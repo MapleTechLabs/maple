@@ -24,7 +24,7 @@ import {
 	ReadSecurityIsAdmin,
 	StartRun,
 } from "./command"
-import { activeRepositoriesOf, latestRunFor, runsOf, targetsOf } from "./derive"
+import { activeRepositoriesOf, allRuns, latestRunFor, runningRuns, runsOf, targetsOf } from "./derive"
 import { Message, type Model, type Tab } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -172,7 +172,18 @@ const finishedSince = (
 
 /** A write changed the targets or runs: read both again past any read in flight. */
 const afterWrite = (model: Model, context: PageContext): Return =>
-	chain(readTargets(model, context, "Supersede"), (next) => readRuns(next, context, "Supersede"))
+	chainAll(model, [
+		(next) => readTargets(next, context, "Supersede"),
+		(next) => readRuns(next, context, "Supersede"),
+		...targetsOf(model).map(
+			(target) => (next: Model) => readTargetRuns(next, context, target.id, "Supersede"),
+		),
+	])
+
+/** Each target once, in first-seen order. */
+const uniqueTargets = (runs: ReadonlyArray<SecurityAuditRun>): ReadonlyArray<SecurityAuditTargetId> => [
+	...new Set(runs.map((run) => run.targetId)),
+]
 
 // ENTRY
 
@@ -361,10 +372,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			)
 		},
 		CompletedFetchRuns: ({ key, result }) => {
-			const before = runsOf(model)
+			const before = allRuns(model)
 			const next: Model = { ...model, runs: Keyed.accept(model.runs, key, result) }
-			const finished = finishedSince(before, runsOf(next))
+			const finished = finishedSince(before, allRuns(next))
+			const known = new Set(before.map((run) => run.id))
+			const started = runsOf(next).filter((run) => !known.has(run.id))
+			// A target whose run finished or started has a stale own list: read it past any in flight.
+			const changed = known.size === 0 ? [] : uniqueTargets([...finished, ...started])
 			return chainAll(next, [
+				...changed.map(
+					(targetId) => (updated: Model) => readTargetRuns(updated, context, targetId, "Supersede"),
+				),
 				(updated) => followRuns(updated, context, "Refresh"),
 				// A finished run's answers supersede reads sent while it was still live.
 				...finished.map(
@@ -409,7 +427,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchGithubStatus: ({ key, result }) => ({
 			model: { ...model, githubStatus: Keyed.accept(model.githubStatus, key, result) },
 		}),
-		TickedPoll: ({ nowMs }) => readRuns({ ...model, nowMs }, context, "Refresh"),
+		TickedPoll: ({ nowMs }) =>
+			chainAll({ ...model, nowMs }, [
+				(next) => readRuns(next, context, "Refresh"),
+				// A live run the global list no longer holds is still followed through its target's list.
+				...uniqueTargets(runningRuns(model)).map(
+					(targetId) => (next: Model) => readTargetRuns(next, context, targetId, "Refresh"),
+				),
+			]),
 		ClickedRetry: () =>
 			chain(readTargets(model, context, "Refresh"), (next) => readRuns(next, context, "Refresh")),
 		ClickedAddTarget: () => {

@@ -5,7 +5,7 @@ import {
 	SecurityAuditRepositoryNotConnectedError,
 	SecurityAuditTargetExistsError,
 } from "@maple/domain/http"
-import { SecurityAuditTargetId } from "@maple/domain/security-audit"
+import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -25,7 +25,14 @@ import * as Field from "../../../ui/field"
 import * as Select from "../../../ui/select"
 import type { PageContext } from "../../contract"
 import * as AddTarget from "../kit/add-target"
-import { filteredFindings, findingsStateOf, groupFindings, spendThisMonth } from "./derive"
+import {
+	filteredFindings,
+	findingsStateOf,
+	groupFindings,
+	latestRunFor,
+	runningRuns,
+	spendThisMonth,
+} from "./derive"
 import { Message, type Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
@@ -127,6 +134,74 @@ describe("security tabs", () => {
 			expect.arrayContaining(["SecurityApiListFindings", "SecurityApiGetLatestRun"]),
 		)
 		expect(answered.model.findings[TARGET_IDS.dashboard]?.data._tag).toBe("Refreshing")
+	})
+
+	test("a target's own runs do not go stale: the polled list's newer copy wins and new runs show", () => {
+		const targetId = Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.dashboard)
+		const ownRuns = runsOf(NOW).runs.filter((run) => run.targetId === TARGET_IDS.dashboard)
+		const withOwn = pageUpdate(
+			loaded(),
+			Message.CompletedFetchTargetRuns({
+				targetId,
+				key: loaded().targetRuns[TARGET_IDS.dashboard]?.key ?? "",
+				result: Result.succeed({ runs: ownRuns }),
+			}),
+		).model
+		expect(latestRunFor(withOwn, TARGET_IDS.dashboard)?.finishedAt).toBeNull()
+		const polled = pageUpdate(withOwn, Message.TickedPoll({ nowMs: NOW + 15_000 }))
+		expect(names(polled.commands)).toEqual(
+			expect.arrayContaining(["SecurityApiListRuns", "SecurityApiListTargetRuns"]),
+		)
+		const live = ownRuns[0]
+		expect(live).toBeDefined()
+		if (live === undefined) return
+		const next = {
+			...live,
+			id: Schema.decodeSync(SecurityAuditRunId)("run_next_0001"),
+			startedAt: NOW + 10_000,
+		}
+		const finished = { ...live, status: "complete" as const, finishedAt: NOW + 5_000 }
+		const answered = pageUpdate(
+			polled.model,
+			Message.CompletedFetchRuns({
+				key: polled.model.runs.key ?? "",
+				result: Result.succeed({
+					runs: [
+						next,
+						finished,
+						...runsOf(NOW).runs.filter((run) => run.targetId !== TARGET_IDS.dashboard),
+					],
+				}),
+			}),
+		)
+		// The own list still says live; the merge shows the new run and the old one as finished.
+		expect(latestRunFor(answered.model, TARGET_IDS.dashboard)?.id).toBe("run_next_0001")
+		expect(runningRuns(answered.model).map((run) => run.id)).toEqual(["run_next_0001"])
+		expect(names(answered.commands)).toContain("SecurityApiListTargetRuns")
+	})
+
+	test("polling continues while a target's own list holds a live run the global list dropped", () => {
+		const targetId = Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.dashboard)
+		const ownRuns = runsOf(NOW).runs.filter((run) => run.targetId === TARGET_IDS.dashboard)
+		const base = loaded()
+		const withoutGlobal = pageUpdate(
+			base,
+			Message.CompletedFetchRuns({
+				key: base.runs.key ?? "",
+				result: Result.succeed({
+					runs: runsOf(NOW).runs.filter((run) => run.targetId !== TARGET_IDS.dashboard),
+				}),
+			}),
+		).model
+		const withOwn = pageUpdate(
+			withoutGlobal,
+			Message.CompletedFetchTargetRuns({
+				targetId,
+				key: withoutGlobal.targetRuns[TARGET_IDS.dashboard]?.key ?? "",
+				result: Result.succeed({ runs: ownRuns }),
+			}),
+		).model
+		expect(runningRuns(withOwn)).toHaveLength(1)
 	})
 
 	test("an org outside the rollout sees the not-enabled state, not an error", () => {
@@ -241,10 +316,20 @@ describe("security tabs", () => {
 				Message.CompletedFetchTargetRuns({
 					targetId: Schema.decodeSync(SecurityAuditTargetId)(targetId),
 					key: model.targetRuns[targetId]?.key ?? "",
+					// An older run past the global list's cap, with no cost recorded.
 					result: Result.succeed({
-						runs: capped.map((run) =>
-							run.targetId === TARGET_IDS.terraform ? { ...run, costUsd: null } : run,
-						),
+						runs:
+							targetId === TARGET_IDS.terraform
+								? capped.flatMap((run) => [
+										run,
+										{
+											...run,
+											id: Schema.decodeSync(SecurityAuditRunId)("run_older_0001"),
+											costUsd: null,
+											startedAt: run.startedAt - 60_000,
+										},
+									])
+								: capped,
 					}),
 				}),
 			).model

@@ -41,7 +41,8 @@ export const latestRunOf = (
 	targetId: string,
 ): SecurityAuditRun | undefined => runs.find((run) => run.targetId === targetId)
 
-export const runningRuns = (model: Model): ReadonlyArray<SecurityAuditRun> => runsOf(model).filter(isLive)
+/** Live runs in either list: polling keeps going while any is. */
+export const runningRuns = (model: Model): ReadonlyArray<SecurityAuditRun> => allRuns(model).filter(isLive)
 
 export const latestDetailOf = (model: Model, runId: string): SecurityAuditRunDetail | null =>
 	Option.getOrNull(
@@ -124,23 +125,46 @@ const targetRunsOf = (model: Model, targetId: string): ReadonlyArray<SecurityAud
 		),
 	)?.runs ?? null
 
-/** A target's newest run, from its own list once read, else from the global one. */
-export const latestRunFor = (model: Model, targetId: string): SecurityAuditRun | undefined => {
-	const own = targetRunsOf(model, targetId)
-	const runs = own === null ? runsOf(model) : [...own].sort((a, b) => b.startedAt - a.startedAt)
-	return latestRunOf(runs, targetId)
-}
+/** Of two copies of one run, the further along: finished beats live, then more invocations spent. */
+const fresher = (a: SecurityAuditRun, b: SecurityAuditRun): SecurityAuditRun =>
+	a.finishedAt !== null && b.finishedAt === null
+		? a
+		: b.finishedAt !== null && a.finishedAt === null
+			? b
+			: b.invocationsSpent > a.invocationsSpent
+				? b
+				: a
 
-/** The Runs tab's rows: one target's own list when narrowed to it, else the global one. */
+/** Runs merged by id, the fresher copy kept, newest first. */
+const mergeRuns = (lists: ReadonlyArray<ReadonlyArray<SecurityAuditRun>>): ReadonlyArray<SecurityAuditRun> =>
+	[
+		...lists
+			.flat()
+			.reduce((byId, run) => {
+				const held = byId.get(run.id)
+				return byId.set(run.id, held === undefined ? run : fresher(held, run))
+			}, new Map<string, SecurityAuditRun>())
+			.values(),
+	].sort((a, b) => b.startedAt - a.startedAt)
+
+/** A target's runs: its own list and the polled global list together, so neither goes stale. */
+const runsForTarget = (model: Model, targetId: string): ReadonlyArray<SecurityAuditRun> =>
+	mergeRuns([targetRunsOf(model, targetId) ?? [], runsOf(model).filter((run) => run.targetId === targetId)])
+
+/** Every run either list holds. */
+export const allRuns = (model: Model): ReadonlyArray<SecurityAuditRun> =>
+	mergeRuns([runsOf(model), ...targetsOf(model).map((target) => targetRunsOf(model, target.id) ?? [])])
+
+export const latestRunFor = (model: Model, targetId: string): SecurityAuditRun | undefined =>
+	runsForTarget(model, targetId)[0]
+
+/** The Runs tab's rows: one target's runs when narrowed to it, else every run held. */
 export const runsForTab = (
 	model: Model,
 ): Readonly<{ runs: ReadonlyArray<SecurityAuditRun>; isCapped: boolean }> => {
 	const targetId = model.runsSearch.target
 	const own = targetId === undefined ? null : targetRunsOf(model, targetId)
-	const runs =
-		own === null
-			? runsOf(model).filter((run) => targetId === undefined || run.targetId === targetId)
-			: [...own].sort((a, b) => b.startedAt - a.startedAt)
+	const runs = targetId === undefined ? runsOf(model) : runsForTarget(model, targetId)
 	const listed = own ?? Option.getOrNull(AsyncData.getData(model.runs.data))?.runs ?? []
 	return { runs, isCapped: listed.length >= RUN_LIST_CAP }
 }
@@ -159,8 +183,7 @@ export type Spend = Readonly<{
 export const spendThisMonth = (model: Model): Spend => {
 	const lists = targetsOf(model).map((target) => targetRunsOf(model, target.id))
 	const isPartial = lists.some((runs) => runs === null || runs.length >= RUN_LIST_CAP)
-	const runs = lists.every((list) => list === null) ? runsOf(model) : lists.flatMap((list) => list ?? [])
-	return runs
+	return allRuns(model)
 		.filter((run) => isSameMonth(run.startedAt, model.nowMs))
 		.reduce<Spend>(
 			(sum, run) => ({
