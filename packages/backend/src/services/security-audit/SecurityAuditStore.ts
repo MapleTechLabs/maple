@@ -34,6 +34,7 @@ import {
 	type AuditStoreApi,
 	type Finding,
 } from "@maple/security-audit"
+import { CoverageUnit, Finding as FindingSchema, UnitStatus } from "@maple/security-audit/schema"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -125,6 +126,33 @@ export interface SecurityAuditStoreApi {
 
 const DEFAULT_RUN_LIST_LIMIT = 50
 
+/** Ledger units per insert: 7 binds each keeps one statement far under Postgres's 65,535. */
+const LEDGER_INSERT_CHUNK = 500
+
+const decodeCoverageUnit = Schema.decodeUnknownOption(CoverageUnit)
+const decodeUnitStatus = Schema.decodeUnknownOption(UnitStatus)
+const decodeFinding = Schema.decodeUnknownOption(FindingSchema)
+
+/**
+ * Keeps the rows that still decode against the current schemas. Stored jsonb outlives a skill
+ * upgrade that tightens them; one stale row must not fail every later run that reads it.
+ */
+const keepDecodable = <Raw, A>(
+	rows: ReadonlyArray<Raw>,
+	decode: (row: Raw) => Option.Option<A>,
+	what: string,
+) =>
+	Effect.gen(function* () {
+		const decoded = Arr.getSomes(rows.map(decode))
+		const skipped = rows.length - decoded.length
+		if (skipped > 0) {
+			yield* Effect.logWarning(`Skipped stored ${what} that no longer decode`).pipe(
+				Effect.annotateLogs({ skipped, total: rows.length }),
+			)
+		}
+		return decoded
+	})
+
 const newTargetId = () => Schema.decodeSync(SecurityAuditTargetId)(crypto.randomUUID())
 const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
 
@@ -210,6 +238,30 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						),
 					)
 
+				/** The target's lifecycle rows, tolerant of records stored under an older schema. */
+				const readFindings = (targetId: SecurityAuditTargetId, fingerprint?: string) =>
+					dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditFindings)
+								.select(($) => ({ ...$, record: PG.undecoded($.record) }))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.targetId.eq(targetId),
+									fingerprint === undefined ? undefined : $.fingerprint.eq(fingerprint),
+								])
+								.orderBy(($) => [[$.createdAt, "asc"]]),
+						),
+					).pipe(
+						Effect.flatMap((rows) =>
+							keepDecodable(
+								rows,
+								(row): Option.Option<SecurityAuditFindingRow> =>
+									Option.map(decodeFinding(row.record), (record) => ({ ...row, record })),
+								"findings",
+							),
+						),
+					)
+
 				const saveMetadata: AuditStoreApi["saveMetadata"] = Effect.fn(
 					"SecurityAuditStore.saveMetadata",
 				)(function* (metadata) {
@@ -252,19 +304,23 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											$.runId.eq(runId),
 										]),
 									)
-									if (!Arr.isReadonlyArrayNonEmpty(ledger)) return
-									yield* db.run(
-										PG.insertInto(SecurityAuditUnits).values(
-											Arr.map(ledger, (unit) => ({
-												runId,
-												coverageId: unit.coverage_id,
-												orgId,
-												status: unit.status,
-												wave: unit.wave,
-												agentId: unit.agent_id,
-												unit,
-											})),
-										),
+									yield* Effect.forEach(
+										Arr.chunksOf(ledger, LEDGER_INSERT_CHUNK),
+										(chunk) =>
+											db.run(
+												PG.insertInto(SecurityAuditUnits).values(
+													Arr.map(chunk, (unit) => ({
+														runId,
+														coverageId: unit.coverage_id,
+														orgId,
+														status: unit.status,
+														wave: unit.wave,
+														agentId: unit.agent_id,
+														unit,
+													})),
+												),
+											),
+										{ discard: true },
 									)
 								}),
 							),
@@ -602,13 +658,26 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					"SecurityAuditStore.listUnits",
 				)(function* (rawRunId) {
 					const runId = yield* decodeRunId(rawRunId)
-					return yield* dbExecute((db) =>
+					const rows = yield* dbExecute((db) =>
 						db.run(
 							PG.from(SecurityAuditUnits)
-								.select()
+								.select(($) => ({
+									...$,
+									status: PG.undecoded($.status),
+									unit: PG.undecoded($.unit),
+								}))
 								.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)])
 								.orderBy(($) => [[$.coverageId, "asc"]]),
 						),
+					)
+					return yield* keepDecodable(
+						rows,
+						(row): Option.Option<SecurityAuditUnitRow> =>
+							Option.all({
+								status: decodeUnitStatus(row.status),
+								unit: decodeCoverageUnit(row.unit),
+							}).pipe(Option.map((decoded) => ({ ...row, ...decoded }))),
+						"ledger units",
 					)
 				})
 
@@ -619,12 +688,12 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					const rows = yield* dbExecute((db) =>
 						db.run(
 							PG.from(SecurityAuditRunFindings)
-								.select()
+								.select(($) => ({ record: PG.undecoded($.record) }))
 								.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)])
 								.orderBy(($) => [[$.fingerprint, "asc"]]),
 						),
 					)
-					return rows.map((row) => row.record)
+					return yield* keepDecodable(rows, (row) => decodeFinding(row.record), "run findings")
 				})
 
 				const listEvents: SecurityAuditOrgStore["listEvents"] = Effect.fn(
@@ -644,14 +713,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				const listFindings: SecurityAuditOrgStore["listFindings"] = Effect.fn(
 					"SecurityAuditStore.listFindings",
 				)(function* (targetId) {
-					return yield* dbExecute((db) =>
-						db.run(
-							PG.from(SecurityAuditFindings)
-								.select()
-								.where(($) => [$.orgId.eq(orgId), $.targetId.eq(targetId)])
-								.orderBy(($) => [[$.createdAt, "asc"]]),
-						),
-					)
+					return yield* readFindings(targetId)
 				})
 
 				const markFixed: SecurityAuditOrgStore["markFixed"] = Effect.fn(
@@ -722,10 +784,11 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									$.targetId.eq(targetId),
 									$.fingerprint.eq(fingerprint),
 								])
-								.returning(),
+								.returning("id"),
 						),
 					)
-					return Option.fromUndefinedOr(rows[0])
+					if (rows.length === 0) return Option.none()
+					return Arr.head(yield* readFindings(targetId, fingerprint))
 				})
 
 				return {

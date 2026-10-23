@@ -475,3 +475,73 @@ describe("SecurityAuditStore triage", () => {
 		),
 	)
 })
+
+describe("SecurityAuditStore tolerant readers", () => {
+	it.effect("skips stored units and findings an older schema wrote, keeping the rest", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveLedger(runId, [unit("u1", "covered", 1)])
+				yield* scoped.saveFindings(runId, [confirmed("f1"), confirmed("f2")])
+				const db = trackedDbs[0]
+				assert.isDefined(db)
+				// Shapes an earlier skill version wrote: a unit without its refs, a finding without a verdict.
+				yield* Effect.promise(() =>
+					db.pglite.query(
+						`INSERT INTO security_audit_units (run_id, coverage_id, org_id, status, wave, agent_id, unit)
+						 VALUES ($1, 'u0', $2, 'covered', 1, null, '{"coverage_id":"u0"}'::jsonb)`,
+						[runId, orgA],
+					),
+				)
+				yield* Effect.promise(() =>
+					db.pglite.query(
+						`INSERT INTO security_audit_run_findings (run_id, fingerprint, org_id, verdict, overall_severity, record)
+						 VALUES ($1, 'f0', $2, 'confirmed', 'high', '{"fingerprint":"f0","title":"old"}'::jsonb)`,
+						[runId, orgA],
+					),
+				)
+				yield* Effect.promise(() =>
+					db.pglite.query(
+						`UPDATE security_audit_findings SET record = '{"fingerprint":"f2"}'::jsonb WHERE fingerprint = 'f2'`,
+					),
+				)
+
+				const units = yield* scoped.listUnits(runId)
+				const runFindings = yield* scoped.listRunFindings(runId)
+				const findings = yield* scoped.listFindings(targetId)
+
+				assert.deepStrictEqual(
+					[
+						units.map((u) => u.coverageId),
+						runFindings.map((f) => f.fingerprint),
+						findings.map((f) => f.fingerprint),
+					],
+					[["u1"], ["f1", "f2"], ["f1"]],
+				)
+			}),
+		),
+	)
+})
+
+describe("SecurityAuditStore large ledgers", () => {
+	it.effect("saves and resaves a ledger beyond one statement's bind limit", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "sha-1")
+				const ledger = Array.from({ length: 1_200 }, (_, i) => unit(`u${i}`, "planned", 1))
+				yield* scoped.saveLedger(runId, ledger)
+				yield* scoped.saveLedger(
+					runId,
+					ledger.map((u) => unit(u.coverage_id, "covered", 1)),
+				)
+				const units = yield* scoped.listUnits(runId)
+				assert.deepStrictEqual(
+					[units.length, new Set(units.map((u) => u.status))],
+					[1_200, new Set(["covered"])],
+				)
+			}),
+		),
+	)
+})
