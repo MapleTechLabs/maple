@@ -173,7 +173,17 @@ const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html
 }
 
 /** Connected, but nothing streamed yet: say which step is missing, never show placeholders. */
+// Metrics that arrive win over the connection state: a stream set up outside Maple still reads.
 const noMetrics = (h: H, status: AwsStatus): Html => {
+	if (status.connections.length === 0)
+		return integrationNotConnected(h, {
+			icon: icon(h, "AwsIcon", { size: 16 }),
+			title: status.available ? "Connect an AWS account" : "AWS can't be connected here yet",
+			description:
+				"Maple streams CloudWatch metrics for ECS, EC2, load balancers, RDS, Lambda and SQS, and matches them to your traces.",
+			integration: "aws",
+			actionLabel: "Connect AWS",
+		})
 	const streaming = status.connections.filter((connection) => connection.metric_stream !== null)
 	if (streaming.length === 0)
 		return integrationNotConnected(h, {
@@ -226,18 +236,6 @@ const fleet = (h: H, model: Model, status: AwsStatus): Html =>
 		onRefreshing: (data) => fleetView(h, model, status, data, true),
 	})
 
-const byStatus = (h: H, model: Model, status: AwsStatus): Html => {
-	if (status.connections.length > 0) return fleet(h, model, status)
-	return integrationNotConnected(h, {
-		icon: icon(h, "AwsIcon", { size: 16 }),
-		title: status.available ? "Connect an AWS account" : "AWS can't be connected here yet",
-		description:
-			"Maple streams CloudWatch metrics for ECS, EC2, load balancers, RDS, Lambda and SQS, and matches them to your traces.",
-		integration: "aws",
-		actionLabel: "Connect AWS",
-	})
-}
-
 const statusView = (h: H, model: Model): Html =>
 	AsyncData.match(model.status.data, {
 		onIdle: () => loading(h),
@@ -248,9 +246,9 @@ const statusView = (h: H, model: Model): Html =>
 				title: "Failed to load the AWS integration",
 				onRetry: Message.ClickedRetryStatus(),
 			}),
-		onStale: ({ data }) => byStatus(h, model, data),
-		onSuccess: (data) => byStatus(h, model, data),
-		onRefreshing: (data) => byStatus(h, model, data),
+		onStale: ({ data }) => fleet(h, model, data),
+		onSuccess: (data) => fleet(h, model, data),
+		onRefreshing: (data) => fleet(h, model, data),
 	})
 
 /** "4417-2213-9045 · us-east-1, eu-central-1 · metrics every minute", once connected. */

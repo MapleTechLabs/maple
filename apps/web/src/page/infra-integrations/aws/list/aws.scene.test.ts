@@ -131,6 +131,19 @@ describe("aws list", () => {
 		)
 	})
 
+	test("metrics that arrive show even without a connection in Maple", () => {
+		const fleet: ReadonlyArray<FleetRead> = [
+			{ kind: "ecs", failed: false, points: [cpu("payments-api", 40)] },
+		]
+		const { model } = loaded({}, [], fleet)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("link", { name: /payments-api/ })).toExist(),
+			expectView(text("Connect an AWS account")).toBeAbsent(),
+		)
+	})
+
 	test("the first reporting kind shows, with its sparklines read once the fleet names it", () => {
 		const fleet: ReadonlyArray<FleetRead> = [
 			{ kind: "ecs", failed: false, points: [cpu("payments-api", 40), cpu("worker-billing", 92)] },
