@@ -71,7 +71,9 @@ export const buildReports = (
 		)
 	const pending = findings.filter((f): f is NeedsValidation => f.verdict === "needs_validation")
 	const counts = countBy(s.ledger)
-	const unvalidated = [...s.candidates.keys()].filter((fp) => !s.findings.has(fp))
+	const unvalidated = [
+		...new Set([...s.candidates.keys(), ...s.carried.map((c) => c.record.fingerprint)]),
+	].filter((fp) => !s.findings.has(fp))
 	const partial =
 		input.profile === "quick" ||
 		input.scopePaths.length > 0 ||
