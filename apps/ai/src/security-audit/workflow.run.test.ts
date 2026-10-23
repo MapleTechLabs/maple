@@ -134,7 +134,7 @@ const payloadFor = (runId: string, priorRunId: string | null = null): SecurityAu
 	ref: "main",
 	profile: "deep",
 	scopePaths: [],
-	budget: null,
+	budget: 400,
 	priorRunId,
 })
 
@@ -250,7 +250,13 @@ describe("auditWithAgents, prior runs", () => {
 	it.effect("ignores a prior run that has not finished", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
-			const unfinished = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+			// One target holds one running run, so the unfinished prior run belongs to a sibling branch target.
+			const sibling = yield* store.createTarget({
+				repository: "acme/api",
+				branch: "release",
+				createdBy: Schema.decodeUnknownSync(UserId)("user_a"),
+			})
+			const unfinished = yield* store.startRun({ targetId: sibling.id, kind: "manual", sourceRef: SHA })
 			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
 			const commands: Array<string> = []
 			yield* auditWithAgents(payloadFor(run.id, unfinished.id), () =>
