@@ -130,6 +130,37 @@ describe("aws card", () => {
 		expect(names(saved.commands)).toContain("LoadIntegrationsAwsStatus")
 	})
 
+	test("a stream saved while the setup is open reads the script again", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+		const model = withStatus(entered(), [connection({ verified_at })])
+		const open = pageUpdate(model, Message.ClickedAwsSetup({ id: connectionId })).model
+		const loaded = pageUpdate(
+			open,
+			Message.CompletedLoadAwsSetup({
+				key: open.awsCard.setup.key ?? "",
+				result: Result.succeed({
+					object: "aws_connection.setup",
+					stack_name: "maple-integration",
+					stack_region: "us-east-1",
+					setup_script: "no stream",
+					cleanup_script: "",
+					cloudformation_template: "{}",
+					terraform: "",
+					metrics_stack_name: null,
+					metrics_cloudformation_template: null,
+				}),
+			}),
+		).model
+		const saved = pageUpdate(
+			loaded,
+			Message.CompletedAwsMetricStream({
+				connection: connection({ verified_at, metric_stream: stream }),
+				error: null,
+			}),
+		)
+		expect(names(saved.commands)).toContain("LoadAwsSetup")
+	})
+
 	test("a refused metric stream keeps the form open with the reason", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
 		const opened = pageUpdate(

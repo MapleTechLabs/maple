@@ -115,13 +115,18 @@ export const setAdding = (model: Model, isAdding: boolean): Return => ({
 const setupKey = (context: PageContext, id: AwsConnectionId) =>
 	requestKey(context.orgId, "awsIntegration.setup", { id })
 
-export const openSetup = (model: Model, context: PageContext, id: AwsConnectionId): Return => {
+export const openSetup = (
+	model: Model,
+	context: PageContext,
+	id: AwsConnectionId,
+	mode: Keyed.ReadMode = "Load",
+): Return => {
 	// Another connection's setup is never shown while this one loads: its stack is for another account.
 	const opened = withCard(
 		model,
 		model.awsCard.setupId === id ? { setupId: id } : { setupId: id, setup: Keyed.idle() },
 	)
-	return Option.match(Keyed.requestFor(opened.awsCard.setup, setupKey(context, id), "Load"), {
+	return Option.match(Keyed.requestFor(opened.awsCard.setup, setupKey(context, id), mode), {
 		onNone: () => ({ model: opened }),
 		onSome: (requested) => ({
 			model: withCard(opened, { setup: requested }),
@@ -428,7 +433,8 @@ export const completedMetricStream = (
 		return { model: withCard(model, { isSavingMetrics: false, metricsError: error }) }
 	}
 	return chain(withCard(model, { isSavingMetrics: false, metricsId: null }), [
-		(next) => openSetup(next, context, connection.id),
+		// The stored script predates the stream, so it is read again.
+		(next) => openSetup(next, context, connection.id, "Supersede"),
 		(next) => requestStatus(next, context, "aws", "Supersede"),
 		(next) =>
 			toast(next, "success", "Metric stream added", "Run the setup again in AWS to start streaming."),
