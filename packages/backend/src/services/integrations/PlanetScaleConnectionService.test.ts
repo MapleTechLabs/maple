@@ -13,6 +13,7 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { PlanetScaleConnectionService } from "./PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
+import { PlanetScaleWebhookService } from "./PlanetScaleWebhookService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { ScrapeTargetsService } from "./ScrapeTargetsService"
 
@@ -46,6 +47,10 @@ const makeLayer = (testDb: TestDb) => {
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(oauthLive),
 	)
+	const webhooksLive = Layer.effect(PlanetScaleWebhookService, PlanetScaleWebhookService.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
+		Layer.provide(oauthLive),
+	)
 	const scrapeTargetsLive = Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(discoveryLive, oauthLive, SupabaseOAuthService.layer)),
@@ -53,8 +58,9 @@ const makeLayer = (testDb: TestDb) => {
 	return Layer.mergeAll(
 		Layer.effect(PlanetScaleConnectionService, PlanetScaleConnectionService.make).pipe(
 			Layer.provide(FetchHttpClient.layer),
-			Layer.provide(Layer.mergeAll(scrapeTargetsLive, discoveryLive, oauthLive)),
+			Layer.provide(Layer.mergeAll(scrapeTargetsLive, discoveryLive, webhooksLive, oauthLive)),
 		),
+		webhooksLive,
 		scrapeTargetsLive,
 		oauthLive,
 	).pipe(Layer.provide(testDb.layer), Layer.provide(Env.layer), Layer.provide(makeConfig()))

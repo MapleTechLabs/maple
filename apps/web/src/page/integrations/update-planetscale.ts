@@ -10,7 +10,6 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import {
 	FetchOrganizations,
-	FetchWebhookConfig,
 	normalizeTokenPaste,
 	parsePatternList,
 	type PlanetscaleCardModel,
@@ -196,18 +195,6 @@ export const completedToken = (model: Model, context: PageContext, error: string
 			(next) => refreshAfterWrite(next, context),
 		],
 	)
-}
-
-export const clickedShowWebhook = (model: Model, context: PageContext): Return => {
-	const revealed = withCard(model, { isWebhookRevealed: true })
-	const key = requestKey(context.orgId, "planetscaleIntegration.webhookConfig", {})
-	return Option.match(Keyed.request(model.planetscaleCard.webhookConfig, key, "Load"), {
-		onNone: () => ({ model: revealed }),
-		onSome: (webhookConfig) => ({
-			model: withCard(revealed, { webhookConfig }),
-			commands: [FetchWebhookConfig({ key })],
-		}),
-	})
 }
 
 export const updateCard = (model: Model, card: Partial<PlanetscaleCardModel>): Return => ({

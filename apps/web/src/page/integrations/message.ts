@@ -22,7 +22,6 @@ import {
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
 	V2PlanetScaleOrganizationList,
-	V2PlanetScaleWebhookConfig,
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
@@ -269,7 +268,6 @@ export const Message = defineMessageUnion({
 		failure: Schema.NullOr(LoadFailure),
 	},
 	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
-	CompletedFetchWebhookConfig: result(V2PlanetScaleWebhookConfig),
 	ClickedChangeOrganization: {},
 	GotPickerDialogMessage: { message: Dialog.Message },
 	SelectedOrganization: { name: Schema.String },
@@ -285,10 +283,8 @@ export const Message = defineMessageUnion({
 	SubmittedMetricsToken: {},
 	CompletedSetMetricsToken: { error: Schema.NullOr(Schema.String) },
 	ClickedMetricsDetails: {},
-	ClickedShowWebhookSetup: {},
 	/** Every 5 s while the first scrape is awaited. */
 	TickedPlanetscaleWatch: {},
-	GotWebhookCopyMessage: { field: Schema.Literals(["url", "secret"]), message: CopyButton.Message },
 	CompletedGcpLogVolume: { key: Schema.String, result: Schema.Result(LogVolume, LoadFailure) },
 	CompletedGcpFleet: { key: Schema.String, result: Schema.Result(Schema.Array(FleetRead), LoadFailure) },
 	CompletedGcpInventory: result(GcpResourcesResponse),

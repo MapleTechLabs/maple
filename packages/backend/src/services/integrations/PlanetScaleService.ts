@@ -28,6 +28,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { PlanetScaleWebhookService } from "./PlanetScaleWebhookService"
 import {
 	collectPages,
 	decodeConsumed,
@@ -69,6 +70,12 @@ const DEPLOY_REQUESTS_FLOOR_MS = Duration.toMillis(Duration.days(30))
 /** Per-tick budget so a 200-database org can't monopolize the API allowance. */
 const DEPLOY_REQUESTS_MAX_DATABASES_PER_TICK = 25
 const DEPLOY_REQUESTS_CONCURRENCY = 2
+/**
+ * Webhook registration (`PlanetScaleWebhookService`). Short enough that a reauthorization or a
+ * new database gets its webhook within a few ticks; a healthy check is one listing per database.
+ */
+const WEBHOOKS_DATASET = "webhooks"
+const WEBHOOKS_TTL_MS = Duration.toMillis(Duration.minutes(15))
 /** Tick-overlap lease. */
 const LEASE_MS = Duration.toMillis(Duration.minutes(4))
 /**
@@ -335,6 +342,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			const env = yield* Env
 			const psOAuth = yield* PlanetScaleOAuthService
 			const httpClient = yield* HttpClient.HttpClient
+			const webhooks = yield* PlanetScaleWebhookService
 
 			/**
 			 * One management-API call with the org's grant. A 401 refreshes once and stamps the
@@ -978,6 +986,39 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				return { outcome: "failed" as const, deployEvents }
 			})
 
+			/** Register missing webhooks after the inventory, so a new connection gets them on its first tick. */
+			const syncWebhooks = Effect.fn("PlanetScaleService.syncWebhooks")(
+				function* (connection: PlanetScaleConnectionRow) {
+					yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
+					const claim = yield* claimPollWork(
+						connection.orgId,
+						WEBHOOKS_DATASET,
+						"",
+						WEBHOOKS_TTL_MS,
+					)
+					if (claim !== "claimed") {
+						yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": claim })
+						return
+					}
+					const result = yield* webhooks.reconcile(connection)
+					yield* recordPollResult(
+						connection.orgId,
+						WEBHOOKS_DATASET,
+						"",
+						result.failed > 0 ? `${result.failed} database webhook(s) failed to register` : null,
+						null,
+					)
+				},
+				// Webhooks must never cost the org its inventory or deploy timeline.
+				Effect.catchCause((cause) =>
+					Cause.hasInterruptsOnly(cause)
+						? Effect.interrupt
+						: Effect.logWarning("PlanetScale webhook sync failed").pipe(
+								Effect.annotateLogs({ error: summarizeCause(cause) }),
+							),
+				),
+			)
+
 			const pollAllOrgs = Effect.fn("PlanetScaleService.pollAllOrgs")(function* () {
 				const connections = yield* dbExecute((db) =>
 					db.run(PG.from(PlanetscaleConnections).select()),
@@ -993,6 +1034,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					connections,
 					(connection) =>
 						pollOrg(connection).pipe(
+							Effect.tap(() => syncWebhooks(connection)),
 							// A broken org must not stop the fleet.
 							Effect.catchCause((cause) =>
 								Cause.hasInterruptsOnly(cause)
@@ -1204,6 +1246,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
+		Layer.provide(PlanetScaleWebhookService.layer),
 		Layer.provide(PlanetScaleOAuthService.layer),
 	)
 }

@@ -109,6 +109,32 @@ export const V2PlanetScaleScrapeTarget = Schema.Struct({
 })
 export type V2PlanetScaleScrapeTarget = Schema.Schema.Type<typeof V2PlanetScaleScrapeTarget>
 
+export const V2PlanetScaleWebhooks = Schema.Struct({
+	state: Schema.Literals(["active", "pending", "failing", "needs_reauthorization"]).annotate({
+		description:
+			"`active`: every database has Maple's webhook. `pending`: some do not yet; Maple registers them within minutes. `failing`: registering one failed, see `last_error`. `needs_reauthorization`: the OAuth grant lacks the `write_databases` access webhooks need; reconnect to grant it.",
+		examples: ["active"],
+	}),
+	registered_databases: Schema.Number.annotate({
+		description: "Databases that have Maple's webhook.",
+		examples: [3],
+	}),
+	databases: Schema.Number.annotate({
+		description: "Databases in the bound organization.",
+		examples: [3],
+	}),
+	last_error: Schema.NullOr(Schema.String).annotate({
+		description: "The most recent registration failure, or `null`.",
+		examples: [null],
+	}),
+}).annotate({
+	identifier: "PlanetScaleWebhooks",
+	title: "PlanetScale webhooks",
+	description:
+		"The webhooks Maple registers on every database of the bound organization, which deliver health events and deploy-request transitions.",
+})
+export type V2PlanetScaleWebhooks = Schema.Schema.Type<typeof V2PlanetScaleWebhooks>
+
 export const V2PlanetScaleIntegration = Schema.Struct({
 	object: Schema.Literal("planetscale_integration").annotate({
 		description: 'The object type — always `"planetscale_integration"`.',
@@ -141,6 +167,12 @@ export const V2PlanetScaleIntegration = Schema.Struct({
 	scrape_target: Schema.NullOr(V2PlanetScaleScrapeTarget).annotate({
 		description: "The managed scrape target, or `null` before one is provisioned.",
 	}),
+	webhooks: Schema.optionalKey(
+		Schema.NullOr(V2PlanetScaleWebhooks).annotate({
+			description:
+				"Webhook registration across the organization's databases, or `null` before one is bound.",
+		}),
+	),
 	last_inventory_at: Schema.NullOr(Timestamp).annotate({
 		description: "When the database/branch inventory last refreshed, or `null` before the first refresh.",
 	}),
@@ -179,6 +211,7 @@ export const V2PlanetScaleIntegration = Schema.Struct({
 				last_scrape_at: "2026-08-05T12:00:00.000Z",
 				last_scrape_error: null,
 			},
+			webhooks: { state: "active", registered_databases: 3, databases: 3, last_error: null },
 			last_inventory_at: "2026-08-05T12:00:00.000Z",
 			last_inventory_error: null,
 			revoked_at: null,
@@ -926,9 +959,9 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getPlanetScaleWebhookConfig",
-				summary: "Retrieve the PlanetScale webhook configuration",
+				summary: "Retrieve the PlanetScale webhook configuration (deprecated)",
 				description:
-					"Returns the URL and HMAC signing secret to register in PlanetScale's per-database webhook settings, so deploy-request and branch events reach Maple live instead of waiting for the REST backfill. Admin-only because the response carries the secret. Requires an org-admin role and the `integrations:read` scope.",
+					"Deprecated: Maple now registers a webhook on every database itself and verifies each delivery with the secret PlanetScale generated for it; see `webhooks` on the integration status. The URL and secret returned here no longer verify deliveries. Requires an org-admin role and the `integrations:read` scope.",
 			}),
 		),
 	)

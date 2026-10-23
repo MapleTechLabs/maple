@@ -360,6 +360,21 @@ export class PlanetScaleScrapeTargetSummary extends Schema.Class<PlanetScaleScra
 	lastScrapeError: Schema.NullOr(Schema.String),
 }) {}
 
+/** The webhooks Maple registers on the bound organization's databases. */
+export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookStatus>(
+	"PlanetScaleWebhookStatus",
+)({
+	/**
+	 * `needs_reauthorization`: the grant predates the `write_databases` access webhooks need.
+	 * `pending`: not every database has one yet. `failing`: registering one failed.
+	 */
+	state: Schema.Literals(["active", "pending", "failing", "needs_reauthorization"]),
+	registeredDatabases: Schema.Number,
+	databases: Schema.Number,
+	/** The most recent registration failure, or null. */
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
 export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegrationStatus>(
 	"PlanetScaleIntegrationStatus",
 )({
@@ -383,6 +398,8 @@ export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegr
 	 */
 	metricsAuth: Schema.Literals(["oauth", "service_token", "missing"]),
 	scrapeTarget: Schema.NullOr(PlanetScaleScrapeTargetSummary),
+	/** Null until an organization is bound. */
+	webhooks: Schema.NullOr(PlanetScaleWebhookStatus),
 	/** Epoch ms of the last successful inventory refresh; null before the first. */
 	lastInventoryAt: Schema.NullOr(Schema.Number),
 	lastInventoryError: Schema.NullOr(Schema.String),

@@ -20,6 +20,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PlanetscaleConnections,
+	PlanetscaleDatabases,
 	ScrapeTargets,
 	type PlanetScaleConnectionRow,
 	type ScrapeTargetRow,
@@ -41,6 +42,7 @@ import {
 	planetScaleBearerHeader,
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { ScrapeTargetsService, type ScrapeTargetsServiceApi } from "./ScrapeTargetsService"
+import { planetScaleWebhookStatus, PlanetScaleWebhookService } from "./PlanetScaleWebhookService"
 import {
 	deleteSourcesOf,
 	createIntegrationSource,
@@ -177,6 +179,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 		const scrapeTargetsService = yield* ScrapeTargetsService
 		const psOAuth = yield* PlanetScaleOAuthService
 		const discovery = yield* PlanetScaleDiscoveryService
+		const webhooks = yield* PlanetScaleWebhookService
 		const httpClient = yield* HttpClient.HttpClient
 		const encryptionKey = yield* parseBase64Aes256GcmKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -364,6 +367,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 					connectedByUserId: null,
 					detectedPermissions: null,
 					scrapeTarget: null,
+					webhooks: null,
 					lastInventoryAt: null,
 					lastInventoryError: null,
 					revokedAt: grant.revokedAt,
@@ -372,6 +376,13 @@ export class PlanetScaleConnectionService extends Context.Service<
 			}
 			const target = yield* selectManagedTarget(connection)
 			const discoveryConfig = target ? yield* decodeStoredDiscoveryConfig(target) : null
+			const databases = yield* dbExecute((db) =>
+				db.run(
+					PG.from(PlanetscaleDatabases)
+						.select("webhookId", "webhookError")
+						.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
+				),
+			)
 			// How scraping authenticates: a stored service token wins; grant-resolved
 			// bearer auth counts only while the target is enabled (finalize disables
 			// it unless the bearer passed an end-to-end data-plane scrape probe —
@@ -403,6 +414,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 							lastScrapeError: target.lastScrapeError,
 						})
 					: null,
+				webhooks: planetScaleWebhookStatus(grant.scopes, databases),
 				lastInventoryAt: connection.lastInventoryAt,
 				lastInventoryError: connection.lastInventoryError,
 				revokedAt: grant.revokedAt,
@@ -485,6 +497,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 
 				const now = yield* Clock.currentTimeMillis
 				const existing = yield* selectConnection(orgId)
+				// The connection id (and so the webhook URL) survives a rebind; the old
+				// organization's webhooks would keep delivering to it.
+				if (existing !== null && existing.psOrganization !== request.organization) {
+					yield* webhooks.removeAll(existing)
+				}
 				const connectionId = existing?.id ?? randomUUID()
 				const managedBy = managedByForConnection(connectionId)
 
@@ -786,6 +803,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 			const connection = yield* selectConnection(orgId)
 
 			if (connection !== null) {
+				// Before the grant goes: deleting the webhooks needs it.
+				yield* webhooks.removeAll(connection)
+
 				// Tear down the managed scrape target — but only if this connection still
 				// owns it (a user-created row adopted by a *different* connection stays).
 				const target = yield* selectManagedTarget(connection)
@@ -893,6 +913,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 			Layer.mergeAll(
 				PlanetScaleOAuthService.layer,
 				PlanetScaleDiscoveryService.layer,
+				PlanetScaleWebhookService.layer,
 				ScrapeTargetsService.layer,
 			),
 		),
