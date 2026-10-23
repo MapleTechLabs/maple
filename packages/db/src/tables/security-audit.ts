@@ -52,7 +52,10 @@ export const SecurityAuditTargets = PG.table("security_audit_targets", {
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
 	primaryKey: ["id"],
-	indexes: [PG.index("security_audit_targets_org_created_idx", ["orgId", "createdAt"])],
+	indexes: [
+		PG.index("security_audit_targets_org_created_idx", ["orgId", "createdAt"]),
+		PG.uniqueIndex("security_audit_targets_org_repo_branch_idx", ["orgId", "repository", "branch"]),
+	],
 	tenantColumn: "orgId",
 })
 
@@ -87,6 +90,10 @@ export const SecurityAuditRuns = PG.table("security_audit_runs", {
 	indexes: [
 		PG.index("security_audit_runs_org_started_idx", ["orgId", "startedAt"]),
 		PG.index("security_audit_runs_target_started_idx", ["targetId", "startedAt"]),
+		// One run in progress per target; the store refuses a second before the insert reaches this.
+		PG.uniqueIndex("security_audit_runs_one_running_idx", ["targetId"], {
+			where: ($) => $.status.eq("in_progress"),
+		}),
 	],
 	tenantColumn: "orgId",
 })

@@ -113,6 +113,8 @@ export const AuditResources = {
 	 */
 	organization: { verbs: ["deleted", "region_chosen"] },
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
+	/** A person's triage of a security audit finding; target, fingerprint, status and reason in `metadata`. */
+	security_audit_finding: { verbs: ["triaged"] },
 	/**
 	 * Reads of recorded browser sessions, the surface most likely to carry
 	 * end-user data. Recorded by the auth layers from the `AuditedRead` annotation.
@@ -171,6 +173,7 @@ export const AuditResourceLabels = {
 	member: "Member",
 	organization: "Organization",
 	scrape_target: "Scrape target",
+	security_audit_finding: "Security audit finding",
 	source: "Source",
 	session_replay: "Session replay",
 	support_channel: "Support channel",
@@ -264,6 +267,7 @@ export const AuditActionLabels = {
 	"scrape_target.created": "Created scrape target",
 	"scrape_target.updated": "Updated scrape target",
 	"scrape_target.deleted": "Deleted scrape target",
+	"security_audit_finding.triaged": "Triaged security audit finding",
 	"session_replay.read": "Viewed session replay",
 	"support_channel.created": "Created support channel",
 	"support_channel.invite_sent": "Sent support channel invite",

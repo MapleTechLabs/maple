@@ -2,12 +2,19 @@ import { HttpApiBuilder } from "effect/http-api"
 import {
 	CurrentTenant,
 	MapleAiApi,
+	DEFAULT_RUN_BUDGET,
+	SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT,
+	SECURITY_AUDIT_MAX_BUDGET,
 	SecurityAuditDisabledError,
 	type SecurityAuditEvent,
 	type SecurityAuditFinding,
 	SecurityAuditFindingNotFoundError,
 	SecurityAuditForbiddenError,
 	SecurityAuditPersistenceError,
+	SecurityAuditRepositoryNotConnectedError,
+	SecurityAuditRunInProgressError,
+	SecurityAuditTargetDisabledError,
+	SecurityAuditTargetExistsError,
 	type SecurityAuditRun,
 	SecurityAuditRunNotFoundError,
 	SecurityAuditStartError,
@@ -19,18 +26,15 @@ import {
 	type SecurityAuditTargetId,
 	type SecurityAuditWorkflowPayload,
 } from "@maple/domain/security-audit"
-import type {
-	SecurityAuditEventRow,
-	SecurityAuditFindingRow,
-	SecurityAuditRunRow,
-	SecurityAuditTargetRow,
-} from "@maple/db/tables"
-import type { AuditStoreError } from "@maple/security-audit"
-import { Array as Arr, Effect, Option, Record as Rec, Schema } from "effect"
+import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
+import { AuditStoreError } from "@maple/security-audit"
+import { Effect, Option, Schema } from "effect"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
+	type SecurityAuditEventRecord,
 	type SecurityAuditOrgStore,
 	SecurityAuditStore,
 } from "@maple/backend/services/security-audit/SecurityAuditStore"
@@ -67,17 +71,17 @@ const toRun = (row: SecurityAuditRunRow): SecurityAuditRun => ({
 	finishedAt: row.finishedAt,
 })
 
-const toEvent = (row: SecurityAuditEventRow): SecurityAuditEvent => ({
+const toEvent = (row: SecurityAuditEventRecord): SecurityAuditEvent => ({
 	id: row.id,
 	at: row.at,
 	kind: row.kind,
 	role: row.role,
 	agentId: row.agentId,
 	outcome: row.outcome,
-	message: row.detail.message,
-	phase: row.detail.phase,
-	detail: row.detail.detail,
-	costUsd: row.detail.costUsd,
+	message: row.detail?.message ?? null,
+	phase: row.detail?.phase ?? null,
+	detail: row.detail?.detail ?? null,
+	costUsd: row.detail?.costUsd ?? null,
 	inputTokens: row.inputTokens,
 	outputTokens: row.outputTokens,
 })
@@ -102,21 +106,25 @@ const toFinding = (row: SecurityAuditFindingRow): SecurityAuditFinding => ({
 })
 
 /** A store failure is the database's, never the caller's: a 503 that names the operation. */
-const orUnavailable = <A, R>(effect: Effect.Effect<A, AuditStoreError, R>) =>
+const orUnavailable = <A, E, R>(effect: Effect.Effect<A, E | AuditStoreError, R>) =>
 	effect.pipe(
-		Effect.mapError(
+		Effect.catchIf(
+			(error): error is AuditStoreError => error instanceof AuditStoreError,
 			(error) =>
-				new SecurityAuditPersistenceError({
-					message: "Security audit storage is unavailable",
-					cause: error.message,
-				}),
+				Effect.fail(
+					new SecurityAuditPersistenceError({
+						message: "Security audit storage is unavailable",
+						cause: error.message,
+					}),
+				),
 		),
 	)
 
-const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
+/** The request's budget, else the target's, else the default; never above the hard cap. */
+const resolveBudget = (requested: number | undefined, targetBudget: number | null) =>
+	Math.min(requested ?? targetBudget ?? DEFAULT_RUN_BUDGET, SECURITY_AUDIT_MAX_BUDGET)
 
-/** A new run carries forward the findings of the target's latest run that finished. */
-const PRIOR_RUN_STATUSES = ["complete", "incomplete"] as const
+const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
 
 /** `/api/security-audit/*`: targets, runs and findings for the caller's org, behind `securityAudit`. */
 export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityAudit", (handlers) =>
@@ -211,8 +219,28 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			.handle("createTarget", ({ payload }) =>
 				Effect.gen(function* () {
 					const { tenant, store } = yield* adminAccess
+					const repository = yield* orUnavailable(store.findConnectedRepository(payload.repository))
+					if (Option.isNone(repository)) {
+						return yield* new SecurityAuditRepositoryNotConnectedError({
+							message: "This organization has no connected repository by that name.",
+							repository: payload.repository,
+						})
+					}
 					const row = yield* orUnavailable(
-						store.createTarget({ ...payload, createdBy: tenant.userId }),
+						store.createTarget({
+							...payload,
+							repository: repository.value.fullName,
+							vcsRepositoryId: repository.value.id,
+							createdBy: tenant.userId,
+						}),
+					).pipe(
+						Effect.catchTag("@maple/backend/security-audit/TargetExists", () =>
+							Effect.fail(
+								new SecurityAuditTargetExistsError({
+									message: "This repository branch is already an audit target.",
+								}),
+							),
+						),
 					)
 					return toTarget(row)
 				}).pipe(Effect.withSpan("HttpSecurityAudit.createTarget")),
@@ -228,20 +256,36 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				Effect.gen(function* () {
 					const { tenant, store } = yield* adminAccess
 					const target = yield* requireTarget(store, params.targetId)
-					const prior = yield* orUnavailable(
-						store.listRuns({ targetId: target.id, statuses: PRIOR_RUN_STATUSES, limit: 1 }),
-					)
+					const prior = yield* orUnavailable(store.latestPriorRun(target.id))
 					const runId = newRunId()
+					const budget = resolveBudget(payload.budget, target.budgetPerRun)
 					// The branch for now; the Workflow pins the commit it resolves to before any agent runs.
 					const run = yield* orUnavailable(
 						store.startRun({
 							runId,
 							targetId: target.id,
-							kind: payload.kind ?? "manual",
+							kind: "manual",
 							sourceRef: target.branch,
 							workflowInstanceId: runId,
 							scopePaths: payload.scopePaths ?? target.scopePaths,
-							budget: payload.budget ?? target.budgetPerRun,
+							budget,
+						}),
+					).pipe(
+						Effect.catchTags({
+							"@maple/backend/security-audit/RunInProgress": () =>
+								Effect.fail(
+									new SecurityAuditRunInProgressError({
+										message: "This target already has an audit in progress.",
+										targetId: target.id,
+									}),
+								),
+							"@maple/backend/security-audit/TargetDisabled": () =>
+								Effect.fail(
+									new SecurityAuditTargetDisabledError({
+										message: "This audit target is disabled.",
+										targetId: target.id,
+									}),
+								),
 						}),
 					)
 					const workflowPayload: SecurityAuditWorkflowPayload = {
@@ -251,8 +295,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						ref: target.branch,
 						profile: run.profile,
 						scopePaths: run.scopePaths,
-						budget: run.budget,
-						priorRunId: prior[0]?.id ?? null,
+						budget,
+						priorRunId: Option.match(prior, { onNone: () => null, onSome: (r) => r.id }),
 					}
 					yield* workflow
 						.create(workflowPayload)
@@ -271,33 +315,34 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("getRun", ({ params }) =>
 				Effect.gen(function* () {
-					const { store } = yield* orgAccess
+					const { store } = yield* adminAccess
 					const run = yield* requireRun(store, params.runId)
-					const units = yield* orUnavailable(store.listUnits(run.id))
-					const unitCounts = Rec.map(
-						Arr.groupBy(units, (unit): string => unit.status),
-						(group) => group.length,
-					)
+					const unitCounts = yield* orUnavailable(store.countUnits(run.id))
 					return {
 						...toRun(run),
 						reports: run.reports,
 						architectureMd: run.architectureMd,
 						unitCounts,
-						unitTotal: units.length,
+						unitTotal: Object.values(unitCounts).reduce((sum, n) => sum + n, 0),
 					}
 				}).pipe(Effect.withSpan("HttpSecurityAudit.getRun")),
 			)
-			.handle("listRunEvents", ({ params }) =>
+			.handle("listRunEvents", ({ params, query }) =>
 				Effect.gen(function* () {
-					const { store } = yield* orgAccess
+					const { store } = yield* adminAccess
 					const run = yield* requireRun(store, params.runId)
-					const rows = yield* orUnavailable(store.listEvents(run.id))
+					const rows = yield* orUnavailable(
+						store.listEvents(run.id, {
+							limit: query.limit ?? SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT,
+							beforeAt: query.beforeAt,
+						}),
+					)
 					return { events: rows.map(toEvent) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunEvents")),
 			)
 			.handle("listFindings", ({ params, query }) =>
 				Effect.gen(function* () {
-					const { store } = yield* orgAccess
+					const { store } = yield* adminAccess
 					const target = yield* requireTarget(store, params.targetId)
 					const rows = yield* orUnavailable(store.listFindings(target.id))
 					const includeRejected = query.includeRejected === "true"
@@ -320,17 +365,22 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							tenant.userId,
 						),
 					)
-					return yield* Option.match(updated, {
-						onNone: () =>
-							Effect.fail(
-								new SecurityAuditFindingNotFoundError({
-									message: "This audit target has no finding with that fingerprint.",
-									targetId: params.targetId,
-									fingerprint: params.fingerprint,
-								}),
-							),
-						onSome: (row) => Effect.succeed(toFinding(row)),
+					if (Option.isNone(updated)) {
+						return yield* new SecurityAuditFindingNotFoundError({
+							message: "This audit target has no finding with that fingerprint.",
+							targetId: params.targetId,
+							fingerprint: params.fingerprint,
+						})
+					}
+					yield* recordHttpAudit("security_audit_finding.triaged", {
+						metadata: {
+							targetId: params.targetId,
+							fingerprint: params.fingerprint,
+							status: payload.status,
+							reason: payload.reason,
+						},
 					})
+					return toFinding(updated.value)
 				}).pipe(Effect.withSpan("HttpSecurityAudit.updateFindingStatus")),
 			)
 	}),

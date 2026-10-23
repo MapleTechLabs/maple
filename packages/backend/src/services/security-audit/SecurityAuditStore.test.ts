@@ -84,6 +84,11 @@ const seedRun = (
 		const target =
 			targetId ??
 			(yield* scoped.createTarget({ repository: "acme/api", branch: "main", createdBy: user })).id
+		// One run in progress per target: the earlier one finishes before the next starts.
+		const running = yield* scoped.listRuns({ targetId: target, statuses: ["in_progress"] })
+		yield* Effect.forEach(running, (r) => scoped.finishRun(r.id, { status: "complete" }), {
+			discard: true,
+		})
 		const run = yield* scoped.startRun({ targetId: target, kind: "baseline", sourceRef })
 		return { targetId: target, runId: run.id }
 	})
@@ -540,6 +545,168 @@ describe("SecurityAuditStore large ledgers", () => {
 				assert.deepStrictEqual(
 					[units.length, new Set(units.map((u) => u.status))],
 					[1_200, new Set(["covered"])],
+				)
+			}),
+		),
+	)
+})
+
+/** Raw SQL against the store's database, for rows an older schema or a person wrote. */
+const rawSql = (sql: string, params: Array<unknown> = []) =>
+	Effect.promise(() => trackedDbs[0]?.pglite.query(sql, params) ?? Promise.resolve(undefined))
+
+describe("SecurityAuditStore run admission", () => {
+	it.effect("runs one at a time per target, replays a start, and refuses a disabled target", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				const replay = yield* scoped.startRun({ runId, targetId, kind: "manual", sourceRef: "x" })
+				const second = yield* Effect.flip(
+					scoped.startRun({ targetId, kind: "manual", sourceRef: "sha-2" }),
+				)
+				yield* scoped.finishRun(runId, { status: "complete" })
+				yield* rawSql(`UPDATE security_audit_targets SET enabled = false WHERE id = $1`, [targetId])
+				const disabled = yield* Effect.flip(
+					scoped.startRun({ targetId, kind: "manual", sourceRef: "sha-3" }),
+				)
+				assert.deepStrictEqual(
+					[replay.id, replay.sourceRef, second._tag, disabled._tag],
+					[
+						runId,
+						"sha-1",
+						"@maple/backend/security-audit/RunInProgress",
+						"@maple/backend/security-audit/TargetDisabled",
+					],
+				)
+			}),
+		),
+	)
+
+	it.effect("refuses a second target for the same repository branch in the org only", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const input = { repository: "acme/api", branch: "main", createdBy: user }
+				yield* store.forOrg(orgA).createTarget(input)
+				const duplicate = yield* Effect.flip(store.forOrg(orgA).createTarget(input))
+				const otherBranch = yield* store.forOrg(orgA).createTarget({ ...input, branch: "next" })
+				const otherOrg = yield* store.forOrg(orgB).createTarget(input)
+				assert.deepStrictEqual(
+					[duplicate._tag, otherBranch.branch, otherOrg.orgId],
+					["@maple/backend/security-audit/TargetExists", "next", orgB],
+				)
+			}),
+		),
+	)
+
+	it.effect("carries forward the latest unscoped finished run, else the latest finished", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const target = yield* scoped.createTarget({
+					repository: "acme/api",
+					branch: "main",
+					createdBy: user,
+				})
+				const start = (scopePaths: ReadonlyArray<string>, finish: boolean) =>
+					Effect.gen(function* () {
+						const run = yield* scoped.startRun({
+							targetId: target.id,
+							kind: "manual",
+							sourceRef: "main",
+							scopePaths,
+						})
+						if (finish) yield* scoped.finishRun(run.id, { status: "complete" })
+						return run.id
+					})
+				const none = yield* scoped.latestPriorRun(target.id)
+				const scopedOnly = yield* start(["apps/api"], true)
+				const onlyScoped = yield* scoped.latestPriorRun(target.id)
+				const whole = yield* start([], true)
+				yield* start(["apps/web"], true)
+				yield* start([], false)
+				const preferred = yield* scoped.latestPriorRun(target.id)
+				assert.deepStrictEqual(
+					[
+						Option.isNone(none),
+						Option.map(onlyScoped, (r) => r.id),
+						Option.map(preferred, (r) => r.id),
+					],
+					[true, Option.some(scopedOnly), Option.some(whole)],
+				)
+			}),
+		),
+	)
+})
+
+describe("SecurityAuditStore lenient run and event reads", () => {
+	it.effect("reads an older metadata, reports or event detail shape as null instead of failing", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveReports(runId, { report: "r", findingsDetail: "d", needsValidation: "n" })
+				yield* scoped.recordEvent(runId, { _tag: "Note", message: "kept" })
+				yield* scoped.recordEvent(runId, { _tag: "Note", message: "old" })
+				yield* rawSql(
+					`UPDATE security_audit_runs SET metadata = '{"run_id":1}'::jsonb, reports = '{"report":["old"]}'::jsonb WHERE id = $1`,
+					[runId],
+				)
+				yield* rawSql(
+					`UPDATE security_audit_events SET detail = '{"text":"old"}'::jsonb WHERE detail->>'message' = 'old'`,
+				)
+				const run = yield* scoped.getRun(runId)
+				const runs = yield* scoped.listRuns({ targetId })
+				const events = yield* scoped.listEvents(runId)
+				assert.deepStrictEqual(
+					[
+						Option.map(run, (r) => [r.metadata, r.reports]),
+						runs.map((r) => r.reports),
+						events.map((e) => e.detail?.message ?? null).toSorted(),
+					],
+					[Option.some([null, null]), [null], ["kept", null]],
+				)
+			}),
+		),
+	)
+
+	it.effect("pages events newest first by `beforeAt` and counts units by status in SQL", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* Effect.forEach(
+					[1, 2, 3, 4, 5],
+					(i) =>
+						rawSql(
+							`INSERT INTO security_audit_events (id, run_id, org_id, at, kind, detail)
+							 VALUES ($1, $2, $3, to_timestamp($4), 'Note', $5::jsonb)`,
+							[
+								`e${i}`,
+								runId,
+								orgA,
+								i,
+								JSON.stringify({
+									message: `m${i}`,
+									phase: null,
+									detail: null,
+									costUsd: null,
+								}),
+							],
+						),
+					{ discard: true },
+				)
+				yield* scoped.saveLedger(runId, [
+					unit("u1", "covered", 1),
+					unit("u2", "covered", 1),
+					unit("u3", "planned", 1),
+				])
+				const newest = yield* scoped.listEvents(runId, { limit: 2 })
+				const older = yield* scoped.listEvents(runId, { limit: 2, beforeAt: newest[0]?.at ?? 0 })
+				const counts = yield* scoped.countUnits(runId)
+				assert.deepStrictEqual(
+					[newest.map((e) => e.id), older.map((e) => e.id), counts],
+					[["e4", "e5"], ["e2", "e3"], { covered: 2, planned: 1 }],
 				)
 			}),
 		),

@@ -21,6 +21,11 @@ import { HttpTaggedError } from "./error-policy"
 
 /** The hard cap on one run's agent invocations; a request asking for more is a 400. */
 export const SECURITY_AUDIT_MAX_BUDGET = 20_000
+/** Agent invocations a run gets when neither the request nor the target sets a budget. */
+export const DEFAULT_RUN_BUDGET = 400
+/** Events per page, and the most one page may ask for. */
+export const SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT = 200
+const SECURITY_AUDIT_EVENTS_MAX_LIMIT = 1000
 const MAX_SCOPE_PATHS = 100
 
 /** `owner/name`, as GitHub spells it. */
@@ -44,7 +49,7 @@ const ScopePaths = Schema.Array(ScopePath).check(Schema.isMaxLength(MAX_SCOPE_PA
 
 const Budget = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: SECURITY_AUDIT_MAX_BUDGET }))
 
-const Fingerprint = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256))
+const Fingerprint = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(1024))
 
 export const SecurityAuditCreateTargetRequest = Schema.Struct({
 	repository: SecurityAuditRepository,
@@ -55,8 +60,8 @@ export const SecurityAuditCreateTargetRequest = Schema.Struct({
 })
 export type SecurityAuditCreateTargetRequest = typeof SecurityAuditCreateTargetRequest.Type
 
+/** Runs started here are always `manual`; the scheduler picks the other kinds. */
 export const SecurityAuditStartRunRequest = Schema.Struct({
-	kind: Schema.optionalKey(SecurityAuditRunKind),
 	scopePaths: Schema.optionalKey(ScopePaths),
 	budget: Schema.optionalKey(Budget),
 })
@@ -74,6 +79,17 @@ export type SecurityAuditUpdateFindingRequest = typeof SecurityAuditUpdateFindin
 
 export const SecurityAuditListRunsQuery = Schema.Struct({
 	targetId: Schema.optional(SecurityAuditTargetId),
+})
+
+export const SecurityAuditListEventsQuery = Schema.Struct({
+	limit: Schema.optional(
+		Schema.NumberFromString.check(
+			Schema.isInt(),
+			Schema.isBetween({ minimum: 1, maximum: SECURITY_AUDIT_EVENTS_MAX_LIMIT }),
+		),
+	),
+	/** Epoch ms: only events strictly before it; the page's oldest `at` fetches the next page. */
+	beforeAt: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0))),
 })
 
 export const SecurityAuditListFindingsQuery = Schema.Struct({
@@ -267,8 +283,63 @@ export class SecurityAuditPersistenceError extends HttpTaggedError<SecurityAudit
 	},
 ) {}
 
+/** The target already has a run in progress; one runs at a time per target. */
+export class SecurityAuditRunInProgressError extends HttpTaggedError<SecurityAuditRunInProgressError>()(
+	"@maple/http/security-audit/SecurityAuditRunInProgressError",
+	{ message: Schema.String, targetId: SecurityAuditTargetId },
+	{
+		status: 409,
+		code: "security_audit_run_in_progress",
+		title: "An audit is already running",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
+export class SecurityAuditTargetDisabledError extends HttpTaggedError<SecurityAuditTargetDisabledError>()(
+	"@maple/http/security-audit/SecurityAuditTargetDisabledError",
+	{ message: Schema.String, targetId: SecurityAuditTargetId },
+	{
+		status: 409,
+		code: "security_audit_target_disabled",
+		title: "Audit target is disabled",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
+export class SecurityAuditTargetExistsError extends HttpTaggedError<SecurityAuditTargetExistsError>()(
+	"@maple/http/security-audit/SecurityAuditTargetExistsError",
+	{ message: Schema.String },
+	{
+		status: 409,
+		code: "security_audit_target_exists",
+		title: "Audit target already exists",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
+/** The org has no connected repository by that name. */
+export class SecurityAuditRepositoryNotConnectedError extends HttpTaggedError<SecurityAuditRepositoryNotConnectedError>()(
+	"@maple/http/security-audit/SecurityAuditRepositoryNotConnectedError",
+	{ message: Schema.String, repository: Schema.String },
+	{
+		status: 404,
+		code: "security_audit_repository_not_connected",
+		title: "Repository not connected",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
 const readErrors = [SecurityAuditDisabledError, SecurityAuditPersistenceError] as const
-const writeErrors = [...readErrors, SecurityAuditForbiddenError] as const
+/** Writes, and the reads that expose findings or reports: org admins only. */
+const adminErrors = [...readErrors, SecurityAuditForbiddenError] as const
 
 // API group
 
@@ -278,7 +349,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		HttpApiEndpoint.post("createTarget", "/targets", {
 			payload: SecurityAuditCreateTargetRequest,
 			success: SecurityAuditTarget,
-			error: writeErrors,
+			error: [...adminErrors, SecurityAuditRepositoryNotConnectedError, SecurityAuditTargetExistsError],
 		}),
 	)
 	.add(
@@ -292,7 +363,13 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			params: { targetId: SecurityAuditTargetId },
 			payload: SecurityAuditStartRunRequest,
 			success: SecurityAuditRun,
-			error: [...writeErrors, SecurityAuditTargetNotFoundError, SecurityAuditStartError],
+			error: [
+				...adminErrors,
+				SecurityAuditTargetNotFoundError,
+				SecurityAuditTargetDisabledError,
+				SecurityAuditRunInProgressError,
+				SecurityAuditStartError,
+			],
 		}),
 	)
 	.add(
@@ -306,14 +383,15 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		HttpApiEndpoint.get("getRun", "/runs/:runId", {
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditRunDetail,
-			error: [...readErrors, SecurityAuditRunNotFoundError],
+			error: [...adminErrors, SecurityAuditRunNotFoundError],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.get("listRunEvents", "/runs/:runId/events", {
 			params: { runId: SecurityAuditRunId },
+			query: SecurityAuditListEventsQuery,
 			success: SecurityAuditEventsResponse,
-			error: [...readErrors, SecurityAuditRunNotFoundError],
+			error: [...adminErrors, SecurityAuditRunNotFoundError],
 		}),
 	)
 	.add(
@@ -321,7 +399,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			params: { targetId: SecurityAuditTargetId },
 			query: SecurityAuditListFindingsQuery,
 			success: SecurityAuditFindingsResponse,
-			error: [...readErrors, SecurityAuditTargetNotFoundError],
+			error: [...adminErrors, SecurityAuditTargetNotFoundError],
 		}),
 	)
 	.add(
@@ -329,7 +407,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			params: { targetId: SecurityAuditTargetId, fingerprint: Fingerprint },
 			payload: SecurityAuditUpdateFindingRequest,
 			success: SecurityAuditFinding,
-			error: [...writeErrors, SecurityAuditFindingNotFoundError],
+			error: [...adminErrors, SecurityAuditFindingNotFoundError],
 		}),
 	)
 	.prefix("/api/security-audit")

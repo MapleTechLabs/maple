@@ -14,12 +14,14 @@ import {
 	SecurityAuditTargetId,
 } from "@maple/domain/security-audit"
 import {
+	SecurityAuditEventDetail,
 	SecurityAuditEvents,
 	SecurityAuditFindings,
 	SecurityAuditRunFindings,
 	SecurityAuditRuns,
 	SecurityAuditTargets,
 	SecurityAuditUnits,
+	VcsRepositories,
 	type SecurityAuditEventRow,
 	type SecurityAuditFindingRow,
 	type SecurityAuditRunRow,
@@ -34,7 +36,13 @@ import {
 	type AuditStoreApi,
 	type Finding,
 } from "@maple/security-audit"
-import { CoverageUnit, Finding as FindingSchema, UnitStatus } from "@maple/security-audit/schema"
+import {
+	AuditReportsRecord,
+	CoverageUnit,
+	Finding as FindingSchema,
+	RunMetadataRecord,
+	UnitStatus,
+} from "@maple/security-audit/schema"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -81,12 +89,29 @@ export interface RunUsage {
 export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly createTarget: (
 		input: CreateTargetInput,
-	) => Effect.Effect<SecurityAuditTargetRow, AuditStoreError>
+	) => Effect.Effect<SecurityAuditTargetRow, AuditStoreError | SecurityAuditTargetExists>
+	/** The org's active connected repository by `owner/name`, case-insensitively. */
+	readonly findConnectedRepository: (
+		repository: string,
+	) => Effect.Effect<Option.Option<ConnectedRepository>, AuditStoreError>
 	readonly listTargets: () => Effect.Effect<ReadonlyArray<SecurityAuditTargetRow>, AuditStoreError>
 	readonly getTarget: (
 		targetId: SecurityAuditTargetId,
 	) => Effect.Effect<Option.Option<SecurityAuditTargetRow>, AuditStoreError>
-	readonly startRun: (input: StartRunInput) => Effect.Effect<SecurityAuditRunRow, AuditStoreError>
+	/** Refuses a disabled target, and a second run while one is in progress. */
+	readonly startRun: (
+		input: StartRunInput,
+	) => Effect.Effect<
+		SecurityAuditRunRow,
+		AuditStoreError | SecurityAuditRunInProgress | SecurityAuditTargetDisabled
+	>
+	/**
+	 * The run a new one carries forward: the latest finished run that audited the whole target,
+	 * else the latest finished run at all.
+	 */
+	readonly latestPriorRun: (
+		targetId: SecurityAuditTargetId,
+	) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
 	readonly finishRun: (runId: string, outcome: FinishRunOutcome) => Effect.Effect<void, AuditStoreError>
 	readonly addUsage: (runId: string, usage: RunUsage) => Effect.Effect<void, AuditStoreError>
 	readonly getRun: (runId: string) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
@@ -96,11 +121,15 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		readonly limit?: number
 	}) => Effect.Effect<ReadonlyArray<SecurityAuditRunRow>, AuditStoreError>
 	readonly listUnits: (runId: string) => Effect.Effect<ReadonlyArray<SecurityAuditUnitRow>, AuditStoreError>
+	/** Ledger units per status, counted in SQL. */
+	readonly countUnits: (runId: string) => Effect.Effect<Record<string, number>, AuditStoreError>
 	/** One run's final records, the input a later run carries forward. */
 	readonly listRunFindings: (runId: string) => Effect.Effect<ReadonlyArray<Finding>, AuditStoreError>
+	/** Oldest first; with a `limit`, the newest page strictly before `beforeAt`. */
 	readonly listEvents: (
 		runId: string,
-	) => Effect.Effect<ReadonlyArray<SecurityAuditEventRow>, AuditStoreError>
+		options?: { readonly limit?: number | undefined; readonly beforeAt?: number | undefined },
+	) => Effect.Effect<ReadonlyArray<SecurityAuditEventRecord>, AuditStoreError>
 	readonly listFindings: (
 		targetId: SecurityAuditTargetId,
 	) => Effect.Effect<ReadonlyArray<SecurityAuditFindingRow>, AuditStoreError>
@@ -120,6 +149,31 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	) => Effect.Effect<Option.Option<SecurityAuditFindingRow>, AuditStoreError>
 }
 
+export interface ConnectedRepository {
+	readonly id: VcsRepositoryId
+	readonly fullName: string
+}
+
+/** An event row whose `detail` is null when it was written under an older shape. */
+export type SecurityAuditEventRecord = Omit<SecurityAuditEventRow, "detail"> & {
+	readonly detail: SecurityAuditEventRow["detail"] | null
+}
+
+export class SecurityAuditRunInProgress extends Schema.TaggedError<SecurityAuditRunInProgress>()(
+	"@maple/backend/security-audit/RunInProgress",
+	{ message: Schema.String, targetId: SecurityAuditTargetId },
+) {}
+
+export class SecurityAuditTargetDisabled extends Schema.TaggedError<SecurityAuditTargetDisabled>()(
+	"@maple/backend/security-audit/TargetDisabled",
+	{ message: Schema.String, targetId: SecurityAuditTargetId },
+) {}
+
+export class SecurityAuditTargetExists extends Schema.TaggedError<SecurityAuditTargetExists>()(
+	"@maple/backend/security-audit/TargetExists",
+	{ message: Schema.String, repository: Schema.String, branch: Schema.String },
+) {}
+
 export interface SecurityAuditStoreApi {
 	readonly forOrg: (orgId: OrgId) => SecurityAuditOrgStore
 }
@@ -132,6 +186,55 @@ const LEDGER_INSERT_CHUNK = 500
 const decodeCoverageUnit = Schema.decodeUnknownOption(CoverageUnit)
 const decodeUnitStatus = Schema.decodeUnknownOption(UnitStatus)
 const decodeFinding = Schema.decodeUnknownOption(FindingSchema)
+const decodeRunMetadata = Schema.decodeUnknownOption(RunMetadataRecord)
+const decodeReports = Schema.decodeUnknownOption(AuditReportsRecord)
+const decodeEventDetail = Schema.decodeUnknownOption(SecurityAuditEventDetail)
+
+/** A stored jsonb value under the current schema, or null when it was written under an older one. */
+const lenient = <A>(stored: { readonly isNull: boolean; readonly decoded: Option.Option<A> }) =>
+	stored.isNull
+		? { value: null, stale: false }
+		: Option.match(stored.decoded, {
+				onNone: () => ({ value: null, stale: true }),
+				onSome: (value) => ({ value, stale: false }),
+			})
+
+const warnStale = (what: string, stale: number, total: number) =>
+	stale === 0
+		? Effect.void
+		: Effect.logWarning(`Read stored ${what} under an older shape as null`).pipe(
+				Effect.annotateLogs({ stale, total }),
+			)
+
+type RawRunRow = Omit<SecurityAuditRunRow, "metadata" | "reports"> & {
+	readonly metadata: unknown
+	readonly reports: unknown
+}
+
+/** Runs with `metadata` and `reports` read leniently: an old shape becomes null, not a failure. */
+const lenientRuns = (rows: ReadonlyArray<RawRunRow>) =>
+	Effect.gen(function* () {
+		const decoded = rows.map((row) => {
+			const metadata = lenient({
+				isNull: row.metadata === null,
+				decoded: decodeRunMetadata(row.metadata),
+			})
+			const reports = lenient({ isNull: row.reports === null, decoded: decodeReports(row.reports) })
+			return {
+				row: { ...row, metadata: metadata.value, reports: reports.value },
+				stale: metadata.stale || reports.stale,
+			}
+		})
+		yield* warnStale("run metadata or reports", decoded.filter((d) => d.stale).length, rows.length)
+		return decoded.map((d): SecurityAuditRunRow => d.row)
+	})
+
+const selectRuns = () =>
+	PG.from(SecurityAuditRuns).select(($) => ({
+		...$,
+		metadata: PG.undecoded($.metadata),
+		reports: PG.undecoded($.reports),
+	}))
 
 /**
  * Keeps the rows that still decode against the current schemas. Stored jsonb outlives a skill
@@ -522,22 +625,63 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									createdAt: now,
 									updatedAt: now,
 								})
+								.onConflictDoNothing({ target: ["orgId", "repository", "branch"] })
 								.returning(),
 						),
 					)
-					return yield* firstOrFail(rows, "Security audit target insert returned no row")
+					if (rows[0] === undefined) {
+						return yield* new SecurityAuditTargetExists({
+							message: `${input.repository}@${input.branch} is already an audit target`,
+							repository: input.repository,
+							branch: input.branch,
+						})
+					}
+					return rows[0]
+				})
+
+				const findConnectedRepository: SecurityAuditOrgStore["findConnectedRepository"] = Effect.fn(
+					"SecurityAuditStore.findConnectedRepository",
+				)(function* (repository) {
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(VcsRepositories)
+								.select("id", "fullName")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.status.eq("active"),
+									PG.lower($.fullName).eq(repository.toLowerCase()),
+								])
+								.limit(1),
+						),
+					)
+					return Option.fromUndefinedOr(rows[0])
 				})
 
 				const startRun: SecurityAuditOrgStore["startRun"] = Effect.fn("SecurityAuditStore.startRun")(
 					function* (input) {
 						const now = yield* Clock.currentTimeMillis
 						const runId = input.runId ?? newRunId()
+						const inProgress = new SecurityAuditRunInProgress({
+							message: `Security audit target ${input.targetId} already has a run in progress`,
+							targetId: input.targetId,
+						})
 						return yield* dbExecute((db) =>
 							db.transaction(
 								Effect.gen(function* () {
+									const readRun = db
+										.run(
+											selectRuns()
+												.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)])
+												.limit(1),
+										)
+										.pipe(Effect.flatMap(lenientRuns))
+									// Starting the same id again is a no-op, even while it runs.
+									const existing = yield* readRun
+									if (existing[0] !== undefined) return existing[0]
+
 									const targets = yield* db.run(
 										PG.from(SecurityAuditTargets)
-											.select("profile", "scopePaths", "budgetPerRun")
+											.select("profile", "scopePaths", "budgetPerRun", "enabled")
 											.where(($) => [$.orgId.eq(orgId), $.id.eq(input.targetId)])
 											.limit(1),
 									)
@@ -545,6 +689,25 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										targets,
 										`Security audit target ${input.targetId} not found`,
 									)
+									if (!target.enabled) {
+										return yield* new SecurityAuditTargetDisabled({
+											message: `Security audit target ${input.targetId} is disabled`,
+											targetId: input.targetId,
+										})
+									}
+									const running = yield* db.run(
+										PG.from(SecurityAuditRuns)
+											.select("id")
+											.where(($) => [
+												$.orgId.eq(orgId),
+												$.targetId.eq(input.targetId),
+												$.status.eq("in_progress"),
+											])
+											.limit(1),
+									)
+									if (running.length > 0) return yield* inProgress
+									// No conflict target: a concurrent start losing on the one-running index
+									// inserts nothing, and is told so below rather than failing as a 5xx.
 									yield* db.run(
 										PG.insertInto(SecurityAuditRuns)
 											.values({
@@ -564,23 +727,49 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												workflowInstanceId: input.workflowInstanceId ?? null,
 												startedAt: now,
 											})
-											.onConflictDoNothing({ target: ["id"] }),
+											.onConflictDoNothing(),
 									)
-									const runs = yield* db.run(
+									const inserted = yield* readRun
+									if (inserted[0] !== undefined) return inserted[0]
+									const raced = yield* db.run(
 										PG.from(SecurityAuditRuns)
-											.select()
-											.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)])
+											.select("id")
+											.where(($) => [
+												$.targetId.eq(input.targetId),
+												$.status.eq("in_progress"),
+											])
 											.limit(1),
 									)
-									return yield* firstOrFail(
-										runs,
-										`Security audit run ${runId} belongs to another org`,
-									)
+									if (raced.length > 0) return yield* inProgress
+									return yield* new AuditStoreError({
+										message: `Security audit run ${runId} belongs to another org`,
+									})
 								}),
 							),
 						)
 					},
 				)
+
+				const latestPriorRun: SecurityAuditOrgStore["latestPriorRun"] = Effect.fn(
+					"SecurityAuditStore.latestPriorRun",
+				)(function* (targetId) {
+					const latest = (unscopedOnly: boolean) =>
+						dbExecute((db) =>
+							db.run(
+								selectRuns()
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.targetId.eq(targetId),
+										$.status.in_("complete", "incomplete"),
+										unscopedOnly ? $.scopePaths.eq([]) : undefined,
+									])
+									.orderBy(($) => [[$.startedAt, "desc"]])
+									.limit(1),
+							),
+						).pipe(Effect.flatMap(lenientRuns), Effect.map(Arr.head))
+					const unscoped = yield* latest(true)
+					return Option.isSome(unscoped) ? unscoped : yield* latest(false)
+				})
 
 				const finishRun: SecurityAuditOrgStore["finishRun"] = Effect.fn(
 					"SecurityAuditStore.finishRun",
@@ -624,13 +813,12 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						const runId = yield* decodeRunId(rawRunId)
 						const rows = yield* dbExecute((db) =>
 							db.run(
-								PG.from(SecurityAuditRuns)
-									.select()
+								selectRuns()
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)])
 									.limit(1),
 							),
-						)
-						return Option.fromUndefinedOr(rows[0])
+						).pipe(Effect.flatMap(lenientRuns))
+						return Arr.head(rows)
 					},
 				)
 
@@ -640,8 +828,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						const statuses = options?.statuses
 						return yield* dbExecute((db) =>
 							db.run(
-								PG.from(SecurityAuditRuns)
-									.select()
+								selectRuns()
 									.where(($) => [
 										$.orgId.eq(orgId),
 										targetId === undefined ? undefined : $.targetId.eq(targetId),
@@ -650,7 +837,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									.orderBy(($) => [[$.startedAt, "desc"]])
 									.limit(options?.limit ?? DEFAULT_RUN_LIST_LIMIT),
 							),
-						)
+						).pipe(Effect.flatMap(lenientRuns))
 					},
 				)
 
@@ -698,16 +885,55 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 
 				const listEvents: SecurityAuditOrgStore["listEvents"] = Effect.fn(
 					"SecurityAuditStore.listEvents",
+				)(function* (rawRunId, options) {
+					const runId = yield* decodeRunId(rawRunId)
+					const beforeAt = options?.beforeAt
+					const query = PG.from(SecurityAuditEvents)
+						.select(($) => ({ ...$, detail: PG.undecoded($.detail) }))
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.runId.eq(runId),
+							beforeAt === undefined ? undefined : $.at.lt(beforeAt),
+						])
+					const limit = options?.limit
+					const rows = yield* dbExecute((db) =>
+						limit === undefined
+							? db.run(query.orderBy(($) => [[$.at, "asc"]]))
+							: db
+									.run(query.orderBy(($) => [[$.at, "desc"]]).limit(limit))
+									.pipe(Effect.map((page) => page.toReversed())),
+					)
+					const decoded = rows.map((row) => ({
+						row,
+						detail: lenient({
+							isNull: row.detail === null,
+							decoded: decodeEventDetail(row.detail),
+						}),
+					}))
+					yield* warnStale(
+						"event details",
+						decoded.filter((d) => d.detail.stale).length,
+						rows.length,
+					)
+					return decoded.map(({ row, detail }): SecurityAuditEventRecord => ({
+						...row,
+						detail: detail.value,
+					}))
+				})
+
+				const countUnits: SecurityAuditOrgStore["countUnits"] = Effect.fn(
+					"SecurityAuditStore.countUnits",
 				)(function* (rawRunId) {
 					const runId = yield* decodeRunId(rawRunId)
-					return yield* dbExecute((db) =>
+					const rows = yield* dbExecute((db) =>
 						db.run(
-							PG.from(SecurityAuditEvents)
-								.select()
+							PG.from(SecurityAuditUnits)
+								.select(($) => ({ status: PG.undecoded($.status), count: PG.count() }))
 								.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)])
-								.orderBy(($) => [[$.at, "asc"]]),
+								.groupBy("status"),
 						),
 					)
+					return Object.fromEntries(rows.map((row) => [String(row.status), row.count]))
 				})
 
 				const listFindings: SecurityAuditOrgStore["listFindings"] = Effect.fn(
@@ -795,6 +1021,9 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					listTargets,
 					getTarget,
 					setFindingStatus,
+					findConnectedRepository,
+					latestPriorRun,
+					countUnits,
 					saveMetadata,
 					saveArchitecture,
 					saveLedger,

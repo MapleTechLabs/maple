@@ -48,7 +48,8 @@ export const SecurityAuditWorkflowPayload = Schema.Struct({
 	ref: Schema.String,
 	profile: SecurityAuditProfile,
 	scopePaths: Schema.Array(Schema.String),
-	budget: Schema.NullOr(Schema.Int),
+	/** Max agent invocations; always finite, the API resolves a default before starting. */
+	budget: Schema.Int.check(Schema.isGreaterThan(0)),
 	priorRunId: Schema.NullOr(Schema.String),
 })
 export type SecurityAuditWorkflowPayload = typeof SecurityAuditWorkflowPayload.Type

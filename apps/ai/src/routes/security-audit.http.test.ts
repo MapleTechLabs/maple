@@ -16,8 +16,15 @@ import type { Finding } from "@maple/security-audit"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { SecurityAuditWorkflowStarter, WorkflowStartError } from "@maple/backend/platform/bindings"
 import { envPorts } from "@maple/backend/platform/env-ports"
+import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { WorkerPlatformLive } from "@maple/infra/worker-http"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { Context, Effect, Layer, Schema } from "effect"
@@ -70,7 +77,16 @@ const makeHarness = (options: { readonly enabled?: boolean; readonly startFails?
 						started.push(payload)
 					}),
 	})
+	const auditLog = makeMemoryAuditLog()
 	const storeLayer = SecurityAuditStore.layer.pipe(Layer.provide(db.layer))
+	// The org's GitHub connection: a target can only name a repository it has connected.
+	const connected = executeSql(
+		db,
+		`INSERT INTO vcs_repositories (id, org_id, provider, installation_id, external_repo_id, owner, name,
+			full_name, tracked_branch, html_url, created_at, updated_at)
+		 VALUES ($1, $2, 'github', $3, '1001', 'acme', 'api', 'acme/api', 'main', 'https://github.com/acme/api', now(), now())`,
+		[crypto.randomUUID(), ORG_A, crypto.randomUUID()],
+	)
 	const routes = HttpApiBuilder.layer(SecurityAuditOnlyApi).pipe(
 		Layer.provide(HttpSecurityAuditLive),
 		Layer.provide(ApiErrorBoundaryLive),
@@ -81,6 +97,7 @@ const makeHarness = (options: { readonly enabled?: boolean; readonly startFails?
 				envPorts({}),
 				storeLayer,
 				starter,
+				Layer.succeed(AuditLogService, auditLog),
 				OrganizationFeatureFlagsService.fixed(
 					options.enabled === false
 						? DISABLED_ORGANIZATION_FEATURE_FLAGS
@@ -96,6 +113,7 @@ const makeHarness = (options: { readonly enabled?: boolean; readonly startFails?
 		path: string,
 		options: { readonly as?: string; readonly body?: unknown } = {},
 	) => {
+		await connected
 		const response = await handler(
 			new Request(`http://maple.test/api/security-audit${path}`, {
 				method,
@@ -122,7 +140,9 @@ const makeHarness = (options: { readonly enabled?: boolean; readonly startFails?
 	const count = async (table: string) =>
 		Number((await queryFirstRow<{ n: number }>(db, `SELECT count(*)::int AS n FROM ${table}`))?.n)
 
-	return { call, dispose, started, withStore, count }
+	const sql = (statement: string, params: Array<unknown> = []) => executeSql(db, statement, params)
+
+	return { call, dispose, started, withStore, count, sql, auditLog }
 }
 
 const confirmed = (fingerprint: string): Finding => ({
@@ -158,7 +178,9 @@ const rejected = (fingerprint: string): Finding => ({
 
 const TARGET = { repository: "acme/api", branch: "main" }
 
-describe("/api/security-audit", () => {
+const tag = (name: string) => `@maple/http/security-audit/${name}`
+
+describe("/api/security-audit access", () => {
 	it("refuses every call with a 403 while the org is outside the rollout, and writes nothing", async () => {
 		const harness = makeHarness({ enabled: false })
 		try {
@@ -167,9 +189,9 @@ describe("/api/security-audit", () => {
 
 			expect([create.status, create.body._tag, list.status, list.body._tag]).toEqual([
 				403,
-				"@maple/http/security-audit/SecurityAuditDisabledError",
+				tag("SecurityAuditDisabledError"),
 				403,
-				"@maple/http/security-audit/SecurityAuditDisabledError",
+				tag("SecurityAuditDisabledError"),
 			])
 			expect(await harness.count("security_audit_targets")).toBe(0)
 		} finally {
@@ -177,164 +199,28 @@ describe("/api/security-audit", () => {
 		}
 	})
 
-	it("lets members read but only admins write", async () => {
+	it("lets members list targets and runs, and keeps findings, reports and writes to admins", async () => {
 		const harness = makeHarness()
 		try {
 			const member = `${ORG_A}|org:member`
-			const denied = await harness.call("POST", "/targets", { as: member, body: TARGET })
-			const target = await harness.call("POST", "/targets", { body: TARGET })
-			const deniedRun = await harness.call("POST", `/targets/${target.body.id}/runs`, {
-				as: member,
-				body: {},
-			})
-			const listed = await harness.call("GET", "/targets", { as: member })
-
-			expect([denied.status, denied.body._tag, deniedRun.status]).toEqual([
-				403,
-				"@maple/http/security-audit/SecurityAuditForbiddenError",
-				403,
-			])
-			expect(listed.body.targets.map((t: { id: string }) => t.id)).toEqual([target.body.id])
-			expect([harness.started, await harness.count("security_audit_runs")]).toEqual([[], 0])
-		} finally {
-			await harness.dispose()
-		}
-	})
-
-	it("rejects an unsafe repository, scope path or budget at the boundary", async () => {
-		const harness = makeHarness()
-		try {
-			const statuses = await Promise.all(
-				[
-					{ ...TARGET, repository: "acme" },
-					{ ...TARGET, repository: "acme/../etc" },
-					{ ...TARGET, branch: "--upload-pack=x" },
-					{ ...TARGET, scopePaths: ["../secrets"] },
-					{ ...TARGET, scopePaths: ["/etc/passwd"] },
-					{ ...TARGET, budgetPerRun: 0 },
-					{ ...TARGET, budgetPerRun: 20_001 },
-				].map((body) => harness.call("POST", "/targets", { body }).then((r) => r.status)),
-			)
-			expect(statuses).toEqual([400, 400, 400, 400, 400, 400, 400])
-			expect(await harness.count("security_audit_targets")).toBe(0)
-		} finally {
-			await harness.dispose()
-		}
-	})
-
-	it("starts a run for the target's branch and carries the last finished run forward", async () => {
-		const harness = makeHarness()
-		try {
-			const target = await harness.call("POST", "/targets", {
-				body: { ...TARGET, scopePaths: ["apps/api"], budgetPerRun: 300 },
-			})
-			const first = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
-			// A run still in progress is not a baseline to carry forward.
-			const second = await harness.call("POST", `/targets/${target.body.id}/runs`, {
-				body: { budget: 40 },
-			})
-			await harness.withStore((store) =>
-				store.forOrg(ORG_A).finishRun(first.body.id, { status: "complete" }),
-			)
-			const third = await harness.call("POST", `/targets/${target.body.id}/runs`, {
-				body: { kind: "revalidation", scopePaths: ["apps/api/src/routes"] },
-			})
-
-			expect([first.status, first.body.status, first.body.kind, third.body.kind]).toEqual([
-				200,
-				"in_progress",
-				"manual",
-				"revalidation",
-			])
-			expect(harness.started).toEqual([
-				{
-					orgId: ORG_A,
-					runId: first.body.id,
-					repository: "acme/api",
-					ref: "main",
-					profile: "deep",
-					scopePaths: ["apps/api"],
-					budget: 300,
-					priorRunId: null,
-				},
-				{
-					orgId: ORG_A,
-					runId: second.body.id,
-					repository: "acme/api",
-					ref: "main",
-					profile: "deep",
-					scopePaths: ["apps/api"],
-					budget: 40,
-					priorRunId: null,
-				},
-				{
-					orgId: ORG_A,
-					runId: third.body.id,
-					repository: "acme/api",
-					ref: "main",
-					profile: "deep",
-					scopePaths: ["apps/api/src/routes"],
-					budget: 300,
-					priorRunId: first.body.id,
-				},
-			])
-		} finally {
-			await harness.dispose()
-		}
-	})
-
-	it("marks the run failed when its workflow does not start", async () => {
-		const harness = makeHarness({ startFails: true })
-		try {
-			const target = await harness.call("POST", "/targets", { body: TARGET })
-			const start = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
-			const runs = await harness.call("GET", `/runs?targetId=${target.body.id}`)
-
-			expect([start.status, start.body._tag]).toEqual([
-				503,
-				"@maple/http/security-audit/SecurityAuditStartError",
-			])
-			expect(runs.body.runs.map((r: { status: string; error: string }) => [r.status, r.error])).toEqual(
-				[["failed", "The audit workflow did not start: instance limit reached"]],
-			)
-		} finally {
-			await harness.dispose()
-		}
-	})
-
-	it("hides rejected findings unless asked, and persists a dismissal with its reason", async () => {
-		const harness = makeHarness()
-		try {
 			const target = await harness.call("POST", "/targets", { body: TARGET })
 			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
-			await harness.withStore((store) =>
-				store.forOrg(ORG_A).saveFindings(run.body.id, [confirmed("f1"), rejected("f2")]),
-			)
-			const findingsPath = `/targets/${target.body.id}/findings`
+			const memberCalls = await Promise.all([
+				harness.call("GET", "/targets", { as: member }),
+				harness.call("GET", "/runs", { as: member }),
+				harness.call("GET", `/runs/${run.body.id}`, { as: member }),
+				harness.call("GET", `/runs/${run.body.id}/events`, { as: member }),
+				harness.call("GET", `/targets/${target.body.id}/findings`, { as: member }),
+				harness.call("POST", "/targets", { as: member, body: { ...TARGET, branch: "next" } }),
+				harness.call("PATCH", `/targets/${target.body.id}/findings/f1`, {
+					as: member,
+					body: { status: "dismissed", reason: "no" },
+				}),
+			])
 
-			const visible = await harness.call("GET", findingsPath)
-			const all = await harness.call("GET", `${findingsPath}?includeRejected=true`)
-			const dismiss = await harness.call("PATCH", `${findingsPath}/f1`, {
-				body: { status: "dismissed", reason: "fixture data, not reachable" },
-			})
-			const missingReason = await harness.call("PATCH", `${findingsPath}/f1`, {
-				body: { status: "accepted_risk" },
-			})
-			const after = await harness.call("GET", findingsPath)
-
-			const fingerprints = (body: { findings: ReadonlyArray<{ fingerprint: string }> }) =>
-				body.findings.map((f) => f.fingerprint)
-			expect([fingerprints(visible.body), fingerprints(all.body)]).toEqual([["f1"], ["f1", "f2"]])
-			expect([dismiss.status, missingReason.status]).toEqual([200, 400])
-			expect(
-				after.body.findings.map(
-					(f: { status: string; statusReason: string; statusChangedBy: string }) => [
-						f.status,
-						f.statusReason,
-						f.statusChangedBy,
-					],
-				),
-			).toEqual([["dismissed", "fixture data, not reachable", USER]])
+			expect(memberCalls.map((r) => r.status)).toEqual([200, 200, 403, 403, 403, 403, 403])
+			expect(memberCalls[5]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
+			expect(harness.started.map((p) => p.runId)).toEqual([run.body.id])
 		} finally {
 			await harness.dispose()
 		}
@@ -360,17 +246,242 @@ describe("/api/security-audit", () => {
 					body: { status: "dismissed", reason: "not mine" },
 				}),
 			])
-			const own = await harness.call("GET", `/runs/${run.body.id}`)
 			const foreignRuns = await harness.call("GET", "/runs", { as: other })
 
 			expect(responses.map((r) => r.status)).toEqual([404, 404, 404, 404, 404])
-			expect([own.status, own.body.id, own.body.unitTotal, foreignRuns.body.runs]).toEqual([
-				200,
-				run.body.id,
-				0,
+			expect(foreignRuns.body.runs).toEqual([])
+			expect(harness.started.map((p) => p.orgId)).toEqual([ORG_A])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit targets", () => {
+	it("rejects an unsafe repository, scope path, budget or page size at the boundary", async () => {
+		const harness = makeHarness()
+		try {
+			const statuses = await Promise.all(
+				[
+					{ ...TARGET, repository: "acme" },
+					{ ...TARGET, repository: "acme/../etc" },
+					{ ...TARGET, branch: "--upload-pack=x" },
+					{ ...TARGET, scopePaths: ["../secrets"] },
+					{ ...TARGET, scopePaths: ["/etc/passwd"] },
+					{ ...TARGET, budgetPerRun: 0 },
+					{ ...TARGET, budgetPerRun: 20_001 },
+				].map((body) => harness.call("POST", "/targets", { body }).then((r) => r.status)),
+			)
+			const run = "00000000-0000-4000-8000-000000000000"
+			const pages = await Promise.all(
+				["limit=0", "limit=1001", "beforeAt=-1"].map((q) =>
+					harness.call("GET", `/runs/${run}/events?${q}`).then((r) => r.status),
+				),
+			)
+			expect([statuses, pages]).toEqual([
+				[400, 400, 400, 400, 400, 400, 400],
+				[400, 400, 400],
+			])
+			expect(await harness.count("security_audit_targets")).toBe(0)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("resolves the repository through the org's connection and refuses duplicates", async () => {
+		const harness = makeHarness()
+		try {
+			const created = await harness.call("POST", "/targets", {
+				body: { ...TARGET, repository: "Acme/API" },
+			})
+			const duplicate = await harness.call("POST", "/targets", { body: TARGET })
+			const unconnected = await harness.call("POST", "/targets", {
+				body: { ...TARGET, repository: "acme/web" },
+			})
+
+			expect([created.status, created.body.repository]).toEqual([200, "acme/api"])
+			expect([
+				duplicate.status,
+				duplicate.body._tag,
+				unconnected.status,
+				unconnected.body._tag,
+			]).toEqual([
+				409,
+				tag("SecurityAuditTargetExistsError"),
+				404,
+				tag("SecurityAuditRepositoryNotConnectedError"),
+			])
+			expect(await harness.count("security_audit_targets")).toBe(1)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit runs", () => {
+	it("starts manual runs one at a time, with a finite budget and the best prior run", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
+			const runs = `/targets/${target.body.id}/runs`
+			const finish = (runId: string) =>
+				harness.withStore((store) => store.forOrg(ORG_A).finishRun(runId, { status: "complete" }))
+
+			// `kind` is not the client's to set: the API only starts manual runs.
+			const whole = await harness.call("POST", runs, { body: { kind: "revalidation" } })
+			const whileRunning = await harness.call("POST", runs, { body: {} })
+			await finish(whole.body.id)
+			const scoped = await harness.call("POST", runs, {
+				body: { scopePaths: ["apps/api/src/routes"], budget: 40 },
+			})
+			await finish(scoped.body.id)
+			const next = await harness.call("POST", runs, { body: {} })
+
+			const unbudgeted = await harness.call("POST", "/targets", { body: { ...TARGET, branch: "next" } })
+			await harness.call("POST", `/targets/${unbudgeted.body.id}/runs`, { body: {} })
+
+			expect([whole.body.kind, whileRunning.status, whileRunning.body._tag]).toEqual([
+				"manual",
+				409,
+				tag("SecurityAuditRunInProgressError"),
+			])
+			expect(
+				harness.started.map((p) => [p.runId, p.ref, p.scopePaths, p.budget, p.priorRunId]),
+			).toEqual([
+				[whole.body.id, "main", [], 300, null],
+				[scoped.body.id, "main", ["apps/api/src/routes"], 40, whole.body.id],
+				// The whole-target run is preferred over the later scoped one.
+				[next.body.id, "main", [], 300, whole.body.id],
+				[expect.any(String), "next", [], 400, null],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a run on a disabled target", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			await harness.sql(`UPDATE security_audit_targets SET enabled = false WHERE id = $1`, [
+				target.body.id,
+			])
+			const start = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			expect([start.status, start.body._tag, harness.started]).toEqual([
+				409,
+				tag("SecurityAuditTargetDisabledError"),
 				[],
 			])
-			expect(harness.started.map((p) => p.orgId)).toEqual([ORG_A])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("marks the run failed when its workflow does not start, freeing the target", async () => {
+		const harness = makeHarness({ startFails: true })
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const start = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const retry = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const runs = await harness.call("GET", `/runs?targetId=${target.body.id}`)
+
+			expect([start.status, start.body._tag, retry.body._tag]).toEqual([
+				503,
+				tag("SecurityAuditStartError"),
+				tag("SecurityAuditStartError"),
+			])
+			expect(runs.body.runs.map((r: { status: string; error: string }) => [r.status, r.error])).toEqual(
+				[
+					["failed", "The audit workflow did not start: instance limit reached"],
+					["failed", "The audit workflow did not start: instance limit reached"],
+				],
+			)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("serves a run whose stored reports predate the current shape, with unit counts", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			await harness.sql(
+				`UPDATE security_audit_runs SET reports = '{"report":1}'::jsonb WHERE id = $1`,
+				[run.body.id],
+			)
+			const detail = await harness.call("GET", `/runs/${run.body.id}`)
+
+			expect([
+				detail.status,
+				detail.body.reports,
+				detail.body.unitCounts,
+				detail.body.unitTotal,
+			]).toEqual([200, null, {}, 0])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit findings", () => {
+	it("hides rejected findings unless asked, and records a dismissal with its reason", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const fingerprint = "authz/rollKey:missing-org"
+			await harness.withStore((store) =>
+				store.forOrg(ORG_A).saveFindings(run.body.id, [confirmed(fingerprint), rejected("f2")]),
+			)
+			const findingsPath = `/targets/${target.body.id}/findings`
+			const findingPath = `${findingsPath}/${encodeURIComponent(fingerprint)}`
+
+			const visible = await harness.call("GET", findingsPath)
+			const all = await harness.call("GET", `${findingsPath}?includeRejected=true`)
+			const dismiss = await harness.call("PATCH", findingPath, {
+				body: { status: "dismissed", reason: "fixture data, not reachable" },
+			})
+			const missingReason = await harness.call("PATCH", findingPath, {
+				body: { status: "accepted_risk" },
+			})
+			const after = await harness.call("GET", findingsPath)
+			const audit = await Effect.runPromise(
+				harness.auditLog.list(ORG_A, {
+					action: "security_audit_finding.triaged",
+					limit: 10,
+					offset: 0,
+				}),
+			)
+
+			const fingerprints = (body: { findings: ReadonlyArray<{ fingerprint: string }> }) =>
+				body.findings.map((f) => f.fingerprint)
+			expect([fingerprints(visible.body), fingerprints(all.body)]).toEqual([
+				[fingerprint],
+				[fingerprint, "f2"],
+			])
+			expect([dismiss.status, missingReason.status]).toEqual([200, 400])
+			expect(
+				after.body.findings.map(
+					(f: { status: string; statusReason: string; statusChangedBy: string }) => [
+						f.status,
+						f.statusReason,
+						f.statusChangedBy,
+					],
+				),
+			).toEqual([["dismissed", "fixture data, not reachable", USER]])
+			expect(audit.map((entry) => [entry.userId, entry.metadata])).toEqual([
+				[
+					USER,
+					{
+						targetId: target.body.id,
+						fingerprint,
+						status: "dismissed",
+						reason: "fixture data, not reachable",
+					},
+				],
+			])
 		} finally {
 			await harness.dispose()
 		}
