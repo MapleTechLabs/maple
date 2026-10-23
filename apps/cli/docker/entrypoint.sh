@@ -18,6 +18,10 @@ for name in MAPLE_LOCAL_INGEST_KEY MAPLE_LOCAL_ACCESS_TOKEN; do
 	fi
 done
 
+# The store lives on the volume whatever HOME the platform sets; the probe
+# below and the chown agree on that.
+export HOME=/data
+
 # After an unclean stop (OOM kill, host crash) the store restores its last
 # checkpoint. Before the first one exists there is nothing to recover, and
 # refusing to start would crash-loop the container, so it starts fresh.
