@@ -230,30 +230,34 @@ export const phaseStrip = (h: H, phases: ReadonlyArray<Phase>): Html =>
 	h.ol(
 		[
 			h.AriaLabel("Run phases"),
-			h.Class(
-				"grid divide-y overflow-hidden rounded-md border bg-card md:grid-cols-5 md:divide-x md:divide-y-0",
-			),
+			// Phases wrap onto more rows as the column narrows; each row fills its width.
+			h.Class("flex flex-wrap gap-px overflow-hidden rounded-md border bg-border"),
 		],
 		phases.map((phase) =>
 			h.li(
 				[
 					h.Key(phase.name),
 					h.AriaLabel(`${phase.name}, ${PHASE_STATE_LABEL[phase.state]}`),
-					h.Class(cn("flex flex-col gap-2 px-4 py-3", phase.state === "active" && "bg-muted/40")),
+					h.Class(
+						cn(
+							"flex min-w-44 flex-1 flex-col gap-2 bg-card px-4 py-3",
+							phase.state === "active" && "bg-muted",
+						),
+					),
 				],
 				[
 					h.span(
 						[
 							h.Class(
 								cn(
-									"flex items-center gap-2 text-sm",
+									"flex min-w-0 items-center gap-2 text-sm",
 									phase.state === "pending" || phase.state === "skipped"
 										? "text-muted-foreground"
 										: "font-medium",
 								),
 							),
 						],
-						[phaseMark(h, phase.state), phase.name],
+						[phaseMark(h, phase.state), h.span([h.Class("truncate")], [phase.name])],
 					),
 					h.span(
 						[h.AriaHidden(true), h.Class("h-1 w-full overflow-hidden rounded-full bg-muted")],

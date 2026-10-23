@@ -3,7 +3,8 @@ import { AsyncData } from "foldkit"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { button } from "../../../ui/button"
+import { button, linkButton } from "../../../ui/button"
+import { empty, emptyDescription, emptyHeader, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import * as SelectView from "../../../ui/select-view"
@@ -175,6 +176,31 @@ export const startRunAction = (h: H, model: Model): Html | undefined => {
 	)
 }
 
+/** No target yet: the way to add one, or to the overview for a member who cannot. */
+const noTargets = (h: H, model: Model): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyTitle(h, ["No runs yet"]),
+				emptyDescription(h, [
+					model.isAdmin
+						? "Add a target, then start its first run."
+						: "An org admin adds the first target on the Overview tab.",
+				]),
+			]),
+			model.isAdmin
+				? button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedAddTarget())] }, [
+						icon(h, "PlusIcon"),
+						"Add target",
+					])
+				: linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Security()) }, [
+						"Open the overview",
+					]),
+		],
+		"rounded-md border border-dashed md:py-14",
+	)
+
 export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 	const targets = targetsOf(model)
 	const { runs, isCapped } = runsForTab(model)
@@ -192,13 +218,13 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 				? h.div(
 						[h.Class("p-4")],
 						[
-							nothingInWindow(h, {
-								title: "No runs yet",
-								description:
-									targets.length === 0
-										? "Add a target on the Overview tab, then start its first run."
-										: "Runs start manually for now: pick a target and start one.",
-							}),
+							targets.length === 0
+								? noTargets(h, model)
+								: nothingInWindow(h, {
+										title: "No runs yet",
+										description:
+											"Runs start manually for now: pick a target and start one.",
+									}),
 						],
 					)
 				: table(h, { variant: "bare", ariaLabel: "Audit runs" }, [

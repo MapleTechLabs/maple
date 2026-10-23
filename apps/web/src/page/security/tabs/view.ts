@@ -38,6 +38,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					active: "findings",
 					description:
 						"A finding is followed by its fingerprint from run to run. Findings are visible to org admins only.",
+					actions: addTargetButton(h, model),
 					overlay,
 				},
 				findingsBody(h, model, inputs.context.timeZone),

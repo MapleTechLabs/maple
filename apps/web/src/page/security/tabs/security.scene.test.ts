@@ -344,6 +344,48 @@ describe("security tabs", () => {
 		)
 	})
 
+	test("with no target, Findings hides its filters and Runs offers Add target", () => {
+		const entered = init(AppRoute.SecurityFindings({ search: {} }), context).model
+		const noTargets = [
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchTargets({
+				key: entered.targets.key ?? "",
+				result: Result.succeed({ targets: [] }),
+			}),
+			Message.CompletedFetchRuns({ key: entered.runs.key ?? "", result: Result.succeed({ runs: [] }) }),
+		].reduce((model, message) => pageUpdate(model, message).model, entered)
+		scene(
+			{ update: pageUpdate, view },
+			given(noTargets),
+			expectView(text("No findings yet")).toExist(),
+			expectView(role("textbox", { name: /Search/ })).not.toExist(),
+			expectView(role("link", { name: /^Open/ })).not.toExist(),
+		)
+		const runsTab = routeChanged(noTargets, AppRoute.SecurityRuns({ search: {} }), context).model
+		scene(
+			{ update: pageUpdate, view },
+			given(runsTab),
+			expectView(text("Add a target, then start its first run.")).toExist(),
+		)
+		const opened = pageUpdate(runsTab, Message.ClickedAddTarget())
+		expect(opened.model.addTarget.dialog.isOpen).toBe(true)
+	})
+
+	test("Overview, Findings and Runs all offer Add target to an admin", () => {
+		const model = loaded()
+		for (const route of [
+			overview,
+			AppRoute.SecurityFindings({ search: {} }),
+			AppRoute.SecurityRuns({ search: {} }),
+		]) {
+			scene(
+				{ update: pageUpdate, view },
+				given(routeChanged(model, route, context).model),
+				expectView(role("button", { name: "Add target" })).toExist(),
+			)
+		}
+	})
+
 	test("a member sees no Add target or Start run control", () => {
 		const member = pageUpdate(loaded(), Message.CompletedReadIsAdmin({ isAdmin: false })).model
 		scene(

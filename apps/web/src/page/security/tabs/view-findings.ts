@@ -422,8 +422,21 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 		h.section(
 			[h.AriaLabel("Findings"), h.Class("overflow-hidden rounded-md border bg-card")],
 			[
-				h.div([h.Class("border-b border-border/60 px-2 py-1.5")], [statusTabs(h, model, all)]),
-				toolbar(h, model, targets, rows.filter((finding) => finding.verdict !== "rejected").length),
+				// Nothing to filter until there is a target, as the errors hub hides its toolbar when empty.
+				...(targets.length === 0
+					? []
+					: [
+							h.div(
+								[h.Class("border-b border-border/60 px-2 py-1.5")],
+								[statusTabs(h, model, all)],
+							),
+							toolbar(
+								h,
+								model,
+								targets,
+								rows.filter((finding) => finding.verdict !== "rejected").length,
+							),
+						]),
 				content,
 			],
 		),
