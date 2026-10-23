@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { SecurityAuditForbiddenError } from "@maple/domain/http"
+import { SecurityAuditForbiddenError, SecurityAuditTargetNotFoundError } from "@maple/domain/http"
 import { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Result, Schema } from "effect"
 import {
@@ -120,6 +120,31 @@ describe("security finding", () => {
 			Message.GotReasonMessage({ message: Field.Message.ChangedValue({ value: "still open" }) }),
 		).model
 		expect(names(pageUpdate(reasoned, Message.SubmittedTriage()).commands)).toEqual([])
+	})
+
+	test("an unknown target or finding renders not found with a way back to the findings", () => {
+		const entered = init(route, context).model
+		const missing = pageUpdate(
+			entered,
+			Message.CompletedFetchFindings({
+				key: entered.findings.key ?? "",
+				result: Result.fail(
+					toLoadFailure(
+						new SecurityAuditTargetNotFoundError({
+							message: "no target",
+							targetId: route.targetId,
+						}),
+					),
+				),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(missing),
+			expectView(text("Finding not found")).toExist(),
+			expectView(role("link", { name: "Back to findings" })).toHaveAttr("href", "/security/findings"),
+			expectView(text(/^Failed to load/)).not.toExist(),
+		)
 	})
 
 	test("a member sees the admins-only state instead of the record", () => {

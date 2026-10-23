@@ -347,6 +347,19 @@ const loaded = (h: H, model: Model, finding: SecurityAuditFinding, timeZone: str
 	)
 }
 
+/** The target or the finding does not exist: the same way back either way. */
+const NOT_FOUND_CODES: ReadonlySet<string> = new Set([
+	"security_audit_finding_not_found",
+	"security_audit_target_not_found",
+])
+
+const findingNotFound = (h: H): Html =>
+	resourceNotFound(h, {
+		title: "Finding not found",
+		description: "It may belong to another target or organization, or the link is stale.",
+		back: { href: hrefOf(AppRoute.SecurityFindings({ search: {} })), label: "Back to findings" },
+	})
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	AsyncData.matchData(model.findings.data, {
 		onEmpty: () =>
@@ -357,28 +370,21 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		onFailure: (failure) => {
 			const gate = gateOf(failure)
 			return dashboardPage(h, {}, [
-				gate === null
-					? errorState(h, {
-							failure,
-							title: "Failed to load the finding",
-							onRetry: Message.ClickedRetry(),
-						})
-					: stack(h, [gateState(h, gate)]),
+				NOT_FOUND_CODES.has(failure.code)
+					? findingNotFound(h)
+					: gate === null
+						? errorState(h, {
+								failure,
+								title: "Failed to load the finding",
+								onRetry: Message.ClickedRetry(),
+							})
+						: stack(h, [gateState(h, gate)]),
 			])
 		},
 		onData: () => {
 			const finding = findingOf(model)
 			return finding === null
-				? dashboardPage(h, {}, [
-						resourceNotFound(h, {
-							title: "Finding not found",
-							description: "No finding on this target has that fingerprint.",
-							back: {
-								href: hrefOf(AppRoute.SecurityFindings({ search: {} })),
-								label: "Back to findings",
-							},
-						}),
-					])
+				? dashboardPage(h, {}, [findingNotFound(h)])
 				: loaded(h, model, finding, inputs.context.timeZone)
 		},
 	}),
