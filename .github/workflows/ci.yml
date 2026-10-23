@@ -121,6 +121,7 @@ jobs:
                         - *base
                         - 'scripts/*.sh'
                         - 'apps/cli/test/*.sh'
+                        - 'apps/cli/docker/*.sh'
                       # Not `*base`: the JS lockfile and tsconfigs cannot move a Rust or Go build.
                       ingest:
                         - '.github/workflows/ci.yml'
@@ -166,6 +167,9 @@ jobs:
                   apps/cli/test/native-archive-merge-probe.sh
                   apps/cli/test/native-retention-probe.sh
                   apps/cli/test/native-remote-auth-smoke.sh
+                  apps/cli/docker/entrypoint.sh
+                  apps/cli/docker/build-image.sh
+                  apps/cli/docker/image-smoke.sh
 
             # The installers claim POSIX /bin/sh; check them against it.
             - name: sh -n
@@ -496,6 +500,15 @@ jobs:
                     run: |
                         mkdir -p "$TMPDIR"
                         apps/cli/test/native-remote-auth-smoke.sh "$GITHUB_WORKSPACE/dist"
+
+                  # The self-hosted image around this bundle: secrets, a root-owned volume, restart.
+                  - name: Build and smoke the self-hosted image
+                    timeout-minutes: 5
+                    run: |
+                        mkdir -p "$RUNNER_TEMP/image-bundles/linux-amd64"
+                        cp dist/maple dist/libchdb.so "$RUNNER_TEMP/image-bundles/linux-amd64/"
+                        BUNDLES="$RUNNER_TEMP/image-bundles" apps/cli/docker/build-image.sh maple-local:ci linux/amd64
+                        apps/cli/docker/image-smoke.sh maple-local:ci
 
             # cancelled() too: a timeout or concurrency cancel mid-hang is the evidence that matters.
             - name: Upload checkpoint failure evidence

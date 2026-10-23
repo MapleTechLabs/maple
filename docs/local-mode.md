@@ -711,6 +711,35 @@ tricks are needed.
 
 ```bash
 scripts/build-local-binary.sh               # full 2-file bundle into ./dist
+MAPLE_TARGET=linux-arm64 scripts/build-local-binary.sh   # cross-compile (linux-x64, linux-arm64, darwin-x64, darwin-arm64)
+```
+
+## Container image
+
+`apps/cli/docker/` packages the Linux bundle as the self-hosted image
+`ghcr.io/mapletechlabs/maple` (user docs: `apps/landing/src/content/docs/local-mode/self-hosting.md`).
+
+- `Dockerfile` takes prebuilt bundles from its context
+  (`linux-{amd64,arm64}/{maple,libchdb.so}`); the final stage only copies files,
+  so a multi-arch build needs no emulation. `HOME=/data` puts the store, sidecars
+  and config on the volume, so CLI defaults work under `docker exec`.
+- `entrypoint.sh` refuses `start` without `MAPLE_LOCAL_INGEST_KEY` and
+  `MAPLE_LOCAL_ACCESS_TOKEN`, binds `0.0.0.0:${PORT:-4318}` with `--offline`,
+  chowns a root-owned `/data` and drops to uid 10001 with `setpriv`. Its dirty-store
+  policy is `restore-checkpoint` once a checkpoint exists and `wipe` before that,
+  so a container killed before its first checkpoint starts instead of crash-looping.
+  Any other command runs `maple` as is.
+- `build-image.sh <tag> [platforms]` cross-compiles the bundles (or takes
+  `BUNDLES=<dir>`) and builds; `image-smoke.sh <image>` is the end-to-end check:
+  secrets, a root-owned volume, uid, auth through the published port,
+  `docker exec`, clean stop, restart, and kill recovery.
+- CI's `Local checkpoint native` job builds the amd64 image from its bundle and
+  runs the smoke. The release workflow's `image` job smokes the amd64 image and,
+  for a tag, pushes both platforms as `:<tag>` (and `:latest` unless it is a
+  pre-release) with a provenance attestation.
+
+```bash
+apps/cli/docker/build-image.sh maple-local:dev && apps/cli/docker/image-smoke.sh maple-local:dev
 ```
 
 ## Release signing

@@ -96,7 +96,7 @@ maple start --host 0.0.0.0 --offline
 
 Without the secrets the server still starts and its banner warns you: anyone who can reach the port can use the UI, run raw SQL through `/local/query`, and send OTLP data. The maintenance routes (checkpoint, day retirement and the local event routes) require a token that `maple start` writes beside the data directory with mode `0600` (`<data-dir>.maintenance-token`, and `<data-dir>.event-consumer-token` for event consumers). They are only as safe as those files. `/local/retention/retire` deletes a day of live data. The full route list is in the [CLI reference](/docs/reference/cli#server-endpoints).
 
-Put a TLS-terminating proxy in front of anything reachable from the internet; the session cookie is marked `Secure` when the proxy forwards `X-Forwarded-Proto: https`.
+Put a TLS-terminating proxy in front of anything reachable from the internet; the session cookie is marked `Secure` when the proxy forwards `X-Forwarded-Proto: https`. To run it on a server or a container platform, use the image described in [Self-hosting](/docs/local-mode/self-hosting).
 
 ## Query from the terminal
 
