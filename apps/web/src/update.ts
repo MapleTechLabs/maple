@@ -189,6 +189,7 @@ export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 								presence: presenceOf(model.shell),
 								isPresenceFailed: AsyncData.isFailure(model.shell.infraPresence),
 								integrations: model.shell.integrations,
+								remembered: model.shell.rememberedSurfaces[orgId],
 							},
 						})),
 					),

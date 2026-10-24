@@ -27,14 +27,15 @@ const scopeOf = (model: Model, context: PageContext): Frame.Scope => ({
 	timeZone: context.timeZone,
 })
 
-/** The sources presence shows (every one until it is known, `presentSources(null)`); each mounts its read. */
+/** The sources the org has, once that is known; each mounts its read. */
 const requestSources = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
 	const window = model.frame.window
-	if (window === null) return { model }
+	const sources = presentSources(surfacesOf(model, context))
+	if (window === null || sources === null) return { model }
 	const input = { startTime: window.startTime, endTime: window.endTime }
 	const requested = seriesSteps<SourceReading, LoadFailure, Message>(
 		model.sources,
-		presentSources(surfacesOf(model, context)).map((source) => ({
+		sources.map((source) => ({
 			id: source,
 			key: requestKey(context.orgId, `infraOverview.${source}`, { data: input }),
 			fetch: (key: string) => FetchSource({ source, key, window }),

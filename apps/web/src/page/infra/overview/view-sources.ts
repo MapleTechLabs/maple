@@ -58,6 +58,13 @@ const healthBar = <M>(h: HtmlBuilder<M>, segments: ReadonlyArray<HealthSegment>)
 	)
 }
 
+/** `healthBar`'s shape while loading: the bar and an empty legend line, so the row keeps its height. */
+const healthBarLoading = <M>(h: HtmlBuilder<M>): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-1.5")],
+		[skeleton(h, "h-1.5 w-full rounded-full"), h.span([h.Class("text-2xs")], ["\u00a0"])],
+	)
+
 export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState, time: TimeSearch): Html =>
 	h.a(
 		[h.Class(cn(ROW_CLASS, "py-3.5")), h.Href(sourceHref(id, time))],
@@ -69,11 +76,20 @@ export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState
 					h.span(
 						[h.Class("flex min-w-0 flex-col gap-0.5")],
 						[
-							h.span([h.Class("text-sm text-foreground group-hover:text-primary")], [SOURCE_TITLE[id]]),
 							h.span(
-								[h.Class("text-xs text-muted-foreground")],
-								[state.status === "ready" ? state.summary.resources : state.status === "error" ? "Couldn't load" : " "],
+								[h.Class("text-sm text-foreground group-hover:text-primary")],
+								[SOURCE_TITLE[id]],
 							),
+							state.status === "loading"
+								? skeleton(h, "my-0.5 h-3 w-16")
+								: h.span(
+										[h.Class("text-xs text-muted-foreground")],
+										[
+											state.status === "ready"
+												? state.summary.resources
+												: "Couldn't load",
+										],
+									),
 						],
 					),
 				],
@@ -83,33 +99,60 @@ export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState
 				state.status === "ready"
 					? [healthBar(h, state.summary.segments)]
 					: state.status === "loading"
-						? [skeleton(h, "h-1.5 w-full rounded-full")]
+						? [healthBarLoading(h)]
 						: [],
 			),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"min-w-0 flex-1 truncate text-xs md:w-64 md:flex-none",
-							state.status === "ready" ? VALUE_TONE[state.summary.headlineTone] : "text-muted-foreground",
-						),
+			state.status === "loading"
+				? h.span(
+						[h.Class("flex min-w-0 flex-1 md:w-64 md:flex-none")],
+						[skeleton(h, "my-0.5 h-3 w-40 max-w-full")],
+					)
+				: h.span(
+						[
+							h.Class(
+								cn(
+									"min-w-0 flex-1 truncate text-xs md:w-64 md:flex-none",
+									state.status === "ready"
+										? VALUE_TONE[state.summary.headlineTone]
+										: "text-muted-foreground",
+								),
+							),
+						],
+						[state.status === "ready" ? state.summary.headline : "Open the page for details"],
 					),
-				],
-				[
-					state.status === "ready"
-						? state.summary.headline
-						: state.status === "loading"
-							? skeleton(h, "h-3 w-40")
-							: "Open the page for details",
-				],
-			),
 			icon(h, "ChevronRightIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 		],
 	)
 
+/** A source row before the org's sources are known: same height, no name yet. */
+const sourceRowPending = <M>(h: HtmlBuilder<M>): Html =>
+	h.div(
+		[h.Class(cn(ROW_CLASS, "py-3.5 hover:bg-transparent"))],
+		[
+			h.span(
+				[h.Class("flex w-52 shrink-0 items-center gap-3")],
+				[
+					skeleton(h, "size-[18px] shrink-0 rounded"),
+					h.span(
+						[h.Class("flex min-w-0 flex-col gap-0.5")],
+						[skeleton(h, "my-0.5 h-4 w-24"), skeleton(h, "my-0.5 h-3 w-16")],
+					),
+				],
+			),
+			h.span([h.Class("hidden min-w-0 flex-1 pr-6 md:block")], [healthBarLoading(h)]),
+			h.span(
+				[h.Class("flex min-w-0 flex-1 md:w-64 md:flex-none")],
+				[skeleton(h, "my-0.5 h-3 w-40 max-w-full")],
+			),
+		],
+	)
+
+/** Rows the pending table holds: a typical org's count, so the real table mostly lands in place. */
+const PENDING_ROWS = 3
+
 export const sourcesTable = <M>(
 	h: HtmlBuilder<M>,
-	sources: ReadonlyArray<Readonly<{ id: SourceId; state: SourceState }>>,
+	sources: ReadonlyArray<Readonly<{ id: SourceId; state: SourceState }>> | null,
 	time: TimeSearch,
 ): Html =>
 	h.section(
@@ -119,7 +162,9 @@ export const sourcesTable = <M>(
 			panel(
 				h,
 				{ tone: "background", className: "divide-y" },
-				sources.map(({ id, state }) => sourceRow(h, id, state, time)),
+				sources === null
+					? Array.from({ length: PENDING_ROWS }, () => sourceRowPending(h))
+					: sources.map(({ id, state }) => sourceRow(h, id, state, time)),
 			),
 		],
 	)

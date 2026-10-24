@@ -20,7 +20,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
-import { FocusElement, SaveNamespace, SaveSidebarState, SaveTheme } from "./command"
+import { FocusElement, SaveInfraSurfaces, SaveNamespace, SaveSidebarState, SaveTheme } from "./command"
 import {
 	LoadAwsStatus,
 	LoadCloudflareStatus,
@@ -205,6 +205,8 @@ describe("sidebar collapse", () => {
 					}),
 				],
 			),
+			Command.expectExact(SaveInfraSurfaces({ orgId: "org_parity", surfaces: [] })),
+			Command.resolve(SaveInfraSurfaces, Message.CompletedSaveInfraSurfaces()),
 			...close(),
 			...open(),
 			Command.expectNone(),
@@ -378,12 +380,12 @@ describe("in-place org change", () => {
 		const onB = enter("org_b")(onA).model
 		expectVitest(onB.namespaces._tag).toBe("Idle")
 		expectVitest(onB.integrations).toEqual({
-			cloudflare: false,
-			railway: false,
-			planetscale: false,
-			gcp: false,
-			supabase: false,
-			aws: false,
+			cloudflare: null,
+			railway: null,
+			planetscale: null,
+			gcp: null,
+			supabase: null,
+			aws: null,
 		})
 		const lateNamespaces = update(
 			onB,
@@ -398,7 +400,7 @@ describe("in-place org change", () => {
 				isConnected: true,
 			}),
 		)
-		expectVitest(lateStatus.model.integrations.cloudflare).toBe(false)
+		expectVitest(lateStatus.model.integrations.cloudflare).toBe(null)
 		const ownStatus = update(
 			onB,
 			Message.SucceededLoadIntegration({ orgId: "org_b", integration: "railway", isConnected: true }),
@@ -456,5 +458,70 @@ describe("infrastructure section", () => {
 			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),
 			expect(role("link", { name: "Railway" })).toBeAbsent(),
 		)
+	})
+
+	const answered = (model: Model, cloudflare: boolean) =>
+		[
+			Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: ["hosts"] }),
+			...(["railway", "planetscale", "gcp", "supabase", "aws"] as const).map((integration) =>
+				Message.SucceededLoadIntegration({ orgId: "org_parity", integration, isConnected: false }),
+			),
+			Message.SucceededLoadIntegration({
+				orgId: "org_parity",
+				integration: "cloudflare",
+				isConnected: cloudflare,
+			}),
+		].reduce<{ model: Model; commands: ReadonlyArray<{ readonly name: string }> }>(
+			(acc, message) => {
+				const next = update(acc.model, message)
+				return { model: next.model, commands: [...acc.commands, ...(next.commands ?? [])] }
+			},
+			{ model, commands: [] },
+		)
+
+	test("a first visit lists no optional source until the probe and every status answered", () => {
+		const probeOnly = update(
+			signedIn(),
+			Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: ["hosts"] }),
+		).model
+		scene(
+			{ update, view: shellAt("/infra") },
+			given(probeOnly),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("link", { name: "Hosts" })).toBeAbsent(),
+			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),
+		)
+		scene(
+			{ update, view: shellAt("/infra") },
+			given(answered(signedIn(), true).model),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("link", { name: "Hosts" })).toExist(),
+			expect(role("link", { name: "Cloudflare" })).toExist(),
+			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),
+		)
+	})
+
+	test("the surfaces remembered from the last visit lay the section out before anything answers", () => {
+		scene(
+			{ update, view: shellAt("/infra") },
+			given(signedIn({ rememberedSurfaces: { org_parity: ["cloudflare", "hosts"] } })),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			expect(role("link", { name: "Hosts" })).toExist(),
+			expect(role("link", { name: "Cloudflare" })).toExist(),
+			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),
+		)
+	})
+
+	test("a settled answer is remembered only when it differs from the remembered set", () => {
+		const first = answered(signedIn(), true)
+		expectVitest(first.model.rememberedSurfaces).toEqual({ org_parity: ["cloudflare", "hosts"] })
+		expectVitest(first.commands.map(({ name }) => name)).toEqual(["SaveInfraSurfaces"])
+		const same = answered(signedIn({ rememberedSurfaces: { org_parity: ["cloudflare", "hosts"] } }), true)
+		expectVitest(same.commands).toEqual([])
+		const dropped = answered(
+			signedIn({ rememberedSurfaces: { org_parity: ["cloudflare", "hosts"] } }),
+			false,
+		)
+		expectVitest(dropped.model.rememberedSurfaces).toEqual({ org_parity: ["hosts"] })
 	})
 })

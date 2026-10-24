@@ -61,6 +61,7 @@ export const Message = defineMessageUnion({
 	CompletedFocusElement: {},
 	CompletedSaveTheme: {},
 	CompletedSaveNamespace: {},
+	CompletedSaveInfraSurfaces: {},
 	CompletedSaveSidebarState: {},
 	CompletedLogOut: {},
 	ElapsedVersionPollInterval: {},

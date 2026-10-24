@@ -8,6 +8,7 @@ import type { IntegrationFlags } from "../data/infra-surfaces"
 import type { Resources } from "../platform/resources"
 import type { AppRoute, RouteTag } from "../route"
 import type { BreadcrumbEntry } from "../shell"
+import type { NavSurface } from "../shell/nav"
 import { ToastType } from "../ui/toast"
 
 /** The page contract: every routed page is a Submodel registered once in `registry.ts`. See s8-pages.md. */
@@ -31,6 +32,8 @@ export interface ShellInfraSurfaces {
 	/** The probe failed: `presence` stays `null` for good, so readers stop waiting on it. */
 	readonly isPresenceFailed: boolean
 	readonly integrations: IntegrationFlags
+	/** The org's surfaces as of its last visit, until the live answer is complete. */
+	readonly remembered: ReadonlyArray<NavSurface> | undefined
 }
 
 export interface PageViewInputs {

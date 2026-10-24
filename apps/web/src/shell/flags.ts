@@ -2,9 +2,10 @@ import { readLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema } from "effect"
 import { readQuotaApproachingDismissed } from "./billing-banners"
 import { readDashboardFavorites } from "./favorites"
-import { NAMESPACE_STORAGE_PREFIX, THEME_STORAGE_KEY } from "./command"
+import { INFRA_SURFACES_STORAGE_PREFIX, NAMESPACE_STORAGE_PREFIX, THEME_STORAGE_KEY } from "./command"
 import { Theme } from "./message"
 import type { ShellFlags } from "./model"
+import { NavSurface } from "./nav"
 import { FILTER_COLLAPSED_QUERY, MOBILE_QUERY, SMALL_QUERY } from "./subscription"
 import { detectPlatform } from "./palette/shortcuts"
 
@@ -34,6 +35,24 @@ const readPinnedNamespaces: Effect.Effect<Record<string, string>> = Effect.try((
 	),
 ).pipe(Effect.orElseSucceed(() => ({})))
 
+const decodeSurfaces = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(NavSurface)))
+
+/** Every org's remembered infra surfaces; an entry that no longer decodes is skipped. */
+const readRememberedSurfaces: Effect.Effect<Record<string, ReadonlyArray<NavSurface>>> = Effect.try(() =>
+	Object.fromEntries(
+		Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+			.filter((key): key is string => key !== null && key.startsWith(INFRA_SURFACES_STORAGE_PREFIX))
+			.flatMap((key) =>
+				Option.match(decodeSurfaces(localStorage.getItem(key)), {
+					onNone: () => [],
+					onSome: (surfaces) => [
+						[key.slice(INFRA_SURFACES_STORAGE_PREFIX.length), surfaces] as const,
+					],
+				}),
+			),
+	),
+).pipe(Effect.orElseSucceed(() => ({})))
+
 /** Persisted shell UI state, read once before the first render. */
 export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* () {
 	const pinnedNamespaces = yield* readPinnedNamespaces
@@ -44,6 +63,7 @@ export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* ()
 		theme: readTheme(),
 		pinnedNamespaces,
 		dashboardFavorites: readDashboardFavorites(),
+		rememberedSurfaces: yield* readRememberedSurfaces,
 		isQuotaApproachingDismissed: yield* readQuotaApproachingDismissed,
 		platform: detectPlatform(),
 	}
