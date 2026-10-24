@@ -194,9 +194,9 @@ describe("connect a source", () => {
 			given(loaded),
 			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
 			expectView(role("button", { name: "Connect Cloudflare" })).toExist(),
-			click(role("button", { name: "Pick another source" })),
+			expectView(role("button", { name: "Continue" })).toBeDisabled(),
 		)
-		expect(pageUpdate(entered.model, Message.ClickedBack()).outMessage).toEqual(
+		expect(pageUpdate(entered.model, Message.ClickedStepBack()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/sources/new", isReplace: false }),
 		)
 		const unknown = init(integrationRoute("slack"), context)
@@ -249,7 +249,9 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(listed),
-			expectView(role("listitem", { name: "Connected" })).toExist(),
+			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
+			click(role("button", { name: "Continue" })),
+			expectView(role("listitem", { name: "Acme" })).toExist(),
 			expectView(role("link", { name: "Open source" })).toExist(),
 		)
 	})
@@ -301,19 +303,20 @@ describe("connect a source", () => {
 				}),
 			}),
 		).model
-		const at = (message: IntegrationMessage) =>
-			pageUpdate(clocked, Message.GotIntegrationsMessage({ message })).model
+		const live = (message: IntegrationMessage) =>
+			pageUpdate(
+				pageUpdate(clocked, Message.GotIntegrationsMessage({ message })).model,
+				Message.ClickedContinue(),
+			).model
 		scene(
 			{ update: pageUpdate, view },
-			given(at(status(null))),
-			expectView(text("AWS needs attention")).toExist(),
-			expectView(text("No metrics arriving. See the steps below.")).toExist(),
+			given(live(status(null))),
+			expectView(text("No metrics arriving")).toExist(),
 			expectView(role("listitem", { current: "step", name: "Go live: needs attention" })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given(at(status("2026-10-23T08:59:30.000Z"))),
-			expectView(text("AWS is connected")).toExist(),
+			given(live(status("2026-10-23T08:59:30.000Z"))),
 			expectView(role("listitem", { name: "Live" })).toExist(),
 		)
 	})
@@ -338,7 +341,8 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(added),
-			expectView(role("listitem", { name: "Connected" })).toExist(),
+			click(role("button", { name: "Continue" })),
+			expectView(role("listitem", { name: "Target added" })).toExist(),
 			expectView(role("link", { name: "View sources" })).toExist(),
 		)
 	})

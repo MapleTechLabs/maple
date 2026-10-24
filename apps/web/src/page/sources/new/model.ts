@@ -8,6 +8,7 @@ import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
 import { DataIntegration } from "../../integrations/embed"
+import { FlowStage } from "../../integrations/flow"
 import { Model as IntegrationModel } from "../../integrations/model"
 
 // `/sources/new`: pick a platform, name it, copy the token.
@@ -36,5 +37,7 @@ export const Model = Schema.Struct({
 	integrations: IntegrationModel,
 	/** A target was added in this visit: WarpStream's step is done (its targets read as Prometheus ones). */
 	hasAddedTarget: Schema.Boolean,
+	/** The integration's current step: Connect, Choose data or Go live. */
+	stage: FlowStage,
 })
 export type Model = typeof Model.Type

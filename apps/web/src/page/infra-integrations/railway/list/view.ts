@@ -13,6 +13,8 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { timeControls } from "../../../kit/time-controls"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { integrationNotConnected } from "../../kit/empty-states"
+import { integrationConnectCta, RAILWAY_ACCENT } from "../../kit/integration-empty"
+import { AppRoute, hrefOf } from "../../../../route"
 import { filteredEmpty } from "../../../kit/signal-empty-state"
 import { avgPeakContent } from "../../../infra/kit/avg-peak"
 import { pageHero, countLabel, searchToolbar } from "../../../infra/kit/page-parts"
@@ -23,7 +25,6 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { railwayFleetBand, railwayFleetBandLoading } from "./view-band"
-import { LIST_TOKEN_FORM, railwayConnectCard } from "./view-connect"
 import { type Clock, railwayTable, railwayTableLoading, triggerIds } from "./view-table"
 
 // `RailwayPage`.
@@ -155,11 +156,37 @@ export const servicesList = (
 	})
 }
 
+const FEATURES = [
+	{
+		label: "Resources",
+		title: "CPU and memory per replica",
+		description: "Usage against limits for every service, sampled each minute.",
+	},
+	{
+		label: "Network & disk",
+		title: "Traffic and volumes",
+		description: "Network in and out, volume and ephemeral disk usage.",
+	},
+	{
+		label: "Correlation",
+		title: "Next to your traces",
+		description: "Metrics carry the Railway service name, so they line up with your telemetry.",
+	},
+]
+
+/** Nothing connected: what this page will show, and the way to the connect flow. */
+const railwayConnectCta = (h: H): Html =>
+	integrationConnectCta(h, {
+		brand: { icon: "RailwayIcon", accent: RAILWAY_ACCENT, iconClassName: "text-foreground" },
+		features: FEATURES,
+		hint: "Connecting pulls the last hour of metrics right away, then Maple keeps it fresh every 5 minutes.",
+		label: "Connect Railway",
+		href: hrefOf(AppRoute.SourcesNew({ search: { integration: "railway" } })),
+	})
+
 /** `RailwayIntegrationCard` keeps the last loaded status when a refetch fails. */
 const connectedView = (h: H, model: Model, status: RailwayStatus, clock: Clock): Html =>
-	status.connected
-		? servicesView(h, model, status, clock)
-		: railwayConnectCard(h, model.connect, LIST_TOKEN_FORM)
+	status.connected ? servicesView(h, model, status, clock) : railwayConnectCta(h)
 
 const statusView = (h: H, model: Model, clock: Clock): Html =>
 	AsyncData.match(model.status.data, {

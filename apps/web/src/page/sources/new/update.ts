@@ -17,14 +17,15 @@ import type { Message as IntegrationMessage } from "../../integrations/message"
 import type { Model as IntegrationModel } from "../../integrations/model"
 import * as Integrations from "../../integrations/update"
 import { Message } from "./message"
-import { isIntegrationConnected } from "./view-integration"
+import { canContinue, type FlowSpec, flowOf, nextStage, previousStage } from "../../integrations/flow"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 type NewRoute = Extract<AppRoute, { readonly _tag: "SourcesNew" }>
 
-const navigate = (url: string): PageOutMessage => PageOutMessage.RequestedNavigation({ url, isReplace: false })
+const navigate = (url: string): PageOutMessage =>
+	PageOutMessage.RequestedNavigation({ url, isReplace: false })
 
 /** Step 2's form, fresh for each platform pick. */
 const withForm = (model: Model, platform: PushSourcePlatform | null): Model => ({
@@ -39,7 +40,9 @@ const withForm = (model: Model, platform: PushSourcePlatform | null): Model => (
 /** The form's list read; `refresh` when it mounts again in the same visit (the atom was dropped). */
 const readList = (model: Model, context: PageContext, refresh: boolean): Return => {
 	const key = sourcesListKey(context.orgId)
-	const next = refresh ? Option.some(Keyed.supersede(model.list, key)) : Keyed.request(model.list, key, "Load")
+	const next = refresh
+		? Option.some(Keyed.supersede(model.list, key))
+		: Keyed.request(model.list, key, "Load")
 	return Option.match(next, {
 		onNone: () => ({ model }),
 		onSome: (list) => ({
@@ -92,12 +95,15 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 			integration,
 			integrations: embedded.model,
 			hasAddedTarget: false,
+			stage: "connect",
 		},
 		platform,
 	)
 	const lifted = liftIntegrations(model, embedded)
 	// An integration's step reads the list too: once connected it links to the source it made.
-	return platform === null && integration === null ? lifted : merge(lifted, readList(lifted.model, context, false))
+	return platform === null && integration === null
+		? lifted
+		: merge(lifted, readList(lifted.model, context, false))
 }
 
 export const routeChanged = (model: Model, route: NewRoute, context: PageContext): Return => {
@@ -107,7 +113,7 @@ export const routeChanged = (model: Model, route: NewRoute, context: PageContext
 		integration === model.integration
 			? { model }
 			: liftIntegrations(
-					{ ...model, integration },
+					{ ...model, integration, stage: "connect" },
 					Integrations.routeChanged(
 						model.integrations,
 						{ search: integration === null ? {} : { integration } },
@@ -125,9 +131,21 @@ export const routeChanged = (model: Model, route: NewRoute, context: PageContext
 	if (model.created !== null) return { ...entered, model: next }
 	// Back to the picker clears the form's list; an integration's step reads it again.
 	if (platform === null)
-		return integration === null ? { ...entered, model: next } : merge(entered, readList(next, context, false))
+		return integration === null
+			? { ...entered, model: next }
+			: merge(entered, readList(next, context, false))
 	return merge(entered, readList(next, context, true))
 }
+
+/** The chosen integration's place in the flow, or null on the picker and push platforms. */
+export const flowSpecOf = (model: Model): FlowSpec | null =>
+	model.integration === null
+		? null
+		: flowOf(model.integrations, model.integration, { hasAddedTarget: model.hasAddedTarget })
+
+/** Connect's answer is in: the source exists (WarpStream: a target was added in this visit). */
+export const isIntegrationConnected = (model: Model): boolean =>
+	(flowSpecOf(model)?.connected ?? null) !== null
 
 /** `FirstDataStatus`'s `latest`: the polled source, else the one the create answered. */
 export const latestOf = (model: Model): V2Source | null =>
@@ -140,7 +158,12 @@ export const isReceiving = (model: Model): boolean => {
 	return latest !== null && latest.last_used_at !== null
 }
 
-const readCreated = (model: Model, context: PageContext, source: V2Source, mode: Keyed.RequestMode): Return => {
+const readCreated = (
+	model: Model,
+	context: PageContext,
+	source: V2Source,
+	mode: Keyed.RequestMode,
+): Return => {
 	const key = sourceRetrieveKey(context.orgId, source.id)
 	return Option.match(Keyed.request(model.firstData, key, mode), {
 		onNone: () => ({ model }),
@@ -165,7 +188,10 @@ const submit = (model: Model): Return => {
 }
 
 const delegate = <Child, ChildMessage>(
-	step: { readonly model: Child; readonly commands?: ReadonlyArray<Command.Command<ChildMessage, never, Resources>> },
+	step: {
+		readonly model: Child
+		readonly commands?: ReadonlyArray<Command.Command<ChildMessage, never, Resources>>
+	},
 	set: (child: Child) => Model,
 	wrap: (message: ChildMessage) => Message,
 ): Return => ({ model: set(step.model), commands: Command.mapMessages(step.commands ?? [], wrap) })
@@ -174,7 +200,10 @@ const delegate = <Child, ChildMessage>(
 const pollUnlessReceiving = (step: Return): Return =>
 	step.model.created === null || isReceiving(step.model) || step.model.firstData.key === null
 		? step
-		: { ...step, commands: [...(step.commands ?? []), WaitFirstDataPoll({ key: step.model.firstData.key })] }
+		: {
+				...step,
+				commands: [...(step.commands ?? []), WaitFirstDataPoll({ key: step.model.firstData.key })],
+			}
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -195,7 +224,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			)
 			// A connect just finished or a target was added: its source is new, so read the list again.
 			return integration !== null &&
-				(added || (!isIntegrationConnected(model, integration) && isIntegrationConnected(step.model, integration)))
+				(added || (!isIntegrationConnected(model) && isIntegrationConnected(step.model)))
 				? merge(step, readList(step.model, context, true))
 				: step
 		},
@@ -208,6 +237,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(child) => Message.GotRulesMessage({ message: child }),
 			),
 		ClickedBack: () => ({ model, outMessage: navigate(hrefOf(Routes.SourcesNew({ search: {} }))) }),
+		ClickedContinue: () => {
+			const spec = flowSpecOf(model)
+			const next = spec === null ? null : nextStage(spec, model.stage)
+			return spec === null || next === null || !canContinue(spec, model.stage)
+				? { model }
+				: { model: { ...model, stage: next } }
+		},
+		ClickedStepBack: () => {
+			const spec = flowSpecOf(model)
+			const previous = spec === null ? null : previousStage(spec, model.stage)
+			return previous === null
+				? { model, outMessage: navigate(hrefOf(Routes.SourcesNew({ search: {} }))) }
+				: { model: { ...model, stage: previous } }
+		},
 		SubmittedForm: () => submit(model),
 		CompletedCreate: ({ result }) =>
 			Result.match(result, {
@@ -227,14 +270,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						setup: Setup.init(source.platform),
 					}
 					const read = readCreated(created, context, source, "Load")
-					return { model: read.model, commands: [...(refreshed.commands ?? []), ...(read.commands ?? [])] }
+					return {
+						model: read.model,
+						commands: [...(refreshed.commands ?? []), ...(read.commands ?? [])],
+					}
 				},
 			}),
-		CompletedFetchList: ({ key, result }) => ({ model: { ...model, list: Keyed.accept(model.list, key, result) } }),
+		CompletedFetchList: ({ key, result }) => ({
+			model: { ...model, list: Keyed.accept(model.list, key, result) },
+		}),
 		CompletedFetchSource: ({ key, result }) =>
 			key !== model.firstData.key
 				? { model }
-				: pollUnlessReceiving({ model: { ...model, firstData: Keyed.accept(model.firstData, key, result) } }),
+				: pollUnlessReceiving({
+						model: { ...model, firstData: Keyed.accept(model.firstData, key, result) },
+					}),
 		ElapsedPoll: ({ key }) =>
 			key !== model.firstData.key || model.created === null || isReceiving(model)
 				? { model }

@@ -4,6 +4,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { icon } from "../../../ui/icon"
 import { platformMeta } from "../kit/platforms"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -24,17 +25,51 @@ const titleOf = (model: Model): string =>
 			? `Connect ${integrationMeta(model.integration).label}`
 			: "Connect a source"
 
-const titleContent = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("space-y-2")],
+const metaOf = (model: Model) =>
+	model.platform !== null
+		? platformMeta(model.platform)
+		: model.integration !== null
+			? integrationMeta(model.integration)
+			: null
+
+/** The source's mark, its title and the trail under it. */
+const titleContent = (h: H, model: Model): Html => {
+	const meta = metaOf(model)
+	return h.div(
+		[h.Class("flex items-center gap-4")],
 		[
-			h.h1([h.Class("font-display text-2xl font-medium tracking-tight")], [titleOf(model)]),
-			trail(h, model),
+			...(meta === null
+				? []
+				: [
+						h.span(
+							[
+								h.AriaHidden(true),
+								h.Class(
+									"inline-flex size-12 shrink-0 items-center justify-center rounded-lg border bg-card",
+								),
+							],
+							[icon(h, meta.icon, { size: 22 })],
+						),
+					]),
+			h.div(
+				[h.Class("space-y-2")],
+				[
+					h.h1([h.Class("font-display text-2xl font-medium tracking-tight")], [titleOf(model)]),
+					trail(h, model),
+				],
+			),
 		],
+	)
+}
+
+const cancel = (h: H): Html =>
+	h.a(
+		[h.Href(hrefOf(AppRoute.Sources())), h.Class("text-xs text-muted-foreground hover:text-foreground")],
+		["Cancel"],
 	)
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	dashboardPage(h, { titleContent: titleContent(h, model) }, [
+	dashboardPage(h, { titleContent: titleContent(h, model), actions: cancel(h) }, [
 		model.created !== null
 			? tokenStep(h, model, model.created)
 			: model.platform !== null

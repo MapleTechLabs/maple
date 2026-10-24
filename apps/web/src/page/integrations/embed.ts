@@ -12,6 +12,8 @@ import { cardView, connectButton } from "./view"
 import { awsDisconnectDialog } from "./view-aws"
 import { cloudflareReconnectButton } from "./view-cloudflare"
 import { gcpDialogs } from "./view-gcp-dialogs"
+import type { FlowStage } from "./flow"
+import { flowView } from "./view-flow"
 
 // The integrations page module, embedded by Sources: the connect step and a source's Connection tab.
 
@@ -39,6 +41,13 @@ export const cardEmbed = Submodel.defineView<Model, Message, EmbedInputs>((model
 		[h.Class("flex flex-col gap-4")],
 		[...cardView(h, model, inputs.integration, inputs.timeZone, inputs.focusId ?? null)],
 	),
+)
+
+export type FlowInputs = Readonly<{ integration: DataIntegration; stage: FlowStage; timeZone: string }>
+
+/** `/sources/new`'s current step for a data integration: the step card and the rail beside it. */
+export const flowEmbed = Submodel.defineView<Model, Message, FlowInputs>((model, inputs, h) =>
+	flowView(h, model, inputs.integration, inputs.stage, inputs.timeZone),
 )
 
 /**
