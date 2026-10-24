@@ -186,32 +186,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	const s = model.statuses
 	return Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs }) =>
-			chain(
-				{
-					...model,
-					nowMs,
-					planetscaleCard: {
-						...model.planetscaleCard,
-						watchStartedAt: model.planetscaleCard.watchStartedAt ?? nowMs,
-					},
-				},
-				[
-					(next) => gcpBand(next, context),
-					(next) => Supabase.requestMetricsRows(next, context, "Load"),
-				],
-			),
+			chain(Planetscale.withWatchStart({ ...model, nowMs }, nowMs), [
+				(next) => gcpBand(next, context),
+				(next) => Supabase.requestMetricsRows(next, context, "Load"),
+			]),
 		CompletedLoadCloudflare: ({ key, result }) =>
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
 		CompletedLoadRailway: ({ key, result }) =>
 			accepted(model, { ...s, railway: Keyed.accept(s.railway, key, result) }),
 		CompletedLoadPlanetscale: ({ key, result }) => {
-			const next = accepted(model, {
+			const read = accepted(model, {
 				...s,
 				planetscale: Keyed.accept(s.planetscale, key, result),
 			}).model
-			return integrationOfSearch(next.search.integration) === "planetscale"
-				? Planetscale.ensurePendingPicker(next, context)
-				: { model: next }
+			const watched = Planetscale.withWatchStart(read, null)
+			return integrationOfSearch(watched.search.integration) === "planetscale"
+				? Planetscale.ensurePendingPicker(watched, context)
+				: { model: watched }
 		},
 		CompletedLoadPlanetscaleDatabases: ({ key, result }) =>
 			accepted(model, {
@@ -392,10 +383,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Planetscale.completedSelect(model, context, organization, failure),
 		ClickedMetricsDetails: () =>
 			Planetscale.updateCard(model, { isDetailsOpen: !model.planetscaleCard.isDetailsOpen }),
-		TickedPlanetscaleWatch: () => {
-			const refreshed = requestStatus(model, context, "planetscale", "Refresh")
-			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
-		},
+		TickedPlanetscaleWatch: () => Planetscale.refreshWatch(model, context),
+		ClickedPlanetscaleCheckAgain: () => Planetscale.clickedCheckAgain(model, context),
 		CompletedGcpLogVolume: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { logVolume: Keyed.accept(model.gcpCard.logVolume, key, result) }),
 		CompletedGcpFleet: ({ key, result }) =>

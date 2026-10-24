@@ -8,8 +8,10 @@ import * as Field from "../../ui/field"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { ReadClock } from "./command"
 import {
 	FetchOrganizations,
+	isAwaitingFirstMetrics,
 	parsePatternList,
 	type PlanetscaleCardModel,
 	SelectOrganization,
@@ -32,6 +34,28 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 
 export const planetscaleStatusOf = (model: Model) =>
 	Option.getOrNull(AsyncData.getData(model.statuses.planetscale.data))
+
+/**
+ * The watch starts at the first clock read while awaiting first metrics and resets once that
+ * ends, so a connection made later on gets its own full window.
+ */
+export const withWatchStart = (model: Model, readAtMs: number | null): Model => {
+	const startedAt = model.planetscaleCard.watchStartedAt
+	return withCard(model, {
+		watchStartedAt: isAwaitingFirstMetrics(planetscaleStatusOf(model), model.nowMs)
+			? (startedAt ?? readAtMs)
+			: null,
+	})
+}
+
+/** A watch tick, or "Check again" after the watch ran out: read the status and the clock. */
+export const refreshWatch = (model: Model, context: PageContext): Return => {
+	const refreshed = requestStatus(model, context, "planetscale", "Refresh")
+	return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
+}
+
+export const clickedCheckAgain = (model: Model, context: PageContext): Return =>
+	refreshWatch(withCard(model, { watchStartedAt: null }), context)
 
 /** A write's `planetscaleIntegration` `reactivityKeys` (the target list carries no key). */
 const refreshAfterWrite = (model: Model, context: PageContext): Return =>
