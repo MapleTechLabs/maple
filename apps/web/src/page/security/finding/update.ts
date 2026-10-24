@@ -109,7 +109,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchTargets: ({ key, result }) => ({
 			model: { ...model, targets: Keyed.accept(model.targets, key, result) },
 		}),
-		ClickedRetry: () => readFindings(model, context, "Refresh"),
+		ClickedRetry: () =>
+			chainAll(model, [
+				(next) => readFindings(next, context, "Refresh"),
+				(next) => readTargets(next, context),
+			]),
 		GotTriageMessage: ({ message: inner }) => triageStep(model, inner),
 		GotReasonMessage: ({ message: inner }) => ({
 			model: { ...model, reason: Field.update(model.reason, inner).model },

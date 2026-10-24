@@ -102,23 +102,48 @@ describe("scanDependencies, private dependencies", () => {
 		])
 	})
 
-	it("flags package.json git dependencies over SSH, not a github: shorthand or its homepage", () => {
+	it("flags package.json git dependencies over SSH, not a github: shorthand or its metadata URLs", () => {
 		expect(
 			scan({
 				"package.json": JSON.stringify({
 					homepage: "https://acme.internal/docs",
-					repository: { url: "git+https://github.com/acme/web.git" },
+					repository: { url: "git+ssh://git@github.com/acme/web.git" },
+					bugs: { url: "git@github.com:acme/web/issues" },
 					dependencies: {
 						react: "^19.0.0",
 						"@acme/ui": "git+ssh://git@github.com/acme/ui.git#v2",
 						"@acme/auth": "github:acme/auth#main",
 						"@acme/flags": "git@gitlab.acme.dev:web/flags.git",
 					},
+					devDependencies: { "@acme/lint": "git+ssh://git@git.acme.dev/lint.git" },
 				}),
 			}).privateDependencies,
 		).toEqual([
 			"package.json: git dependency @acme/ui (git+ssh://git@github.com/acme/ui.git#v2)",
 			"package.json: git dependency @acme/flags (git@gitlab.acme.dev:web/flags.git)",
+			"package.json: git dependency @acme/lint (git+ssh://git@git.acme.dev/lint.git)",
+		])
+	})
+
+	it("flags nothing in a package.json that is not valid JSON", () => {
+		expect(scan({ "package.json": '{"dependencies": {"a": "git@x:y.git"' }).privateDependencies).toEqual(
+			[],
+		)
+	})
+
+	it("flags submodules on a private host or over SSH, not public HTTPS ones", () => {
+		expect(
+			scan({
+				".gitmodules": [
+					'[submodule "lib"]\n\turl = https://github.com/acme/lib',
+					'[submodule "docs"]\n\turl = git://gitlab.com/acme/docs.git',
+					'[submodule "infra"]\n\turl = https://git.acme.dev/infra.git',
+					'[submodule "keys"]\n\turl = ssh://git@github.com/acme/keys.git',
+				].join("\n"),
+			}).privateDependencies,
+		).toEqual([
+			".gitmodules: git submodule https://git.acme.dev/infra.git, not checked out",
+			".gitmodules: git submodule ssh://git@github.com/acme/keys.git over SSH, not checked out",
 		])
 	})
 

@@ -3,7 +3,7 @@
  * sandbox could not fetch without credentials, and so how the run may execute target code. Pure
  * over a list of tracked paths and the text of a few config files, so it tests on fixture trees.
  */
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 
 export const Ecosystem = Schema.Literals(["node", "python", "go", "rust", "jvm"])
 export type Ecosystem = typeof Ecosystem.Type
@@ -227,7 +227,41 @@ const sourceText = (name: string, text: string): string => {
  * A package.json dependency fetched from git over SSH (`git+ssh://`, `git@host:`). A plain
  * `github:owner/repo` shorthand is usually public, so it is not a signal.
  */
-const GIT_DEPENDENCY = /"([^"]+)"\s*:\s*"((?:git\+ssh:\/\/|git@)[^"]+)"/gu
+const GIT_DEPENDENCY = /^(?:git\+ssh:\/\/|git@)/u
+
+const DependencyMap = Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown))
+const PackageJson = Schema.fromJsonString(
+	Schema.Struct({
+		dependencies: DependencyMap,
+		devDependencies: DependencyMap,
+		optionalDependencies: DependencyMap,
+		peerDependencies: DependencyMap,
+	}),
+)
+const decodePackageJson = Schema.decodeUnknownOption(PackageJson)
+
+/** The git-over-SSH entries of a package.json's dependency maps, never its metadata. */
+const gitDependencies = (text: string): ReadonlyArray<{ readonly name: string; readonly spec: string }> =>
+	Option.match(decodePackageJson(text), {
+		onNone: () => [],
+		onSome: (manifest) =>
+			[
+				manifest.dependencies,
+				manifest.devDependencies,
+				manifest.optionalDependencies,
+				manifest.peerDependencies,
+			]
+				.flatMap((deps) => Object.entries(deps ?? {}))
+				.flatMap(([name, spec]) =>
+					typeof spec === "string" && GIT_DEPENDENCY.test(spec) ? [{ name, spec }] : [],
+				),
+	})
+
+/** A submodule URL anyone can clone: http(s) or git protocol on a public host. */
+const isPublicSubmodule = (url: string) => {
+	const host = /^(?:https?|git):\/\//iu.test(url) ? hostOf(url) : undefined
+	return host !== undefined && PUBLIC_HOSTS.has(host)
+}
 
 /** The Go settings that mark modules as private, as a shell, Makefile or workflow sets them. */
 const GO_PRIVATE = /\b(GOPRIVATE|GONOSUMDB|GONOPROXY)\s*[=:]\s*["']?([^\s"']+)/gu
@@ -250,7 +284,7 @@ const signalsIn = (path: string, text: string): ReadonlyArray<string> => {
 	if (isWorkflow(path)) return goPrivate
 	switch (name) {
 		case "package.json":
-			return [...text.matchAll(GIT_DEPENDENCY)].map((m) => at(`git dependency ${m[1]} (${m[2]})`))
+			return gitDependencies(text).map(({ name: dep, spec }) => at(`git dependency ${dep} (${spec})`))
 		case "go.env":
 		case ".envrc":
 		case "Makefile":
@@ -269,6 +303,7 @@ const signalsIn = (path: string, text: string): ReadonlyArray<string> => {
 			return lines(text)
 				.filter((line) => /^url\s*=/u.test(line))
 				.map((line) => line.slice(line.indexOf("=") + 1).trim())
+				.filter((url) => !isPublicSubmodule(url))
 				.map((url) =>
 					at(
 						`git submodule ${url}${url.startsWith("git@") || url.startsWith("ssh://") ? " over SSH" : ""}, not checked out`,

@@ -7,6 +7,8 @@ import { Message, type Model } from "./model"
 
 /** While a run is in progress the runs list is read again every 15 s, and stops once none is. */
 const POLL = Duration.seconds(15)
+/** With no run live the clock is read every minute, so elapsed times and this month's spend move. */
+const CLOCK = Duration.minutes(1)
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()((entry) => ({
 	poll: entry(
@@ -21,6 +23,18 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 							),
 						)
 					: Stream.empty,
+		},
+	),
+	clock: entry(
+		{},
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () =>
+				pollTicks(CLOCK).pipe(
+					Stream.mapEffect(() =>
+						Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
+					),
+				),
 		},
 	),
 }))

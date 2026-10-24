@@ -8,7 +8,8 @@ import {
 	SecurityAuditTargetExistsError,
 } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Cause, Result, Schema } from "effect"
+import { Cause, Effect, Fiber, Option, Result, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -37,6 +38,7 @@ import {
 	spendThisMonth,
 } from "./derive"
 import { Message, type Model } from "./model"
+import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -513,6 +515,37 @@ describe("security tabs", () => {
 			expect.arrayContaining(["SecurityApiListFindings", "SecurityApiGetLatestRun"]),
 		)
 		expect(answered.model.findings[TARGET_IDS.dashboard]?.data._tag).toBe("Refreshing")
+	})
+
+	test("with no run live the clock still moves, so this month's spend rolls over", async () => {
+		const finished = runsOf(NOW).runs.map((run) => ({
+			...run,
+			status: "complete" as const,
+			finishedAt: NOW,
+		}))
+		const idle = pageUpdate(
+			loaded(),
+			Message.CompletedFetchRuns({
+				key: loaded().runs.key ?? "",
+				result: Result.succeed({ runs: finished }),
+			}),
+		).model
+		expect(runningRuns(idle)).toEqual([])
+		expect(spendThisMonth(idle).invocations).toBeGreaterThan(0)
+		const nextMonth = Date.UTC(2026, 10, 1)
+		const tick = await Effect.runPromise(
+			Effect.gen(function* () {
+				yield* TestClock.setTime(nextMonth)
+				const first = yield* Effect.forkChild(
+					Stream.runHead(subscriptions.clock.dependenciesToStream({})),
+				)
+				yield* TestClock.adjust("1 minute")
+				return yield* Fiber.join(first)
+			}).pipe(Effect.provide(TestClock.layer())),
+		)
+		const moved = pageUpdate(idle, Option.getOrThrow(tick)).model
+		expect(moved.nowMs).toBe(nextMonth + 60_000)
+		expect(spendThisMonth(moved).invocations).toBe(0)
 	})
 })
 

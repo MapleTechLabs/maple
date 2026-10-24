@@ -11,7 +11,7 @@ import { breadcrumbsOf, view } from "./view"
 /** A live run, its events and its ledger are read again every 5 s; it stops once the run finishes. */
 const POLL = Duration.seconds(5)
 
-const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()((entry) => ({
+export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()((entry) => ({
 	live: entry(
 		{ isLive: Schema.Boolean },
 		{
