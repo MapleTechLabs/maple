@@ -4,6 +4,7 @@ import { icon } from "../../../ui/icon"
 import type { Message } from "./message"
 
 // The connect flow's sticky footer: Back on the left, the step's hint and its actions on the right.
+// It sits on the page's bottom edge, stuck or not, so it never moves between steps or at the scroll end.
 
 type H = HtmlBuilder<Message>
 
@@ -18,7 +19,7 @@ export const flowFooter = (h: H, options: FlowFooterOptions): Html =>
 	h.footer(
 		[
 			h.Class(
-				"sticky -bottom-4 -mx-1 mt-2 flex items-center justify-between gap-4 border-t border-border bg-background px-1 py-4",
+				"sticky -bottom-4 -mx-1 mt-auto -mb-4 flex items-center justify-between gap-4 border-t border-border bg-background px-1 py-4",
 			),
 		],
 		[

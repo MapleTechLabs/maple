@@ -61,7 +61,7 @@ export const tokenStep = (h: H, model: Model, created: Created): Html => {
 	const receiving = isReceiving(model)
 	const platform = created.source.platform
 	return h.div(
-		[h.Class("flex w-full flex-col gap-4")],
+		[h.Class("flex w-full flex-1 flex-col gap-4")],
 		[
 			flowColumns(
 				h,

@@ -110,7 +110,7 @@ const advanced = (h: H, model: Model): Html => {
 export const createSourceForm = (h: H, model: Model, platform: PushSourcePlatform): Html => {
 	const isValid = model.name.trim().length > 0 && rulesOutcome(model.rules).valid
 	return h.form(
-		[h.Class("flex w-full flex-col gap-4"), h.OnSubmit(Message.SubmittedForm())],
+		[h.Class("flex w-full flex-1 flex-col gap-4"), h.OnSubmit(Message.SubmittedForm())],
 		[
 			flowColumns(
 				h,

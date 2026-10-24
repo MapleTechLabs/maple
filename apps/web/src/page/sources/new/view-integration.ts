@@ -54,7 +54,7 @@ const footer = (h: H, model: Model, integration: DataIntegration, spec: FlowSpec
 export const integrationStep = (h: H, model: Model, integration: DataIntegration, timeZone: string): Html => {
 	const spec = flowSpecOf(model)
 	return h.div(
-		[h.Class("flex flex-col gap-4")],
+		[h.Class("flex flex-1 flex-col gap-4")],
 		[
 			h.submodel({
 				slotId: "sources-new-integration",
