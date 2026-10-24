@@ -73,7 +73,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(entered.model),
-			expectView(text("Step 1 of 3 · Pick what sends the data")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Source" })).toExist(),
 		)
 		expect(
 			pageUpdate(entered.model, Message.ClickedPushPlatform({ platform: "nodejs" })).outMessage,
@@ -97,7 +97,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(entered.model),
-			expectView(text("Step 2 of 3 · Name it")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Name" })).toExist(),
 			click(role("button", { name: "Advanced" })),
 			expectView(text("Resource attributes")).toExist(),
 		)
@@ -136,7 +136,7 @@ describe("connect a source", () => {
 			{ update: pageUpdate, view },
 			given(done.model),
 			indicatorMeasured(),
-			expectView(text("Step 3 of 3 · Send data")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Send data" })).toExist(),
 			expectView(text("Waiting for first data")).toExist(),
 			expectView(role("link", { name: "Skip for now" })).toExist(),
 		)
@@ -163,6 +163,7 @@ describe("connect a source", () => {
 			given(receiving.model),
 			indicatorMeasured(),
 			expectView(role("link", { name: "Open source" })).toExist(),
+			expectView(role("listitem", { name: "Receiving data" })).toExist(),
 		)
 	})
 
@@ -191,7 +192,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded),
-			expectView(text("Step 2 of 3 · Connect Cloudflare")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
 			expectView(role("button", { name: "Connect Cloudflare" })).toExist(),
 			click(role("button", { name: "Pick another source" })),
 		)
@@ -203,7 +204,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(unknown.model),
-			expectView(text("Step 1 of 3 · Pick what sends the data")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Source" })).toExist(),
 		)
 	})
 
@@ -248,7 +249,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(listed),
-			expectView(text("Step 3 of 3 · Collecting")).toExist(),
+			expectView(role("listitem", { name: "Connected" })).toExist(),
 			expectView(role("link", { name: "Open source" })).toExist(),
 		)
 	})
@@ -307,11 +308,13 @@ describe("connect a source", () => {
 			given(at(status(null))),
 			expectView(text("AWS needs attention")).toExist(),
 			expectView(text("No metrics arriving. See the steps below.")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Go live: needs attention" })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(at(status("2026-10-23T08:59:30.000Z"))),
 			expectView(text("AWS is connected")).toExist(),
+			expectView(role("listitem", { name: "Live" })).toExist(),
 		)
 	})
 
@@ -335,7 +338,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(added),
-			expectView(text("Step 3 of 3 · Collecting")).toExist(),
+			expectView(role("listitem", { name: "Connected" })).toExist(),
 			expectView(role("link", { name: "View sources" })).toExist(),
 		)
 	})
