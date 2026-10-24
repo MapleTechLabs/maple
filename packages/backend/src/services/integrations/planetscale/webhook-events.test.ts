@@ -16,6 +16,7 @@ import {
 	decodePlanetScaleWebhookPayload,
 	deployRequestNumber,
 	insertPlanetScaleEvent,
+	PLANETSCALE_WEBHOOK_EVENTS,
 	planetScaleIssueFingerprint,
 	projectPlanetScaleWebhookEvent as projectPlanetScaleWebhookEventResult,
 	truncateToSecond,
@@ -58,6 +59,14 @@ describe("verifyPlanetScaleSignature", () => {
 })
 
 describe("classifyPlanetScaleEvent", () => {
+	it("acts on every event Maple subscribes its webhooks to", () => {
+		const ignored = PLANETSCALE_WEBHOOK_EVENTS.filter((event) => {
+			const { action } = classifyPlanetScaleEvent(event)
+			return action !== "issue" && action !== "timeline"
+		})
+		assert.deepStrictEqual(ignored, [])
+	})
+
 	it("normalizes queued webhooks into deterministic common CloudEvents", () => {
 		const payload = Schema.decodeUnknownSync(PlanetScaleWebhookPayload)(JSON.parse(OOM_PAYLOAD))
 		const input = {

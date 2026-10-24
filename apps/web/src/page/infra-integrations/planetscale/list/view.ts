@@ -1,4 +1,7 @@
-import { derivePlanetScaleSetup } from "../../../../components/integrations/planetscale-setup-steps"
+import {
+	derivePlanetScaleSetup,
+	metricsCollectionFailing,
+} from "../../../../components/integrations/planetscale-setup-steps"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -18,15 +21,7 @@ import { pageTime } from "../../kit/page-time"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import type { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
 import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../metrics"
-import {
-	inventoryIsStale,
-	inventoryNotice,
-	METRICS_PAUSED_MESSAGE,
-	METRICS_PAUSED_SHORT,
-	metricsNotice,
-	revokedNotice,
-	setupState,
-} from "../notices"
+import { inventoryIsStale, inventoryNotice, metricsNotice, revokedNotice, setupState } from "../notices"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, neverCollected, sortOf } from "./update"
 import { databaseTable, databaseTableLoading } from "./view-table"
@@ -103,7 +98,6 @@ const content = (
 	const statsData = model.stats.data
 	const stats =
 		AsyncData.isSuccess(statsData) || AsyncData.isRefreshing(statsData) ? statsData.data : NO_STATS
-	const metricsPaused = status.metrics_auth === "missing"
 	const never = neverCollected(model)
 	const branchTotal = inventory.databases.reduce((sum, db) => sum + db.branches.length, 0)
 	const showInventoryNotice =
@@ -114,7 +108,9 @@ const content = (
 		[h.Class("space-y-6")],
 		[
 			...(status.revoked_at !== null ? [revokedNotice(h)] : []),
-			...(metricsPaused && !never ? [metricsNotice(h)] : []),
+			...(status.revoked_at === null && !never && metricsCollectionFailing(status, clock.nowMs)
+				? [metricsNotice(h, status)]
+				: []),
 			...(showInventoryNotice
 				? [
 						inventoryNotice(h, {
@@ -154,21 +150,15 @@ const content = (
 									totals.storageMax === null
 										? "neutral"
 										: utilizationTone(totals.storageMax),
-								subline: metricsPaused
-									? METRICS_PAUSED_SHORT
-									: (totals.storageOwner ?? undefined),
+								subline: totals.storageOwner ?? undefined,
 							}),
 							statRailItem(h, {
 								compact: true,
 								eyebrow: "Worst replica lag",
-								value:
-									metricsPaused && stats.length === 0
-										? EMPTY_VALUE
-										: formatLag(totals.lagMax),
+								value: formatLag(totals.lagMax),
 								tone: lagTone(totals.lagMax),
-								subline: metricsPaused
-									? METRICS_PAUSED_SHORT
-									: totals.lagOwner !== null && totals.lagMax > 0
+								subline:
+									totals.lagOwner !== null && totals.lagMax > 0
 										? totals.lagOwner
 										: `${formatNumber(totals.connections)} connections`,
 							}),
@@ -182,9 +172,7 @@ const content = (
 						sort: sortOf(model),
 						isWaiting: AsyncData.isRefreshing(statsData) || AsyncData.isLoading(statsData),
 						metricsPaused: never,
-						emptyMessage: metricsPaused
-							? METRICS_PAUSED_MESSAGE
-							: "No databases in the inventory.",
+						emptyMessage: "No databases in the inventory.",
 					}),
 		],
 	)
