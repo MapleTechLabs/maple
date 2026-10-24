@@ -63,7 +63,7 @@ export const scopeFields = (
 					})),
 					variant: "outline",
 					// Shrinks on a phone, where "Organization" otherwise runs past the card.
-					itemClassName: "min-w-0 flex-1 px-1 sm:px-3",
+					itemClassName: "min-w-0 flex-1 px-1 text-sm sm:px-3",
 					className: "w-full",
 				}),
 				h.p([h.Class(SMALL)], [scope.description]),
