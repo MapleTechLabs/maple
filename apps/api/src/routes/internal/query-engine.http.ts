@@ -59,9 +59,7 @@ import {
 	ServiceMapBundleResponse,
 	ServiceWorkloadsResponse,
 	ServiceUsageResponse,
-	ServiceEndpointsRequest,
 	ServiceEndpointsResponse,
-	ServiceOperationsRequest,
 	ServiceOperationsResponse,
 	ListLogsResponse,
 	GetLogResponse,
@@ -120,31 +118,24 @@ import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { isAiContentFormat } from "@maple/domain/ai-traffic"
-import { Cause, Clock, DateTime, Effect, Option, Schema } from "effect"
+import { DateTime, Effect, Option, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import {
-	isMissingProductEvents,
-	isMissingServiceOperationsRollup,
-} from "@maple/backend/services/warehouse/missing-table"
+import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audit/audit-access"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 import {
-	baselineWarehouseCapabilities,
 	CH,
 	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
 	QueryEngineExecuteBatchResponse,
 	parseSpanEvents,
-	parseWarehouseDateTime,
 } from "@maple/query-engine"
 
 import {
 	containerMetricSpec,
 	hostMetricSpec,
 	nodeMetricSpec,
-	partitionWindowAround,
 	podMetricSpec,
 	toCloudflareFilters,
 	validateFunnelDefinition,
@@ -152,30 +143,11 @@ import {
 	workloadMetricSpec,
 } from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
-import {
-	productEventsFunnelOpts,
-	productEventsPathsOpts,
-	type QueryDefinition,
-} from "@maple/query-engine/registry"
-import { makeQueryRunners } from "@maple/backend/queries/query-runner"
+import { productEventsFunnelOpts, productEventsPathsOpts } from "@maple/query-engine/registry"
+import { makeDashboardReads, makeRollupFallback, mapExecError } from "@maple/backend/queries/dashboard-reads"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import * as Integrations from "@maple/query-engine-integrations"
-
-// `warehouse.sqlQuery` fails with the warehouse error union (distinct tagged
-// classes per failure mode). The typed error channel threads through unchanged
-// so HTTP status mapping stays accurate — every endpoint declares the full set
-// via `warehouseHttpErrors`; on any failure, defects included, the context
-// string lands on the route span so a failed request names which step broke.
-const mapExecError = <A, E, R>(effect: Effect.Effect<A, E, R>, context: string): Effect.Effect<A, E, R> =>
-	effect.pipe(
-		Effect.tapCause((cause) =>
-			Cause.hasInterruptsOnly(cause)
-				? Effect.void
-				: Effect.annotateCurrentSpan({ "maple.query_engine.failed_step": context }),
-		),
-	)
 
 /**
  * Payload → query-engine filter opts. Every Cloudflare zone endpoint carries the same optional
@@ -184,63 +156,10 @@ const mapExecError = <A, E, R>(effect: Effect.Effect<A, E, R>, context: string):
  * mark a panel zone-wide instead of pretending the filter applied.
  */
 
-/**
- * Read a rollup table, degrading to the raw-source query on a cluster that does
- * not have it.
- *
- * **This is error recovery, not a rollout switch.** There is no flag and nothing
- * to set: these rollups ship in `requiredForIngest: false` migrations, which
- * reach a BYO-ClickHouse cluster only when an org admin opens Settings → BYO
- * Backend and clicks Apply schema. Nothing reconciles that — there is no cron,
- * no on-deploy hook, and `upsert` deliberately runs no DDL.
- * `ClickHouseSchemaApplyWorkflow` even skips perf-only migrations in its first
- * pass and retries them best-effort inside a try/catch, so a run can report
- * `succeeded` with the table still absent. So the window where an org lacks one
- * is unbounded, per-org, and invisible from here, and the only correct response
- * is to notice at query time and read the other table. Without this, those orgs
- * get a hard 502 titled "Database is not configured correctly" with no
- * remediation hint, indefinitely.
- *
- * The two definitions in each pair are required to return identical rows — this
- * is a source swap, not a semantics change, enforced for web analytics by
- * `web-analytics-parity.clickhouse.e2e.test.ts` — so the degrade is invisible to
- * the caller and needs no response-shape branching. `Effect.fn` would give this
- * a second span; it is deliberately a plain helper so the fallback annotation
- * lands on the handler's own span.
- */
-const makeRollupFallback =
-	(detect: (error: unknown) => boolean, warning: string) =>
-	<A, P, E, R>(
-		rollup: (tenant: TenantContext, payload: P) => Effect.Effect<A, E, R>,
-		raw: (tenant: TenantContext, payload: P) => Effect.Effect<A, E, R>,
-		tenant: TenantContext,
-		payload: P,
-	): Effect.Effect<A, E, R> =>
-		rollup(tenant, payload).pipe(
-			Effect.catch((error) => {
-				if (!detect(error)) return Effect.fail(error)
-				return Effect.gen(function* () {
-					yield* Effect.logWarning(warning).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
-					yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
-					return yield* raw(tenant, payload)
-				})
-			}),
-		)
-
 const withProductEventsFallback = makeRollupFallback(
 	isMissingProductEvents,
 	"product_events is absent on this cluster; reading raw session_events. Apply ClickHouse schema to restore the fast path.",
 )
-
-const withServiceOperationsFallback = makeRollupFallback(
-	isMissingServiceOperationsRollup,
-	"service_operations rollup is absent on this cluster; reading raw traces. Apply ClickHouse schema to restore the fast path.",
-)
-
-interface SparklinePoint {
-	readonly bucket: string
-	readonly count: number
-}
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeSpanId = Schema.decodeSync(SpanId)
@@ -254,13 +173,6 @@ const decodeCommitSha = Schema.decodeUnknownSync(CommitSha)
 const decodeStatusCodeOption = Schema.decodeUnknownOption(StatusCode)
 const coerceStatusCode = (value: string): StatusCode =>
 	Option.getOrElse(decodeStatusCodeOption(value), () => "Unset" as const)
-
-// Most traces opened without a timestamp are still recent (list rows carry
-// `?t=`; it's direct/shared/AI links that don't, and those overwhelmingly
-// point at fresh traces). Probing the last 48h first prunes to ~2 daily
-// partitions; only older traces fall back to the unbounded every-partition
-// probe.
-const PROBE_RECENT_WINDOW_MS = 48 * 3_600_000
 
 const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 	const k8sCluster = row.k8sCluster
@@ -351,102 +263,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 	Effect.gen(function* () {
 		const queryEngine = yield* QueryEngineService
 		const warehouse = yield* WarehouseQueryService
-		const { runQuery, runQueryFirst } = makeQueryRunners({ warehouse, queryEngine })
-
-		/**
-		 * Summary + per-row sparkline for the operation rollup, shared by the
-		 * Operations tab (every span) and the API tab (HTTP endpoints only).
-		 *
-		 * Both reads try `service_operations_minutely`/`_hourly` and degrade
-		 * per-org on UNKNOWN_TABLE. The timeseries read repeats the probe rather
-		 * than inheriting the summary's verdict: one extra failed query on a
-		 * cluster that never applied migration 0008 is cheaper than the mutable
-		 * flag this replaced.
-		 */
-		const operationRowsWithSparklines = (
-			tenant: TenantContext,
-			payload: ServiceOperationsRequest | ServiceEndpointsRequest,
-			queries: {
-				readonly summary: QueryDefinition<ServiceOperationsRequest, CH.ServiceOperationsSummaryOutput>
-				readonly summaryRaw: QueryDefinition<
-					ServiceOperationsRequest,
-					CH.ServiceOperationsSummaryOutput
-				>
-				readonly label: string
-				/**
-				 * The Operations tab draws a sparkline per row; the API tab does not,
-				 * and issuing its timeseries anyway cost a second warehouse query whose
-				 * result was discarded — and capped the summary at ~50 rows, since the
-				 * timeseries returns `rows × buckets` against a 10k limit.
-				 */
-				readonly sparklines: boolean
-			},
-		) =>
-			Effect.gen(function* () {
-				const toNumber = (value: unknown) => Number(value ?? 0)
-				const summaryRows = yield* mapExecError(
-					withServiceOperationsFallback(
-						(t, pl) => runQuery(queries.summary, t, pl),
-						(t, pl) => runQuery(queries.summaryRaw, t, pl),
-						tenant,
-						payload,
-					),
-					`${queries.label} query failed`,
-				)
-				if (summaryRows.length === 0) {
-					return []
-				}
-
-				const toRow = (row: (typeof summaryRows)[number], sparkline: SparklinePoint[]) => ({
-					spanName: row.spanName,
-					spanCount: toNumber(row.spanCount),
-					estimatedSpanCount: toNumber(row.estimatedSpanCount),
-					errorCount: toNumber(row.errorCount),
-					estimatedErrorCount: toNumber(row.estimatedErrorCount),
-					errorRate: toNumber(row.errorRate),
-					avgDurationMs: toNumber(row.avgDurationMs),
-					p50DurationMs: toNumber(row.p50DurationMs),
-					p95DurationMs: toNumber(row.p95DurationMs),
-					p99DurationMs: toNumber(row.p99DurationMs),
-					sparkline,
-				})
-
-				if (!queries.sparklines) {
-					return summaryRows.map((row) => toRow(row, []))
-				}
-
-				const spanNames = summaryRows.map((row) => row.spanName)
-				// The rollup is minute-grain, so every sparkline interval must be
-				// a whole-minute multiple. Nearest-minute rounding keeps ~50 points.
-				const windowSeconds = Math.max(
-					0,
-					(parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)) /
-						1000,
-				)
-				const requestedBucketSeconds =
-					("bucketSeconds" in payload ? payload.bucketSeconds : undefined) ?? windowSeconds / 50
-				const bucketSeconds = Math.max(1, Math.round(requestedBucketSeconds / 60)) * 60
-				const timeseriesInput = { ...payload, spanNames, bucketSeconds }
-				const timeseriesRows = yield* mapExecError(
-					withServiceOperationsFallback(
-						(t, pl) => runQuery(Queries.serviceOperationsTimeseries, t, pl),
-						(t, pl) => runQuery(Queries.serviceOperationsTimeseriesRaw, t, pl),
-						tenant,
-						timeseriesInput,
-					),
-					"serviceOperationsTimeseries query failed",
-				)
-
-				const sparklines = new Map<string, SparklinePoint[]>()
-				for (const row of timeseriesRows) {
-					const key = row.spanName
-					const points = sparklines.get(key) ?? []
-					points.push({ bucket: DateTime.formatIso(row.bucket), count: toNumber(row.count) })
-					sparklines.set(key, points)
-				}
-
-				return summaryRows.map((row) => toRow(row, sparklines.get(row.spanName) ?? []))
-			})
+		const reads = makeDashboardReads({ warehouse, queryEngine })
+		const { runQuery, runQueryFirst } = reads
 
 		const executeRawSql = makeExecuteRawSql<
 			ExecutionTenant,
@@ -477,56 +295,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("spanHierarchy", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const nowMs = yield* Clock.currentTimeMillis
-						// The cache stores rows through the query's row codec, so a hit
-						// returns the same `DateTime.Utc` start times a miss does.
-						const rowSchema = yield* Queries.spanHierarchy
-							.compile(payload, tenant.orgId, baselineWarehouseCapabilities())
-							.pipe(
-								Effect.map((compiled) => compiled.rowSchema),
-								Effect.orElseSucceed(() => undefined),
-							)
-						const rows = yield* queryEngine.cachedDirect(
-							tenant,
-							"spanHierarchy",
-							payload,
-							// Wrapped in cachedDirect's effect so the probe only fires on a
-							// cache miss. `traces` is partitioned by `toDate(Timestamp)`;
-							// without a time predicate the hierarchy query seeks every daily
-							// partition (~30). When the caller has no timestamp (direct URL,
-							// shared link, AI link), resolve one via a cheap LIMIT-1 probe and
-							// derive a ±1h window so the main query can prune. The probe itself
-							// tries the recent window first (see PROBE_RECENT_WINDOW_MS).
-							Effect.gen(function* () {
-								let startTime = payload.startTime
-								let endTime = payload.endTime
-								if (startTime == null || endTime == null) {
-									const probe =
-										(yield* runQueryFirst(Queries.spanHierarchyProbeRecent, tenant, {
-											traceId: payload.traceId,
-											startTime: formatWarehouseDateTime(
-												nowMs - PROBE_RECENT_WINDOW_MS,
-											),
-										})) ??
-										(yield* runQueryFirst(Queries.spanHierarchyProbe, tenant, payload))
-									if (probe?.timestamp != null) {
-										const window = partitionWindowAround(
-											DateTime.formatIso(probe.timestamp),
-										)
-										startTime = window.startTime
-										endTime = window.endTime
-									}
-								}
-								return yield* runQuery(Queries.spanHierarchy, tenant, {
-									traceId: payload.traceId,
-									spanId: payload.spanId,
-									startTime,
-									endTime,
-								})
-							}),
-							traceCacheTtlSeconds(payload.endTime, nowMs),
-							rowSchema === undefined ? undefined : Schema.Array(rowSchema),
-						)
+						const { rows } = yield* reads.spanHierarchy(tenant, payload)
 						const typedRows = rows.map((row) => ({
 							...row,
 							startTime: DateTime.formatIso(row.startTime),
@@ -676,7 +445,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("serviceHealthSnapshot", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.serviceHealthSnapshot, tenant, payload)
+						const rows = yield* reads.serviceHealthSnapshot(tenant, payload)
 						return new ServiceHealthSnapshotResponse({
 							data: rows.map((row) => ({
 								serviceName: decodeServiceName(row.serviceName),
@@ -691,7 +460,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("serviceHealthBaseline", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.serviceHealthBaseline, tenant, payload)
+						const rows = yield* reads.serviceHealthBaseline(tenant, payload)
 						return new ServiceHealthBaselineResponse({
 							data: rows.map((row) => ({
 								serviceName: decodeServiceName(row.serviceName),
@@ -1581,36 +1350,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("serviceOperations", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const data = yield* queryEngine.cachedDirect(
-							tenant,
-							"serviceOperations",
-							payload,
-							operationRowsWithSparklines(tenant, payload, {
-								summary: Queries.serviceOperationsSummary,
-								summaryRaw: Queries.serviceOperationsSummaryRaw,
-								label: "serviceOperations",
-								sparklines: true,
-							}),
-							30,
-						)
+						const data = yield* reads.serviceOperations(tenant, payload)
 						return new ServiceOperationsResponse({ data })
 					}),
 				)
 				.handle("serviceEndpoints", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const rows = yield* queryEngine.cachedDirect(
-							tenant,
-							"serviceEndpoints",
-							payload,
-							operationRowsWithSparklines(tenant, payload, {
-								summary: Queries.serviceEndpointsSummary,
-								summaryRaw: Queries.serviceEndpointsSummaryRaw,
-								label: "serviceEndpoints",
-								sparklines: false,
-							}),
-							30,
-						)
+						const rows = yield* reads.serviceEndpoints(tenant, payload)
 						// The split is display-only, so it happens after the cache read
 						// rather than being baked into the cached payload.
 						const data = rows.map((row) => ({

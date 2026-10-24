@@ -39,7 +39,7 @@ extension FixtureAPI {
 				httpMethod: String(route.1.split(separator: " ").first ?? "GET"),
 				httpRoute: String(route.1.split(separator: " ").last ?? "/"),
 				httpStatusCode: route.3 ? "500" : "200",
-				id: index == 0 ? Self.checkoutTrace : String(format: "%032x", index * 7_919),
+				id: index == 0 ? Self.checkoutTrace : String(format: "%08x%024x", (index * 2_654_435_761) & 0xffff_ffff, index * 7_919),
 				object: .trace,
 				rootHasError: route.3,
 				rootServiceName: route.0,
@@ -168,7 +168,7 @@ extension FixtureAPI {
 		return Page(items: Array(items.prefix(limit)), hasMore: false, nextCursor: nil)
 	}
 
-	func logVolume(_ search: LogSearch, targetPoints: Int) async throws -> [Double] {
+	func logVolumeTotals(targetPoints: Int) async throws -> [Double] {
 		try await pause()
 		return (0..<targetPoints).map { index -> Double in
 			let base = 120 + 40 * sin(Double(index) / 4)
@@ -210,7 +210,7 @@ extension FixtureAPI {
 
 	private var dashboardSummaries: [DashboardSummary] {
 		[
-			DashboardSummary(id: "dash_checkout", name: "Checkout health", description: "Golden signals for the purchase path", tags: ["commerce"], widgetCount: 6, updatedAt: stamp(-3_600)),
+			DashboardSummary(id: "dash_checkout", name: "Checkout health", description: "Golden signals for the purchase path", tags: ["commerce"], widgetCount: 8, updatedAt: stamp(-3_600)),
 			DashboardSummary(id: "dash_edge", name: "Edge traffic", description: nil, tags: ["edge"], widgetCount: 4, updatedAt: stamp(-86_400 * 2)),
 			DashboardSummary(id: "dash_db", name: "Database queries", description: "Slowest statements by service", tags: [], widgetCount: 5, updatedAt: stamp(-86_400 * 9)),
 		]
@@ -236,6 +236,8 @@ extension FixtureAPI {
 			widgets: [
 				MobileWidget(id: "w_req", visualization: "stat", title: "Requests", transform: reduce, x: 0, y: 0, w: 6),
 				MobileWidget(id: "w_err", visualization: "stat", title: "Error rate", unit: "percent", transform: reduce, x: 6, y: 0, w: 6),
+				MobileWidget(id: "w_p95", visualization: "stat", title: "Checkout p95", unit: "duration_ms", x: 0, y: 1, w: 6),
+				MobileWidget(id: "w_svc", visualization: "stat", title: "Services", x: 6, y: 1, w: 6),
 				MobileWidget(id: "w_lat", visualization: "chart", title: "Latency by percentile", unit: "duration_ms", x: 0, y: 2),
 				MobileWidget(id: "w_vol", visualization: "chart", title: "Requests by service", x: 0, y: 4),
 				MobileWidget(id: "w_top", visualization: "hbar", title: "Errors by service", x: 0, y: 6),
@@ -262,6 +264,8 @@ extension FixtureAPI {
 				switch id {
 				case "w_req": series { ["value": 4_800 + Double(($0 * 53) % 900)] }
 				case "w_err": .object(["data": .array([.object(["value": .number(0.0123)])])])
+				case "w_p95": .object(["data": .array([.object(["value": .number(612)])])])
+				case "w_svc": .object(["data": .array([.object(["value": .number(9)])])])
 				case "w_lat": series { index in
 					let spike = index > 18 ? 2.2 : 1
 					return ["p50": 84 + Double(index % 5) * 3, "p95": 410 * spike + Double(index % 7) * 12, "p99": 980 * spike + Double(index % 3) * 40]
@@ -276,10 +280,10 @@ extension FixtureAPI {
 					.object(["name": .string("web"), "value": .number(31)]),
 				])])
 				case "w_slow": .object(["data": .array([
-					.object(["name": .string("POST /v1/checkout"), "p95": .number(1_390), "count": .number(8_120)]),
-					.object(["name": .string("GET /search"), "p95": .number(1_340), "count": .number(42_002)]),
-					.object(["name": .string("POST /charges"), "p95": .number(1_150), "count": .number(3_310)]),
-					.object(["name": .string("GET /products/:id"), "p95": .number(190), "count": .number(19_870)]),
+					.object(["name": .string("POST /v1/checkout"), "p50": .number(86), "p95": .number(1_390), "p99": .number(1_480)]),
+					.object(["name": .string("GET /search"), "p50": .number(64), "p95": .number(488), "p99": .number(820)]),
+					.object(["name": .string("POST /charges"), "p50": .number(142), "p95": .number(388), "p99": .number(903)]),
+					.object(["name": .string("GET /products/:id"), "p50": .number(24), "p95": .number(118), "p99": .number(402)]),
 				])])
 				default: nil
 				}

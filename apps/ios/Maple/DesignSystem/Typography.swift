@@ -33,6 +33,8 @@ enum Typo {
 	/// Body / row titles — `text-sm`.
 	static let body = Font.custom(Face.mono, size: 14)
 	static let bodyMedium = Font.custom(Face.monoMedium, size: 14)
+	/// The Explore query text, between body and small.
+	static let query = Font.custom(Face.mono, size: 13)
 	/// `text-xs` secondary metadata.
 	static let small = Font.custom(Face.mono, size: 12)
 	static let smallMedium = Font.custom(Face.monoMedium, size: 12)
@@ -44,8 +46,8 @@ enum Typo {
 	static let micro = Font.custom(Face.mono, size: 10)
 	static let microMedium = Font.custom(Face.monoMedium, size: 10)
 
-	/// The big number on a stat tile: `font-mono text-[26px] font-semibold`.
-	static let statValue = Font.custom(Face.monoSemibold, size: 24)
+	/// The big number on a stat tile: `font-display text-[22px] font-semibold`.
+	static let statValue = Font.custom(Face.display, size: 22)
 	/// Tab bar and other chrome that should still read as Maple.
 	static let chrome = Font.custom(Face.monoMedium, size: 11)
 
