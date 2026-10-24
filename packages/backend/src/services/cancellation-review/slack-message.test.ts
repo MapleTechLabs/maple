@@ -1,3 +1,4 @@
+import { CancellationModelRead } from "@maple/domain/http"
 import type { IntegrationEntry } from "@maple/domain/integration-inventory"
 import { describe, expect, it } from "vitest"
 import { CANCELLATION_FIXTURES } from "./fixtures"
@@ -23,12 +24,16 @@ const report = (id: string, overrides: Partial<CancellationReport> = {}): Cancel
 				autumn: "https://autumn.test/customers/org_42",
 				stripe: "https://stripe.test/customers/cus_42",
 			},
+			sessionsUrl: "https://app.test/replays?group=Acme&timePreset=30d",
 			integrations: null,
 			otherOrgs: null,
 		},
 		snapshot: fixture.snapshot,
 		reason: ruleReason(fixture.snapshot),
 		signals: deriveSignals(fixture.snapshot),
+		modelRead: null,
+		stripeFeedback: null,
+		unreadEvidence: [],
 		...overrides,
 	}
 }
@@ -80,7 +85,92 @@ const otherOrg = (overrides: Partial<OtherOrg> = {}): OtherOrg => ({
 	...overrides,
 })
 
+const modelRead = (verdict: CancellationModelRead["verdict"], reason: string | null, note: string | null) =>
+	new CancellationModelRead({ verdict, category: null, reason, note, model: "test-model" })
+
 describe("buildCancellationMessage", () => {
+	it("adds nothing when the model agrees", () => {
+		const plain = buildCancellationMessage(report("pipeline-off"))
+		const agreed = buildCancellationMessage(
+			report("pipeline-off", { modelRead: modelRead("agree", null, null) }),
+		)
+		expect(agreed).toEqual(plain)
+	})
+
+	it("adds the model's note under the rules' reason when it has context", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				modelRead: modelRead("context", null, "Revoked both ingest keys on <Oct 6>."),
+			}),
+		)
+		expect(text(message)).toContain("*Likely reason:* Stopped sending telemetry")
+		expect(text(message)).toContain(":robot_face: Revoked both ingest keys on &lt;Oct 6&gt;.")
+	})
+
+	it("leads with the model's reason when it overrides the rules, and keeps theirs beside it", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				modelRead: modelRead("override", "Needed SSO", "Asked Stripe for SSO."),
+			}),
+		)
+		expect(message.text).toBe("Acme &lt;Labs&gt; &amp; Co cancelled the startup plan (Needed SSO)")
+		expect(text(message)).toContain(
+			"*Likely reason:* Needed SSO  _(model's read; rules said: Stopped sending telemetry)_",
+		)
+		expect(text(message)).toContain(":robot_face: Asked Stripe for SSO.")
+	})
+
+	it("never turns a URL in the customer's or the model's words into a link", () => {
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: null, comment: "see https://evil.test" },
+				modelRead: modelRead("context", null, "Visit https://evil.test now."),
+			}),
+		)
+		const quotedTexts = message.blocks
+			.flatMap((block) => (Array.isArray(block.elements) ? block.elements : []))
+			.filter(
+				(element: { text?: unknown }) =>
+					typeof element.text === "string" && element.text.includes("evil.test"),
+			)
+		expect(quotedTexts).toHaveLength(2)
+		for (const element of quotedTexts) expect(element).toMatchObject({ verbatim: true })
+	})
+
+	it("names the evidence it could not read", () => {
+		const message = buildCancellationMessage(report("pipeline-off", { unreadEvidence: ["Stripe"] }))
+		expect(text(message)).toContain("Could not read: Stripe")
+	})
+
+	it("quotes what the customer told Stripe, and nothing when they skipped it", () => {
+		const told = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: "too_expensive", comment: "Too much for <us>" },
+			}),
+		)
+		expect(text(told)).toContain("*Told Stripe:* too expensive “Too much for &lt;us&gt;”")
+		const skipped = buildCancellationMessage(
+			report("pipeline-off", { stripeFeedback: { feedback: null, comment: null } }),
+		)
+		expect(text(skipped)).not.toContain("Told Stripe")
+	})
+
+	it("cuts free text short enough that Slack never refuses the report", () => {
+		const long = "x".repeat(5_000)
+		const message = buildCancellationMessage(
+			report("pipeline-off", {
+				stripeFeedback: { feedback: null, comment: long },
+				modelRead: modelRead("override", long, long),
+			}),
+		)
+		const texts = message.blocks.flatMap((block) =>
+			[block.text, ...(Array.isArray(block.elements) ? block.elements : [])].flatMap(
+				(part: { text?: unknown } | undefined) => (typeof part?.text === "string" ? [part.text] : []),
+			),
+		)
+		expect(Math.max(...texts.map((value) => value.length))).toBeLessThan(3_000)
+	})
+
 	it("leads with the org, the plan's remaining access and the rule's reason", () => {
 		const message = buildCancellationMessage(report("pipeline-off"))
 		// The fallback is mrkdwn, where a raw `<!channel>` in an org name would ping; the header is plain text.
@@ -146,7 +236,7 @@ describe("buildCancellationMessage", () => {
 		expect(text(message)).toContain("allowance on &lt;logs&gt;")
 	})
 
-	it("links the org in Clerk, Stripe and Autumn as buttons, leaving out Stripe when there is no customer", () => {
+	it("links the org in Clerk, Stripe, Autumn and its sessions as buttons, leaving out what it has no link for", () => {
 		const base = report("healthy-team")
 		const buttons = (message: Message) =>
 			message.blocks
@@ -157,8 +247,12 @@ describe("buildCancellationMessage", () => {
 			["Clerk", "https://clerk.test/organizations/org_42"],
 			["Stripe", "https://stripe.test/customers/cus_42"],
 			["Autumn", "https://autumn.test/customers/org_42"],
+			["Sessions", "https://app.test/replays?group=Acme&timePreset=30d"],
 		])
-		const noStripe = withSubject(base, { links: { ...base.subject.links, stripe: null } })
+		const noStripe = withSubject(base, {
+			links: { ...base.subject.links, stripe: null },
+			sessionsUrl: null,
+		})
 		expect(buttons(noStripe).map(([label]) => label)).toEqual(["Clerk", "Autumn"])
 	})
 

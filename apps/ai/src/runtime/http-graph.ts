@@ -13,6 +13,8 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  *     worth pinning.
  *   - `/internal/mcp/tools`: the public tool catalog for Settings > MCP, typed and
  *     served here because the registry lives in this Worker.
+ *   - `/internal/cancellation-review/read`: the model's read of a plan
+ *     cancellation, asked by api's cancellation review over the same binding.
  *   - `/internal/triage/classify` — the decision model behind the investigation
  *     gate, typed for the same reason. Reached only over a service binding: api
  *     does not forward it, and the callers are the Workers that open incidents.
@@ -29,6 +31,10 @@ import { HttpApiBuilder } from "effect/http-api"
 import { McpLive } from "../mcp/app"
 import { HttpChatLive } from "../routes/internal/chat.http"
 import { HttpTriageLive } from "../routes/internal/triage.http"
+import {
+	CancellationModelLive,
+	HttpCancellationReviewLive,
+} from "../routes/internal/cancellation-review.http"
 import { HttpMcpToolsLive } from "../routes/internal/mcp-tools.http"
 import { layerDecisionModelFromConfig } from "../platform/Llm"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
@@ -88,6 +94,7 @@ const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(HttpChatLive),
 	Layer.provide(HttpMcpToolsLive),
 	Layer.provide(HttpTriageLive.pipe(Layer.provide(DecisionModelLive))),
+	Layer.provide(HttpCancellationReviewLive.pipe(Layer.provide(CancellationModelLive))),
 	Layer.provide(ApiErrorBoundaryLive),
 )
 

@@ -2,7 +2,12 @@
  * The cancellation report as a Slack message. Block Kit, built as plain data so
  * what a reader sees is asserted in a test rather than eyeballed in a channel.
  */
-import type { CancellationReason, CancellationSnapshot } from "@maple/domain/http"
+import type {
+	CancellationModelRead,
+	CancellationReason,
+	CancellationSnapshot,
+	CancellationStripeFeedback,
+} from "@maple/domain/http"
 import type { IntegrationEntry } from "@maple/domain/integration-inventory"
 import { type CancellationSignal, dollars, formatGB, totalGB } from "./signals"
 
@@ -23,6 +28,8 @@ export interface CancellationReportSubject {
 	/** Epoch ms the plan's access ends, when Autumn said. */
 	readonly expiresAt: number | null
 	readonly links: OrgLinks
+	/** The org's browser sessions on Maple's own replays page; null when that org is not known. */
+	readonly sessionsUrl: string | null
 	/** Null when the integrations could not be read. */
 	readonly integrations: ReadonlyArray<IntegrationEntry> | null
 	/** Orgs the members also belong to; null when they could not be read. */
@@ -46,6 +53,12 @@ export interface CancellationReport {
 	readonly snapshot: CancellationSnapshot
 	readonly reason: CancellationReason
 	readonly signals: ReadonlyArray<CancellationSignal>
+	/** The model's second read; null when it did not answer. */
+	readonly modelRead: CancellationModelRead | null
+	/** Null when Stripe could not be read. */
+	readonly stripeFeedback: CancellationStripeFeedback | null
+	/** Sources only the model reads that could not be read, by name. */
+	readonly unreadEvidence: ReadonlyArray<string>
 }
 
 const REASON_LABELS = {
@@ -103,13 +116,14 @@ const planContext = ({ subject, snapshot }: CancellationReport): string => {
 	return parts.join(SEPARATOR)
 }
 
-const linkButtons = (links: OrgLinks) => ({
+const linkButtons = (links: OrgLinks, sessionsUrl: string | null) => ({
 	type: "actions",
 	elements: (
 		[
 			["Clerk", links.clerk],
 			["Stripe", links.stripe],
 			["Autumn", links.autumn],
+			["Sessions", sessionsUrl],
 		] as const
 	).flatMap(([label, url]) =>
 		url === null
@@ -261,6 +275,8 @@ const unread = (snapshot: CancellationSnapshot): ReadonlyArray<string> =>
 		.map(([name]) => name)
 
 const context = (text: string) => ({ type: "context", elements: [{ type: "mrkdwn", text }] })
+/** Text the customer or the model wrote: shown as written, a URL in it never turned into a link. */
+const quoted = (text: string) => ({ type: "context", elements: [{ type: "mrkdwn", text, verbatim: true }] })
 const heading = (text: string) => ({ type: "section", text: { type: "mrkdwn", text: `*${text}*` } })
 
 /** Favicons, because Slack renders neither SVG nor its own app icons in a message. */
@@ -403,11 +419,32 @@ const otherOrgsBlocks = (
 	]
 }
 
+/** Slack refuses a text object past 3000 characters, which would lose the whole report. */
+const MAX_FREE_TEXT = 500
+const clip = (value: string): string =>
+	value.length > MAX_FREE_TEXT ? `${value.slice(0, MAX_FREE_TEXT - 1)}…` : value
+
+/** Stripe's survey answers are snake_case enum values (`too_expensive`); the comment is free text. */
+const stripeFeedbackText = (feedback: CancellationStripeFeedback | null): string | null => {
+	if (feedback === null || (feedback.feedback === null && feedback.comment === null)) return null
+	return [
+		"*Told Stripe:*",
+		...(feedback.feedback === null ? [] : [feedback.feedback.replaceAll("_", " ")]),
+		...(feedback.comment === null ? [] : [`“${escape(clip(feedback.comment))}”`]),
+	].join(" ")
+}
+
+/** The reason line: the model's when it overrode the rules, which then stay visible beside it. */
+const reasonText = (reason: CancellationReason, modelRead: CancellationModelRead | null): string =>
+	modelRead?.verdict === "override" && modelRead.reason !== null
+		? `*Likely reason:* ${escape(clip(modelRead.reason))}  _(model's read; rules said: ${REASON_LABELS[reason]})_`
+		: `*Likely reason:* ${REASON_LABELS[reason]}`
+
 /** `text` is the notification and screen-reader fallback; `blocks` is what the channel shows. */
 export const buildCancellationMessage = (
 	report: CancellationReport,
 ): { readonly text: string; readonly blocks: ReadonlyArray<Record<string, unknown>> } => {
-	const { subject, snapshot, reason, signals } = report
+	const { subject, snapshot, reason, signals, modelRead } = report
 	const shown = stats(snapshot)
 	// Sentences about a section with no stat (the plan itself) have nowhere to fold into.
 	const flags = signals.filter((signal) => !shown.some((stat) => stat.topic === signal.topic))
@@ -415,9 +452,16 @@ export const buildCancellationMessage = (
 	const blocks: Array<Record<string, unknown>> = [
 		{ type: "header", text: { type: "plain_text", text: title(report).slice(0, 150), emoji: true } },
 		context(planContext(report)),
-		linkButtons(subject.links),
-		{ type: "section", text: { type: "mrkdwn", text: `*Likely reason:* ${REASON_LABELS[reason]}` } },
+		linkButtons(subject.links, subject.sessionsUrl),
+		// Verbatim: an override's reason is the model's words.
+		{ type: "section", text: { type: "mrkdwn", text: reasonText(reason, modelRead), verbatim: true } },
 	]
+	// `agree` adds nothing: the model only speaks when it has something the rules did not.
+	if (modelRead !== null && modelRead.verdict !== "agree" && modelRead.note !== null) {
+		blocks.push(quoted(`:robot_face: ${escape(clip(modelRead.note))}`))
+	}
+	const told = stripeFeedbackText(report.stripeFeedback)
+	if (told !== null) blocks.push(quoted(told))
 	if (flags.length > 0) {
 		blocks.push(
 			context(flags.map((signal) => `${TONE_MARK[signal.tone]}${escape(signal.text)}`).join(SEPARATOR)),
@@ -433,9 +477,13 @@ export const buildCancellationMessage = (
 	if (integrations.length > 0) blocks.push({ type: "divider" }, ...integrations)
 	blocks.push({ type: "divider" }, ...otherOrgsBlocks(subject.otherOrgs))
 
-	const missing = unread(snapshot)
+	const missing = [...unread(snapshot), ...report.unreadEvidence]
 	if (missing.length > 0) blocks.push(context(`Could not read: ${missing.join(", ")}`))
 
 	// Unlike the header's plain text, the fallback is mrkdwn: an org name is escaped here.
-	return { text: `${escape(title(report))} (${REASON_LABELS[reason]})`, blocks }
+	const shownReason =
+		modelRead?.verdict === "override" && modelRead.reason !== null
+			? escape(clip(modelRead.reason))
+			: REASON_LABELS[reason]
+	return { text: `${escape(title(report))} (${shownReason})`, blocks }
 }
