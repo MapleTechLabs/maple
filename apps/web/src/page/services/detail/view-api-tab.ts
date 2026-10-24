@@ -76,7 +76,7 @@ const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
 		[
 			h.Key(tile.label),
 			h.Class(
-				"flex min-w-0 flex-col gap-2 border-b p-4 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0",
+				"flex min-w-0 flex-col gap-2 border-b p-4 odd:border-r last:col-span-2 last:border-b-0 last:border-r-0 md:border-r md:border-b-0 md:last:col-span-1 md:last:border-r-0",
 			),
 		],
 		[
@@ -210,7 +210,7 @@ const kpiStrip = (
 		},
 	]
 	return h.div(
-		[h.Class("grid w-full grid-cols-1 overflow-hidden rounded-lg border bg-card md:grid-cols-5")],
+		[h.Class("grid w-full grid-cols-2 overflow-hidden rounded-lg border bg-card md:grid-cols-5")],
 		tiles.map((tile) => kpiTile(h, tile, theme)),
 	)
 }
@@ -218,7 +218,7 @@ const kpiStrip = (
 const kpiSkeleton = (h: H): Html =>
 	h.div(
 		[
-			h.Class("grid w-full grid-cols-1 overflow-hidden rounded-lg border bg-card md:grid-cols-5"),
+			h.Class("grid w-full grid-cols-2 overflow-hidden rounded-lg border bg-card md:grid-cols-5"),
 			h.AriaBusy(true),
 		],
 		Array.from({ length: 5 }, (_, index) =>
@@ -540,7 +540,14 @@ const endpointsTable = (
 						[
 							column("path", "Endpoint", "pl-4", "left"),
 							column("traffic", "Req/s", COLUMN.rate),
-							headLabel(h, ["2xx / 4xx / 5xx"], cn("pr-0 text-right", COLUMN.mix)),
+							headLabel(
+								h,
+								[
+									h.span([h.Class("md:hidden")], ["4xx"]),
+									h.span([h.Class("hidden md:inline")], ["2xx / 4xx / 5xx"]),
+								],
+								cn("pr-0 text-right", COLUMN.mix),
+							),
 							column("errorRate", "5xx", COLUMN.err),
 							column("p50", "p50", COLUMN.p50),
 							column("p95", "p95", COLUMN.p95),

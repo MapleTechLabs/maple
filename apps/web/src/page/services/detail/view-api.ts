@@ -30,15 +30,16 @@ import { SPARK_TOKENS, sparkline } from "./view-api-charts"
 
 type H = HtmlBuilder<Message>
 
+/** Below `md` the table keeps the endpoint, its rate, 4xx share and p95; the rest hide. */
 export const COLUMN = {
-	rate: "w-[176px]",
-	mix: "w-[176px]",
-	err: "w-[72px]",
-	p50: "w-[84px]",
-	p95: "w-[84px]",
-	p99: "w-[84px]",
-	body: "w-[88px]",
-	chevron: "w-10",
+	rate: "w-14 md:w-[176px]",
+	mix: "w-12 md:w-[176px]",
+	err: "hidden w-[72px] md:table-cell",
+	p50: "hidden w-[84px] md:table-cell",
+	p95: "w-16 md:w-[84px]",
+	p99: "hidden w-[84px] md:table-cell",
+	body: "hidden w-[88px] md:table-cell",
+	chevron: "w-6 md:w-10",
 } as const
 
 export const COLUMN_COUNT = 9
@@ -151,10 +152,10 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 								],
 								[],
 							),
-							methodLabel(h, endpoint.method),
+							methodLabel(h, endpoint.method, "w-8 md:w-10"),
 							truncatedText(h, { text: endpoint.route, className: "text-ui" }, [
 								...(head.length > 0
-									? [h.span([h.Class("text-muted-foreground")], [head])]
+									? [h.span([h.Class("hidden text-muted-foreground md:inline")], [head])]
 									: []),
 								h.span([h.Class("text-foreground")], [tail]),
 							]),
@@ -163,7 +164,7 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 										h.span(
 											[
 												h.Class(
-													"shrink-0 rounded-sm bg-muted px-1.5 text-3xs text-warning-foreground",
+													"hidden shrink-0 rounded-sm bg-muted px-1.5 text-3xs text-warning-foreground md:inline",
 												),
 											],
 											["slowest"],
@@ -182,13 +183,16 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 						[h.Class("flex items-center justify-end gap-3")],
 						[
 							context.theme === null
-								? h.div([h.Class("h-5 w-[88px]")])
+								? h.div([h.Class("hidden h-5 w-[88px] md:block")])
 								: sparkline(h, {
 										chartId: `endpoint-${endpoint.spanName}`,
 										values: context.sparks.get(endpoint.spanName) ?? [],
 										token: SPARK_TOKENS.requests,
 										theme: context.theme,
-										className: cn("h-5 w-[88px]", isQuiet && "opacity-60"),
+										className: cn(
+											"hidden h-5 w-[88px] md:block",
+											isQuiet && "opacity-60",
+										),
 										toMessage: (message) =>
 											Message.GotChartMessage({ chartId: "sparkline", message }),
 									}),
@@ -214,7 +218,7 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 					h.div(
 						[h.Class("flex items-center justify-end gap-3")],
 						[
-							statusMixBar(h, mix),
+							statusMixBar(h, mix, "hidden w-24 md:flex"),
 							h.span(
 								[h.Class("w-12 text-right")],
 								[shareText(h, mix?.client ?? null, "text-warning-foreground")],
