@@ -1918,7 +1918,7 @@ export const serviceEndpointDetailsHourlyMv = defineMaterializedView("service_en
 		"Pre-aggregates HTTP server spans hourly per normalized endpoint, status code and error.type: counts, latency and body-size t-digests, top user agents and the slowest request.",
 	datasource: serviceEndpointDetailsHourly,
 	// The target keeps 90 days and `traces` 30, so a rebuild at promotion would cut it to a
-	// month. `alter` keeps every later change in place; the table fills forward from creation.
+	// month. `alter` keeps every later change in place (live in US and EU since 2026-10-24).
 	deploymentMethod: "alter",
 	nodes: [
 		node({
