@@ -9,7 +9,7 @@
  * carry `canonical_refs` and `ordinary_attack_class_block`, so the parent can derive the unit's
  * `coverage_id` and assignment block map without judgment of its own.
  */
-import { Effect, Schema } from "effect"
+import { Effect, Schema, SchemaIssue } from "effect"
 import { findingsErrors } from "./validators"
 import {
 	CanonicalRefs,
@@ -29,6 +29,8 @@ export class SecurityAuditResultError extends Schema.TaggedError<SecurityAuditRe
 		role: Schema.String,
 		/** The first characters of what the agent answered, for the run log. */
 		rawExcerpt: Schema.String,
+		/** Where the answer broke its contract, as value-free paths. Empty when it was not one object. */
+		issuePaths: Schema.Array(Schema.String),
 	},
 ) {}
 
@@ -41,19 +43,39 @@ const unfence = (text: string): string => {
 	return opener === "" || opener === "json" ? text.slice(firstNewline + 1, -3).trim() : text
 }
 
+const formatIssues = SchemaIssue.makeFormatterStandardSchemaV1()
+
+/** Each failing path, keys only (each capped), so no decoded value reaches a log. */
+const issuePaths = (issue: SchemaIssue.Issue): ReadonlyArray<string> => [
+	...new Set(
+		formatIssues(issue).issues.map(({ path = [] }) =>
+			path.length === 0
+				? "$"
+				: path
+						.map((segment) =>
+							String(typeof segment === "object" ? segment.key : segment).slice(0, 40),
+						)
+						.join("."),
+		),
+	),
+]
+
 /** Exactly one JSON object, or a typed failure the parent answers by discarding the result. */
 export const decodeAgentJson = <S extends Schema.Top>(role: string, schema: S, text: string) =>
 	Effect.gen(function* () {
 		const trimmed = text.trim()
 		const body = unfence(trimmed)
-		const fail = (message: string) =>
-			new SecurityAuditResultError({ message, role, rawExcerpt: trimmed.slice(0, 400) })
+		const fail = (message: string, issuePaths: ReadonlyArray<string>) =>
+			new SecurityAuditResultError({ message, role, rawExcerpt: trimmed.slice(0, 400), issuePaths })
 		if (!body.startsWith("{") || !body.endsWith("}")) {
-			return yield* fail(`${role} answered prose, not exactly one JSON object`)
+			return yield* fail(`${role} answered prose, not exactly one JSON object`, [])
 		}
 		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(body).pipe(
 			Effect.mapError((cause) =>
-				fail(`${role} result is not valid JSON for its contract: ${cause.message}`),
+				fail(
+					`${role} result is not valid JSON for its contract: ${cause.message}`,
+					issuePaths(cause.issue),
+				),
 			),
 		)
 	})
@@ -70,6 +92,7 @@ export type Candidate = typeof Candidate.Type
 /** A candidate as the finding record it proposes, so the upstream validator can check it. */
 export const candidateRecord = (candidate: Candidate): Finding => {
 	const { proposed_verdict, ...rest } = candidate
+	// SAFETY: each Candidate branch is its Finding branch minus `verdict`, restored from `proposed_verdict`.
 	return { verdict: proposed_verdict, ...rest } as Finding
 }
 
@@ -150,6 +173,8 @@ export const SeedUnit = Schema.Struct({
 	ordinary_attack_class_block: Schema.NullOr(Schema.String),
 	selected_companion_blocks: Schema.Array(Schema.String),
 	excluded_blocks: Schema.Array(ExcludedBlock),
+	/** 1 is hunted first: lowest-trust surfaces, then the most valuable boundaries (skill ranking 1 and 2). */
+	priority: Schema.optionalKey(Schema.Int),
 })
 export type SeedUnit = typeof SeedUnit.Type
 
