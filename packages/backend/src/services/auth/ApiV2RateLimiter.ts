@@ -25,6 +25,9 @@ export const makeApiV2RateLimitKey = (partition: string, key: string): string =>
 /** The v2 API's own scoping prefix, preserving the pre-generalization key shape. */
 export const apiV2RateLimitKey = (keyId: ApiKeyId): string => `v2:${keyId}`
 
+/** DPoP device credentials share one budget per credential across tokens and requests. */
+export const deviceRateLimitKey = (credentialId: string): string => `v2dev:${credentialId}`
+
 /** Share links are limited per token, and separately per client IP. */
 export const shareTokenRateLimitKey = (tokenHashPrefix: string): string => `share:${tokenHashPrefix}`
 export const shareIpRateLimitKey = (ip: string): string => `shareip:${ip}`
