@@ -1005,7 +1005,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						connection.orgId,
 						WEBHOOKS_DATASET,
 						"",
-						result.failed > 0 ? `${result.failed} database webhook(s) failed to register` : null,
+						// A skip (no write access yet) is not a success: the next tick checks the grant again,
+						// so a reauthorization registers within minutes, not after the TTL.
+						result.skipped !== null
+							? `Webhook sync skipped: ${result.skipped}`
+							: result.failed > 0
+								? `${result.failed} database webhook(s) failed to register`
+								: null,
 						null,
 					)
 				},
