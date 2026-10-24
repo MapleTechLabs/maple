@@ -44,29 +44,30 @@ struct TracesExploreView: View {
 	@State private var model: TracesExploreModel?
 
 	var body: some View {
-		VStack(spacing: 10) {
+		VStack(spacing: 0) {
 			if let model {
 				@Bindable var model = model
-				ExploreSearchField(prompt: "Span name", text: $model.spanName) {
+				ExploreFilterBar(prompt: "Search span name", text: $model.spanName, count: countLabel(model)) {
 					Task { await model.loader.load(.replace) }
+				} chips: {
+					ExploreWindowChip(window: $model.window)
+					ExploreServiceChip(service: $model.service, services: model.services.names)
+					ExploreToggleChip(label: "errors only", isOn: $model.errorsOnly)
+					ExploreToggleChip(label: "duration > 1s", isOn: $model.slowOnly)
 				}
-				ExploreChipRow(window: $model.window, service: $model.service, services: model.services.names) {
-					Button { model.errorsOnly.toggle() } label: { FilterChip(label: "Errors", isOn: model.errorsOnly) }
-						.buttonStyle(.plain)
-					Button { model.slowOnly.toggle() } label: { FilterChip(label: "Slow > 1s", isOn: model.slowOnly) }
-						.buttonStyle(.plain)
-				}
+				.padding(.top, 12)
 				Hairline()
+					.padding(.top, 16)
 				LoadableView(
 					loader: model.loader,
 					emptyTitle: "No traces",
 					emptyMessage: "Nothing matches these filters in \(model.window.phrase).",
-					skeletonRowHeight: 56
+					skeletonRowHeight: 60
 				) { traces in
 					LazyVStack(spacing: 0) {
 						ForEach(traces) { trace in
 							NavigationLink(value: Route.trace(id: trace.id)) {
-								TraceRow(trace: trace)
+								TracesListRow(trace: trace)
 							}
 							.buttonStyle(RowButtonStyle())
 							Hairline()
@@ -79,7 +80,6 @@ struct TracesExploreView: View {
 				.task(id: model.window) { await model.services.load(api: model.api, window: model.window) }
 			}
 		}
-		.padding(.top, 10)
 		.mapleScreen(Screen.traces)
 		.task {
 			if model == nil {
@@ -87,45 +87,62 @@ struct TracesExploreView: View {
 			}
 		}
 	}
+
+	/// `50 traces`, the page on screen; nil until something has loaded.
+	private func countLabel(_ model: TracesExploreModel) -> String? {
+		guard model.loader.state.hasContent else { return nil }
+		let count = model.loader.state.value?.count ?? 0
+		return "\(count) traces"
+	}
 }
 
-private struct TraceRow: View {
+/// One trace: the logs row's vocabulary. Error strip, service swatch and root
+/// span, duration in its latency tone, then `trace id · age` and the status.
+private struct TracesListRow: View {
 	let trace: TraceSummary
 
 	var body: some View {
-		HStack(spacing: 12) {
+		HStack(spacing: 0) {
 			Rectangle()
-				.fill(trace.rootHasError ? Token.destructive : .clear)
-				.frame(width: 2)
+				.fill(trace.rootHasError ? Token.severityError : .clear)
+				.frame(width: 3)
 			VStack(alignment: .leading, spacing: 4) {
-				HStack(spacing: 6) {
+				HStack(spacing: 8) {
 					ServiceDot(serviceName: trace.rootServiceName)
 					Text(trace.rootSpanName)
-						.font(Typo.smallMedium)
+						.font(Typo.small)
 						.foregroundStyle(Token.foreground)
 						.lineLimit(1)
+					Spacer(minLength: 8)
+					Text(Format.latency(trace.durationMs))
+						.font(Typo.smallMedium)
+						.tabularNumbers()
+						.foregroundStyle(Tone.latency(trace.durationMs, scale: .p95))
 				}
 				HStack(spacing: 8) {
-					Text(trace.rootServiceName)
-					if let status = trace.httpStatusCode {
+					Text("\(trace.id.prefix(8)) · \(Format.lastSeen(trace.startTime))")
+						.foregroundStyle(Token.mutedForeground)
+						.lineLimit(1)
+					Spacer(minLength: 8)
+					if let status = statusLabel {
 						Text(status)
-							.foregroundStyle(trace.rootHasError ? Token.destructive : Token.mutedForeground)
+							.foregroundStyle(trace.rootHasError ? Token.severityError : Token.mutedForeground)
 					}
-					Text(Format.lastSeen(trace.startTime))
 				}
 				.font(Typo.tiny)
 				.tabularNumbers()
-				.foregroundStyle(Token.mutedForeground)
-				.lineLimit(1)
 			}
-			Spacer(minLength: 8)
-			Text(Format.latency(trace.durationMs))
-				.font(Typo.smallSemibold)
-				.tabularNumbers()
-				.foregroundStyle(Tone.latency(trace.durationMs, scale: .p95))
+			.padding(.leading, 14)
+			.padding(.trailing, 16)
+			.padding(.vertical, 10)
 		}
-		.padding(.trailing, 16)
-		.frame(minHeight: 56)
+		.fixedSize(horizontal: false, vertical: true)
 		.contentShape(.rect)
+	}
+
+	/// The HTTP status when there is one, else `error` for a failed root.
+	private var statusLabel: String? {
+		if let status = trace.httpStatusCode, !status.isEmpty { return status }
+		return trace.rootHasError ? "error" : nil
 	}
 }

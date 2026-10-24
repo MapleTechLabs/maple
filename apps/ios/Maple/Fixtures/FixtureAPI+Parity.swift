@@ -29,10 +29,13 @@ extension FixtureAPI {
 
 	func logVolumeBySeverity(_ search: LogSearch, targetPoints: Int) async throws -> LogVolume {
 		let totals = try await logVolume(search, targetPoints: targetPoints)
-		return LogVolume(series: [
-			.init(severity: "ERROR", values: totals.map { ($0 / 3).rounded() }),
-			.init(severity: "WARN", values: totals.map { ($0 * 2 / 3).rounded() }),
-		])
+		let severe: [LogVolume.Series] = [
+			.init(severity: "ERROR", values: totals.map { ($0 / 6).rounded() }),
+			.init(severity: "WARN", values: totals.map { ($0 / 3).rounded() }),
+		]
+		// Lower severities only when the search lets them through, as the server does.
+		guard (search.minimumSeverity ?? 0) < 13 else { return LogVolume(series: severe) }
+		return LogVolume(series: severe + [.init(severity: "INFO", values: totals.map { ($0 / 2).rounded() })])
 	}
 
 	func previewAlertRule(_ rule: AlertRule, window: ResolvedTimeWindow) async throws -> AlertRulePreview {
