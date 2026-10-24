@@ -886,6 +886,20 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										$.targetId.eq(targetId),
 										$.status.in_("complete", "incomplete"),
 										$.finishedAt.isNotNull(),
+										// A cancelled run's ledger and findings are partial; one with no reports or
+										// ledger never finished saving. Neither may stand in for the target's state.
+										PG.or(
+											$.incompleteReason.isNull(),
+											$.incompleteReason.neq("cancelled"),
+										),
+										$.metadata.isNotNull(),
+										$.reports.isNotNull(),
+										PG.inSubquery(
+											$.id,
+											PG.from(SecurityAuditUnits)
+												.select("runId")
+												.where(($unit) => [$unit.orgId.eq(orgId)]),
+										),
 										unscopedOnly ? $.scopePaths.eq([]) : undefined,
 									])
 									.orderBy(($) => [[$.startedAt, "desc"]])

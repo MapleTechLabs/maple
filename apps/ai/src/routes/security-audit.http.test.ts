@@ -341,8 +341,21 @@ describe("/api/security-audit runs", () => {
 		try {
 			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
 			const runs = `/targets/${target.body.id}/runs`
-			const finish = (runId: string) =>
-				harness.withStore((store) => store.forOrg(ORG_A).finishRun(runId, { status: "complete" }))
+			// A finished run that counts as prior has saved its metadata, reports and ledger.
+			const finish = async (runId: string) => {
+				await harness.sql(
+					`UPDATE security_audit_runs SET metadata = '{}'::jsonb, reports = '{}'::jsonb WHERE id = $1`,
+					[runId],
+				)
+				await harness.sql(
+					`INSERT INTO security_audit_units (run_id, coverage_id, org_id, status, wave, agent_id, unit)
+					 VALUES ($1, 'u1', $2, 'covered', 1, null, '{}'::jsonb)`,
+					[runId, ORG_A],
+				)
+				await harness.withStore((store) =>
+					store.forOrg(ORG_A).finishRun(runId, { status: "complete" }),
+				)
+			}
 
 			// `kind` is not the client's to set: the API only starts manual runs.
 			const whole = await harness.call("POST", runs, { body: { kind: "revalidation" } })

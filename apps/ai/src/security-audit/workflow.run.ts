@@ -146,6 +146,8 @@ export const auditWithAgents = <E, R>(
 			payload.priorRunId === null ? Option.none() : yield* store.getRun(payload.priorRunId),
 			(row) =>
 				(row.status === "complete" || row.status === "incomplete") &&
+				// A cancelled run's ledger and findings are partial, so it says nothing about what is fixed.
+				row.incompleteReason !== "cancelled" &&
 				row.metadata !== null &&
 				row.metadata.repo === payload.repository,
 		)
