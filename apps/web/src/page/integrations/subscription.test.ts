@@ -10,12 +10,14 @@ import { ReadClock } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { subscriptions } from "./subscription"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const step = (model: Model, message: Message) => update(model, message, context).model
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 
 const status = (fields: Partial<Record<keyof V2PlanetScaleIntegration, unknown>>) =>
 	Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
@@ -138,5 +140,18 @@ describe("planetscale first-metrics watch", () => {
 		expect(isWatching(again)).toBe(true)
 		const read = step(again, Message.CompletedReadClock({ nowMs: stuck.model.nowMs + 1_000 }))
 		expect(isWatching(read)).toBe(true)
+	})
+
+	test("time spent on another integration does not count against the watch", () => {
+		const watching = step(cardOn(status({})), Message.CompletedReadClock({ nowMs: 5_000 }))
+		const away = routeChanged(watching, { search: { integration: "gcp" } }, context).model
+		const later = step(away, Message.CompletedReadClock({ nowMs: THIRTY_MINUTES_MS * 2 }))
+		const back = routeChanged(later, { search: { integration: "planetscale" } }, context)
+		expect(names(back.commands)).toContain("ReadIntegrationsClock")
+		const read = step(back.model, Message.CompletedReadClock({ nowMs: THIRTY_MINUTES_MS * 2 + 5_000 }))
+		expect(isWatching(read)).toBe(true)
+		expect(isWatching(step(read, Message.CompletedReadClock({ nowMs: THIRTY_MINUTES_MS * 3 })))).toBe(
+			true,
+		)
 	})
 })

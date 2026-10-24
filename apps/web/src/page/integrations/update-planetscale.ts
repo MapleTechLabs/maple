@@ -8,6 +8,7 @@ import * as Field from "../../ui/field"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { integrationOfSearch } from "./catalog"
 import { ReadClock } from "./command"
 import {
 	FetchOrganizations,
@@ -36,17 +37,22 @@ export const planetscaleStatusOf = (model: Model) =>
 	Option.getOrNull(AsyncData.getData(model.statuses.planetscale.data))
 
 /**
- * The watch starts at the first clock read while awaiting first metrics and resets once that
- * ends, so a connection made later on gets its own full window.
+ * The watch starts at the first clock read while the card is shown and awaits first metrics,
+ * and resets otherwise, so a later connection or visit gets its own full window.
  */
 export const withWatchStart = (model: Model, readAtMs: number | null): Model => {
 	const startedAt = model.planetscaleCard.watchStartedAt
-	return withCard(model, {
-		watchStartedAt: isAwaitingFirstMetrics(planetscaleStatusOf(model), model.nowMs)
-			? (startedAt ?? readAtMs)
-			: null,
-	})
+	const isWatched =
+		integrationOfSearch(model.search.integration) === "planetscale" &&
+		isAwaitingFirstMetrics(planetscaleStatusOf(model), model.nowMs)
+	return withCard(model, { watchStartedAt: isWatched ? (startedAt ?? readAtMs) : null })
 }
+
+/** Each visit to the card starts a fresh watch from a fresh clock. */
+export const enterPlanetscale = (model: Model): Return => ({
+	model: withCard(model, { watchStartedAt: null }),
+	commands: [ReadClock()],
+})
 
 /** A watch tick, or "Check again" after the watch ran out: read the status and the clock. */
 export const refreshWatch = (model: Model, context: PageContext): Return => {

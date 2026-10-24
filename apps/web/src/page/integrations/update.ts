@@ -163,7 +163,7 @@ export const routeChanged = (
 				(next) => handleChatCallback(next, true),
 			])
 
-/** The reads an integration's card mounts (Cloudflare's usage). */
+/** The reads an integration's card mounts (Cloudflare's usage, PlanetScale's watch clock). */
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
@@ -171,6 +171,7 @@ const enterIntegration = (model: Model, context: PageContext): Return => {
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
 	if (integration === "supabase") return Supabase.requestMetricsRows(model, context, "Load")
+	if (integration === "planetscale") return Planetscale.enterPlanetscale(model)
 	return { model }
 }
 
