@@ -35,11 +35,14 @@ const FRAMEWORK_DOCS = {
 	otel: { label: "OpenTelemetry", page: "instrumentation" },
 } as const satisfies { readonly [Id in FrameworkId]: InstructionsDocs }
 
-const SETUP_TAB_ICONS: Readonly<Record<string, IconName>> = {
+const SETUP_TAB_ICONS = {
 	install: "DownloadIcon",
 	instrument: "CodeIcon",
 	"claude-code": "ClaudeIcon",
-}
+} as const satisfies { readonly [Value in (typeof SETUP_TAB_VALUES)[number]]: IconName }
+
+const isSetupTab = (value: string): value is (typeof SETUP_TAB_VALUES)[number] =>
+	SETUP_TAB_VALUES.some((tab) => tab === value)
 
 const PACKAGE_MANAGERS = [
 	{ id: "npm", command: "npm install" },
@@ -178,7 +181,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 			listClassName: "h-9",
 			tabClassName: "gap-2",
 			tabContent: (value, label) => [
-				icon(h, SETUP_TAB_ICONS[value] ?? "CodeIcon", { size: 14 }),
+				icon(h, isSetupTab(value) ? SETUP_TAB_ICONS[value] : "CodeIcon", { size: 14 }),
 				label,
 			],
 			wrapList: (list) =>
