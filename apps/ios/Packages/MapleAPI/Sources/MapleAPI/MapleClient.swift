@@ -199,6 +199,12 @@ public protocol MapleAPI: Sendable {
 	func dashboardWidgetData(dashboardId: String, widgetIds: [String], window: ResolvedTimeWindow, maxDataPoints: Int)
 		async throws -> [WidgetOutcome]
 
+	// The web dashboard's own reads: see MapleClient+Parity.swift
+	func serviceHealth(window: ResolvedTimeWindow, comparing previous: ResolvedTimeWindow?) async throws
+		-> ServiceHealthSnapshot
+	func logVolumeBySeverity(_ search: LogSearch, targetPoints: Int) async throws -> LogVolume
+	func previewAlertRule(_ rule: AlertRule, window: ResolvedTimeWindow) async throws -> AlertRulePreview
+
 	// Home Screen widgets — see MapleClient+WidgetSummary.swift
 	func widgetSummary() async throws -> WidgetSummaryPayload
 	func mintWidgetCredential(installationId: String) async throws -> WidgetCredential

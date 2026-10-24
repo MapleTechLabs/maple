@@ -139,7 +139,7 @@ extension MapleClient {
 		}
 	}
 
-	private func logFilters(_ search: LogSearch) -> Components.Schemas.LogFilters {
+	func logFilters(_ search: LogSearch) -> Components.Schemas.LogFilters {
 		.init(
 			bodySearch: search.bodySearch.flatMap { $0.isEmpty ? nil : $0 },
 			deploymentEnvironment: environment,
