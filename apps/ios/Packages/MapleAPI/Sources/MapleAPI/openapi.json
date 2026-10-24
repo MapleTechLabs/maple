@@ -5123,6 +5123,7 @@
             "previous": null,
             "services": [
               {
+                "baseline_p95_latency_ms": 120,
                 "deployment_environment": "production",
                 "error_count": 12,
                 "error_rate": 0.00027,
@@ -5172,6 +5173,9 @@
         "additionalProperties": false,
         "description": "One service in one deployment environment, with its request volume, errors and p95 latency.",
         "properties": {
+          "baseline_p95_latency_ms": {
+            "type": "number"
+          },
           "deployment_environment": {
             "type": "string"
           },
@@ -11545,7 +11549,7 @@
     },
     "/v2/services/health": {
       "post": {
-        "description": "Returns request volume, error rate and p95 latency per (service, environment) for a window, and for an optional comparison window in the same call. Reads the hourly entry-span aggregate the dashboard overview reads, so each window's edges widen to whole hours. Requires `services:read`.",
+        "description": "Returns request volume, error rate and p95 latency per (service, environment) for a window, and for an optional comparison window in the same call. Reads the hourly entry-span aggregate the dashboard overview reads, so each window widens to the whole hours it touches (end exclusive), the response carries those hours, and `throughput` is per second over them. Requires `services:read`.",
         "operationId": "queryServiceHealth",
         "parameters": [],
         "requestBody": {
