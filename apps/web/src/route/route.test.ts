@@ -73,6 +73,24 @@ describe("routes", () => {
 		expect(routeRedirect(parse("/integrations"))).toEqual(Option.none())
 	})
 
+	test("the Security Center's tabs, run and finding pages parse to their own routes", () => {
+		expect(parse("/security")._tag).toBe("Security")
+		expect(parse("/security/findings?rejected=true")).toMatchObject({
+			_tag: "SecurityFindings",
+			search: { rejected: true },
+		})
+		expect(parse("/security/runs")._tag).toBe("SecurityRuns")
+		expect(parse("/security/runs/run_9f3c2a1e7b")).toMatchObject({
+			_tag: "SecurityRun",
+			runId: "run_9f3c2a1e7b",
+		})
+		const finding = parse("/security/findings/5ec0a0d1-0000-4000-8000-000000000001/exports%2Ftenant")
+		expect(finding).toMatchObject({ _tag: "SecurityFinding", fingerprint: "exports/tenant" })
+		expect(hrefOf(finding)).toBe(
+			"/security/findings/5ec0a0d1-0000-4000-8000-000000000001/exports%2Ftenant",
+		)
+	})
+
 	test("an unknown path is NotFound", () => {
 		expect(parse("/nope/nope")).toEqual(AppRoute.NotFound({ path: "/nope/nope" }))
 	})

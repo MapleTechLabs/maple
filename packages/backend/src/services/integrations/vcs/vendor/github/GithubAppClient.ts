@@ -513,6 +513,7 @@ const GithubContentFileSchema = Schema.Struct({
 })
 type GithubContentFile = Schema.Schema.Type<typeof GithubContentFileSchema>
 
+const decodeRepositorySize = Schema.decodeUnknownEffect(Schema.Struct({ size: Schema.Number }))
 const decodeOAuthToken = Schema.decodeUnknownEffect(GithubOAuthTokenResponse)
 const decodeUserInstallations = Schema.decodeUnknownEffect(GithubUserInstallationsResponse)
 const decodeAuthenticatedUser = Schema.decodeUnknownEffect(GithubAuthenticatedUser)
@@ -1078,6 +1079,25 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					Effect.map(Option.some),
 					Effect.mapError(
 						(cause) => new GithubAppError({ message: "Unexpected commit payload", cause }),
+					),
+				)
+			})
+
+			/** The repository's size as GitHub reports it (`size`, in KiB): the packed history, before any clone. */
+			const getRepositorySizeKib = Effect.fn("GithubAppClient.getRepositorySizeKib")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(config, token, repoBase(config, owner, repo))
+				if (!isOk(response)) return yield* failure(response, "Get repository", "repository")
+				const json = yield* parseJson(response, "Get repository")
+				return yield* decodeRepositorySize(json).pipe(
+					Effect.map((body) => body.size),
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected repository payload", cause }),
 					),
 				)
 			})
@@ -2228,6 +2248,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				listBranches,
 				listCommits,
 				getCommit,
+				getRepositorySizeKib,
 				listPullRequests,
 				getPullRequest,
 				listPullRequestFiles,

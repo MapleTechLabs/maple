@@ -1,7 +1,7 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"ignoreWorkspaces": ["apps/ingest", "apps/ios", "examples/*"],
-	"ignore": [".deepsec/**", "**/*.type-test.ts"],
+	"ignore": ["**/*.type-test.ts"],
 	"ignoreExportsUsedInFile": true,
 	"workspaces": {
 		".": {
@@ -75,6 +75,10 @@
 		},
 		"packages/db": {
 			"entry": ["scripts/**/*.ts", "effect-orm.config.ts"]
+		},
+		"packages/security-audit": {
+			// The vendored skill's own validator tests run under `node --test`.
+			"entry": ["scripts/**/*.ts", "skill/*.test.cjs"]
 		},
 		"packages/email": {
 			"entry": ["scripts/**/*.ts"],

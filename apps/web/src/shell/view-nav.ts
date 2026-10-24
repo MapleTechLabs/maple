@@ -4,7 +4,6 @@ import { Option } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { infraSurfacesOf } from "../data/infra-surfaces"
 import { icon, iconColor } from "../ui/icon"
 import {
 	sidebarGroup,
@@ -19,7 +18,7 @@ import {
 } from "../ui/sidebar"
 import type { PinnedDashboardRow } from "./dashboards-shape"
 import { Menu, Message } from "./message"
-import type { Model, ShellClerk } from "./model"
+import { type Model, type ShellClerk, shellProbe, shellSurfaces } from "./model"
 import {
 	isNavItemActive,
 	matchSubItem,
@@ -37,27 +36,36 @@ import { ACTIVE_RAIL, GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } 
  * `useOrganizationFeatureFlags`: self-hosted turns every rollout on; a Clerk org reads its public
  * metadata, and fails closed (no flagged rows) until Clerk has an org.
  */
-export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> =>
-	navGroups({
-		releases:
-			!isClerkAuthEnabled ||
-			(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags.releases)),
-	})
+export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> => {
+	const flag = (name: "releases" | "securityAudit") =>
+		!isClerkAuthEnabled ||
+		(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags[name]))
+	return navGroups({ releases: flag("releases"), securityAudit: flag("securityAudit") })
+}
 
-/** The last-hour probe's answer; `null` while it is in flight or after it failed. */
-export const presenceOf = (model: Model): ReadonlyArray<InfraSurfaceLiteral> | null =>
-	AsyncData.match(model.infraPresence, {
-		onIdle: () => null,
-		onLoading: () => null,
-		onRefreshing: () => null,
-		onFailure: () => null,
-		onStale: () => null,
-		onSuccess: (surfaces) => surfaces,
-	})
+/** The last-hour probe's answer; `null` while it is first in flight or after it failed. */
+export const presenceOf = (model: Model): ReadonlyArray<InfraSurfaceLiteral> | null => {
+	const probe = shellProbe(model)
+	return probe === "failed" ? null : probe
+}
 
-/** `useInfraSurfaces`: the probe's surfaces plus connected integrations; `null` until the probe answers. */
-export const surfacesOf = (model: Model): ReadonlySet<NavSurface> | null =>
-	infraSurfacesOf(presenceOf(model), model.integrations)
+const NO_SURFACES: ReadonlySet<NavSurface> = new Set()
+
+/**
+ * The surfaces the nav filters by: every one when the probe failed, none of the optional ones
+ * while the answer is pending, so rows only ever appear once.
+ */
+export const surfacesOf = (model: Model): ReadonlySet<NavSurface> | null => {
+	const surfaces = shellSurfaces(model)
+	switch (surfaces._tag) {
+		case "Pending":
+			return NO_SURFACES
+		case "Every":
+			return null
+		case "Only":
+			return surfaces.surfaces
+	}
+}
 
 const activeSubHrefOf = (subItems: ReadonlyArray<NavSubItem>, currentPath: string): string | undefined =>
 	subItems.reduce<{ href: string; length: number } | undefined>((best, sub) => {

@@ -49,6 +49,16 @@ Create a service from the image `ghcr.io/mapletechlabs/maple:latest` and give it
 
 The server listens on `$PORT` when the platform sets one, and on `4318` otherwise. Platforms that terminate TLS for you work as is: the session cookie is marked `Secure` when the request arrives over HTTPS, and the dashboard works on whatever hostname the platform assigns.
 
+### Render
+
+[Deploy to Render](https://render.com/deploy?repo=https://github.com/MapleTechLabs/maple-render) creates the service from the [maple-render](https://github.com/MapleTechLabs/maple-render) blueprint: one instance with a 10 GB disk at `/data` and the health check already set.
+
+1. Generate an ingest key with `openssl rand -hex 32` and paste it into `MAPLE_LOCAL_INGEST_KEY` on the deploy page. Render generates the access token for you.
+2. When the deploy finishes, copy `MAPLE_LOCAL_ACCESS_TOKEN` from the service's **Environment** tab.
+3. Open the service's `onrender.com` URL and sign in with the access token.
+
+The blueprint uses the `1c-2g` plan. You can pick another before deploying, but plans with 512 MB of memory can run out under load.
+
 ## Behind a reverse proxy
 
 Put anything reachable from the internet behind TLS. On your own server, run a reverse proxy in front of port 4318. With [Caddy](https://caddyserver.com), which gets a certificate for you, the whole config is:

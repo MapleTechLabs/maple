@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { icon, type IconName } from "../../ui/icon"
 
 // `UnderlineTabStrip` and `underlineTabClass`: a row of tabs with an underlined active tab.
 
@@ -39,4 +40,49 @@ export const underlineTabClass = (isActive: boolean): string =>
 		isActive
 			? "border-primary font-medium text-foreground"
 			: "border-transparent text-muted-foreground hover:text-foreground",
+	)
+
+export type LinkTab = Readonly<{
+	key: string
+	href: string
+	label: string
+	icon: IconName
+	/** The tab the page shows: underlined, its icon in the primary colour. */
+	isCurrent: boolean
+	/** The link matches the URL (path and search): `aria-current` and the router's `active`. */
+	isRouteActive: boolean
+}>
+
+/** A page's tabs as links: each one a route, the current one underlined. */
+export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: ReadonlyArray<LinkTab>): Html =>
+	underlineTabStrip(
+		h,
+		{
+			navigation: true,
+			label,
+			bleed: false,
+			divided: false,
+			className: "gap-0 overflow-visible border-b border-border",
+		},
+		tabs.map((tab) =>
+			h.a(
+				[
+					h.Key(tab.key),
+					...(tab.isRouteActive ? [h.AriaCurrent("page")] : []),
+					h.Class(
+						cn(
+							cn(
+								underlineTabClass(tab.isCurrent),
+								"h-9 gap-[7px] px-3 first:pl-0.5",
+								tab.isCurrent ? "[&_svg]:text-primary" : "[&_svg]:text-muted-foreground",
+							),
+							tab.isRouteActive && "active",
+						),
+					),
+					...(tab.isRouteActive ? [h.DataAttribute("status", "active")] : []),
+					h.Href(tab.href),
+				],
+				[icon(h, tab.icon, { size: 14 }), tab.label],
+			),
+		),
 	)

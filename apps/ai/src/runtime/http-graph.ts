@@ -13,6 +13,8 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  *     worth pinning.
  *   - `/internal/mcp/tools`: the public tool catalog for Settings > MCP, typed and
  *     served here because the registry lives in this Worker.
+ *   - `/api/security-audit/*`: scheduled security audits, typed and served here because the
+ *     Workflow that runs them is hosted in this Worker.
  *   - `/internal/triage/classify` — the decision model behind the investigation
  *     gate, typed for the same reason. Reached only over a service binding: api
  *     does not forward it, and the callers are the Workers that open incidents.
@@ -30,6 +32,7 @@ import { McpLive } from "../mcp/app"
 import { HttpChatLive } from "../routes/internal/chat.http"
 import { HttpTriageLive } from "../routes/internal/triage.http"
 import { HttpMcpToolsLive } from "../routes/internal/mcp-tools.http"
+import { HttpSecurityAuditLive } from "../routes/security-audit.http"
 import { layerDecisionModelFromConfig } from "../platform/Llm"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { ChatSessionsRouter } from "../routes/chat-sessions.http"
@@ -43,6 +46,10 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { SecurityAuditPlanBudget } from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
+import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
+import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import type { AiPortsLayer } from "../worker/bindings"
 
@@ -87,6 +94,18 @@ const DecisionModelLive = Layer.unwrap(Effect.map(WorkersAiGateway, layerDecisio
 const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(HttpChatLive),
 	Layer.provide(HttpMcpToolsLive),
+	Layer.provide(
+		HttpSecurityAuditLive.pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					SecurityAuditStore.layer,
+					OrganizationFeatureFlagsService.layer,
+					SecurityAuditPlanBudget.layer,
+					SecurityAuditRepositorySize.layer,
+				),
+			),
+		),
+	),
 	Layer.provide(HttpTriageLive.pipe(Layer.provide(DecisionModelLive))),
 	Layer.provide(ApiErrorBoundaryLive),
 )
