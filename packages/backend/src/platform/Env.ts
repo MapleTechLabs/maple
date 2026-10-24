@@ -360,10 +360,12 @@ const envConfig = Config.all({
 	// `invalid_scope` ("The requested scope is invalid, unknown, or malformed").
 	// The resource prefix is load-bearing: the same action name (e.g. `read_backups`,
 	// `read_branches`) exists at multiple resource levels, so an unprefixed scope is
-	// ambiguous. Default = the scopes the Maple OAuth app is provisioned with.
+	// ambiguous. Default = the scopes the Maple OAuth app is provisioned with: a scope the app
+	// lacks fails every authorize, so the app gains a scope before this list does.
+	// `organization:write_databases` lets Maple register its webhook on each database.
 	PLANETSCALE_OAUTH_SCOPES: stringWithDefault(
 		"PLANETSCALE_OAUTH_SCOPES",
-		"user:read_organizations organization:read_organization organization:read_databases organization:read_branches organization:read_backups organization:read_comments organization:read_deploy_requests branch:read_branch",
+		"user:read_organizations organization:read_organization organization:read_databases organization:write_databases organization:read_branches organization:read_backups organization:read_comments organization:read_deploy_requests branch:read_branch",
 	),
 	SUPABASE_OAUTH_CLIENT_ID: optionalString("SUPABASE_OAUTH_CLIENT_ID"),
 	SUPABASE_OAUTH_CLIENT_SECRET: optionalRedacted("SUPABASE_OAUTH_CLIENT_SECRET"),

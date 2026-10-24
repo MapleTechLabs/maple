@@ -1,26 +1,23 @@
-import type { V2PlanetScaleScrapeTarget } from "@maple/domain/http/v2"
+import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import {
-	type MetricsAuth,
+	metricsAuthOf,
 	metricsHealthState,
+	metricsLastCollectedAt,
+	metricsLastError,
 	type SetupStep,
 } from "../../components/integrations/planetscale-setup-steps"
-import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
+import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
-import * as Field from "../../ui/field"
 import { spinner } from "../../ui/spinner"
 import { statusDot } from "../../ui/status-dot"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { SECRET_PREFIX } from "./planetscale"
 
-// `PlanetScaleMetricsHealth`, `PlanetScaleMetricsTokenForm`,
-// `PlanetScaleSetupChecklist` and `PlanetScaleOrgPicker`.
+// `PlanetScaleMetricsHealth`, `PlanetScaleSetupChecklist` and `PlanetScaleOrgPicker`.
 
 type H = HtmlBuilder<Message>
 
@@ -37,13 +34,14 @@ const HEADLINE = new Map([
 export const metricsHealth = (
 	h: H,
 	model: Model,
-	target: V2PlanetScaleScrapeTarget,
-	metricsAuth: MetricsAuth,
+	status: V2PlanetScaleIntegration,
 	timeZone: string,
-	action: Html | null,
 ): Html => {
-	const state = metricsHealthState(target, metricsAuth, model.nowMs)
+	const state = metricsHealthState(status, model.nowMs)
 	if (state === "unconfigured") return h.empty
+	const viaApi = metricsAuthOf(status) === "api"
+	const lastAt = metricsLastCollectedAt(status)
+	const excluded = status.scrape_target?.exclude_branches ?? []
 	const isOpen = model.planetscaleCard.isDetailsOpen
 	return h.div(
 		[h.Class("border-t border-border/60 p-4")],
@@ -58,20 +56,26 @@ export const metricsHealth = (
 					h.span(
 						[h.Class("text-muted-foreground")],
 						[
+							...(viaApi ? ["Polled from PlanetScale's metrics API every 5 minutes."] : []),
 							...(state === "waiting"
-								? ["Branch metrics usually appear within a minute."]
-								: target.last_scrape_at !== null
+								? [
+										viaApi
+											? " The first poll usually lands within 10 minutes."
+											: "Branch metrics usually appear within a minute.",
+									]
+								: lastAt !== null
 									? [
+											...(viaApi ? [" "] : []),
 											relativeTime(h, {
-												value: target.last_scrape_at,
+												value: lastAt,
 												nowMs: model.nowMs,
 												timeZone,
 												prefix: state === "healthy" ? "Updated" : "Last data",
 											}),
 										]
 									: []),
-							...(state === "healthy" && target.exclude_branches.length > 0
-								? [" · excluding ", target.exclude_branches.join(", ")]
+							...(state === "healthy" && excluded.length > 0
+								? [" · excluding ", excluded.join(", ")]
 								: []),
 						],
 					),
@@ -103,7 +107,6 @@ export const metricsHealth = (
 										),
 									]
 								: []),
-							...(action === null ? [] : [action]),
 						],
 					),
 				],
@@ -116,157 +119,10 @@ export const metricsHealth = (
 									"mt-2 break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-muted-foreground",
 								),
 							],
-							[target.last_scrape_error ?? ""],
+							[metricsLastError(status) ?? ""],
 						),
 					]
 				: []),
-		],
-	)
-}
-
-const tokenSettingsUrl = (organization: string) =>
-	`https://app.planetscale.com/${encodeURIComponent(organization)}/settings/service-tokens`
-
-const tokenInput = (
-	h: H,
-	model: Model,
-	field: "id" | "secret",
-	options: Readonly<{ id: string; label: string; placeholder: string; type?: "password" }>,
-): Html => {
-	const fieldModel = field === "id" ? model.planetscaleCard.tokenId : model.planetscaleCard.tokenSecret
-	const state = Field.stateOf(fieldModel, false)
-	const ids: Field.FieldIds = {
-		control: options.id,
-		label: `${options.id}-label`,
-		error: `${options.id}-error`,
-	}
-	return Field.field(h, { className: "min-w-40 flex-1 items-stretch gap-1.5", state }, [
-		Field.fieldLabel(h, { ids, state }, options.label),
-		Field.input(h, {
-			ids,
-			state,
-			attributes: [
-				...(options.type === undefined ? [] : [h.Type(options.type)]),
-				h.Placeholder(options.placeholder),
-				h.Autocomplete("off"),
-				...Field.controlAttributes(h, fieldModel, (message) =>
-					Message.GotMetricsTokenMessage({ field, message }),
-				),
-				h.OnPastePreventDefault((text) => Option.some(Message.PastedMetricsToken({ field, text }))),
-			],
-		}),
-	])
-}
-
-/** `PlanetScaleMetricsTokenForm`. */
-export const metricsTokenForm = (
-	h: H,
-	model: Model,
-	organization: string | null,
-	docsUrl: string | undefined,
-	mode: "initial" | "rotate",
-	canCancel: boolean,
-): Html => {
-	const card = model.planetscaleCard
-	const secret = card.tokenSecret.value
-	const looksWrong = secret.length > 0 && !secret.startsWith(SECRET_PREFIX)
-	const canSubmit = card.tokenId.value.trim().length > 0 && secret.length > 0
-	const linkHref = organization !== null ? tokenSettingsUrl(organization) : (docsUrl ?? null)
-	return h.div(
-		[h.Class("flex flex-col gap-3")],
-		[
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				[
-					"Create a service token with the single ",
-					inlineCode(h, {}, ["read_metrics_endpoints"]),
-					" ",
-					"permission — no other permission is needed, and Maple never uses it for anything else.",
-				],
-			),
-			...(linkHref === null
-				? []
-				: [
-						h.div(
-							[],
-							[
-								linkButton(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										href: linkHref,
-										attributes: [h.Target("_blank"), h.Rel("noreferrer")],
-									},
-									[
-										organization !== null
-											? "Create a token in PlanetScale"
-											: "How to create a token",
-										icon(h, "ExternalLinkIcon"),
-									],
-								),
-							],
-						),
-					]),
-			h.div(
-				[h.Class("flex flex-wrap items-end gap-2")],
-				[
-					tokenInput(h, model, "id", {
-						id: "ps-metrics-token-id",
-						label: "Service token ID",
-						placeholder: "tok_…",
-					}),
-					tokenInput(h, model, "secret", {
-						id: "ps-metrics-token-secret",
-						label: "Service token secret",
-						placeholder: `${SECRET_PREFIX}…`,
-						type: "password",
-					}),
-					h.div(
-						[h.Class("flex items-center gap-1.5")],
-						[
-							...(canCancel
-								? [
-										button(
-											h,
-											{
-												variant: "outline",
-												isDisabled: card.isSavingToken,
-												attributes: [h.OnClick(Message.ClickedRotateCancel())],
-											},
-											["Cancel"],
-										),
-									]
-								: []),
-							button(
-								h,
-								{
-									isDisabled: !canSubmit,
-									isLoading: card.isSavingToken,
-									attributes: [h.OnClick(Message.SubmittedMetricsToken())],
-								},
-								[mode === "rotate" ? "Update token" : "Enable metrics"],
-							),
-						],
-					),
-				],
-			),
-			...(looksWrong && card.tokenError === null
-				? [
-						h.p(
-							[h.Class("text-xs text-muted-foreground")],
-							[
-								"That doesn't look like a service token secret — it usually starts with",
-								" ",
-								inlineCode(h, {}, [SECRET_PREFIX]),
-								".",
-							],
-						),
-					]
-				: []),
-			...(card.tokenError === null
-				? []
-				: [h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [card.tokenError])]),
 		],
 	)
 }
