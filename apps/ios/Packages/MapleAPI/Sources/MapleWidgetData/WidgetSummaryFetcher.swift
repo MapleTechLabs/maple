@@ -42,26 +42,48 @@ public actor WidgetSummaryFetcher {
 
 	private let credentials: WidgetCredentialStore
 	private let fetchStates: WidgetFetchStateStore
-	private let session: URLSession
+	private let keys: any DeviceKeyStoring
+	private let tokens: DeviceTokenClient
+	private let session: any WidgetHTTPTransport
 	private var inFlight: [String: Task<WidgetSummaryPayload?, Never>] = [:]
 
 	public init(
 		credentials: WidgetCredentialStore = WidgetCredentialStore(),
 		fetchStates: WidgetFetchStateStore = WidgetFetchStateStore(),
-		session: URLSession? = nil
+		keys: any DeviceKeyStoring = KeychainDeviceKeyStore(),
+		tokens: DeviceTokenClient? = nil,
+		session: (any WidgetHTTPTransport)? = nil
 	) {
 		self.credentials = credentials
 		self.fetchStates = fetchStates
-		if let session {
-			self.session = session
-		} else {
-			let configuration = URLSessionConfiguration.ephemeral
-			configuration.timeoutIntervalForRequest = WidgetSummaryFetcher.deadline
-			configuration.timeoutIntervalForResource = WidgetSummaryFetcher.deadline
-			// A provider that waits for connectivity is a provider that gets
-			// killed. Offline is an answer here, and a fast one.
-			configuration.waitsForConnectivity = false
-			self.session = URLSession(configuration: configuration)
+		self.keys = keys
+		let session = session ?? Self.makeSession()
+		self.session = session
+		self.tokens = tokens ?? DeviceTokenClient(transport: session, store: credentials)
+	}
+
+	/// The extension's session: the provider's deadline, no waiting.
+	public static func makeSession() -> URLSession {
+		let configuration = URLSessionConfiguration.ephemeral
+		configuration.timeoutIntervalForRequest = WidgetSummaryFetcher.deadline
+		configuration.timeoutIntervalForResource = WidgetSummaryFetcher.deadline
+		// A provider that waits for connectivity is a provider that gets
+		// killed. Offline is an answer here, and a fast one.
+		configuration.waitsForConnectivity = false
+		return URLSession(configuration: configuration)
+	}
+
+	/// How a request authenticates: the device-bound key, or the legacy
+	/// `maple_ak_` bearer an older API still issues.
+	enum Authorization: Sendable {
+		case device(DeviceCredential, DeviceKey)
+		case legacy(WidgetCredential)
+
+		var scheme: String {
+			switch self {
+			case .device: "dpop"
+			case .legacy: "bearer"
+			}
 		}
 	}
 
@@ -117,13 +139,26 @@ public actor WidgetSummaryFetcher {
 		// an honest age, the same thing it does for every other skip.
 		if state.isInFlight(at: now, within: Self.attemptLock) { return .coalesced }
 
-		guard let credential = credentials.load(organizationId: organizationId) else {
+		// The device credential wins whenever the app has registered one.
+		let authorization: Authorization
+		if let device = credentials.loadDevice(organizationId: organizationId) {
+			if device.isExpired(at: now) { return .needsApp }
+			// The record without its key (a restored backup, a wiped keychain) is
+			// a credential nothing can sign for. Recorded so the app re-registers.
+			guard let key = keys.load(organizationId: organizationId), key.thumbprint == device.jkt else {
+				fetchStates.save(state.recording(.unauthorized, at: now), organizationId: organizationId)
+				return .needsApp
+			}
+			authorization = .device(device, key)
+		} else if let credential = credentials.load(organizationId: organizationId) {
+			// Expiry is checked here rather than left to the 401: a credential the
+			// app has simply not renewed yet is not a rejected one, and spending a
+			// request to be told so helps nobody.
+			if credential.isExpired(at: now) { return .needsApp }
+			authorization = .legacy(credential)
+		} else {
 			return .noCredential
 		}
-		// Expiry is checked here rather than left to the 401: a credential the
-		// app has simply not renewed yet is not a rejected one, and spending a
-		// request to be told so helps nobody.
-		if credential.isExpired(at: now) { return .needsApp }
 
 		// Keyed by organization *and* environment: within this process two
 		// widgets asking for different environments are asking different
@@ -138,11 +173,13 @@ public actor WidgetSummaryFetcher {
 		// the same second sees an attempt in progress rather than none.
 		fetchStates.save(state.attempting(at: now), organizationId: organizationId)
 
-		let task = Task<WidgetSummaryPayload?, Never> { [credentials, fetchStates, session] in
+		let task = Task<WidgetSummaryPayload?, Never> { [credentials, fetchStates, session, tokens] in
 			let outcome = await Self.request(
-				credential: credential,
+				authorization: authorization,
 				environment: environment,
-				session: session
+				session: session,
+				tokens: tokens,
+				now: now
 			)
 			switch outcome {
 			case .success(let payload):
@@ -162,7 +199,7 @@ public actor WidgetSummaryFetcher {
 				else {
 					fetchStates.save(
 						fetchStates.load(organizationId: organizationId)
-							.recording(.undecodable, at: Date()),
+							.recording(.undecodable, at: Date(), authScheme: authorization.scheme),
 						organizationId: organizationId
 					)
 					return nil
@@ -176,14 +213,16 @@ public actor WidgetSummaryFetcher {
 					.throughput(organizationId: organizationId, environment: environment)
 					.save(payload.throughputSnapshot())
 				fetchStates.save(
-					fetchStates.load(organizationId: organizationId).recording(.success, at: Date()),
+					fetchStates.load(organizationId: organizationId)
+						.recording(.success, at: Date(), authScheme: authorization.scheme),
 					organizationId: organizationId
 				)
 				_ = credentials
 				return payload
 			case .failure(let reason):
 				fetchStates.save(
-					fetchStates.load(organizationId: organizationId).recording(reason, at: Date()),
+					fetchStates.load(organizationId: organizationId)
+						.recording(reason, at: Date(), authScheme: authorization.scheme),
 					organizationId: organizationId
 				)
 				return nil
@@ -195,17 +234,96 @@ public actor WidgetSummaryFetcher {
 		return payload.map(Attempt.fetched) ?? .failed
 	}
 
-	private enum RequestOutcome {
+	enum RequestOutcome {
 		case success(WidgetSummaryPayload)
 		case failure(WidgetFetchState.Outcome)
 	}
 
-	private static func request(
-		credential: WidgetCredential,
+	static func request(
+		authorization: Authorization,
 		environment: String?,
-		session: URLSession
+		session: any WidgetHTTPTransport,
+		tokens: DeviceTokenClient,
+		now: Date
 	) async -> RequestOutcome {
-		let path = credential.apiBaseURL.appendingPathComponent("v2/widget_summary")
+		switch authorization {
+		case .legacy(let credential):
+			var request = summaryRequest(baseURL: credential.apiBaseURL, environment: environment)
+			request.setValue("Bearer \(credential.secret)", forHTTPHeaderField: "Authorization")
+			return await send(request, session: session)
+		case .device(let credential, let key):
+			return await deviceRequest(
+				credential: credential,
+				key: key,
+				environment: environment,
+				session: session,
+				tokens: tokens,
+				now: now
+			)
+		}
+	}
+
+	/// `GET /v2/widget_summary` with a DPoP-bound token.
+	///
+	/// `invalid_token` earns one fresh token and `invalid_dpop_proof` one fresh
+	/// proof; a second refusal, or `invalid_device_credential`, waits for the app.
+	static func deviceRequest(
+		credential: DeviceCredential,
+		key: DeviceKey,
+		environment: String?,
+		session: any WidgetHTTPTransport,
+		tokens: DeviceTokenClient,
+		now: Date
+	) async -> RequestOutcome {
+		var refreshedToken = false
+		var retriedProof = false
+		while true {
+			let token: DeviceAccessToken
+			switch await tokens.token(for: credential, key: key, forceRefresh: refreshedToken, now: now) {
+			case .success(let value): token = value
+			case .failure(.needsApp): return .failure(.unauthorized)
+			case .failure(.unreachable): return .failure(.unreachable)
+			case .failure(.server): return .failure(.server)
+			}
+			var request = summaryRequest(baseURL: credential.apiBaseURL, environment: environment)
+			guard let url = request.url,
+				let proof = try? DPoPProof.make(
+					key: key.signer,
+					method: "GET",
+					url: url,
+					accessToken: token.accessToken,
+					issuedAt: await tokens.issuedAt(now)
+				)
+			else { return .failure(.unauthorized) }
+			request.setValue("DPoP \(token.accessToken)", forHTTPHeaderField: "Authorization")
+			request.setValue(proof, forHTTPHeaderField: "DPoP")
+
+			let data: Data
+			let response: HTTPURLResponse
+			do {
+				(data, response) = try await session.send(request)
+			} catch {
+				return .failure(.unreachable)
+			}
+			await tokens.observe(response, at: now)
+			guard response.statusCode == 401 else { return outcome(status: response.statusCode, data: data) }
+			let error = DeviceAuthError(status: 401, data: data, headers: response.allHeaderFields)
+			if error.isInvalidProof, !retriedProof {
+				retriedProof = true
+				continue
+			}
+			// A proof refused twice is a clock or a bug, not a revoked key: back off.
+			if error.isInvalidProof { return .failure(.server) }
+			if !refreshedToken {
+				refreshedToken = true
+				continue
+			}
+			return .failure(.unauthorized)
+		}
+	}
+
+	private static func summaryRequest(baseURL: URL, environment: String?) -> URLRequest {
+		let path = baseURL.appendingPathComponent("v2/widget_summary")
 		// `URLComponents` rather than string interpolation: environment names
 		// are user-defined and may carry a space or a slash, which would
 		// otherwise produce a URL that silently fails to build.
@@ -215,37 +333,41 @@ public actor WidgetSummaryFetcher {
 		}
 		var request = URLRequest(url: components?.url ?? path, timeoutInterval: deadline)
 		request.httpMethod = "GET"
-		request.setValue("Bearer \(credential.secret)", forHTTPHeaderField: "Authorization")
 		request.setValue("application/json", forHTTPHeaderField: "Accept")
-		// Deliberately no `x-maple-org-id`. An API key is already bound to one
-		// organization and the server rejects a header that disagrees, so the
-		// only way to get this wrong is to send it.
+		// Deliberately no `x-maple-org-id`. Both credentials are already bound
+		// to one organization, so the only way to get this wrong is to send it.
+		return request
+	}
 
+	private static func send(_ request: URLRequest, session: any WidgetHTTPTransport) async -> RequestOutcome {
 		do {
-			let (data, response) = try await session.data(for: request)
-			guard let http = response as? HTTPURLResponse else { return .failure(.server) }
-			switch http.statusCode {
-			case 200:
-				// `WidgetJSON.decoder`, never a plain `.iso8601` one: the API sends
-				// timestamps with milliseconds and `.iso8601` rejects those on the
-				// deployment target. See WidgetJSON.
-				guard let payload = try? WidgetJSON.decoder.decode(WidgetSummaryPayload.self, from: data)
-				else {
-					return .failure(.undecodable)
-				}
-				return .success(payload)
-			// 403 belongs here too: a credential whose scopes no longer reach
-			// this endpoint is as dead as one that was revoked, and the app is
-			// the only thing that can mint a working replacement.
-			case 401, 403:
-				return .failure(.unauthorized)
-			default:
-				return .failure(.server)
-			}
+			let (data, response) = try await session.send(request)
+			return outcome(status: response.statusCode, data: data)
 		} catch {
 			// Offline, DNS, TLS, or the deadline. All the same to a widget: try
 			// again sooner than a server error, and render what it has meanwhile.
 			return .failure(.unreachable)
+		}
+	}
+
+	private static func outcome(status: Int, data: Data) -> RequestOutcome {
+		switch status {
+		case 200:
+			// `WidgetJSON.decoder`, never a plain `.iso8601` one: the API sends
+			// timestamps with milliseconds and `.iso8601` rejects those on the
+			// deployment target. See WidgetJSON.
+			guard let payload = try? WidgetJSON.decoder.decode(WidgetSummaryPayload.self, from: data)
+			else {
+				return .failure(.undecodable)
+			}
+			return .success(payload)
+		// 403 belongs here too: a credential whose scopes no longer reach
+		// this endpoint is as dead as one that was revoked, and the app is
+		// the only thing that can mint a working replacement.
+		case 401, 403:
+			return .failure(.unauthorized)
+		default:
+			return .failure(.server)
 		}
 	}
 }

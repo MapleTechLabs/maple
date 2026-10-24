@@ -31,6 +31,8 @@ public struct WidgetFetchState: Codable, Sendable, Equatable {
 	/// extension from fetching the same thing at the same time, which is a
 	/// steady-state concern, not a first-run one.
 	public var inFlightSince: Date?
+	/// `dpop` or `bearer`: which credential the last attempt used. Diagnostic.
+	public var lastAuthScheme: String?
 
 	public enum Outcome: String, Codable, Sendable {
 		case success
@@ -64,8 +66,9 @@ public struct WidgetFetchState: Codable, Sendable, Equatable {
 	/// Fetching is pointless until the app mints again.
 	public var isCredentialRejected: Bool { credentialRejectedAt != nil }
 
-	public func recording(_ outcome: Outcome, at date: Date) -> WidgetFetchState {
+	public func recording(_ outcome: Outcome, at date: Date, authScheme: String? = nil) -> WidgetFetchState {
 		var next = self
+		if let authScheme { next.lastAuthScheme = authScheme }
 		next.lastAttemptAt = date
 		next.lastOutcome = outcome
 		next.inFlightSince = nil
