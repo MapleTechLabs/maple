@@ -163,7 +163,7 @@ export const routeChanged = (
 				(next) => handleChatCallback(next, true),
 			])
 
-/** The reads an integration's card mounts (Cloudflare's usage). */
+/** The reads an integration's card mounts (Cloudflare's usage, PlanetScale's watch clock). */
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
@@ -171,6 +171,7 @@ const enterIntegration = (model: Model, context: PageContext): Return => {
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
 	if (integration === "supabase") return Supabase.requestMetricsRows(model, context, "Load")
+	if (integration === "planetscale") return Planetscale.enterPlanetscale(model)
 	return { model }
 }
 
@@ -186,7 +187,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	const s = model.statuses
 	return Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs }) =>
-			chain({ ...model, nowMs }, [
+			chain(Planetscale.withWatchStart({ ...model, nowMs }, nowMs), [
 				(next) => gcpBand(next, context),
 				(next) => Supabase.requestMetricsRows(next, context, "Load"),
 			]),
@@ -195,13 +196,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadRailway: ({ key, result }) =>
 			accepted(model, { ...s, railway: Keyed.accept(s.railway, key, result) }),
 		CompletedLoadPlanetscale: ({ key, result }) => {
-			const next = accepted(model, {
+			const read = accepted(model, {
 				...s,
 				planetscale: Keyed.accept(s.planetscale, key, result),
 			}).model
-			return integrationOfSearch(next.search.integration) === "planetscale"
-				? Planetscale.ensurePicker(next, context)
-				: { model: next }
+			return chain(read, [
+				(next) => Planetscale.loadedStatus(next),
+				(next) =>
+					integrationOfSearch(next.search.integration) === "planetscale"
+						? Planetscale.ensurePicker(next, context)
+						: { model: next },
+			])
 		},
 		CompletedLoadPlanetscaleDatabases: ({ key, result }) =>
 			accepted(model, {
@@ -386,10 +391,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedPlanetscaleToken: ({ failure }) => Planetscale.completedToken(model, context, failure),
 		ClickedPlanetscaleReplaceToken: () =>
 			Planetscale.updateCard(model, { isReplacingToken: !model.planetscaleCard.isReplacingToken }),
-		TickedPlanetscaleWatch: () => {
-			const refreshed = requestStatus(model, context, "planetscale", "Refresh")
-			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
-		},
+		TickedPlanetscaleWatch: () => Planetscale.refreshWatch(model, context),
+		ClickedPlanetscaleCheckAgain: () => Planetscale.clickedCheckAgain(model, context),
 		CompletedGcpLogVolume: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { logVolume: Keyed.accept(model.gcpCard.logVolume, key, result) }),
 		CompletedGcpFleet: ({ key, result }) =>

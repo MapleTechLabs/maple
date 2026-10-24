@@ -1,4 +1,5 @@
 import {
+	type V2PlanetScaleIntegration,
 	V2PlanetScaleMetricsTokenRequest,
 	V2PlanetScaleOrganizationList,
 	V2PlanetScaleSelectOrganizationRequest,
@@ -10,6 +11,7 @@ import { LoadFailure, toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import * as Dialog from "../../ui/dialog"
 import * as Field from "../../ui/field"
+import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { Message } from "./message"
 
 // `PlanetScaleIntegrationCard` and its connect flow: state and IO.
@@ -37,6 +39,8 @@ export const PlanetscaleCardModel = Schema.Struct({
 	tokenError: Schema.NullOr(Schema.String),
 	/** A token is attached and the form is open to replace it. */
 	isReplacingToken: Schema.Boolean,
+	/** The first clock read while awaiting first metrics; null while not awaiting. */
+	watchStartedAt: Schema.NullOr(Schema.Number),
 })
 export type PlanetscaleCardModel = typeof PlanetscaleCardModel.Type
 
@@ -54,7 +58,18 @@ export const initPlanetscaleCard = (): PlanetscaleCardModel => ({
 	isSavingToken: false,
 	tokenError: null,
 	isReplacingToken: false,
+	watchStartedAt: null,
 })
+
+/** The card stops watching for first metrics after this long and offers "Check again". */
+export const WATCH_LIMIT_MS = 30 * 60 * 1000
+
+/** Connected, nothing collected yet and the grant works: the card watches the status. */
+export const isAwaitingFirstMetrics = (status: V2PlanetScaleIntegration | null, nowMs: number): boolean =>
+	status !== null && status.connected && derivePlanetScaleSetup(status, nowMs).awaitingFirstScrape
+
+export const isWatchExpired = (card: PlanetscaleCardModel, nowMs: number): boolean =>
+	card.watchStartedAt !== null && nowMs - card.watchStartedAt >= WATCH_LIMIT_MS
 
 /** Comma or newline separated globs, trimmed. */
 export const parsePatternList = (value: string): ReadonlyArray<string> =>

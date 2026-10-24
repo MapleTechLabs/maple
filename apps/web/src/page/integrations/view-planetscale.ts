@@ -13,6 +13,7 @@ import { liveChecklist } from "../kit/connect-flow"
 import { catalogEntry } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { isWatchExpired } from "./planetscale"
 import { disconnectDialog } from "./view-disconnect"
 import { inventoryCountsOf } from "./flow-planetscale"
 import { metricsHealth } from "./view-planetscale-parts"
@@ -120,6 +121,27 @@ const webhookStatus = (h: H, model: Model, webhooks: Webhooks): Html =>
 		]),
 	])
 
+/** The first-metrics watch ran out; "Check again" restarts it. */
+const watchExpired = (h: H): Html =>
+	h.div(
+		[h.Class("mt-3 flex flex-col items-start gap-2")],
+		[
+			h.p(
+				[h.Class("text-xs text-muted-foreground")],
+				["Still no metrics after 30 minutes, so this stopped checking on its own."],
+			),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					attributes: [h.OnClick(Message.ClickedPlanetscaleCheckAgain())],
+				},
+				["Check again"],
+			),
+		],
+	)
+
 const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, timeZone: string): Html => {
 	const setup = derivePlanetScaleSetup(status, model.nowMs, inventoryCountsOf(model))
 	const busy = model.connect.isStarting || model.disconnect.isPending
@@ -176,7 +198,12 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 					? metricsHealth(h, model, status, timeZone)
 					: h.div(
 							[h.Class("border-t border-border/60 p-4")],
-							[liveChecklist(h, { title: "Checking the connection", rows: setup.checks })],
+							[
+								liveChecklist(h, { title: "Checking the connection", rows: setup.checks }),
+								...(isWatchExpired(model.planetscaleCard, model.nowMs)
+									? [watchExpired(h)]
+									: []),
+							],
 						),
 			]),
 			...(webhooks === null ? [] : [webhookStatus(h, model, webhooks)]),

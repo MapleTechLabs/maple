@@ -21,9 +21,11 @@ import * as QuickStartView from "./quick-start-view"
 import { bootSplash } from "../../layout/boot-splash"
 import * as MenuView from "../../ui/menu-view"
 import type * as CliLogin from "./cli-login"
+import * as CreateOrgView from "./create-org-view"
 import * as CliLoginView from "./cli-login-view"
-import { type Message, type Model, type Screen, toClerkSignIn, toCliLogin, toMcpAuthorize, toQuickStart, toSelectPlan, toSwitcher, toUnsubscribe, toUserMenu } from "./index"
+import { type Message, type Model, type Screen, toClerkSignIn, toCliLogin, toCreateOrg, toMcpAuthorize, toQuickStart, toSelectPlan, toSwitcher, toUnsubscribe, toUserMenu } from "./index"
 import type { Inputs } from "./inputs"
+import type * as CreateOrg from "./create-org"
 import type * as McpAuthorize from "./mcp-authorize"
 import * as McpAuthorizeView from "./mcp-authorize-view"
 import * as Unsubscribe from "./unsubscribe"
@@ -146,18 +148,15 @@ const selectPlanView = Submodel.defineView<SelectPlan.Model, SelectPlan.Message,
 	accessOf(inputs.customer) === "loading" ? bootSplash(h) : SelectPlan.view(h, model, customerOf(inputs.customer)),
 )
 
-/** `OrgRequiredPageClerk`. */
-const orgRequiredView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): Html =>
-	authLayout(h, "max-w-lg", [
-		authTitle(h, ["Organization required"]),
-		authDescription(h, ["Select or create an organization before entering the app."]),
-		switcher(h, model, inputs, "start", ({ trigger, withTrigger }) =>
-			h.div(
-				[h.Class("mt-4")],
-				withTrigger(button(h, { variant: "outline", attributes: trigger }, ["Select or create organization"])),
-			),
-		),
-	])
+/** `/org-required`: create the first organization, or join one that invited the user. */
+const createOrgView = Submodel.defineView<CreateOrg.Model, CreateOrg.Message, ScreenInputs>((model, inputs, h) =>
+	CreateOrgView.view(
+		h,
+		model,
+		Option.getOrNull(Option.flatMapNullishOr(inputs.maybeUser, (user) => user.email)),
+		inputs.memberships,
+	),
+)
 
 /** `WrongRegionScreen`: this region has nothing to show for an org another region serves. */
 const wrongRegionView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs, screen: ClerkScreens.WrongRegion): Html => {
@@ -207,7 +206,7 @@ const screenView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): Html
 		case "SignUp":
 			return accountLayout(h, [clerkCard(h, "SignUp", screen.target)])
 		case "OrgRequired":
-			return orgRequiredView(h, model, inputs)
+			return h.submodel({ slotId, model: screen, view: createOrgView, viewInputs, toParentMessage: toCreateOrg })
 		case "WrongRegion":
 			return wrongRegionView(h, model, inputs, screen)
 		case "SelectPlan":

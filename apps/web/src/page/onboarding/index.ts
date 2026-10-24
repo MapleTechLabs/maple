@@ -14,6 +14,7 @@ import * as Menu from "../../ui/menu"
 import * as CliLogin from "./cli-login"
 import * as ClerkScreens from "./clerk-screens"
 import * as ClerkSignIn from "./clerk-sign-in"
+import * as CreateOrg from "./create-org"
 import type { Inputs } from "./inputs"
 import * as McpAuthorize from "./mcp-authorize"
 import * as QuickStart from "./quick-start"
@@ -37,7 +38,7 @@ export const Screen = Schema.Union([
 	McpAuthorize.Model,
 	Unsubscribe.Model,
 	ClerkSignIn.Model,
-	ClerkScreens.OrgRequired,
+	CreateOrg.Model,
 	ClerkScreens.SignUp,
 	ClerkScreens.WrongRegion,
 	QuickStart.Model,
@@ -64,6 +65,7 @@ export const Message = defineMessageUnion({
 	GotSwitcherMessage: { message: OrgSwitcher.Message },
 	GotClerkSignInMessage: { message: ClerkSignIn.Message },
 	GotQuickStartMessage: { message: QuickStart.Message },
+	GotCreateOrgMessage: { message: CreateOrg.Message },
 	GotSelectPlanMessage: { message: SelectPlan.Message },
 	GotUserMenuMessage: { message: Menu.Message },
 	CompletedLogOut: {},
@@ -87,6 +89,7 @@ export const toUnsubscribe = (message: Unsubscribe.Message) => Message.GotUnsubs
 export const toSwitcher = (message: OrgSwitcher.Message) => Message.GotSwitcherMessage({ message })
 export const toClerkSignIn = (message: ClerkSignIn.Message) => Message.GotClerkSignInMessage({ message })
 export const toQuickStart = (message: QuickStart.Message) => Message.GotQuickStartMessage({ message })
+export const toCreateOrg = (message: CreateOrg.Message) => Message.GotCreateOrgMessage({ message })
 export const toSelectPlan = (message: SelectPlan.Message) => Message.GotSelectPlanMessage({ message })
 export const toUserMenu = (message: Menu.Message) => Message.GotUserMenuMessage({ message })
 
@@ -173,7 +176,7 @@ export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Optio
 					},
 					toClerkSignIn,
 				),
-			OrgRequired: () => fresh(key, { model: ClerkScreens.OrgRequired.make({}) }, toClerkSignIn),
+			OrgRequired: () => fresh(key, CreateOrg.init(inputs.maybeUser), toCreateOrg),
 		},
 		() => Option.none(),
 	)
@@ -254,6 +257,8 @@ export const update = (model: Model, message: Message, inputs: Inputs): Step => 
 			const step = withScreen(model, next, toSelectPlan)
 			return next.outMessage === undefined ? step : { ...step, outMessage: next.outMessage }
 		},
+		GotCreateOrgMessage: ({ message: child }) =>
+			screen._tag === "OrgRequired" ? withScreen(model, CreateOrg.update(screen, child), toCreateOrg) : unchanged(model),
 		GotUserMenuMessage: ({ message: child }) => updateUserMenu(model, child),
 		CompletedLogOut: () => unchanged(model),
 	})

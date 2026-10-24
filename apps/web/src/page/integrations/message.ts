@@ -281,8 +281,10 @@ export const Message = defineMessageUnion({
 	SubmittedPlanetscaleToken: {},
 	CompletedPlanetscaleToken: { failure: Schema.NullOr(LoadFailure) },
 	ClickedPlanetscaleReplaceToken: {},
-	/** Every 5 s while the first scrape is awaited. */
+	/** While the first metrics are awaited: every 5 s, then every minute, for 30 minutes. */
 	TickedPlanetscaleWatch: {},
+	/** Restarts the watch once it ran out. */
+	ClickedPlanetscaleCheckAgain: {},
 	CompletedGcpLogVolume: { key: Schema.String, result: Schema.Result(LogVolume, LoadFailure) },
 	CompletedGcpFleet: { key: Schema.String, result: Schema.Result(Schema.Array(FleetRead), LoadFailure) },
 	CompletedGcpInventory: result(GcpResourcesResponse),

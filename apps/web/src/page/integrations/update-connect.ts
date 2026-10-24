@@ -8,6 +8,7 @@ import type { Model, Statuses } from "./model"
 import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
 import * as Cloudflare from "./update-cloudflare"
+import * as Planetscale from "./update-planetscale"
 import * as Supabase from "./update-supabase"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
@@ -129,7 +130,7 @@ export const receivedCallback = (
 	const label = PROVIDERS[provider].label
 	if (status === "success") {
 		const title = CONNECTED_TITLE[provider]
-		return chain(model, [
+		return chain(provider === "planetscale" ? Planetscale.restartWatch(model) : model, [
 			(next) => ({ model: next, commands: [TrackConnected({ provider })] }),
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>

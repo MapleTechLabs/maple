@@ -14,7 +14,7 @@ import { regionFlag } from "./region-flag"
 
 type H = HtmlBuilder<Message>
 
-const REGION_CARDS = {
+export const REGION_CARDS = {
 	us: {
 		name: "United States",
 		place: "North America",
