@@ -1216,8 +1216,8 @@ describe("v2 reads shared with the dashboard", () => {
 			start_time: START,
 			end_time: END,
 			services: [
-				{ ...api, baseline_p95_latency_ms: 35 },
-				{ ...worker, baseline_p95_latency_ms: null },
+				{ ...api, baseline_p95_latency_ms: 35, baseline_span_count: 5000 },
+				{ ...worker, baseline_p95_latency_ms: null, baseline_span_count: null },
 			],
 			previous: { start_time: "2026-07-15T11:00:00.000Z", end_time: START, services },
 		})
