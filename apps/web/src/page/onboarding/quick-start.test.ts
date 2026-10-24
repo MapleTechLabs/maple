@@ -83,6 +83,16 @@ describe("quick start", () => {
 		expect(resolveQuickStartStep(stateOf(landed.model), false)).toBe("plan")
 	})
 
+	test("finishing the last step without a plan goes back to the plan step instead of nowhere", () => {
+		const atTeam = {
+			...loaded(),
+			state: { ...DEFAULT_QUICK_START_STATE, activeStep: "team", completedSteps: { stack: true } },
+		}
+		const done = updateWith(atTeam, Message.ClickedContinue({ step: "team" }), false)
+		expect(names(done)).not.toContain("FinishQuickStart")
+		expect(resolveQuickStartStep(stateOf(done.model), false)).toBe("plan")
+	})
+
 	test("a save from the old wizard that reached its plan step stays finished", () => {
 		const legacy = {
 			...DEFAULT_QUICK_START_STATE,
