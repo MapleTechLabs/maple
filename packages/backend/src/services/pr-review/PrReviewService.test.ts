@@ -599,6 +599,25 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		},
 	)
 
+	it.effect(
+		"reviews an outside author's head once a maintainer approves its CI, without re-reviewing it",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			return Effect.gen(function* () {
+				yield* seed(true, false)
+				const reviews = yield* PrReviewService
+				const approved = yield* reviews.onCiApproved(orgId, job({ authorAssociation: "CONTRIBUTOR" }))
+				assert.equal(approved.outcome, "started")
+				assert.equal(begun.length, 1)
+				// Every workflow of the run reports the approval; the head is reviewed once.
+				const again = yield* reviews.onCiApproved(orgId, job({ authorAssociation: "CONTRIBUTOR" }))
+				assert.equal(again.skipReason, "duplicate")
+				assert.equal(begun.length, 1)
+			}).pipe(Effect.provide(layerFor(testDb, { begun })))
+		},
+	)
+
 	it.effect("reviews a private repository's pull request whatever association the webhook reports", () => {
 		const testDb = createTestDb(trackedDbs)
 		const begun: Array<Begun> = []

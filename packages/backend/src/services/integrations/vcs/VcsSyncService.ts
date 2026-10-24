@@ -4,6 +4,7 @@ import {
 	type InstallationSyncJob,
 	isInstallationProcessable,
 	type PullRequestChecklistJob,
+	type PullRequestCiApprovedJob,
 	type PullRequestCommentJob,
 	type PullRequestEventJob,
 	type PushJob,
@@ -29,6 +30,7 @@ import { Clock, Duration, Effect, Context, Layer, Option, Schema, Match } from "
 import type { VcsProviderClient } from "./VcsProviderClient"
 import {
 	PullRequestChecklistSink,
+	PullRequestCiApprovalSink,
 	PullRequestCommentSink,
 	PullRequestEventSink,
 } from "./PullRequestEventSink"
@@ -96,6 +98,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const sink = yield* PullRequestEventSink
 			const commentSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestCommentSink))
 			const checklistSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestChecklistSink))
+			const ciApprovalSink = Option.getOrUndefined(
+				yield* Effect.serviceOption(PullRequestCiApprovalSink),
+			)
 			const workflowSink = Option.getOrUndefined(yield* Effect.serviceOption(WorkflowEventSink))
 
 			// The repo's single tracked branch, with the default-branch fallback for a
@@ -881,6 +886,18 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				},
 			)
 
+			const handlePullRequestCiApproved = Effect.fn("VcsSyncService.handlePullRequestCiApproved")(
+				function* (installation: VcsInstallation, job: PullRequestCiApprovedJob) {
+					yield* Effect.annotateCurrentSpan({
+						"vcs.repository.external_id": job.externalRepoId,
+						"cicd.pipeline.run.id": job.runId,
+						"vcs.pull_request.ci_approval_forwarded": ciApprovalSink !== undefined,
+					})
+					if (ciApprovalSink !== undefined)
+						yield* ciApprovalSink.onCiApproved(installation.orgId, job)
+				},
+			)
+
 			// CI runs and jobs touch no VCS table: they resolve the org and go to the sink, which turns
 			// them into spans. Not behind `ensureProcessable`, since CI traces need no synced commits.
 			// An org that turned CI traces off drops them here, before any span is built.
@@ -1070,6 +1087,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					),
 					Match.discriminator("kind")("pull-request-checklist", (job) =>
 						handlePullRequestChecklist(installation, job),
+					),
+					Match.discriminator("kind")("pull-request-ci-approved", (job) =>
+						handlePullRequestCiApproved(installation, job),
 					),
 					Match.discriminator("kind")("workflow-run", (job) =>
 						handleWorkflowRun(installation, job),
