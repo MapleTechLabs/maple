@@ -5,15 +5,6 @@ import SwiftUI
 @Observable
 final class ServicesListModel {
 	private(set) var loader: ScreenLoader<[Service]>!
-	/// Open-issue counts, keyed by service. Fetched once alongside the list so
-	/// each row can carry a badge without an N+1.
-	///
-	/// **Organization-wide, even when an environment is selected.**
-	/// `/v2/error_issues/service_counts` takes no parameters at all, so with
-	/// "staging" chosen a row's metrics are staging and its badge is not. It is
-	/// the only place in the app where one row mixes the two; the fix is a
-	/// parameter on that endpoint, not a second request here.
-	private(set) var openIssueCounts: [String: Int] = [:]
 	var window: TimeWindow = .default
 	/// The organization *and* environment these rows answer for. The view
 	/// rebuilds the model when it moves.
@@ -53,14 +44,7 @@ final class ServicesListModel {
 
 	private func fetch() async throws -> [Service] {
 		let resolved = window.resolve()
-		async let servicesTask = api.services(window: resolved, limit: 50)
-		async let countsTask = api.issueCountsByService()
-
-		let services = try await servicesTask.items
-		// Counts are decoration: a failure there must not empty the screen.
-		openIssueCounts = Dictionary(
-			uniqueKeysWithValues: ((try? await countsTask) ?? []).map { ($0.serviceName, Int($0.openCount)) }
-		)
+		let services = try await api.services(window: resolved, limit: 50).items
 		let rows = sorted(services)
 		// Persist only the window the next launch will seed with.
 		if window == .default, let organizationId {
@@ -92,92 +76,118 @@ struct ServicesListView: View {
 	@Environment(AppNavigation.self) private var navigation
 	@Environment(EnvironmentController.self) private var environments
 	@State private var model: ServicesListModel?
+	@State private var search = ""
 
 	private var scope: SessionController.DataScope {
 		.init(generation: session.dataGeneration, environment: environments.selected)
 	}
-	@State private var search = ""
+
+	private var window: TimeWindow { model?.window ?? .default }
 
 	var body: some View {
 		@Bindable var navigation = navigation
 		// The path lives in `AppNavigation` so the throughput widget can open a
-		// service from outside the view tree — same reason as the Alerts hub.
+		// service from outside the view tree, same reason as the Alerts hub.
 		return NavigationStack(path: $navigation.servicesPath) {
 			ZStack {
 				Token.background.ignoresSafeArea()
 				content
 			}
+			// Hidden here; it names the back button on pushed screens.
 			.navigationTitle("Services")
-			.navigationBarTitleDisplayMode(.large)
-			.toolbar {
-				ToolbarItem(placement: .topBarLeading) {
-					OrganizationSwitcherButton()
-				}
-				ToolbarItem(placement: .topBarLeading) {
-					EnvironmentPickerView()
-				}
-				if let model {
-					ToolbarItem(placement: .topBarTrailing) {
-						TimeWindowMenu(window: windowBinding(model))
-					}
-				}
-			}
+			.tabRootChrome()
 			.mapleDestinations()
 			.mapleScreen(Screen.services)
 		}
 		// Re-runs on an org switch or an environment change, which is what clears
 		// one scope's services before the next scope's arrive. The environment is
-		// in the key rather than pushed at this screen because it can resolve
-		// *after* the first build — a stored selection is only checked against
-		// the organization's real environments once the network answers.
+		// in the key because it can resolve after the first build.
 		.task(id: scope) {
-			let model = model?.scope == scope
-				? model!
-				: ServicesListModel(
-					api: session.api.scoped(toEnvironment: scope.environment),
-					session: session,
-					scope: scope
-				)
+			let model =
+				if let model, model.scope == scope { model } else {
+					ServicesListModel(
+						api: session.api.scoped(toEnvironment: scope.environment),
+						session: session,
+						scope: scope
+					)
+				}
 			self.model = model
 			await model.start()
 		}
+	}
+
+	private var status: TabRootStatus {
+		let count = model?.state.value?.count
+		let lead = count.map { "\($0) \($0 == 1 ? "service" : "services") · " } ?? ""
+		return TabRootStatus(dot: nil, lead: "", detail: "\(lead)last \(ServicesFormat.window(window))")
 	}
 
 	private var content: some View {
 		LoadableView(
 			loader: model?.loader,
 			emptyTitle: "No services",
-			emptyMessage: "No services reported telemetry in \(model?.window.phrase ?? TimeWindow.default.phrase).",
+			emptyMessage: "No services reported telemetry in \(window.phrase).",
 			skeletonRowHeight: 64
-		) { services in
-			let visible = filtered(services)
-			LazyVStack(spacing: 0) {
-				if visible.isEmpty {
-					EmptyStateView(
-						title: "No matches",
-						message: "No service name contains “\(search)”."
-					)
-					.padding(.top, 48)
-				} else if let model {
-					ForEach(visible, id: \.name) { service in
-						NavigationLink(value: Route.service(name: service.name, window: model.window)) {
-							ServiceRow(
-								service: service,
-								openIssues: model.openIssueCounts[service.name] ?? 0
-							)
+		) {
+			VStack(alignment: .leading, spacing: 0) {
+				TabRootHeader(title: "Services", status: status)
+				// In the header so the window stays changeable from the empty
+				// and error states too.
+				VStack(alignment: .leading, spacing: 12) {
+					if let model {
+						WindowChips(window: windowBinding(model))
+					}
+					FilterField(prompt: "Filter services", text: $search)
+				}
+				.padding(.horizontal, 16)
+				.padding(.top, 16)
+			}
+		} content: { services in
+			servicesTable(filtered(services))
+				.padding(.horizontal, 16)
+				.padding(.top, 16)
+				.padding(.bottom, 24)
+		}
+	}
+
+	@ViewBuilder
+	private func servicesTable(_ visible: [Service]) -> some View {
+		VStack(alignment: .leading, spacing: 8) {
+			HStack {
+				SectionLabel("Worst first")
+					.accessibilityAddTraits(.isHeader)
+				Spacer(minLength: 8)
+				Text("p50 · p95 · p99")
+					.font(Typo.micro)
+					.foregroundStyle(Token.mutedForeground)
+			}
+			if visible.isEmpty {
+				EmptyStateView(title: "No matches", message: "No service name contains \u{201C}\(search)\u{201D}.")
+					.padding(.top, 32)
+			} else {
+				VStack(spacing: 0) {
+					ForEach(Array(visible.enumerated()), id: \.element.name) { index, service in
+						NavigationLink(value: Route.service(name: service.name, window: window)) {
+							ServiceRow(service: service)
 						}
 						.buttonStyle(RowButtonStyle())
-						Hairline()
+						if index < visible.count - 1 { Hairline() }
 					}
 				}
+				.background(Token.card)
+				.clipShape(.rect(cornerRadius: Token.Radius.lg))
+				.overlay(
+					RoundedRectangle(cornerRadius: Token.Radius.lg)
+						.stroke(Token.border, lineWidth: Token.hairline)
+				)
 			}
 		}
-		.searchable(text: $search, prompt: "Filter services")
 	}
 
 	private func filtered(_ services: [Service]) -> [Service] {
-		guard !search.isEmpty else { return services }
-		return services.filter { $0.name.localizedCaseInsensitiveContains(search) }
+		let query = search.trimmingCharacters(in: .whitespaces)
+		guard !query.isEmpty else { return services }
+		return services.filter { $0.name.localizedCaseInsensitiveContains(query) }
 	}
 
 	private func windowBinding(_ model: ServicesListModel) -> Binding<TimeWindow> {
@@ -195,88 +205,48 @@ struct ServicesListView: View {
 	}
 }
 
-/// Row anatomy from the web's mobile services list: name with service dot and
-/// health dot, namespace, a mono stat line, and the error rate right-aligned
-/// under an uppercase "err" caption.
+/// One service: swatch, name and health dot over its percentiles, with
+/// throughput and error rate on the right.
 private struct ServiceRow: View {
 	let service: Service
-	let openIssues: Int
-
-	private var health: ServiceHealth {
-		ServiceHealth(service: service)
-	}
 
 	var body: some View {
-		HStack(alignment: .center, spacing: 12) {
-			// A 2px lane reserved on every row and painted only when unhealthy,
-			// so nothing shifts horizontally between rows.
-			Rectangle()
-				.fill(health == .unhealthy ? Token.destructive : .clear)
-				.frame(width: 2)
-
-			VStack(alignment: .leading, spacing: 5) {
-				HStack(spacing: 6) {
-					ServiceDot(serviceName: service.name)
-					Text(service.name)
-						.font(Typo.bodyMedium)
-						.foregroundStyle(Token.foreground)
-						.lineLimit(1)
-					HealthDot(health: health)
-				}
-
-				if let namespace = service.serviceNamespaces.first, !namespace.isEmpty {
-					Text(namespace)
-						.font(Typo.tiny)
-						.foregroundStyle(Token.mutedForeground)
-						.lineLimit(1)
-				}
-
-				PercentileTriplet(p50: service.p50LatencyMs, p95: service.p95LatencyMs, p99: service.p99LatencyMs)
-
-				HStack(spacing: 12) {
-					Stat(label: "thru", value: Format.throughput(service.throughput), tint: Token.foreground)
-					if openIssues > 0 {
-						Stat(label: "open", value: "\(openIssues)", tint: Token.destructive)
-					}
-				}
-			}
-
-			Spacer(minLength: 8)
-
-			VStack(alignment: .trailing, spacing: 2) {
-				Text(Format.errorRate(service.errorRate))
-					.font(Typo.smallSemibold)
+		VStack(alignment: .leading, spacing: 6) {
+			HStack(spacing: 8) {
+				ServiceDot(serviceName: service.name)
+				Text(service.name)
+					.font(Typo.body)
+					.foregroundStyle(Token.foreground)
+					.lineLimit(1)
+					.truncationMode(.middle)
+				HealthDot(health: ServiceHealth(service: service))
+				Spacer(minLength: 8)
+				Text(ServicesFormat.rps(service.throughput))
+					.font(Typo.body)
 					.tabularNumbers()
-					.foregroundStyle(Tone.errorRate(service.errorRate))
-				Text("err")
-					.font(Typo.micro)
-					.textCase(.uppercase)
-					.tracking(0.8)
-					.foregroundStyle(Token.mutedForeground.opacity(0.6))
+					.foregroundStyle(Token.foreground)
+					.layoutPriority(1)
 			}
-		}
-		.padding(.trailing, 16)
-		.padding(.vertical, 10)
-		.frame(minHeight: 64)
-		.contentShape(.rect)
-	}
-
-	private struct Stat: View {
-		let label: String
-		let value: String
-		var tint: Color
-
-		var body: some View {
-			HStack(spacing: 4) {
-				Text(label)
-					.font(Typo.micro)
-					.foregroundStyle(Token.mutedForeground.opacity(0.6))
-				Text(value)
+			HStack(spacing: 12) {
+				PercentileTriplet(
+					p50: service.p50LatencyMs,
+					p95: service.p95LatencyMs,
+					p99: service.p99LatencyMs,
+					showsLabels: false
+				)
+				Spacer(minLength: 8)
+				Text("\(Format.errorRate(service.errorRate)) err")
 					.font(Typo.tiny)
 					.tabularNumbers()
-					.foregroundStyle(tint)
+					.foregroundStyle(Tone.errorRate(service.errorRate))
+					.layoutPriority(1)
 			}
+			.padding(.leading, 16)
 		}
+		.padding(.horizontal, 12)
+		.padding(.vertical, 10)
+		.contentShape(.rect)
+		.accessibilityElement(children: .combine)
 	}
 }
 

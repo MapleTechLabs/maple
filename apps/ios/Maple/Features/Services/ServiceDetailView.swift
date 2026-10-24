@@ -166,6 +166,7 @@ struct ServiceDetailView: View {
 
 	@Environment(SessionController.self) private var session
 	@Environment(EnvironmentController.self) private var environments
+	@Environment(\.openURL) private var openURL
 	@State private var model: ServiceDetailModel?
 
 	private var scope: SessionController.DataScope {
@@ -182,51 +183,69 @@ struct ServiceDetailView: View {
 				skeleton: { DetailSkeleton(leadsWithHeadline: true, leadsWithChart: true) }
 			) { detail in
 				ServiceDetailContent(detail: detail, window: model?.window ?? window)
+					.id(serviceName)
 			}
 		}
 		.navigationBarTitleDisplayMode(.inline)
 		.toolbar {
 			ToolbarItem(placement: .principal) {
-				HStack(spacing: 6) {
+				HStack(spacing: 8) {
 					ServiceDot(serviceName: serviceName, size: 8)
 					Text(serviceName)
-						.font(Typo.monoTitle)
+						.font(Typo.bodyMedium)
 						.foregroundStyle(Token.foreground)
 						.lineLimit(1)
 				}
+				.accessibilityElement(children: .combine)
+				.accessibilityAddTraits(.isHeader)
 			}
-			if let model {
+			if let url = ServiceWebLink.url(serviceName: serviceName) {
 				ToolbarItem(placement: .topBarTrailing) {
-					TimeWindowMenu(
-						window: Binding(
-							get: { model.window },
-							set: { newValue in
-								model.window = newValue
-								Telemetry.track(
-									Telemetry.Event.timeWindowChanged,
-									["screen": Screen.serviceDetail, "window": newValue.rawValue]
-								)
-								Task { await model.loader.load(.replace) }
-							}
-						)
-					)
+					Button {
+						openURL(url)
+					} label: {
+						PixelIcon.externalLink.image
+							.resizable()
+							.frame(width: 14, height: 14)
+							.foregroundStyle(Token.mutedForeground)
+					}
+					.accessibilityLabel("Open on web")
 				}
 			}
 		}
 		.mapleScreen(Screen.serviceDetail)
-		.task(id: scope) {
+		// Keyed on the name too: a deep link that swaps the pushed service
+		// reuses this view, and must not keep the previous service's model.
+		.task(id: TaskKey(scope: scope, serviceName: serviceName)) {
 			let model =
-				model?.scope == scope
-				? model!
-				: ServiceDetailModel(
-					serviceName: serviceName,
-					window: window,
-					api: session.api.scoped(toEnvironment: scope.environment),
-					session: session,
-					scope: scope
-				)
+				if let model, model.scope == scope, model.serviceName == serviceName { model } else {
+					ServiceDetailModel(
+						serviceName: serviceName,
+						window: window,
+						api: session.api.scoped(toEnvironment: scope.environment),
+						session: session,
+						scope: scope
+					)
+				}
 			self.model = model
 			await model.start()
+		}
+	}
+}
+
+private struct TaskKey: Hashable {
+	let scope: SessionController.DataScope
+	let serviceName: String
+}
+
+private enum DetailSegment: String, CaseIterable {
+	case overview, operations, errors
+
+	var title: String {
+		switch self {
+		case .overview: "Overview"
+		case .operations: "Operations"
+		case .errors: "Errors"
 		}
 	}
 }
@@ -234,6 +253,9 @@ struct ServiceDetailView: View {
 private struct ServiceDetailContent: View {
 	let detail: ServiceDetail
 	let window: TimeWindow
+
+	@State private var segment: DetailSegment = .overview
+	@State private var sort: OperationSort = .failures
 
 	private var service: Service { detail.service }
 	private var resolvedWindow: ResolvedTimeWindow {
@@ -246,145 +268,132 @@ private struct ServiceDetailContent: View {
 	}
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 28) {
+		VStack(alignment: .leading, spacing: 0) {
 			VerdictHeadline(verdict: ServiceHealth.verdict(for: service, window: window))
 				.padding(.horizontal, 16)
+				.padding(.top, 12)
 
-			SignalCard(
-				points: SignalPoint.from(detail.overview),
-				window: resolvedWindow,
-				baselineP95: LatencyBaseline(service: service)?.p95LatencyMs
+			UnderlineTabs(
+				options: DetailSegment.allCases.map { ($0, $0.title) },
+				selection: $segment
 			)
-			.padding(.horizontal, 16)
+			.padding(.top, 16)
 
-			Block(title: "Over \(window.phrase)") {
-				StatGrid(columns: 3) {
-					StatTile(
-						label: "Requests",
-						value: Format.count(service.throughput * resolvedWindow.end.timeIntervalSince(resolvedWindow.start))
-					)
-					StatTile(
-						label: "Error rate",
-						value: Format.errorRate(service.errorRate),
-						tint: Tone.errorRate(service.errorRate)
-					)
-					StatTile(
-						label: "p95",
-						value: Format.latency(service.p95LatencyMs),
-						tint: Tone.latency(service.p95LatencyMs, scale: .p95)
-					)
-				}
-				.padding(.horizontal, 16)
-			}
-
-			if !detail.incidents.isEmpty {
-				Block(title: "Open alerts", count: detail.incidents.count) {
-					VStack(spacing: 8) {
-						ForEach(detail.incidents) { card in
-							NavigationLink(value: Route.incident(id: card.id)) {
-								IncidentCardView(card: card)
-							}
-							.buttonStyle(.plain)
-						}
-					}
+			switch segment {
+			case .overview: overview
+			case .operations:
+				OperationsSection(operations: detail.overview.operations, window: window, sort: $sort, limit: nil)
 					.padding(.horizontal, 16)
-				}
+					.padding(.top, 16)
+			case .errors: errors
 			}
-
-			OperationsSection(operations: detail.overview.operations, window: window)
-
-			Block(title: "Open issues", count: detail.issues.isEmpty ? nil : detail.issues.count) {
-				if detail.issues.isEmpty {
-					Text("Nothing needs attention in \(window.phrase).")
-						.font(Typo.small)
-						.foregroundStyle(Token.mutedForeground)
-						.padding(.horizontal, 16)
-				} else {
-					VStack(spacing: 0) {
-						ForEach(detail.issues, id: \.id) { issue in
-							NavigationLink(value: Route.issue(id: issue.id)) {
-								IssueRow(issue: issue, showsService: false)
-							}
-							.buttonStyle(RowButtonStyle())
-							Hairline()
-						}
-					}
-				}
-			}
-
-			Block(title: "Volume") {
-				VStack(spacing: 0) {
-					DetailRow("Spans", Format.count(service.spanCount))
-					Hairline()
-					DetailRow("Errors", Format.count(service.errorCount))
-					Hairline()
-					if service.hasSampling {
-						// Sampled data means the raw counts understate reality;
-						// saying so is more useful than silently scaling.
-						DetailRow("Sampling", "1 in \(Format.count(service.samplingWeight))")
-						Hairline()
-						DetailRow("Est. throughput", Format.throughput(service.tracedThroughput))
-						Hairline()
-					}
-					if !service.deploymentEnvironments.isEmpty {
-						DetailRow("Environments", service.deploymentEnvironments.joined(separator: ", "))
-						Hairline()
-					}
-					if !service.serviceNamespaces.isEmpty {
-						DetailRow("Namespaces", service.serviceNamespaces.joined(separator: ", "))
-						Hairline()
-					}
-				}
-				.padding(.horizontal, 16)
-			}
-
-			Text("Updated \(detail.loadedAt.formatted(date: .omitted, time: .shortened))")
-				.font(Typo.tiny)
-				.tabularNumbers()
-				.foregroundStyle(Token.mutedForeground.opacity(0.6))
-				.padding(.horizontal, 16)
 		}
-		.padding(.top, 8)
 		.padding(.bottom, 24)
 	}
-}
 
-private struct Block<Content: View>: View {
-	let title: String
-	var count: Int? = nil
-	@ViewBuilder let content: Content
+	@ViewBuilder
+	private var overview: some View {
+		StatGrid(columns: 2) {
+			StatTile(label: "Throughput", value: ServicesFormat.rps(service.throughput))
+			StatTile(label: "Error rate", value: Format.errorRate(service.errorRate))
+			StatTile(
+				label: "P95 latency",
+				value: Format.latency(service.p95LatencyMs),
+				delta: StatDelta(
+					current: service.p95LatencyMs,
+					previous: LatencyBaseline(service: service)?.p95LatencyMs,
+					higherIsBetter: false,
+					style: .milliseconds,
+					comparison: "vs baseline"
+				)
+			)
+			StatTile(label: "Open issues", value: "\(detail.issues.count)", note: issuesNote)
+		}
+		.padding(.horizontal, 16)
+		.padding(.top, 16)
 
-	var body: some View {
-		VStack(alignment: .leading, spacing: 10) {
-			HStack(spacing: 6) {
-				SectionLabel(title)
-				if let count {
-					Text("\(count)")
-						.font(Typo.microMedium)
-						.tabularNumbers()
-						.foregroundStyle(Token.mutedForeground.opacity(0.7))
+		SignalCard(
+			points: SignalPoint.from(detail.overview),
+			window: resolvedWindow,
+			windowLabel: ServicesFormat.window(window),
+			baselineP95: LatencyBaseline(service: service)?.p95LatencyMs
+		)
+		.padding(.horizontal, 16)
+		.padding(.top, 16)
+
+		if !detail.incidents.isEmpty {
+			VStack(alignment: .leading, spacing: 8) {
+				ServiceSectionHeader(title: "Open alerts", count: detail.incidents.count)
+				ForEach(detail.incidents) { card in
+					NavigationLink(value: Route.incident(id: card.id)) {
+						ServiceIncidentRow(card: card)
+					}
+					.buttonStyle(.plain)
 				}
 			}
 			.padding(.horizontal, 16)
-			content
+			.padding(.top, 24)
 		}
+
+		OperationsSection(operations: detail.overview.operations, window: window, sort: $sort, limit: 5)
+			.padding(.horizontal, 16)
+			.padding(.top, 24)
+	}
+
+	/// `1 new today`: issues first seen in the last 24 hours.
+	private var issuesNote: (text: String, tint: Color)? {
+		guard !detail.issues.isEmpty else { return nil }
+		let dayAgo = Date().addingTimeInterval(-86_400)
+		let fresh = detail.issues.filter { (ResolvedTimeWindow.parse($0.firstSeenAt) ?? .distantPast) >= dayAgo }.count
+		return fresh > 0 ? ("\(fresh) new today", Token.severityWarn) : ("none new today", Token.mutedForeground)
+	}
+
+	@ViewBuilder
+	private var errors: some View {
+		VStack(alignment: .leading, spacing: 8) {
+			ServiceSectionHeader(title: "Open issues", count: detail.issues.isEmpty ? nil : detail.issues.count)
+			if detail.issues.isEmpty {
+				Text("Nothing needs attention in \(window.phrase).")
+					.font(Typo.small)
+					.foregroundStyle(Token.mutedForeground)
+					.padding(.top, 4)
+			} else {
+				VStack(spacing: 0) {
+					ForEach(Array(detail.issues.enumerated()), id: \.element.id) { index, issue in
+						NavigationLink(value: Route.issue(id: issue.id)) {
+							IssueRow(issue: issue, showsService: false)
+						}
+						.buttonStyle(RowButtonStyle())
+						if index < detail.issues.count - 1 { Hairline() }
+					}
+				}
+				.background(Token.card)
+				.clipShape(.rect(cornerRadius: Token.Radius.lg))
+				.overlay(
+					RoundedRectangle(cornerRadius: Token.Radius.lg)
+						.stroke(Token.border, lineWidth: Token.hairline)
+				)
+			}
+		}
+		.padding(.horizontal, 16)
+		.padding(.top, 16)
 	}
 }
 
-/// The verdict and the sentence behind it — the only place on the screen the
+/// The verdict and the sentence behind it, the only place on the screen the
 /// health colour is allowed to be loud, as on Home.
 private struct VerdictHeadline: View {
 	let verdict: ServiceHealth.Verdict
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 6) {
-			HStack(alignment: .firstTextBaseline, spacing: 10) {
+			HStack(spacing: 8) {
 				Circle()
 					.fill(verdict.health.tint)
 					.frame(width: 8, height: 8)
-					.offset(y: -1)
 				Text(verdict.title)
 					.font(Typo.title)
+					.tracking(-0.5)
 					.foregroundStyle(Token.foreground)
 			}
 			Text(verdict.reason)
@@ -392,21 +401,18 @@ private struct VerdictHeadline: View {
 				.tabularNumbers()
 				.foregroundStyle(Token.mutedForeground)
 				.fixedSize(horizontal: false, vertical: true)
-				.padding(.leading, 18)
 		}
-		.padding(.top, 8)
 		.accessibilityElement(children: .combine)
 	}
 }
 
-/// One signal at a time, full width. The number is the latest settled bucket
-/// — what the service is doing *now* — with the window's peak and average as
-/// the small print, because an average over a day answers a different
-/// question than the one someone opens this screen with. Scrubbing the chart
-/// swaps the number for the bucket under the finger.
+/// One signal at a time, full width. The headline is the latest settled
+/// bucket (what the service is doing now) with the window's peak beside it;
+/// scrubbing swaps it for the bucket under the finger.
 private struct SignalCard: View {
 	let points: [SignalPoint]
 	let window: ResolvedTimeWindow
+	let windowLabel: String
 	let baselineP95: Double?
 
 	@State private var kind: SignalKind = .throughput
@@ -416,35 +422,43 @@ private struct SignalCard: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
-			SegmentChips(
-				options: SignalKind.allCases.map { ($0, $0.title) },
-				selection: Binding(
-					get: { kind },
-					set: { next in
-						kind = next
-						scrubbed = nil
-						Telemetry.track(Telemetry.Event.serviceSignalChanged, ["signal": next.rawValue])
-					}
+			HStack {
+				SegmentChips(
+					options: SignalKind.allCases.map { ($0, $0.title) },
+					selection: Binding(
+						get: { kind },
+						set: { next in
+							kind = next
+							scrubbed = nil
+							Telemetry.track(Telemetry.Event.serviceSignalChanged, ["signal": next.rawValue])
+						}
+					),
+					style: .framedCompact
 				)
-			)
+				Spacer(minLength: 8)
+				Text("last \(windowLabel)")
+					.font(Typo.tiny)
+					.foregroundStyle(Token.mutedForeground)
+			}
 
 			if points.count < 2 {
 				Text("Not enough traffic in this window to chart.")
 					.font(Typo.small)
 					.foregroundStyle(Token.mutedForeground)
-					.frame(height: 160)
+					.frame(height: 130)
 					.frame(maxWidth: .infinity)
 			} else {
-				headline
+				readout
 				SignalChart(
 					points: points,
 					kind: kind,
 					window: window,
 					baselineP95: baselineP95,
-					scrubbed: $scrubbed
+					scrubbed: $scrubbed,
+					axisLabels: false
 				)
-				.frame(height: 170)
-				footer
+				.frame(height: 130)
+				legend
 			}
 		}
 		.padding(12)
@@ -455,141 +469,81 @@ private struct SignalCard: View {
 		)
 	}
 
-	/// "now" or the scrubbed bucket's time, then the value in the signal's unit.
-	@ViewBuilder
-	private var headline: some View {
-		VStack(alignment: .leading, spacing: 4) {
-			HStack(alignment: .firstTextBaseline, spacing: 8) {
-				Text(scrubbed == nil ? "Now" : (shown?.date.formatted(date: .omitted, time: .shortened) ?? ""))
-					.font(Typo.micro)
-					.textCase(.uppercase)
-					.tracking(1.2)
-					.tabularNumbers()
-					.foregroundStyle(Token.mutedForeground)
-				if scrubbed == nil, let trend = trendLabel {
-					Text(trend)
-						.font(Typo.tiny)
-						.tabularNumbers()
-						.foregroundStyle(Token.mutedForeground.opacity(0.8))
-				}
-			}
-			switch kind {
-			case .throughput:
-				HStack(alignment: .firstTextBaseline, spacing: 8) {
-					Text(Format.throughput(shown?.throughput ?? 0))
-						.font(Typo.statValue)
-						.tabularNumbers()
-						.foregroundStyle(Token.foreground)
-					Text("\(Format.count(shown?.requests ?? 0)) requests in the bucket")
-						.font(Typo.tiny)
-						.tabularNumbers()
-						.foregroundStyle(Token.mutedForeground)
-				}
-			case .errors:
-				Text(Format.errorRate(shown?.errorRate ?? 0))
-					.font(Typo.statValue)
-					.tabularNumbers()
-					.foregroundStyle(Tone.errorRate(shown?.errorRate ?? 0))
-			case .latency:
-				HStack(alignment: .top, spacing: 14) {
-					Percentile(label: "p50", value: shown?.p50, tint: Token.chartP50, scale: .p50)
-					Percentile(label: "p95", value: shown?.p95, tint: Token.chartP95, scale: .p95, emphasis: true)
-					Percentile(label: "p99", value: shown?.p99, tint: Token.chartP99, scale: .p99)
-				}
-			}
+	/// `612 ms  p95 now · peak 702 ms`, or the scrubbed bucket's time.
+	private var readout: some View {
+		let when = scrubbed.map { $0.date.formatted(date: .omitted, time: .shortened) } ?? "now"
+		let value: String
+		let detail: String
+		switch kind {
+		case .throughput:
+			value = ServicesFormat.rps(shown?.throughput ?? 0)
+			detail = "\(when) · peak \(ServicesFormat.rps(points.map(\.throughput).max() ?? 0))"
+		case .errors:
+			value = Format.errorRate(shown?.errorRate ?? 0)
+			detail = "\(when) · peak \(Format.errorRate(points.map(\.errorRate).max() ?? 0))"
+		case .latency:
+			value = Format.latency(shown?.p95 ?? 0)
+			detail = "p95 \(when) · peak \(Format.latency(points.map(\.p95).max() ?? 0))"
+		}
+		return HStack(alignment: .firstTextBaseline, spacing: 8) {
+			Text(value)
+				.font(Typo.statValue)
+				.tracking(-0.4)
+				.tabularNumbers()
+				.foregroundStyle(Token.foreground)
+			Text(detail)
+				.font(Typo.tiny)
+				.tabularNumbers()
+				.foregroundStyle(Token.mutedForeground)
+				.lineLimit(1)
 		}
 		.animation(nil, value: scrubbed)
+		.accessibilityElement(children: .combine)
 	}
 
-	/// The window's shape in two numbers, so the "now" above it has context.
-	private var footer: some View {
+	/// Swatches with the shown bucket's values, and the unit on the right.
+	private var legend: some View {
 		HStack(spacing: 12) {
 			switch kind {
 			case .throughput:
-				Fact(label: "peak", value: Format.throughput(points.map(\.throughput).max() ?? 0))
-				Fact(label: "avg", value: Format.throughput(average(points.map(\.throughput))))
+				LegendItem(tint: Token.foreground.opacity(0.85), text: "throughput")
 			case .errors:
-				Fact(label: "peak", value: Format.errorRate(points.map(\.errorRate).max() ?? 0))
-				Fact(label: "buckets over 1%", value: "\(points.filter { $0.errorRate >= 0.01 }.count)")
+				LegendItem(tint: Token.chartError, text: "error rate")
 			case .latency:
-				Fact(label: "p95 peak", value: Format.latency(points.map(\.p95).max() ?? 0))
-				if let baselineP95 {
-					Fact(label: "7d p95", value: Format.latency(baselineP95))
-				}
+				LegendItem(tint: Token.chartP50, text: "p50 \(Self.ms(shown?.p50))")
+				LegendItem(tint: Token.chartP95, text: "p95 \(Self.ms(shown?.p95))")
+				LegendItem(tint: Token.chartP99, text: "p99 \(Self.ms(shown?.p99))")
 			}
 			Spacer(minLength: 0)
-			Text("\(points.count) buckets")
+			Text(unit)
 				.font(Typo.micro)
-				.tabularNumbers()
-				.foregroundStyle(Token.mutedForeground.opacity(0.6))
+				.foregroundStyle(Token.mutedForeground)
 		}
 	}
 
-	/// How the settled bucket compares with the first half of the window —
-	/// "+38% vs earlier" — so a climb reads as a climb even before the chart
-	/// is looked at. Nil when there is too little to compare.
-	private var trendLabel: String? {
-		guard points.count >= 6, let now = points.settled else { return nil }
-		let earlier = Array(points.prefix(points.count / 2))
-		let current: Double
-		let reference: Double
+	private var unit: String {
 		switch kind {
-		case .throughput:
-			current = now.throughput
-			reference = average(earlier.map(\.throughput))
-		case .errors:
-			current = now.errorRate
-			reference = average(earlier.map(\.errorRate))
-		case .latency:
-			current = now.p95
-			reference = average(earlier.map(\.p95))
+		case .throughput: "rps"
+		case .errors: "%"
+		case .latency: "ms"
 		}
-		guard reference > 0, current.isFinite else { return nil }
-		let change = (current - reference) / reference
-		guard abs(change) >= 0.05 else { return "steady vs earlier" }
-		let percent = Int((abs(change) * 100).rounded())
-		return "\(change > 0 ? "+" : "−")\(percent)% vs earlier"
 	}
 
-	private func average(_ values: [Double]) -> Double {
-		let finite = values.filter(\.isFinite)
-		return finite.isEmpty ? 0 : finite.reduce(0, +) / Double(finite.count)
+	/// Whole milliseconds, unit-less: the legend's unit sits on the right.
+	private static func ms(_ value: Double?) -> String {
+		guard let value, value.isFinite else { return "-" }
+		return "\(Int(value.rounded()))"
 	}
 
-	private struct Percentile: View {
-		let label: String
-		let value: Double?
+	private struct LegendItem: View {
 		let tint: Color
-		let scale: Tone.LatencyScale
-		var emphasis = false
+		let text: String
 
 		var body: some View {
-			VStack(alignment: .leading, spacing: 2) {
-				HStack(spacing: 4) {
-					Circle().fill(tint).frame(width: 5, height: 5)
-					Text(label)
-						.font(Typo.micro)
-						.foregroundStyle(Token.mutedForeground)
-				}
-				Text(value.map(Format.latency) ?? "—")
-					.font(emphasis ? Typo.statValue : Typo.bodyMedium)
-					.tabularNumbers()
-					.foregroundStyle(value.map { Tone.latency($0, scale: scale) } ?? Token.mutedForeground)
-			}
-		}
-	}
-
-	private struct Fact: View {
-		let label: String
-		let value: String
-
-		var body: some View {
-			HStack(spacing: 4) {
-				Text(label)
+			HStack(spacing: 6) {
+				Rectangle().fill(tint).frame(width: 10, height: 2)
+				Text(text)
 					.font(Typo.micro)
-					.foregroundStyle(Token.mutedForeground.opacity(0.7))
-				Text(value)
-					.font(Typo.tinyMedium)
 					.tabularNumbers()
 					.foregroundStyle(Token.mutedForeground)
 			}
@@ -597,174 +551,92 @@ private struct SignalCard: View {
 	}
 }
 
-/// The busiest operations, re-ranked in place: by errors when triaging, by
-/// p95 when chasing latency, by volume to see what the service is. Every row
-/// carries all three numbers so switching the sort only moves rows.
+/// How the operations table is ranked; the header's label cycles through.
+private enum OperationSort: String, CaseIterable {
+	case failures
+	case latency
+	case volume
+
+	var title: String {
+		switch self {
+		case .failures: "By failures"
+		case .latency: "By latency"
+		case .volume: "By volume"
+		}
+	}
+
+	var next: OperationSort {
+		let all = Self.allCases
+		let index = all.firstIndex(of: self) ?? 0
+		return all[(index + 1) % all.count]
+	}
+}
+
+/// The busiest operations as a table: name, p95 and error rate. Overview
+/// shows the top few; the Operations segment shows them all.
 private struct OperationsSection: View {
 	let operations: [ServiceOperation]
 	let window: TimeWindow
-
-	private enum Sort: String, CaseIterable {
-		case errors
-		case latency
-		case volume
-
-		var title: String {
-			switch self {
-			case .errors: "Failing"
-			case .latency: "Slowest"
-			case .volume: "Busiest"
-			}
-		}
-	}
-
-	private static let collapsedCount = 6
-
-	@State private var sort: Sort = .errors
-	@State private var expanded = false
+	@Binding var sort: OperationSort
+	/// Nil shows every operation.
+	let limit: Int?
 
 	private var ranked: [ServiceOperation] {
 		switch sort {
-		case .errors:
-			return operations.filter { $0.errorCount > 0 }.sorted { a, b in
+		case .failures:
+			operations.sorted { a, b in
 				a.errorCount != b.errorCount ? a.errorCount > b.errorCount : a.errorRate > b.errorRate
 			}
 		case .latency:
-			return operations.sorted { $0.p95LatencyMs > $1.p95LatencyMs }
+			operations.sorted { $0.p95LatencyMs > $1.p95LatencyMs }
 		case .volume:
-			return operations.sorted { $0.estimatedSpanCount > $1.estimatedSpanCount }
-		}
-	}
-
-	private func metric(_ operation: ServiceOperation) -> Double {
-		switch sort {
-		case .errors: operation.errorCount
-		case .latency: operation.p95LatencyMs
-		case .volume: operation.estimatedSpanCount
+			operations.sorted { $0.estimatedSpanCount > $1.estimatedSpanCount }
 		}
 	}
 
 	var body: some View {
 		let rows = ranked
-		let visible = expanded ? rows : Array(rows.prefix(Self.collapsedCount))
-		let peak = visible.map(metric).max() ?? 0
-		VStack(alignment: .leading, spacing: 10) {
-			HStack {
-				SectionLabel("Operations")
-				Spacer(minLength: 8)
-				SegmentChips(
-					options: Sort.allCases.map { ($0, $0.title) },
-					selection: Binding(
-						get: { sort },
-						set: { next in
-							sort = next
-							Telemetry.track(Telemetry.Event.serviceOperationsSorted, ["sort": next.rawValue])
-						}
-					)
-				)
+		let visible = limit.map { Array(rows.prefix($0)) } ?? rows
+		VStack(alignment: .leading, spacing: 8) {
+			ServiceSectionHeader(title: "Operations", count: operations.count) {
+				if operations.count > 1 {
+					Button {
+						sort = sort.next
+						Telemetry.track(Telemetry.Event.serviceOperationsSorted, ["sort": sort.rawValue])
+					} label: {
+						Text(sort.title)
+							.font(Typo.tiny)
+							.foregroundStyle(Token.mutedForeground)
+							.frame(minHeight: 28)
+							.contentShape(.rect)
+					}
+					.buttonStyle(.plain)
+					.accessibilityLabel("Sort operations, \(sort.title)")
+				}
 			}
-			.padding(.horizontal, 16)
 
 			if operations.isEmpty {
 				Text("No operations recorded in \(window.phrase).")
 					.font(Typo.small)
 					.foregroundStyle(Token.mutedForeground)
-					.padding(.horizontal, 16)
-			} else if rows.isEmpty {
-				Text("No operation failed in \(window.phrase).")
-					.font(Typo.small)
-					.foregroundStyle(Token.mutedForeground)
-					.padding(.horizontal, 16)
 			} else {
-				VStack(spacing: 0) {
+				TableCard(columns: ["Operation", "P95", "Errors"]) {
 					ForEach(visible, id: \.name) { operation in
-						OperationRow(operation: operation, share: peak > 0 ? metric(operation) / peak : 0, sort: sort)
-						Hairline()
+						TableRow {
+							Text(operation.name.isEmpty ? "(unnamed)" : operation.name)
+								.font(Typo.body)
+								.foregroundStyle(Token.foreground)
+								.lineLimit(1)
+								.truncationMode(.middle)
+						} trailing: {
+							TableCell(text: Format.latency(operation.p95LatencyMs), tint: Token.chartP95)
+							TableCell(
+								text: Format.errorRate(operation.errorRate),
+								tint: operation.errorRate >= 0.01 ? Tone.errorRate(operation.errorRate) : Token.foreground
+							)
+						}
+						.accessibilityElement(children: .combine)
 					}
-				}
-				if rows.count > Self.collapsedCount {
-					Button {
-						withAnimation(.easeOut(duration: 0.2)) { expanded.toggle() }
-					} label: {
-						Text(expanded ? "Show fewer" : "Show all \(rows.count)")
-							.font(Typo.smallMedium)
-							.foregroundStyle(Token.foreground)
-							.padding(.horizontal, 10)
-							.frame(height: 28)
-							.background(Token.muted, in: .rect(cornerRadius: Token.Radius.md))
-					}
-					.buttonStyle(.plain)
-					.padding(.horizontal, 16)
-				}
-			}
-		}
-	}
-
-	/// Name, then the three numbers with the sort's own emphasised, then a bar
-	/// scaled to the largest row on screen.
-	private struct OperationRow: View {
-		let operation: ServiceOperation
-		let share: Double
-		let sort: Sort
-
-		private var barTint: Color {
-			switch sort {
-			case .errors: Token.chartError
-			case .latency: Token.chartP95
-			case .volume: Token.mutedForeground
-			}
-		}
-
-		var body: some View {
-			VStack(alignment: .leading, spacing: 6) {
-				Text(operation.name.isEmpty ? "(unnamed)" : operation.name)
-					.font(Typo.small)
-					.foregroundStyle(Token.foreground)
-					.lineLimit(1)
-					.truncationMode(.middle)
-				HStack(spacing: 12) {
-					Stat(
-						value: Format.count(operation.estimatedSpanCount),
-						unit: "req",
-						tint: sort == .volume ? Token.foreground : Token.mutedForeground
-					)
-					Stat(
-						value: Format.errorRate(operation.errorRate),
-						unit: "err",
-						tint: sort == .errors ? Tone.errorRate(operation.errorRate) : Token.mutedForeground
-					)
-					Stat(
-						value: Format.latency(operation.p95LatencyMs),
-						unit: "p95",
-						tint: sort == .latency ? Tone.latency(operation.p95LatencyMs, scale: .p95) : Token.mutedForeground
-					)
-					Spacer(minLength: 0)
-				}
-				GeometryReader { proxy in
-					Rectangle()
-						.fill(barTint.opacity(0.7))
-						.frame(width: max(2, proxy.size.width * CGFloat(share)))
-				}
-				.frame(height: 3)
-			}
-			.padding(.horizontal, 16)
-			.padding(.vertical, 9)
-		}
-
-		private struct Stat: View {
-			let value: String
-			let unit: String
-			let tint: Color
-
-			var body: some View {
-				HStack(spacing: 3) {
-					Text(value)
-						.font(Typo.tinyMedium)
-						.tabularNumbers()
-						.foregroundStyle(tint)
-					Text(unit)
-						.font(Typo.micro)
-						.foregroundStyle(Token.mutedForeground.opacity(0.6))
 				}
 			}
 		}

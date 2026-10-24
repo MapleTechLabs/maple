@@ -379,8 +379,17 @@ enum Tone {
 /// signal" and "which sort". Not a system segmented control: that draws its
 /// own material and type, and reads as someone else's app.
 struct SegmentChips<Option: Hashable>: View {
+	/// `plain` is bare chips; `framed` sits them in a hairline group (the time
+	/// window row); `framedCompact` is the smaller in-card switch.
+	enum Style {
+		case plain, framed, framedCompact
+	}
+
 	let options: [(Option, String)]
 	@Binding var selection: Option
+	var style: Style = .plain
+
+	private var compact: Bool { style == .framedCompact }
 
 	var body: some View {
 		HStack(spacing: 4) {
@@ -391,18 +400,25 @@ struct SegmentChips<Option: Hashable>: View {
 					selection = option
 				} label: {
 					Text(label)
-						.font(selected ? Typo.smallMedium : Typo.small)
+						.font(compact ? (selected ? Typo.tinyMedium : Typo.tiny) : (selected ? Typo.smallMedium : Typo.small))
 						.foregroundStyle(selected ? Token.foreground : Token.mutedForeground)
-						.padding(.horizontal, 10)
-						.frame(height: 26)
+						.padding(.horizontal, compact ? 8 : (style == .framed ? 12 : 10))
+						.frame(height: compact ? 24 : (style == .framed ? 28 : 26))
 						.background(
 							selected ? Token.muted : .clear,
-							in: .rect(cornerRadius: Token.Radius.md)
+							in: .rect(cornerRadius: compact ? Token.Radius.sm : Token.Radius.md)
 						)
 						.contentShape(.rect)
 				}
 				.buttonStyle(.plain)
 				.accessibilityAddTraits(selected ? [.isSelected] : [])
+			}
+		}
+		.padding(style == .plain ? 0 : (compact ? 2 : 4))
+		.overlay {
+			if style != .plain {
+				RoundedRectangle(cornerRadius: compact ? Token.Radius.md : Token.Radius.lg)
+					.stroke(Token.border, lineWidth: Token.hairline)
 			}
 		}
 		.animation(.easeOut(duration: 0.15), value: selection)

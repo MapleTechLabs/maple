@@ -83,6 +83,9 @@ struct SignalChart: View {
 	var baselineP95: Double? = nil
 	/// The bucket under the finger, or nil when nobody is scrubbing.
 	@Binding var scrubbed: SignalPoint?
+	/// False keeps the gridlines but drops the axis labels, for a card that
+	/// carries its own legend and unit.
+	var axisLabels = true
 
 	@State private var rawSelection: Date?
 
@@ -216,21 +219,27 @@ struct SignalChart: View {
 			// the last one on the final gridline, where a 24h window's "12:00 AM"
 			// was sliced to "1" even with the trailing inset below.
 			AxisMarks(preset: .aligned, values: .automatic(desiredCount: 4)) { _ in
-				AxisGridLine().foregroundStyle(Token.border)
-				AxisValueLabel(format: xLabelFormat)
-					.font(Typo.micro)
-					.foregroundStyle(Token.mutedForeground)
+				// Without labels the card reads as the design's ruled plot:
+				// horizontal gridlines only.
+				if axisLabels {
+					AxisGridLine().foregroundStyle(Token.border)
+					AxisValueLabel(format: xLabelFormat)
+						.font(Typo.micro)
+						.foregroundStyle(Token.mutedForeground)
+				}
 			}
 		}
 		.chartYAxis {
 			AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
 				AxisGridLine().foregroundStyle(Token.border)
-				AxisValueLabel {
-					if let number = value.as(Double.self) {
-						Text(axisLabel(number))
-							.font(Typo.micro)
-							.tabularNumbers()
-							.foregroundStyle(Token.mutedForeground)
+				if axisLabels {
+					AxisValueLabel {
+						if let number = value.as(Double.self) {
+							Text(axisLabel(number))
+								.font(Typo.micro)
+								.tabularNumbers()
+								.foregroundStyle(Token.mutedForeground)
+						}
 					}
 				}
 			}
