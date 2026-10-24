@@ -535,6 +535,26 @@ describe("SecurityAuditStore triage", () => {
 		),
 	)
 
+	it.effect("reopening a fixed finding drops the run that fixed it", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const first = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(first.runId, [confirmed("f1")])
+				const revalidation = yield* seedRun(store, orgA, "sha-2", first.targetId)
+				yield* scoped.markFixed(first.targetId, ["f1"], revalidation.runId)
+
+				yield* scoped.setFindingStatus(first.targetId, "f1", "open", "still reproduces", user)
+				const findings = yield* scoped.listFindings(first.targetId)
+
+				assert.deepStrictEqual(
+					findings.map((f) => [f.fingerprint, f.status, f.fixedRunId]),
+					[["f1", "open", null]],
+				)
+			}),
+		),
+	)
+
 	it.effect("lists the org's targets and runs by status, never another org's", () =>
 		withStore((store) =>
 			Effect.gen(function* () {

@@ -8,6 +8,7 @@ import type { SecurityAuditRunId } from "@maple/domain/security-audit"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import type { LoadFailure } from "../../../data/load-failure"
 import type { BreadcrumbEntry } from "../../../shell"
 import { button } from "../../../ui/button"
 import * as CopyButton from "../../../ui/copy-button"
@@ -360,6 +361,17 @@ const findingNotFound = (h: H): Html =>
 		back: { href: hrefOf(AppRoute.SecurityFindings({ search: {} })), label: "Back to findings" },
 	})
 
+const failed = (h: H, failure: LoadFailure, title: string): Html => {
+	const gate = gateOf(failure)
+	return dashboardPage(h, {}, [
+		NOT_FOUND_CODES.has(failure.code)
+			? findingNotFound(h)
+			: gate === null
+				? errorState(h, { failure, title, onRetry: Message.ClickedRetry() })
+				: stack(h, [gateState(h, gate)]),
+	])
+}
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	AsyncData.matchData(model.findings.data, {
 		onEmpty: () =>
@@ -367,24 +379,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				placeholder(h, "h-40 w-full"),
 				placeholder(h, "h-64 w-full"),
 			]),
-		onFailure: (failure) => {
-			const gate = gateOf(failure)
-			return dashboardPage(h, {}, [
-				NOT_FOUND_CODES.has(failure.code)
-					? findingNotFound(h)
-					: gate === null
-						? errorState(h, {
-								failure,
-								title: "Failed to load the finding",
-								onRetry: Message.ClickedRetry(),
-							})
-						: stack(h, [gateState(h, gate)]),
-			])
-		},
+		onFailure: (failure) => failed(h, failure, "Failed to load the finding"),
 		onData: () => {
 			const finding = findingOf(model)
-			return finding === null
-				? dashboardPage(h, {}, [findingNotFound(h)])
+			if (finding === null) return dashboardPage(h, {}, [findingNotFound(h)])
+			// A failed targets read is not a removed target: show it, with a retry.
+			return AsyncData.isFailure(model.targets.data)
+				? failed(h, model.targets.data.error, "Failed to load the finding's target")
 				: loaded(h, model, finding, inputs.context.timeZone)
 		},
 	}),

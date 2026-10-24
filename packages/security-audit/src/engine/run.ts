@@ -72,11 +72,20 @@ export const runAudit = (input: AuditRunInput) =>
 		if (ledgerProblems.length > 0)
 			yield* engine.fail(`ledger_failed_validation: ${ledgerProblems.slice(0, 3).join("; ")}`)
 
+		// Each record that passes on its own is stored; the rest are withheld and disclosed.
+		const valid = findings.filter((record) => findingsErrors([record]).length === 0)
+		const stored = findingsErrors(valid).length === 0 ? valid : []
+		const withheld = findings.filter((record) => !stored.includes(record))
+		if (withheld.length > 0)
+			yield* engine.gap(
+				`${withheld.length} records withheld from findings.json after failing validation: ${withheld.map((r) => r.fingerprint).join(", ")}`,
+			)
+
 		yield* engine.persist
 		const final = yield* Ref.get(engine.state)
 		const status = final.incomplete.length === 0 ? "complete" : "incomplete"
 		const reports = buildReports(input, final, findings, status)
-		yield* engine.store.saveFindings(input.runId, findingErrors.length === 0 ? findings : [])
+		yield* engine.store.saveFindings(input.runId, stored)
 		yield* engine.store.saveReports(input.runId, reports)
 		yield* engine.store.saveMetadata(metadata(input, status, final.incomplete))
 		yield* engine.event({

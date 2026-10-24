@@ -22,7 +22,6 @@ import type { Model, ShellClerk } from "./model"
 import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
 import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
-import { navGroups } from "./nav"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
 import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader } from "./view-sidebar"
 import { type BreadcrumbEntry, topbar } from "./view-topbar"
@@ -54,13 +53,10 @@ const sidebarRegions = (
 
 const RAIL_TIP_PREFIX = "shell-rail-tip-"
 
-/** Every row that can carry a rail tooltip: the nav items, Search and the footer links. */
-export const RAIL_TIP_TITLES: ReadonlyArray<string> = [
+/** The rows that carry a rail tooltip: Search, the nav rows this org is shown, the footer links. */
+const railTipTitles = (clerk: ShellClerk | null): ReadonlyArray<string> => [
 	"Search",
-	// Every row any org can show: the flags only hide rows, so a hidden row's tip is never reached.
-	...navGroups({ releases: true, securityAudit: true }).flatMap((group) =>
-		group.items.map((item) => item.title),
-	),
+	...shellNavGroups(clerk).flatMap((group) => group.items.map((item) => item.title)),
 	"Sources",
 	"Settings",
 ]
@@ -87,7 +83,7 @@ const desktopSidebar = (
 					...(portal === null ? [] : [portal]),
 				]),
 			toContent: (triggerId) => [triggerId.slice(RAIL_TIP_PREFIX.length)],
-			triggerIds: RAIL_TIP_TITLES.map((title) => `${RAIL_TIP_PREFIX}${title}`),
+			triggerIds: railTipTitles(clerk).map((title) => `${RAIL_TIP_PREFIX}${title}`),
 		},
 		toParentMessage: (message) => Message.GotRailTooltipMessage({ message }),
 	})
@@ -202,7 +198,12 @@ export const bareFrameView = Submodel.defineView<Model, Message, BareFrameInputs
 	),
 )
 
-const mobileNav = (h: HtmlBuilder<Message>, model: Model, currentPath: string, clerk: ShellClerk | null): Html =>
+const mobileNav = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	currentPath: string,
+	clerk: ShellClerk | null,
+): Html =>
 	leftSheet(
 		h,
 		{
@@ -269,7 +270,9 @@ export type OverlayInputs = Readonly<{ currentPath: string; clerk?: ShellClerk |
 
 /** Base UI's sheet portal for the mobile nav, after the frame in the app root. */
 export const sheetLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
-	model.isMobile && model.isMobileNavOpen ? mobileNav(h, model, inputs.currentPath, inputs.clerk ?? null) : null,
+	model.isMobile && model.isMobileNavOpen
+		? mobileNav(h, model, inputs.currentPath, inputs.clerk ?? null)
+		: null,
 )
 
 /** A box-less holder that always renders, so a portal moved to `<body>` is never an insertion point. */
@@ -278,32 +281,44 @@ const layer = (h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
 
 /** `CommandPalette`'s portal while it is mounted. */
 export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
-	layer(h, model.palette === null
-		? []
-		: [paletteView(
-				h,
-				model.palette,
-				{
-					context: paletteContextOf(model),
-					visibleFlagged: shellNavGroups(inputs.clerk ?? null).flatMap((group) =>
-						group.items.flatMap((item) => (FLAGGED_HREFS.has(item.href) ? [item.href] : [])),
+	layer(
+		h,
+		model.palette === null
+			? []
+			: [
+					paletteView(
+						h,
+						model.palette,
+						{
+							context: paletteContextOf(model),
+							visibleFlagged: shellNavGroups(inputs.clerk ?? null).flatMap((group) =>
+								group.items.flatMap((item) =>
+									FLAGGED_HREFS.has(item.href) ? [item.href] : [],
+								),
+							),
+						},
+						(message) => Message.GotPaletteMessage({ message }),
 					),
-				},
-				(message) => Message.GotPaletteMessage({ message }),
-			)]),
+				],
+	),
 )
 
 /** `KeyboardShortcutsDialog`'s portal while it is mounted. */
 export const shortcutsLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, _inputs, h) =>
-	layer(h, model.shortcutsDialog === null
-		? []
-		: [shortcutsDialogView(
-				h,
-				model.shortcutsDialog,
-				model.platform,
-				(message) => Message.GotShortcutsDialogMessage({ message }),
-				Message.MeasuredShortcutsPanel(),
-			)]),
+	layer(
+		h,
+		model.shortcutsDialog === null
+			? []
+			: [
+					shortcutsDialogView(
+						h,
+						model.shortcutsDialog,
+						model.platform,
+						(message) => Message.GotShortcutsDialogMessage({ message }),
+						Message.MeasuredShortcutsPanel(),
+					),
+				],
+	),
 )
 
 /** Base UI's menu portal for the open menu, last in the app root. */

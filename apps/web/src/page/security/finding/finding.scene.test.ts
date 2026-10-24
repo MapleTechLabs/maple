@@ -122,6 +122,31 @@ describe("security finding", () => {
 		expect(names(pageUpdate(reasoned, Message.SubmittedTriage()).commands)).toEqual([])
 	})
 
+	test("a failed targets read shows the error with a retry, not a removed target", () => {
+		const entered = init(route, context).model
+		const failed = [
+			Message.CompletedFetchFindings({
+				key: entered.findings.key ?? "",
+				result: Result.succeed(findingsOf(NOW, TARGET_IDS.gateway)),
+			}),
+			Message.CompletedFetchTargets({
+				key: entered.targets.key ?? "",
+				// A response that did not decode: no automatic retry, so the button is the way back.
+				result: Result.fail(toLoadFailure(new Error("unexpected body"))),
+			}),
+		].reduce((model, message) => pageUpdate(model, message).model, entered)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Failed to load the finding's target")).toExist(),
+			expectView(role("button", { name: "Try again" })).toExist(),
+			expectView(text("Removed target")).not.toExist(),
+		)
+		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toContain(
+			"SecurityApiListFindingTargets",
+		)
+	})
+
 	test("an unknown target or finding renders not found with a way back to the findings", () => {
 		const entered = init(route, context).model
 		const missing = pageUpdate(
