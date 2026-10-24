@@ -220,6 +220,25 @@ describe("MapleFoldkit.make", () => {
 		expect(loadAlerts?.traceId).toBe(pageload?.traceId)
 	})
 
+	it.each([
+		["visible", true],
+		["hidden", false],
+	] as const)("marks a slow update that ran while the document was %s", async (state, visible) => {
+		const { maple, spans } = setup()
+		vi.stubGlobal("document", { visibilityState: state })
+		const app = maple.instrument({
+			resources: Layer.empty,
+			slow: { onSlow: (_context: unknown) => undefined },
+		})
+		app.slow.onSlow({ _tag: "Update", durationMs: 4_000, thresholdMs: 16, message: { _tag: "Polled" } })
+		await Effect.runPromise(Effect.void.pipe(Effect.withSpan("boot"), Effect.provide(app.resources)))
+		await maple.dispose()
+		const slow = spans().find((span) => span.name === "foldkit.update")
+		const attribute = (key: string) => slow?.attributes.find((kv) => kv.key === key)?.value
+		expect(attribute("maple.foldkit.message")).toEqual({ stringValue: "Polled" })
+		expect(attribute("maple.foldkit.visible")).toEqual({ boolValue: visible })
+	})
+
 	it("reports a crash with the Message that caused it and the recent Messages", async () => {
 		const { maple, spans } = setup()
 		const app = maple.instrument({

@@ -1,5 +1,6 @@
 import { scrubUrl } from "@maple/browser-session"
 import { Effect, Layer, Predicate, Tracer } from "effect"
+import { browserDocument } from "../client/browser-globals.js"
 import {
 	type FlushableTelemetry,
 	type MapleClientFlushableConfig,
@@ -82,6 +83,12 @@ const objectField = (owner: unknown, key: string): object | undefined => {
 	return Predicate.isObject(value) ? value : undefined
 }
 const isThresholds = (value: unknown): value is SlowThresholds => Predicate.isObject(value)
+
+// A hidden tab's timers and frames are throttled, so a slow phase there is usually not real CPU cost.
+const documentVisible = (): boolean | undefined => {
+	const state = browserDocument()?.visibilityState
+	return typeof state === "string" ? state === "visible" : undefined
+}
 
 const parseAppConfig = <Config extends object>(app: Config): FoldkitAppConfig => {
 	const resources = field(app, "resources")
@@ -295,10 +302,12 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 				: Predicate.hasProperty(context.message, "value")
 					? context.message.value
 					: undefined
+		const visible = documentVisible()
 		tracing.recordPhase(`foldkit.${context._tag.toLowerCase()}`, startTime, endTime, {
 			"maple.foldkit.phase": context._tag,
 			"maple.foldkit.duration_ms": context.durationMs,
 			"maple.foldkit.threshold_ms": context.thresholdMs,
+			...(visible === undefined ? undefined : { "maple.foldkit.visible": visible }),
 			...(message === undefined ? undefined : { "maple.foldkit.message": messageTag(message) }),
 		})
 	}
