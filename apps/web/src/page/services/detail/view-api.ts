@@ -126,7 +126,14 @@ const latencyCell = (h: H, ms: number, scale: "p50" | "p95" | "p99", isChip: boo
 		cn(numeric, "py-0 pr-0", width),
 	)
 
-const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext): Html => {
+const endpointRow = (
+	h: H,
+	endpoint: Endpoint,
+	stem: string,
+	context: RowContext,
+	/** A sibling shares this row's route, so only the method tells them apart. */
+	isRouteShared = false,
+): Html => {
 	const { head, tail } = leafLabel(endpoint.route, stem)
 	const mix = knownStatusMix(endpoint)
 	const isSelected = context.selected === endpoint.spanName
@@ -152,7 +159,12 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 								],
 								[],
 							),
-							methodLabel(h, endpoint.method, "hidden w-10 md:inline-block"),
+							methodLabel(
+								h,
+								endpoint.method,
+								// Narrow screens drop the method unless a sibling shares the route.
+								isRouteShared ? "w-9 md:w-10" : "hidden w-10 md:inline-block",
+							),
 							truncatedText(h, { text: endpoint.route, className: "text-ui" }, [
 								...(head.length > 0
 									? [
@@ -187,7 +199,7 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 						],
 					),
 				],
-				cn("max-w-0 py-0 align-middle", stem.length > 0 ? "pl-9" : "pl-4"),
+				cn("max-w-0 py-0 align-middle", stem.length > 0 ? "pl-6 md:pl-9" : "pl-4"),
 			),
 			tableCell(
 				h,
@@ -444,7 +456,15 @@ export const groupRows = (
 					}),
 				]
 			: []),
-		...group.endpoints.map((endpoint) => endpointRow(h, endpoint, group.stem, context)),
+		...group.endpoints.map((endpoint) =>
+			endpointRow(
+				h,
+				endpoint,
+				group.stem,
+				context,
+				group.endpoints.some((other) => other !== endpoint && other.route === endpoint.route),
+			),
+		),
 	]
 }
 
