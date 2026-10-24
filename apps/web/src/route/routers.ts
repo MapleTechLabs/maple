@@ -1,10 +1,11 @@
 import { AlertRuleId, AnomalyIncidentId, DashboardId, ErrorIssueId } from "@maple/domain/http"
+import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { pipe, Schema } from "effect"
 import { Route } from "foldkit"
 import { query, schemaSegment, slash } from "foldkit/route"
 import { AppRoute } from "./app-route"
 import * as Search from "./search"
-import { path, restSegments, segment } from "./segment"
+import { boundedSegment, path, restSegments, segment } from "./segment"
 import { tanstackSearch } from "./tanstack-search"
 
 const search = <A, I>(schema: Schema.Codec<A, I>) => query(tanstackSearch(schema))
@@ -96,6 +97,28 @@ const routers = {
 		Route.mapTo(AppRoute.CodeReviewPullRequests),
 	),
 	CodeReviewSettings: pipe(path("code-review", "settings"), Route.mapTo(AppRoute.CodeReviewSettings)),
+	Security: pipe(path("security"), Route.mapTo(AppRoute.Security)),
+	SecurityFindings: pipe(
+		path("security", "findings"),
+		search(Search.SecurityFindingsSearch),
+		Route.mapTo(AppRoute.SecurityFindings),
+	),
+	SecurityRuns: pipe(
+		path("security", "runs"),
+		search(Search.SecurityRunsSearch),
+		Route.mapTo(AppRoute.SecurityRuns),
+	),
+	SecurityRun: pipe(
+		path("security", "runs"),
+		slash(schemaSegment("runId", SecurityAuditRunId)),
+		Route.mapTo(AppRoute.SecurityRun),
+	),
+	SecurityFinding: pipe(
+		path("security", "findings"),
+		slash(schemaSegment("targetId", SecurityAuditTargetId)),
+		slash(boundedSegment("fingerprint", 1024)),
+		Route.mapTo(AppRoute.SecurityFinding),
+	),
 	Dashboard: pipe(
 		path("dashboards"),
 		slash(schemaSegment("dashboardId", DashboardId)),

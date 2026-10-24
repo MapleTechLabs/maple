@@ -42,6 +42,12 @@ export function isActivePlanSubscription(sub: PlanGatingSubscription | null | un
 export const OPENROUTER_BYOK_ADDON_ID = "openrouter_byok"
 export const OPENROUTER_BYOK_FEATURE_ID = "openrouter_byok"
 
+/**
+ * Security-audit agent invocations: a metered feature whose plan allotment is the org's monthly
+ * audit budget, tracked one unit per invocation a run reserves.
+ */
+export const SECURITY_AUDIT_INVOCATIONS_FEATURE_ID = "security_audit_invocations"
+
 /** Does a raw Autumn customer carry this boolean feature? Autumn keys granted ones under `flags`. */
 export const customerHasFlag = (response: unknown, featureId: string): boolean =>
 	Predicate.isObject(response) &&

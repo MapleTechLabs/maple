@@ -1,0 +1,323 @@
+{
+	"defaults": { "profile": "quick", "budget": 16, "concurrency": 3 },
+	"cases": [
+		{
+			"id": "maple-s01",
+			"corpus": "maple",
+			"language": "typescript",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "4a8b3ad2b17fb5ff34edd56b1537fb812392b4a5",
+			"scope": [
+				"apps/api/src/services/auth/ApiAuthorizationV2Layer.ts",
+				"packages/domain/src/http/v2/auth.ts",
+				"apps/api/src/routes/internal/billing.http.ts",
+				"apps/api/src/routes/v2/attribute-mappings.http.ts",
+				"apps/api/src/services/errors/ErrorPolicyService.ts",
+				"packages/auth/src"
+			],
+			"bugs": [
+				{
+					"id": "pr-712",
+					"reference": "MapleTechLabs/maple#712",
+					"fixSha": "d276eb142ba0088d2a785e9a5a9333e26320027f",
+					"touchedFiles": [
+						"apps/api/src/services/auth/ApiAuthorizationV2Layer.ts",
+						"packages/domain/src/http/v2/auth.ts"
+					]
+				},
+				{
+					"id": "pr-713",
+					"reference": "MapleTechLabs/maple#713",
+					"fixSha": "26c7718b589233d69f5e30876edbc27bfa96f11c",
+					"touchedFiles": [
+						"apps/api/src/routes/internal/billing.http.ts",
+						"apps/api/src/routes/v2/attribute-mappings.http.ts",
+						"apps/api/src/services/errors/ErrorPolicyService.ts",
+						"apps/api/src/mcp/tools/update-error-notification-policy.ts",
+						"packages/auth/src/index.ts"
+					]
+				}
+			]
+		},
+		{
+			"id": "maple-s02",
+			"corpus": "maple",
+			"language": "typescript",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "4a8b3ad2b17fb5ff34edd56b1537fb812392b4a5",
+			"scope": [
+				"apps/api/src/routes/v1/integrations.http.ts",
+				"packages/domain/src/http/integrations.ts",
+				"apps/api/src/routes/discovery.http.ts",
+				"apps/api/src/routes/v1/oauth-discovery.http.ts",
+				"packages/domain/src/mcp-manifest.ts"
+			],
+			"bugs": [
+				{
+					"id": "pr-714",
+					"reference": "MapleTechLabs/maple#714",
+					"fixSha": "b46f8a4b710b579c1fae311b9fecbb4f2a293ba0",
+					"touchedFiles": [
+						"apps/api/src/routes/v1/integrations.http.ts",
+						"packages/domain/src/http/integrations.ts"
+					]
+				},
+				{
+					"id": "pr-715",
+					"reference": "MapleTechLabs/maple#715",
+					"fixSha": "9517d3c3c251de573bb2678d8aa894938e85c489",
+					"touchedFiles": [
+						"apps/api/src/routes/discovery.http.ts",
+						"apps/api/src/routes/v1/oauth-discovery.http.ts",
+						"packages/domain/src/mcp-manifest.ts"
+					]
+				}
+			]
+		},
+		{
+			"id": "maple-s03",
+			"corpus": "maple",
+			"language": "typescript",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "4a8b3ad2b17fb5ff34edd56b1537fb812392b4a5",
+			"scope": [
+				"apps/api/src/http/url-validator.ts",
+				"apps/api/src/services/warehouse/WarehouseQueryService.ts",
+				"apps/electric-sync/src/electric",
+				"apps/api/src/services/integrations/ScrapeTargetsService.ts",
+				"apps/api/src/routes/v2/scrape-targets.http.ts"
+			],
+			"bugs": [
+				{
+					"id": "pr-717",
+					"reference": "MapleTechLabs/maple#717",
+					"fixSha": "bc2265cfdec2a221bae4b9dfda0eee6cc00bab96",
+					"touchedFiles": [
+						"apps/api/src/http/url-validator.ts",
+						"apps/api/src/services/warehouse/WarehouseQueryService.ts",
+						"apps/electric-sync/src/electric/ElectricClient.ts"
+					]
+				},
+				{
+					"id": "pr-718",
+					"reference": "MapleTechLabs/maple#718",
+					"fixSha": "3d46f428683d7399c7fbddf3ac8bedd93bfaf3ce",
+					"touchedFiles": [
+						"apps/api/src/routes/v2/scrape-targets.http.ts",
+						"apps/api/src/services/integrations/ScrapeTargetsService.ts",
+						"packages/domain/src/http/v2/scrape-targets.ts"
+					]
+				}
+			]
+		},
+		{
+			"id": "maple-s04",
+			"corpus": "maple",
+			"language": "typescript",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "c98e2e40284a8fafe35b55f26d1d6f322f9d33ae",
+			"scope": [
+				"apps/api/src/routes/auth.http.ts",
+				"apps/api/src/routes/v2/api-keys.http.ts",
+				"packages/backend/src/services/org/ApiKeysService.ts",
+				"packages/domain/src/http/auth.ts"
+			],
+			"bugs": [
+				{
+					"id": "pr-1665",
+					"reference": "MapleTechLabs/maple#1665",
+					"fixSha": "5a8ad790aedb450ce0b8b48dca498988b182e823",
+					"touchedFiles": [
+						"apps/api/src/routes/auth.http.ts",
+						"packages/backend/src/services/org/ApiKeysService.ts",
+						"packages/domain/src/http/auth.ts"
+					]
+				},
+				{
+					"id": "pr-1672",
+					"reference": "MapleTechLabs/maple#1672",
+					"fixSha": "fba9aedf1c6a64b2377e37fb818471b32a2af820",
+					"touchedFiles": ["apps/api/src/routes/v2/api-keys.http.ts"]
+				}
+			]
+		},
+		{
+			"id": "maple-s05",
+			"corpus": "maple",
+			"language": "typescript",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "5b0304c6648fe5844237b74a834c0040f643178e",
+			"scope": [
+				"apps/ai/src/mcp/lib",
+				"apps/ai/src/routes/chat-sessions.http.ts",
+				"packages/backend/src/services/auth/ApiAuthorizationV2Live.ts",
+				"packages/domain/src/http/v2/auth.ts"
+			],
+			"bugs": [
+				{
+					"id": "pr-1674",
+					"reference": "MapleTechLabs/maple#1674",
+					"fixSha": "d125179daf18648433dfad7dd366cdc62ada7408",
+					"touchedFiles": [
+						"apps/ai/src/mcp/lib/resolve-actor.ts",
+						"apps/ai/src/mcp/lib/resolve-tenant.ts",
+						"apps/ai/src/routes/chat-sessions.http.ts",
+						"packages/backend/src/services/auth/ApiAuthorizationV2Live.ts",
+						"packages/domain/src/http/v2/auth.ts"
+					]
+				}
+			]
+		},
+		{
+			"id": "maple-s06",
+			"corpus": "maple",
+			"language": "typescript",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "5b0304c6648fe5844237b74a834c0040f643178e",
+			"scope": [
+				"apps/api/src/routes/integrations-callback.http.ts",
+				"apps/api/src/routes/v2/integrations.http.ts",
+				"packages/backend/src/services/auth/oauth",
+				"packages/backend/src/services/auth/OAuthStateRepository.ts",
+				"packages/backend/src/services/integrations/vcs/vendor/github/GithubConnectService.ts",
+				"packages/backend/src/services/integrations/vcs/vendor/github/GithubAppClient.ts"
+			],
+			"bugs": [
+				{
+					"id": "pr-1675",
+					"reference": "MapleTechLabs/maple#1675",
+					"fixSha": "4f1c3a995c8da074582acc4a21acd2084bfa4898",
+					"touchedFiles": [
+						"apps/api/src/routes/integrations-callback.http.ts",
+						"packages/backend/src/services/auth/OAuthStateRepository.ts",
+						"packages/backend/src/services/auth/oauth/connection-helpers.ts",
+						"packages/backend/src/services/integrations/ChatWorkspaceService.ts",
+						"packages/backend/src/services/integrations/vcs/vendor/github/GithubConnectService.ts"
+					]
+				},
+				{
+					"id": "pr-1685",
+					"reference": "MapleTechLabs/maple#1685",
+					"fixSha": "85326f25d664f3a6edbe4de6f7b7d6193d034f6b",
+					"touchedFiles": [
+						"apps/api/src/routes/v2/integrations.http.ts",
+						"packages/backend/src/services/integrations/vcs/vendor/github/GithubAppClient.ts",
+						"packages/backend/src/services/integrations/vcs/vendor/github/GithubConnectService.ts"
+					]
+				}
+			]
+		},
+		{
+			"id": "maple-s07",
+			"corpus": "maple",
+			"language": "typescript",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "5b0304c6648fe5844237b74a834c0040f643178e",
+			"scope": ["lib/safe-fetch/src", "apps/scraper/src/TargetFetcher.ts"],
+			"bugs": [
+				{
+					"id": "pr-1676",
+					"reference": "MapleTechLabs/maple#1676",
+					"fixSha": "593af61f76c76895ae1b36e89f2dfc211b05ebf2",
+					"touchedFiles": ["lib/safe-fetch/src/index.ts", "apps/scraper/src/TargetFetcher.ts"]
+				}
+			]
+		},
+		{
+			"id": "maple-s08",
+			"corpus": "maple",
+			"language": "rust",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "5b0304c6648fe5844237b74a834c0040f643178e",
+			"scope": ["apps/ingest/src"],
+			"bugs": [
+				{
+					"id": "pr-1677",
+					"reference": "MapleTechLabs/maple#1677",
+					"fixSha": "2c945fbebfd948829fc514b16106b2b488342805",
+					"touchedFiles": ["apps/ingest/src/main.rs", "apps/ingest/src/telemetry.rs"]
+				}
+			]
+		},
+		{
+			"id": "maple-s09",
+			"corpus": "maple",
+			"language": "typescript",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "5b0304c6648fe5844237b74a834c0040f643178e",
+			"scope": [
+				"packages/domain/src/raw-sql.ts",
+				"apps/api/src/routes/v2/dashboards.http.ts",
+				"apps/api/src/routes/v2/investigations.http.ts",
+				"apps/api/src/routes/v2/share.http.ts",
+				"packages/backend/src/services/dashboards/DashboardWidgetDataService.ts"
+			],
+			"bugs": [
+				{
+					"id": "pr-1678",
+					"reference": "MapleTechLabs/maple#1678",
+					"fixSha": "10db318ccbf69d174662fe4cdad2068cd2a7d394",
+					"touchedFiles": ["packages/domain/src/raw-sql.ts"]
+				},
+				{
+					"id": "pr-1686",
+					"reference": "MapleTechLabs/maple#1686",
+					"fixSha": "48c4cfb4d49bb76d67df3db31af3ded47b59ea86",
+					"touchedFiles": [
+						"apps/api/src/routes/v2/dashboards.http.ts",
+						"apps/api/src/routes/v2/investigations.http.ts",
+						"apps/api/src/routes/v2/share.http.ts",
+						"packages/backend/src/services/dashboards/DashboardWidgetDataService.ts",
+						"packages/domain/src/http/v2/auth.ts"
+					]
+				}
+			]
+		},
+		{
+			"id": "maple-s10",
+			"corpus": "maple",
+			"language": "typescript",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "48c4cfb4d49bb76d67df3db31af3ded47b59ea86",
+			"scope": ["packages/backend/src/services/dashboards/ServiceMapRollupService.ts"],
+			"bugs": [
+				{
+					"id": "pr-1683",
+					"reference": "MapleTechLabs/maple#1683",
+					"fixSha": "582d6a7b2667691b531e7f5ca6c879c0955de56f",
+					"touchedFiles": ["packages/backend/src/services/dashboards/ServiceMapRollupService.ts"]
+				}
+			]
+		},
+		{
+			"id": "maple-s11",
+			"corpus": "maple",
+			"language": "typescript",
+			"repo": { "name": "maple", "url": "https://github.com/MapleTechLabs/maple.git" },
+			"sha": "4a8b3ad2b17fb5ff34edd56b1537fb812392b4a5",
+			"scope": [
+				"apps/api/src/routes/webhooks/clerk.http.ts",
+				"apps/api/src/services/auth/McpOAuthService.ts",
+				"apps/api/src/services/auth/CliDeviceAuthService.ts",
+				"apps/api/src/services/auth/OrgMembershipService.ts",
+				"apps/api/src/services/org/ApiKeysService.ts",
+				"apps/api/src/services/org/OrganizationService.ts"
+			],
+			"bugs": [
+				{
+					"id": "pr-719",
+					"reference": "MapleTechLabs/maple#719",
+					"fixSha": "59db862b972f2b459384ae7b3ec7d4badf97e88f",
+					"touchedFiles": [
+						"apps/api/src/routes/webhooks/clerk.http.ts",
+						"apps/api/src/services/auth/CliDeviceAuthService.ts",
+						"apps/api/src/services/auth/McpOAuthService.ts",
+						"apps/api/src/services/auth/OrgMembershipService.ts",
+						"apps/api/src/services/org/ApiKeysService.ts",
+						"apps/api/src/services/org/OrganizationService.ts"
+					]
+				}
+			]
+		}
+	]
+}

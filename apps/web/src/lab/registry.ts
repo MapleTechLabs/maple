@@ -211,6 +211,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/security",
+		title: "Security Center",
+		description:
+			"Every Security Center page over fixtures: overview, empty, not enabled, Add target and its errors, findings, runs, a live, incomplete, failed and cancelled run, a finding and its triage, and the admins-only states. Pick one with ?state=.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/errors",
 		title: "Errors list",
 		description:

@@ -1,6 +1,10 @@
-import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import { infraSurfacesOf } from "../../../data/infra-surfaces"
+import {
+	type InfraSurfaces,
+	type IntegrationFlags,
+	probeOf,
+	resolveInfraSurfaces,
+} from "../../../data/infra-surfaces"
 import type { NavSurface } from "../../../shell/nav"
 import type { PageContext } from "../../contract"
 import type { Model, SourceId, SourceSummary } from "./model"
@@ -33,7 +37,7 @@ const SOURCE_SURFACES = {
 	aws: ["aws"],
 } satisfies Readonly<{ [K in SourceId]: ReadonlyArray<NavSurface> }>
 
-const NOT_CONNECTED = {
+const NOT_CONNECTED: IntegrationFlags = {
 	cloudflare: false,
 	railway: false,
 	planetscale: false,
@@ -43,14 +47,23 @@ const NOT_CONNECTED = {
 }
 
 /** `useInfraSurfaces(window)`: the page's probe (the last answer while a new window loads) and the shell's statuses. */
-export const surfacesOf = (model: Model, context: PageContext): ReadonlySet<NavSurface> | null =>
-	infraSurfacesOf(
-		Option.getOrNull(AsyncData.getData(model.presence.data)),
+export const surfacesOf = (model: Model, context: PageContext): InfraSurfaces =>
+	resolveInfraSurfaces(
+		probeOf(model.presence.data),
 		context.infra?.integrations ?? NOT_CONNECTED,
+		context.infra?.remembered,
 	)
 
-/** The sources an org has. Unknown presence (`null`) shows every source rather than hiding one. */
-export const presentSources = (surfaces: ReadonlySet<NavSurface> | null): ReadonlyArray<SourceId> =>
-	surfaces === null
-		? SOURCE_IDS
-		: SOURCE_IDS.filter((id) => SOURCE_SURFACES[id].some((surface) => surfaces.has(surface)))
+/** The sources an org has, `null` while that is pending. A failed probe shows every source rather than hiding one. */
+export const presentSources = (surfaces: InfraSurfaces): ReadonlyArray<SourceId> | null => {
+	switch (surfaces._tag) {
+		case "Pending":
+			return null
+		case "Every":
+			return SOURCE_IDS
+		case "Only":
+			return SOURCE_IDS.filter((id) =>
+				SOURCE_SURFACES[id].some((surface) => surfaces.surfaces.has(surface)),
+			)
+	}
+}

@@ -115,6 +115,13 @@ const toPlanetScaleStatus = (status: PlanetScaleIntegrationStatus): V2PlanetScal
 	connected_by_user_id: status.connectedByUserId,
 	detected_permissions: status.detectedPermissions,
 	metrics_auth: status.metricsAuth,
+	api_metrics:
+		status.apiMetrics === null
+			? null
+			: {
+					last_polled_at: isoTimestampOrNull(status.apiMetrics.lastPolledAt),
+					last_error: status.apiMetrics.lastError,
+				},
 	scrape_target:
 		status.scrapeTarget === null
 			? null
@@ -127,6 +134,15 @@ const toPlanetScaleStatus = (status: PlanetScaleIntegrationStatus): V2PlanetScal
 					exclude_branches: status.scrapeTarget.excludeBranches,
 					last_scrape_at: isoTimestampOrNull(status.scrapeTarget.lastScrapeAt),
 					last_scrape_error: status.scrapeTarget.lastScrapeError,
+				},
+	webhooks:
+		status.webhooks === null
+			? null
+			: {
+					state: status.webhooks.state,
+					registered_databases: status.webhooks.registeredDatabases,
+					databases: status.webhooks.databases,
+					last_error: status.webhooks.lastError,
 				},
 	last_inventory_at: isoTimestampOrNull(status.lastInventoryAt),
 	last_inventory_error: status.lastInventoryError,

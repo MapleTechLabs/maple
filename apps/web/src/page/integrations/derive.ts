@@ -10,6 +10,11 @@ import {
 } from "../../components/integrations/gcp-connector-state"
 import { Array, DateTime, Option } from "effect"
 import { AsyncData } from "foldkit"
+import {
+	metricsAuthOf,
+	metricsLastCollectedAt,
+	metricsLastError,
+} from "../../components/integrations/planetscale-setup-steps"
 import type { Keyed } from "../../data/keyed"
 import { chatIntegrationId, HUB_CATALOG, type IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
@@ -262,7 +267,7 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 					status.connected
 						? {
 								label: status.organization ?? "Connected",
-								variant: status.scrape_target?.last_scrape_error != null ? "warn" : "ok",
+								variant: metricsLastError(status) !== null ? "warn" : "ok",
 							}
 						: scrapeStatus(statuses, "planetscale"),
 				unavailableStatus,
@@ -499,13 +504,13 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 			if (!status.connected) return scrapeOverview(statuses, nowMs, "planetscale")
 			const issue = status.pending_org_selection
 				? "Finish org selection"
-				: status.metrics_auth === "missing"
-					? "Metrics setup pending"
-					: status.scrape_target?.last_scrape_error != null
-						? "Scrape failing"
-						: status.last_inventory_error != null
-							? "Inventory failing"
-							: null
+				: metricsLastError(status) !== null
+					? metricsAuthOf(status) === "api"
+						? "Metrics polling failing"
+						: "Scrape failing"
+					: status.last_inventory_error != null
+						? "Inventory failing"
+						: null
 			return {
 				kind: "connected",
 				...attentionOr(issue),
@@ -513,11 +518,11 @@ const planetscaleOverview = (statuses: Statuses, nowMs: number) => {
 				stat:
 					dbCount !== null && dbCount > 0
 						? `${countLabel(dbCount, "database")} tracked`
-						: status.scrape_target?.enabled === true
-							? "Metrics scraping on"
+						: metricsAuthOf(status) === "api" || status.scrape_target?.enabled === true
+							? "Branch metrics on"
 							: null,
 				lastSyncLabel: syncedLabel(
-					maxMs([status.scrape_target?.last_scrape_at, status.last_inventory_at].map(isoMs)),
+					maxMs([metricsLastCollectedAt(status), status.last_inventory_at].map(isoMs)),
 					nowMs,
 				),
 				issue,
