@@ -1,5 +1,6 @@
 import { scrubUrl } from "@maple/browser-session"
 import { Effect, Layer, Predicate, Tracer } from "effect"
+import { browserDocument } from "../client/browser-globals.js"
 import {
 	type FlushableTelemetry,
 	type MapleClientFlushableConfig,
@@ -85,7 +86,7 @@ const isThresholds = (value: unknown): value is SlowThresholds => Predicate.isOb
 
 // A hidden tab's timers and frames are throttled, so a slow phase there is usually not real CPU cost.
 const documentVisible = (): boolean | undefined => {
-	const state = field(field(globalThis, "document"), "visibilityState")
+	const state = browserDocument()?.visibilityState
 	return typeof state === "string" ? state === "visible" : undefined
 }
 
