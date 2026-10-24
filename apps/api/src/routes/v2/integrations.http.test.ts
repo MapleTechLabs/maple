@@ -232,6 +232,7 @@ describe("v2 planetscale integration over HTTP", () => {
 		connectedByUserId: null,
 		detectedPermissions: { readMetricsEndpoints: true },
 		metricsAuth: "service_token" as const,
+		webhooks: null,
 		scrapeTarget: {
 			id: Schema.decodeUnknownSync(ScrapeTargetId)("11111111-1111-4111-8111-111111111111"),
 			enabled: true,
