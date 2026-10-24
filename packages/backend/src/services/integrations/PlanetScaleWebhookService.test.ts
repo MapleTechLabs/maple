@@ -4,7 +4,7 @@ import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { PlanetScaleConnectionService } from "./PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
@@ -289,6 +289,16 @@ describe("PlanetScaleWebhookService", () => {
 			assert.strictEqual(result.skipped, "missing_scope")
 			assert.isFalse(store.has("shop"))
 			assert.strictEqual((yield* webhooksStatus)?.state, "needs_reauthorization")
+
+			// A reauthorization with write access registers on the very next tick, not after the TTL.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE oauth_connections SET scope = 'read_databases write_databases' WHERE provider = 'planetscale'",
+				),
+			)
+			yield* (yield* PlanetScaleService).pollAllOrgs()
+			assert.strictEqual(store.get("shop")?.length, 1)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -380,6 +390,8 @@ describe("PlanetScaleWebhookService", () => {
 			})
 
 			assert.deepStrictEqual(store.get("shop"), [])
+			// The old organization's databases are retired, so nothing reconciles them against the new one.
+			assert.deepStrictEqual(yield* (yield* PlanetScaleService).listDatabases(asOrgId("org_1")), [])
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

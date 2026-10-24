@@ -451,6 +451,22 @@ export class PlanetScaleConnectionService extends Context.Service<
 				// organization's webhooks would keep delivering to it.
 				if (existing !== null && existing.psOrganization !== request.organization) {
 					yield* webhooks.removeAll(existing)
+					// The old organization's databases and poll state are not the new one's: retire
+					// them so the next tick inventories the new organization before anything else.
+					yield* dbExecute((db) =>
+						db.transaction(
+							Effect.gen(function* () {
+								yield* db.run(
+									PG.update(PlanetscaleDatabases)
+										.set({ deletedAt: now, updatedAt: now })
+										.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
+								)
+								yield* db.run(
+									PG.deleteFrom(PlanetscalePollState).where(($) => [$.orgId.eq(orgId)]),
+								)
+							}),
+						),
+					)
 				}
 				const connectionId = existing?.id ?? randomUUID()
 				const managedBy = managedByForConnection(connectionId)
