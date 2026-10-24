@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS "device_proof_replays" (
 CREATE UNIQUE INDEX IF NOT EXISTS "device_credentials_jkt_unique" ON "device_credentials" USING btree ("jkt");
 --> statement-breakpoint
 -- metadata
-CREATE INDEX IF NOT EXISTS "device_credentials_org_installation_idx" ON "device_credentials" USING btree ("org_id", "installation_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "device_credentials_live_installation_unique" ON "device_credentials" USING btree ("org_id", "installation_id") WHERE "revoked_at" IS NULL;
 --> statement-breakpoint
 -- metadata
 CREATE INDEX IF NOT EXISTS "device_credentials_user_idx" ON "device_credentials" USING btree ("user_id");

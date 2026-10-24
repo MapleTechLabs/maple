@@ -51,7 +51,10 @@ export const DeviceCredentials = PG.table("device_credentials", {
 	primaryKey: ["id"],
 	indexes: [
 		PG.uniqueIndex("device_credentials_jkt_unique", ["jkt"]),
-		PG.index("device_credentials_org_installation_idx", ["orgId", "installationId"]),
+		// At most one live credential per installation and org, even under concurrent registrations.
+		PG.uniqueIndex("device_credentials_live_installation_unique", ["orgId", "installationId"], {
+			where: ($) => $.revokedAt.isNull(),
+		}),
 		PG.index("device_credentials_user_idx", ["userId"]),
 	],
 	tenantColumn: "orgId",
