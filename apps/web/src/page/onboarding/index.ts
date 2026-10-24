@@ -183,6 +183,7 @@ export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Optio
 								search.checkout === "complete",
 								needsRegion(inputs.maybeOrganization),
 								validateInternalRedirect(search.redirect_url ?? null) ?? "/",
+								Option.getOrElse(inputs.maybeOrgId, () => ""),
 							),
 							toQuickStart,
 						),

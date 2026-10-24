@@ -1,5 +1,6 @@
 import type { FrameworkId } from "../components/quick-start/sdk-snippets"
 import type { IconName } from "../ui/icon"
+import type { DocsPage } from "./docs"
 import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "./onboarding-intent"
 
 // The onboarding stack step: what the user runs, and which of Maple's surfaces each pick fills.
@@ -48,6 +49,24 @@ export const STACK_LANGUAGES = {
 	java: { label: "Java", description: "Spring, JVM", icon: "OpenjdkIcon", fills: CODE_FILLS },
 	rust: { label: "Rust", description: "Axum, Tokio", icon: "RustIcon", fills: CODE_FILLS },
 } as const satisfies Record<StackLanguage, StackItem>
+
+/** The instrumentation guide the connect step links to for each language. */
+export const STACK_LANGUAGE_DOCS = {
+	nodejs: { label: "Node.js", page: "nodejsGuide" },
+	browser: { label: "Browser", page: "browserSdk" },
+	python: { label: "Python", page: "pythonGuide" },
+	go: { label: "Go", page: "goGuide" },
+	java: { label: "Java", page: "javaGuide" },
+	rust: { label: "Rust", page: "rustGuide" },
+} as const satisfies Record<StackLanguage, Readonly<{ label: string; page: DocsPage }>>
+
+/** The guide for the first language picked, matching the snippet `frameworkOf` opens on. */
+export const languageDocsOf = (
+	answers: StackAnswers,
+): Readonly<{ label: string; page: DocsPage }> | undefined => {
+	const first = answers.languages[0]
+	return first === undefined ? undefined : STACK_LANGUAGE_DOCS[first]
+}
 
 export const STACK_PLATFORMS = {
 	cloudflare: {

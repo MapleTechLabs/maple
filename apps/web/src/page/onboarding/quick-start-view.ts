@@ -1,17 +1,24 @@
 import { ONBOARDING_INTENTS } from "../../lib/onboarding-intent"
 import {
 	filledSurfaces,
+	languageDocsOf,
 	STACK_LANGUAGE_IDS,
 	STACK_LANGUAGES,
 	STACK_PLATFORM_IDS,
 	STACK_PLATFORMS,
+	type StackAnswers,
 	type StackItem,
+	type StackPlatform,
 } from "../../lib/onboarding-stack"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
+import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import { type PixelGlyphName, pixelGlyph } from "./option-card"
+import * as GuidedSetup from "../kit/guided-setup"
+import { presenceOf, type TelemetrySignalKind } from "../kit/signal-presence"
+import { ConnectMessage, STATUS_PROVIDERS } from "./quick-start-connect"
 import { regionStep } from "./quick-start-region-view"
 import { Message, type Model, MountDitherField } from "./quick-start"
 import { type QuickStartState, resolveQuickStartStep, type StepId } from "./quick-start-state"
@@ -40,7 +47,8 @@ const REACH = {
 	region: "0.6",
 	plan: "0.7",
 	stack: "0.85",
-	team: "1.05",
+	connect: "1.0",
+	team: "1.15",
 } as const satisfies Record<StepId | "region", string>
 
 type TrailItem = Readonly<{ label: string; answer: string | null; isCurrent: boolean }>
@@ -448,6 +456,310 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 	)
 }
 
+// CONNECT
+
+const toConnect = (message: ConnectMessage): Message => Message.GotConnectMessage({ message })
+
+/** Each platform's own setup page under Sources: an integration's connect step or a push platform's snippets. */
+/** The picked language's guide for the Instrument tab; without one it keeps the snippet's own. */
+const docsFor = (stack: StackAnswers): Readonly<{ docs?: GuidedSetup.InstructionsDocs }> => {
+	const docs = languageDocsOf(stack)
+	return docs === undefined ? {} : { docs }
+}
+
+const setupHrefOf = (platform: StackPlatform): string =>
+	platform === "kubernetes" || platform === "docker"
+		? hrefOf(AppRoute.SourcesNew({ search: { platform } }))
+		: hrefOf(AppRoute.SourcesNew({ search: { integration: platform } }))
+
+const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
+	const item = STACK_PLATFORMS[platform]
+	const isConnected = model.connect.connected[platform] === true
+	return h.li(
+		[h.Class("flex items-center gap-3.5 px-4 py-3.5")],
+		[
+			h.span(
+				[
+					h.AriaHidden(true),
+					h.Class(
+						"flex size-9 shrink-0 items-center justify-center rounded-md border border-border",
+					),
+				],
+				[icon(h, item.icon, { size: 18 })],
+			),
+			h.div(
+				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+				[
+					h.span([h.Class("text-sm font-medium")], [item.label]),
+					h.span([h.Class("text-xs text-muted-foreground")], [item.description]),
+				],
+			),
+			isConnected
+				? h.span(
+						[h.Class("flex items-center gap-1.5 text-sm text-success")],
+						[icon(h, "CircleCheckIcon", { size: 14 }), "Connected"],
+					)
+				: linkButton(
+						h,
+						{
+							href: setupHrefOf(platform),
+							variant: "outline",
+							size: "sm",
+							attributes: [
+								h.Target("_blank"),
+								h.Rel("noopener"),
+								h.AriaLabel(`Set up ${item.label} (opens a new tab)`),
+							],
+						},
+						["Set up", icon(h, "ExternalLinkIcon", { size: 12 })],
+					),
+		],
+	)
+}
+
+const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
+	const { platforms } = state.stack
+	const { connect } = model
+	return h.div(
+		[h.Class(STEP_BODY_CLASS)],
+		[
+			h.div(
+				[h.Class("flex flex-col gap-2.5")],
+				[
+					h.h1(
+						[h.Class("font-display text-3xl font-semibold tracking-tight")],
+						["Connect your stack"],
+					),
+					h.p(
+						[h.Class("text-[15px] leading-relaxed text-muted-foreground")],
+						[
+							"Providers connect on their own page. Your code sends its traces, logs and metrics with OpenTelemetry: one prompt to your coding agent, or a few lines by hand.",
+						],
+					),
+				],
+			),
+			...(platforms.length === 0
+				? []
+				: [
+						h.section(
+							[h.Class("flex flex-col gap-3")],
+							[
+								h.h2(
+									[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
+									["Providers"],
+								),
+								h.ul(
+									[
+										h.Class(
+											"flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card",
+										),
+									],
+									platforms.map((platform) => providerRow(h, model, platform)),
+								),
+							],
+						),
+					]),
+			h.section(
+				[h.Class("flex flex-col gap-3")],
+				[
+					h.div(
+						[h.Class("flex items-center justify-between gap-3")],
+						[
+							h.h2(
+								[
+									h.Class(
+										"flex items-center gap-2 text-2xs uppercase tracking-widest text-muted-foreground",
+									),
+								],
+								["Your code, with OpenTelemetry"],
+							),
+							// The languages picked, or every SDK there are snippets for when none was.
+							h.span(
+								[h.AriaHidden(true), h.Class("flex items-center gap-1.5")],
+								(state.stack.languages.length === 0
+									? ([
+											"FrameworkNodejsIcon",
+											"FrameworkPythonIcon",
+											"FrameworkGoIcon",
+											"OpenjdkIcon",
+											"RustIcon",
+											"GlobeIcon",
+										] as const)
+									: state.stack.languages.map((language) => STACK_LANGUAGES[language].icon)
+								).map((name) =>
+									h.span(
+										[
+											h.Class(
+												"flex size-6 items-center justify-center rounded-sm border border-border bg-card",
+											),
+										],
+										[icon(h, name, { size: 13 })],
+									),
+								),
+							),
+						],
+					),
+					GuidedSetup.connectInstructions(h, {
+						slot: "onboarding-connect",
+						framework: state.selectedFramework ?? "nodejs",
+						apiKey: connect.keys._tag === "Ready" ? connect.keys.privateKey : "",
+						setupTabs: connect.setupTabs,
+						packageTabs: connect.packageTabs,
+						snippetCopies: connect.snippetCopies,
+						toSetupTabs: (message) => toConnect(ConnectMessage.GotSetupTabsMessage({ message })),
+						toPackageTabs: (message) =>
+							toConnect(ConnectMessage.GotPackageTabsMessage({ message })),
+						toSnippetCopy: (snippet, message) =>
+							toConnect(ConnectMessage.GotSnippetCopyMessage({ snippet, message })),
+						variant: "boxed",
+						...docsFor(state.stack),
+					}),
+					...(connect.keys._tag === "Failed"
+						? [
+								h.p(
+									[h.Class("text-xs text-muted-foreground")],
+									[
+										"Couldn't read your ingest key. An admin can copy it from Settings, Ingestion.",
+									],
+								),
+							]
+						: []),
+				],
+			),
+			stepFooter(h, [
+				h.span([h.Class("text-sm text-muted-foreground")], ["We keep listening while you move on."]),
+				button(
+					h,
+					{ size: "lg", attributes: [h.OnClick(Message.ClickedContinue({ step: "connect" }))] },
+					["Continue", icon(h, "ArrowRightIcon", { size: 16 })],
+				),
+			]),
+		],
+	)
+}
+
+const SIGNALS: ReadonlyArray<Readonly<{ signal: TelemetrySignalKind; label: string; waiting: string }>> = [
+	{ signal: "traces", label: "Traces", waiting: "Waiting for the first span" },
+	{ signal: "logs", label: "Logs", waiting: "Waiting for the first log line" },
+	{ signal: "metrics", label: "Metrics", waiting: "Waiting for the first data point" },
+	{ signal: "sessions", label: "Sessions", waiting: "Waiting for the first browser session" },
+]
+
+/** What has reached Maple so far, re-read every few seconds while the step shows. */
+const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartState): Html => {
+	const rows = SIGNALS.map((entry) => ({
+		...entry,
+		presence: presenceOf(model.connect.presence, entry.signal),
+	}))
+	const arriving = rows.filter((row) => row.presence.status === "present").length
+	const providers = state.stack.platforms.filter((platform) =>
+		STATUS_PROVIDERS.some((provider) => provider === platform),
+	)
+	return h.div(
+		[h.Class("flex flex-col gap-4"), h.AriaLive("polite")],
+		[
+			h.div(
+				[h.Class("flex items-end justify-between gap-3")],
+				[
+					h.div(
+						[h.Class("flex flex-col gap-1")],
+						[
+							h.span(
+								[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
+								[`Arriving in ${orgName}`],
+							),
+							h.span(
+								[h.Class("font-display text-xl font-semibold")],
+								[
+									arriving === 0
+										? "Waiting for your first data"
+										: `${arriving} of ${rows.length} signals arriving`,
+								],
+							),
+						],
+					),
+					h.span(
+						[
+							h.Class(
+								"flex items-center gap-1.5 rounded-sm border border-border px-2 py-0.5 text-2xs text-muted-foreground",
+							),
+						],
+						[
+							h.span([h.AriaHidden(true), h.Class("size-1.5 rounded-full bg-success")], []),
+							"Listening",
+						],
+					),
+				],
+			),
+			h.ul(
+				[
+					h.Class(
+						"flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-background",
+					),
+				],
+				[
+					...rows.map((row) =>
+						h.li(
+							[h.Class("flex items-center gap-3 px-4 py-3")],
+							[
+								h.span([h.Class("flex-1 text-sm")], [row.label]),
+								h.span(
+									[
+										h.Class(
+											cn(
+												"text-xs",
+												row.presence.status === "present"
+													? "text-success"
+													: "text-muted-foreground",
+											),
+										),
+									],
+									[
+										row.presence.status === "present"
+											? "Receiving"
+											: row.presence.status === "loading"
+												? "Checking"
+												: row.waiting,
+									],
+								),
+							],
+						),
+					),
+					...providers.map((platform) =>
+						h.li(
+							[h.Class("flex items-center gap-3 px-4 py-3")],
+							[
+								h.span(
+									[h.AriaHidden(true), h.Class("flex")],
+									[icon(h, STACK_PLATFORMS[platform].icon, { size: 14 })],
+								),
+								h.span([h.Class("flex-1 text-sm")], [STACK_PLATFORMS[platform].label]),
+								h.span(
+									[
+										h.Class(
+											cn(
+												"text-xs",
+												model.connect.connected[platform] === true
+													? "text-success"
+													: "text-muted-foreground",
+											),
+										),
+									],
+									[
+										model.connect.connected[platform] === true
+											? "Connected"
+											: "Not connected yet",
+									],
+								),
+							],
+						),
+					),
+				],
+			),
+		],
+	)
+}
+
 /** What the screen draws for its step; the team and plan steps come from their own modules. */
 export type QuickStartParts = Readonly<{
 	/** The header's right cluster around the trail: the container owns its menus. */
@@ -480,6 +792,11 @@ const trailOf = (
 					: null,
 			isCurrent: step === "stack",
 		},
+		{
+			label: "Connect",
+			answer: state.completedSteps.connect === true && step !== "connect" ? "Done" : null,
+			isCurrent: step === "connect",
+		},
 		{ label: "Team", answer: null, isCurrent: step === "team" },
 	]
 }
@@ -502,6 +819,10 @@ export const view = (h: H, model: Model, parts: QuickStartParts): Html | null =>
 		case "stack":
 			return shell(h, options(stackPreview(h, parts.orgName, state)), [
 				motionStep(h, "stack", stackStep(h, state)),
+			])
+		case "connect":
+			return shell(h, options(connectPreview(h, parts.orgName, model, state)), [
+				motionStep(h, "connect", connectStep(h, model, state)),
 			])
 		case "team":
 			return shell(h, options(null), [motionStep(h, "team", parts.teamStep(state))])

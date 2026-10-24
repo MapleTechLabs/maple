@@ -13,6 +13,14 @@ import { clerkTry, currentClerkOrganization } from "../../platform/clerk"
 import { startDitherField } from "../../ui/dither-field"
 import type { Resources } from "../../platform/resources"
 import * as PricingCards from "./pricing-cards"
+import {
+	closeConnect,
+	Connect,
+	ConnectMessage,
+	initConnect,
+	openConnect,
+	updateConnect,
+} from "./quick-start-connect"
 import { LoadTeam, loadingTeam, selfHostedTeam, Team, TeamMessage, updateTeam } from "./quick-start-team"
 import {
 	completeStep,
@@ -55,6 +63,8 @@ export const Model = Schema.TaggedStruct("QuickStart", {
 	isRegionStepShown: Schema.Boolean,
 	/** Where the last step sends them (`redirect_url`, else home). */
 	redirectUrl: Schema.String,
+	orgId: Schema.String,
+	connect: Connect,
 	/** Whether an update has run with the plan known: the save can load before the customer read. */
 	isPlanKnown: Schema.Boolean,
 })
@@ -62,6 +72,7 @@ export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
 	GotTeamMessage: { message: TeamMessage },
+	GotConnectMessage: { message: ConnectMessage },
 	GotPricingMessage: { message: PricingCards.Message },
 	LoadedQuickStartState: { state: QuickStartState },
 	ToggledLanguage: { language: Schema.Literals(STACK_LANGUAGE_IDS) },
@@ -175,6 +186,7 @@ export const init = (
 	isCheckoutReturn = false,
 	needsRegion = false,
 	redirectUrl = "/",
+	orgId = "",
 ): UpdateReturn => ({
 	model: {
 		_tag: "QuickStart",
@@ -187,12 +199,15 @@ export const init = (
 		pricing: PricingCards.init(),
 		isPlansRequested: false,
 		redirectUrl,
+		orgId,
+		connect: initConnect(),
 		isPlanKnown: false,
 	},
 	commands: [LoadQuickStartState({ key: storageKey })],
 })
 
 const toTeam = (message: TeamMessage) => Message.GotTeamMessage({ message })
+const toConnect = (message: ConnectMessage) => Message.GotConnectMessage({ message })
 const toPricing = (message: PricingCards.Message) => Message.GotPricingMessage({ message })
 
 /**
@@ -200,26 +215,38 @@ const toPricing = (message: PricingCards.Message) => Message.GotPricingMessage({
  * team step, the plan catalog on the plan step (cached after the first read, like the atom).
  */
 const entered = (previous: Model, result: UpdateReturn, hasPlan: boolean): UpdateReturn => {
-	const { model } = result
-	if (model.state === null || isQuickStartFinished(model.state)) return result
-	const step = resolveQuickStartStep(model.state, hasPlan)
+	if (result.model.state === null || isQuickStartFinished(result.model.state)) return result
+	const step = resolveQuickStartStep(result.model.state, hasPlan)
 	const wasOn = previous.state === null ? null : resolveQuickStartStep(previous.state, hasPlan)
 	if (step === wasOn) return result
+	// Leaving the connect step stops its polling.
+	const model =
+		wasOn === "connect" ? { ...result.model, connect: closeConnect(result.model.connect) } : result.model
+	const state = result.model.state
+	const commands = result.commands ?? []
+	if (step === "connect") {
+		const opened = openConnect(model.connect, model.orgId, state.stack.platforms)
+		return {
+			...result,
+			model: { ...model, connect: opened.connect },
+			commands: [...commands, ...Command.mapMessages(opened.commands, toConnect)],
+		}
+	}
 	if (step === "team" && isClerkAuthEnabled)
 		return {
 			...result,
 			model: { ...model, team: loadingTeam() },
-			commands: [...(result.commands ?? []), Command.mapMessage(toTeam)(LoadTeam())],
+			commands: [...commands, Command.mapMessage(toTeam)(LoadTeam())],
 		}
 	if (step === "plan" && !model.isPlansRequested) {
 		const pricing = PricingCards.initReturning(model.isCheckoutReturn)
 		return {
 			...result,
 			model: { ...model, isPlansRequested: true, pricing: pricing.model },
-			commands: [...(result.commands ?? []), ...Command.mapMessages(pricing.commands, toPricing)],
+			commands: [...commands, ...Command.mapMessages(pricing.commands, toPricing)],
 		}
 	}
-	return result
+	return { ...result, model }
 }
 
 /** Every change is written through, as the atom's `setState` is. */
@@ -263,6 +290,14 @@ const step = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
 			return {
 				model: { ...model, team: next.team },
 				commands: Command.mapMessages(next.commands, toTeam),
+			}
+		},
+		GotConnectMessage: ({ message: child }) => {
+			const platforms = model.state?.stack.platforms ?? []
+			const next = updateConnect(model.connect, child, model.orgId, platforms)
+			return {
+				model: { ...model, connect: next.connect },
+				commands: Command.mapMessages(next.commands, toConnect),
 			}
 		},
 		GotPricingMessage: ({ message: child }) => {

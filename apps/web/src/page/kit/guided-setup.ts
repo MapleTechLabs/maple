@@ -1,6 +1,7 @@
 import { REPLAY_BLOCK_CLASS } from "../../components/common/replay-privacy"
 import { ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "../../components/ingest/onboard-skill"
 import { type FrameworkId, sdkSnippets } from "../../components/quick-start/sdk-snippets"
+import { type DocsPage, docsUrl } from "../../lib/docs"
 import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -23,6 +24,25 @@ const FRAMEWORK_ICONS = {
 	effect: "FrameworkEffectIcon",
 	otel: "FrameworkOpenTelemetryIcon",
 } as const satisfies { readonly [Id in FrameworkId]: IconName }
+
+/** The guide each snippet's Instrument tab links to. */
+const FRAMEWORK_DOCS = {
+	nextjs: { label: "Next.js", page: "nextjsGuide" },
+	nodejs: { label: "Node.js", page: "nodejsGuide" },
+	python: { label: "Python", page: "pythonGuide" },
+	go: { label: "Go", page: "goGuide" },
+	effect: { label: "Effect", page: "effectSdk" },
+	otel: { label: "OpenTelemetry", page: "instrumentation" },
+} as const satisfies { readonly [Id in FrameworkId]: InstructionsDocs }
+
+const SETUP_TAB_ICONS = {
+	install: "DownloadIcon",
+	instrument: "CodeIcon",
+	"claude-code": "ClaudeIcon",
+} as const satisfies { readonly [Value in (typeof SETUP_TAB_VALUES)[number]]: IconName }
+
+const isSetupTab = (value: string): value is (typeof SETUP_TAB_VALUES)[number] =>
+	SETUP_TAB_VALUES.some((tab) => tab === value)
 
 const PACKAGE_MANAGERS = [
 	{ id: "npm", command: "npm install" },
@@ -58,7 +78,9 @@ export const frameworkPicker = <M>(
 					h.Class(
 						cn(
 							"flex items-center gap-1.5 border font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-							compact ? "rounded-full px-2.5 py-1 font-mono text-2xs leading-3.5" : "rounded-lg px-3 py-2 text-xs gap-2",
+							compact
+								? "rounded-full px-2.5 py-1 font-mono text-2xs leading-3.5"
+								: "rounded-lg px-3 py-2 text-xs gap-2",
 							isActive
 								? compact
 									? "border-primary text-primary"
@@ -77,6 +99,8 @@ export const frameworkPicker = <M>(
 	return h.div([h.Class("space-y-2")], [eyebrow(h, { variant: "label" }, ["Pick your stack"]), chips])
 }
 
+export type InstructionsDocs = Readonly<{ label: string; page: DocsPage }>
+
 /** The parent's state for `ConnectInstructions`: its tabs, snippet copy states and Messages. */
 export type InstructionsParts<M> = Readonly<{
 	/** Slot id prefix, unique per page (`ingestion`, `overview-setup`). */
@@ -91,6 +115,8 @@ export type InstructionsParts<M> = Readonly<{
 	toSnippetCopy: (snippet: string, message: CopyButton.Message) => M
 	/** `flush` drops the outer panel so the tabs sit directly in a parent card. */
 	variant: "boxed" | "flush"
+	/** The Instrument tab's guide; defaults to the framework's (a Rust stack sets the Rust one). */
+	docs?: InstructionsDocs
 }>
 
 const block = <M>(
@@ -109,7 +135,11 @@ const block = <M>(
 		toCopyMessage: (message) => parts.toSnippetCopy(key, message),
 	})
 
-const packageManagerBlock = <M>(h: HtmlBuilder<M>, parts: InstructionsParts<M>, packages: ReadonlyArray<string>): Html =>
+const packageManagerBlock = <M>(
+	h: HtmlBuilder<M>,
+	parts: InstructionsParts<M>,
+	packages: ReadonlyArray<string>,
+): Html =>
 	h.submodel({
 		slotId: `${parts.slot}-package-tabs`,
 		model: parts.packageTabs,
@@ -134,8 +164,11 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 	const padding = isBoxed ? "p-3" : "px-4 pt-3 pb-4"
 	const apiKey = parts.apiKey
 	const interpolate = (template: string) =>
-		template.replace(/\{\{INGEST_URL\}\}/g, ingestUrl).replace(/\{\{API_KEY\}\}/g, apiKey || "<your-api-key>")
+		template
+			.replace(/\{\{INGEST_URL\}\}/g, ingestUrl)
+			.replace(/\{\{API_KEY\}\}/g, apiKey || "<your-api-key>")
 	const install = snippet.install
+	const docs = parts.docs ?? FRAMEWORK_DOCS[snippet.language]
 	const tabs = h.submodel({
 		slotId: `${parts.slot}-setup-tabs`,
 		model: parts.setupTabs,
@@ -146,7 +179,31 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 			labels: ["Install", "Instrument", "Claude Code"],
 			className: "flex flex-col",
 			listClassName: "h-9",
-			wrapList: (list) => h.div([h.Class(cn("border-b", isBoxed ? "px-3" : "px-4"))], [list]),
+			tabClassName: "gap-2",
+			tabContent: (value, label) => [
+				icon(h, isSetupTab(value) ? SETUP_TAB_ICONS[value] : "CodeIcon", { size: 14 }),
+				label,
+			],
+			wrapList: (list) =>
+				h.div(
+					[
+						h.Class(
+							cn("flex items-center justify-between gap-3 border-b", isBoxed ? "px-3" : "px-4"),
+						),
+					],
+					[
+						list,
+						h.span(
+							[
+								h.Role("img"),
+								h.AriaLabel("OpenTelemetry"),
+								h.Title("OpenTelemetry"),
+								h.Class("text-muted-foreground"),
+							],
+							[icon(h, "FrameworkOpenTelemetryIcon", { size: 16 })],
+						),
+					],
+				),
 			panelClassName: cn("overflow-auto mt-0", padding),
 			panelClassNameFor: (value) => (value === "claude-code" ? "space-y-2" : undefined),
 			panel: (value) => {
@@ -158,7 +215,37 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 					]
 				if (value === "instrument")
 					return [
-						block(h, parts, "instrument", interpolate(snippet.instrument), snippet.label.toLowerCase(), REPLAY_BLOCK_CLASS),
+						block(
+							h,
+							parts,
+							"instrument",
+							interpolate(snippet.instrument),
+							snippet.label.toLowerCase(),
+							REPLAY_BLOCK_CLASS,
+						),
+						h.a(
+							[
+								h.Class(
+									"mt-3 flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground",
+								),
+								h.Href(docsUrl(docs.page)),
+								h.Target("_blank"),
+								h.Rel("noopener"),
+							],
+							[
+								h.span(
+									[],
+									[
+										h.span(
+											[h.Class("text-foreground font-medium")],
+											[`${docs.label} guide`],
+										),
+										" for SDK setup, logs, metrics and sampling",
+									],
+								),
+								icon(h, "ExternalLinkIcon", { size: 12 }),
+							],
+						),
 					]
 				return [
 					h.p(
@@ -171,7 +258,14 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 						],
 					),
 					block(h, parts, "skill-command", ONBOARD_SKILL_COMMAND, "shell"),
-					block(h, parts, "skill-prompt", onboardSkillPrompt(ingestUrl, apiKey), "shell", REPLAY_BLOCK_CLASS),
+					block(
+						h,
+						parts,
+						"skill-prompt",
+						onboardSkillPrompt(ingestUrl, apiKey),
+						"shell",
+						REPLAY_BLOCK_CLASS,
+					),
 				]
 			},
 		},
