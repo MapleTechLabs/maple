@@ -512,19 +512,27 @@ describe("infrastructure section", () => {
 		)
 	})
 
-	test("the answer that completes the live set tells the pages, once", () => {
+	test("the last integration status to answer tells the pages, once, even when the probe failed", () => {
 		const settledBy = (model: Model, message: Message) => update(model, message).outMessage?._tag
-		const probeFirst = update(
-			signedIn(),
-			Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: ["hosts"] }),
-		).model
+		const probeFailed = update(signedIn(), Message.FailedLoadInfraPresence({ orgId: "org_parity" })).model
 		expectVitest(
 			settledBy(signedIn(), Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: [] })),
 		).toBe(undefined)
-		const settled = answered(signedIn(), true).model
+		const answeredOnce = {
+			...probeFailed,
+			integrations: {
+				cloudflare: true,
+				railway: false,
+				planetscale: false,
+				gcp: false,
+				supabase: false,
+				aws: false,
+			},
+		}
+		const oneLeft = { ...answeredOnce, integrations: { ...answeredOnce.integrations, aws: null } }
 		expectVitest(
 			settledBy(
-				{ ...settled, integrations: { ...settled.integrations, aws: null } },
+				oneLeft,
 				Message.SucceededLoadIntegration({
 					orgId: "org_parity",
 					integration: "aws",
@@ -534,7 +542,7 @@ describe("infrastructure section", () => {
 		).toBe("SettledInfraSurfaces")
 		expectVitest(
 			settledBy(
-				settled,
+				answeredOnce,
 				Message.SucceededLoadIntegration({
 					orgId: "org_parity",
 					integration: "aws",
@@ -544,7 +552,7 @@ describe("infrastructure section", () => {
 		).toBe(undefined)
 		expectVitest(
 			settledBy(
-				probeFirst,
+				oneLeft,
 				Message.SucceededLoadIntegration({ orgId: "org_b", integration: "aws", isConnected: true }),
 			),
 		).toBe(undefined)

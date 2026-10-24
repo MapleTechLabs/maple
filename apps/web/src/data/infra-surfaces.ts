@@ -82,13 +82,17 @@ export const probeOf = <E>(
 	data: AsyncData.AsyncData<ReadonlyArray<InfraSurfaceLiteral>, E>,
 ): PresenceProbe => (AsyncData.isFailure(data) ? "failed" : Option.getOrNull(AsyncData.getData(data)))
 
+/** Every integration status answered (a failed one counts as not connected). */
+export const integrationsAnswered = (integrations: IntegrationFlags): boolean =>
+	INTEGRATION_IDS.every((id) => integrations[id] !== null)
+
 /** The live answer when it is complete, else the set remembered from the last visit. */
 export const resolveInfraSurfaces = (
 	probe: PresenceProbe,
 	integrations: IntegrationFlags,
 	remembered: ReadonlyArray<NavSurface> | undefined,
 ): InfraSurfaces => {
-	const isSettled = INTEGRATION_IDS.every((id) => integrations[id] !== null)
+	const isSettled = integrationsAnswered(integrations)
 	if (Array.isArray(probe) && isSettled)
 		return {
 			_tag: "Only",

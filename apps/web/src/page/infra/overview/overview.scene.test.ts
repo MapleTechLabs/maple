@@ -9,7 +9,7 @@ import * as Frame from "../kit/frame"
 import { Message } from "./message"
 import type { Model, SourceId, SourceReading } from "./model"
 import { presentSources, sourceState, surfacesOf } from "./state"
-import { contextChanged, init, update } from "./update"
+import { infraSurfacesSettled, init, update } from "./update"
 import { view } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -113,9 +113,12 @@ describe("infra overview", () => {
 		expect(presentSources(surfacesOf(answered.model, waiting))).toBeNull()
 		expect(sourceReads(answered.commands)).toEqual([])
 		// The last status lands after the probe: the shell's settle step requests the sources.
-		const settled = contextChanged(answered.model, context)
+		const settled = infraSurfacesSettled(answered.model, context)
 		expect(sourceReads(settled.commands)).toHaveLength(2)
-		expect(sourceReads(contextChanged(settled.model, context).commands)).toEqual([])
+		// A source that already failed keeps its error row instead of loading again.
+		const failed = complete(settled.model, "hosts", Result.fail(toLoadFailure("boom")))
+		expect(sourceReads(infraSurfacesSettled(failed, context).commands)).toEqual([])
+		expect(sourceState(failed, "hosts")).toEqual({ status: "error" })
 	})
 
 	test("the remembered sources are read on entry, before the probe answers", () => {

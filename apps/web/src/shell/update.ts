@@ -5,7 +5,7 @@ import { modifyFields } from "foldkit/struct"
 import * as Dialog from "../ui/dialog"
 import * as Tooltip from "../ui/tooltip"
 import type { Resources } from "../platform/resources"
-import { PENDING_INTEGRATIONS, settledSurfaces } from "../data/infra-surfaces"
+import { integrationsAnswered, PENDING_INTEGRATIONS, settledSurfaces } from "../data/infra-surfaces"
 import {
 	FocusElement,
 	FocusSiblingMenuItem,
@@ -162,12 +162,12 @@ const rememberSettled = (orgId: string, step: UpdateReturn): UpdateReturn => {
 	}
 }
 
-/** A probe or status answer for the org; the one that completes the live set tells the pages. */
+/** A probe or status answer for the org; the last status to answer tells the pages. */
 const surfacesAnswered = (model: Model, orgId: string, apply: (model: Model) => Model): UpdateReturn => {
 	const step = rememberSettled(orgId, forOrg(model, orgId, apply))
-	const wasSettled = settledSurfaces(shellProbe(model), model.integrations) !== null
-	const isSettled = settledSurfaces(shellProbe(step.model), step.model.integrations) !== null
-	return !wasSettled && isSettled ? { ...step, outMessage: OutMessage.SettledInfraSurfaces() } : step
+	return !integrationsAnswered(model.integrations) && integrationsAnswered(step.model.integrations)
+		? { ...step, outMessage: OutMessage.SettledInfraSurfaces() }
+		: step
 }
 
 const toChecklist = Command.mapMessage((message: Checklist.Message) =>

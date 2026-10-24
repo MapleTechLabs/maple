@@ -166,7 +166,7 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly revive?: (model: Model, route: RouteOf<Tags>, context: PageContext) => PageReturn<Model, Message>
 	/** The namespace pin or time zone changed (an org change builds a new instance). */
 	readonly contextChanged?: (model: Model, context: PageContext) => PageReturn<Model, Message>
-	/** The org's probe and every integration status answered, after a page may have entered without them. */
+	/** Every integration status answered, after the page may have entered without them. */
 	readonly infraSurfacesSettled?: (model: Model, context: PageContext) => PageReturn<Model, Message>
 	readonly view: Submodel.View<Model, Message, PageViewInputs>
 	readonly subscriptions?: Subscription.Subscriptions<PageSubscriptionInput<Model>, Message, Resources>
