@@ -23,6 +23,7 @@ import {
 	knownStatusMix,
 	latencyHistogram,
 	reasonPhrase,
+	type WindowMs,
 } from "../derive-api"
 import type { LoadFailure } from "../../../../data/load-failure"
 import type { ApiBucket, EndpointDetail, StatusRow } from "../model-tabs"
@@ -43,6 +44,7 @@ export type ViewInputs = Readonly<{
 	/** The peeked endpoint's buckets, from the tab's per-endpoint read or the drawer's own. */
 	series: AsyncData.AsyncData<ReadonlyArray<ApiBucket>, LoadFailure>
 	bucketSeconds: number
+	window: WindowMs
 	statusRows: ReadonlyArray<StatusRow>
 	chartContext: ChartContext | null
 	seconds: number
@@ -80,7 +82,12 @@ const hint = (h: H, text: string) => h.span([h.Class("text-3xs text-muted-foregr
 
 const stat = (h: H, label: string, value: string, sub: string, valueClassName?: string): Html =>
 	h.div(
-		[h.Key(label), h.Class("flex min-w-0 flex-col gap-1 border-r p-3 last:border-r-0")],
+		[
+			h.Key(label),
+			h.Class(
+				"flex min-w-0 flex-col gap-1 border-b p-3 odd:border-r sm:border-r sm:border-b-0 sm:last:border-r-0",
+			),
+		],
 		[
 			h.span([h.Class("text-3xs uppercase tracking-wider text-muted-foreground")], [label]),
 			h.span([h.Class(cn("text-lg font-medium leading-6 tabular-nums", valueClassName))], [value]),
@@ -93,7 +100,7 @@ const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, 
 	const mix = knownStatusMix(endpoint)
 	const topClient = codes.find((code) => code.name.startsWith("4"))
 	return h.div(
-		[h.Class("grid grid-cols-4 overflow-hidden rounded-lg border bg-card")],
+		[h.Class("grid grid-cols-2 overflow-hidden rounded-lg border bg-card sm:grid-cols-4")],
 		[
 			stat(
 				h,
@@ -158,7 +165,9 @@ const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => 
 			}),
 		]
 	const buckets = AsyncData.getOrElse(inputs.series, () => [])
-	const context = inputs.chartContext
+	// Until the series lands the charts are skeletons, not an endpoint that served nothing.
+	const isPending = AsyncData.isIdle(inputs.series) || AsyncData.isLoading(inputs.series)
+	const context = isPending ? null : inputs.chartContext
 	return [
 		chartSection(
 			h,
@@ -175,6 +184,7 @@ const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => 
 						chart: model.charts["peek-requests"],
 						buckets,
 						bucketSeconds: inputs.bucketSeconds,
+						window: inputs.window,
 						context,
 						className: "h-[120px] w-full",
 						toMessage: toChart("peek-requests"),
@@ -400,7 +410,10 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 						[h.Class("flex items-baseline gap-2")],
 						[
 							h.h3([h.Class(eyebrowClass)], ["Slowest requests"]),
-							hint(h, "slowest per hour and status"),
+							h.span(
+								[h.Class("hidden text-3xs text-muted-foreground sm:inline")],
+								["slowest per hour and status"],
+							),
 						],
 					),
 					h.a(
@@ -427,12 +440,12 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 								h.Key(`${request.traceId}-${request.timestamp}`),
 								h.Href(hrefOf(AppRoute.Trace({ traceId: request.traceId, search: {} }))),
 								h.Class(
-									"flex h-9 items-center gap-3 border-b px-3 text-2xs tabular-nums last:border-b-0 hover:bg-muted/40",
+									"flex h-9 items-center gap-2 border-b px-3 text-2xs tabular-nums sm:gap-3 last:border-b-0 hover:bg-muted/40",
 								),
 							],
 							[
 								h.span(
-									[h.Class("w-20 shrink-0 text-info-foreground")],
+									[h.Class("w-16 shrink-0 text-info-foreground sm:w-20")],
 									[request.traceId.slice(0, 8)],
 								),
 								h.span(
@@ -455,11 +468,15 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 									[request.httpStatusCode],
 								),
 								h.span(
-									[h.Class("flex-1 text-muted-foreground")],
+									[
+										h.Class(
+											"hidden min-w-0 flex-1 truncate text-muted-foreground sm:block",
+										),
+									],
 									[request.bodyBytes === null ? "" : formatBytes(request.bodyBytes)],
 								),
 								h.span(
-									[h.Class("text-muted-foreground")],
+									[h.Class("ml-auto shrink-0 whitespace-nowrap text-muted-foreground")],
 									[formatSlowestTime(request.timestamp, inputs.timeZone)],
 								),
 							],
@@ -474,7 +491,7 @@ const detailSections = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Rea
 	return AsyncData.matchData(data, {
 		onEmpty: () => [
 			h.div(
-				[h.Key("detail-loading"), h.Class("grid grid-cols-2 gap-3"), h.AriaBusy(true)],
+				[h.Key("detail-loading"), h.Class("grid grid-cols-1 gap-3 sm:grid-cols-2"), h.AriaBusy(true)],
 				[0, 1, 2, 3].map((index) =>
 					h.div([h.Key(String(index))], [skeleton(h, "h-[148px] w-full rounded-md")]),
 				),
@@ -489,10 +506,19 @@ const detailSections = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Rea
 			}),
 		],
 		onData: (detail) => [
+			h.p(
+				[h.Key("detail-grain"), h.Class("text-2xs text-muted-foreground")],
+				["The cards below count whole hours, so they can reach past the window's edges."],
+			),
 			h.div(
 				[
 					h.Key("detail-grid"),
-					h.Class(cn("grid grid-cols-2 gap-3", refreshingClass(AsyncData.isRefreshing(data)))),
+					h.Class(
+						cn(
+							"grid grid-cols-1 gap-3 sm:grid-cols-2",
+							refreshingClass(AsyncData.isRefreshing(data)),
+						),
+					),
 				],
 				[
 					statusCard(h, inputs.statusRows, peek.endpoint.spanName),
@@ -603,10 +629,16 @@ const footer = (h: H, peek: Peek, inputs: ViewInputs): Html => {
 					),
 				],
 			),
-			linkButton(h, { size: "sm", variant: "ghost", href: inputs.alertHref }, [
-				icon(h, "BellIcon"),
-				"Create alert",
-			]),
+			linkButton(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					href: inputs.alertHref,
+					attributes: [h.AriaLabel("Create alert")],
+				},
+				[icon(h, "BellIcon"), h.span([h.Class("hidden sm:inline")], ["Create alert"])],
+			),
 		],
 		"flex-row items-center justify-between gap-3 border-t sm:justify-between",
 	)

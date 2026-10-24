@@ -37,6 +37,7 @@ import {
 	onAxis,
 	statusCodeSummaries,
 	statusMix,
+	type WindowMs,
 	hasUnknownBuckets,
 } from "./derive-api"
 import { commitMarkers, markerLayout } from "./derive-markers"
@@ -57,7 +58,7 @@ type H = HtmlBuilder<Message>
 const toChart = (chartId: string) => (message: Chart.Message) => Message.GotChartMessage({ chartId, message })
 
 /** The tab's charts and sparklines share one bucket size (`operationsBucketSeconds`). */
-export type ApiTabInputs = Readonly<{ bucketSeconds: number; timeZone: string }>
+export type ApiTabInputs = Readonly<{ bucketSeconds: number; timeZone: string; window: WindowMs }>
 
 // KPI STRIP
 
@@ -146,7 +147,9 @@ const splitUnit = (text: string): Readonly<{ value: string; unit?: string }> => 
 	return space < 0 ? { value: text } : { value: text.slice(0, space), unit: text.slice(space + 1) }
 }
 
-const formatChange = (change: number) => `${change > 0 ? "+" : "−"}${formatErrorRate(Math.abs(change))}`
+/** "+12%" / "−8%"; under half a percent either way reads as unchanged. */
+const formatChange = (change: number) =>
+	Math.abs(change) < 0.005 ? "±0%" : `${change > 0 ? "+" : "−"}${formatErrorRate(Math.abs(change))}`
 
 const kpiStrip = (
 	h: H,
@@ -157,7 +160,7 @@ const kpiStrip = (
 	theme: ThemeColors | null,
 ): Html => {
 	const kpis = apiKpis(overview.totals, overview.previous, seconds)
-	const sparks = kpiSparks(overview.buckets, inputs.bucketSeconds)
+	const sparks = kpiSparks(overview.buckets, inputs.bucketSeconds, inputs.window)
 	const client = kpis.mix?.client ?? null
 	const server = kpis.mix?.server ?? null
 	const tiles: ReadonlyArray<Tile> = [
@@ -192,7 +195,7 @@ const kpiStrip = (
 		{
 			label: "p95 latency",
 			value: formatLatency(kpis.p95DurationMs),
-			aside: kpis.p95Change === null ? "no previous window" : `${formatChange(kpis.p95Change)} vs prev`,
+			aside: kpis.p95Change === null ? "no prior data" : `${formatChange(kpis.p95Change)} vs prev`,
 			asideClassName:
 				kpis.p95Change === null || Math.abs(kpis.p95Change) < 0.05
 					? undefined
@@ -329,6 +332,7 @@ const responsesChart = (
 						chart: chartModel,
 						buckets: overview.buckets,
 						bucketSeconds: inputs.bucketSeconds,
+						window: inputs.window,
 						context,
 						className: "h-[200px] w-full",
 						overlay,
@@ -391,11 +395,7 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 	)
 }
 
-const breakdownPanel = (
-	h: H,
-	summaries: ReadonlyArray<StatusCodeSummary> | null,
-	windowLabel: string,
-): Html => {
+const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null): Html => {
 	const total = summaries?.reduce((sum, summary) => sum + summary.count, 0) ?? 0
 	return h.div(
 		[
@@ -413,7 +413,7 @@ const breakdownPanel = (
 						: [
 								h.span(
 									[h.Class("text-2xs text-muted-foreground tabular-nums")],
-									[`${formatNumber(Math.round(total))} in ${windowLabel}`],
+									[`${formatNumber(Math.round(total))} · whole hours`],
 								),
 							]),
 				],
@@ -497,8 +497,8 @@ const toolbar = (h: H, model: Model, count: number): Html =>
 	)
 
 /** Request rate per bucket by span name on one axis; a bucket an endpoint was quiet in reads 0. */
-const sparksBySpanName = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number) => {
-	const axis = bucketAxis(buckets, bucketSeconds)
+const sparksBySpanName = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number, window: WindowMs) => {
+	const axis = bucketAxis(buckets, bucketSeconds, window)
 	const bySpanName = buckets.reduce(
 		(acc, bucket) => acc.set(bucket.spanName, [...(acc.get(bucket.spanName) ?? []), bucket]),
 		new Map<string, ReadonlyArray<ApiBucket>>(),
@@ -529,6 +529,7 @@ const endpointsTable = (
 		sparks: sparksBySpanName(
 			AsyncData.getOrElse(model.endpointSeries.data, () => []),
 			inputs.bucketSeconds,
+			inputs.window,
 		),
 		theme,
 		selected: model.search.endpoint,
@@ -676,13 +677,6 @@ const notes = (h: H, count: number, seconds: number): ReadonlyArray<Html> =>
 			: []),
 	].map((note) => h.p([h.Key(note), h.Class("px-0.5 text-xs text-muted-foreground")], [note]))
 
-const windowLabelOf = (seconds: number) =>
-	seconds >= 86_400 && seconds % 86_400 === 0
-		? `${seconds / 86_400}d`
-		: seconds >= 3_600 && seconds % 3_600 === 0
-			? `${seconds / 3_600}h`
-			: "this window"
-
 const loaded = (
 	h: H,
 	model: Model,
@@ -743,7 +737,7 @@ const loaded = (
 									}),
 								],
 							)
-						: breakdownPanel(h, summaries, windowLabelOf(seconds)),
+						: breakdownPanel(h, summaries),
 				],
 			),
 			endpointsTable(h, model, endpoints, inputs, theme),

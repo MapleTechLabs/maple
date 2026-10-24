@@ -10,7 +10,7 @@ import { plotFrame } from "../../../charts/plot-frame"
 import * as Sparkline from "../../../charts/sparkline"
 import { stackedBreakdown } from "../../../charts/stacked-breakdown-chart"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
-import { responseRows, type StatusClass } from "./derive-api"
+import { responseRows, type StatusClass, type WindowMs } from "./derive-api"
 import type { ApiBucket } from "./model-tabs"
 
 // The API tab's charts: the responses-by-status stack, the latency lines and the sparklines.
@@ -53,6 +53,7 @@ export const statusChart = <M>(
 		chart: Chart.Model | undefined
 		buckets: ReadonlyArray<ApiBucket>
 		bucketSeconds: number
+		window: WindowMs
 		context: ChartContext
 		className: string
 		overlay?: Html
@@ -62,7 +63,7 @@ export const statusChart = <M>(
 	}>,
 ): Html => {
 	const built = stackedBreakdown({
-		rows: responseRows(options.buckets, options.bucketSeconds),
+		rows: responseRows(options.buckets, options.bucketSeconds, options.window),
 		colors: STATUS_COLORS,
 		// Paint order is bottom up: errors sit on the axis where a small band stays visible.
 		order: STACK_ORDER,

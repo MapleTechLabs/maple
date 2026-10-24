@@ -1,3 +1,4 @@
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 import { AsyncData, Submodel } from "foldkit"
@@ -149,7 +150,12 @@ const body = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<Html> =
 		case "api": {
 			const bucketSeconds = model.window === null ? 60 : apiBucketSeconds(model.window)
 			return [
-				apiTab(h, model, { bucketSeconds, timeZone: inputs.context.timeZone }, model.themeColors),
+				apiTab(
+					h,
+					model,
+					{ bucketSeconds, timeZone: inputs.context.timeZone, window: windowMs(model) },
+					model.themeColors,
+				),
 				endpointDrawer(h, model, inputs, bucketSeconds),
 			]
 		}
@@ -157,6 +163,15 @@ const body = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<Html> =
 			return [dependenciesTab(h, model)]
 	}
 }
+
+/** The resolved window in epoch ms; before the clock is read, an empty one. */
+const windowMs = (model: Model) =>
+	model.window === null
+		? { startMs: 0, endMs: 0 }
+		: {
+				startMs: parseWarehouseDateTime(model.window.startTime),
+				endMs: parseWarehouseDateTime(model.window.endTime),
+			}
 
 /** "ingest · production · last 12 hours": what the drawer's numbers are scoped to. */
 const scopeLabel = (model: Model): string => {
@@ -187,6 +202,7 @@ const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSecond
 			peek,
 			series: peek === null ? AsyncData.Idle() : peekSeries(model, spanName),
 			bucketSeconds,
+			window: windowMs(model),
 			statusRows: AsyncData.getOrElse(model.statusBreakdown.data, () => []),
 			chartContext:
 				theme === null ? null : { theme, timeZone: inputs.context.timeZone, nowMs: model.nowMs ?? 0 },

@@ -202,8 +202,12 @@ describe("responses chart rows", () => {
 		...patch,
 	})
 
+	const oneMinute = { startMs: 1_792_810_800_000, endMs: 1_792_810_860_000 }
+
 	test("splits each bucket's request rate by status class", () => {
-		expect(responseRows([bucket({})], 60).map((row) => [row.attributeValue, row.value])).toEqual([
+		expect(
+			responseRows([bucket({})], 60, oneMinute).map((row) => [row.attributeValue, row.value]),
+		).toEqual([
 			["2xx", 7],
 			["4xx", 2],
 			["5xx", 1],
@@ -211,9 +215,9 @@ describe("responses chart rows", () => {
 	})
 
 	test("a bucket sealed before the status counters is unknown, not 2xx", () => {
-		expect(responseRows([bucket({ httpClassifiedSpanCount: 0, httpStatusCount: 0 })], 60)).toEqual([
-			{ bucket: "2026-10-24T03:00:00.000Z", attributeValue: "unknown", value: 10 },
-		])
+		expect(
+			responseRows([bucket({ httpClassifiedSpanCount: 0, httpStatusCount: 0 })], 60, oneMinute),
+		).toEqual([{ bucket: "2026-10-24T03:00:00.000Z", attributeValue: "unknown", value: 10 }])
 	})
 })
 
@@ -236,6 +240,40 @@ test("a bucket the service was silent in reads 0 on the spark, not a gap", () =>
 		p95DurationMs: 1,
 		p99DurationMs: 1,
 	})
-	const sparks = kpiSparks([bucket("2026-10-24T03:00:00.000Z", 60), bucket("2026-10-24T03:03:00.000Z", 120)], 60)
-	expect(sparks.requests).toEqual([1, 0, 0, 2])
+	// The window runs from a minute before the first bucket to the end of the last.
+	const window = { startMs: 1_792_810_740_000, endMs: 1_792_811_040_000 }
+	const sparks = kpiSparks(
+		[bucket("2026-10-24T03:00:00.000Z", 60), bucket("2026-10-24T03:03:00.000Z", 120)],
+		60,
+		window,
+	)
+	expect(sparks.requests).toEqual([0, 1, 0, 0, 2])
+})
+
+test("the responses chart spans the selected window, not only the buckets with traffic", () => {
+	const window = { startMs: 1_792_810_800_000, endMs: 1_792_810_980_000 }
+	const rows = responseRows(
+		[
+			{
+				bucket: "2026-10-24T03:01:00.000Z",
+				spanName: "",
+				estimatedSpanCount: 60,
+				httpClassifiedSpanCount: 1,
+				httpStatusCount: 1,
+				http4xxCount: 0,
+				http5xxCount: 0,
+				requestBodyBytes: 0,
+				p50DurationMs: 1,
+				p95DurationMs: 1,
+				p99DurationMs: 1,
+			},
+		],
+		60,
+		window,
+	)
+	expect([...new Set(rows.map((row) => row.bucket))]).toEqual([
+		"2026-10-24T03:00:00.000Z",
+		"2026-10-24T03:01:00.000Z",
+		"2026-10-24T03:02:00.000Z",
+	])
 })

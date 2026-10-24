@@ -59,24 +59,29 @@ export const apiKpis = (totals: ApiTotals, previous: ApiTotals | null, seconds: 
 	avgBodyBytes: totals.requestBodyCount === 0 ? null : totals.requestBodyBytes / totals.requestBodyCount,
 })
 
-/** One series per KPI tile, in bucket order. */
+/** The selected window in epoch ms, so axes span all of it and not just the buckets with data. */
+export type WindowMs = Readonly<{ startMs: number; endMs: number }>
+
 /**
- * The read's time axis: every bucket from the first to the last one returned, a bucket apart.
- * The warehouse leaves out buckets without traffic, so series are laid on this axis, zero-filled.
+ * The axis every bucket of the window sits on, a bucket apart. Anchored on a returned bucket so
+ * the slots line up with the warehouse's own grid; the warehouse leaves out buckets without
+ * traffic, so series are laid on this axis and zero-filled.
  */
 export const bucketAxis = (
 	buckets: ReadonlyArray<ApiBucket>,
 	bucketSeconds: number,
+	window: WindowMs,
 ): ReadonlyArray<number> => {
-	const times = buckets.flatMap((bucket) => {
-		const ms = parseBucketMs(bucket.bucket)
-		return ms === null ? [] : [ms]
-	})
-	if (times.length === 0) return []
-	const first = Math.min(...times)
-	const last = Math.max(...times)
 	const step = Math.max(1, bucketSeconds) * 1000
-	return Array.from({ length: Math.floor((last - first) / step) + 1 }, (_, index) => first + index * step)
+	const anchor = buckets.reduce<number | null>(
+		(found, bucket) => found ?? parseBucketMs(bucket.bucket),
+		null,
+	)
+	const origin = anchor ?? Math.floor(window.startMs / step) * step
+	// The first slot at or before the window start, the last one starting before its end.
+	const first = origin - Math.ceil((origin - window.startMs) / step) * step
+	const count = Math.max(0, Math.ceil((window.endMs - first) / step))
+	return Array.from({ length: count }, (_, index) => first + index * step)
 }
 
 /** `value` of each bucket on the axis, summed per slot, 0 where the read had none. */
@@ -92,9 +97,9 @@ export const onAxis = (
 	return axis.map((time) => sums.get(time) ?? 0)
 }
 
-/** One series per KPI tile on the read's axis; a silent bucket reads 0, not a gap. */
-export const kpiSparks = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number) => {
-	const axis = bucketAxis(buckets, bucketSeconds)
+/** One series per KPI tile across the window; a silent bucket reads 0, not a gap. */
+export const kpiSparks = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number, window: WindowMs) => {
+	const axis = bucketAxis(buckets, bucketSeconds, window)
 	const perSecond = Math.max(1, bucketSeconds)
 	return {
 		requests: onAxis(axis, buckets, (bucket) => bucket.estimatedSpanCount / perSecond),
@@ -112,17 +117,33 @@ export type StatusClass = (typeof STATUS_CLASSES)[number]
  * The responses chart's long rows: each bucket's request rate split by status class. A bucket
  * sealed before the status counters existed is all "unknown", never 2xx.
  */
-export const responseRows = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number) =>
-	buckets.flatMap((bucket) => {
+export const responseRows = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number, window: WindowMs) => {
+	const byTime = new Map(
+		buckets.flatMap((bucket) => {
+			const ms = parseBucketMs(bucket.bucket)
+			return ms === null ? [] : [[ms, bucket] as const]
+		}),
+	)
+	// Every slot of the window gets rows, so the x axis spans the window and quiet buckets read 0.
+	return bucketAxis(buckets, bucketSeconds, window).flatMap((ms) => {
+		const iso = new Date(ms).toISOString()
+		const bucket = byTime.get(ms)
+		if (bucket === undefined)
+			return [
+				{ bucket: iso, attributeValue: "2xx", value: 0 },
+				{ bucket: iso, attributeValue: "4xx", value: 0 },
+				{ bucket: iso, attributeValue: "5xx", value: 0 },
+			]
 		const rate = bucket.estimatedSpanCount / Math.max(1, bucketSeconds)
 		const mix = knownStatusMix(bucket)
-		if (mix === null) return [{ bucket: bucket.bucket, attributeValue: "unknown", value: rate }]
+		if (mix === null) return [{ bucket: iso, attributeValue: "unknown", value: rate }]
 		return [
-			{ bucket: bucket.bucket, attributeValue: "2xx", value: rate * mix.ok },
-			{ bucket: bucket.bucket, attributeValue: "4xx", value: rate * mix.client },
-			{ bucket: bucket.bucket, attributeValue: "5xx", value: rate * mix.server },
+			{ bucket: iso, attributeValue: "2xx", value: rate * mix.ok },
+			{ bucket: iso, attributeValue: "4xx", value: rate * mix.client },
+			{ bucket: iso, attributeValue: "5xx", value: rate * mix.server },
 		]
 	})
+}
 
 /** Whether any bucket's status mix is unknown, so the chart legend names the grey band. */
 export const hasUnknownBuckets = (buckets: ReadonlyArray<ApiBucket>) =>
@@ -215,8 +236,10 @@ export const endpointStatusCodes = (rows: ReadonlyArray<StatusRow>, spanName: st
 
 /** "/v1/traces, /v1/logs +3": the leading routes of a code, by their path only. */
 export const routeList = (routes: Ranked, shown = 2): string => {
-	const paths = routes.slice(0, shown).map((route) => route.name.slice(route.name.indexOf(" ") + 1))
-	const rest = routes.length - shown
+	// GET and POST of one path read the same once the method is dropped: list each path once.
+	const all = [...new Set(routes.map((route) => route.name.slice(route.name.indexOf(" ") + 1)))]
+	const paths = all.slice(0, shown)
+	const rest = all.length - shown
 	return rest > 0 ? `${paths.join(", ")} +${rest}` : paths.join(", ")
 }
 

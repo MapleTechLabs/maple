@@ -152,7 +152,7 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 								],
 								[],
 							),
-							methodLabel(h, endpoint.method, "w-8 md:w-10"),
+							methodLabel(h, endpoint.method, "hidden w-10 md:inline-block"),
 							truncatedText(h, { text: endpoint.route, className: "text-ui" }, [
 								...(head.length > 0
 									? [h.span([h.Class("hidden text-muted-foreground md:inline")], [head])]
@@ -182,20 +182,26 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 					h.div(
 						[h.Class("flex items-center justify-end gap-3")],
 						[
-							context.theme === null
-								? h.div([h.Class("hidden h-5 w-[88px] md:block")])
-								: sparkline(h, {
-										chartId: `endpoint-${endpoint.spanName}`,
-										values: context.sparks.get(endpoint.spanName) ?? [],
-										token: SPARK_TOKENS.requests,
-										theme: context.theme,
-										className: cn(
-											"hidden h-5 w-[88px] md:block",
-											isQuiet && "opacity-60",
-										),
-										toMessage: (message) =>
-											Message.GotChartMessage({ chartId: "sparkline", message }),
-									}),
+							// The wrapper hides it on narrow screens; the chart keeps its own flex layout.
+							h.div(
+								[h.Class("hidden h-5 w-[88px] md:block")],
+								context.theme === null
+									? []
+									: [
+											sparkline(h, {
+												chartId: `endpoint-${endpoint.spanName}`,
+												values: context.sparks.get(endpoint.spanName) ?? [],
+												token: SPARK_TOKENS.requests,
+												theme: context.theme,
+												className: cn("h-5 w-[88px]", isQuiet && "opacity-60"),
+												toMessage: (message) =>
+													Message.GotChartMessage({
+														chartId: "sparkline",
+														message,
+													}),
+											}),
+										],
+							),
 							h.span(
 								[
 									h.Class(
@@ -311,7 +317,10 @@ const groupHeaderRow = (
 								],
 								[options.title],
 							),
-							h.span([h.Class("shrink-0 text-2xs text-muted-foreground")], [options.count]),
+							h.span(
+								[h.Class("hidden shrink-0 text-2xs text-muted-foreground md:inline")],
+								[options.count],
+							),
 						],
 					),
 				],
