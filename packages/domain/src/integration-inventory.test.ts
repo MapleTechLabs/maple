@@ -164,21 +164,25 @@ describe("buildIntegrationInventory", () => {
 		expect(planetscale?.problem).toContain("no PlanetScale organization is selected")
 	})
 
-	it("flags a PlanetScale grant missing a permission", () => {
-		const planetscale = providerOf(
-			{
-				planetscaleConnection: {
-					psOrganization: "acme",
-					detectedPermissions: { readDatabases: true, readMetricsEndpoints: false },
-					lastInventoryAt: NOW - MINUTE,
-					lastInventoryError: null,
-					createdAt: NOW - 24 * 60 * MINUTE,
+	it("flags a PlanetScale grant missing a permission, and ignores ones nothing uses anymore", () => {
+		const withPermissions = (detectedPermissions: Record<string, boolean>) =>
+			providerOf(
+				{
+					planetscaleConnection: {
+						psOrganization: "acme",
+						detectedPermissions,
+						lastInventoryAt: NOW - MINUTE,
+						lastInventoryError: null,
+						createdAt: NOW - 24 * 60 * MINUTE,
+					},
 				},
-			},
-			"planetscale",
-		)
-		expect(planetscale?.status).toBe("failing")
-		expect(planetscale?.problem).toContain("readMetricsEndpoints (database metrics)")
+				"planetscale",
+			)
+		const missing = withPermissions({ readDatabases: false })
+		expect(missing?.status).toBe("failing")
+		expect(missing?.problem).toContain("readDatabases (the database inventory and deploy requests)")
+		// Bindings from before the metrics API stored this one; metrics no longer need it.
+		expect(withPermissions({ readDatabases: true, readMetricsEndpoints: false })?.status).toBe("healthy")
 	})
 
 	it("splits managed PlanetScale scrape targets from user Prometheus targets", () => {
@@ -310,7 +314,11 @@ describe("withSourceHealth", () => {
 		const failingZone = build({
 			oauthConnections: [cloudflareGrant],
 			cloudflareStates: [
-				zone("shop.example.com", { lastSuccessAt: null, lastErrorAt: NOW - MINUTE, lastError: "denied" }),
+				zone("shop.example.com", {
+					lastSuccessAt: null,
+					lastErrorAt: NOW - MINUTE,
+					lastError: "denied",
+				}),
 			],
 		})
 		const cloudflare = withSourceHealth(failingZone, [
@@ -323,4 +331,3 @@ describe("withSourceHealth", () => {
 		expect(withSourceHealth(inventory, [])).toEqual(inventory)
 	})
 })
-

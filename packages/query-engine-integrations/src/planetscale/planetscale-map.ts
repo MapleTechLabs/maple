@@ -32,10 +32,17 @@ export const CONNECTION_METRIC_NAMES = [
 ] as const
 
 /** Pod CPU utilization percentage (gauge, both products). */
-export const CPU_METRIC_NAMES = ["planetscale_pods_cpu_util_percentages"] as const
+export const CPU_METRIC_NAMES = [
+	"planetscale_pods_cpu_util_percentages",
+	// Vitess branches read from the metrics API: router CPU is the only CPU it serves.
+	"planetscale_vtgate_cpu_util_percentages",
+] as const
 
 /** Pod memory utilization percentage (gauge, both products). */
-export const MEMORY_METRIC_NAMES = ["planetscale_pods_mem_util_percentages"] as const
+export const MEMORY_METRIC_NAMES = [
+	"planetscale_pods_mem_util_percentages",
+	"planetscale_vtgate_mem_util_percentages",
+] as const
 
 /** Replication lag in seconds (gauge). */
 export const REPLICA_LAG_METRIC_NAMES = [
