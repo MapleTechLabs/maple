@@ -2,7 +2,6 @@ import {
 	V2PlanetScaleMetricsTokenRequest,
 	V2PlanetScaleOrganizationList,
 	V2PlanetScaleSelectOrganizationRequest,
-	V2PlanetScaleWebhookConfig,
 } from "@maple/domain/http/v2"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Effect, Schema } from "effect"
@@ -10,7 +9,6 @@ import { AsyncData, Command } from "foldkit"
 import { KeyedSchema } from "../../data/keyed"
 import { LoadFailure, toLoadFailure } from "../../data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
-import * as CopyButton from "../../ui/copy-button"
 import * as Dialog from "../../ui/dialog"
 import * as Field from "../../ui/field"
 import { Message } from "./message"
@@ -33,13 +31,8 @@ export const PlanetscaleCardModel = Schema.Struct({
 	tokenError: Schema.NullOr(Schema.String),
 	/** `PlanetScaleMetricsHealth`'s "Show details". */
 	isDetailsOpen: Schema.Boolean,
-	/** `PlanetScaleWebhookSetup`: revealed, then the config read. */
-	isWebhookRevealed: Schema.Boolean,
-	webhookConfig: KeyedSchema(V2PlanetScaleWebhookConfig, LoadFailure),
 	/** When the card started watching for the first scrape (`watchStartedAt`). */
 	watchStartedAt: Schema.NullOr(Schema.Number),
-	urlCopy: CopyButton.Model,
-	secretCopy: CopyButton.Model,
 })
 export type PlanetscaleCardModel = typeof PlanetscaleCardModel.Type
 
@@ -56,11 +49,7 @@ export const initPlanetscaleCard = (): PlanetscaleCardModel => ({
 	isSavingToken: false,
 	tokenError: null,
 	isDetailsOpen: false,
-	isWebhookRevealed: false,
-	webhookConfig: { key: null, data: AsyncData.Idle() },
 	watchStartedAt: null,
-	urlCopy: CopyButton.init(),
-	secretCopy: CopyButton.init(),
 })
 
 /** Comma or newline separated globs, trimmed. */
@@ -105,20 +94,6 @@ export const FetchOrganizations = Command.define("FetchPlanetscaleOrganizations"
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchOrganizations({ key, result })),
-		),
-})
-
-export const FetchWebhookConfig = Command.define("FetchPlanetscaleWebhookConfig", {
-	args: { key: Schema.String },
-	messages: [Message.CompletedFetchWebhookConfig],
-	execute: ({ key }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleApiV2Client
-			return yield* client.planetscaleIntegration.webhookConfig()
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchWebhookConfig({ key, result })),
 		),
 })
 

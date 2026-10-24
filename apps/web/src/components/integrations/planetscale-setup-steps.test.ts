@@ -31,6 +31,7 @@ const status = (over: Partial<V2PlanetScaleIntegration> = {}): V2PlanetScaleInte
 	detected_permissions: { readDatabases: true, readMetricsEndpoints: false },
 	metrics_auth: "service_token",
 	scrape_target: target(),
+	webhooks: null,
 	last_inventory_at: iso(NOW - 60_000),
 	last_inventory_error: null,
 	revoked_at: null,

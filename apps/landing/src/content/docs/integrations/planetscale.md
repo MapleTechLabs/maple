@@ -7,11 +7,11 @@ order: 3
 
 PlanetScale publishes Prometheus metrics per database branch behind a [service-discovery API](https://planetscale.com/docs/vitess/integrations/prometheus). One organization endpoint returns the current list of branch metrics targets, and that list changes as branches are created and deleted. You connect the organization once. Maple runs the discovery call, scrapes every branch it returns, and refreshes the branch list every 10 minutes.
 
-Setup has two parts. An OAuth authorization covers the management plane: database inventory, query insights, and webhooks. PlanetScale serves branch metrics only to service tokens, so you add a service token to turn on metrics.
+Setup has two parts. An OAuth authorization covers the management plane: database inventory, query insights, and the webhooks Maple registers for you. PlanetScale serves branch metrics only to service tokens, so you add a service token to turn on metrics.
 
 ## Prerequisites
 
-- Permission in the PlanetScale organization to authorize an OAuth application and create a service token.
+- Permission in the PlanetScale organization to authorize an OAuth application, manage database webhooks, and create a service token.
 
 ## 1. Authorize Maple
 
@@ -36,9 +36,11 @@ The secret is encrypted at rest. Maple derives the discovery URL (`https://api.p
 
 To replace the token later, click **Rotate token**.
 
-## 3. Optional: webhooks
+## 3. Webhooks
 
-Under **Webhooks**, click **Show setup** to reveal an endpoint URL and signing secret. Register them in each database's webhook settings on PlanetScale. Only Maple organization admins can view the secret.
+Maple registers a webhook on every database in the organization, including databases you create later, within a few minutes. Out-of-memory restarts, storage thresholds, and anomalies open triage issues, and deploy requests and branch changes appear on the charts as they happen. The **Webhooks** row shows how many databases have one.
+
+Registering webhooks needs the `write_databases` access. If you connected before Maple asked for it, the row reads **Needs attention**; click **Reauthorize**. Maple only creates, re-enables, and deletes its own webhook and leaves your other webhooks alone. PlanetScale allows 5 webhooks per database, so a database that already has 5 shows the error on the row. Disconnecting removes Maple's webhooks.
 
 ## Verify
 

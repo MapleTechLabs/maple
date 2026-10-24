@@ -128,6 +128,15 @@ const toPlanetScaleStatus = (status: PlanetScaleIntegrationStatus): V2PlanetScal
 					last_scrape_at: isoTimestampOrNull(status.scrapeTarget.lastScrapeAt),
 					last_scrape_error: status.scrapeTarget.lastScrapeError,
 				},
+	webhooks:
+		status.webhooks === null
+			? null
+			: {
+					state: status.webhooks.state,
+					registered_databases: status.webhooks.registeredDatabases,
+					databases: status.webhooks.databases,
+					last_error: status.webhooks.lastError,
+				},
 	last_inventory_at: isoTimestampOrNull(status.lastInventoryAt),
 	last_inventory_error: status.lastInventoryError,
 	revoked_at: isoTimestampOrNull(status.revokedAt),

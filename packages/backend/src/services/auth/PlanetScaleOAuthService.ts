@@ -187,12 +187,15 @@ export interface PlanetScaleOAuthServiceApi {
 	readonly connectedByUserId: (orgId: OrgId) => Effect.Effect<string | null, IntegrationsPersistenceError>
 	/**
 	 * Grant lifecycle timestamps (epoch ms), so the UI can name a revoked grant
-	 * directly instead of inferring it from whichever downstream call failed.
+	 * directly instead of inferring it from whichever downstream call failed, and
+	 * the scopes PlanetScale granted (unprefixed, e.g. `write_databases`).
 	 */
-	readonly grantStatus: (
-		orgId: OrgId,
-	) => Effect.Effect<
-		{ readonly revokedAt: number | null; readonly expiresAt: number | null },
+	readonly grantStatus: (orgId: OrgId) => Effect.Effect<
+		{
+			readonly revokedAt: number | null
+			readonly expiresAt: number | null
+			readonly scopes: ReadonlyArray<string>
+		},
 		IntegrationsPersistenceError
 	>
 	/** Drop the stored grant. PlanetScale documents no revoke endpoint. */
@@ -541,6 +544,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			return {
 				revokedAt: row?.revokedAt ?? null,
 				expiresAt: row?.expiresAt ?? null,
+				scopes: (row?.scope ?? "").split(" ").filter((scope) => scope !== ""),
 			}
 		})
 
