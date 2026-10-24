@@ -27,6 +27,8 @@ const RETENTION_DAYS = {
 	metrics_histogram: 90,
 	metrics_sum: 90,
 	service_address_resolutions_hourly: 365,
+	// Hour-grain only, read for windows of days; a year would be a second annual table.
+	service_endpoint_details_hourly: 90,
 	service_external_edges_hourly: 365,
 	service_map_children: 30,
 	service_map_db_edges_hourly: 365,
