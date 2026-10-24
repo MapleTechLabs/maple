@@ -49,11 +49,11 @@ private final class MemoryKeyStore: DeviceKeyStoring, @unchecked Sendable {
 
 	func load(organizationId: String) -> DeviceKey? { lock.withLock { keys[organizationId] } }
 
-	func create(organizationId: String) throws -> DeviceKey {
-		let key = DeviceKey(organizationId: organizationId, isHardwareBacked: false, signer: SoftwareDeviceKey())
-		lock.withLock { keys[organizationId] = key }
-		return key
+	func generate(organizationId: String) throws -> DeviceKey {
+		DeviceKey(organizationId: organizationId, isHardwareBacked: false, signer: SoftwareDeviceKey())
 	}
+
+	func save(_ key: DeviceKey) throws { lock.withLock { keys[key.organizationId] = key } }
 
 	func delete(organizationId: String) { _ = lock.withLock { keys.removeValue(forKey: organizationId) } }
 	func deleteAll() { lock.withLock { keys.removeAll() } }
@@ -107,7 +107,8 @@ private struct Harness {
 	/// A registered key and its record, as the app leaves them.
 	@discardableResult
 	func register() throws -> (DeviceCredential, DeviceKey) {
-		let key = try keys.create(organizationId: organizationId)
+		let key = try keys.generate(organizationId: organizationId)
+		try keys.save(key)
 		let record = DeviceCredential(
 			organizationId: organizationId,
 			credentialId: "dcred_1",
@@ -508,6 +509,21 @@ struct WidgetSummaryDPoPTests {
 		defer { harness.cleanUp() }
 		try harness.register()
 		harness.keys.deleteAll()
+		let transport = ScriptedTransport([:])
+		let attempt = await harness.fetcher(transport).fetch(organizationId: organizationId, organizationName: nil, storedGeneratedAt: nil, now: now)
+		#expect(attempt == .needsApp)
+		#expect(await transport.requests.isEmpty)
+		#expect(harness.fetchStates.load(organizationId: organizationId).isCredentialRejected)
+	}
+
+	@Test("an expired registration asks for the app and records it, without a request")
+	func expired() async throws {
+		let harness = Harness()
+		defer { harness.cleanUp() }
+		let (record, _) = try harness.register()
+		var expired = record
+		expired.expiresAt = now.addingTimeInterval(-1)
+		harness.credentials.saveDevice(expired)
 		let transport = ScriptedTransport([:])
 		let attempt = await harness.fetcher(transport).fetch(organizationId: organizationId, organizationName: nil, storedGeneratedAt: nil, now: now)
 		#expect(attempt == .needsApp)

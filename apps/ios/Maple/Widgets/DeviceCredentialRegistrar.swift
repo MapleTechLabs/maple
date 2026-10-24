@@ -53,7 +53,7 @@ struct DeviceCredentialRegistrar {
 			// offer it again rather than orphan it.
 			action = stored == nil ? .register : .refresh
 		} else {
-			key = try keys.create(organizationId: organizationId)
+			key = try keys.generate(organizationId: organizationId)
 			isNewKey = true
 			action = stored == nil ? .register : .rotate
 		}
@@ -67,7 +67,7 @@ struct DeviceCredentialRegistrar {
 		} catch let error as MapleAPIError where error.code == "device_key_in_use" || error.code == "device_key_invalid" {
 			// A retired key can never come back, and the server keeps one key per
 			// organization: the only way forward is a new one.
-			signer = try keys.create(organizationId: organizationId)
+			signer = try keys.generate(organizationId: organizationId)
 			isNewKey = true
 			action = .rotate
 			record = try await register(signer, attest: true, api: api, installationId: installationId)
@@ -75,6 +75,9 @@ struct DeviceCredentialRegistrar {
 		guard record.organizationId == organizationId, record.jkt == signer.thumbprint else {
 			throw DeviceCredentialMismatch()
 		}
+		// Only now does a new key replace the old one: a failed PUT above leaves
+		// the keychain and the record agreeing on the key that still works.
+		if isNewKey { try keys.save(signer) }
 		guard credentials.saveDevice(record) else { throw DeviceCredentialNotStored() }
 		// A token bound to the previous key is worthless now.
 		if isNewKey { credentials.clearToken(organizationId: organizationId) }

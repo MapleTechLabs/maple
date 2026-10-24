@@ -5,8 +5,11 @@ import Security
 /// Where widget keys live, behind a protocol so `swift test` can use memory.
 public protocol DeviceKeyStoring: Sendable {
 	func load(organizationId: String) -> DeviceKey?
-	/// A fresh key for the organization, replacing any it had.
-	func create(organizationId: String) throws -> DeviceKey
+	/// A fresh key, in memory only: the stored key stays until `save`, so a
+	/// registration that fails leaves the working key in place.
+	func generate(organizationId: String) throws -> DeviceKey
+	/// Store `key`, replacing the organization's previous one.
+	func save(_ key: DeviceKey) throws
 	func delete(organizationId: String)
 	func deleteAll()
 }
@@ -17,6 +20,7 @@ public enum DeviceKeyStoreError: Error, Sendable, Equatable {
 	case missingAccessGroup
 	case invalidOrganizationId
 	case keychain(OSStatus)
+	case unsupportedKey
 }
 
 /// The keychain store, in a group shared by the app and the widget extension.
@@ -71,21 +75,29 @@ public struct KeychainDeviceKeyStore: DeviceKeyStoring {
 		}
 	}
 
-	public func create(organizationId: String) throws -> DeviceKey {
+	public func save(_ key: DeviceKey) throws {
 		guard accessGroup != nil else { throw DeviceKeyStoreError.missingAccessGroup }
-		guard var query = baseQuery(organizationId: organizationId) else {
+		guard var query = baseQuery(organizationId: key.organizationId) else {
 			throw DeviceKeyStoreError.invalidOrganizationId
 		}
-		let (kind, blob, key) = try generate(organizationId: organizationId)
+		let item: Data
+		switch key.signer {
+		case let signer as SecureEnclaveDeviceKey:
+			item = Data([Kind.secureEnclave.rawValue]) + signer.privateKey.dataRepresentation
+		case let signer as SoftwareDeviceKey:
+			item = Data([Kind.software.rawValue]) + signer.privateKey.rawRepresentation
+		default:
+			throw DeviceKeyStoreError.unsupportedKey
+		}
 		SecItemDelete(query as CFDictionary)
-		query[kSecValueData as String] = Data([kind.rawValue]) + blob
+		query[kSecValueData as String] = item
 		query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 		let status = SecItemAdd(query as CFDictionary, nil)
 		guard status == errSecSuccess else { throw DeviceKeyStoreError.keychain(status) }
-		return key
 	}
 
-	private func generate(organizationId: String) throws -> (Kind, Data, DeviceKey) {
+	public func generate(organizationId: String) throws -> DeviceKey {
+		guard accessGroup != nil else { throw DeviceKeyStoreError.missingAccessGroup }
 		if prefersSecureEnclave,
 			let access = SecAccessControlCreateWithFlags(
 				nil,
@@ -95,18 +107,9 @@ public struct KeychainDeviceKeyStore: DeviceKeyStoring {
 			),
 			let key = try? SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
 		{
-			return (
-				.secureEnclave,
-				key.dataRepresentation,
-				DeviceKey(organizationId: organizationId, isHardwareBacked: true, signer: SecureEnclaveDeviceKey(key))
-			)
+			return DeviceKey(organizationId: organizationId, isHardwareBacked: true, signer: SecureEnclaveDeviceKey(key))
 		}
-		let key = P256.Signing.PrivateKey()
-		return (
-			.software,
-			key.rawRepresentation,
-			DeviceKey(organizationId: organizationId, isHardwareBacked: false, signer: SoftwareDeviceKey(key))
-		)
+		return DeviceKey(organizationId: organizationId, isHardwareBacked: false, signer: SoftwareDeviceKey())
 	}
 
 	public func delete(organizationId: String) {
