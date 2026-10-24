@@ -155,6 +155,21 @@ describe("quick start live step", () => {
 			}),
 		})
 
+	test("opened straight from a save, it reads what is arriving once the plan is known", () => {
+		const atLive = {
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "live",
+			completedSteps: { stack: true, connect: true, team: true },
+		}
+		const loading = init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model
+		const early = updateWith(loading, Message.LoadedQuickStartState({ state: atLive }), null)
+		const settled = updateWith(early.model, Message.SettledPlan(), true)
+		expect(names(settled)).toEqual(
+			expect.arrayContaining(["LoadOnboardingConnectPresence", "LoadOnboardingLiveFindings"]),
+		)
+		expect(settled.model.connect.isActive).toBe(true)
+	})
+
 	test("a signal arriving while it shows re-reads the findings; a poll with nothing new does not", () => {
 		const atLive = {
 			...init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model,
