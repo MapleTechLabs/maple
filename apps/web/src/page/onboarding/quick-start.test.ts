@@ -2,10 +2,13 @@ import { CatalogPlan, CatalogPlansResponse } from "@maple/domain/http"
 import { Effect } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as PricingCards from "./pricing-cards"
-import { init, Message, type Model, update } from "./quick-start"
-import { DEFAULT_QUICK_START_STATE, resolveQuickStartStep } from "./quick-start-state"
+import { init, Message, type Model, update as updateWith } from "./quick-start"
+import { DEFAULT_QUICK_START_STATE, readQuickStartState, resolveQuickStartStep } from "./quick-start-state"
 import { ConnectMessage } from "./quick-start-connect"
 import { LoadTeam, loadingTeam, TeamMessage, updateTeam } from "./quick-start-team"
+
+/** An org that holds a plan, as most of these steps run for. */
+const update = (model: Model, message: Message) => updateWith(model, message, true)
 
 const loaded = (): Model => ({ ...init("maple-onboarding-v6-org_1").model, state: DEFAULT_QUICK_START_STATE })
 
@@ -19,7 +22,7 @@ const stateOf = (model: Model) => {
 
 describe("quick start", () => {
 	test("the plan comes first, and an org that already holds one starts on its stack", () => {
-		expect(resolveQuickStartStep(DEFAULT_QUICK_START_STATE)).toBe("plan")
+		expect(resolveQuickStartStep(DEFAULT_QUICK_START_STATE, false)).toBe("plan")
 		expect(resolveQuickStartStep(DEFAULT_QUICK_START_STATE, true)).toBe("stack")
 	})
 
@@ -70,6 +73,31 @@ describe("quick start", () => {
 			names(update(loading, Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE }))),
 		).not.toContain("FinishQuickStart")
 	})
+
+	test("a finished save with no plan behind it goes back to the plan step instead of bouncing off the gate", () => {
+		const finished = {
+			...DEFAULT_QUICK_START_STATE,
+			completedSteps: { plan: true, stack: true, team: true },
+		}
+		const loading = init("maple-onboarding-v6-org_1").model
+		const landed = updateWith(loading, Message.LoadedQuickStartState({ state: finished }), false)
+		expect(names(landed)).not.toContain("FinishQuickStart")
+		expect(resolveQuickStartStep(stateOf(landed.model), false)).toBe("plan")
+	})
+
+	test("a save from the old wizard that reached its plan step stays finished", () => {
+		const legacy = {
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "plan",
+			completedSteps: { role: true, intent: true, team: true, plan: true },
+			qualifyAnswers: { role: null, intents: [] },
+		}
+		vi.stubGlobal("localStorage", { getItem: () => JSON.stringify(legacy) })
+		const state = Effect.runSync(readQuickStartState("maple-onboarding-v6-legacy"))
+		const loading = init("maple-onboarding-v6-legacy").model
+		expect(names(update(loading, Message.LoadedQuickStartState({ state })))).toEqual(["FinishQuickStart"])
+		vi.unstubAllGlobals()
+	})
 })
 
 describe("quick start connect step", () => {
@@ -95,6 +123,19 @@ describe("quick start connect step", () => {
 			(command) => command.name === "LoadOnboardingConnectedProviders",
 		)
 		expect(providers?.args).toEqual({ orgId: "org_1", providers: ["cloudflare"] })
+		expect(opened.model.connect.isActive).toBe(true)
+	})
+
+	test("an org that already holds a plan opens it from a fresh save, whose saved step is still the plan", () => {
+		const fresh = {
+			...atStack(),
+			state: {
+				...DEFAULT_QUICK_START_STATE,
+				stack: atStack().state?.stack ?? DEFAULT_QUICK_START_STATE.stack,
+			},
+		}
+		const opened = update(fresh, Message.ClickedContinue({ step: "stack" }))
+		expect(names(opened)).toContain("FetchOnboardingConnectKeys")
 		expect(opened.model.connect.isActive).toBe(true)
 	})
 

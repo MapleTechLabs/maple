@@ -100,6 +100,13 @@ const teamStep = (model: Model, message: TeamMessage): Return => {
 	}
 }
 
+/** The screen's update without its Commands; the sample team stays, as nothing here loads one. */
+const screenStep = (model: Model, message: QuickStart.Message): Model =>
+	withQuickStart(model, {
+		...QuickStart.update(model.quickStart, message, model.hasPlan).model,
+		team: model.quickStart.team,
+	})
+
 /** The screen's own update, minus its saves, analytics and navigation; a sample plan's checkout just succeeds. */
 const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 	switch (message._tag) {
@@ -109,9 +116,9 @@ const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 			return message.message._tag === "ClickedPlan" ? { model: { ...model, hasPlan: true } } : { model }
 		case "ClickedContinue":
 			if (message.step === "live") return { model: { ...model, isComplete: true } }
-			return { model: withQuickStart(model, QuickStart.update(model.quickStart, message).model) }
+			return { model: screenStep(model, message) }
 		default:
-			return { model: withQuickStart(model, QuickStart.update(model.quickStart, message).model) }
+			return { model: screenStep(model, message) }
 	}
 }
 

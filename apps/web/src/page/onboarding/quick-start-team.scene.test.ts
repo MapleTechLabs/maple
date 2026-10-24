@@ -1,10 +1,12 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, role, scene } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { init, Message, type Model, update } from "./quick-start"
+import { init, Message, type Model, update as updateWith } from "./quick-start"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
 import { ready } from "./quick-start-team"
 import { teamStep } from "./quick-start-team-view"
+
+const update = (model: Model, message: Message) => updateWith(model, message, true)
 
 const atTeam = (): Model => ({
 	...init("maple-onboarding-v6-org_1", false, false, "/services").model,
