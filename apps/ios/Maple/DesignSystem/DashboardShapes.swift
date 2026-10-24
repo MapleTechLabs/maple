@@ -10,6 +10,8 @@ import SwiftUI
 struct UnderlineTabs<Option: Hashable>: View {
 	let options: [(Option, String)]
 	@Binding var selection: Option
+	/// An optional count beside a label, such as `Errors 12`. Nil draws none.
+	var badge: (Option) -> UnderlineTabBadge? = { _ in nil }
 
 	var body: some View {
 		ScrollView(.horizontal, showsIndicators: false) {
@@ -20,9 +22,17 @@ struct UnderlineTabs<Option: Hashable>: View {
 						selection = option
 					} label: {
 						VStack(spacing: 8) {
-							Text(label)
-								.font(selected ? Typo.smallMedium : Typo.small)
-								.foregroundStyle(selected ? Token.foreground : Token.mutedForeground)
+							HStack(alignment: .firstTextBaseline, spacing: 6) {
+								Text(label)
+									.font(selected ? Typo.smallMedium : Typo.small)
+									.foregroundStyle(selected ? Token.foreground : Token.mutedForeground)
+								if let badge = badge(option) {
+									Text(badge.text)
+										.font(Typo.tiny)
+										.tabularNumbers()
+										.foregroundStyle(badge.tint)
+								}
+							}
 							Rectangle()
 								.fill(selected ? Token.foreground : .clear)
 								.frame(height: 1.5)
@@ -39,6 +49,12 @@ struct UnderlineTabs<Option: Hashable>: View {
 		.background(alignment: .bottom) { Hairline() }
 		.animation(.easeOut(duration: 0.15), value: selection)
 	}
+}
+
+/// The count an `UnderlineTabs` label can carry, in its own tint.
+struct UnderlineTabBadge {
+	let text: String
+	var tint: Color = Token.mutedForeground
 }
 
 // MARK: - Percentiles
