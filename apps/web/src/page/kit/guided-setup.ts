@@ -176,6 +176,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 			labels: ["Install", "Instrument", "Claude Code"],
 			className: "flex flex-col",
 			listClassName: "h-9",
+			tabClassName: "gap-2",
 			tabContent: (value, label) => [
 				icon(h, SETUP_TAB_ICONS[value] ?? "CodeIcon", { size: 14 }),
 				label,
