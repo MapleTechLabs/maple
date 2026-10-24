@@ -1074,6 +1074,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				)(function* (rawRunId, outcome) {
 					const runId = yield* decodeRunId(rawRunId)
 					const now = yield* Clock.currentTimeMillis
+					// The last agent has no later admission to price it: settling does, so the month counts it.
+					yield* dbExecute((db) => reconcileRunCosts(db, orgId, runId))
 					const settled = yield* dbExecute((db) =>
 						db.run(
 							PG.update(SecurityAuditRuns)

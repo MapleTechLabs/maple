@@ -1298,6 +1298,25 @@ describe("SecurityAuditStore org spend limit", () => {
 		),
 	)
 
+	it.effect("prices the run's last agent when the run settles, if its cost write was lost", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const a = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "abc")
+				yield* a.reserveOrgInvocation(runId, "report-1", "2026-10", 100, NO_SPEND_LIMIT)
+				yield* a.recordEvent(runId, {
+					_tag: "Agent",
+					role: "recon",
+					agentId: "report-1",
+					outcome: "ok",
+					usage: { inputTokens: 100, outputTokens: 10, costUsd: 2.5 },
+				})
+				yield* a.finishRun(runId, { status: "complete" })
+				assert.strictEqual(yield* a.orgSpendUsd(0), 2.5)
+			}),
+		),
+	)
+
 	it.effect("saves an org's settings over its earlier ones, and never shows them to another org", () =>
 		withStore((store) =>
 			Effect.gen(function* () {
