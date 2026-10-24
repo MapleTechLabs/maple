@@ -1333,6 +1333,15 @@ describe("v2 reads shared with the dashboard", () => {
 		})
 		expect(inverted.status).toBe(400)
 		expect(inverted.body.error.param).toBe("previous_end_time")
+
+		const afterCurrent = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: "2026-07-15T06:00:00.000Z",
+			end_time: "2026-07-15T09:00:00.000Z",
+			previous_start_time: "2026-07-15T09:00:00.000Z",
+			previous_end_time: "2026-07-15T12:00:00.000Z",
+		})
+		expect(afterCurrent.status).toBe(400)
+		expect(afterCurrent.body.error.param).toBe("previous_end_time")
 		await harness.dispose()
 	})
 
