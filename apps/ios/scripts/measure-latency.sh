@@ -8,6 +8,8 @@
 #
 # --build    builds with MAPLE_ENVIRONMENT=latency-<label> and the public ingest key
 #            ($MAPLE_OTEL_PUBLIC_INGEST_KEY), then installs it.
+# --api, --clerk-key  point the build at another API and its Clerk instance (a PR
+#            preview: https://api-pr-<n>.maple.dev and the dev publishable key).
 # --org      switches to this organization id first (maple://debug/org/<id>).
 # --signin   mints a one-time Clerk sign-in token ($CLERK_SECRET_KEY) and hands it to
 #            the app via MAPLE_DEBUG_SIGNIN_TICKET. Only needed once per simulator.
@@ -27,6 +29,8 @@ iterations=10
 build=0
 signin=""
 org=""
+api=""
+clerk_key=""
 settle=7
 routes=(services triage/errors triage/incidents triage/anomalies explore/traces explore/logs explore/dashboards)
 bundle=com.maple.mobile
@@ -39,6 +43,8 @@ while [[ $# -gt 0 ]]; do
 	--build) build=1; shift ;;
 	--signin) signin="$2"; shift 2 ;;
 	--org) org="$2"; shift 2 ;;
+	--api) api="$2"; shift 2 ;;
+	--clerk-key) clerk_key="$2"; shift 2 ;;
 	--settle) settle="$2"; shift 2 ;;
 	--route) routes+=("$2"); shift 2 ;;
 	*) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -56,6 +62,7 @@ if [[ $build == 1 ]]; then
 		-destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$derived" \
 		-skipPackagePluginValidation \
 		MAPLE_ENVIRONMENT="latency-$label" MAPLE_INGEST_KEY="$MAPLE_OTEL_PUBLIC_INGEST_KEY" \
+		${api:+MAPLE_API_BASE_URL="$api"} ${clerk_key:+CLERK_PUBLISHABLE_KEY="$clerk_key"} \
 		build | grep -E " error:|BUILD (SUCCEEDED|FAILED)"
 	xcrun simctl install "$udid" "$derived/Build/Products/Debug-iphonesimulator/Maple.app"
 fi
