@@ -1,4 +1,9 @@
-import type { PullRequestChecklistJob, PullRequestCommentJob, PullRequestEventJob } from "@maple/domain/http"
+import type {
+	PullRequestChecklistJob,
+	PullRequestCiApprovedJob,
+	PullRequestCommentJob,
+	PullRequestEventJob,
+} from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import { Context, Effect, Layer } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -96,3 +101,16 @@ export class PullRequestChecklistSink extends Context.Service<
 	PullRequestChecklistSink,
 	PullRequestChecklistSinkApi
 >()("@maple/backend/services/integrations/vcs/PullRequestChecklistSink") {}
+
+/**
+ * Where a pull request's CI, let go by someone other than its author, goes. Optional in
+ * `VcsSyncService`, like the comment sink: a root without reviews drops it.
+ */
+export interface PullRequestCiApprovalSinkApi {
+	readonly onCiApproved: (orgId: OrgId, job: PullRequestCiApprovedJob) => Effect.Effect<void>
+}
+
+export class PullRequestCiApprovalSink extends Context.Service<
+	PullRequestCiApprovalSink,
+	PullRequestCiApprovalSinkApi
+>()("@maple/backend/services/integrations/vcs/PullRequestCiApprovalSink") {}
