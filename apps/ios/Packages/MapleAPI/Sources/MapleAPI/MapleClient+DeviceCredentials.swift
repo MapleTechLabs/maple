@@ -1,5 +1,4 @@
 import Foundation
-import HTTPTypes
 import MapleWidgetData
 import OpenAPIRuntime
 
@@ -42,9 +41,12 @@ extension MapleClient {
 	) async throws -> DeviceCredential {
 		let jwk = key.publicJWK
 		return try await mapping {
-			let output = try await client(adding: DPoPProofMiddleware(key: key.signer)).registerDeviceCredential(
+			let url = serverURL.appendingPathComponent("v2/device_credentials").appendingPathComponent(installationId)
+			let proof = try DPoPProof.make(key: key.signer, method: "PUT", url: url, issuedAt: Date())
+			let output = try await client.registerDeviceCredential(
 				.init(
 					path: .init(installationId: installationId),
+					headers: .init(dpop: proof),
 					body: .json(
 						.init(
 							attestation: attestation.map {
@@ -87,28 +89,6 @@ extension MapleClient {
 	}
 }
 
-/// Adds a `DPoP` proof for the request it sees, signed at send time.
-struct DPoPProofMiddleware: ClientMiddleware {
-	let key: any DeviceSigningKey
-
-	func intercept(
-		_ request: HTTPRequest,
-		body: HTTPBody?,
-		baseURL: URL,
-		operationID: String,
-		next: (HTTPRequest, HTTPBody?, URL) async throws -> (HTTPResponse, HTTPBody?)
-	) async throws -> (HTTPResponse, HTTPBody?) {
-		var request = request
-		let path = request.path ?? ""
-		guard let url = URL(string: baseURL.absoluteString.trimmingSuffix("/") + path) else {
-			throw MapleAPIError.decoding(DPoPProof.ProofError.invalidURL)
-		}
-		let proof = try DPoPProof.make(key: key, method: request.method.rawValue, url: url, issuedAt: Date())
-		if let name = HTTPField.Name("DPoP") { request.headerFields[name] = proof }
-		return try await next(request, body, baseURL)
-	}
-}
-
 extension MapleAPIError {
 	/// The envelope's stable `code`, when the server sent one.
 	public var code: String? { body?.code }
@@ -119,11 +99,5 @@ extension MapleAPIError {
 		case .api(let status, _), .unexpectedStatus(let status, _): status
 		default: nil
 		}
-	}
-}
-
-extension String {
-	fileprivate func trimmingSuffix(_ suffix: String) -> String {
-		hasSuffix(suffix) ? String(dropLast(suffix.count)) : self
 	}
 }
