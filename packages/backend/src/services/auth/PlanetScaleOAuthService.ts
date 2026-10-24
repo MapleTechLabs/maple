@@ -204,7 +204,7 @@ export interface PlanetScaleOAuthServiceApi {
 export class PlanetScaleOAuthService extends Context.Service<
 	PlanetScaleOAuthService,
 	PlanetScaleOAuthServiceApi
->()("@maple/api/services/PlanetScaleOAuthService", {
+>()("@maple/backend/services/PlanetScaleOAuthService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env

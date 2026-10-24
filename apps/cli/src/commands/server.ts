@@ -17,6 +17,7 @@ import {
 } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { ServerBindError, startServer } from "../server/serve"
+import { ACCESS_TOKEN_ENV, INGEST_KEY_ENV, type RemoteAuth, remoteAuthFromEnv } from "../server/remote-auth"
 import { CURRENT_LOCAL_SCHEMA } from "../server/schema-identity"
 import {
 	adoptLegacySidecars,
@@ -94,7 +95,7 @@ import {
 	startedBeforeWrite,
 	validateHost,
 } from "./server-args"
-import { DEFAULT_LOCAL_PORT } from "../lib/local-address"
+import { DEFAULT_LOCAL_PORT, isLoopbackHostname } from "../lib/local-address"
 
 /**
  * A refused command whose precondition simply wasn't met: the server is already
@@ -160,6 +161,20 @@ const validatedHost = (source: string, value: string): Effect.Effect<string, Ser
 			new ServerOptionError({ source, message: `invalid ${source}: ${describeError(error)}` }),
 	})
 
+/**
+ * What the banner says about authentication: which secrets guard the listener,
+ * or a warning when a non-loopback listener leaves ingest or reads open.
+ */
+export const authSummary = (auth: RemoteAuth, bindHost: string): string | undefined => {
+	const open = [
+		...(auth.ingestKey === undefined ? [`ingest (${INGEST_KEY_ENV})`] : []),
+		...(auth.accessToken === undefined ? [`dashboard and queries (${ACCESS_TOKEN_ENV})`] : []),
+	]
+	if (open.length === 0) return "ingest key + access token"
+	if (isLoopbackHostname(bindHost)) return undefined
+	return amber(`⚠ open to anyone who can reach this address: ${open.join(", ")}`)
+}
+
 /** The startup banner shown once the server is listening. `dashboardUrl` is the
  *  URL the user should open (the auto-updating `local.maple.dev` by default, or
  *  the bundled same-origin UI with `--offline`); `undefined` when no UI. */
@@ -170,6 +185,7 @@ const startBanner = (
 	dashboardUrl: string | undefined,
 	offline: boolean,
 	scope: CommandScope,
+	authLine: string | undefined,
 ): string => {
 	// No leading indent here: the gutter below supplies it.
 	const row = (key: string, value: string) => `${dim(key.padEnd(11))}${value}`
@@ -190,6 +206,7 @@ const startBanner = (
 				]
 			: []),
 		row("data", prettyPath(dataDir)),
+		...(authLine === undefined ? [] : [row("auth", authLine)]),
 		row("pid", `${process.pid}  ${dim("· stop with")} ${bold(mapleCommand("stop", scope))}`),
 	]
 
@@ -513,7 +530,7 @@ const port = Flag.Int("port").pipe(
 
 const host = Flag.String("host").pipe(
 	Flag.withDescription(
-		"Local server host (env: MAPLE_LOCAL_BIND_HOST; non-loopback start exposes unauthenticated ingest and queries)",
+		`Local server host (env: MAPLE_LOCAL_BIND_HOST; off loopback, set ${INGEST_KEY_ENV} and ${ACCESS_TOKEN_ENV})`,
 	),
 	Flag.withDefault(resolveBindHost(process.env.MAPLE_LOCAL_BIND_HOST)),
 )
@@ -979,6 +996,7 @@ interface DetachedStart {
 	readonly minimumRawTelemetryRetentionDays: number | undefined
 	readonly checkpointInterval: string
 	readonly scope: CommandScope
+	readonly authLine: string | undefined
 }
 
 type ChildReadiness = { readonly kind: "ready" } | { readonly kind: "exited" } | { readonly kind: "timeout" }
@@ -1127,6 +1145,7 @@ const startDetached = (options: DetachedStart) =>
 					`  ${dim("listening")} ${cyan(underline(bindAddr))}\n` +
 					(connectAddr === bindAddr ? "" : `  ${dim("connect")}   ${cyan(connectAddr)}\n`) +
 					(dashboardUrl === undefined ? "" : `  ${dim("dashboard")} ${cyan(dashboardUrl)}\n`) +
+					(options.authLine === undefined ? "" : `  ${dim("auth")}      ${options.authLine}\n`) +
 					`  ${dim("env")}       export OTEL_EXPORTER_OTLP_ENDPOINT=${connectAddr}\n` +
 					`  ${dim("logs")}      ${prettyPath(logPath)}\n` +
 					`  ${dim("stop")}      ${bold(mapleCommand("stop", options.scope))}\n`,
@@ -1172,6 +1191,11 @@ export const start = Command.make("start", {
 			const fs = yield* FileSystem
 			const dataDir = resolve(Option.getOrUndefined(a.dataDir) ?? defaultDataDir())
 			const bindHost = yield* validatedHost("--host / MAPLE_LOCAL_BIND_HOST", a.host)
+			const auth = yield* Effect.fromResult(remoteAuthFromEnv(process.env)).pipe(
+				Effect.mapError(
+					(error) => new ServerOptionError({ source: error.source, message: error.message }),
+				),
+			)
 			// Rejected up front, before anything is opened: a typo that quietly fell
 			// back to the default (or worse, to off) would reintroduce the data loss
 			// the refresh loop exists to prevent.
@@ -1423,6 +1447,7 @@ export const start = Command.make("start", {
 							minimumRawTelemetryRetentionDays: requestedRetentionDays,
 							checkpointInterval: a.checkpointInterval,
 							scope,
+							authLine: authSummary(auth, bindHost),
 						})
 					}
 
@@ -1450,6 +1475,7 @@ export const start = Command.make("start", {
 						configFile: chdbConfigFile,
 						minimumRawTelemetryRetentionDays: requestedRetentionDays,
 						assets,
+						auth,
 					})
 					started = true
 					yield* clearStartFailures(dataDir)
@@ -1496,7 +1522,15 @@ export const start = Command.make("start", {
 							: hostedDashboardUrl(hostedUiUrl, boundPort)
 					yield* Effect.sync(() =>
 						process.stderr.write(
-							startBanner(bindAddr, connectAddr, dataDir, dashboardUrl, a.offline, boundScope),
+							startBanner(
+								bindAddr,
+								connectAddr,
+								dataDir,
+								dashboardUrl,
+								a.offline,
+								boundScope,
+								authSummary(auth, bindHost),
+							),
 						),
 					)
 

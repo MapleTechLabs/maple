@@ -20,7 +20,8 @@ interface ValidationItem {
 	readonly fingerprint: string
 	/** The hunter's proposal, or the carried prior record. */
 	readonly claim: Candidate | Finding
-	readonly carriedUnit?: string
+	/** Every unit carrying this prior record; one verifier decides for all of them. */
+	readonly carriedUnits: ReadonlyArray<string>
 }
 
 const files = (record: Finding): ReadonlyArray<string> => [
@@ -42,23 +43,25 @@ const validationBlocks = (units: ReadonlyArray<LedgerUnit>): ReadonlyArray<strin
 
 /**
  * One item per fingerprint. A carried record a hunter raised again is one item: the hunter's fresh
- * claim is what the verifier checks, and the carried unit still takes the decision.
+ * claim is what the verifier checks, and every carried unit still takes the decision.
  */
 const items = (s: EngineState): ReadonlyArray<ValidationItem> => {
-	const carried = new Map(s.carried.map((c) => [c.record.fingerprint, c] as const))
+	const carried = s.carried.reduce(
+		(acc, c) =>
+			new Map(acc).set(c.record.fingerprint, {
+				record: c.record,
+				units: [...(acc.get(c.record.fingerprint)?.units ?? []), c.coverageId],
+			}),
+		new Map<string, { readonly record: Finding; readonly units: ReadonlyArray<string> }>(),
+	)
 	const raised = [...s.candidates].flatMap(([fingerprint, entries]): ReadonlyArray<ValidationItem> => {
 		const best = strongest(entries)
-		const unit = carried.get(fingerprint)?.coverageId
 		if (best === undefined) return []
-		return [
-			unit === undefined
-				? { fingerprint, claim: best.candidate }
-				: { fingerprint, claim: best.candidate, carriedUnit: unit },
-		]
+		return [{ fingerprint, claim: best.candidate, carriedUnits: carried.get(fingerprint)?.units ?? [] }]
 	})
-	const onlyCarried = [...carried.values()]
-		.filter((c) => !s.candidates.has(c.record.fingerprint))
-		.map((c) => ({ fingerprint: c.record.fingerprint, claim: c.record, carriedUnit: c.coverageId }))
+	const onlyCarried = [...carried]
+		.filter(([fingerprint]) => !s.candidates.has(fingerprint))
+		.map(([fingerprint, c]) => ({ fingerprint, claim: c.record, carriedUnits: c.units }))
 	return [...raised, ...onlyCarried].sort((a, b) =>
 		a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0,
 	)
@@ -79,7 +82,8 @@ const recordDecision = (
 	verifierId: string,
 ): EngineState => {
 	const ledger = s.ledger.map((unit): LedgerUnit => {
-		if (unit.coverage_id === item.carriedUnit && unit.status === "candidate" && unit.agent_id !== null) {
+		const carries = item.carriedUnits.includes(unit.coverage_id)
+		if (carries && unit.status === "candidate" && unit.agent_id !== null) {
 			// A unit carrying several records: each later decision adds its own check and fingerprint.
 			const check = {
 				agent_id: verifierId,
@@ -97,7 +101,7 @@ const recordDecision = (
 				decisions: { ...unit.decisions, [record.fingerprint]: record.verdict },
 			}
 		}
-		if (unit.coverage_id === item.carriedUnit) {
+		if (carries) {
 			return {
 				...unit,
 				status: "candidate",
@@ -173,7 +177,7 @@ const validateOne = (engine: Engine, item: ValidationItem, index: number) =>
 					...s,
 					ledger: s.ledger.map((unit) =>
 						unit.result_fingerprints.includes(item.fingerprint) ||
-						unit.coverage_id === item.carriedUnit
+						item.carriedUnits.includes(unit.coverage_id)
 							? { ...unit, unresolved: [...unit.unresolved, `${item.fingerprint}: ${reason}`] }
 							: unit,
 					),
@@ -198,14 +202,21 @@ export const runCandidateValidation = (engine: Engine) =>
 			concurrency: validationConcurrency(engine),
 			discard: true,
 		})
-		// A carried unit no verifier reached is still unassigned work, disclosed as such.
+		// A carried unit no verifier decided is still unassigned work, deferred with its verifier's reason.
 		yield* engine.mutate((c) => [
 			undefined,
 			{
 				...c,
 				ledger: c.ledger.map((unit) =>
 					unit.status === "planned" && unit.carried_fingerprint !== undefined
-						? { ...unit, status: "deferred", unresolved: ["validation_budget_exhausted"] }
+						? {
+								...unit,
+								status: "deferred",
+								unresolved:
+									unit.unresolved.length > 0
+										? unit.unresolved
+										: ["carried_record_not_validated"],
+							}
 						: unit,
 				),
 			},
@@ -213,36 +224,37 @@ export const runCandidateValidation = (engine: Engine) =>
 		yield* engine.persist
 	})
 
-const VERDICT_RANK = { rejected: 0, needs_validation: 1, confirmed: 2 } as const
+/** The trace's structure: step kinds, files and scopes, without line numbers or prose. */
+const tracePath = (record: Finding) => record.trace.map(({ kind, file, scope }) => [kind, file, scope])
 
-const stripLines = (record: Finding) => record.trace.map(({ line: _line, ...step }) => step)
-
-/** The skill's material change: verdict, root cause, trace (beyond line numbers), execution, impact or severity. */
-export const isMaterial = (before: Finding, after: Finding): boolean => {
-	if (VERDICT_RANK[before.verdict] !== VERDICT_RANK[after.verdict]) return true
-	if (JSON.stringify(stripLines(before)) !== JSON.stringify(stripLines(after))) return true
-	const differs = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b)
-	if (before.verdict === "confirmed" && after.verdict === "confirmed") {
-		return (
-			before.root_cause !== after.root_cause ||
-			differs(before.execution, after.execution) ||
-			differs(before.conditions, after.conditions) ||
-			differs(before.severity, after.severity) ||
-			differs(before.confidence, after.confidence)
-		)
+/** A record's material fields; prose reasons and descriptions are wording, not meaning. */
+const materialView = (record: Finding) => {
+	switch (record.verdict) {
+		case "confirmed":
+			return {
+				root_cause: record.root_cause,
+				conditions: record.conditions.map((c) => c.kind),
+				payloads: record.execution.payloads,
+				instructions: record.execution.instructions,
+				likelihood: record.severity.likelihood.score,
+				impact: record.severity.impact.score,
+				overall: record.severity.overall_severity,
+				confidence: record.confidence.score,
+			}
+		case "needs_validation":
+		case "rejected":
+			return { root_cause: record.claimed_root_cause }
 	}
-	if (before.verdict === "needs_validation" && after.verdict === "needs_validation") {
-		return (
-			before.claimed_root_cause !== after.claimed_root_cause ||
-			differs(before.blockers, after.blockers) ||
-			differs(before.validation_plan, after.validation_plan)
-		)
-	}
-	if (before.verdict === "rejected" && after.verdict === "rejected") {
-		return before.claimed_root_cause !== after.claimed_root_cause
-	}
-	return true
 }
+
+/**
+ * The skill's material change: verdict, root cause, trace (beyond line numbers), execution input,
+ * impact or severity. Rewording a reason or description is not material.
+ */
+export const isMaterial = (before: Finding, after: Finding): boolean =>
+	before.verdict !== after.verdict ||
+	JSON.stringify(tracePath(before)) !== JSON.stringify(tracePath(after)) ||
+	JSON.stringify(materialView(before)) !== JSON.stringify(materialView(after))
 
 const verifyRecord = (engine: Engine, record: Finding, index: number) =>
 	Effect.gen(function* () {

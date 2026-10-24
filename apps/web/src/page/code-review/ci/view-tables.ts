@@ -12,7 +12,7 @@ import { emptyMessage } from "../../../ui/empty"
 import { panel, panelHeader } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { truncatedId } from "../../../ui/truncated-id"
-import { ciResultBadge } from "../kit/parts"
+import { ciResultBadge, traceKept } from "../kit/parts"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./model"
 
@@ -54,19 +54,25 @@ const redStreakLine = (h: H, red: CodeReviewCiRedStreak, time: TimeContext): Htm
 		[h.Class("mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground")],
 		[
 			h.span([], ["First failed at"]),
-			h.a(
-				[
-					h.Class("text-foreground underline-offset-4 hover:underline"),
-					h.Href(traceHref),
-					h.Title("Open the first failed run's trace"),
-					// `event.stopPropagation()` keeps the row's click off; the page follows the link itself.
-					h.OnClick(Message.ClickedTraceLink({ url: traceHref }), {
-						defaultAction: "Prevent",
-						propagation: "Stop",
-					}),
-				],
-				[truncatedId(h, { value: red.firstFailedRevision, kind: "sha" })],
-			),
+			// The commit alone once the run's trace has expired.
+			traceKept(red.since, time.nowMs)
+				? h.a(
+						[
+							h.Class("text-foreground underline-offset-4 hover:underline"),
+							h.Href(traceHref),
+							h.Title("Open the first failed run's trace"),
+							// `event.stopPropagation()` keeps the row's click off; the page follows the link itself.
+							h.OnClick(Message.ClickedTraceLink({ url: traceHref }), {
+								defaultAction: "Prevent",
+								propagation: "Stop",
+							}),
+						],
+						[truncatedId(h, { value: red.firstFailedRevision, kind: "sha" })],
+					)
+				: h.span(
+						[h.Class("text-foreground")],
+						[truncatedId(h, { value: red.firstFailedRevision, kind: "sha" })],
+					),
 			relativeTime(h, { tooltip: "title", value: red.since, variant: "short", ...time }),
 			h.span([h.AriaHidden(true)], ["·"]),
 			red.lastGreenRevision === null

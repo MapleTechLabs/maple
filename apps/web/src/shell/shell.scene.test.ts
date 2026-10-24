@@ -22,6 +22,7 @@ import {
 import { describe, expect as expectVitest, test } from "vitest"
 import { FocusElement, SaveNamespace, SaveSidebarState, SaveTheme } from "./command"
 import {
+	LoadAwsStatus,
 	LoadCloudflareStatus,
 	LoadGcpStatus,
 	LoadInfraPresence,
@@ -148,14 +149,61 @@ describe("sidebar collapse", () => {
 				LoadRailwayStatus,
 				LoadGcpStatus,
 				LoadSupabaseStatus,
+				LoadAwsStatus,
 			),
 			Command.resolveAll(
-				[LoadInfraPresence, Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: [] })],
-				[LoadCloudflareStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "cloudflare", isConnected: false })],
-				[LoadPlanetscaleStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "planetscale", isConnected: false })],
-				[LoadRailwayStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "railway", isConnected: false })],
-				[LoadGcpStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "gcp", isConnected: false })],
-				[LoadSupabaseStatus, Message.SucceededLoadIntegration({ orgId: "org_parity", integration: "supabase", isConnected: false })],
+				[
+					LoadInfraPresence,
+					Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: [] }),
+				],
+				[
+					LoadCloudflareStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "cloudflare",
+						isConnected: false,
+					}),
+				],
+				[
+					LoadPlanetscaleStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "planetscale",
+						isConnected: false,
+					}),
+				],
+				[
+					LoadRailwayStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "railway",
+						isConnected: false,
+					}),
+				],
+				[
+					LoadGcpStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "gcp",
+						isConnected: false,
+					}),
+				],
+				[
+					LoadSupabaseStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "supabase",
+						isConnected: false,
+					}),
+				],
+				[
+					LoadAwsStatus,
+					Message.SucceededLoadIntegration({
+						orgId: "org_parity",
+						integration: "aws",
+						isConnected: false,
+					}),
+				],
 			),
 			...close(),
 			...open(),
@@ -174,6 +222,7 @@ describe("sidebar collapse", () => {
 			"LoadRailwayStatus",
 			"LoadGcpStatus",
 			"LoadSupabaseStatus",
+			"LoadAwsStatus",
 		])
 		expectVitest(asked.model.hasRequestedSidebarData).toBe(false)
 		expectVitest(update(asked.model, Message.RequestedInfraSurfaces()).commands ?? []).toEqual([])
@@ -317,16 +366,37 @@ describe("in-place org change", () => {
 		const onA = {
 			...signedIn({ maybeOrgId: Option.some("org_a") }),
 			namespaces: NamespacesData.Success({ data: ["a-only"] }),
-			integrations: { cloudflare: true, railway: true, planetscale: false, gcp: false, supabase: false },
+			integrations: {
+				cloudflare: true,
+				railway: true,
+				planetscale: false,
+				gcp: false,
+				supabase: false,
+				aws: false,
+			},
 		}
 		const onB = enter("org_b")(onA).model
 		expectVitest(onB.namespaces._tag).toBe("Idle")
-		expectVitest(onB.integrations).toEqual({ cloudflare: false, railway: false, planetscale: false, gcp: false, supabase: false })
-		const lateNamespaces = update(onB, Message.SucceededLoadNamespaces({ orgId: "org_a", namespaces: ["a-only"] }))
+		expectVitest(onB.integrations).toEqual({
+			cloudflare: false,
+			railway: false,
+			planetscale: false,
+			gcp: false,
+			supabase: false,
+			aws: false,
+		})
+		const lateNamespaces = update(
+			onB,
+			Message.SucceededLoadNamespaces({ orgId: "org_a", namespaces: ["a-only"] }),
+		)
 		expectVitest(lateNamespaces.model.namespaces._tag).toBe("Idle")
 		const lateStatus = update(
 			onB,
-			Message.SucceededLoadIntegration({ orgId: "org_a", integration: "cloudflare", isConnected: true }),
+			Message.SucceededLoadIntegration({
+				orgId: "org_a",
+				integration: "cloudflare",
+				isConnected: true,
+			}),
 		)
 		expectVitest(lateStatus.model.integrations.cloudflare).toBe(false)
 		const ownStatus = update(
@@ -370,7 +440,14 @@ describe("infrastructure section", () => {
 			given(
 				signedIn({
 					infraPresence: { _tag: "Success", data: ["hosts"] },
-					integrations: { cloudflare: true, railway: false, planetscale: false, gcp: false, supabase: false },
+					integrations: {
+						cloudflare: true,
+						railway: false,
+						planetscale: false,
+						gcp: false,
+						supabase: false,
+						aws: false,
+					},
 				}),
 			),
 			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),

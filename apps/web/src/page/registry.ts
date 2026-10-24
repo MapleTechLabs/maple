@@ -47,6 +47,8 @@ import * as InfraOverview from "./infra/overview"
 import * as InfraCloudflare from "./infra-integrations/cloudflare/list"
 import * as InfraCloudflareWorker from "./infra-integrations/cloudflare/worker"
 import * as InfraCloudflareZone from "./infra-integrations/cloudflare/zone"
+import * as InfraAws from "./infra-integrations/aws/list"
+import * as InfraAwsResource from "./infra-integrations/aws/resource"
 import * as InfraGcp from "./infra-integrations/gcp/list"
 import * as InfraGcpWorkload from "./infra-integrations/gcp/workload"
 import * as InfraPlanetscaleDatabase from "./infra-integrations/planetscale/db"
@@ -121,6 +123,8 @@ export const pages = [
 	InfraSupabaseProject.page,
 	InfraPlanetscale.page,
 	InfraPlanetscaleDatabase.page,
+	InfraAws.page,
+	InfraAwsResource.page,
 	InfraGcp.page,
 	InfraGcpWorkload.page,
 	InfraCloudflare.page,
@@ -313,7 +317,9 @@ export const blockNavigation = (
 		(page) => page.id === current._tag && Option.contains(page.keyOf(route), current.key),
 	)
 	if (isSameInstance) return Option.none()
-	return Option.flatMap(pageById(current._tag), (page) => toHeld(page.blockedNavigation(current, url, context)))
+	return Option.flatMap(pageById(current._tag), (page) =>
+		toHeld(page.blockedNavigation(current, url, context)),
+	)
 }
 
 export const changeContext = (current: PageSlot | null, context: PageContext): PageTransition =>

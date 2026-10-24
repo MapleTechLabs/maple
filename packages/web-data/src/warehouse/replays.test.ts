@@ -149,7 +149,7 @@ describe("replay v2 HTTP adapters", () => {
 			const url = new URL(String(mocks.fetch.mock.calls[1]![0]))
 			expect(url.pathname).toBe(`/v2/session_replays/${publicId}/transcript`)
 			expect(url.searchParams.get("cursor")).toBe("next-events")
-			expect(url.searchParams.get("limit")).toBe("100")
+			expect(url.searchParams.get("limit")).toBe("1000")
 			expect(url.searchParams.get("window_start")).toBe("2026-09-01T00:00:00.000Z")
 		}).pipe(provideV2),
 	)

@@ -137,6 +137,8 @@ export {
 	sessionReplayEventsQuery,
 	sessionsForTraceQuery,
 	sessionTraceSummariesQuery,
+	MAX_SESSION_TRACE_SUMMARIES,
+	sessionTraceWindow,
 	type SessionReplaysListOpts,
 	type SessionReplaysListOutput,
 	type SessionReplaysFacetsOpts,
@@ -688,6 +690,15 @@ export {
 	type OperationTrafficOutput,
 } from "./queries/pr-review"
 
+// Queries: AWS ingest (one connection's metric stream by namespace and region)
+export {
+	AWS_INGEST_RESOURCE_SAMPLE,
+	AWS_METRIC_STREAM_SCOPE,
+	awsIngestQuery,
+	awsIngestRowSchema,
+	type AwsIngestOutput,
+} from "./queries/aws-ingest"
+
 // Queries: source usage (hourly volume and estimated bytes per source)
 export {
 	sourceUsageHourlyQuery,
@@ -701,7 +712,6 @@ export {
 // Queries — CI pipeline runs (GitHub Actions traces)
 export {
 	CI_FAILED_RESULTS,
-	CI_TRACES_SERVICE_NAME,
 	ciFailedJobsQuery,
 	ciJobStatsQuery,
 	ciPipelineStatsQuery,
@@ -713,9 +723,7 @@ export {
 	ciRunTotalsQuery,
 	ciRunsQuery,
 	type CiFailedJobsOpts,
-	type CiFailedJobsOutput,
 	type CiRedStreak,
 	type CiRunsOpts,
-	type CiRunsOutput,
 	type CiScopeOpts,
 } from "./queries/ci-runs"

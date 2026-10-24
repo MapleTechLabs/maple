@@ -1422,6 +1422,23 @@ describe("v2 session_replays over HTTP", () => {
 		expect(second.body.data[0].seq).toBe(100)
 		expect(second.body.has_more).toBe(false)
 		expect(second.body.next_cursor).toBeNull()
+
+		// A transcript page goes past the shared list cap, so the dashboard reads it in one trip.
+		const whole = await harness.request("GET", `/v2/session_replays/${sessionId}/transcript?limit=1000`, {
+			token: key.secret,
+		})
+		expect(whole.status).toBe(200)
+		expect(whole.body.data).toHaveLength(105)
+		expect(whole.body.has_more).toBe(false)
+
+		const tooWide = await harness.request(
+			"GET",
+			`/v2/session_replays/${sessionId}/transcript?limit=1001`,
+			{
+				token: key.secret,
+			},
+		)
+		expect(tooWide.status).toBe(400)
 		await harness.dispose()
 	})
 

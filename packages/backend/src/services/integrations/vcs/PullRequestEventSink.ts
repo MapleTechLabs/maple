@@ -24,7 +24,7 @@ export interface PullRequestEventSinkApi {
 }
 
 export class PullRequestEventSink extends Context.Service<PullRequestEventSink, PullRequestEventSinkApi>()(
-	"@maple/api/services/integrations/vcs/PullRequestEventSink",
+	"@maple/backend/services/integrations/vcs/PullRequestEventSink",
 ) {}
 
 /** One consumer of the port, built in whatever services it needs. */
@@ -82,7 +82,7 @@ export interface PullRequestCommentSinkApi {
 export class PullRequestCommentSink extends Context.Service<
 	PullRequestCommentSink,
 	PullRequestCommentSinkApi
->()("@maple/api/services/integrations/vcs/PullRequestCommentSink") {}
+>()("@maple/backend/services/integrations/vcs/PullRequestCommentSink") {}
 
 /**
  * Where a ticked "Before merge" step goes. Optional in `VcsSyncService`, like the comment sink: a
@@ -95,4 +95,4 @@ export interface PullRequestChecklistSinkApi {
 export class PullRequestChecklistSink extends Context.Service<
 	PullRequestChecklistSink,
 	PullRequestChecklistSinkApi
->()("@maple/api/services/integrations/vcs/PullRequestChecklistSink") {}
+>()("@maple/backend/services/integrations/vcs/PullRequestChecklistSink") {}

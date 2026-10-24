@@ -610,6 +610,7 @@ const awsConnection = (id: AwsConnectionId): V2AwsConnection =>
 		last_checked_at: "2026-10-01T11:59:00.000Z",
 		last_check_error: "Maple cannot assume the role yet.",
 		metric_stream: null,
+		metric_stream_changed_at: null,
 		metrics_last_received_at: null,
 		metrics_last_error: null,
 		created_at: "2026-10-01T11:00:00.000Z",

@@ -152,7 +152,7 @@ interface Window {
 export class PrReviewAnalyticsService extends Context.Service<
 	PrReviewAnalyticsService,
 	PrReviewAnalyticsServiceApi
->()("@maple/api/services/pr-review/PrReviewAnalyticsService", {
+>()("@maple/backend/services/pr-review/PrReviewAnalyticsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "PrReviewAnalyticsService", toPersistence)

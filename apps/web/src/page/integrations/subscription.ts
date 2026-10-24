@@ -144,6 +144,8 @@ const after = (millis: number, message: () => Message) =>
 const CLOUDFLARE_INGEST_MS = 30_000
 
 const SUPABASE_CLOCK_MS = 60_000
+/** A metric stream delivers about every minute. */
+const AWS_WATCH_MS = 60_000
 
 const isSupabaseShown = (model: Model): boolean =>
 	integrationOfSearch(model.search.integration) === "supabase" &&
@@ -167,6 +169,18 @@ const isAwsPending = (model: Model): boolean => {
 		status !== null &&
 		setupId !== null &&
 		status.connections.some((connection) => connection.id === setupId && connection.verified_at === null)
+	)
+}
+
+/** A verified connection streams metrics: its deliveries and what they stored keep moving. */
+const isAwsStreaming = (model: Model): boolean => {
+	if (integrationOfSearch(model.search.integration) !== "aws") return false
+	const status = Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
+	return (
+		status !== null &&
+		status.connections.some(
+			(connection) => connection.verified_at !== null && connection.metric_stream !== null,
+		)
 	)
 }
 
@@ -359,6 +373,14 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ isPending: isAwsPending(model) }),
 				dependenciesToStream: ({ isPending }) =>
 					isPending ? every(10_000, () => Message.TickedAwsPending()) : Stream.empty,
+			},
+		),
+		awsWatch: entry(
+			{ isStreaming: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isStreaming: isAwsStreaming(model) }),
+				dependenciesToStream: ({ isStreaming }) =>
+					isStreaming ? every(AWS_WATCH_MS, () => Message.TickedAwsWatch()) : Stream.empty,
 			},
 		),
 		/** The connected Supabase card's clock, so its metrics window and "Last data" ages advance. */

@@ -39,6 +39,7 @@ import { InvestigationService } from "@maple/backend/services/errors/Investigati
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
+import { AwsIngestService } from "@maple/backend/services/integrations/AwsIngestService"
 import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
@@ -135,6 +136,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SupabaseInsightsService.layer,
 	GcpConnectorService.layer,
 	AwsConnectionService.layer,
+	AwsIngestService.layer,
 	OrgOpenRouterKeyService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,

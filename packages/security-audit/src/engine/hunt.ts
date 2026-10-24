@@ -43,9 +43,14 @@ export const strongest = <E extends { readonly candidate: Candidate; readonly ag
 		return x[0] - y[0] || x[1] - y[1] || (x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0)
 	})[0]
 
-/** Verifier calls the candidates already found will need, or 30% of the balance when that is larger. */
-const validationReserve = (s: EngineState, perCandidate: number, balance: number): number =>
-	Math.max((s.candidates.size + s.carried.length) * perCandidate, Math.ceil(balance * 0.3))
+/**
+ * Verifier calls the fingerprints already found will need, or 30% of the balance when larger. A
+ * fingerprint is one verifier however many units carry or raise it.
+ */
+const validationReserve = (s: EngineState, perCandidate: number, balance: number): number => {
+	const fingerprints = new Set([...s.candidates.keys(), ...s.carried.map((c) => c.record.fingerprint)])
+	return Math.max(fingerprints.size * perCandidate, Math.ceil(balance * 0.3))
+}
 
 const groupUnits = (
 	units: ReadonlyArray<LedgerUnit>,
@@ -383,6 +388,8 @@ export const runHunting = (engine: Engine) =>
 			Effect.gen(function* () {
 				const planned = huntable((yield* Ref.get(engine.state)).ledger)
 				if (planned.length > 0 && !(yield* launchWave(wave, planned))) {
+					// A run that hunted nothing has not audited its planned work, whatever else it validates.
+					if (wave === 1) yield* engine.fail("budget_cannot_fund_a_hunter")
 					return yield* recordGap(wave, BUDGET_DEFER, false)
 				}
 				// The post-wave critic was reserved before the wave; for quick it is the one final critic.
