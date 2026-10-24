@@ -11,12 +11,14 @@ import * as Select from "../../../ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { chain, chainAll, slotStep } from "../../kit/keyed-step"
 import * as AddTarget from "../kit/add-target"
+import * as SpendSettings from "../kit/spend-settings"
 import { isLive, SECURITY_SEVERITY_ORDER } from "../kit/format"
 import {
 	FetchFindings,
 	FetchGithubStatus,
 	FetchLatestRun,
 	FetchRuns,
+	FetchSettings,
 	FetchTargetRuns,
 	FetchTargets,
 	WaitSecuritySearchDebounce,
@@ -24,7 +26,15 @@ import {
 	ReadSecurityIsAdmin,
 	StartRun,
 } from "./command"
-import { activeRepositoriesOf, allRuns, latestRunFor, runningRuns, runsOf, targetsOf } from "./derive"
+import {
+	activeRepositoriesOf,
+	allRuns,
+	latestRunFor,
+	runningRuns,
+	runsOf,
+	settingsOf,
+	targetsOf,
+} from "./derive"
 import { Message, type Model, type Tab } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -82,6 +92,16 @@ const readRuns = (model: Model, context: PageContext, mode: Keyed.ReadMode): Ret
 		keyOf(context, "listRuns"),
 		mode,
 		(key) => FetchRuns({ key }),
+	)
+
+const readSettings = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
+	slotStep(
+		model,
+		model.settings,
+		(settings) => ({ settings }),
+		keyOf(context, "getSettings"),
+		mode,
+		(key) => FetchSettings({ key }),
 	)
 
 const readGithubStatus = (model: Model, context: PageContext): Return =>
@@ -170,11 +190,12 @@ const finishedSince = (
 		(run) => !isLive(run) && before.some((previous) => previous.id === run.id && isLive(previous)),
 	)
 
-/** A write changed the targets or runs: read both again past any read in flight. */
+/** A write changed the targets or runs (and so the spend): read them again past any read in flight. */
 const afterWrite = (model: Model, context: PageContext): Return =>
 	chainAll(model, [
 		(next) => readTargets(next, context, "Supersede"),
 		(next) => readRuns(next, context, "Supersede"),
+		(next) => readSettings(next, context, "Supersede"),
 		...targetsOf(model).map(
 			(target) => (next: Model) => readTargetRuns(next, context, target.id, "Supersede"),
 		),
@@ -205,7 +226,9 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		findings: {},
 		latestRuns: {},
 		githubStatus: Keyed.idle(),
+		settings: Keyed.idle(),
 		addTarget: AddTarget.init(),
+		spendSettings: SpendSettings.init(),
 		startingTargetId: null,
 		searchDraft: searches.findingsSearch.q ?? "",
 		searchGeneration: 0,
@@ -218,6 +241,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 	const loaded = chainAll(model, [
 		(next) => readTargets(next, context, "Load"),
 		(next) => readRuns(next, context, "Load"),
+		(next) => readSettings(next, context, "Load"),
 		(next) => readGithubStatus(next, context),
 	])
 	return {
@@ -369,6 +393,27 @@ const addTargetStep = (model: Model, message: AddTarget.Message, context: PageCo
 	})
 }
 
+// SPEND & MODELS
+
+const spendSettingsStep = (model: Model, message: SpendSettings.Message, context: PageContext): Return => {
+	const step = SpendSettings.update(model.spendSettings, message)
+	const next: Return = {
+		model: { ...model, spendSettings: step.model },
+		commands: Command.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotSpendSettingsMessage({ message: inner }),
+		),
+	}
+	if (step.outMessage === undefined) return next
+	return {
+		...chain(next, (updated) => readSettings(updated, context, "Supersede")),
+		outMessage: toast(
+			"success",
+			"Spend & models saved",
+			"New runs use them; running audits check the limit before each agent.",
+		),
+	}
+}
+
 // UPDATE
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -447,18 +492,29 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchGithubStatus: ({ key, result }) => ({
 			model: { ...model, githubStatus: Keyed.accept(model.githubStatus, key, result) },
 		}),
+		CompletedFetchSettings: ({ key, result }) => ({
+			model: { ...model, settings: Keyed.accept(model.settings, key, result) },
+		}),
 		TickedPoll: ({ nowMs }) =>
 			chainAll({ ...model, nowMs }, [
 				(next) => readRuns(next, context, "Refresh"),
+				// Running agents spend: the month's total moves while any audit runs.
+				...(runningRuns(model).length === 0
+					? []
+					: [(next: Model) => readSettings(next, context, "Refresh")]),
 				// A live run the global list no longer holds is still followed through its target's list.
 				...uniqueTargets(runningRuns(model)).map(
 					(targetId) => (next: Model) => readTargetRuns(next, context, targetId, "Refresh"),
 				),
 			]),
 		ClickedRetry: () =>
-			chain(readTargets(model, context, "Refresh"), (next) => readRuns(next, context, "Refresh")),
+			chainAll(model, [
+				(next) => readTargets(next, context, "Refresh"),
+				(next) => readRuns(next, context, "Refresh"),
+				(next) => readSettings(next, context, "Refresh"),
+			]),
 		ClickedAddTarget: () => {
-			const opened = AddTarget.open(model.addTarget)
+			const opened = AddTarget.open(model.addTarget, settingsOf(model))
 			return chain(
 				{
 					model: { ...model, addTarget: opened.model },
@@ -470,6 +526,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			)
 		},
 		GotAddTargetMessage: ({ message: inner }) => addTargetStep(model, inner, context),
+		ClickedSpendAndModels: () => {
+			const settings = settingsOf(model)
+			if (settings === null) return { model }
+			const opened = SpendSettings.open(model.spendSettings, settings)
+			return {
+				model: { ...model, spendSettings: opened.model },
+				commands: Command.mapMessages(opened.commands ?? [], (inner) =>
+					Message.GotSpendSettingsMessage({ message: inner }),
+				),
+			}
+		},
+		GotSpendSettingsMessage: ({ message: inner }) => spendSettingsStep(model, inner, context),
 		ClickedStartRun: ({ targetId }) =>
 			model.startingTargetId !== null
 				? { model }

@@ -39,6 +39,7 @@ import {
 	Dashboards,
 	DashboardShares,
 	DashboardVersions,
+	DeviceCredentials,
 	DigestSubscriptions,
 	ErrorIncidents,
 	ErrorIssueEvents,
@@ -74,6 +75,7 @@ import {
 	PrReviewEdits,
 	SecurityAuditEvents,
 	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
 	SecurityAuditOrgUsage,
 	SecurityAuditFindings,
 	SecurityAuditRunFindings,
@@ -167,6 +169,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// hourly, so a deleted org's MCP client kept working for up to 30 days.
 	McpOAuthRefreshTokens,
 	MobileDevices,
+	// Device-held widget keys: their tokens re-read the row, so deleting it ends them.
+	DeviceCredentials,
 	// A share link is a public bearer credential: `resolveByToken` matches the
 	// token hash and `revoked_at is null` and nothing else, then queries the
 	// warehouse as the org. It only went dead on deletion by accident of a
@@ -195,6 +199,7 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// Security audit evidence about the org's source code: exploit traces must not outlive the org.
 	SecurityAuditEvents,
 	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
 	SecurityAuditOrgUsage,
 	SecurityAuditRunFindings,
 	SecurityAuditFindings,

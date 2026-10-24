@@ -28,7 +28,7 @@ import { Schema } from "effect"
 
 const ScopePaths = Schema.Array(Schema.String)
 
-/** One repository branch an org audits, with its cadence and invocation budgets. */
+/** One repository branch an org audits, with its cadence and the models it overrides. */
 export const SecurityAuditTargets = PG.table("security_audit_targets", {
 	columns: {
 		id: PG.brand(PG.text, SecurityAuditTargetId),
@@ -48,6 +48,9 @@ export const SecurityAuditTargets = PG.table("security_audit_targets", {
 		/** Max agent invocations per run; null is unbounded. */
 		budgetPerRun: PG.column(PG.nullable(PG.int4), { name: "budget_per_run" }),
 		monthlyInvocationBudget: PG.column(PG.nullable(PG.int4), { name: "monthly_invocation_budget" }),
+		/** OpenRouter model ids overriding the org's; null runs on the org's pick. */
+		discoveryModel: PG.column(PG.nullable(PG.text), { name: "discovery_model" }),
+		validationModel: PG.column(PG.nullable(PG.text), { name: "validation_model" }),
 		createdBy: PG.column(PG.brand(PG.text, UserId), { name: "created_by" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
@@ -84,6 +87,9 @@ export const SecurityAuditRuns = PG.table("security_audit_runs", {
 		inputTokens: PG.column(PG.int8, { name: "input_tokens", default: 0 }),
 		outputTokens: PG.column(PG.int8, { name: "output_tokens", default: 0 }),
 		costUsd: PG.column(PG.nullable(PG.float8), { name: "cost_usd" }),
+		/** The OpenRouter model ids the run used; null for runs from before they were recorded. */
+		discoveryModel: PG.column(PG.nullable(PG.text), { name: "discovery_model" }),
+		validationModel: PG.column(PG.nullable(PG.text), { name: "validation_model" }),
 		workflowInstanceId: PG.column(PG.nullable(PG.text), { name: "workflow_instance_id" }),
 		startedAt: PG.column(PG.timestamptzMillis, { name: "started_at" }),
 		finishedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "finished_at" }),
@@ -217,7 +223,8 @@ export const SecurityAuditOrgUsage = PG.table("security_audit_org_usage", {
 
 /**
  * One granted invocation per (run, agent): a retried or replayed reservation finds its grant here
- * instead of counting it again in `security_audit_org_usage`.
+ * instead of counting it again in `security_audit_org_usage`. Once the agent answers, its cost is
+ * set here too, and the org's monthly spend is their sum.
  */
 export const SecurityAuditOrgReservations = PG.table("security_audit_org_reservations", {
 	columns: {
@@ -225,10 +232,30 @@ export const SecurityAuditOrgReservations = PG.table("security_audit_org_reserva
 		agentId: PG.column(PG.text, { name: "agent_id" }),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		period: PG.text,
+		/** What OpenRouter charged for the agent; null until it answers, and for an agent that failed. */
+		costUsd: PG.column(PG.nullable(PG.float8), { name: "cost_usd" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 	},
 	primaryKey: ["runId", "agentId"],
-	indexes: [PG.index("security_audit_org_reservations_org_idx", ["orgId", "period"])],
+	indexes: [
+		PG.index("security_audit_org_reservations_org_idx", ["orgId", "period"]),
+		PG.index("security_audit_org_reservations_org_created_idx", ["orgId", "createdAt"]),
+	],
+	tenantColumn: "orgId",
+})
+
+/** An org's audit settings: its monthly spend limit and default models. No row runs on the defaults. */
+export const SecurityAuditOrgSettings = PG.table("security_audit_org_settings", {
+	columns: {
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		/** Whole US dollars per UTC month; running audits stop once the org's spend reaches it. */
+		monthlySpendLimitUsd: PG.column(PG.int4, { name: "monthly_spend_limit_usd" }),
+		discoveryModel: PG.column(PG.text, { name: "discovery_model" }),
+		validationModel: PG.column(PG.text, { name: "validation_model" }),
+		updatedBy: PG.column(PG.brand(PG.text, UserId), { name: "updated_by" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: ["orgId"],
 	tenantColumn: "orgId",
 })
 
@@ -239,3 +266,4 @@ export type SecurityAuditRunFindingRow = PG.SelectRowOf<typeof SecurityAuditRunF
 export type SecurityAuditFindingRow = PG.SelectRowOf<typeof SecurityAuditFindings>
 export type SecurityAuditEventRow = PG.SelectRowOf<typeof SecurityAuditEvents>
 export type SecurityAuditOrgUsageRow = PG.SelectRowOf<typeof SecurityAuditOrgUsage>
+export type SecurityAuditOrgSettingsRow = PG.SelectRowOf<typeof SecurityAuditOrgSettings>

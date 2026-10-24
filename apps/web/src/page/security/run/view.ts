@@ -62,7 +62,7 @@ const cancelDialog = (h: H, model: Model): Html =>
 		toParentMessage: (message) => Message.GotCancelDialogMessage({ message }),
 		title: "Cancel this run?",
 		description:
-			"The agents stop after the invocation in flight. Units it closed stay closed; the rest are left as gaps the next run starts with. Spend so far is kept.",
+			"The agents stop after the ones in flight. Units it closed stay closed; the rest are left as gaps the next run starts with. Spend so far is kept.",
 		confirmLabel: model.busy === "cancel" ? "Cancelling..." : "Cancel run",
 		cancelLabel: "Keep running",
 		isConfirmDisabled: model.busy === "cancel",

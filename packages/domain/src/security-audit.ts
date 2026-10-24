@@ -50,8 +50,13 @@ export const SecurityAuditWorkflowPayload = Schema.Struct({
 	ref: Schema.String,
 	profile: SecurityAuditProfile,
 	scopePaths: Schema.Array(Schema.String),
-	/** Max agent invocations; always finite, the API resolves a default before starting. */
-	budget: Schema.Int.check(Schema.isGreaterThan(0)),
+	/**
+	 * Max agent invocations; null leaves the run unbounded, so the org's monthly spend limit and its
+	 * plan are what stop it.
+	 */
+	budget: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
+	/** OpenRouter model ids, resolved at start so a replay runs on the same models. */
+	models: Schema.Struct({ discovery: Schema.String, validation: Schema.String }),
 	priorRunId: Schema.NullOr(Schema.String),
 	/** The org's monthly invocation limit, resolved from its plan at start; checked before every agent. */
 	orgBudget: Schema.Struct({
@@ -68,6 +73,67 @@ export const securityAuditBudgetPeriod = (epochMs: number): string =>
 
 /** Why a run ends incomplete when the org's monthly invocations run out mid-run. */
 export const ORG_BUDGET_EXHAUSTED = "org_budget_exhausted"
+
+/** Why a run ends incomplete when the org reaches its monthly spend limit mid-run. */
+export const ORG_SPEND_LIMIT_REACHED = "org_spend_limit_reached"
+
+/** The UTC month containing `epochMs`: when an org's audit spend started counting, and when it resets. */
+export const securityAuditSpendWindow = (
+	epochMs: number,
+): { readonly since: number; readonly resetsAt: number } => {
+	const now = new Date(epochMs)
+	return {
+		since: Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+		resetsAt: Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+	}
+}
+
+/**
+ * The models an org may pick for its audits, as OpenRouter ids. `eu` marks a model the EU instance
+ * serves; there, a pick without it runs on the region's default. `verifies` is false for a model
+ * that refused verifier prompts in the phase 0 eval.
+ */
+export const SECURITY_AUDIT_MODELS = [
+	{
+		id: "deepseek/deepseek-v4.1-flash-1017:nitro",
+		label: "DeepSeek V4.1 Flash",
+		provider: "DeepSeek",
+		eu: false,
+		verifies: true,
+	},
+	{
+		id: "anthropic/claude-sonnet-5.5",
+		label: "Claude Sonnet 5.5",
+		provider: "Anthropic",
+		eu: true,
+		verifies: true,
+	},
+	{
+		id: "anthropic/claude-haiku-5.5",
+		label: "Claude Haiku 5.5",
+		provider: "Anthropic",
+		eu: true,
+		verifies: true,
+	},
+	{ id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", provider: "OpenAI", eu: true, verifies: false },
+	{ id: "openai/gpt-6-luna", label: "GPT-6 Luna", provider: "OpenAI", eu: true, verifies: true },
+] as const
+
+export type SecurityAuditModelOption = (typeof SECURITY_AUDIT_MODELS)[number]
+
+/** A model that hunts: any in the catalogue. */
+export const SecurityAuditDiscoveryModel = Schema.Literals(SECURITY_AUDIT_MODELS.map((model) => model.id))
+export type SecurityAuditDiscoveryModel = typeof SecurityAuditDiscoveryModel.Type
+
+/** A model that verifies: one that answered verifier prompts in the eval. */
+export const SecurityAuditValidationModel = Schema.Literals(
+	SECURITY_AUDIT_MODELS.filter((model) => model.verifies).map((model) => model.id),
+)
+export type SecurityAuditValidationModel = typeof SecurityAuditValidationModel.Type
+
+/** The catalogue entry for an id, or undefined for one the catalogue no longer lists. */
+export const securityAuditModelOption = (id: string): SecurityAuditModelOption | undefined =>
+	SECURITY_AUDIT_MODELS.find((model) => model.id === id)
 
 const PATH_FORBIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u
 const WINDOWS_RESERVED_COMPONENT =

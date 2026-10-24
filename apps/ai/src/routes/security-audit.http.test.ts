@@ -308,7 +308,7 @@ describe("/api/security-audit access", () => {
 })
 
 describe("/api/security-audit targets", () => {
-	it("rejects an unsafe repository, scope path, budget or page size at the boundary", async () => {
+	it("rejects an unsafe repository, scope path, model or page size at the boundary", async () => {
 		const harness = makeHarness()
 		try {
 			const statuses = await Promise.all(
@@ -318,8 +318,9 @@ describe("/api/security-audit targets", () => {
 					{ ...TARGET, branch: "--upload-pack=x" },
 					{ ...TARGET, scopePaths: ["../secrets"] },
 					{ ...TARGET, scopePaths: ["/etc/passwd"] },
-					{ ...TARGET, budgetPerRun: 0 },
-					{ ...TARGET, budgetPerRun: 20_001 },
+					{ ...TARGET, discoveryModel: "acme/unlisted-model" },
+					// It refused verifier prompts in the eval, so it never verifies.
+					{ ...TARGET, validationModel: "openai/gpt-6.1-sol" },
 				].map((body) => harness.call("POST", "/targets", { body }).then((r) => r.status)),
 			)
 			const run = "00000000-0000-4000-8000-000000000000"
@@ -338,30 +339,27 @@ describe("/api/security-audit targets", () => {
 		}
 	})
 
-	it("refuses a per-run budget that cannot fund the target's profile", async () => {
+	it("refuses a target whose models would verify on the hunter's model, and keeps its own picks", async () => {
 		const harness = makeHarness()
 		try {
-			const quickMin = minimumInvocations("quick")
-			const tooLowQuick = await harness.call("POST", "/targets", {
-				body: { ...TARGET, profile: "quick", budgetPerRun: quickMin - 1 },
+			// The org's default verifier is Claude Sonnet, so hunting on it too is refused.
+			const same = await harness.call("POST", "/targets", {
+				body: { ...TARGET, discoveryModel: "anthropic/claude-sonnet-5.5" },
 			})
-			// An omitted profile is a deep audit, so its minimum applies.
-			const tooLowDeep = await harness.call("POST", "/targets", {
-				body: { ...TARGET, budgetPerRun: minimumInvocations("deep") - 1 },
-			})
-			const exact = await harness.call("POST", "/targets", {
-				body: { ...TARGET, profile: "quick", budgetPerRun: quickMin },
+			const own = await harness.call("POST", "/targets", {
+				body: { ...TARGET, discoveryModel: "anthropic/claude-haiku-5.5" },
 			})
 
-			expect([
-				tooLowQuick.status,
-				tooLowQuick.body._tag,
-				tooLowQuick.body.minimum,
-				tooLowQuick.body.profile,
-			]).toEqual([400, tag("SecurityAuditBudgetTooLowError"), quickMin, "quick"])
-			expect(tooLowQuick.body.message).toContain(String(quickMin))
-			expect([tooLowDeep.status, tooLowDeep.body.minimum]).toEqual([400, minimumInvocations("deep")])
-			expect([exact.status, exact.body.budgetPerRun]).toEqual([200, quickMin])
+			expect([same.status, same.body._tag, same.body.model]).toEqual([
+				400,
+				tag("SecurityAuditSameModelsError"),
+				"anthropic/claude-sonnet-5.5",
+			])
+			expect([own.status, own.body.discoveryModel, own.body.validationModel]).toEqual([
+				200,
+				"anthropic/claude-haiku-5.5",
+				null,
+			])
 			expect(await harness.count("security_audit_targets")).toBe(1)
 		} finally {
 			await harness.dispose()
@@ -473,10 +471,10 @@ describe("/api/security-audit GitHub only", () => {
 })
 
 describe("/api/security-audit runs", () => {
-	it("starts manual runs one at a time, with a finite budget and the best prior run", async () => {
+	it("starts manual runs one at a time, unbudgeted, on their models and the best prior run", async () => {
 		const harness = makeHarness()
 		try {
-			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
+			const target = await harness.call("POST", "/targets", { body: TARGET })
 			const runs = `/targets/${target.body.id}/runs`
 			// A finished run that counts as prior has saved its metadata, reports and ledger.
 			const finish = async (runId: string) => {
@@ -499,27 +497,47 @@ describe("/api/security-audit runs", () => {
 			const whileRunning = await harness.call("POST", runs, { body: {} })
 			await finish(whole.body.id)
 			const scoped = await harness.call("POST", runs, {
-				body: { scopePaths: ["apps/api/src/routes"], budget: 40 },
+				body: { scopePaths: ["apps/api/src/routes"] },
 			})
 			await finish(scoped.body.id)
 			const next = await harness.call("POST", runs, { body: {} })
 
-			const unbudgeted = await harness.call("POST", "/targets", { body: { ...TARGET, branch: "next" } })
-			await harness.call("POST", `/targets/${unbudgeted.body.id}/runs`, { body: {} })
+			const overridden = await harness.call("POST", "/targets", {
+				body: { ...TARGET, branch: "next", discoveryModel: "anthropic/claude-haiku-5.5" },
+			})
+			const onOwnModels = await harness.call("POST", `/targets/${overridden.body.id}/runs`, {
+				body: {},
+			})
 
 			expect([whole.body.kind, whileRunning.status, whileRunning.body._tag]).toEqual([
 				"manual",
 				409,
 				tag("SecurityAuditRunInProgressError"),
 			])
+			const defaults = {
+				discovery: "deepseek/deepseek-v4.1-flash-1017:nitro",
+				validation: "anthropic/claude-sonnet-5.5",
+			}
 			expect(
-				harness.started.map((p) => [p.runId, p.ref, p.scopePaths, p.budget, p.priorRunId]),
+				harness.started.map((p) => [p.runId, p.ref, p.scopePaths, p.budget, p.priorRunId, p.models]),
 			).toEqual([
-				[whole.body.id, "main", [], 300, null],
-				[scoped.body.id, "main", ["apps/api/src/routes"], 40, whole.body.id],
+				[whole.body.id, "main", [], null, null, defaults],
+				[scoped.body.id, "main", ["apps/api/src/routes"], null, whole.body.id, defaults],
 				// The whole-target run is preferred over the later scoped one.
-				[next.body.id, "main", [], 300, whole.body.id],
-				[expect.any(String), "next", [], 400, null],
+				[next.body.id, "main", [], null, whole.body.id, defaults],
+				[
+					onOwnModels.body.id,
+					"next",
+					[],
+					null,
+					null,
+					{ ...defaults, discovery: "anthropic/claude-haiku-5.5" },
+				],
+			])
+			// The run records the models it ran on.
+			expect([onOwnModels.body.discoveryModel, onOwnModels.body.validationModel]).toEqual([
+				"anthropic/claude-haiku-5.5",
+				defaults.validation,
 			])
 		} finally {
 			await harness.dispose()
@@ -567,19 +585,19 @@ describe("/api/security-audit runs", () => {
 		}
 	})
 
-	it("caps a run's budget at what the org has left this month and passes the org limit on", async () => {
+	it("passes the plan's limit on, leaving the run itself unbudgeted", async () => {
 		const harness = makeHarness({ orgLimit: 50 })
 		try {
-			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
+			const target = await harness.call("POST", "/targets", { body: TARGET })
 			await harness.sql(
 				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 20, now())`,
 				[ORG_A, PERIOD],
 			)
 			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
 
-			expect([run.status, run.body.budget]).toEqual([200, 30])
+			expect([run.status, run.body.budget]).toEqual([200, null])
 			expect(harness.started.map((p) => [p.budget, p.orgBudget])).toEqual([
-				[30, { period: PERIOD, limit: 50 }],
+				[null, { period: PERIOD, limit: 50 }],
 			])
 		} finally {
 			await harness.dispose()
@@ -590,45 +608,57 @@ describe("/api/security-audit runs", () => {
 		const cycle = "cycle:2026-10-07T09:00:00.000Z"
 		const harness = makeHarness({ budget: { limit: 50, period: cycle, autumnRemaining: 12 } })
 		try {
-			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
-			// Spend under the calendar month is another cycle's: it does not count here.
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			// Spend under the calendar month is another cycle's: counted, 45 of 50 could not fund a run.
 			await harness.sql(
 				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 45, now())`,
 				[ORG_A, PERIOD],
 			)
 			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
 
-			expect([run.status, run.body.budget]).toEqual([200, 12])
+			expect(run.status).toBe(200)
 			expect(harness.started.map((p) => p.orgBudget)).toEqual([{ period: cycle, limit: 50 }])
 		} finally {
 			await harness.dispose()
 		}
 	})
 
-	it("refuses a run whose budget cannot fund reconnaissance, without starting a workflow", async () => {
+	it("refuses a run once the org's spend this month reaches its limit, until an admin raises it", async () => {
 		const harness = makeHarness()
 		try {
-			const deepMin = minimumInvocations("deep")
 			const target = await harness.call("POST", "/targets", { body: TARGET })
 			const runs = `/targets/${target.body.id}/runs`
-			const requested = await harness.call("POST", runs, { body: { budget: deepMin - 1 } })
-			// A stored per-run budget below the minimum (e.g. after the profile changed) is refused too.
-			await harness.sql(`UPDATE security_audit_targets SET budget_per_run = $1 WHERE id = $2`, [
-				deepMin - 1,
-				target.body.id,
-			])
-			const stored = await harness.call("POST", runs, { body: {} })
-			const funded = await harness.call("POST", runs, { body: { budget: deepMin } })
+			const limitOf = (monthlySpendLimitUsd: number) =>
+				harness.call("PUT", "/settings", {
+					body: {
+						monthlySpendLimitUsd,
+						discoveryModel: "deepseek/deepseek-v4.1-flash-1017:nitro",
+						validationModel: "anthropic/claude-sonnet-5.5",
+					},
+				})
+			await limitOf(10)
+			const reservation = (agentId: string, costUsd: number, at: number) =>
+				harness.sql(
+					`INSERT INTO security_audit_org_reservations (run_id, agent_id, org_id, period, cost_usd, created_at)
+					 VALUES ('earlier-run', $1, $2, $3, $4, to_timestamp($5 / 1000.0))`,
+					[agentId, ORG_A, PERIOD, costUsd, at],
+				)
+			// Spend from last month is not this month's.
+			await reservation("hunter-1", 40, Date.UTC(2026, 8, 30))
+			await reservation("hunter-2", 6.5, Date.UTC(2026, 9, 2))
+			await reservation("hunter-3", 3.5, Date.UTC(2026, 9, 10))
+			const refused = await harness.call("POST", runs, { body: {} })
+			await limitOf(25)
+			const raised = await harness.call("POST", runs, { body: {} })
 
 			expect([
-				requested.status,
-				requested.body._tag,
-				requested.body.budget,
-				requested.body.minimum,
-			]).toEqual([400, tag("SecurityAuditBudgetTooLowError"), deepMin - 1, deepMin])
-			expect([stored.status, stored.body._tag]).toEqual([400, tag("SecurityAuditBudgetTooLowError")])
-			expect([funded.status, harness.started.map((p) => p.budget)]).toEqual([200, [deepMin]])
-			expect(await harness.count("security_audit_runs")).toBe(1)
+				refused.status,
+				refused.body._tag,
+				refused.body.limitUsd,
+				refused.body.spentUsd,
+				refused.body.resetsAt,
+			]).toEqual([402, tag("SecurityAuditSpendLimitReachedError"), 10, 10, "2026-11-01T00:00:00.000Z"])
+			expect([raised.status, harness.started.map((p) => p.runId)]).toEqual([200, [raised.body.id]])
 		} finally {
 			await harness.dispose()
 		}
@@ -961,7 +991,7 @@ describe("/api/security-audit cancellation of an unsettled run", () => {
 			await harness.withStore((store) =>
 				store
 					.forOrg(ORG_A)
-					.reserveOrgInvocation(run.body.id, "hunter-1", PERIOD, 100)
+					.reserveOrgInvocation(run.body.id, "hunter-1", PERIOD, 100, { since: 0, limitUsd: 1_000 })
 					.pipe(
 						Effect.andThen(
 							store.forOrg(ORG_A).recordEvent(run.body.id, {
@@ -1029,6 +1059,59 @@ describe("/api/security-audit unit payload", () => {
 				false,
 				fingerprints.slice(0, 20),
 			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit settings", () => {
+	it("serves the defaults until an admin saves, and keeps them to the org that saved them", async () => {
+		const harness = makeHarness()
+		try {
+			const before = await harness.call("GET", "/settings", { as: `${ORG_A}|org:member` })
+			const body = {
+				monthlySpendLimitUsd: 750,
+				discoveryModel: "anthropic/claude-haiku-5.5",
+				validationModel: "openai/gpt-6-luna",
+			}
+			const asMember = await harness.call("PUT", "/settings", { as: `${ORG_A}|org:member`, body })
+			const sameModels = await harness.call("PUT", "/settings", {
+				body: { ...body, validationModel: "anthropic/claude-haiku-5.5" },
+			})
+			const tooHigh = await harness.call("PUT", "/settings", {
+				body: { ...body, monthlySpendLimitUsd: 100_001 },
+			})
+			const saved = await harness.call("PUT", "/settings", { body })
+			const otherOrg = await harness.call("GET", "/settings", { as: `${ORG_B}|org:admin` })
+			const audit = await Effect.runPromise(
+				harness.auditLog.list(ORG_A, {
+					action: "security_audit_settings.updated",
+					limit: 10,
+					offset: 0,
+				}),
+			)
+
+			expect(before.body).toEqual({
+				monthlySpendLimitUsd: 100,
+				spentUsd: 0,
+				since: Date.UTC(2026, 9, 1),
+				resetsAt: Date.UTC(2026, 10, 1),
+				discoveryModel: "deepseek/deepseek-v4.1-flash-1017:nitro",
+				validationModel: "anthropic/claude-sonnet-5.5",
+			})
+			expect([asMember.status, sameModels.status, sameModels.body._tag, tooHigh.status]).toEqual([
+				403,
+				400,
+				tag("SecurityAuditSameModelsError"),
+				400,
+			])
+			expect([saved.status, saved.body.monthlySpendLimitUsd, saved.body.validationModel]).toEqual([
+				200,
+				750,
+				"openai/gpt-6-luna",
+			])
+			expect([otherOrg.body.monthlySpendLimitUsd, audit.length]).toEqual([100, 1])
 		} finally {
 			await harness.dispose()
 		}

@@ -208,7 +208,3 @@ export const verdictsOf = (findings: ReadonlyArray<SecurityAuditFinding>): Verdi
 	needsValidation: findings.filter((finding) => finding.verdict === "needs_validation").length,
 	rejected: findings.filter((finding) => finding.verdict === "rejected").length,
 })
-
-/** Twice the run's budget, within the cap: the "run again with more" offer. */
-export const raisedBudget = (budget: number | null, cap: number): number | null =>
-	budget === null ? null : Math.min(budget * 2, cap)

@@ -91,7 +91,7 @@ export const runAudit = (input: AuditRunInput) =>
 		yield* engine.event({
 			_tag: "Phase",
 			phase: "finished",
-			detail: `${status}, ${final.spent} invocations`,
+			detail: `${status}, ${final.spent} agents run`,
 		})
 		return {
 			status,

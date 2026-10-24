@@ -61,6 +61,8 @@ export const AuditResources = {
 		],
 	},
 	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
+	/** A device-held key registered for the mobile widgets (DPoP); keyed by installation. */
+	device_credential: { prefix: PublicIdPrefixes.deviceCredential, verbs: ["registered", "revoked"] },
 	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
 	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
@@ -117,6 +119,8 @@ export const AuditResources = {
 	security_audit_finding: { verbs: ["triaged"] },
 	/** An admin stopping an in-progress security audit run; target and run id in `metadata`. */
 	security_audit_run: { verbs: ["cancelled"] },
+	/** An admin changing the org's audit spend limit or default models; the new values in `metadata`. */
+	security_audit_settings: { verbs: ["updated"] },
 	/**
 	 * Reads of recorded browser sessions, the surface most likely to carry
 	 * end-user data. Recorded by the auth layers from the `AuditedRead` annotation.
@@ -163,6 +167,7 @@ export const AuditResourceLabels = {
 	dashboard: "Dashboard",
 	chat_integration: "Chat integration",
 	dashboard_share: "Dashboard share",
+	device_credential: "Device credential",
 	error_issue: "Issue",
 	gcp_connector: "Google Cloud connector",
 	aws_connection: "AWS connection",
@@ -177,6 +182,7 @@ export const AuditResourceLabels = {
 	scrape_target: "Scrape target",
 	security_audit_finding: "Security audit finding",
 	security_audit_run: "Security audit run",
+	security_audit_settings: "Security audit settings",
 	source: "Source",
 	session_replay: "Session replay",
 	support_channel: "Support channel",
@@ -218,6 +224,8 @@ export const AuditActionLabels = {
 	"dashboard_share.created": "Shared dashboard",
 	"dashboard_share.rotated": "Rotated dashboard share link",
 	"dashboard_share.deleted": "Removed dashboard share link",
+	"device_credential.registered": "Registered device key",
+	"device_credential.revoked": "Revoked device key",
 	"error_issue.created": "Created issue",
 	"error_issue.state_change": "Changed issue status",
 	"error_issue.assignment": "Assigned issue",
@@ -272,6 +280,7 @@ export const AuditActionLabels = {
 	"scrape_target.deleted": "Deleted scrape target",
 	"security_audit_finding.triaged": "Triaged security audit finding",
 	"security_audit_run.cancelled": "Cancelled security audit run",
+	"security_audit_settings.updated": "Updated security audit spend limit and models",
 	"session_replay.read": "Viewed session replay",
 	"support_channel.created": "Created support channel",
 	"support_channel.invite_sent": "Sent support channel invite",

@@ -1243,26 +1243,30 @@ SELECT
         GROUP BY fingerprintHash
         FORMAT JSON
 
--- builder:errors:recentTraceTimeProbeQuery:endBounded  [0a0cbd7e]
+-- builder:errors:recentTraceTimeProbeQuery:endBounded  [1ece91df]
 SELECT
-          trace_index.MinTimestamp AS timestamp
+          trace_index.TraceId AS traceId,
+          min(trace_index.MinTimestamp) AS timestamp,
+          max(trace_index.MaxTimestamp) AS endTimestamp
         FROM trace_index
         WHERE trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
           AND trace_index.OrgId = 'org_sql_catalog'
           AND trace_index.MaxTimestamp >= '2026-01-01 10:30:00'
           AND trace_index.MinTimestamp < '2026-01-03 14:15:00'
-        ORDER BY timestamp ASC
+        GROUP BY traceId
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:recentTraceTimeProbeQuery:openEnded  [20abddea]
+-- builder:errors:recentTraceTimeProbeQuery:openEnded  [579e46d9]
 SELECT
-          trace_index.MinTimestamp AS timestamp
+          trace_index.TraceId AS traceId,
+          min(trace_index.MinTimestamp) AS timestamp,
+          max(trace_index.MaxTimestamp) AS endTimestamp
         FROM trace_index
         WHERE trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
           AND trace_index.OrgId = 'org_sql_catalog'
           AND trace_index.MaxTimestamp >= '2026-01-01 10:30:00'
-        ORDER BY timestamp ASC
+        GROUP BY traceId
         LIMIT 1
         FORMAT JSON
 
@@ -1619,13 +1623,15 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
--- builder:errors:traceTimeProbeQuery:default  [c3b822a7]
+-- builder:errors:traceTimeProbeQuery:default  [12f190a8]
 SELECT
-          trace_index.MinTimestamp AS timestamp
+          trace_index.TraceId AS traceId,
+          min(trace_index.MinTimestamp) AS timestamp,
+          max(trace_index.MaxTimestamp) AS endTimestamp
         FROM trace_index
         WHERE trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
           AND trace_index.OrgId = 'org_sql_catalog'
-        ORDER BY timestamp ASC
+        GROUP BY traceId
         LIMIT 1
         FORMAT JSON
 
@@ -6873,7 +6879,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:services:serviceHealthSnapshotQuery:envFiltered  [02bd4c03]
+-- builder:services:serviceHealthSnapshotQuery:envFiltered  [ad73e722]
 SELECT
           traces_aggregates_hourly.ServiceName AS serviceName,
           traces_aggregates_hourly.DeploymentEnv AS environment,
@@ -6884,7 +6890,7 @@ SELECT
         WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
           AND traces_aggregates_hourly.IsEntryPoint = 1
           AND traces_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND traces_aggregates_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND traces_aggregates_hourly.Hour < toStartOfHour(addSeconds(toDateTime('2026-01-03 14:15:00'), 3599))
           AND traces_aggregates_hourly.DeploymentEnv IN ('production')
         GROUP BY serviceName, environment
         ORDER BY requestCount DESC, serviceName ASC

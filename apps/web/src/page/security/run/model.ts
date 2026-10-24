@@ -86,7 +86,7 @@ export const Message = defineMessageUnion({
 	ClickedLoadOlder: {},
 	PickedUnitFilter: { filter: UnitFilter },
 	ToggledLedger: {},
-	ClickedStartRun: { budget: Schema.NullOr(Schema.Finite) },
+	ClickedStartRun: {},
 	CompletedStartRun: { result: Schema.Result(SecurityAuditRun, LoadFailure) },
 	ClickedCancel: {},
 	ClickedConfirmCancel: {},

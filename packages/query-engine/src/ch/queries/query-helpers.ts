@@ -207,6 +207,21 @@ export function utcHourFloor(name: string): CH.Expr<DateTime.Utc> {
 }
 
 /**
+ * A time param rounded up to its hour, the exclusive end of an hourly-rollup read: a window
+ * ending on the hour stops there instead of pulling in the hour it ends at.
+ */
+export function utcHourCeil(name: string): CH.Expr<DateTime.Utc> {
+	return CH.toStartOfHour(
+		CH.compileTypedFnCall(
+			"addSeconds",
+			T.dateTime.schema,
+			CH.toDateTime(utcSecondsParam(name)),
+			CH.lit(3599),
+		),
+	)
+}
+
+/**
  * The row shape every facet-sidebar query returns: one distinct value, how many
  * rows carry it, and which dimension it belongs to. Declared once and aliased
  * per query, so the seven callers keep their descriptive names (they are public

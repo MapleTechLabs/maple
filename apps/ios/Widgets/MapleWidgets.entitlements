@@ -9,5 +9,11 @@
 	<array>
 		<string>group.com.maple.mobile</string>
 	</array>
+	<!-- The DPoP signing keys the app creates for this extension. Only this
+	     group: Clerk's session group is deliberately not shared. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.maple.mobile.widget-keys</string>
+	</array>
 </dict>
 </plist>
