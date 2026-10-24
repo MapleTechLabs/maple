@@ -1,0 +1,350 @@
+import { parseBucketMs } from "@maple/ui/lib/format"
+import type { ApiBucket, ApiTotals, Endpoint, StatusRow } from "./model-tabs"
+
+// Pure halves of the API tab: status mix, KPI figures, the responses chart, the non-2xx breakdown,
+// the table filters and the drawer's latency distribution.
+
+/** The counters a status mix is read from (an endpoint, a bucket or the totals). */
+type StatusCounts = Readonly<{
+	httpStatusCount: number
+	http4xxCount: number
+	http5xxCount: number
+}>
+
+export type StatusMix = Readonly<{ ok: number; client: number; server: number }>
+
+/** Shares of 2xx (everything below 400), 4xx and 5xx; `null` when no span carried a status code. */
+export const statusMix = (counts: StatusCounts): StatusMix | null =>
+	counts.httpStatusCount <= 0
+		? null
+		: {
+				client: counts.http4xxCount / counts.httpStatusCount,
+				server: counts.http5xxCount / counts.httpStatusCount,
+				ok: Math.max(0, 1 - (counts.http4xxCount + counts.http5xxCount) / counts.httpStatusCount),
+			}
+
+/** Rows sealed before the status counters existed read as unknown, not as "no errors". */
+export const knownStatusMix = (
+	counts: StatusCounts & Readonly<{ httpClassifiedSpanCount: number }>,
+): StatusMix | null => (counts.httpClassifiedSpanCount <= 0 ? null : statusMix(counts))
+
+/** Bytes are exact counts of stored spans; the sampling weight scales them like the request rate. */
+const samplingScale = (totals: Readonly<{ spanCount: number; estimatedSpanCount: number }>) =>
+	totals.spanCount > 0 ? totals.estimatedSpanCount / totals.spanCount : 1
+
+export type ApiKpis = Readonly<{
+	requestsPerSecond: number
+	totalRequests: number
+	mix: StatusMix | null
+	p95DurationMs: number
+	/** p95 against the previous window of the same length, as a fraction; `null` without one. */
+	p95Change: number | null
+	bytesPerSecond: number | null
+	avgBodyBytes: number | null
+}>
+
+export const apiKpis = (totals: ApiTotals, previous: ApiTotals | null, seconds: number): ApiKpis => ({
+	requestsPerSecond: seconds > 0 ? totals.estimatedSpanCount / seconds : 0,
+	totalRequests: totals.estimatedSpanCount,
+	mix: knownStatusMix(totals),
+	p95DurationMs: totals.p95DurationMs,
+	p95Change:
+		previous === null || previous.p95DurationMs <= 0 || previous.spanCount === 0
+			? null
+			: (totals.p95DurationMs - previous.p95DurationMs) / previous.p95DurationMs,
+	bytesPerSecond:
+		totals.requestBodyCount === 0 || seconds <= 0
+			? null
+			: (totals.requestBodyBytes * samplingScale(totals)) / seconds,
+	avgBodyBytes: totals.requestBodyCount === 0 ? null : totals.requestBodyBytes / totals.requestBodyCount,
+})
+
+/** The selected window in epoch ms, so axes span all of it and not just the buckets with data. */
+export type WindowMs = Readonly<{ startMs: number; endMs: number }>
+
+/**
+ * The axis every bucket of the window sits on, a bucket apart. Anchored on a returned bucket so
+ * the slots line up with the warehouse's own grid; the warehouse leaves out buckets without
+ * traffic, so series are laid on this axis and zero-filled.
+ */
+export const bucketAxis = (
+	buckets: ReadonlyArray<ApiBucket>,
+	bucketSeconds: number,
+	window: WindowMs,
+): ReadonlyArray<number> => {
+	const step = Math.max(1, bucketSeconds) * 1000
+	const anchor = buckets.reduce<number | null>(
+		(found, bucket) => found ?? parseBucketMs(bucket.bucket),
+		null,
+	)
+	const origin = anchor ?? Math.floor(window.startMs / step) * step
+	// The first slot at or before the window start, the last one starting before its end.
+	const first = origin - Math.ceil((origin - window.startMs) / step) * step
+	const count = Math.max(0, Math.ceil((window.endMs - first) / step))
+	return Array.from({ length: count }, (_, index) => first + index * step)
+}
+
+/** `value` of each bucket on the axis, summed per slot, 0 where the read had none. */
+export const onAxis = (
+	axis: ReadonlyArray<number>,
+	buckets: ReadonlyArray<ApiBucket>,
+	value: (bucket: ApiBucket) => number,
+): ReadonlyArray<number> => {
+	const sums = buckets.reduce((acc, bucket) => {
+		const ms = parseBucketMs(bucket.bucket)
+		return ms === null ? acc : acc.set(ms, (acc.get(ms) ?? 0) + value(bucket))
+	}, new Map<number, number>())
+	return axis.map((time) => sums.get(time) ?? 0)
+}
+
+/** One series per KPI tile across the window; a silent bucket reads 0, not a gap. */
+export const kpiSparks = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number, window: WindowMs) => {
+	const axis = bucketAxis(buckets, bucketSeconds, window)
+	const perSecond = Math.max(1, bucketSeconds)
+	return {
+		requests: onAxis(axis, buckets, (bucket) => bucket.estimatedSpanCount / perSecond),
+		client: onAxis(axis, buckets, (bucket) => statusMix(bucket)?.client ?? 0),
+		server: onAxis(axis, buckets, (bucket) => statusMix(bucket)?.server ?? 0),
+		p95: onAxis(axis, buckets, (bucket) => bucket.p95DurationMs),
+		bytes: onAxis(axis, buckets, (bucket) => bucket.requestBodyBytes / perSecond),
+	}
+}
+
+export const STATUS_CLASSES = ["2xx", "4xx", "5xx", "unknown"] as const
+export type StatusClass = (typeof STATUS_CLASSES)[number]
+
+/**
+ * The responses chart's long rows: each bucket's request rate split by status class. A bucket
+ * sealed before the status counters existed is all "unknown", never 2xx.
+ */
+export const responseRows = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number, window: WindowMs) => {
+	const byTime = new Map(
+		buckets.flatMap((bucket) => {
+			const ms = parseBucketMs(bucket.bucket)
+			return ms === null ? [] : [[ms, bucket] as const]
+		}),
+	)
+	// Every slot of the window gets rows, so the x axis spans the window and quiet buckets read 0.
+	return bucketAxis(buckets, bucketSeconds, window).flatMap((ms) => {
+		const iso = new Date(ms).toISOString()
+		const bucket = byTime.get(ms)
+		if (bucket === undefined)
+			return [
+				{ bucket: iso, attributeValue: "2xx", value: 0 },
+				{ bucket: iso, attributeValue: "4xx", value: 0 },
+				{ bucket: iso, attributeValue: "5xx", value: 0 },
+			]
+		const rate = bucket.estimatedSpanCount / Math.max(1, bucketSeconds)
+		const mix = knownStatusMix(bucket)
+		if (mix === null) return [{ bucket: iso, attributeValue: "unknown", value: rate }]
+		return [
+			{ bucket: iso, attributeValue: "2xx", value: rate * mix.ok },
+			{ bucket: iso, attributeValue: "4xx", value: rate * mix.client },
+			{ bucket: iso, attributeValue: "5xx", value: rate * mix.server },
+		]
+	})
+}
+
+/** Whether any bucket's status mix is unknown, so the chart legend names the grey band. */
+export const hasUnknownBuckets = (buckets: ReadonlyArray<ApiBucket>) =>
+	buckets.some((bucket) => knownStatusMix(bucket) === null && bucket.estimatedSpanCount > 0)
+
+/** Status-code reason phrases the breakdown names; unknown codes print bare. */
+const REASON_PHRASES = new Map<string, string>([
+	["400", "Bad Request"],
+	["401", "Unauthorized"],
+	["402", "Payment Required"],
+	["403", "Forbidden"],
+	["404", "Not Found"],
+	["405", "Method Not Allowed"],
+	["408", "Request Timeout"],
+	["409", "Conflict"],
+	["410", "Gone"],
+	["413", "Content Too Large"],
+	["415", "Unsupported Media Type"],
+	["422", "Unprocessable Content"],
+	["429", "Too Many Requests"],
+	["499", "Client Closed Request"],
+	["500", "Internal Server Error"],
+	["501", "Not Implemented"],
+	["502", "Bad Gateway"],
+	["503", "Service Unavailable"],
+	["504", "Gateway Timeout"],
+])
+
+export const reasonPhrase = (code: string): string => REASON_PHRASES.get(code) ?? ""
+
+export const isServerError = (code: string) => code.startsWith("5")
+
+/** Codes 400 and up; 1xx-3xx are what the breakdown leaves out. */
+const isNonOk = (code: string) => Number(code) >= 400
+
+type Ranked = ReadonlyArray<Readonly<{ name: string; count: number }>>
+
+const ranked = (counts: ReadonlyMap<string, number>): Ranked =>
+	[...counts].map(([name, count]) => ({ name, count })).toSorted((a, b) => b.count - a.count)
+
+const add = (map: Map<string, number>, key: string, count: number) =>
+	map.set(key, (map.get(key) ?? 0) + count)
+
+export type StatusCodeSummary = Readonly<{
+	code: string
+	count: number
+	/** Share of every non-2xx response in the window. */
+	share: number
+	/** `error.type` values, most frequent first; empty values dropped. */
+	errorTypes: Ranked
+	/** Endpoints answering with this code, most frequent first. */
+	routes: Ranked
+}>
+
+/** The non-2xx responses by status code, busiest first. */
+export const statusCodeSummaries = (rows: ReadonlyArray<StatusRow>): ReadonlyArray<StatusCodeSummary> => {
+	const groups = rows
+		.filter((row) => isNonOk(row.httpStatusCode))
+		.reduce((acc, row) => {
+			const entry = acc.get(row.httpStatusCode) ?? {
+				count: 0,
+				errorTypes: new Map<string, number>(),
+				routes: new Map<string, number>(),
+			}
+			entry.count += row.estimatedSpanCount
+			if (row.errorType !== "") add(entry.errorTypes, row.errorType, row.estimatedSpanCount)
+			add(entry.routes, row.spanName, row.estimatedSpanCount)
+			return acc.set(row.httpStatusCode, entry)
+		}, new Map<string, { count: number; errorTypes: Map<string, number>; routes: Map<string, number> }>())
+	const total = [...groups.values()].reduce((sum, entry) => sum + entry.count, 0)
+	return [...groups]
+		.map(([code, entry]) => ({
+			code,
+			count: entry.count,
+			share: total > 0 ? entry.count / total : 0,
+			errorTypes: ranked(entry.errorTypes),
+			routes: ranked(entry.routes),
+		}))
+		.toSorted((a, b) => b.count - a.count)
+}
+
+/** Every status code of one endpoint (2xx included), busiest first, with its share of the endpoint. */
+export const endpointStatusCodes = (rows: ReadonlyArray<StatusRow>, spanName: string) => {
+	const counts = rows
+		.filter((row) => row.spanName === spanName)
+		.reduce((acc, row) => add(acc, row.httpStatusCode, row.estimatedSpanCount), new Map<string, number>())
+	const total = [...counts.values()].reduce((sum, count) => sum + count, 0)
+	return ranked(counts).map((entry) => ({ ...entry, share: total > 0 ? entry.count / total : 0 }))
+}
+
+/** "/v1/traces, /v1/logs +3": the leading routes of a code, by their path only. */
+export const routeList = (routes: Ranked, shown = 2): string => {
+	// GET and POST of one path read the same once the method is dropped: list each path once.
+	const all = [...new Set(routes.map((route) => route.name.slice(route.name.indexOf(" ") + 1)))]
+	const paths = all.slice(0, shown)
+	const rest = all.length - shown
+	return rest > 0 ? `${paths.join(", ")} +${rest}` : paths.join(", ")
+}
+
+export const ENDPOINT_FILTERS = ["all", "rejecting", "slow"] as const
+export type EndpointFilter = (typeof ENDPOINT_FILTERS)[number]
+
+/** A response share above this marks an endpoint as rejecting. */
+export const REJECTING_SHARE = 0.05
+/** A p95 above this marks an endpoint as slow. */
+export const SLOW_P95_MS = 100
+
+export const ENDPOINT_FILTER_LABELS = {
+	all: "All",
+	rejecting: "Rejecting > 5%",
+	slow: "p95 > 100ms",
+} as const satisfies Record<EndpointFilter, string>
+
+/**
+ * An endpoint's 5xx share; rows older than the status counters fall back to their Error-status
+ * share, which for server spans is the 5xx share by convention.
+ */
+export const serverShare = (endpoint: Endpoint): number =>
+	knownStatusMix(endpoint)?.server ?? endpoint.errorRate
+
+export const matchesFilter = (endpoint: Endpoint, filter: EndpointFilter, query: string): boolean => {
+	const needle = query.trim().toLowerCase()
+	if (needle !== "" && !endpoint.spanName.toLowerCase().includes(needle)) return false
+	switch (filter) {
+		case "all":
+			return true
+		case "rejecting":
+			return (knownStatusMix(endpoint)?.client ?? 0) + serverShare(endpoint) > REJECTING_SHARE
+		case "slow":
+			return endpoint.p95DurationMs > SLOW_P95_MS
+	}
+}
+
+/** The endpoint the "slowest" badge marks: the worst p95, when it is past the slow line. */
+export const slowestEndpoint = (endpoints: ReadonlyArray<Endpoint>): string | null => {
+	const worst = endpoints.reduce<Endpoint | null>(
+		(acc, endpoint) => (acc === null || endpoint.p95DurationMs > acc.p95DurationMs ? endpoint : acc),
+		null,
+	)
+	return worst !== null && worst.p95DurationMs > SLOW_P95_MS ? worst.spanName : null
+}
+
+export type HistogramBin = Readonly<{
+	fromMs: number
+	toMs: number
+	/** Share of requests in the bin, 0-1. */
+	share: number
+	/** Which percentile band the bin's upper edge falls in, for its colour. */
+	band: "p50" | "p95" | "p99"
+}>
+
+const HISTOGRAM_BINS = 10
+const MIN_LATENCY_MS = 0.01
+
+/**
+ * The latency distribution from a few quantiles: log-spaced bins between the lowest and highest
+ * quantile, each holding the probability mass the piecewise-linear (in log time) CDF puts in it.
+ */
+export const latencyHistogram = (
+	levels: ReadonlyArray<number>,
+	valuesMs: ReadonlyArray<number>,
+): ReadonlyArray<HistogramBin> => {
+	// t-digest quantiles can dip out of order; a running max keeps the CDF monotone.
+	const points = levels
+		.map((level, index) => ({ level, ms: Math.max(MIN_LATENCY_MS, valuesMs[index] ?? 0) }))
+		.filter((point) => Number.isFinite(point.ms))
+		.reduce<Array<{ level: number; ms: number }>>(
+			(acc, point) => [
+				...acc,
+				{ level: point.level, ms: Math.max(point.ms, acc[acc.length - 1]?.ms ?? 0) },
+			],
+			[],
+		)
+	const first = points[0]
+	const last = points[points.length - 1]
+	if (first === undefined || last === undefined || last.ms <= first.ms) return []
+	const logOf = (ms: number) => Math.log10(Math.max(MIN_LATENCY_MS, ms))
+	const cdf = (ms: number): number => {
+		const x = logOf(ms)
+		if (x <= logOf(first.ms)) return first.level
+		if (x >= logOf(last.ms)) return last.level
+		const upper = points.findIndex((point) => logOf(point.ms) >= x)
+		const hi = points[upper]
+		const lo = points[upper - 1]
+		if (hi === undefined || lo === undefined) return last.level
+		const span = logOf(hi.ms) - logOf(lo.ms)
+		return span <= 0 ? hi.level : lo.level + ((x - logOf(lo.ms)) / span) * (hi.level - lo.level)
+	}
+	const quantileAt = (level: number) => points.find((point) => point.level >= level)?.ms ?? last.ms
+	const p95 = quantileAt(0.95)
+	const p99 = quantileAt(0.99)
+	const step = (logOf(last.ms) - logOf(first.ms)) / HISTOGRAM_BINS
+	const mass = last.level - first.level
+	return Array.from({ length: HISTOGRAM_BINS }, (_, index) => {
+		const fromMs = 10 ** (logOf(first.ms) + step * index)
+		const toMs = 10 ** (logOf(first.ms) + step * (index + 1))
+		return {
+			fromMs,
+			toMs,
+			share: mass > 0 ? (cdf(toMs) - cdf(fromMs)) / mass : 0,
+			band: toMs <= p95 ? "p50" : toMs <= p99 ? "p95" : "p99",
+		}
+	})
+}

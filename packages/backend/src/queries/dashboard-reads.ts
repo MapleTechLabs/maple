@@ -20,7 +20,10 @@ import { Cause, Clock, DateTime, Effect, Option, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { partitionWindowAround } from "@maple/backend/queries/query-helpers"
 import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/query-runner"
-import { isMissingServiceOperationsRollup } from "@maple/backend/services/warehouse/missing-table"
+import {
+	isMissingServiceApiColumns,
+	isMissingServiceOperationsRollup,
+} from "@maple/backend/services/warehouse/missing-table"
 import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 
 /** Sets one attribute on a span chosen by the caller. */
@@ -91,6 +94,12 @@ const withServiceOperationsFallback = makeRollupFallback(
 	"service_operations rollup is absent on this cluster; reading raw traces. Apply ClickHouse schema to restore the fast path.",
 )
 
+// The API tab's reads also degrade when the rollups exist but predate migration 0048.
+export const withServiceApiFallback = makeRollupFallback(
+	(error) => isMissingServiceOperationsRollup(error) || isMissingServiceApiColumns(error),
+	"service_operations rollup lacks migration 0048; reading raw traces. Apply ClickHouse schema to restore the fast path.",
+)
+
 /** Operation rows are cached this long, keyed on the request payload. */
 const SERVICE_OPERATIONS_CACHE_SECONDS = 30
 
@@ -154,7 +163,7 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 	 */
 	const operationRowsWithSparklines = (
 		tenant: TenantContext,
-		payload: ServiceOperationsRequest | ServiceEndpointsRequest,
+		payload: ServiceOperationsRequest,
 		queries: {
 			readonly summary: QueryDefinition<ServiceOperationsRequest, CH.ServiceOperationsSummaryOutput>
 			readonly summaryRaw: QueryDefinition<ServiceOperationsRequest, CH.ServiceOperationsSummaryOutput>
@@ -260,23 +269,47 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 			),
 		)
 
-	/** The service detail API tab: HTTP endpoints only, no sparklines. */
+	/**
+	 * The service detail API tab: HTTP endpoints with their status and body counters, no
+	 * sparklines. Its own cache key: the rows gained fields, so older cached rows never serve.
+	 */
 	const serviceEndpoints = (tenant: TenantContext, payload: ServiceEndpointsRequest) =>
 		Effect.flatMap(callerSpanAnnotator, (annotate) =>
 			queryEngine.cachedDirect(
 				tenant,
-				"serviceEndpoints",
+				"serviceEndpointsHttp",
 				payload,
-				operationRowsWithSparklines(
-					tenant,
-					payload,
-					{
-						summary: Queries.serviceEndpointsSummary,
-						summaryRaw: Queries.serviceEndpointsSummaryRaw,
-						label: "serviceEndpoints",
-						sparklines: false,
-					},
+				mapExecError(
+					withServiceApiFallback(
+						(t, pl) => runQuery(Queries.serviceEndpointsSummary, t, pl),
+						(t, pl) => runQuery(Queries.serviceEndpointsSummaryRaw, t, pl),
+						tenant,
+						payload,
+						annotate,
+					),
+					"serviceEndpoints query failed",
 					annotate,
+				).pipe(
+					Effect.map((rows) =>
+						rows.map((row) => ({
+							spanName: row.spanName,
+							spanCount: row.spanCount,
+							estimatedSpanCount: row.estimatedSpanCount,
+							errorCount: row.errorCount,
+							estimatedErrorCount: row.estimatedErrorCount,
+							errorRate: row.errorRate,
+							avgDurationMs: row.avgDurationMs,
+							p50DurationMs: row.p50DurationMs,
+							p95DurationMs: row.p95DurationMs,
+							p99DurationMs: row.p99DurationMs,
+							httpClassifiedSpanCount: row.httpClassifiedSpanCount,
+							httpStatusCount: row.httpStatusCount,
+							http4xxCount: row.http4xxCount,
+							http5xxCount: row.http5xxCount,
+							requestBodyBytes: row.requestBodyBytes,
+							requestBodyCount: row.requestBodyCount,
+						})),
+					),
 				),
 				SERVICE_OPERATIONS_CACHE_SECONDS,
 			),
