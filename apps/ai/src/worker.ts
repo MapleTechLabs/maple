@@ -32,6 +32,7 @@ import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer, Option } from "effect"
 import { ChatSessionObject } from "@maple/backend/platform/chat-sessions"
 import { ChatSessionLive } from "./chat/ChatSession"
+import SecurityAuditWorkflow from "./security-audit/SecurityAuditWorkflow"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { WorkersAiGateway } from "./platform/WorkersAiHttpClient"
 import { aiPorts, AiBindingsLive, bindAiClients, WorkersAiGatewayLive } from "./worker/bindings"
@@ -83,6 +84,9 @@ const props = Effect.gen(function* () {
 		workersDev: false,
 		// Same as api: keeps DB graph init off the first Postgres dial (docs/infra.md).
 		build: { output: { strictExecutionOrder: false } },
+		// A security-audit Workflow step is one agent run that parses up to 20 minutes of streamed
+		// model output; the paid-plan ceiling keeps it inside one step's CPU budget.
+		limits: { cpuMs: 300_000 },
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...mapleDbEnv(db, "ai"),
@@ -102,9 +106,11 @@ export default MapleAi.make(
 	Effect.gen(function* () {
 		// Yielding the hosted DO binds, registers and exports it. Its hosting must not move.
 		const chatSessions = yield* ChatSessionObject
+		// Yielding the Workflow binds, registers and exports it from this Worker, where the agents run.
+		const audits = yield* SecurityAuditWorkflow
 		const clients = yield* bindAiClients
 		const env = yield* Cloudflare.WorkerEnvironment
-		const ports = aiPorts(clients, env, yield* WorkersAiGateway, chatSessions)
+		const ports = aiPorts(clients, env, yield* WorkersAiGateway, chatSessions, audits)
 		// Captured before any event, so the first request's context cannot leak into later ones.
 		const isolate = isolateContext(yield* Effect.context())
 		const app = yield* cachedRecoverable(buildApp(isolate, ports))
