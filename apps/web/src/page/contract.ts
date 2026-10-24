@@ -8,6 +8,7 @@ import type { IntegrationFlags } from "../data/infra-surfaces"
 import type { Resources } from "../platform/resources"
 import type { AppRoute, RouteTag } from "../route"
 import type { BreadcrumbEntry } from "../shell"
+import type { NavSurface } from "../shell/nav"
 import { ToastType } from "../ui/toast"
 
 /** The page contract: every routed page is a Submodel registered once in `registry.ts`. See s8-pages.md. */
@@ -31,6 +32,8 @@ export interface ShellInfraSurfaces {
 	/** The probe failed: `presence` stays `null` for good, so readers stop waiting on it. */
 	readonly isPresenceFailed: boolean
 	readonly integrations: IntegrationFlags
+	/** The org's surfaces as of its last visit, until the live answer is complete. */
+	readonly remembered: ReadonlyArray<NavSurface> | undefined
 }
 
 export interface PageViewInputs {
@@ -163,6 +166,8 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly revive?: (model: Model, route: RouteOf<Tags>, context: PageContext) => PageReturn<Model, Message>
 	/** The namespace pin or time zone changed (an org change builds a new instance). */
 	readonly contextChanged?: (model: Model, context: PageContext) => PageReturn<Model, Message>
+	/** Every integration status answered, after the page may have entered without them. */
+	readonly infraSurfacesSettled?: (model: Model, context: PageContext) => PageReturn<Model, Message>
 	readonly view: Submodel.View<Model, Message, PageViewInputs>
 	readonly subscriptions?: Subscription.Subscriptions<PageSubscriptionInput<Model>, Message, Resources>
 	/** `DashboardPage`'s `breadcrumbs`. */
@@ -388,6 +393,17 @@ export const definePage = <
 		contextChanged: (slot: PageSlotBase, context: PageContext) =>
 			isOwnSlot(slot) && spec.contextChanged
 				? Option.some(step(slot.key, slot.instance, context, spec.contextChanged(slot.model, context)))
+				: Option.none<PageStep<SlotType, WrappedType>>(),
+		infraSurfacesSettled: (slot: PageSlotBase, context: PageContext) =>
+			isOwnSlot(slot) && spec.infraSurfacesSettled
+				? Option.some(
+						step(
+							slot.key,
+							slot.instance,
+							context,
+							spec.infraSurfacesSettled(slot.model, context),
+						),
+					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		breadcrumbs: (slot: PageSlotBase): ReadonlyArray<BreadcrumbEntry> =>
 			isOwnSlot(slot) ? spec.breadcrumbs(slot.model) : [],

@@ -27,14 +27,21 @@ const scopeOf = (model: Model, context: PageContext): Frame.Scope => ({
 	timeZone: context.timeZone,
 })
 
-/** The sources presence shows (every one until it is known, `presentSources(null)`); each mounts its read. */
-const requestSources = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+/** The sources the org has, once that is known; each mounts its read. `onlyNew` skips any already asked for. */
+const requestSources = (
+	model: Model,
+	context: PageContext,
+	mode: Frame.RequestMode,
+	onlyNew = false,
+): Return => {
 	const window = model.frame.window
-	if (window === null) return { model }
+	const known = presentSources(surfacesOf(model, context))
+	if (window === null || known === null) return { model }
+	const sources = onlyNew ? known.filter((source) => model.sources[source].key === null) : known
 	const input = { startTime: window.startTime, endTime: window.endTime }
 	const requested = seriesSteps<SourceReading, LoadFailure, Message>(
 		model.sources,
-		presentSources(surfacesOf(model, context)).map((source) => ({
+		sources.map((source) => ({
 			id: source,
 			key: requestKey(context.orgId, `infraOverview.${source}`, { data: input }),
 			fetch: (key: string) => FetchSource({ source, key, window }),
@@ -103,6 +110,10 @@ export const routeChanged = (model: Model, route: { readonly search: Search }, c
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
+
+/** The statuses landed after the probe: read the sources that just became known, nothing else. */
+export const infraSurfacesSettled = (model: Model, context: PageContext): Return =>
+	requestSources(model, context, "Load", true)
 
 const navigate = (model: Model, search: Search): Return => ({
 	model,

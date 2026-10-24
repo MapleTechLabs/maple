@@ -1,16 +1,18 @@
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
-import { Option, Record } from "effect"
+import { Array, Equal, Option, Record } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import * as Dialog from "../ui/dialog"
 import * as Tooltip from "../ui/tooltip"
 import type { Resources } from "../platform/resources"
+import { integrationsAnswered, PENDING_INTEGRATIONS, settledSurfaces } from "../data/infra-surfaces"
 import {
 	FocusElement,
 	FocusSiblingMenuItem,
 	FocusShortcutSearch,
 	LogOut,
 	OpenGlobalChat,
+	SaveInfraSurfaces,
 	SaveNamespace,
 	SaveSidebarState,
 	SaveTheme,
@@ -43,7 +45,7 @@ import {
 	initRightSheet,
 	type Model,
 	NamespacesData,
-	NO_INTEGRATIONS,
+	shellProbe,
 	TenantData,
 } from "./model"
 
@@ -69,7 +71,7 @@ export const enter =
 			hasRequestedSidebarData: () => false,
 			// Nothing read for the previous org (an in-place org change) carries over.
 			infraPresence: () => InfraPresenceData.Idle(),
-			integrations: () => NO_INTEGRATIONS,
+			integrations: () => PENDING_INTEGRATIONS,
 			dashboards: () => DashboardsData.Idle(),
 			namespaces: () => NamespacesData.Idle(),
 		})
@@ -143,6 +145,32 @@ const readNamespaces = (model: Model): UpdateReturn =>
 const forOrg = (model: Model, orgId: string, apply: (model: Model) => Model): UpdateReturn => ({
 	model: Option.contains(model.maybeOrgId, orgId) ? apply(model) : model,
 })
+
+/** Once the org's live surfaces are complete, remember them if they changed. */
+const rememberSettled = (orgId: string, step: UpdateReturn): UpdateReturn => {
+	const model = step.model
+	const settled = settledSurfaces(shellProbe(model), model.integrations)
+	const remembered = model.rememberedSurfaces[orgId]
+	if (
+		settled === null ||
+		(remembered !== undefined && Array.makeEquivalence(Equal.equals)(remembered, settled))
+	)
+		return step
+	return {
+		model: modifyFields(model, { rememberedSurfaces: (all) => Record.set(all, orgId, settled) }),
+		commands: [SaveInfraSurfaces({ orgId, surfaces: settled })],
+	}
+}
+
+/** A probe or status answer for the org; the last status to answer tells the pages. */
+const surfacesAnswered = (model: Model, orgId: string, apply: (model: Model) => Model): UpdateReturn => {
+	// A late answer for an org the shell has left must not file this org's set under it.
+	if (!Option.contains(model.maybeOrgId, orgId)) return { model }
+	const step = rememberSettled(orgId, { model: apply(model) })
+	return !integrationsAnswered(model.integrations) && integrationsAnswered(step.model.integrations)
+		? { ...step, outMessage: OutMessage.SettledInfraSurfaces() }
+		: step
+}
 
 const toChecklist = Command.mapMessage((message: Checklist.Message) =>
 	Message.GotChecklistMessage({ message }),
@@ -369,6 +397,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		CompletedFocusElement: () => ({ model }),
 		CompletedSaveTheme: () => ({ model }),
 		CompletedSaveNamespace: () => ({ model }),
+		CompletedSaveInfraSurfaces: () => ({ model }),
 		CompletedSaveSidebarState: () => ({ model }),
 		CompletedLogOut: () => ({ model }),
 		ElapsedVersionPollInterval: () => ({ model, commands: [CheckDeployedCommit()] }),
@@ -391,23 +420,23 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		}),
 		// Org-stamped answers: one for an org the shell has left is dropped.
 		SucceededLoadInfraPresence: ({ orgId, surfaces }) =>
-			forOrg(model, orgId, (current) =>
+			surfacesAnswered(model, orgId, (current) =>
 				modifyFields(current, { infraPresence: () => InfraPresenceData.Success({ data: surfaces }) }),
 			),
 		FailedLoadInfraPresence: ({ orgId }) =>
-			forOrg(model, orgId, (current) =>
+			surfacesAnswered(model, orgId, (current) =>
 				modifyFields(current, {
 					infraPresence: () => InfraPresenceData.Failure({ error: "Failed" }),
 				}),
 			),
 		SucceededLoadIntegration: ({ orgId, integration, isConnected }) =>
-			forOrg(model, orgId, (current) =>
+			surfacesAnswered(model, orgId, (current) =>
 				modifyFields(current, {
 					integrations: (known) => ({ ...known, [integration]: isConnected }),
 				}),
 			),
 		FailedLoadIntegration: ({ orgId, integration }) =>
-			forOrg(model, orgId, (current) =>
+			surfacesAnswered(model, orgId, (current) =>
 				modifyFields(current, { integrations: (known) => ({ ...known, [integration]: false }) }),
 			),
 		// A result for an org the shell has left is dropped.
