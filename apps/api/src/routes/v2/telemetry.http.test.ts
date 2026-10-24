@@ -1018,6 +1018,10 @@ const recordingQueryEngine = (calls: CachedDirectCall[]): QueryEngineServiceApi 
 	},
 })
 
+/** A row the stub cannot decode fails the way the real service reports a bad result. */
+const asWarehouseFailure = (error: { readonly message: string }) =>
+	new WarehouseQueryError({ message: error.message, pipeName: "stub" })
+
 const observingWarehouse = (
 	observedSql: string[],
 	rows: (sql: string) => ReadonlyArray<Record<string, unknown>> = rowsForSql,
@@ -1026,14 +1030,17 @@ const observingWarehouse = (
 	compiledQuery: (_tenant, compiled) => {
 		const sql = compiledQueryOf(compiled).sql
 		observedSql.push(sql)
-		return compiledQueryOf(compiled).decodeRows(rows(sql))
+		return compiledQueryOf(compiled).decodeRows(rows(sql)).pipe(Effect.mapError(asWarehouseFailure))
 	},
 	compiledQueryFirst: (_tenant, compiled) => {
 		const sql = compiledQueryOf(compiled).sql
 		observedSql.push(sql)
 		return compiledQueryOf(compiled)
 			.decodeRows(rows(sql))
-			.pipe(Effect.map((decoded) => Option.fromNullishOr(decoded[0])))
+			.pipe(
+				Effect.mapError(asWarehouseFailure),
+				Effect.map((decoded) => Option.fromNullishOr(decoded[0])),
+			)
 	},
 })
 
