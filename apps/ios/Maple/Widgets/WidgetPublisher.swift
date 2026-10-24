@@ -535,8 +535,8 @@ final class WidgetPublisher {
 	///
 	/// Renewal is the app's job and only the app's: a widget credential does not
 	/// carry the scope to mint, so it cannot extend its own life. That is why the
-	/// renewal window is a week — a phone opened at weekends must not be one bad
-	/// Monday from a Home Screen that has gone quiet with no way back.
+	/// renewal window (`WidgetCredential.renewalLead`, four days of fourteen)
+	/// leaves room for a phone opened only every few days.
 	private func ensureCredentials(for organizations: [WidgetOrganization], context: Context) async {
 		let now = Date()
 		let installationId = AppInstallation.identifier

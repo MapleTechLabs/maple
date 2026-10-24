@@ -632,7 +632,7 @@ struct FixtureAPI: MapleAPI {
 			organizationId: FixtureSession.organizationId,
 			secret: "maple_ak_fixture",
 			apiBaseURL: URL(string: "https://fixtures.maple.invalid")!,
-			expiresAt: now.addingTimeInterval(30 * 24 * 60 * 60),
+			expiresAt: now.addingTimeInterval(14 * 24 * 60 * 60),
 			mintedAt: now
 		)
 	}
