@@ -618,6 +618,15 @@ export class PrReviewConversationService extends Context.Service<
 						// The approval covers the commit it ran on, not one pushed since.
 						if (pr.state !== "open" || pr.headSha !== job.headSha)
 							return yield* annotate("head_moved", { "vcs.pull_request.number": number })
+						// And the pull request it ran for: the author gate is waived on this identity.
+						if (
+							pr.headRef !== job.headBranch ||
+							pr.headRepoFullName?.toLowerCase() !== job.headRepoFullName.toLowerCase() ||
+							pr.authorLogin?.toLowerCase() !== job.authorLogin.toLowerCase()
+						)
+							return yield* annotate("other_pull_request", {
+								"vcs.pull_request.number": number,
+							})
 						const outcome = yield* reviews.onCiApproved(orgId, reviewJobFor(job, pr))
 						yield* annotate(outcome.outcome, {
 							"vcs.pull_request.number": number,
