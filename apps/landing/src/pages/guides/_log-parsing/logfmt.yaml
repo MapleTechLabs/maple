@@ -1,0 +1,11 @@
+receivers:
+    file_log/worker:
+        include: [/var/log/worker/worker.log]
+        operators:
+            - type: key_value_parser
+              timestamp:
+                  parse_from: attributes.time
+                  layout_type: gotime
+                  layout: "2006-01-02T15:04:05Z07:00"
+              severity:
+                  parse_from: attributes.level

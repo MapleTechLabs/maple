@@ -106,6 +106,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [What is Apdex, and how do you use the score?](${url("/guides/what-is-apdex")})`,
 		`- [Uptime monitoring with traces and HTTP checks](${url("/guides/uptime-monitoring")})`,
 		`- [Prometheus metrics, explained](${url("/guides/prometheus-metrics")})`,
+		`- [Log parsing: from raw lines to structured fields](${url("/guides/log-parsing")})`,
 		`- [What is observability?](${url("/observability")})`,
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
