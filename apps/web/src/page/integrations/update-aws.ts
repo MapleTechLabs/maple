@@ -267,7 +267,11 @@ export const completedDisconnect = (
 	const stacks = [removed, ...card.removed.filter((stack) => stack.connectionId !== removed.connectionId)]
 	return chain(
 		// `disconnectId` stays: the closing dialog still names the account.
-		withCard(settled, { removed: stacks, setupId: card.setupId === id ? null : card.setupId }),
+		withCard(settled, {
+			removed: stacks,
+			setupId: card.setupId === id ? null : card.setupId,
+			flowId: card.flowId === id ? null : card.flowId,
+		}),
 		[
 			(next) =>
 				next.awsCard.disconnectId === id

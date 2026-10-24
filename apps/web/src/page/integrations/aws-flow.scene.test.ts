@@ -86,6 +86,43 @@ describe("aws connect flow", () => {
 		)
 	})
 
+	test("after the flow's own account is disconnected, Connect asks for an account again", () => {
+		const made = withConnections([connection()])
+		const id = idOf(made)
+		if (id === null) return expect.unreachable("the loaded status lists the connection")
+		const flowing: Model = {
+			...made,
+			integrations: { ...made.integrations, awsCard: { ...made.integrations.awsCard, flowId: id } },
+		}
+		const disconnected = inner(
+			flowing,
+			IntegrationMessage.CompletedAwsDisconnect({
+				id,
+				removed: { connectionId: id, accountId: "123456789012", cleanupScript: "echo done" },
+				error: null,
+			}),
+		)
+		const reloaded = inner(
+			disconnected,
+			IntegrationMessage.CompletedLoadAws({
+				key: disconnected.integrations.statuses.aws.key ?? "",
+				result: Result.succeed(
+					Schema.decodeUnknownSync(V2AwsIntegration)({
+						object: "aws_integration",
+						available: true,
+						modules: [],
+						connections: [],
+					}),
+				),
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(reloaded),
+			expectView(text("Deploy a read-only role")).toExist(),
+		)
+	})
+
 	test("a stack not deployed yet waits for the role; a refused check says why", () => {
 		scene(
 			{ update: pageUpdate, view },

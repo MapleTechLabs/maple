@@ -303,6 +303,13 @@ const checkGlyph = <M>(h: HtmlBuilder<M>, state: CheckState): Html =>
 		? spinner(h, "text-primary", 16)
 		: icon(h, CHECK_ICON[state].name, { size: 16, className: CHECK_ICON[state].className })
 
+/** What a screen reader hears when polling moves a row: counts only, so ticking times stay quiet. */
+const checklistSummary = (rows: ReadonlyArray<CheckRow>): string => {
+	const done = rows.filter((row) => row.state === "done").length
+	const failed = rows.filter((row) => row.state === "failed").length
+	return `${done} of ${rows.length} checks done${failed === 0 ? "" : `, ${failed} need attention`}.`
+}
+
 /** Go live's one checklist: access works, resources found, first data. */
 export const liveChecklist = <M>(
 	h: HtmlBuilder<M>,
@@ -322,6 +329,10 @@ export const liveChecklist = <M>(
 						? []
 						: [h.span([h.Class("text-xs text-muted-foreground")], [options.meta])]),
 				],
+			),
+			h.p(
+				[h.Class("sr-only"), h.AriaLive("polite"), h.AriaAtomic(true)],
+				[checklistSummary(options.rows)],
 			),
 			h.ol(
 				[h.Class("flex flex-col")],
