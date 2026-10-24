@@ -1004,12 +1004,12 @@ const toOverviewPoints = (
 
 const baselineKey = (serviceName: string, environment: string) => JSON.stringify([serviceName, environment])
 
-/** Baseline p95 per (service, environment); of several namespaces, the busiest one's. */
+/** Baseline per (service, environment); of several namespaces, the busiest one's. */
 const baselineByServiceEnvironment = (rows: ReadonlyArray<CH.ServiceHealthBaselineOutput>) =>
 	new Map(
 		[...rows]
 			.sort((left, right) => left.baselineSpanCount - right.baselineSpanCount)
-			.map((row) => [baselineKey(row.serviceName, row.environment), row.baselineP95LatencyMs] as const),
+			.map((row) => [baselineKey(row.serviceName, row.environment), row] as const),
 	)
 
 const isoAt = (epochMs: number): Timestamp => timestamp(new Date(epochMs).toISOString())
@@ -1175,13 +1175,16 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							],
 							{ concurrency: 3 },
 						)
-						const services = current.map((entry) => ({
-							...entry,
-							baseline_p95_latency_ms:
-								baselineMap.get(
-									baselineKey(entry.service_name, entry.deployment_environment ?? ""),
-								) ?? null,
-						}))
+						const services = current.map((entry) => {
+							const baseline = baselineMap.get(
+								baselineKey(entry.service_name, entry.deployment_environment ?? ""),
+							)
+							return {
+								...entry,
+								baseline_p95_latency_ms: baseline?.baselineP95LatencyMs ?? null,
+								baseline_span_count: baseline?.baselineSpanCount ?? null,
+							}
+						})
 						return {
 							object: "service_health" as const,
 							// The whole hours actually read, which every rate here is per.

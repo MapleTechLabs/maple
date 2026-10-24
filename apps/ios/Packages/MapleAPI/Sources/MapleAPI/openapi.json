@@ -5176,6 +5176,9 @@
           "baseline_p95_latency_ms": {
             "type": "number"
           },
+          "baseline_span_count": {
+            "type": "number"
+          },
           "deployment_environment": {
             "type": "string"
           },
