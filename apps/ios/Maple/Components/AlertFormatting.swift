@@ -183,6 +183,29 @@ extension Format {
 		return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
 	}
 
+	/// `9:41`: the locale's clock without its AM/PM marker, for chart axes and
+	/// timelines that have no room for it.
+	static func clock(_ date: Date) -> String {
+		clockFormatter.string(from: date)
+			.replacingOccurrences(of: clockFormatter.amSymbol, with: "")
+			.replacingOccurrences(of: clockFormatter.pmSymbol, with: "")
+			.trimmingCharacters(in: .whitespaces)
+	}
+
+	private static let clockFormatter: DateFormatter = {
+		let formatter = DateFormatter()
+		formatter.setLocalizedDateFormatFromTemplate("jmm")
+		return formatter
+	}()
+
+	/// `timelineTime`, but a bare `9:41` for today.
+	static func timelineClock(_ timestamp: String) -> String {
+		guard let date = ResolvedTimeWindow.parse(timestamp), Calendar.current.isDateInToday(date) else {
+			return timelineTime(timestamp)
+		}
+		return clock(date)
+	}
+
 	/// "32m", "3h 12m", "2d 4h" — how long something has been going on. Terse
 	/// like `lastSeen`, but two units once it passes an hour, because "3h" for
 	/// an incident hides whether it's fresh or nearly four.

@@ -36,17 +36,41 @@ extension FixtureAPI {
 	}
 
 	func previewAlertRule(_ rule: AlertRule, window: ResolvedTimeWindow) async throws -> AlertRulePreview {
-		let checks = try await alertRuleChecks(ruleId: rule.id, groupKey: nil, since: window.start, limit: 30)
-		let points = checks.map { check in
-			AlertRulePreviewPoint(
-				bucket: check.timestamp,
+		try await pause()
+		// 20 bars over the window: calm, a ramp that crosses the threshold at the
+		// window's incident's first trigger, a plateau, then calm once resolved.
+		let open = incidents.first { incident in
+			guard incident.ruleId == rule.id, let at = ResolvedTimeWindow.parse(incident.firstTriggeredAt) else { return false }
+			return at >= window.start && at <= window.end
+		}
+		let trigger = open.flatMap { ResolvedTimeWindow.parse($0.firstTriggeredAt) }
+		let resolved = open?.resolvedAt.flatMap(ResolvedTimeWindow.parse) ?? .distantFuture
+		let bucket = max(60, (window.end.timeIntervalSince(window.start) / 20 / 60).rounded() * 60)
+		let count = max(2, Int(window.end.timeIntervalSince(window.start) / bucket))
+		let calm = rule.threshold * 0.3
+		let peak = max(open?.lastObservedValue ?? rule.threshold * 0.6, rule.threshold * 1.2)
+		let points = (0..<count).map { index in
+			let at = window.start.addingTimeInterval(bucket * Double(index))
+			let wobble = 1 + 0.08 * sin(Double(index) * 1.7)
+			let value: Double
+			if let trigger, at < resolved {
+				// -1 at 10 minutes before the trigger, 0 at the trigger, 1 at 10 after.
+				let phase = at.timeIntervalSince(trigger) / 600
+				let ramp = min(1, max(0, (phase + 1) / 2))
+				let crossing = rule.threshold * 1.15
+				value = (phase < 0 ? calm + (crossing - calm) * ramp * ramp : crossing + (peak - crossing) * min(1, phase)) * wobble
+			} else {
+				value = calm * wobble
+			}
+			return AlertRulePreviewPoint(
+				bucket: ResolvedTimeWindow.format(at),
 				sampleCount: 120,
-				status: check.status == .breached ? .breached : .healthy,
-				value: check.observedValue
+				status: value > rule.threshold ? .breached : .healthy,
+				value: value
 			)
 		}
 		return AlertRulePreview(
-			bucketSeconds: 60,
+			bucketSeconds: bucket,
 			comparator: rule.comparator,
 			object: .alertRule_preview,
 			series: [.init(groupKey: "__total__", points: points)],
