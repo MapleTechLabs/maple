@@ -182,7 +182,18 @@ const endpointRow = (
 											),
 										]
 									: []),
-								h.span([h.Class("text-foreground")], [tail]),
+								h.span(
+									[
+										// A shared index row reads as its method on narrow screens; the header names the path.
+										h.Class(
+											cn(
+												"text-foreground",
+												isRouteShared && tail === "(index)" && "hidden md:inline",
+											),
+										),
+									],
+									[tail],
+								),
 							]),
 							...(isSlowest
 								? [
