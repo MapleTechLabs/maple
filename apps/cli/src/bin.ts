@@ -18,6 +18,7 @@ import {
 import { TelemetryLayer } from "./core/telemetry"
 import { maybeNotifyUpdate } from "./core/update"
 import { maybeNotifyWhatsNew } from "./core/changelog"
+import { LocalAccessHttpClient } from "./core/local-access"
 import { WarehouseExecutorFromMode } from "./core/warehouse"
 import { debugEnabled } from "./lib/debug"
 import { makeHelpCapture, usageHint } from "./lib/help"
@@ -33,7 +34,7 @@ const MainLayer = WarehouseExecutorFromMode.pipe(
 	Layer.provideMerge(Mode.layer),
 	Layer.provideMerge(MapleConfig.layer),
 	Layer.provideMerge(BunServices.layer),
-	Layer.provideMerge(FetchHttpClient.layer),
+	Layer.provideMerge(LocalAccessHttpClient.pipe(Layer.provide(FetchHttpClient.layer))),
 )
 
 // Throttled, non-blocking "update available" notice before dispatching the

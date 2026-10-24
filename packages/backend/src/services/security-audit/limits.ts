@@ -28,13 +28,19 @@ export const SECURITY_AUDIT_LIMIT_DEFAULTS: SecurityAuditLimits = {
 	maxLfsFiles: 0,
 }
 
-const limit = (name: string, fallback: number) =>
+/** Postgres `int4`: the reservation compares the monthly limit against it in SQL. */
+export const MAX_LIMIT = 2_147_483_647
+
+const limit = (name: string, fallback: number, max = Number.MAX_SAFE_INTEGER) =>
 	Config.option(Config.Int(name)).pipe(
 		Config.orElse(() => Config.succeed(Option.none<number>())),
 		Config.map((value) =>
-			Option.getOrElse(
-				Option.filter(value, (n) => n >= 0),
-				() => fallback,
+			Math.min(
+				max,
+				Option.getOrElse(
+					Option.filter(value, (n) => n >= 0),
+					() => fallback,
+				),
 			),
 		),
 	)
@@ -43,6 +49,7 @@ const limitsConfig = Config.all({
 	unmeteredMonthlyInvocations: limit(
 		"SECURITY_AUDIT_UNMETERED_MONTHLY_INVOCATIONS",
 		SECURITY_AUDIT_LIMIT_DEFAULTS.unmeteredMonthlyInvocations,
+		MAX_LIMIT,
 	),
 	maxRepositoryBytes: limit(
 		"SECURITY_AUDIT_MAX_REPOSITORY_BYTES",

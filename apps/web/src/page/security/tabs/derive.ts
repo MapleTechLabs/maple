@@ -148,7 +148,7 @@ const mergeRuns = (lists: ReadonlyArray<ReadonlyArray<SecurityAuditRun>>): Reado
 	].sort((a, b) => b.startedAt - a.startedAt)
 
 /** A target's runs: its own list and the polled global list together, so neither goes stale. */
-const runsForTarget = (model: Model, targetId: string): ReadonlyArray<SecurityAuditRun> =>
+export const runsForTarget = (model: Model, targetId: string): ReadonlyArray<SecurityAuditRun> =>
 	mergeRuns([targetRunsOf(model, targetId) ?? [], runsOf(model).filter((run) => run.targetId === targetId)])
 
 /** Every run either list holds. */

@@ -222,7 +222,7 @@ const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig"
 })
 
 export class GithubConnectService extends Context.Service<GithubConnectService, GithubConnectServiceApi>()(
-	"@maple/api/services/vcs/vendor/github/GithubConnectService",
+	"@maple/backend/services/vcs/vendor/github/GithubConnectService",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

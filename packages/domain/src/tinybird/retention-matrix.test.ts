@@ -3,6 +3,9 @@ import { tinybirdProjectManifest } from "../generated/tinybird-project-manifest"
 
 const RETENTION_DAYS = {
 	alert_checks: 365,
+	// CI projections outlive their raw traces on purpose: a year of run history.
+	ci_jobs: 365,
+	ci_runs: 365,
 	// Raw-tier projection of `traces`: rebuilt from it, so holding
 	// it past the source's own retention would store rows detection can no
 	// longer cross-check against a raw trace.

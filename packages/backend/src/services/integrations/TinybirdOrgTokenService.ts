@@ -34,7 +34,7 @@ export interface TinybirdOrgTokenServiceApi {
 export class TinybirdOrgTokenService extends Context.Service<
 	TinybirdOrgTokenService,
 	TinybirdOrgTokenServiceApi
->()("@maple/api/services/TinybirdOrgTokenService", {
+>()("@maple/backend/services/TinybirdOrgTokenService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
 		// The scope allowlist is static per deploy — compute it once.

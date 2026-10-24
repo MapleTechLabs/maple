@@ -1,7 +1,12 @@
 import { assert, describe, it } from "@effect/vitest"
-import { BillingCustomer } from "@maple/domain/http"
-import { Schema } from "effect"
-import { orgAuditBudget, planMonthlyInvocations } from "./SecurityAuditPlanBudget"
+import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
+import { BillingCustomer, OrgId } from "@maple/domain/http"
+import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { Env } from "@maple/backend/platform/Env"
+import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+import { orgAuditBudget, planMonthlyInvocations, SecurityAuditPlanBudget } from "./SecurityAuditPlanBudget"
+import { MAX_LIMIT } from "./limits"
 
 const customer = (balances: Record<string, unknown>) =>
 	Schema.decodeUnknownSync(BillingCustomer)({
@@ -106,4 +111,85 @@ describe("orgAuditBudget", () => {
 			],
 		)
 	})
+})
+
+describe("SecurityAuditPlanBudget", () => {
+	const NOW = Date.UTC(2026, 9, 24, 12)
+	const CUSTOMER_ORG = Schema.decodeUnknownSync(OrgId)("org_customer")
+	const MAPLE_ORG = Schema.decodeUnknownSync(OrgId)("default")
+
+	/** The service over a stubbed Autumn that answers every call with `status`. */
+	const budgetFor = (orgId: OrgId, config: Record<string, unknown>, status: number) =>
+		Effect.gen(function* () {
+			const service = yield* SecurityAuditPlanBudget
+			return yield* service.budget(orgId, NOW)
+		}).pipe(
+			Effect.provide(
+				Layer.effect(SecurityAuditPlanBudget, SecurityAuditPlanBudget.make).pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							Layer.effect(AutumnClient, AutumnClient.make).pipe(
+								Layer.provide(FetchHttpClient.layer),
+								Layer.provide(
+									Layer.succeed(FetchHttpClient.Fetch, () =>
+										Promise.resolve(new Response('{"code":"unauthorized"}', { status })),
+									),
+								),
+							),
+							EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
+						),
+					),
+					Layer.provideMerge(Env.layer),
+					Layer.provideMerge(
+						ConfigProvider.layer(
+							ConfigProvider.fromUnknown({
+								PORT: "3472",
+								TINYBIRD_HOST: "https://api.tinybird.co",
+								TINYBIRD_TOKEN: "test-token",
+								MAPLE_AUTH_MODE: "self_hosted",
+								MAPLE_ROOT_PASSWORD: "test-root-password",
+								MAPLE_DEFAULT_ORG_ID: "default",
+								MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+								MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+								...config,
+							}),
+						),
+					),
+				),
+			),
+		)
+
+	it.effect("refuses, not unmeters, when billing rejects a configured key", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				budgetFor(CUSTOMER_ORG, { AUTUMN_SECRET_KEY: "am_sk_test" }, 401),
+			)
+			assert.strictEqual(error._tag, "@maple/backend/security-audit/PlanUnavailable")
+		}),
+	)
+
+	it.effect("unmeters every org on a deployment without billing", () =>
+		Effect.gen(function* () {
+			const budget = yield* budgetFor(CUSTOMER_ORG, {}, 401)
+			assert.deepStrictEqual([budget.limit, budget.autumnRemaining], [20_000, null])
+		}),
+	)
+
+	it.effect("unmeters Maple's own org even with billing configured", () =>
+		Effect.gen(function* () {
+			const budget = yield* budgetFor(MAPLE_ORG, { AUTUMN_SECRET_KEY: "am_sk_test" }, 401)
+			assert.deepStrictEqual([budget.limit, budget.autumnRemaining], [20_000, null])
+		}),
+	)
+
+	it.effect("caps a configured unmetered allowance at what Postgres can compare", () =>
+		Effect.gen(function* () {
+			const budget = yield* budgetFor(
+				MAPLE_ORG,
+				{ SECURITY_AUDIT_UNMETERED_MONTHLY_INVOCATIONS: "99999999999" },
+				401,
+			)
+			assert.strictEqual(budget.limit, MAX_LIMIT)
+		}),
+	)
 })

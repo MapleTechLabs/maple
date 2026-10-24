@@ -725,6 +725,15 @@ export const InfraContainersSearch = Schema.Struct({
 })
 
 // sessionTimeRangeSearchMiddleware()
+export const InfraAwsSearch = Schema.Struct({
+	tab: Schema.optional(Schema.String),
+	scope: Schema.optional(Schema.String),
+	region: Schema.optional(Schema.String),
+	q: Schema.optional(Schema.String),
+	...TimeRangeSearchFields,
+})
+
+// sessionTimeRangeSearchMiddleware()
 export const InfraGcpSearch = Schema.Struct({
 	view: Schema.optional(Schema.String),
 	tab: Schema.optional(Schema.String),
@@ -772,6 +781,15 @@ export const DashboardWidgetSearch = Schema.StructWithRest(Schema.Struct(dashboa
 export const InfraCloudflareWorkerSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 	account: Schema.optional(Schema.String),
+})
+
+// sessionTimeRangeSearchMiddleware()
+/** The resource's keys after its name, as `AWS_INFRA_KINDS[kind].identity` orders them. */
+export const InfraAwsResourceSearch = Schema.Struct({
+	cluster: Schema.optional(Schema.String),
+	region: Schema.optional(Schema.String),
+	account: Schema.optional(Schema.String),
+	...TimeRangeSearchFields,
 })
 
 // sessionTimeRangeSearchMiddleware()

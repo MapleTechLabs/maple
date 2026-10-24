@@ -7,6 +7,7 @@ import {
 	SecurityAuditBudgetExhaustedError,
 	SecurityAuditRepositoryTooLargeError,
 	SECURITY_AUDIT_MAX_BUDGET,
+	SecurityAuditBudgetTooLowError,
 	SecurityAuditDisabledError,
 	type SecurityAuditEvent,
 	type SecurityAuditFinding,
@@ -27,6 +28,7 @@ import {
 } from "@maple/domain/http"
 import { IsoDateTimeString } from "@maple/domain/primitives"
 import {
+	type SecurityAuditProfile,
 	SecurityAuditRunId,
 	type SecurityAuditTargetId,
 	type SecurityAuditWorkflowPayload,
@@ -162,6 +164,21 @@ const orUnavailable = <A, E, R>(effect: Effect.Effect<A, E | AuditStoreError, R>
 const resolveBudget = (requested: number | undefined, targetBudget: number | null, orgRemaining: number) =>
 	Math.min(requested ?? targetBudget ?? DEFAULT_RUN_BUDGET, SECURITY_AUDIT_MAX_BUDGET, orgRemaining)
 
+/** A budget the engine would refuse before reconnaissance is the caller's to fix: a 400, not a failed run. */
+const requireFundableBudget = (budget: number, profile: SecurityAuditProfile) => {
+	const minimum = minimumInvocations(profile)
+	return budget >= minimum
+		? Effect.void
+		: Effect.fail(
+				new SecurityAuditBudgetTooLowError({
+					message: `A ${profile} audit needs a budget of at least ${minimum} agent invocations; got ${budget}.`,
+					budget,
+					minimum,
+					profile,
+				}),
+			)
+}
+
 const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
 const decodeIso = Schema.decodeSync(IsoDateTimeString)
 
@@ -273,6 +290,9 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			.handle("createTarget", ({ payload }) =>
 				Effect.gen(function* () {
 					const { tenant, store } = yield* adminAccess
+					if (payload.budgetPerRun !== undefined) {
+						yield* requireFundableBudget(payload.budgetPerRun, payload.profile ?? "deep")
+					}
 					const repository = yield* orUnavailable(store.findConnectedRepository(payload.repository))
 					if (Option.isNone(repository)) {
 						return yield* new SecurityAuditRepositoryNotConnectedError({
@@ -312,6 +332,11 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				Effect.gen(function* () {
 					const { tenant, store } = yield* adminAccess
 					const target = yield* requireTarget(store, params.targetId)
+					// The caller's own budget first: one the engine would refuse is a 400, before billing.
+					yield* requireFundableBudget(
+						resolveBudget(payload.budget, target.budgetPerRun, Number.POSITIVE_INFINITY),
+						target.profile,
+					)
 					yield* refuseOversized(tenant.orgId, target.repository)
 					const prior = yield* orUnavailable(store.latestPriorRun(target.id))
 					const runId = newRunId()

@@ -185,7 +185,7 @@ const toConnector = (row: GcpConnectorRow, discoveredProjectCount = 0): GcpConne
 const notFound = () => new IntegrationsNotFoundError({ message: "No such Google Cloud connector." })
 
 export class GcpConnectorService extends Context.Service<GcpConnectorService, GcpConnectorServiceApi>()(
-	"@maple/api/services/GcpConnectorService",
+	"@maple/backend/services/GcpConnectorService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

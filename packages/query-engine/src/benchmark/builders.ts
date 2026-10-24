@@ -1796,6 +1796,18 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 
+	// AwsConnectionService.ingest: what one connection's metric stream stored.
+	{
+		module: "aws-ingest",
+		name: "awsIngestQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.awsIngestQuery(), {
+				...window,
+				connectionId: "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+			}),
+	},
+
 	// apps/cli `serviceHasTelemetry`: the `-s <name>` typo check.
 	{
 		module: "services",

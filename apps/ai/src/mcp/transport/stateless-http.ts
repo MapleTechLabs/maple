@@ -24,7 +24,7 @@
  * live request. No `mcp-session-id` is issued, so clients never send one back
  * and the 404 branch cannot be reached. See `layerStatelessMcpServer`.
  */
-import { Cause, Context, Effect, Exit, Layer, Predicate, Queue, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Predicate, Queue, Ref, Scope } from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
@@ -146,7 +146,7 @@ export const layerStatelessMcpHttp = (options: {
 
 			const disconnects = yield* Queue.make<number>()
 			let writeRequest!: (clientId: number, message: FromClientEncoded) => Effect.Effect<void>
-			let clientId = 0
+			const nextClientId = yield* Ref.make(0)
 
 			type Client = {
 				readonly write: (response: FromServerEncoded) => Effect.Effect<void>
@@ -187,7 +187,7 @@ export const layerStatelessMcpHttp = (options: {
 					)
 					if (body === undefined) return jsonRpcError(null, -32700, "Parse error")
 
-					const id = clientId++
+					const id = yield* Ref.getAndUpdate(nextClientId, (n) => n + 1)
 					const queue = yield* Queue.make<FromServerEncoded, Cause.Done>()
 					const requestIds: Array<RequestId> = []
 

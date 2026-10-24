@@ -440,6 +440,25 @@ export class SecurityAuditRepositoryNotConnectedError extends HttpTaggedError<Se
 	},
 ) {}
 
+/** The budget cannot fund the profile's reserved reconnaissance, synthesis, critics and verifier. */
+export class SecurityAuditBudgetTooLowError extends HttpTaggedError<SecurityAuditBudgetTooLowError>()(
+	"@maple/http/security-audit/SecurityAuditBudgetTooLowError",
+	{
+		message: Schema.String,
+		budget: Schema.Number,
+		minimum: Schema.Number,
+		profile: SecurityAuditProfile,
+	},
+	{
+		status: 400,
+		code: "security_audit_budget_too_low",
+		title: "Audit budget is too low",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
 const readErrors = [SecurityAuditDisabledError, SecurityAuditPersistenceError] as const
 /** Writes, and the reads that expose findings or reports: org admins only. */
 const adminErrors = [...readErrors, SecurityAuditForbiddenError] as const
@@ -457,6 +476,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				SecurityAuditRepositoryNotConnectedError,
 				SecurityAuditTargetExistsError,
 				SecurityAuditRepositoryTooLargeError,
+				SecurityAuditBudgetTooLowError,
 			],
 		}),
 	)
@@ -479,6 +499,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				SecurityAuditBudgetExhaustedError,
 				SecurityAuditRepositoryTooLargeError,
 				SecurityAuditStartError,
+				SecurityAuditBudgetTooLowError,
 			],
 		}),
 	)

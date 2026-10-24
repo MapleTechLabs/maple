@@ -58,7 +58,12 @@ const ACTIONABLE_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = [
 ]
 /** The list's "Closed" set: nobody has to act. `verifying` is here because the
  *  fix has merged and the verification tick, not a person, owns what happens next. */
-const CLOSED_LIST_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = ["verifying", "done", "cancelled", "wontfix"]
+const CLOSED_LIST_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = [
+	"verifying",
+	"done",
+	"cancelled",
+	"wontfix",
+]
 
 type IssueColumns = PG.ColumnAccessor<typeof ErrorIssues.columns>
 type IssueConditions = ($: IssueColumns) => Array<PG.Condition | undefined>
@@ -545,7 +550,7 @@ const make: Effect.Effect<
 export class ErrorIssueReadModelsService extends Context.Service<
 	ErrorIssueReadModelsService,
 	ErrorIssueReadModelsServiceApi
->()("@maple/api/services/errors/ErrorIssueReadModelsService", { make }) {
+>()("@maple/backend/services/errors/ErrorIssueReadModelsService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, ErrorIssueWorkflowService.layer)),
 	)

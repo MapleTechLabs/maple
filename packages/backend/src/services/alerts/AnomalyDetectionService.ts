@@ -2201,6 +2201,6 @@ const make: Effect.Effect<
 export class AnomalyDetectionService extends Context.Service<
 	AnomalyDetectionService,
 	AnomalyDetectionServiceApi
->()("@maple/api/services/AnomalyDetectionService", { make }) {
+>()("@maple/backend/services/AnomalyDetectionService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
 }

@@ -303,7 +303,7 @@ export interface OrganizationServiceApi {
 }
 
 export class OrganizationService extends Context.Service<OrganizationService, OrganizationServiceApi>()(
-	"@maple/api/services/OrganizationService",
+	"@maple/backend/services/OrganizationService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

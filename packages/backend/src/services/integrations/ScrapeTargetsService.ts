@@ -597,7 +597,7 @@ const buildDiscoveryConfig = (
 })
 
 export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, ScrapeTargetsServiceApi>()(
-	"@maple/api/services/ScrapeTargetsService",
+	"@maple/backend/services/ScrapeTargetsService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

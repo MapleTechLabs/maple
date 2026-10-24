@@ -37,9 +37,9 @@ describe("sourceHealth", () => {
 			problem: "Rate limited",
 		})
 		expect(sourceHealth({ ...refused, lastRejectedAt: now - 20 * MINUTE }, now).status).toBe("healthy")
-		expect(
-			sourceHealth({ ...refused, status: "paused", lastRejectedAt: now - MINUTE }, now).status,
-		).toBe("paused")
+		expect(sourceHealth({ ...refused, status: "paused", lastRejectedAt: now - MINUTE }, now).status).toBe(
+			"paused",
+		)
 	})
 
 	it("judges a polled integration by its last good poll, not by data arriving", () => {
@@ -101,6 +101,43 @@ describe("sourceHealth", () => {
 		expect(sourceHealth(revoked, now)).toMatchObject({
 			status: "disconnected",
 			problem: "The GitHub installation is suspended",
+		})
+	})
+})
+
+describe("sourceHealth for AWS", () => {
+	const aws = (fields: Partial<SourceHealthInput> = {}) => source({ platform: "aws", ...fields })
+
+	it("is not healthy on a good role check alone: only metric deliveries are data", () => {
+		expect(sourceHealth(aws({ lastPollOkAt: now - MINUTE }), now)).toEqual({
+			status: "pending",
+			lastDataAt: null,
+			problem: null,
+		})
+	})
+
+	it("is healthy while deliveries arrive and stale once they stop", () => {
+		const delivering = aws({ lastPollOkAt: now - MINUTE, lastUsedAt: now - 2 * MINUTE })
+		expect(sourceHealth(delivering, now)).toEqual({
+			status: "healthy",
+			lastDataAt: now - 2 * MINUTE,
+			problem: null,
+		})
+		expect(sourceHealth({ ...delivering, lastUsedAt: now - HOUR }, now)).toMatchObject({
+			status: "stale",
+			problem: "No data in the last 30 minutes",
+		})
+	})
+
+	it("fails with what its integration reports, after a failed role check", () => {
+		const refused = aws({ lastUsedAt: now - MINUTE, failing: "A delivery was refused" })
+		expect(sourceHealth(refused, now)).toMatchObject({
+			status: "failing",
+			problem: "A delivery was refused",
+		})
+		expect(sourceHealth({ ...refused, lastPollError: "Role gone" }, now)).toMatchObject({
+			status: "failing",
+			problem: "Role gone",
 		})
 	})
 })

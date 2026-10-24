@@ -440,7 +440,7 @@ const packCommits = (
 	return slices
 }
 export class GithubProvider extends Context.Service<GithubProvider, VcsProviderClient>()(
-	"@maple/api/services/vcs/vendor/github/GithubProvider",
+	"@maple/backend/services/vcs/vendor/github/GithubProvider",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
