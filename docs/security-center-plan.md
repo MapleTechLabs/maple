@@ -347,7 +347,7 @@ The method is language-neutral; the platform around it is not. Before a customer
 
 Waits on phase 1 (sandbox v2): per-ecosystem toolchain images, the trusted dependency install,
 hostile-code isolation with its external review and cross-tenant escape tests, and so any
-`executable` run. The multi-language eval is not started.
+`executable` run. The multi-language eval ran with phase 0 (see "Phase 0 results"): one public repo per language so far.
 
 What we can honestly ship at the end of this phase: full deep scans for JS/TS repos without
 private dependencies, and source-only deep review for everything else with execution-bound
