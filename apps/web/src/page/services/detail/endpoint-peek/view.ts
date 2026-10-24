@@ -3,7 +3,6 @@ import { formatBytes, formatErrorRate, formatLatency, formatNumber, formatRate }
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type * as Chart from "../../../../charts/chart"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -369,6 +368,17 @@ const bodyCard = (h: H, detail: EndpointDetail): Html =>
 				),
 	])
 
+/** "Oct 24 13:40" in the page time zone, 24-hour like the rest of the page. */
+const formatSlowestTime = (timestamp: string, timeZone: string): string =>
+	new Intl.DateTimeFormat("en-US", {
+		timeZone,
+		month: "short",
+		day: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+		hourCycle: "h23",
+	}).format(toEpochMs(timestamp))
+
 const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 	h.section(
 		[h.Class("flex flex-col overflow-hidden rounded-md border bg-card")],
@@ -440,11 +450,7 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 								),
 								h.span(
 									[h.Class("text-muted-foreground")],
-									[
-										formatTimestampInTimezone(toEpochMs(request.timestamp), {
-											timeZone: inputs.timeZone,
-										}),
-									],
+									[formatSlowestTime(request.timestamp, inputs.timeZone)],
 								),
 							],
 						),

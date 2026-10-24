@@ -307,11 +307,11 @@ const loadedEndpoints = (model: Model): ReadonlyArray<Endpoint> =>
 const isCollapsedKind = (kind: string) => kind === "probes" || kind === "unrouted"
 
 /**
- * The busiest endpoints the table can show, sorted so the key is stable. Only once the endpoints
- * answered for the current window, so a window change does not read the old names first.
+ * The busiest endpoints the table can show, sorted so the key is stable. Read from data that
+ * answers the current window (a Refresh keeps it), never from rows retained across a change.
  */
 export const seriesSpanNames = (model: Model): ReadonlyArray<string> =>
-	!AsyncData.isSuccess(model.endpoints.data)
+	model.endpoints.retained === true
 		? []
 		: groupsOf(loadedEndpoints(model), model.sorts.endpoints)
 				.filter((group) => !isCollapsedKind(group.kind))

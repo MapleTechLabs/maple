@@ -301,7 +301,7 @@ const responsesChart = (
 								`5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`,
 							),
 							...(hasUnknownBuckets(overview.buckets)
-								? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "before status tracking")]
+								? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "no status code")]
 								: []),
 							...(markers.length === 0
 								? []
@@ -684,8 +684,11 @@ const loaded = (
 	)
 	const summaries = statusRows === null ? null : statusCodeSummaries(statusRows)
 	const overview = AsyncData.getData(model.apiOverview.data)
-	const overviewFailure = Option.getOrNull(AsyncData.getError(model.apiOverview.data))
-	const breakdownFailure = Option.getOrNull(AsyncData.getError(model.statusBreakdown.data))
+	// A failed refresh keeps its data on screen (Stale); only a read with nothing to show errors.
+	const overviewFailure = AsyncData.isFailure(model.apiOverview.data) ? model.apiOverview.data.error : null
+	const breakdownFailure = AsyncData.isFailure(model.statusBreakdown.data)
+		? model.statusBreakdown.data.error
+		: null
 	return h.div(
 		[
 			h.Class(cn("flex flex-col gap-4", refreshingClass(isWaiting))),

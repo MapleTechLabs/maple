@@ -145,7 +145,7 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 							h.button(
 								[
 									h.Type("button"),
-									h.Class("sr-only focus:not-sr-only"),
+									h.Class("sr-only"),
 									h.AriaHasPopup("dialog"),
 									h.AriaExpanded(isSelected),
 									h.AriaLabel(`Open ${endpoint.spanName}`),

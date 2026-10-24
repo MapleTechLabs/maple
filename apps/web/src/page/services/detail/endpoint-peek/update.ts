@@ -214,7 +214,7 @@ export const update = (model: Model, message: Message, scope: PeekScope, peek: P
 		ClickedRetryDetail: () =>
 			peek === null || scope.window === null
 				? { model }
-				: requestDetails(model, scope, scope.window, [peek.endpoint], "Refresh"),
+				: request(model, scope, scope.window, { ...peek, neighbors: [] }, "Refresh"),
 		GotChartMessage: ({ chartId, message: inner }) => {
 			const chart = model.charts[chartId] ?? Chart.init()
 			const next = Chart.update(chart, inner)

@@ -427,6 +427,19 @@ describe("the API tab's endpoint drawer", () => {
 		)
 	})
 
+	test("a Reload re-reads the sparklines over the same rows", () => {
+		const { model } = loadedApi()
+		const series = pageUpdate(
+			model,
+			Message.CompletedFetchEndpointSeries({
+				key: model.endpointSeries.key ?? "",
+				result: Result.succeed([]),
+			}),
+		).model
+		const reloaded = pageUpdate(series, Message.CompletedResolveClock({ nowMs: NOW, mode: "Refresh" }))
+		expect(names(reloaded.commands)).toContain("FetchServiceEndpointSeries")
+	})
+
 	test("a step past the last row stays put", () => {
 		const { model } = loadedApi({ endpoint: "GET /c" })
 		expect(
