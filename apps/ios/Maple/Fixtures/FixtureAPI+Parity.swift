@@ -14,8 +14,11 @@ extension FixtureAPI {
 	}
 
 	private static func healthEntry(_ service: Service, scale: Double) -> ServiceHealthEntry {
+		let current = scale == 1
 		let requests = (service.throughput * 3600 * scale).rounded()
 		return ServiceHealthEntry(
+			baselineP95LatencyMs: current ? service.baselineP95LatencyMs : nil,
+			baselineSpanCount: current ? service.baselineSpanCount : nil,
 			deploymentEnvironment: "production",
 			errorCount: (requests * service.errorRate).rounded(),
 			errorRate: service.errorRate,

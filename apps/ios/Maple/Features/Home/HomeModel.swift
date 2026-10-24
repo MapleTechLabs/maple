@@ -37,10 +37,10 @@ struct ServiceSummary: Codable, Hashable {
 	let errorCount: Double
 	let throughput: Double
 	let p95LatencyMs: Double
-	/// The same service in the previous window, as its latency baseline.
-	/// Nil when the service did not report there.
+	/// The trailing 7-day p95 the web judges latency against, and the spans
+	/// behind it. Nil when the service has no history there.
 	let baselineP95LatencyMs: Double?
-	let baselineRequestCount: Double?
+	let baselineSpanCount: Double?
 
 	var errorRate: Double { requestCount > 0 ? errorCount / requestCount : 0 }
 
@@ -50,23 +50,24 @@ struct ServiceSummary: Codable, Hashable {
 			p95LatencyMs: p95LatencyMs,
 			spanCount: requestCount,
 			baseline: baselineP95LatencyMs.flatMap { p95 in
-				baselineRequestCount.map { LatencyBaseline(p95LatencyMs: p95, spanCount: $0) }
+				baselineSpanCount.map { LatencyBaseline(p95LatencyMs: p95, spanCount: $0) }
 			}
 		)
 	}
 
 	/// Folds per-environment rows into one row per service, busiest first.
-	static func aggregate(_ entries: [ServiceHealthEntry], baseline: [ServiceSummary]? = nil) -> [ServiceSummary] {
-		let previous = Dictionary((baseline ?? []).map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
-		return Dictionary(grouping: entries, by: \.serviceName).map { name, rows in
-			ServiceSummary(
+	static func aggregate(_ entries: [ServiceHealthEntry]) -> [ServiceSummary] {
+		Dictionary(grouping: entries, by: \.serviceName).map { name, rows in
+			// The worst environment's baseline goes with the worst environment's p95.
+			let slowest = rows.max { $0.p95LatencyMs < $1.p95LatencyMs }
+			return ServiceSummary(
 				name: name,
 				requestCount: rows.reduce(0) { $0 + $1.requestCount },
 				errorCount: rows.reduce(0) { $0 + $1.errorCount },
 				throughput: rows.reduce(0) { $0 + $1.throughput },
 				p95LatencyMs: rows.map(\.p95LatencyMs).max() ?? 0,
-				baselineP95LatencyMs: previous[name]?.p95LatencyMs,
-				baselineRequestCount: previous[name]?.requestCount
+				baselineP95LatencyMs: slowest?.baselineP95LatencyMs ?? nil,
+				baselineSpanCount: slowest?.baselineSpanCount ?? nil
 			)
 		}
 		.sorted { $0.requestCount > $1.requestCount }
@@ -86,8 +87,8 @@ extension LatencyBaseline {
 /// seeded on the next launch; see `SnapshotCache`.
 struct HomeSnapshot: Codable {
 	var services: [ServiceSummary]
-	/// The equally long window before `services`, for the tiles' deltas and
-	/// the latency baseline. Nil when the API returned no comparison.
+	/// The equally long window before `services`, for the tiles' deltas.
+	/// Nil when the API returned no comparison.
 	var previousServices: [ServiceSummary]?
 	var incidents: [IncidentCard]
 	/// Actionable issues seen in the last 24 hours, and how many of those
@@ -253,7 +254,7 @@ final class HomeModel {
 
 		let health = try await healthTask
 		let previousServices = health.previous.map { ServiceSummary.aggregate($0) }
-		let services = ServiceSummary.aggregate(health.services, baseline: previousServices)
+		let services = ServiceSummary.aggregate(health.services)
 		let incidents = try await incidentsTask.items
 		let rules = Dictionary(
 			((try? await rulesTask.items) ?? []).map { ($0.id, $0) },
