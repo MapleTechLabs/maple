@@ -78,10 +78,11 @@ export const SaveSecuritySettings = Command.define("SecurityApiUpdateSettings", 
 const isDiscoveryModel = Schema.is(SecurityAuditDiscoveryModel)
 const isValidationModel = Schema.is(SecurityAuditValidationModel)
 
-/** Whole dollars, with or without a thousands separator. */
+/** Whole dollars, with or without a thousands separator: `1,000` is 1000, `12,50` is refused. */
 const parseLimit = (value: string): number | null => {
-	const parsed = Number(value.trim().replaceAll(",", ""))
-	return value.trim() !== "" &&
+	const trimmed = value.trim()
+	const parsed = Number(/^\d{1,3}(,\d{3})+$/u.test(trimmed) ? trimmed.replaceAll(",", "") : trimmed)
+	return trimmed !== "" &&
 		Number.isInteger(parsed) &&
 		parsed >= 1 &&
 		parsed <= SECURITY_AUDIT_MAX_MONTHLY_SPEND_USD

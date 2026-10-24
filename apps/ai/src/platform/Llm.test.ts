@@ -26,6 +26,7 @@ import {
 	resolveReviewModel,
 	resolveSecurityAuditModel,
 	securityAuditModelId,
+	securityAuditModelIds,
 	DEFAULT_AUDIT_MODELS,
 	resolveTriageModel,
 	type LlmCallTags,
@@ -245,6 +246,19 @@ describe("resolveSecurityAuditModel", () => {
 			DEFAULT_AUDIT_MODELS.us.validation,
 			DEFAULT_AUDIT_MODELS.us.discovery,
 		])
+	})
+})
+
+describe("securityAuditModelIds", () => {
+	it("never verifies on the hunting model, even when the region's fallback lands both picks on one", () => {
+		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		// DeepSeek has no EU provider, so the hunter falls back to Haiku, which this org verifies with.
+		expect(
+			securityAuditModelIds(eu, {
+				discovery: "deepseek/deepseek-v4.1-flash-1017:nitro",
+				validation: "anthropic/claude-haiku-5.5",
+			}),
+		).toEqual({ discovery: DEFAULT_AUDIT_MODELS.eu.validation, validation: "anthropic/claude-haiku-5.5" })
 	})
 })
 

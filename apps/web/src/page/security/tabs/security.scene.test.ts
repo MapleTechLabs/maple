@@ -624,6 +624,43 @@ describe("spend and models", () => {
 		})
 	})
 
+	test("a comma read as a decimal separator is refused, a thousands separator is not", () => {
+		const typedLimit = (value: string) =>
+			send(
+				opened(),
+				SpendSettings.Message.GotLimitMessage({ message: Field.Message.ChangedValue({ value }) }),
+			).model.spendSettings
+		expect([
+			SpendSettings.requestOf(typedLimit("100,50"))?.monthlySpendLimitUsd ?? null,
+			SpendSettings.requestOf(typedLimit("1,500"))?.monthlySpendLimitUsd ?? null,
+		]).toEqual([null, 1_500])
+	})
+
+	test("a settings read that failed says so, and Retry reads it again", () => {
+		const model = withSettings()
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchSettings({
+				key: model.settings.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("unavailable"))),
+			}),
+		).model
+		const fresh = loaded()
+		const failedFresh = pageUpdate(
+			fresh,
+			Message.CompletedFetchSettings({
+				key: fresh.settings.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("unavailable"))),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failedFresh),
+			expectView(text("The spend limit could not be loaded")).toExist(),
+		)
+		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toContain("SecurityApiGetSettings")
+	})
+
 	test("verifying on the hunting model is refused before anything is sent", () => {
 		const same = pickValidation(opened(), "deepseek/deepseek-v4.1-flash-1017:nitro")
 		const submitted = send(same, SpendSettings.Message.Submitted())

@@ -508,7 +508,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			]),
 		ClickedRetry: () =>
-			chain(readTargets(model, context, "Refresh"), (next) => readRuns(next, context, "Refresh")),
+			chainAll(model, [
+				(next) => readTargets(next, context, "Refresh"),
+				(next) => readRuns(next, context, "Refresh"),
+				(next) => readSettings(next, context, "Refresh"),
+			]),
 		ClickedAddTarget: () => {
 			const opened = AddTarget.open(model.addTarget, settingsOf(model))
 			return chain(

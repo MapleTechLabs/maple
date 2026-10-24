@@ -44,7 +44,7 @@ import { securityAuditLimits } from "@maple/backend/services/security-audit/limi
 import { SecurityAuditPlanBudget } from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { hostedSizeViolations, refusalReason } from "../security-audit/repo-size"
-import { loadLlmSettings, securityAuditModelId } from "../platform/Llm"
+import { loadLlmSettings, securityAuditModelIds } from "../platform/Llm"
 import {
 	type SecurityAuditEventRecord,
 	type SecurityAuditOrgStore,
@@ -220,14 +220,18 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				const llm = yield* loadLlmSettings
 				const window = securityAuditSpendWindow(yield* Clock.currentTimeMillis)
 				const spentUsd = yield* orUnavailable(store.orgSpendUsd(window.since))
+				const models = securityAuditModelIds(llm, {
+					discovery: row?.discoveryModel ?? null,
+					validation: row?.validationModel ?? null,
+				})
 				return {
 					monthlySpendLimitUsd:
 						row?.monthlySpendLimitUsd ?? (yield* securityAuditLimits).defaultMonthlySpendLimitUsd,
 					spentUsd,
 					since: window.since,
 					resetsAt: window.resetsAt,
-					discoveryModel: securityAuditModelId(llm, "discovery", row?.discoveryModel ?? null),
-					validationModel: securityAuditModelId(llm, "validation", row?.validationModel ?? null),
+					discoveryModel: models.discovery,
+					validationModel: models.validation,
 				} satisfies SecurityAuditSettings
 			})
 
@@ -414,19 +418,10 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						})
 					}
 					// The target's models, else the org's, as this region serves them; fixed for the run.
-					const llm = yield* loadLlmSettings
-					const models = {
-						discovery: securityAuditModelId(
-							llm,
-							"discovery",
-							target.discoveryModel ?? org.discoveryModel,
-						),
-						validation: securityAuditModelId(
-							llm,
-							"validation",
-							target.validationModel ?? org.validationModel,
-						),
-					}
+					const models = securityAuditModelIds(yield* loadLlmSettings, {
+						discovery: target.discoveryModel ?? org.discoveryModel,
+						validation: target.validationModel ?? org.validationModel,
+					})
 					// The branch for now; the Workflow pins the commit it resolves to before any agent runs.
 					const run = yield* orUnavailable(
 						store.startRun({

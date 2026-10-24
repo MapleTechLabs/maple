@@ -627,6 +627,25 @@ export const securityAuditModelId = (
 }
 
 /**
+ * Both stages' models for a run. A region fallback can land both picks on one model (an EU org that
+ * hunts on DeepSeek and verifies on Claude Haiku hunts on Haiku there); then the hunter falls back
+ * to the region's other default, so verification never shares the hunter's blind spots.
+ */
+export const securityAuditModelIds = (
+	settings: LlmSettings,
+	chosen: Readonly<{ discovery: string | null; validation: string | null }>,
+): Readonly<{ discovery: string; validation: string }> => {
+	const validation = securityAuditModelId(settings, "validation", chosen.validation)
+	const discovery = securityAuditModelId(settings, "discovery", chosen.discovery)
+	if (discovery !== validation) return { discovery, validation }
+	const region = DEFAULT_AUDIT_MODELS[openRouterRegion(settings)]
+	return {
+		discovery: region.discovery !== validation ? region.discovery : region.validation,
+		validation,
+	}
+}
+
+/**
  * A security-audit stage's model. Unattended like a review: deltas coalesce and long calls retry.
  * On the Workers AI provider both stages fall back to the triage model.
  */

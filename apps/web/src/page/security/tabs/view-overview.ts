@@ -98,6 +98,24 @@ const monthDay = (epochMs: number): string =>
 /** This month's spend against the org's limit; the runs' own costs until the settings load. */
 const spendTile = (h: H, model: Model): Html => {
 	const settings = settingsOf(model)
+	if (settings === null && AsyncData.isFailure(model.settings.data))
+		return statRailItem(h, {
+			eyebrow: "Spend this month",
+			value: "Unavailable",
+			valueClassName: "text-base",
+			compact: true,
+			action: h.button(
+				[
+					h.Type("button"),
+					h.OnClick(Message.ClickedRetry()),
+					h.Class(
+						"text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
+					),
+				],
+				["Retry"],
+			),
+			subline: "The spend limit could not be loaded",
+		})
 	if (settings === null) {
 		const spend = spendThisMonth(model)
 		return statRailItem(h, {
