@@ -513,6 +513,7 @@ const GithubContentFileSchema = Schema.Struct({
 })
 type GithubContentFile = Schema.Schema.Type<typeof GithubContentFileSchema>
 
+const decodeRepositorySize = Schema.decodeUnknownEffect(Schema.Struct({ size: Schema.Number }))
 const decodeOAuthToken = Schema.decodeUnknownEffect(GithubOAuthTokenResponse)
 const decodeUserInstallations = Schema.decodeUnknownEffect(GithubUserInstallationsResponse)
 const decodeAuthenticatedUser = Schema.decodeUnknownEffect(GithubAuthenticatedUser)
@@ -1082,6 +1083,25 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			/** The repository's size as GitHub reports it (`size`, in KiB): the packed history, before any clone. */
+			const getRepositorySizeKib = Effect.fn("GithubAppClient.getRepositorySizeKib")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(config, token, repoBase(config, owner, repo))
+				if (!isOk(response)) return yield* failure(response, "Get repository", "repository")
+				const json = yield* parseJson(response, "Get repository")
+				return yield* decodeRepositorySize(json).pipe(
+					Effect.map((body) => body.size),
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected repository payload", cause }),
+					),
+				)
+			})
+
 			/**
 			 * A clone credential for one repository: the plain remote, plus a token
 			 * minted for that repository alone.
@@ -1149,11 +1169,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				owner: string,
 				repo: string,
 				limit: number,
+				head?: string,
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
 				const params = new URLSearchParams({
-					state: "all",
+					...(head === undefined ? { state: "all" } : { state: "open", head }),
 					sort: "updated",
 					direction: "desc",
 					per_page: String(Math.min(limit, PER_PAGE)),
@@ -2227,6 +2248,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				listBranches,
 				listCommits,
 				getCommit,
+				getRepositorySizeKib,
 				listPullRequests,
 				getPullRequest,
 				listPullRequestFiles,

@@ -7,6 +7,7 @@
  * the CLI) provides nothing — services that can degrade read the tag through
  * `Effect.serviceOption`. Every method keeps its failure in the typed channel.
  */
+import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { Context, type Effect, type Option, Schema } from "effect"
 
@@ -133,6 +134,25 @@ export class SchemaApplyWorkflow extends Context.Service<
 	SchemaApplyWorkflow,
 	WorkflowStarter<{ readonly orgId: string }>
 >()("@maple/backend/platform/SchemaApplyWorkflow") {}
+
+export class WorkflowCancelError extends Schema.TaggedError<WorkflowCancelError>()(
+	"@maple/backend/platform/WorkflowCancelError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
+export interface SecurityAuditWorkflowControl extends WorkflowStarter<SecurityAuditWorkflowPayload> {
+	/** Terminates the run's instance; one that is already gone or finished is not an error. */
+	readonly cancel: (runId: string) => Effect.Effect<void, WorkflowCancelError>
+}
+
+/** One security-audit run, hosted by the ai Worker because the agents run there. Keyed by run id. */
+export class SecurityAuditWorkflowStarter extends Context.Service<
+	SecurityAuditWorkflowStarter,
+	SecurityAuditWorkflowControl
+>()("@maple/backend/platform/SecurityAuditWorkflowStarter") {}
 
 // ── Email (send_email) ───────────────────────────────────────────────────────
 

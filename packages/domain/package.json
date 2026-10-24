@@ -37,6 +37,7 @@
 		"./raw-sql": "./src/raw-sql.ts",
 		"./recommendations": "./src/recommendations.ts",
 		"./sandbox": "./src/sandbox.ts",
+		"./security-audit": "./src/security-audit.ts",
 		"./onboarding-checklist": "./src/onboarding-checklist.ts",
 		"./setup-audit": "./src/setup-audit.ts",
 		"./support-channel": "./src/support-channel.ts",
@@ -72,6 +73,7 @@
 		"@maple-dev/effect-orm": "0.5.0",
 		"@maple/primitives": "workspace:*",
 		"@maple/query-model": "workspace:*",
+		"@maple/security-audit": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"effect": "catalog:effect"
 	},

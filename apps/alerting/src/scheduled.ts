@@ -19,6 +19,7 @@ import { GcpMetricsService } from "@maple/backend/services/integrations/GcpMetri
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
+import { PlanetScaleMetricsService } from "@maple/backend/services/integrations/PlanetScaleMetricsService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
@@ -56,6 +57,7 @@ export const layerTick = (
 		CloudflareAnalyticsService.layer,
 		GcpMetricsService.layer,
 		PlanetScaleService.layer,
+		PlanetScaleMetricsService.layer,
 		RailwayMetricsService.layer,
 		AwsConnectionService.layer,
 		SupabaseConnectionService.layer,
@@ -297,6 +299,21 @@ const planetScaleTick = makeTick(
 			: undefined,
 )
 
+const planetScaleMetricsTick = makeTick(
+	PlanetScaleMetricsService.use((metrics) => metrics.pollAll()),
+	"planetscale_metrics",
+	(result) =>
+		result.polled > 0
+			? {
+					orgs: result.orgs,
+					polled: result.polled,
+					branches: result.branches,
+					rowsIngested: result.rowsIngested,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
 const awsConnectionsTick = makeTick(
 	AwsConnectionService.use((aws) => aws.checkDue()),
 	"aws_connections",
@@ -394,6 +411,7 @@ export interface ScheduledTickPrograms<R = never> {
 	readonly fixVerification: Effect.Effect<void, never, R>
 	readonly gcpMetrics: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
+	readonly planetScaleMetrics: Effect.Effect<void, never, R>
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
@@ -415,7 +433,9 @@ const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect
 		Match.when("anomaly", () => ticks.anomaly),
 		Match.when("cloudflare_analytics", () => ticks.cloudflareAnalytics),
 		Match.when("gcp_metrics", () => ticks.gcpMetrics),
-		Match.when("planetscale", () => ticks.planetScale),
+		// Metrics ride the inventory's lane: the 5-minute cron is at its six-connection cap, and
+		// they read the branch list the inventory just refreshed.
+		Match.when("planetscale", () => Effect.andThen(ticks.planetScale, ticks.planetScaleMetrics)),
 		Match.when("railway_metrics", () => ticks.railwayMetrics),
 		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
 		Match.when("digest", () => ticks.digest),
@@ -471,6 +491,7 @@ type ScheduledServices =
 	| FixVerificationTickService
 	| GcpMetricsService
 	| PlanetScaleService
+	| PlanetScaleMetricsService
 	| PrReviewPostMergeService
 	| RailwayMetricsService
 	| ServiceMapRollupService
@@ -490,6 +511,7 @@ export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	fixVerification: fixVerificationTick,
 	gcpMetrics: gcpMetricsTick,
 	planetScale: planetScaleTick,
+	planetScaleMetrics: planetScaleMetricsTick,
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,
 	serviceMapRollup: serviceMapRollupTick,
