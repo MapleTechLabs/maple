@@ -92,13 +92,7 @@ struct IssueDetailView: View {
 		}
 		.toolbar {
 			ToolbarItemGroup(placement: .topBarTrailing) {
-				Link(destination: MapleWeb.issue(issueID)) {
-					PixelIcon.externalLink.image
-						.resizable()
-						.frame(width: 16, height: 16)
-						.foregroundStyle(Token.foreground)
-				}
-				.accessibilityLabel("Open on the web")
+				OpenOnWebButton(url: MapleWeb.issue(issueID))
 				if let model, let issue = model.state.value {
 					IssueMoreMenu(issue: issue) { action in
 						Task { await model.perform(action) }

@@ -278,10 +278,7 @@ private struct IncidentActions: View {
 
 	var body: some View {
 		HStack(spacing: 8) {
-			Link(destination: url) {
-				AlertActionLabel(title: "Web", icon: .externalLink)
-			}
-			.accessibilityLabel("Open on the web")
+			OpenOnWebButton(url: url, style: .action)
 			ShareLink(item: url, message: Text(summary)) {
 				AlertActionLabel(title: "Share", icon: .upload)
 			}

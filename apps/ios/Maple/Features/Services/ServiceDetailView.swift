@@ -166,7 +166,6 @@ struct ServiceDetailView: View {
 
 	@Environment(SessionController.self) private var session
 	@Environment(EnvironmentController.self) private var environments
-	@Environment(\.openURL) private var openURL
 	@State private var model: ServiceDetailModel?
 
 	private var scope: SessionController.DataScope {
@@ -200,15 +199,7 @@ struct ServiceDetailView: View {
 				.accessibilityAddTraits(.isHeader)
 			}
 			ToolbarItem(placement: .topBarTrailing) {
-				Button {
-					openURL(MapleWeb.service(serviceName))
-				} label: {
-					PixelIcon.externalLink.image
-						.resizable()
-						.frame(width: 14, height: 14)
-						.foregroundStyle(Token.mutedForeground)
-				}
-				.accessibilityLabel("Open on web")
+				OpenOnWebButton(url: MapleWeb.service(serviceName))
 			}
 		}
 		.mapleScreen(Screen.serviceDetail)

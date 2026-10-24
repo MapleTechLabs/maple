@@ -188,7 +188,6 @@ struct DashboardDetailView: View {
 	let name: String
 
 	@Environment(SessionController.self) private var session
-	@Environment(\.openURL) private var openURL
 	@State private var model: DashboardDetailModel?
 
 	var body: some View {
@@ -212,15 +211,7 @@ struct DashboardDetailView: View {
 		.navigationBarTitleDisplayMode(.inline)
 		.toolbar {
 			ToolbarItem(placement: .topBarTrailing) {
-				Menu {
-					Button("Open on web", systemImage: "safari") { openURL(MapleWeb.dashboard(dashboardID)) }
-				} label: {
-					PixelIcon.dotsVertical.image
-						.resizable()
-						.frame(width: 16, height: 16)
-						.foregroundStyle(Token.mutedForeground)
-				}
-				.accessibilityLabel("More")
+				OpenOnWebButton(url: MapleWeb.dashboard(dashboardID))
 			}
 		}
 		.mapleScreen(Screen.dashboardDetail)

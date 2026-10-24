@@ -63,7 +63,6 @@ struct TraceDetailView: View {
 	var initialSpanID: String? = nil
 
 	@Environment(SessionController.self) private var session
-	@Environment(\.openURL) private var openURL
 	@State private var model: TraceDetailModel?
 	@State private var selected: WaterfallRow?
 
@@ -87,7 +86,7 @@ struct TraceDetailView: View {
 					Button("Copy trace ID", systemImage: "doc.on.doc") {
 						UIPasteboard.general.string = traceID
 					}
-					Button("Open on web", systemImage: "safari") { openURL(MapleWeb.trace(traceID)) }
+					OpenOnWebButton(url: MapleWeb.trace(traceID), style: .menuItem)
 				} label: {
 					PixelIcon.dotsVertical.image
 						.resizable()
