@@ -30,6 +30,10 @@ export const Model = Schema.TaggedStruct("OrgRequired", {
 	joiningId: Schema.NullOr(Schema.String),
 	/** An org the user already belongs to, being opened (`setActive` then its region's app). */
 	openingId: Schema.NullOr(Schema.String),
+	/** Created, but not opened yet (Clerk refused `setActive`): Create retries opening it, never a second org. */
+	createdOrgId: Schema.NullOr(Schema.String),
+	/** Clerk could not list the invitations, so their absence says nothing. */
+	invitationsError: Schema.NullOr(Schema.String),
 })
 export type Model = typeof Model.Type
 
@@ -40,6 +44,7 @@ export const Message = defineMessageUnion({
 	SucceededCreate: { orgId: Schema.String },
 	FailedCreate: { message: Schema.String },
 	LoadedInvitations: { invitations: Schema.Array(UserInvitation) },
+	FailedLoadInvitations: { message: Schema.String },
 	ClickedJoin: { invitationId: Schema.String },
 	SucceededJoin: { orgId: Schema.String },
 	FailedJoin: { message: Schema.String },
@@ -56,10 +61,10 @@ export type Message = typeof Message.Type
 // COMMANDS
 
 export const LoadInvitations = Command.define("LoadUserInvitations", {
-	messages: [Message.LoadedInvitations],
+	messages: [Message.LoadedInvitations, Message.FailedLoadInvitations],
 	execute: pendingUserInvitations.pipe(
-		Effect.orElseSucceed((): ReadonlyArray<UserInvitation> => []),
 		Effect.map((invitations) => Message.LoadedInvitations({ invitations })),
+		Effect.catch((error) => Effect.succeed(Message.FailedLoadInvitations({ message: error.message }))),
 	),
 })
 
@@ -130,6 +135,8 @@ export const init = (maybeUser: Option.Option<ClerkUser>): Result => {
 			invitations: null,
 			joiningId: null,
 			openingId: null,
+			createdOrgId: null,
+			invitationsError: null,
 		}),
 		commands: [LoadInvitations()],
 	}
@@ -147,10 +154,17 @@ export const update = (model: Model, message: Message): Result =>
 				? { model }
 				: {
 						model: { ...model, isCreating: true, errorMessage: null },
-						commands: [CreateOrganization({ name: model.name, region: model.region })],
+						commands: [
+							model.createdOrgId === null
+								? CreateOrganization({ name: model.name, region: model.region })
+								: LeaveFor({
+										orgId: model.createdOrgId,
+										targetUrl: createdTargetOf(model.region),
+									}),
+						],
 					},
 		SucceededCreate: ({ orgId }) => ({
-			model,
+			model: { ...model, createdOrgId: orgId },
 			commands: [LeaveFor({ orgId, targetUrl: createdTargetOf(model.region) })],
 		}),
 		FailedCreate: ({ message: failure }) => ({
@@ -160,7 +174,12 @@ export const update = (model: Model, message: Message): Result =>
 				errorMessage: failure.trim() || "Couldn't create your organization. Try again.",
 			},
 		}),
-		LoadedInvitations: ({ invitations }) => ({ model: { ...model, invitations } }),
+		LoadedInvitations: ({ invitations }) => ({
+			model: { ...model, invitations, invitationsError: null },
+		}),
+		FailedLoadInvitations: ({ message: failure }) => ({
+			model: { ...model, invitations: [], invitationsError: failure.trim() || "Clerk did not answer." },
+		}),
 		ClickedJoin: ({ invitationId }) =>
 			isBusy(model)
 				? { model }
