@@ -751,6 +751,8 @@ MAPLE_TARGET=linux-arm64 scripts/build-local-binary.sh   # cross-compile (linux-
   chowns a root-owned `/data` and drops to uid 10001 with `setpriv`. Its dirty-store
   policy is `restore-checkpoint` once a checkpoint exists and `wipe` before that,
   so a container killed before its first checkpoint starts instead of crash-looping.
+  `start --in-memory` gets no policy flag (it has no store to recover); pair it
+  with `--shm-size=1g` or more to keep the store in RAM.
   Any other command runs `maple` as is.
 - `build-image.sh <tag> [platforms]` cross-compiles the bundles (or takes
   `BUNDLES=<dir>`) and builds; `image-smoke.sh <image>` is the end-to-end check:
