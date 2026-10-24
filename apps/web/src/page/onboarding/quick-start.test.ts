@@ -48,7 +48,9 @@ describe("quick start", () => {
 		expect(resolveQuickStartStep(stateOf(skipped), true)).toBe("connect")
 		const connected = update(skipped, Message.ClickedContinue({ step: "connect" })).model
 		expect(resolveQuickStartStep(stateOf(connected), true)).toBe("team")
-		const done = update(connected, Message.ClickedContinue({ step: "team" }))
+		const teamed = update(connected, Message.ClickedContinue({ step: "team" })).model
+		expect(resolveQuickStartStep(stateOf(teamed), true)).toBe("live")
+		const done = update(teamed, Message.ClickedContinue({ step: "live" }))
 		expect(done.commands?.map((command) => [command.name, command.args]).at(-1)).toEqual([
 			"FinishQuickStart",
 			{ url: "/traces" },
@@ -58,7 +60,7 @@ describe("quick start", () => {
 	test("someone who already finished is sent straight on when the page loads", () => {
 		const finished = {
 			...DEFAULT_QUICK_START_STATE,
-			completedSteps: { plan: true, stack: true, connect: true, team: true },
+			completedSteps: { plan: true, stack: true, connect: true, team: true, live: true },
 		}
 		const loading = init("maple-onboarding-v6-org_1").model
 		expect(names(update(loading, Message.LoadedQuickStartState({ state: finished })))).toEqual([

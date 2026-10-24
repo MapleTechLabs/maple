@@ -108,7 +108,7 @@ const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 		case "GotPricingMessage":
 			return message.message._tag === "ClickedPlan" ? { model: { ...model, hasPlan: true } } : { model }
 		case "ClickedContinue":
-			if (message.step === "team") return { model: { ...model, isComplete: true } }
+			if (message.step === "live") return { model: { ...model, isComplete: true } }
 			return { model: withQuickStart(model, QuickStart.update(model.quickStart, message).model) }
 		default:
 			return { model: withQuickStart(model, QuickStart.update(model.quickStart, message).model) }
@@ -155,7 +155,7 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>(
 			needsRegion: false,
 			hasPlan: model.hasPlan,
 			orgName: "Acme",
-			teamStep: () => QuickStartTeamView.teamStep(h, model.quickStart.team, "Acme"),
+			teamStep: () => QuickStartTeamView.teamStep(h, model.quickStart.team),
 			planStep: QuickStartTeamView.planStep(
 				h,
 				false,

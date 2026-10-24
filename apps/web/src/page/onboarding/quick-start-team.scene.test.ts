@@ -1,15 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { click, Command, expect as expectView, given, role, scene } from "foldkit/scene"
-import { describe, test } from "vitest"
-import {
-	Finish,
-	init,
-	Message,
-	type Model,
-	SaveQuickStartState,
-	TrackStepCompleted,
-	update,
-} from "./quick-start"
+import { expect as expectView, given, role, scene } from "foldkit/scene"
+import { describe, expect, test } from "vitest"
+import { init, Message, type Model, update } from "./quick-start"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
 import { ready } from "./quick-start-team"
 import { teamStep } from "./quick-start-team-view"
@@ -24,7 +16,7 @@ const atTeam = (): Model => ({
 	team: ready("Acme", [], true, null),
 })
 
-const view = (model: Model, h: HtmlBuilder<Message>): Html => teamStep(h, model.team, "Acme")
+const view = (model: Model, h: HtmlBuilder<Message>): Html => teamStep(h, model.team)
 
 describe("team and tools step", () => {
 	test("each tool opens its own setup page in a new tab", () => {
@@ -46,16 +38,14 @@ describe("team and tools step", () => {
 		)
 	})
 
-	test("the last button finishes onboarding and opens the org where they were going", () => {
+	test("Continue moves on to the last screen, which reads what the org already shows", () => {
 		scene(
 			{ update, view },
 			given(atTeam()),
-			expectView(role("button", { name: "Back" })).not.toBeDisabled(),
-			click(role("button", { name: "Open Acme" })),
-			Command.expectHas(Finish({ url: "/services" })),
-			Command.resolve(TrackStepCompleted, Message.CompletedTrackStepCompleted()),
-			Command.resolve(SaveQuickStartState, Message.CompletedSaveQuickStartState()),
-			Command.resolve(Finish, Message.CompletedFinish()),
+			expectView(role("button", { name: "Continue" })).not.toBeDisabled(),
 		)
+		const next = update(atTeam(), Message.ClickedContinue({ step: "team" }))
+		expect((next.commands ?? []).map((command) => command.name)).toContain("LoadOnboardingLiveFindings")
+		expect(next.model.live._tag).toBe("Loading")
 	})
 })

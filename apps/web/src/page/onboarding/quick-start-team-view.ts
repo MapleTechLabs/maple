@@ -100,7 +100,7 @@ const toolRow = (h: H, tool: Tool): Html =>
 	)
 
 /** `StepTeam`: the tools Maple plugs into, then teammates. Every part is optional. */
-export const teamStep = (h: H, team: Team, orgName: string): Html => {
+export const teamStep = (h: H, team: Team): Html => {
 	const isBusy = team.pending !== null
 	return h.div(
 		[h.Class("flex flex-1 flex-col gap-8 px-6 pb-8 pt-4 sm:px-12 lg:px-16")],
@@ -182,7 +182,7 @@ export const teamStep = (h: H, team: Team, orgName: string): Html => {
 							isDisabled: isBusy,
 							attributes: [h.OnClick(Message.ClickedContinue({ step: "team" }))],
 						},
-						[`Open ${orgName}`, icon(h, "ArrowRightIcon", { size: 16 })],
+						["Continue", icon(h, "ArrowRightIcon", { size: 16 })],
 					),
 				],
 			),

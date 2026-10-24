@@ -9,6 +9,7 @@ import {
 	type StackPlatform,
 } from "../../lib/onboarding-stack"
 import { cn } from "@maple/ui/lib/utils"
+import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
@@ -17,6 +18,7 @@ import { optionCard, type PixelGlyphName, pixelGlyph } from "./option-card"
 import * as GuidedSetup from "../kit/guided-setup"
 import { presenceOf, type TelemetrySignalKind } from "../kit/signal-presence"
 import { ConnectMessage, STATUS_PROVIDERS } from "./quick-start-connect"
+import type { LiveFindings } from "./quick-start-live"
 import { regionStep } from "./quick-start-region-view"
 import * as QuickStartTeamView from "./quick-start-team-view"
 import { Message, type Model, MountDitherField } from "./quick-start"
@@ -48,6 +50,7 @@ const REACH = {
 	stack: "0.85",
 	connect: "1.0",
 	team: "1.15",
+	live: "1.35",
 } as const satisfies Record<StepId | "region", string>
 
 type TrailItem = Readonly<{ label: string; answer: string | null; isCurrent: boolean }>
@@ -640,6 +643,290 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 	)
 }
 
+// LIVE
+
+type StartCard = Readonly<{
+	glyph: PixelGlyphName
+	title: string
+	finding: string
+	action: string
+	href: string
+}>
+
+const percent = (rate: number): string => `${(rate * 100).toFixed(rate < 0.01 ? 2 : 1)}%`
+
+/** Where to look first, each card worded from the org's own last 24 hours when there is something to say. */
+const startCards = (findings: LiveFindings | null): ReadonlyArray<StartCard> => [
+	{
+		glyph: "nodes-3",
+		title: "Service Map",
+		finding:
+			findings === null || findings.serviceCount === 0
+				? "Draws itself from your first traces: which services call which."
+				: `${findings.serviceCount} ${findings.serviceCount === 1 ? "service" : "services"} reporting so far.`,
+		action: "Open the map",
+		href: hrefOf(AppRoute.ServiceMap({ search: {} })),
+	},
+	{
+		glyph: "square-activity-chart",
+		title: "Slowest service",
+		finding:
+			findings?.slowest == null
+				? "Once requests arrive, the slowest one is a click away."
+				: `${findings.slowest.serviceName} at ${Math.round(findings.slowest.p95LatencyMs)} ms p95.`,
+		action: "See its traces",
+		href: hrefOf(
+			AppRoute.Traces({
+				search: findings?.slowest == null ? {} : { services: [findings.slowest.serviceName] },
+			}),
+		),
+	},
+	{
+		glyph: "triangle-warning",
+		title: "Errors",
+		finding:
+			findings?.mostErrors == null
+				? "Exceptions are grouped into issues as soon as one is thrown."
+				: `${findings.mostErrors.serviceName} fails ${percent(findings.mostErrors.errorRate)} of requests.`,
+		action: "Triage issues",
+		href: hrefOf(AppRoute.Errors({ search: {} })),
+	},
+]
+
+const chip = (h: H, children: ReadonlyArray<Html | string>): Html =>
+	h.li(
+		[h.Class("flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs")],
+		children,
+	)
+
+const liveStep = (h: H, model: Model, state: QuickStartState, orgName: string): Html => {
+	const findings = AsyncData.getOrElse(model.live, (): LiveFindings | null => null)
+	const signals = SIGNALS.map((entry) => ({
+		...entry,
+		presence: presenceOf(model.connect.presence, entry.signal),
+	}))
+	const arriving = signals.filter((row) => row.presence.status === "present")
+	const providers = state.stack.platforms.filter((platform) =>
+		STATUS_PROVIDERS.some((provider) => provider === platform),
+	)
+	const connected = providers.filter((platform) => model.connect.connected[platform] === true)
+	const notConnected = state.stack.platforms.filter((platform) => !connected.includes(platform))
+	const isLive = arriving.length > 0 || connected.length > 0
+	const invited = model.team.invited.length
+	return h.div(
+		[h.Class("relative flex flex-1 flex-col items-center px-6 pb-12 pt-10 sm:px-12")],
+		[
+			h.div(
+				[h.Class("flex w-full max-w-4xl flex-col gap-10")],
+				[
+					h.div(
+						[h.Class("flex flex-col items-center gap-3 text-center")],
+						[
+							h.p(
+								[h.Class(cn("text-sm", isLive ? "text-success" : "text-muted-foreground"))],
+								[isLive ? "Data is flowing" : "All set up"],
+							),
+							h.h1(
+								[h.Class("font-display text-4xl font-semibold tracking-tight")],
+								[isLive ? `${orgName} is live.` : `${orgName} is ready for its first data.`],
+							),
+							h.ul(
+								[
+									h.AriaLabel("Connected so far"),
+									h.Class("mt-1 flex flex-wrap justify-center gap-2"),
+								],
+								[
+									...arriving.map((row) =>
+										chip(h, [
+											icon(h, "CircleCheckIcon", {
+												size: 12,
+												className: "text-success",
+											}),
+											row.label,
+										]),
+									),
+									...connected.map((platform) =>
+										chip(h, [
+											icon(h, STACK_PLATFORMS[platform].icon, { size: 12 }),
+											STACK_PLATFORMS[platform].label,
+										]),
+									),
+									...(invited === 0
+										? []
+										: [
+												chip(h, [
+													`${invited} ${invited === 1 ? "invite" : "invites"} sent`,
+												]),
+											]),
+								],
+							),
+						],
+					),
+					h.section(
+						[h.Class("flex flex-col gap-3")],
+						[
+							h.h2(
+								[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
+								["Start with your own data"],
+							),
+							h.ul(
+								[
+									h.Class(
+										"grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3",
+									),
+								],
+								startCards(findings).map((card) =>
+									h.li(
+										[h.Class("flex flex-col gap-3.5 bg-background p-5")],
+										[
+											pixelGlyph(h, card.glyph, true),
+											h.div(
+												[h.Class("flex flex-col gap-1")],
+												[
+													h.span(
+														[h.Class("text-[15px] font-medium")],
+														[card.title],
+													),
+													h.span(
+														[
+															h.Class(
+																"text-[13px] leading-relaxed text-muted-foreground",
+															),
+														],
+														[card.finding],
+													),
+												],
+											),
+											h.a(
+												[
+													h.Href(card.href),
+													h.Class(
+														"mt-auto flex items-center gap-1.5 text-[13px] text-primary hover:underline",
+													),
+												],
+												[card.action, icon(h, "ArrowRightIcon", { size: 12 })],
+											),
+										],
+									),
+								),
+							),
+						],
+					),
+					...(notConnected.length === 0 && arriving.length === signals.length
+						? []
+						: [
+								h.section(
+									[h.Class("flex flex-col gap-3")],
+									[
+										h.h2(
+											[
+												h.Class(
+													"text-2xs uppercase tracking-widest text-muted-foreground",
+												),
+											],
+											["Still waiting on"],
+										),
+										h.ul(
+											[
+												h.Class(
+													"flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border",
+												),
+											],
+											[
+												...notConnected.map((platform) =>
+													h.li(
+														[h.Class("flex items-center gap-3 px-4 py-3")],
+														[
+															h.span(
+																[h.AriaHidden(true), h.Class("flex")],
+																[
+																	icon(h, STACK_PLATFORMS[platform].icon, {
+																		size: 14,
+																	}),
+																],
+															),
+															h.span(
+																[h.Class("flex-1 text-sm")],
+																[
+																	`Connect ${STACK_PLATFORMS[platform].label}`,
+																],
+															),
+															h.a(
+																[
+																	h.Href(setupHrefOf(platform)),
+																	h.Target("_blank"),
+																	h.Rel("noopener"),
+																	h.Class(
+																		"text-xs text-primary hover:underline",
+																	),
+																],
+																["Set up"],
+															),
+														],
+													),
+												),
+												...(arriving.length > 0
+													? []
+													: [
+															h.li(
+																[
+																	h.Class(
+																		"flex items-center gap-3 px-4 py-3",
+																	),
+																],
+																[
+																	icon(h, "ClockIcon", {
+																		size: 14,
+																		className: "text-muted-foreground",
+																	}),
+																	h.span(
+																		[h.Class("flex-1 text-sm")],
+																		["Your first span, log or metric"],
+																	),
+																	h.span(
+																		[
+																			h.Class(
+																				"text-xs text-muted-foreground",
+																			),
+																		],
+																		["Listening"],
+																	),
+																],
+															),
+														]),
+											],
+										),
+									],
+								),
+							]),
+					h.div(
+						[h.Class("flex flex-col items-center gap-3")],
+						[
+							button(
+								h,
+								{
+									size: "lg",
+									attributes: [h.OnClick(Message.ClickedContinue({ step: "live" }))],
+								},
+								[`Go to ${orgName}`, icon(h, "ArrowRightIcon", { size: 16 })],
+							),
+							h.a(
+								[
+									h.Href(hrefOf(AppRoute.Alerts({ search: {} }))),
+									h.Class(
+										"text-xs text-muted-foreground underline-offset-4 hover:underline",
+									),
+								],
+								["Or set up your first alert"],
+							),
+						],
+					),
+				],
+			),
+		],
+	)
+}
+
 /** What the screen draws for its step; the team and plan steps come from their own modules. */
 export type QuickStartParts = Readonly<{
 	/** The header's right cluster around the trail: the container owns its menus. */
@@ -704,6 +991,8 @@ export const view = (h: H, model: Model, parts: QuickStartParts): Html | null =>
 			return shell(h, options(connectPreview(h, parts.orgName, model, state)), [
 				motionStep(h, "connect", connectStep(h, model, state)),
 			])
+		case "live":
+			return shell(h, options(null), [motionStep(h, "live", liveStep(h, model, state, parts.orgName))])
 		case "team":
 			return shell(h, options(QuickStartTeamView.teamPreview(h)), [
 				motionStep(h, "team", parts.teamStep(state)),
