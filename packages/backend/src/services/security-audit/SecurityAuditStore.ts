@@ -206,8 +206,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						profile: metadata.profile,
 						scopePaths: metadata.scope_paths,
 						budget: metadata.budget,
-						status: metadata.run_status,
-						incompleteReason: metadata.incomplete_reason ?? null,
+						// `status` is the row's lifecycle, settled by finishRun; the engine's stays in metadata.
 					})
 				})
 
@@ -261,7 +260,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				/**
 				 * Replaces the run's findings, then folds them into the target's lifecycle rows: a new
 				 * fingerprint opens, a `fixed` one regresses to open, dismissed and accepted stay put.
-				 * Lifecycle rows this run created that its latest save dropped are removed again.
+				 * Lifecycle rows this run created that its latest save dropped are removed again while
+				 * still open; a triaged one (dismissed, accepted) stays.
 				 */
 				const saveFindings: AuditStoreApi["saveFindings"] = Effect.fn(
 					"SecurityAuditStore.saveFindings",
@@ -290,6 +290,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										$.firstSeenRunId.eq(runId),
 										$.lastSeenRunId.eq(runId),
 										$.fingerprint.notIn(...fingerprints),
+										$.status.eq("open"),
 									]),
 								)
 								if (!Arr.isReadonlyArrayNonEmpty(unique)) return
