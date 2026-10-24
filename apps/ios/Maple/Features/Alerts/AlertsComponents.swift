@@ -11,11 +11,7 @@ struct SeverityRailRow<Content: View>: View {
 			.padding(.horizontal, 14)
 			.padding(.vertical, 12)
 			.frame(maxWidth: .infinity, alignment: .leading)
-			.overlay(alignment: .leading) {
-				if let tint {
-					Rectangle().fill(tint).frame(width: 2)
-				}
-			}
+			.severityRail(tint)
 			.contentShape(.rect)
 	}
 }

@@ -140,17 +140,9 @@ struct IncidentRow: View {
 					Text(card.display.label)
 						.foregroundStyle(Token.mutedForeground)
 						.lineLimit(1)
-					Text(
-						Format.breach(
-							observed: incident.lastObservedValue,
-							comparator: incident.comparator,
-							threshold: incident.threshold,
-							upper: incident.thresholdUpper,
-							unit: card.display.unit
-						)
-					)
-					.foregroundStyle(tint)
-					.fixedSize()
+					Text(incident.breach(unit: card.display.unit))
+						.foregroundStyle(tint)
+						.fixedSize()
 				}
 				.font(Typo.small)
 				.tabularNumbers()

@@ -470,6 +470,17 @@ struct SectionLabel: View {
 	}
 }
 
+extension View {
+	/// The 2pt leading rail marking a row's severity; nil draws none.
+	func severityRail(_ tint: Color?) -> some View {
+		overlay(alignment: .leading) {
+			if let tint {
+				Rectangle().fill(tint).frame(width: 2)
+			}
+		}
+	}
+}
+
 /// `OPEN ALERTS 3` with a trailing note or link: every section's header.
 struct SectionHeader<Trailing: View>: View {
 	let title: String

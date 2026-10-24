@@ -102,41 +102,35 @@ private struct TracesListRow: View {
 	let trace: TraceSummary
 
 	var body: some View {
-		HStack(spacing: 0) {
-			Rectangle()
-				.fill(trace.rootHasError ? Token.severityError : .clear)
-				.frame(width: 3)
-			VStack(alignment: .leading, spacing: 4) {
-				HStack(spacing: 8) {
-					ServiceDot(serviceName: trace.rootServiceName)
-					Text(trace.rootSpanName)
-						.font(Typo.small)
-						.foregroundStyle(Token.foreground)
-						.lineLimit(1)
-					Spacer(minLength: 8)
-					Text(Format.latency(trace.durationMs))
-						.font(Typo.smallMedium)
-						.tabularNumbers()
-						.foregroundStyle(Tone.latency(trace.durationMs, scale: .p95))
-				}
-				HStack(spacing: 8) {
-					Text("\(trace.id.prefix(8)) · \(Format.lastSeen(trace.startTime))")
-						.foregroundStyle(Token.mutedForeground)
-						.lineLimit(1)
-					Spacer(minLength: 8)
-					if let status = statusLabel {
-						Text(status)
-							.foregroundStyle(trace.rootHasError ? Token.severityError : Token.mutedForeground)
-					}
-				}
-				.font(Typo.tiny)
-				.tabularNumbers()
+		VStack(alignment: .leading, spacing: 4) {
+			HStack(spacing: 8) {
+				ServiceDot(serviceName: trace.rootServiceName)
+				Text(trace.rootSpanName)
+					.font(Typo.small)
+					.foregroundStyle(Token.foreground)
+					.lineLimit(1)
+				Spacer(minLength: 8)
+				Text(Format.latency(trace.durationMs))
+					.font(Typo.smallMedium)
+					.tabularNumbers()
+					.foregroundStyle(Tone.latency(trace.durationMs, scale: .p95))
 			}
-			.padding(.leading, 14)
-			.padding(.trailing, 16)
-			.padding(.vertical, 10)
+			HStack(spacing: 8) {
+				Text("\(trace.id.prefix(8)) · \(Format.lastSeen(trace.startTime))")
+					.foregroundStyle(Token.mutedForeground)
+					.lineLimit(1)
+				Spacer(minLength: 8)
+				if let status = statusLabel {
+					Text(status)
+						.foregroundStyle(trace.rootHasError ? Token.severityError : Token.mutedForeground)
+				}
+			}
+			.font(Typo.tiny)
+			.tabularNumbers()
 		}
-		.fixedSize(horizontal: false, vertical: true)
+		.padding(.horizontal, 16)
+		.padding(.vertical, 10)
+		.severityRail(trace.rootHasError ? Token.severityError : nil)
 		.contentShape(.rect)
 	}
 

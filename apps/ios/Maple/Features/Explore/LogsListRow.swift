@@ -8,40 +8,34 @@ struct LogsListRow: View {
 	@State private var expanded = false
 
 	var body: some View {
-		HStack(spacing: 0) {
-			Rectangle()
-				.fill(log.severityTint)
-				.frame(width: 3)
-			VStack(alignment: .leading, spacing: expanded ? 8 : 4) {
-				Button {
-					withAnimation(.snappy(duration: 0.2)) { expanded.toggle() }
-				} label: {
-					VStack(alignment: .leading, spacing: expanded ? 8 : 4) {
-						meta
-						Text(log.body)
-							.font(Typo.small)
-							.lineSpacing(3)
-							.foregroundStyle(Token.foreground)
-							.lineLimit(expanded ? nil : 3)
-							.frame(maxWidth: .infinity, alignment: .leading)
-					}
-					.contentShape(.rect)
+		VStack(alignment: .leading, spacing: expanded ? 8 : 4) {
+			Button {
+				withAnimation(.snappy(duration: 0.2)) { expanded.toggle() }
+			} label: {
+				VStack(alignment: .leading, spacing: expanded ? 8 : 4) {
+					meta
+					Text(log.body)
+						.font(Typo.small)
+						.lineSpacing(3)
+						.foregroundStyle(Token.foreground)
+						.lineLimit(expanded ? nil : 3)
+						.frame(maxWidth: .infinity, alignment: .leading)
 				}
-				.buttonStyle(.plain)
-				.accessibilityHint(expanded ? "Collapses the log" : "Shows attributes")
-
-				if expanded {
-					LogsAttributeCard(values: attributes)
-						.padding(.top, 4)
-					actions
-						.padding(.top, 4)
-				}
+				.contentShape(.rect)
 			}
-			.padding(.leading, 14)
-			.padding(.trailing, 16)
-			.padding(.vertical, 10)
+			.buttonStyle(.plain)
+			.accessibilityHint(expanded ? "Collapses the log" : "Shows attributes")
+
+			if expanded {
+				LogsAttributeCard(values: attributes)
+					.padding(.top, 4)
+				actions
+					.padding(.top, 4)
+			}
 		}
-		.fixedSize(horizontal: false, vertical: true)
+		.padding(.horizontal, 16)
+		.padding(.vertical, 10)
+		.severityRail(log.severityTint)
 		.background(expanded ? Token.card : .clear)
 	}
 

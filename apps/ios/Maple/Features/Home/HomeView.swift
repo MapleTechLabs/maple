@@ -210,18 +210,10 @@ struct IncidentCardView: View {
 					Text(card.display.label)
 						.font(Typo.micro)
 						.foregroundStyle(Token.mutedForeground)
-					Text(
-						Format.breach(
-							observed: incident.lastObservedValue,
-							comparator: incident.comparator,
-							threshold: incident.threshold,
-							upper: incident.thresholdUpper,
-							unit: card.display.unit
-						)
-					)
-					.font(Typo.smallSemibold)
-					.tabularNumbers()
-					.foregroundStyle(incident.severity.tint)
+					Text(incident.breach(unit: card.display.unit))
+						.font(Typo.smallSemibold)
+						.tabularNumbers()
+						.foregroundStyle(incident.severity.tint)
 				}
 				Spacer(minLength: 0)
 				Sparkline(
@@ -237,11 +229,7 @@ struct IncidentCardView: View {
 		.padding(.leading, 16)
 		.padding(.trailing, 14)
 		.padding(.vertical, 14)
-		.overlay(alignment: .leading) {
-			Rectangle()
-				.fill(incident.severity.tint)
-				.frame(width: 2)
-		}
+		.severityRail(incident.severity.tint)
 		.hairlineCard()
 		.contentShape(.rect)
 	}

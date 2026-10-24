@@ -223,17 +223,9 @@ private struct IncidentHeader: View {
 				.accessibilityAddTraits(.isHeader)
 
 			HStack(spacing: 8) {
-				Text(
-					Format.breach(
-						observed: incident.lastObservedValue,
-						comparator: incident.comparator,
-						threshold: incident.threshold,
-						upper: incident.thresholdUpper,
-						unit: detail.display.unit
-					)
-				)
-				.font(Typo.smallSemibold)
-				.foregroundStyle(isOpen ? incident.severity.tint : Token.mutedForeground)
+				Text(incident.breach(unit: detail.display.unit))
+					.font(Typo.smallSemibold)
+					.foregroundStyle(isOpen ? incident.severity.tint : Token.mutedForeground)
 				Text(
 					isOpen
 						? "· open \(Format.duration(from: incident.firstTriggeredAt))"
@@ -301,13 +293,7 @@ private struct IncidentActions: View {
 
 	private var summary: String {
 		let incident = detail.incident
-		let breach = Format.breach(
-			observed: incident.lastObservedValue,
-			comparator: incident.comparator,
-			threshold: incident.threshold,
-			upper: incident.thresholdUpper,
-			unit: detail.display.unit
-		)
+		let breach = incident.breach(unit: detail.display.unit)
 		let service = detail.serviceName.map { " on \($0)" } ?? ""
 		let state = incident.status == .open ? "open \(Format.duration(from: incident.firstTriggeredAt))" : "resolved"
 		return "\(incident.ruleName): \(detail.display.label) \(breach)\(service) · \(incident.severity.label), \(state)"

@@ -86,45 +86,32 @@ struct ServiceIncidentRow: View {
 	private var incident: AlertIncident { card.incident }
 
 	var body: some View {
-		HStack(spacing: 0) {
-			Rectangle()
-				.fill(incident.severity.tint)
-				.frame(width: 2)
-			HStack(spacing: 12) {
-				VStack(alignment: .leading, spacing: 2) {
-					Text(incident.ruleName)
-						.font(Typo.bodyMedium)
-						.foregroundStyle(Token.foreground)
-						.lineLimit(1)
-					Text("\(incident.severity.label) · open \(Format.duration(from: incident.firstTriggeredAt))")
-						.font(Typo.tiny)
-						.tabularNumbers()
-						.foregroundStyle(Token.mutedForeground)
-						.lineLimit(1)
-				}
-				.frame(maxWidth: .infinity, alignment: .leading)
-				Text(
-					Format.breach(
-						observed: incident.lastObservedValue,
-						comparator: incident.comparator,
-						threshold: incident.threshold,
-						upper: incident.thresholdUpper,
-						unit: card.display.unit
-					)
-				)
+		HStack(spacing: 12) {
+			VStack(alignment: .leading, spacing: 2) {
+				Text(incident.ruleName)
+					.font(Typo.bodyMedium)
+					.foregroundStyle(Token.foreground)
+					.lineLimit(1)
+				Text("\(incident.severity.label) · open \(Format.duration(from: incident.firstTriggeredAt))")
+					.font(Typo.tiny)
+					.tabularNumbers()
+					.foregroundStyle(Token.mutedForeground)
+					.lineLimit(1)
+			}
+			.frame(maxWidth: .infinity, alignment: .leading)
+			Text(incident.breach(unit: card.display.unit))
 				.font(Typo.smallSemibold)
 				.tabularNumbers()
 				.foregroundStyle(incident.severity.tint)
 				.lineLimit(1)
-				PixelIcon.chevronRight.image
-					.resizable()
-					.frame(width: 14, height: 14)
-					.foregroundStyle(Token.mutedForeground)
-			}
-			.padding(.horizontal, 12)
-			.padding(.vertical, 10)
+			PixelIcon.chevronRight.image
+				.resizable()
+				.frame(width: 14, height: 14)
+				.foregroundStyle(Token.mutedForeground)
 		}
-		.fixedSize(horizontal: false, vertical: true)
+		.padding(.horizontal, 12)
+		.padding(.vertical, 10)
+		.severityRail(incident.severity.tint)
 		.hairlineCard()
 		.contentShape(.rect)
 		.accessibilityElement(children: .combine)

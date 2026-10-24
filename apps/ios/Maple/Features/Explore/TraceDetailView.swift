@@ -327,13 +327,7 @@ private struct TraceWaterfallRow: View {
 			}
 		}
 		.background(isSelected ? Token.muted : .clear)
-		.overlay(alignment: .leading) {
-			if isSelected {
-				Rectangle()
-					.fill(row.isError ? Token.destructive : Token.primary)
-					.frame(width: 2)
-			}
-		}
+		.severityRail(isSelected ? (row.isError ? Token.destructive : Token.primary) : nil)
 		.contentShape(.rect)
 		.accessibilityElement(children: .combine)
 		.accessibilityAddTraits(isSelected ? [.isSelected] : [])

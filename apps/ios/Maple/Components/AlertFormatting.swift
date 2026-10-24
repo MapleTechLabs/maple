@@ -244,3 +244,16 @@ extension Format {
 		}
 	}
 }
+
+extension AlertIncident {
+	/// The last observation against the rule's threshold: `9.0% > 5.0%`.
+	func breach(unit: SignalUnit) -> String {
+		Format.breach(
+			observed: lastObservedValue,
+			comparator: comparator,
+			threshold: threshold,
+			upper: thresholdUpper,
+			unit: unit
+		)
+	}
+}
