@@ -3,7 +3,12 @@ import { Effect } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as PricingCards from "./pricing-cards"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
-import { DEFAULT_QUICK_START_STATE, readQuickStartState, resolveQuickStartStep } from "./quick-start-state"
+import {
+	DEFAULT_QUICK_START_STATE,
+	readQuickStartState,
+	resolveQuickStartStep,
+	STEP_IDS,
+} from "./quick-start-state"
 import { LoadTeam, loadingTeam, TeamMessage, updateTeam } from "./quick-start-team"
 
 /** An org that holds a plan, as most of these steps run for. */
@@ -81,11 +86,12 @@ describe("quick start", () => {
 	})
 
 	test("finishing the last step without a plan goes back to the plan step instead of nowhere", () => {
-		const atTeam = {
+		const last = STEP_IDS[STEP_IDS.length - 1] ?? "team"
+		const atLast = {
 			...loaded(),
-			state: { ...DEFAULT_QUICK_START_STATE, activeStep: "team", completedSteps: { stack: true } },
+			state: { ...DEFAULT_QUICK_START_STATE, activeStep: last, completedSteps: { stack: true } },
 		}
-		const done = updateWith(atTeam, Message.ClickedContinue({ step: "team" }), false)
+		const done = updateWith(atLast, Message.ClickedContinue({ step: last }), false)
 		expect(names(done)).not.toContain("FinishQuickStart")
 		expect(resolveQuickStartStep(stateOf(done.model), false)).toBe("plan")
 	})
