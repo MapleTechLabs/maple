@@ -33,6 +33,10 @@ public struct WidgetFetchState: Codable, Sendable, Equatable {
 	public var inFlightSince: Date?
 	/// `dpop` or `bearer`: which credential the last attempt used. Diagnostic.
 	public var lastAuthScheme: String?
+	/// When the app last found this installation held by another member's
+	/// credential (409 `device_installation_in_use`). Needs attention, not a
+	/// new key; the widget keeps its last snapshot and the app retries.
+	public var installationInUseAt: Date?
 
 	public enum Outcome: String, Codable, Sendable {
 		case success
@@ -138,6 +142,14 @@ public struct WidgetFetchStateStore: Sendable {
 
 	public func clear(organizationId: String) {
 		defaults?.removeObject(forKey: key(organizationId))
+	}
+
+	/// Set or clear the installation conflict the app saw while registering.
+	public func recordInstallationInUse(_ date: Date?, organizationId: String) {
+		var state = load(organizationId: organizationId)
+		guard state.installationInUseAt != date else { return }
+		state.installationInUseAt = date
+		save(state, organizationId: organizationId)
 	}
 
 	/// The app, having minted a fresh credential, telling the widget to stop

@@ -437,7 +437,7 @@ final class WidgetPublisher {
 			outcome.issuesChanged = outcome.issuesChanged || resolutionMoved
 			outcome.throughputChanged = outcome.throughputChanged || resolutionMoved
 
-			await self.ensureCredentials(for: organizations, context: context)
+			await self.ensureCredentials(for: organizations, context: context, trigger: trigger)
 			self.drainFetchState(for: context.active.id, onto: span)
 
 			var reloads = 0
@@ -531,6 +531,7 @@ final class WidgetPublisher {
 		span?.setAttribute(Telemetry.Key.widgetFetchFailures, state.consecutiveFailures)
 		span?.setAttribute(Telemetry.Key.widgetFetchCredentialRejected, state.isCredentialRejected)
 		if let scheme = state.lastAuthScheme { span?.setAttribute(Telemetry.Key.widgetFetchAuthScheme, scheme) }
+		span?.setAttribute(Telemetry.Key.widgetCredentialInstallationInUse, state.installationInUseAt != nil)
 		// Absent rather than zero when the extension has never succeeded: "it has
 		// not managed one yet" and "the last one was just now" must not read the
 		// same.
@@ -554,14 +555,18 @@ final class WidgetPublisher {
 	/// carry the scope to mint, so it cannot extend its own life. That is why the
 	/// renewal window (`WidgetCredential.renewalLead`, four days of fourteen)
 	/// leaves room for a phone opened only every few days.
-	private func ensureCredentials(for organizations: [WidgetOrganization], context: Context) async {
+	private func ensureCredentials(for organizations: [WidgetOrganization], context: Context, trigger: Trigger) async {
 		let now = Date()
 		let installationId = AppInstallation.identifier
 		for organization in organizations {
 			// A widget that met a refusal stopped fetching on purpose; only a
 			// registration here can lift that, so a rejection always re-registers.
-			let rejected = fetchStates.load(organizationId: organization.id).isCredentialRejected
+			let state = fetchStates.load(organizationId: organization.id)
+			let rejected = state.isCredentialRejected
 			let api = context.api.scoped(to: organization.id)
+			// Another member's credential holds this installation: only a user in
+			// the app (a foreground or a switch) retries, not every background wake.
+			if state.installationInUseAt != nil, trigger == .background || trigger == .push { continue }
 			if !legacyOnly.contains(organization.id) {
 				if !rejected, registrar.isCurrent(organizationId: organization.id, now: now) { continue }
 				if await registerDevice(organization.id, api: api, installationId: installationId, rejected: rejected, now: now) {
@@ -596,6 +601,14 @@ final class WidgetPublisher {
 					now: now
 				)
 				switch outcome {
+				case .installationInUse:
+					// Needs attention, not a new key: the widget keeps its last
+					// snapshot and the next foreground round tries again.
+					self.fetchStates.recordInstallationInUse(now, organizationId: organizationId)
+					span?.setAttribute(Telemetry.Key.widgetCredentialInstallationInUse, true)
+					span?.setAttribute(Telemetry.Key.widgetCredentialErrorCode, "device_installation_in_use")
+					span?.setStatus(.error("installation held by another member"))
+					return true
 				case .unsupportedServer:
 					self.legacyOnly.insert(organizationId)
 					span?.setAttribute(Telemetry.Key.widgetCredentialKind, "legacy_fallback")
@@ -611,6 +624,7 @@ final class WidgetPublisher {
 						Task { try? await api.revokeWidgetCredential(installationId: installationId) }
 					}
 					self.fetchStates.clearCredentialRejection(organizationId: organizationId)
+					self.fetchStates.recordInstallationInUse(nil, organizationId: organizationId)
 					// A refresh changes nothing the widget can see; a new key or a
 					// lifted rejection does, and is worth a reload.
 					let changed = action != .refresh || rejected

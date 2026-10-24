@@ -26,6 +26,9 @@ struct DeviceCredentialRegistrar {
 		case registered(DeviceCredential, action: Action, key: DeviceKey)
 		/// The API predates device credentials (404): use the legacy key.
 		case unsupportedServer
+		/// 409 `device_installation_in_use`: another member's credential holds
+		/// this installation until they sign out or it expires.
+		case installationInUse
 	}
 
 	/// Nothing to do: a live registration for the key the keychain holds.
@@ -62,15 +65,28 @@ struct DeviceCredentialRegistrar {
 		var record: DeviceCredential
 		do {
 			record = try await register(signer, attest: isNewKey || stored == nil, api: api, installationId: installationId)
-		} catch let error as MapleAPIError where error.status == 404 {
-			return .unsupportedServer
-		} catch let error as MapleAPIError where error.code == "device_key_in_use" || error.code == "device_key_invalid" {
-			// A retired key can never come back, and the server keeps one key per
-			// organization: the only way forward is a new one.
-			signer = try keys.generate(organizationId: organizationId)
-			isNewKey = true
-			action = .rotate
-			record = try await register(signer, attest: true, api: api, installationId: installationId)
+		} catch let error as MapleAPIError {
+			switch error.deviceRegistrationFailure {
+			case .unsupportedServer:
+				return .unsupportedServer
+			case .installationInUse:
+				// Another member holds this installation. A new key cannot help,
+				// so nothing is rotated or saved; the next foreground retries.
+				return .installationInUse
+			case .keyRejected:
+				// A retired key can never come back, and the server keeps one key per
+				// organization: the only way forward is a new one.
+				signer = try keys.generate(organizationId: organizationId)
+				isNewKey = true
+				action = .rotate
+				do {
+					record = try await register(signer, attest: true, api: api, installationId: installationId)
+				} catch let retry as MapleAPIError where retry.deviceRegistrationFailure == .installationInUse {
+					return .installationInUse
+				}
+			case .attestationRejected, .other:
+				throw error
+			}
 		}
 		guard record.organizationId == organizationId, record.jkt == signer.thumbprint else {
 			throw DeviceCredentialMismatch()
@@ -97,7 +113,7 @@ struct DeviceCredentialRegistrar {
 		let attestation = attest ? try? await attestor.attest(key: key, api: api, installationId: installationId) : nil
 		do {
 			return try await api.registerDeviceCredential(installationId: installationId, key: key, attestation: attestation)
-		} catch let error as MapleAPIError where error.code == "device_attestation_invalid" && attestation != nil {
+		} catch let error as MapleAPIError where error.deviceRegistrationFailure == .attestationRejected && attestation != nil {
 			return try await api.registerDeviceCredential(installationId: installationId, key: key, attestation: nil)
 		}
 	}

@@ -123,4 +123,29 @@ struct DeviceCredentialRegistrationTests {
 			(error as? MapleAPIError)?.status == 404
 		}
 	}
+
+	@Test("tells an installation held by another member apart from a refused key")
+	func classifiesConflicts() async throws {
+		let key = DeviceKey(organizationId: "org_1", isHardwareBacked: false, signer: SoftwareDeviceKey())
+		func failure(status: HTTPResponse.Status, code: String) async -> DeviceRegistrationFailure? {
+			let transport = RecordingTransport(
+				status: status,
+				responseJSON: #"{"error":{"_tag":"T","type":"invalid_request_error","code":"\#(code)","title":"t","message":"m","retryable":false,"recovery":"fix_request"}}"#
+			)
+			do {
+				_ = try await MapleClient(tokens: StaticTokens(), serverURL: server, transport: transport)
+					.registerDeviceCredential(installationId: "inst-1", key: key, attestation: nil)
+				return nil
+			} catch {
+				return (error as? MapleAPIError)?.deviceRegistrationFailure
+			}
+		}
+		// Same status, opposite remedies: a new key fixes the first and cannot fix the second.
+		#expect(await failure(status: .conflict, code: "device_key_in_use") == .keyRejected)
+		#expect(await failure(status: .conflict, code: "device_installation_in_use") == .installationInUse)
+		#expect(await failure(status: .badRequest, code: "device_key_invalid") == .keyRejected)
+		#expect(await failure(status: .badRequest, code: "device_attestation_invalid") == .attestationRejected)
+		#expect(await failure(status: .badRequest, code: "invalid_dpop_proof") == .other)
+		#expect(await failure(status: .notFound, code: "route_not_found") == .unsupportedServer)
+	}
 }

@@ -531,6 +531,19 @@ struct WidgetSummaryDPoPTests {
 		#expect(harness.fetchStates.load(organizationId: organizationId).isCredentialRejected)
 	}
 
+	@Test("an installation conflict is recorded apart from a rejection, and cleared")
+	func installationConflict() throws {
+		let harness = Harness()
+		defer { harness.cleanUp() }
+		harness.fetchStates.recordInstallationInUse(now, organizationId: organizationId)
+		let state = harness.fetchStates.load(organizationId: organizationId)
+		#expect(state.installationInUseAt == now)
+		// Not a rejection: the widget keeps fetching with whatever it has.
+		#expect(!state.isCredentialRejected)
+		harness.fetchStates.recordInstallationInUse(nil, organizationId: organizationId)
+		#expect(harness.fetchStates.load(organizationId: organizationId).installationInUseAt == nil)
+	}
+
 	@Test("sign-out and pruning remove the record and the cached token")
 	func clearing() throws {
 		let harness = Harness()

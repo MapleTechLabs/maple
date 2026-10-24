@@ -89,7 +89,31 @@ extension MapleClient {
 	}
 }
 
+/// What a failed `registerDeviceCredential` asks the caller to do.
+public enum DeviceRegistrationFailure: Sendable, Equatable {
+	/// 404: the API predates device credentials; use the legacy key.
+	case unsupportedServer
+	/// `device_key_in_use` / `device_key_invalid`: this key can never register. Rotate.
+	case keyRejected
+	/// `device_installation_in_use`: another member's live credential holds this
+	/// installation. Never rotate (a new key cannot help); retry on a later foreground.
+	case installationInUse
+	/// `device_attestation_invalid`: register again without an attestation.
+	case attestationRejected
+	case other
+}
+
 extension MapleAPIError {
+	public var deviceRegistrationFailure: DeviceRegistrationFailure {
+		if status == 404 { return .unsupportedServer }
+		switch code {
+		case "device_key_in_use", "device_key_invalid": return .keyRejected
+		case "device_installation_in_use": return .installationInUse
+		case "device_attestation_invalid": return .attestationRejected
+		default: return .other
+		}
+	}
+
 	/// The envelope's stable `code`, when the server sent one.
 	public var code: String? { body?.code }
 
