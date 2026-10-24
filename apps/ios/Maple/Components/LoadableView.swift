@@ -125,6 +125,7 @@ struct LoadableView<Value: Sendable, Skeleton: View, Content: View, Header: View
 			.animation(.easeOut(duration: 0.2), value: loader?.refreshError == nil)
 		}
 		.scrollContentBackground(.hidden)
+		.onDisappear { loader?.abandonReady() }
 		.refreshable {
 			if let loader { Telemetry.track(Telemetry.Event.screenRefreshed, ["screen": loader.screen]) }
 			await loader?.load(.refresh)
