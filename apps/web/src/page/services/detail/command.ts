@@ -2,7 +2,12 @@ import {
 	getServiceDetailOverview,
 	getServiceDetailThroughputRefinement,
 } from "@maple/web-data/warehouse/custom-charts"
-import { getServiceEndpoints } from "@maple/web-data/warehouse/service-endpoints"
+import {
+	getServiceApiOverview,
+	getServiceEndpointStatusBreakdown,
+	getServiceEndpoints,
+	getServiceEndpointsTimeseries,
+} from "@maple/web-data/warehouse/service-endpoints"
 import { getServiceOperations } from "@maple/web-data/warehouse/service-operations"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
@@ -233,5 +238,60 @@ export const FetchCommit = Command.define("FetchServiceDeployCommit", {
 			Effect.mapError((error) => ({ tag: errorTag(error) })),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchCommit({ sha, result })),
+		),
+})
+
+export const ApiOverviewInput = Schema.Struct({
+	...DetailInput.fields,
+	previousStartTime: Schema.optional(Schema.String),
+	previousEndTime: Schema.optional(Schema.String),
+	bucketSeconds: Schema.Number,
+})
+export type ApiOverviewInput = typeof ApiOverviewInput.Type
+
+/** `getServiceApiOverview`: the API tab's KPI totals (and the previous window's) and merged buckets. */
+export const FetchApiOverview = Command.define("FetchServiceApiOverview", {
+	args: { key: Schema.String, input: ApiOverviewInput },
+	messages: [Message.CompletedFetchApiOverview],
+	execute: ({ key, input }) =>
+		getServiceApiOverview({ data: { ...input, environments: mutable(input.environments) } }).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchApiOverview({ key, result })),
+		),
+})
+
+export const EndpointSeriesInput = Schema.Struct({
+	...DetailInput.fields,
+	bucketSeconds: Schema.Number,
+	spanNames: Schema.Array(Schema.String),
+})
+export type EndpointSeriesInput = typeof EndpointSeriesInput.Type
+
+/** `getServiceEndpointsTimeseries`: per-endpoint buckets for the row sparklines and the drawer charts. */
+export const FetchEndpointSeries = Command.define("FetchServiceEndpointSeries", {
+	args: { key: Schema.String, input: EndpointSeriesInput },
+	messages: [Message.CompletedFetchEndpointSeries],
+	execute: ({ key, input }) =>
+		getServiceEndpointsTimeseries({
+			data: { ...input, environments: mutable(input.environments), spanNames: [...input.spanNames] },
+		}).pipe(
+			Effect.map((response) => response.buckets),
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchEndpointSeries({ key, result })),
+		),
+})
+
+/** `getServiceEndpointStatusBreakdown`: every (endpoint, status code, error.type) of the window. */
+export const FetchStatusBreakdown = Command.define("FetchServiceEndpointStatusBreakdown", {
+	args: { key: Schema.String, input: DetailInput },
+	messages: [Message.CompletedFetchStatusBreakdown],
+	execute: ({ key, input }) =>
+		getServiceEndpointStatusBreakdown({ data: { ...input, environments: mutable(input.environments) } }).pipe(
+			Effect.map((response) => response.rows),
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchStatusBreakdown({ key, result })),
 		),
 })

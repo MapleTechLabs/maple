@@ -27,6 +27,8 @@ import {
 	FetchWorkloads,
 } from "./command"
 import { LinkedCursorMessage, MountLinkedCursor } from "../../../charts/linked-cursor"
+import * as Dialog from "../../../ui/dialog"
+import * as PeekMessage from "./endpoint-peek/message"
 import { Message } from "./message"
 import type { Model, OverviewData } from "./model"
 import type { Endpoint, Operation } from "./model-tabs"
@@ -214,12 +216,12 @@ describe("service detail", () => {
 	})
 })
 
-const endpoint = (route: string): Endpoint => ({
+const endpoint = (route: string, estimatedSpanCount = 10): Endpoint => ({
 	spanName: `GET ${route}`,
 	method: "GET",
 	route,
 	spanCount: 10,
-	estimatedSpanCount: 10,
+	estimatedSpanCount,
 	errorCount: 0,
 	estimatedErrorCount: 0,
 	errorRate: 0,
@@ -341,6 +343,94 @@ describe("service detail view", () => {
 			expectView(text("Unrouted paths")).toExist(),
 			click(role("button", { name: "Show anyway" })),
 			expectView(role("button", { name: "Hide" })).toExist(),
+		)
+	})
+})
+
+describe("the API tab's endpoint drawer", () => {
+	const loadedApi = (search: Model["search"] = {}) => {
+		const model = entered({ tab: "api", ...search })
+		return pageUpdate(
+			model,
+			Message.CompletedFetchEndpoints({
+				key: model.endpoints.key ?? "",
+				result: Result.succeed([endpoint("/a", 30), endpoint("/b", 20), endpoint("/c", 10)]),
+			}),
+		)
+	}
+	const peekMessage = (message: PeekMessage.Message) => Message.GotEndpointPeekMessage({ message })
+
+	test("clicking a row puts its endpoint in the URL", () => {
+		const clicked = pageUpdate(loadedApi().model, Message.ClickedEndpoint({ spanName: "GET /b" }))
+		expect(clicked.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/services/payment-svc?tab=api&endpoint=GET%20%2Fb",
+				isReplace: false,
+			}),
+		)
+	})
+
+	test("a peeked endpoint opens the drawer and warms it and both neighbours", () => {
+		const loaded = loadedApi({ endpoint: "GET /b" })
+		expect(loaded.model.endpointPeek.dialog.isOpen).toBe(true)
+		expect(names(loaded.commands).filter((name) => name === "FetchServiceEndpointDetail")).toHaveLength(3)
+	})
+
+	test("an endpoint no row matches keeps the drawer closed", () => {
+		expect(loadedApi({ endpoint: "GET /gone" }).model.endpointPeek.dialog.isOpen).toBe(false)
+	})
+
+	test("a step replaces the endpoint with the next row; closing clears it", () => {
+		const { model } = loadedApi({ endpoint: "GET /b" })
+		const stepped = pageUpdate(model, peekMessage(PeekMessage.Message.ClickedStep({ step: 1 })))
+		expect(stepped.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/services/payment-svc?tab=api&endpoint=GET%20%2Fc",
+				isReplace: true,
+			}),
+		)
+		const closed = pageUpdate(
+			model,
+			peekMessage(PeekMessage.Message.GotDialogMessage({ message: Dialog.Message.PressedEscape() })),
+		)
+		expect(closed.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/services/payment-svc?tab=api", isReplace: true }),
+		)
+	})
+
+	test("retrying a failed detail reads that endpoint alone again", () => {
+		const { model } = loadedApi({ endpoint: "GET /b" })
+		const failed = pageUpdate(
+			model,
+			peekMessage(
+				PeekMessage.Message.CompletedFetchDetail({
+					spanName: "GET /b",
+					key: model.endpointPeek.details["GET /b"]?.key ?? "",
+					result: Result.fail(toLoadFailure("boom")),
+				}),
+			),
+		).model
+		const retried = pageUpdate(failed, peekMessage(PeekMessage.Message.ClickedRetryDetail()))
+		expect(names(retried.commands)).toEqual(["FetchServiceEndpointDetail"])
+	})
+
+	test("switching tabs drops the open endpoint from the URL", () => {
+		const { model } = loadedApi({ endpoint: "GET /b" })
+		const switched = pageUpdate(model, Message.ClickedTab({ tab: "operations" }))
+		expect(switched.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/services/payment-svc?tab=operations", isReplace: true }),
+		)
+	})
+
+	test("the Rejecting filter hides endpoints that answered every request below 400", () => {
+		const { model } = loadedApi()
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(text("/a")).toExist(),
+			click(role("button", { name: "Rejecting > 5%" })),
+			expectView(text("No endpoint matches this filter.")).toExist(),
 		)
 	})
 })

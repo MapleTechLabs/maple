@@ -35,6 +35,7 @@ export const Endpoint = Schema.Struct({
 	p50DurationMs: Schema.Number,
 	p95DurationMs: Schema.Number,
 	p99DurationMs: Schema.Number,
+	/** Spans in buckets written after the status counters existed; below `spanCount` the mix is partial. */
 	httpClassifiedSpanCount: Schema.Number,
 	httpStatusCount: Schema.Number,
 	http4xxCount: Schema.Number,
@@ -43,6 +44,80 @@ export const Endpoint = Schema.Struct({
 	requestBodyCount: Schema.Number,
 })
 export type Endpoint = typeof Endpoint.Type
+
+/** `ServiceApiTotals`: every HTTP endpoint of the service merged. */
+export const ApiTotals = Schema.Struct({
+	spanCount: Schema.Number,
+	estimatedSpanCount: Schema.Number,
+	httpClassifiedSpanCount: Schema.Number,
+	httpStatusCount: Schema.Number,
+	http4xxCount: Schema.Number,
+	http5xxCount: Schema.Number,
+	requestBodyBytes: Schema.Number,
+	requestBodyCount: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	p99DurationMs: Schema.Number,
+})
+export type ApiTotals = typeof ApiTotals.Type
+
+/** `ServiceApiBucket`: one bucket of one endpoint, or of all of them when `spanName` is empty. */
+export const ApiBucket = Schema.Struct({
+	bucket: Schema.String,
+	spanName: Schema.String,
+	estimatedSpanCount: Schema.Number,
+	httpStatusCount: Schema.Number,
+	http4xxCount: Schema.Number,
+	http5xxCount: Schema.Number,
+	requestBodyBytes: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	p99DurationMs: Schema.Number,
+})
+export type ApiBucket = typeof ApiBucket.Type
+
+/** `getServiceApiOverview`'s answer: the KPI strip and the responses chart. */
+export const ApiOverview = Schema.Struct({
+	totals: ApiTotals,
+	previous: Schema.NullOr(ApiTotals),
+	buckets: Schema.Array(ApiBucket),
+})
+export type ApiOverview = typeof ApiOverview.Type
+
+/** `ServiceEndpointStatusRow`: one (endpoint, status code, error.type) of the window. */
+export const StatusRow = Schema.Struct({
+	spanName: Schema.String,
+	httpStatusCode: Schema.String,
+	errorType: Schema.String,
+	spanCount: Schema.Number,
+	estimatedSpanCount: Schema.Number,
+})
+export type StatusRow = typeof StatusRow.Type
+
+/** `ServiceEndpointDetail`: the drawer's distribution, body sizes, clients and slowest requests. */
+export const EndpointDetail = Schema.Struct({
+	latencyQuantileLevels: Schema.Array(Schema.Number),
+	latencyQuantilesMs: Schema.Array(Schema.Number),
+	body: Schema.NullOr(
+		Schema.Struct({
+			p50Bytes: Schema.Number,
+			p95Bytes: Schema.Number,
+			maxBytes: Schema.Number,
+			count: Schema.Number,
+		}),
+	),
+	userAgents: Schema.Array(Schema.Struct({ value: Schema.String, count: Schema.NullOr(Schema.Number) })),
+	slowest: Schema.Array(
+		Schema.Struct({
+			traceId: Schema.String,
+			timestamp: Schema.String,
+			durationMs: Schema.Number,
+			httpStatusCode: Schema.String,
+			bodyBytes: Schema.NullOr(Schema.Number),
+		}),
+	),
+})
+export type EndpointDetail = typeof EndpointDetail.Type
 
 const EdgeStats = {
 	callCount: Schema.Number,

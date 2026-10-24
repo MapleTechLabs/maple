@@ -18,9 +18,12 @@ import {
 	CompleteReloadSpin,
 	type DetailInput,
 	ResolveClock,
+	FetchApiOverview,
 	FetchCommit,
 	FetchDependencies,
+	FetchEndpointSeries,
 	FetchEndpoints,
+	FetchStatusBreakdown,
 	FetchIssues,
 	FetchOperations,
 	FetchOverview,
@@ -44,8 +47,13 @@ import {
 import { commitMarkers, markerShas } from "./derive-markers"
 import { initialSort, nextSort, operationTraceSearch, TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
 import { deriveDeploys, isResolvableSha } from "./derive-panels"
+import { matchesFilter } from "./derive-api"
+import * as EndpointPeek from "./endpoint-peek/model"
+import * as EndpointPeekUpdate from "./endpoint-peek/update"
 import { Message, type RequestMode } from "./message"
 import type { Commit, CommitFailure, Model } from "./model"
+import type { Endpoint } from "./model-tabs"
+import { groupsOf, visibleEndpoints } from "./view-api"
 
 export type Return = PageReturn<Model, Message>
 
@@ -284,19 +292,121 @@ const tabSteps = (model: Model, context: PageContext, window: TimeWindow, mode: 
 		case "dependencies":
 			return [dependenciesStep(context, window, mode)]
 		case "api":
-			return [
-				(current) => {
-					const input = { ...detailInput(current, window), limit: ENDPOINTS_LIMIT }
-					return keyed(
-						current.endpoints,
-						requestKey(context.orgId, "getServiceEndpoints", { data: input }),
-						mode,
-						(endpoints) => ({ endpoints }),
-						(key) => FetchEndpoints({ key, input }),
-					)
-				},
-			]
+			return apiTabSteps(context, window, mode)
 	}
+}
+
+/** Row sparklines for the busiest endpoints; past this many the rows go without one. */
+const SPARKLINE_ENDPOINTS = 49
+
+const loadedEndpoints = (model: Model): ReadonlyArray<Endpoint> => AsyncData.getOrElse(model.endpoints.data, () => [])
+
+/** The busiest endpoints by traffic, plus the peeked one, sorted so the key is stable. */
+const seriesSpanNames = (model: Model): ReadonlyArray<string> => {
+	const busiest = loadedEndpoints(model)
+		.toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)
+		.slice(0, SPARKLINE_ENDPOINTS)
+		.map((endpoint) => endpoint.spanName)
+	const peeked = model.search.endpoint
+	return [...new Set([...busiest, ...(peeked === undefined ? [] : [peeked])])].toSorted()
+}
+
+/** What `ServiceApiTab` mounts: the endpoints, the KPI overview, the status rows and the sparklines. */
+const apiTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
+	(model) => {
+		const input = { ...detailInput(model, window), limit: ENDPOINTS_LIMIT }
+		return keyed(
+			model.endpoints,
+			requestKey(context.orgId, "getServiceEndpoints", { data: input }),
+			mode,
+			(endpoints) => ({ endpoints }),
+			(key) => FetchEndpoints({ key, input }),
+		)
+	},
+	(model) => {
+		const input = {
+			...detailInput(model, window),
+			...previousWindow(window),
+			bucketSeconds: operationsBucketSeconds(window),
+		}
+		return keyed(
+			model.apiOverview,
+			requestKey(context.orgId, "getServiceApiOverview", { data: input }),
+			mode,
+			(apiOverview) => ({ apiOverview }),
+			(key) => FetchApiOverview({ key, input }),
+		)
+	},
+	(model) => {
+		const input = detailInput(model, window)
+		return keyed(
+			model.statusBreakdown,
+			requestKey(context.orgId, "getServiceEndpointStatusBreakdown", { data: input }),
+			mode,
+			(statusBreakdown) => ({ statusBreakdown }),
+			(key) => FetchStatusBreakdown({ key, input }),
+		)
+	},
+	(model) => {
+		const spanNames = seriesSpanNames(model)
+		if (spanNames.length === 0) return NONE
+		const input = { ...detailInput(model, window), bucketSeconds: operationsBucketSeconds(window), spanNames }
+		return keyed(
+			model.endpointSeries,
+			requestKey(context.orgId, "getServiceEndpointsTimeseries", { data: input }),
+			mode,
+			(endpointSeries) => ({ endpointSeries }),
+			(key) => FetchEndpointSeries({ key, input }),
+		)
+	},
+]
+
+/** The table's rows in screen order: the filter, the search and the sort applied. */
+export const tableRows = (model: Model): ReadonlyArray<Endpoint> =>
+	visibleEndpoints(
+		groupsOf(
+			loadedEndpoints(model).filter((endpoint) => matchesFilter(endpoint, model.endpointFilter, model.endpointQuery)),
+			model.sorts.endpoints,
+		),
+		model.expandedEndpointGroups,
+	)
+
+/** The drawer's endpoint on the API tab, `null` elsewhere or when no row matches. */
+export const peekOf = (model: Model): EndpointPeekUpdate.Peek | null =>
+	tabOf(model.search) === "api" ? EndpointPeekUpdate.resolvePeek(tableRows(model), model.search.endpoint) : null
+
+const peekScope = (model: Model, context: PageContext): EndpointPeekUpdate.PeekScope => ({
+	context,
+	window: model.window,
+	serviceName: model.serviceName,
+	environments: environmentsOf(model.search),
+})
+
+const liftPeek = (model: Model, result: EndpointPeekUpdate.Return): Return => {
+	const commands = Command.mapMessages(result.commands ?? [], (message) => Message.GotEndpointPeekMessage({ message }))
+	const next = { ...model, endpointPeek: result.model }
+	if (result.outMessage === undefined) return { model: next, commands }
+	const out = result.outMessage
+	const search =
+		out._tag === "Closed"
+			? { ...model.search, endpoint: undefined }
+			: { ...model.search, endpoint: stepTarget(model, out.step) ?? model.search.endpoint }
+	return { model: next, commands, outMessage: navigate(next, search, true).outMessage }
+}
+
+const stepTarget = (model: Model, step: 1 | -1): string | undefined => {
+	const peek = peekOf(model)
+	if (peek === null) return undefined
+	return tableRows(model)[peek.index + step]?.spanName
+}
+
+/** The drawer follows the URL and the loaded rows; run after every request pass. */
+const syncPeek = (result: Return, context: PageContext, mode: RequestMode): Return => {
+	const peeked = liftPeek(
+		result.model,
+		EndpointPeekUpdate.sync(result.model.endpointPeek, peekScope(result.model, context), peekOf(result.model), mode),
+	)
+	return { ...result, model: peeked.model, commands: [...(result.commands ?? []), ...(peeked.commands ?? [])] }
 }
 
 /**
@@ -306,10 +416,11 @@ const tabSteps = (model: Model, context: PageContext, window: TimeWindow, mode: 
 export const sync = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	if (model.nowMs === null) return { model }
 	const window = windowOf(model, context, model.nowMs)
-	return runSteps({ ...model, window }, [
+	const requested = runSteps({ ...model, window }, [
 		overviewStep(context, window, mode),
 		...tabSteps(model, context, window, mode),
 	])
+	return syncPeek(requested, context, mode)
 }
 
 // NAVIGATION
@@ -327,6 +438,7 @@ const navigate = (model: Model, search: Search, isReplace: boolean): Return => (
 /** `handleTabChange`: Overview leaves the URL, and the history entry is replaced. */
 export const tabSearch = (search: Search, tab: ServiceTab): Search => ({
 	...search,
+	endpoint: undefined,
 	tab: tab === "overview" ? undefined : tab,
 })
 
@@ -348,6 +460,12 @@ export const init = (
 		operations: Keyed.idle(),
 		endpoints: Keyed.idle(),
 		expandedEndpointGroups: [],
+		apiOverview: Keyed.idle(),
+		endpointSeries: Keyed.idle(),
+		statusBreakdown: Keyed.idle(),
+		endpointFilter: "all",
+		endpointQuery: "",
+		endpointPeek: EndpointPeek.init("service-endpoint-peek"),
 		issues: Keyed.idle(),
 		usage: Keyed.idle(),
 		workloads: Keyed.idle(),
@@ -527,17 +645,37 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			}
 		},
-		CompletedFetchEndpoints: ({ key, result }) => ({
-			model: { ...model, endpoints: Keyed.accept(model.endpoints, key, result) },
+		// The sparkline read keys on the loaded endpoints, and the drawer on the rows: sync both.
+		CompletedFetchEndpoints: ({ key, result }) =>
+			sync({ ...model, endpoints: Keyed.accept(model.endpoints, key, result) }, context, "Load"),
+		CompletedFetchApiOverview: ({ key, result }) => ({
+			model: { ...model, apiOverview: Keyed.accept(model.apiOverview, key, result) },
 		}),
-		ClickedToggleEndpointGroup: ({ kind }) => ({
-			model: {
-				...model,
-				expandedEndpointGroups: model.expandedEndpointGroups.includes(kind)
-					? model.expandedEndpointGroups.filter((open) => open !== kind)
-					: [...model.expandedEndpointGroups, kind],
-			},
+		CompletedFetchEndpointSeries: ({ key, result }) => ({
+			model: { ...model, endpointSeries: Keyed.accept(model.endpointSeries, key, result) },
 		}),
+		CompletedFetchStatusBreakdown: ({ key, result }) => ({
+			model: { ...model, statusBreakdown: Keyed.accept(model.statusBreakdown, key, result) },
+		}),
+		ClickedEndpoint: ({ spanName }) =>
+			navigate(model, { ...model.search, endpoint: model.search.endpoint === spanName ? undefined : spanName }, false),
+		ClickedEndpointFilter: ({ filter }) => syncPeek({ model: { ...model, endpointFilter: filter } }, context, "Load"),
+		ChangedEndpointQuery: ({ value }) => syncPeek({ model: { ...model, endpointQuery: value } }, context, "Load"),
+		GotEndpointPeekMessage: ({ message: inner }) =>
+			liftPeek(model, EndpointPeekUpdate.update(model.endpointPeek, inner, peekScope(model, context), peekOf(model))),
+		ClickedToggleEndpointGroup: ({ kind }) =>
+			syncPeek(
+				{
+					model: {
+						...model,
+						expandedEndpointGroups: model.expandedEndpointGroups.includes(kind)
+							? model.expandedEndpointGroups.filter((open) => open !== kind)
+							: [...model.expandedEndpointGroups, kind],
+					},
+				},
+				context,
+				"Load",
+			),
 		CompletedFetchIssues: ({ key, result }) => ({
 			model: { ...model, issues: Keyed.accept(model.issues, key, result) },
 		}),
@@ -580,9 +718,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedTab: ({ tab }) => navigate(model, tabSearch(model.search, tab), true),
 		ClickedToggleDeploys: () =>
 			sync({ ...model, isDeploysExpanded: !model.isDeploysExpanded }, context, "Load"),
-		ClickedSort: ({ table, key }) => ({
-			model: { ...model, sorts: { ...model.sorts, [table]: nextSort(table, model.sorts[table], key) } },
-		}),
+		ClickedSort: ({ table, key }) =>
+			syncPeek(
+				{ model: { ...model, sorts: { ...model.sorts, [table]: nextSort(table, model.sorts[table], key) } } },
+				context,
+				"Load",
+			),
 		ClickedOperation: ({ spanName }) => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({
