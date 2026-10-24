@@ -628,6 +628,35 @@ struct FixtureAPI: MapleAPI {
 		try await pause()
 	}
 
+	func deviceAttestationChallenge(installationId: String) async throws -> String {
+		try await pause()
+		return "fixture-challenge"
+	}
+
+	/// A well-formed registration for the key it was given, so the register path
+	/// runs without a server. No widget fetches with it.
+	func registerDeviceCredential(
+		installationId: String,
+		key: DeviceKey,
+		attestation: DeviceAttestationPayload?
+	) async throws -> DeviceCredential {
+		try await pause()
+		return DeviceCredential(
+			organizationId: FixtureSession.organizationId,
+			credentialId: "dcred_fixture",
+			jkt: key.thumbprint,
+			apiBaseURL: URL(string: "https://fixtures.maple.invalid")!,
+			attested: false,
+			expiresAt: now.addingTimeInterval(30 * 24 * 60 * 60),
+			hardExpiresAt: now.addingTimeInterval(90 * 24 * 60 * 60),
+			registeredAt: now
+		)
+	}
+
+	func revokeDeviceCredential(installationId: String) async throws {
+		try await pause()
+	}
+
 	/// Assembled from the same seeds the rest of the fixtures use, so a Home
 	/// Screen screenshot and the Services tab behind it agree.
 	func widgetSummary() async throws -> WidgetSummaryPayload {

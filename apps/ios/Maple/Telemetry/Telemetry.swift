@@ -115,6 +115,17 @@ enum Telemetry {
 		/// How the publisher got its session: the view tree, or a headless
 		/// bootstrap in a background launch.
 		static let widgetContextSource = "maple.app.widget.context_source"
+		/// `device` (DPoP), `legacy` (`maple_ak_`) or `legacy_fallback` (API 404).
+		static let widgetCredentialKind = "maple.app.widget.credential.kind"
+		/// `register`, `refresh` or `rotate`.
+		static let widgetCredentialAction = "maple.app.widget.credential.action"
+		static let widgetCredentialAttested = "maple.app.widget.credential.attested"
+		/// Secure Enclave key, as opposed to the software fallback.
+		static let widgetCredentialHardwareBacked = "maple.app.widget.credential.hardware_backed"
+		/// The v2 error `code` of a failed registration. Never a secret.
+		static let widgetCredentialErrorCode = "maple.app.widget.credential.error_code"
+		/// `dpop` or `bearer`: how the extension's last fetch authenticated.
+		static let widgetFetchAuthScheme = "maple.app.widget.fetch.auth_scheme"
 		static let liveActivityAction = "maple.app.live_activity.action"
 	}
 

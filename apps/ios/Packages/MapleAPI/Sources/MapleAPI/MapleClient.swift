@@ -203,6 +203,15 @@ public protocol MapleAPI: Sendable {
 	func widgetSummary() async throws -> WidgetSummaryPayload
 	func mintWidgetCredential(installationId: String) async throws -> WidgetCredential
 	func revokeWidgetCredential(installationId: String) async throws
+
+	// Device-bound widget credentials: see MapleClient+DeviceCredentials.swift
+	func deviceAttestationChallenge(installationId: String) async throws -> String
+	func registerDeviceCredential(
+		installationId: String,
+		key: DeviceKey,
+		attestation: DeviceAttestationPayload?
+	) async throws -> DeviceCredential
+	func revokeDeviceCredential(installationId: String) async throws
 }
 
 extension MapleAPI {
@@ -287,14 +296,42 @@ public struct MapleClient: MapleAPI {
 		// and coalescing runs innermost so its key is computed over the finished
 		// request — bearer token and organization header included — and so every
 		// waiter still gets its own typed error from the mapper above it.
+		self.client = Client(
+			serverURL: serverURL,
+			transport: transport,
+			middlewares: Self.middlewares(tokens: tokens, organizationId: organizationId, coalescer: coalescer)
+		)
+	}
+
+	private static func middlewares(
+		tokens: any MapleTokenProvider,
+		organizationId: String?,
+		coalescer: RequestCoalescer,
+		extra: [any ClientMiddleware] = []
+	) -> [any ClientMiddleware] {
 		var middlewares: [any ClientMiddleware] = [BearerAuthMiddleware(tokens: tokens)]
 		if let organizationId {
 			middlewares.append(OrganizationMiddleware(organizationId: organizationId))
 		}
+		middlewares.append(contentsOf: extra)
 		middlewares.append(ErrorMappingMiddleware())
 		middlewares.append(CoalescingMiddleware(coalescer: coalescer))
+		return middlewares
+	}
 
-		self.client = Client(serverURL: serverURL, transport: transport, middlewares: middlewares)
+	/// This client's chain plus one middleware, for a single call that needs a
+	/// header the spec does not model (the registration's `DPoP` proof).
+	func client(adding middleware: any ClientMiddleware) -> Client {
+		Client(
+			serverURL: serverURL,
+			transport: transport,
+			middlewares: Self.middlewares(
+				tokens: tokens,
+				organizationId: organizationId,
+				coalescer: coalescer,
+				extra: [middleware]
+			)
+		)
 	}
 
 	/// The transport is shared rather than rebuilt, so scoping to three
