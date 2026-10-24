@@ -55,6 +55,8 @@ export const Model = Schema.TaggedStruct("QuickStart", {
 	isRegionStepShown: Schema.Boolean,
 	/** Where the last step sends them (`redirect_url`, else home). */
 	redirectUrl: Schema.String,
+	/** Whether an update has run with the plan known: the save can load before the customer read. */
+	isPlanKnown: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -77,6 +79,8 @@ export const Message = defineMessageUnion({
 	CompletedLeaveForRegion: {},
 	CompletedFinish: {},
 	CompletedMountDitherField: {},
+	/** The root read the customer: the save that loaded before it is settled now. */
+	SettledPlan: {},
 })
 export type Message = typeof Message.Type
 
@@ -183,6 +187,7 @@ export const init = (
 		pricing: PricingCards.init(),
 		isPlansRequested: false,
 		redirectUrl,
+		isPlanKnown: false,
 	},
 	commands: [LoadQuickStartState({ key: storageKey })],
 })
@@ -227,9 +232,29 @@ const saved = (model: Model, next: (state: QuickStartState) => QuickStartState):
 	}
 }
 
-/** `hasPlan` is the root's (`hasPlanOf`): the steps resolve as the view shows them. */
-export const update = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
-	entered(model, step(model, message, hasPlan), hasPlan)
+/** A loaded save: a finished one is sent on, or without a plan back to the plan step. */
+const arrived = (model: Model, state: QuickStartState, hasPlan: boolean): UpdateReturn =>
+	!isQuickStartFinished(state)
+		? { model: { ...model, state } }
+		: hasPlan
+			? { model: { ...model, state }, commands: [Finish({ url: model.redirectUrl })] }
+			: { model: { ...model, state: reopenedForPlan(state) } }
+
+/**
+ * `hasPlan` is the root's (`planOf`), so the steps resolve as the view shows them; `null` while the
+ * customer read is out (the view shows the boot splash), when a loaded save waits for it.
+ */
+export const update = (model: Model, message: Message, hasPlan: boolean | null): UpdateReturn => {
+	if (hasPlan === null)
+		return message._tag === "LoadedQuickStartState"
+			? { model: { ...model, state: message.state } }
+			: step(model, message, false)
+	const known = model.isPlanKnown ? model : { ...model, isPlanKnown: true }
+	// The root's word that the plan is known: settle a save that loaded before it, and enter its step.
+	if (message._tag === "SettledPlan" && !model.isPlanKnown && model.state !== null)
+		return entered({ ...known, state: null }, arrived(known, model.state, hasPlan), hasPlan)
+	return entered(model, step(known, message, hasPlan), hasPlan)
+}
 
 const step = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
@@ -250,12 +275,7 @@ const step = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
 		},
 		// Someone who already finished is sent straight on; without a plan the gate would send them
 		// back, so they land on the plan step instead.
-		LoadedQuickStartState: ({ state }) =>
-			!isQuickStartFinished(state)
-				? { model: { ...model, state } }
-				: hasPlan
-					? { model: { ...model, state }, commands: [Finish({ url: model.redirectUrl })] }
-					: { model: { ...model, state: reopenedForPlan(state) } },
+		LoadedQuickStartState: ({ state }) => arrived(model, state, hasPlan),
 		ToggledLanguage: ({ language }) =>
 			saved(model, (state) =>
 				withStack(state, { ...state.stack, languages: toggled(state.stack.languages, language) }),
@@ -316,4 +336,5 @@ const step = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
 		CompletedLeaveForRegion: () => ({ model }),
 		CompletedFinish: () => ({ model }),
 		CompletedMountDitherField: () => ({ model }),
+		SettledPlan: () => ({ model }),
 	})

@@ -8,7 +8,7 @@ import { clearSessionToken } from "../../platform/auth-api"
 import { signOutOfClerk } from "../../platform/clerk"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
-import { hasPlanOf, needsRegion, wrongRegionOf } from "./plan-gate"
+import { needsRegion, planOf, wrongRegionOf } from "./plan-gate"
 import * as OrgSwitcher from "../../shell/clerk-org-switcher"
 import * as Menu from "../../ui/menu"
 import * as CliLogin from "./cli-login"
@@ -89,6 +89,8 @@ export const toUnsubscribe = (message: Unsubscribe.Message) => Message.GotUnsubs
 export const toSwitcher = (message: OrgSwitcher.Message) => Message.GotSwitcherMessage({ message })
 export const toClerkSignIn = (message: ClerkSignIn.Message) => Message.GotClerkSignInMessage({ message })
 export const toQuickStart = (message: QuickStart.Message) => Message.GotQuickStartMessage({ message })
+/** Sent by the root once the customer read settles (`QuickStart.SettledPlan`). */
+export const settledPlanMessage = toQuickStart(QuickStart.Message.SettledPlan())
 export const toCreateOrg = (message: CreateOrg.Message) => Message.GotCreateOrgMessage({ message })
 export const toSelectPlan = (message: SelectPlan.Message) => Message.GotSelectPlanMessage({ message })
 export const toUserMenu = (message: Menu.Message) => Message.GotUserMenuMessage({ message })
@@ -285,7 +287,7 @@ export const update = (model: Model, message: Message, inputs: Inputs): Step => 
 		CompletedMountClerkCard: () => unchanged(model),
 		GotQuickStartMessage: ({ message: child }) => {
 			if (screen._tag !== "QuickStart") return unchanged(model)
-			const next = QuickStart.update(screen, child, hasPlanOf(inputs.customer))
+			const next = QuickStart.update(screen, child, planOf(inputs.customer))
 			const step = withScreen(model, next, toQuickStart)
 			return next.outMessage === undefined ? step : { ...step, outMessage: next.outMessage }
 		},

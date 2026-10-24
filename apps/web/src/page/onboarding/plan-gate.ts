@@ -38,6 +38,10 @@ export const hasPlanOf = (slot: CustomerSlot): boolean => {
 	return access === "app" || access === "unknown"
 }
 
+/** `hasPlanOf` for the wizard's update: `null` while the customer read is still out. */
+export const planOf = (slot: CustomerSlot): boolean | null =>
+	accessOf(slot) === "loading" ? null : hasPlanOf(slot)
+
 /** `selectedPlanKnownAtomFor(orgId)`: `maple.billing.selected-plan.<orgId>`. */
 export const SELECTED_PLAN_KEY_PREFIX = "maple.billing.selected-plan."
 

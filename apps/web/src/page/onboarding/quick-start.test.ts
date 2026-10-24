@@ -81,6 +81,26 @@ describe("quick start", () => {
 		expect(names(updateWith(loading, load, true))).not.toContain("LoadPlans")
 	})
 
+	test("a save that loads before the plan is known waits for it, then is sent on or opens its step", () => {
+		const finished = {
+			...DEFAULT_QUICK_START_STATE,
+			completedSteps: Object.fromEntries(STEP_IDS.map((id) => [id, true])),
+		}
+		const loading = init("maple-onboarding-v6-org_1").model
+		const early = updateWith(loading, Message.LoadedQuickStartState({ state: finished }), null)
+		expect(names(early)).toEqual([])
+		expect(names(updateWith(early.model, Message.SettledPlan(), true))).toEqual(["FinishQuickStart"])
+		const fresh = updateWith(
+			loading,
+			Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE }),
+			null,
+		)
+		expect(names(fresh)).toEqual([])
+		expect(names(updateWith(fresh.model, Message.SettledPlan(), false))).toContain("LoadPlans")
+		const settled = updateWith(early.model, Message.SettledPlan(), true).model
+		expect(names(updateWith(settled, Message.SettledPlan(), true))).toEqual([])
+	})
+
 	test("a finished save with no plan behind it goes back to the plan step instead of bouncing off the gate", () => {
 		const finished = {
 			...DEFAULT_QUICK_START_STATE,
