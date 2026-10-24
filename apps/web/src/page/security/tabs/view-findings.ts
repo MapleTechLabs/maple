@@ -396,8 +396,8 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 											? "No audit has reported a finding yet."
 											: "Nothing in this status matches the filters.",
 									onClear:
-										Object.keys(model.findingsSearch).length > 0 ||
-										model.findingsSearch.q !== undefined
+										// Clearing keeps the status tab, so the status alone is not a filter.
+										Object.keys(model.findingsSearch).some((key) => key !== "status")
 											? Message.ClickedClearFilters()
 											: undefined,
 								}),

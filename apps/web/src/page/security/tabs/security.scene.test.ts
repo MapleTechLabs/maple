@@ -467,6 +467,22 @@ describe("security tabs", () => {
 		)
 	})
 
+	test("an empty status tab offers Clear filters only when a filter besides the status is set", () => {
+		const atStatus = (search: { q?: string; status: "accepted_risk" }) =>
+			routeChanged(loaded(), AppRoute.SecurityFindings({ search }), context).model
+		scene(
+			{ update: pageUpdate, view },
+			given(atStatus({ status: "accepted_risk" })),
+			expectView(text("No findings match")).toExist(),
+			expectView(role("button", { name: "Clear filters" })).toBeAbsent(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(atStatus({ q: "exports", status: "accepted_risk" })),
+			expectView(role("button", { name: "Clear filters" })).toExist(),
+		)
+	})
+
 	test("a run only its target's own list holds re-reads the findings once it finishes", () => {
 		const targetId = Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.dashboard)
 		const ownRuns = runsOf(NOW).runs.filter((run) => run.targetId === TARGET_IDS.dashboard)
