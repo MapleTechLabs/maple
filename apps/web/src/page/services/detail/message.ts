@@ -6,7 +6,9 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { ServiceTab } from "./derive"
-import { DependencyBundle, Endpoint, Operation, SortTable } from "./model-tabs"
+import { ENDPOINT_FILTERS } from "./derive-api"
+import * as EndpointPeek from "./endpoint-peek/message"
+import { ApiBucket, ApiOverview, DependencyBundle, Endpoint, Operation, SortTable, StatusRow } from "./model-tabs"
 import { Commit, CommitFailure, Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
 
 /** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
@@ -28,6 +30,9 @@ export const Message = defineMessageUnion({
 	CompletedFetchRefinement: result(Schema.Array(RefinementPoint)),
 	CompletedFetchOperations: result(Schema.Array(Operation)),
 	CompletedFetchEndpoints: result(Schema.Array(Endpoint)),
+	CompletedFetchApiOverview: result(ApiOverview),
+	CompletedFetchEndpointSeries: result(Schema.Array(ApiBucket)),
+	CompletedFetchStatusBreakdown: result(Schema.Array(StatusRow)),
 	CompletedFetchIssues: result(Schema.Array(Issue)),
 	CompletedFetchUsage: result(Usage),
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
@@ -50,6 +55,11 @@ export const Message = defineMessageUnion({
 	ClickedDependency: { whereClause: Schema.String },
 	/** "Show anyway" / "Hide" on a collapsed API group. */
 	ClickedToggleEndpointGroup: { kind: Schema.String },
+	/** An API row: its drawer (`?endpoint=`). */
+	ClickedEndpoint: { spanName: Schema.String },
+	ClickedEndpointFilter: { filter: Schema.Literals(ENDPOINT_FILTERS) },
+	ChangedEndpointQuery: { value: Schema.String },
+	GotEndpointPeekMessage: { message: EndpointPeek.Message },
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },

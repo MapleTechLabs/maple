@@ -189,7 +189,6 @@ public protocol MapleAPI: Sendable {
 	func searchTraces(_ search: TraceSearch, limit: Int, cursor: String?) async throws -> Page<TraceSummary>
 	func trace(id: String) async throws -> TraceDetail
 	func searchLogs(_ search: LogSearch, limit: Int, cursor: String?) async throws -> Page<LogRecord>
-	func logVolume(_ search: LogSearch, targetPoints: Int) async throws -> [Double]
 	func transitionIssue(id: String, to state: WorkflowState, note: String?) async throws -> ErrorIssue
 	func claimIssue(id: String) async throws -> ErrorIssue
 	func releaseIssue(id: String) async throws -> ErrorIssue
@@ -199,10 +198,25 @@ public protocol MapleAPI: Sendable {
 	func dashboardWidgetData(dashboardId: String, widgetIds: [String], window: ResolvedTimeWindow, maxDataPoints: Int)
 		async throws -> [WidgetOutcome]
 
+	// The web dashboard's own reads: see MapleClient+Parity.swift
+	func serviceHealth(window: ResolvedTimeWindow, comparing previous: ResolvedTimeWindow?) async throws
+		-> ServiceHealthSnapshot
+	func logVolumeBySeverity(_ search: LogSearch, targetPoints: Int) async throws -> LogVolume
+	func previewAlertRule(_ rule: AlertRule, window: ResolvedTimeWindow) async throws -> AlertRulePreview
+
 	// Home Screen widgets — see MapleClient+WidgetSummary.swift
 	func widgetSummary() async throws -> WidgetSummaryPayload
 	func mintWidgetCredential(installationId: String) async throws -> WidgetCredential
 	func revokeWidgetCredential(installationId: String) async throws
+
+	// Device-bound widget credentials: see MapleClient+DeviceCredentials.swift
+	func deviceAttestationChallenge(installationId: String) async throws -> String
+	func registerDeviceCredential(
+		installationId: String,
+		key: DeviceKey,
+		attestation: DeviceAttestationPayload?
+	) async throws -> DeviceCredential
+	func revokeDeviceCredential(installationId: String) async throws
 }
 
 extension MapleAPI {

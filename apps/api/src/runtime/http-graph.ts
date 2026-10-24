@@ -78,6 +78,8 @@ import {
 } from "@/routes/v2/telemetry.http"
 import { HttpV2WidgetSummaryLive } from "@/routes/v2/widget-summary.http"
 import { HttpV2WidgetCredentialsLive } from "@/routes/v2/widget-credentials.http"
+import { HttpV2DeviceCredentialsLive, HttpV2DeviceTokensLive } from "@/routes/v2/device-credentials.http"
+import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
 import { ApiAuthorizationLive } from "@maple/backend/services/auth/ApiAuthorizationLive"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import {
@@ -197,6 +199,8 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2EnvironmentsLive,
 			HttpV2WidgetSummaryLive,
 			HttpV2WidgetCredentialsLive,
+			HttpV2DeviceCredentialsLive,
+			HttpV2DeviceTokensLive,
 		),
 	),
 	Layer.provide(V2TransportErrorBoundaryLive),
@@ -263,6 +267,8 @@ export const ApiAuthLive = Layer.mergeAll(
 	Layer.provideMerge(ApiV2RateLimiter.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
+	// `Authorization: DPoP` device tokens; also serves the device credential routes.
+	Layer.provideMerge(DeviceCredentialsService.layer),
 	Layer.provideMerge(OrganizationRegionService.layer),
 	// Denied attempts and audited reads are recorded from inside the auth layers.
 	Layer.provideMerge(AuditLogService.layer),

@@ -50,7 +50,7 @@ POST   /v2/traces/search         complex reads are POST .../search
 
 Every v2 object has a prefixed public ID (`key_4CzLmR…`, `dash_…`, `alrt_…`). Public IDs are opaque; internally they are a reversible base58 encoding of the internal ID, computed at the API boundary in `packages/domain/src/http/v2/public-id.ts`, which also holds the prefix registry (`PublicIdPrefixes`, the source of truth). No database migration: rows keep their raw UUIDs / internal strings.
 
-Prefixes: `key` (API key), `ingk` (ingest key), `dash` (dashboard), `dbv` (dashboard version), `dshr` (dashboard share), `dtpl` (dashboard template), `alrt` (alert rule), `dest` (alert destination), `inc` (alert incident), `evt` (alert delivery event), `actor` (actor), `alog` (audit log entry), `einc` (error incident), `iss` (error issue), `inv` (investigation), `anom` (anomaly incident), `scrp` (scrape target), `rec` (recommendation), `amap` (attribute mapping), `srep` (session replay), `mdev` (mobile device), `chatw` (chat workspace), `afb` (agent feedback), `gcpc` (Google Cloud connector), `mcpc` (MCP OAuth connection), and `log` (synthetic log identity); `we` is reserved for webhooks.
+Prefixes: `key` (API key), `ingk` (ingest key), `dash` (dashboard), `dbv` (dashboard version), `dshr` (dashboard share), `dtpl` (dashboard template), `alrt` (alert rule), `dest` (alert destination), `inc` (alert incident), `evt` (alert delivery event), `actor` (actor), `alog` (audit log entry), `einc` (error incident), `iss` (error issue), `inv` (investigation), `anom` (anomaly incident), `scrp` (scrape target), `rec` (recommendation), `amap` (attribute mapping), `srep` (session replay), `mdev` (mobile device), `chatw` (chat workspace), `afb` (agent feedback), `gcpc` (Google Cloud connector), `mcpc` (MCP OAuth connection), `dcred` (device credential), and `log` (synthetic log identity); `we` is reserved for webhooks.
 
 Exception: Clerk-issued `org_…` / `user_…` IDs are already prefixed public IDs and pass through unchanged.
 
@@ -128,6 +128,10 @@ v2 accepts API keys (`maple_ak_…`) and dashboard session tokens (Clerk or self
 
 Implementation: `packages/domain/src/http/v2/auth.ts` + `packages/backend/src/services/auth/ApiAuthorizationV2Live.ts`; scopes are stored on `api_keys.scopes` (jsonb).
 
+#### Device-bound credentials (DPoP)
+
+The mobile widgets authenticate without any stored bearer secret, using DPoP (RFC 9449). A signed-in session registers the public half of a Secure Enclave P-256 key with `PUT /v2/device_credentials/{installation_id}` (optionally with an App Attest attestation over a challenge from `GET .../attestation_challenge`). The widget then signs a `DPoP` proof and trades it at `POST /v2/device_tokens` (no bearer) for a one-hour ES256 access token whose `cnf.jkt` is the key's thumbprint, and sends `Authorization: DPoP <token>` plus a fresh proof (with `ath`) on every request. Proof `jti`s are single-use (`device_proof_replays`), and every request re-reads the credential row, so a revocation (sign-out, leaving the org, demotion) applies on the next request. Device credentials carry pinned roles and the fixed scope `widget_summary:read`; `maple_ak_` device keys keep working unchanged. Implementation: `packages/backend/src/services/auth/DeviceCredentialsService.ts`.
+
 ### Versioning
 
 - The `/v2` path prefix is the major version. Breaking changes require `/v3`.
@@ -194,7 +198,7 @@ Phase 2 exposes traces, logs, metrics, services, and the service map. Telemetry 
 
 Trace IDs, span IDs, metric names, and service names remain their native OpenTelemetry identifiers. Logs have no native record ID, so search results return a deterministic `log_…` ID containing a compact timestamp and a complete-record fingerprint. Malformed log IDs return `log_id_invalid`; records outside retention return `log_not_found`.
 
-All telemetry lists use the standard cursor envelope with a default limit of 20 and maximum of 100. Trace search filters match any span by default and return the owning trace's root summary; `filters.span_scope: "root"` restricts matching to root spans. Trace results are ordered by start time and trace ID. Log ordering includes timestamp plus the complete composite identity. Attribute filters support equality, existence, substring, and numeric comparisons with optional negation; each attribute-filter collection is capped at 20 entries.
+All telemetry lists use the standard cursor envelope with a default limit of 20 and maximum of 100. Trace search filters match any span by default and return the owning trace's root summary; `filters.span_scope: "root"` restricts matching to the trace's root span (no parent), the span the summary describes; in timeseries and breakdowns it keeps entry spans (the root plus Server and Consumer spans). Trace results are ordered by start time and trace ID. Log ordering includes timestamp plus the complete composite identity. Attribute filters support equality, existence, substring, and numeric comparisons with optional negation; each attribute-filter collection is capped at 20 entries.
 
 Each signal has explicit `POST …/timeseries` and `POST …/breakdown` operations. Requests use `aggregation`, optional scalar `group_by` for timeseries, required `group_by` for breakdowns, and nested `filters`. Timeseries responses contain chronological `series[].points`; breakdown responses contain ordered `data` entries. Inactive fields and query-engine terminology are never returned. Metric `rate` and `increase` require `metric_type: "sum"`; Apdex defaults to a 500 ms threshold.
 

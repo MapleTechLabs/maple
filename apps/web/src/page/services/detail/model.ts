@@ -10,7 +10,9 @@ import { ServiceSearch } from "../../../route/search"
 import * as Select from "../../../ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { SortState } from "../../kit/table-sort"
-import { DependencyBundle, Endpoint, Operation } from "./model-tabs"
+import { ENDPOINT_FILTERS } from "./derive-api"
+import * as EndpointPeek from "./endpoint-peek/model"
+import { ApiBucket, ApiOverview, DependencyBundle, Endpoint, Operation, StatusRow } from "./model-tabs"
 
 // The service detail page.
 
@@ -111,6 +113,15 @@ export const Model = Schema.Struct({
 	endpoints: KeyedSchema(Schema.Array(Endpoint), LoadFailure),
 	/** The API tab's collapsed groups ("unrouted", "probes") the user opened. */
 	expandedEndpointGroups: Schema.Array(Schema.String),
+	/** The API tab's KPI strip and responses chart. */
+	apiOverview: KeyedSchema(ApiOverview, LoadFailure),
+	/** Per-endpoint buckets of the listed endpoints: the row sparklines and the drawer charts. */
+	endpointSeries: KeyedSchema(Schema.Array(ApiBucket), LoadFailure),
+	/** Every (endpoint, status code, error.type) of the window: the non-2xx panel and the drawer. */
+	statusBreakdown: KeyedSchema(Schema.Array(StatusRow), LoadFailure),
+	endpointFilter: Schema.Literals(ENDPOINT_FILTERS),
+	endpointQuery: Schema.String,
+	endpointPeek: EndpointPeek.Model,
 	issues: KeyedSchema(Schema.Array(Issue), LoadFailure),
 	usage: KeyedSchema(Usage, LoadFailure),
 	workloads: KeyedSchema(Schema.Array(Workload), LoadFailure),

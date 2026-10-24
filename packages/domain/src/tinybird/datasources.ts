@@ -1949,6 +1949,19 @@ export const serviceOperationsMinutely = defineDatasource("service_operations_mi
 		// `url.path`, so a route template and a raw URL are indistinguishable in
 		// SpanName alone — this is the difference.
 		RoutedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// HTTP measures added by migration 0048, additive for the reason above. Only the
+		// post-0048 view writes HttpClassifiedSpanCount, so a bucket where it is 0
+		// predates the migration and the five below mean UNKNOWN there, not "no errors".
+		// Not backfilled, like 0023. All five count Server spans only (see
+		// `SERVICE_OPERATIONS_HTTP_MEASURES`), matching `service_endpoint_details_hourly`.
+		HttpClassifiedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Spans carrying an HTTP response status code; the denominator of the status mix.
+		HttpStatusCount: t.simpleAggregateFunction("sum", t.uint64()),
+		Http4xxCount: t.simpleAggregateFunction("sum", t.uint64()),
+		Http5xxCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// `http.request.body.size` (legacy `http.request_content_length`) where present.
+		RequestBodyBytes: t.simpleAggregateFunction("sum", t.uint64()),
+		RequestBodyCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Minute)",
@@ -2007,6 +2020,13 @@ export const serviceOperationsHourly = defineDatasource("service_operations_hour
 		// `url.path`, so a route template and a raw URL are indistinguishable in
 		// SpanName alone — this is the difference.
 		RoutedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Migration 0048's HTTP measures, summed from the minutely tier; see there.
+		HttpClassifiedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		HttpStatusCount: t.simpleAggregateFunction("sum", t.uint64()),
+		Http4xxCount: t.simpleAggregateFunction("sum", t.uint64()),
+		Http5xxCount: t.simpleAggregateFunction("sum", t.uint64()),
+		RequestBodyBytes: t.simpleAggregateFunction("sum", t.uint64()),
+		RequestBodyCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toYYYYMM(Hour)",
@@ -2016,6 +2036,68 @@ export const serviceOperationsHourly = defineDatasource("service_operations_hour
 })
 
 export type ServiceOperationsHourlyRow = InferRow<typeof serviceOperationsHourly>
+
+/**
+ * Per-endpoint HTTP detail for the service API tab: status and `error.type` mix,
+ * latency and request-body distributions, top user agents and the slowest request,
+ * per hour. Server spans with a response status only, keyed on the same normalized
+ * SpanName as `service_operations_*` so the two join.
+ *
+ * Cardinality: routes x status codes x error types per (service, env, hour). Routes
+ * are bounded by `service_operations_*` already; codes are a few per route and
+ * `error.type` is the status or an exception class, so expect ~2-5 rows per route
+ * per hour. A service without `http.route` falls back to `url.path` here too.
+ * `UserAgents` holds up to 30 counters per row, so its state grows with the number
+ * of distinct agents per route, not with traffic.
+ *
+ * Single hour-grain tier on purpose: the reads floor the window to whole hours
+ * (deliberately approximate, like `serviceHealthSnapshot`) and nothing splices it.
+ */
+export const serviceEndpointDetailsHourly = defineDatasource("service_endpoint_details_hourly", {
+	tenantColumn: "OrgId",
+	description:
+		"Hourly HTTP server endpoint detail per status code and error.type: counts, latency and request-body t-digests, top user agents and the slowest request. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		ServiceName: t.string().lowCardinality(),
+		Hour: utcDateTime(),
+		DeploymentEnv: t.string().lowCardinality(),
+		// Plain String like `service_operations_*`: a url.path fallback can be high-cardinality.
+		SpanName: t.string(),
+		HttpStatusCode: t.string().lowCardinality(),
+		ErrorType: t.string().lowCardinality(),
+		SpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		EstimatedSpanCount: t.simpleAggregateFunction("sum", t.float64()),
+		DurationQuantiles: t.aggregateFunction("quantilesTDigest(0.5, 0.95, 0.99)", t.uint64()),
+		// Only spans that carry a body size feed the digest; read it with `quantilesTDigestIfMerge`.
+		BodySizeQuantiles: t.aggregateFunction("quantilesTDigestIf(0.5, 0.95, 0.99)", t.uint64(), t.uint8()),
+		BodySizeMax: t.simpleAggregateFunction("max", t.uint64()),
+		BodyCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Keeps (value, count, error) per agent, so the merged list carries counts.
+		UserAgents: t.aggregateFunction("approx_top_k(10)", t.string()),
+		SlowestDuration: t.simpleAggregateFunction("max", t.uint64()),
+		SlowestTraceId: t.aggregateFunction("argMax", t.string(), t.uint64()),
+		SlowestTimestamp: t.aggregateFunction("argMax", utcDateTime64(9), t.uint64()),
+		// -1 when the slowest request carried no body size: argMax skips a NULL argument.
+		SlowestBodySize: t.aggregateFunction("argMax", t.int64(), t.uint64()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toYYYYMM(Hour)",
+		sortingKey: [
+			"OrgId",
+			"ServiceName",
+			"Hour",
+			"DeploymentEnv",
+			"SpanName",
+			"HttpStatusCode",
+			"ErrorType",
+		],
+		ttl: "toDate(Hour) + INTERVAL 90 DAY",
+	}),
+})
+
+export type ServiceEndpointDetailsHourlyRow = InferRow<typeof serviceEndpointDetailsHourly>
 
 /**
  * Generalized hourly aggregating MV target for traces. Stores partial state

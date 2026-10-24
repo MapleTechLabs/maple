@@ -530,6 +530,40 @@ export {
 	type ServiceEndpointsSummaryOutput,
 } from "./queries/service-endpoints"
 
+// Queries — Service API tab (HTTP totals/timeseries off the operations splice, and
+// per-endpoint detail off service_endpoint_details_hourly, migration 0048)
+export {
+	serviceApiTimeseriesQuery,
+	serviceApiTimeseriesRowSchema,
+	serviceApiTotalsQuery,
+	serviceApiTotalsRowSchema,
+	serviceEndpointsWithHttpQuery,
+	serviceEndpointsWithHttpRowSchema,
+	type ServiceApiScopeOpts,
+	type ServiceApiTiers,
+	type ServiceApiTimeseriesOpts,
+	type ServiceApiTimeseriesOutput,
+	type ServiceApiTotalsOutput,
+	type ServiceEndpointsWithHttpOpts,
+	type ServiceEndpointsWithHttpOutput,
+} from "./queries/service-api"
+export {
+	ENDPOINT_LATENCY_QUANTILE_LEVELS,
+	serviceEndpointDistributionQuery,
+	serviceEndpointDistributionRowSchema,
+	serviceEndpointSlowestQuery,
+	serviceEndpointSlowestRowSchema,
+	serviceEndpointStatusBreakdownQuery,
+	serviceEndpointStatusBreakdownRowSchema,
+	type ServiceEndpointDetailOpts,
+	type ServiceEndpointDetailsScopeOpts,
+	type ServiceEndpointDistributionOutput,
+	type ServiceEndpointSlowestOpts,
+	type ServiceEndpointSlowestOutput,
+	type ServiceEndpointStatusBreakdownOpts,
+	type ServiceEndpointStatusBreakdownOutput,
+} from "./queries/service-endpoint-details"
+
 // Queries — Alert Checks (historical rule evaluations)
 export {
 	listRuleChecksQuery,

@@ -1243,26 +1243,30 @@ SELECT
         GROUP BY fingerprintHash
         FORMAT JSON
 
--- builder:errors:recentTraceTimeProbeQuery:endBounded  [0a0cbd7e]
+-- builder:errors:recentTraceTimeProbeQuery:endBounded  [1ece91df]
 SELECT
-          trace_index.MinTimestamp AS timestamp
+          trace_index.TraceId AS traceId,
+          min(trace_index.MinTimestamp) AS timestamp,
+          max(trace_index.MaxTimestamp) AS endTimestamp
         FROM trace_index
         WHERE trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
           AND trace_index.OrgId = 'org_sql_catalog'
           AND trace_index.MaxTimestamp >= '2026-01-01 10:30:00'
           AND trace_index.MinTimestamp < '2026-01-03 14:15:00'
-        ORDER BY timestamp ASC
+        GROUP BY traceId
         LIMIT 1
         FORMAT JSON
 
--- builder:errors:recentTraceTimeProbeQuery:openEnded  [20abddea]
+-- builder:errors:recentTraceTimeProbeQuery:openEnded  [579e46d9]
 SELECT
-          trace_index.MinTimestamp AS timestamp
+          trace_index.TraceId AS traceId,
+          min(trace_index.MinTimestamp) AS timestamp,
+          max(trace_index.MaxTimestamp) AS endTimestamp
         FROM trace_index
         WHERE trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
           AND trace_index.OrgId = 'org_sql_catalog'
           AND trace_index.MaxTimestamp >= '2026-01-01 10:30:00'
-        ORDER BY timestamp ASC
+        GROUP BY traceId
         LIMIT 1
         FORMAT JSON
 
@@ -1619,13 +1623,15 @@ SELECT
 ) AS errorCount_tiers
 FORMAT JSON
 
--- builder:errors:traceTimeProbeQuery:default  [c3b822a7]
+-- builder:errors:traceTimeProbeQuery:default  [12f190a8]
 SELECT
-          trace_index.MinTimestamp AS timestamp
+          trace_index.TraceId AS traceId,
+          min(trace_index.MinTimestamp) AS timestamp,
+          max(trace_index.MaxTimestamp) AS endTimestamp
         FROM trace_index
         WHERE trace_index.TraceId = '0af7651916cd43dd8448eb211c80319c'
           AND trace_index.OrgId = 'org_sql_catalog'
-        ORDER BY timestamp ASC
+        GROUP BY traceId
         LIMIT 1
         FORMAT JSON
 
@@ -4254,27 +4260,35 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:service-endpoints:serviceEndpointsSummaryQuery:default  [3decb4a7]
+-- builder:service-api:serviceApiTimeseriesQuery:mergedSubHour  [d9a67a8b]
 SELECT
-          operation_windows.bSpanName AS spanName,
-          sum(operation_windows.bSpanCount) AS spanCount,
-          sum(operation_windows.bEstimatedSpanCount) AS estimatedSpanCount,
-          sum(operation_windows.bErrorCount) AS errorCount,
-          sum(operation_windows.bEstimatedErrorCount) AS estimatedErrorCount,
-          if(sum(operation_windows.bEstimatedSpanCount) > 0, sum(operation_windows.bEstimatedErrorCount) / sum(operation_windows.bEstimatedSpanCount), 0) AS errorRate,
-          if(sum(operation_windows.bSpanCount) > 0, sum(operation_windows.bDurationSum) / sum(operation_windows.bSpanCount) / 1000000, 0) AS avgDurationMs,
+          endpoint_buckets.bBucket AS bucket,
+          endpoint_buckets.bSpanName AS spanName,
+          sum(endpoint_buckets.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_buckets.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
+          sum(endpoint_buckets.bHttpStatusCount) AS httpStatusCount,
+          sum(endpoint_buckets.bHttp4xxCount) AS http4xxCount,
+          sum(endpoint_buckets.bHttp5xxCount) AS http5xxCount,
+          sum(endpoint_buckets.bRequestBodyBytes) AS requestBodyBytes,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000, 0) AS p99DurationMs
         FROM (
 SELECT
-          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND) AS bBucket,
+          '' AS bSpanName,
           count() AS bSpanCount,
           sum(traces.SampleRate) AS bEstimatedSpanCount,
           countIf(traces.StatusCode = 'Error') AS bErrorCount,
           sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS bEstimatedErrorCount,
           sum(toFloat64(Duration)) AS bDurationSum,
-          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          count() AS bHttpClassifiedSpanCount,
+          countIf(SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '') AS bHttpStatusCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 400 AND 499) AS bHttp4xxCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 500 AND 599) AS bHttp5xxCount,
+          sumIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyBytes,
+          countIf(SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -4282,55 +4296,178 @@ SELECT
           AND traces.ServiceName = 'api'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
           AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
-        GROUP BY bSpanName
+        GROUP BY bBucket, bSpanName
 UNION ALL
 SELECT
+          toStartOfInterval(service_operations_minutely.Minute, INTERVAL 300 SECOND) AS bBucket,
+          '' AS bSpanName,
+          sum(service_operations_minutely.SpanCount) AS bSpanCount,
+          sum(service_operations_minutely.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_operations_minutely.ErrorCount) AS bErrorCount,
+          sum(service_operations_minutely.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_operations_minutely.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_minutely.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_minutely.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_minutely.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_minutely.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_minutely.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_minutely.RequestBodyCount) AS bRequestBodyCount
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.ServiceName = 'api'
+          AND service_operations_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_operations_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND match(service_operations_minutely.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bBucket, bSpanName
+) AS endpoint_buckets
+        GROUP BY bucket, spanName
+        ORDER BY bucket ASC, spanName ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:service-api:serviceApiTimeseriesQuery:perEndpointHourly  [5a9f2599]
+SELECT
+          endpoint_buckets.bBucket AS bucket,
+          endpoint_buckets.bSpanName AS spanName,
+          sum(endpoint_buckets.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_buckets.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
+          sum(endpoint_buckets.bHttpStatusCount) AS httpStatusCount,
+          sum(endpoint_buckets.bHttp4xxCount) AS http4xxCount,
+          sum(endpoint_buckets.bHttp5xxCount) AS http5xxCount,
+          sum(endpoint_buckets.bRequestBodyBytes) AS requestBodyBytes,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000, 0) AS p99DurationMs
+        FROM (
+SELECT
+          toStartOfInterval(traces.Timestamp, INTERVAL 3600 SECOND) AS bBucket,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          count() AS bSpanCount,
+          sum(traces.SampleRate) AS bEstimatedSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          count() AS bHttpClassifiedSpanCount,
+          countIf(SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '') AS bHttpStatusCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 400 AND 499) AS bHttp4xxCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 500 AND 599) AS bHttp5xxCount,
+          sumIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyBytes,
+          countIf(SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyCount
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+          AND if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) IN ('GET /v2/services', 'POST /v2/alerts')
+        GROUP BY bBucket, bSpanName
+UNION ALL
+SELECT
+          toStartOfInterval(service_operations_minutely.Minute, INTERVAL 3600 SECOND) AS bBucket,
           service_operations_minutely.SpanName AS bSpanName,
           sum(service_operations_minutely.SpanCount) AS bSpanCount,
           sum(service_operations_minutely.EstimatedSpanCount) AS bEstimatedSpanCount,
           sum(service_operations_minutely.ErrorCount) AS bErrorCount,
           sum(service_operations_minutely.EstimatedErrorCount) AS bEstimatedErrorCount,
           sum(service_operations_minutely.DurationSum) AS bDurationSum,
-          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_minutely.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_minutely.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_minutely.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_minutely.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_minutely.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_minutely.RequestBodyCount) AS bRequestBodyCount
         FROM service_operations_minutely
         WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
           AND service_operations_minutely.ServiceName = 'api'
           AND service_operations_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
           AND service_operations_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
           AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND match(service_operations_minutely.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
-        GROUP BY bSpanName
+          AND service_operations_minutely.SpanName IN ('GET /v2/services', 'POST /v2/alerts')
+        GROUP BY bBucket, bSpanName
 UNION ALL
 SELECT
+          toStartOfInterval(service_operations_hourly.Hour, INTERVAL 3600 SECOND) AS bBucket,
           service_operations_hourly.SpanName AS bSpanName,
           sum(service_operations_hourly.SpanCount) AS bSpanCount,
           sum(service_operations_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
           sum(service_operations_hourly.ErrorCount) AS bErrorCount,
           sum(service_operations_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
           sum(service_operations_hourly.DurationSum) AS bDurationSum,
-          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_hourly.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_hourly.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_hourly.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_hourly.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_hourly.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_hourly.RequestBodyCount) AS bRequestBodyCount
         FROM service_operations_hourly
         WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
           AND service_operations_hourly.ServiceName = 'api'
           AND service_operations_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
-          AND match(service_operations_hourly.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
-        GROUP BY bSpanName
-) AS operation_windows
-        GROUP BY spanName
-        ORDER BY estimatedSpanCount DESC
-        LIMIT 50
+          AND service_operations_hourly.SpanName IN ('GET /v2/services', 'POST /v2/alerts')
+        GROUP BY bBucket, bSpanName
+) AS endpoint_buckets
+        GROUP BY bucket, spanName
+        ORDER BY bucket ASC, spanName ASC
+        LIMIT 10000
         FORMAT JSON
 
--- builder:service-endpoints:serviceEndpointsSummaryQuery:envFiltered  [c245abf5]
+-- builder:service-api:serviceApiTimeseriesQuery:rawTier  [8ca1d398]
 SELECT
-          operation_windows.bSpanName AS spanName,
-          sum(operation_windows.bSpanCount) AS spanCount,
-          sum(operation_windows.bEstimatedSpanCount) AS estimatedSpanCount,
-          sum(operation_windows.bErrorCount) AS errorCount,
-          sum(operation_windows.bEstimatedErrorCount) AS estimatedErrorCount,
-          if(sum(operation_windows.bEstimatedSpanCount) > 0, sum(operation_windows.bEstimatedErrorCount) / sum(operation_windows.bEstimatedSpanCount), 0) AS errorRate,
-          if(sum(operation_windows.bSpanCount) > 0, sum(operation_windows.bDurationSum) / sum(operation_windows.bSpanCount) / 1000000, 0) AS avgDurationMs,
+          endpoint_buckets.bBucket AS bucket,
+          endpoint_buckets.bSpanName AS spanName,
+          sum(endpoint_buckets.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_buckets.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
+          sum(endpoint_buckets.bHttpStatusCount) AS httpStatusCount,
+          sum(endpoint_buckets.bHttp4xxCount) AS http4xxCount,
+          sum(endpoint_buckets.bHttp5xxCount) AS http5xxCount,
+          sum(endpoint_buckets.bRequestBodyBytes) AS requestBodyBytes,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000, 0) AS p99DurationMs
+        FROM (
+SELECT
+          toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND) AS bBucket,
+          '' AS bSpanName,
+          count() AS bSpanCount,
+          sum(traces.SampleRate) AS bEstimatedSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          count() AS bHttpClassifiedSpanCount,
+          countIf(SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '') AS bHttpStatusCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 400 AND 499) AS bHttp4xxCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 500 AND 599) AS bHttp5xxCount,
+          sumIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyBytes,
+          countIf(SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyCount
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bBucket, bSpanName
+) AS endpoint_buckets
+        GROUP BY bucket, spanName
+        ORDER BY bucket ASC, spanName ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:service-api:serviceApiTotalsQuery:default  [eaa55ab3]
+SELECT
+          sum(endpoint_windows.bSpanCount) AS spanCount,
+          sum(endpoint_windows.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_windows.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
+          sum(endpoint_windows.bHttpStatusCount) AS httpStatusCount,
+          sum(endpoint_windows.bHttp4xxCount) AS http4xxCount,
+          sum(endpoint_windows.bHttp5xxCount) AS http5xxCount,
+          sum(endpoint_windows.bRequestBodyBytes) AS requestBodyBytes,
+          sum(endpoint_windows.bRequestBodyCount) AS requestBodyCount,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
           if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000, 0) AS p99DurationMs
@@ -4342,7 +4479,13 @@ SELECT
           countIf(traces.StatusCode = 'Error') AS bErrorCount,
           sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS bEstimatedErrorCount,
           sum(toFloat64(Duration)) AS bDurationSum,
-          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          count() AS bHttpClassifiedSpanCount,
+          countIf(SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '') AS bHttpStatusCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 400 AND 499) AS bHttp4xxCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 500 AND 599) AS bHttp5xxCount,
+          sumIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyBytes,
+          countIf(SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -4360,7 +4503,13 @@ SELECT
           sum(service_operations_minutely.ErrorCount) AS bErrorCount,
           sum(service_operations_minutely.EstimatedErrorCount) AS bEstimatedErrorCount,
           sum(service_operations_minutely.DurationSum) AS bDurationSum,
-          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_minutely.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_minutely.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_minutely.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_minutely.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_minutely.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_minutely.RequestBodyCount) AS bRequestBodyCount
         FROM service_operations_minutely
         WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
           AND service_operations_minutely.ServiceName = 'api'
@@ -4378,7 +4527,13 @@ SELECT
           sum(service_operations_hourly.ErrorCount) AS bErrorCount,
           sum(service_operations_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
           sum(service_operations_hourly.DurationSum) AS bDurationSum,
-          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_hourly.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_hourly.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_hourly.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_hourly.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_hourly.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_hourly.RequestBodyCount) AS bRequestBodyCount
         FROM service_operations_hourly
         WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
           AND service_operations_hourly.ServiceName = 'api'
@@ -4387,24 +4542,433 @@ SELECT
           AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND match(service_operations_hourly.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
         GROUP BY bSpanName
-) AS operation_windows
+) AS endpoint_windows
+        FORMAT JSON
+
+-- builder:service-api:serviceApiTotalsQuery:rawTier  [a24731e3]
+SELECT
+          sum(endpoint_windows.bSpanCount) AS spanCount,
+          sum(endpoint_windows.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_windows.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
+          sum(endpoint_windows.bHttpStatusCount) AS httpStatusCount,
+          sum(endpoint_windows.bHttp4xxCount) AS http4xxCount,
+          sum(endpoint_windows.bHttp5xxCount) AS http5xxCount,
+          sum(endpoint_windows.bRequestBodyBytes) AS requestBodyBytes,
+          sum(endpoint_windows.bRequestBodyCount) AS requestBodyCount,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000, 0) AS p99DurationMs
+        FROM (
+SELECT
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          count() AS bSpanCount,
+          sum(traces.SampleRate) AS bEstimatedSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          count() AS bHttpClassifiedSpanCount,
+          countIf(SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '') AS bHttpStatusCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 400 AND 499) AS bHttp4xxCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 500 AND 599) AS bHttp5xxCount,
+          sumIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyBytes,
+          countIf(SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyCount
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+) AS endpoint_windows
+        FORMAT JSON
+
+-- builder:service-api:serviceEndpointsWithHttpQuery:default  [1230931e]
+SELECT
+          endpoint_windows.bSpanName AS spanName,
+          sum(endpoint_windows.bSpanCount) AS spanCount,
+          sum(endpoint_windows.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_windows.bErrorCount) AS errorCount,
+          sum(endpoint_windows.bEstimatedErrorCount) AS estimatedErrorCount,
+          if(sum(endpoint_windows.bEstimatedSpanCount) > 0, sum(endpoint_windows.bEstimatedErrorCount) / sum(endpoint_windows.bEstimatedSpanCount), 0) AS errorRate,
+          if(sum(endpoint_windows.bSpanCount) > 0, sum(endpoint_windows.bDurationSum) / sum(endpoint_windows.bSpanCount) / 1000000, 0) AS avgDurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000, 0) AS p99DurationMs,
+          sum(endpoint_windows.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
+          sum(endpoint_windows.bHttpStatusCount) AS httpStatusCount,
+          sum(endpoint_windows.bHttp4xxCount) AS http4xxCount,
+          sum(endpoint_windows.bHttp5xxCount) AS http5xxCount,
+          sum(endpoint_windows.bRequestBodyBytes) AS requestBodyBytes,
+          sum(endpoint_windows.bRequestBodyCount) AS requestBodyCount
+        FROM (
+SELECT
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          count() AS bSpanCount,
+          sum(traces.SampleRate) AS bEstimatedSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          count() AS bHttpClassifiedSpanCount,
+          countIf(SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '') AS bHttpStatusCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 400 AND 499) AS bHttp4xxCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 500 AND 599) AS bHttp5xxCount,
+          sumIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyBytes,
+          countIf(SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyCount
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+          AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+UNION ALL
+SELECT
+          service_operations_minutely.SpanName AS bSpanName,
+          sum(service_operations_minutely.SpanCount) AS bSpanCount,
+          sum(service_operations_minutely.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_operations_minutely.ErrorCount) AS bErrorCount,
+          sum(service_operations_minutely.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_operations_minutely.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_minutely.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_minutely.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_minutely.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_minutely.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_minutely.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_minutely.RequestBodyCount) AS bRequestBodyCount
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.ServiceName = 'api'
+          AND service_operations_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_operations_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND match(service_operations_minutely.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+UNION ALL
+SELECT
+          service_operations_hourly.SpanName AS bSpanName,
+          sum(service_operations_hourly.SpanCount) AS bSpanCount,
+          sum(service_operations_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_operations_hourly.ErrorCount) AS bErrorCount,
+          sum(service_operations_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_operations_hourly.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_hourly.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_hourly.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_hourly.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_hourly.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_hourly.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_hourly.RequestBodyCount) AS bRequestBodyCount
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND match(service_operations_hourly.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+) AS endpoint_windows
         GROUP BY spanName
         ORDER BY estimatedSpanCount DESC
         LIMIT 50
         FORMAT JSON
 
--- builder:service-endpoints:serviceEndpointsSummaryRawQuery:envFiltered  [6f13da5c]
+-- builder:service-endpoint-details:serviceEndpointDistributionQuery:default  [7363b77d]
 SELECT
-          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
-          count() AS spanCount,
-          sum(traces.SampleRate) AS estimatedSpanCount,
-          countIf(traces.StatusCode = 'Error') AS errorCount,
-          sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS estimatedErrorCount,
-          if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
-          avg(traces.Duration) / 1000000 AS avgDurationMs,
-          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
-          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
-          quantile(0.99)(traces.Duration) / 1000000 AS p99DurationMs
+          sum(service_endpoint_details_hourly.SpanCount) AS spanCount,
+          if(sum(SpanCount) > 0, arrayMap(x -> x / 1000000, quantilesTDigestMerge(0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 0.999)(DurationQuantiles)), []) AS latencyQuantilesMs,
+          sum(service_endpoint_details_hourly.BodyCount) AS bodyCount,
+          if(sum(BodyCount) > 0, arrayElement(quantilesTDigestIfMerge(0.5, 0.95)(BodySizeQuantiles), 1), 0) AS bodyP50Bytes,
+          if(sum(BodyCount) > 0, arrayElement(quantilesTDigestIfMerge(0.5, 0.95)(BodySizeQuantiles), 2), 0) AS bodyP95Bytes,
+          max(service_endpoint_details_hourly.BodySizeMax) AS bodyMaxBytes,
+          arrayMap(x -> x.1, arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(UserAgents))) AS userAgents,
+          arrayMap(x -> x.2, arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(UserAgents))) AS userAgentCounts
+        FROM service_endpoint_details_hourly
+        WHERE service_endpoint_details_hourly.OrgId = 'org_sql_catalog'
+          AND service_endpoint_details_hourly.ServiceName = 'api'
+          AND service_endpoint_details_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_endpoint_details_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND service_endpoint_details_hourly.SpanName = 'GET /v2/services'
+        FORMAT JSON
+
+-- builder:service-endpoint-details:serviceEndpointSlowestQuery:default  [eee4d778]
+SELECT
+          service_endpoint_details_hourly.Hour AS hour,
+          service_endpoint_details_hourly.HttpStatusCode AS httpStatusCode,
+          argMaxMerge(SlowestTraceId) AS traceId,
+          toDateTime64(argMaxMerge(SlowestTimestamp), 3) AS timestamp,
+          max(SlowestDuration) / 1000000 AS durationMs,
+          argMaxMerge(SlowestBodySize) AS bodyBytes
+        FROM service_endpoint_details_hourly
+        WHERE service_endpoint_details_hourly.OrgId = 'org_sql_catalog'
+          AND service_endpoint_details_hourly.ServiceName = 'api'
+          AND service_endpoint_details_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_endpoint_details_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND service_endpoint_details_hourly.SpanName = 'GET /v2/services'
+        GROUP BY hour, httpStatusCode
+        ORDER BY durationMs DESC
+        LIMIT 5
+        FORMAT JSON
+
+-- builder:service-endpoint-details:serviceEndpointStatusBreakdownQuery:allEndpoints  [d049afc5]
+SELECT
+          service_endpoint_details_hourly.SpanName AS spanName,
+          service_endpoint_details_hourly.HttpStatusCode AS httpStatusCode,
+          service_endpoint_details_hourly.ErrorType AS errorType,
+          sum(service_endpoint_details_hourly.SpanCount) AS spanCount,
+          sum(service_endpoint_details_hourly.EstimatedSpanCount) AS estimatedSpanCount
+        FROM service_endpoint_details_hourly
+        WHERE service_endpoint_details_hourly.OrgId = 'org_sql_catalog'
+          AND service_endpoint_details_hourly.ServiceName = 'api'
+          AND service_endpoint_details_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_endpoint_details_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND match(service_endpoint_details_hourly.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY spanName, httpStatusCode, errorType
+        ORDER BY spanCount DESC, spanName ASC, httpStatusCode ASC
+        LIMIT 500
+        FORMAT JSON
+
+-- builder:service-endpoint-details:serviceEndpointStatusBreakdownQuery:oneEndpoint  [14361c3e]
+SELECT
+          service_endpoint_details_hourly.SpanName AS spanName,
+          service_endpoint_details_hourly.HttpStatusCode AS httpStatusCode,
+          service_endpoint_details_hourly.ErrorType AS errorType,
+          sum(service_endpoint_details_hourly.SpanCount) AS spanCount,
+          sum(service_endpoint_details_hourly.EstimatedSpanCount) AS estimatedSpanCount
+        FROM service_endpoint_details_hourly
+        WHERE service_endpoint_details_hourly.OrgId = 'org_sql_catalog'
+          AND service_endpoint_details_hourly.ServiceName = 'api'
+          AND service_endpoint_details_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_endpoint_details_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND service_endpoint_details_hourly.DeploymentEnv IN ('production')
+          AND service_endpoint_details_hourly.SpanName = 'GET /v2/services'
+        GROUP BY spanName, httpStatusCode, errorType
+        ORDER BY spanCount DESC, spanName ASC, httpStatusCode ASC
+        LIMIT 500
+        FORMAT JSON
+
+-- builder:service-endpoints:serviceEndpointsSummaryQuery:default  [1230931e]
+SELECT
+          endpoint_windows.bSpanName AS spanName,
+          sum(endpoint_windows.bSpanCount) AS spanCount,
+          sum(endpoint_windows.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_windows.bErrorCount) AS errorCount,
+          sum(endpoint_windows.bEstimatedErrorCount) AS estimatedErrorCount,
+          if(sum(endpoint_windows.bEstimatedSpanCount) > 0, sum(endpoint_windows.bEstimatedErrorCount) / sum(endpoint_windows.bEstimatedSpanCount), 0) AS errorRate,
+          if(sum(endpoint_windows.bSpanCount) > 0, sum(endpoint_windows.bDurationSum) / sum(endpoint_windows.bSpanCount) / 1000000, 0) AS avgDurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000, 0) AS p99DurationMs,
+          sum(endpoint_windows.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
+          sum(endpoint_windows.bHttpStatusCount) AS httpStatusCount,
+          sum(endpoint_windows.bHttp4xxCount) AS http4xxCount,
+          sum(endpoint_windows.bHttp5xxCount) AS http5xxCount,
+          sum(endpoint_windows.bRequestBodyBytes) AS requestBodyBytes,
+          sum(endpoint_windows.bRequestBodyCount) AS requestBodyCount
+        FROM (
+SELECT
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          count() AS bSpanCount,
+          sum(traces.SampleRate) AS bEstimatedSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          count() AS bHttpClassifiedSpanCount,
+          countIf(SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '') AS bHttpStatusCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 400 AND 499) AS bHttp4xxCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 500 AND 599) AS bHttp5xxCount,
+          sumIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyBytes,
+          countIf(SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyCount
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+          AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+UNION ALL
+SELECT
+          service_operations_minutely.SpanName AS bSpanName,
+          sum(service_operations_minutely.SpanCount) AS bSpanCount,
+          sum(service_operations_minutely.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_operations_minutely.ErrorCount) AS bErrorCount,
+          sum(service_operations_minutely.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_operations_minutely.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_minutely.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_minutely.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_minutely.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_minutely.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_minutely.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_minutely.RequestBodyCount) AS bRequestBodyCount
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.ServiceName = 'api'
+          AND service_operations_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_operations_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND match(service_operations_minutely.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+UNION ALL
+SELECT
+          service_operations_hourly.SpanName AS bSpanName,
+          sum(service_operations_hourly.SpanCount) AS bSpanCount,
+          sum(service_operations_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_operations_hourly.ErrorCount) AS bErrorCount,
+          sum(service_operations_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_operations_hourly.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_hourly.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_hourly.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_hourly.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_hourly.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_hourly.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_hourly.RequestBodyCount) AS bRequestBodyCount
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND match(service_operations_hourly.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+) AS endpoint_windows
+        GROUP BY spanName
+        ORDER BY estimatedSpanCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:service-endpoints:serviceEndpointsSummaryQuery:envFiltered  [f0e02822]
+SELECT
+          endpoint_windows.bSpanName AS spanName,
+          sum(endpoint_windows.bSpanCount) AS spanCount,
+          sum(endpoint_windows.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_windows.bErrorCount) AS errorCount,
+          sum(endpoint_windows.bEstimatedErrorCount) AS estimatedErrorCount,
+          if(sum(endpoint_windows.bEstimatedSpanCount) > 0, sum(endpoint_windows.bEstimatedErrorCount) / sum(endpoint_windows.bEstimatedSpanCount), 0) AS errorRate,
+          if(sum(endpoint_windows.bSpanCount) > 0, sum(endpoint_windows.bDurationSum) / sum(endpoint_windows.bSpanCount) / 1000000, 0) AS avgDurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000, 0) AS p99DurationMs,
+          sum(endpoint_windows.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
+          sum(endpoint_windows.bHttpStatusCount) AS httpStatusCount,
+          sum(endpoint_windows.bHttp4xxCount) AS http4xxCount,
+          sum(endpoint_windows.bHttp5xxCount) AS http5xxCount,
+          sum(endpoint_windows.bRequestBodyBytes) AS requestBodyBytes,
+          sum(endpoint_windows.bRequestBodyCount) AS requestBodyCount
+        FROM (
+SELECT
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          count() AS bSpanCount,
+          sum(traces.SampleRate) AS bEstimatedSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          count() AS bHttpClassifiedSpanCount,
+          countIf(SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '') AS bHttpStatusCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 400 AND 499) AS bHttp4xxCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 500 AND 599) AS bHttp5xxCount,
+          sumIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyBytes,
+          countIf(SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyCount
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName = 'api'
+          AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) IN ('production')
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00')))
+          AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+UNION ALL
+SELECT
+          service_operations_minutely.SpanName AS bSpanName,
+          sum(service_operations_minutely.SpanCount) AS bSpanCount,
+          sum(service_operations_minutely.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_operations_minutely.ErrorCount) AS bErrorCount,
+          sum(service_operations_minutely.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_operations_minutely.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_minutely.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_minutely.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_minutely.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_minutely.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_minutely.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_minutely.RequestBodyCount) AS bRequestBodyCount
+        FROM service_operations_minutely
+        WHERE service_operations_minutely.OrgId = 'org_sql_catalog'
+          AND service_operations_minutely.ServiceName = 'api'
+          AND service_operations_minutely.DeploymentEnv IN ('production')
+          AND service_operations_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_operations_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND match(service_operations_minutely.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+UNION ALL
+SELECT
+          service_operations_hourly.SpanName AS bSpanName,
+          sum(service_operations_hourly.SpanCount) AS bSpanCount,
+          sum(service_operations_hourly.EstimatedSpanCount) AS bEstimatedSpanCount,
+          sum(service_operations_hourly.ErrorCount) AS bErrorCount,
+          sum(service_operations_hourly.EstimatedErrorCount) AS bEstimatedErrorCount,
+          sum(service_operations_hourly.DurationSum) AS bDurationSum,
+          quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles) AS bDurationQuantiles,
+          sum(service_operations_hourly.HttpClassifiedSpanCount) AS bHttpClassifiedSpanCount,
+          sum(service_operations_hourly.HttpStatusCount) AS bHttpStatusCount,
+          sum(service_operations_hourly.Http4xxCount) AS bHttp4xxCount,
+          sum(service_operations_hourly.Http5xxCount) AS bHttp5xxCount,
+          sum(service_operations_hourly.RequestBodyBytes) AS bRequestBodyBytes,
+          sum(service_operations_hourly.RequestBodyCount) AS bRequestBodyCount
+        FROM service_operations_hourly
+        WHERE service_operations_hourly.OrgId = 'org_sql_catalog'
+          AND service_operations_hourly.ServiceName = 'api'
+          AND service_operations_hourly.DeploymentEnv IN ('production')
+          AND service_operations_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND service_operations_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND match(service_operations_hourly.SpanName, '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+) AS endpoint_windows
+        GROUP BY spanName
+        ORDER BY estimatedSpanCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:service-endpoints:serviceEndpointsSummaryRawQuery:envFiltered  [a6e839dc]
+SELECT
+          endpoint_windows.bSpanName AS spanName,
+          sum(endpoint_windows.bSpanCount) AS spanCount,
+          sum(endpoint_windows.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_windows.bErrorCount) AS errorCount,
+          sum(endpoint_windows.bEstimatedErrorCount) AS estimatedErrorCount,
+          if(sum(endpoint_windows.bEstimatedSpanCount) > 0, sum(endpoint_windows.bEstimatedErrorCount) / sum(endpoint_windows.bEstimatedSpanCount), 0) AS errorRate,
+          if(sum(endpoint_windows.bSpanCount) > 0, sum(endpoint_windows.bDurationSum) / sum(endpoint_windows.bSpanCount) / 1000000, 0) AS avgDurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 1) / 1000000, 0) AS p50DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 2) / 1000000, 0) AS p95DurationMs,
+          if(sum(bSpanCount) > 0, arrayElement(quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles), 3) / 1000000, 0) AS p99DurationMs,
+          sum(endpoint_windows.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
+          sum(endpoint_windows.bHttpStatusCount) AS httpStatusCount,
+          sum(endpoint_windows.bHttp4xxCount) AS http4xxCount,
+          sum(endpoint_windows.bHttp5xxCount) AS http5xxCount,
+          sum(endpoint_windows.bRequestBodyBytes) AS requestBodyBytes,
+          sum(endpoint_windows.bRequestBodyCount) AS requestBodyCount
+        FROM (
+SELECT
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS bSpanName,
+          count() AS bSpanCount,
+          sum(traces.SampleRate) AS bEstimatedSpanCount,
+          countIf(traces.StatusCode = 'Error') AS bErrorCount,
+          sumIf(traces.SampleRate, traces.StatusCode = 'Error') AS bEstimatedErrorCount,
+          sum(toFloat64(Duration)) AS bDurationSum,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS bDurationQuantiles,
+          count() AS bHttpClassifiedSpanCount,
+          countIf(SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '') AS bHttpStatusCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 400 AND 499) AS bHttp4xxCount,
+          countIf(SpanKind = 'Server' AND toUInt16OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) BETWEEN 500 AND 599) AS bHttp5xxCount,
+          sumIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyBytes,
+          countIf(SpanKind = 'Server' AND toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS bRequestBodyCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -4412,6 +4976,8 @@ SELECT
           AND traces.ServiceName = 'api'
           AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) IN ('production')
           AND match(if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName), '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ')
+        GROUP BY bSpanName
+) AS endpoint_windows
         GROUP BY spanName
         ORDER BY estimatedSpanCount DESC
         LIMIT 50
@@ -6313,7 +6879,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:services:serviceHealthSnapshotQuery:envFiltered  [02bd4c03]
+-- builder:services:serviceHealthSnapshotQuery:envFiltered  [ad73e722]
 SELECT
           traces_aggregates_hourly.ServiceName AS serviceName,
           traces_aggregates_hourly.DeploymentEnv AS environment,
@@ -6324,7 +6890,7 @@ SELECT
         WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
           AND traces_aggregates_hourly.IsEntryPoint = 1
           AND traces_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND traces_aggregates_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND traces_aggregates_hourly.Hour < toStartOfHour(addSeconds(toDateTime('2026-01-03 14:15:00'), 3599))
           AND traces_aggregates_hourly.DeploymentEnv IN ('production')
         GROUP BY serviceName, environment
         ORDER BY requestCount DESC, serviceName ASC
@@ -7962,6 +8528,77 @@ SELECT
         GROUP BY traceId
         ORDER BY startTime DESC, traceId DESC
         LIMIT 50
+        OFFSET 0
+        FORMAT JSON
+
+-- builder:traces:traceSummariesQuery:root-scope  [cb2173a6]
+SELECT
+          trace_list_mv.TraceId AS traceId,
+          min(trace_list_mv.Timestamp) AS startTime,
+          argMin(trace_list_mv.Duration, trace_list_mv.Timestamp) / 1000000 AS durationMs,
+          argMin(trace_list_mv.SpanName, trace_list_mv.Timestamp) AS rootSpanName,
+          argMin(trace_list_mv.SpanKind, trace_list_mv.Timestamp) AS rootSpanKind,
+          argMin(trace_list_mv.ServiceName, trace_list_mv.Timestamp) AS rootServiceName,
+          argMin(trace_list_mv.StatusCode, trace_list_mv.Timestamp) AS statusCode,
+          max(trace_list_mv.HasError) AS hasError,
+          argMin(trace_list_mv.DeploymentEnv, trace_list_mv.Timestamp) AS deploymentEnvironment,
+          argMin(trace_list_mv.ServiceNamespace, trace_list_mv.Timestamp) AS serviceNamespace,
+          argMin(trace_list_mv.HttpMethod, trace_list_mv.Timestamp) AS httpMethod,
+          argMin(trace_list_mv.HttpRoute, trace_list_mv.Timestamp) AS httpRoute,
+          argMin(trace_list_mv.HttpStatusCode, trace_list_mv.Timestamp) AS httpStatusCode
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (Timestamp, TraceId) IN (SELECT ts, traceId FROM (SELECT
+          trace_list_mv.Timestamp AS ts,
+          trace_list_mv.TraceId AS traceId
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 51))
+        GROUP BY traceId
+        ORDER BY startTime DESC, traceId DESC
+        LIMIT 51
+        OFFSET 0
+        FORMAT JSON
+
+-- builder:traces:traceSummariesQuery:root-scope-raw  [e14df082]
+SELECT
+          trace_list_mv.TraceId AS traceId,
+          min(trace_list_mv.Timestamp) AS startTime,
+          argMin(trace_list_mv.Duration, trace_list_mv.Timestamp) / 1000000 AS durationMs,
+          argMin(trace_list_mv.SpanName, trace_list_mv.Timestamp) AS rootSpanName,
+          argMin(trace_list_mv.SpanKind, trace_list_mv.Timestamp) AS rootSpanKind,
+          argMin(trace_list_mv.ServiceName, trace_list_mv.Timestamp) AS rootServiceName,
+          argMin(trace_list_mv.StatusCode, trace_list_mv.Timestamp) AS statusCode,
+          max(trace_list_mv.HasError) AS hasError,
+          argMin(trace_list_mv.DeploymentEnv, trace_list_mv.Timestamp) AS deploymentEnvironment,
+          argMin(trace_list_mv.ServiceNamespace, trace_list_mv.Timestamp) AS serviceNamespace,
+          argMin(trace_list_mv.HttpMethod, trace_list_mv.Timestamp) AS httpMethod,
+          argMin(trace_list_mv.HttpRoute, trace_list_mv.Timestamp) AS httpRoute,
+          argMin(trace_list_mv.HttpStatusCode, trace_list_mv.Timestamp) AS httpStatusCode
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (Timestamp, TraceId) IN (SELECT ts, traceId FROM (SELECT
+          toDateTime(traces.Timestamp) AS ts,
+          traces.TraceId AS traceId
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.StatusCode = 'Error'
+          AND SpanAttributes['http.route'] = '/users/:id'
+          AND traces.ParentSpanId = ''
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 51))
+        GROUP BY traceId
+        ORDER BY startTime DESC, traceId DESC
+        LIMIT 51
         OFFSET 0
         FORMAT JSON
 

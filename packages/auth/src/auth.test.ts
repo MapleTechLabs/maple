@@ -8,6 +8,7 @@ import {
 	makeGetCustomerData,
 	makeLoginSelfHosted,
 	makeRefreshSelfHostedSession,
+	makeResolveClerkUser,
 	makeResolveMcpTenant,
 	makeResolveTenant,
 	ORG_SELECTION_HEADER,
@@ -228,6 +229,58 @@ describe("makeResolveTenant", () => {
 				roles: [asRoleName("root")],
 				authMode: "self_hosted",
 			})
+		}),
+	)
+})
+
+describe("pending Clerk sessions (no organization chosen yet)", () => {
+	const clerkEnv = {
+		...baseEnv,
+		MAPLE_AUTH_MODE: "clerk",
+		CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+		CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+	} as const
+
+	// Mirrors @clerk/backend: a pending session reads as signed out unless the caller opts in.
+	const pendingSession = async () => ({
+		isAuthenticated: true,
+		message: null,
+		toAuth: ({ treatPendingAsSignedOut = true }: { treatPendingAsSignedOut?: boolean } = {}) =>
+			treatPendingAsSignedOut
+				? {
+						isAuthenticated: false,
+						tokenType: "session_token",
+						userId: null,
+						orgId: null,
+						orgRole: null,
+					}
+				: {
+						isAuthenticated: true,
+						tokenType: "session_token",
+						userId: "user_new",
+						orgId: null,
+						orgRole: null,
+					},
+	})
+
+	it.effect("resolves the user, so they can create their first organization", () =>
+		Effect.gen(function* () {
+			const userId = yield* makeResolveClerkUser(
+				clerkEnv,
+				pendingSession,
+			)({
+				authorization: "Bearer test-token",
+			})
+			assert.strictEqual(userId, asUserId("user_new"))
+		}),
+	)
+
+	it.effect("is still refused on organization-scoped routes", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				makeResolveTenant(clerkEnv, pendingSession)({ authorization: "Bearer test-token" }),
+			)
+			assertRejected(exit, "Invalid Clerk token")
 		}),
 	)
 })

@@ -48,6 +48,7 @@ import {
 	spanMetricsCallsHourly,
 	serviceOperationsMinutely,
 	serviceOperationsHourly,
+	serviceEndpointDetailsHourly,
 	productEvents,
 	identityLinks,
 } from "./datasources"
@@ -61,6 +62,13 @@ import {
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR, MAPLE_AI_VENDOR_VERSION_ATTR } from "../gen-ai"
 import { PRODUCT_EVENTS_TRACE_FILTER, PRODUCT_EVENTS_TRACE_PROJECTION_SQL } from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
+import {
+	HTTP_SERVER_SPAN_SQL,
+	HTTP_STATUS_CODE_SQL,
+	REQUEST_BODY_SIZE_SQL,
+	SERVICE_OPERATIONS_HTTP_MEASURES as HTTP,
+	USER_AGENT_SQL,
+} from "./http-endpoint-sql"
 import {
 	AI_CRAWLER_INDEX_SQL,
 	AI_CRAWLER_NAME_SQL,
@@ -1342,7 +1350,7 @@ export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
           StatusCode,
           if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) AS HttpMethod,
           if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], if(SpanAttributes['url.path'] != '', SpanAttributes['url.path'], SpanAttributes['http.target'])) AS HttpRoute,
-          if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS HttpStatusCode,
+          ${HTTP_STATUS_CODE_SQL} AS HttpStatusCode,
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
           toUInt8(
             StatusCode = 'Error'
@@ -1819,6 +1827,7 @@ export const serviceOperationsMinutelyMv = defineMaterializedView("service_opera
 	// with no data movement at promotion, which is what an additive change
 	// actually needs, and is also why these rollups need no FORWARD_QUERY (a
 	// leftover one makes every later deploy fail — see the note in datasources).
+	// Migration 0048's six HTTP measures rely on the same directive.
 	deploymentMethod: "alter",
 	nodes: [
 		node({
@@ -1838,7 +1847,13 @@ export const serviceOperationsMinutelyMv = defineMaterializedView("service_opera
           quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles,
           count() AS ClassifiedSpanCount,
           countIf(SpanKind IN ('Server', 'Consumer')) AS ServerSpanCount,
-          countIf(SpanAttributes['http.route'] != '') AS RoutedSpanCount
+          countIf(SpanAttributes['http.route'] != '') AS RoutedSpanCount,
+          ${HTTP.HttpClassifiedSpanCount} AS HttpClassifiedSpanCount,
+          ${HTTP.HttpStatusCount} AS HttpStatusCount,
+          ${HTTP.Http4xxCount} AS Http4xxCount,
+          ${HTTP.Http5xxCount} AS Http5xxCount,
+          ${HTTP.RequestBodyBytes} AS RequestBodyBytes,
+          ${HTTP.RequestBodyCount} AS RequestBodyCount
         FROM traces
         GROUP BY OrgId, Minute, ServiceName, DeploymentEnv, SpanName
       `,
@@ -1876,9 +1891,62 @@ export const serviceOperationsHourlyMv = defineMaterializedView("service_operati
           quantilesTDigestMergeState(0.5, 0.95)(DurationQuantiles) AS DurationQuantiles,
           sum(ClassifiedSpanCount) AS ClassifiedSpanCount,
           sum(ServerSpanCount) AS ServerSpanCount,
-          sum(RoutedSpanCount) AS RoutedSpanCount
+          sum(RoutedSpanCount) AS RoutedSpanCount,
+          sum(HttpClassifiedSpanCount) AS HttpClassifiedSpanCount,
+          sum(HttpStatusCount) AS HttpStatusCount,
+          sum(Http4xxCount) AS Http4xxCount,
+          sum(Http5xxCount) AS Http5xxCount,
+          sum(RequestBodyBytes) AS RequestBodyBytes,
+          sum(RequestBodyCount) AS RequestBodyCount
         FROM service_operations_minutely
         GROUP BY OrgId, Hour, ServiceName, DeploymentEnv, SpanName
+      `,
+		}),
+	],
+})
+
+/** Request body bytes as Int64 with -1 for none, so `argMax` keeps the slowest row either way. */
+const SLOWEST_BODY_SIZE_SQL = `ifNull(toInt64(${REQUEST_BODY_SIZE_SQL}), -1)`
+
+/**
+ * Hourly HTTP endpoint detail off raw `traces`, for the service API tab. Reads Server
+ * spans with a response status; the SpanName expression is the operations rollup's so
+ * the two tables join on it.
+ */
+export const serviceEndpointDetailsHourlyMv = defineMaterializedView("service_endpoint_details_hourly_mv", {
+	description:
+		"Pre-aggregates HTTP server spans hourly per normalized endpoint, status code and error.type: counts, latency and body-size t-digests, top user agents and the slowest request.",
+	datasource: serviceEndpointDetailsHourly,
+	// The target keeps 90 days and `traces` 30, so a rebuild at promotion would cut it to a
+	// month. `alter` keeps every later change in place (live in US and EU since 2026-10-24).
+	deploymentMethod: "alter",
+	nodes: [
+		node({
+			name: "service_endpoint_details_hourly_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          ServiceName,
+          toStartOfHour(toDateTime(Timestamp)) AS Hour,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          ${NORMALIZED_SPAN_NAME_SQL} AS SpanName,
+          ${HTTP_STATUS_CODE_SQL} AS HttpStatusCode,
+          SpanAttributes['error.type'] AS ErrorType,
+          count() AS SpanCount,
+          sum(SampleRate) AS EstimatedSpanCount,
+          quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles,
+          quantilesTDigestIfState(0.5, 0.95, 0.99)(ifNull(${REQUEST_BODY_SIZE_SQL}, 0), ${REQUEST_BODY_SIZE_SQL} IS NOT NULL) AS BodySizeQuantiles,
+          maxIf(ifNull(${REQUEST_BODY_SIZE_SQL}, 0), ${REQUEST_BODY_SIZE_SQL} IS NOT NULL) AS BodySizeMax,
+          countIf(${REQUEST_BODY_SIZE_SQL} IS NOT NULL) AS BodyCount,
+          approx_top_kState(10)(${USER_AGENT_SQL}) AS UserAgents,
+          max(Duration) AS SlowestDuration,
+          argMaxState(TraceId, Duration) AS SlowestTraceId,
+          argMaxState(Timestamp, Duration) AS SlowestTimestamp,
+          argMaxState(${SLOWEST_BODY_SIZE_SQL}, Duration) AS SlowestBodySize
+        FROM traces
+        WHERE ${HTTP_SERVER_SPAN_SQL}
+          AND ${HTTP_STATUS_CODE_SQL} != ''
+        GROUP BY OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType
       `,
 		}),
 	],

@@ -20,6 +20,7 @@ import { CloudflareHyperdriveConfigs } from "./cloudflare-hyperdrive-configs"
 import { CloudflareLogpushConnectors } from "./cloudflare-logpush-connectors"
 import { DashboardShares } from "./dashboard-shares"
 import { Dashboards, DashboardVersions } from "./dashboards"
+import { DeviceCredentials, DeviceProofReplays } from "./device-credentials"
 import { DigestSubscriptions } from "./digest"
 import {
 	Actors,
@@ -102,6 +103,7 @@ export * from "./cloudflare-hyperdrive-configs"
 export * from "./cloudflare-logpush-connectors"
 export * from "./dashboard-shares"
 export * from "./dashboards"
+export * from "./device-credentials"
 export * from "./digest"
 export * from "./errors"
 export * from "./escalations"
@@ -155,6 +157,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	DashboardShares,
 	Dashboards,
 	DashboardVersions,
+	DeviceCredentials,
+	DeviceProofReplays,
 	DigestSubscriptions,
 	Actors,
 	ErrorIssues,

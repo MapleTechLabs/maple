@@ -394,6 +394,8 @@ export const ReplaySearch = Schema.Struct({
 // sessionTimeRangeSearchMiddleware({ maxRangeSeconds: one year })
 export const ServiceSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
+	/** The API tab's open endpoint drawer, by normalized span name ("GET /users/{id}"). */
+	endpoint: Schema.optional(Schema.String),
 	environments: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })

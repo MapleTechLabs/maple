@@ -129,6 +129,8 @@ enum AppTab: Hashable {
 	case services
 	case alerts
 	case explore
+	/// The search tab: services, issues and trace ids.
+	case search
 }
 
 /// Explore's segments: the web sidebar's Analyze group.

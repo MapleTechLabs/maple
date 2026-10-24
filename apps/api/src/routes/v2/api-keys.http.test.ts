@@ -147,6 +147,21 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 			metadataJson: { source: "maple_cli", roles: ["org:member"], deviceName: "laptop" },
 		})
 
+	/** A widget credential, minted the way the phone's app mints it. */
+	const bootstrapDeviceKey = (userId: UserId, deviceId: string) =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const service = yield* ApiKeysService
+				return yield* service.replaceDeviceKey(ORG, userId, {
+					deviceId,
+					name: "Home Screen widgets",
+					scopes: ["widget_summary:read"],
+					expiresInSeconds: 14 * 86_400,
+					roles: ["org:member"],
+				})
+			}),
+		)
+
 	const resolveKey = (secret: string) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
@@ -171,6 +186,7 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 		auditEntries,
 		bootstrapKey,
 		bootstrapMemberKey,
+		bootstrapDeviceKey,
 		bootstrapSession,
 		resolveKey,
 		ORG,
@@ -578,6 +594,36 @@ describe("v2 api_keys over HTTP", () => {
 		})
 		expect(denied.status).toBe(403)
 		expect(denied.body.error.code).toBe("insufficient_permissions")
+		await harness.dispose()
+	})
+
+	it("lets a member revoke a device key their phone minted, and only an admin anyone else's", async () => {
+		const harness = makeHarness()
+		const { encodePublicId } = await import("@maple/domain/http/v2")
+		const member = await harness.bootstrapMemberKey()
+		const own = await harness.bootstrapDeviceKey(harness.USER, "installation-own")
+		const other = Schema.decodeUnknownSync(UserId)("user_other")
+		const foreign = await harness.bootstrapDeviceKey(other, "installation-foreign")
+
+		const revoked = await harness.request("DELETE", `/v2/api_keys/${encodePublicId("key", own.id)}`, {
+			token: member.secret,
+		})
+		expect(revoked.status).toBe(200)
+		expect(revoked.body.revoked).toBe(true)
+		expect(Option.isNone(await harness.resolveKey(own.secret))).toBe(true)
+
+		const denied = await harness.request("DELETE", `/v2/api_keys/${encodePublicId("key", foreign.id)}`, {
+			token: member.secret,
+		})
+		expect(denied.status).toBe(403)
+		expect(denied.body.error.code).toBe("insufficient_permissions")
+
+		const admin = await harness.bootstrapKey()
+		const byAdmin = await harness.request("DELETE", `/v2/api_keys/${encodePublicId("key", foreign.id)}`, {
+			token: admin.secret,
+		})
+		expect(byAdmin.status).toBe(200)
+		expect(byAdmin.body.revoked).toBe(true)
 		await harness.dispose()
 	})
 

@@ -53,5 +53,7 @@ export const ApiObservabilityLive = Layer.mergeAll(
 		"x-hub-signature-256",
 		// Svix (Clerk / Autumn webhooks): replayable alongside its body within the tolerance window.
 		"svix-signature",
+		// RFC 9449 proofs: short-lived, but a captured one replays within its window.
+		"dpop",
 	]),
 )

@@ -1535,6 +1535,144 @@ export class ServiceEndpointsResponse extends Schema.Class<ServiceEndpointsRespo
 			p50DurationMs: Schema.Number,
 			p95DurationMs: Schema.Number,
 			p99DurationMs: Schema.Number,
+			// Migration 0048, Server spans only. httpClassifiedSpanCount below spanCount
+			// means part of the window predates 0048: the status mix is unknown there.
+			httpClassifiedSpanCount: Schema.Number,
+			httpStatusCount: Schema.Number,
+			http4xxCount: Schema.Number,
+			http5xxCount: Schema.Number,
+			requestBodyBytes: Schema.Number,
+			requestBodyCount: Schema.Number,
+		}),
+	),
+}) {}
+
+/** Every HTTP endpoint of one service merged; the API tab's headline numbers. */
+export const ServiceApiTotals = Schema.Struct({
+	spanCount: Schema.Number,
+	estimatedSpanCount: Schema.Number,
+	httpClassifiedSpanCount: Schema.Number,
+	httpStatusCount: Schema.Number,
+	http4xxCount: Schema.Number,
+	http5xxCount: Schema.Number,
+	requestBodyBytes: Schema.Number,
+	requestBodyCount: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	p99DurationMs: Schema.Number,
+})
+
+/** One timeseries bucket; `spanName` is `''` for the series merged across endpoints. */
+export const ServiceApiBucket = Schema.Struct({
+	bucket: Schema.String,
+	spanName: Schema.String,
+	estimatedSpanCount: Schema.Number,
+	/** 0 when the bucket predates the status counters: its status mix is unknown. */
+	httpClassifiedSpanCount: Schema.Number,
+	httpStatusCount: Schema.Number,
+	http4xxCount: Schema.Number,
+	http5xxCount: Schema.Number,
+	requestBodyBytes: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	p99DurationMs: Schema.Number,
+})
+
+export class ServiceApiOverviewRequest extends Schema.Class<ServiceApiOverviewRequest>(
+	"ServiceApiOverviewRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	// Both or neither: the totals for the comparison window, same scope.
+	previousStartTime: Schema.optional(TinybirdDateTime),
+	previousEndTime: Schema.optional(TinybirdDateTime),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	bucketSeconds: BucketSeconds,
+}) {}
+
+export class ServiceApiOverviewResponse extends Schema.Class<ServiceApiOverviewResponse>(
+	"ServiceApiOverviewResponse",
+)({
+	totals: ServiceApiTotals,
+	previous: Schema.NullOr(ServiceApiTotals),
+	buckets: Schema.Array(ServiceApiBucket),
+}) {}
+
+export class ServiceEndpointsTimeseriesRequest extends Schema.Class<ServiceEndpointsTimeseriesRequest>(
+	"ServiceEndpointsTimeseriesRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	bucketSeconds: BucketSeconds,
+	spanNames: Schema.Array(SpanName).check(Schema.isMinLength(1), Schema.isMaxLength(50)),
+}) {}
+
+export class ServiceEndpointsTimeseriesResponse extends Schema.Class<ServiceEndpointsTimeseriesResponse>(
+	"ServiceEndpointsTimeseriesResponse",
+)({
+	buckets: Schema.Array(ServiceApiBucket),
+}) {}
+
+export class ServiceEndpointStatusBreakdownRequest extends Schema.Class<ServiceEndpointStatusBreakdownRequest>(
+	"ServiceEndpointStatusBreakdownRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	spanName: Schema.optional(SpanName),
+}) {}
+
+export class ServiceEndpointStatusBreakdownResponse extends Schema.Class<ServiceEndpointStatusBreakdownResponse>(
+	"ServiceEndpointStatusBreakdownResponse",
+)({
+	rows: Schema.Array(
+		Schema.Struct({
+			spanName: Schema.String,
+			httpStatusCode: Schema.String,
+			// `error.type` as written, '' when the span carried none.
+			errorType: Schema.String,
+			spanCount: Schema.Number,
+			estimatedSpanCount: Schema.Number,
+		}),
+	),
+}) {}
+
+export class ServiceEndpointDetailRequest extends Schema.Class<ServiceEndpointDetailRequest>(
+	"ServiceEndpointDetailRequest",
+)({
+	serviceName: ServiceName,
+	spanName: SpanName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+}) {}
+
+export class ServiceEndpointDetailResponse extends Schema.Class<ServiceEndpointDetailResponse>(
+	"ServiceEndpointDetailResponse",
+)({
+	latencyQuantileLevels: Schema.Array(Schema.Number),
+	// Empty when the window holds no request; otherwise one value per level, in ms.
+	latencyQuantilesMs: Schema.Array(Schema.Number),
+	body: Schema.NullOr(
+		Schema.Struct({
+			p50Bytes: Schema.Number,
+			p95Bytes: Schema.Number,
+			maxBytes: Schema.Number,
+			count: Schema.Number,
+		}),
+	),
+	userAgents: Schema.Array(Schema.Struct({ value: Schema.String, count: Schema.NullOr(Schema.Number) })),
+	slowest: Schema.Array(
+		Schema.Struct({
+			traceId: Schema.String,
+			timestamp: Schema.String,
+			durationMs: Schema.Number,
+			httpStatusCode: Schema.String,
+			bodyBytes: Schema.NullOr(Schema.Number),
 		}),
 	),
 }) {}
@@ -3403,6 +3541,34 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("serviceEndpoints", "/service-endpoints", {
 			payload: ServiceEndpointsRequest,
 			success: ServiceEndpointsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceApiOverview", "/service-api-overview", {
+			payload: ServiceApiOverviewRequest,
+			success: ServiceApiOverviewResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceEndpointsTimeseries", "/service-endpoints-timeseries", {
+			payload: ServiceEndpointsTimeseriesRequest,
+			success: ServiceEndpointsTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceEndpointStatusBreakdown", "/service-endpoint-status-breakdown", {
+			payload: ServiceEndpointStatusBreakdownRequest,
+			success: ServiceEndpointStatusBreakdownResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceEndpointDetail", "/service-endpoint-detail", {
+			payload: ServiceEndpointDetailRequest,
+			success: ServiceEndpointDetailResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)
