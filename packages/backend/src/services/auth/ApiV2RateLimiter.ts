@@ -27,6 +27,8 @@ export const apiV2RateLimitKey = (keyId: ApiKeyId): string => `v2:${keyId}`
 
 /** DPoP device credentials share one budget per credential across tokens and requests. */
 export const deviceRateLimitKey = (credentialId: string): string => `v2dev:${credentialId}`
+/** The token endpoint is unauthenticated, so it is also limited per client IP before any work. */
+export const deviceTokenIpRateLimitKey = (ip: string): string => `v2devip:${ip}`
 
 /** Share links are limited per token, and separately per client IP. */
 export const shareTokenRateLimitKey = (tokenHashPrefix: string): string => `share:${tokenHashPrefix}`

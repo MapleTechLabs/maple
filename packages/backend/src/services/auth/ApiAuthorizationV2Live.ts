@@ -158,7 +158,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 									),
 						})
 						yield* annotateAuthSpan("dpop", { orgId: resolved.orgId, userId: resolved.userId })
-						yield* Effect.annotateCurrentSpan("maple.device_credential.id", resolved.credentialId)
+						yield* Effect.annotateCurrentSpan("maple.device.credential_id", resolved.credentialId)
 						const rateLimitOutcome = yield* rateLimiter.check(
 							deviceRateLimitKey(resolved.credentialId),
 						)

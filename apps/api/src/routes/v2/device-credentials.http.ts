@@ -9,6 +9,7 @@ import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	ApiV2RateLimiter,
 	deviceRateLimitKey,
+	deviceTokenIpRateLimitKey,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
 
@@ -94,9 +95,8 @@ export const HttpV2DeviceTokensLive = HttpApiBuilder.group(MapleApiV2, "deviceTo
 		return handlers.handle("issue", ({ headers }) =>
 			Effect.gen(function* () {
 				const request = yield* HttpServerRequest.HttpServerRequest
-				// The same per-credential budget its requests draw from, checked before issuance.
-				const admit = (credentialId: string) =>
-					rateLimiter.check(deviceRateLimitKey(credentialId)).pipe(
+				const limit = (key: string) =>
+					rateLimiter.check(key).pipe(
 						Effect.tap((outcome) =>
 							Effect.annotateCurrentSpan("maple.rate_limit.outcome", outcome),
 						),
@@ -110,6 +110,12 @@ export const HttpV2DeviceTokensLive = HttpApiBuilder.group(MapleApiV2, "deviceTo
 								: Effect.void,
 						),
 					)
+				// Before any proof work: keys are free to generate, the client IP is not. Absent
+				// outside Cloudflare (self-hosted), where only the per-credential limit applies.
+				const ip = request.headers["cf-connecting-ip"]
+				if (ip !== undefined) yield* limit(deviceTokenIpRateLimitKey(ip))
+				// The same per-credential budget its requests draw from, checked before issuance.
+				const admit = (credentialId: string) => limit(deviceRateLimitKey(credentialId))
 				const issued = yield* devices.issueToken(
 					{ proof: headers.dpop, method: request.method, path: request.url },
 					admit,

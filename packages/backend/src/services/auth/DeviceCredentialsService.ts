@@ -296,7 +296,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 					orgId: tenant.orgId,
 					"tenant.userId": tenant.userId,
 					"maple.device.installation_id": params.installationId,
-					"maple.device_credential.attestation_present": params.attestation !== undefined,
+					"maple.device.attestation_present": params.attestation !== undefined,
 				})
 				yield* importEcPublicJwk(params.publicJwk).pipe(
 					Effect.mapError((error) => new DeviceKeyInvalidError({ message: error.message })),
@@ -394,8 +394,8 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 					),
 				)
 				yield* Effect.annotateCurrentSpan({
-					"maple.device_credential.id": row.id,
-					"maple.device_credential.attested": row.attested,
+					"maple.device.credential_id": row.id,
+					"maple.device.attested": row.attested,
 				})
 				return row
 			})
@@ -414,7 +414,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 							.returning("id"),
 					),
 				)
-				yield* Effect.annotateCurrentSpan("maple.device_credential.revoked", revoked.length)
+				yield* Effect.annotateCurrentSpan("maple.device.revoked_count", revoked.length)
 				return revoked.length
 			})
 
@@ -550,7 +550,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 						),
 					)
 				yield* touchLastUsed(row, now)
-				yield* Effect.annotateCurrentSpan({ orgId: row.orgId, "maple.device_credential.id": row.id })
+				yield* Effect.annotateCurrentSpan({ orgId: row.orgId, "maple.device.credential_id": row.id })
 				return { accessToken, expiresIn: DEVICE_TOKEN_TTL_SECONDS, scope, row }
 			})
 
@@ -601,7 +601,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 				yield* touchLastUsed(row.value, now)
 				yield* Effect.annotateCurrentSpan({
 					orgId: row.value.orgId,
-					"maple.device_credential.id": row.value.id,
+					"maple.device.credential_id": row.value.id,
 				})
 				return {
 					credentialId: row.value.id,
