@@ -1,6 +1,8 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import type { HtmlBuilder } from "foldkit/html"
+import { Lazy } from "foldkit/test"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import type { PageContext } from "../../contract"
@@ -284,5 +286,20 @@ describe("replay detail", () => {
 		expect(Object.keys(cache)).toHaveLength(RANGE_CACHE_LIMIT)
 		expect(Object.keys(cache)[0]).toBe("range-3")
 		expect(Object.keys(cacheRange(cache, "range-3", [])).at(-1)).toBe("range-3")
+	})
+})
+
+describe("replay detail playback", () => {
+	test("an engine tick reuses every memoized section, so only the playhead is rebuilt", () => {
+		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
+		const playing = pageUpdate(ready, Message.ClickedPlay()).model
+		const ticked = pageUpdate(playing, Message.TickedEngine({ seedVersion: 1, currentMs: 1500 })).model
+		expect(ticked.player.currentMs).not.toBe(playing.player.currentMs)
+		// The first render draws the frame before the tick, the second the tick itself.
+		const frames = [playing, ticked].values()
+		Lazy.expectAllReused({
+			view: (model: Model, h: HtmlBuilder<Message>) => view(frames.next().value ?? model, h),
+			model: ticked,
+		})
 	})
 })
