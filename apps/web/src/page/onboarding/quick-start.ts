@@ -263,6 +263,12 @@ const entered = (previous: Model, result: UpdateReturn, hasPlan: boolean): Updat
 	return { ...result, model }
 }
 
+/** How many signals the last presence read found arriving. */
+const presentCount = (connect: Connect): number =>
+	Object.values(AsyncData.getOrElse(connect.presence, () => ({}))).filter(
+		(presence) => presence.status === "present",
+	).length
+
 /** Every change is written through, as the atom's `setState` is. */
 const saved = (model: Model, next: (state: QuickStartState) => QuickStartState): UpdateReturn => {
 	if (model.state === null) return { model }
@@ -289,9 +295,17 @@ const step = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
 		GotConnectMessage: ({ message: child }) => {
 			const platforms = model.state?.stack.platforms ?? []
 			const next = updateConnect(model.connect, child, model.orgId, platforms)
+			// On the last screen, a signal that just arrived re-reads the cards' findings.
+			const isOnLive = model.state !== null && resolveQuickStartStep(model.state, hasPlan) === "live"
+			const isNewSignal = presentCount(next.connect) > presentCount(model.connect)
 			return {
 				model: { ...model, connect: next.connect },
-				commands: Command.mapMessages(next.commands, toConnect),
+				commands: [
+					...Command.mapMessages(next.commands, toConnect),
+					...(isOnLive && isNewSignal
+						? [Command.mapMessage(toLive)(LoadLiveFindings({ timeZone: "UTC" }))]
+						: []),
+				],
 			}
 		},
 		GotLiveMessage: ({ message: child }) => ({
