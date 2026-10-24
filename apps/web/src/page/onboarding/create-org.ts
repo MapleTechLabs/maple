@@ -12,7 +12,7 @@ import {
 	UserInvitation,
 } from "../../platform/clerk"
 import type { Resources } from "../../platform/resources"
-import { createdTargetOf, createOrganization, switchToOrganization } from "../../shell/clerk-org-switcher"
+import { createdTargetOf, createOrganization, openOrganization } from "../../shell/clerk-org-switcher"
 import { startDitherField } from "../../ui/dither-field"
 
 // `/org-required`: a signed-in user with no organization names their first one (the name guessed from
@@ -47,6 +47,8 @@ export const Message = defineMessageUnion({
 	ClickedSignOut: {},
 	/** The page is leaving for the new org (`setActive` then reload), or Clerk is signing out. */
 	CompletedLeave: {},
+	/** Clerk refused to make the org active, so the page stays instead of reloading onto no org. */
+	FailedLeave: { message: Schema.String },
 	CompletedMountDitherField: {},
 })
 export type Message = typeof Message.Type
@@ -84,9 +86,12 @@ export const JoinInvitation = Command.define("AcceptUserInvitation", {
 /** Stays pending while the page reloads onto the org; the root's gates take it from there. */
 export const LeaveFor = Command.define("OpenFirstOrganization", {
 	args: { orgId: Schema.String, targetUrl: Schema.NullOr(Schema.String) },
-	messages: [Message.CompletedLeave],
+	messages: [Message.CompletedLeave, Message.FailedLeave],
 	execute: ({ orgId, targetUrl }) =>
-		switchToOrganization(orgId, targetUrl).pipe(Effect.as(Message.CompletedLeave())),
+		openOrganization(orgId, targetUrl).pipe(
+			Effect.as(Message.CompletedLeave()),
+			Effect.catch((error) => Effect.succeed(Message.FailedLeave({ message: error.message }))),
+		),
 })
 
 const SignOut = Command.define("OrgRequiredSignOut", {
@@ -183,5 +188,8 @@ export const update = (model: Model, message: Message): Result =>
 					},
 		ClickedSignOut: () => ({ model, commands: [SignOut()] }),
 		CompletedLeave: () => ({ model }),
+		FailedLeave: ({ message: failure }) => ({
+			model: { ...model, isCreating: false, joiningId: null, openingId: null, errorMessage: failure },
+		}),
 		CompletedMountDitherField: () => ({ model }),
 	})

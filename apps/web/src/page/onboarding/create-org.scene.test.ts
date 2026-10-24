@@ -146,6 +146,18 @@ describe("create your first organization", () => {
 		)
 	})
 
+	test("if Clerk will not open the org, the page stays and says so", () => {
+		scene(
+			{ update, view: memberView },
+			given(init(user).model),
+			mounted,
+			click(role("button", { name: "Open Redirect test US" })),
+			Command.resolve(LeaveFor, Message.FailedLeave({ message: "Couldn't open that organization." })),
+			expectView(text("Couldn't open that organization.")).toExist(),
+			expectView(role("button", { name: "Open Redirect test US" })).not.toBeDisabled(),
+		)
+	})
+
 	test("an invitation accepted elsewhere is re-read instead of failing forever", () => {
 		scene(
 			{ update, view },
