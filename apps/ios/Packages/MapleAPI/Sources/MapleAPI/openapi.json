@@ -3345,13 +3345,13 @@
             "type": "string"
           },
           "x": {
-            "description": "a base64url P-256 coordinate (32 bytes)",
-            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "description": "a canonical base64url P-256 coordinate (32 bytes, no padding)",
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
             "type": "string"
           },
           "y": {
-            "description": "a base64url P-256 coordinate (32 bytes)",
-            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "description": "a canonical base64url P-256 coordinate (32 bytes, no padding)",
+            "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
             "type": "string"
           }
         },
@@ -8442,7 +8442,7 @@
     },
     "/v2/device_credentials/{installation_id}": {
       "delete": {
-        "description": "Revokes the installation's device credential for this organization. Tokens already issued for it stop working on their next request. Idempotent. Requires the `device_credentials:write` scope.",
+        "description": "Revokes the caller's own device credential for this installation and organization. Tokens already issued for it stop working on their next request. Idempotent. Signed-in sessions only; there is no path to revoke another member's device (removing the member does that).",
         "operationId": "revokeDeviceCredential",
         "parameters": [
           {
@@ -8501,7 +8501,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -8572,7 +8572,7 @@
         ]
       },
       "put": {
-        "description": "Registers the public half of a device-held P-256 key for this installation and organization, revoking the key it had before in the same transaction. Registering the same key again refreshes it: the rolling 30-day expiry moves out (never past 90 days from creation) and the roles are re-pinned to the caller's. Requires the `device_credentials:write` scope, which a device token never has, so registration always comes from a signed-in session.",
+        "description": "Registers the public half of a device-held P-256 key for this installation and organization, revoking the caller's previous key for it in the same transaction. Registering the same key again refreshes it: the rolling 30-day expiry moves out (never past 90 days from creation) and the roles are re-pinned to the caller's. Signed-in sessions only (API keys and device tokens get `session_required`). The request must also carry a `DPoP` proof signed by the submitted key (`htm` `PUT`, `htu` this URL, no `ath`), proving the caller holds it. An installation another member holds a live credential for answers `device_installation_in_use`.",
         "operationId": "registerDeviceCredential",
         "parameters": [
           {
@@ -8588,6 +8588,15 @@
               "minLength": 8,
               "pattern": "^[A-Za-z0-9_-]+$",
               "title": "Installation ID",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "dpop",
+            "required": false,
+            "schema": {
+              "description": "The DPoP proof JWT (RFC 9449 section 4.2) for this request.",
               "type": "string"
             }
           }
@@ -8621,7 +8630,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/DeviceKeyInvalidError failure. HTTP 400. | The @maple/http/errors/DeviceAttestationInvalidError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+            "description": "The @maple/http/errors/DeviceKeyInvalidError failure. HTTP 400. | The @maple/http/errors/DpopProofInvalidError failure. HTTP 400. | The @maple/http/errors/DeviceAttestationInvalidError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
           },
           "401": {
             "content": {
@@ -8641,7 +8650,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
           },
           "409": {
             "content": {
@@ -8651,7 +8660,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/DeviceKeyInUseError failure. HTTP 409."
+            "description": "The @maple/http/errors/DeviceKeyInUseError failure. HTTP 409. | The @maple/http/errors/DeviceInstallationInUseError failure. HTTP 409."
           },
           "429": {
             "content": {
@@ -8724,7 +8733,7 @@
     },
     "/v2/device_credentials/{installation_id}/attestation_challenge": {
       "get": {
-        "description": "Returns a single-use challenge, valid for five minutes, for an App Attest attestation of this installation's registration. Requires the `device_credentials:read` scope.",
+        "description": "Returns a single-use challenge, valid for five minutes, for an App Attest attestation of this installation's registration. Signed-in sessions only.",
         "operationId": "getDeviceAttestationChallenge",
         "parameters": [
           {
@@ -8783,7 +8792,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
           },
           "429": {
             "content": {
