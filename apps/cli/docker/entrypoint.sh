@@ -29,8 +29,17 @@ on_dirty_store=wipe
 if [ -f "$HOME/.maple/data/backups/state.json" ]; then
 	on_dirty_store=restore-checkpoint
 fi
-set -- /opt/maple/maple start --host 0.0.0.0 --port "${PORT:-4318}" --offline \
-	--on-dirty-store "$on_dirty_store" "$@"
+# `--in-memory` has no store to recover and refuses the policy flag.
+in_memory=0
+for arg in "$@"; do
+	[ "$arg" = "--in-memory" ] && in_memory=1
+done
+if [ "$in_memory" = 1 ]; then
+	set -- /opt/maple/maple start --host 0.0.0.0 --port "${PORT:-4318}" --offline "$@"
+else
+	set -- /opt/maple/maple start --host 0.0.0.0 --port "${PORT:-4318}" --offline \
+		--on-dirty-store "$on_dirty_store" "$@"
+fi
 
 if [ "$(id -u)" = 0 ]; then
 	# Platform volumes are often mounted root-owned: hand them to the server user, then drop root.
