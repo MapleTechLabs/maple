@@ -21,10 +21,10 @@ describe("planetscaleGaugesSQL", () => {
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain(
-			"maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages'))",
+			"maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages'))",
 		)
 		expect(sql).toContain(
-			"maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages'))",
+			"maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages'))",
 		)
 		// Both products' replica-lag spellings are covered.
 		expect(sql).toContain("planetscale_mysql_replica_lag_seconds")
