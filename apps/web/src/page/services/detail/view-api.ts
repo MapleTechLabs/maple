@@ -4,32 +4,55 @@ import {
 	groupEndpoints,
 	leafLabel,
 } from "../../../components/services/endpoint-grouping"
-import { errorRateClass, errorRateLevel } from "@maple/ui/lib/error-rate"
-import { countLabel, formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
+import {
+	countLabel,
+	formatBytes,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatRate,
+} from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type { ThemeColors } from "../../../charts/theme-colors"
 import { button } from "../../../ui/button"
+import { icon } from "../../../ui/icon"
 import { tableCell, tableRow } from "../../../ui/table"
 import { truncatedText } from "../../../ui/truncated-text"
-import { errorRateValue, latencyValue } from "../../../ui/values"
+import { latencyValue } from "../../../ui/values"
 import { callsPerSecond } from "./derive"
+import { knownStatusMix, serverShare, type StatusMix } from "./derive-api"
 import { Message } from "./message"
 import type { Endpoint } from "./model-tabs"
-import { barCell } from "./view-table-cells"
+import { SPARK_TOKENS, sparkline } from "./view-api-charts"
 
-// The API tab: rows and group rows.
+// The API tab: endpoint rows and group rows.
 
 type H = HtmlBuilder<Message>
 
-export type Maxima = Readonly<{ calls: number; p95: number }>
-
+/** Below `md` the table keeps the endpoint, its rate, 4xx share and p95; the rest hide. */
 export const COLUMN = {
-	rate: "w-[96px]",
-	err: "w-[84px]",
-	p50: "w-[84px]",
-	p95: "w-[96px]",
-	p99: "w-[84px]",
+	rate: "w-14 md:w-[176px]",
+	mix: "w-12 md:w-[176px]",
+	err: "hidden w-[72px] md:table-cell",
+	p50: "hidden w-[84px] md:table-cell",
+	p95: "w-16 md:w-[84px]",
+	p99: "hidden w-[84px] md:table-cell",
+	body: "hidden w-[88px] md:table-cell",
+	chevron: "w-6 md:w-10",
 } as const
+
+export const COLUMN_COUNT = 9
+
+/** What every row reads besides its endpoint. */
+export type RowContext = Readonly<{
+	seconds: number
+	/** Per span name, the request rate per bucket for the sparkline. */
+	sparks: ReadonlyMap<string, ReadonlyArray<number>>
+	theme: ThemeColors | null
+	selected: string | undefined
+	slowest: string | null
+}>
 
 /** `methodTone`: only the mutating verbs are tinted. */
 const methodTone = (method: string): string =>
@@ -39,18 +62,8 @@ const methodTone = (method: string): string =>
 			? "text-severity-error"
 			: "text-muted-foreground"
 
-const methodLabel = (h: H, method: string): Html =>
-	h.span(
-		[
-			h.Class(
-				cn(
-					"w-[52px] shrink-0 font-mono text-2xs font-semibold uppercase tracking-wide",
-					methodTone(method),
-				),
-			),
-		],
-		[method],
-	)
+export const methodLabel = <M>(h: HtmlBuilder<M>, method: string, className = "w-10"): Html =>
+	h.span([h.Class(cn("shrink-0 text-2xs font-medium uppercase", methodTone(method), className))], [method])
 
 const COLLAPSED_COPY = {
 	unrouted: {
@@ -64,16 +77,68 @@ const COLLAPSED_COPY = {
 	},
 } as const
 
-/** `GroupHeaderRow`: the group's totals in the row columns; p95/p99 are the worst in the group. */
-const groupHeaderRow = (
+const numeric = "text-right align-middle tabular-nums"
+
+/** The 2xx/4xx/5xx bar; an unknown mix (rows older than the counters) is an empty track. */
+export const statusMixBar = <M>(h: HtmlBuilder<M>, mix: StatusMix | null, className = "w-24"): Html =>
+	h.div(
+		[
+			h.Class(cn("flex h-1.5 shrink-0 overflow-hidden rounded-full bg-muted", className)),
+			h.Title(
+				mix === null
+					? "No status codes recorded in this window"
+					: `2xx ${formatErrorRate(mix.ok)} · 4xx ${formatErrorRate(mix.client)} · 5xx ${formatErrorRate(mix.server)}`,
+			),
+		],
+		mix === null
+			? []
+			: [
+					h.div([h.Class("h-full bg-chart-3"), h.Style({ width: `${mix.ok * 100}%` })]),
+					h.div([h.Class("h-full bg-warning"), h.Style({ width: `${mix.client * 100}%` })]),
+					h.div([h.Class("h-full bg-severity-error"), h.Style({ width: `${mix.server * 100}%` })]),
+				],
+	)
+
+/** A share as the table prints it: zero is muted, anything else toned. */
+const shareText = (h: H, share: number | null, tone: string): Html =>
+	h.span(
+		[h.Class(share === null || share === 0 ? "text-muted-foreground" : tone)],
+		[share === null ? "—" : formatErrorRate(share)],
+	)
+
+const rateText = (endpoint: Endpoint, seconds: number) =>
+	`${endpoint.estimatedSpanCount > endpoint.spanCount ? "~" : ""}${formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds))}`
+
+/** The slowest endpoint's p50/p95 sit in a chip so the eye lands on them. */
+const latencyCell = (h: H, ms: number, scale: "p50" | "p95" | "p99", isChip: boolean, width: string) =>
+	tableCell(
+		h,
+		[
+			latencyValue(h, {
+				ms,
+				scale,
+				className: cn(
+					"text-ui",
+					isChip && "rounded-sm bg-muted px-1.5 py-0.5 text-warning-foreground",
+				),
+			}),
+		],
+		cn(numeric, "py-0 pr-0", width),
+	)
+
+const endpointRow = (
 	h: H,
-	title: string,
-	count: string,
-	group: EndpointGroup,
-	seconds: number,
-	muted: boolean,
-) => {
-	const numeric = "py-1.5 text-right align-middle font-mono text-2xs tabular-nums text-muted-foreground/70"
+	endpoint: Endpoint,
+	stem: string,
+	context: RowContext,
+	/** A sibling shares this row's route, so only the method tells them apart. */
+	isRouteShared = false,
+): Html => {
+	const { head, tail } = leafLabel(endpoint.route, stem)
+	const mix = knownStatusMix(endpoint)
+	const isSelected = context.selected === endpoint.spanName
+	const isSlowest = context.slowest === endpoint.spanName
+	const isQuiet = callsPerSecond(endpoint.estimatedSpanCount, context.seconds) < 0.1
 	return tableRow(
 		h,
 		[
@@ -81,55 +146,188 @@ const groupHeaderRow = (
 				h,
 				[
 					h.div(
-						[h.Class("flex min-w-0 items-baseline gap-2")],
+						[h.Class("flex min-w-0 items-center gap-3")],
 						[
+							// The row's click opens the drawer; this button is its keyboard and screen-reader trigger.
+							h.button(
+								[
+									h.Type("button"),
+									h.Class("sr-only"),
+									h.AriaHasPopup("dialog"),
+									h.AriaExpanded(isSelected),
+									h.AriaLabel(`Open ${endpoint.spanName}`),
+								],
+								[],
+							),
+							methodLabel(
+								h,
+								endpoint.method,
+								// Narrow screens drop the method unless a sibling shares the route.
+								isRouteShared ? "w-9 md:w-10" : "hidden w-10 md:inline-block",
+							),
+							truncatedText(h, { text: endpoint.route, className: "text-ui" }, [
+								...(head.length > 0
+									? [
+											h.span(
+												// A grouped row's head repeats its stem, so it folds away on narrow screens.
+												[
+													h.Class(
+														cn(
+															"text-muted-foreground",
+															stem.length > 0 && "hidden md:inline",
+														),
+													),
+												],
+												[head],
+											),
+										]
+									: []),
+								h.span(
+									[
+										// A shared index row reads as its method on narrow screens; the header names the path.
+										h.Class(
+											cn(
+												"text-foreground",
+												isRouteShared && tail === "(index)" && "hidden md:inline",
+											),
+										),
+									],
+									[tail],
+								),
+							]),
+							...(isSlowest
+								? [
+										h.span(
+											[
+												h.Class(
+													"hidden shrink-0 rounded-sm bg-muted px-1.5 text-3xs text-warning-foreground md:inline",
+												),
+											],
+											["slowest"],
+										),
+									]
+								: []),
+						],
+					),
+				],
+				cn("max-w-0 py-0 align-middle", stem.length > 0 ? "pl-6 md:pl-9" : "pl-4"),
+			),
+			tableCell(
+				h,
+				[
+					h.div(
+						[h.Class("flex items-center justify-end gap-3")],
+						[
+							// The wrapper hides it on narrow screens; the chart keeps its own flex layout.
+							h.div(
+								[h.Class("hidden h-5 w-[88px] md:block")],
+								context.theme === null
+									? []
+									: [
+											sparkline(h, {
+												chartId: `endpoint-${endpoint.spanName}`,
+												values: context.sparks.get(endpoint.spanName) ?? [],
+												token: SPARK_TOKENS.requests,
+												theme: context.theme,
+												className: cn("h-5 w-[88px]", isQuiet && "opacity-60"),
+												toMessage: (message) =>
+													Message.GotChartMessage({
+														chartId: "sparkline",
+														message,
+													}),
+											}),
+										],
+							),
 							h.span(
 								[
 									h.Class(
 										cn(
-											"truncate font-mono text-xs font-medium",
-											muted ? "text-muted-foreground" : "text-foreground",
+											"w-12 text-right",
+											isQuiet ? "text-muted-foreground" : "text-foreground",
 										),
 									),
-									h.Title(title),
 								],
-								[title],
+								[rateText(endpoint, context.seconds)],
 							),
-							h.span([h.Class("shrink-0 text-2xs text-muted-foreground/60")], [count]),
 						],
 					),
 				],
-				"max-w-0 py-1.5 pl-3 align-middle",
+				cn(numeric, "py-0 pr-0", COLUMN.rate),
 			),
 			tableCell(
 				h,
-				[formatRate(callsPerSecond(group.totals.estimatedSpanCount, seconds))],
-				cn(numeric, "pr-1.5"),
+				[
+					h.div(
+						[h.Class("flex items-center justify-end gap-3")],
+						[
+							statusMixBar(h, mix, "hidden w-24 md:flex"),
+							h.span(
+								[h.Class("w-12 text-right")],
+								[shareText(h, mix?.client ?? null, "text-warning-foreground")],
+							),
+						],
+					),
+				],
+				cn(numeric, "py-0 pr-0", COLUMN.mix),
 			),
 			tableCell(
 				h,
-				[formatErrorRate(group.totals.errorRate)],
-				cn(
-					numeric,
-					"pr-1.5",
-					errorRateLevel(group.totals.errorRate) !== "neutral" &&
-						errorRateClass(group.totals.errorRate),
-				),
+				[shareText(h, serverShare(endpoint), "text-destructive-foreground")],
+				cn(numeric, "py-0 pr-0", COLUMN.err),
 			),
-			tableCell(h, [], numeric),
-			tableCell(h, [formatLatency(group.totals.p95DurationMs)], cn(numeric, "pr-1.5"), [
-				h.Title("Worst p95 in the group"),
-			]),
-			tableCell(h, [formatLatency(group.totals.p99DurationMs)], cn(numeric, "pr-3"), [
-				h.Title("Worst p99 in the group"),
-			]),
+			latencyCell(h, endpoint.p50DurationMs, "p50", isSlowest, COLUMN.p50),
+			latencyCell(h, endpoint.p95DurationMs, "p95", isSlowest, COLUMN.p95),
+			latencyCell(h, endpoint.p99DurationMs, "p99", false, COLUMN.p99),
+			tableCell(
+				h,
+				[
+					endpoint.requestBodyCount === 0
+						? "—"
+						: formatBytes(endpoint.requestBodyBytes / endpoint.requestBodyCount),
+				],
+				cn(numeric, "py-0 pr-0 text-muted-foreground", COLUMN.body),
+			),
+			tableCell(
+				h,
+				[
+					icon(h, "ChevronRightIcon", {
+						size: 16,
+						className: cn("ml-auto", isSelected ? "text-foreground" : "text-muted-foreground"),
+					}),
+				],
+				cn("py-0 pr-4 align-middle", COLUMN.chevron),
+			),
 		],
-		"border-b bg-muted/30 hover:bg-muted/30",
+		cn(
+			"group/row h-12 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
+			isSelected ? "bg-accent hover:bg-accent" : "hover:bg-muted/40",
+		),
+		[h.Key(endpoint.spanName), h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName }))],
 	)
 }
 
-const endpointRow = (h: H, endpoint: Endpoint, stem: string, seconds: number, maxima: Maxima): Html => {
-	const { head, tail } = leafLabel(endpoint.route, stem)
+/** `GroupHeaderRow`: the group's totals; p95/p99 are the worst in the group. */
+const groupHeaderRow = (
+	h: H,
+	options: Readonly<{
+		title: string
+		count: string
+		group: EndpointGroup<Endpoint>
+		seconds: number
+		muted: boolean
+	}>,
+) => {
+	const { group } = options
+	const sum = (pick: (endpoint: Endpoint) => number) =>
+		group.endpoints.reduce((acc, endpoint) => acc + pick(endpoint), 0)
+	const mix = knownStatusMix({
+		httpClassifiedSpanCount: sum((endpoint) => endpoint.httpClassifiedSpanCount),
+		httpStatusCount: sum((endpoint) => endpoint.httpStatusCount),
+		http4xxCount: sum((endpoint) => endpoint.http4xxCount),
+		http5xxCount: sum((endpoint) => endpoint.http5xxCount),
+	})
+	const cell = (text: string, width: string, tone?: string) =>
+		tableCell(h, [text], cn(numeric, "py-0 pr-0 text-2xs text-muted-foreground", tone, width))
 	return tableRow(
 		h,
 		[
@@ -137,67 +335,63 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, seconds: number, ma
 				h,
 				[
 					h.div(
-						[h.Class("flex min-w-0 items-center gap-2.5")],
+						[h.Class("flex min-w-0 items-center gap-2")],
 						[
-							methodLabel(h, endpoint.method),
-							truncatedText(h, { text: endpoint.route, mono: true, className: "text-xs" }, [
-								...(head.length > 0
-									? [h.span([h.Class("text-muted-foreground/50")], [head])]
-									: []),
-								h.span([h.Class("text-foreground")], [tail]),
-							]),
+							icon(h, "ChevronDownIcon", {
+								size: 14,
+								className: "hidden shrink-0 text-muted-foreground md:block",
+							}),
+							h.span(
+								[
+									h.Class(
+										cn(
+											"truncate text-ui",
+											options.muted ? "text-muted-foreground" : "text-foreground",
+										),
+									),
+									h.Title(options.title),
+								],
+								[options.title],
+							),
+							h.span(
+								[h.Class("hidden shrink-0 text-2xs text-muted-foreground md:inline")],
+								[options.count],
+							),
 						],
 					),
 				],
-				cn("max-w-0 py-2 align-middle", stem.length > 0 ? "pl-6" : "pl-3"),
+				"max-w-0 py-0 pl-4 align-middle",
 			),
-			barCell(
-				h,
-				{ value: endpoint.estimatedSpanCount, max: maxima.calls, tone: "calls" },
-				h.span(
-					[h.Class("font-mono text-xs tabular-nums text-foreground")],
-					[
-						...(endpoint.estimatedSpanCount > endpoint.spanCount ? ["~"] : []),
-						formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds)),
-					],
-				),
+			cell(formatRate(callsPerSecond(group.totals.estimatedSpanCount, options.seconds)), COLUMN.rate),
+			cell(mix === null ? "—" : formatErrorRate(mix.client), COLUMN.mix),
+			cell(
+				formatErrorRate(mix === null ? group.totals.errorRate : mix.server),
+				COLUMN.err,
+				(mix === null ? group.totals.errorRate : mix.server) > 0
+					? "text-destructive-foreground"
+					: undefined,
 			),
-			barCell(
-				h,
-				{ value: endpoint.errorRate > 0 ? endpoint.errorRate : 0, max: 0.05, tone: "errors" },
-				errorRateValue(h, { rate: endpoint.errorRate, className: "text-xs" }),
-			),
-			tableCell(
-				h,
-				[latencyValue(h, { ms: endpoint.p50DurationMs, scale: "p50", className: "text-xs" })],
-				"py-2 text-right align-middle",
-			),
-			barCell(
-				h,
-				{ value: endpoint.p95DurationMs, max: maxima.p95, tone: "latency" },
-				latencyValue(h, { ms: endpoint.p95DurationMs, scale: "p95", className: "text-xs" }),
-			),
-			tableCell(
-				h,
-				[latencyValue(h, { ms: endpoint.p99DurationMs, scale: "p99", className: "text-xs" })],
-				"py-2 pr-3 text-right align-middle",
-			),
+			cell("—", COLUMN.p50),
+			cell(formatLatencyText(group.totals.p95DurationMs), COLUMN.p95),
+			cell(formatLatencyText(group.totals.p99DurationMs), COLUMN.p99),
+			cell("—", COLUMN.body),
+			tableCell(h, [], COLUMN.chevron),
 		],
-		"group/row cursor-pointer border-b last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
-		[
-			h.Key(endpoint.spanName),
-			h.Attribute("tabindex", "0"),
-			h.OnClick(Message.ClickedOperation({ spanName: endpoint.spanName })),
-		],
+		"h-10 border-b bg-muted/30 hover:bg-muted/30",
 	)
 }
+
+const formatLatencyText = (ms: number) => (ms > 0 ? formatLatency(ms) : "—")
+
+/** Whether a sibling in the group serves the same route, so only the method tells them apart. */
+const sharesRoute = (endpoints: ReadonlyArray<Endpoint>, endpoint: Endpoint) =>
+	endpoints.some((other) => other !== endpoint && other.route === endpoint.route)
 
 /** `GroupRows`: a collapsed bucket with its explainer, or a stem header and its rows. */
 export const groupRows = (
 	h: H,
-	group: EndpointGroup,
-	seconds: number,
-	maxima: Maxima,
+	group: EndpointGroup<Endpoint>,
+	context: RowContext,
 	isExpanded: boolean,
 ): ReadonlyArray<Html> => {
 	if (group.kind === "unrouted" || group.kind === "probes") {
@@ -205,7 +399,13 @@ export const groupRows = (
 		const sample = group.endpoints.slice(0, 2).map((endpoint) => endpoint.route)
 		const remaining = group.endpoints.length - sample.length
 		return [
-			groupHeaderRow(h, copy.label, countLabel(group.endpoints.length, "path"), group, seconds, true),
+			groupHeaderRow(h, {
+				title: copy.label,
+				count: countLabel(group.endpoints.length, "path"),
+				group,
+				seconds: context.seconds,
+				muted: true,
+			}),
 			tableRow(
 				h,
 				[
@@ -223,11 +423,7 @@ export const groupRows = (
 												[copy.explainer],
 											),
 											h.span(
-												[
-													h.Class(
-														"truncate font-mono text-2xs text-muted-foreground/50",
-													),
-												],
+												[h.Class("truncate text-2xs text-muted-foreground/50")],
 												[
 													sample.join("  ·  "),
 													remaining > 0
@@ -254,38 +450,52 @@ export const groupRows = (
 								],
 							),
 						],
-						"py-2.5 pl-3 pr-3",
-						[h.Attribute("colspan", "6")],
+						"py-2.5 pl-4 pr-4",
+						[h.Attribute("colspan", String(COLUMN_COUNT))],
 					),
 				],
 				"border-b hover:bg-transparent",
 			),
 			...(isExpanded
-				? group.endpoints.map((endpoint) => endpointRow(h, endpoint, "", seconds, maxima))
+				? group.endpoints.map((endpoint) =>
+						endpointRow(h, endpoint, "", context, sharesRoute(group.endpoints, endpoint)),
+					)
 				: []),
 		]
 	}
 	return [
 		...(group.kind === "stem"
 			? [
-					groupHeaderRow(
-						h,
-						group.stem,
-						countLabel(group.endpoints.length, "endpoint"),
+					groupHeaderRow(h, {
+						title: group.stem,
+						count: countLabel(group.endpoints.length, "endpoint"),
 						group,
-						seconds,
-						false,
-					),
+						seconds: context.seconds,
+						muted: false,
+					}),
 				]
 			: []),
-		...group.endpoints.map((endpoint) => endpointRow(h, endpoint, group.stem, seconds, maxima)),
+		...group.endpoints.map((endpoint) =>
+			endpointRow(h, endpoint, group.stem, context, sharesRoute(group.endpoints, endpoint)),
+		),
 	]
 }
 
 export const groupsOf = (
 	endpoints: ReadonlyArray<Endpoint>,
 	sort: { key: string | null; dir: "asc" | "desc" },
-) => groupEndpoints(endpoints, endpointSortOf(sort.key), sort.dir)
+): ReadonlyArray<EndpointGroup<Endpoint>> => groupEndpoints(endpoints, endpointSortOf(sort.key), sort.dir)
+
+/** The rows in screen order (collapsed buckets only when opened): what the drawer steps through. */
+export const visibleEndpoints = (
+	groups: ReadonlyArray<EndpointGroup<Endpoint>>,
+	expanded: ReadonlyArray<string>,
+): ReadonlyArray<Endpoint> =>
+	groups.flatMap((group) =>
+		(group.kind === "unrouted" || group.kind === "probes") && !expanded.includes(group.kind)
+			? []
+			: group.endpoints,
+	)
 
 const ENDPOINT_SORTS: ReadonlyArray<EndpointSort> = ["traffic", "path", "errorRate", "p50", "p95", "p99"]
 const endpointSortOf = (key: string | null): EndpointSort =>

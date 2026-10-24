@@ -349,7 +349,7 @@ type ClerkSessionAuth = {
 type ClerkRequestState = {
 	readonly isAuthenticated: boolean
 	readonly message: string | null
-	readonly toAuth: () => ClerkSessionAuth | null
+	readonly toAuth: (options?: { readonly treatPendingAsSignedOut?: boolean }) => ClerkSessionAuth | null
 }
 
 type ClerkAuthenticateRequest = (
@@ -638,6 +638,7 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 	env: Pick<AuthEnv, "CLERK_JWT_KEY">,
 	authenticateClerkRequest: ClerkAuthenticateRequest,
 	acceptsToken: string | string[],
+	acceptPendingSession = false,
 ) {
 	const requestState = yield* Effect.tryPromise({
 		try: () =>
@@ -655,7 +656,9 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 		return yield* unauthorized(requestState.message ?? "Invalid Clerk session token")
 	}
 
-	const auth = requestState.toAuth()
+	// Clerk reports a `pending` session (one with an unfinished task, such as choosing an
+	// organization) as signed out unless asked otherwise.
+	const auth = requestState.toAuth({ treatPendingAsSignedOut: !acceptPendingSession })
 	if (!auth) {
 		return yield* unauthorized("Invalid Clerk session token")
 	}
@@ -686,7 +689,15 @@ export const makeResolveClerkUser = (
 		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "clerk" || !authenticateClerkRequest) {
 			return yield* unauthorized("A Clerk session is required")
 		}
-		const auth = yield* authenticateClerkUser(headers, env, authenticateClerkRequest, "session_token")
+		// A user with no organization yet holds a pending session until they create one, so
+		// this is the one place a pending session is accepted.
+		const auth = yield* authenticateClerkUser(
+			headers,
+			env,
+			authenticateClerkRequest,
+			"session_token",
+			true,
+		)
 		return yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
 	})
 

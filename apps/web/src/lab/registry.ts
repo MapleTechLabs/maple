@@ -211,6 +211,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/service-api",
+		title: "Service API tab",
+		description:
+			"The service page's API tab over 12 hours of the ingest service: KPI strip, responses by status, the non-2xx breakdown, the endpoint table and its drawer (?endpoint=POST%20/v1/traces).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/security",
 		title: "Security Center",
 		description:
