@@ -1319,6 +1319,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									statusReason: reason,
 									statusChangedBy: actor,
 									statusChangedAt: now,
+									// A person's triage is not the revalidation that closed it.
+									fixedRunId: null,
 									updatedAt: now,
 								})
 								.where(($) => [
