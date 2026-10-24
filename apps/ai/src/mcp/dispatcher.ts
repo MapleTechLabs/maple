@@ -284,7 +284,7 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 )
 
 export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExecutorApi>()(
-	"@maple/api/mcp/McpToolExecutor",
+	"@maple/ai/mcp/McpToolExecutor",
 	{
 		make: Effect.gen(function* () {
 			const runtimeServices = yield* Effect.context<McpToolRuntimeRequirements>()

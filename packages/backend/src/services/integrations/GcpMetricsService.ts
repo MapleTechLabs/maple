@@ -16,7 +16,7 @@ import { IntegrationsPersistenceError, UserId } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
-import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Option, Redacted, Ref, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -41,7 +41,6 @@ import {
 	RESOURCE_PAGE_SIZE,
 	searchResourcesPage,
 	type GcpReader,
-	type GcpSqlInstanceData,
 	type GcpTimeSeries,
 	type GcpTimeSeriesQuery,
 } from "./gcp/api"
@@ -111,9 +110,59 @@ const READS = GCP_METRIC_GROUPS.flatMap((group): ReadonlyArray<MetricRead> => {
 type ReadOutcome = boolean | GcpApiError | "skipped"
 type Read = readonly [GcpMetric, ReadOutcome]
 
+/** Queries answered in full, cut short at a budget, not started because of one, and the first failure. */
+const tallyReads = (reads: ReadonlyArray<Read>) =>
+	reads.reduce(
+		(tally, [metric, outcome]) =>
+			outcome === "skipped"
+				? { ...tally, skipped: tally.skipped + 1 }
+				: outcome === false
+					? { ...tally, partial: tally.partial + 1 }
+					: // Cloud Monitoring answers 404 for a type that never had data in the scope.
+						outcome === true || outcome.kind === "not_found"
+						? { ...tally, complete: tally.complete + 1 }
+						: {
+								...tally,
+								firstFailure: tally.firstFailure ?? { type: metric.type, error: outcome },
+							},
+		{
+			complete: 0,
+			partial: 0,
+			skipped: 0,
+			firstFailure: undefined as { readonly type: string; readonly error: GcpApiError } | undefined,
+		},
+	)
+
 /** No access, or out of quota: every remaining query would fail the same way. */
 const halts = (outcome: ReadOutcome) =>
 	typeof outcome === "object" && (outcome.kind === "denied" || outcome.kind === "rate_limited")
+
+/**
+ * A paged listing's bodies in order, at most `maxPages`. Pages after the first are fetched only
+ * while `proceed` holds. The listing was read in full when the last body has no `nextPageToken`.
+ */
+const pages = <B extends { readonly nextPageToken?: string | undefined }, E, R>(
+	maxPages: number,
+	fetchPage: (pageToken: string | undefined) => Effect.Effect<B, E, R>,
+	proceed: Effect.Effect<boolean> = Effect.succeed(true),
+): Stream.Stream<B, E, R> =>
+	Stream.paginate({ page: 0, pageToken: Option.none<string>() }, ({ page, pageToken }) =>
+		Effect.gen(function* () {
+			if (page > 0 && !(yield* proceed)) return [[], Option.none()] as const
+			const body = yield* fetchPage(Option.getOrUndefined(pageToken))
+			const next = Option.fromUndefinedOr(body.nextPageToken)
+			return [
+				[body],
+				page + 1 < maxPages && Option.isSome(next)
+					? Option.some({ page: page + 1, pageToken: next })
+					: Option.none(),
+			] as const
+		}),
+	)
+
+/** Whether a listing's last page was its end. */
+const readToEnd = <B extends { readonly nextPageToken?: string | undefined }>(last: Option.Option<B>) =>
+	Option.isSome(last) && last.value.nextPageToken === undefined
 
 const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-gcp-metrics")
 
@@ -228,7 +277,7 @@ export interface GcpMetricsServiceApi {
 }
 
 export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMetricsServiceApi>()(
-	"@maple/api/services/GcpMetricsService",
+	"@maple/backend/services/GcpMetricsService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -336,26 +385,27 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				scope: string,
 				reader: GcpReader,
 			) {
-				const instances: Array<{ readonly name: string; readonly data: GcpSqlInstanceData }> = []
-				let pageToken: string | undefined
-				for (let page = 0; page < MAX_RESOURCE_PAGES; page++) {
-					const body = yield* listSqlInstancesPage(tick.httpClient, reader, scope, pageToken)
-					for (const asset of body.assets ?? []) {
+				const bodies = yield* pages(MAX_RESOURCE_PAGES, (pageToken) =>
+					listSqlInstancesPage(tick.httpClient, reader, scope, pageToken),
+				).pipe(Stream.runCollect)
+				const instances = bodies.flatMap((body) =>
+					(body.assets ?? []).flatMap((asset) => {
 						const data = asset.resource?.data
-						if (data !== undefined) instances.push({ name: asset.name, data })
-					}
-					pageToken = body.nextPageToken
-					if (pageToken === undefined) break
-				}
-				for (const [name, details] of gcpSqlSettings(instances)) {
-					yield* dbExecute((db) =>
-						db.run(
-							PG.update(GcpResources)
-								.set({ details })
-								.where(($) => [$.connectorId.eq(connector.id), $.name.eq(name)]),
+						return data === undefined ? [] : [{ name: asset.name, data }]
+					}),
+				)
+				yield* Effect.forEach(
+					gcpSqlSettings(instances),
+					([name, details]) =>
+						dbExecute((db) =>
+							db.run(
+								PG.update(GcpResources)
+									.set({ details })
+									.where(($) => [$.connectorId.eq(connector.id), $.name.eq(name)]),
+							),
 						),
-					)
-				}
+					{ discard: true },
+				)
 			})
 
 			/**
@@ -370,58 +420,57 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				reader: GcpReader,
 			) {
 				const lastSeenAt = tick.now
-				let complete = false
-				let pageToken: string | undefined
-				for (let page = 0; page < MAX_RESOURCE_PAGES && !complete; page++) {
-					const body = yield* searchResourcesPage(tick.httpClient, reader, scope, pageToken)
-					// Keyed by name: one statement cannot upsert the same row twice.
+				/** One page's resources onto the inventory. Keyed by name: one statement cannot upsert the same row twice. */
+				const upsertPage = (body: Effect.Success<ReturnType<typeof searchResourcesPage>>) => {
 					const rows = new Map(
 						(body.results ?? []).flatMap((result) => {
 							const resource = mapGcpResource(result)
 							return resource === undefined ? [] : [[resource.name, resource] as const]
 						}),
 					)
-					if (rows.size > 0) {
-						yield* dbExecute((db) =>
-							db.run(
-								PG.insertInto(GcpResources)
-									.values(
-										[...rows.values()].map((resource) => ({
-											...resource,
-											connectorId: connector.id,
-											orgId: connector.orgId,
-											lastSeenAt,
-										})),
-									)
-									.onConflictDoUpdate({
-										target: ["connectorId", "name"],
-										set: (_, excluded) => ({
-											assetType: excluded.assetType,
-											projectId: excluded.projectId,
-											location: excluded.location,
-											displayName: excluded.displayName,
-											state: excluded.state,
-											labels: excluded.labels,
-											resourceCreatedAt: excluded.resourceCreatedAt,
-											resourceUpdatedAt: excluded.resourceUpdatedAt,
-											lastSeenAt: excluded.lastSeenAt,
-										}),
+					if (rows.size === 0) return Effect.void
+					return dbExecute((db) =>
+						db.run(
+							PG.insertInto(GcpResources)
+								.values(
+									[...rows.values()].map((resource) => ({
+										...resource,
+										connectorId: connector.id,
+										orgId: connector.orgId,
+										lastSeenAt,
+									})),
+								)
+								.onConflictDoUpdate({
+									target: ["connectorId", "name"],
+									set: (_, excluded) => ({
+										assetType: excluded.assetType,
+										projectId: excluded.projectId,
+										location: excluded.location,
+										displayName: excluded.displayName,
+										state: excluded.state,
+										labels: excluded.labels,
+										resourceCreatedAt: excluded.resourceCreatedAt,
+										resourceUpdatedAt: excluded.resourceUpdatedAt,
+										lastSeenAt: excluded.lastSeenAt,
 									}),
-							),
-						)
-					}
-					pageToken = body.nextPageToken
-					if (pageToken === undefined) {
-						yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(GcpResources).where(($) => [
-									$.connectorId.eq(connector.id),
-									$.lastSeenAt.lt(lastSeenAt),
-								]),
-							),
-						)
-						complete = true
-					}
+								}),
+						),
+					)
+				}
+				const complete = readToEnd(
+					yield* pages(MAX_RESOURCE_PAGES, (pageToken) =>
+						searchResourcesPage(tick.httpClient, reader, scope, pageToken),
+					).pipe(Stream.tap(upsertPage), Stream.runLast),
+				)
+				if (complete) {
+					yield* dbExecute((db) =>
+						db.run(
+							PG.deleteFrom(GcpResources).where(($) => [
+								$.connectorId.eq(connector.id),
+								$.lastSeenAt.lt(lastSeenAt),
+							]),
+						),
+					)
 				}
 				yield* syncSqlSettings(connector, tick, scope, reader)
 				if (complete) return null
@@ -503,8 +552,13 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 							time - startedAt >= POLL_BUDGET_MS || tick.budget.calls >= MAX_CALLS_PER_TICK,
 					)
 
-					let buffer: GcpMetricRows = { sumRows: [], gaugeRows: [] }
-					let rowsIngested = 0
+					const emptyRows: GcpMetricRows = { sumRows: [], gaugeRows: [] }
+					const buffer = yield* Ref.make(emptyRows)
+					const rowsIngested = yield* Ref.make(0)
+					const ship = (rows: GcpMetricRows) =>
+						emitMetrics(tick.httpClient, ingestKey, sourceId, rows).pipe(
+							Effect.flatMap((shipped) => Ref.update(rowsIngested, (total) => total + shipped)),
+						)
 					/** A page's rows of one metric, `keep`'s series only; shipped once enough are buffered. */
 					const store = Effect.fnUntraced(function* (
 						query: GcpTimeSeriesQuery,
@@ -515,12 +569,16 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 							query,
 							keep === undefined ? series : series.filter(keep),
 						)
-						buffer.sumRows.push(...rows.sumRows)
-						buffer.gaugeRows.push(...rows.gaugeRows)
-						if (buffer.sumRows.length + buffer.gaugeRows.length >= FLUSH_ROWS) {
-							rowsIngested += yield* emitMetrics(tick.httpClient, ingestKey, sourceId, buffer)
-							buffer = { sumRows: [], gaugeRows: [] }
-						}
+						const full = yield* Ref.modify(buffer, (held) => {
+							const next = {
+								sumRows: [...held.sumRows, ...rows.sumRows],
+								gaugeRows: [...held.gaugeRows, ...rows.gaugeRows],
+							}
+							return next.sumRows.length + next.gaugeRows.length >= FLUSH_ROWS
+								? [Option.some(next), emptyRows]
+								: [Option.none<GcpMetricRows>(), next]
+						})
+						if (Option.isSome(full)) yield* ship(full.value)
 					})
 					/**
 					 * One metric, page by page, each page's series through `read`; false when pages were
@@ -530,25 +588,18 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						query: GcpTimeSeriesQuery,
 						read: (series: ReadonlyArray<GcpTimeSeries>) => Effect.Effect<void, E>,
 					) =>
-						Effect.gen(function* () {
-							let pageToken: string | undefined
-							for (let page = 0; page < MAX_PAGES_PER_METRIC; page++) {
-								if (page > 0 && (yield* outOfBudget)) return false
-								const body = yield* listTimeSeriesPage(
-									tick.httpClient,
-									reader,
-									query,
-									pageToken,
-								).pipe(
+						pages(
+							MAX_PAGES_PER_METRIC,
+							(pageToken) =>
+								listTimeSeriesPage(tick.httpClient, reader, query, pageToken).pipe(
 									// One more try rides out a blip; a query that keeps failing is skipped.
 									Effect.retry({ times: 1, while: (error) => error.kind === "upstream" }),
-								)
-								yield* read(body.timeSeries ?? [])
-								pageToken = body.nextPageToken
-								if (pageToken === undefined) return true
-							}
-							return false
-						}).pipe(
+								),
+							Effect.map(outOfBudget, (out) => !out),
+						).pipe(
+							Stream.tap((body) => read(body.timeSeries ?? [])),
+							Stream.runLast,
+							Effect.map(readToEnd),
 							Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
 								Effect.succeed(error),
 							),
@@ -575,11 +626,9 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 							return [ranking, ...rest].map((metric): Read => [metric, "skipped"])
 						}
 						const query = { scope, group, metric: ranking, ...window }
-						const series: Array<GcpTimeSeries> = []
+						const rankingSeries = yield* Ref.make<ReadonlyArray<GcpTimeSeries>>([])
 						const ranked = yield* readMetric(query, (page) =>
-							Effect.sync(() => {
-								series.push(...page)
-							}),
+							Ref.update(rankingSeries, (series) => [...series, ...page]),
 						)
 						if (typeof ranked !== "boolean") {
 							// A type that never had data in the scope has nothing to rank.
@@ -587,57 +636,58 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 								ranked.kind === "not_found" ? rest.map((metric): Read => [metric, true]) : []
 							return [[ranking, ranked] satisfies Read, ...nothing]
 						}
+						const series = yield* Ref.get(rankingSeries)
 						const kept = gcpTopSeries(group, series)
 						const keep = (item: GcpTimeSeries) => kept.has(gcpTopKey(group, item))
 						yield* store(query, series, keep)
-						const reads: Array<Read> = [[ranking, ranked]]
-						for (const metric of rest) {
-							if (kept.size === 0) {
-								reads.push([metric, true])
-							} else if (yield* outOfBudget) {
-								reads.push([metric, "skipped"])
-							} else {
-								const next = { scope, group, metric, ...window }
-								const outcome = yield* readMetric(next, (page) => store(next, page, keep))
-								reads.push([metric, outcome])
-								if (halts(outcome)) break
-							}
+						if (kept.size === 0) {
+							return [
+								[ranking, ranked] satisfies Read,
+								...rest.map((metric): Read => [metric, true]),
+							]
 						}
-						return reads
+						const others = yield* Stream.fromIterable(rest).pipe(
+							Stream.mapEffect(
+								Effect.fnUntraced(function* (metric) {
+									if (yield* outOfBudget) return [metric, "skipped"] satisfies Read
+									const next = { scope, group, metric, ...window }
+									const outcome = yield* readMetric(next, (page) => store(next, page, keep))
+									return [metric, outcome] satisfies Read
+								}),
+							),
+							Stream.takeUntil(([, outcome]) => halts(outcome)),
+							Stream.runCollect,
+						)
+						return [[ranking, ranked] satisfies Read, ...others]
 					})
 
-					/** Queries answered in full, cut short at a budget, and not started because of one. */
-					let complete = 0
-					let partial = 0
-					let skipped = 0
-					let firstFailure: { readonly type: string; readonly error: GcpApiError } | undefined
 					// A different read goes first each tick, so a scope that always runs out of budget
 					// does not lose the same ones every time.
 					const first = Math.floor(window.endMs / TICK_MS) % READS.length
-					for (const read of [...READS.slice(first), ...READS.slice(0, first)]) {
-						const reads: ReadonlyArray<Read> =
-							"metric" in read
-								? [[read.metric, yield* readOne(read.group, read.metric)] as const]
-								: yield* readTop(read.group, read.ranking, read.rest)
-						for (const [metric, outcome] of reads) {
-							if (outcome === "skipped") {
-								skipped += 1
-							} else if (outcome === false) {
-								partial += 1
-							} else if (outcome === true || outcome.kind === "not_found") {
-								// Cloud Monitoring answers 404 for a type that never had data in the scope.
-								complete += 1
-							} else {
-								firstFailure ??= { type: metric.type, error: outcome }
-							}
-						}
-						if (reads.some(([, outcome]) => halts(outcome))) break
-					}
+					const reads = yield* Stream.fromIterable([
+						...READS.slice(first),
+						...READS.slice(0, first),
+					]).pipe(
+						Stream.mapEffect(
+							Effect.fnUntraced(function* (read) {
+								if ("metric" in read) {
+									return [
+										[read.metric, yield* readOne(read.group, read.metric)] satisfies Read,
+									]
+								}
+								return yield* readTop(read.group, read.ranking, read.rest)
+							}),
+						),
+						Stream.takeUntil((reads) => reads.some(([, outcome]) => halts(outcome))),
+						Stream.runCollect,
+					)
+					const { complete, partial, skipped, firstFailure } = tallyReads(reads.flat())
 					// Nothing answered and nothing shipped: the window is left for the next poll.
-					if (rowsIngested === 0 && complete + partial === 0) {
+					if ((yield* Ref.get(rowsIngested)) === 0 && complete + partial === 0) {
 						return firstFailure === undefined ? NOTHING : yield* firstFailure.error
 					}
-					rowsIngested += yield* emitMetrics(tick.httpClient, ingestKey, sourceId, buffer)
+					yield* ship(yield* Ref.getAndSet(buffer, emptyRows))
+					const rowsIngestedTotal = yield* Ref.get(rowsIngested)
 
 					const incomplete = partial + skipped
 					const failed = METRIC_COUNT - complete - incomplete
@@ -677,12 +727,12 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 						),
 					)
 					yield* Effect.annotateCurrentSpan({
-						"maple.gcp.rows_ingested": rowsIngested,
+						"maple.gcp.rows_ingested": rowsIngestedTotal,
 						"maple.gcp.metric_queries_failed": failed,
 						"maple.gcp.metric_queries_incomplete": incomplete,
 					})
 					return {
-						rowsIngested,
+						rowsIngested: rowsIngestedTotal,
 						failed: false,
 						incompleteMetrics: incomplete,
 					} satisfies ConnectorOutcome

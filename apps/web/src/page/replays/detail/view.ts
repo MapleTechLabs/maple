@@ -4,8 +4,9 @@ import { gradientFor, hostFromUrl } from "@maple/ui/lib/replay"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
 import { parseChTimestampMs } from "../../../components/replays/replay-timeline"
+import { Struct } from "effect"
 import { AsyncData, Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import type { BreadcrumbEntry } from "../../../shell"
 import { linkButton } from "../../../ui/button"
 import { badge } from "../../../ui/display"
@@ -19,6 +20,7 @@ import { statusDot } from "../../../ui/status-dot"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
+import { stableSlice } from "../../kit/stable-slice"
 import { errorCountPill, livePill } from "../kit/sessions-parts"
 import { WatchPlayerKeys } from "./command"
 import { detailOf, durationOf, isActive, labelOf, playerStatus } from "./derive"
@@ -57,7 +59,12 @@ const reveal = (h: H, delay: number, child: Html): Html =>
 		[child],
 	)
 
-const identityBar = (h: H, model: Model, session: ReplayDetail, timeZone: string): Html => {
+/** What the identity bar reads off the Model; none of it moves with the playhead. */
+type IdentityView = Pick<Model, "sessionId" | "nowMs" | "copies">
+const identityOf = stableSlice((model: Model): IdentityView => Struct.pick(model, ["sessionId", "nowMs", "copies"]))
+const identitySlot = createLazy()
+
+const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone: string): Html => {
 	const label = labelOf(session)
 	const startedEpoch = parseChTimestampMs(session.startTime)
 	const sessionActive = isActive(model, session)
@@ -122,7 +129,7 @@ const studio = (h: H, model: Model, session: ReplayDetail, timeZone: string): Ht
 	const transport = replayTransport(h, model, status)
 	return h.div([h.Class("flex min-h-0 flex-1 flex-col lg:flex-row"), h.OnMount(WatchPlayerKeys())], [
 		h.div([h.Class("flex min-w-0 flex-1 flex-col gap-3.5 overflow-y-auto p-4")], [
-			reveal(h, 0, identityBar(h, model, session, timeZone)),
+			reveal(h, 0, identitySlot(identityBar, [h, identityOf(model), session, timeZone])),
 			h.div([h.Class("flex flex-col")], [
 				replaySurface(h, model, session, { status, failure, sessionActive: isActive(model, session) }),
 				...(transport === null ? [] : [transport]),

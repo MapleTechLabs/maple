@@ -7,6 +7,7 @@
  * Clocks are read inside steps or the store only: the body replays.
  */
 import { OrgId } from "@maple/domain/http"
+import type { SandboxError } from "@maple/backend/sandbox/contract"
 import { ORG_BUDGET_EXHAUSTED, type SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { durableStep } from "@maple/backend/platform/durable-step"
 import { trackSecurityAuditInvocations } from "@maple/backend/services/billing/autumn-tracker"
@@ -29,10 +30,11 @@ import {
 	runAudit,
 } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, type Context, Effect, Layer, Option, Predicate, Schedule, Schema } from "effect"
+import { Cause, type Context, Duration, Effect, Layer, Option, Predicate, Schedule, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../platform/Llm"
 import { makeAuditAgents } from "./agents"
+import { changedPaths } from "./changed-paths"
 import { inspectDependencies } from "./dependencies"
 import {
 	AuditRepositoryRefusedError,
@@ -49,6 +51,35 @@ export class AuditCommitUnresolvedError extends Schema.TaggedError<AuditCommitUn
 	{ message: Schema.String },
 ) {}
 
+/**
+ * A sandbox failure as a step may fail with it. The sandbox's own errors carry values (a Duration,
+ * a defect) the step failure encoding rejects, which would make the step terminal and skip retries.
+ */
+export class AuditSandboxStepError extends Schema.TaggedError<AuditSandboxStepError>()(
+	"@maple/ai/security-audit/SandboxStepError",
+	{ message: Schema.String, step: Schema.String, sandboxTag: Schema.String },
+) {}
+
+const describeSandboxError = (error: SandboxError): string => {
+	switch (error._tag) {
+		case "@maple/backend/sandbox/SandboxTimeoutError":
+			return `timed out after ${Duration.toMillis(error.maxWallTime)} ms`
+		case "@maple/backend/sandbox/SandboxOutputLimitError":
+			return `${error.stream} reached ${error.observed} bytes, over its ${error.limit} byte limit`
+		default:
+			return error.message
+	}
+}
+
+export const toSandboxStepError =
+	(step: string) =>
+	(error: SandboxError): AuditSandboxStepError =>
+		new AuditSandboxStepError({
+			message: `${step}: ${describeSandboxError(error)}`.slice(0, 1_000),
+			step,
+			sandboxTag: error._tag,
+		})
+
 /** Sandbox reads time out and fail transiently; the parent retries rather than losing a step. */
 const STEP_RETRY = { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } } as const
 
@@ -57,8 +88,6 @@ const AGENT_STEP = {
 	retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
 	timeout: "30 minutes",
 } as const
-
-const MAX_CHANGED_PATHS = 20_000
 
 /** Counting a very large tree takes a while; the sandbox's own ceiling is 120 seconds. */
 const REPO_SIZE_TIMEOUT_SECONDS = 120
@@ -193,6 +222,7 @@ export const auditWithAgents = <E, R>(
 			"resolve-commit",
 			sandbox.prepare(orgId, target).pipe(
 				Effect.andThen(sandbox.exec(orgId, target, { command: "git", args: ["rev-parse", "HEAD"] })),
+				Effect.mapError(toSandboxStepError("resolve-commit")),
 				Effect.flatMap((result) =>
 					result.exitCode === 0 && /^[0-9a-f]{40}$/.test(result.stdout.trim())
 						? Effect.succeed(result.stdout.trim())
@@ -212,10 +242,9 @@ export const auditWithAgents = <E, R>(
 		const { violations } = yield* durableStep(
 			"repo-size",
 			Effect.gen(function* () {
-				const result = yield* sandbox.exec(orgId, pinned, {
-					...REPO_SIZE_COMMAND,
-					timeoutSeconds: REPO_SIZE_TIMEOUT_SECONDS,
-				})
+				const result = yield* sandbox
+					.exec(orgId, pinned, { ...REPO_SIZE_COMMAND, timeoutSeconds: REPO_SIZE_TIMEOUT_SECONDS })
+					.pipe(Effect.mapError(toSandboxStepError("repo-size")))
 				const size =
 					result.exitCode === 0 && !result.truncated ? parseRepoSize(result.stdout) : Option.none()
 				if (Option.isNone(size)) {
@@ -249,6 +278,8 @@ export const auditWithAgents = <E, R>(
 			payload.priorRunId === null ? Option.none() : yield* store.getRun(payload.priorRunId),
 			(row) =>
 				(row.status === "complete" || row.status === "incomplete") &&
+				// A cancelled run's ledger and findings are partial, so it says nothing about what is fixed.
+				row.incompleteReason !== "cancelled" &&
 				row.metadata !== null &&
 				row.metadata.repo === payload.repository,
 		)
@@ -265,23 +296,9 @@ export const auditWithAgents = <E, R>(
 				? []
 				: yield* durableStep(
 						"changed-since-prior",
-						sandbox
-							.exec(orgId, pinned, {
-								command: "git",
-								// A rename lists only its new path without --no-renames; the old path changed too.
-								args: ["diff", "--name-only", "--no-renames", prior.sourceRef, "HEAD"],
-							})
-							.pipe(
-								Effect.map((result) =>
-									// A cut or failed diff (an unreachable prior commit) counts as everything changed.
-									result.truncated || result.exitCode !== 0
-										? [EVERYTHING_CHANGED]
-										: result.stdout
-												.split("\n")
-												.filter(Boolean)
-												.slice(0, MAX_CHANGED_PATHS),
-								),
-							),
+						changedPaths(sandbox, orgId, pinned, prior.sourceRef).pipe(
+							Effect.mapError(toSandboxStepError("changed-since-prior")),
+						),
 						STEP_RETRY,
 					)
 		const changedSincePrior = changedMatcher(changed)

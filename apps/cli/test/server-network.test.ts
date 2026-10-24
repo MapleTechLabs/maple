@@ -232,7 +232,7 @@ describe("browser origin policy", () => {
 		deepStrictEqual(corsHeadersForAllowedOrigin(hostedOrigin), {
 			"access-control-allow-origin": hostedOrigin,
 			"access-control-allow-methods": "GET, POST, OPTIONS",
-			"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk",
+			"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key",
 			"access-control-allow-private-network": "true",
 			vary: "Origin",
 		})

@@ -103,6 +103,8 @@ export const TABLE_DELETE_PLAN = {
 	attribute_keys_hourly: unkeyed("Hour"),
 	attribute_values_hourly: unkeyed("Hour"),
 	audit_log: { strategy: "excluded", reason: NOT_TELEMETRY },
+	ci_jobs: unkeyed("Timestamp"),
+	ci_runs: unkeyed("Timestamp"),
 	error_events: derived("Timestamp"),
 	error_events_by_time: derived("Timestamp"),
 	error_fingerprints_minutely: unkeyed("Minute"),

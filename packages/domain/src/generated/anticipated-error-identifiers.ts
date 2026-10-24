@@ -115,6 +115,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/pr-review/PrReviewNotFoundError",
 	"@maple/http/pr-review/PrReviewReplyNotFoundError",
 	"@maple/http/security-audit/SecurityAuditBudgetExhaustedError",
+	"@maple/http/security-audit/SecurityAuditBudgetTooLowError",
 	"@maple/http/security-audit/SecurityAuditDisabledError",
 	"@maple/http/security-audit/SecurityAuditFindingNotFoundError",
 	"@maple/http/security-audit/SecurityAuditForbiddenError",

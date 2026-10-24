@@ -61,6 +61,8 @@ const SAMPLE_PATHS = [
 	"/infra/planetscale/orders",
 	"/infra/gcp",
 	"/infra/gcp/cloudSql/acme",
+	"/infra/aws",
+	"/infra/aws/ecs/payments-api?cluster=%22prod%22",
 	"/infra/cloudflare",
 	"/infra/cloudflare/workers/api",
 	"/infra/cloudflare/example.com",

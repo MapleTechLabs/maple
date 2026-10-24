@@ -233,14 +233,17 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 /** Same instance: the tab or its search changed. The data is shared, so nothing is read again. */
 export const routeChanged = (model: Model, route: SecurityTabsRoute, _context: PageContext): Return => {
 	const searches = searchesOf(route, model)
+	const isFindings = route._tag === "SecurityFindings"
 	return {
 		model: withSelectValues({
 			...model,
 			tab: tabOfRoute(route),
 			...searches,
+			// Leaving Findings drops a pending debounce, so it cannot navigate back there.
+			searchGeneration: isFindings ? model.searchGeneration : model.searchGeneration + 1,
 			// The draft follows the URL unless it already says the same thing (trailing spaces).
 			searchDraft:
-				route._tag === "SecurityFindings" && draftQuery(model.searchDraft) !== route.search.q
+				isFindings && draftQuery(model.searchDraft) !== route.search.q
 					? (route.search.q ?? "")
 					: model.searchDraft,
 		}),
@@ -407,7 +410,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model,
 				targetRuns: { ...model.targetRuns, [targetId]: Keyed.accept(slot, key, result) },
 			}
-			return followRuns(next, context, "Load")
+			// A live run only this list held may have finished: its findings and latest run changed.
+			const finished = finishedSince(allRuns(model), allRuns(next))
+			return chainAll(next, [
+				(updated) => followRuns(updated, context, "Load"),
+				...finished.map(
+					(run) => (updated: Model) => readFindings(updated, context, run.targetId, "Supersede"),
+				),
+				...finished.map(
+					(run) => (updated: Model) => readLatestRun(updated, context, run, "Supersede"),
+				),
+			])
 		},
 		CompletedFetchFindings: ({ targetId, key, result }) => {
 			const slot = model.findings[targetId]
@@ -484,7 +497,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ElapsedSearchDebounce: ({ generation }) => {
 			const q = draftQuery(model.searchDraft)
-			if (generation !== model.searchGeneration || q === model.findingsSearch.q) return { model }
+			if (
+				generation !== model.searchGeneration ||
+				model.tab !== "findings" ||
+				q === model.findingsSearch.q
+			)
+				return { model }
 			const { q: _q, ...rest } = model.findingsSearch
 			return navigate(model, findingsUrl(q === undefined ? rest : { ...rest, q }), true)
 		},

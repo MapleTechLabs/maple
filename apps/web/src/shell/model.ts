@@ -34,6 +34,7 @@ export const Integrations = Schema.Struct({
 	planetscale: Schema.Boolean,
 	gcp: Schema.Boolean,
 	supabase: Schema.Boolean,
+	aws: Schema.Boolean,
 })
 export const NO_INTEGRATIONS: typeof Integrations.Type = {
 	cloudflare: false,
@@ -41,6 +42,7 @@ export const NO_INTEGRATIONS: typeof Integrations.Type = {
 	planetscale: false,
 	gcp: false,
 	supabase: false,
+	aws: false,
 }
 
 export const Model = Schema.Struct({

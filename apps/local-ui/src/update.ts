@@ -13,6 +13,7 @@ import { hashOf, locationOf, routeOf, trackVisit } from "./navigation"
 import { updateCopy } from "./page/kit/copies"
 import { pageKeyOf } from "./page/registry"
 import { nextProbeDelayMs, nextServerState } from "./server/derive"
+import { LOGIN_PATH } from "./server/state"
 import { enterLocation, filterDrawerStep, probe, retryStaleData, type RootReturn, updatePageMessage } from "./update-page"
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
@@ -60,6 +61,9 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		CompletedNavigate: () => ({ model }),
 		CompletedRememberRange: () => ({ model }),
 		CompletedProbeServer: ({ outcome, checkedAtMs }) => {
+			// A self-hosted server with an access token answers 401 once the session is gone.
+			if (outcome._tag === "Rejected" && outcome.status === 401 && !model.env.isHosted)
+				return { model, commands: [LoadExternal({ href: LOGIN_PATH })] }
 			const server = nextServerState(model.maybeServer, outcome, checkedAtMs)
 			const version = model.probe.version + 1
 			return {

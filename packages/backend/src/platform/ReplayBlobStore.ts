@@ -74,7 +74,8 @@ const makeHydrate =
 						Option.match({
 							onNone: () => Effect.succeed(Option.none<T>()),
 							onSome: (bytes) =>
-								Effect.promise(() => decodeGzip(bytes)).pipe(
+								// tryPromise: a corrupt gzip body must fail into the catch below, not die.
+								Effect.tryPromise(() => decodeGzip(bytes)).pipe(
 									Effect.map((events) => Option.some({ ...chunk, events })),
 								),
 						}),
@@ -95,7 +96,7 @@ const makeHydrate =
 		).pipe(Effect.map(Arr.getSomes))
 
 export class ReplayBlobStore extends Context.Service<ReplayBlobStore, ReplayBlobStoreApi>()(
-	"@maple/api/platform/ReplayBlobStore",
+	"@maple/backend/platform/ReplayBlobStore",
 	{
 		make: Effect.gen(function* () {
 			const bucket = yield* Effect.serviceOption(ReplayBlobBucket)

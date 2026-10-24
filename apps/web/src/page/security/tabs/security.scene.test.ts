@@ -21,7 +21,7 @@ import {
 	TARGET_IDS,
 	targetsOf,
 } from "../../../lab/security-fixture"
-import { AppRoute } from "../../../route"
+import { AppRoute, hrefOf } from "../../../route"
 import * as Dialog from "../../../ui/dialog"
 import * as Field from "../../../ui/field"
 import * as Select from "../../../ui/select"
@@ -440,6 +440,79 @@ describe("security tabs", () => {
 			_tag: "RequestedNavigation",
 			url: expect.stringContaining("q="),
 		})
+	})
+
+	test("a search typed just before leaving Findings does not navigate back to it", () => {
+		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
+		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
+		const left = routeChanged(typed, AppRoute.SecurityRuns({ search: {} }), context).model
+		expect(
+			pageUpdate(left, Message.ElapsedSearchDebounce({ generation: typed.searchGeneration }))
+				.outMessage,
+		).toBeUndefined()
+	})
+
+	test("a status tab picked within the search debounce keeps what was typed", () => {
+		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
+		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(typed),
+			expectView(role("link", { name: /^Fixed/ })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityFindings({ search: { q: "exports", status: "fixed" } })),
+			),
+		)
+	})
+
+	test("a run only its target's own list holds re-reads the findings once it finishes", () => {
+		const targetId = Schema.decodeSync(SecurityAuditTargetId)(TARGET_IDS.dashboard)
+		const ownRuns = runsOf(NOW).runs.filter((run) => run.targetId === TARGET_IDS.dashboard)
+		const base = loaded()
+		const withoutGlobal = pageUpdate(
+			base,
+			Message.CompletedFetchRuns({
+				key: base.runs.key ?? "",
+				result: Result.succeed({
+					runs: runsOf(NOW).runs.filter((run) => run.targetId !== TARGET_IDS.dashboard),
+				}),
+			}),
+		).model
+		const withOwn = pageUpdate(
+			withoutGlobal,
+			Message.CompletedFetchTargetRuns({
+				targetId,
+				key: withoutGlobal.targetRuns[TARGET_IDS.dashboard]?.key ?? "",
+				result: Result.succeed({ runs: ownRuns }),
+			}),
+		).model
+		// The live run is only in the target's own list, and still blocks a second run.
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				routeChanged(
+					withOwn,
+					AppRoute.SecurityRuns({ search: { target: TARGET_IDS.dashboard } }),
+					context,
+				).model,
+			),
+			expectView(role("button", { name: "Start run" })).toBeDisabled(),
+		)
+		const polled = pageUpdate(withOwn, Message.TickedPoll({ nowMs: NOW + 15_000 }))
+		const answered = pageUpdate(
+			polled.model,
+			Message.CompletedFetchTargetRuns({
+				targetId,
+				key: polled.model.targetRuns[TARGET_IDS.dashboard]?.key ?? "",
+				result: Result.succeed({
+					runs: ownRuns.map((run) => ({ ...run, status: "complete" as const, finishedAt: NOW })),
+				}),
+			}),
+		)
+		expect(names(answered.commands)).toEqual(
+			expect.arrayContaining(["SecurityApiListFindings", "SecurityApiGetLatestRun"]),
+		)
+		expect(answered.model.findings[TARGET_IDS.dashboard]?.data._tag).toBe("Refreshing")
 	})
 })
 

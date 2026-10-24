@@ -1238,7 +1238,7 @@ export interface CloudflareAnalyticsServiceApi {
 export class CloudflareAnalyticsService extends Context.Service<
 	CloudflareAnalyticsService,
 	CloudflareAnalyticsServiceApi
->()("@maple/api/services/CloudflareAnalyticsService", {
+>()("@maple/backend/services/CloudflareAnalyticsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -1716,19 +1716,21 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const total = rows.sumRows.length + rows.gaugeRows.length
 			if (total === 0) return 0
 			const payload = metricRowsToOtlp(rows.sumRows, rows.gaugeRows, { sourceId })
-			return yield* ingest.send({ signal: "metrics", ingestKey, payload, label: "Cloudflare metrics" }).pipe(
-				Effect.as(total),
-				Effect.catchTag("@maple/backend/ingest/IngestSendError", (error) =>
-					// 402 is billing; 401/403 is the org's key refused (an edge block on a revoked key).
-					isRefusal(error)
-						? Effect.annotateCurrentSpan("maple.cloudflare.ingest_refused", true).pipe(
-								Effect.as({ refused: error.message } satisfies IngestRefused),
-							)
-						: Effect.fail(
-								new IntegrationsUpstreamError({ message: error.message, cause: error }),
-							),
-				),
-			)
+			return yield* ingest
+				.send({ signal: "metrics", ingestKey, payload, label: "Cloudflare metrics" })
+				.pipe(
+					Effect.as(total),
+					Effect.catchTag("@maple/backend/ingest/IngestSendError", (error) =>
+						// 402 is billing; 401/403 is the org's key refused (an edge block on a revoked key).
+						isRefusal(error)
+							? Effect.annotateCurrentSpan("maple.cloudflare.ingest_refused", true).pipe(
+									Effect.as({ refused: error.message } satisfies IngestRefused),
+								)
+							: Effect.fail(
+									new IntegrationsUpstreamError({ message: error.message, cause: error }),
+								),
+					),
+				)
 		})
 
 		/**
@@ -2674,7 +2676,9 @@ export class CloudflareAnalyticsService extends Context.Service<
 						const status = pollStatus(row, now, DATASET_STALE_MS)
 						return status === "failing" || status === "stale"
 					})
-					return enabled.length >= 2 ? { total: enabled.length, unhealthy: unhealthy.length } : undefined
+					return enabled.length >= 2
+						? { total: enabled.length, unhealthy: unhealthy.length }
+						: undefined
 				}),
 			)
 
@@ -2763,7 +2767,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const summaries = [...skipped, ...polled]
 			const reportedAt = yield* Clock.currentTimeMillis
 			const resources = polled.some((summary) => summary.skipped === null)
-				? yield* datasetHealth(orgId, new Set(pollable.map((account) => account.accountId)), reportedAt)
+				? yield* datasetHealth(
+						orgId,
+						new Set(pollable.map((account) => account.accountId)),
+						reportedAt,
+					)
 				: undefined
 			const outcome = sourcePollOutcome(summaries, yield* Ref.get(orgRefusal), resources)
 			if (outcome !== null) yield* reportTick(linkedSource, outcome, reportedAt)

@@ -154,7 +154,7 @@ export interface RailwayMetricsServiceApi {
 }
 
 export class RailwayMetricsService extends Context.Service<RailwayMetricsService, RailwayMetricsServiceApi>()(
-	"@maple/api/services/RailwayMetricsService",
+	"@maple/backend/services/RailwayMetricsService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
