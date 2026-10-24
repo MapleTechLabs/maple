@@ -1,3 +1,4 @@
+import { parseBucketMs } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,7 +11,7 @@ import { plotFrame } from "../../../charts/plot-frame"
 import * as Sparkline from "../../../charts/sparkline"
 import { stackedBreakdown } from "../../../charts/stacked-breakdown-chart"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
-import { responseRows, type StatusClass, type WindowMs } from "./derive-api"
+import { bucketAxis, responseRows, type StatusClass, type WindowMs } from "./derive-api"
 import type { ApiBucket } from "./model-tabs"
 
 // The API tab's charts: the responses-by-status stack, the latency lines and the sparklines.
@@ -113,6 +114,25 @@ const StatusChartView = Submodel.defineView<Chart.Model, Chart.Message, StatusCh
 		}),
 )
 
+/** Latency rows on the window's axis; a bucket without requests has no latency, so it is a gap. */
+const latencyRows = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number, window: WindowMs) => {
+	const byTime = new Map(
+		buckets.flatMap((bucket) => {
+			const ms = parseBucketMs(bucket.bucket)
+			return ms === null ? [] : [[ms, bucket] as const]
+		}),
+	)
+	return bucketAxis(buckets, bucketSeconds, window).map((ms) => {
+		const bucket = byTime.get(ms)
+		return {
+			bucket: new Date(ms).toISOString(),
+			p50LatencyMs: bucket?.p50DurationMs ?? null,
+			p95LatencyMs: bucket?.p95DurationMs ?? null,
+			p99LatencyMs: bucket?.p99DurationMs ?? null,
+		}
+	})
+}
+
 /** One endpoint's p50/p95/p99 over the window, on the service page's latency chart. */
 export const latencyChart = <M>(
 	h: HtmlBuilder<M>,
@@ -120,6 +140,8 @@ export const latencyChart = <M>(
 		chartId: string
 		chart: Chart.Model | undefined
 		buckets: ReadonlyArray<ApiBucket>
+		bucketSeconds: number
+		window: WindowMs
 		context: ChartContext
 		className: string
 		toMessage: (message: Chart.Message) => M
@@ -135,12 +157,7 @@ export const latencyChart = <M>(
 			className: options.className,
 			spec: ChartSpec.FixedMetric({
 				chart: "Latency",
-				rows: options.buckets.map((bucket) => ({
-					bucket: bucket.bucket,
-					p50LatencyMs: bucket.p50DurationMs,
-					p95LatencyMs: bucket.p95DurationMs,
-					p99LatencyMs: bucket.p99DurationMs,
-				})),
+				rows: latencyRows(options.buckets, options.bucketSeconds, options.window),
 				colors: {
 					border: resolveColor(options.context.theme, "--border"),
 					background: resolveColor(options.context.theme, "--background"),

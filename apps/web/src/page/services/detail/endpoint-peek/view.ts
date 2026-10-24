@@ -1,5 +1,12 @@
 import * as SheetStyles from "@maple/ui/styles/ui/sheet"
-import { formatBytes, formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
+import {
+	countLabel,
+	formatBytes,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatRate,
+} from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -112,7 +119,12 @@ const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, 
 				h,
 				"4xx",
 				mix === null ? "—" : formatErrorRate(mix.client),
-				topClient === undefined ? "none in window" : `mostly ${topClient.name}`,
+				// The leading code comes from the status rows; until they land it stays blank.
+				mix === null || mix.client === 0
+					? "none in window"
+					: topClient === undefined
+						? ""
+						: `mostly ${topClient.name}`,
 				mix !== null && mix.client > 0 ? "text-warning-foreground" : undefined,
 			),
 			stat(
@@ -121,7 +133,10 @@ const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, 
 				mix === null ? formatErrorRate(endpoint.errorRate) : formatErrorRate(mix.server),
 				(mix?.server ?? endpoint.errorRate) === 0
 					? "none in window"
-					: `${formatNumber(Math.round(endpoint.estimatedSpanCount * (mix?.server ?? endpoint.errorRate)))} responses`,
+					: countLabel(
+							Math.round(endpoint.estimatedSpanCount * (mix?.server ?? endpoint.errorRate)),
+							"response",
+						),
 				(mix?.server ?? endpoint.errorRate) > 0 ? "text-destructive-foreground" : undefined,
 			),
 			stat(
@@ -204,6 +219,8 @@ const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => 
 						chartId: "peek-latency",
 						chart: model.charts["peek-latency"],
 						buckets,
+						bucketSeconds: inputs.bucketSeconds,
+						window: inputs.window,
 						context,
 						className: "h-[120px] w-full",
 						toMessage: toChart("peek-latency"),

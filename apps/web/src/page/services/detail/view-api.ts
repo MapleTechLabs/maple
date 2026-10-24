@@ -155,7 +155,20 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 							methodLabel(h, endpoint.method, "hidden w-10 md:inline-block"),
 							truncatedText(h, { text: endpoint.route, className: "text-ui" }, [
 								...(head.length > 0
-									? [h.span([h.Class("hidden text-muted-foreground md:inline")], [head])]
+									? [
+											h.span(
+												// A grouped row's head repeats its stem, so it folds away on narrow screens.
+												[
+													h.Class(
+														cn(
+															"text-muted-foreground",
+															stem.length > 0 && "hidden md:inline",
+														),
+													),
+												],
+												[head],
+											),
+										]
 									: []),
 								h.span([h.Class("text-foreground")], [tail]),
 							]),
@@ -303,7 +316,7 @@ const groupHeaderRow = (
 						[
 							icon(h, "ChevronDownIcon", {
 								size: 14,
-								className: "shrink-0 text-muted-foreground",
+								className: "hidden shrink-0 text-muted-foreground md:block",
 							}),
 							h.span(
 								[
