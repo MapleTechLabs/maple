@@ -274,6 +274,14 @@ export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { 
 								{m.nav_docs()}
 							</a>
 						</NavigationMenuItem>
+						<NavigationMenuItem>
+							<a
+								href="/guides"
+								className="inline-flex h-10 w-max items-center justify-center bg-transparent px-2.5 py-1.5 text-[15px] font-medium text-fg-muted hover:bg-muted/20 hover:text-fg transition-all"
+							>
+								{m.nav_guides()}
+							</a>
+						</NavigationMenuItem>
 					</NavigationMenuList>
 				</NavigationMenu>
 			</div>
@@ -386,6 +394,13 @@ export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { 
 								className="text-xs text-fg hover:text-fg transition-colors py-2 font-medium"
 							>
 								{m.nav_docs()}
+							</a>
+							<a
+								href="/guides"
+								onClick={() => setMenuOpen(false)}
+								className="text-xs text-fg hover:text-fg transition-colors py-2 font-medium"
+							>
+								{m.nav_guides()}
 							</a>
 						</div>
 
