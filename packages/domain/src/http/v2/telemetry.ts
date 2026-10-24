@@ -1185,6 +1185,8 @@ export const V2ServiceHealthEntry = Schema.Struct({
 	 * namespace's). Current window only; null when the service has no history there.
 	 */
 	baseline_p95_latency_ms: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	/** Spans behind the baseline; clients ignore a baseline below their own minimum. */
+	baseline_span_count: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 }).annotate({
 	identifier: "ServiceHealthEntry",
 	title: "Service health entry",
