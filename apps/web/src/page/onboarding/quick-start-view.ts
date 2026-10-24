@@ -1,46 +1,357 @@
-import { ONBOARDING_INTENT_IDS, ONBOARDING_INTENTS, type OnboardingIntent } from "../../lib/onboarding-intent"
+import { ONBOARDING_INTENTS } from "../../lib/onboarding-intent"
 import {
-	ONBOARDING_ROLE_IDS,
-	ONBOARDING_ROLES,
-	type OnboardingRole,
-	ROLE_DETAIL_MAX_LENGTH,
-} from "../../lib/onboarding-role"
-import { Option } from "effect"
+	filledSurfaces,
+	STACK_LANGUAGE_IDS,
+	STACK_LANGUAGES,
+	STACK_PLATFORM_IDS,
+	STACK_PLATFORMS,
+	type StackItem,
+} from "../../lib/onboarding-stack"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
-import { eyebrow } from "../../ui/eyebrow"
-import { field, type FieldIds, type FieldState, fieldLabel, input } from "../../ui/field"
 import { icon } from "../../ui/icon"
-import { optionCard, type PixelGlyphName, pixelGlyph } from "./option-card"
+import { type PixelGlyphName, pixelGlyph } from "./option-card"
 import { regionStep } from "./quick-start-region-view"
-import { Message, type Model, roleNeedsDetail } from "./quick-start"
-import { type QuickStartState, resolveQuickStartStep, STEP_IDS } from "./quick-start-state"
+import { Message, type Model, MountDitherField } from "./quick-start"
+import { type QuickStartState, resolveQuickStartStep, type StepId } from "./quick-start-state"
+
+// `/quick-start`: each step's form on the left and, where it has one, a preview of what it sets up on
+// the right, over the dithered backdrop that spreads a little further every step.
 
 type H = HtmlBuilder<Message>
 
-/** `<Input id="onboarding-role-detail">` under `<FieldLabel htmlFor>`. */
-const DETAIL_FIELD: FieldIds = {
-	control: "onboarding-role-detail",
-	label: "onboarding-role-detail-label",
-	error: "onboarding-role-detail-error",
-}
-const DETAIL_STATE: FieldState = {
-	isInvalid: false,
-	isDirty: false,
-	isFilled: false,
-	isFocused: false,
-	isTouched: false,
+/** `OnboardingLayout`'s right cluster: the progress trail, then the account actions. */
+export const accountClusterOf = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+	h.div([h.Class("flex items-center gap-3")], children)
+
+/**
+ * `MotionStep key={step}` at rest (reduced motion: no slide). A new step is a new element, as
+ * AnimatePresence remounts it, so no card is patched over from the previous step.
+ */
+export const motionStep = <M>(h: HtmlBuilder<M>, step: string, child: Html): Html =>
+	h.div(
+		[h.Key(step), h.Class("flex flex-1 flex-col"), h.Style({ opacity: "1", transform: "none" })],
+		[child],
+	)
+
+/** How far the backdrop has spread by each step (`/org-required` starts it at 0.55). */
+const REACH = {
+	region: "0.6",
+	plan: "0.7",
+	stack: "0.85",
+	team: "1.05",
+} as const satisfies Record<StepId | "region", string>
+
+type TrailItem = Readonly<{ label: string; answer: string | null; isCurrent: boolean }>
+
+/** The quiet progress line: done steps show their answer, the current one is underlined. */
+const trail = (h: H, items: ReadonlyArray<TrailItem>): Html =>
+	h.nav(
+		[h.AriaLabel("Onboarding progress"), h.Class("hidden items-center gap-2 text-xs md:flex")],
+		[
+			h.ol(
+				[h.Class("flex items-center gap-2")],
+				items.map((item, index) =>
+					h.li(
+						[
+							h.Class("flex items-center gap-2"),
+							...(item.isCurrent ? [h.AriaCurrent("step")] : []),
+						],
+						[
+							...(index === 0
+								? []
+								: [h.span([h.AriaHidden(true), h.Class("text-input")], ["/"])]),
+							item.answer === null
+								? h.span(
+										[
+											h.Class(
+												cn(
+													item.isCurrent
+														? "text-foreground underline underline-offset-4"
+														: "text-muted-foreground",
+												),
+											),
+										],
+										[item.label],
+									)
+								: h.span(
+										[h.Class("flex items-center gap-1.5 text-muted-foreground")],
+										[
+											icon(h, "CheckIcon", { size: 12, className: "text-success" }),
+											item.answer,
+										],
+									),
+						],
+					),
+				),
+			),
+		],
+	)
+
+type ShellOptions = Readonly<{
+	accountCluster: (label: Html) => Html
+	trail: Html
+	reach: string
+	/** The step's preview; without one the step takes the whole width. */
+	aside: Html | null
+}>
+
+/**
+ * One screen high: the header stays, only the step scrolls (its footer pinned to the bottom), and the
+ * preview with its backdrop stays put, scrolling on its own when it is taller than the window.
+ */
+const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html => {
+	const canvas = h.canvas(
+		[
+			h.AriaHidden(true),
+			h.Class(
+				cn(
+					"absolute left-0 top-0 size-full",
+					options.aside === null &&
+						"opacity-60 [mask-image:linear-gradient(to_right,black,transparent_14%)]",
+				),
+			),
+			h.DataAttribute("reach", options.reach),
+			h.OnMount(MountDitherField()),
+		],
+		[],
+	)
+	return h.div(
+		[h.Class("relative flex h-dvh overflow-hidden bg-background text-foreground")],
+		[
+			...(options.aside === null
+				? [
+						h.div(
+							[
+								h.AriaHidden(true),
+								h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
+							],
+							[canvas],
+						),
+					]
+				: []),
+			h.div(
+				[
+					h.Class(
+						cn(
+							"relative z-10 flex h-dvh min-w-0 flex-col",
+							options.aside === null ? "flex-1" : "w-full lg:w-[760px] lg:shrink-0",
+						),
+					),
+				],
+				[
+					h.header(
+						[
+							h.Class(
+								"flex shrink-0 items-center justify-between gap-4 px-6 py-5 sm:px-12 lg:px-16",
+							),
+						],
+						[
+							h.div(
+								[h.Class("flex items-center gap-2")],
+								[
+									h.span(
+										[h.AriaHidden(true), h.Class("text-primary")],
+										[icon(h, "MapleMark", { size: 20 })],
+									),
+									h.span(
+										[h.Class("font-display text-lg font-semibold tracking-tight")],
+										["maple"],
+									),
+								],
+							),
+							options.accountCluster(options.trail),
+						],
+					),
+					h.main(
+						[h.Class("flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain")],
+						children,
+					),
+				],
+			),
+			...(options.aside === null
+				? []
+				: [
+						h.div(
+							[
+								h.Class(
+									"relative hidden h-dvh flex-1 border-l border-border bg-sidebar lg:block",
+								),
+							],
+							[
+								h.div(
+									[
+										h.AriaHidden(true),
+										h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
+									],
+									[canvas],
+								),
+								h.div(
+									[
+										h.Class(
+											"absolute inset-0 flex flex-col overflow-y-auto overscroll-contain p-14",
+										),
+									],
+									[
+										h.div(
+											[
+												h.Class(
+													"relative m-auto w-full max-w-[540px] rounded-2xl border border-border bg-sidebar p-5",
+												),
+											],
+											[options.aside],
+										),
+									],
+								),
+							],
+						),
+					]),
+		],
+	)
 }
 
-const ROLE_GLYPH = {
-	backend: "brackets-curly-dots",
-	frontend: "laptop",
-	devops_sre: "gear-2",
-	eng_leader: "users-2",
-	founder: "rocket",
-	other: "pen-writing",
-} satisfies Record<OnboardingRole, PixelGlyphName>
+// STACK
+
+/** A compact pick: one line of label and description, so the whole stack fits on a laptop screen. */
+const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message): Html =>
+	h.label(
+		[h.Class("group relative cursor-pointer")],
+		[
+			h.input([
+				h.Type("checkbox"),
+				h.Class("peer sr-only"),
+				h.Checked(isChecked),
+				h.AriaLabel(item.label),
+				h.OnChange(() => onChange),
+			]),
+			h.div(
+				[
+					h.Class(
+						cn(
+							"flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+							isChecked
+								? "border-primary bg-primary/5"
+								: "border-border group-hover:border-foreground/30",
+						),
+					),
+				],
+				[
+					h.span(
+						[h.AriaHidden(true), h.Class("flex size-7 shrink-0 items-center justify-center")],
+						[icon(h, item.icon, { size: 18 })],
+					),
+					h.span(
+						[h.Class("flex min-w-0 flex-1 flex-col")],
+						[
+							h.span([h.Class("truncate text-sm font-medium")], [item.label]),
+							h.span([h.Class("truncate text-xs text-muted-foreground")], [item.description]),
+						],
+					),
+					h.span(
+						[
+							h.AriaHidden(true),
+							h.Class(
+								cn(
+									"flex size-4 shrink-0 items-center justify-center rounded-sm border",
+									isChecked
+										? "border-primary bg-primary text-primary-foreground"
+										: "border-input",
+								),
+							),
+						],
+						isChecked ? [icon(h, "CheckIcon", { size: 12 })] : [],
+					),
+				],
+			),
+		],
+	)
+
+const stackGroup = (h: H, legend: string, cards: ReadonlyArray<Html>): Html =>
+	h.fieldset(
+		[h.Class("flex min-w-0 flex-col gap-3")],
+		[
+			h.legend([h.Class("mb-3 text-2xs uppercase tracking-widest text-muted-foreground")], [legend]),
+			h.div([h.Class("grid gap-2 sm:grid-cols-2 xl:grid-cols-3")], cards),
+		],
+	)
+
+/** A step's column: side padding on everything but its footer, which pads itself. */
+export const STEP_BODY_CLASS =
+	"flex flex-1 flex-col gap-7 pt-4 [&>:not(:last-child)]:px-6 sm:[&>:not(:last-child)]:px-12 lg:[&>:not(:last-child)]:px-16"
+
+/** The step's actions, pinned to the bottom of the scrolling column so Continue never scrolls away. */
+export const STEP_FOOTER_CLASS =
+	"sticky bottom-0 z-10 mt-auto flex items-center justify-end gap-4 border-t border-border bg-background px-6 py-4 sm:px-12 lg:px-16"
+
+const stepFooter = (h: H, children: ReadonlyArray<Html>): Html =>
+	h.div([h.Class(STEP_FOOTER_CLASS)], children)
+
+const stackStep = (h: H, state: QuickStartState): Html => {
+	const { languages, platforms } = state.stack
+	const picked = languages.length + platforms.length
+	return h.div(
+		[h.Class(STEP_BODY_CLASS)],
+		[
+			h.div(
+				[h.Class("flex flex-col gap-2.5")],
+				[
+					h.h1(
+						[h.Class("font-display text-3xl font-semibold tracking-tight")],
+						["What are you running?"],
+					),
+					h.p(
+						[h.Class("text-[15px] leading-relaxed text-muted-foreground")],
+						["Pick everything that applies. We set up just those, and you can add more later."],
+					),
+				],
+			),
+			stackGroup(
+				h,
+				"Your code",
+				STACK_LANGUAGE_IDS.map((language) =>
+					stackCard(
+						h,
+						STACK_LANGUAGES[language],
+						languages.includes(language),
+						Message.ToggledLanguage({ language }),
+					),
+				),
+			),
+			stackGroup(
+				h,
+				"Where it runs",
+				STACK_PLATFORM_IDS.map((platform) =>
+					stackCard(
+						h,
+						STACK_PLATFORMS[platform],
+						platforms.includes(platform),
+						Message.ToggledPlatform({ platform }),
+					),
+				),
+			),
+			stepFooter(h, [
+				...(picked === 0
+					? [
+							h.span(
+								[h.Class("text-sm text-muted-foreground")],
+								["Not sure yet? You can skip this."],
+							),
+						]
+					: []),
+				button(
+					h,
+					{
+						size: "lg",
+						variant: picked === 0 ? "outline" : "default",
+						attributes: [h.OnClick(Message.ClickedContinue({ step: "stack" }))],
+					},
+					[picked === 0 ? "Skip for now" : "Continue", icon(h, "ArrowRightIcon", { size: 16 })],
+				),
+			]),
+		],
+	)
+}
 
 const INTENT_GLYPH = {
 	traces: "square-activity-chart",
@@ -51,297 +362,148 @@ const INTENT_GLYPH = {
 	service_map: "nodes-3",
 	infrastructure: "layers-3",
 	alerts: "bell",
-} satisfies Record<OnboardingIntent, PixelGlyphName>
+} as const satisfies Record<keyof typeof ONBOARDING_INTENTS, PixelGlyphName>
 
-const stepLabel = <M>(h: HtmlBuilder<M>, label: string): Html =>
-	h.span([h.Class("hidden text-sm text-muted-foreground tabular-nums sm:inline")], [label])
-
-/** `OnboardingLayout`'s right cluster: the step label, then the account actions. */
-export const accountClusterOf = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("flex items-center gap-3")], children)
-
-/** `OnboardingLayout`: the mark, the step pills and the account actions over the step. */
-export const onboardingLayout = <M>(
-	h: HtmlBuilder<M>,
-	currentStep: number,
-	totalSteps: number,
-	accountCluster: (label: Html) => Html,
-	children: ReadonlyArray<Html>,
-): Html =>
-	h.div(
-		[h.Class("relative min-h-screen bg-background flex flex-col overflow-hidden")],
-		[
-			h.div(
-				[
-					h.AriaHidden(true),
-					h.Class("pointer-events-none absolute inset-x-0 top-0 h-[520px] opacity-60"),
-					h.Style({
-						background:
-							"radial-gradient(60% 80% at 50% 0%, hsl(var(--primary) / 0.08) 0%, hsl(var(--primary) / 0.02) 45%, transparent 75%)",
-					}),
-				],
-				[],
-			),
-			h.div(
-				[
-					h.AriaHidden(true),
-					h.Class("pointer-events-none absolute inset-0 [mask-image:linear-gradient(to_bottom,black,transparent_60%)]"),
-					h.Style({
-						"background-image": "radial-gradient(circle at 1px 1px, hsl(var(--foreground) / 0.04) 1px, transparent 0)",
-						"background-size": "24px 24px",
-					}),
-				],
-				[],
-			),
-			h.header(
-				[h.Class("relative z-10 flex items-center justify-between px-6 py-5 shrink-0")],
-				[
-					h.div(
-						[h.Class("flex items-center gap-2.5")],
-						[
-							icon(h, "MapleMark", { size: 26, className: "text-primary shrink-0" }),
-							h.span([h.Class("text-base font-semibold tracking-tight")], ["Maple"]),
-						],
-					),
-					h.div([h.Class("flex items-center gap-1.5")], Array.from({ length: totalSteps }, (_, index) => stepPill(h, index < currentStep))),
-					accountCluster(stepLabel(h, `Step ${currentStep} of ${totalSteps}`)),
-				],
-			),
-			h.main([h.Class("relative z-10 flex-1 flex flex-col")], children),
-		],
-	)
-
-const roleDetailField = (h: H, state: QuickStartState): Html =>
-	field(h, { className: "w-full items-stretch", state: DETAIL_STATE }, [
-		fieldLabel(h, { ids: DETAIL_FIELD, state: DETAIL_STATE }, "Your role"),
-		input(h, {
-			ids: DETAIL_FIELD,
-			state: { ...DETAIL_STATE, isFilled: state.qualifyAnswers.roleDetail !== "" },
-			attributes: [
-				h.Type("text"),
-				h.Autocomplete("organization-title"),
-				h.Placeholder("e.g. Security engineer"),
-				h.Value(state.qualifyAnswers.roleDetail),
-				h.Maxlength(ROLE_DETAIL_MAX_LENGTH),
-				h.OnInput((value) => Message.ChangedRoleDetail({ value })),
-				h.OnKeyDownPreventDefault((key) =>
-					key === "Enter" && !roleNeedsDetail(state)
-						? Option.some(Message.ClickedContinue({ step: "role" }))
-						: Option.none(),
-				),
-			],
-		}),
-	])
-
-/** `StepRole`. */
-export const roleStep = (h: H, state: QuickStartState): Html => {
-	const { role } = state.qualifyAnswers
+/** What the picks fill in Maple, each surface with the picks behind it. */
+const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
+	const surfaces = filledSurfaces(state.stack)
 	return h.div(
-		[h.Class("flex flex-1 flex-col items-center justify-center overflow-auto px-6 py-12")],
+		[h.Class("flex flex-col gap-4")],
 		[
 			h.div(
-				[h.Class("flex w-full max-w-3xl flex-col gap-8")],
+				[h.Class("flex flex-col gap-1")],
 				[
-					h.div(
-						[h.Class("space-y-3 text-center")],
-						[
-							h.div([h.AriaHidden(true), h.Class("mx-auto mb-6 w-fit text-primary")], [icon(h, "MapleMark", { size: 56 })]),
-							eyebrow(h, { variant: "label", className: "text-primary" }, ["Welcome to Maple"]),
-							h.h1([h.Class("text-3xl font-semibold tracking-tight")], ["What's your role?"]),
-							h.p(
-								[h.Class("mx-auto max-w-md text-sm leading-relaxed text-muted-foreground")],
-								["Sets the default SDK snippet and the first pages we point you at."],
-							),
-						],
+					h.span(
+						[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
+						[`What ${orgName} gets`],
 					),
-					h.fieldset(
-						[h.Class("grid min-w-0 gap-2.5 sm:grid-cols-2")],
+					h.span(
+						[h.Class("font-display text-xl font-semibold")],
 						[
-							h.legend([h.Class("sr-only")], ["Your role"]),
-							...ONBOARDING_ROLE_IDS.map((id) =>
-								optionCard(h, {
-									type: "radio",
-									name: "onboarding-role",
-									isChecked: role === id,
-									onChange: Message.PickedRole({ role: id }),
-									label: ONBOARDING_ROLES[id].label,
-									title: ONBOARDING_ROLES[id].label,
-									description: ONBOARDING_ROLES[id].title,
-									media: pixelGlyph(h, ROLE_GLYPH[id], role === id),
-								}),
-							),
-						],
-					),
-					...(role === "other" ? [roleDetailField(h, state)] : []),
-					h.p(
-						[
-							h.AriaLive("polite"),
-							h.AriaAtomic(true),
-							h.Class("min-h-10 text-center text-xs leading-relaxed text-muted-foreground"),
-						],
-						[role === null ? "A little about you. Then a look inside." : ONBOARDING_ROLES[role].greeting],
-					),
-					h.div(
-						[h.Class("flex items-center justify-end")],
-						[
-							button(
-								h,
-								{
-									size: "lg",
-									className: "min-w-[180px]",
-									isDisabled: role === null || roleNeedsDetail(state),
-									attributes: [h.OnClick(Message.ClickedContinue({ step: "role" }))],
-								},
-								["Continue", h.span([h.Class("ml-2")], ["→"])],
-							),
+							surfaces.length === 0
+								? "Pick what you run to see it here"
+								: `${surfaces.length} places light up`,
 						],
 					),
 				],
 			),
-		],
-	)
-}
-
-const backButton = (h: H, to: (typeof STEP_IDS)[number], className?: string): Html =>
-	button(h, { variant: "ghost", className, attributes: [h.OnClick(Message.ClickedBack({ to }))] }, [
-		icon(h, "ArrowLeftIcon"),
-		"Back",
-	])
-
-/** `StepIntent`. */
-export const intentStep = (h: H, state: QuickStartState): Html => {
-	const { intents } = state.qualifyAnswers
-	return h.div(
-		[h.Class("flex flex-1 flex-col items-center justify-center px-6 py-10")],
-		[
-			h.div(
-				[h.Class("w-full max-w-3xl space-y-7")],
-				[
-					h.div(
-						[h.Class("space-y-3 text-center")],
-						[
-							h.h1([h.Class("text-3xl font-semibold tracking-tight")], ["What do you want to see first?"]),
-							h.p(
-								[h.Class("text-sm leading-relaxed text-muted-foreground")],
-								["Pick any. Setup guidance follows what you choose."],
+			...(surfaces.length === 0
+				? []
+				: [
+						h.ul(
+							[
+								h.Class(
+									"flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-background",
+								),
+							],
+							surfaces.map((surface) =>
+								h.li(
+									[h.Class("flex items-center gap-3.5 px-4 py-3")],
+									[
+										pixelGlyph(h, INTENT_GLYPH[surface.intent], true),
+										h.div(
+											[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
+											[
+												h.span(
+													[h.Class("text-sm font-medium")],
+													[ONBOARDING_INTENTS[surface.intent].label],
+												),
+												h.span(
+													[h.Class("text-xs text-muted-foreground")],
+													[ONBOARDING_INTENTS[surface.intent].title],
+												),
+											],
+										),
+										surface.sources.length === 0
+											? h.span(
+													[h.Class("shrink-0 text-2xs text-muted-foreground")],
+													["On everything"],
+												)
+											: h.span(
+													[
+														h.Class("flex shrink-0 items-center gap-1"),
+														h.Title(
+															surface.sources
+																.map((source) => source.label)
+																.join(", "),
+														),
+													],
+													surface.sources.map((source) =>
+														h.span(
+															[
+																h.Class(
+																	"flex size-6 items-center justify-center rounded-sm border border-border",
+																),
+															],
+															[icon(h, source.icon, { size: 12 })],
+														),
+													),
+												),
+									],
+								),
 							),
-						],
-					),
-					h.fieldset(
-						[h.Class("grid min-w-0 gap-2.5 sm:grid-cols-2")],
-						[
-							h.legend([h.Class("sr-only")], ["Surfaces to start with — choose any that apply"]),
-							...ONBOARDING_INTENT_IDS.map((id) =>
-								optionCard(h, {
-									type: "checkbox",
-									isChecked: intents.includes(id),
-									onChange: Message.ToggledIntent({ intent: id }),
-									label: ONBOARDING_INTENTS[id].label,
-									title: ONBOARDING_INTENTS[id].label,
-									description: ONBOARDING_INTENTS[id].title,
-									media: pixelGlyph(h, INTENT_GLYPH[id], intents.includes(id)),
-								}),
-							),
-						],
-					),
-					h.div(
-						[
-							h.Class("flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 border-b pb-5 text-xs"),
-							h.AriaLive("polite"),
-							h.AriaAtomic(true),
-						],
-						intents.length === 0
-							? [h.span([h.Class("text-muted-foreground")], ["Pick at least one."])]
-							: [
-									h.span([h.Class("tabular-nums")], [String(intents.length), " selected"]),
-									h.span(
-										[h.Class("text-muted-foreground")],
-										[intents.map((id) => ONBOARDING_INTENTS[id].label).join(" · ")],
-									),
-								],
-					),
-					h.div(
-						[h.Class("flex items-center justify-between gap-3")],
-						[
-							backButton(h, "role"),
-							button(
-								h,
-								{
-									size: "lg",
-									isDisabled: intents.length === 0,
-									attributes: [h.OnClick(Message.ClickedContinue({ step: "intent" }))],
-								},
-								["Continue"],
-							),
-						],
-					),
-				],
-			),
-		],
-	)
-}
-
-/** Width, not scale: scaling a pill squashes its end caps mid-transition. */
-const stepPill = <M>(h: HtmlBuilder<M>, isReached: boolean): Html =>
-	h.div(
-		[
-			h.Class(
-				cn(
-					"h-1 overflow-hidden rounded-full bg-muted transition-[width] duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
-					isReached ? "w-7" : "w-4",
-				),
-			),
-		],
-		[
-			h.div(
-				[
-					h.Class(
-						cn(
-							"h-full origin-left bg-primary transition-transform duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
-							isReached ? "scale-x-100" : "scale-x-0",
 						),
-					),
-				],
-				[],
-			),
+					]),
 		],
 	)
+}
 
 /** What the screen draws for its step; the team and plan steps come from their own modules. */
 export type QuickStartParts = Readonly<{
-	/** The header's right cluster around the step label: the container owns its menus. */
+	/** The header's right cluster around the trail: the container owns its menus. */
 	accountCluster: (label: Html) => Html
 	teamStep: (state: QuickStartState) => Html
 	planStep: Html
 	/** `needsRegion`: the region step holds back the others until the org has one. */
 	needsRegion: boolean
+	/** The org already holds a plan, so its step is done and skipped. */
+	hasPlan: boolean
+	orgName: string
 }>
 
-/**
- * `MotionStep key={step}` at rest (reduced motion: no slide). A new step is a new element, as
- * AnimatePresence remounts it, so no card is patched over from the previous step.
- */
-export const motionStep = <M>(h: HtmlBuilder<M>, step: string, child: Html): Html =>
-	h.div([h.Key(step), h.Class("flex flex-1 flex-col"), h.Style({ opacity: "1", transform: "none" })], [child])
+const trailOf = (
+	state: QuickStartState,
+	parts: QuickStartParts,
+	step: StepId | "region",
+): ReadonlyArray<TrailItem> => {
+	const picks = state.stack.languages.length + state.stack.platforms.length
+	return [
+		{ label: "Name", answer: parts.orgName, isCurrent: false },
+		{ label: "Plan", answer: parts.hasPlan ? "Plan" : null, isCurrent: step === "plan" },
+		{
+			label: "Stack",
+			answer:
+				state.completedSteps.stack === true && step !== "stack"
+					? picks === 0
+						? "Skipped"
+						: `${picks} picked`
+					: null,
+			isCurrent: step === "stack",
+		},
+		{ label: "Team", answer: null, isCurrent: step === "team" },
+	]
+}
 
 export const view = (h: H, model: Model, parts: QuickStartParts): Html | null => {
 	const state = model.state
 	if (state === null) return null
-	const step = resolveQuickStartStep(state)
-	const regionOffset = model.isRegionStepShown || parts.needsRegion ? 1 : 0
-	if (parts.needsRegion)
-		return onboardingLayout(h, 1, STEP_IDS.length + regionOffset, parts.accountCluster, [
-			motionStep(h, "region", regionStep(h, model.region)),
-		])
-	const content =
-		step === "role"
-			? roleStep(h, state)
-			: step === "intent"
-				? intentStep(h, state)
-				: step === "team"
-					? parts.teamStep(state)
-					: parts.planStep
-	return onboardingLayout(h, STEP_IDS.indexOf(step) + 1 + regionOffset, STEP_IDS.length + regionOffset, parts.accountCluster, [
-		motionStep(h, step, content),
-	])
+	const step = parts.needsRegion ? "region" : resolveQuickStartStep(state, parts.hasPlan)
+	const options = (aside: Html | null): ShellOptions => ({
+		accountCluster: parts.accountCluster,
+		trail: trail(h, trailOf(state, parts, step)),
+		reach: REACH[step],
+		aside,
+	})
+	switch (step) {
+		case "region":
+			return shell(h, options(null), [motionStep(h, "region", regionStep(h, model.region))])
+		case "plan":
+			return shell(h, options(null), [motionStep(h, "plan", parts.planStep)])
+		case "stack":
+			return shell(h, options(stackPreview(h, parts.orgName, state)), [
+				motionStep(h, "stack", stackStep(h, state)),
+			])
+		case "team":
+			return shell(h, options(null), [motionStep(h, "team", parts.teamStep(state))])
+	}
 }

@@ -1,16 +1,28 @@
 import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "../../lib/onboarding-intent"
-import { ONBOARDING_ROLE_IDS, type OnboardingRole } from "../../lib/onboarding-role"
+import { ONBOARDING_ROLE_IDS } from "../../lib/onboarding-role"
+import {
+	frameworkOf,
+	intentsOf,
+	STACK_LANGUAGE_IDS,
+	STACK_PLATFORM_IDS,
+	type StackAnswers as StackPicks,
+} from "../../lib/onboarding-stack"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema, SchemaGetter } from "effect"
 
 // The quick start wizard's progress in localStorage `maple-onboarding-v6-<orgId>`, with normalisation
-// of older saves.
+// of older saves (their role and intent steps are gone; the answers still feed the setup checklist).
 
-export const STEP_IDS = ["role", "intent", "team", "plan"] as const
+export const STEP_IDS = ["plan", "stack", "team"] as const
 export type StepId = (typeof STEP_IDS)[number]
 
 const IntentSchema = Schema.Literals(ONBOARDING_INTENT_IDS)
-const StoredIntentSchema = Schema.Literals([...ONBOARDING_INTENT_IDS, "slow_requests", "consolidate", "visibility"])
+const StoredIntentSchema = Schema.Literals([
+	...ONBOARDING_INTENT_IDS,
+	"slow_requests",
+	"consolidate",
+	"visibility",
+])
 const CURRENT_INTENT = {
 	traces: "traces",
 	logs: "logs",
@@ -45,11 +57,21 @@ const StoredQualifyAnswers = Schema.Struct({
 		decode: SchemaGetter.transform(({ role, roleDetail, intent, intents }) => ({
 			role: role === "engineer" ? "backend" : role,
 			roleDetail: roleDetail ?? "",
-			intents: [...new Set((intents ?? (intent ? [intent] : [])).map((stored) => CURRENT_INTENT[stored]))],
+			intents: [
+				...new Set((intents ?? (intent ? [intent] : [])).map((stored) => CURRENT_INTENT[stored])),
+			],
 		})),
 		encode: SchemaGetter.transform(({ role, roleDetail, intents }) => ({ role, roleDetail, intents })),
 	}),
 )
+
+export const StackAnswers = Schema.Struct({
+	languages: Schema.Array(Schema.Literals(STACK_LANGUAGE_IDS)),
+	platforms: Schema.Array(Schema.Literals(STACK_PLATFORM_IDS)),
+})
+export type StackAnswers = typeof StackAnswers.Type
+
+export const NO_STACK: StackAnswers = { languages: [], platforms: [] }
 
 export const QuickStartState = Schema.Struct({
 	completedSteps: Schema.Record(Schema.String, Schema.Boolean),
@@ -57,21 +79,42 @@ export const QuickStartState = Schema.Struct({
 	selectedFramework: Schema.NullOr(Schema.String),
 	activeStep: Schema.String,
 	qualifyAnswers: QualifyAnswers,
+	stack: StackAnswers,
 	checklistDismissed: Schema.Boolean,
 	checklistExpanded: Schema.Boolean,
 })
 export type QuickStartState = typeof QuickStartState.Type
 
+/** The old role, intent, team, plan wizard ended on its plan step: such a save stays finished. */
+const isLegacyFinished = (completed: Readonly<Record<string, boolean>>): boolean =>
+	("role" in completed || "intent" in completed) && completed.plan === true
+
 const StoredQuickStartState = Schema.fromJsonString(
-	Schema.Struct({ ...QuickStartState.fields, qualifyAnswers: StoredQualifyAnswers }),
+	Schema.Struct({
+		...QuickStartState.fields,
+		qualifyAnswers: StoredQualifyAnswers,
+		stack: Schema.optionalKey(StackAnswers),
+	}).pipe(
+		Schema.decodeTo(QuickStartState, {
+			decode: SchemaGetter.transform((stored) => ({
+				...stored,
+				stack: stored.stack ?? NO_STACK,
+				completedSteps: isLegacyFinished(stored.completedSteps)
+					? Object.fromEntries(STEP_IDS.map((step) => [step, true]))
+					: stored.completedSteps,
+			})),
+			encode: SchemaGetter.transform((state) => state),
+		}),
+	),
 )
 
 export const DEFAULT_QUICK_START_STATE: QuickStartState = {
 	completedSteps: {},
 	dismissed: false,
 	selectedFramework: null,
-	activeStep: "role",
+	activeStep: "plan",
 	qualifyAnswers: { role: null, roleDetail: "", intents: [] },
+	stack: NO_STACK,
 	checklistDismissed: false,
 	checklistExpanded: true,
 }
@@ -93,32 +136,50 @@ export const writeQuickStartState = (key: string, state: QuickStartState): Effec
 		Effect.sync(() => writeLocalStorage(key, json)),
 	).pipe(Effect.ignore)
 
-/** `resolveQuickStartStep`: a removed active step resumes at the first incomplete one. */
-export const resolveQuickStartStep = (state: QuickStartState): StepId =>
-	STEP_IDS.find((step) => step === state.activeStep) ??
-	STEP_IDS.find((step) => state.completedSteps[step] !== true) ??
-	"plan"
+/**
+ * The step on screen: the saved one, else the first incomplete one. An org that already holds a
+ * plan skips the plan step, wherever the save left off.
+ */
+export const resolveQuickStartStep = (state: QuickStartState, hasPlan: boolean): StepId => {
+	const steps = STEP_IDS.filter((step) => !(hasPlan && step === "plan"))
+	return (
+		steps.find((step) => step === state.activeStep) ??
+		steps.find((step) => state.completedSteps[step] !== true) ??
+		"team"
+	)
+}
 
 /** `completeStep(id)`: mark it done and, if it is the current step, move on to the next. */
-export const completeStep = (state: QuickStartState, id: StepId): QuickStartState => {
+export const completeStep = (state: QuickStartState, id: StepId, hasPlan: boolean): QuickStartState => {
 	const index = STEP_IDS.indexOf(id)
 	const next = STEP_IDS[index + 1]
 	return {
 		...state,
 		completedSteps: { ...state.completedSteps, [id]: true },
-		activeStep: resolveQuickStartStep(state) === id && next !== undefined ? next : state.activeStep,
+		activeStep:
+			resolveQuickStartStep(state, hasPlan) === id && next !== undefined ? next : state.activeStep,
 	}
 }
 
-export const toggledIntent = (answers: QualifyAnswers, intent: OnboardingIntent): QualifyAnswers => ({
-	...answers,
-	intents: answers.intents.includes(intent)
-		? answers.intents.filter((item) => item !== intent)
-		: [...answers.intents, intent],
+/** Onboarding is over once its last step is done. */
+export const isQuickStartFinished = (state: QuickStartState): boolean =>
+	state.completedSteps[STEP_IDS[STEP_IDS.length - 1] ?? "team"] === true
+
+/** A finished save with no plan behind it: back to the plan step, and no longer finished. */
+export const reopenedForPlan = (state: QuickStartState): QuickStartState => ({
+	...state,
+	activeStep: "plan",
+	completedSteps: {
+		...state.completedSteps,
+		plan: false,
+		[STEP_IDS[STEP_IDS.length - 1] ?? "team"]: false,
+	},
 })
 
-export const pickedRole = (answers: QualifyAnswers, role: OnboardingRole, detail: string): QualifyAnswers => ({
-	...answers,
-	role,
-	roleDetail: detail,
+/** New stack picks, and what the setup checklist derives from them (its intents and first snippet). */
+export const withStack = (state: QuickStartState, stack: StackPicks): QuickStartState => ({
+	...state,
+	stack: { languages: [...stack.languages], platforms: [...stack.platforms] },
+	qualifyAnswers: { ...state.qualifyAnswers, intents: [...intentsOf(stack)] },
+	selectedFramework: frameworkOf(stack),
 })

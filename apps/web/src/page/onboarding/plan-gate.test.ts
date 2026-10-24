@@ -45,10 +45,8 @@ describe("plan gate", () => {
 		)
 	})
 
-	test("a subscriber leaves the onboarding wizard and the plan picker", () => {
-		expect(gate(AppRoute.QuickStart({ search: {} }), customerWith("active")).redirect).toEqual(
-			Option.some({ url: "/", isReplace: true }),
-		)
+	test("a subscriber finishes the onboarding steps after the plan, and leaves the plan picker", () => {
+		expect(gate(AppRoute.QuickStart({ search: {} }), customerWith("active")).redirect).toEqual(Option.none())
 		expect(gate(AppRoute.SelectPlan({ search: { redirect_url: "/traces" } }), customerWith("active")).redirect).toEqual(
 			Option.some({ url: "/traces", isReplace: true }),
 		)
