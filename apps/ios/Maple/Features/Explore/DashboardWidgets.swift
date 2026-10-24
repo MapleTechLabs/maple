@@ -195,6 +195,36 @@ private struct DashboardLineChart: View {
 		return ResolvedTimeWindow.parse(text.replacingOccurrences(of: " ", with: "T") + "Z")
 	}
 
+	private static func domain(_ points: [Point]) -> ClosedRange<Date> {
+		let dates = points.map(\.date)
+		guard let first = dates.min(), let last = dates.max(), first < last else { return Date()...Date() }
+		return first...last
+	}
+
+	/// `14:30`: 24-hour whatever the locale, so labels always read ascending.
+	private static let clock: DateFormatter = {
+		let formatter = DateFormatter()
+		formatter.locale = Locale(identifier: "en_US_POSIX")
+		formatter.dateFormat = "HH:mm"
+		return formatter
+	}()
+
+	/// `Oct 21`, once ticks sit a day or more apart.
+	private static let day: DateFormatter = {
+		let formatter = DateFormatter()
+		formatter.locale = Locale(identifier: "en_US_POSIX")
+		formatter.dateFormat = "MMM d"
+		return formatter
+	}()
+
+	/// Five evenly spaced, ascending labels across the window, the last one `now`.
+	private static func ticks(_ points: [Point]) -> [Date] {
+		let range = domain(points)
+		let span = range.upperBound.timeIntervalSince(range.lowerBound)
+		guard span > 0 else { return [] }
+		return (0...4).map { range.lowerBound.addingTimeInterval(span * Double($0) / 4) }
+	}
+
 	var body: some View {
 		let points = points
 		let series = Array(Set(points.map(\.series))).sorted()
@@ -212,11 +242,17 @@ private struct DashboardLineChart: View {
 				.interpolationMethod(.monotone)
 			}
 			.chartLegend(.hidden)
+			.chartXScale(domain: Self.domain(points))
 			.chartXAxis {
-				AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-					AxisValueLabel(format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute())
-						.font(Typo.micro)
-						.foregroundStyle(Token.mutedForeground)
+				let ticks = Self.ticks(points)
+				let format = ticks.count > 1 && ticks[1].timeIntervalSince(ticks[0]) >= 86_400 ? Self.day : Self.clock
+				AxisMarks(values: ticks) { value in
+					let date = value.as(Date.self)
+					AxisValueLabel(anchor: date == ticks.first ? .topLeading : date == ticks.last ? .topTrailing : .top) {
+						Text(date == ticks.last ? "now" : date.map(format.string(from:)) ?? "")
+							.font(Typo.micro)
+							.foregroundStyle(Token.mutedForeground)
+					}
 				}
 			}
 			.chartYAxis {
