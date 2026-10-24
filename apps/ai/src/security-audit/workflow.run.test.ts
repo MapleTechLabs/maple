@@ -7,10 +7,13 @@ import {
 	RepoSandboxService,
 	type RepoSandboxServiceApi,
 } from "@maple/backend/services/sandbox/RepoSandboxService"
-import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import {
+	SecurityAuditStore,
+	type SecurityAuditOrgStore,
+} from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { OrgId as OrgIdSchema } from "@maple/domain/http"
 import { UserId } from "@maple/domain/primitives"
-import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
+import type { SecurityAuditTargetId, SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { type AgentInvocation, type AuditAgentsApi, coverageId, type Finding } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
@@ -356,16 +359,24 @@ const keysFinding: Finding = {
 	confidence: { score: "medium", reason: "source trace complete" },
 }
 
+/** An open finding on the target, opened by an earlier settled run (a finished run takes no writes). */
+const seedOpenFinding = (store: SecurityAuditOrgStore, targetId: SecurityAuditTargetId) =>
+	Effect.gen(function* () {
+		const seed = yield* store.startRun({ targetId, kind: "manual", sourceRef: SHA })
+		yield* store.saveFindings(seed.id, [keysFinding])
+		yield* store.finishRun(seed.id, { status: "complete" })
+	})
+
 describe("auditWithAgents, settling", () => {
 	it.effect("never marks a finding fixed when the diff against the prior run could not be read", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
+			yield* seedOpenFinding(store, target.id)
 			const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
 			yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
 				Effect.provideService(RepoSandboxService, sandbox([])),
 				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
 			)
-			yield* store.saveFindings(prior.id, [keysFinding])
 			const next = yield* store.startRun({
 				targetId: target.id,
 				kind: "revalidation",
@@ -403,12 +414,12 @@ describe("auditWithAgents, settling", () => {
 	it.effect("leaves a finding open when the run that missed it was only a quick pass", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
+			yield* seedOpenFinding(store, target.id)
 			const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
 			yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
 				Effect.provideService(RepoSandboxService, sandbox([])),
 				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
 			)
-			yield* store.saveFindings(prior.id, [keysFinding])
 			const next = yield* store.startRun({
 				targetId: target.id,
 				kind: "revalidation",
@@ -447,17 +458,58 @@ describe("auditWithAgents, settling", () => {
 		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
 	)
 
+	it.effect("keeps a run cancelled mid-flight cancelled and marks nothing fixed when it settles", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			yield* seedOpenFinding(store, target.id)
+			const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+			yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const next = yield* store.startRun({
+				targetId: target.id,
+				kind: "revalidation",
+				sourceRef: "main",
+			})
+			const scripted = scriptedAgents([])
+			// An admin cancels while agents are in flight; the run still completes and settles after.
+			const cancelling: AuditAgentsApi = {
+				run: (invocation) =>
+					store
+						.cancelRun(next.id, Schema.decodeUnknownSync(UserId)("user_admin"))
+						.pipe(Effect.orDie, Effect.andThen(scripted.run(invocation))),
+			}
+			const result = yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
+				Effect.succeed(cancelling),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const row = yield* store.getRun(next.id)
+			const findings = yield* store.listFindings(target.id)
+			assert.deepStrictEqual(
+				[
+					result.status,
+					Option.map(row, (r) => [r.status, r.incompleteReason]),
+					findings.map((f) => f.status),
+				],
+				["complete", Option.some(["incomplete", "cancelled"]), ["open"]],
+			)
+		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	)
+
 	it.effect(
 		"marks an open finding fixed when a complete run no longer reports it and its files changed",
 		() =>
 			Effect.gen(function* () {
 				const { store, target } = yield* setup
+				yield* seedOpenFinding(store, target.id)
 				const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
 				yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
 					Effect.provideService(RepoSandboxService, sandbox([])),
 					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
 				)
-				yield* store.saveFindings(prior.id, [keysFinding])
 				const next = yield* store.startRun({
 					targetId: target.id,
 					kind: "revalidation",

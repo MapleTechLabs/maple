@@ -135,10 +135,23 @@ export class SchemaApplyWorkflow extends Context.Service<
 	WorkflowStarter<{ readonly orgId: string }>
 >()("@maple/backend/platform/SchemaApplyWorkflow") {}
 
+export class WorkflowCancelError extends Schema.TaggedError<WorkflowCancelError>()(
+	"@maple/backend/platform/WorkflowCancelError",
+	{
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
+export interface SecurityAuditWorkflowControl extends WorkflowStarter<SecurityAuditWorkflowPayload> {
+	/** Terminates the run's instance; one that is already gone or finished is not an error. */
+	readonly cancel: (runId: string) => Effect.Effect<void, WorkflowCancelError>
+}
+
 /** One security-audit run, hosted by the ai Worker because the agents run there. Keyed by run id. */
 export class SecurityAuditWorkflowStarter extends Context.Service<
 	SecurityAuditWorkflowStarter,
-	WorkflowStarter<SecurityAuditWorkflowPayload>
+	SecurityAuditWorkflowControl
 >()("@maple/backend/platform/SecurityAuditWorkflowStarter") {}
 
 // ── Email (send_email) ───────────────────────────────────────────────────────
