@@ -372,6 +372,10 @@ const groupHeaderRow = (
 
 const formatLatencyText = (ms: number) => (ms > 0 ? formatLatency(ms) : "—")
 
+/** Whether a sibling in the group serves the same route, so only the method tells them apart. */
+const sharesRoute = (endpoints: ReadonlyArray<Endpoint>, endpoint: Endpoint) =>
+	endpoints.some((other) => other !== endpoint && other.route === endpoint.route)
+
 /** `GroupRows`: a collapsed bucket with its explainer, or a stem header and its rows. */
 export const groupRows = (
 	h: H,
@@ -441,7 +445,11 @@ export const groupRows = (
 				],
 				"border-b hover:bg-transparent",
 			),
-			...(isExpanded ? group.endpoints.map((endpoint) => endpointRow(h, endpoint, "", context)) : []),
+			...(isExpanded
+				? group.endpoints.map((endpoint) =>
+						endpointRow(h, endpoint, "", context, sharesRoute(group.endpoints, endpoint)),
+					)
+				: []),
 		]
 	}
 	return [
@@ -457,13 +465,7 @@ export const groupRows = (
 				]
 			: []),
 		...group.endpoints.map((endpoint) =>
-			endpointRow(
-				h,
-				endpoint,
-				group.stem,
-				context,
-				group.endpoints.some((other) => other !== endpoint && other.route === endpoint.route),
-			),
+			endpointRow(h, endpoint, group.stem, context, sharesRoute(group.endpoints, endpoint)),
 		),
 	]
 }
