@@ -50,9 +50,11 @@ struct PercentileTriplet: View {
 	let p95: Double
 	let p99: Double
 	var font: Font = Typo.tiny
+	/// False drops the `p50`/`p95`/`p99` captions when a header names them.
+	var showsLabels = true
 
 	var body: some View {
-		HStack(spacing: 10) {
+		HStack(spacing: showsLabels ? 10 : 12) {
 			item("p50", p50, Token.chartP50)
 			item("p95", p95, Token.chartP95)
 			item("p99", p99, Token.chartP99)
@@ -62,8 +64,10 @@ struct PercentileTriplet: View {
 
 	private func item(_ label: String, _ ms: Double, _ tint: Color) -> some View {
 		HStack(spacing: 3) {
-			Text(label)
-				.foregroundStyle(Token.mutedForeground.opacity(0.7))
+			if showsLabels {
+				Text(label)
+					.foregroundStyle(Token.mutedForeground.opacity(0.7))
+			}
 			Text(Format.latency(ms))
 				.foregroundStyle(tint)
 		}
