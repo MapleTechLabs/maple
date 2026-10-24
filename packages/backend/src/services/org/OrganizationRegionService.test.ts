@@ -202,4 +202,64 @@ describe("OrganizationRegionService", () => {
 			assert.isTrue(Exit.isSuccess(yield* Fiber.join(pending)))
 		}),
 	)
+
+	it.effect("parallel misses in one isolate read Clerk once and share its answer", () =>
+		Effect.gen(function* () {
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			const slowClerk = { read: (id: OrgId) => Effect.delay(directory.read(id), "120 millis") }
+			const regions = yield* isolate(makeMemoryBackend(), slowClerk)
+			const pending = yield* Effect.forkChild(
+				Effect.all(
+					Array.from({ length: 4 }, () => Effect.exit(regions.ensureServedHere(orgId))),
+					{ concurrency: "unbounded" },
+				),
+			)
+			yield* TestClock.adjust("200 millis")
+			const exits = yield* Fiber.join(pending)
+			assert.isTrue(exits.every(Exit.isSuccess))
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+		}),
+	)
+
+	it.effect("waiting requests share a refusal too, which is never remembered", () =>
+		Effect.gen(function* () {
+			const directory = yield* makeDirectory(Option.some(chosen("eu")))
+			const slowClerk = { read: (id: OrgId) => Effect.delay(directory.read(id), "120 millis") }
+			const regions = yield* isolate(makeMemoryBackend(), slowClerk)
+			const pending = yield* Effect.forkChild(
+				Effect.all(
+					Array.from({ length: 3 }, () => Effect.exit(regions.ensureServedHere(orgId))),
+					{ concurrency: "unbounded" },
+				),
+			)
+			yield* TestClock.adjust("200 millis")
+			assert.isTrue((yield* Fiber.join(pending)).every(isWrongRegion))
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+			// The next request reads again, so a region just chosen here is served at once.
+			yield* Ref.set(directory.answer, Option.some(chosen("us")))
+			const next = yield* Effect.forkChild(Effect.exit(regions.ensureServedHere(orgId)))
+			yield* TestClock.adjust("200 millis")
+			assert.isTrue(Exit.isSuccess(yield* Fiber.join(next)))
+		}),
+	)
+
+	it.effect("a request waiting on a hung read gives up and reads for itself", () =>
+		Effect.gen(function* () {
+			const directory = yield* makeDirectory(Option.some(chosen("eu")))
+			const calls = yield* Ref.make(0)
+			const firstHangs = {
+				read: (id: OrgId) =>
+					Ref.getAndUpdate(calls, (n) => n + 1).pipe(
+						Effect.flatMap((n) => (n === 0 ? Effect.never : directory.read(id))),
+					),
+			}
+			const regions = yield* isolate(makeMemoryBackend(), firstHangs)
+			yield* Effect.forkChild(regions.ensureServedHere(orgId))
+			yield* TestClock.adjust("10 millis")
+			const follower = yield* Effect.forkChild(Effect.exit(regions.ensureServedHere(orgId)))
+			yield* TestClock.adjust("2 seconds")
+			assert.isTrue(isWrongRegion(yield* Fiber.join(follower)))
+			assert.strictEqual(yield* Ref.get(calls), 2)
+		}),
+	)
 })

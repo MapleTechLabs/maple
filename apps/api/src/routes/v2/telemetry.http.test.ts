@@ -183,6 +183,10 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 	if (sql.includes("AS environment")) {
 		return [{ environment: "production" }, { environment: "staging" }]
 	}
+	// The per-operation sparkline read the dashboard's Operations list carries.
+	if (sql.includes("service_operations_minutely") && sql.includes("AS bucket")) {
+		return [{ bucket: "2026-07-15 12:00:00", spanName: "GET /checkout", count: "8" }]
+	}
 	if (sql.includes("bSpanName") || sql.includes("service_operations_minutely")) {
 		return [
 			{
@@ -995,6 +999,249 @@ describe("v2 telemetry reads over HTTP", () => {
 		expect(response.status).toBe(502)
 		expect(response.body.error.code).toBe("warehouse_query_failed")
 		expect(JSON.stringify(response.body)).not.toContain("SECRET_CLICKHOUSE_DIAGNOSTIC")
+		await harness.dispose()
+	})
+})
+
+interface CachedDirectCall {
+	readonly route: string
+	readonly payload: unknown
+	readonly policy: unknown
+}
+
+/** The query engine stub, recording which dashboard cache entry each read went through. */
+const recordingQueryEngine = (calls: CachedDirectCall[]): QueryEngineServiceApi => ({
+	...queryEngineStub,
+	cachedDirect: (_tenant, route, payload, effect, policy) => {
+		calls.push({ route, payload, policy })
+		return effect
+	},
+})
+
+const observingWarehouse = (
+	observedSql: string[],
+	rows: (sql: string) => ReadonlyArray<Record<string, unknown>> = rowsForSql,
+): WarehouseQueryServiceApi => ({
+	...warehouseStub,
+	compiledQuery: (_tenant, compiled) => {
+		const sql = compiledQueryOf(compiled).sql
+		observedSql.push(sql)
+		return compiledQueryOf(compiled).decodeRows(rows(sql))
+	},
+	compiledQueryFirst: (_tenant, compiled) => {
+		const sql = compiledQueryOf(compiled).sql
+		observedSql.push(sql)
+		return compiledQueryOf(compiled)
+			.decodeRows(rows(sql))
+			.pipe(Effect.map((decoded) => Option.fromNullishOr(decoded[0])))
+	},
+})
+
+const snapshotRows = (sql: string) =>
+	sql.includes("AS requestCount")
+		? [
+				{
+					serviceName: "api",
+					environment: "production",
+					requestCount: "7200",
+					errorCount: "72",
+					p95LatencyMs: "120",
+				},
+				{
+					serviceName: "worker",
+					environment: "",
+					requestCount: "0",
+					errorCount: "0",
+					p95LatencyMs: "0",
+				},
+			]
+		: rowsForSql(sql)
+
+describe("v2 reads shared with the dashboard", () => {
+	it("bounds a trace read by the probed start and caches it under the dashboard's key", async () => {
+		const observedSql: string[] = []
+		const calls: CachedDirectCall[] = []
+		const probed = (sql: string) =>
+			sql.includes("FROM trace_index") && !readsTraceSpans(sql)
+				? [{ timestamp: "2026-07-15 12:00:00" }]
+				: rowsForSql(sql)
+		const harness = makeHarness(observingWarehouse(observedSql, probed), recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["traces:read"])
+
+		const trace = await harness.request("GET", `/v2/traces/${TRACE_ID}`, key.secret)
+		expect(trace.status, JSON.stringify(trace.body)).toBe(200)
+		expect(trace.body.truncated).toBe(false)
+		expect(calls.map(({ route, payload }) => ({ route, payload }))).toEqual([
+			{ route: "spanHierarchy", payload: { traceId: TRACE_ID } },
+		])
+		const hierarchySql = observedSql.find(
+			(sql) => readsTraceSpans(sql) && sql.includes("AS relationship"),
+		)
+		expect(hierarchySql).toContain("'2026-07-15 11:00:00'")
+		expect(hierarchySql).toContain("'2026-07-15 13:00:00'")
+		await harness.dispose()
+	})
+
+	it("reports a trace past the span cap as truncated, returning the cap", async () => {
+		const many = (sql: string) =>
+			readsTraceSpans(sql) && sql.includes("AS relationship")
+				? Array.from({ length: 5001 }, (_, index) => ({
+						...hierarchyRow,
+						spanId: index.toString(16).padStart(16, "0"),
+					}))
+				: rowsForSql(sql)
+		const harness = makeHarness(observingWarehouse([], many))
+		const key = await harness.bootstrapKey(["traces:read"])
+		const trace = await harness.request("GET", `/v2/traces/${TRACE_ID}`, key.secret)
+		expect(trace.status).toBe(200)
+		expect(trace.body.truncated).toBe(true)
+		expect(trace.body.span_count).toBe(5000)
+		await harness.dispose()
+	})
+
+	it("reads overview operations from the dashboard's 30s Operations entry", async () => {
+		const calls: CachedDirectCall[] = []
+		const harness = makeHarness(warehouseStub, recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request(
+			"GET",
+			`/v2/services/api/overview?${windowQuery}&deployment_environment=production`,
+			key.secret,
+		)
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(response.body.operations.map((operation: { name: string }) => operation.name)).toEqual([
+			"GET /checkout",
+		])
+		// The payload the dashboard's service page sends for the same window.
+		expect(calls.find((call) => call.route === "serviceOperations")).toEqual({
+			route: "serviceOperations",
+			payload: {
+				serviceName: "api",
+				startTime: "2026-07-15 12:00:00",
+				endTime: "2026-07-15 13:00:00",
+				environments: ["production"],
+				bucketSeconds: 60,
+				limit: 25,
+			},
+			policy: 30,
+		})
+		await harness.dispose()
+	})
+
+	it("reads service baselines through the dashboard's baseline definition", async () => {
+		const calls: CachedDirectCall[] = []
+		const harness = makeHarness(warehouseStub, recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("GET", `/v2/services?${windowQuery}`, key.secret)
+		expect(response.status).toBe(200)
+		expect(response.body.data[0].baseline_p95_latency_ms).toBe(35)
+		expect(calls.find((call) => call.route === "serviceHealthBaseline")?.payload).toMatchObject({
+			definition: "serviceHealthBaseline",
+			input: { startTime: "2026-07-08 12:00:00", endTime: "2026-07-15 12:00:00" },
+		})
+		await harness.dispose()
+	})
+
+	it("returns both health windows from the overview's snapshot read", async () => {
+		const calls: CachedDirectCall[] = []
+		const harness = makeHarness(observingWarehouse([], snapshotRows), recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: START,
+			end_time: END,
+			deployment_environment: "production",
+			previous_start_time: "2026-07-15T11:00:00.000Z",
+			previous_end_time: START,
+		})
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		const services = [
+			{
+				object: "service_health.service",
+				service_name: "api",
+				deployment_environment: "production",
+				request_count: 7200,
+				error_count: 72,
+				error_rate: 0.01,
+				p95_latency_ms: 120,
+				throughput: 2,
+			},
+			{
+				object: "service_health.service",
+				service_name: "worker",
+				deployment_environment: null,
+				request_count: 0,
+				error_count: 0,
+				error_rate: 0,
+				p95_latency_ms: 0,
+				throughput: 0,
+			},
+		]
+		expect(response.body).toEqual({
+			object: "service_health",
+			start_time: START,
+			end_time: END,
+			services,
+			previous: { start_time: "2026-07-15T11:00:00.000Z", end_time: START, services },
+		})
+		expect(
+			calls.filter((call) => call.route === "serviceHealthSnapshot").map((call) => call.payload),
+		).toMatchObject([
+			{
+				definition: "serviceHealthSnapshot",
+				input: {
+					startTime: "2026-07-15 12:00:00",
+					endTime: "2026-07-15 13:00:00",
+					environments: ["production"],
+				},
+			},
+			{
+				definition: "serviceHealthSnapshot",
+				input: {
+					startTime: "2026-07-15 11:00:00",
+					endTime: "2026-07-15 12:00:00",
+					environments: ["production"],
+				},
+			},
+		])
+		await harness.dispose()
+	})
+
+	it("omits the comparison window unless both of its bounds are sent", async () => {
+		const harness = makeHarness(observingWarehouse([], snapshotRows))
+		const key = await harness.bootstrapKey(["services:read"])
+		const single = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: START,
+			end_time: END,
+		})
+		expect(single.status).toBe(200)
+		expect(single.body.previous).toBeNull()
+
+		const halfPair = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: START,
+			end_time: END,
+			previous_start_time: "2026-07-15T11:00:00.000Z",
+		})
+		expect(halfPair.status).toBe(400)
+
+		const inverted = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: START,
+			end_time: END,
+			previous_start_time: START,
+			previous_end_time: "2026-07-15T11:00:00.000Z",
+		})
+		expect(inverted.status).toBe(400)
+		expect(inverted.body.error.param).toBe("previous_end_time")
+		await harness.dispose()
+	})
+
+	it("serves the health read to a services:read key and refuses one without it", async () => {
+		const harness = makeHarness(observingWarehouse([], snapshotRows))
+		const traces = await harness.bootstrapKey(["traces:read"])
+		const refused = await harness.request("POST", "/v2/services/health", traces.secret, {
+			start_time: START,
+			end_time: END,
+		})
+		expect(refused.status).toBe(403)
 		await harness.dispose()
 	})
 })

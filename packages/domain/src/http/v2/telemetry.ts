@@ -6,7 +6,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { defineV2Error, V2CursorInvalid, V2ParameterInvalid, V2TimeRangeInvalid } from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { V2QueryErrors, V2WarehouseReadErrors } from "./query-errors"
+import { V2CachedWarehouseReadErrors, V2QueryErrors, V2WarehouseReadErrors } from "./query-errors"
 
 export const V2TelemetryRangeTooLarge = defineV2Error({
 	tag: "@maple/http/v2/TelemetryRangeTooLargeError",
@@ -741,7 +741,8 @@ export class V2TracesApiGroup extends HttpApiGroup.make("traces")
 		HttpApiEndpoint.get("retrieve", "/:trace_id", {
 			params: { trace_id: TraceId },
 			success: V2Trace,
-			error: [...V2WarehouseReadErrors, V2TraceNotFound.schema],
+			// Edge-cached like the dashboard's read, so the cache's own deadline can surface.
+			error: [...V2CachedWarehouseReadErrors, V2TraceNotFound.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getTrace",
@@ -1163,6 +1164,95 @@ const serviceOverviewErrors = [
 	V2ServiceNotFound.schema,
 ] as const
 
+/**
+ * Golden signals for one (service, environment) pair, from the hourly entry-span aggregate.
+ * Counts are sampling-weighted, so `request_count` is an estimate of real requests.
+ */
+export const V2ServiceHealthEntry = Schema.Struct({
+	object: Schema.Literal("service_health.service"),
+	service_name: ServiceName,
+	/** Null when the service reports no deployment environment. */
+	deployment_environment: Schema.NullOr(Schema.String),
+	request_count: Schema.Number,
+	error_count: Schema.Number,
+	/** `error_count / request_count`, 0 for a service with no requests. */
+	error_rate: Schema.Number,
+	p95_latency_ms: Schema.Number,
+	/** Requests per second over the requested window. */
+	throughput: Schema.Number,
+}).annotate({
+	identifier: "ServiceHealthEntry",
+	title: "Service health entry",
+	description:
+		"One service in one deployment environment, with its request volume, errors and p95 latency.",
+})
+export type V2ServiceHealthEntry = Schema.Schema.Type<typeof V2ServiceHealthEntry>
+
+export const V2ServiceHealthWindow = Schema.Struct({
+	start_time: Timestamp,
+	end_time: Timestamp,
+	services: Schema.Array(V2ServiceHealthEntry),
+}).annotate({ identifier: "ServiceHealthWindow", title: "Service health window" })
+
+export const V2ServiceHealth = Schema.Struct({
+	object: Schema.Literal("service_health"),
+	start_time: Timestamp,
+	end_time: Timestamp,
+	services: Schema.Array(V2ServiceHealthEntry),
+	/** The comparison window, when `previous_start_time` and `previous_end_time` were sent. */
+	previous: Schema.NullOr(V2ServiceHealthWindow),
+}).annotate({
+	identifier: "ServiceHealth",
+	title: "Service health",
+	description:
+		"Per-service golden signals for a window, and optionally for a comparison window, read from the same hourly aggregate as the dashboard overview.",
+	examples: [
+		wireExample({
+			object: "service_health",
+			start_time: "2026-07-15T12:00:00.000Z",
+			end_time: "2026-07-15T13:00:00.000Z",
+			services: [
+				{
+					object: "service_health.service",
+					service_name: "api",
+					deployment_environment: "production",
+					request_count: 45_000,
+					error_count: 12,
+					error_rate: 0.00027,
+					p95_latency_ms: 142.9,
+					throughput: 12.5,
+				},
+			],
+			previous: null,
+		}),
+	],
+})
+export type V2ServiceHealth = Schema.Schema.Type<typeof V2ServiceHealth>
+
+const V2ServiceHealthParamsBase = Schema.Struct({
+	...RequiredTimeRange,
+	deployment_environment: Schema.optionalKey(Schema.String),
+	previous_start_time: Schema.optionalKey(Timestamp),
+	previous_end_time: Schema.optionalKey(Timestamp),
+})
+export const V2ServiceHealthParams = V2ServiceHealthParamsBase.check(
+	Schema.makeFilter(
+		(value) => (value.previous_start_time === undefined) === (value.previous_end_time === undefined),
+		{ message: "previous_start_time and previous_end_time must be sent together" },
+	),
+).annotate({
+	identifier: "ServiceHealthParams",
+	title: "Service health parameters",
+	examples: [
+		wireExample({
+			start_time: "2026-07-15T12:00:00.000Z",
+			end_time: "2026-07-15T13:00:00.000Z",
+			previous_start_time: "2026-07-15T11:00:00.000Z",
+			previous_end_time: "2026-07-15T12:00:00.000Z",
+		}),
+	],
+})
+
 export class V2ServicesApiGroup extends HttpApiGroup.make("services")
 	.add(
 		HttpApiEndpoint.get("list", "/", {
@@ -1175,6 +1265,20 @@ export class V2ServicesApiGroup extends HttpApiGroup.make("services")
 				summary: "List services",
 				description:
 					"Lists services aggregated by name in an explicit time window. Requires `services:read`.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("health", "/health", {
+			payload: V2ServiceHealthParams,
+			success: V2ServiceHealth,
+			error: [...windowErrors, ...V2CachedWarehouseReadErrors],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "queryServiceHealth",
+				summary: "Query service health",
+				description:
+					"Returns request volume, error rate and p95 latency per (service, environment) for a window, and for an optional comparison window in the same call. Reads the hourly entry-span aggregate the dashboard overview reads, so each window's edges widen to whole hours. Requires `services:read`.",
 			}),
 		),
 	)
