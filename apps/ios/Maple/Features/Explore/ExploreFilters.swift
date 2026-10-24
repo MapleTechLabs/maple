@@ -34,7 +34,7 @@ struct ExploreQueryBar: View {
 				.foregroundStyle(Token.mutedForeground)
 				.accessibilityHidden(true)
 			TextField(prompt, text: $text)
-				.font(Typo.bodyQuery)
+				.font(Typo.query)
 				.foregroundStyle(Token.foreground)
 				.textInputAutocapitalization(.never)
 				.autocorrectionDisabled()
@@ -69,11 +69,6 @@ struct ExploreQueryBar: View {
 				.stroke(Token.input, lineWidth: Token.hairline)
 		)
 	}
-}
-
-private extension Typo {
-	/// The query text: Geist Mono at 13, between body and small.
-	static let bodyQuery = Font.custom(Typo.bodyFamily, size: 13)
 }
 
 /// A filter chip. Unset it reads `key ⌄` and opens its menu; set it reads

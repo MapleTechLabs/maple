@@ -24,13 +24,8 @@ struct IncidentCard: Identifiable, Hashable, Codable {
 	}
 }
 
-/// One service across every deployment environment it reports from.
-///
-/// `serviceHealth` returns a row per (service, environment); Home wants one
-/// row per service, so rows are folded by name: request and error counts and
-/// throughput are summed, the error rate is recomputed as errors / requests,
-/// and p95 is the max across the service's environments (a p95 cannot be
-/// summed or averaged, and the worst environment is the one worth flagging).
+/// One service folded across its environments: counts and throughput summed,
+/// error rate recomputed, p95 the worst environment's (a p95 cannot be summed).
 struct ServiceSummary: Codable, Hashable {
 	let name: String
 	let requestCount: Double
@@ -232,13 +227,9 @@ final class HomeModel {
 		await loader.loadIfNeeded()
 	}
 
-	/// The first pass: only what gates the paint.
-	///
-	/// Service health and open incidents *are* the screen, so they alone are
-	/// awaited here and `screen.load` measures time-to-content. Service health
-	/// is one call carrying both the current and the previous equally long
-	/// window: the query the web overview runs. Issue and anomaly counts and
-	/// the sparklines are a second pass over the loaded board.
+	/// The first pass: service health (current and previous window, as the web
+	/// overview queries it) and open incidents, the screen itself. Counts and
+	/// sparklines follow in a second pass.
 	private func fetch() async throws -> HomeSnapshot {
 		decorations?.cancel()
 		let now = Date()
