@@ -44,7 +44,9 @@ export const railwayFlow = (model: Model): FlowSpec => {
 			live:
 				live === "healthy"
 					? "Live. Maple syncs every 5 minutes."
-					: "Saved. Safe to leave while the backfill runs.",
+					: live === "attention"
+						? "Saved, but Railway is failing. Fix the token or the environment below."
+						: "Saved. Safe to leave while the backfill runs.",
 		},
 	}
 }
