@@ -73,6 +73,13 @@ const investigationGuides = [
         description: "Measure the right latency clock, isolate the slow requests, and trace a regression to the release and operation responsible.",
         read: "14 min",
     },
+    {
+        href: "/guides/incident-response",
+        label: "On-call",
+        title: "Incident response, step by step",
+        description: "An incident response process for small teams: an afternoon of preparation, the response steps for one or two engineers, and lightweight postmortems.",
+        read: "12 min",
+    },
 ];
 
 const fieldNotes = (await getCollection("blog") as BlogPost[])
