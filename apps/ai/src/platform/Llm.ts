@@ -152,6 +152,10 @@ export interface LlmSettings {
 	readonly MAPLE_TRIAGE_MODEL_WORKERS_AI?: string | undefined
 	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
 	readonly MAPLE_REVIEW_MODEL_OPENROUTER?: string | undefined
+	/** OpenRouter model for security-audit discovery (reconnaissance, hunters, critics). */
+	readonly MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER?: string | undefined
+	/** OpenRouter model for security-audit validation; a different model from discovery by design. */
+	readonly MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER?: string | undefined
 	/** Context window in tokens, overriding {@link MODEL_LIMITS} for the configured model. */
 	readonly MAPLE_TRIAGE_MODEL_CONTEXT?: string | undefined
 	/** Max completion tokens, overriding {@link MODEL_LIMITS} for the configured model. */
@@ -193,6 +197,8 @@ export const llmSettingsConfig: Config.Config<LlmSettings> = Config.all({
 	MAPLE_TRIAGE_MODEL_OPENROUTER: optionalTrimmed("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 	MAPLE_TRIAGE_MODEL_WORKERS_AI: optionalTrimmed("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
 	MAPLE_REVIEW_MODEL_OPENROUTER: optionalTrimmed("MAPLE_REVIEW_MODEL_OPENROUTER"),
+	MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER"),
+	MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER"),
 	MAPLE_TRIAGE_MODEL_CONTEXT: optionalTrimmed("MAPLE_TRIAGE_MODEL_CONTEXT"),
 	MAPLE_TRIAGE_MODEL_OUTPUT: optionalTrimmed("MAPLE_TRIAGE_MODEL_OUTPUT"),
 	MAPLE_TRIAGE_REASONING_EFFORT: optionalTrimmed("MAPLE_TRIAGE_REASONING_EFFORT"),
@@ -571,6 +577,36 @@ export const resolveReviewModel = (
 				),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				undefined,
+				tags,
+				false,
+				true,
+			)
+
+/** Security-audit discovery default: a frontier model, since flash-class models missed seeded bugs. */
+export const DEFAULT_AUDIT_DISCOVERY_MODEL = "anthropic/claude-sonnet-5.5"
+/** Validation runs on a different model than discovery, so a verifier does not share the hunter's blind spots. */
+export const DEFAULT_AUDIT_VALIDATION_MODEL = "openai/gpt-6.1-sol"
+
+/**
+ * A security-audit stage's model. Unattended like a review: deltas coalesce and long calls retry.
+ * On the Workers AI provider both stages fall back to the triage model.
+ */
+export const resolveSecurityAuditModel = (
+	settings: LlmSettings,
+	stage: "discovery" | "validation",
+	tags?: LlmCallTags,
+): ResolvedModel =>
+	resolveLlmProvider(settings) === "workers-ai"
+		? resolveTriageModel(settings, tags)
+		: openRouterModel(
+				settings,
+				stage === "discovery"
+					? (readString(settings, "MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER") ??
+							DEFAULT_AUDIT_DISCOVERY_MODEL)
+					: (readString(settings, "MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER") ??
+							DEFAULT_AUDIT_VALIDATION_MODEL),
+				"MAPLE_TRIAGE_REASONING_EFFORT",
+				"high",
 				tags,
 				false,
 				true,
