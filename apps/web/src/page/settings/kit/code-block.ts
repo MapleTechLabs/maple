@@ -20,6 +20,9 @@ export type CodeBlockOptions<M> = Readonly<{
 	isPlain?: boolean
 }>
 
+const escapeHtml = (text: string): string =>
+	text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+
 export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): Html =>
 	h.div(
 		[h.Class(cn("relative overflow-clip rounded-md border border-border bg-muted", options.className))],
@@ -43,12 +46,19 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 					h.pre(
 						[h.Class("text-xs leading-relaxed")],
 						[
-							options.isPlain === true
-								? h.code([h.Class("whitespace-pre-wrap")], [options.code])
-								: h.code(
-										[h.InnerHTML(options.highlighted ?? highlightCode(options.code))],
-										[],
+							// Always markup, never a text child: tabs reuse this node across blocks, and
+							// switching between the two kinds makes the patch remove a child that is gone.
+							h.code(
+								[
+									...(options.isPlain === true ? [h.Class("whitespace-pre-wrap")] : []),
+									h.InnerHTML(
+										options.isPlain === true
+											? escapeHtml(options.code)
+											: (options.highlighted ?? highlightCode(options.code)),
 									),
+								],
+								[],
+							),
 						],
 					),
 				],
