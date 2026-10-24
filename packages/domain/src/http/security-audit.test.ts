@@ -1,6 +1,8 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { SecurityAuditCreateTargetRequest } from "./security-audit"
+import { IsoDateTimeString } from "../primitives"
+import { publicHttpErrorBody } from "./error-policy"
+import { SecurityAuditBudgetExhaustedError, SecurityAuditCreateTargetRequest } from "./security-audit"
 
 const failureOf = (input: unknown) => {
 	const result = Schema.decodeUnknownExit(SecurityAuditCreateTargetRequest)(input)
@@ -26,5 +28,23 @@ describe("SecurityAuditCreateTargetRequest", () => {
 		expect(failureOf({ repository: "acme/api", branch: "main.lock" })).toContain(
 			"Expected a branch name that does not end in '/' or '.lock'",
 		)
+	})
+})
+
+describe("SecurityAuditBudgetExhaustedError", () => {
+	it("is retryable at the cycle reset it names, so a client may honour retry_at", () => {
+		const body = publicHttpErrorBody(
+			new SecurityAuditBudgetExhaustedError({
+				message: "Budget used up.",
+				remaining: 0,
+				required: 9,
+				resetsAt: Schema.decodeSync(IsoDateTimeString)("2026-11-01T00:00:00.000Z"),
+			}),
+		)
+		expect([body.retryable, body.recovery, body.retry_at]).toEqual([
+			true,
+			"retry",
+			"2026-11-01T00:00:00.000Z",
+		])
 	})
 })

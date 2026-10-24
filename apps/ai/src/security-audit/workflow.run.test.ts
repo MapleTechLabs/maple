@@ -14,7 +14,13 @@ import {
 import { OrgId as OrgIdSchema } from "@maple/domain/http"
 import { UserId } from "@maple/domain/primitives"
 import type { SecurityAuditTargetId, SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
-import { type AgentInvocation, type AuditAgentsApi, coverageId, type Finding } from "@maple/security-audit"
+import {
+	type AgentInvocation,
+	type AuditAgentsApi,
+	AuditStoreError,
+	coverageId,
+	type Finding,
+} from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
@@ -924,4 +930,81 @@ describe("sandbox failures across a step", () => {
 			)
 		}).pipe(Effect.provide(testLayer())),
 	)
+
+	it.effect("retries a refusal's writes through a transient store error and keeps its reason", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const attempts: Array<string> = []
+			const exit = yield* Effect.exit(
+				auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([], "5000 250000 524288000 0\n")),
+					Effect.provideServiceEffect(Cloudflare.WorkflowStep, nativeStep(attempts)),
+					Effect.provideServiceEffect(SecurityAuditStore, flakyStore("finishRun")),
+				),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				[
+					exit._tag,
+					attempts.filter((name) => name === "refuse").length,
+					Option.map(row, (r) => [r.status, r.error?.startsWith("repository_refused:")]),
+				],
+				["Failure", 2, Option.some(["failed", true])],
+			)
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("retries the execution-profile write instead of failing a run whose repository is fine", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const attempts: Array<string> = []
+			const result = yield* auditWithAgents(payloadFor(run.id), () =>
+				Effect.succeed(scriptedAgents([])),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideServiceEffect(Cloudflare.WorkflowStep, nativeStep(attempts)),
+				Effect.provideServiceEffect(SecurityAuditStore, flakyStore("setExecutionProfile")),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				[
+					result.status,
+					attempts.filter((name) => name === "save-execution-profile").length,
+					Option.map(row, (r) => [r.status, r.executionProfile?.mode]),
+				],
+				["complete", 2, Option.some(["complete", "source_only"])],
+			)
+		}).pipe(Effect.provide(testLayer())),
+	)
 })
+
+/** The real store, whose `method` fails once with a transient error before it works. */
+const flakyStore = (method: "finishRun" | "setExecutionProfile") =>
+	Effect.map(SecurityAuditStore, (real): SecurityAuditStore["Service"] => {
+		const failures = { left: 1 }
+		const transient = Effect.suspend(() =>
+			failures.left > 0
+				? Effect.sync(() => {
+						failures.left -= 1
+					}).pipe(Effect.andThen(Effect.fail(new AuditStoreError({ message: "connection reset" }))))
+				: Effect.void,
+		)
+		return {
+			...real,
+			forOrg: (orgId) => {
+				const org = real.forOrg(orgId)
+				return method === "finishRun"
+					? {
+							...org,
+							finishRun: (id, outcome) => Effect.andThen(transient, org.finishRun(id, outcome)),
+						}
+					: {
+							...org,
+							setExecutionProfile: (id, profile) =>
+								Effect.andThen(transient, org.setExecutionProfile(id, profile)),
+						}
+			},
+		}
+	})

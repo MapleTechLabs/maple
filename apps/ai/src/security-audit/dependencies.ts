@@ -49,14 +49,32 @@ export const inspectDependencies = (
 			configFilesToRead(paths),
 			(path) =>
 				sandbox.exec(orgId, target, { command: "git", args: [...GIT, "show", `HEAD:${path}`] }).pipe(
-					Effect.map((read) => (read.exitCode === 0 ? [{ path, text: read.stdout }] : [])),
+					Effect.map((read) =>
+						read.exitCode !== 0
+							? { path, text: undefined, cut: false }
+							: { path, text: read.truncated ? undefined : read.stdout, cut: read.truncated },
+					),
 					// One unreadable config file costs its own signals, not the label.
-					Effect.orElseSucceed(() => []),
+					Effect.orElseSucceed(() => ({ path, text: undefined, cut: false })),
 				),
 			{ concurrency: 4 },
 		)
 		const texts = new Map(
-			configs.flat().map((config): readonly [string, string] => [config.path, config.text]),
+			configs.flatMap((config): ReadonlyArray<readonly [string, string]> =>
+				config.text === undefined ? [] : [[config.path, config.text]],
+			),
 		)
-		return executionProfile(scanDependencies(paths, texts))
+		// A cut read is a prefix, so its file is uninspected rather than scanned as whole.
+		const cut = configs.filter((config) => config.cut).map((config) => config.path)
+		const profile = executionProfile(scanDependencies(paths, texts))
+		return cut.length === 0
+			? profile
+			: {
+					...profile,
+					mode: "source_only" as const,
+					reasons: [
+						...profile.reasons,
+						`config files too large to inspect in full (${cut.join(", ").slice(0, 300)})`,
+					],
+				}
 	}).pipe(Effect.catch((error) => Effect.succeed(uninspected(error.message))))

@@ -260,8 +260,15 @@ export const auditWithAgents = <E, R>(
 		)
 		if (violations.length > 0) {
 			const reason = refusalReason(violations)
-			yield* store.recordEvent(payload.runId, { _tag: "Note", message: reason })
-			yield* store.finishRun(payload.runId, { status: "failed", error: reason })
+			// Its own retried step, so a transient write error cannot replace the refusal's reason.
+			yield* durableStep(
+				"refuse",
+				Effect.gen(function* () {
+					yield* store.recordEvent(payload.runId, { _tag: "Note", message: reason })
+					yield* store.finishRun(payload.runId, { status: "failed", error: reason })
+				}),
+				STEP_RETRY,
+			)
 			return yield* new AuditRepositoryRefusedError({ message: reason, violations })
 		}
 		// Labelling only: which ecosystems it builds with, and what it could not install.
@@ -270,7 +277,11 @@ export const auditWithAgents = <E, R>(
 			inspectDependencies(sandbox, orgId, pinned),
 			STEP_RETRY,
 		)
-		yield* store.setExecutionProfile(payload.runId, executionProfile)
+		yield* durableStep(
+			"save-execution-profile",
+			store.setExecutionProfile(payload.runId, executionProfile),
+			STEP_RETRY,
+		)
 
 		// Prior records are read, not stepped: a finished run never changes, so a replay reads the same.
 		// Only a finished run of the same repository counts; anything else would make replays disagree.
