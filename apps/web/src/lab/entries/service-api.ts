@@ -41,8 +41,11 @@ const Message = defineMessageUnion({ GotPageMessage: { message: PageMessage } })
 type Message = typeof Message.Type
 type Return = Update.Return<Model, Message, Resources>
 
-/** One deploy at 11:41, so the responses chart draws its marker. */
-const RELEASES = [{ bucket: "2026-10-24T11:41:00.000Z", commitSha: "3f9c21a", count: 120, errorCount: 0 }]
+/** The build running at the window start, then one deploy at 11:41 (the first is the baseline). */
+const RELEASES = [
+	{ bucket: "2026-10-24T03:00:00.000Z", commitSha: "a81d0c4", count: 400, errorCount: 0 },
+	{ bucket: "2026-10-24T11:41:00.000Z", commitSha: "3f9c21a", count: 120, errorCount: 0 },
+]
 
 const isPending = (data: AsyncData.AsyncData<unknown, unknown>) => AsyncData.isLoading(data) || AsyncData.isRefreshing(data)
 
