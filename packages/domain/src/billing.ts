@@ -48,6 +48,25 @@ export const OPENROUTER_BYOK_FEATURE_ID = "openrouter_byok"
  */
 export const SECURITY_AUDIT_INVOCATIONS_FEATURE_ID = "security_audit_invocations"
 
+/**
+ * The plan features a pricing card lists, in display order. An allowlist on purpose: a feature
+ * added to a plan for metering or gating (security audits, raw AI tokens) stays off every card
+ * until it is added here.
+ */
+export const PRICING_CARD_FEATURE_IDS = [
+	"logs",
+	"traces",
+	"metrics",
+	"browser_sessions",
+	"product_events",
+	"ai_credits",
+] as const
+
+const pricingCardFeatureIds: ReadonlySet<string> = new Set(PRICING_CARD_FEATURE_IDS)
+
+export const isPricingCardFeature = (featureId: string | null | undefined): featureId is string =>
+	featureId !== null && featureId !== undefined && pricingCardFeatureIds.has(featureId)
+
 /** Does a raw Autumn customer carry this boolean feature? Autumn keys granted ones under `flags`. */
 export const customerHasFlag = (response: unknown, featureId: string): boolean =>
 	Predicate.isObject(response) &&

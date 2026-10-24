@@ -1,3 +1,4 @@
+import { isPricingCardFeature } from "@maple/domain/billing"
 import type { CatalogPlan } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { getTrialStatus } from "../../../lib/billing/plan-gating"
@@ -120,8 +121,7 @@ const planRow = (h: H, spend: SpendModel, plans: ReadonlyArray<CatalogPlan>, can
 const includedRun = (plan: CatalogPlan): string =>
 	plan.items
 		.flatMap((item) => {
-			if (item.featureId === undefined || item.featureId === null || item.included === undefined || item.included === null)
-				return []
+			if (!isPricingCardFeature(item.featureId) || item.included === undefined || item.included === null) return []
 			if (item.featureId === "ai_credits") return [`$${formatCount(item.included)} AI usage`]
 			const amount = formatCount(item.included)
 			return [featureUnit(item.featureId) === "GB" ? `${amount} GB ${item.featureId}` : `${amount} ${featureUnit(item.featureId)}`]

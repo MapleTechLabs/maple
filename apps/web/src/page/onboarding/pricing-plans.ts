@@ -1,4 +1,5 @@
 import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
+import { isPricingCardFeature } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
 import { formatCount, formatQuoteUnits, quoteUnits } from "../../lib/billing/usage"
 import type { IconName } from "../../ui/icon"
@@ -36,8 +37,6 @@ export const PLATFORM_FEATURE_ICONS = new Map<string, IconName>([
 	["shield", "ShieldIcon"],
 ])
 
-const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
-
 export const getPlanSlug = (plan: CatalogPlan): string => {
 	if (plan.autoEnable) return "starter"
 	const id = plan.id.toLowerCase()
@@ -61,7 +60,8 @@ const formatIncludedUsage = (item: CatalogPlanItem): string => {
 	if (item.unlimited) return "Unlimited"
 	if (item.featureId === "ai_credits" && item.included != null)
 		return `${formatCurrency(item.included, "usd")} included`
-	if (item.included != null) return `${formatCount(item.included)} ${COUNT_UNITS.get(item.featureId) ?? "GB"}`
+	if (item.included != null)
+		return `${formatCount(item.included)} ${COUNT_UNITS.get(item.featureId) ?? "GB"}`
 	return ""
 }
 
@@ -128,7 +128,7 @@ export type FeatureRow = Readonly<{ featureId: string; label: string; value: str
 
 export const getFeatureRows = (plan: CatalogPlan): ReadonlyArray<FeatureRow> =>
 	plan.items
-		.filter((item) => item.featureId !== "" && !HIDDEN_FEATURE_IDS.has(item.featureId))
+		.filter((item) => isPricingCardFeature(item.featureId))
 		.map((item) => {
 			const detail = formatDetail(item)
 			return {
