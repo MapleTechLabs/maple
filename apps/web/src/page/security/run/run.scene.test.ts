@@ -13,6 +13,7 @@ import { eventsOf, findingsOf, RUN_IDS, runDetailOf, targetsOf, unitsOf } from "
 import { AppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
 import { eventsOf as eventLogOf, phasesOf } from "./derive"
+import { subscriptions } from "./index"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
@@ -345,6 +346,24 @@ describe("security run", () => {
 		)
 		expect(names(repeated.commands)).toEqual([])
 		expect(repeated.model.isLoadingOlder).toBe(false)
+	})
+
+	test("a failed poll of a live run keeps its last read on screen and the poll running", () => {
+		const live = loaded(RUN_IDS.dashboard)
+		const polled = pageUpdate(live, Message.TickedPoll({ nowMs: NOW })).model
+		const failed = pageUpdate(
+			polled,
+			Message.CompletedFetchRun({
+				key: polled.run.key ?? "",
+				result: Result.fail(
+					toLoadFailure(new SecurityAuditPersistenceError({ message: "unavailable" })),
+				),
+			}),
+		).model
+		expect(subscriptions.live.modelToDependencies({ model: failed, context })).toEqual({ isLive: true })
+		expect(names(pageUpdate(failed, Message.TickedPoll({ nowMs: NOW + 5_000 })).commands)).toContain(
+			"SecurityApiGetRun",
+		)
 	})
 
 	test("a run that finishes reads its events and ledger once more", () => {
