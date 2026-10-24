@@ -307,7 +307,7 @@ const checkGlyph = <M>(h: HtmlBuilder<M>, state: CheckState): Html =>
 const checklistSummary = (rows: ReadonlyArray<CheckRow>): string => {
 	const done = rows.filter((row) => row.state === "done").length
 	const failed = rows.filter((row) => row.state === "failed").length
-	return `${done} of ${rows.length} checks done${failed === 0 ? "" : `, ${failed} need attention`}.`
+	return `${done} of ${rows.length} checks done${failed === 0 ? "" : `, ${failed} ${failed === 1 ? "needs" : "need"} attention`}.`
 }
 
 /** Go live's one checklist: access works, resources found, first data. */
