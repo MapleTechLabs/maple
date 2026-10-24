@@ -219,15 +219,18 @@ private struct TraceContent: View {
 		let row = laidOut.rows[index]
 		let children = laidOut.subtreeSizes[index]
 		let isCollapsed = collapsed.contains(row.id)
-		Button { selected = row } label: {
-			TraceWaterfallRow(
-				row: row,
-				hiddenChildren: isCollapsed ? children : 0,
-				isSelected: selected?.id == row.id,
-				expand: { collapsed.remove(row.id) }
-			)
-		}
-		.buttonStyle(RowButtonStyle())
+		// A tap gesture rather than a Button, so the `+N` chip's own button inside
+		// the row still receives its taps.
+		TraceWaterfallRow(
+			row: row,
+			hiddenChildren: isCollapsed ? children : 0,
+			isSelected: selected?.id == row.id,
+			expand: { collapsed.remove(row.id) }
+		)
+		.contentShape(.rect)
+		.onTapGesture { selected = row }
+		.accessibilityAddTraits(.isButton)
+		.accessibilityAction { selected = row }
 		.contextMenu {
 			if children > 0 {
 				if isCollapsed {
