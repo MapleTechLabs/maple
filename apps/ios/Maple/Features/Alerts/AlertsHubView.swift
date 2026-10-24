@@ -20,11 +20,12 @@ struct AlertsHubView: View {
 			ZStack {
 				Token.background.ignoresSafeArea()
 				VStack(spacing: 0) {
+					TabRootHeader(title: "Triage")
 					UnderlineTabs(
 						options: AlertsSegment.allCases.map { ($0, $0.title) },
 						selection: $navigation.alertsSegment
 					)
-					.padding(.top, 4)
+					.padding(.top, 12)
 					if let models {
 						switch navigation.alertsSegment {
 						case .incidents: IncidentsListView(model: models.incidents)
@@ -38,16 +39,7 @@ struct AlertsHubView: View {
 					}
 				}
 			}
-			.navigationTitle("Triage")
-			.navigationBarTitleDisplayMode(.large)
-			.toolbar {
-				ToolbarItem(placement: .topBarLeading) {
-					OrganizationSwitcherButton()
-				}
-				ToolbarItem(placement: .topBarLeading) {
-					EnvironmentPickerView()
-				}
-			}
+			.tabRootChrome()
 			.mapleDestinations()
 		}
 		// Re-runs on an org switch or an environment change, replacing all three

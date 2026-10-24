@@ -37,6 +37,8 @@ enum Token {
 
 	// MARK: Severity ramp
 
+	/// The "good" delta green: `--severity-info`.
+	static let severityInfo = theme(light: .init(0.696, 0.17, 162.48), dark: .init(0.658, 0.134, 151))
 	static let severityWarn = theme(light: .init(0.769, 0.188, 70.08), dark: .init(0.714, 0.154, 59))
 	static let severityError = theme(light: .init(0.637, 0.237, 25.331), dark: .init(0.654, 0.176, 30))
 
