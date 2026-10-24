@@ -290,6 +290,8 @@ export interface ServiceApiTimeseriesOutput {
 	readonly bucket: DateTime.Utc
 	readonly spanName: string
 	readonly estimatedSpanCount: number
+	/** 0 when every span in the bucket predates the status counters. */
+	readonly httpClassifiedSpanCount: number
 	readonly httpStatusCount: number
 	readonly http4xxCount: number
 	readonly http5xxCount: number
@@ -303,6 +305,7 @@ export const serviceApiTimeseriesRowSchema = Schema.Struct({
 	bucket: DateTimeUtcFromWarehouse,
 	spanName: Schema.String,
 	estimatedSpanCount: CHNumber,
+	httpClassifiedSpanCount: CHNumber,
 	httpStatusCount: CHNumber,
 	http4xxCount: CHNumber,
 	http5xxCount: CHNumber,
@@ -380,6 +383,7 @@ export function serviceApiTimeseriesQuery(opts: ServiceApiTimeseriesOpts) {
 			bucket: $.bBucket,
 			spanName: $.bSpanName,
 			estimatedSpanCount: CH.sum($.bEstimatedSpanCount),
+			httpClassifiedSpanCount: CH.sum($.bHttpClassifiedSpanCount),
 			httpStatusCount: CH.sum($.bHttpStatusCount),
 			http4xxCount: CH.sum($.bHttp4xxCount),
 			http5xxCount: CH.sum($.bHttp5xxCount),

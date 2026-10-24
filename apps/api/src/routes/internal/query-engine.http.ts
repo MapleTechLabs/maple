@@ -137,6 +137,7 @@ import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audi
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 import {
+	alignServiceApiBucketSeconds,
 	baselineWarehouseCapabilities,
 	CH,
 	computeBucketSecondsForRange,
@@ -259,15 +260,6 @@ const orEmptyWithoutEndpointDetails = <A, E, R>(effect: Effect.Effect<A, E, R>, 
 		),
 	)
 
-/**
- * The rollups are minute-grain and hour-grain: a sub-hour bucket rounds to whole
- * minutes, an hour or more to whole hours so the hourly tier tiles it exactly.
- */
-const alignServiceApiBucket = (bucketSeconds: number) =>
-	bucketSeconds >= 3600
-		? Math.round(bucketSeconds / 3600) * 3600
-		: Math.max(60, Math.round(bucketSeconds / 60) * 60)
-
 const emptyServiceApiTotals: CH.ServiceApiTotalsOutput = {
 	spanCount: 0,
 	estimatedSpanCount: 0,
@@ -288,6 +280,7 @@ const toServiceApiBucket = (row: CH.ServiceApiTimeseriesOutput) => ({
 	estimatedSpanCount: row.estimatedSpanCount,
 	httpStatusCount: row.httpStatusCount,
 	http4xxCount: row.http4xxCount,
+	httpClassifiedSpanCount: row.httpClassifiedSpanCount,
 	http5xxCount: row.http5xxCount,
 	requestBodyBytes: row.requestBodyBytes,
 	p50DurationMs: row.p50DurationMs,
@@ -1699,7 +1692,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("serviceApiOverview", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const bucketSeconds = alignServiceApiBucket(payload.bucketSeconds)
+						const bucketSeconds = alignServiceApiBucketSeconds(payload.bucketSeconds)
 						const window = (startTime: string, endTime: string) => ({
 							serviceName: payload.serviceName,
 							environments: payload.environments,
@@ -1754,7 +1747,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							environments: payload.environments,
 							startTime: payload.startTime,
 							endTime: payload.endTime,
-							bucketSeconds: alignServiceApiBucket(payload.bucketSeconds),
+							bucketSeconds: alignServiceApiBucketSeconds(payload.bucketSeconds),
 							spanNames: payload.spanNames,
 						}
 						const buckets = yield* queryEngine.cachedDirect(

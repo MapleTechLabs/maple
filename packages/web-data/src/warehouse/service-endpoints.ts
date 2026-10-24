@@ -119,6 +119,8 @@ export interface ServiceApiBucket {
 	bucket: string
 	spanName: string
 	estimatedSpanCount: number
+	/** 0 when the bucket predates the status counters: its status mix is unknown. */
+	httpClassifiedSpanCount: number
 	httpStatusCount: number
 	http4xxCount: number
 	http5xxCount: number

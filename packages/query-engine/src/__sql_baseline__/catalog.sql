@@ -4254,11 +4254,12 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:service-api:serviceApiTimeseriesQuery:mergedSubHour  [78007824]
+-- builder:service-api:serviceApiTimeseriesQuery:mergedSubHour  [d9a67a8b]
 SELECT
           endpoint_buckets.bBucket AS bucket,
           endpoint_buckets.bSpanName AS spanName,
           sum(endpoint_buckets.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_buckets.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
           sum(endpoint_buckets.bHttpStatusCount) AS httpStatusCount,
           sum(endpoint_buckets.bHttp4xxCount) AS http4xxCount,
           sum(endpoint_buckets.bHttp5xxCount) AS http5xxCount,
@@ -4319,11 +4320,12 @@ SELECT
         LIMIT 10000
         FORMAT JSON
 
--- builder:service-api:serviceApiTimeseriesQuery:perEndpointHourly  [d15cfb88]
+-- builder:service-api:serviceApiTimeseriesQuery:perEndpointHourly  [5a9f2599]
 SELECT
           endpoint_buckets.bBucket AS bucket,
           endpoint_buckets.bSpanName AS spanName,
           sum(endpoint_buckets.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_buckets.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
           sum(endpoint_buckets.bHttpStatusCount) AS httpStatusCount,
           sum(endpoint_buckets.bHttp4xxCount) AS http4xxCount,
           sum(endpoint_buckets.bHttp5xxCount) AS http5xxCount,
@@ -4408,11 +4410,12 @@ SELECT
         LIMIT 10000
         FORMAT JSON
 
--- builder:service-api:serviceApiTimeseriesQuery:rawTier  [58f0f75f]
+-- builder:service-api:serviceApiTimeseriesQuery:rawTier  [8ca1d398]
 SELECT
           endpoint_buckets.bBucket AS bucket,
           endpoint_buckets.bSpanName AS spanName,
           sum(endpoint_buckets.bEstimatedSpanCount) AS estimatedSpanCount,
+          sum(endpoint_buckets.bHttpClassifiedSpanCount) AS httpClassifiedSpanCount,
           sum(endpoint_buckets.bHttpStatusCount) AS httpStatusCount,
           sum(endpoint_buckets.bHttp4xxCount) AS http4xxCount,
           sum(endpoint_buckets.bHttp5xxCount) AS http5xxCount,

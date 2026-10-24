@@ -1567,6 +1567,8 @@ export const ServiceApiBucket = Schema.Struct({
 	bucket: Schema.String,
 	spanName: Schema.String,
 	estimatedSpanCount: Schema.Number,
+	/** 0 when the bucket predates the status counters: its status mix is unknown. */
+	httpClassifiedSpanCount: Schema.Number,
 	httpStatusCount: Schema.Number,
 	http4xxCount: Schema.Number,
 	http5xxCount: Schema.Number,
