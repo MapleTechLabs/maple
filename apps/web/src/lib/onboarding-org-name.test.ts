@@ -21,6 +21,12 @@ describe("suggestOrganizationName", () => {
 		})
 	})
 
+	test("a provider's country domain and a punycode domain are not company names", () => {
+		expect(suggestOrganizationName("dana@yahoo.co.uk", "Dana Onboard").name).toBe("Dana's team")
+		expect(suggestOrganizationName("dana@outlook.de", "Dana Onboard").name).toBe("Dana's team")
+		expect(suggestOrganizationName("dana@xn--mnchen-3ya.de", "Dana Onboard").name).toBe("Dana's team")
+	})
+
 	test("without a name or a work domain there is still something to submit", () => {
 		expect(suggestOrganizationName(null, null).name).toBe("My team")
 		expect(suggestOrganizationName("not-an-email", "  ").name).toBe("My team")

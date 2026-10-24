@@ -1,29 +1,27 @@
-import { MapleRegion, type MapleRegion as Region } from "@maple/domain/organization-regions"
+import { MapleRegion } from "@maple/domain/organization-regions"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hasMultipleRegions } from "../../lib/region"
-import type { UserInvitation } from "../../platform/clerk"
+import type { ClerkOrganization, UserInvitation } from "../../platform/clerk"
+import { switchTargetOf } from "../../shell/clerk-org-switcher"
 import { button } from "../../ui/button"
 import { icon, type IconName } from "../../ui/icon"
 import { input } from "../../ui/input"
 import { Message, type Model, MountDitherField } from "./create-org"
 import { optionCard } from "./option-card"
+import { REGION_CARDS } from "./quick-start-region-view"
 import { regionFlag } from "./region-flag"
 
 // The `/org-required` screen: the form on the left, a preview of the workspace being made on the right.
 
 type H = HtmlBuilder<Message>
 
-const REGION_COPY = {
-	us: { title: "United States", description: "Stored and processed in the US" },
-	eu: { title: "European Union", description: "Stored and processed in Frankfurt" },
-} as const satisfies Record<Region, { title: string; description: string }>
+/** The name as typed, or what an untitled org is called until it has one. */
+const nameOf = (name: string): string => name.trim() || "your organization"
 
 /** The org's initial, as its avatar tile and the preview's switcher show it. */
-const initialOf = (name: string): string => name.trim().charAt(0).toUpperCase() || "M"
-
-const displayName = (model: Model): string => model.name.trim() || "your organization"
+const initialOf = (name: string): string => nameOf(name).charAt(0).toUpperCase()
 
 const header = (h: H, email: string | null): Html =>
 	h.div(
@@ -119,9 +117,9 @@ const regionField = (h: H, model: Model): Html =>
 						isChecked: model.region === region,
 						isDisabled: model.isCreating,
 						onChange: Message.PickedRegion({ region }),
-						label: REGION_COPY[region].title,
-						title: REGION_COPY[region].title,
-						description: REGION_COPY[region].description,
+						label: REGION_CARDS[region].name,
+						title: REGION_CARDS[region].name,
+						description: REGION_CARDS[region].residency,
 						media: regionFlag(h, region, "h-7 w-[42px]"),
 					}),
 				),
@@ -133,11 +131,23 @@ const regionField = (h: H, model: Model): Html =>
 		],
 	)
 
-const invitationRow = (h: H, model: Model, invitation: UserInvitation): Html =>
+type OrgRowOptions = Readonly<{
+	name: string
+	imageUrl: string
+	lead: string
+	action: string
+	actionLabel: string
+	isLoading: boolean
+	isDisabled: boolean
+	onClick: Message
+}>
+
+/** An org the user can go to instead of creating one: an invitation, or one they already belong to. */
+const orgRow = (h: H, options: OrgRowOptions): Html =>
 	h.div(
 		[h.Class("flex items-center gap-3 rounded-lg border border-dashed border-input px-3.5 py-3")],
 		[
-			invitation.imageUrl === ""
+			options.imageUrl === ""
 				? h.span(
 						[
 							h.AriaHidden(true),
@@ -145,19 +155,16 @@ const invitationRow = (h: H, model: Model, invitation: UserInvitation): Html =>
 								"flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold",
 							),
 						],
-						[initialOf(invitation.orgName)],
+						[initialOf(options.name)],
 					)
 				: h.img([
-						h.Src(invitation.imageUrl),
+						h.Src(options.imageUrl),
 						h.Alt(""),
 						h.Class("size-7 shrink-0 rounded-md object-cover"),
 					]),
 			h.span(
 				[h.Class("min-w-0 flex-1 text-sm leading-snug text-muted-foreground line-clamp-2")],
-				[
-					"You're invited to ",
-					h.span([h.Class("font-medium text-foreground")], [invitation.orgName]),
-				],
+				[options.lead, " ", h.span([h.Class("font-medium text-foreground")], [options.name])],
 			),
 			button(
 				h,
@@ -165,20 +172,43 @@ const invitationRow = (h: H, model: Model, invitation: UserInvitation): Html =>
 					variant: "ghost",
 					size: "sm",
 					className: "text-primary",
-					isLoading: model.joiningId === invitation.id,
-					isDisabled:
-						model.isCreating || (model.joiningId !== null && model.joiningId !== invitation.id),
-					attributes: [
-						h.OnClick(Message.ClickedJoin({ invitationId: invitation.id })),
-						h.AriaLabel(`Join ${invitation.orgName}`),
-					],
+					isLoading: options.isLoading,
+					isDisabled: options.isDisabled,
+					attributes: [h.OnClick(options.onClick), h.AriaLabel(options.actionLabel)],
 				},
-				["Join instead"],
+				[options.action],
 			),
 		],
 	)
 
-const form = (h: H, model: Model): Html =>
+const isBusy = (model: Model): boolean =>
+	model.isCreating || model.joiningId !== null || model.openingId !== null
+
+const invitationRow = (h: H, model: Model, invitation: UserInvitation): Html =>
+	orgRow(h, {
+		name: invitation.orgName,
+		imageUrl: invitation.imageUrl,
+		lead: "You're invited to",
+		action: "Join instead",
+		actionLabel: `Join ${invitation.orgName}`,
+		isLoading: model.joiningId === invitation.id,
+		isDisabled: isBusy(model) && model.joiningId !== invitation.id,
+		onClick: Message.ClickedJoin({ invitationId: invitation.id }),
+	})
+
+const membershipRow = (h: H, model: Model, organization: ClerkOrganization): Html =>
+	orgRow(h, {
+		name: organization.name,
+		imageUrl: organization.imageUrl,
+		lead: "You're a member of",
+		action: "Open",
+		actionLabel: `Open ${organization.name}`,
+		isLoading: model.openingId === organization.id,
+		isDisabled: isBusy(model) && model.openingId !== organization.id,
+		onClick: Message.ClickedOpen({ orgId: organization.id, targetUrl: switchTargetOf(organization) }),
+	})
+
+const form = (h: H, model: Model, memberships: ReadonlyArray<ClerkOrganization>): Html =>
 	h.form(
 		[
 			h.Class("flex flex-col gap-9"),
@@ -202,10 +232,14 @@ const form = (h: H, model: Model): Html =>
 							size: "lg",
 							className: "h-12 w-full text-[15px] font-semibold",
 							isLoading: model.isCreating,
-							isDisabled: model.name.trim() === "" || model.joiningId !== null,
+							isDisabled:
+								model.name.trim() === "" ||
+								model.joiningId !== null ||
+								model.openingId !== null,
 						},
-						[`Create ${displayName(model)}`, icon(h, "ArrowRightIcon", { size: 16 })],
+						[`Create ${nameOf(model.name)}`, icon(h, "ArrowRightIcon", { size: 16 })],
 					),
+					...memberships.map((organization) => membershipRow(h, model, organization)),
 					...(model.invitations ?? []).map((invitation) => invitationRow(h, model, invitation)),
 				],
 			),
@@ -232,13 +266,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 				[
 					h.div(
 						[h.Class("flex h-9 items-center gap-1.5 border-b border-border bg-sidebar px-3.5")],
-						[
-							...[0, 1, 2].map(() => h.span([h.Class("size-2.5 rounded-full bg-input")], [])),
-							h.span(
-								[h.Class("flex-1 text-center text-xs text-muted-foreground")],
-								["app.maple.dev"],
-							),
-						],
+						[0, 1, 2].map(() => h.span([h.Class("size-2.5 rounded-full bg-input")], [])),
 					),
 					h.div(
 						[h.Class("flex h-[420px]")],
@@ -267,7 +295,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 											),
 											h.span(
 												[h.Class("min-w-0 flex-1 truncate text-[13px] font-medium")],
-												[model.name.trim() || "Untitled"],
+												[nameOf(model.name)],
 											),
 											...(hasMultipleRegions
 												? [regionFlag(h, model.region, "h-2.5 w-[15px]")]
@@ -299,7 +327,7 @@ const workspacePreview = (h: H, model: Model): Html =>
 								[
 									h.span(
 										[h.Class("font-display text-[15px] font-semibold")],
-										[`Welcome to ${model.name.trim() || "Maple"}`],
+										[`Welcome to ${nameOf(model.name)}`],
 									),
 									h.div(
 										[
@@ -331,7 +359,12 @@ const workspacePreview = (h: H, model: Model): Html =>
 		],
 	)
 
-export const view = (h: H, model: Model, email: string | null): Html =>
+export const view = (
+	h: H,
+	model: Model,
+	email: string | null,
+	memberships: ReadonlyArray<ClerkOrganization>,
+): Html =>
 	h.main(
 		[h.Class("flex min-h-dvh bg-background text-foreground")],
 		[
@@ -359,7 +392,7 @@ export const view = (h: H, model: Model, email: string | null): Html =>
 							),
 						],
 					),
-					form(h, model),
+					form(h, model, memberships),
 				],
 			),
 			h.div(

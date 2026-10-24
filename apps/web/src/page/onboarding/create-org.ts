@@ -28,6 +28,8 @@ export const Model = Schema.TaggedStruct("OrgRequired", {
 	/** `null` until Clerk answers; a failed read shows none. */
 	invitations: Schema.NullOr(Schema.Array(UserInvitation)),
 	joiningId: Schema.NullOr(Schema.String),
+	/** An org the user already belongs to, being opened (`setActive` then its region's app). */
+	openingId: Schema.NullOr(Schema.String),
 })
 export type Model = typeof Model.Type
 
@@ -41,6 +43,7 @@ export const Message = defineMessageUnion({
 	ClickedJoin: { invitationId: Schema.String },
 	SucceededJoin: { orgId: Schema.String },
 	FailedJoin: { message: Schema.String },
+	ClickedOpen: { orgId: Schema.String, targetUrl: Schema.NullOr(Schema.String) },
 	ClickedSignOut: {},
 	/** The page is leaving for the new org (`setActive` then reload), or Clerk is signing out. */
 	CompletedLeave: {},
@@ -121,12 +124,14 @@ export const init = (maybeUser: Option.Option<ClerkUser>): Result => {
 			errorMessage: null,
 			invitations: null,
 			joiningId: null,
+			openingId: null,
 		}),
 		commands: [LoadInvitations()],
 	}
 }
 
-const isBusy = (model: Model): boolean => model.isCreating || model.joiningId !== null
+const isBusy = (model: Model): boolean =>
+	model.isCreating || model.joiningId !== null || model.openingId !== null
 
 export const update = (model: Model, message: Message): Result =>
 	Message.match<Result>(message, {
@@ -158,7 +163,7 @@ export const update = (model: Model, message: Message): Result =>
 						model: { ...model, joiningId: invitationId, errorMessage: null },
 						commands: [JoinInvitation({ invitationId })],
 					},
-		// An invited org may live in another region; this dashboard reloads and the region gate sends it on.
+		// An invited org may live in another region: the reload lands on its wrong-region notice, one click from there.
 		SucceededJoin: ({ orgId }) => ({ model, commands: [LeaveFor({ orgId, targetUrl: null })] }),
 		FailedJoin: ({ message: failure }) => ({
 			model: {
@@ -166,7 +171,16 @@ export const update = (model: Model, message: Message): Result =>
 				joiningId: null,
 				errorMessage: failure.trim() || "Couldn't join that organization. Try again.",
 			},
+			// Accepted in another tab: the re-read drops the row, and the org shows up among the user's own.
+			commands: [LoadInvitations()],
 		}),
+		ClickedOpen: ({ orgId, targetUrl }) =>
+			isBusy(model)
+				? { model }
+				: {
+						model: { ...model, openingId: orgId, errorMessage: null },
+						commands: [LeaveFor({ orgId, targetUrl })],
+					},
 		ClickedSignOut: () => ({ model, commands: [SignOut()] }),
 		CompletedLeave: () => ({ model }),
 		CompletedMountDitherField: () => ({ model }),

@@ -38,7 +38,10 @@ const readReach = (canvas: HTMLCanvasElement): number => {
 	return Number.isFinite(parsed) ? parsed : 0.55
 }
 
-/** Starts drawing into `canvas`; the returned function stops it. */
+/**
+ * Starts drawing into `canvas`; the returned function stops it. The frame loop only runs while
+ * there is something to move: a resize, a new `data-reach` or (with motion allowed) the waves.
+ */
 export const startDitherField = (canvas: HTMLCanvasElement): (() => void) => {
 	const context = canvas.getContext("2d")
 	if (context === null) return () => undefined
@@ -76,29 +79,39 @@ export const startDitherField = (canvas: HTMLCanvasElement): (() => void) => {
 	}
 
 	const tick = (now: number) => {
-		state.frame = requestAnimationFrame(tick)
-		if (document.hidden || now - state.last < FRAME_MS) return
-		const elapsed = state.last === 0 ? 0 : now - state.last
-		state.last = now
+		state.frame = 0
+		// A hidden canvas (the preview column on a phone) has nothing to draw until it is shown.
+		if (state.width === 0 || state.height === 0) return
 		const target = readReach(canvas)
 		const isSettled = Math.abs(target - state.reach) < 0.002
-		if (isStill && isSettled && state.seconds > 0) return
-		state.reach += (target - state.reach) * 0.08
-		if (!isStill) state.seconds += elapsed / 1000
-		// A still field still needs one frame; `seconds` > 0 marks it drawn.
-		if (isStill) state.seconds = Math.max(state.seconds, Number.MIN_VALUE)
-		draw()
+		if (now - state.last >= FRAME_MS) {
+			// Time spent in a background tab is not counted, so the waves pick up where they left.
+			const elapsed = state.last === 0 || document.hidden ? 0 : Math.min(now - state.last, 200)
+			state.last = now
+			state.reach = isSettled ? target : state.reach + (target - state.reach) * 0.08
+			if (!isStill) state.seconds += elapsed / 1000
+			draw()
+		}
+		if (!isStill || !isSettled) state.frame = requestAnimationFrame(tick)
 	}
 
-	const observer = new ResizeObserver(() => {
+	const run = () => {
+		if (state.frame === 0) state.frame = requestAnimationFrame(tick)
+	}
+
+	const resizes = new ResizeObserver(() => {
 		resize()
-		draw()
+		if (state.width > 0) draw()
+		run()
 	})
-	observer.observe(canvas)
+	const reaches = new MutationObserver(run)
+	resizes.observe(canvas)
+	reaches.observe(canvas, { attributes: true, attributeFilter: ["data-reach"] })
 	resize()
-	state.frame = requestAnimationFrame(tick)
+	run()
 	return () => {
 		cancelAnimationFrame(state.frame)
-		observer.disconnect()
+		resizes.disconnect()
+		reaches.disconnect()
 	}
 }

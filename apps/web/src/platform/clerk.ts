@@ -109,8 +109,8 @@ export interface ClerkUserResource {
 	readonly getOrganizationMemberships: () => Promise<
 		ClerkPage<{ readonly organization: { readonly id: string } }>
 	>
-	readonly getOrganizationInvitations?: (params: {
-		readonly status?: string
+	readonly getOrganizationInvitations: (params: {
+		readonly status: "pending"
 	}) => Promise<ClerkPage<ClerkUserInvitationResource>>
 }
 /** An invitation addressed to the signed-in user (`user.getOrganizationInvitations()`). */
@@ -502,9 +502,9 @@ export const UserInvitation = Schema.Struct({
 export type UserInvitation = typeof UserInvitation.Type
 
 const userInvitationPage = (user: ClerkUserResource): Effect.Effect<ReadonlyArray<ClerkUserInvitationResource>, ClerkActionError> => {
-	const getInvitations = user.getOrganizationInvitations
-	if (getInvitations === undefined) return Effect.succeed([])
-	return clerkTry("Could not load your invitations", () => getInvitations.call(user, { status: "pending" })).pipe(
+	return clerkTry("Could not load your invitations", () =>
+		user.getOrganizationInvitations.call(user, { status: "pending" }),
+	).pipe(
 		Effect.map((page) => page.data),
 	)
 }
@@ -517,7 +517,7 @@ export const pendingUserInvitations: Effect.Effect<ReadonlyArray<UserInvitation>
 			id: invitation.id,
 			orgId: invitation.publicOrganizationData.id,
 			orgName: invitation.publicOrganizationData.name,
-			imageUrl: invitation.publicOrganizationData.imageUrl ?? "",
+			imageUrl: invitation.publicOrganizationData.imageUrl,
 		})),
 	),
 )

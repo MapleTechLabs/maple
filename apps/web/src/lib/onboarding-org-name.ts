@@ -1,30 +1,35 @@
 // The name `/org-required` fills in: the company in a work email's domain, else the person's own team.
 
-const PERSONAL_EMAIL_DOMAINS = new Set([
-	"gmail.com",
-	"googlemail.com",
-	"outlook.com",
-	"hotmail.com",
-	"live.com",
-	"msn.com",
-	"yahoo.com",
-	"icloud.com",
-	"me.com",
-	"mac.com",
-	"aol.com",
-	"proton.me",
-	"protonmail.com",
-	"pm.me",
-	"gmx.com",
-	"gmx.de",
-	"web.de",
-	"hey.com",
-	"fastmail.com",
-	"zoho.com",
-	"yandex.com",
-	"mail.com",
-	"qq.com",
-	"163.com",
+/** Mail providers by company label, so `yahoo.co.uk` and `outlook.de` count as personal too. */
+const PERSONAL_EMAIL_PROVIDERS = new Set([
+	"gmail",
+	"googlemail",
+	"outlook",
+	"hotmail",
+	"live",
+	"msn",
+	"yahoo",
+	"ymail",
+	"icloud",
+	"me",
+	"mac",
+	"aol",
+	"proton",
+	"protonmail",
+	"pm",
+	"gmx",
+	"web",
+	"hey",
+	"fastmail",
+	"zoho",
+	"yandex",
+	"mail",
+	"qq",
+	"163",
+	"orange",
+	"free",
+	"laposte",
+	"t-online",
 ])
 
 /** Second-level labels that sit under a country code (`acme.co.uk`), so the company is one further left. */
@@ -58,7 +63,12 @@ export const suggestOrganizationName = (
 	fullName: string | null,
 ): SuggestedOrganizationName => {
 	const domain = email?.split("@")[1]?.trim().toLowerCase() ?? ""
-	const label = domain === "" || PERSONAL_EMAIL_DOMAINS.has(domain) ? null : companyLabel(domain)
+	const company = companyLabel(domain)
+	// Punycode labels (`xn--…`) would read as noise, so they fall back to the person's name.
+	const label =
+		company === null || PERSONAL_EMAIL_PROVIDERS.has(company) || company.startsWith("xn--")
+			? null
+			: company
 	if (label !== null && titleCase(label) !== "") return { name: titleCase(label), domain }
 	const firstName = fullName?.trim().split(/\s+/)[0] ?? ""
 	return { name: firstName === "" ? "My team" : `${firstName}'s team`, domain: null }

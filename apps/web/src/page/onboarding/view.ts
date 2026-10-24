@@ -150,7 +150,12 @@ const selectPlanView = Submodel.defineView<SelectPlan.Model, SelectPlan.Message,
 
 /** `/org-required`: create the first organization, or join one that invited the user. */
 const createOrgView = Submodel.defineView<CreateOrg.Model, CreateOrg.Message, ScreenInputs>((model, inputs, h) =>
-	CreateOrgView.view(h, model, Option.getOrNull(Option.flatMapNullishOr(inputs.maybeUser, (user) => user.email))),
+	CreateOrgView.view(
+		h,
+		model,
+		Option.getOrNull(Option.flatMapNullishOr(inputs.maybeUser, (user) => user.email)),
+		inputs.memberships,
+	),
 )
 
 /** `WrongRegionScreen`: this region has nothing to show for an org another region serves. */

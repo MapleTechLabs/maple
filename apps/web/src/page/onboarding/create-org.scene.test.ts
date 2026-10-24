@@ -1,3 +1,4 @@
+import { OrgId } from "@maple/domain"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
@@ -13,13 +14,15 @@ import {
 	text,
 	type,
 } from "foldkit/scene"
-import { describe, expect, test } from "vitest"
+import { describe, test } from "vitest"
 import { currentRegion } from "../../lib/region"
+import type { ClerkOrganization } from "../../platform/clerk"
 import {
 	CreateOrganization,
 	init,
 	JoinInvitation,
 	LeaveFor,
+	LoadInvitations,
 	Message,
 	type Model,
 	MountDitherField,
@@ -27,7 +30,19 @@ import {
 } from "./create-org"
 import { view as createOrgView } from "./create-org-view"
 
-const view = (model: Model, h: HtmlBuilder<Message>): Html => createOrgView(h, model, "david@acme.dev")
+const member: ClerkOrganization = {
+	id: OrgId.make("org_redirect"),
+	name: "Redirect test US",
+	imageUrl: "",
+	homeRegion: "us",
+	isServedHere: true,
+	isRegionOpen: false,
+	flags: { aiAutoTriage: false, releases: false, securityAudit: false },
+}
+
+const view = (model: Model, h: HtmlBuilder<Message>): Html => createOrgView(h, model, "david@acme.dev", [])
+const memberView = (model: Model, h: HtmlBuilder<Message>): Html =>
+	createOrgView(h, model, "david@acme.dev", [member])
 
 const user = Option.some({ fullName: "David Smith", email: "david@acme.dev", imageUrl: "" })
 const mounted = Mount.resolve(MountDitherField, Message.CompletedMountDitherField())
@@ -119,11 +134,31 @@ describe("create your first organization", () => {
 		)
 	})
 
-	test("a personal address suggests the person's own team", () => {
-		const personal = init(
-			Option.some({ fullName: "David Smith", email: "david@gmail.com", imageUrl: "" }),
-		).model
-		expect(personal.name).toBe("David's team")
-		expect(personal.suggestedFrom).toBeNull()
+	test("an org the user already belongs to can be opened instead of creating another", () => {
+		scene(
+			{ update, view: memberView },
+			given(init(user).model),
+			mounted,
+			click(role("button", { name: "Open Redirect test US" })),
+			Command.expectExact(LeaveFor({ orgId: "org_redirect", targetUrl: null })),
+			expectView(role("button", { name: "Create Acme" })).toBeDisabled(),
+			Command.resolve(LeaveFor, Message.CompletedLeave()),
+		)
+	})
+
+	test("an invitation accepted elsewhere is re-read instead of failing forever", () => {
+		scene(
+			{ update, view },
+			given(invited),
+			mounted,
+			click(role("button", { name: "Join Heartbeat" })),
+			Command.resolve(
+				JoinInvitation,
+				Message.FailedJoin({ message: "This invitation is no longer pending" }),
+			),
+			expectView(text("This invitation is no longer pending")).toExist(),
+			Command.resolve(LoadInvitations, Message.LoadedInvitations({ invitations: [] })),
+			expectView(role("button", { name: "Join Heartbeat" })).not.toExist(),
+		)
 	})
 })
