@@ -11,8 +11,8 @@ import type { CarriedRecord, Engine, PriorRun } from "./state"
 
 /** The calls the skill reserves before any reconnaissance agent may launch. */
 export const minimumInvocations = (profile: "quick" | "standard" | "deep"): number =>
-	// 4 baseline reconnaissance + 1 synthesis + the profile's mandatory critics + 1 verifier.
-	4 + 1 + (profile === "quick" ? 1 : 2) + 1
+	// 4 baseline reconnaissance + 1 synthesis + 1 hunter + the profile's mandatory critics + 1 verifier.
+	4 + 1 + 1 + (profile === "quick" ? 1 : 2) + 1
 
 const recordFiles = (record: Finding): ReadonlyArray<string> => [
 	...new Set([...record.trace.map((step) => step.file), ...record.evidence.map((e) => e.file)]),
@@ -161,7 +161,7 @@ export const runReconnaissance = (engine: Engine) =>
 			input.focusedRecon ?? [],
 			(area, index) =>
 				Effect.gen(function* () {
-					// Each focused agent passes the gate again: critics and a verifier stay reserved.
+					// Each focused agent passes the gate again: a hunter, critics and a verifier stay reserved.
 					const left = yield* engine.remaining
 					if (left - 1 < minimumInvocations(input.profile) - 4) {
 						yield* engine.gap(
