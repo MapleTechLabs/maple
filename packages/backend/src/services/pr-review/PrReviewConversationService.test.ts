@@ -291,24 +291,23 @@ describe("PrReviewConversationService CI approvals", () => {
 		}).pipe(Effect.provide(layerFor(testDb, recorded, { pr: fork, permission: "triage" })))
 	})
 
-	it.effect("does not review a pull request other than the one the approved run was for", () => {
-		const testDb = createTestDb(trackedDbs)
-		const recorded = record()
-		return Effect.gen(function* () {
-			yield* seedRepo(false)
-			const conversations = yield* PrReviewConversationService
-			yield* conversations.onCiApproved(orgId, ciApproval({ pullRequestNumbers: [612] }))
-			yield* conversations.onCiApproved(
-				orgId,
-				ciApproval({
-					pullRequestNumbers: [612],
-					headRepoFullName: "outsider/repo",
-					authorLogin: "someone",
-				}),
-			)
-			assert.lengthOf(recorded.begun, 0)
-		}).pipe(Effect.provide(layerFor(testDb, recorded, { pr: head() })))
-	})
+	// One field off at a time, so each identity comparison is pinned on its own.
+	for (const [field, pr] of [
+		["head branch", { ...fork, headRef: "feat/other" }],
+		["head repository", { ...fork, headRepoFullName: "someone/repo" }],
+		["author", { ...fork, authorLogin: "someone" }],
+	] as const) {
+		it.effect(`does not review a pull request whose ${field} differs from the approved run's`, () => {
+			const testDb = createTestDb(trackedDbs)
+			const recorded = record()
+			return Effect.gen(function* () {
+				yield* seedRepo(false)
+				const conversations = yield* PrReviewConversationService
+				yield* conversations.onCiApproved(orgId, ciApproval({ pullRequestNumbers: [612] }))
+				assert.lengthOf(recorded.begun, 0)
+			}).pipe(Effect.provide(layerFor(testDb, recorded, { pr })))
+		})
+	}
 
 	it.effect("does not review a head pushed after the approved run", () => {
 		const testDb = createTestDb(trackedDbs)
