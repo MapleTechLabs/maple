@@ -6089,6 +6089,7 @@
             "type": "string"
           },
           "span_scope": {
+            "description": "`root` matches filters against each trace's root span (the span without a parent), the span the trace summary describes. In timeseries and breakdowns it keeps entry spans: the root plus every Server and Consumer span.",
             "enum": [
               "root"
             ],

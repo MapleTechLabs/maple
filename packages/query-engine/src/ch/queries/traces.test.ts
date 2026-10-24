@@ -49,13 +49,50 @@ describe("traceSummariesQuery", () => {
 		expect(sql).toContain("TraceId < 'trace123'")
 	})
 
-	it("restricts the matching subquery to root spans when spanScope=root", () => {
+	it("pages root-scoped filters over trace_list_mv before aggregating", () => {
 		const { sql } = compileUnsafe(
-			traceSummariesQuery({ serviceName: "api", spanScope: "root" }),
+			traceSummariesQuery({
+				serviceName: "api",
+				hasError: true,
+				spanName: "GET /users",
+				spanScope: "root",
+				limit: 51,
+				offset: 10,
+				cursor: { timestamp: DateTime.makeUnsafe("2024-01-01T12:00:00Z"), traceId: "trace123" },
+			}),
 			baseParams,
 		)
-		expect(sql).toMatch(/TraceId IN \(SELECT\s+traces\.TraceId AS traceId/)
-		expect(sql).toContain("SpanKind IN ('Server', 'Consumer')")
+		expect(sql).not.toContain("FROM traces")
+		expect(sql).toMatch(
+			/\(Timestamp, TraceId\) IN \(SELECT ts, traceId FROM \(SELECT\s+trace_list_mv\.Timestamp AS ts/,
+		)
+		expect(sql).toContain("trace_list_mv.ServiceName = 'api'")
+		expect(sql).toContain("trace_list_mv.StatusCode = 'Error'")
+		expect(sql).toContain("trace_list_mv.SpanName = 'GET /users'")
+		expect(sql).toContain("trace_list_mv.TraceId < 'trace123'")
+		expect(sql).toMatch(/ORDER BY ts DESC, traceId DESC\s+LIMIT 61\)\)/)
+	})
+
+	it("pages an unfiltered search over trace_list_mv instead of grouping the window", () => {
+		const { sql } = compileUnsafe(traceSummariesQuery({ limit: 51 }), baseParams)
+		expect(sql).not.toContain("FROM traces")
+		expect(sql).toMatch(/ORDER BY ts DESC, traceId DESC\s+LIMIT 51\)\)/)
+	})
+
+	it.each([
+		["a raw HTTP server span name", { spanName: "http.server GET" }],
+		["an http.route the MV cannot express", { httpRoute: "/users" }],
+	])("pages true roots in raw traces for %s", (_, filter) => {
+		const { sql } = compileUnsafe(
+			traceSummariesQuery({ ...filter, spanScope: "root", limit: 51 }),
+			baseParams,
+		)
+		expect(sql).toMatch(
+			/\(Timestamp, TraceId\) IN \(SELECT ts, traceId FROM \(SELECT\s+toDateTime\(traces\.Timestamp\) AS ts/,
+		)
+		expect(sql).toContain("traces.ParentSpanId = ''")
+		expect(sql).not.toContain("SpanKind IN ('Server', 'Consumer')")
+		expect(sql).toMatch(/ORDER BY ts DESC, traceId DESC\s+LIMIT 51\)\)/)
 	})
 
 	it("forwards contains match modes into the span filters", () => {

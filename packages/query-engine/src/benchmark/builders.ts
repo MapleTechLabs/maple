@@ -1005,6 +1005,29 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		// v2 trace search as the iOS Traces tab sends it: root scope, no filters.
+		module: "traces",
+		name: "traceSummariesQuery",
+		label: "root-scope",
+		compile: () => CH.compileUnsafe(CH.traceSummariesQuery({ spanScope: "root", limit: 51 }), window),
+	},
+	{
+		// v2 trace search, root scope with a filter trace_list_mv cannot express.
+		module: "traces",
+		name: "traceSummariesQuery",
+		label: "root-scope-raw",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceSummariesQuery({
+					spanScope: "root",
+					httpRoute: "/users/:id",
+					hasError: true,
+					limit: 51,
+				}),
+				window,
+			),
+	},
+	{
 		// runtime query engine, grouped traces list.
 		module: "traces",
 		name: "traceListQuery",

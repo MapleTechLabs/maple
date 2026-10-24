@@ -240,7 +240,12 @@ const TraceFilters = Schema.Struct({
 	http_status_code: Schema.optionalKey(NonEmptyString),
 	deployment_environment: Schema.optionalKey(NonEmptyString),
 	service_namespace: Schema.optionalKey(NonEmptyString),
-	span_scope: Schema.optionalKey(Schema.Literal("root")),
+	span_scope: Schema.optionalKey(
+		Schema.Literal("root").annotate({
+			description:
+				"`root` matches filters against each trace's root span (the span without a parent), the span the trace summary describes. In timeseries and breakdowns it keeps entry spans: the root plus every Server and Consumer span.",
+		}),
+	),
 	attributes: Schema.optionalKey(AttributeFilterCollection),
 	resource_attributes: Schema.optionalKey(AttributeFilterCollection),
 }).annotate({ identifier: "TraceFilters", title: "Trace filters" })
