@@ -512,6 +512,46 @@ const lockOpenRun = (db: MapleDb, orgId: OrgId, runId: SecurityAuditRunId, write
 			}),
 		)
 
+/**
+ * Prices this run's answered agents whose cost write was lost (the workflow logs and moves on), from
+ * the cost their own Agent events recorded. Unanswered and failed agents stay unpriced.
+ */
+const reconcileRunCosts = (db: MapleDb, orgId: OrgId, runId: SecurityAuditRunId) =>
+	Effect.gen(function* () {
+		const unpriced = yield* db.run(
+			PG.from(SecurityAuditOrgReservations)
+				.select("agentId")
+				.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId), $.costUsd.isNull()]),
+		)
+		if (!Arr.isReadonlyArrayNonEmpty(unpriced)) return
+		const events = yield* db.run(
+			PG.from(SecurityAuditEvents)
+				.select(($) => ({ agentId: $.agentId, detail: PG.undecoded($.detail) }))
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.runId.eq(runId),
+					$.kind.eq("Agent"),
+					$.agentId.in_(...Arr.map(unpriced, (row) => row.agentId)),
+				]),
+		)
+		yield* Effect.forEach(events, (event) => {
+			const agentId = event.agentId
+			const cost = Option.flatMapNullishOr(decodeEventDetail(event.detail), (d) => d.costUsd)
+			return agentId === null || Option.isNone(cost)
+				? Effect.void
+				: db.run(
+						PG.update(SecurityAuditOrgReservations)
+							.set({ costUsd: cost.value })
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.runId.eq(runId),
+								$.agentId.eq(agentId),
+								$.costUsd.isNull(),
+							]),
+					)
+		})
+	})
+
 /** What the org's priced agents cost since `since` (epoch ms), in US dollars. */
 const sumSpend = (db: MapleDb, orgId: OrgId, since: number) =>
 	db
@@ -1484,6 +1524,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								if (granted.length > 0) return "granted" as const
 								// Agents in flight are not priced yet, so concurrent agents can pass
 								// together; the overshoot is at most what those agents cost.
+								yield* reconcileRunCosts(db, orgId, runId)
 								const spent = yield* sumSpend(db, orgId, spend.since)
 								if (spent >= spend.limitUsd) return "spend_limit_reached" as const
 								// The insert path writes 1, so a limit below 1 must refuse before it.

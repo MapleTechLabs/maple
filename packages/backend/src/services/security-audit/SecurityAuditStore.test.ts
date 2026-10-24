@@ -1277,6 +1277,27 @@ describe("SecurityAuditStore org spend limit", () => {
 			),
 	)
 
+	it.effect("prices an answered agent whose cost write was lost from its own event before the check", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const a = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "abc")
+				const limit = { since: 0, limitUsd: 5 }
+				yield* a.reserveOrgInvocation(runId, "recon-1", "2026-10", 100, limit)
+				// The agent answered and its event holds its cost, but recordAgentCost never landed.
+				yield* a.recordEvent(runId, {
+					_tag: "Agent",
+					role: "recon",
+					agentId: "recon-1",
+					outcome: "ok",
+					usage: { inputTokens: 100, outputTokens: 10, costUsd: 6 },
+				})
+				const next = yield* a.reserveOrgInvocation(runId, "hunter-1", "2026-10", 100, limit)
+				assert.deepStrictEqual([next, yield* a.orgSpendUsd(0)], ["spend_limit_reached", 6])
+			}),
+		),
+	)
+
 	it.effect("saves an org's settings over its earlier ones, and never shows them to another org", () =>
 		withStore((store) =>
 			Effect.gen(function* () {
