@@ -68,6 +68,13 @@ describe("serviceHealthSnapshotQuery", () => {
 		expect(sql).not.toContain("service_overview_spans")
 	})
 
+	it("reads whole hours with an exclusive, rounded-up end", () => {
+		const { sql } = compileUnsafe(serviceHealthSnapshotQuery({}), baseParams)
+		// Back-to-back windows must not share the hour at their seam.
+		expect(sql).toMatch(/Hour < toStartOfHour\(addSeconds\(toDateTime\('[^']+'\), 3599\)\)/)
+		expect(sql).not.toMatch(/Hour <= /)
+	})
+
 	it("coerces BYO ClickHouse string-encoded aggregates", () => {
 		const compiled = compileUnsafe(serviceHealthSnapshotQuery({}), baseParams)
 		const rows = Effect.runSync(

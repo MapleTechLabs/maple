@@ -1178,8 +1178,13 @@ export const V2ServiceHealthEntry = Schema.Struct({
 	/** `error_count / request_count`, 0 for a service with no requests. */
 	error_rate: Schema.Number,
 	p95_latency_ms: Schema.Number,
-	/** Requests per second over the requested window. */
+	/** Requests per second over the whole hours read. */
 	throughput: Schema.Number,
+	/**
+	 * The trailing 7-day p95 before the window, for this service and environment (the busiest
+	 * namespace's). Current window only; null when the service has no history there.
+	 */
+	baseline_p95_latency_ms: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 }).annotate({
 	identifier: "ServiceHealthEntry",
 	title: "Service health entry",
@@ -1188,6 +1193,7 @@ export const V2ServiceHealthEntry = Schema.Struct({
 })
 export type V2ServiceHealthEntry = Schema.Schema.Type<typeof V2ServiceHealthEntry>
 
+/** `start_time`/`end_time` are the whole hours read, which can be wider than requested. */
 export const V2ServiceHealthWindow = Schema.Struct({
 	start_time: Timestamp,
 	end_time: Timestamp,
@@ -1199,7 +1205,10 @@ export const V2ServiceHealth = Schema.Struct({
 	start_time: Timestamp,
 	end_time: Timestamp,
 	services: Schema.Array(V2ServiceHealthEntry),
-	/** The comparison window, when `previous_start_time` and `previous_end_time` were sent. */
+	/**
+	 * The comparison window, when both `previous_*` bounds were sent. It ends where the current
+	 * window's first hour starts, so the two never share an hour; it can be shorter, or empty.
+	 */
 	previous: Schema.NullOr(V2ServiceHealthWindow),
 }).annotate({
 	identifier: "ServiceHealth",
@@ -1221,6 +1230,7 @@ export const V2ServiceHealth = Schema.Struct({
 					error_rate: 0.00027,
 					p95_latency_ms: 142.9,
 					throughput: 12.5,
+					baseline_p95_latency_ms: 120,
 				},
 			],
 			previous: null,
@@ -1278,7 +1288,7 @@ export class V2ServicesApiGroup extends HttpApiGroup.make("services")
 				identifier: "queryServiceHealth",
 				summary: "Query service health",
 				description:
-					"Returns request volume, error rate and p95 latency per (service, environment) for a window, and for an optional comparison window in the same call. Reads the hourly entry-span aggregate the dashboard overview reads, so each window's edges widen to whole hours. Requires `services:read`.",
+					"Returns request volume, error rate and p95 latency per (service, environment) for a window, and for an optional comparison window in the same call. Reads the hourly entry-span aggregate the dashboard overview reads, so each window widens to the whole hours it touches (end exclusive), the response carries those hours, and `throughput` is per second over them. Requires `services:read`.",
 			}),
 		),
 	)

@@ -132,37 +132,39 @@ const make = Effect.gen(function* () {
 	})
 
 	/**
-	 * Trailing p95 per service for the seven days before `windowStartMs`.
-	 *
-	 * Hour-floored so a polling client's drifting window keeps hitting the same
-	 * cache entry, and cached for an hour. A missing baseline is a supported
-	 * state (clients fall back to absolute thresholds), so a failed read degrades
-	 * to no baselines instead of failing the caller.
+	 * Trailing p95 per (service, namespace, environment) for the seven days before `windowStartMs`,
+	 * through the dashboard's baseline definition and cache key. Degrades to no rows on failure.
 	 */
-	const serviceBaselines = (
+	const serviceBaselineRows = (
 		tenant: TenantContext,
 		windowStartMs: number,
 		filters: { readonly deploymentEnvironment?: string; readonly serviceNamespace?: string },
 	) =>
 		Effect.gen(function* () {
+			// Hour-floored, like the dashboard's, so a drifting client window keeps one cache entry.
 			const endMs = Math.floor(windowStartMs / HOUR_MS) * HOUR_MS
-			const window = {
+			const request = yield* Schema.decodeUnknownEffect(ServiceHealthBaselineRequest)({
 				startTime: formatWarehouseDateTime(endMs - BASELINE_WINDOW_MS),
 				endTime: formatWarehouseDateTime(endMs),
-			}
-			const request = yield* Schema.decodeUnknownEffect(ServiceHealthBaselineRequest)({
-				...window,
 				environments: filters.deploymentEnvironment ? [filters.deploymentEnvironment] : undefined,
 				namespaces: filters.serviceNamespace ? [filters.serviceNamespace] : undefined,
 			}).pipe(Effect.orDie)
-			// The dashboard's baseline definition and cache key, so both clients share one read.
-			const rows = yield* reads.serviceHealthBaseline(tenant, request)
-			return collapseBaselines(rows)
+			return yield* reads.serviceHealthBaseline(tenant, request)
 		}).pipe(
 			Effect.catchCause((cause) =>
-				Effect.as(Effect.logWarning("v2 service baseline read failed", cause), collapseBaselines([])),
+				Effect.as(
+					Effect.logWarning("v2 service baseline read failed", cause),
+					[] as ReadonlyArray<CH.ServiceHealthBaselineOutput>,
+				),
 			),
 		)
+
+	/** The baseline rows collapsed by service name, as the catalog rows are. */
+	const serviceBaselines = (
+		tenant: TenantContext,
+		windowStartMs: number,
+		filters: { readonly deploymentEnvironment?: string; readonly serviceNamespace?: string },
+	) => Effect.map(serviceBaselineRows(tenant, windowStartMs, filters), collapseBaselines)
 
 	const serviceCatalog = Effect.fn("TelemetryReadService.serviceCatalog")(function* (
 		tenant: TenantContext,
@@ -175,12 +177,10 @@ const make = Effect.gen(function* () {
 	})
 
 	/**
-	 * The busiest operations of one service, through the dashboard's Operations read: the same
-	 * payload (sparkline bucket included) hits the same 30s cache entry the web app fills.
+	 * A service's busiest operations, through the dashboard's 30s Operations entry (same payload,
+	 * sparkline bucket included). A plain function, so fallbacks label the route's own span.
 	 */
-	// Requests below are built from a window the route already validated, so a decode failure
-	// is a defect, not a caller error.
-	const serviceOperations = Effect.fn("TelemetryReadService.serviceOperations")(function* (
+	const serviceOperations = (
 		tenant: TenantContext,
 		opts: {
 			readonly serviceName: string
@@ -188,17 +188,29 @@ const make = Effect.gen(function* () {
 			readonly limit: number
 		},
 		window: TelemetryWindow,
-	) {
-		const request = yield* Schema.decodeUnknownEffect(ServiceOperationsRequest)({
-			serviceName: opts.serviceName,
-			startTime: window.startTime,
-			endTime: window.endTime,
-			environments: opts.environments,
-			bucketSeconds: operationsSparklineBucketSeconds(window.startTime, window.endTime),
-			limit: opts.limit,
-		}).pipe(Effect.orDie)
-		return yield* reads.serviceOperations(tenant, request)
-	})
+	) =>
+		Effect.gen(function* () {
+			// Built from a window the route already validated, so a decode failure is a defect.
+			const request = yield* Schema.decodeUnknownEffect(ServiceOperationsRequest)({
+				serviceName: opts.serviceName,
+				startTime: window.startTime,
+				endTime: window.endTime,
+				environments: opts.environments,
+				bucketSeconds: operationsSparklineBucketSeconds(window.startTime, window.endTime),
+				limit: opts.limit,
+			}).pipe(Effect.orDie)
+			// The sparklines are only what buys the shared entry; their failure must not cost the rows.
+			return yield* reads
+				.serviceOperations(tenant, request)
+				.pipe(
+					Effect.catch((error) =>
+						Effect.logWarning("Shared operations read failed; reading the summary alone").pipe(
+							Effect.annotateLogs({ orgId: tenant.orgId, error: error.message }),
+							Effect.andThen(reads.serviceOperationsSummary(tenant, request)),
+						),
+					),
+				)
+		})
 
 	/** Golden signals per (service, environment) from the hourly aggregate, as the overview reads them. */
 	const serviceHealthSnapshot = Effect.fn("TelemetryReadService.serviceHealthSnapshot")(function* (
@@ -258,6 +270,7 @@ const make = Effect.gen(function* () {
 		searchLogs,
 		log,
 		listMetrics,
+		serviceBaselineRows,
 		serviceBaselines,
 		serviceCatalog,
 		serviceOperations,

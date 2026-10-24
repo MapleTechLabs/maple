@@ -1,6 +1,7 @@
 import { ALERT_EVALUATION_INTERVALS } from "@maple/domain/http"
 import { describe, expect, it } from "vitest"
 import {
+	serviceHealthSnapshotHours,
 	bucketTimeline,
 	BUCKET_POLICIES,
 	cacheSnapSecondsForRange,
@@ -883,5 +884,22 @@ describe("calendar arithmetic in an IANA zone", () => {
 		expect(resolveRelativeRange("1mo", now, "Asia/Tokyo")!.startMs).toBe(
 			Date.parse("2026-02-27T15:30:00Z"),
 		)
+	})
+})
+
+describe("serviceHealthSnapshotHours", () => {
+	it("covers the hours a window touches, ending at an hour it ends on", () => {
+		expect(serviceHealthSnapshotHours("2026-07-15 12:00:00", "2026-07-15 13:00:00")).toEqual({
+			startMs: Date.parse("2026-07-15T12:00:00Z"),
+			endMs: Date.parse("2026-07-15T13:00:00Z"),
+			seconds: 3600,
+		})
+		expect(serviceHealthSnapshotHours("2026-07-15 12:30:00", "2026-07-15 13:30:00").seconds).toBe(7200)
+	})
+
+	it("gives back-to-back hour windows disjoint hours", () => {
+		const previous = serviceHealthSnapshotHours("2026-07-15 11:00:00", "2026-07-15 12:00:00")
+		const current = serviceHealthSnapshotHours("2026-07-15 12:00:00", "2026-07-15 13:00:00")
+		expect(previous.endMs).toBe(current.startMs)
 	})
 })
