@@ -1,10 +1,12 @@
 import { ONBOARDING_INTENTS } from "../../lib/onboarding-intent"
 import {
 	filledSurfaces,
+	languageDocsOf,
 	STACK_LANGUAGE_IDS,
 	STACK_LANGUAGES,
 	STACK_PLATFORM_IDS,
 	STACK_PLATFORMS,
+	type StackAnswers,
 	type StackItem,
 	type StackPlatform,
 } from "../../lib/onboarding-stack"
@@ -459,6 +461,12 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 const toConnect = (message: ConnectMessage): Message => Message.GotConnectMessage({ message })
 
 /** Each platform's own setup page under Sources: an integration's connect step or a push platform's snippets. */
+/** The picked language's guide for the Instrument tab; without one it keeps the snippet's own. */
+const docsFor = (stack: StackAnswers): Readonly<{ docs?: GuidedSetup.InstructionsDocs }> => {
+	const docs = languageDocsOf(stack)
+	return docs === undefined ? {} : { docs }
+}
+
 const setupHrefOf = (platform: StackPlatform): string =>
 	platform === "kubernetes" || platform === "docker"
 		? hrefOf(AppRoute.SourcesNew({ search: { platform } }))
@@ -563,13 +571,7 @@ const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
 										"flex items-center gap-2 text-2xs uppercase tracking-widest text-muted-foreground",
 									),
 								],
-								[
-									icon(h, "FrameworkOpenTelemetryIcon", {
-										size: 14,
-										className: "text-foreground",
-									}),
-									"Your code, with OpenTelemetry",
-								],
+								["Your code, with OpenTelemetry"],
 							),
 							// The languages picked, or every SDK there are snippets for when none was.
 							h.span(
@@ -610,6 +612,7 @@ const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
 						toSnippetCopy: (snippet, message) =>
 							toConnect(ConnectMessage.GotSnippetCopyMessage({ snippet, message })),
 						variant: "boxed",
+						...docsFor(state.stack),
 					}),
 					...(connect.keys._tag === "Failed"
 						? [
