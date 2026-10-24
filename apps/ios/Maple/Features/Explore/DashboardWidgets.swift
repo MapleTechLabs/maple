@@ -20,7 +20,7 @@ enum WidgetFormat {
 		case "duration_us": Format.latency(value / 1000)
 		case "duration_s": Format.latency(value * 1000)
 		case "duration_ns": Format.latency(value / 1_000_000)
-		case "requests_per_sec": Format.count(value) + "/s"
+		case "requests_per_sec": Format.count(value) + " rps"
 		case "bytes": bytes(value)
 		default: Format.count(value)
 		}
@@ -33,7 +33,7 @@ enum WidgetFormat {
 
 	/// `percentText`: one decimal, with more digits only for a tiny nonzero value.
 	static func percent(_ pct: Double) -> String {
-		guard pct.isFinite else { return "—" }
+		guard pct.isFinite else { return Format.placeholder }
 		let magnitude = abs(pct)
 		if magnitude == 0 || magnitude >= 0.05 { return String(format: "%.1f%%", pct) }
 		let digits = min(6, Int((-log10(magnitude)).rounded(.up)) + 1)
@@ -337,13 +337,13 @@ private struct DashboardTable: View {
 		TableCard(columns: [columns.label ?? "Row"] + columns.numbers, title: title.isEmpty ? nil : title) {
 			ForEach(Array(rows.prefix(10).enumerated()), id: \.offset) { _, row in
 				TableRow {
-					Text(columns.label.flatMap { row[$0]?.string } ?? "—")
+					Text(columns.label.flatMap { row[$0]?.string } ?? Format.placeholder)
 						.font(Typo.small)
 						.foregroundStyle(Token.foreground)
 						.lineLimit(1)
 				} trailing: {
 					ForEach(columns.numbers, id: \.self) { key in
-						TableCell(text: row[key]?.number.map { format($0, key: key) } ?? "—", tint: tint(key))
+						TableCell(text: row[key]?.number.map { format($0, key: key) } ?? Format.placeholder, tint: tint(key))
 					}
 				}
 			}

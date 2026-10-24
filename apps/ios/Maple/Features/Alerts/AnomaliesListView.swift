@@ -107,7 +107,7 @@ struct AnomalyRow: View {
 					Text(
 						isOpen
 							? "· open \(Format.duration(from: anomaly.firstTriggeredAt))"
-							: "· resolved \(IssueFormat.ago(anomaly.resolvedAt ?? anomaly.lastTriggeredAt))"
+							: "· resolved \(Format.ago(anomaly.resolvedAt ?? anomaly.lastTriggeredAt))"
 					)
 					.fixedSize()
 					Spacer(minLength: 0)

@@ -78,7 +78,7 @@ private struct DashboardRow: View {
 
 	private var subtitle: String {
 		let widgets = dashboard.widgetCount == 1 ? "1 widget" : "\(dashboard.widgetCount) widgets"
-		return [widgets, dashboard.description, "updated \(Format.lastSeen(dashboard.updatedAt))"]
+		return [widgets, dashboard.description, "updated \(Format.ago(dashboard.updatedAt))"]
 			.compactMap { $0 }
 			.filter { !$0.isEmpty }
 			.joined(separator: " · ")
@@ -300,7 +300,7 @@ private struct DashboardContent: View {
 						ForEach(widgets) { widget in
 							StatTile(
 								label: widget.title,
-								value: board.data[widget.id].flatMap(\.number).map { WidgetFormat.stat($0, widget: widget) } ?? "—"
+								value: board.data[widget.id].flatMap(\.number).map { WidgetFormat.stat($0, widget: widget) } ?? Format.placeholder
 							)
 						}
 					}
@@ -335,7 +335,7 @@ private struct DashboardWindowPill: View {
 			}
 		} label: {
 			HStack(spacing: 6) {
-				Text(Self.label(window))
+				Text(window.chipTitle)
 					.font(Typo.small)
 					.foregroundStyle(Token.foreground)
 				PixelIcon.chevronDown.image
@@ -352,14 +352,5 @@ private struct DashboardWindowPill: View {
 			.contentShape(.rect)
 		}
 		.accessibilityLabel("Time range, \(window.title)")
-	}
-
-	private static func label(_ window: TimeWindow) -> String {
-		switch window {
-		case .lastHour: "Last 1h"
-		case .last6Hours: "Last 6h"
-		case .last24Hours: "Last 24h"
-		case .last7Days: "Last 7d"
-		}
 	}
 }

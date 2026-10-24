@@ -17,7 +17,7 @@ enum SignalUnit: Codable {
 	case plain
 
 	func format(_ value: Double?) -> String {
-		guard let value, value.isFinite else { return "—" }
+		guard let value, value.isFinite else { return Format.placeholder }
 		switch self {
 		case .ratio: return Format.errorRate(value)
 		case .milliseconds: return Format.latency(value)
@@ -176,7 +176,7 @@ extension Format {
 	/// A timeline stamp: `11:44` today, `Aug 15, 11:44` otherwise. One line,
 	/// always — the timeline's date column is fixed-width.
 	static func timelineTime(_ timestamp: String) -> String {
-		guard let date = ResolvedTimeWindow.parse(timestamp) else { return "—" }
+		guard let date = ResolvedTimeWindow.parse(timestamp) else { return Format.placeholder }
 		if Calendar.current.isDateInToday(date) {
 			return date.formatted(date: .omitted, time: .shortened)
 		}
@@ -210,7 +210,7 @@ extension Format {
 	/// like `lastSeen`, but two units once it passes an hour, because "3h" for
 	/// an incident hides whether it's fresh or nearly four.
 	static func duration(from startText: String, to endText: String? = nil) -> String {
-		guard let start = ResolvedTimeWindow.parse(startText) else { return "—" }
+		guard let start = ResolvedTimeWindow.parse(startText) else { return Format.placeholder }
 		let end = endText.flatMap(ResolvedTimeWindow.parse) ?? Date()
 		return duration(seconds: end.timeIntervalSince(start))
 	}

@@ -181,7 +181,7 @@ struct WhatChangedSection: View {
 				)
 				ChangeTile(
 					label: "Throughput",
-					value: rps.current.map(Format.throughput) ?? SignalUnit.plain.format(nil),
+					value: rps.current.map(Format.rps) ?? SignalUnit.plain.format(nil),
 					values: rps.values,
 					tint: Token.mutedForeground,
 					delta: rps.percentDelta
@@ -333,7 +333,7 @@ struct LikelyCauseSection: View {
 				}
 				HStack(spacing: 6) {
 					Text("\(Format.count(count)) events").foregroundStyle(Token.severityError)
-					Text("· first seen \(IssueFormat.ago(firstSeen))").foregroundStyle(Token.mutedForeground)
+					Text("· first seen \(Format.ago(firstSeen))").foregroundStyle(Token.mutedForeground)
 				}
 				.font(Typo.tiny)
 				.tabularNumbers()

@@ -116,7 +116,7 @@ private struct TracesListRow: View {
 					.foregroundStyle(Tone.latency(trace.durationMs, scale: .p95))
 			}
 			HStack(spacing: 8) {
-				Text("\(trace.id.prefix(8)) · \(Format.lastSeen(trace.startTime))")
+				Text("\(trace.id.prefix(8)) · \(Format.ago(trace.startTime))")
 					.foregroundStyle(Token.mutedForeground)
 					.lineLimit(1)
 				Spacer(minLength: 8)

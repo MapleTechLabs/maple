@@ -127,7 +127,7 @@ private struct SearchResults: View {
 						NavigationLink(value: Route.service(name: service.name)) {
 							SearchRow(
 								title: service.name,
-								detail: "\(Format.throughput(service.throughput)) · p95 \(Format.latency(service.p95LatencyMs))",
+								detail: "\(Format.rps(service.throughput)) · p95 \(Format.latency(service.p95LatencyMs))",
 								serviceName: service.name
 							)
 						}
@@ -143,7 +143,7 @@ private struct SearchResults: View {
 						NavigationLink(value: Route.issue(id: issue.id)) {
 							SearchRow(
 								title: issue.exceptionType,
-								detail: "\(issue.serviceName) · \(Format.lastSeen(issue.lastSeenAt))",
+								detail: "\(issue.serviceName) · \(Format.ago(issue.lastSeenAt))",
 								serviceName: issue.serviceName
 							)
 						}

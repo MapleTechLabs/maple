@@ -292,7 +292,7 @@ private struct ServiceDetailContent: View {
 	@ViewBuilder
 	private var overview: some View {
 		StatGrid(columns: 2) {
-			StatTile(label: "Throughput", value: ServicesFormat.rps(service.throughput))
+			StatTile(label: "Throughput", value: Format.rps(service.throughput))
 			StatTile(label: "Error rate", value: Format.errorRate(service.errorRate))
 			StatTile(
 				label: "P95 latency",
@@ -313,7 +313,7 @@ private struct ServiceDetailContent: View {
 		SignalCard(
 			points: SignalPoint.from(detail.overview),
 			window: resolvedWindow,
-			windowLabel: ServicesFormat.window(window),
+			windowLabel: window.compactTitle,
 			baselineP95: LatencyBaseline(service: service)?.p95LatencyMs
 		)
 		.padding(.horizontal, 16)
@@ -465,8 +465,8 @@ private struct SignalCard: View {
 		let detail: String
 		switch kind {
 		case .throughput:
-			value = ServicesFormat.rps(shown?.throughput ?? 0)
-			detail = "\(when) · peak \(ServicesFormat.rps(points.map(\.throughput).max() ?? 0))"
+			value = Format.rps(shown?.throughput ?? 0)
+			detail = "\(when) · peak \(Format.rps(points.map(\.throughput).max() ?? 0))"
 		case .errors:
 			value = Format.errorRate(shown?.errorRate ?? 0)
 			detail = "\(when) · peak \(Format.errorRate(points.map(\.errorRate).max() ?? 0))"

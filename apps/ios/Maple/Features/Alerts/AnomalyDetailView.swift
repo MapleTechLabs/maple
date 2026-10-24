@@ -102,7 +102,7 @@ private struct AnomalyDetailContent: View {
 							}
 							HStack(spacing: 6) {
 								Text("\(Format.count(issue.occurrenceCount)) events").foregroundStyle(Token.severityError)
-								Text("· first seen \(IssueFormat.ago(issue.firstSeenAt))").foregroundStyle(Token.mutedForeground)
+								Text("· first seen \(Format.ago(issue.firstSeenAt))").foregroundStyle(Token.mutedForeground)
 							}
 							.font(Typo.tiny)
 							.tabularNumbers()

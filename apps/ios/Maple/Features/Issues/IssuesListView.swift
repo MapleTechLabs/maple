@@ -241,7 +241,7 @@ struct IssueRow: View {
 						.foregroundStyle(Token.foreground)
 						.lineLimit(1)
 					Spacer(minLength: 4)
-					Text(Format.lastSeen(issue.lastSeenAt))
+					Text(Format.ago(issue.lastSeenAt))
 						.font(Typo.tiny)
 						.tabularNumbers()
 						.foregroundStyle(Token.mutedForeground)

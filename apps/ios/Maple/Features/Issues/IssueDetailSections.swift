@@ -70,7 +70,7 @@ private struct IssueHeader: View {
 					.font(Typo.smallMedium)
 					.foregroundStyle(Token.foreground)
 					.lineLimit(1)
-				Text("· first \(IssueFormat.ago(issue.firstSeenAt)) · last \(IssueFormat.ago(issue.lastSeenAt))")
+				Text("· first \(Format.ago(issue.firstSeenAt)) · last \(Format.ago(issue.lastSeenAt))")
 					.font(Typo.small)
 					.foregroundStyle(Token.mutedForeground)
 					.lineLimit(1)
@@ -114,7 +114,7 @@ private struct IssueStats: View {
 			)
 			StatTile(
 				label: "First seen",
-				value: IssueFormat.ago(issue.firstSeenAt),
+				value: Format.ago(issue.firstSeenAt),
 				note: (Format.absolute(issue.firstSeenAt), Token.mutedForeground)
 			)
 			StatTile(
@@ -130,10 +130,10 @@ private struct IssueStats: View {
 		if issue.regressionCount > 0 {
 			let times = issue.regressionCount == 1 ? "once" : "\(Format.count(issue.regressionCount)) times"
 			guard let last = issue.lastRegressedAt else { return times }
-			return "\(times) · last \(IssueFormat.ago(last))"
+			return "\(times) · last \(Format.ago(last))"
 		}
 		guard let resolved = issue.lastResolvedAt else { return "never resolved" }
-		return "resolved \(IssueFormat.ago(resolved))"
+		return "resolved \(Format.ago(resolved))"
 	}
 }
 
@@ -265,7 +265,7 @@ private struct SampleRow: View {
 					.font(Typo.smallMedium)
 					.foregroundStyle(Token.foreground)
 					.lineLimit(1)
-				Text("\(sample.traceId.prefix(8)) · \(IssueFormat.ago(sample.timestamp))")
+				Text("\(sample.traceId.prefix(8)) · \(Format.ago(sample.timestamp))")
 					.font(Typo.tiny)
 					.tabularNumbers()
 					.foregroundStyle(Token.mutedForeground)
@@ -311,7 +311,7 @@ private struct IssueIncidents: View {
 									.foregroundStyle(Token.mutedForeground)
 							}
 							Spacer()
-							Text(IssueFormat.ago(incident.lastTriggeredAt))
+							Text(Format.ago(incident.lastTriggeredAt))
 								.font(Typo.tiny)
 								.tabularNumbers()
 								.foregroundStyle(Token.mutedForeground)

@@ -1,33 +1,13 @@
 import MapleAPI
 import SwiftUI
 
-/// Formatting the Services screens share, kept local so the app-wide `Format`
-/// (which mirrors the web exactly) stays untouched.
-enum ServicesFormat {
-	/// `1h`, `6h`, `24h`, `7d`: the chip labels and the status line's window.
-	static func window(_ window: TimeWindow) -> String {
-		switch window {
-		case .lastHour: "1h"
-		case .last6Hours: "6h"
-		case .last24Hours: "24h"
-		case .last7Days: "7d"
-		}
-	}
-
-	/// `41.7 rps`: the design spells throughput out rather than `/s`.
-	static func rps(_ perSecond: Double) -> String {
-		let text = Format.throughput(perSecond)
-		return text.hasSuffix("/s") ? String(text.dropLast(2)) + " rps" : text
-	}
-}
-
 /// The window chips every Services screen carries: `1h 6h 24h 7d`.
 struct WindowChips: View {
 	@Binding var window: TimeWindow
 
 	var body: some View {
 		SegmentChips(
-			options: TimeWindow.allCases.map { ($0, ServicesFormat.window($0)) },
+			options: TimeWindow.allCases.map { ($0, $0.compactTitle) },
 			selection: $window,
 			style: .framed
 		)

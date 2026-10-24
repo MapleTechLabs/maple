@@ -18,18 +18,6 @@ final class ServiceOptions {
 	}
 }
 
-extension TimeWindow {
-	/// The window chip's compact label: `Last 1h`.
-	var chipTitle: String {
-		switch self {
-		case .lastHour: "Last 1h"
-		case .last6Hours: "Last 6h"
-		case .last24Hours: "Last 24h"
-		case .last7Days: "Last 7d"
-		}
-	}
-}
-
 /// The query card above a segment's chips: magnifier, search text, result count.
 struct ExploreQueryBar: View {
 	let prompt: String

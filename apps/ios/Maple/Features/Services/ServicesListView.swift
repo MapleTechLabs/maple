@@ -119,7 +119,7 @@ struct ServicesListView: View {
 	private var status: TabRootStatus {
 		let count = model?.state.value?.count
 		let lead = count.map { "\($0) \($0 == 1 ? "service" : "services") · " } ?? ""
-		return TabRootStatus(dot: nil, lead: "", detail: "\(lead)last \(ServicesFormat.window(window))")
+		return TabRootStatus(dot: nil, lead: "", detail: "\(lead)last \(window.compactTitle)")
 	}
 
 	private var content: some View {
@@ -209,7 +209,7 @@ private struct ServiceRow: View {
 					.truncationMode(.middle)
 				HealthDot(health: ServiceHealth(service: service))
 				Spacer(minLength: 8)
-				Text(ServicesFormat.rps(service.throughput))
+				Text(Format.rps(service.throughput))
 					.font(Typo.body)
 					.tabularNumbers()
 					.foregroundStyle(Token.foreground)

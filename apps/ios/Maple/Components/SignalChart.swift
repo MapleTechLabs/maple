@@ -255,7 +255,7 @@ struct SignalChart: View {
 
 	private func axisLabel(_ value: Double) -> String {
 		switch kind {
-		case .throughput: value == 0 ? "0" : Format.throughput(value)
+		case .throughput: value == 0 ? "0" : Format.rps(value)
 		case .errors: Format.errorRate(value)
 		case .latency: value == 0 ? "0" : Format.latency(value)
 		}

@@ -57,8 +57,8 @@ extension IssueSeverity {
 	}
 }
 
-/// Severity chip. A null severity renders an em dash rather than a badge —
-/// matching the web, which shows `—` in muted text.
+/// Severity chip. A null severity renders the muted placeholder dash rather
+/// than a badge, as the web does.
 struct SeverityBadge: View {
 	let severity: IssueSeverity?
 
@@ -72,7 +72,7 @@ struct SeverityBadge: View {
 				.background(severity.fill.opacity(0.12), in: .rect(cornerRadius: Token.Radius.sm))
 				.fixedSize()
 		} else {
-			Text("—")
+			Text(Format.placeholder)
 				.font(Typo.small)
 				.foregroundStyle(Token.mutedForeground.opacity(0.6))
 		}

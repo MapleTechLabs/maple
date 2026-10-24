@@ -157,7 +157,7 @@ struct IncidentRow: View {
 					Text(
 						isOpen
 							? "open \(Format.duration(from: incident.firstTriggeredAt))"
-							: "resolved \(IssueFormat.ago(incident.resolvedAt ?? incident.lastTriggeredAt))"
+							: "resolved \(Format.ago(incident.resolvedAt ?? incident.lastTriggeredAt))"
 					)
 					.fixedSize()
 					Spacer(minLength: 0)

@@ -35,7 +35,7 @@ struct IssueListRow: View {
 				Text(Format.count(issue.occurrenceCount))
 					.fixedSize()
 				Text("·")
-				Text(IssueFormat.ago(issue.lastSeenAt))
+				Text(Format.ago(issue.lastSeenAt))
 					.fixedSize()
 				if issue.hasOpenIncident {
 					Text("·")
@@ -62,18 +62,6 @@ extension ErrorIssue {
 	var isNew: Bool {
 		guard let first = ResolvedTimeWindow.parse(firstSeenAt) else { return false }
 		return Date().timeIntervalSince(first) < 86_400
-	}
-}
-
-enum IssueFormat {
-	/// `just now`, `14m ago`, `3h ago`; dates past a week stay bare.
-	static func ago(_ timestamp: String) -> String {
-		let terse = Format.lastSeen(timestamp)
-		if terse == "now" { return "just now" }
-		guard let unit = terse.last, "mhd".contains(unit), terse.dropLast().allSatisfy(\.isNumber) else {
-			return terse
-		}
-		return "\(terse) ago"
 	}
 }
 
