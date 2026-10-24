@@ -141,7 +141,7 @@ struct ThroughputProvider: AppIntentTimelineProvider {
 			storedGeneratedAt: base.snapshot?.generatedAt,
 			now: now
 		)
-		if outcome.didFetch { base = makeEntry(for: configuration, at: now) }
+		if outcome.didFetch || outcome.needsApp { base = makeEntry(for: configuration, at: now) }
 		let entries = WidgetTimelineSchedule.entryDates(from: now).map { date -> ThroughputEntry in
 			var entry = base
 			entry.date = date

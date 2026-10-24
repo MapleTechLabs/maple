@@ -75,7 +75,8 @@ private struct ListView: View {
 				SeverityLine(
 					snapshot: snapshot,
 					now: isLarge ? nil : entry.date,
-					extra: snapshot.openCount > rowLimit ? "+\(snapshot.openCount - rowLimit) more" : nil
+					extra: snapshot.openCount > rowLimit ? "+\(snapshot.openCount - rowLimit) more" : nil,
+					needsApp: entry.needsApp
 				)
 				.padding(.bottom, 6)
 
@@ -326,6 +327,7 @@ private struct SeverityLine: View {
 	let snapshot: IssuesSnapshot
 	var now: Date?
 	var extra: String?
+	var needsApp = false
 
 	var body: some View {
 		Text(summary)
@@ -348,7 +350,7 @@ private struct SeverityLine: View {
 		if let extra { parts.append(extra) }
 		// Only the families with no room for `UpdatedFooter` pass `now` — see
 		// `ListView`. Exactly one age per family, never two.
-		if let now { parts.append(WidgetTime.updated(snapshot.age(at: now))) }
+		if let now { parts.append(WidgetTime.updated(snapshot.age(at: now), needsApp: needsApp)) }
 		return parts.joined(separator: " · ")
 	}
 }

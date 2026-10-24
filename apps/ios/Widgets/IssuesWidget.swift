@@ -180,7 +180,7 @@ struct IssuesProvider: AppIntentTimelineProvider {
 		// Re-read rather than take the payload back: the fetcher writes both
 		// widgets' snapshots into the App Group, and going through the store
 		// keeps this provider's one way of resolving an organization.
-		if outcome.didFetch { base = makeEntry(for: configuration, at: now) }
+		if outcome.didFetch || outcome.needsApp { base = makeEntry(for: configuration, at: now) }
 		let entries = WidgetTimelineSchedule.entryDates(from: now).map { date -> IssuesEntry in
 			var entry = base
 			entry.date = date

@@ -142,7 +142,12 @@ public actor WidgetSummaryFetcher {
 		// The device credential wins whenever the app has registered one.
 		let authorization: Authorization
 		if let device = credentials.loadDevice(organizationId: organizationId) {
-			if device.isExpired(at: now) { return .needsApp }
+			// Expired is as final as refused: recorded, so the app re-registers
+			// and the widget says so.
+			if device.isExpired(at: now) {
+				fetchStates.save(state.recording(.unauthorized, at: now, authScheme: "dpop"), organizationId: organizationId)
+				return .needsApp
+			}
 			// The record without its key (a restored backup, a wiped keychain) is
 			// a credential nothing can sign for. Recorded so the app re-registers.
 			guard let key = keys.load(organizationId: organizationId), key.thumbprint == device.jkt else {
