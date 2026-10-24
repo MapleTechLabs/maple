@@ -1,5 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
+import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
@@ -635,6 +636,94 @@ export class SupabaseLogIssuesResponse extends Schema.Class<SupabaseLogIssuesRes
 	"SupabaseLogIssuesResponse",
 )({
 	issues: Schema.Array(SupabaseLogIssue),
+}) {}
+
+// AWS infrastructure page (/infra/aws): `aws.*` metrics from the CloudWatch metric stream.
+const AwsInfraKind = Schema.Literals(AWS_INFRA_KIND_IDS)
+
+export class AwsInfraPresenceRequest extends Schema.Class<AwsInfraPresenceRequest>("AwsInfraPresenceRequest")(
+	{
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+	},
+) {}
+
+export class AwsInfraPresenceResponse extends Schema.Class<AwsInfraPresenceResponse>(
+	"AwsInfraPresenceResponse",
+)({
+	/** The kinds with a metric in the window, in tab order. */
+	kinds: Schema.Array(AwsInfraKind),
+}) {}
+
+export class AwsInfraMetricsRequest extends Schema.Class<AwsInfraMetricsRequest>("AwsInfraMetricsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	kind: AwsInfraKind,
+}) {}
+
+export class AwsInfraMetricsResponse extends Schema.Class<AwsInfraMetricsResponse>("AwsInfraMetricsResponse")(
+	{
+		/** One row per resource and metric: see `awsInfraMetricsSQL`. */
+		data: Schema.Array(
+			Schema.Struct({
+				keys: Schema.Array(Schema.String),
+				metric: Schema.String,
+				total: Schema.Number,
+				samples: Schema.Number,
+				peak: Schema.Number,
+				lastSeen: Schema.String,
+			}),
+		),
+	},
+) {}
+
+export class AwsInfraSparklinesRequest extends Schema.Class<AwsInfraSparklinesRequest>(
+	"AwsInfraSparklinesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	kind: AwsInfraKind,
+}) {}
+
+export class AwsInfraSparklinesResponse extends Schema.Class<AwsInfraSparklinesResponse>(
+	"AwsInfraSparklinesResponse",
+)({
+	/** One row per resource, bucket and metric: see `awsInfraSparklinesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			keys: Schema.Array(Schema.String),
+			bucket: Schema.String,
+			metric: Schema.String,
+			total: Schema.Number,
+			samples: Schema.Number,
+		}),
+	),
+}) {}
+
+export class AwsInfraTimeseriesRequest extends Schema.Class<AwsInfraTimeseriesRequest>(
+	"AwsInfraTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	kind: AwsInfraKind,
+	/** The resource's keys, as `AwsInfraMetricsResponse` returns them. */
+	keys: Schema.Array(Schema.String.check(Schema.isMaxLength(512))).check(Schema.isMaxLength(8)),
+}) {}
+
+export class AwsInfraTimeseriesResponse extends Schema.Class<AwsInfraTimeseriesResponse>(
+	"AwsInfraTimeseriesResponse",
+)({
+	/** One row per bucket and metric: see `awsInfraTimeseriesSQL`. */
+	data: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			metric: Schema.String,
+			total: Schema.Number,
+			samples: Schema.Number,
+		}),
+	),
 }) {}
 
 // Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
@@ -3095,6 +3184,34 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("supabaseLogIssues", "/supabase-log-issues", {
 			payload: SupabaseLogIssuesRequest,
 			success: SupabaseLogIssuesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraPresence", "/aws-infra-presence", {
+			payload: AwsInfraPresenceRequest,
+			success: AwsInfraPresenceResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraMetrics", "/aws-infra-metrics", {
+			payload: AwsInfraMetricsRequest,
+			success: AwsInfraMetricsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraSparklines", "/aws-infra-sparklines", {
+			payload: AwsInfraSparklinesRequest,
+			success: AwsInfraSparklinesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("awsInfraTimeseries", "/aws-infra-timeseries", {
+			payload: AwsInfraTimeseriesRequest,
+			success: AwsInfraTimeseriesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

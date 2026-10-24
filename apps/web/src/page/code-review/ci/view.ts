@@ -1,6 +1,5 @@
 import type { CodeReviewCiAnalytics } from "@maple/domain/http"
-import { CI_RESULT_LABELS, windowWasCut } from "../../../components/code-review/ci/ci-format"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { CI_RESULT_LABELS } from "../../../components/code-review/ci/ci-format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -15,9 +14,9 @@ import { icon } from "../../../ui/icon"
 import type * as Select from "../../../ui/select"
 import { type SelectEntry, view as selectView } from "../../../ui/select-view"
 import type { PageViewInputs } from "../../contract"
-import { epochWindow } from "../kit/api"
 import { seriesTokens } from "../kit/analytics-panel"
-import { CI_PRESETS, filtersView } from "../kit/filters-view"
+import { filtersView } from "../kit/filters-view"
+import * as TimeRangePicker from "../../kit/time-range-picker"
 import { codeReviewLayout, nothingInWindow } from "../kit/layout"
 import { sectionHeading } from "../../kit/section-heading"
 import { Message, type Model } from "./model"
@@ -101,33 +100,14 @@ const runsActions = (h: H, model: Model): Html =>
 	)
 
 const analyticsView = (h: H, model: Model, analytics: CodeReviewCiAnalytics, timeZone: string): Html => {
-	const window = model.frame.window
-	const requestedStart = window === null ? analytics.startTime : epochWindow(window).startTime
-	const isCut = windowWasCut(requestedStart, analytics.startTime)
 	const windowLabel =
-		isCut || model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
+		model.search.startTime !== undefined ? "period" : (model.search.timePreset ?? DEFAULT_PRESET)
 	const theme = model.themeColors
 	const time = { nowMs: model.frame.nowMs, timeZone }
 	if (theme === null || !isChartRuntimeReady(model.chartRuntime)) return ciSkeleton(h)
 	return h.div(
 		[h.Class("flex flex-col gap-6")],
 		[
-			...(isCut
-				? [
-						h.p(
-							[h.Class("text-sm text-muted-foreground")],
-							[
-								"CI analytics cover at most 14 days: showing runs since",
-								" ",
-								formatTimestampInTimezone(new Date(analytics.startTime), {
-									timeZone,
-									style: "range",
-								}),
-								".",
-							],
-						),
-					]
-				: []),
 			h.div(
 				[h.Class("flex flex-col gap-6")],
 				[
@@ -201,8 +181,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					h,
 					active: "ci",
 					search: model.search,
-					nowMs: model.frame.nowMs,
-					timeZone: inputs.context.timeZone,
 					toolbar: filtersView(h, {
 						frame: model.frame,
 						search: model.search,
@@ -211,7 +189,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						options: pipelinesOf(model),
 						selected: model.search.pipeline,
 						defaultPreset: DEFAULT_PRESET,
-						presets: CI_PRESETS,
+						presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
 						toMessage: (message) => Message.GotFrameMessage({ message }),
 					}),
 				},

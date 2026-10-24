@@ -212,7 +212,7 @@ export interface HazelOAuthServiceApi {
 }
 
 export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelOAuthServiceApi>()(
-	"@maple/api/services/HazelOAuthService",
+	"@maple/backend/services/HazelOAuthService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

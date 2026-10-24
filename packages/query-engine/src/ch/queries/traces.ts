@@ -40,6 +40,7 @@ import { edgeCondition, hourGrain, interiorBounds, utcInteriorConditions, minute
 import {
 	apdexExprs,
 	buildProjectedMapExpr,
+	ROOT_SPAN_ATTR_KEYS,
 	canUseServiceOverviewMv,
 	canUseTracesAggregatesMv,
 	errorsOnlyCondition,
@@ -1427,28 +1428,6 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 		.offset(opts.offset ?? 0)
 		.format("JSON")
 }
-
-/**
- * HTTP attribute keys projected into `rootSpanAttributes`. Mirrors the web app's
- * trace-list projection and the hierarchy query's `TREE_SPAN_ATTR_KEYS` so the
- * shared `getHttpInfo` / `HttpSpanLabel` render identically across surfaces.
- */
-const ROOT_SPAN_ATTR_KEYS = [
-	"http.method",
-	"http.request.method",
-	"http.route",
-	"http.target",
-	"http.status_code",
-	"http.response.status_code",
-	"http.url",
-	"url.full",
-	"url.path",
-	"server.address",
-	"net.peer.name",
-	// Mobile screen spans (`ui.screen` / `screen.load`) carry their only useful
-	// identity here — without it every screen trace renders as the bare span name.
-	"screen.name",
-] as const
 
 /**
  * Two-stage root-trace list query. Same OOM avoidance as `tracesListQuery`:

@@ -2,7 +2,7 @@ import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { fromString } from "foldkit/url"
 import { describe, expect, test } from "vitest"
-import { FetchSignalPresence, ProbeServer } from "./command"
+import { FetchSignalPresence, LoadExternal, ProbeServer, WaitBeforeProbe } from "./command"
 import { init } from "./main"
 import type { Model } from "./model"
 import { PageOutMessage } from "./page/contract"
@@ -11,6 +11,7 @@ import { PageMessage } from "./page/registry"
 import { update } from "./update"
 import { foldPageOut, updatePageMessage } from "./update-page"
 import { Message } from "./message"
+import { ProbeOutcome } from "./server/state"
 
 const flags = {
 	env: { apiBase: "", port: "4318", otlpEndpoint: "http://127.0.0.1:4318", isHosted: false },
@@ -82,5 +83,22 @@ describe("superseded requests", () => {
 		const key = model.page._tag === "LogsPage" ? (model.page.logs.key ?? "") : ""
 		const answer = LogsMessage.SucceededFetchLogs({ key, data: { pages: [[]], hasNextPage: false }, fetchedAtMs: NOW })
 		expect(stops(updatePageMessage(model, PageMessage.GotLogsMessage({ message: answer })).commands)).toEqual([])
+	})
+})
+
+describe("signed-out self-hosted server", () => {
+	const rejected = (model: Model, status: number) =>
+		update(model, Message.CompletedProbeServer({ outcome: ProbeOutcome.Rejected({ status, detail: "" }), checkedAtMs: 1 }))
+
+	test("a 401 probe sends the bundled UI to the sign-in page", () => {
+		const signedOut = rejected(settled(), 401)
+		expect(names(signedOut.commands)).toEqual([LoadExternal.name])
+		expect(argsOf(signedOut.commands)).toEqual([{ href: "/login" }])
+	})
+
+	test("the hosted UI and other rejections keep probing", () => {
+		const hosted = { ...settled(), env: { ...flags.env, isHosted: true } }
+		expect(names(rejected(hosted, 401).commands)).toEqual([WaitBeforeProbe.name])
+		expect(names(rejected(settled(), 403).commands)).toEqual([WaitBeforeProbe.name])
 	})
 })

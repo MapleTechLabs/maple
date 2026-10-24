@@ -61,7 +61,7 @@ export const bindChatSessions = Effect.flatMap(aiScriptName, (scriptName) =>
  * class is not a Context tag, so a bound client reaches an activation through this one).
  */
 export class BoundChatSessions extends Context.Service<BoundChatSessions, ChatSessionNamespace>()(
-	"@maple/api/platform/BoundChatSessions",
+	"@maple/backend/platform/BoundChatSessions",
 ) {
 	static readonly layer = Layer.effect(this, bindChatSessions)
 }

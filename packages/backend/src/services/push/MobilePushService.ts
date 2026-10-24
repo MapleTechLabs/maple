@@ -444,7 +444,7 @@ export const renderLiveActivityState = (
 })
 
 export class MobilePushService extends Context.Service<MobilePushService, MobilePushServiceApi>()(
-	"@maple/api/services/push/MobilePushService",
+	"@maple/backend/services/push/MobilePushService",
 	{
 		make: Effect.gen(function* () {
 			const apns = yield* ApnsClient

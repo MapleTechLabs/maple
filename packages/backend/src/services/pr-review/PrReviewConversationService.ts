@@ -198,7 +198,7 @@ export const buildReplyKickoff = (input: {
 export class PrReviewConversationService extends Context.Service<
 	PrReviewConversationService,
 	PrReviewConversationServiceApi
->()("@maple/api/services/pr-review/PrReviewConversationService", {
+>()("@maple/backend/services/pr-review/PrReviewConversationService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "PrReviewConversationService", toPersistence)
