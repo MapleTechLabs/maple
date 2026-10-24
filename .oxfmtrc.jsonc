@@ -24,7 +24,6 @@
 		".agents/**",
 		".codex/**",
 		".context/**",
-		".deepsec/**",
 		".factory/**",
 		".impeccable/**",
 		".superset/**",
