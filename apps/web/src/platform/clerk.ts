@@ -109,6 +109,16 @@ export interface ClerkUserResource {
 	readonly getOrganizationMemberships: () => Promise<
 		ClerkPage<{ readonly organization: { readonly id: string } }>
 	>
+	readonly getOrganizationInvitations: (params: {
+		readonly status: "pending"
+		readonly pageSize: number
+	}) => Promise<ClerkPage<ClerkUserInvitationResource>>
+}
+/** An invitation addressed to the signed-in user (`user.getOrganizationInvitations()`). */
+export interface ClerkUserInvitationResource {
+	readonly id: string
+	readonly publicOrganizationData: { readonly id: string; readonly name: string; readonly imageUrl: string }
+	readonly accept: () => Promise<ClerkUserInvitationResource>
 }
 export interface ClerkPublicUserData {
 	readonly userId?: string
@@ -333,6 +343,14 @@ export const setActiveOrganization = (orgId: string): Effect.Effect<void> =>
 		Effect.catchDefect(() => Effect.void),
 	)
 
+/** `setActive({ organization })` that reports a refusal, for callers that must not move on without it. */
+export const activateOrganization = (orgId: string): Effect.Effect<void, ClerkActionError> =>
+	clerkTry("Couldn't open that organization. Reload the page and try again.", () =>
+		window.Clerk === undefined
+			? Promise.reject(new TypeError("Clerk is not loaded"))
+			: window.Clerk.setActive({ organization: orgId }),
+	)
+
 /** `useClerk().signOut()`: Clerk then routes to `afterSignOutUrl`. */
 export const signOutOfClerk: Effect.Effect<void> = Effect.promise(
 	() => window.Clerk?.signOut() ?? Promise.resolve(),
@@ -482,6 +500,49 @@ export const clerkTryReverified = <A>(
 		Effect.catchIf(isReverificationRequired, (refusal) => Effect.andThen(reverify(refusal), attempt)),
 	)
 }
+
+/** A pending invitation for the signed-in user, as `/org-required` offers it. */
+export const UserInvitation = Schema.Struct({
+	id: Schema.String,
+	orgId: Schema.String,
+	orgName: Schema.String,
+	imageUrl: Schema.String,
+})
+export type UserInvitation = typeof UserInvitation.Type
+
+const userInvitationPage = (user: ClerkUserResource): Effect.Effect<ReadonlyArray<ClerkUserInvitationResource>, ClerkActionError> => {
+	return clerkTry("Could not load your invitations", () =>
+		// One generous page: nobody holds a hundred open invitations.
+		user.getOrganizationInvitations.call(user, { status: "pending", pageSize: 100 }),
+	).pipe(
+		Effect.map((page) => page.data),
+	)
+}
+
+/** `useOrganizationList({ userInvitations })`: the orgs that invited this user and are still waiting. */
+export const pendingUserInvitations: Effect.Effect<ReadonlyArray<UserInvitation>, ClerkActionError> = currentClerkUser.pipe(
+	Effect.flatMap(userInvitationPage),
+	Effect.map((invitations) =>
+		invitations.map((invitation) => ({
+			id: invitation.id,
+			orgId: invitation.publicOrganizationData.id,
+			orgName: invitation.publicOrganizationData.name,
+			imageUrl: invitation.publicOrganizationData.imageUrl,
+		})),
+	),
+)
+
+/** `invitation.accept()`: answers with the org joined, which the caller then makes active. */
+export const acceptUserInvitation = (invitationId: string): Effect.Effect<string, ClerkActionError> =>
+	Effect.gen(function* () {
+		const user = yield* currentClerkUser
+		const invitations = yield* userInvitationPage(user)
+		const invitation = invitations.find((candidate) => candidate.id === invitationId)
+		if (invitation === undefined)
+			return yield* new ClerkActionError({ message: "This invitation is no longer pending", cause: undefined })
+		yield* clerkTry("Could not accept the invitation", () => invitation.accept.call(invitation))
+		return invitation.publicOrganizationData.id
+	})
 
 /** `setActive({ organization })` then home: after leaving or deleting the active organization. */
 export const switchAwayFrom = (orgId: string): Effect.Effect<void> =>

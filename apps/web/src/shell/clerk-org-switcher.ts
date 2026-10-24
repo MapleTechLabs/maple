@@ -7,7 +7,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { load } from "foldkit/navigation"
 import { modifyFields } from "foldkit/struct"
 import { MapleInternalApiClient } from "../platform/api-clients"
-import { setActiveOrganization } from "../platform/clerk"
+import { activateOrganization, type ClerkActionError, setActiveOrganization } from "../platform/clerk"
 import type { Resources } from "../platform/resources"
 import * as Dialog from "../ui/dialog"
 import * as Menu from "../ui/menu"
@@ -200,38 +200,58 @@ export const createdTargetOf = (
 const landOn = (targetUrl: string | null): Effect.Effect<void> =>
 	targetUrl === null ? Effect.sync(() => window.location.reload()) : load(`${targetUrl}/`)
 
+/** `setActive`, then a reload of this dashboard or the region's own app. */
+export const switchToOrganization = (orgId: string, targetUrl: string | null): Effect.Effect<void> =>
+	setActiveOrganization(orgId).pipe(Effect.andThen(landOn(targetUrl)))
+
+/** As `switchToOrganization`, but a refused `setActive` fails instead of reloading onto no org. */
+export const openOrganization = (orgId: string, targetUrl: string | null): Effect.Effect<void, ClerkActionError> =>
+	activateOrganization(orgId).pipe(Effect.andThen(landOn(targetUrl)))
+
 /** `switchOrganization` / the create dialog's ending: `setActive`, then reload or the region's app. */
 export const SwitchOrganization = Command.define("SwitchOrganization", {
 	args: { orgId: Schema.String, targetUrl: Schema.NullOr(Schema.String) },
 	messages: [Message.CompletedSwitchOrganization],
 	execute: ({ orgId, targetUrl }) =>
-		setActiveOrganization(orgId).pipe(
-			Effect.andThen(landOn(targetUrl)),
-			Effect.as(Message.CompletedSwitchOrganization()),
-		),
+		switchToOrganization(orgId, targetUrl).pipe(Effect.as(Message.CompletedSwitchOrganization())),
 })
 
-/** `organizationCreation.create`: the org starts life with its region set. */
+export class OrganizationCreateError extends Schema.TaggedError<OrganizationCreateError>()(
+	"@maple/web/OrganizationCreateError",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+/** `organizationCreation.create`: the new org's id; it starts life with its region set. */
+export const createOrganization = (
+	name: string,
+	region: MapleRegion,
+): Effect.Effect<string, OrganizationCreateError, MapleInternalApiClient> =>
+	Effect.gen(function* () {
+		const client = yield* MapleInternalApiClient
+		const result = yield* client.organizationCreation.create({
+			payload: new CreateOrganizationRequest({ name: name.trim(), region }),
+		})
+		return result.orgId
+	}).pipe(
+		Effect.catchCause((cause) =>
+			Effect.fail(
+				new OrganizationCreateError({
+					message: Option.match(Cause.findErrorOption(cause), {
+						onNone: () => "Failed to create organization",
+						onSome: (error) => error.message,
+					}),
+					cause,
+				}),
+			),
+		),
+	)
+
 export const CreateOrganization = Command.define("CreateOrganization", {
 	args: { name: Schema.String, region: MapleRegion },
 	messages: [Message.SucceededCreateOrganization, Message.FailedCreateOrganization],
 	execute: ({ name, region }) =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalApiClient
-			const result = yield* client.organizationCreation.create({
-				payload: new CreateOrganizationRequest({ name: name.trim(), region }),
-			})
-			return Message.SucceededCreateOrganization({ orgId: result.orgId })
-		}).pipe(
-			Effect.catchCause((cause) =>
-				Effect.succeed(
-					Message.FailedCreateOrganization({
-						message: Option.match(Cause.findErrorOption(cause), {
-							onNone: () => "Failed to create organization",
-							onSome: (error) => error.message,
-						}),
-					}),
-				),
-			),
+		createOrganization(name, region).pipe(
+			Effect.map((orgId) => Message.SucceededCreateOrganization({ orgId })),
+			Effect.catch((error) => Effect.succeed(Message.FailedCreateOrganization({ message: error.message }))),
 		),
 })
