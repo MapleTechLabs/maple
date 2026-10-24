@@ -7,7 +7,7 @@ import {
 } from "@maple/cache"
 import { OrganizationWrongRegionError, OrgId } from "@maple/domain/http"
 import type { MapleRegion } from "@maple/domain/organization-regions"
-import { Effect, Exit, Fiber, Option, Ref, Schema } from "effect"
+import { Deferred, Effect, Exit, Fiber, Option, Ref, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
 import {
@@ -257,9 +257,68 @@ describe("OrganizationRegionService", () => {
 			yield* Effect.forkChild(regions.ensureServedHere(orgId))
 			yield* TestClock.adjust("10 millis")
 			const follower = yield* Effect.forkChild(Effect.exit(regions.ensureServedHere(orgId)))
-			yield* TestClock.adjust("2 seconds")
+			yield* TestClock.adjust("6 seconds")
 			assert.isTrue(isWrongRegion(yield* Fiber.join(follower)))
 			assert.strictEqual(yield* Ref.get(calls), 2)
+		}),
+	)
+
+	it.effect("requests wait out a slow Clerk read instead of each calling Clerk", () =>
+		Effect.gen(function* () {
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			const slowClerk = { read: (id: OrgId) => Effect.delay(directory.read(id), "2 seconds") }
+			const regions = yield* isolate(makeMemoryBackend(), slowClerk)
+			const pending = yield* Effect.forkChild(
+				Effect.all(
+					Array.from({ length: 3 }, () => Effect.exit(regions.ensureServedHere(orgId))),
+					{ concurrency: "unbounded" },
+				),
+			)
+			yield* TestClock.adjust("5 seconds")
+			assert.isTrue((yield* Fiber.join(pending)).every(Exit.isSuccess))
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+		}),
+	)
+
+	it.effect("a read started before forget never answers a request that came after it", () =>
+		Effect.gen(function* () {
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			const calls = yield* Ref.make(0)
+			const firstReadStarted = yield* Deferred.make<void>()
+			// Each call reads Clerk at once and answers later; the pre-forget read lands first.
+			const clerk = {
+				read: (id: OrgId) =>
+					Effect.flatMap(
+						Ref.getAndUpdate(calls, (n) => n + 1),
+						(n) =>
+							Effect.flatMap(directory.read(id), (answer) =>
+								Deferred.succeed(firstReadStarted, undefined).pipe(
+									Effect.andThen(Effect.sleep(n === 0 ? "100 millis" : "200 millis")),
+									Effect.as(answer),
+								),
+							),
+					),
+			}
+			const regions = yield* isolate(makeMemoryBackend(), clerk)
+			const before = yield* Effect.forkChild(Effect.exit(regions.ensureServedHere(orgId)))
+			yield* Deferred.await(firstReadStarted)
+			// The region is written in the same millisecond, before the first read answers.
+			yield* Ref.set(directory.answer, Option.some(chosen("eu")))
+			yield* regions.forget(orgId)
+			const after = yield* Effect.forkChild(
+				Effect.all(
+					[
+						Effect.exit(regions.ensureServedHere(orgId)),
+						Effect.exit(regions.ensureServedHere(orgId)),
+					],
+					{
+						concurrency: "unbounded",
+					},
+				),
+			)
+			yield* TestClock.adjust("300 millis")
+			assert.isTrue(Exit.isSuccess(yield* Fiber.join(before)))
+			assert.isTrue((yield* Fiber.join(after)).every(isWrongRegion))
 		}),
 	)
 })

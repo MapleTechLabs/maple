@@ -47,13 +47,12 @@ const CLERK_HEDGE_AFTER_MS = 40
 /** Frees a hung shared read. Clerk is already answering by then. */
 const SHARED_READ_DEADLINE_MS = 1_000
 /**
- * A phone's parallel requests miss together in one isolate (8% of prod misses overlapped another
- * for the same trace and isolate), so one reads and the rest wait. Followers poll inert state
- * rather than await the leader's fiber: Workers tie I/O to the request that started it.
+ * Parallel requests from one phone miss together in an isolate, so one reads and the rest poll
+ * inert state for its answer: Workers tie I/O to the request that started it.
  */
 const FOLLOWER_POLL_MS = 10
-/** A follower whose leader has not answered by then reads for itself. */
-const FOLLOWER_WAIT_MS = SHARED_READ_DEADLINE_MS + CLERK_HEDGE_AFTER_MS
+/** Followers wait as long as their leader runs, up to this; then they read for themselves. */
+const FOLLOWER_WAIT_MS = 5_000
 
 /** One Clerk answer. Every tier measures its age from `readAtMs`, so reuse never adds up across tiers. */
 const RegionRead = Schema.Struct({
@@ -110,11 +109,10 @@ type DirectoryAnswer =
 
 const found = (metadata: unknown): DirectoryAnswer => ({ _tag: "Found", metadata })
 
-/** A finished read, kept so followers that waited on it can take its answer. */
-interface SettledRead {
-	readonly answer: DirectoryAnswer
-	/** When the read that produced it started, which is how a follower recognizes its leader. */
-	readonly startedAtMs: number
+/** The read running for each organization, and the last one that finished. */
+interface Coalescing {
+	readonly running: HashMap.HashMap<OrgId, { readonly id: number; readonly startedAtMs: number }>
+	readonly settled: HashMap.HashMap<OrgId, { readonly id: number; readonly answer: DirectoryAnswer }>
 }
 
 export interface OrganizationRegionServiceApi {
@@ -141,8 +139,9 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 ) {
 	const edgeCache = yield* EdgeCacheService
 	const remembered = yield* Ref.make(HashMap.empty<OrgId, RegionRead>())
-	const inFlight = yield* Ref.make(HashMap.empty<OrgId, number>())
-	const settled = yield* Ref.make(HashMap.empty<OrgId, SettledRead>())
+	// A counter, not the clock, names a read: Workers' clock stands still between I/O.
+	const readIds = yield* Ref.make(0)
+	const coalescing = yield* Ref.make<Coalescing>({ running: HashMap.empty(), settled: HashMap.empty() })
 
 	const readDirectory = Effect.fnUntraced(function* (read: ReadDirectoryOrganization, orgId: OrgId) {
 		const readAtMs = yield* Clock.currentTimeMillis
@@ -243,35 +242,43 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 			),
 		)
 
-	/** The leader's answer, once it lands; none if the leader is gone or too slow. */
+	/** The leader's answer once it lands; none if the leader is gone or ran past the cap. */
 	const awaitLeader = (
 		orgId: OrgId,
-		startedAtMs: number,
-		deadlineMs: number,
+		leader: { readonly id: number; readonly startedAtMs: number },
 	): Effect.Effect<Option.Option<DirectoryAnswer>> =>
 		Effect.gen(function* () {
-			const done = Option.filter(
-				HashMap.get(yield* Ref.get(settled), orgId),
-				(entry) => entry.startedAtMs === startedAtMs,
-			)
+			const state = yield* Ref.get(coalescing)
+			const done = Option.filter(HashMap.get(state.settled, orgId), (entry) => entry.id === leader.id)
 			if (Option.isSome(done)) return Option.some(done.value.answer)
-			const leaderRunning = Option.exists(
-				HashMap.get(yield* Ref.get(inFlight), orgId),
-				(at) => at === startedAtMs,
+			const running = Option.exists(
+				HashMap.get(state.running, orgId),
+				(entry) => entry.id === leader.id,
 			)
-			if (!leaderRunning || (yield* Clock.currentTimeMillis) >= deadlineMs) return Option.none()
+			const expired = (yield* Clock.currentTimeMillis) - leader.startedAtMs >= FOLLOWER_WAIT_MS
+			if (!running || expired) return Option.none()
 			yield* Effect.sleep(FOLLOWER_POLL_MS)
-			return yield* awaitLeader(orgId, startedAtMs, deadlineMs)
+			return yield* awaitLeader(orgId, leader)
 		})
 
-	const lead = (read: ReadDirectoryOrganization, orgId: OrgId, nowMs: number) =>
+	const lead = (read: ReadDirectoryOrganization, orgId: OrgId, id: number, nowMs: number) =>
 		readTiers(read, orgId, nowMs).pipe(
-			Effect.tap((answer) => Ref.update(settled, HashMap.set(orgId, { answer, startedAtMs: nowMs }))),
+			// Settles only while still the running read, so a forgotten read hands nothing on.
+			Effect.tap((answer) =>
+				Ref.update(coalescing, (state) =>
+					Option.exists(HashMap.get(state.running, orgId), (entry) => entry.id === id)
+						? {
+								running: HashMap.remove(state.running, orgId),
+								settled: HashMap.set(state.settled, orgId, { id, answer }),
+							}
+						: state,
+				),
+			),
 			Effect.ensuring(
-				Ref.update(inFlight, (map) =>
-					Option.exists(HashMap.get(map, orgId), (at) => at === nowMs)
-						? HashMap.remove(map, orgId)
-						: map,
+				Ref.update(coalescing, (state) =>
+					Option.exists(HashMap.get(state.running, orgId), (entry) => entry.id === id)
+						? { ...state, running: HashMap.remove(state.running, orgId) }
+						: state,
 				),
 			),
 		)
@@ -288,22 +295,22 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 			yield* Effect.annotateCurrentSpan({ "cache.hit": true, "cache.layer": "isolate" })
 			return found(local.value.metadata)
 		}
+		const id = yield* Ref.updateAndGet(readIds, (n) => n + 1)
 		// Claim the read, or learn which read is already running. No yield between check and set.
-		const leaderStartedAtMs = yield* Ref.modify(inFlight, (map) =>
-			Option.match(HashMap.get(map, orgId), {
-				onSome: (at) =>
-					nowMs - at < FOLLOWER_WAIT_MS
-						? [Option.some(at), map]
-						: [Option.none<number>(), HashMap.set(map, orgId, nowMs)],
-				onNone: () => [Option.none<number>(), HashMap.set(map, orgId, nowMs)],
-			}),
-		)
-		if (Option.isNone(leaderStartedAtMs)) return yield* lead(readOrganization.value, orgId, nowMs)
-		const coalesced = yield* awaitLeader(
-			orgId,
-			leaderStartedAtMs.value,
-			leaderStartedAtMs.value + FOLLOWER_WAIT_MS,
-		)
+		const leader = yield* Ref.modify(coalescing, (state) => {
+			const current = Option.filter(
+				HashMap.get(state.running, orgId),
+				(entry) => nowMs - entry.startedAtMs < FOLLOWER_WAIT_MS,
+			)
+			return Option.isSome(current)
+				? [current, state]
+				: [
+						Option.none<{ readonly id: number; readonly startedAtMs: number }>(),
+						{ ...state, running: HashMap.set(state.running, orgId, { id, startedAtMs: nowMs }) },
+					]
+		})
+		if (Option.isNone(leader)) return yield* lead(readOrganization.value, orgId, id, nowMs)
+		const coalesced = yield* awaitLeader(orgId, leader.value)
 		if (Option.isSome(coalesced)) {
 			yield* Effect.annotateCurrentSpan({
 				"cache.hit": true,
@@ -351,8 +358,10 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		function* (orgId) {
 			yield* Ref.update(remembered, HashMap.remove(orgId))
 			// A read started before the write must not hand its answer to anyone after it.
-			yield* Ref.update(inFlight, HashMap.remove(orgId))
-			yield* Ref.update(settled, HashMap.remove(orgId))
+			yield* Ref.update(coalescing, (state) => ({
+				running: HashMap.remove(state.running, orgId),
+				settled: HashMap.remove(state.settled, orgId),
+			}))
 			yield* edgeCache
 				.rawDelete(REGIONS_CACHE_BUCKET, orgId)
 				.pipe(

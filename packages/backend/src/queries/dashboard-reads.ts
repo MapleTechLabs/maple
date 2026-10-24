@@ -16,12 +16,33 @@ import {
 } from "@maple/query-engine"
 import { makeDirectRouteCachePolicy, type QueryEngineDirectError } from "@maple/query-engine/runtime"
 import { Queries, type QueryDefinition } from "@maple/query-engine/registry"
-import { Cause, Clock, DateTime, Effect, Schema } from "effect"
+import { Cause, Clock, DateTime, Effect, Option, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { partitionWindowAround } from "@maple/backend/queries/query-helpers"
 import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/query-runner"
 import { isMissingServiceOperationsRollup } from "@maple/backend/services/warehouse/missing-table"
 import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
+
+/** Sets one attribute on a span chosen by the caller. */
+export type SpanAnnotator = (key: string, value: string | boolean) => Effect.Effect<void>
+
+const annotateCurrent: SpanAnnotator = (key, value) => Effect.annotateCurrentSpan(key, value)
+
+/**
+ * The span current at the call site, so work that later runs inside `cachedDirect` still
+ * labels the request's span rather than the cache's.
+ */
+const callerSpanAnnotator: Effect.Effect<SpanAnnotator> = Effect.option(Effect.currentSpan).pipe(
+	Effect.map((span) =>
+		Option.match(span, {
+			onNone: () => annotateCurrent,
+			onSome:
+				(current): SpanAnnotator =>
+				(key, value) =>
+					Effect.sync(() => current.attribute(key, value)),
+		}),
+	),
+)
 
 /**
  * Labels a failed step on the route span. The typed error channel threads through unchanged,
@@ -30,18 +51,20 @@ import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-de
 export const mapExecError = <A, E, R>(
 	effect: Effect.Effect<A, E, R>,
 	context: string,
+	annotate: SpanAnnotator = annotateCurrent,
 ): Effect.Effect<A, E, R> =>
 	effect.pipe(
 		Effect.tapCause((cause) =>
 			Cause.hasInterruptsOnly(cause)
 				? Effect.void
-				: Effect.annotateCurrentSpan({ "maple.query_engine.failed_step": context }),
+				: annotate("maple.query_engine.failed_step", context),
 		),
 	)
 
 /**
  * Read a rollup table, degrading to the raw-source query on a cluster that does not have it
  * (a BYO cluster whose admin never applied the perf migrations). Error recovery, not a switch.
+ * Not an `Effect.fn`: that would add a span, and the fallback annotation belongs on the caller's.
  */
 export const makeRollupFallback =
 	(detect: (error: QueryEngineDirectError) => boolean, warning: string) =>
@@ -50,13 +73,14 @@ export const makeRollupFallback =
 		raw: (tenant: TenantContext, payload: P) => Effect.Effect<A, E, R>,
 		tenant: TenantContext,
 		payload: P,
+		annotate: SpanAnnotator = annotateCurrent,
 	): Effect.Effect<A, E, R> =>
 		rollup(tenant, payload).pipe(
 			Effect.catch((error) => {
 				if (!detect(error)) return Effect.fail(error)
 				return Effect.gen(function* () {
 					yield* Effect.logWarning(warning).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
-					yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
+					yield* annotate("query.rollup.fallback", true)
 					return yield* raw(tenant, payload)
 				})
 			}),
@@ -70,9 +94,12 @@ const withServiceOperationsFallback = makeRollupFallback(
 /** Operation rows are cached this long, keyed on the request payload. */
 const SERVICE_OPERATIONS_CACHE_SECONDS = 30
 
+const HOUR_MS = 3_600_000
 // Most traces opened without a timestamp are still recent, so the last 48h are probed first
 // (~2 daily partitions); only older traces fall back to the every-partition probe.
-const PROBE_RECENT_WINDOW_MS = 48 * 3_600_000
+const PROBE_RECENT_WINDOW_MS = 48 * HOUR_MS
+/** A trace not found yet may be ingesting, so its empty answer is barely cached. */
+const EMPTY_TRACE_TTL_SECONDS = 1
 
 /** Bumped when the cached span-hierarchy value changed: it now holds the sentinel row too. */
 const SPAN_HIERARCHY_CACHE_VERSION = 2
@@ -112,6 +139,11 @@ export const operationsSparklineBucketSeconds = (startTime: string, endTime: str
 	return Math.max(1, Math.round(windowSeconds / 50 / 60)) * 60
 }
 
+const lastSpanEndMs = (
+	rows: ReadonlyArray<{ readonly startTime: DateTime.Utc; readonly durationMs: number }>,
+): number =>
+	rows.reduce((latest, row) => Math.max(latest, DateTime.toEpochMillis(row.startTime) + row.durationMs), 0)
+
 export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 	const { queryEngine } = deps
 	const { runQuery, runQueryFirst } = makeQueryRunners(deps)
@@ -130,6 +162,7 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 			/** The API tab draws no sparkline, so it skips the second warehouse query. */
 			readonly sparklines: boolean
 		},
+		annotate: SpanAnnotator,
 	) =>
 		Effect.gen(function* () {
 			const toNumber = (value: unknown) => Number(value ?? 0)
@@ -139,8 +172,10 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 					(t, pl) => runQuery(queries.summaryRaw, t, pl),
 					tenant,
 					payload,
+					annotate,
 				),
 				`${queries.label} query failed`,
+				annotate,
 			)
 			if (summaryRows.length === 0) return []
 
@@ -176,8 +211,10 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 					(t, pl) => runQuery(Queries.serviceOperationsTimeseriesRaw, t, pl),
 					tenant,
 					{ ...payload, spanNames, bucketSeconds },
+					annotate,
 				),
 				"serviceOperationsTimeseries query failed",
+				annotate,
 			)
 
 			const sparklines = timeseriesRows.reduce((map, row) => {
@@ -189,54 +226,88 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 			return summaryRows.map((row) => toRow(row, sparklines.get(row.spanName) ?? []))
 		})
 
+	const operationsQueries = {
+		summary: Queries.serviceOperationsSummary,
+		summaryRaw: Queries.serviceOperationsSummaryRaw,
+		label: "serviceOperations",
+	} as const
+
 	/** The service detail Operations list, edge-cached for 30s on the request payload. */
 	const serviceOperations = (tenant: TenantContext, payload: ServiceOperationsRequest) =>
-		queryEngine.cachedDirect(
-			tenant,
-			"serviceOperations",
-			payload,
-			operationRowsWithSparklines(tenant, payload, {
-				summary: Queries.serviceOperationsSummary,
-				summaryRaw: Queries.serviceOperationsSummaryRaw,
-				label: "serviceOperations",
-				sparklines: true,
-			}),
-			SERVICE_OPERATIONS_CACHE_SECONDS,
+		Effect.flatMap(callerSpanAnnotator, (annotate) =>
+			queryEngine.cachedDirect(
+				tenant,
+				"serviceOperations",
+				payload,
+				operationRowsWithSparklines(
+					tenant,
+					payload,
+					{ ...operationsQueries, sparklines: true },
+					annotate,
+				),
+				SERVICE_OPERATIONS_CACHE_SECONDS,
+			),
+		)
+
+	/** The Operations summary alone, uncached: the fallback when the sparkline read fails. */
+	const serviceOperationsSummary = (tenant: TenantContext, payload: ServiceOperationsRequest) =>
+		Effect.flatMap(callerSpanAnnotator, (annotate) =>
+			operationRowsWithSparklines(
+				tenant,
+				payload,
+				{ ...operationsQueries, sparklines: false },
+				annotate,
+			),
 		)
 
 	/** The service detail API tab: HTTP endpoints only, no sparklines. */
 	const serviceEndpoints = (tenant: TenantContext, payload: ServiceEndpointsRequest) =>
-		queryEngine.cachedDirect(
-			tenant,
-			"serviceEndpoints",
-			payload,
-			operationRowsWithSparklines(tenant, payload, {
-				summary: Queries.serviceEndpointsSummary,
-				summaryRaw: Queries.serviceEndpointsSummaryRaw,
-				label: "serviceEndpoints",
-				sparklines: false,
-			}),
-			SERVICE_OPERATIONS_CACHE_SECONDS,
+		Effect.flatMap(callerSpanAnnotator, (annotate) =>
+			queryEngine.cachedDirect(
+				tenant,
+				"serviceEndpoints",
+				payload,
+				operationRowsWithSparklines(
+					tenant,
+					payload,
+					{
+						summary: Queries.serviceEndpointsSummary,
+						summaryRaw: Queries.serviceEndpointsSummaryRaw,
+						label: "serviceEndpoints",
+						sparklines: false,
+					},
+					annotate,
+				),
+				SERVICE_OPERATIONS_CACHE_SECONDS,
+			),
 		)
 
 	/**
 	 * `traces` is partitioned by day, so a hierarchy read with no time predicate seeks every
-	 * retained partition. Without a caller window, a LIMIT-1 probe finds the trace's start and the
-	 * read is bounded to the hour either side of it.
+	 * retained partition. Without a caller window, a probe finds the trace's first and last span
+	 * and the read covers them with an hour either side.
 	 */
 	const probedWindow = (tenant: TenantContext, payload: SpanHierarchyInput, nowMs: number) =>
 		Effect.gen(function* () {
 			if (payload.startTime != null && payload.endTime != null) {
 				return { startTime: payload.startTime, endTime: payload.endTime }
 			}
+			const cutoffMs = nowMs - PROBE_RECENT_WINDOW_MS
 			const recent = yield* runQueryFirst(Queries.spanHierarchyProbeRecent, tenant, {
 				traceId: payload.traceId,
-				startTime: formatWarehouseDateTime(nowMs - PROBE_RECENT_WINDOW_MS),
+				startTime: formatWarehouseDateTime(cutoffMs),
 			})
-			const probe = recent ?? (yield* runQueryFirst(Queries.spanHierarchyProbe, tenant, payload))
-			return probe?.timestamp == null
-				? { startTime: undefined, endTime: undefined }
-				: partitionWindowAround(DateTime.formatIso(probe.timestamp))
+			// The recent probe cannot see rows before its cutoff, so a start near it may be late.
+			const settledRecent =
+				recent !== null && DateTime.toEpochMillis(recent.timestamp) >= cutoffMs + HOUR_MS
+					? recent
+					: null
+			const probe = settledRecent ?? (yield* runQueryFirst(Queries.spanHierarchyProbe, tenant, payload))
+			if (probe === null) return { startTime: undefined, endTime: undefined }
+			return {
+				startTime: partitionWindowAround(DateTime.formatIso(probe.timestamp)).startTime,
+				endTime: partitionWindowAround(DateTime.formatIso(probe.endTimestamp)).endTime,
+			}
 		})
 
 	/**
@@ -271,6 +342,11 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 					version: SPAN_HIERARCHY_CACHE_VERSION,
 				}),
 				rowSchema === undefined ? undefined : Schema.Array(rowSchema),
+				// Settled by the trace's own last span, not the caller's window; empty may be ingesting.
+				(found) =>
+					found.length === 0
+						? EMPTY_TRACE_TTL_SECONDS
+						: traceCacheTtlSeconds(formatWarehouseDateTime(lastSpanEndMs(found)), nowMs),
 			)
 			return {
 				rows: rows.slice(0, CH.SPAN_HIERARCHY_MAX_SPANS),
@@ -290,6 +366,7 @@ export const makeDashboardReads = (deps: QueryRunnerDeps) => {
 		runQuery,
 		runQueryFirst,
 		serviceOperations,
+		serviceOperationsSummary,
 		serviceEndpoints,
 		spanHierarchy,
 		serviceHealthSnapshot,
