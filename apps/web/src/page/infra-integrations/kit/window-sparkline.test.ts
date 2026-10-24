@@ -49,6 +49,15 @@ describe("sparkSegments", () => {
 		expect(flat?.[0]?.[1]).toBe(14)
 	})
 
+	test("a floor of 0 keeps a small wobble near its level instead of stretching it full height", () => {
+		const points = [
+			{ bucket: at(0), value: 1.5 },
+			{ bucket: at(5), value: 2 },
+		]
+		const [run] = sparkSegments(points, window, 0)
+		expect(run?.map(([, y]) => y)).toEqual([8, 2])
+	})
+
 	test("nothing to draw without a value", () => {
 		expect(sparkSegments([{ bucket: at(0), value: null }], window)).toEqual([])
 	})

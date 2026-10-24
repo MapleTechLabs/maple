@@ -34,9 +34,9 @@ describe("sessionTraceSummariesQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("anyIf(traces.SpanKind, traces.ParentSpanId = '') AS rootSpanKind")
-		expect(sql).toContain(
-			"anyIf(toJSONString(traces.SpanAttributes), traces.ParentSpanId = '') AS rootSpanAttributes",
-		)
+		// The root's map is picked per trace and serialized once, never per span.
+		expect(sql).toContain("anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['url.full']")
+		expect(sql).not.toContain("toJSONString(traces.SpanAttributes)")
 		expect(sql).toContain("GROUP BY traceId")
 	})
 
@@ -64,6 +64,11 @@ describe("sessionTraceSummariesQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Timestamp >= '2026-06-24 04:00:00'")
 		expect(sql).toContain("Timestamp <= '2026-06-25 06:00:00'")
+		// The trace_index lookup takes the same window, or it probes every retained day.
+		expect(sql).toContain(
+			"trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-06-24 04:00:00.000', 9))",
+		)
+		expect(sql).toContain("trace_index.Bucket <= toDateTime64('2026-06-25 06:00:00.000', 9)")
 	})
 
 	it("omits the time window when absent (deep-link path, unchanged full scan)", () => {
@@ -71,6 +76,7 @@ describe("sessionTraceSummariesQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).not.toContain("Timestamp >=")
 		expect(sql).not.toContain("Timestamp <=")
+		expect(sql).not.toContain("trace_index.Bucket >=")
 	})
 })
 

@@ -87,7 +87,7 @@ export interface VcsSyncServiceApi {
 }
 
 export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServiceApi>()(
-	"@maple/api/services/vcs/VcsSyncService",
+	"@maple/backend/services/vcs/VcsSyncService",
 	{
 		make: Effect.gen(function* () {
 			const repo = yield* VcsRepository

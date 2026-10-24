@@ -1,6 +1,6 @@
-// Renders the ingest load benchmark comment posted on PRs (ingest-rust-tests.yml).
+// Renders the ingest load benchmark comment posted on PRs (ingest-bench.yml).
 // Env: HEAD_LOAD_JSON / BASE_LOAD_JSON (comma-separated LoadSummary JSON paths; several
-// mean median + min/max), TEST_OUTPUT, CRITERION_OUTPUT, COMMENT_OUTPUT, GITHUB_SHA.
+// mean median + min/max), CRITERION_OUTPUT, COMMENT_OUTPUT, GITHUB_SHA.
 // The first line is a stable marker so the workflow updates its comment in place.
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 
@@ -173,6 +173,5 @@ if (criterion && existsSync(criterion)) {
 		"",
 	)
 }
-body.push("### cargo test", "", "```text", tail(process.env.TEST_OUTPUT, 80), "```")
 
 writeFileSync(out, `${body.join("\n")}\n`)

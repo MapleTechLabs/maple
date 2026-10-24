@@ -276,7 +276,7 @@ const boardWhereClauses = (document: DashboardDocument): ReadonlyArray<string> =
 export class DashboardWidgetDataService extends Context.Service<
 	DashboardWidgetDataService,
 	DashboardWidgetDataServiceApi
->()("@maple/api/services/DashboardWidgetDataService", {
+>()("@maple/backend/services/DashboardWidgetDataService", {
 	make: Effect.gen(function* () {
 		const queryEngine = yield* QueryEngineService
 		const warehouse = yield* WarehouseQueryService

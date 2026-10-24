@@ -112,7 +112,7 @@ export class CliDeviceAuthService extends Context.Service<
 			| CliDevicePersistenceError
 		>
 	}
->()("@maple/api/services/CliDeviceAuthService", {
+>()("@maple/backend/services/CliDeviceAuthService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "CliDeviceAuthService", persistenceError)

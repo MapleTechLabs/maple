@@ -75,7 +75,7 @@ export const makeRateLimitCheck = (
 }
 
 export class ApiV2RateLimiter extends Context.Service<ApiV2RateLimiter, RateLimiterApi>()(
-	"@maple/api/services/ApiV2RateLimiter",
+	"@maple/backend/services/ApiV2RateLimiter",
 	{
 		make: Effect.gen(function* () {
 			const limiter = yield* Effect.serviceOption(ApiV2RateLimit)

@@ -23,7 +23,7 @@ export interface OAuthStateRepositoryApi {
 }
 
 export class OAuthStateRepository extends Context.Service<OAuthStateRepository, OAuthStateRepositoryApi>()(
-	"@maple/api/services/OAuthStateRepository",
+	"@maple/backend/services/OAuthStateRepository",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

@@ -76,6 +76,10 @@ export const realServices = (model: Model): ReadonlyArray<ServiceRow> =>
 		(row) => !row.serviceName.startsWith("demo-"),
 	)
 
+/** The card polls only while it waits for the first real service: the celebration needs no reads. */
+export const isPolling = (model: Model): boolean =>
+	isMounted(model) && model.window !== null && realServices(model).length === 0
+
 const fetchOverview = (model: Model, pinnedNamespace: string | null): Return =>
 	model.window === null
 		? { model }

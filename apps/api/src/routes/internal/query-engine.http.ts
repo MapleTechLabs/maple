@@ -27,6 +27,10 @@ import {
 	SupabaseLogIssue,
 	SupabaseLogIssuesResponse,
 	SupabaseProjectCallersResponse,
+	AwsInfraMetricsResponse,
+	AwsInfraPresenceResponse,
+	AwsInfraSparklinesResponse,
+	AwsInfraTimeseriesResponse,
 	GcpInfraMetricsResponse,
 	GcpInfraPresenceResponse,
 	GcpInfraSparklinesResponse,
@@ -112,6 +116,7 @@ import {
 	TraceId,
 	SpanId,
 } from "@maple/domain/http"
+import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { isAiContentFormat } from "@maple/domain/ai-traffic"
@@ -948,6 +953,45 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 										lastSeen: DateTime.formatIso(row.lastSeen),
 									}),
 							),
+						})
+					}),
+				)
+				.handle("awsInfraPresence", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.awsInfraPresence, tenant, payload)
+						const reported = new Set(rows.map((row) => row.metric))
+						return new AwsInfraPresenceResponse({
+							kinds: AWS_INFRA_KIND_IDS.filter((kind) =>
+								AWS_INFRA_KINDS[kind].metrics.some((metric) => reported.has(metric.name)),
+							),
+						})
+					}),
+				)
+				.handle("awsInfraMetrics", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.awsInfraMetrics, tenant, payload)
+						return new AwsInfraMetricsResponse({
+							data: rows.map((row) => ({ ...row, lastSeen: DateTime.formatIso(row.lastSeen) })),
+						})
+					}),
+				)
+				.handle("awsInfraSparklines", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.awsInfraSparklines, tenant, payload)
+						return new AwsInfraSparklinesResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("awsInfraTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.awsInfraTimeseries, tenant, payload)
+						return new AwsInfraTimeseriesResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
 						})
 					}),
 				)

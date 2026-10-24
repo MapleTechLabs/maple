@@ -324,7 +324,7 @@ export interface AlertDestinationsServiceApi {
 export class AlertDestinationsService extends Context.Service<
 	AlertDestinationsService,
 	AlertDestinationsServiceApi
->()("@maple/api/services/alerts/AlertDestinationsService", {
+>()("@maple/backend/services/alerts/AlertDestinationsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env

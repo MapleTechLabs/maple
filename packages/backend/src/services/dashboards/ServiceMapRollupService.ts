@@ -71,7 +71,7 @@ export interface ServiceMapRollupServiceApi {
 export class ServiceMapRollupService extends Context.Service<
 	ServiceMapRollupService,
 	ServiceMapRollupServiceApi
->()("@maple/api/services/ServiceMapRollupService", {
+>()("@maple/backend/services/ServiceMapRollupService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService

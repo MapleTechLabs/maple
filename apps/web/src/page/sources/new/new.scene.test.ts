@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { encodePublicId, PublicIdPrefixes, V2SourceWithSecret } from "@maple/domain/http/v2"
+import { encodePublicId, PublicIdPrefixes, V2AwsIntegration, V2SourceWithSecret } from "@maple/domain/http/v2"
 import { CloudflareIntegrationStatus } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -13,10 +13,15 @@ import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
-const context: PageContext = { orgId: Schema.decodeSync(OrgId)("org_parity"), pinnedNamespace: null, timeZone: "UTC" }
+const context: PageContext = {
+	orgId: Schema.decodeSync(OrgId)("org_parity"),
+	pinnedNamespace: null,
+	timeZone: "UTC",
+}
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 const route = (platform?: "nodejs" | "kubernetes") => ({
 	_tag: "SourcesNew" as const,
 	search: platform === undefined ? {} : { platform },
@@ -29,7 +34,9 @@ const STATUS_READS = ["LoadIntegrationsCloudflareStatus", "LoadIntegrationsScrap
 const indicatorMeasured = () =>
 	Mount.resolve<string, Tabs.Message>(
 		Tabs.MeasureTabIndicator,
-		Tabs.Message.MeasuredIndicator({ rect: { left: 0, right: 96, top: 0, bottom: 32, width: 96, height: 32 } }),
+		Tabs.Message.MeasuredIndicator({
+			rect: { left: 0, right: 96, top: 0, bottom: 32, width: 96, height: 32 },
+		}),
 	)
 
 const created = (lastUsedAt: string | null = null) =>
@@ -96,7 +103,9 @@ describe("connect a source", () => {
 		)
 		const back = routeChanged(entered.model, route(), context)
 		expect(back.model.platform).toBeNull()
-		expect(names(routeChanged(back.model, route("kubernetes"), context).commands)).toEqual(["FetchSourcesList"])
+		expect(names(routeChanged(back.model, route("kubernetes"), context).commands)).toEqual([
+			"FetchSourcesList",
+		])
 	})
 
 	test("an empty name disables Create; a failed create toasts and re-enables it", () => {
@@ -109,7 +118,11 @@ describe("connect a source", () => {
 		const failed = pageUpdate(started.model, Message.CompletedCreate({ result: Result.fail(failure) }))
 		expect(failed.model.isSaving).toBe(false)
 		expect(failed.outMessage).toEqual(
-			PageOutMessage.RequestedToast({ type: "error", title: "Failed to create source", description: failure.message }),
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Failed to create source",
+				description: failure.message,
+			}),
 		)
 	})
 
@@ -128,13 +141,29 @@ describe("connect a source", () => {
 			expectView(role("link", { name: "Skip for now" })).toExist(),
 		)
 		const key = done.model.firstData.key ?? ""
-		const pending = pageUpdate(done.model, Message.CompletedFetchSource({ key, result: Result.succeed(created()) }))
+		const pending = pageUpdate(
+			done.model,
+			Message.CompletedFetchSource({ key, result: Result.succeed(created()) }),
+		)
 		expect(names(pending.commands)).toEqual(["WaitFirstDataPoll"])
-		expect(names(pageUpdate(pending.model, Message.ElapsedPoll({ key })).commands)).toEqual(["FetchCreatedSource"])
-		const receiving = pageUpdate(done.model, Message.CompletedFetchSource({ key, result: Result.succeed(created("2026-10-01T00:01:00.000Z")) }))
+		expect(names(pageUpdate(pending.model, Message.ElapsedPoll({ key })).commands)).toEqual([
+			"FetchCreatedSource",
+		])
+		const receiving = pageUpdate(
+			done.model,
+			Message.CompletedFetchSource({
+				key,
+				result: Result.succeed(created("2026-10-01T00:01:00.000Z")),
+			}),
+		)
 		expect(receiving.commands ?? []).toHaveLength(0)
 		expect(pageUpdate(receiving.model, Message.ElapsedPoll({ key })).commands ?? []).toHaveLength(0)
-		scene({ update: pageUpdate, view }, given(receiving.model), indicatorMeasured(), expectView(role("link", { name: "Open source" })).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(receiving.model),
+			indicatorMeasured(),
+			expectView(role("link", { name: "Open source" })).toExist(),
+		)
 	})
 
 	test("an integration's step shows its own connect card; an unknown id falls back to the picker", () => {
@@ -197,19 +226,92 @@ describe("connect a source", () => {
 					}),
 				),
 			})
-		const waiting = pageUpdate(entered.model, Message.GotIntegrationsMessage({ message: status(false) })).model
+		const waiting = pageUpdate(
+			entered.model,
+			Message.GotIntegrationsMessage({ message: status(false) }),
+		).model
 		const connected = pageUpdate(waiting, Message.GotIntegrationsMessage({ message: status(true) }))
 		expect(names(connected.commands)).toContain("FetchSourcesList")
-		const row = { ...created(), platform: "cloudflare" as const, key_prefix: null, name: "Cloudflare Acme" }
+		const row = {
+			...created(),
+			platform: "cloudflare" as const,
+			key_prefix: null,
+			name: "Cloudflare Acme",
+		}
 		const listed = pageUpdate(
 			connected.model,
-			Message.CompletedFetchList({ key: connected.model.list.key ?? "", result: Result.succeed([row]) }),
+			Message.CompletedFetchList({
+				key: connected.model.list.key ?? "",
+				result: Result.succeed([row]),
+			}),
 		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(listed),
 			expectView(text("Step 3 of 3 · Collecting")).toExist(),
 			expectView(role("link", { name: "Open source" })).toExist(),
+		)
+	})
+
+	test("an integration that sends nothing says what is left instead of connected", () => {
+		const entered = init(integrationRoute("aws"), context)
+		const status = (metrics_last_received_at: string | null) =>
+			IntegrationMessage.CompletedLoadAws({
+				key: entered.model.integrations.statuses.aws.key ?? "",
+				result: Result.succeed(
+					Schema.decodeUnknownSync(V2AwsIntegration)({
+						object: "aws_integration",
+						available: true,
+						modules: [],
+						connections: [
+							{
+								id: encodePublicId(
+									PublicIdPrefixes.awsConnection,
+									"018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+								),
+								object: "aws_connection",
+								account_id: "123456789012",
+								role_arn:
+									"arn:aws:iam::123456789012:role/MapleIntegration-018f2b3c4d5e4f708192a3b4",
+								oidc_issuer: "https://api.maple.dev/oidc/aws",
+								oidc_subject: "aws-connection:018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+								modules: [],
+								granted_modules: [],
+								template_version: 2,
+								setup_outdated: false,
+								verified_at: "2026-10-23T08:00:00.000Z",
+								last_checked_at: "2026-10-23T08:58:00.000Z",
+								last_check_error: null,
+								metric_stream: { regions: ["us-east-1"], namespaces: ["AWS/ECS"] },
+								metric_stream_changed_at: "2026-10-23T07:55:00.000Z",
+								metrics_last_received_at,
+								metrics_last_error: null,
+								created_at: "2026-10-23T07:55:00.000Z",
+							},
+						],
+					}),
+				),
+			})
+		const clocked = pageUpdate(
+			entered.model,
+			Message.GotIntegrationsMessage({
+				message: IntegrationMessage.CompletedReadClock({
+					nowMs: Date.parse("2026-10-23T09:00:00.000Z"),
+				}),
+			}),
+		).model
+		const at = (message: IntegrationMessage) =>
+			pageUpdate(clocked, Message.GotIntegrationsMessage({ message })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(at(status(null))),
+			expectView(text("AWS needs attention")).toExist(),
+			expectView(text("No metrics arriving. See the steps below.")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(at(status("2026-10-23T08:59:30.000Z"))),
+			expectView(text("AWS is connected")).toExist(),
 		)
 	})
 

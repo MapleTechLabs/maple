@@ -96,6 +96,18 @@ export const paramTraceWindow = (start = "startTime", end = "endTime"): TraceWin
 	end: T.param.dateTime(end),
 })
 
+/** A {@link TraceWindow} from two known instants, such as a session's own span. */
+export const utcTraceWindow = (start: DateTime.Utc, end: DateTime.Utc): TraceWindow => ({
+	start: utcDateTime64Literal(start),
+	end: utcDateTime64Literal(end),
+})
+
+const utcDateTime64Literal = (value: DateTime.Utc): CH.Expr<DateTime.Utc> =>
+	CH.makeExpr(
+		CH.toFragment(CH.lit(DateTime.formatIso(value).replace("T", " ").replace("Z", ""))),
+		T.dateTime64.schema,
+	)
+
 /**
  * Selects the spans of the traces `match` picks from `trace_index`, for a query
  * reading `traces`. The index names every `(ServiceName, bucket, TraceId)` sort-key
@@ -151,6 +163,12 @@ export const AiTraceIndex = Datasources.aiTraceIndex
  * request has several spans in one trace, so requests are `uniq(TraceId)`.
  */
 export const AiCrawlerRequests = Datasources.aiCrawlerRequests
+
+/** CI workflow runs (migration 0047): the root span of each `github-actions` trace. */
+export const CiRuns = Datasources.ciRuns
+
+/** CI jobs (migration 0047): a run's children that name a task but not a step. */
+export const CiJobs = Datasources.ciJobs
 
 export const TraceListMv = Datasources.traceListMv
 

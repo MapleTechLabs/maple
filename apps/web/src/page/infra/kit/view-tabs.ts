@@ -15,10 +15,12 @@ export const linkTabStrip = <M>(
 	label: string,
 	tabs: ReadonlyArray<TabLink>,
 	activeId: string,
+	/** Off when the strip sits in page flow rather than a header's `tabs` slot. */
+	bleed = true,
 ): Html =>
 	underlineTabStrip(
 		h,
-		{ label, navigation: true },
+		{ label, navigation: true, bleed },
 		tabs.map((tab) => {
 			const isActive = tab.id === activeId
 			return h.a(
