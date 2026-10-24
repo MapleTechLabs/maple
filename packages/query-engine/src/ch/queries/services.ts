@@ -26,7 +26,13 @@ import {
 } from "../tables"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
-import { apdexExprs, serviceOverviewWhereConditions, utcHourFloor, type FacetOutput } from "./query-helpers"
+import {
+	apdexExprs,
+	serviceOverviewWhereConditions,
+	utcHourCeil,
+	utcHourFloor,
+	type FacetOutput,
+} from "./query-helpers"
 import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 
 // Service overview
@@ -511,9 +517,9 @@ export interface ServiceHealthSnapshotOutput {
  * also avoids the mathematically-invalid weighted average of per-commit p95s
  * used by the richer service catalog response.
  *
- * Hour bounds are floored because the aggregate is hour-grain. The main
- * overview uses multi-hour presets; including both boundary hours is the
- * least-surprising approximation and keeps the current partial hour visible.
+ * The aggregate is hour-grain, so the read covers whole hours [floor(start), ceil(end)):
+ * the current partial hour stays visible, and back-to-back windows never share an hour.
+ * `serviceHealthSnapshotHours` gives callers the same span to divide rates by.
  */
 export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
 	return from(TracesAggregatesHourly)
@@ -531,7 +537,7 @@ export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.IsEntryPoint.eq(1),
 			$.Hour.gte(utcHourFloor("startTime")),
-			$.Hour.lte(utcHourFloor("endTime")),
+			$.Hour.lt(utcHourCeil("endTime")),
 			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
 		])
 		.groupBy("serviceName", "environment")
