@@ -183,6 +183,9 @@ const ACTIVE_STATUSES: ReadonlyArray<PrReviewStatus> = ["queued", "running"]
 const BOT_AUTHOR = /\[bot\]$|^(dependabot|renovate|github-actions)/i
 
 /** GitHub associations trusted with what the reviewer reads and posts; on a public repository anyone else is not. */
+/** Who started a review: the webhook, the webhook vouched for by a CI approval, or someone by name. */
+type TriggerMode = "automatic" | "approved" | "requested"
+
 const TRUSTED_ASSOCIATIONS: ReadonlySet<string> = new Set(["OWNER", "MEMBER", "COLLABORATOR"])
 
 export const isTrustedAuthorAssociation = (association: string | undefined): boolean =>
@@ -234,6 +237,11 @@ export interface PrReviewServiceApi {
 	 * head that was already reviewed is reviewed again. Never fails, like the webhook entry.
 	 */
 	readonly reviewNow: (orgId: OrgId, job: PullRequestEventJob) => Effect.Effect<PrReviewTriggerOutcome>
+	/**
+	 * Review a head whose CI someone with write access let go, as the webhook would for a trusted
+	 * author: an outside contributor's pull request is reviewed once a maintainer approves its run.
+	 */
+	readonly onCiApproved: (orgId: OrgId, job: PullRequestEventJob) => Effect.Effect<PrReviewTriggerOutcome>
 	/**
 	 * Someone ticked or unticked "Before merge" steps on a review comment. Never fails, like the
 	 * webhook entry: a lost tick shows unticked on the next comment, and can be ticked again.
@@ -1901,8 +1909,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const trigger = Effect.fn("PrReviewService.onPullRequestEvent")(function* (
 				orgId: OrgId,
 				job: PullRequestEventJob,
-				requested = false,
+				mode: TriggerMode = "automatic",
 			) {
+				const requested = mode === "requested"
 				const annotate = (outcome: string, extra?: Record<string, string | number | boolean>) =>
 					Effect.annotateCurrentSpan({
 						orgId,
@@ -1989,7 +1998,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// The automatic review reads org telemetry and posts to the pull request, so on a public
 				// repository it runs only for a trusted author. GitHub reports private org members as
 				// CONTRIBUTOR in webhooks, and only people with access can open a pull request on a private one.
-				if (!requested && !repo.isPrivate && !isTrustedAuthorAssociation(job.authorAssociation)) {
+				if (
+					mode === "automatic" &&
+					!repo.isPrivate &&
+					!isTrustedAuthorAssociation(job.authorAssociation)
+				) {
 					yield* annotate("skipped", {
 						"maple.pr_review.skip_reason": "external_author",
 						"vcs.pull_request.author_association": job.authorAssociation ?? "absent",
@@ -2198,8 +2211,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				)
 
+			const onCiApproved: PrReviewServiceApi["onCiApproved"] = (orgId, job) =>
+				trigger(orgId, job, "approved").pipe(
+					Effect.catchCause((cause) =>
+						Effect.logError("[PrReview] approved pull request could not be reviewed").pipe(
+							Effect.annotateLogs({ orgId, number: job.number, cause: summarizeCause(cause) }),
+							Effect.as<PrReviewTriggerOutcome>({ reviewId: null, outcome: "failed" }),
+						),
+					),
+				)
+
 			const reviewNow: PrReviewServiceApi["reviewNow"] = (orgId, job) =>
-				trigger(orgId, job, true).pipe(
+				trigger(orgId, job, "requested").pipe(
 					Effect.catchCause((cause) =>
 						Effect.logError("[PrReview] requested review could not be started").pipe(
 							Effect.annotateLogs({ orgId, number: job.number, cause: summarizeCause(cause) }),
@@ -2976,6 +2999,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				reviewModel,
 				onPullRequestEvent,
 				reviewNow,
+				onCiApproved,
 				onMergeStepsTicked,
 				getReview,
 				submitReview,
