@@ -221,4 +221,7 @@ export const apnsEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("APNS_TEAM_ID"),
 	optionalPlain("APNS_KEY_ID"),
 	optionalSecret("APNS_PRIVATE_KEY"),
+	// App Attest for device credentials: App ID = <APNS_TEAM_ID>.<MAPLE_IOS_BUNDLE_ID>.
+	optionalPlain("MAPLE_IOS_BUNDLE_ID"),
+	optionalPlain("MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT"),
 )
