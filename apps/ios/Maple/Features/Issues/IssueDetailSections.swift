@@ -30,25 +30,6 @@ struct IssueDetailContent: View {
 	}
 }
 
-/// A hairline-bordered badge, no fill: `Error`, `Triage`.
-private struct OutlineBadge: View {
-	let text: String
-	let tint: Color
-
-	var body: some View {
-		Text(text)
-			.font(Typo.micro)
-			.foregroundStyle(tint)
-			.padding(.horizontal, 6)
-			.frame(height: 20)
-			.overlay(
-				RoundedRectangle(cornerRadius: Token.Radius.sm)
-					.stroke(tint.opacity(0.6), lineWidth: 1)
-			)
-			.fixedSize()
-	}
-}
-
 // MARK: - Header
 
 private struct IssueHeader: View {
@@ -58,11 +39,11 @@ private struct IssueHeader: View {
 		VStack(alignment: .leading, spacing: 8) {
 			HStack(spacing: 6) {
 				if let severity = issue.severity {
-					OutlineBadge(text: severity.label, tint: severity.tint)
+					MapleBadge(text: severity.label, tint: severity.tint, outlined: true)
 				} else {
-					OutlineBadge(text: kindLabel, tint: Token.destructive)
+					MapleBadge(text: kindLabel, tint: Token.destructive, outlined: true)
 				}
-				OutlineBadge(text: issue.workflowState.label, tint: issue.workflowState.tint)
+				MapleBadge(text: issue.workflowState.label, tint: issue.workflowState.tint, outlined: true)
 				Text(assignee ?? "Unassigned")
 					.font(Typo.small)
 					.foregroundStyle(Token.mutedForeground)

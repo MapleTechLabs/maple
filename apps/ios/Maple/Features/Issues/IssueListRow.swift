@@ -15,7 +15,7 @@ struct IssueListRow: View {
 					.foregroundStyle(Token.foreground)
 					.lineLimit(1)
 				if issue.isNew {
-					IssueNewBadge()
+					MapleBadge(text: "New", tint: Token.severityWarn, outlined: true)
 				}
 				Spacer(minLength: 0)
 			}
@@ -54,22 +54,6 @@ struct IssueListRow: View {
 		.frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
 		.contentShape(.rect)
 		.accessibilityElement(children: .combine)
-	}
-}
-
-/// `New`: first seen within the last 24 hours. Warn tint, hairline border.
-struct IssueNewBadge: View {
-	var body: some View {
-		Text("New")
-			.font(Typo.microMedium)
-			.foregroundStyle(Token.severityWarn)
-			.padding(.horizontal, 6)
-			.frame(height: 18)
-			.overlay(
-				RoundedRectangle(cornerRadius: Token.Radius.sm)
-					.stroke(Token.severityWarn.opacity(0.6), lineWidth: 1)
-			)
-			.fixedSize()
 	}
 }
 

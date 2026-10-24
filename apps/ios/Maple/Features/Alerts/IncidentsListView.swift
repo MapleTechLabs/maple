@@ -132,7 +132,7 @@ struct IncidentRow: View {
 						.font(Typo.bodyMedium)
 						.foregroundStyle(isOpen ? Token.foreground : Token.mutedForeground)
 						.lineLimit(1)
-					AlertOutlineBadge(text: isOpen ? incident.severity.label : "Resolved", tint: isOpen ? tint : Token.success)
+					MapleBadge(text: isOpen ? incident.severity.label : "Resolved", tint: isOpen ? tint : Token.success, outlined: true)
 					Spacer(minLength: 0)
 				}
 

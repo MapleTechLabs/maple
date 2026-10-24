@@ -242,9 +242,9 @@ private struct IncidentHeader: View {
 				.font(Typo.small)
 				.foregroundStyle(Token.mutedForeground)
 				.lineLimit(1)
-				AlertOutlineBadge(text: incident.severity.label, tint: isOpen ? incident.severity.tint : Token.mutedForeground)
+				MapleBadge(text: incident.severity.label, tint: isOpen ? incident.severity.tint : Token.mutedForeground, outlined: true)
 				if !isOpen {
-					AlertOutlineBadge(text: "Resolved", tint: Token.success)
+					MapleBadge(text: "Resolved", tint: Token.success, outlined: true)
 				}
 			}
 			.tabularNumbers()

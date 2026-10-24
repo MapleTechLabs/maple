@@ -14,7 +14,7 @@ struct MapleBadge: View {
 	/// Fill opacity. The web convention is a /10 or /15 wash under
 	/// full-strength text.
 	var fillOpacity: Double = 0.12
-	/// A tinted hairline border instead of the wash, as on alert cards.
+	/// A tinted border instead of the wash: `Critical`, `Resolved`, `New`.
 	var outlined: Bool = false
 
 	var body: some View {
@@ -26,7 +26,7 @@ struct MapleBadge: View {
 			.background(tint.opacity(outlined ? 0 : fillOpacity), in: .rect(cornerRadius: Token.Radius.sm))
 			.overlay {
 				if outlined {
-					RoundedRectangle(cornerRadius: Token.Radius.sm).stroke(tint, lineWidth: 1)
+					RoundedRectangle(cornerRadius: Token.Radius.sm).stroke(tint.opacity(0.6), lineWidth: 1)
 				}
 			}
 			.fixedSize()

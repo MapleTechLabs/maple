@@ -143,9 +143,9 @@ private struct AnomalyDetailContent: View {
 				.font(Typo.small)
 				.foregroundStyle(Token.mutedForeground)
 				.lineLimit(1)
-				AlertOutlineBadge(text: anomaly.severity.label, tint: isOpen ? anomaly.severity.tint : Token.mutedForeground)
+				MapleBadge(text: anomaly.severity.label, tint: isOpen ? anomaly.severity.tint : Token.mutedForeground, outlined: true)
 				if !isOpen {
-					AlertOutlineBadge(text: "Resolved", tint: Token.success)
+					MapleBadge(text: "Resolved", tint: Token.success, outlined: true)
 				}
 			}
 			.tabularNumbers()

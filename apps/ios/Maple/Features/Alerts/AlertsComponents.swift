@@ -1,24 +1,5 @@
 import SwiftUI
 
-/// A bordered badge with no fill: `Critical`, `Resolved`.
-struct AlertOutlineBadge: View {
-	let text: String
-	let tint: Color
-
-	var body: some View {
-		Text(text)
-			.font(Typo.micro)
-			.foregroundStyle(tint)
-			.padding(.horizontal, 6)
-			.frame(height: 18)
-			.overlay(
-				RoundedRectangle(cornerRadius: Token.Radius.sm)
-					.stroke(tint, lineWidth: 1)
-			)
-			.fixedSize()
-	}
-}
-
 /// A list row inside an `alertCard`, with a 2pt severity rail on its leading
 /// edge while the thing it describes is still open.
 struct SeverityRailRow<Content: View>: View {
