@@ -9,11 +9,7 @@ import { truncatedText } from "../../ui/truncated-text"
 import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
 import { relativeTime } from "../kit/relative-time"
 import { RAILWAY_ACCENT } from "../infra-integrations/kit/integration-empty"
-import {
-	railwayConnectCard,
-	railwayTokenForm,
-	type TokenFormConfig,
-} from "../infra-integrations/railway/list/view-connect"
+import { railwayTokenForm } from "./view-railway-token"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
@@ -31,13 +27,6 @@ import {
 type H = HtmlBuilder<Message>
 
 const BRAND = { icon: "RailwayIcon", accent: RAILWAY_ACCENT, iconClassName: "text-foreground" } as const
-
-const formConfig = (mode: "connect" | "rotate", canCancel: boolean): TokenFormConfig<Message> => ({
-	mode,
-	onField: (message) => Message.GotRailwayTokenMessage({ message }),
-	onSubmit: Message.SubmittedRailwayToken(),
-	onCancel: canCancel ? Message.ClickedRailwayRotateCancel() : undefined,
-})
 
 const environmentsTable = (h: H, model: Model, status: RailwayIntegrationStatus, timeZone: string): Html =>
 	dataTable(
@@ -149,7 +138,7 @@ const connectedView = (h: H, model: Model, status: RailwayIntegrationStatus, tim
 				: null,
 		actions:
 			card.isRotating || status.authFailed
-				? railwayTokenForm(h, card.connect, formConfig("rotate", !status.authFailed))
+				? railwayTokenForm(h, card.connect, { mode: "rotate", canCancel: !status.authFailed })
 				: integrationActions(h, [
 						linkButton(h, { size: "sm", href: hrefOf(AppRoute.InfraRailway({ search: {} })) }, [
 							"View metrics",
@@ -171,7 +160,7 @@ const connectedView = (h: H, model: Model, status: RailwayIntegrationStatus, tim
 								variant: "outline",
 								attributes: [h.OnClick(Message.ClickedRailwayRotate())],
 							},
-							["Replace token"],
+							["Update credential"],
 						),
 						disconnectButton(h, model),
 					]),
@@ -187,6 +176,22 @@ export const railwayCard = (h: H, model: Model, timeZone: string): Html =>
 	})
 
 const byStatus = (h: H, model: Model, status: RailwayIntegrationStatus, timeZone: string): Html =>
-	status.connected
-		? connectedView(h, model, status, timeZone)
-		: railwayConnectCard(h, model.railwayCard.connect, formConfig("connect", false))
+	status.connected ? connectedView(h, model, status, timeZone) : railwayReconnect(h)
+
+/** A source page whose token was removed: the way back is the connect flow. */
+const railwayReconnect = (h: H): Html =>
+	h.div(
+		[
+			h.Class(
+				"flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 text-sm",
+			),
+		],
+		[
+			h.span([h.Class("text-muted-foreground")], ["Railway is not connected."]),
+			linkButton(
+				h,
+				{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "railway" } })) },
+				["Reconnect"],
+			),
+		],
+	)

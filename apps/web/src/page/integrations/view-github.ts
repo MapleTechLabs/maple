@@ -13,15 +13,7 @@ import { settingRow } from "../../ui/setting-row"
 import { skeleton } from "../../ui/skeleton"
 import { statusDot } from "../../ui/status-dot"
 import { switchControl } from "../../ui/switch"
-import {
-	integrationEmpty,
-	integrationEmptyCard,
-	integrationEmptyFeatures,
-	integrationEmptyFooter,
-	integrationEmptyHint,
-	integrationEmptyMedia,
-	integrationIconPlate,
-} from "../infra-integrations/kit/integration-empty"
+import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
 import { GITHUB_ACCENT } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -127,7 +119,7 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 								isLoading: model.connect.isStarting,
 								attributes: [h.OnClick(Message.ClickedConnect())],
 							},
-							["Manage"],
+							["Edit data"],
 						),
 						button(
 							h,
@@ -195,8 +187,8 @@ const byState = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: 
 	status.connected
 		? connectedView(h, model, status, timeZone)
 		: status.state === "disconnected" || status.state === "suspended"
-			? deactivated(h, model, status)
-			: notConnected(h, model)
+			? githubDeactivated(h, model, status)
+			: githubReconnect(h)
 // TODO(clerk): `useIsOrgAdmin` gates the CI traces switch; self-hosted is the root admin.
 
 type H = HtmlBuilder<Message>
@@ -218,38 +210,25 @@ const loadingState = (h: H): Html =>
 		],
 	)
 
-const notConnected = (h: H, model: Model): Html =>
-	integrationEmpty(h, [
-		integrationEmptyFeatures(h, [
-			{
-				label: "Deploy markers",
-				title: "Commits on service charts",
-				description: "Metric shifts line up with the deploys that caused them.",
-			},
-			{
-				label: "Commit context",
-				title: "SHAs resolve to authors",
-				description: "Commit SHAs on traces resolve to message, author, and a GitHub link.",
-			},
-			{
-				label: "Org-wide sync",
-				title: "One tracked branch per repo",
-				description: "History backfills automatically in the background after install.",
-			},
-		]),
-		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, BRAND),
-			integrationEmptyHint(h, ["Your repositories and commits will appear here after installing."]),
-			button(
-				h,
-				{ isLoading: model.connect.isStarting, attributes: [h.OnClick(Message.ClickedConnect())] },
-				[icon(h, "GithubIcon"), "Connect GitHub"],
+/** A source page whose installation was removed: the way back is the connect flow. */
+const githubReconnect = (h: H): Html =>
+	h.div(
+		[
+			h.Class(
+				"flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 text-sm",
 			),
-			integrationEmptyFooter(h, ["You'll choose which repositories to share during install."]),
-		]),
-	])
+		],
+		[
+			h.span([h.Class("text-muted-foreground")], ["GitHub is not connected."]),
+			linkButton(
+				h,
+				{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })) },
+				["Reconnect"],
+			),
+		],
+	)
 
-const deactivated = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
+export const githubDeactivated = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
 	const suspended = status.state === "suspended"
 	const account =
 		status.accountLogin !== null && status.accountLogin !== ""
@@ -293,7 +272,7 @@ const deactivated = (h: H, model: Model, status: GithubIntegrationStatus): Html 
 							: [
 									"The Maple GitHub App was uninstalled (or its access was revoked) on GitHub",
 									...account,
-									", so syncing is paused. Reconnect to resume — nothing was deleted.",
+									", so syncing is paused. Reconnect to resume; nothing was deleted.",
 								],
 					),
 				],

@@ -74,48 +74,38 @@ describe("aws card", () => {
 		expect(names(pageUpdate(sent.model, Message.SubmittedAwsAccount()).commands)).toEqual([])
 	})
 
-	test("a new connection streams every namespace from the typed regions, and bad regions block it", () => {
-		const withRegions = (value: string) =>
-			pageUpdate(
-				typed("123456789012"),
-				Message.GotAwsRegionsMessage({ message: Field.Message.ChangedValue({ value }) }),
-			).model
-
-		const sent = pageUpdate(
-			withRegions("us-east-1, EU-central-1 us-east-1"),
-			Message.SubmittedAwsAccount(),
-		)
+	test("a new connection asks for the role only: the stream is picked once Maple sees the account", () => {
+		const sent = pageUpdate(typed("123456789012"), Message.SubmittedAwsAccount())
 		const [create] = sent.commands ?? []
 		expect(create?.name).toBe("CreateAwsConnection")
-		expect(create?.args).toMatchObject({
-			request: {
-				metric_stream: { regions: ["us-east-1", "eu-central-1"], namespaces: AWS_METRIC_NAMESPACES },
-			},
-		})
-
-		const bad = pageUpdate(withRegions("virginia"), Message.SubmittedAwsAccount())
-		expect(names(bad.commands)).toEqual([])
-		expect(bad.model.awsCard.createError).not.toBeNull()
+		expect(create?.args).toEqual({ request: { account_id: "123456789012" } })
 	})
 
-	test("a connected account without a stream gets one, then its setup opens to redeploy", () => {
+	test("Edit data streams the picked regions, then the setup opens to redeploy", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
 		const model = withStatus(entered(), [connection({ verified_at })])
 		expect(overviewOf(model.statuses, model.nowMs, "aws")).toMatchObject({ issue: "Metrics off" })
 
 		const opened = pageUpdate(model, Message.ClickedAwsMetrics({ id: connectionId })).model
-		const edited = pageUpdate(
-			opened,
-			Message.GotAwsMetricsRegionsMessage({
-				message: Field.Message.ChangedValue({ value: "eu-central-1" }),
-			}),
-		).model
-		const sent = pageUpdate(edited, Message.SubmittedAwsMetrics())
+		const edited = [
+			Message.ToggledAwsRegion({ id: connectionId, region: "eu-central-1" }),
+			Message.ToggledAwsRegion({ id: connectionId, region: "us-east-1" }),
+			Message.ToggledAwsNamespace({ id: connectionId, namespace: "AWS/SQS" }),
+		].reduce((next, message) => pageUpdate(next, message).model, opened)
+		const sent = pageUpdate(edited, Message.SubmittedAwsMetrics({ id: connectionId }))
 		const [update] = sent.commands ?? []
 		expect(update?.name).toBe("UpdateAwsMetricStream")
-		expect(update?.args).toMatchObject({ id: connectionId, metricStream: { regions: ["eu-central-1"] } })
+		expect(update?.args).toEqual({
+			id: connectionId,
+			metricStream: {
+				regions: ["eu-central-1"],
+				namespaces: AWS_METRIC_NAMESPACES.filter((namespace) => namespace !== "AWS/SQS"),
+			},
+		})
 		// A second submit while saving sends nothing.
-		expect(names(pageUpdate(sent.model, Message.SubmittedAwsMetrics()).commands)).toEqual([])
+		expect(
+			names(pageUpdate(sent.model, Message.SubmittedAwsMetrics({ id: connectionId })).commands),
+		).toEqual([])
 
 		const saved = pageUpdate(
 			sent.model,
@@ -128,6 +118,17 @@ describe("aws card", () => {
 		expect(saved.model.awsCard.setupId).toBe(connectionId)
 		expect(names(saved.commands)).toContain("LoadAwsSetup")
 		expect(names(saved.commands)).toContain("LoadIntegrationsAwsStatus")
+	})
+
+	test("without a region nothing is sent, and the picker says what is missing", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+		const none = pageUpdate(
+			withStatus(entered(), [connection({ verified_at })]),
+			Message.ToggledAwsRegion({ id: connectionId, region: "us-east-1" }),
+		).model
+		const sent = pageUpdate(none, Message.SubmittedAwsMetrics({ id: connectionId }))
+		expect(names(sent.commands)).toEqual([])
+		expect(sent.model.awsCard.metricsError).toBe("Pick at least one region and one service.")
 	})
 
 	test("a stream saved while the setup is open reads the script again", () => {
@@ -167,7 +168,7 @@ describe("aws card", () => {
 			withStatus(entered(), [connection({ verified_at })]),
 			Message.ClickedAwsMetrics({ id: connectionId }),
 		).model
-		const sent = pageUpdate(opened, Message.SubmittedAwsMetrics()).model
+		const sent = pageUpdate(opened, Message.SubmittedAwsMetrics({ id: connectionId })).model
 		const failed = pageUpdate(
 			sent,
 			Message.CompletedAwsMetricStream({ connection: null, error: "Not allowed." }),

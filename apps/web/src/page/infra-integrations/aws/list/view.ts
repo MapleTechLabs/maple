@@ -17,6 +17,8 @@ import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/ki
 import { pageHero, searchToolbar } from "../../../infra/kit/page-parts"
 import { linkTabStrip } from "../../../infra/kit/view-tabs"
 import { integrationNotConnected } from "../../kit/empty-states"
+import { integrationConnectCta } from "../../kit/integration-empty"
+import { AWS_ACCENT } from "../../../integrations/catalog"
 import { pageTime } from "../../kit/page-time"
 import type { AwsStatus, FleetRead } from "../data"
 import {
@@ -174,18 +176,47 @@ const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html
 	)
 }
 
+const FEATURES = [
+	{
+		label: "Access",
+		title: "One read-only role",
+		description: "A CloudFormation stack creates it. Maple reads metadata, never your data.",
+	},
+	{
+		label: "Security",
+		title: "No stored secret",
+		description: "The role trusts only short-lived tokens Maple signs for this connection.",
+	},
+	{
+		label: "Metrics",
+		title: "Streamed from CloudWatch",
+		description: "ECS, EC2, load balancers, RDS, Lambda and SQS, matched to your traces.",
+	},
+]
+
+const awsConnectCta = (h: H): Html =>
+	integrationConnectCta(h, {
+		brand: { icon: "AwsIcon", accent: AWS_ACCENT, iconClassName: "text-foreground" },
+		features: FEATURES,
+		hint: "Deploy a read-only role, pick regions and services, then Maple streams their CloudWatch metrics.",
+		label: "Connect AWS",
+		href: hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } })),
+	})
+
 /** Connected, but nothing streamed yet: say which step is missing, never show placeholders. */
 // Metrics that arrive win over the connection state: a stream set up outside Maple still reads.
 const noMetrics = (h: H, status: AwsStatus): Html => {
 	if (status.connections.length === 0)
-		return integrationNotConnected(h, {
-			icon: icon(h, "AwsIcon", { size: 16 }),
-			title: status.available ? "Connect an AWS account" : "AWS can't be connected here yet",
-			description:
-				"Maple streams CloudWatch metrics for ECS, EC2, load balancers, RDS, Lambda and SQS, and matches them to your traces.",
-			integration: "aws",
-			actionLabel: "Connect AWS",
-		})
+		return status.available
+			? awsConnectCta(h)
+			: integrationNotConnected(h, {
+					icon: icon(h, "AwsIcon", { size: 16 }),
+					title: "AWS can't be connected here yet",
+					description:
+						"Maple streams CloudWatch metrics for ECS, EC2, load balancers, RDS, Lambda and SQS, and matches them to your traces.",
+					integration: "aws",
+					actionLabel: "Connect AWS",
+				})
 	const streaming = status.connections.filter((connection) => connection.metric_stream !== null)
 	if (streaming.length === 0)
 		return integrationNotConnected(h, {

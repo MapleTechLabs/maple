@@ -75,25 +75,23 @@ const typed = (field: "scopeId" | "hostProjectId", value: string): ReadonlyArray
 	Message.GotGcpScopeFieldMessage({ field, message: Field.Message.BlurredControl() }),
 ]
 
-const openNew = (model: Model) => run(model, [Message.ClickedGcpConfigure({ target: { _tag: "New" } })])
+const created = () =>
+	Schema.decodeUnknownSync(V2GcpConnector)(
+		connector({
+			id: createdId,
+			applied_logs_enabled: null,
+			applied_metrics_enabled: null,
+			setup_reported_at: null,
+		}),
+	)
 
-describe("google cloud wizard: a new connection", () => {
-	test("a project ID that breaks the rule keeps the scope step", () => {
-		const model = run(openNew(loaded([])), [
-			...typed("scopeId", "Acme_Prod"),
-			Message.SubmittedGcpScope(),
-		])
-		expect(configureOf(model).step).toBe("scope")
-		const valid = run(model, [...typed("scopeId", "acme-prod"), Message.SubmittedGcpScope()])
-		expect(configureOf(valid).step).toBe("data")
-		expect(configureOf(valid).newTitle).toBe("Connect Google Cloud")
-	})
-
+describe("google cloud connect flow: a new connection", () => {
 	test("another kind of scope starts the ID over and keeps the host project", () => {
-		const typedIn = run(openNew(loaded([connector()])), [
+		const typedIn = run(loaded([connector()]), [
 			...typed("scopeId", "acme-prod"),
 			...typed("hostProjectId", "acme-observability"),
 		])
+		expect(configureOf(typedIn).target).toEqual({ _tag: "New" })
 		const folder = run(typedIn, [
 			Message.GotGcpScopeTypeMessage({
 				message: ToggleGroup.Message.ClickedItem({ value: "folder", index: 1 }),
@@ -102,58 +100,78 @@ describe("google cloud wizard: a new connection", () => {
 		expect(configureOf(folder).scopeType).toBe("folder")
 		expect(configureOf(folder).scopeId.value).toBe("")
 		expect(configureOf(folder).hostProjectId.value).toBe("acme-observability")
-		expect(configureOf(folder).newTitle).toBe("Add connection")
 	})
 
-	test("the create sends once, then leads into the Method step, and Continue reads the script", () => {
-		const data = run(openNew(loaded([])), [...typed("scopeId", "acme-prod"), Message.SubmittedGcpScope()])
-		const sent = step(data, Message.SubmittedGcpCreate())
+	test("an invalid ID sends no create", () => {
+		const model = run(loaded([]), typed("scopeId", "Acme_Prod"))
+		expect(names(step(model, Message.SubmittedGcpCreate()).commands)).toEqual([])
+	})
+
+	test("the create sends once, then reads the setup for Go live with the chosen method", () => {
+		const scoped = run(loaded([]), [
+			...typed("scopeId", "acme-prod"),
+			Message.ClickedGcpMethod({ method: "terraform" }),
+		])
+		const sent = step(scoped, Message.SubmittedGcpCreate())
 		expect(names(sent.commands)).toEqual(["CreateGcpConnector"])
 		expect(names(step(sent.model, Message.SubmittedGcpCreate()).commands)).toEqual([])
-		const created = Schema.decodeUnknownSync(V2GcpConnector)(
-			connector({
-				id: createdId,
-				applied_logs_enabled: null,
-				applied_metrics_enabled: null,
-				setup_reported_at: null,
-			}),
+		const done = step(
+			sent.model,
+			Message.CompletedGcpCreate({ opens: 0, connector: created(), failure: null }),
 		)
-		const done = step(sent.model, Message.CompletedGcpCreate({ opens: 1, connector: created, failure: null }))
-		expect(configureOf(done.model).target).toEqual({ _tag: "Connection", id: created.id, stage: "apply" })
-		expect([configureOf(done.model).connectionStage, configureOf(done.model).opened]).toEqual(["method", null])
-		expect(names(done.commands)).toContain("LoadIntegrationsGcpStatus")
-		const setUp = step(done.model, Message.ClickedGcpMethodContinue())
-		expect(configureOf(setUp.model).opened?.rerun).toBe(false)
-		expect(names(setUp.commands)).toEqual(["LoadGcpConfigureScripts"])
+		expect(configureOf(done.model).target).toEqual({
+			_tag: "Connection",
+			id: created().id,
+			stage: "apply",
+		})
+		expect(configureOf(done.model).opened?.rerun).toBe(false)
+		expect(configureOf(done.model).method).toBe("terraform")
+		expect(names(done.commands)).toEqual(
+			expect.arrayContaining(["LoadGcpConfigureScripts", "LoadIntegrationsGcpStatus"]),
+		)
 	})
 
-	test("a reopen mid-create sends no second create, and the late result leaves the new wizard", () => {
-		const scoped: ReadonlyArray<Message> = [...typed("scopeId", "acme-prod"), Message.SubmittedGcpScope()]
-		const sent = run(openNew(loaded([])), [...scoped, Message.SubmittedGcpCreate()])
-		const reopened = run(openNew(run(sent, [Message.ClosedGcpConfigure()])), scoped)
-		expect(names(step(reopened, Message.SubmittedGcpCreate()).commands)).toEqual([])
-		const created = Schema.decodeUnknownSync(V2GcpConnector)(connector({ id: createdId }))
-		const late = step(reopened, Message.CompletedGcpCreate({ opens: 1, connector: created, failure: null }))
-		expect(configureOf(late.model).target).toEqual({ _tag: "New" })
-		expect(configureOf(late.model).isCreating).toBe(false)
-		expect(names(late.commands)).toEqual(["LoadIntegrationsGcpStatus"])
+	test("a filter changed after the create asks for its script again", () => {
+		const done = run(loaded([]), [
+			...typed("scopeId", "acme-prod"),
+			Message.SubmittedGcpCreate(),
+			Message.CompletedGcpCreate({ opens: 0, connector: created(), failure: null }),
+		])
+		const opened = step(done, Message.ClickedGcpForwardOutput())
+		// Opening the runtime ticks keeps the same filter, so the same script.
+		expect(names(opened.commands)).toEqual([])
+		const ticked = step(opened.model, Message.ToggledGcpRuntime({ runtime: "cloud_run" }))
+		expect(names(ticked.commands)).toEqual(["LoadGcpConfigureScripts"])
 	})
 
 	test("a refused create keeps its message until the next edit", () => {
-		const data = run(openNew(loaded([])), [...typed("scopeId", "acme-prod"), Message.SubmittedGcpScope()])
-		const failed = run(data, [
+		const failed = run(loaded([]), [
+			...typed("scopeId", "acme-prod"),
 			Message.SubmittedGcpCreate(),
-			Message.CompletedGcpCreate({ opens: 1, connector: null, failure: toLoadFailure("nope") }),
+			Message.CompletedGcpCreate({ opens: 0, connector: null, failure: toLoadFailure("nope") }),
 		])
 		expect(configureOf(failed).isCreating).toBe(false)
 		expect(configureOf(failed).createError).not.toBeNull()
-		expect(
-			configureOf(run(failed, [Message.ToggledGcpRuntime({ runtime: "cloud_run" })])).filter.runtimes,
-		).toEqual(["cloud_run"])
+		expect(configureOf(run(failed, typed("scopeId", "acme-prod-2"))).createError).toBeNull()
 	})
 
-	test("Cancel, Close and Done drop the wizard", () => {
-		expect(run(openNew(loaded([])), [Message.ClosedGcpConfigure()]).gcpCard.configure).toBeNull()
+	test("a deployment without metrics turns the new connection's metrics off", () => {
+		const start = init({ search: { integration: "gcp" } }, context).model
+		expect(configureOf(start).newFlags.metrics_enabled).toBe(true)
+		const unavailable = step(
+			start,
+			Message.CompletedLoadGcp({
+				key: start.statuses.gcp.key ?? "",
+				result: Result.succeed(
+					Schema.decodeUnknownSync(V2GcpIntegration)({
+						object: "gcp_integration",
+						metrics_available: false,
+						connectors: [],
+					}),
+				),
+			}),
+		).model
+		expect(configureOf(unavailable).newFlags).toEqual({ logs_enabled: true, metrics_enabled: false })
 	})
 })
 
@@ -173,7 +191,10 @@ describe("google cloud wizard: a connection", () => {
 		const model = configured()
 		expect(configureOf(model).opened).toBeNull()
 		const method = step(model, Message.ClickedGcpChooseApply())
-		expect([configureOf(method.model).connectionStage, configureOf(method.model).rerun]).toEqual(["method", true])
+		expect([configureOf(method.model).connectionStage, configureOf(method.model).rerun]).toEqual([
+			"method",
+			true,
+		])
 		const next = step(method.model, Message.ClickedGcpMethodContinue())
 		expect(configureOf(next.model).opened?.rerun).toBe(true)
 		expect(names(next.commands)).toEqual(["LoadGcpConfigureScripts"])
@@ -224,7 +245,10 @@ describe("google cloud wizard: a connection", () => {
 	})
 
 	test("a script answer for an earlier request is dropped", () => {
-		const opened = run(configured(), [Message.ClickedGcpChooseApply(), Message.ClickedGcpMethodContinue()])
+		const opened = run(configured(), [
+			Message.ClickedGcpChooseApply(),
+			Message.ClickedGcpMethodContinue(),
+		])
 		const stale = step(
 			opened,
 			Message.CompletedGcpConfigureScripts({
@@ -250,9 +274,14 @@ describe("google cloud wizard: the Method and Set up steps", () => {
 		const code = run(toMethod(), [Message.ClickedGcpMethod({ method: "terraform" })])
 		expect(configureOf(code).method).toBe("terraform")
 		const alchemy = run(code, [
-			Message.GotGcpFlavourMessage({ message: ToggleGroup.Message.ClickedItem({ value: "alchemy", index: 1 }) }),
+			Message.GotGcpFlavourMessage({
+				message: ToggleGroup.Message.ClickedItem({ value: "alchemy", index: 1 }),
+			}),
 		])
-		expect([configureOf(alchemy).method, configureOf(alchemy).flavourGroup.values]).toEqual(["alchemy", ["alchemy"]])
+		expect([configureOf(alchemy).method, configureOf(alchemy).flavourGroup.values]).toEqual([
+			"alchemy",
+			["alchemy"],
+		])
 		const next = step(alchemy, Message.ClickedGcpMethodContinue())
 		expect(configureOf(next.model).opened).not.toBeNull()
 		expect(names(next.commands)).toEqual(["LoadGcpConfigureScripts"])
@@ -260,11 +289,11 @@ describe("google cloud wizard: the Method and Set up steps", () => {
 
 	test("Edit on the Set up step returns to the Method step with its choice; Back there, to the data step", () => {
 		const back = run(setUp("manual"), [Message.ClickedGcpRunEdit()])
-		expect([configureOf(back).opened, configureOf(back).connectionStage, configureOf(back).method]).toEqual([
-			null,
-			"method",
-			"manual",
-		])
+		expect([
+			configureOf(back).opened,
+			configureOf(back).connectionStage,
+			configureOf(back).method,
+		]).toEqual([null, "method", "manual"])
 		expect(configureOf(run(back, [Message.ClickedGcpRunEdit()])).connectionStage).toBe("choose")
 	})
 
@@ -275,7 +304,10 @@ describe("google cloud wizard: the Method and Set up steps", () => {
 		const done = step(sent.model, Message.CompletedGcpConfirmRemoval({ failure: null }))
 		expect(configureOf(done.model).isConfirmingRemoval).toBe(false)
 		expect(names(done.commands)).toContain("LoadIntegrationsGcpStatus")
-		const failed = step(sent.model, Message.CompletedGcpConfirmRemoval({ failure: toLoadFailure("nope") }))
+		const failed = step(
+			sent.model,
+			Message.CompletedGcpConfirmRemoval({ failure: toLoadFailure("nope") }),
+		)
 		expect(failed.outMessage).toEqual(
 			expect.objectContaining({ _tag: "RequestedToast", title: "Couldn't record the removal" }),
 		)
@@ -292,7 +324,9 @@ describe("google cloud wizard: the Method and Set up steps", () => {
 	})
 
 	test("the console steps open one at a time; the first is open until another is clicked", () => {
-		const closed = run(setUp("manual"), [Message.ClickedGcpManualStep({ title: "Topic", firstTitle: "Topic" })])
+		const closed = run(setUp("manual"), [
+			Message.ClickedGcpManualStep({ title: "Topic", firstTitle: "Topic" }),
+		])
 		expect([configureOf(closed).isManualTouched, configureOf(closed).manualOpen]).toEqual([true, null])
 		const sink = run(closed, [Message.ClickedGcpManualStep({ title: "Sink", firstTitle: "Topic" })])
 		expect(configureOf(sink).manualOpen).toBe("Sink")

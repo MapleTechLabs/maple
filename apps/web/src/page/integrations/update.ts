@@ -204,7 +204,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(next) => Planetscale.loadedStatus(next),
 				(next) =>
 					integrationOfSearch(next.search.integration) === "planetscale"
-						? Planetscale.ensurePendingPicker(next, context)
+						? Planetscale.ensurePicker(next, context)
 						: { model: next },
 			])
 		},
@@ -301,7 +301,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Prometheus.completedProbe(model, context, id, failure, success, error),
 		ClickedToggleTarget: ({ id }) => Prometheus.clickedToggle(model, id),
 		CompletedToggle: ({ id, failure }) => Prometheus.completedToggle(model, context, id, failure),
-		ClickedAddTarget: () => Prometheus.clickedAdd(model),
 		ClickedEditTarget: ({ id }) => Prometheus.clickedEdit(model, id),
 		ClickedDeleteTarget: ({ id }) => Prometheus.clickedDelete(model, id),
 		GotTargetMenuMessage: ({ id, message: child }) => Prometheus.gotTargetMenu(model, id, child),
@@ -325,7 +324,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
 		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
-		GotAwsRegionsMessage: ({ message: child }) => Aws.gotRegions(model, child),
 		SubmittedAwsAccount: () => Aws.submittedAccount(model),
 		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),
 		FailedAwsCreate: ({ error }) => Aws.failedCreate(model, error),
@@ -335,7 +333,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAwsSetupClose: () => Aws.closeSetup(model),
 		CompletedLoadAwsSetup: ({ key, result }) => Aws.completedLoadSetup(model, key, result),
 		CompletedLoadAwsIngest: ({ id, key, result }) => Aws.completedIngest(model, id, key, result),
-		ClickedAwsSetupMethod: ({ method }) => Aws.setMethod(model, method),
+		ClickedAwsSetupMethod: ({ part, method }) => Aws.setMethod(model, part, method),
 		ClickedAwsCheck: ({ id }) => Aws.clickedCheck(model, id),
 		TickedAwsPending: () => Aws.tickedPending(model),
 		TickedAwsWatch: () => Aws.tickedWatch(model, context),
@@ -352,8 +350,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedWriteAwsRemoved: () => ({ model }),
 		ClickedAwsMetrics: ({ id }) => Aws.clickedMetrics(model, id),
 		ClickedAwsMetricsCancel: () => Aws.cancelledMetrics(model),
-		GotAwsMetricsRegionsMessage: ({ message: child }) => Aws.gotMetricsRegions(model, child),
-		SubmittedAwsMetrics: () => Aws.submittedMetrics(model),
+		ToggledAwsRegion: ({ id, region }) => Aws.toggledRegion(model, id, region),
+		ToggledAwsNamespace: ({ id, namespace }) => Aws.toggledNamespace(model, id, namespace),
+		SubmittedAwsMetrics: ({ id }) => Aws.submittedMetrics(model, id),
 		CompletedAwsMetricStream: ({ connection, error }) =>
 			Aws.completedMetricStream(model, context, connection, error),
 		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
@@ -378,15 +377,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotPickerDialogMessage: ({ message: child }) => Planetscale.gotPickerDialog(model, child),
 		SelectedOrganization: ({ name }) => Planetscale.updateCard(model, { selectedOrg: name }),
 		GotBranchFieldMessage: ({ field, message: child }) => Planetscale.gotBranchField(model, field, child),
-		ClickedPickerCancel: () =>
-			model.planetscaleCard.pickerDialog.isOpen
-				? Planetscale.clickedPickerCancel(model)
-				: withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
+		ClickedPickerCancel: () => Planetscale.clickedPickerCancel(model),
 		SubmittedOrganization: () => Planetscale.submittedOrganization(model),
 		CompletedSelectOrganization: ({ organization, failure }) =>
 			Planetscale.completedSelect(model, context, organization, failure),
 		ClickedMetricsDetails: () =>
 			Planetscale.updateCard(model, { isDetailsOpen: !model.planetscaleCard.isDetailsOpen }),
+		SelectedPlanetscaleMetricsMethod: ({ method }) =>
+			Planetscale.updateCard(model, { metricsMethod: method, tokenError: null }),
+		GotPlanetscaleTokenField: ({ field, message: child }) =>
+			Planetscale.gotTokenField(model, field, child),
+		SubmittedPlanetscaleToken: () => Planetscale.submittedToken(model),
+		CompletedPlanetscaleToken: ({ failure }) => Planetscale.completedToken(model, context, failure),
+		ClickedPlanetscaleReplaceToken: () =>
+			Planetscale.updateCard(model, { isReplacingToken: !model.planetscaleCard.isReplacingToken }),
 		TickedPlanetscaleWatch: () => Planetscale.refreshWatch(model, context),
 		ClickedPlanetscaleCheckAgain: () => Planetscale.clickedCheckAgain(model, context),
 		CompletedGcpLogVolume: ({ key, result }) =>
@@ -419,15 +423,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotGcpConfigureDialogMessage: ({ message: child }) => Configure.gotConfigureDialog(model, child),
 		GotGcpScopeTypeMessage: ({ message: child }) => Configure.gotScopeType(model, child),
 		GotGcpScopeFieldMessage: ({ field, message: child }) => Configure.gotScopeField(model, field, child),
-		SubmittedGcpScope: () => Configure.submittedScope(model),
 		SubmittedGcpCreate: () => Configure.submittedCreate(model),
-		ClickedGcpConfigureBack: () => Configure.clickedBack(model),
 		ToggledGcpCollect: ({ capability }) => Configure.toggledCollect(model, capability),
 		ClickedGcpLogFilter: () => Configure.clickedLogFilter(model),
-		GotGcpFilterModeMessage: ({ message: child }) => Configure.gotFilterMode(model, child),
-		ClickedGcpForwardOutput: () => Configure.clickedForwardOutput(model),
-		ClickedGcpUseOpenTelemetry: () => Configure.clickedUseOpenTelemetry(model),
-		ToggledGcpRuntime: ({ runtime }) => Configure.toggledRuntime(model, runtime),
+		GotGcpFilterModeMessage: ({ message: child }) => Configure.gotFilterMode(model, context, child),
+		ClickedGcpForwardOutput: () => Configure.clickedForwardOutput(model, context),
+		ClickedGcpUseOpenTelemetry: () => Configure.clickedUseOpenTelemetry(model, context),
+		ToggledGcpRuntime: ({ runtime }) => Configure.toggledRuntime(model, context, runtime),
 		CompletedGcpCreate: ({ opens, connector, failure }) =>
 			Configure.completedCreate(model, context, opens, connector, failure),
 		ClickedGcpChooseApply: () => Configure.clickedChooseApply(model),

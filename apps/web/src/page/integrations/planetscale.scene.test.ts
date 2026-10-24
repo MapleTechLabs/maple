@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { V2PlanetScaleIntegration, V2PlanetScaleOrganizationList } from "@maple/domain/http/v2"
+import { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -31,14 +31,6 @@ const pending = Schema.decodeUnknownSync(V2PlanetScaleIntegration)({
 	expires_at: null,
 })
 
-const organizations = Schema.decodeUnknownSync(V2PlanetScaleOrganizationList)({
-	object: "planetscale_integration.organization_list",
-	organizations: [
-		{ id: "organization/acme", name: "acme" },
-		{ id: "organization/labs", name: "labs" },
-	],
-})
-
 const withPending = () => {
 	const model = init({ search: { integration: "planetscale" } }, context).model
 	return pageUpdate(
@@ -51,21 +43,17 @@ const withPending = () => {
 }
 
 describe("planetscale card", () => {
-	test("a pending organization choice reads the organizations and renders the picker", () => {
+	test("an organization still to be picked sends the source page back to the connect flow", () => {
 		const entered = withPending()
 		expect(names(entered.commands)).toEqual(["FetchPlanetscaleOrganizations"])
-		const listed = pageUpdate(
-			entered.model,
-			Message.CompletedFetchOrganizations({
-				key: entered.model.planetscaleCard.organizations.key ?? "",
-				result: Result.succeed(organizations),
-			}),
-		).model
 		scene(
 			{ update: pageUpdate, view },
-			given(listed),
-			expectView(text("Authorized")).toExist(),
-			expectView(role("radio", { name: "labs" })).toExist(),
+			given(entered.model),
+			expectView(text(/no organization is picked yet/)).toExist(),
+			expectView(role("link", { name: "Reconnect" })).toHaveAttr(
+				"href",
+				"/sources/new?integration=planetscale",
+			),
 		)
 	})
 
@@ -87,7 +75,7 @@ describe("planetscale card", () => {
 		)
 	})
 
-	test("the webhook row reports registration and offers a reauthorization when the grant cannot write", () => {
+	test("the webhook row reports registration and offers to reconnect when the grant predates webhooks", () => {
 		const connected = (webhooks: Record<string, unknown>) => {
 			const model = init({ search: { integration: "planetscale" } }, context).model
 			return pageUpdate(
@@ -123,7 +111,7 @@ describe("planetscale card", () => {
 			{ update: pageUpdate, view },
 			given(connected({ state: "needs_reauthorization" })),
 			expectView(text("Needs attention")).toExist(),
-			expectView(role("button", { name: "Reauthorize" })).toExist(),
+			expectView(role("button", { name: "Reconnect" })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -136,7 +124,7 @@ describe("planetscale card", () => {
 			{ update: pageUpdate, view },
 			given(connected({ state: "active", registered_databases: 2 })),
 			expectView(text("Active")).toExist(),
-			expectView(role("button", { name: "Reauthorize" })).not.toExist(),
+			expectView(role("button", { name: "Reconnect" })).not.toExist(),
 		)
 	})
 
@@ -172,8 +160,8 @@ describe("planetscale card", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(connected({ last_polled_at: null, last_error: null })),
-			expectView(text("Step 3 of 3")).toExist(),
-			expectView(text(/Waiting for the first poll/)).toExist(),
+			expectView(text("Starting")).toExist(),
+			expectView(text("First poll, branch metrics")).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -184,8 +172,8 @@ describe("planetscale card", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(connected({ last_polled_at: null, last_error: "PlanetScale returned 403" })),
-			expectView(text("The last poll failed.")).toExist(),
-			expectView(text("PlanetScale returned 403")).toExist(),
+			expectView(text("Needs attention")).toExist(),
+			expectView(text("The last poll failed: PlanetScale returned 403")).toExist(),
 		)
 	})
 })

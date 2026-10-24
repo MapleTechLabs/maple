@@ -6,7 +6,7 @@ import {
 	type V2AwsIntegration,
 	V2AwsSetup,
 } from "@maple/domain/http/v2"
-import { AWS_METRIC_NAMESPACES, AwsConnectionId } from "@maple/domain/primitives"
+import { AWS_METRIC_NAMESPACES, AwsConnectionId, AwsMetricNamespace } from "@maple/domain/primitives"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Effect, Option, Schema } from "effect"
@@ -22,20 +22,30 @@ import { Message } from "./message"
 
 // `AwsIntegrationCard`: state and writes.
 
-export { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
+export { AwsRemovedStack, AwsSetupMethod, AwsSetupPart } from "./aws-schema"
+
+/** The regions and namespaces picked for one connection's metric stream, before it is saved. */
+export const AwsSelection = Schema.Struct({
+	id: AwsConnectionId,
+	regions: Schema.Array(Schema.String),
+	namespaces: Schema.Array(AwsMetricNamespace),
+})
+export type AwsSelection = typeof AwsSelection.Type
 
 export const AwsCardModel = Schema.Struct({
 	accountId: Field.Model,
-	/** The regions a new connection streams metrics from. */
-	regions: Field.Model,
 	isCreating: Schema.Boolean,
 	createError: Schema.NullOr(Schema.String),
-	/** The add form while connections exist; with none it always shows. */
+	/** The connect flow's account form, over the connection it would otherwise resume. */
 	isAdding: Schema.Boolean,
+	/** The connection the connect flow works on: the one made or set up in this visit. */
+	flowId: Schema.NullOr(AwsConnectionId),
 	/** The connection whose setup is open, and its setup read. */
 	setupId: Schema.NullOr(AwsConnectionId),
 	setup: KeyedSchema(V2AwsSetup, LoadFailure),
 	method: AwsSetupMethod,
+	/** The metric stream's own method: Terraform covers only the role. */
+	streamMethod: AwsSetupMethod,
 	/** Checks in flight, by connection; a quiet one raises no toast unless the user asks meanwhile. */
 	checking: Schema.Array(Schema.Struct({ id: AwsConnectionId, quiet: Schema.Boolean })),
 	copies: Schema.Record(Schema.String, CopyButton.Model),
@@ -43,9 +53,9 @@ export const AwsCardModel = Schema.Struct({
 	disconnectDialog: Dialog.Model,
 	isDisconnecting: Schema.Boolean,
 	removed: Schema.Array(AwsRemovedStack),
-	/** The connection whose metric stream form is open, its regions, and its save. */
+	/** The connection whose Edit data panel is open, the picked data, and its save. */
 	metricsId: Schema.NullOr(AwsConnectionId),
-	metricsRegions: Field.Model,
+	selection: Schema.NullOr(AwsSelection),
 	isSavingMetrics: Schema.Boolean,
 	metricsError: Schema.NullOr(Schema.String),
 	/** What each streaming connection stored in the last hour, by connection id. */
@@ -53,17 +63,18 @@ export const AwsCardModel = Schema.Struct({
 })
 export type AwsCardModel = typeof AwsCardModel.Type
 
-export const DEFAULT_METRIC_REGIONS = "us-east-1"
+export const DEFAULT_METRIC_REGIONS: ReadonlyArray<string> = ["us-east-1"]
 
 export const initAwsCard = (): AwsCardModel => ({
 	accountId: Field.init(),
-	regions: Field.init(DEFAULT_METRIC_REGIONS),
 	isCreating: false,
 	createError: null,
 	isAdding: false,
+	flowId: null,
 	setupId: null,
 	setup: { key: null, data: AsyncData.Idle() },
 	method: "cloudshell",
+	streamMethod: "cloudshell",
 	checking: [],
 	copies: {},
 	disconnectId: null,
@@ -71,7 +82,7 @@ export const initAwsCard = (): AwsCardModel => ({
 	isDisconnecting: false,
 	removed: [],
 	metricsId: null,
-	metricsRegions: Field.init(DEFAULT_METRIC_REGIONS),
+	selection: null,
 	isSavingMetrics: false,
 	metricsError: null,
 	ingest: {},
@@ -81,21 +92,33 @@ export const decodeCreateRequest = Schema.decodeUnknownOption(V2AwsCreateConnect
 
 const decodeMetricStream = Schema.decodeUnknownOption(AwsMetricStream)
 
-/** Typed regions (`us-east-1, eu-central-1`) as a stream of every namespace Maple reads; None when invalid. */
-export const metricStreamOf = (value: string) =>
-	decodeMetricStream({
-		regions: [
-			...new Set(
-				value
-					.toLowerCase()
-					.split(/[\s,]+/u)
-					.filter((region) => region !== ""),
-			),
-		],
-		namespaces: AWS_METRIC_NAMESPACES,
-	})
+/** What a connection streams, else the default: one region, every namespace Maple reads. */
+export const selectionOf = (connection: V2AwsConnection, selection: AwsSelection | null): AwsSelection =>
+	selection !== null && selection.id === connection.id
+		? selection
+		: {
+				id: connection.id,
+				regions: connection.metric_stream?.regions ?? DEFAULT_METRIC_REGIONS,
+				namespaces: connection.metric_stream?.namespaces ?? AWS_METRIC_NAMESPACES,
+			}
 
-export const METRIC_REGIONS_HINT = "Region codes separated by commas, like us-east-1, eu-central-1."
+/** The picked regions and namespaces as a stream; None without a region or a namespace. */
+export const metricStreamOf = (selection: AwsSelection) =>
+	decodeMetricStream({ regions: selection.regions, namespaces: selection.namespaces })
+
+/** The connection already streams exactly what is picked: nothing to save. */
+export const isSelectionSaved = (connection: V2AwsConnection, selection: AwsSelection): boolean => {
+	const stream = connection.metric_stream
+	const same = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
+		a.length === b.length && a.every((value) => b.includes(value))
+	return (
+		stream !== null &&
+		same(stream.regions, selection.regions) &&
+		same(stream.namespaces, selection.namespaces)
+	)
+}
+
+export const METRIC_SELECTION_HINT = "Pick at least one region and one service."
 
 /** Account ids are often pasted with the console's dashes: `1234-5678-9012`. */
 export const normalizeAccountId = (value: string) => value.replaceAll(/[\s-]/gu, "")

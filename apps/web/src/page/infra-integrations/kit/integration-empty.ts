@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { linkButton } from "../../../ui/button"
 import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon, type IconName } from "../../../ui/icon"
@@ -149,3 +150,24 @@ export const integrationEmpty = <M>(
 	children: ReadonlyArray<Html>,
 	className?: string,
 ): Html => h.div([h.Class(cn("flex flex-col gap-4", className))], children)
+
+export type IntegrationConnectCtaOptions = Readonly<{
+	brand: IntegrationBrand
+	features: ReadonlyArray<IntegrationFeature>
+	hint: string
+	/** "Connect Railway". */
+	label: string
+	/** The connect flow, opened at the source's Connect step (`/sources/new?integration=`). */
+	href: string
+}>
+
+/** An infra page with nothing connected: what it will show, and one way to the connect flow. */
+export const integrationConnectCta = <M>(h: HtmlBuilder<M>, options: IntegrationConnectCtaOptions): Html =>
+	integrationEmpty(h, [
+		integrationEmptyFeatures(h, options.features),
+		integrationEmptyCard(h, [
+			integrationEmptyMedia(h, options.brand),
+			integrationEmptyHint(h, [options.hint]),
+			linkButton(h, { href: options.href }, [options.label, icon(h, "ArrowRightIcon", { size: 14 })]),
+		]),
+	])

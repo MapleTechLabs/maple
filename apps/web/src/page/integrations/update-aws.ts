@@ -1,5 +1,5 @@
 import type { V2AwsConnection, V2AwsIngest, V2AwsSetup } from "@maple/domain/http/v2"
-import type { AwsConnectionId } from "@maple/domain/primitives"
+import type { AwsConnectionId, AwsMetricNamespace } from "@maple/domain/primitives"
 import { Option, type Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "../../data/keyed"
@@ -12,19 +12,21 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import {
 	type AwsCardModel,
 	type AwsRemovedStack,
+	type AwsSelection,
 	type AwsSetupMethod,
+	type AwsSetupPart,
 	CheckAwsConnection,
 	CreateAwsConnection,
-	DEFAULT_METRIC_REGIONS,
 	DeleteAwsConnection,
 	decodeCreateRequest,
 	LoadAwsIngest,
 	LoadAwsSetup,
-	METRIC_REGIONS_HINT,
+	METRIC_SELECTION_HINT,
 	metricStreamOf,
 	normalizeAccountId,
 	pendingConnections,
 	ReadAwsRemoved,
+	selectionOf,
 	UpdateAwsMetricStream,
 	WriteAwsRemoved,
 } from "./aws"
@@ -64,45 +66,33 @@ export const gotAccountId = (model: Model, message: Field.Message): Return => {
 	}
 }
 
-export const gotRegions = (model: Model, message: Field.Message): Return => {
-	const step = Field.update(model.awsCard.regions, message)
-	return {
-		model: withCard(model, { regions: step.model, createError: null }),
-		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-			Message.GotAwsRegionsMessage({ message: inner }),
-		),
-	}
-}
-
-/** A new connection streams metrics from the first deploy: without a stream Maple receives nothing. */
+/** The role comes first: the metric stream is picked once Maple can see the account. */
 export const submittedAccount = (model: Model): Return => {
 	const card = model.awsCard
 	if (card.isCreating) return { model }
-	const metricStream = metricStreamOf(card.regions.value)
-	if (Option.isNone(metricStream)) {
-		return { model: withCard(model, { createError: METRIC_REGIONS_HINT }) }
-	}
-	return Option.match(
-		decodeCreateRequest({
-			account_id: normalizeAccountId(card.accountId.value),
-			metric_stream: metricStream.value,
+	return Option.match(decodeCreateRequest({ account_id: normalizeAccountId(card.accountId.value) }), {
+		onNone: () => ({ model: withCard(model, { createError: "An AWS account ID is 12 digits." }) }),
+		onSome: (request) => ({
+			model: withCard(model, { isCreating: true, createError: null }),
+			commands: [CreateAwsConnection({ request })],
 		}),
-		{
-			onNone: () => ({ model: withCard(model, { createError: "An AWS account ID is 12 digits." }) }),
-			onSome: (request) => ({
-				model: withCard(model, { isCreating: true, createError: null }),
-				commands: [CreateAwsConnection({ request })],
-			}),
-		},
-	)
+	})
 }
 
 /** The new connection's setup opens right away: deploying the stack is the next step. */
 export const succeededCreate = (model: Model, context: PageContext, connection: V2AwsConnection): Return =>
-	chain(withCard(model, { accountId: Field.init(), isCreating: false, isAdding: false }), [
-		(next) => openSetup(next, context, connection.id),
-		(next) => requestStatus(next, context, "aws", "Supersede"),
-	])
+	chain(
+		withCard(model, {
+			accountId: Field.init(),
+			isCreating: false,
+			isAdding: false,
+			flowId: connection.id,
+		}),
+		[
+			(next) => openSetup(next, context, connection.id),
+			(next) => requestStatus(next, context, "aws", "Supersede"),
+		],
+	)
 
 export const failedCreate = (model: Model, error: string): Return => ({
 	model: withCard(model, { isCreating: false, createError: error }),
@@ -124,7 +114,9 @@ export const openSetup = (
 	// Another connection's setup is never shown while this one loads: its stack is for another account.
 	const opened = withCard(
 		model,
-		model.awsCard.setupId === id ? { setupId: id } : { setupId: id, setup: Keyed.idle() },
+		model.awsCard.setupId === id
+			? { setupId: id, flowId: id }
+			: { setupId: id, flowId: id, setup: Keyed.idle() },
 	)
 	return Option.match(Keyed.requestFor(opened.awsCard.setup, setupKey(context, id), mode), {
 		onNone: () => ({ model: opened }),
@@ -143,8 +135,8 @@ export const completedLoadSetup = (
 	result: Result.Result<V2AwsSetup, LoadFailure>,
 ): Return => ({ model: withCard(model, { setup: Keyed.accept(model.awsCard.setup, key, result) }) })
 
-export const setMethod = (model: Model, method: AwsSetupMethod): Return => ({
-	model: withCard(model, { method }),
+export const setMethod = (model: Model, part: AwsSetupPart, method: AwsSetupMethod): Return => ({
+	model: withCard(model, part === "role" ? { method } : { streamMethod: method }),
 })
 
 /** A click during a background check makes that check the user's: its result is toasted. */
@@ -275,7 +267,11 @@ export const completedDisconnect = (
 	const stacks = [removed, ...card.removed.filter((stack) => stack.connectionId !== removed.connectionId)]
 	return chain(
 		// `disconnectId` stays: the closing dialog still names the account.
-		withCard(settled, { removed: stacks, setupId: card.setupId === id ? null : card.setupId }),
+		withCard(settled, {
+			removed: stacks,
+			setupId: card.setupId === id ? null : card.setupId,
+			flowId: card.flowId === id ? null : card.flowId,
+		}),
 		[
 			(next) =>
 				next.awsCard.disconnectId === id
@@ -386,35 +382,46 @@ export const statusArrived = (
 	])
 }
 
-/** A connection without a metric stream: its form opens with the default region. */
+/** Edit data: the picker opens with what the connection streams. */
 export const clickedMetrics = (model: Model, id: AwsConnectionId): Return => ({
-	model: withCard(model, {
-		metricsId: id,
-		metricsRegions: Field.init(DEFAULT_METRIC_REGIONS),
-		metricsError: null,
-	}),
+	model: withCard(model, { metricsId: id, metricsError: null }),
 })
 
 export const cancelledMetrics = (model: Model): Return => ({
-	model: withCard(model, { metricsId: null, metricsError: null }),
+	model: withCard(model, { metricsId: null, metricsError: null, selection: null }),
 })
 
-export const gotMetricsRegions = (model: Model, message: Field.Message): Return => {
-	const step = Field.update(model.awsCard.metricsRegions, message)
+/** One region or namespace in or out of what the connection would stream. */
+const toggled = (
+	model: Model,
+	id: AwsConnectionId,
+	change: (selection: AwsSelection) => AwsSelection,
+): Return => {
+	const connection = connectionsOf(model).find((entry) => entry.id === id)
+	if (connection === undefined) return { model }
 	return {
-		model: withCard(model, { metricsRegions: step.model, metricsError: null }),
-		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-			Message.GotAwsMetricsRegionsMessage({ message: inner }),
-		),
+		model: withCard(model, {
+			selection: change(selectionOf(connection, model.awsCard.selection)),
+			metricsError: null,
+		}),
 	}
 }
 
-export const submittedMetrics = (model: Model): Return => {
+const flip = <A>(values: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
+	values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value]
+
+export const toggledRegion = (model: Model, id: AwsConnectionId, region: string): Return =>
+	toggled(model, id, (selection) => ({ ...selection, regions: flip(selection.regions, region) }))
+
+export const toggledNamespace = (model: Model, id: AwsConnectionId, namespace: AwsMetricNamespace): Return =>
+	toggled(model, id, (selection) => ({ ...selection, namespaces: flip(selection.namespaces, namespace) }))
+
+export const submittedMetrics = (model: Model, id: AwsConnectionId): Return => {
 	const card = model.awsCard
-	if (card.metricsId === null || card.isSavingMetrics) return { model }
-	const id = card.metricsId
-	return Option.match(metricStreamOf(card.metricsRegions.value), {
-		onNone: () => ({ model: withCard(model, { metricsError: METRIC_REGIONS_HINT }) }),
+	const connection = connectionsOf(model).find((entry) => entry.id === id)
+	if (connection === undefined || card.isSavingMetrics) return { model }
+	return Option.match(metricStreamOf(selectionOf(connection, card.selection)), {
+		onNone: () => ({ model: withCard(model, { metricsError: METRIC_SELECTION_HINT }) }),
 		onSome: (metricStream) => ({
 			model: withCard(model, { isSavingMetrics: true, metricsError: null }),
 			commands: [UpdateAwsMetricStream({ id, metricStream })],

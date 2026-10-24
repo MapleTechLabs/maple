@@ -9,6 +9,15 @@ import { loadSource, loadSources } from "../kit/data"
 import { ExpiryChoice, expiresAtOf } from "../kit/rules"
 import { Message } from "./message"
 
+/** A new step or source starts at the top; the page's scroll area otherwise keeps the old offset. */
+export const ScrollToTop = Command.define("ScrollSourcesNewToTop", {
+	messages: [Message.CompletedScrollToTop],
+	execute: Effect.sync(() => {
+		document.querySelector('[data-slot="page-scroll-area"]')?.scrollTo({ top: 0 })
+		return Message.CompletedScrollToTop()
+	}),
+})
+
 /** `FirstDataStatus`'s `POLL_MS`. */
 export const POLL_MS = 5_000
 
@@ -37,7 +46,8 @@ export const FetchCreatedSource = Command.define("FetchCreatedSource", {
 export const WaitFirstDataPoll = Command.define("WaitFirstDataPoll", {
 	args: { key: Schema.String },
 	messages: [Message.ElapsedPoll],
-	execute: ({ key }) => Effect.sleep(Duration.millis(POLL_MS)).pipe(Effect.as(Message.ElapsedPoll({ key }))),
+	execute: ({ key }) =>
+		Effect.sleep(Duration.millis(POLL_MS)).pipe(Effect.as(Message.ElapsedPoll({ key }))),
 })
 
 /** `sources.create` with the rules payload; the expiry resolves against the clock at submit. */

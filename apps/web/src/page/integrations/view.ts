@@ -77,8 +77,11 @@ export const cardView = (
 		case "prometheus":
 		case "warpstream":
 			return focusId === null
-				? [scrapeIntro(h, integration), ...scrapeTargetsSection(h, model, timeZone)]
-				: scrapeTargetsSection(h, model, timeZone, focusId)
+				? [
+						scrapeIntro(h, integration),
+						...scrapeTargetsSection(h, model, timeZone, null, integration),
+					]
+				: scrapeTargetsSection(h, model, timeZone, focusId, integration)
 		default:
 			return []
 	}
@@ -101,11 +104,8 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 
 /** The settings rail with "Integrations" the active link, gated like `/settings`. */
 const settingsNav = (h: HtmlBuilder<Message>, model: Model): Html =>
-	navShell(
-		h,
-		visibleSections(settingsNavVisibility(model, isClerkAuthEnabled)),
-		"integrations",
-		(tab) => Message.ClickedSettingsTab({ tab }),
+	navShell(h, visibleSections(settingsNavVisibility(model, isClerkAuthEnabled)), "integrations", (tab) =>
+		Message.ClickedSettingsTab({ tab }),
 	)
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {

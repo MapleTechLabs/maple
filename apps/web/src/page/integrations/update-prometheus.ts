@@ -16,6 +16,7 @@ import {
 	emptyForm,
 	FetchChecks,
 	type FormFieldName,
+	hostnameOf,
 	type PrometheusCardModel,
 	ProbeTarget,
 	SaveTarget,
@@ -89,7 +90,11 @@ export const completedProbe = (
 	success: boolean,
 	error: string | null,
 ): Return => {
-	const settled = withCard(model, { probing: without(model.prometheusCard.probing, id) })
+	const outcome = failure === null ? { success, error } : { success: false, error: failure.message }
+	const settled = withCard(model, {
+		probing: without(model.prometheusCard.probing, id),
+		probes: { ...model.prometheusCard.probes, [id]: outcome },
+	})
 	if (failure !== null) return toast(settled, "error", "Failed to test connection", failure.message)
 	return chain(settled, [
 		(next) => refreshTargets(next, context),
@@ -142,8 +147,6 @@ const openForm = (model: Model, editingId: ScrapeTargetId | null, form: ScrapeFo
 		}),
 		Dialog.open(model.prometheusCard.formDialog),
 	)
-
-export const clickedAdd = (model: Model): Return => openForm(model, null, emptyForm())
 
 export const clickedEdit = (model: Model, id: ScrapeTargetId): Return => {
 	const target = targetOf(model, id)
@@ -218,23 +221,30 @@ const credentialsOf = (form: ScrapeForm): string | null => {
 	return null
 }
 
+/** The connect flow asks for the URL first: a blank name falls back to the URL's host. */
+const withDefaultName = (form: ScrapeForm): ScrapeForm =>
+	form.name.value.trim() === "" && form.url.value.trim() !== ""
+		? { ...form, name: Field.init(hostnameOf(form.url.value.trim())) }
+		: form
+
 export const submittedForm = (model: Model): Return => {
 	const card = model.prometheusCard
-	const interval = parsedInterval(card.form)
-	if (card.isSaving || !isFormValid(card.form) || interval === null) return { model }
-	const credentials = credentialsOf(card.form)
-	const serviceName = card.form.serviceName.value.trim()
+	const form = withDefaultName(card.form)
+	const interval = parsedInterval(form)
+	if (card.isSaving || !isFormValid(form) || interval === null) return { model }
+	const credentials = credentialsOf(form)
+	const serviceName = form.serviceName.value.trim()
 	return {
-		model: withCard(model, { isSaving: true }),
+		model: withCard(model, { isSaving: true, form }),
 		commands: [
 			SaveTarget({
 				editingId: card.editingId,
 				payload: {
-					name: card.form.name.value.trim(),
+					name: form.name.value.trim(),
 					scrape_interval_seconds: interval,
 					service_name: serviceName === "" ? null : serviceName,
-					url: card.form.url.value.trim(),
-					auth_type: card.form.authType,
+					url: form.url.value.trim(),
+					auth_type: form.authType,
 					auth_credentials: credentials ?? undefined,
 				},
 			}),
@@ -261,7 +271,13 @@ export const completedSave = (
 		(next) => toast(next, "success", isEdit ? "Scrape target updated" : "Scrape target created"),
 		(next) => refreshTargets(next, context),
 		(next) => formDialogStep(next, Dialog.close(next.prometheusCard.formDialog)),
-		(next) => (isEdit || id === null ? { model: next } : clickedTarget(next, context, id)),
+		// A new target becomes the one being edited, so the connect flow's later saves update it.
+		(next) =>
+			isEdit || id === null
+				? { model: next }
+				: clickedTarget(withCard(next, { editingId: id }), context, id),
+		// Every save is probed, so the flow's status row answers without a Test button.
+		(next) => (id === null ? { model: next } : clickedProbe(next, id)),
 	])
 }
 

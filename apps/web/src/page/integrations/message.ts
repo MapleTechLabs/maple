@@ -27,6 +27,7 @@ import {
 } from "@maple/domain/http/v2"
 import {
 	AwsConnectionId,
+	AwsMetricNamespace,
 	ChatWorkspaceId,
 	GcpConnectorId,
 	GcpLogRuntime,
@@ -50,7 +51,7 @@ import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
 import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
-import { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
+import { AwsRemovedStack, AwsSetupMethod, AwsSetupPart } from "./aws-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",
@@ -170,7 +171,6 @@ export const Message = defineMessageUnion({
 	},
 	ClickedToggleTarget: { id: ScrapeTargetId },
 	CompletedToggle: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
-	ClickedAddTarget: {},
 	ClickedEditTarget: { id: ScrapeTargetId },
 	ClickedDeleteTarget: { id: ScrapeTargetId },
 	GotTargetMenuMessage: { id: ScrapeTargetId, message: Menu.Message },
@@ -197,7 +197,6 @@ export const Message = defineMessageUnion({
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
 	GotAwsAccountIdMessage: { message: Field.Message },
-	GotAwsRegionsMessage: { message: Field.Message },
 	SubmittedAwsAccount: {},
 	SucceededAwsCreate: { connection: V2AwsConnection },
 	FailedAwsCreate: { error: Schema.String },
@@ -207,7 +206,7 @@ export const Message = defineMessageUnion({
 	ClickedAwsSetupClose: {},
 	CompletedLoadAwsSetup: result(V2AwsSetup),
 	CompletedLoadAwsIngest: { id: AwsConnectionId, ...result(V2AwsIngest) },
-	ClickedAwsSetupMethod: { method: AwsSetupMethod },
+	ClickedAwsSetupMethod: { part: AwsSetupPart, method: AwsSetupMethod },
 	ClickedAwsCheck: { id: AwsConnectionId },
 	/** The background re-check of connections still waiting for their stack. */
 	TickedAwsPending: {},
@@ -233,8 +232,9 @@ export const Message = defineMessageUnion({
 	CompletedWriteAwsRemoved: {},
 	ClickedAwsMetrics: { id: AwsConnectionId },
 	ClickedAwsMetricsCancel: {},
-	GotAwsMetricsRegionsMessage: { message: Field.Message },
-	SubmittedAwsMetrics: {},
+	ToggledAwsRegion: { id: AwsConnectionId, region: Schema.String },
+	ToggledAwsNamespace: { id: AwsConnectionId, namespace: AwsMetricNamespace },
+	SubmittedAwsMetrics: { id: AwsConnectionId },
 	CompletedAwsMetricStream: {
 		connection: Schema.NullOr(V2AwsConnection),
 		error: Schema.NullOr(Schema.String),
@@ -276,6 +276,11 @@ export const Message = defineMessageUnion({
 	SubmittedOrganization: {},
 	CompletedSelectOrganization: { organization: Schema.String, failure: Schema.NullOr(LoadFailure) },
 	ClickedMetricsDetails: {},
+	SelectedPlanetscaleMetricsMethod: { method: Schema.Literals(["api", "service_token"]) },
+	GotPlanetscaleTokenField: { field: Schema.Literals(["id", "secret"]), message: Field.Message },
+	SubmittedPlanetscaleToken: {},
+	CompletedPlanetscaleToken: { failure: Schema.NullOr(LoadFailure) },
+	ClickedPlanetscaleReplaceToken: {},
 	/** While the first metrics are awaited: every 5 s, then every minute, for 30 minutes. */
 	TickedPlanetscaleWatch: {},
 	/** Restarts the watch once it ran out. */
@@ -310,9 +315,7 @@ export const Message = defineMessageUnion({
 	GotGcpScopeTypeMessage: { message: ToggleGroup.Message },
 	GotGcpScopeFieldMessage: { field: Schema.Literals(["scopeId", "hostProjectId"]), message: Field.Message },
 	/** The scope step's form submit (Continue or Enter). */
-	SubmittedGcpScope: {},
 	SubmittedGcpCreate: {},
-	ClickedGcpConfigureBack: {},
 	ToggledGcpCollect: { capability: Capability },
 	ClickedGcpLogFilter: {},
 	GotGcpFilterModeMessage: { message: Select.Message },

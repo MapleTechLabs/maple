@@ -21,7 +21,7 @@ import { githubStatusOf, trackedBranchOf } from "./update-github"
 
 type H = HtmlBuilder<Message>
 
-const SYNC_PRESENTATION = {
+export const SYNC_PRESENTATION = {
 	ready: { label: "Synced", tone: "text-severity-info", icon: "CircleCheckIcon", spin: false },
 	backfilling: { label: "Syncing", tone: "text-severity-info", icon: "LoaderIcon", spin: true },
 	pending: { label: "Queued", tone: "text-muted-foreground", icon: "ClockIcon", spin: false },

@@ -1,17 +1,37 @@
 import { OrgId } from "@maple/domain"
-import { encodePublicId, PublicIdPrefixes, V2AwsIntegration, V2SourceWithSecret } from "@maple/domain/http/v2"
+import {
+	encodePublicId,
+	PublicIdPrefixes,
+	V2AwsIntegration,
+	V2ScrapeTarget,
+	V2SourceWithSecret,
+} from "@maple/domain/http/v2"
 import { CloudflareIntegrationStatus } from "@maple/domain/http"
 import { Result, Schema } from "effect"
-import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	Command,
+	expect as expectView,
+	expectOutMessage,
+	given,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
+import * as Field from "../../../ui/field"
 import * as Tabs from "../../../ui/tabs"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message as IntegrationMessage } from "../../integrations/message"
+import { ScrollToTop } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
+import { trailOf } from "./view-trail"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_parity"),
@@ -73,7 +93,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(entered.model),
-			expectView(text("Step 1 of 3 · Pick what sends the data")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Source" })).toExist(),
 		)
 		expect(
 			pageUpdate(entered.model, Message.ClickedPushPlatform({ platform: "nodejs" })).outMessage,
@@ -97,21 +117,29 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(entered.model),
-			expectView(text("Step 2 of 3 · Name it")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Name" })).toExist(),
 			click(role("button", { name: "Advanced" })),
 			expectView(text("Resource attributes")).toExist(),
+			click(role("button", { name: "Back" })),
+			expectOutMessage(PageOutMessage.RequestedNavigation({ url: "/sources/new", isReplace: false })),
 		)
 		const back = routeChanged(entered.model, route(), context)
 		expect(back.model.platform).toBeNull()
-		expect(names(routeChanged(back.model, route("kubernetes"), context).commands)).toEqual([
-			"FetchSourcesList",
-		])
+		// Another source opens at the top of the page, not at the picker's scroll offset.
+		const picked = names(routeChanged(back.model, route("kubernetes"), context).commands)
+		expect(picked).toContain("FetchSourcesList")
+		expect(picked).toContain("ScrollSourcesNewToTop")
 	})
 
 	test("an empty name disables Create; a failed create toasts and re-enables it", () => {
 		const entered = init(route("nodejs"), context).model
 		const blank = pageUpdate(entered, Message.ChangedName({ value: "  " })).model
 		expect(pageUpdate(blank, Message.SubmittedForm()).commands ?? []).toHaveLength(0)
+		scene(
+			{ update: pageUpdate, view },
+			given(blank),
+			expectView(role("button", { name: "Create source" })).toBeDisabled(),
+		)
 		const started = pageUpdate(entered, Message.SubmittedForm())
 		expect(names(started.commands)).toEqual(["CreateSource"])
 		const failure = toLoadFailure(new Error("no"))
@@ -136,9 +164,11 @@ describe("connect a source", () => {
 			{ update: pageUpdate, view },
 			given(done.model),
 			indicatorMeasured(),
-			expectView(text("Step 3 of 3 · Send data")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Send data" })).toExist(),
 			expectView(text("Waiting for first data")).toExist(),
+			expectView(text("Waiting for the first request signed with maple_src_Q7xZa")).toExist(),
 			expectView(role("link", { name: "Skip for now" })).toExist(),
+			expectView(role("button", { name: "Open source" })).toBeDisabled(),
 		)
 		const key = done.model.firstData.key ?? ""
 		const pending = pageUpdate(
@@ -163,6 +193,20 @@ describe("connect a source", () => {
 			given(receiving.model),
 			indicatorMeasured(),
 			expectView(role("link", { name: "Open source" })).toExist(),
+			expectView(role("listitem", { name: "Receiving data" })).toExist(),
+		)
+	})
+
+	test("the token step keeps the created source's trail after the route moves to another platform", () => {
+		const started = pageUpdate(init(route("nodejs"), context).model, Message.SubmittedForm()).model
+		const done = pageUpdate(started, Message.CompletedCreate({ result: Result.succeed(created()) })).model
+		const moved = routeChanged(done, route("kubernetes"), context).model
+		scene(
+			{ update: pageUpdate, view },
+			given(moved),
+			indicatorMeasured(),
+			expectView(role("listitem", { name: "Kubernetes" })).toBeAbsent(),
+			expectView(role("listitem", { current: "step", name: "Send data" })).toExist(),
 		)
 	})
 
@@ -191,11 +235,11 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded),
-			expectView(text("Step 2 of 3 · Connect Cloudflare")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
 			expectView(role("button", { name: "Connect Cloudflare" })).toExist(),
-			click(role("button", { name: "Pick another source" })),
+			expectView(role("button", { name: "Continue" })).toBeDisabled(),
 		)
-		expect(pageUpdate(entered.model, Message.ClickedBack()).outMessage).toEqual(
+		expect(pageUpdate(entered.model, Message.ClickedStepBack()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/sources/new", isReplace: false }),
 		)
 		const unknown = init(integrationRoute("slack"), context)
@@ -203,7 +247,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(unknown.model),
-			expectView(text("Step 1 of 3 · Pick what sends the data")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Source" })).toExist(),
 		)
 	})
 
@@ -248,9 +292,20 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(listed),
-			expectView(text("Step 3 of 3 · Collecting")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			expectView(role("listitem", { name: "Acme" })).toExist(),
 			expectView(role("link", { name: "Open source" })).toExist(),
+			click(role("button", { name: "Back" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
+			expectView(role("button", { name: "Continue" })).toBeEnabled(),
 		)
+		// On Go live, a poll that loses the connection takes Connect's tick away.
+		const live = pageUpdate(listed, Message.ClickedContinue()).model
+		const lost = pageUpdate(live, Message.GotIntegrationsMessage({ message: status(false) })).model
+		expect(trailOf(lost)).toContainEqual({ label: "Connect", state: "next" })
 	})
 
 	test("an integration that sends nothing says what is left instead of connected", () => {
@@ -300,18 +355,25 @@ describe("connect a source", () => {
 				}),
 			}),
 		).model
-		const at = (message: IntegrationMessage) =>
-			pageUpdate(clocked, Message.GotIntegrationsMessage({ message })).model
+		// Connect, then Choose data (prefilled with the stream), then Go live.
+		const live = (message: IntegrationMessage) =>
+			pageUpdate(
+				pageUpdate(
+					pageUpdate(clocked, Message.GotIntegrationsMessage({ message })).model,
+					Message.ClickedContinue(),
+				).model,
+				Message.ClickedContinue(),
+			).model
 		scene(
 			{ update: pageUpdate, view },
-			given(at(status(null))),
-			expectView(text("AWS needs attention")).toExist(),
-			expectView(text("No metrics arriving. See the steps below.")).toExist(),
+			given(live(status(null))),
+			expectView(text("No metrics arriving")).toExist(),
+			expectView(role("listitem", { current: "step", name: "Go live: needs attention" })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given(at(status("2026-10-23T08:59:30.000Z"))),
-			expectView(text("AWS is connected")).toExist(),
+			given(live(status("2026-10-23T08:59:30.000Z"))),
+			expectView(role("listitem", { name: "Live" })).toExist(),
 		)
 	})
 
@@ -326,16 +388,61 @@ describe("connect a source", () => {
 	test("WarpStream finishes once a target is added in this visit, and links to the list", () => {
 		const entered = init(integrationRoute("warpstream"), context).model
 		expect(entered.hasAddedTarget).toBe(false)
-		const added = pageUpdate(
+		const target = Schema.decodeUnknownSync(V2ScrapeTarget)({
+			id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
+			object: "scrape_target",
+			name: "api.warpstream.com",
+			service_name: null,
+			url: "https://api.warpstream.com/api/v1/monitoring/prometheus/virtual_clusters/vci_1",
+			target_type: "prometheus",
+			organization: null,
+			include_branches: [],
+			exclude_branches: [],
+			scrape_interval_seconds: 15,
+			labels_json: null,
+			auth_type: "basic",
+			has_credentials: true,
+			managed_by: null,
+			enabled: true,
+			last_scrape_at: null,
+			last_scrape_error: null,
+			created_at: "2026-10-01T00:00:00.000Z",
+			updated_at: "2026-10-01T00:00:00.000Z",
+		})
+		const added = [
+			() =>
+				IntegrationMessage.GotFormFieldMessage({
+					field: "url",
+					message: Field.Message.ChangedValue({ value: target.url }),
+				}),
+			() => IntegrationMessage.SubmittedTargetForm(),
+			() => IntegrationMessage.CompletedSave({ isEdit: false, id: target.id, failure: null }),
+			(model: Model) =>
+				IntegrationMessage.CompletedLoadScrapeTargets({
+					key: model.integrations.statuses.scrapeTargets.key ?? "",
+					result: Result.succeed([target]),
+				}),
+			() =>
+				IntegrationMessage.CompletedProbe({
+					id: target.id,
+					failure: null,
+					success: true,
+					error: null,
+				}),
+		].reduce(
+			(model, message) =>
+				pageUpdate(model, Message.GotIntegrationsMessage({ message: message(model) })).model,
 			entered,
-			Message.GotIntegrationsMessage({
-				message: IntegrationMessage.CompletedSave({ isEdit: false, id: null, failure: null }),
-			}),
-		).model
+		)
+		expect(added.hasAddedTarget).toBe(true)
 		scene(
 			{ update: pageUpdate, view },
 			given(added),
-			expectView(text("Step 3 of 3 · Collecting")).toExist(),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			expectView(role("listitem", { name: "api.warpstream.com" })).toExist(),
 			expectView(role("link", { name: "View sources" })).toExist(),
 		)
 	})

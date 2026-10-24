@@ -17,7 +17,11 @@ export const Message = defineMessageUnion({
 	ToggledAdvanced: {},
 	GotRulesMessage: { message: Rules.Message },
 	ClickedBack: {},
+	/** The footer: the integration's next step, or the one before it. */
+	ClickedContinue: {},
+	ClickedStepBack: {},
 	SubmittedForm: {},
+	CompletedScrollToTop: {},
 	CompletedCreate: { result: Schema.Result(V2SourceWithSecret, LoadFailure) },
 	CompletedFetchList: { key: Schema.String, result: Schema.Result(SourceList, LoadFailure) },
 	CompletedFetchSource: { key: Schema.String, result: Schema.Result(V2Source, LoadFailure) },

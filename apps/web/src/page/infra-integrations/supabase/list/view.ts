@@ -19,7 +19,7 @@ import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { pageHero } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { pageTime } from "../../kit/page-time"
-import { SUPABASE_CONNECT_HINT, SUPABASE_NOT_CONFIGURED, supabaseOnRamp } from "../connect"
+import { supabaseConnectCta } from "../connect"
 import { ERROR_RATE_LIMIT } from "../health"
 import type { SupabaseProjectRow, SupabaseStatus } from "../model"
 import { MANAGE_HREF } from "../panel"
@@ -33,9 +33,6 @@ import { supabaseTable, supabaseTableLoading } from "./view-table"
 // `/infra/supabase`: the organization's projects, their health and what needs a look.
 
 type H = HtmlBuilder<Message>
-
-const connectLink = (h: H, label: string): Html =>
-	linkButton(h, { href: MANAGE_HREF }, [icon(h, "SupabaseIcon"), label])
 
 const loading = (h: H): Html =>
 	h.div([h.Class("space-y-4")], [statRailLoading(h, 4, 4), supabaseTableLoading(h)])
@@ -147,10 +144,7 @@ const projectsView = (h: H, model: Model, status: SupabaseStatus): Html =>
 
 /** Not connected is the on-ramp: no placeholder data, ever. */
 const byStatus = (h: H, model: Model, status: SupabaseStatus): Html => {
-	if (status.connected) return projectsView(h, model, status)
-	return status.configured
-		? supabaseOnRamp(h, SUPABASE_CONNECT_HINT, connectLink(h, "Connect Supabase"))
-		: supabaseOnRamp(h, SUPABASE_NOT_CONFIGURED, null)
+	return status.connected ? projectsView(h, model, status) : supabaseConnectCta(h, status.configured)
 }
 
 const statusView = (h: H, model: Model): Html =>

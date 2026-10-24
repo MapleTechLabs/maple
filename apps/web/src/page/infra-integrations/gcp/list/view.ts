@@ -39,6 +39,9 @@ import { skeleton } from "../../../../ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { integrationNotConnected } from "../../kit/empty-states"
+import { integrationConnectCta } from "../../kit/integration-empty"
+import { AppRoute, hrefOf } from "../../../../route"
+import { GCP_ACCENT } from "../../../integrations/catalog"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHero, searchToolbar } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
@@ -535,24 +538,39 @@ const content = (h: H, model: Model): ReadonlyArray<Html> =>
 		onSuccess: () => connected(h, model),
 	})
 
+/** Nothing connected: what this page will show, and the way to the connect flow. */
+const gcpConnectCta = (h: H): Html =>
+	integrationConnectCta(h, {
+		brand: { icon: "GoogleCloudIcon", backerIcon: "GoogleCloudMonoIcon", accent: GCP_ACCENT },
+		features: [
+			{
+				label: "Metrics",
+				title: "Workloads, no agents",
+				description: "Cloud Run, GKE, Compute Engine, Cloud SQL and more, read every 5 minutes.",
+			},
+			{
+				label: "Resources",
+				title: "Everything in the scope",
+				description: "A project, a folder or the organization, including projects created later.",
+			},
+			{
+				label: "Access",
+				title: "Read-only, your choice of setup",
+				description: "A Cloud Shell script, the console, Terraform or Alchemy. No keys for Maple.",
+			},
+		],
+		hint: "Connect a project, folder or organization. Its workloads and resources appear here.",
+		label: "Connect Google Cloud",
+		href: hrefOf(AppRoute.SourcesNew({ search: { integration: "gcp" } })),
+	})
+
 const connected = (h: H, model: Model): ReadonlyArray<Html> => {
 	const status = statusOf(model)
 	if (status === null) return []
 	const state = pageStateOf(status, model.nowMs)
 	switch (state._tag) {
 		case "NotConnected":
-			return [
-				hero(h),
-				integrationNotConnected(h, {
-					icon: icon(h, "GoogleCloudIcon", { size: 16 }),
-					title: "Connect Google Cloud to see your infrastructure",
-					description:
-						"Connect an organization, folder or project that collects metrics and resources. Maple reads Cloud Monitoring metrics and lists your resources, with no agents to install.",
-					integration: "gcp",
-					actionLabel: "Connect Google Cloud",
-					docsPage: "gcp",
-				}),
-			]
+			return [hero(h), gcpConnectCta(h)]
 		case "SetupPending":
 			return [
 				hero(h),

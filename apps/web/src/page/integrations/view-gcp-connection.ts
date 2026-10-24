@@ -149,7 +149,7 @@ const connectionIssues = (
 					? [h.p([], ["To remove the connection instead, choose Disconnect in its menu."])]
 					: []),
 			],
-			action: runScript(h, connector, needed === "setup-pending" ? "Finish setup" : "Apply changes"),
+			action: runScript(h, connector, needed === "setup-pending" ? "Reconnect" : "Apply changes"),
 		})
 	}
 	if (metrics.kind === "incomplete")
@@ -318,7 +318,7 @@ const signalLink = (h: H, href: string, label: string): Html =>
 	h.a([h.Href(href), h.Class(SIGNAL_LINK)], [label, icon(h, "ArrowRightIcon", { size: 11 })])
 
 const menuEntries: ReadonlyArray<MenuEntry> = [
-	...(IS_ADMIN ? [{ _tag: "Item", value: "configure", label: "Configure" } as const] : []),
+	...(IS_ADMIN ? [{ _tag: "Item", value: "configure", label: "Edit data" } as const] : []),
 	{ _tag: "Item", value: "logs", label: "View logs" },
 	{ _tag: "Item", value: "infra", label: "View infrastructure" },
 	...(IS_ADMIN

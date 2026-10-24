@@ -21,13 +21,18 @@ import { type SelectEntry, view as selectView } from "../../../../ui/select-view
 import * as Tooltip from "../../../../ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { integrationNotConnected } from "../../kit/empty-states"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHero } from "../../../infra/kit/page-parts"
 import { formatAbsolute } from "../../../kit/relative-time"
 import { pageTime } from "../../kit/page-time"
 import { activeFilterChips, applyBranchFilters } from "../filters"
-import { BRANCH_ABSENCE_COPY, metricsNotice, revokedNotice, setupState } from "../notices"
+import {
+	BRANCH_ABSENCE_COPY,
+	metricsNotice,
+	planetscaleConnectCta,
+	revokedNotice,
+	setupState,
+} from "../notices"
 import {
 	candidatesOf,
 	databaseOf,
@@ -340,17 +345,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	})
 	const body = (trigger: Trigger): ReadonlyArray<Html> =>
 		status !== null && !status.connected
-			? [
-					integrationNotConnected(h, {
-						icon: icon(h, "PlanetScaleIcon", { size: 16 }),
-						title: "Connect PlanetScale to see database health",
-						description:
-							"Authorize your PlanetScale organization with one click and Maple tracks every branch's health (connections, CPU, memory, replication lag) with nothing to install.",
-						integration: "planetscale",
-						actionLabel: "Connect PlanetScale",
-						docsPage: "planetscale",
-					}),
-				]
+			? [planetscaleConnectCta(h)]
 			: [
 					...(status?.revoked_at != null ? [revokedNotice(h)] : []),
 					...(status !== null &&
@@ -360,7 +355,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						? [metricsNotice(h, status)]
 						: []),
 					...(never && status !== null
-						? [setupState(h, derivePlanetScaleSetup(status, clock.nowMs).steps)]
+						? [setupState(h, derivePlanetScaleSetup(status, clock.nowMs).checks)]
 						: []),
 					...(resolution.kind === "unknown"
 						? [unknownBranchNotice(h, resolution.name, resolution.fallback?.name ?? null)]

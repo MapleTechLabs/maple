@@ -1,23 +1,19 @@
 import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import { cn } from "@maple/ui/lib/utils"
 import {
 	metricsAuthOf,
 	metricsHealthState,
 	metricsLastCollectedAt,
 	metricsLastError,
-	type SetupStep,
 } from "../../components/integrations/planetscale-setup-steps"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button } from "../../ui/button"
-import { icon } from "../../ui/icon"
-import { spinner } from "../../ui/spinner"
 import { statusDot } from "../../ui/status-dot"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `PlanetScaleMetricsHealth`, `PlanetScaleSetupChecklist` and `PlanetScaleOrgPicker`.
+// `PlanetScaleMetricsHealth`.
 
 type H = HtmlBuilder<Message>
 
@@ -126,96 +122,3 @@ export const metricsHealth = (
 		],
 	)
 }
-
-/** `StepMarker`: done, blocked, current (a spinner while Maple works), else the step number. */
-const stepMarker = (h: H, step: SetupStep, number: number): Html => {
-	if (step.state === "done")
-		return icon(h, "CircleCheckIcon", {
-			size: 14,
-			className: "mt-0.5 shrink-0 text-severity-info",
-			attributes: [h.AriaHidden(true)],
-		})
-	if (step.state === "blocked")
-		return icon(h, "CircleWarningIcon", {
-			size: 14,
-			className: "mt-0.5 shrink-0 text-severity-error",
-			attributes: [h.AriaHidden(true)],
-		})
-	if (step.state === "current")
-		return step.waitingOnMaple
-			? spinner(h, "mt-0.5 shrink-0 text-muted-foreground", 14)
-			: h.span(
-					[
-						h.AriaHidden(true),
-						h.Class(
-							"mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full bg-primary text-4xs font-medium text-primary-foreground",
-						),
-					],
-					[String(number)],
-				)
-	return h.span(
-		[
-			h.AriaHidden(true),
-			h.Class(
-				"mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border border-border text-4xs font-medium text-muted-foreground",
-			),
-		],
-		[String(number)],
-	)
-}
-
-/** `PlanetScaleSetupChecklist`: the active step carries its action. */
-export const setupChecklist = (
-	h: H,
-	steps: ReadonlyArray<SetupStep>,
-	actionOf: (id: SetupStep["id"]) => Html | null,
-): Html =>
-	h.ol(
-		[h.Class("flex flex-col")],
-		steps.map((step, index) => {
-			const action = step.state === "current" || step.state === "blocked" ? actionOf(step.id) : null
-			return h.li(
-				[h.Class("flex gap-3 border-b border-border/60 py-2.5 last:border-b-0 last:pb-0 first:pt-0")],
-				[
-					stepMarker(h, step, index + 1),
-					h.div(
-						[h.Class("min-w-0 flex-1")],
-						[
-							h.div(
-								[h.Class("flex flex-wrap items-baseline gap-x-2")],
-								[
-									h.span(
-										[
-											h.Class(
-												cn(
-													"text-xs font-medium",
-													step.state === "pending"
-														? "text-muted-foreground"
-														: "text-foreground",
-												),
-											),
-										],
-										[step.title],
-									),
-									h.span(
-										[
-											h.Class(
-												cn(
-													"text-xs",
-													step.state === "blocked"
-														? "text-severity-error"
-														: "text-muted-foreground",
-												),
-											),
-										],
-										[step.detail],
-									),
-								],
-							),
-							...(action === null ? [] : [h.div([h.Class("mt-2.5")], [action])]),
-						],
-					),
-				],
-			)
-		}),
-	)
