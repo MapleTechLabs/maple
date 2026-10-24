@@ -19,6 +19,7 @@ import {
 	type PrReviewReplyCommand,
 	PrReviewReplyId,
 	type PrReviewReplyStatus,
+	type PullRequestCiApprovedJob,
 	type PullRequestCommentJob,
 	type PullRequestEventJob,
 	type PullRequestHead,
@@ -70,6 +71,11 @@ export interface PrReplyOutcome {
 export interface PrReviewConversationServiceApi {
 	/** Webhook entry point. Never fails, for the reason `onPullRequestEvent` never does. */
 	readonly onPullRequestComment: (orgId: OrgId, job: PullRequestCommentJob) => Effect.Effect<PrReplyOutcome>
+	/**
+	 * Someone other than the author ran a pull request's CI. When they have write access and the
+	 * pull request's head is still the run's, its review starts as a trusted author's would. Never fails.
+	 */
+	readonly onCiApproved: (orgId: OrgId, job: PullRequestCiApprovedJob) => Effect.Effect<void>
 	/** Post the agent's answer, committing a `fix`'s staged edits first. */
 	readonly submitReply: (
 		orgId: OrgId,
@@ -89,6 +95,36 @@ export interface PrReviewConversationServiceApi {
 		error: string,
 	) => Effect.Effect<void, PrReviewPersistenceError>
 }
+
+/** The pull request read fresh, as the `opened` event a review starts from. */
+const reviewJobFor = (
+	source: Pick<
+		PullRequestCommentJob,
+		"provider" | "externalInstallationId" | "externalRepoId" | "repoFullName"
+	>,
+	pr: PullRequestHead,
+): PullRequestEventJob => ({
+	kind: "pull-request-event",
+	provider: source.provider,
+	externalInstallationId: source.externalInstallationId,
+	externalRepoId: source.externalRepoId,
+	repoFullName: source.repoFullName,
+	number: pr.number,
+	action: "opened",
+	url: pr.url,
+	title: pr.title,
+	body: pr.body,
+	authorLogin: pr.authorLogin,
+	merged: false,
+	mergeCommitSha: null,
+	mergedAtMs: null,
+	headSha: pr.headSha,
+	baseSha: pr.baseSha,
+	headRef: pr.headRef,
+	baseRef: pr.baseRef,
+	draft: pr.draft,
+	headRepoFullName: pr.headRepoFullName,
+})
 
 const toPersistence = (error: { readonly message: string }) =>
 	new PrReviewPersistenceError({ message: error.message })
@@ -406,29 +442,7 @@ export class PrReviewConversationService extends Context.Service<
 
 			if (command === "review") {
 				const pr = head.value
-				const reviewJob: PullRequestEventJob = {
-					kind: "pull-request-event",
-					provider: job.provider,
-					externalInstallationId: job.externalInstallationId,
-					externalRepoId: job.externalRepoId,
-					repoFullName: job.repoFullName,
-					number: pr.number,
-					action: "opened",
-					url: pr.url,
-					title: pr.title,
-					body: pr.body,
-					authorLogin: pr.authorLogin,
-					merged: false,
-					mergeCommitSha: null,
-					mergedAtMs: null,
-					headSha: pr.headSha,
-					baseSha: pr.baseSha,
-					headRef: pr.headRef,
-					baseRef: pr.baseRef,
-					draft: pr.draft,
-					headRepoFullName: pr.headRepoFullName,
-				}
-				const outcome = yield* reviews.reviewNow(orgId, reviewJob)
+				const outcome = yield* reviews.reviewNow(orgId, reviewJobFor(job, pr))
 				if (outcome.outcome !== "started")
 					return yield* fail(
 						`review ${outcome.skipReason ?? outcome.outcome}`,
@@ -558,6 +572,69 @@ export class PrReviewConversationService extends Context.Service<
 					Effect.logError("[PrReply] pull request comment could not be answered").pipe(
 						Effect.annotateLogs({ orgId, number: job.number, cause: summarizeCause(cause) }),
 						Effect.as<PrReplyOutcome>({ replyId: null, outcome: "failed" }),
+					),
+				),
+			)
+
+		const ciApproved = Effect.fn("PrReviewConversationService.onCiApproved")(function* (
+			orgId: OrgId,
+			job: PullRequestCiApprovedJob,
+		) {
+			const annotate = (outcome: string, extra?: Record<string, string | number | boolean>) =>
+				Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": job.repoFullName,
+					"cicd.pipeline.run.id": job.runId,
+					"maple.pr_review.ci_approval": outcome,
+					...extra,
+				})
+			const repo = yield* repositories
+				.resolveRepository(orgId, job.provider, job.externalRepoId)
+				.pipe(Effect.mapError(toPersistence))
+			if (Option.isNone(repo) || !repo.value.prReviewEnabled) return yield* annotate("disabled")
+			const upstream = yield* upstreamFor(orgId, repo.value)
+			if (Option.isNone(upstream)) return yield* annotate("disconnected")
+			const { provider, installation, ref } = upstream.value
+			// Anyone can re-run CI on their own pull request; only write access vouches for someone else's.
+			const permission = yield* provider
+				.fetchCommenterPermission(installation, ref, job.approverLogin)
+				.pipe(Effect.orElseSucceed(() => "none"))
+			if (!WRITE_PERMISSIONS.has(permission))
+				return yield* annotate("not_permitted", { "vcs.repository.permission": permission })
+			// Fork runs carry no pull request number: the open one from the run's branch is it.
+			const numbers =
+				job.pullRequestNumbers.length > 0
+					? job.pullRequestNumbers
+					: (yield* provider.fetchPullRequests(installation, ref, {
+							limit: 5,
+							head: `${job.headRepoFullName.split("/")[0]}:${job.headBranch}`,
+						})).map((pr) => pr.number)
+			if (numbers.length === 0) return yield* annotate("no_pull_request")
+			yield* Effect.forEach(
+				numbers,
+				(number) =>
+					Effect.gen(function* () {
+						const pr = yield* provider.fetchPullRequestHead(installation, ref, number)
+						// The approval covers the commit it ran on, not one pushed since.
+						if (pr.state !== "open" || pr.headSha !== job.headSha)
+							return yield* annotate("head_moved", { "vcs.pull_request.number": number })
+						const outcome = yield* reviews.onCiApproved(orgId, reviewJobFor(job, pr))
+						yield* annotate(outcome.outcome, {
+							"vcs.pull_request.number": number,
+							...(outcome.skipReason === undefined
+								? undefined
+								: { "maple.pr_review.skip_reason": outcome.skipReason }),
+						})
+					}),
+				{ discard: true },
+			)
+		})
+
+		const onCiApproved: PrReviewConversationServiceApi["onCiApproved"] = (orgId, job) =>
+			ciApproved(orgId, job).pipe(
+				Effect.catchCause((cause) =>
+					Effect.logError("[PrReview] CI approval could not be applied").pipe(
+						Effect.annotateLogs({ orgId, runId: job.runId, cause: summarizeCause(cause) }),
 					),
 				),
 			)
@@ -746,6 +823,7 @@ export class PrReviewConversationService extends Context.Service<
 
 		return {
 			onPullRequestComment,
+			onCiApproved,
 			submitReply,
 			stageEdit,
 			failReply,
