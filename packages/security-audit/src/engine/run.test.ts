@@ -581,3 +581,86 @@ describe("runAudit, fourth review regressions", () => {
 		expect(message).not.toContain("ABC123")
 	})
 })
+
+describe("runAudit, fifth review regressions", () => {
+	const priorOf = async () => {
+		const { result } = await runScripted(baseInput(), happy())
+		return { runId: "run-1", sourceRef: "abc123", ledger: result.ledger, findings: result.findings }
+	}
+
+	it("marks a carried unit resolved when a critic resolves its prior lead, and keeps the mark", async () => {
+		const prior = await priorOf()
+		const { result } = await runScripted(baseInput({ runId: "run-2", prior }), (i) =>
+			i.agentId === "critic-w1-post"
+				? json({ ...emptyCritic, resolved_prior_leads: [FINGERPRINT] })
+				: happy()(i),
+		)
+		const keys = result.ledger.find((u) => u.coverage_id === idOf(KEYS))
+		expect(keys?.resolved_prior_leads).toEqual([FINGERPRINT])
+		expect(ledgerErrors(result.ledger)).toEqual([])
+	})
+
+	it("lists candidates and uncovered surfaces to the critic in a stable order, not hunter order", async () => {
+		const searchFp = "a-search/injection"
+		const { recorded } = await runScripted(baseInput({ concurrency: 4 }), (i) => {
+			if (i.role !== "hunter") return happy()(i)
+			const answer = hunterAnswer(i, ALL)
+			const ownsSearch = i.prompt.includes(`"coverage_id": "${idOf(SEARCH)}"`)
+			const uncovered = {
+				surface: ownsSearch ? "GET /a-first" : "GET /z-last",
+				boundary: "none",
+				subsystem: "services",
+				attack_class: "Injection",
+				starting_paths: ["src/routes/other.ts"],
+				reason: "unmapped",
+			}
+			if (!ownsSearch) return json({ ...answer, uncovered: [uncovered] })
+			return json({
+				...answer,
+				units: answer.units.map((u) => ({
+					...u,
+					disposition: "candidate",
+					candidate_fingerprints: [searchFp],
+				})),
+				candidates: [{ ...keysCandidate, fingerprint: searchFp }],
+				uncovered: [uncovered],
+			})
+		})
+		const critic = recorded.invocations.find((i) => i.agentId === "critic-w1-post")?.prompt ?? ""
+		const at = (text: string) => critic.indexOf(text)
+		expect(at(searchFp)).toBeGreaterThan(-1)
+		expect(at(`"fingerprint": "${searchFp}"`)).toBeLessThan(at(`"fingerprint": "${FINGERPRINT}"`))
+		expect(at("GET /a-first")).toBeGreaterThan(-1)
+		expect(at("GET /a-first")).toBeLessThan(at("GET /z-last"))
+	})
+
+	it("stores every valid record and discloses the one that fails validation", async () => {
+		const prior = await priorOf()
+		const broken = { ...rejectedRecord, reason: "" }
+		const { result, recorded } = await runScripted(
+			baseInput({
+				runId: "run-2",
+				prior: { ...prior, findings: [...prior.findings, { ...broken, fingerprint: "search/old" }] },
+			}),
+			(i) => {
+				if (i.role !== "hunter" || !i.prompt.includes(`"coverage_id": "${idOf(SEARCH)}"`))
+					return happy()(i)
+				// The search hunter raises the unchanged rejected claim again, so it is reported.
+				const answer = hunterAnswer(i, ALL)
+				return json({
+					...answer,
+					units: answer.units.map((u) => ({
+						...u,
+						disposition: "candidate",
+						candidate_fingerprints: ["search/old"],
+					})),
+					candidates: [{ ...keysCandidate, fingerprint: "search/old" }],
+				})
+			},
+		)
+		expect(result.findings.map((f) => f.fingerprint)).toEqual([FINGERPRINT, "search/old"])
+		expect(recorded.findings.map((f) => f.fingerprint)).toEqual([FINGERPRINT])
+		expect(result.status).toBe("incomplete")
+		expect(result.gaps.some((gap) => gap.includes("search/old"))).toBe(true)
+	})
+})
