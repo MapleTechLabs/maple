@@ -61,6 +61,8 @@ export const AuditResources = {
 		],
 	},
 	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
+	/** A device-held key registered for the mobile widgets (DPoP); keyed by installation. */
+	device_credential: { prefix: PublicIdPrefixes.deviceCredential, verbs: ["registered", "revoked"] },
 	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
 	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
@@ -159,6 +161,7 @@ export const AuditResourceLabels = {
 	dashboard: "Dashboard",
 	chat_integration: "Chat integration",
 	dashboard_share: "Dashboard share",
+	device_credential: "Device credential",
 	error_issue: "Issue",
 	gcp_connector: "Google Cloud connector",
 	aws_connection: "AWS connection",
@@ -212,6 +215,8 @@ export const AuditActionLabels = {
 	"dashboard_share.created": "Shared dashboard",
 	"dashboard_share.rotated": "Rotated dashboard share link",
 	"dashboard_share.deleted": "Removed dashboard share link",
+	"device_credential.registered": "Registered device key",
+	"device_credential.revoked": "Revoked device key",
 	"error_issue.created": "Created issue",
 	"error_issue.state_change": "Changed issue status",
 	"error_issue.assignment": "Assigned issue",

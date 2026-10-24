@@ -5,6 +5,7 @@ import { AuthorizationUnavailableError, Context, UnauthorizedError } from "../cu
 import {
 	V2InsufficientScope,
 	V2InvalidCredentials,
+	V2InvalidDpopProof,
 	V2OrganizationAccessDenied,
 	V2InvalidRequest,
 	V2RateLimited,
@@ -30,6 +31,7 @@ export class AuthorizationV2 extends HttpApiMiddleware.Service<
 >()("AuthorizationV2", {
 	error: [
 		V2InvalidCredentials.schema,
+		V2InvalidDpopProof.schema,
 		V2InsufficientScope.schema,
 		V2RateLimited.schema,
 		V2OrganizationAccessDenied.schema,
@@ -42,7 +44,7 @@ export class AuthorizationV2 extends HttpApiMiddleware.Service<
 			HttpApiSecurity.annotateMerge(
 				OpenApi.annotations({
 					description:
-						"Authenticate every request with a Bearer token: `Authorization: Bearer <token>`. Accepts a Maple API key (`maple_ak_…`) or a dashboard session token (Clerk / self-hosted JWT). API keys may be restricted with scopes — see the `Scope` schema.",
+						"Authenticate every request with a Bearer token: `Authorization: Bearer <token>`. Accepts a Maple API key (`maple_ak_…`) or a dashboard session token (Clerk / self-hosted JWT). API keys may be restricted with scopes (see the `Scope` schema). A device-bound access token from `POST /v2/device_tokens` is sent as `Authorization: DPoP <token>` together with a `DPoP` proof header (RFC 9449) instead.",
 					format: "maple_ak_… API key or session JWT",
 				}),
 			),
