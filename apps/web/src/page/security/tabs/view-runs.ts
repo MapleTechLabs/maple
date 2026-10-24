@@ -23,7 +23,7 @@ import {
 	refLabel,
 } from "../kit/format"
 import { placeholderRows, repositoryName, runStatusBadge } from "../kit/parts"
-import { RUN_LIST_CAP, runsForTab, runsOf, targetsOf } from "./derive"
+import { RUN_LIST_CAP, runsForTab, runsForTarget, targetsOf } from "./derive"
 import { Message, type Model } from "./model"
 
 // The Runs tab: every run, newest first, narrowed to one target from the select.
@@ -161,7 +161,7 @@ export const startRunAction = (h: H, model: Model): Html | undefined => {
 	const targetId = model.runsSearch.target
 	const target = targetsOf(model).find((candidate) => candidate.id === targetId)
 	if (target === undefined || !model.isAdmin) return undefined
-	const isRunning = runsOf(model).some((run) => run.targetId === target.id && isLive(run))
+	const isRunning = runsForTarget(model, target.id).some(isLive)
 	return button(
 		h,
 		{

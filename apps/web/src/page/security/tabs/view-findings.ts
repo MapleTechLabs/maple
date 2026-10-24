@@ -52,7 +52,10 @@ const statusTabs = (h: H, model: Model, findings: ReadonlyArray<SecurityAuditFin
 	return h.nav(
 		[h.AriaLabel("Finding status"), h.Class("flex items-center gap-1 overflow-x-auto")],
 		STATUS_TABS.map((tab) => {
-			const { status: _status, ...rest } = model.findingsSearch
+			// The search box as typed, so a status switch within the debounce keeps the query.
+			const { status: _status, q: _q, ...filters } = model.findingsSearch
+			const q = model.searchDraft.trim()
+			const rest: SecurityFindingsSearch = q === "" ? filters : { ...filters, q }
 			const search: SecurityFindingsSearch = tab === "open" ? rest : { ...rest, status: tab }
 			const isActive = tab === active
 			return h.a(
