@@ -11,6 +11,7 @@ import {
 	isAbandonedStore,
 	MIN_TMPFS_FREE_BYTES,
 	sweepAbandonedStores,
+	sweepParents,
 } from "../src/commands/in-memory-store"
 
 const NO_FLAGS = {
@@ -92,6 +93,11 @@ describe("sweepAbandonedStores", () => {
 		expect(existsSync(live)).toBe(true)
 		expect(existsSync(young)).toBe(true)
 		expect(existsSync(unrelated)).toBe(true)
+	})
+
+	it("sweeps both tmpfs and the temp dir on Linux, where a run may have used either", () => {
+		expect(sweepParents("linux")).toEqual(["/dev/shm", tmpdir()])
+		expect(sweepParents("darwin")).toEqual([tmpdir()])
 	})
 
 	it("treats a missing parent as nothing to sweep", async () => {

@@ -107,6 +107,10 @@ export const sweepAbandonedStores = (parent: string): Effect.Effect<ReadonlyArra
 		return abandoned
 	})
 
+/** Every dir an in-memory store can live in on this platform. */
+export const sweepParents = (platform: NodeJS.Platform = process.platform): ReadonlyArray<string> =>
+	platform === "linux" ? [TMPFS_DIR, tmpdir()] : [tmpdir()]
+
 /**
  * Create a fresh in-memory store, deleted when the scope closes. Acquire it
  * before chDB opens so the release runs after chDB has closed.
@@ -114,7 +118,8 @@ export const sweepAbandonedStores = (parent: string): Effect.Effect<ReadonlyArra
 export const acquireInMemoryStore = Effect.acquireRelease(
 	Effect.gen(function* () {
 		const parent = yield* inMemoryStoreParent()
-		yield* sweepAbandonedStores(parent.dir)
+		// Both candidates: a killed run may have used the other one (tmpfs filled up).
+		yield* Effect.forEach(sweepParents(), sweepAbandonedStores, { discard: true })
 		const root = yield* Effect.try({
 			try: () => mkdtempSync(join(parent.dir, IN_MEMORY_STORE_PREFIX)),
 			catch: (error) =>
