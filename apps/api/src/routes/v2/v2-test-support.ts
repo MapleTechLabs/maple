@@ -83,6 +83,8 @@ import {
 } from "./telemetry.http"
 import { HttpV2WidgetSummaryLive } from "./widget-summary.http"
 import { HttpV2WidgetCredentialsLive } from "./widget-credentials.http"
+import { HttpV2DeviceCredentialsLive, HttpV2DeviceTokensLive } from "./device-credentials.http"
+import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
 
 /**
  * Test-only support for the v2 HTTP harnesses. `HttpApiBuilder.layer(MapleApiV2)`
@@ -204,6 +206,9 @@ const v2GroupLayersExceptOnboardingChecklist = (
 			HttpV2WidgetSummaryLive,
 		).pipe(Layer.provide(Layer.effect(TelemetryReadService, TelemetryReadService.make))),
 		HttpV2WidgetCredentialsLive,
+		Layer.mergeAll(HttpV2DeviceCredentialsLive, HttpV2DeviceTokensLive).pipe(
+			Layer.provide(DeviceCredentialsService.layer),
+		),
 		// Talks to Slack; only its own service test exercises it.
 		HttpV2SupportChannelLive.pipe(
 			Layer.provide(
