@@ -22,7 +22,7 @@ import { Message } from "./message"
 
 // `AwsIntegrationCard`: state and writes.
 
-export { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
+export { AwsRemovedStack, AwsSetupMethod, AwsSetupPart } from "./aws-schema"
 
 /** The regions and namespaces picked for one connection's metric stream, before it is saved. */
 export const AwsSelection = Schema.Struct({
@@ -44,6 +44,8 @@ export const AwsCardModel = Schema.Struct({
 	setupId: Schema.NullOr(AwsConnectionId),
 	setup: KeyedSchema(V2AwsSetup, LoadFailure),
 	method: AwsSetupMethod,
+	/** The metric stream's own method: Terraform covers only the role. */
+	streamMethod: AwsSetupMethod,
 	/** Checks in flight, by connection; a quiet one raises no toast unless the user asks meanwhile. */
 	checking: Schema.Array(Schema.Struct({ id: AwsConnectionId, quiet: Schema.Boolean })),
 	copies: Schema.Record(Schema.String, CopyButton.Model),
@@ -72,6 +74,7 @@ export const initAwsCard = (): AwsCardModel => ({
 	setupId: null,
 	setup: { key: null, data: AsyncData.Idle() },
 	method: "cloudshell",
+	streamMethod: "cloudshell",
 	checking: [],
 	copies: {},
 	disconnectId: null,

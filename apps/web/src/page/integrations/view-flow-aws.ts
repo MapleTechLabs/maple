@@ -537,6 +537,9 @@ const liveStep = (h: H, model: Model, timeZone: string): Html => {
 	if (flow._tag !== "found" || flow.connection.verified_at === null) return notConnectedYet(h)
 	const connection = flow.connection
 	const isDelivering = awsStreamOf(connection, model.nowMs)._tag === "delivering"
+	// A delivering stream still needs the script again when the pick changed since it was saved.
+	const needsDeploy =
+		!isDelivering || !isSelectionSaved(connection, selectionOf(connection, model.awsCard.selection))
 	const chosen = awsChosenLabel(model, connection)
 	return flowColumns(
 		h,
@@ -546,7 +549,7 @@ const liveStep = (h: H, model: Model, timeZone: string): Html => {
 				`Saved as AWS ${connection.account_id}. Safe to leave; Maple keeps checking.`,
 				chosen ?? "",
 			),
-			...(isDelivering ? [] : [deployCard(h, model, connection)]),
+			...(needsDeploy ? [deployCard(h, model, connection)] : []),
 			liveChecklist(h, { rows: liveRows(h, model, connection, timeZone) }),
 			...ingestPanel(h, model, connection, timeZone),
 		],

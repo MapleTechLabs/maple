@@ -81,7 +81,7 @@ export const cardView = (
 						scrapeIntro(h, integration),
 						...scrapeTargetsSection(h, model, timeZone, null, integration),
 					]
-				: scrapeTargetsSection(h, model, timeZone, focusId)
+				: scrapeTargetsSection(h, model, timeZone, focusId, integration)
 		default:
 			return []
 	}

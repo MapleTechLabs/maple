@@ -29,6 +29,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
+import { trailOf } from "./view-trail"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_parity"),
@@ -193,6 +194,19 @@ describe("connect a source", () => {
 		)
 	})
 
+	test("the token step keeps the created source's trail after the route moves to another platform", () => {
+		const started = pageUpdate(init(route("nodejs"), context).model, Message.SubmittedForm()).model
+		const done = pageUpdate(started, Message.CompletedCreate({ result: Result.succeed(created()) })).model
+		const moved = routeChanged(done, route("kubernetes"), context).model
+		scene(
+			{ update: pageUpdate, view },
+			given(moved),
+			indicatorMeasured(),
+			expectView(role("listitem", { name: "Kubernetes" })).toBeAbsent(),
+			expectView(role("listitem", { current: "step", name: "Send data" })).toExist(),
+		)
+	})
+
 	test("an integration's step shows its own connect card; an unknown id falls back to the picker", () => {
 		const entered = init(integrationRoute("cloudflare"), context)
 		expect(entered.model.integration).toBe("cloudflare")
@@ -279,7 +293,14 @@ describe("connect a source", () => {
 			click(role("button", { name: "Continue" })),
 			expectView(role("listitem", { name: "Acme" })).toExist(),
 			expectView(role("link", { name: "Open source" })).toExist(),
+			click(role("button", { name: "Back" })),
+			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
+			expectView(role("button", { name: "Continue" })).toBeEnabled(),
 		)
+		// On Go live, a poll that loses the connection takes Connect's tick away.
+		const live = pageUpdate(listed, Message.ClickedContinue()).model
+		const lost = pageUpdate(live, Message.GotIntegrationsMessage({ message: status(false) })).model
+		expect(trailOf(lost)).toContainEqual({ label: "Connect", state: "next" })
 	})
 
 	test("an integration that sends nothing says what is left instead of connected", () => {

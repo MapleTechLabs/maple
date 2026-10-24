@@ -38,7 +38,7 @@ export const awsFlowConnection = (model: Model): AwsFlowConnection => {
 	return newest === undefined ? { _tag: "none" } : { _tag: "found", connection: newest }
 }
 
-/** "2 regions, 5 services" once the pick can be streamed, else null. */
+/** "2 regions, 5 services" once the pick can be streamed, else null. The defaults count as a pick. */
 export const awsChosenLabel = (model: Model, connection: V2AwsConnection): string | null => {
 	const selection = selectionOf(connection, model.awsCard.selection)
 	return Option.isNone(metricStreamOf(selection))
@@ -82,7 +82,7 @@ export const awsFlow = (model: Model): FlowSpec => {
 			choose:
 				chosen === null
 					? "Pick at least one region and one service."
-					: `${chosen}, streamed. You can change this later from the source page.`,
+					: `${chosen} picked. Next, deploy the stream that sends them.`,
 			live:
 				live === "healthy"
 					? "Live. Metrics keep streaming on their own."

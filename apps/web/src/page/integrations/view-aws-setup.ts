@@ -6,7 +6,7 @@ import { errorState } from "../../ui/error-state"
 import { segmentedSelect } from "../../ui/segmented-select"
 import { skeleton } from "../../ui/skeleton"
 import { codeBlock } from "../settings/kit/code-block"
-import type { AwsSetupMethod } from "./aws"
+import type { AwsSetupMethod, AwsSetupPart } from "./aws"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { externalLink } from "./view-gcp-configure-parts"
@@ -40,20 +40,20 @@ const ROLE_METHODS: ReadonlyArray<Readonly<{ value: AwsSetupMethod; label: strin
 // Terraform covers only the role, so the metric stream is set up from CloudShell or the console.
 const STREAM_METHODS = ROLE_METHODS.filter((option) => option.value !== "terraform")
 
-export type SetupPart = "role" | "stream"
+export type SetupPart = AwsSetupPart
 
 /** The method picker for the role's setup or the metric stream's. */
 export const methodSelect = (h: H, model: Model, part: SetupPart): Html =>
 	segmentedSelect(h, {
 		options: part === "role" ? ROLE_METHODS : STREAM_METHODS,
 		value: methodOf(model, part),
-		onChange: (method) => Message.ClickedAwsSetupMethod({ method }),
+		onChange: (method) => Message.ClickedAwsSetupMethod({ part, method }),
 		size: "sm",
 		ariaLabel: "Setup method",
 	})
 
 const methodOf = (model: Model, part: SetupPart): AwsSetupMethod =>
-	part === "stream" && model.awsCard.method === "terraform" ? "cloudshell" : model.awsCard.method
+	part === "role" ? model.awsCard.method : model.awsCard.streamMethod
 
 const roleBody = (
 	h: H,

@@ -92,6 +92,13 @@ const projectChips = (h: H, status: RailwayIntegrationStatus): Html => {
 	)
 }
 
+/** "Workspace Acme, 2 environments", or just the count when the token has no workspace name. */
+const railwayStatusLine = (status: RailwayIntegrationStatus): string => {
+	const count = countLabel(status.environments.length, "environment")
+	const reach = railwayReach(status)
+	return reach === count ? count : `${reach}, ${count}`
+}
+
 const statusOf = (model: Model): RailwayIntegrationStatus | null =>
 	fold(
 		model.statuses.railway,
@@ -134,7 +141,7 @@ const connectStep = (h: H, model: Model): Html => {
 							h,
 							{
 								tone: "ok",
-								text: `Token works. ${railwayReach(status)}, ${countLabel(status.environments.length, "environment")}.`,
+								text: `Token works. ${railwayStatusLine(status)}.`,
 							},
 							status.environments.length === 0 ? [] : [projectChips(h, status)],
 						)

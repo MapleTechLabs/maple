@@ -27,12 +27,17 @@ const STAGE_LABEL = { connect: "Connect", choose: "Choose data", live: "Go live"
 >
 
 export const trailOf = (model: Model): ReadonlyArray<TrailItem> => {
-	if (model.platform !== null) {
-		const source = done(platformMeta(model.platform).label)
-		if (model.created === null) return [source, current("Name"), next("Send data")]
-		const named = done(model.created.source.name)
-		return [source, named, isReceiving(model) ? done("Receiving data") : current("Send data")]
+	// The token step stays on screen once a source exists, even if the route moved on.
+	if (model.created !== null) {
+		const { source } = model.created
+		return [
+			done(platformMeta(source.platform).label),
+			done(source.name),
+			isReceiving(model) ? done("Receiving data") : current("Send data"),
+		]
 	}
+	if (model.platform !== null)
+		return [done(platformMeta(model.platform).label), current("Name"), next("Send data")]
 	const spec = flowSpecOf(model)
 	if (model.integration !== null && spec !== null) {
 		const source = done(integrationMeta(model.integration).label)
@@ -48,7 +53,9 @@ export const trailOf = (model: Model): ReadonlyArray<TrailItem> => {
 							? { label: "Go live: needs attention", state: "blocked" }
 							: current("Go live")
 				const answer = stage === "connect" ? spec.connected : spec.chosen
-				return index < at ? done(answer ?? STAGE_LABEL[stage]) : current(STAGE_LABEL[stage])
+				if (index === at) return current(STAGE_LABEL[stage])
+				// A passed step is only ticked while it still has its answer; a poll can take it back.
+				return answer === null ? next(STAGE_LABEL[stage]) : done(answer)
 			}),
 		]
 	}
@@ -59,7 +66,7 @@ const ITEM_CLASS = {
 	done: "text-muted-foreground",
 	current: "text-foreground border-primary border-b pb-0.5 font-medium",
 	next: "text-muted-foreground/60",
-	blocked: "text-foreground border-warning border-b pb-0.5 font-medium",
+	blocked: "text-warning border-warning border-b pb-0.5 font-medium",
 } satisfies Record<TrailItem["state"], string>
 
 const item = (h: H, entry: TrailItem): Html =>

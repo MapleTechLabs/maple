@@ -14,6 +14,7 @@ import {
 	type AwsRemovedStack,
 	type AwsSelection,
 	type AwsSetupMethod,
+	type AwsSetupPart,
 	CheckAwsConnection,
 	CreateAwsConnection,
 	DeleteAwsConnection,
@@ -134,8 +135,8 @@ export const completedLoadSetup = (
 	result: Result.Result<V2AwsSetup, LoadFailure>,
 ): Return => ({ model: withCard(model, { setup: Keyed.accept(model.awsCard.setup, key, result) }) })
 
-export const setMethod = (model: Model, method: AwsSetupMethod): Return => ({
-	model: withCard(model, { method }),
+export const setMethod = (model: Model, part: AwsSetupPart, method: AwsSetupMethod): Return => ({
+	model: withCard(model, part === "role" ? { method } : { streamMethod: method }),
 })
 
 /** A click during a background check makes that check the user's: its result is toasted. */

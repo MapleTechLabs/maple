@@ -51,7 +51,7 @@ import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
 import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
 import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
-import { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
+import { AwsRemovedStack, AwsSetupMethod, AwsSetupPart } from "./aws-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",
@@ -206,7 +206,7 @@ export const Message = defineMessageUnion({
 	ClickedAwsSetupClose: {},
 	CompletedLoadAwsSetup: result(V2AwsSetup),
 	CompletedLoadAwsIngest: { id: AwsConnectionId, ...result(V2AwsIngest) },
-	ClickedAwsSetupMethod: { method: AwsSetupMethod },
+	ClickedAwsSetupMethod: { part: AwsSetupPart, method: AwsSetupMethod },
 	ClickedAwsCheck: { id: AwsConnectionId },
 	/** The background re-check of connections still waiting for their stack. */
 	TickedAwsPending: {},
