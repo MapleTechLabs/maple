@@ -41,13 +41,13 @@ struct AnomaliesListView: View {
 				: "No anomalies in the last 7 days.",
 			skeletonRowHeight: 84,
 			header: {
-				TriageFilterBar {
-					TriageFilterChip(title: "Open", isOn: model.openOnly) { model.openOnly = true }
-					TriageFilterChip(title: "Last 7 days", isOn: !model.openOnly) { model.openOnly = false }
+				FilterChipBar {
+					FilterChip(title: "Open", isOn: model.openOnly) { model.openOnly = true }
+					FilterChip(title: "Last 7 days", isOn: !model.openOnly) { model.openOnly = false }
 				}
 			}
 		) { anomalies in
-			TriageListCard(
+			ListCard(
 				title: model.openOnly ? "Open anomalies" : "Anomalies",
 				count: "\(anomalies.count)"
 			) {

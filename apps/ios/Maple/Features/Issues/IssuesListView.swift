@@ -124,32 +124,33 @@ struct IssuesListContent: View {
 				? "Nothing needs attention right now."
 				: "No error issues match these filters.",
 			skeletonRowHeight: 84,
-			header: { IssueFilterChips(model: model) }
-		) { issues in
-			VStack(alignment: .leading, spacing: 10) {
-				SectionHeader(
-					title: model.listTitle,
-					count: "\(issues.count)\(model.canLoadMore ? "+" : "")",
-					note: "Last seen"
-				)
-
-				LazyVStack(spacing: 0) {
-					ForEach(issues, id: \.id) { issue in
-						row(issue)
-						if issue.id != issues.last?.id || model.canLoadMore { Hairline() }
+			header: {
+				FilterChipBar {
+					FilterChip(title: "Unresolved", isOn: model.query.actionableOnly) {
+						model.query.actionableOnly.toggle()
 					}
-					if model.canLoadMore {
-						// Trigger on the appearance of the trailing row rather than
-						// on a scroll offset, so row heights never matter.
-						SkeletonList(rowHeight: 84, rows: 1)
-							.task { await model.loadMore() }
+					FilterChip(title: "Regressed", isOn: model.query.workflowState == .regressed) {
+						model.query.workflowState = model.query.workflowState == .regressed ? nil : .regressed
 					}
 				}
-				.hairlineCard()
 			}
-			.padding(.horizontal, 16)
-			.padding(.top, 4)
-			.padding(.bottom, 24)
+		) { issues in
+			ListCard(
+				title: model.listTitle,
+				count: "\(issues.count)\(model.canLoadMore ? "+" : "")",
+				trailing: "Last seen"
+			) {
+				ForEach(issues, id: \.id) { issue in
+					row(issue)
+					if issue.id != issues.last?.id || model.canLoadMore { Hairline() }
+				}
+				if model.canLoadMore {
+					// Trigger on the appearance of the trailing row rather than
+					// on a scroll offset, so row heights never matter.
+					SkeletonList(rowHeight: 84, rows: 1)
+						.task { await model.loadMore() }
+				}
+			}
 		}
 		.task {
 			await model.loader.loadIfNeeded()
@@ -210,42 +211,6 @@ struct IssuesListContent: View {
 				Task { await model.perform(.resolve, on: issue.id) }
 			}
 		return [assign, close]
-	}
-}
-
-/// `Unresolved` and `Regressed`, the two list filters the v2 query carries.
-/// The design's `Mine` and `New 24h` have no backing filter in `IssueQuery`.
-private struct IssueFilterChips: View {
-	@Bindable var model: IssuesListModel
-
-	var body: some View {
-		HStack(spacing: 8) {
-			chip("Unresolved", isOn: model.query.actionableOnly) {
-				model.query.actionableOnly.toggle()
-			}
-			chip("Regressed", isOn: model.query.workflowState == .regressed) {
-				model.query.workflowState = model.query.workflowState == .regressed ? nil : .regressed
-			}
-			Spacer(minLength: 0)
-		}
-		.padding(.horizontal, 16)
-		.padding(.top, 14)
-		.padding(.bottom, 14)
-	}
-
-	private func chip(_ title: String, isOn: Bool, toggle: @escaping () -> Void) -> some View {
-		Button(action: toggle) {
-			Text(title)
-				.font(Typo.small)
-				.foregroundStyle(isOn ? Token.foreground : Token.mutedForeground)
-				.padding(.horizontal, 12)
-				.frame(height: 28)
-				.background(isOn ? Token.muted : .clear, in: .capsule)
-				.overlay(Capsule().stroke(isOn ? Token.input : Token.border, lineWidth: 1))
-				.contentShape(.capsule)
-		}
-		.buttonStyle(.plain)
-		.accessibilityAddTraits(isOn ? [.isSelected] : [])
 	}
 }
 

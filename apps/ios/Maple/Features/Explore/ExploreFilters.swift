@@ -118,7 +118,7 @@ struct ExploreChip<Leading: View, Options: View>: View {
 							.foregroundStyle(Token.mutedForeground)
 					}
 				}
-				.font(Typo.tiny)
+				.font(Typo.small)
 				.lineLimit(1)
 			}
 			if let clear, value != nil {
@@ -192,7 +192,7 @@ struct ExploreToggleChip: View {
 		} label: {
 			HStack(spacing: 6) {
 				Text(label)
-					.font(Typo.tiny)
+					.font(Typo.small)
 					.foregroundStyle(isOn ? Token.foreground : Token.mutedForeground)
 				if isOn {
 					PixelIcon.xmark.image

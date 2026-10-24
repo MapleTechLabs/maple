@@ -87,13 +87,13 @@ struct IncidentsListView: View {
 				: "No alert rule has fired yet.",
 			skeletonRowHeight: 84,
 			header: {
-				TriageFilterBar {
-					TriageFilterChip(title: "Open", isOn: model.openOnly) { model.openOnly = true }
-					TriageFilterChip(title: "All", isOn: !model.openOnly) { model.openOnly = false }
+				FilterChipBar {
+					FilterChip(title: "Open", isOn: model.openOnly) { model.openOnly = true }
+					FilterChip(title: "All", isOn: !model.openOnly) { model.openOnly = false }
 				}
 			}
 		) { cards in
-			TriageListCard(
+			ListCard(
 				title: model.openOnly ? "Open alerts" : "Alerts",
 				count: "\(cards.count)\(model.canLoadMore ? "+" : "")"
 			) {

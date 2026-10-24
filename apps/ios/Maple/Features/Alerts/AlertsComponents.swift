@@ -19,28 +19,6 @@ struct AlertOutlineBadge: View {
 	}
 }
 
-/// A pill filter chip, the same shape as the Errors segment's filters.
-struct TriageFilterChip: View {
-	let title: String
-	let isOn: Bool
-	let action: () -> Void
-
-	var body: some View {
-		Button(action: action) {
-			Text(title)
-				.font(Typo.small)
-				.foregroundStyle(isOn ? Token.foreground : Token.mutedForeground)
-				.padding(.horizontal, 12)
-				.frame(height: 28)
-				.background(isOn ? Token.muted : .clear, in: .capsule)
-				.overlay(Capsule().stroke(isOn ? Token.input : Token.border, lineWidth: 1))
-				.contentShape(.capsule)
-		}
-		.buttonStyle(.plain)
-		.accessibilityAddTraits(isOn ? [.isSelected] : [])
-	}
-}
-
 /// A list row inside an `alertCard`, with a 2pt severity rail on its leading
 /// edge while the thing it describes is still open.
 struct SeverityRailRow<Content: View>: View {
@@ -79,41 +57,5 @@ struct AlertActionLabel: View {
 				.stroke(Token.input, lineWidth: 1)
 		)
 		.contentShape(.rect)
-	}
-}
-
-/// The filter chip row under the triage tabs, spaced like the Errors segment's.
-struct TriageFilterBar<Content: View>: View {
-	@ViewBuilder let content: Content
-
-	var body: some View {
-		HStack(spacing: 8) {
-			content
-			Spacer(minLength: 0)
-		}
-		.padding(.horizontal, 16)
-		.padding(.vertical, 14)
-	}
-}
-
-/// A triage segment's list: `TITLE 3` label with a trailing column note, over
-/// one hairline card holding the rows.
-struct TriageListCard<Content: View>: View {
-	let title: String
-	let count: String
-	var trailing: String? = nil
-	@ViewBuilder let content: Content
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 10) {
-			SectionHeader(title: title, count: count, note: trailing)
-			LazyVStack(spacing: 0) {
-				content
-			}
-			.hairlineCard()
-		}
-		.padding(.horizontal, 16)
-		.padding(.top, 4)
-		.padding(.bottom, 24)
 	}
 }
