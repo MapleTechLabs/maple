@@ -11,7 +11,7 @@ import { sourceRetrieveKey, sourcesListKey } from "../kit/data"
 import { defaultSourceName } from "../kit/platforms"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { CreateSource, FetchCreatedSource, FetchSourcesList, WaitFirstDataPoll } from "./command"
+import { CreateSource, FetchCreatedSource, FetchSourcesList, ScrollToTop, WaitFirstDataPoll } from "./command"
 import { type DataIntegration, initEmbedded, isDataIntegration } from "../../integrations/embed"
 import type { Message as IntegrationMessage } from "../../integrations/message"
 import type { Model as IntegrationModel } from "../../integrations/model"
@@ -106,7 +106,20 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 		: merge(lifted, readList(lifted.model, context, false))
 }
 
+const scrolledToTop = (step: Return): Return => ({
+	...step,
+	commands: [...(step.commands ?? []), ScrollToTop()],
+})
+
+/** Another source or integration opens at the top of the page. */
 export const routeChanged = (model: Model, route: NewRoute, context: PageContext): Return => {
+	const step = enterRoute(model, route, context)
+	return step.model.platform === model.platform && step.model.integration === model.integration
+		? step
+		: scrolledToTop(step)
+}
+
+const enterRoute = (model: Model, route: NewRoute, context: PageContext): Return => {
 	const platform = route.search.platform ?? null
 	const integration = integrationOf(route)
 	const entered: Return =
@@ -242,16 +255,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = spec === null ? null : nextStage(spec, model.stage)
 			return spec === null || next === null || !canContinue(spec, model.stage)
 				? { model }
-				: { model: { ...model, stage: next } }
+				: scrolledToTop({ model: { ...model, stage: next } })
 		},
 		ClickedStepBack: () => {
 			const spec = flowSpecOf(model)
 			const previous = spec === null ? null : previousStage(spec, model.stage)
 			return previous === null
 				? { model, outMessage: navigate(hrefOf(Routes.SourcesNew({ search: {} }))) }
-				: { model: { ...model, stage: previous } }
+				: scrolledToTop({ model: { ...model, stage: previous } })
 		},
 		SubmittedForm: () => submit(model),
+		CompletedScrollToTop: () => ({ model }),
 		CompletedCreate: ({ result }) =>
 			Result.match(result, {
 				onFailure: (failure) => ({
@@ -270,10 +284,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						setup: Setup.init(source.platform),
 					}
 					const read = readCreated(created, context, source, "Load")
-					return {
+					return scrolledToTop({
 						model: read.model,
 						commands: [...(refreshed.commands ?? []), ...(read.commands ?? [])],
-					}
+					})
 				},
 			}),
 		CompletedFetchList: ({ key, result }) => ({

@@ -10,6 +10,7 @@ import { CloudflareIntegrationStatus } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import {
 	click,
+	Command,
 	expect as expectView,
 	expectOutMessage,
 	given,
@@ -25,6 +26,7 @@ import * as Field from "../../../ui/field"
 import * as Tabs from "../../../ui/tabs"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message as IntegrationMessage } from "../../integrations/message"
+import { ScrollToTop } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -123,9 +125,10 @@ describe("connect a source", () => {
 		)
 		const back = routeChanged(entered.model, route(), context)
 		expect(back.model.platform).toBeNull()
-		expect(names(routeChanged(back.model, route("kubernetes"), context).commands)).toEqual([
-			"FetchSourcesList",
-		])
+		// Another source opens at the top of the page, not at the picker's scroll offset.
+		const picked = names(routeChanged(back.model, route("kubernetes"), context).commands)
+		expect(picked).toContain("FetchSourcesList")
+		expect(picked).toContain("ScrollSourcesNewToTop")
 	})
 
 	test("an empty name disables Create; a failed create toasts and re-enables it", () => {
@@ -291,9 +294,11 @@ describe("connect a source", () => {
 			given(listed),
 			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Acme" })).toExist(),
 			expectView(role("link", { name: "Open source" })).toExist(),
 			click(role("button", { name: "Back" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
 			expectView(role("button", { name: "Continue" })).toBeEnabled(),
 		)
@@ -434,7 +439,9 @@ describe("connect a source", () => {
 			{ update: pageUpdate, view },
 			given(added),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "api.warpstream.com" })).toExist(),
 			expectView(role("link", { name: "View sources" })).toExist(),
 		)

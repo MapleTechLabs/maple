@@ -6,11 +6,12 @@ import {
 	V2PlanetScaleOrganizationList,
 } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
-import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../data/load-failure"
 import * as Field from "../../ui/field"
 import type { PageContext } from "../contract"
+import { ScrollToTop } from "../sources/new/command"
 import { Message } from "../sources/new/message"
 import type { Model } from "../sources/new/model"
 import { init, update } from "../sources/new/update"
@@ -117,6 +118,7 @@ describe("PlanetScale connect flow", () => {
 			given(listed),
 			expectView(text(/pick one on the next step/)).toExist(),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
 			expectView(role("listitem", { name: "Authorized" })).toExist(),
 			expectView(role("radio", { name: "labs" })).toExist(),

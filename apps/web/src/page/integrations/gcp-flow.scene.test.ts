@@ -1,10 +1,11 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2GcpConnector, V2GcpIntegration } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
-import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, test } from "vitest"
 import * as Field from "../../ui/field"
 import type { PageContext } from "../contract"
+import { ScrollToTop } from "../sources/new/command"
 import { Message as PageMessage } from "../sources/new/message"
 import type { Model as PageModel } from "../sources/new/model"
 import { init, update } from "../sources/new/update"
@@ -102,6 +103,7 @@ describe("google cloud connect flow", () => {
 			given(send(entered(), typed("acme-prod"))),
 			expectView(text("Project ID looks right. Maple checks access when the setup runs.")).toExist(),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, PageMessage.CompletedScrollToTop()),
 			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
 			expectView(role("listitem", { name: "Project acme-prod" })).toExist(),
 			expectView(role("button", { name: "Create connection" })).toExist(),

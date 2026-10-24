@@ -1,9 +1,10 @@
 import { OrgId } from "@maple/domain"
 import { GithubIntegrationStatus } from "@maple/domain/http"
 import { Result, Schema } from "effect"
-import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, test } from "vitest"
 import type { PageContext } from "../contract"
+import { ScrollToTop } from "../sources/new/command"
 import { Message } from "../sources/new/message"
 import type { Model } from "../sources/new/model"
 import { init, update } from "../sources/new/update"
@@ -85,6 +86,7 @@ describe("github connect flow", () => {
 			given(withStatus(status())),
 			expectView(text("Installed on acme with 2 repositories.")).toExist(),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Installed on acme" })).toExist(),
 			expectView(role("listitem", { current: "step", name: "Go live" })).toExist(),
 			expectView(text("Repositories syncing")).toExist(),
@@ -97,6 +99,7 @@ describe("github connect flow", () => {
 			{ update: pageUpdate, view },
 			given(withStatus(status({ repositories: [repo("1", "web", "ready")] }))),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Live" })).toExist(),
 			expectView(text("GitHub is live")).toExist(),
 		)
@@ -106,6 +109,7 @@ describe("github connect flow", () => {
 				withStatus(status({ repositories: [repo("1", "web", "error", "branch release is gone")] })),
 			),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Go live: needs attention" })).toExist(),
 			expectView(text("0 synced, 1 sync failed: branch release is gone")).toExist(),
 		)

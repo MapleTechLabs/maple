@@ -18,7 +18,7 @@ export const flowFooter = (h: H, options: FlowFooterOptions): Html =>
 	h.footer(
 		[
 			h.Class(
-				"sticky bottom-0 -mx-1 mt-2 flex items-center justify-between gap-4 border-t border-border bg-background px-1 py-4",
+				"sticky -bottom-4 -mx-1 mt-2 flex items-center justify-between gap-4 border-t border-border bg-background px-1 py-4",
 			),
 		],
 		[

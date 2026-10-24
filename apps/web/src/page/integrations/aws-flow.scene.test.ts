@@ -2,9 +2,10 @@ import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2AwsIntegration } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
+import { ScrollToTop } from "../sources/new/command"
 import { Message } from "../sources/new/message"
 import type { Model } from "../sources/new/model"
 import { init, update } from "../sources/new/update"
@@ -148,6 +149,7 @@ describe("aws connect flow", () => {
 				text("Role found. Maple assumed MapleIntegration-018f2b3c4d5e4f708192a3b4 through OIDC."),
 			).toExist(),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
 			expectView(role("switch", { name: "Lambda" })).toBeChecked(),
 			expectView(role("checkbox", { name: "us-east-1, N. Virginia" })).toBeChecked(),

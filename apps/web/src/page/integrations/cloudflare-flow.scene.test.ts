@@ -1,9 +1,10 @@
 import { OrgId } from "@maple/domain"
 import { CloudflareIntegrationStatus } from "@maple/domain/http"
 import { Result, Schema } from "effect"
-import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, test } from "vitest"
 import type { PageContext } from "../contract"
+import { ScrollToTop } from "../sources/new/command"
 import { Message } from "../sources/new/message"
 import type { Model } from "../sources/new/model"
 import { init, update } from "../sources/new/update"
@@ -78,6 +79,7 @@ describe("cloudflare connect flow", () => {
 			expectView(text("Authorized. 1 account and 2 zones found.")).toExist(),
 			expectView(role("button", { name: "Authorize again" })).toExist(),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Acme" })).toExist(),
 			expectView(role("listitem", { current: "step", name: "Go live" })).toExist(),
 			expectView(text("Access works")).toExist(),
@@ -91,6 +93,7 @@ describe("cloudflare connect flow", () => {
 			{ update: pageUpdate, view },
 			given(withStatus(status({ analyticsCapable: false }))),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Go live: needs attention" })).toExist(),
 			expectView(text("Access works: partly")).toExist(),
 			expectView(role("button", { name: "Update access" })).toExist(),
@@ -102,6 +105,7 @@ describe("cloudflare connect flow", () => {
 			{ update: pageUpdate, view },
 			given(withStatus(status({ zones: [zone("acme.com", NOW - 60_000)] }))),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Live" })).toExist(),
 			expectView(text("Cloudflare is live")).toExist(),
 			expectView(text("Backfilled the last 24 hours")).toExist(),

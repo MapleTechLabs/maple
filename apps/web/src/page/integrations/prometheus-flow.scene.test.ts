@@ -1,10 +1,11 @@
 import { OrgId } from "@maple/domain"
 import { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
-import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Field from "../../ui/field"
 import type { PageContext } from "../contract"
+import { ScrollToTop } from "../sources/new/command"
 import { Message } from "../sources/new/message"
 import type { Model } from "../sources/new/model"
 import { init, update } from "../sources/new/update"
@@ -143,10 +144,12 @@ describe("prometheus connect flow", () => {
 			given(probed(saved("prometheus"), true)),
 			expectView(text("Endpoint works. redis.internal:9121 answered the probe.")).toExist(),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
 			expectView(role("listitem", { name: "redis.internal:9121" })).toExist(),
 			expectView(role("button", { name: "Continue" })).toBeEnabled(),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { current: "step", name: "Go live" })).toExist(),
 			expectView(text("Access works")).toExist(),
 			expectView(text("The first scheduled scrape runs within 15 s")).toExist(),

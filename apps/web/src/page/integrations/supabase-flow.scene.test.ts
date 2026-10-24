@@ -2,10 +2,11 @@ import { OrgId } from "@maple/domain"
 import { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/domain/primitives"
 import { Result, Schema } from "effect"
-import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
 import type { SupabaseProjectRow } from "../infra-integrations/supabase/model"
+import { ScrollToTop } from "../sources/new/command"
 import { Message } from "../sources/new/message"
 import type { Model } from "../sources/new/model"
 import { init, update } from "../sources/new/update"
@@ -132,6 +133,7 @@ describe("supabase connect flow", () => {
 			given(withStatus(status())),
 			expectView(text("Connected to Acme. Maple can list its 1 project.")).toExist(),
 			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
 			expectView(role("listitem", { name: "Acme" })).toExist(),
 			expectView(role("switch", { name: "Collect metrics for storefront" })).toBeEnabled(),
