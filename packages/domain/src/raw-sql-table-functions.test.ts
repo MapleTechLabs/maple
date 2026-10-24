@@ -81,4 +81,39 @@ describe("rawSqlIssue table sources", () => {
 	])("accepts legitimate queries: %s", (sql) => {
 		expect(rawSqlIssue(sql)).toBeNull()
 	})
+
+	it.each([
+		"SELECT name FROM system.tables WHERE $__orgFilter",
+		"SELECT name FROM `system`.tables WHERE $__orgFilter",
+		'SELECT name FROM "system".tables WHERE $__orgFilter',
+		"SELECT name FROM `system`.`users` WHERE $__orgFilter",
+		"SELECT name FROM “system”.tables WHERE $__orgFilter",
+		"SELECT name FROM `SyStEm`.tables WHERE $__orgFilter",
+		"SELECT name FROM SYSTEM.tables WHERE $__orgFilter",
+		"SELECT name FROM `system` /* c */ . tables WHERE $__orgFilter",
+		"SELECT name FROM `system` -- c\n.tables WHERE $__orgFilter",
+		"SELECT name FROM `\\x73ystem`.tables WHERE $__orgFilter",
+		"SELECT name FROM `sys\\Ntem`.tables WHERE $__orgFilter",
+		"SELECT * FROM traces t JOIN `system`.users u ON 1 = 1 WHERE $__orgFilter(t)",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanName IN (SELECT name FROM `system`.tables)",
+		'SELECT (SELECT count() FROM "system".processes) AS n FROM traces WHERE $__orgFilter',
+		"SELECT name FROM information_schema.tables WHERE $__orgFilter",
+		"SELECT name FROM `INFORMATION_SCHEMA`.`TABLES` WHERE $__orgFilter",
+		'SELECT name FROM "information_schema".columns WHERE $__orgFilter',
+	])("rejects the system databases however they are quoted: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedStatement")
+	})
+
+	it.each([
+		"SELECT system FROM traces WHERE $__orgFilter",
+		"SELECT `system` FROM traces WHERE $__orgFilter",
+		'SELECT "system", count() AS system FROM traces WHERE $__orgFilter GROUP BY "system"',
+		"SELECT t.system FROM traces t WHERE $__orgFilter(t)",
+		"SELECT t.`system` AS s FROM traces t WHERE $__orgFilter(t)",
+		"SELECT 'system' AS a, 'system.tables' AS b FROM traces WHERE $__orgFilter",
+		"SELECT 1 AS a FROM traces WHERE $__orgFilter -- reads system.tables",
+		"SELECT ServiceName FROM traces WHERE $__orgFilter AND ServiceName = 'system'",
+	])("accepts a column, alias or literal named system: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
 })

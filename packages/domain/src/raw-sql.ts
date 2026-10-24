@@ -51,7 +51,6 @@ const DENY_LIST = [
 	"GRANT",
 	"REVOKE",
 	"OPTIMIZE",
-	"SYSTEM",
 	"KILL",
 ] as const
 
@@ -145,6 +144,25 @@ const QUOTE_CLOSE = new Map([
 	["“", "”"],
 ])
 const SPACE_RE = /\s/
+const HEX2_RE = /^[0-9A-Fa-f]{2}$/
+// ClickHouse decodes these escapes in a quoted identifier; any other `\c` keeps its backslash.
+const IDENT_ESCAPES = new Map([
+	["\\", "\\"],
+	["'", "'"],
+	['"', '"'],
+	["`", "`"],
+	["/", "/"],
+	["=", "="],
+	["b", "\b"],
+	["f", "\f"],
+	["n", "\n"],
+	["r", "\r"],
+	["t", "\t"],
+	["0", "\0"],
+	["a", "\x07"],
+	["v", "\v"],
+	["e", "\x1b"],
+])
 
 /**
  * ClickHouse SQL as significant tokens: whitespace, `--`/`#`/`/* *\/` comments and
@@ -189,8 +207,16 @@ const tokenizeSql = (sql: string): ReadonlyArray<SqlToken> => {
 			while (i < n) {
 				const d = sql.charAt(i)
 				if (d === "\\") {
-					body += sql.slice(i, i + 2)
-					i += 2
+					// Decoded as the server does, so `\x73ystem` and `sys\Ntem` both read as `system`.
+					const e = sql.charAt(i + 1)
+					const hex = sql.slice(i + 2, i + 4)
+					if ((e === "x" || e === "X") && HEX2_RE.test(hex)) {
+						body += String.fromCharCode(Number.parseInt(hex, 16))
+						i += 4
+					} else {
+						body += e === "N" ? "" : (IDENT_ESCAPES.get(e) ?? `\\${e}`)
+						i += 2
+					}
 				} else if (d === close) {
 					if (close !== "”" && sql.charAt(i + 1) === close) {
 						body += d
@@ -321,6 +347,23 @@ const disallowedTableFunction = (sql: string): string | null => {
 		if (CLAUSE_BOUNDARY.has(t.v) && depth === fromListDepth) fromListDepth = -1
 	}
 	return null
+}
+
+// Databases whose tables describe the whole server rather than this org's data.
+const SYSTEM_DATABASES = new Set(["system", "information_schema"])
+
+/**
+ * The first system database used as a `db.` qualifier, or null. Runs on the token
+ * stream, so quoted, Unicode-quoted, escaped, cased and commented spellings all match,
+ * while a bare `system` column or alias (no qualifier dot) and string literals pass.
+ */
+const systemDatabaseReference = (sql: string): string | null => {
+	const tokens = tokenizeSql(sql)
+	const isDot = (t: SqlToken | undefined) => t !== undefined && !t.ident && t.v === "."
+	const hit = tokens.find(
+		(t, i) => t.ident && SYSTEM_DATABASES.has(t.v) && isDot(tokens[i + 1]) && !isDot(tokens[i - 1]),
+	)
+	return hit?.v ?? null
 }
 
 /**
@@ -603,13 +646,15 @@ export const rawSqlIssue = (
 		return issue("MultipleStatements", "Multiple SQL statements are not allowed. Remove ';' separators.")
 	}
 
-	const denyMatch = masked.match(DENY_LIST_RE)
-	if (denyMatch?.[1].toUpperCase() === "SYSTEM") {
+	// SYSTEM statements fail the SELECT check below; within a SELECT the keyword only
+	// matters as a database name, which the token stream resolves however it is quoted.
+	if (systemDatabaseReference(sql) !== null) {
 		return issue(
 			"DisallowedStatement",
 			"System tables and SYSTEM statements are not available in raw SQL. For table and column names use describe_warehouse_tables (the warehouse table catalog).",
 		)
 	}
+	const denyMatch = masked.match(DENY_LIST_RE)
 	if (denyMatch) {
 		return issue(
 			"DisallowedStatement",
