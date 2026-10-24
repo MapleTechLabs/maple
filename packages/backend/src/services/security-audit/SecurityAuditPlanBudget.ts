@@ -8,20 +8,17 @@ import { BillingCustomer } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import { securityAuditBudgetPeriod } from "@maple/domain/security-audit"
 import { EdgeCacheService } from "@maple/cache"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { decodeUpstream, ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
-import { securityAuditLimits } from "./limits"
+import { MAX_LIMIT, securityAuditLimits } from "./limits"
 
 /** Billing could not say what the org's plan includes; a start refuses rather than guess. */
 export class SecurityAuditPlanUnavailable extends Schema.TaggedError<SecurityAuditPlanUnavailable>()(
 	"@maple/backend/security-audit/PlanUnavailable",
 	{ message: Schema.String },
 ) {}
-
-/** Postgres `int4`: the reservation compares against the limit in SQL. */
-const MAX_LIMIT = 2_147_483_647
 
 /**
  * The plan's monthly invocations: the granted balance, the unmetered allowance for an unlimited
@@ -112,8 +109,11 @@ export class SecurityAuditPlanBudget extends Context.Service<
 			function* (orgId, nowMs) {
 				const limits = yield* securityAuditLimits
 				const unmetered = limits.unmeteredMonthlyInvocations
-				// Maple's own org is never metered, as with AI usage.
-				if (orgId === env.MAPLE_DEFAULT_ORG_ID) return orgAuditBudget(null, unmetered, nowMs)
+				// Maple's own org is never metered, as with AI usage, nor is a deployment without
+				// billing (self-hosted, local dev). Unmetered is decided here, never from an error.
+				if (orgId === env.MAPLE_DEFAULT_ORG_ID || Option.isNone(env.AUTUMN_SECRET_KEY)) {
+					return orgAuditBudget(null, unmetered, nowMs)
+				}
 				const result = yield* readCustomerCached(
 					edgeCache,
 					orgId,
@@ -123,9 +123,9 @@ export class SecurityAuditPlanBudget extends Context.Service<
 					Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
 					Effect.map((customer) => orgAuditBudget(customer, unmetered, nowMs)),
 					Effect.catchTags({
-						// Billing that is not configured (self-hosted, local dev) meters nothing.
-						"@maple/http/errors/BillingNotConfiguredError": () =>
-							Effect.succeed(orgAuditBudget(null, unmetered, nowMs)),
+						// With a key configured, a refused credential is an outage, not a free plan.
+						"@maple/http/errors/BillingNotConfiguredError": (error) =>
+							Effect.fail(new SecurityAuditPlanUnavailable({ message: error.message })),
 						"@maple/http/errors/BillingUpstreamError": (error) =>
 							Effect.fail(new SecurityAuditPlanUnavailable({ message: error.message })),
 					}),

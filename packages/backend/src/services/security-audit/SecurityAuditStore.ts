@@ -990,8 +990,14 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										.returning("id"),
 								)
 								if (rows.length === 0) return false
-								// Settle never runs for a cancelled run: its spend so far is its agents' events.
-								// The row is locked by the update, so no event can land after this sum.
+								// Settle never runs for a cancelled run: its spend is its reservations (an agent
+								// may have reserved without an event yet), its tokens its agents' events. The row
+								// is locked by the update, so neither can land after these reads.
+								const reserved = yield* db.run(
+									PG.from(SecurityAuditOrgReservations)
+										.select("agentId")
+										.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)]),
+								)
 								const agents = yield* db.run(
 									PG.from(SecurityAuditEvents)
 										.select(($) => ({
@@ -1016,7 +1022,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								yield* db.run(
 									PG.update(SecurityAuditRuns)
 										.set({
-											invocationsSpent: agents.length,
+											invocationsSpent: reserved.length,
 											inputTokens: agents.reduce((n, a) => n + (a.inputTokens ?? 0), 0),
 											outputTokens: agents.reduce(
 												(n, a) => n + (a.outputTokens ?? 0),

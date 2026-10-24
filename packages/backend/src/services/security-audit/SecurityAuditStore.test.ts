@@ -938,7 +938,7 @@ describe("SecurityAuditStore writes after a run finished", () => {
 		),
 	)
 
-	it.effect("records a cancelled run's spend from its agents' events", () =>
+	it.effect("records a cancelled run's spend from its reservations and its agents' events", () =>
 		withStore((store) =>
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
@@ -951,6 +951,10 @@ describe("SecurityAuditStore writes after a run finished", () => {
 					usage,
 				})
 				const tokens = { inputTokens: 100, outputTokens: 10 }
+				// hunter-4 reserved its invocation but was cancelled before it reported.
+				yield* Effect.forEach(["hunter-1", "hunter-2", "hunter-3", "hunter-4"], (id) =>
+					scoped.reserveOrgInvocation(runId, id, "2026-10", 100),
+				)
 				yield* scoped.recordEvent(runId, agent("hunter-1", { ...tokens, costUsd: 0.25 }))
 				yield* scoped.recordEvent(runId, agent("hunter-2", { ...tokens, costUsd: 0.5 }))
 				// An agent whose price is unknown still counts its invocation and tokens.
@@ -965,7 +969,7 @@ describe("SecurityAuditStore writes after a run finished", () => {
 						r.outputTokens,
 						r.costUsd,
 					]),
-					Option.some([3, 300, 30, 0.75]),
+					Option.some([4, 300, 30, 0.75]),
 				)
 			}),
 		),
