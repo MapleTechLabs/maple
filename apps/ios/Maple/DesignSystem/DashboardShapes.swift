@@ -221,25 +221,25 @@ struct StatDelta: Hashable {
 	var text: String {
 		guard !rendersAsZero else { return "no change \(comparison)" }
 		let sign = change >= 0 ? "+" : "\u{2212}"
+		return "\(sign)\(magnitude) \(comparison)"
+	}
+
+	/// The unsigned move at the precision it is shown: `6.2%`, `0.12 pts`, `18ms`.
+	private var magnitude: String {
 		switch style {
 		case .percent:
 			let percent = abs(relativeChange) * 100
-			let value = percent >= 10 ? String(format: "%.0f", percent) : String(format: "%.1f", percent)
-			return "\(sign)\(value)% \(comparison)"
+			return (percent >= 10 ? String(format: "%.0f", percent) : String(format: "%.1f", percent)) + "%"
 		case .points:
-			return "\(sign)\(String(format: "%.2f", abs(change) * 100)) pts \(comparison)"
+			return String(format: "%.2f", abs(change) * 100) + " pts"
 		case .milliseconds:
-			return "\(sign)\(Format.latency(abs(change))) \(comparison)"
+			return Format.latency(abs(change))
 		}
 	}
 
-	/// A move too small to show at this style's precision.
+	/// The move rounds to zero at the shown precision, so `-0.00 pts` never renders.
 	private var rendersAsZero: Bool {
-		switch style {
-		case .percent: abs(relativeChange) < 0.0005
-		case .points: abs(change) < 0.00005
-		case .milliseconds: abs(change) < 0.0005
-		}
+		!magnitude.contains { $0.isNumber && $0 != "0" }
 	}
 
 	/// Green when the move is good, red when bad, muted when it is noise.
