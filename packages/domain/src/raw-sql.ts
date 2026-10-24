@@ -400,6 +400,47 @@ const disallowedServerFunction = (sql: string): string | null => {
 	return hit?.v ?? null
 }
 
+// The commands a `SYSTEM` statement takes; a column named `system` is followed by none of them.
+const SYSTEM_COMMANDS = new Set([
+	"flush",
+	"reload",
+	"drop",
+	"stop",
+	"start",
+	"sync",
+	"restart",
+	"enable",
+	"disable",
+	"kill",
+	"suspend",
+	"wait",
+	"unfreeze",
+	"refresh",
+	"cancel",
+	"clear",
+	"prewarm",
+	"shutdown",
+	"load",
+	"unload",
+	"free",
+	"jemalloc",
+	"notify",
+	"instrument",
+	"reconnect",
+])
+
+/** `SYSTEM <command>` anywhere in the text, so no prefix can carry a SYSTEM statement past the SELECT check. */
+const systemStatement = (sql: string): boolean => {
+	const tokens = tokenizeSql(sql)
+	return tokens.some(
+		(t, i) =>
+			t.ident &&
+			t.v === "system" &&
+			tokens[i + 1]?.ident === true &&
+			SYSTEM_COMMANDS.has(tokens[i + 1]?.v ?? ""),
+	)
+}
+
 // Databases whose tables describe the whole server rather than this org's data.
 const SYSTEM_DATABASES = new Set(["system", "information_schema"])
 
@@ -697,9 +738,9 @@ export const rawSqlIssue = (
 		return issue("MultipleStatements", "Multiple SQL statements are not allowed. Remove ';' separators.")
 	}
 
-	// SYSTEM statements fail the SELECT check below; within a SELECT the keyword only
-	// matters as a database name, which the token stream resolves however it is quoted.
-	if (systemDatabaseReference(sql) !== null) {
+	// Within a SELECT, `system` matters as a database name or as a SYSTEM statement; both are
+	// read from the token stream, so quoting cannot hide them and a column named system passes.
+	if (systemDatabaseReference(sql) !== null || systemStatement(sql)) {
 		return issue(
 			"DisallowedStatement",
 			"System tables and SYSTEM statements are not available in raw SQL. For table and column names use describe_warehouse_tables (the warehouse table catalog).",

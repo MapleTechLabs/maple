@@ -105,6 +105,14 @@ describe("rawSqlIssue table sources", () => {
 	})
 
 	it.each([
+		"WITH 1 AS x SYSTEM FLUSH LOGS $__orgFilter",
+		"SELECT 1 FROM traces WHERE $__orgFilter; SYSTEM RELOAD DICTIONARIES",
+		"WITH 1 AS x system stop merges $__orgFilter",
+	])("rejects a SYSTEM statement wherever it sits: %s", (sql) => {
+		expect(rawSqlIssue(sql)).not.toBeNull()
+	})
+
+	it.each([
 		"SELECT system FROM traces WHERE $__orgFilter",
 		"SELECT `system` FROM traces WHERE $__orgFilter",
 		'SELECT "system", count() AS system FROM traces WHERE $__orgFilter GROUP BY "system"',
