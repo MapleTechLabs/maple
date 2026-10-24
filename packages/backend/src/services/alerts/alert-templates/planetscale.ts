@@ -90,6 +90,8 @@ const REPLICA_LAG_METRICS = [
 const CONNECTION_METRICS = [
 	{ metric: "planetscale_edge_active_connections", label: "MySQL" },
 	{ metric: "planetscale_edge_postgres_active_connections", label: "Postgres" },
+	// Connections without a service token are polled from the metrics API under this name.
+	{ metric: "planetscale_api_connections", label: "API" },
 ] as const
 
 const suffix = (database: string | undefined) =>
@@ -146,7 +148,7 @@ export const PLANETSCALE_ALERT_TEMPLATES: ReadonlyArray<AlertTemplateDefinition>
 		category: "infrastructure",
 		tags: ["planetscale", "database", "connections"],
 		requirement: REQUIREMENT,
-		requiredMetricPrefixes: ["planetscale_edge_active_connections"],
+		requiredMetricPrefixes: ["planetscale_"],
 		parameters: [
 			DATABASE_PARAM,
 			{

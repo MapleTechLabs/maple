@@ -44,6 +44,7 @@ import { GcpConnectorService } from "@maple/backend/services/integrations/GcpCon
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import { PlanetScaleWebhookService } from "@maple/backend/services/integrations/PlanetScaleWebhookService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
@@ -123,6 +124,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	ScrapeTargetsService.layer,
 	PlanetScaleConnectionService.layer,
 	PlanetScaleService.layer,
+	PlanetScaleWebhookService.layer,
 	IngestAttributeMappingService.layer,
 	AutumnClient.layer,
 	StripeClient.layer,
