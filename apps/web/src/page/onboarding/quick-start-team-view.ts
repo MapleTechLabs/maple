@@ -1,3 +1,4 @@
+import { cn } from "@maple/ui/lib/utils"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { TRIAL_DURATION_DAYS } from "../../lib/billing/plans"
@@ -10,6 +11,7 @@ import { icon, type IconName } from "../../ui/icon"
 import { input } from "../../ui/input"
 import { label } from "../../ui/label"
 import { Message } from "./quick-start"
+import { STEP_BODY_CLASS, STEP_FOOTER_CLASS } from "./step-layout"
 import { isAlreadyInvited, type Team, TeamMessage } from "./quick-start-team"
 
 type H = HtmlBuilder<Message>
@@ -103,7 +105,7 @@ const toolRow = (h: H, tool: Tool): Html =>
 export const teamStep = (h: H, team: Team): Html => {
 	const isBusy = team.pending !== null
 	return h.div(
-		[h.Class("flex flex-1 flex-col gap-8 px-6 pb-8 pt-4 sm:px-12 lg:px-16")],
+		[h.Class(STEP_BODY_CLASS)],
 		[
 			h.div(
 				[h.Class("flex flex-col gap-2.5")],
@@ -160,11 +162,7 @@ export const teamStep = (h: H, team: Team): Html => {
 					)
 				: h.output([h.Class("text-sm text-muted-foreground")], ["Loading your team…"]),
 			h.div(
-				[
-					h.Class(
-						"mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5",
-					),
-				],
+				[h.Class(cn(STEP_FOOTER_CLASS, "justify-between"))],
 				[
 					button(
 						h,

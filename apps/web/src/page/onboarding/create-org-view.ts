@@ -377,51 +377,79 @@ export const view = (
 	memberships: ReadonlyArray<ClerkOrganization>,
 ): Html =>
 	h.main(
-		[h.Class("flex min-h-dvh bg-background text-foreground")],
+		// One screen high: the form column scrolls under its fixed header, the preview stays put.
+		[h.Class("flex h-dvh overflow-hidden bg-background text-foreground")],
 		[
 			h.div(
+				[h.Class("flex h-dvh w-full shrink-0 flex-col lg:w-[640px]")],
 				[
-					h.Class(
-						"flex w-full shrink-0 flex-col gap-10 px-6 py-8 sm:px-12 lg:w-[640px] lg:px-20 lg:py-12",
-					),
-				],
-				[
-					header(h, email),
+					h.div([h.Class("shrink-0 px-6 pt-8 sm:px-12 lg:px-20 lg:pt-12")], [header(h, email)]),
 					h.div(
-						[h.Class("flex flex-col gap-3 pt-6")],
 						[
-							h.p([h.Class("text-sm text-primary")], ["Welcome to Maple"]),
-							h.h1(
-								[h.Class("font-display text-4xl font-semibold leading-[1.1] tracking-tight")],
-								["Let's give your team a home."],
+							h.Class(
+								"min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-10 sm:px-12 lg:px-20",
 							),
-							h.p(
-								[h.Class("max-w-md text-[15px] leading-relaxed text-muted-foreground")],
+						],
+						[
+							h.div(
+								[h.Class("flex flex-col gap-10 pt-12")],
 								[
-									"Your traces, logs, dashboards and alerts all live in one organization. It takes ten seconds.",
+									h.div(
+										[h.Class("flex flex-col gap-3")],
+										[
+											h.p([h.Class("text-sm text-primary")], ["Welcome to Maple"]),
+											h.h1(
+												[
+													h.Class(
+														"font-display text-4xl font-semibold leading-[1.1] tracking-tight",
+													),
+												],
+												["Let's give your team a home."],
+											),
+											h.p(
+												[
+													h.Class(
+														"max-w-md text-[15px] leading-relaxed text-muted-foreground",
+													),
+												],
+												[
+													"Your traces, logs, dashboards and alerts all live in one organization. It takes ten seconds.",
+												],
+											),
+										],
+									),
+									form(h, model, memberships),
 								],
 							),
 						],
 					),
-					form(h, model, memberships),
 				],
 			),
 			h.div(
+				[h.Class("relative hidden h-dvh flex-1 border-l border-border bg-sidebar lg:block")],
 				[
-					h.Class(
-						"relative hidden flex-1 items-center justify-center overflow-hidden border-l border-border bg-sidebar p-14 lg:flex",
-					),
-				],
-				[
-					h.canvas(
+					h.div(
+						[h.Class("pointer-events-none absolute inset-0 overflow-hidden")],
 						[
-							h.Class("pointer-events-none absolute inset-0 size-full"),
-							h.DataAttribute("reach", "0.55"),
-							h.OnMount(MountDitherField()),
+							h.canvas(
+								[
+									h.Class("absolute left-0 top-0 size-full"),
+									h.DataAttribute("reach", "0.55"),
+									h.OnMount(MountDitherField()),
+								],
+								[],
+							),
 						],
-						[],
 					),
-					workspacePreview(h, model),
+					h.div(
+						[h.Class("absolute inset-0 flex flex-col overflow-y-auto p-14")],
+						[
+							h.div(
+								[h.Class("m-auto flex w-full max-w-[640px] justify-center")],
+								[workspacePreview(h, model)],
+							),
+						],
+					),
 				],
 			),
 		],
