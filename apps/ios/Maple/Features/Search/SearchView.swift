@@ -173,9 +173,7 @@ private struct SearchResults: View {
 	}
 
 	private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-		VStack(alignment: .leading, spacing: 8) {
-			SectionLabel(title)
-				.accessibilityAddTraits(.isHeader)
+		TitledSection(SectionHeader(title: title)) {
 			VStack(spacing: 0) { content() }
 				.hairlineCard()
 		}

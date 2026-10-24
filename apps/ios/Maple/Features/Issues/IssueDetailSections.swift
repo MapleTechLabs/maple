@@ -15,7 +15,7 @@ struct IssueDetailContent: View {
 			IssueSamples(samples: issue.sampleTraces)
 			IssueIncidents(incidents: issue.incidents)
 			if let notes = issue.notes, !notes.isEmpty {
-				IssueSection(title: "Notes") {
+				TitledSection(SectionHeader(title: "Notes")) {
 					Text(notes)
 						.font(Typo.small)
 						.foregroundStyle(Token.foreground)
@@ -27,26 +27,6 @@ struct IssueDetailContent: View {
 		.padding(.horizontal, 16)
 		.padding(.top, 8)
 		.padding(.bottom, 24)
-	}
-}
-
-/// An uppercase label with an optional trailing label, over its content.
-private struct IssueSection<Content: View>: View {
-	let title: String
-	var trailing: String? = nil
-	@ViewBuilder let content: Content
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 10) {
-			HStack(alignment: .firstTextBaseline) {
-				SectionLabel(title).accessibilityAddTraits(.isHeader)
-				Spacer()
-				if let trailing {
-					Text(trailing).font(Typo.tiny).tabularNumbers().foregroundStyle(Token.mutedForeground)
-				}
-			}
-			content
-		}
 	}
 }
 
@@ -186,7 +166,7 @@ private struct IssueOccurrences: View {
 	var body: some View {
 		if !points.isEmpty {
 			let peak = max(points.map(\.count).max() ?? 0, 1)
-			IssueSection(title: "Occurrences", trailing: "Last 24h") {
+			TitledSection(SectionHeader(title: "Occurrences", note: "Last 24h")) {
 				VStack(spacing: 10) {
 					HStack(alignment: .bottom, spacing: 3) {
 						ForEach(points, id: \.bucket) { point in
@@ -225,7 +205,7 @@ private struct IssueStackTrace: View {
 	var body: some View {
 		let frame = StackFrame(topFrame)
 		if !topFrame.isEmpty {
-			IssueSection(title: "Stack trace", trailing: "Top frame") {
+			TitledSection(SectionHeader(title: "Stack trace", note: "Top frame")) {
 				VStack(alignment: .leading, spacing: 3) {
 					Text(frame.function ?? frame.location)
 						.font(Typo.smallMedium)
@@ -273,7 +253,7 @@ private struct IssueSamples: View {
 
 	var body: some View {
 		if !samples.isEmpty {
-			IssueSection(title: "Sample traces", trailing: "All \(samples.count)") {
+			TitledSection(SectionHeader(title: "Sample traces", note: "All \(samples.count)")) {
 				VStack(spacing: 0) {
 					ForEach(samples, id: \.traceId) { sample in
 						NavigationLink(value: Route.trace(id: sample.traceId, spanId: sample.spanId)) {
@@ -335,7 +315,7 @@ private struct IssueIncidents: View {
 
 	var body: some View {
 		if !incidents.isEmpty {
-			IssueSection(title: "Incidents") {
+			TitledSection(SectionHeader(title: "Incidents")) {
 				VStack(spacing: 0) {
 					ForEach(incidents, id: \.id) { incident in
 						HStack(alignment: .firstTextBaseline) {

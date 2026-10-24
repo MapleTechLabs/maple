@@ -58,10 +58,8 @@ struct LogsVolumeHistogram: View {
 	let bands: LogsVolumeBands
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 6) {
-			HStack {
-				SectionLabel("Volume")
-				Spacer()
+		VStack(alignment: .leading, spacing: 10) {
+			SectionHeader(title: "Volume") {
 				HStack(spacing: 12) {
 					legend(.error, "error")
 					legend(.warn, "warn")

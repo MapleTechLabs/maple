@@ -143,22 +143,16 @@ private struct TraceContent: View {
 			header
 				.padding(.horizontal, 16)
 
-			VStack(alignment: .leading, spacing: 8) {
-				HStack(spacing: 12) {
-					SectionLabel("Waterfall")
-						.accessibilityAddTraits(.isHeader)
-					if trace.truncated {
-						Text("Truncated")
-							.font(Typo.micro)
-							.foregroundStyle(Token.severityWarn)
+			VStack(alignment: .leading, spacing: 10) {
+				SectionHeader(title: "Waterfall") {
+					HStack(spacing: 12) {
+						if trace.truncated {
+							Text("Truncated").foregroundStyle(Token.severityWarn)
+						}
+						Text("0 ms")
+						Text(Format.latency(trace.durationMs))
 					}
-					Spacer(minLength: 8)
-					Text("0 ms")
-					Text(Format.latency(trace.durationMs))
 				}
-				.font(Typo.micro)
-				.tabularNumbers()
-				.foregroundStyle(Token.mutedForeground)
 
 				// Lazy: a 10,000-span trace built every row up front and hung for seconds.
 				LazyVStack(spacing: 0) {

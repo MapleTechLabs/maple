@@ -470,6 +470,71 @@ struct SectionLabel: View {
 	}
 }
 
+/// `OPEN ALERTS 3` with a trailing note or link: every section's header.
+struct SectionHeader<Trailing: View>: View {
+	let title: String
+	/// Muted beside the title: `3`, `50+`.
+	var count: String? = nil
+	@ViewBuilder var trailing: Trailing
+
+	var body: some View {
+		HStack(alignment: .firstTextBaseline, spacing: 6) {
+			SectionLabel(title)
+				.accessibilityAddTraits(.isHeader)
+			if let count {
+				Text(count)
+					.font(Typo.micro)
+					.tabularNumbers()
+					.foregroundStyle(Token.mutedForeground)
+			}
+			Spacer(minLength: 8)
+			trailing
+				.font(Typo.tiny)
+				.tabularNumbers()
+				.foregroundStyle(Token.mutedForeground)
+				.lineLimit(1)
+				.buttonStyle(.plain)
+		}
+	}
+}
+
+extension SectionHeader where Trailing == EmptyView {
+	init(title: String, count: String? = nil) {
+		self.init(title: title, count: count) { EmptyView() }
+	}
+}
+
+extension SectionHeader where Trailing == Text? {
+	init(title: String, count: String? = nil, note: String?) {
+		self.init(title: title, count: count) { note.map { Text($0) } }
+	}
+}
+
+extension SectionHeader where Trailing == Button<Text> {
+	/// A trailing link to the screen holding the full list: `Triage`.
+	init(title: String, count: String? = nil, link: String, action: @escaping () -> Void) {
+		self.init(title: title, count: count) { Button(link, action: action) }
+	}
+}
+
+/// A `SectionHeader` over its content, the same gap on every screen.
+struct TitledSection<Trailing: View, Content: View>: View {
+	let header: SectionHeader<Trailing>
+	@ViewBuilder let content: Content
+
+	init(_ header: SectionHeader<Trailing>, @ViewBuilder content: () -> Content) {
+		self.header = header
+		self.content = content()
+	}
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 10) {
+			header
+			content
+		}
+	}
+}
+
 /// A stat tile: its own hairline card with an uppercase label, a display-face
 /// value and an optional delta or note line, as on the web overview.
 struct StatTile: View {

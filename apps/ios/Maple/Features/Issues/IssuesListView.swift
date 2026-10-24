@@ -127,16 +127,11 @@ struct IssuesListContent: View {
 			header: { IssueFilterChips(model: model) }
 		) { issues in
 			VStack(alignment: .leading, spacing: 10) {
-				HStack(alignment: .firstTextBaseline) {
-					(Text(model.listTitle) + Text(" \(issues.count)\(model.canLoadMore ? "+" : "")"))
-						.sectionLabelStyle()
-						.tabularNumbers()
-						.accessibilityAddTraits(.isHeader)
-					Spacer()
-					Text("Last seen")
-						.font(Typo.tiny)
-						.foregroundStyle(Token.mutedForeground)
-				}
+				SectionHeader(
+					title: model.listTitle,
+					count: "\(issues.count)\(model.canLoadMore ? "+" : "")",
+					note: "Last seen"
+				)
 
 				LazyVStack(spacing: 0) {
 					ForEach(issues, id: \.id) { issue in

@@ -1,31 +1,5 @@
 import SwiftUI
 
-/// An uppercase section label with an optional trailing note, over its content.
-/// The incident and anomaly screens' one section shape.
-struct AlertSection<Content: View>: View {
-	let title: String
-	var trailing: String? = nil
-	@ViewBuilder let content: Content
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 8) {
-			HStack(alignment: .firstTextBaseline) {
-				SectionLabel(title).accessibilityAddTraits(.isHeader)
-				Spacer(minLength: 8)
-				if let trailing {
-					Text(trailing)
-						.font(Typo.tiny)
-						.tabularNumbers()
-						.foregroundStyle(Token.mutedForeground)
-						.lineLimit(1)
-				}
-			}
-			content
-		}
-		.padding(.horizontal, 16)
-	}
-}
-
 /// A bordered badge with no fill: `Critical`, `Resolved`.
 struct AlertOutlineBadge: View {
 	let text: String
@@ -132,18 +106,7 @@ struct TriageListCard<Content: View>: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 10) {
-			HStack(alignment: .firstTextBaseline) {
-				(Text(title) + Text(" \(count)"))
-					.sectionLabelStyle()
-					.tabularNumbers()
-					.accessibilityAddTraits(.isHeader)
-				Spacer()
-				if let trailing {
-					Text(trailing)
-						.font(Typo.tiny)
-						.foregroundStyle(Token.mutedForeground)
-				}
-			}
+			SectionHeader(title: title, count: count, note: trailing)
 			LazyVStack(spacing: 0) {
 				content
 			}

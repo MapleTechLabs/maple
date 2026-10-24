@@ -78,35 +78,6 @@ struct FilterField: View {
 	}
 }
 
-/// `OPEN ALERTS 1` / `OPERATIONS 24`: a section label with a muted count and
-/// an optional trailing accessory.
-struct ServiceSectionHeader<Trailing: View>: View {
-	let title: String
-	var count: Int? = nil
-	@ViewBuilder var trailing: Trailing
-
-	var body: some View {
-		HStack(spacing: 6) {
-			SectionLabel(title)
-				.accessibilityAddTraits(.isHeader)
-			if let count {
-				Text("\(count)")
-					.font(Typo.micro)
-					.tabularNumbers()
-					.foregroundStyle(Token.mutedForeground)
-			}
-			Spacer(minLength: 8)
-			trailing
-		}
-	}
-}
-
-extension ServiceSectionHeader where Trailing == EmptyView {
-	init(title: String, count: Int? = nil) {
-		self.init(title: title, count: count) { EmptyView() }
-	}
-}
-
 /// An open alert on the service: severity rail, rule name, severity and age,
 /// the breach against its threshold, a chevron.
 struct ServiceIncidentRow: View {

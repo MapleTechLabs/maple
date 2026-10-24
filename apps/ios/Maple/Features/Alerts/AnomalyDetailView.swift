@@ -77,11 +77,17 @@ private struct AnomalyDetailContent: View {
 	var body: some View {
 		VStack(alignment: .leading, spacing: 24) {
 			header
-			AlertSection(title: "What the detector saw", trailing: detail.timeseries.map { "\(Int($0.bucketSeconds / 60))m buckets" }) {
+			TitledSection(
+				SectionHeader(
+					title: "What the detector saw",
+					note: detail.timeseries.map { "\(Int($0.bucketSeconds / 60))m buckets" }
+				)
+			) {
 				AnomalySignalChart(series: detail.timeseries, unit: unit, tint: isOpen ? anomaly.severity.tint : Token.mutedForeground)
 			}
+			.padding(.horizontal, 16)
 			if let issue = detail.linkedIssue {
-				AlertSection(title: "Linked issue") {
+				TitledSection(SectionHeader(title: "Linked issue")) {
 					NavigationLink(value: Route.issue(id: issue.id)) {
 						VStack(alignment: .leading, spacing: 4) {
 							Text(issue.displayTitle)
@@ -109,6 +115,7 @@ private struct AnomalyDetailContent: View {
 					.buttonStyle(RowButtonStyle())
 					.hairlineCard()
 				}
+				.padding(.horizontal, 16)
 			}
 			facts
 		}
@@ -160,7 +167,7 @@ private struct AnomalyDetailContent: View {
 	}
 
 	private var facts: some View {
-		AlertSection(title: "Detector") {
+		TitledSection(SectionHeader(title: "Detector")) {
 			VStack(spacing: 0) {
 				row("Opened at", unit.format(anomaly.openedValue))
 				row("Threshold", unit.format(anomaly.thresholdValue))
@@ -175,6 +182,7 @@ private struct AnomalyDetailContent: View {
 			.padding(.horizontal, 12)
 			.hairlineCard()
 		}
+		.padding(.horizontal, 16)
 	}
 
 	@ViewBuilder

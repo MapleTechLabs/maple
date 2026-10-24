@@ -119,9 +119,11 @@ private struct HomeContent: View {
 			OverviewStats(snapshot: snapshot)
 
 			if !snapshot.incidents.isEmpty {
-				HomeSection(title: "Open alerts", count: snapshot.incidents.count, link: "Triage") {
-					navigation.open(.incidents)
-				} content: {
+				TitledSection(
+					SectionHeader(title: "Open alerts", count: "\(snapshot.incidents.count)", link: "Triage") {
+						navigation.open(.incidents)
+					}
+				) {
 					VStack(spacing: 8) {
 						ForEach(snapshot.incidents) { card in
 							NavigationLink(value: Route.incident(id: card.id)) {
@@ -133,14 +135,16 @@ private struct HomeContent: View {
 				}
 			}
 
-			HomeSection(
-				title: "Needs attention",
-				count: snapshot.attention.isEmpty ? nil : snapshot.attention.count,
-				link: "All services"
+			TitledSection(
+				SectionHeader(
+					title: "Needs attention",
+					count: snapshot.attention.isEmpty ? nil : "\(snapshot.attention.count)",
+					link: "All services"
+				) {
+					navigation.servicesPath = []
+					navigation.tab = .services
+				}
 			) {
-				navigation.servicesPath = []
-				navigation.tab = .services
-			} content: {
 				if snapshot.attention.isEmpty {
 					Text(
 						snapshot.services.isEmpty
@@ -164,38 +168,6 @@ private struct HomeContent: View {
 		.padding(.horizontal, 16)
 		.padding(.top, 20)
 		.padding(.bottom, 24)
-	}
-}
-
-/// An uppercase label with its count, and a link to the tab that holds the
-/// full list.
-private struct HomeSection<Content: View>: View {
-	let title: String
-	let count: Int?
-	let link: String
-	let action: () -> Void
-	@ViewBuilder let content: Content
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			HStack(alignment: .firstTextBaseline, spacing: 6) {
-				SectionLabel(title)
-				if let count {
-					Text("\(count)")
-						.font(Typo.micro)
-						.tabularNumbers()
-						.foregroundStyle(Token.mutedForeground)
-				}
-				Spacer(minLength: 8)
-				Button(link, action: action)
-					.font(Typo.tiny)
-					.foregroundStyle(Token.mutedForeground)
-					.buttonStyle(.plain)
-			}
-			.accessibilityElement(children: .contain)
-			.accessibilityAddTraits(.isHeader)
-			content
-		}
 	}
 }
 

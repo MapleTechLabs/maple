@@ -13,7 +13,7 @@ struct RuleSignalSection: View {
 	}
 
 	var body: some View {
-		AlertSection(title: "What the rule saw", trailing: trailing) {
+		TitledSection(SectionHeader(title: "What the rule saw", note: trailing)) {
 			let bars = Self.bars(detail.ruleSignal.points, max: 40)
 			if bars.count < 2 {
 				Text("Not enough evaluations to chart yet.")
@@ -31,6 +31,7 @@ struct RuleSignalSection: View {
 				.hairlineCard(padding: 12)
 			}
 		}
+		.padding(.horizontal, 16)
 	}
 
 	/// At most `max` bars: neighbouring evaluations merge into their peak, and
@@ -156,7 +157,7 @@ struct WhatChangedSection: View {
 	private var points: [ServiceOverviewPoint] { detail.overview?.points ?? [] }
 
 	var body: some View {
-		AlertSection(title: "What changed on \(detail.serviceName ?? "the service")") {
+		TitledSection(SectionHeader(title: "What changed on \(detail.serviceName ?? "the service")")) {
 			let opened = ResolvedTimeWindow.parse(detail.incident.firstTriggeredAt) ?? Date()
 			let split = points.firstIndex { (ResolvedTimeWindow.parse($0.timestamp) ?? .distantPast) >= opened }
 			let bucket = Double(detail.overview?.bucketSeconds ?? 60)
@@ -187,6 +188,7 @@ struct WhatChangedSection: View {
 				)
 			}
 		}
+		.padding(.horizontal, 16)
 	}
 }
 
@@ -275,7 +277,7 @@ struct LikelyCauseSection: View {
 	let detail: IncidentDetail
 
 	var body: some View {
-		AlertSection(title: "Likely cause") {
+		TitledSection(SectionHeader(title: "Likely cause")) {
 			if detail.linkedIssue == nil, detail.topIssue == nil, detail.failingOperations.isEmpty {
 				Text(
 					detail.serviceName == nil
@@ -306,6 +308,7 @@ struct LikelyCauseSection: View {
 				.hairlineCard()
 			}
 		}
+		.padding(.horizontal, 16)
 	}
 
 	private func issueRow(
@@ -457,7 +460,7 @@ struct IncidentTimeline: View {
 	}
 
 	var body: some View {
-		AlertSection(title: "Timeline") {
+		TitledSection(SectionHeader(title: "Timeline")) {
 			VStack(alignment: .leading, spacing: 16) {
 				ForEach(events) { event in
 					HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -506,5 +509,6 @@ struct IncidentTimeline: View {
 					.offset(x: 3)
 			}
 		}
+		.padding(.horizontal, 16)
 	}
 }

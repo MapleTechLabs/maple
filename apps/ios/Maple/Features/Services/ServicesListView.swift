@@ -152,15 +152,8 @@ struct ServicesListView: View {
 
 	@ViewBuilder
 	private func servicesTable(_ visible: [Service]) -> some View {
-		VStack(alignment: .leading, spacing: 8) {
-			HStack {
-				SectionLabel("Worst first")
-					.accessibilityAddTraits(.isHeader)
-				Spacer(minLength: 8)
-				Text("p50 · p95 · p99")
-					.font(Typo.micro)
-					.foregroundStyle(Token.mutedForeground)
-			}
+		VStack(alignment: .leading, spacing: 10) {
+			SectionHeader(title: "Worst first", note: "p50 · p95 · p99")
 			if visible.isEmpty {
 				EmptyStateView(title: "No matches", message: "No service name contains \u{201C}\(search)\u{201D}.")
 					.padding(.top, 32)

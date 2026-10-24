@@ -320,8 +320,8 @@ private struct ServiceDetailContent: View {
 		.padding(.top, 16)
 
 		if !detail.incidents.isEmpty {
-			VStack(alignment: .leading, spacing: 8) {
-				ServiceSectionHeader(title: "Open alerts", count: detail.incidents.count)
+			VStack(alignment: .leading, spacing: 10) {
+				SectionHeader(title: "Open alerts", count: "\(detail.incidents.count)")
 				ForEach(detail.incidents) { card in
 					NavigationLink(value: Route.incident(id: card.id)) {
 						ServiceIncidentRow(card: card)
@@ -348,8 +348,8 @@ private struct ServiceDetailContent: View {
 
 	@ViewBuilder
 	private var errors: some View {
-		VStack(alignment: .leading, spacing: 8) {
-			ServiceSectionHeader(title: "Open issues", count: detail.issues.isEmpty ? nil : detail.issues.count)
+		VStack(alignment: .leading, spacing: 10) {
+			SectionHeader(title: "Open issues", count: detail.issues.isEmpty ? nil : "\(detail.issues.count)")
 			if detail.issues.isEmpty {
 				Text("Nothing needs attention in \(window.phrase).")
 					.font(Typo.small)
@@ -586,8 +586,8 @@ private struct OperationsSection: View {
 	var body: some View {
 		let rows = ranked
 		let visible = limit.map { Array(rows.prefix($0)) } ?? rows
-		VStack(alignment: .leading, spacing: 8) {
-			ServiceSectionHeader(title: "Operations", count: operations.count) {
+		VStack(alignment: .leading, spacing: 10) {
+			SectionHeader(title: "Operations", count: "\(operations.count)") {
 				if operations.count > 1 {
 					Button {
 						sort = sort.next
