@@ -656,6 +656,7 @@
 	// Vendored third-party source is read as a unit and re-pulled wholesale from its upstream,
 	// so house rules that would be rewrites are not applied to it.
 	"ignorePatterns": [
+		"packages/security-audit/skill/**",
 		".agents/**",
 		".codex/**",
 		".context/**",

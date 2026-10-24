@@ -1,0 +1,22 @@
+{
+	"name": "@maple/security-audit",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"test": "bun scripts/vendor-skill.ts --check && node --test skill/validate-findings.test.cjs skill/validate-coverage-ledger.test.cjs && vitest run",
+		"typecheck": "tsrs --noEmit",
+		"vendor": "bun scripts/vendor-skill.ts"
+	},
+	"dependencies": {
+		"effect": "catalog:effect"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}
