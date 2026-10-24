@@ -8,10 +8,13 @@ import {
 	Message,
 	type Model,
 	MountDitherField,
-	update,
+	update as updateWith,
 } from "./quick-start"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
 import * as QuickStartView from "./quick-start-view"
+
+/** An org without a region holds no plan yet. */
+const update = (model: Model, message: Message) => updateWith(model, message, false)
 
 const loaded = (): Model => ({
 	...init("maple-onboarding-v6-org_1", false, true).model,

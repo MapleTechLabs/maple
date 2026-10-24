@@ -32,6 +32,12 @@ export const accessOf = (slot: CustomerSlot): PlanAccess =>
 		isLoading: AsyncData.isIdle(slot.data) || AsyncData.isLoading(slot.data),
 	})
 
+/** The wizard skips its plan step: a plan is held, or the read failed and the gate fails open. */
+export const hasPlanOf = (slot: CustomerSlot): boolean => {
+	const access = accessOf(slot)
+	return access === "app" || access === "unknown"
+}
+
 /** `selectedPlanKnownAtomFor(orgId)`: `maple.billing.selected-plan.<orgId>`. */
 export const SELECTED_PLAN_KEY_PREFIX = "maple.billing.selected-plan."
 
@@ -40,7 +46,13 @@ export const readKnownToRenderApp: Effect.Effect<Record<string, boolean>> = Effe
 	Object.fromEntries(
 		Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
 			.filter((key): key is string => key !== null && key.startsWith(SELECTED_PLAN_KEY_PREFIX))
-			.map((key) => [key.slice(SELECTED_PLAN_KEY_PREFIX.length), localStorage.getItem(key) === "true"] as const),
+			.map(
+				(key) =>
+					[
+						key.slice(SELECTED_PLAN_KEY_PREFIX.length),
+						localStorage.getItem(key) === "true",
+					] as const,
+			),
 	),
 ).pipe(Effect.orElseSucceed(() => ({})))
 
@@ -65,15 +77,25 @@ export type GateInput = Readonly<{
 }>
 
 /** `wrongRegion`: the org lives in another region and its choice is closed (`WrongRegionScreen`). */
-export type Gate = Readonly<{ redirect: Option.Option<Redirect>; isSplash: boolean; wrongRegion: MapleRegion | null }>
+export type Gate = Readonly<{
+	redirect: Option.Option<Redirect>
+	isSplash: boolean
+	wrongRegion: MapleRegion | null
+}>
 
 const app: Gate = { redirect: Option.none(), isSplash: false, wrongRegion: null }
 const splash: Gate = { redirect: Option.none(), isSplash: true, wrongRegion: null }
-const redirectTo = (url: string): Gate => ({ redirect: Option.some({ url, isReplace: true }), isSplash: false, wrongRegion: null })
+const redirectTo = (url: string): Gate => ({
+	redirect: Option.some({ url, isReplace: true }),
+	isSplash: false,
+	wrongRegion: null,
+})
 
 /** The region of an org another region serves, once it can no longer choose (`WrongRegionScreen`). */
 export const wrongRegionOf = (organization: Option.Option<ClerkOrganization>): Option.Option<MapleRegion> =>
-	Option.flatMap(organization, (org) => (org.isServedHere || org.isRegionOpen ? Option.none() : Option.some(org.homeRegion)))
+	Option.flatMap(organization, (org) =>
+		org.isServedHere || org.isRegionOpen ? Option.none() : Option.some(org.homeRegion),
+	)
 
 /** `ClerkReverseRedirects` renders a splash or redirects instead of the route: nothing mounts yet. */
 export const isRouteHeld = (gate: Gate): boolean => gate.isSplash || Option.isSome(gate.redirect)

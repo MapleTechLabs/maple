@@ -8,11 +8,13 @@ import {
 	type Model,
 	SaveQuickStartState,
 	TrackStepCompleted,
-	update,
+	update as updateWith,
 } from "./quick-start"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
 import { ready } from "./quick-start-team"
 import { teamStep } from "./quick-start-team-view"
+
+const update = (model: Model, message: Message) => updateWith(model, message, true)
 
 const atTeam = (): Model => ({
 	...init("maple-onboarding-v6-org_1", false, false, "/services").model,

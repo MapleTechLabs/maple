@@ -85,6 +85,10 @@ export const QuickStartState = Schema.Struct({
 })
 export type QuickStartState = typeof QuickStartState.Type
 
+/** The old role, intent, team, plan wizard ended on its plan step: such a save stays finished. */
+const isLegacyFinished = (completed: Readonly<Record<string, boolean>>): boolean =>
+	("role" in completed || "intent" in completed) && completed.plan === true
+
 const StoredQuickStartState = Schema.fromJsonString(
 	Schema.Struct({
 		...QuickStartState.fields,
@@ -92,7 +96,13 @@ const StoredQuickStartState = Schema.fromJsonString(
 		stack: Schema.optionalKey(StackAnswers),
 	}).pipe(
 		Schema.decodeTo(QuickStartState, {
-			decode: SchemaGetter.transform((stored) => ({ ...stored, stack: stored.stack ?? NO_STACK })),
+			decode: SchemaGetter.transform((stored) => ({
+				...stored,
+				stack: stored.stack ?? NO_STACK,
+				completedSteps: isLegacyFinished(stored.completedSteps)
+					? Object.fromEntries(STEP_IDS.map((step) => [step, true]))
+					: stored.completedSteps,
+			})),
 			encode: SchemaGetter.transform((state) => state),
 		}),
 	),
@@ -130,7 +140,7 @@ export const writeQuickStartState = (key: string, state: QuickStartState): Effec
  * The step on screen: the saved one, else the first incomplete one. An org that already holds a
  * plan skips the plan step, wherever the save left off.
  */
-export const resolveQuickStartStep = (state: QuickStartState, hasPlan = false): StepId => {
+export const resolveQuickStartStep = (state: QuickStartState, hasPlan: boolean): StepId => {
 	const steps = STEP_IDS.filter((step) => !(hasPlan && step === "plan"))
 	return (
 		steps.find((step) => step === state.activeStep) ??
@@ -140,19 +150,31 @@ export const resolveQuickStartStep = (state: QuickStartState, hasPlan = false): 
 }
 
 /** `completeStep(id)`: mark it done and, if it is the current step, move on to the next. */
-export const completeStep = (state: QuickStartState, id: StepId): QuickStartState => {
+export const completeStep = (state: QuickStartState, id: StepId, hasPlan: boolean): QuickStartState => {
 	const index = STEP_IDS.indexOf(id)
 	const next = STEP_IDS[index + 1]
 	return {
 		...state,
 		completedSteps: { ...state.completedSteps, [id]: true },
-		activeStep: resolveQuickStartStep(state) === id && next !== undefined ? next : state.activeStep,
+		activeStep:
+			resolveQuickStartStep(state, hasPlan) === id && next !== undefined ? next : state.activeStep,
 	}
 }
 
 /** Onboarding is over once its last step is done. */
 export const isQuickStartFinished = (state: QuickStartState): boolean =>
 	state.completedSteps[STEP_IDS[STEP_IDS.length - 1] ?? "team"] === true
+
+/** A finished save with no plan behind it: back to the plan step, and no longer finished. */
+export const reopenedForPlan = (state: QuickStartState): QuickStartState => ({
+	...state,
+	activeStep: "plan",
+	completedSteps: {
+		...state.completedSteps,
+		plan: false,
+		[STEP_IDS[STEP_IDS.length - 1] ?? "team"]: false,
+	},
+})
 
 /** New stack picks, and what the setup checklist derives from them (its intents and first snippet). */
 export const withStack = (state: QuickStartState, stack: StackPicks): QuickStartState => ({
