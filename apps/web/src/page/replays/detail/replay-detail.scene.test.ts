@@ -145,6 +145,14 @@ describe("replay detail", () => {
 		expect(planned.model.loader.queue).toEqual([{ fromChunkSeq: 0, toChunkSeq: 1 }])
 	})
 
+	test("trace summaries read the session's own span with slack, not the day-wide `t` window", () => {
+		const start = init({ sessionId: SESSION, search: { t: "2026-10-01 11:18:00" } }, context).model
+		const traced = { ...session, traceIds: ["0af7651916cd43dd8448eb211c80319c"] }
+		const detailed = pageUpdate(start, Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(traced) }))
+		const summaries = detailed.commands?.find((command) => command.name === FetchTraceSummaries.name)
+		expect(summaries?.args).toMatchObject({ windowStart: "2026-10-01 11:03:00", windowEnd: "2026-10-01 11:37:00" })
+	})
+
 	test("the opening range becomes the seed, and an answer for a superseded range is dropped", () => {
 		const model = loaded()
 		const stale = pageUpdate(model, Message.CompletedFetchRange({ key: "stale", result: Result.succeed([]) }))

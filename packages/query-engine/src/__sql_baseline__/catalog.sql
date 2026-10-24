@@ -7733,7 +7733,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- builder:session-replays:sessionTraceSummariesQuery:default  [bbb74197]
+-- builder:session-replays:sessionTraceSummariesQuery:default  [5b5ad4c6]
 SELECT
           traces.TraceId AS traceId,
           min(traces.Timestamp) AS startTime,
@@ -7741,7 +7741,7 @@ SELECT
           coalesce(nullIf(anyIf(traces.SpanName, traces.ParentSpanId = ''), ''), any(traces.SpanName)) AS rootSpanName,
           coalesce(nullIf(anyIf(traces.ServiceName, traces.ParentSpanId = ''), ''), any(traces.ServiceName)) AS rootServiceName,
           anyIf(traces.SpanKind, traces.ParentSpanId = '') AS rootSpanKind,
-          anyIf(toJSONString(traces.SpanAttributes), traces.ParentSpanId = '') AS rootSpanAttributes,
+          toJSONString(map('http.method', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['http.method'], 'http.request.method', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['http.request.method'], 'http.route', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['http.route'], 'http.target', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['http.target'], 'http.status_code', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['http.status_code'], 'http.response.status_code', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['http.response.status_code'], 'http.url', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['http.url'], 'url.full', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['url.full'], 'url.path', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['url.path'], 'server.address', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['server.address'], 'net.peer.name', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['net.peer.name'], 'screen.name', anyIf(traces.SpanAttributes, traces.ParentSpanId = '')['screen.name'])) AS rootSpanAttributes,
           count() AS spanCount,
           if(countIf(traces.StatusCode = 'Error') > 0, 1, 0) AS hasError
         FROM traces
@@ -7752,7 +7752,9 @@ SELECT
           trace_index.TraceId AS TraceId
         FROM trace_index
         WHERE trace_index.OrgId = 'org_sql_catalog'
-          AND trace_index.TraceId IN ('0af7651916cd43dd8448eb211c80319c'))
+          AND trace_index.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00.000', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00.000', 9))
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId

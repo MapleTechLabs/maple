@@ -92,7 +92,11 @@ const make = Effect.gen(function* () {
 	) {
 		// `TraceId IN ()` is invalid SQL; no correlated traces never touches the warehouse.
 		if (opts.traceIds.length === 0) return []
-		const compiled = CH.compile(CH.sessionTraceSummariesQuery(opts), { orgId: tenant.orgId })
+		// The query returns at most this many rows, so a longer id list only widens the lookup.
+		const traceIds = opts.traceIds.slice(0, CH.MAX_SESSION_TRACE_SUMMARIES)
+		const compiled = CH.compile(CH.sessionTraceSummariesQuery({ ...opts, traceIds }), {
+			orgId: tenant.orgId,
+		})
 		return yield* warehouse.compiledQuery(tenant, compiled, {
 			profile: "list",
 			context: "sessionTraceSummaries",

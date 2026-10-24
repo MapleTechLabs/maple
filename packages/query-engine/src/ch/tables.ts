@@ -96,6 +96,18 @@ export const paramTraceWindow = (start = "startTime", end = "endTime"): TraceWin
 	end: T.param.dateTime(end),
 })
 
+/** A {@link TraceWindow} from two known instants, such as a session's own span. */
+export const utcTraceWindow = (start: DateTime.Utc, end: DateTime.Utc): TraceWindow => ({
+	start: utcDateTime64Literal(start),
+	end: utcDateTime64Literal(end),
+})
+
+const utcDateTime64Literal = (value: DateTime.Utc): CH.Expr<DateTime.Utc> =>
+	CH.makeExpr(
+		CH.toFragment(CH.lit(DateTime.formatIso(value).replace("T", " ").replace("Z", ""))),
+		T.dateTime64.schema,
+	)
+
 /**
  * Selects the spans of the traces `match` picks from `trace_index`, for a query
  * reading `traces`. The index names every `(ServiceName, bucket, TraceId)` sort-key
