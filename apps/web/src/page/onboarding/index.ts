@@ -11,16 +11,16 @@ import { AppRoute, hrefOf } from "../../route"
 import { needsRegion, planOf, wrongRegionOf } from "./plan-gate"
 import * as OrgSwitcher from "../../shell/clerk-org-switcher"
 import * as Menu from "../../ui/menu"
+import type { PageContext, PageSubscriptionInput } from "../contract"
+import type * as SourcesFlow from "../sources/new/embed"
 import * as CliLogin from "./cli-login"
 import * as ClerkScreens from "./clerk-screens"
 import * as ClerkSignIn from "./clerk-sign-in"
 import * as CreateOrg from "./create-org"
-import type { PageContext, PageSubscriptionInput } from "../contract"
-import type * as SourcesFlow from "../sources/new/embed"
-import { DrawerMessage } from "./quick-start-drawer"
 import type { Inputs } from "./inputs"
 import * as McpAuthorize from "./mcp-authorize"
 import * as QuickStart from "./quick-start"
+import { DrawerMessage } from "./quick-start-drawer"
 import { storageKeyOf } from "./quick-start-state"
 import * as SelectPlan from "./select-plan"
 import * as Unsubscribe from "./unsubscribe"
@@ -244,7 +244,11 @@ export const connectFlowOf = (
 }
 
 export const fromConnectFlow = (message: SourcesFlow.Message): Message =>
-	toQuickStart(QuickStart.Message.GotDrawerMessage({ message: DrawerMessage.GotFlowMessage({ message }) }))
+	toQuickStart(
+		QuickStart.Message.GotDrawerMessage({
+			message: DrawerMessage.GotFlowMessage({ instance: null, message }),
+		}),
+	)
 
 const unchanged = (model: Model): Step => ({ model, commands: [] })
 

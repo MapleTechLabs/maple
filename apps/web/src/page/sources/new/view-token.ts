@@ -43,6 +43,7 @@ const drawerFooter = (h: H, receiving: boolean): Html =>
 	flowFooter(h, {
 		back: null,
 		hint: receiving ? "Data is arriving." : "Saved. Safe to close; the source keeps listening.",
+		host: "drawer",
 		actions: [
 			button(
 				h,
@@ -59,6 +60,7 @@ const footer = (h: H, created: Created, receiving: boolean, host: FlowHost): Htm
 	host === "drawer"
 		? drawerFooter(h, receiving)
 		: flowFooter(h, {
+				host: "page",
 				back: null,
 				hint: receiving
 					? "Data is arriving. The source page shows what came in."

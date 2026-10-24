@@ -23,7 +23,7 @@ import type { Model } from "./model"
 type Return = PageReturn<Model, Message>
 
 /** The flow is done with, from its first step's Back or the drawer's Done: its host decides where to. */
-export type FlowExit = Readonly<{ _tag: "ExitedConnectFlow" }>
+type FlowExit = Readonly<{ _tag: "ExitedConnectFlow" }>
 const exited: FlowExit = { _tag: "ExitedConnectFlow" }
 
 /** A step of the flow on its own: a page fact for the root, or the exit for its host. */

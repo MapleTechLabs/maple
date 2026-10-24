@@ -35,9 +35,9 @@ export const initFlow = (target: FlowTarget, context: PageContext): FlowReturn =
 /** The source exists: connected, or a push source created. */
 export const isFlowDone = (model: Model): boolean => model.created !== null || isIntegrationConnected(model)
 
-/** The drawer's header: the source's mark, its title and the trail. */
-export const headerEmbed = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>(
-	(model, _, h) => titleContent(h, model),
+/** The drawer's header: the source's mark, its title (the dialog's name) and the trail. */
+export const headerEmbed = Submodel.defineView<Model, Message, Readonly<{ titleId: string }>>(
+	(model, inputs, h) => titleContent(h, model, inputs.titleId),
 )
 
 /** The drawer's body: the current step and its footer, with Done in place of links away. */

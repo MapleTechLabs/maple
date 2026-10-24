@@ -56,8 +56,9 @@ const tabsMeasured = () =>
 		}),
 	)
 
-const toFlow = (message: FlowMessage) =>
-	Message.GotDrawerMessage({ message: DrawerMessage.GotFlowMessage({ message }) })
+/** A flow message as the open sheet sends it: from its view, or a Command sent for that flow. */
+const toFlow = (message: FlowMessage, instance: number | null = 1) =>
+	Message.GotDrawerMessage({ message: DrawerMessage.GotFlowMessage({ instance, message }) })
 
 const created = Schema.decodeUnknownSync(V2SourceWithSecret)({
 	id: encodePublicId(PublicIdPrefixes.source, "0199a0e1-0000-7000-8000-000000000011"),
@@ -84,17 +85,14 @@ const created = Schema.decodeUnknownSync(V2SourceWithSecret)({
 	secret: "maple_src_K8sQa8Kt7pQ2wR5vN0sL3dJ6hM4gY9dW1",
 })
 
-/** The sheet's exit transition settled: the drawer reports it closed. */
-const closed = (model: Model): Model => {
-	const dialog = model.drawer?.dialog
-	if (dialog === undefined) return model
-	return update(
+/** The user closes the sheet (its X, Escape or the backdrop). */
+const closedByUser = (model: Model): Model =>
+	update(
 		model,
 		Message.GotDrawerMessage({
 			message: DrawerMessage.GotDialogMessage({ message: Dialog.Message.ClickedClose() }),
 		}),
 	).model
-}
 
 describe("onboarding connect drawer", () => {
 	test("Set up opens the platform's connect flow over the step, without leaving onboarding", () => {
@@ -102,7 +100,6 @@ describe("onboarding connect drawer", () => {
 			{ update, view },
 			given(atConnect(["railway"])),
 			tabsMeasured(),
-			expectView(role("link", { name: /Set up Railway/ })).not.toExist(),
 			expectView(role("button", { name: "Set up Railway" })).toExist(),
 		)
 		const opened = update(atConnect(["railway"]), Message.ClickedSetUp({ platform: "railway" }))
@@ -116,8 +113,8 @@ describe("onboarding connect drawer", () => {
 			given(opened.model),
 			tabsMeasured(),
 			dialogMounted(),
-			expectView(role("dialog")).toExist(),
-			expectView(role("heading", { name: "Connect Railway" })).toExist(),
+			// The sheet is named by its title alone, not the trail under it.
+			expectView(role("dialog", { name: "Connect Railway" })).toExist(),
 			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
 		)
 	})
@@ -203,7 +200,7 @@ describe("onboarding connect drawer", () => {
 		expect(names(init("maple-onboarding-v6-org_parity").commands)).toContain("PeekOnboardingOAuthReturn")
 	})
 
-	test("a poll from a closed drawer is dropped, and a second Set up waits for the open one", () => {
+	test("a second Set up waits for the open sheet", () => {
 		const opened = update(
 			atConnect(["railway", "aws"]),
 			Message.ClickedSetUp({ platform: "railway" }),
@@ -211,13 +208,43 @@ describe("onboarding connect drawer", () => {
 		expect(update(opened, Message.ClickedSetUp({ platform: "aws" })).model.drawer?.platform).toBe(
 			"railway",
 		)
-		const shut = closed(opened)
-		const late = update(shut, toFlow(FlowMessage.ClickedContinue()))
-		expect(late.model.drawer?.flow).toBe(shut.drawer?.flow)
-		expect(late.commands ?? []).toHaveLength(0)
-		expect(update(shut, Message.ClickedSetUp({ platform: "aws" })).model.drawer?.flow.integration).toBe(
-			"aws",
+	})
+
+	test("a create that answers after the sheet closed still lands: the row reads Connected, reopening shows the token", () => {
+		const opened = update(
+			atConnect(["kubernetes"]),
+			Message.ClickedSetUp({ platform: "kubernetes" }),
+		).model
+		const shut = closedByUser(update(opened, toFlow(FlowMessage.SubmittedForm())).model)
+		const late = update(
+			shut,
+			toFlow(FlowMessage.CompletedCreate({ result: Result.succeed(created) })),
+		).model
+		expect(late.connect.connected["kubernetes"]).toBe(true)
+		const reopened = update(late, Message.ClickedSetUp({ platform: "kubernetes" }))
+		expect(reopened.model.drawer?.dialog.isOpen).toBe(true)
+		expect(reopened.model.drawer?.flow.created?.secret).toBe(created.secret)
+		// Resuming starts no new flow, so nothing is read or created again.
+		expect(names(reopened.commands)).not.toContain("FetchSourcesList")
+	})
+
+	test("a closed flow's late result does not land in the next platform's sheet", () => {
+		const opened = update(
+			atConnect(["kubernetes", "docker"]),
+			Message.ClickedSetUp({ platform: "kubernetes" }),
+		).model
+		const shut = closedByUser(update(opened, toFlow(FlowMessage.SubmittedForm())).model)
+		const docker = update(shut, Message.ClickedSetUp({ platform: "docker" })).model
+		expect(docker.drawer?.flow.platform).toBe("docker")
+		const stale = update(
+			docker,
+			toFlow(FlowMessage.CompletedCreate({ result: Result.succeed(created) }), 1),
 		)
+		expect(stale.model.drawer?.flow.created).toBeNull()
+		expect(stale.model.connect.connected["docker"]).toBeUndefined()
+		// The open sheet's own Subscriptions and Commands still reach it.
+		const own = update(docker, toFlow(FlowMessage.ChangedName({ value: "Edge hosts" }), null))
+		expect(own.model.drawer?.flow.name).toBe("Edge hosts")
 	})
 
 	test("without the org's context the drawer stays shut", () => {

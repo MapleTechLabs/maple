@@ -265,37 +265,61 @@ const withoutToastActions = (model: Model, toastId: string): Model =>
 		toastRootActions: (actions) => Struct.omit(actions, [toastId]),
 	})
 
+/** A page's out message as the root acts on it: its toasts shown, its navigation and reads to send. */
+const actOnPageOut = (model: Model, outMessage: Option.Option<PageOutMessage>) => {
+	const toasted = Option.match(
+		Option.flatMap(outMessage, (out): Option.Option<PageToast> =>
+			out._tag === "RequestedToast"
+				? Option.some(out)
+				: (out._tag === "RequestedNavigation" || out._tag === "RequestedCustomerRefresh") && out.toast !== undefined
+					? Option.some(
+							PageOutMessage.RequestedToast({
+								...out.toast,
+								timeoutMs: null,
+								action: null,
+							}),
+						)
+					: Option.none(),
+		),
+		{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
+	)
+	const followUp = Option.flatMap(outMessage, (out) =>
+		out._tag === "RequestedNavigation" && out.followUpToast !== undefined
+			? Option.some(PageOutMessage.RequestedToast({ ...out.followUpToast, timeoutMs: null, action: null }))
+			: Option.none(),
+	)
+	const followed = Option.match(followUp, {
+		onNone: () => toasted,
+		onSome: (request) => {
+			const shown = showPageToast(toasted.model, request)
+			return { model: shown.model, commands: [...toasted.commands, ...shown.commands] }
+		},
+	})
+	const outCommands = Option.match(outMessage, {
+		onNone: () => [],
+		onSome: PageOutMessage.match({
+			RequestedNavigation: ({ url, isReplace, refreshesCustomer }) => [
+				navigateTo(model, url, isReplace),
+				...(refreshesCustomer === true && model.customer.orgId !== null
+					? [LoadCustomer({ orgId: model.customer.orgId, refresh: true })]
+					: []),
+			],
+			RequestedNamespacePin: () => [],
+			RequestedSidebarToggle: () => [],
+			RequestedInfraSurfaces: () => [],
+			RequestedToast: () => [],
+			RequestedReconnectOrgCollections: () => [ReconnectOrgCollections()],
+			RequestedCustomerRefresh: () =>
+				model.customer.orgId === null ? [] : [LoadCustomer({ orgId: model.customer.orgId, refresh: true })],
+		}),
+	})
+	return { model: followed.model, outCommands, toastCommands: followed.commands }
+}
+
 const writePage =
 	(transition: PageTransition): Step =>
 	(model) => {
-		const toasted = Option.match(
-			Option.flatMap(transition.outMessage, (out): Option.Option<PageToast> =>
-				out._tag === "RequestedToast"
-					? Option.some(out)
-					: (out._tag === "RequestedNavigation" || out._tag === "RequestedCustomerRefresh") && out.toast !== undefined
-						? Option.some(
-								PageOutMessage.RequestedToast({
-									...out.toast,
-									timeoutMs: null,
-									action: null,
-								}),
-							)
-						: Option.none(),
-			),
-			{ onNone: () => ({ model, commands: [] }), onSome: (request) => showPageToast(model, request) },
-		)
-		const followUp = Option.flatMap(transition.outMessage, (out) =>
-			out._tag === "RequestedNavigation" && out.followUpToast !== undefined
-				? Option.some(PageOutMessage.RequestedToast({ ...out.followUpToast, timeoutMs: null, action: null }))
-				: Option.none(),
-		)
-		const followed = Option.match(followUp, {
-			onNone: () => toasted,
-			onSome: (request) => {
-				const shown = showPageToast(toasted.model, request)
-				return { model: shown.model, commands: [...toasted.commands, ...shown.commands] }
-			},
-		})
+		const followed = actOnPageOut(model, transition.outMessage)
 		const held = Preload.held(
 			followed.model.preload,
 			pageIdentity(transition.slot),
@@ -316,25 +340,8 @@ const writePage =
 				...transition.commands.map(
 					Command.mapMessage((message) => Message.GotPageMessage({ message })),
 				),
-				...Option.match(transition.outMessage, {
-					onNone: () => [],
-					onSome: PageOutMessage.match({
-						RequestedNavigation: ({ url, isReplace, refreshesCustomer }) => [
-							navigateTo(model, url, isReplace),
-							...(refreshesCustomer === true && model.customer.orgId !== null
-								? [LoadCustomer({ orgId: model.customer.orgId, refresh: true })]
-								: []),
-						],
-						RequestedNamespacePin: () => [],
-						RequestedSidebarToggle: () => [],
-						RequestedInfraSurfaces: () => [],
-						RequestedToast: () => [],
-						RequestedReconnectOrgCollections: () => [ReconnectOrgCollections()],
-						RequestedCustomerRefresh: () =>
-							model.customer.orgId === null ? [] : [LoadCustomer({ orgId: model.customer.orgId, refresh: true })],
-					}),
-				}),
-				...followed.commands,
+				...followed.outCommands,
+				...followed.toastCommands,
 			],
 		}
 	}
@@ -451,21 +458,13 @@ const loadOnboarding: Step = (model) => {
 	})
 }
 
-/** The connect drawer's flow toasts as a page does; a link it followed leaves onboarding. */
+/** The connect drawer's flow toasts and navigates as a page does (a link it followed leaves onboarding). */
 const connectFlowOut =
 	(out: PageOutMessage): Step =>
-	(model) =>
-		out._tag === "RequestedToast"
-			? showPageToast(model, out)
-			: out._tag === "RequestedNavigation"
-				? Option.match(Option.fromUndefinedOr(out.toast), {
-						onNone: () => ({ model, commands: [navigateTo(model, out.url, out.isReplace)] }),
-						onSome: (toast) => {
-							const shown = showPageToast(model, PageOutMessage.RequestedToast({ ...toast, timeoutMs: null, action: null }))
-							return { model: shown.model, commands: [navigateTo(model, out.url, out.isReplace), ...shown.commands] }
-						},
-					})
-				: { model }
+	(model) => {
+		const acted = actOnPageOut(model, Option.some(out))
+		return { model: acted.model, commands: [...acted.outCommands, ...acted.toastCommands] }
+	}
 
 /** A plan change re-reads the customer (`refreshCustomer()`) and toasts, as `PricingCards` does. */
 const onboardingOut =

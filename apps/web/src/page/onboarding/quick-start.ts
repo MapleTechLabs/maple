@@ -18,11 +18,12 @@ import { clerkTry, currentClerkOrganization } from "../../platform/clerk"
 import { startDitherField } from "../../ui/dither-field"
 import type { Resources } from "../../platform/resources"
 import * as PricingCards from "./pricing-cards"
-import type { PageContext, PageOutMessage } from "../contract"
+import { type PageContext, PageOutMessage } from "../contract"
 import {
 	ConnectDrawer,
 	type DrawerStep,
 	DrawerMessage,
+	isDrawerDone,
 	openDrawer,
 	pendingOAuthPlatform,
 	updateDrawer,
@@ -215,8 +216,8 @@ export const FollowChosenRegion = Command.define("FollowChosenRegion", {
 })
 
 /** A connect flow's page fact (a toast, a link it followed), for the root to act on. */
-export type ConnectFlowOut = Readonly<{ _tag: "RequestedConnectFlowOut"; out: PageOutMessage }>
-export type OutMessage = PricingCards.OutMessage | ConnectFlowOut
+const ConnectFlowOut = Schema.TaggedStruct("RequestedConnectFlowOut", { out: PageOutMessage })
+export type OutMessage = PricingCards.OutMessage | typeof ConnectFlowOut.Type
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
@@ -254,20 +255,19 @@ const toLive = (message: LiveMessage) => Message.GotLiveMessage({ message })
 const toPricing = (message: PricingCards.Message) => Message.GotPricingMessage({ message })
 const toDrawer = (message: DrawerMessage) => Message.GotDrawerMessage({ message })
 
-/** The drawer's step lifted: a closed drawer re-reads the providers, a page fact goes to the root. */
+/** The drawer's step lifted: a made source reads Connected, a closed drawer re-reads the providers. */
 const withDrawer = (model: Model, step: DrawerStep): UpdateReturn => {
-	const next: Model = { ...model, drawer: step.drawer }
+	const connected = isDrawerDone(step.drawer)
+		? { ...model.connect.connected, [step.drawer.platform]: true }
+		: model.connect.connected
+	const next: Model = { ...model, drawer: step.drawer, connect: { ...model.connect, connected } }
 	const commands = Command.mapMessages(step.commands, toDrawer)
 	const out = step.outMessage
 	if (out === undefined) return { model: next, commands }
 	if (out._tag !== "ClosedDrawer")
-		return { model: next, commands, outMessage: { _tag: "RequestedConnectFlowOut", out } }
-	// A source made in the drawer counts as connected for the visit, read or not.
-	const connected = out.isDone
-		? { ...next.connect.connected, [out.platform]: true }
-		: next.connect.connected
+		return { model: next, commands, outMessage: ConnectFlowOut.make({ out }) }
 	return {
-		model: { ...next, connect: { ...next.connect, connected } },
+		model: next,
 		commands: [
 			...commands,
 			...Command.mapMessages(
@@ -281,7 +281,7 @@ const withDrawer = (model: Model, step: DrawerStep): UpdateReturn => {
 const openedDrawer = (model: Model, platform: StackPlatform, context: PageContext | null): UpdateReturn =>
 	context === null || model.drawer?.dialog.isOpen === true
 		? { model }
-		: withDrawer(model, openDrawer(platform, context))
+		: withDrawer(model, openDrawer(model.drawer, platform, context))
 
 /**
  * A step's data is read when it mounts: the Clerk team (its name and pending invitations) on the

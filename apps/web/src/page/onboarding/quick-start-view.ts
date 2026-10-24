@@ -533,7 +533,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 					h.p(
 						[h.Class("text-[15px] leading-relaxed text-muted-foreground")],
 						[
-							"Set up each provider here, step by step. Your code sends its traces, logs and metrics with OpenTelemetry: one prompt to your coding agent, or a few lines by hand.",
+							"Connect each provider without leaving setup. Your code sends its traces, logs and metrics with OpenTelemetry: one prompt to your coding agent, or a few lines by hand.",
 						],
 					),
 				],

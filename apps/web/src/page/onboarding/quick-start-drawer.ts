@@ -15,13 +15,16 @@ export const DRAWER_ID = "onboarding-connect-drawer"
 
 export const ConnectDrawer = Schema.Struct({
 	platform: Schema.Literals(STACK_PLATFORM_IDS),
+	/** Bumped for each new flow: a result from a replaced one is dropped, like a page instance's. */
+	instance: Schema.Number,
 	flow: SourcesFlow.Model,
 	dialog: Dialog.Model,
 })
 export type ConnectDrawer = typeof ConnectDrawer.Type
 
 export const DrawerMessage = defineMessageUnion({
-	GotFlowMessage: { message: SourcesFlow.Message },
+	/** `instance` is the flow a Command was sent for; null from its Subscriptions, which run for the open one. */
+	GotFlowMessage: { instance: Schema.NullOr(Schema.Number), message: SourcesFlow.Message },
 	GotDialogMessage: { message: Dialog.Message },
 })
 export type DrawerMessage = typeof DrawerMessage.Type
@@ -39,9 +42,8 @@ const TARGETS = {
 	docker: { _tag: "Push", platform: "docker" },
 } as const satisfies Record<StackPlatform, SourcesFlow.FlowTarget>
 
-/** The drawer closed: whether its source exists, so the row reads Connected. */
-export type DrawerClosed = Readonly<{ _tag: "ClosedDrawer"; platform: StackPlatform; isDone: boolean }>
-export type DrawerOut = DrawerClosed | PageOutMessage
+/** The sheet closed: the step re-reads the providers. */
+type DrawerOut = Readonly<{ _tag: "ClosedDrawer" }> | PageOutMessage
 
 export type DrawerStep = Readonly<{
 	drawer: ConnectDrawer
@@ -49,23 +51,17 @@ export type DrawerStep = Readonly<{
 	outMessage?: DrawerOut
 }>
 
-const toFlow = (message: SourcesFlow.Message) => DrawerMessage.GotFlowMessage({ message })
 const toDialog = (message: Dialog.Message) => DrawerMessage.GotDialogMessage({ message })
-
-type FlowOut = SourcesFlow.FlowReturn["outMessage"]
 
 const withFlow = (drawer: ConnectDrawer, step: SourcesFlow.FlowReturn): DrawerStep => {
 	const next = { ...drawer, flow: step.model }
-	const commands = Command.mapMessages(step.commands ?? [], toFlow)
-	const out: FlowOut = step.outMessage
+	const commands = Command.mapMessages(step.commands ?? [], (message) =>
+		DrawerMessage.GotFlowMessage({ instance: drawer.instance, message }),
+	)
+	const out = step.outMessage
 	if (out === undefined) return { drawer: next, commands }
 	if (out._tag !== "ExitedConnectFlow") return { drawer: next, commands, outMessage: out }
-	return closeDrawer(next, commands)
-}
-
-const closeDrawer = (drawer: ConnectDrawer, commands: DrawerStep["commands"] = []): DrawerStep => {
-	const closed = Dialog.close(drawer.dialog)
-	return withDialog(drawer, closed, commands)
+	return withDialog(next, Dialog.close(next.dialog), commands)
 }
 
 const withDialog = (
@@ -76,25 +72,28 @@ const withDialog = (
 	const next = { ...drawer, dialog: step.model }
 	const all = [...commands, ...Command.mapMessages(step.commands ?? [], toDialog)]
 	return step.outMessage?._tag === "Closed"
-		? {
-				drawer: next,
-				commands: all,
-				outMessage: {
-					_tag: "ClosedDrawer",
-					platform: drawer.platform,
-					isDone: SourcesFlow.isFlowDone(drawer.flow),
-				},
-			}
+		? { drawer: next, commands: all, outMessage: { _tag: "ClosedDrawer" } }
 		: { drawer: next, commands: all }
 }
 
-/** A fresh flow for the platform each time, opened with the sheet's enter transition. */
-export const openDrawer = (platform: StackPlatform, context: PageContext): DrawerStep => {
+/**
+ * Opens the sheet on the platform. The same platform resumes its flow (a token not yet copied, a
+ * create still answering); another starts a new one. The dialog is reused, mid-exit or not.
+ */
+export const openDrawer = (
+	previous: ConnectDrawer | null,
+	platform: StackPlatform,
+	context: PageContext,
+): DrawerStep => {
+	const dialog = previous?.dialog ?? Dialog.init(DRAWER_ID, "sheet")
+	const opened = Dialog.open(dialog)
+	const dialogCommands = Command.mapMessages(opened.commands ?? [], toDialog)
+	if (previous !== null && previous.platform === platform)
+		return { drawer: { ...previous, dialog: opened.model }, commands: dialogCommands }
 	const flow = SourcesFlow.initFlow(TARGETS[platform], context)
-	const opened = Dialog.open(Dialog.init(DRAWER_ID, "sheet"))
-	const drawer: ConnectDrawer = { platform, flow: flow.model, dialog: opened.model }
-	const step = withFlow(drawer, flow)
-	return { ...step, commands: [...step.commands, ...Command.mapMessages(opened.commands ?? [], toDialog)] }
+	const instance = (previous?.instance ?? 0) + 1
+	const step = withFlow({ platform, instance, flow: flow.model, dialog: opened.model }, flow)
+	return { ...step, commands: [...step.commands, ...dialogCommands] }
 }
 
 export const updateDrawer = (
@@ -103,13 +102,16 @@ export const updateDrawer = (
 	context: PageContext,
 ): DrawerStep =>
 	DrawerMessage.match<DrawerStep>(message, {
-		// A poll that lands after the drawer closed is dropped; the next open starts a new flow.
-		GotFlowMessage: ({ message: child }) =>
-			drawer.dialog.isOpen
-				? withFlow(drawer, SourcesFlow.updateFlow(drawer.flow, child, context))
-				: { drawer, commands: [] },
+		// A closed sheet still takes its own flow's results; a replaced flow's are dropped.
+		GotFlowMessage: ({ instance, message: child }) =>
+			instance !== null && instance !== drawer.instance
+				? { drawer, commands: [] }
+				: withFlow(drawer, SourcesFlow.updateFlow(drawer.flow, child, context)),
 		GotDialogMessage: ({ message: child }) => withDialog(drawer, Dialog.update(drawer.dialog, child)),
 	})
+
+/** The source exists: its row reads Connected for the visit, open sheet or not. */
+export const isDrawerDone = (drawer: ConnectDrawer): boolean => SourcesFlow.isFlowDone(drawer.flow)
 
 /** The providers whose OAuth returns land here: the drawer opens on them to finish the connect. */
 const PLATFORM_OF_FLOW = {

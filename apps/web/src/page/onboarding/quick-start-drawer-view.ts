@@ -12,18 +12,14 @@ const header = <M>(h: HtmlBuilder<M>, drawer: ConnectDrawer, toParent: (message:
 		h,
 		"sheet",
 		[
-			h.div(
-				[h.Id(titleId(DRAWER_ID))],
-				[
-					h.submodel({
-						slotId: `${DRAWER_ID}-header`,
-						model: drawer.flow,
-						view: SourcesFlow.headerEmbed,
-						viewInputs: {},
-						toParentMessage: (message) => toParent(DrawerMessage.GotFlowMessage({ message })),
-					}),
-				],
-			),
+			h.submodel({
+				slotId: `${DRAWER_ID}-header`,
+				model: drawer.flow,
+				view: SourcesFlow.headerEmbed,
+				viewInputs: { titleId: titleId(DRAWER_ID) },
+				toParentMessage: (message) =>
+					toParent(DrawerMessage.GotFlowMessage({ instance: drawer.instance, message })),
+			}),
 		],
 		"pr-14",
 	)
@@ -40,23 +36,21 @@ const body = <M>(
 		DRAWER_ID,
 		[
 			h.div(
-				[
-					h.Class("@container/page flex min-h-full flex-col"),
-					h.DataAttribute("connect-flow-scroll", ""),
-				],
+				[h.Class("@container/page flex flex-1 flex-col"), h.DataAttribute("connect-flow-scroll", "")],
 				[
 					h.submodel({
 						slotId: `${DRAWER_ID}-body`,
 						model: drawer.flow,
 						view: SourcesFlow.bodyEmbed,
 						viewInputs: { timeZone },
-						toParentMessage: (message) => toParent(DrawerMessage.GotFlowMessage({ message })),
+						toParentMessage: (message) =>
+							toParent(DrawerMessage.GotFlowMessage({ instance: drawer.instance, message })),
 					}),
 				],
 			),
 		],
-		// The flow's sticky footer pulls itself to the panel's bottom edge by this padding.
-		"flex flex-col pt-1 pb-4",
+		// Full height, so a short step's footer still sits on the sheet's bottom edge.
+		"flex min-h-full flex-col",
 	)
 
 /** The drawer's portal while it is open or animating out; nothing once it is gone. */

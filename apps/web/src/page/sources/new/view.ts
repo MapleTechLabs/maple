@@ -32,8 +32,10 @@ const metaOf = (model: Model) =>
 			? integrationMeta(model.integration)
 			: null
 
-/** The source's mark, its title and the trail under it. */
-export const titleContent = (h: H, model: Model): Html => {
+const TITLE_CLASS = "font-display text-2xl font-medium tracking-tight"
+
+/** The source's mark, its title and the trail under it; `titleId` names the drawer's dialog by it. */
+export const titleContent = (h: H, model: Model, titleId?: string): Html => {
 	const meta = metaOf(model)
 	return h.div(
 		[h.Class("flex items-center gap-4")],
@@ -54,7 +56,10 @@ export const titleContent = (h: H, model: Model): Html => {
 			h.div(
 				[h.Class("space-y-2")],
 				[
-					h.h1([h.Class("font-display text-2xl font-medium tracking-tight")], [titleOf(model)]),
+					// In the drawer the title is the dialog's name, under the onboarding page's own h1.
+					titleId === undefined
+						? h.h1([h.Class(TITLE_CLASS)], [titleOf(model)])
+						: h.h2([h.Class(TITLE_CLASS), h.Id(titleId)], [titleOf(model)]),
 					trail(h, model),
 				],
 			),
@@ -73,7 +78,7 @@ export const stepBody = (h: H, model: Model, timeZone: string, host: FlowHost): 
 	model.created !== null
 		? tokenStep(h, model, model.created, host)
 		: model.platform !== null
-			? createSourceForm(h, model, model.platform)
+			? createSourceForm(h, model, model.platform, host)
 			: model.integration !== null
 				? integrationStep(h, model, model.integration, timeZone, host)
 				: platformPicker(h, model)

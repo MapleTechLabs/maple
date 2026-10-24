@@ -127,14 +127,6 @@ type Step = Readonly<{
 	commands: ReadonlyArray<Command.Command<ConnectMessage, never, Resources>>
 }>
 
-const reads = (orgId: string, platforms: ReadonlyArray<StackPlatform>) => {
-	const providers = platforms.filter(isStatusProvider)
-	return [
-		LoadConnectPresence({ orgId }),
-		...(providers.length === 0 ? [] : [LoadConnected({ orgId, providers })]),
-	]
-}
-
 /** The drawer closed: the picked providers' connections, read once outside the poll. */
 export const refreshConnected = (
 	orgId: string,
@@ -143,6 +135,11 @@ export const refreshConnected = (
 	const providers = platforms.filter(isStatusProvider)
 	return providers.length === 0 ? [] : [LoadConnected({ orgId, providers })]
 }
+
+const reads = (orgId: string, platforms: ReadonlyArray<StackPlatform>): Step["commands"] => [
+	LoadConnectPresence({ orgId }),
+	...refreshConnected(orgId, platforms),
+]
 
 /** The step opens: the key once, then presence and providers on a poll until it closes. */
 export const openConnect = (
