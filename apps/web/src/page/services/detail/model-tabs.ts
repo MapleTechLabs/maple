@@ -35,6 +35,12 @@ export const Endpoint = Schema.Struct({
 	p50DurationMs: Schema.Number,
 	p95DurationMs: Schema.Number,
 	p99DurationMs: Schema.Number,
+	httpClassifiedSpanCount: Schema.Number,
+	httpStatusCount: Schema.Number,
+	http4xxCount: Schema.Number,
+	http5xxCount: Schema.Number,
+	requestBodyBytes: Schema.Number,
+	requestBodyCount: Schema.Number,
 })
 export type Endpoint = typeof Endpoint.Type
 

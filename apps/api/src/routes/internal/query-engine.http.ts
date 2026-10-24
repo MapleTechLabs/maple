@@ -61,6 +61,10 @@ import {
 	ServiceUsageResponse,
 	ServiceEndpointsRequest,
 	ServiceEndpointsResponse,
+	ServiceApiOverviewResponse,
+	ServiceEndpointsTimeseriesResponse,
+	ServiceEndpointStatusBreakdownResponse,
+	ServiceEndpointDetailResponse,
 	ServiceOperationsRequest,
 	ServiceOperationsResponse,
 	ListLogsResponse,
@@ -124,6 +128,8 @@ import { Cause, Clock, DateTime, Effect, Option, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	isMissingProductEvents,
+	isMissingServiceApiColumns,
+	isMissingServiceEndpointDetails,
 	isMissingServiceOperationsRollup,
 } from "@maple/backend/services/warehouse/missing-table"
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
@@ -236,6 +242,78 @@ const withServiceOperationsFallback = makeRollupFallback(
 	isMissingServiceOperationsRollup,
 	"service_operations rollup is absent on this cluster; reading raw traces. Apply ClickHouse schema to restore the fast path.",
 )
+
+// The API tab's reads also degrade when the rollups exist but predate migration 0048.
+const withServiceApiFallback = makeRollupFallback(
+	(error) => isMissingServiceOperationsRollup(error) || isMissingServiceApiColumns(error),
+	"service_operations rollup lacks migration 0048; reading raw traces. Apply ClickHouse schema to restore the fast path.",
+)
+
+/** Endpoint detail has no raw fallback: without migration 0048 the panel is empty. */
+const orEmptyWithoutEndpointDetails = <A, E, R>(effect: Effect.Effect<A, E, R>, empty: A) =>
+	effect.pipe(
+		Effect.catch((error) =>
+			isMissingServiceEndpointDetails(error)
+				? Effect.as(Effect.annotateCurrentSpan("query.rollup.missing", true), empty)
+				: Effect.fail(error),
+		),
+	)
+
+/**
+ * The rollups are minute-grain and hour-grain: a sub-hour bucket rounds to whole
+ * minutes, an hour or more to whole hours so the hourly tier tiles it exactly.
+ */
+const alignServiceApiBucket = (bucketSeconds: number) =>
+	bucketSeconds >= 3600
+		? Math.round(bucketSeconds / 3600) * 3600
+		: Math.max(60, Math.round(bucketSeconds / 60) * 60)
+
+const emptyServiceApiTotals: CH.ServiceApiTotalsOutput = {
+	spanCount: 0,
+	estimatedSpanCount: 0,
+	httpClassifiedSpanCount: 0,
+	httpStatusCount: 0,
+	http4xxCount: 0,
+	http5xxCount: 0,
+	requestBodyBytes: 0,
+	requestBodyCount: 0,
+	p50DurationMs: 0,
+	p95DurationMs: 0,
+	p99DurationMs: 0,
+}
+
+const toServiceApiBucket = (row: CH.ServiceApiTimeseriesOutput) => ({
+	bucket: DateTime.formatIso(row.bucket),
+	spanName: row.spanName,
+	estimatedSpanCount: row.estimatedSpanCount,
+	httpStatusCount: row.httpStatusCount,
+	http4xxCount: row.http4xxCount,
+	http5xxCount: row.http5xxCount,
+	requestBodyBytes: row.requestBodyBytes,
+	p50DurationMs: row.p50DurationMs,
+	p95DurationMs: row.p95DurationMs,
+	p99DurationMs: row.p99DurationMs,
+})
+
+const toServiceEndpointRow = (row: CH.ServiceEndpointsSummaryOutput) => ({
+	spanName: row.spanName,
+	...CH.splitEndpointName(row.spanName),
+	spanCount: row.spanCount,
+	estimatedSpanCount: row.estimatedSpanCount,
+	errorCount: row.errorCount,
+	estimatedErrorCount: row.estimatedErrorCount,
+	errorRate: row.errorRate,
+	avgDurationMs: row.avgDurationMs,
+	p50DurationMs: row.p50DurationMs,
+	p95DurationMs: row.p95DurationMs,
+	p99DurationMs: row.p99DurationMs,
+	httpClassifiedSpanCount: row.httpClassifiedSpanCount,
+	httpStatusCount: row.httpStatusCount,
+	http4xxCount: row.http4xxCount,
+	http5xxCount: row.http5xxCount,
+	requestBodyBytes: row.requestBodyBytes,
+	requestBodyCount: row.requestBodyCount,
+})
 
 interface SparklinePoint {
 	readonly bucket: string
@@ -1599,25 +1677,179 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("serviceEndpoints", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						// Cached as the response rows: plain JSON, nothing to re-decode.
+						const data = yield* queryEngine.cachedDirect(
+							tenant,
+							"serviceEndpointsHttp",
+							payload,
+							mapExecError(
+								withServiceApiFallback(
+									(t, pl) => runQuery(Queries.serviceEndpointsSummary, t, pl),
+									(t, pl) => runQuery(Queries.serviceEndpointsSummaryRaw, t, pl),
+									tenant,
+									payload,
+								),
+								"serviceEndpoints query failed",
+							).pipe(Effect.map((rows) => rows.map(toServiceEndpointRow))),
+							30,
+						)
+						return new ServiceEndpointsResponse({ data })
+					}),
+				)
+				.handle("serviceApiOverview", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const bucketSeconds = alignServiceApiBucket(payload.bucketSeconds)
+						const window = (startTime: string, endTime: string) => ({
+							serviceName: payload.serviceName,
+							environments: payload.environments,
+							startTime,
+							endTime,
+						})
+						const totals = (startTime: string, endTime: string) =>
+							mapExecError(
+								withServiceApiFallback(
+									(t, pl) => runQuery(Queries.serviceApiTotals, t, pl),
+									(t, pl) => runQuery(Queries.serviceApiTotalsRaw, t, pl),
+									tenant,
+									window(startTime, endTime),
+								),
+								"serviceApiTotals query failed",
+							).pipe(Effect.map((rows) => rows[0] ?? emptyServiceApiTotals))
+						const { previousStartTime, previousEndTime } = payload
+						const overview = Effect.all(
+							{
+								totals: totals(payload.startTime, payload.endTime),
+								previous:
+									previousStartTime !== undefined && previousEndTime !== undefined
+										? totals(previousStartTime, previousEndTime)
+										: Effect.succeed(null),
+								buckets: mapExecError(
+									withServiceApiFallback(
+										(t, pl) => runQuery(Queries.serviceApiTimeseries, t, pl),
+										(t, pl) => runQuery(Queries.serviceApiTimeseriesRaw, t, pl),
+										tenant,
+										{ ...window(payload.startTime, payload.endTime), bucketSeconds },
+									),
+									"serviceApiTimeseries query failed",
+								).pipe(Effect.map((rows) => rows.map(toServiceApiBucket))),
+							},
+							{ concurrency: "unbounded" },
+						)
+						const data = yield* queryEngine.cachedDirect(
+							tenant,
+							"serviceApiOverview",
+							payload,
+							overview,
+							30,
+						)
+						return new ServiceApiOverviewResponse(data)
+					}),
+				)
+				.handle("serviceEndpointsTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const input = {
+							serviceName: payload.serviceName,
+							environments: payload.environments,
+							startTime: payload.startTime,
+							endTime: payload.endTime,
+							bucketSeconds: alignServiceApiBucket(payload.bucketSeconds),
+							spanNames: payload.spanNames,
+						}
+						const buckets = yield* queryEngine.cachedDirect(
+							tenant,
+							"serviceEndpointsTimeseries",
+							payload,
+							mapExecError(
+								withServiceApiFallback(
+									(t, pl) => runQuery(Queries.serviceApiTimeseries, t, pl),
+									(t, pl) => runQuery(Queries.serviceApiTimeseriesRaw, t, pl),
+									tenant,
+									input,
+								),
+								"serviceEndpointsTimeseries query failed",
+							).pipe(Effect.map((rows) => rows.map(toServiceApiBucket))),
+							30,
+						)
+						return new ServiceEndpointsTimeseriesResponse({ buckets })
+					}),
+				)
+				.handle("serviceEndpointStatusBreakdown", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
 						const rows = yield* queryEngine.cachedDirect(
 							tenant,
-							"serviceEndpoints",
+							"serviceEndpointStatusBreakdown",
 							payload,
-							operationRowsWithSparklines(tenant, payload, {
-								summary: Queries.serviceEndpointsSummary,
-								summaryRaw: Queries.serviceEndpointsSummaryRaw,
-								label: "serviceEndpoints",
-								sparklines: false,
+							orEmptyWithoutEndpointDetails(
+								mapExecError(
+									runQuery(Queries.serviceEndpointStatusBreakdown, tenant, payload),
+									"serviceEndpointStatusBreakdown query failed",
+								).pipe(Effect.map((result) => result.map((row) => ({ ...row })))),
+								[],
+							),
+							30,
+						)
+						return new ServiceEndpointStatusBreakdownResponse({ rows })
+					}),
+				)
+				.handle("serviceEndpointDetail", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const detail = Effect.all(
+							{
+								distribution: mapExecError(
+									runQuery(Queries.serviceEndpointDistribution, tenant, payload),
+									"serviceEndpointDistribution query failed",
+								),
+								slowest: mapExecError(
+									runQuery(Queries.serviceEndpointSlowest, tenant, payload),
+									"serviceEndpointSlowest query failed",
+								),
+							},
+							{ concurrency: "unbounded" },
+						).pipe(
+							Effect.map(({ distribution: [row], slowest }) => ({
+								latencyQuantileLevels: [...CH.ENDPOINT_LATENCY_QUANTILE_LEVELS],
+								latencyQuantilesMs: [...(row?.latencyQuantilesMs ?? [])],
+								body:
+									row !== undefined && row.bodyCount > 0
+										? {
+												p50Bytes: row.bodyP50Bytes,
+												p95Bytes: row.bodyP95Bytes,
+												maxBytes: row.bodyMaxBytes,
+												count: row.bodyCount,
+											}
+										: null,
+								userAgents: (row?.userAgents ?? []).map((value, index) => ({
+									value,
+									count: row?.userAgentCounts[index] ?? null,
+								})),
+								slowest: slowest.map((request) => ({
+									traceId: request.traceId,
+									timestamp: DateTime.formatIso(request.timestamp),
+									durationMs: request.durationMs,
+									httpStatusCode: request.httpStatusCode,
+									// The rollup writes -1 for a request without a body size.
+									bodyBytes: request.bodyBytes < 0 ? null : request.bodyBytes,
+								})),
+							})),
+						)
+						const data = yield* queryEngine.cachedDirect(
+							tenant,
+							"serviceEndpointDetail",
+							payload,
+							orEmptyWithoutEndpointDetails(detail, {
+								latencyQuantileLevels: [...CH.ENDPOINT_LATENCY_QUANTILE_LEVELS],
+								latencyQuantilesMs: [],
+								body: null,
+								userAgents: [],
+								slowest: [],
 							}),
 							30,
 						)
-						// The split is display-only, so it happens after the cache read
-						// rather than being baked into the cached payload.
-						const data = rows.map((row) => ({
-							...row,
-							...CH.splitEndpointName(row.spanName),
-						}))
-						return new ServiceEndpointsResponse({ data })
+						return new ServiceEndpointDetailResponse(data)
 					}),
 				)
 				.handle("listLogs", ({ payload }) =>

@@ -227,6 +227,12 @@ const endpoint = (route: string): Endpoint => ({
 	p50DurationMs: 4,
 	p95DurationMs: 9,
 	p99DurationMs: 12,
+	httpClassifiedSpanCount: 10,
+	httpStatusCount: 10,
+	http4xxCount: 0,
+	http5xxCount: 0,
+	requestBodyBytes: 0,
+	requestBodyCount: 0,
 })
 
 describe("service detail view", () => {
