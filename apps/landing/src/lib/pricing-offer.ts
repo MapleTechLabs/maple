@@ -13,6 +13,7 @@
  * `label: m.pricing_logs()` freezes whichever locale rendered first and every
  * other locale inherits it.
  */
+import { PRICING_CARD_FEATURE_IDS, isPricingCardFeature } from "@maple/domain/billing"
 import { Autumn } from "autumn-js"
 import * as m from "../paraglide/messages.js"
 
@@ -54,15 +55,10 @@ export interface Offer {
 	ctaLabel: string
 }
 
-const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
-
 /** Canonical row order: Autumn can return items in any order. */
-const DATA_FEATURE_ORDER = ["logs", "traces", "metrics", "browser_sessions", "product_events", "ai_credits"]
+const DATA_FEATURE_ORDER: ReadonlyArray<string> = PRICING_CARD_FEATURE_IDS
 
-const dataFeatureRank = (id: string | undefined) => {
-	const i = id ? DATA_FEATURE_ORDER.indexOf(id) : -1
-	return i === -1 ? DATA_FEATURE_ORDER.length : i
-}
+const dataFeatureRank = (id: string) => DATA_FEATURE_ORDER.indexOf(id)
 
 const FEATURE_UNITS = {
 	browser_sessions: "sessions",
@@ -142,7 +138,7 @@ export async function getOffer(): Promise<Offer> {
 				hasTrial: !!product.freeTrial,
 				trialDuration: product.freeTrial?.durationLength,
 				allotments: product.items
-					.filter((item) => item.featureId && !HIDDEN_FEATURE_IDS.has(item.featureId))
+					.filter((item) => isPricingCardFeature(item.featureId))
 					.map((item) => {
 						const featureId = item.featureId
 						const unit = unitFor(featureId)
