@@ -7,11 +7,13 @@ import {
 	ABANDONED_STORE_MIN_AGE_MS,
 	IN_MEMORY_STORE_PREFIX,
 	inMemoryConflicts,
+	inMemoryDiscoveryPath,
 	inMemoryStoreParent,
 	isAbandonedStore,
 	MIN_TMPFS_FREE_BYTES,
 	sweepAbandonedStores,
 	sweepParents,
+	sweepStaleDiscoveryFiles,
 } from "../src/commands/in-memory-store"
 
 const NO_FLAGS = {
@@ -102,6 +104,27 @@ describe("sweepAbandonedStores", () => {
 
 	it("treats a missing parent as nothing to sweep", async () => {
 		expect(await Effect.runPromise(sweepAbandonedStores(join(parent, "missing")))).toEqual([])
+	})
+})
+
+describe("sweepStaleDiscoveryFiles", () => {
+	let dir: string
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "maple-in-memory-discovery-"))
+	})
+	afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+	it("removes files of dead in-memory servers and keeps live ones and other servers' files", async () => {
+		const dead = inMemoryDiscoveryPath(dir, 111)
+		const live = inMemoryDiscoveryPath(dir, 222)
+		const persistent = join(dir, "maple-server.json")
+		const otherStore = join(dir, "work.maple-server.json")
+		for (const path of [dead, live, persistent, otherStore]) writeFileSync(path, "{}")
+
+		const removed = await Effect.runPromise(sweepStaleDiscoveryFiles(dir, (pid) => pid === 222))
+
+		expect(removed).toEqual([dead])
+		expect([dead, live, persistent, otherStore].map(existsSync)).toEqual([false, true, true, true])
 	})
 })
 

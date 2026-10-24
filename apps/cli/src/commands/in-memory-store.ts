@@ -111,27 +111,54 @@ export const sweepAbandonedStores = (parent: string): Effect.Effect<ReadonlyArra
 export const sweepParents = (platform: NodeJS.Platform = process.platform): ReadonlyArray<string> =>
 	platform === "linux" ? [TMPFS_DIR, tmpdir()] : [tmpdir()]
 
+const DISCOVERY_FILE = /^in-memory-(\d+)\.maple-server\.json$/
+
+/** An in-memory server's discovery file: its store's sidecars vanish with it,
+ *  so the file goes where query commands look (`~/.maple/*.maple-server.json`). */
+export const inMemoryDiscoveryPath = (dir: string, pid: number): string =>
+	join(dir, `in-memory-${pid}.maple-server.json`)
+
+/** Delete in-memory discovery files under `dir` whose server is gone. Never fails. */
+export const sweepStaleDiscoveryFiles = (
+	dir: string,
+	alive: (pid: number) => boolean = isProcessAlive,
+): Effect.Effect<ReadonlyArray<string>> =>
+	Effect.gen(function* () {
+		const names = yield* Effect.try({ try: () => readdirSync(dir), catch: (error) => error }).pipe(
+			Effect.orElseSucceed((): Array<string> => []),
+		)
+		const stale = names.flatMap((name) => {
+			const pid = DISCOVERY_FILE.exec(name)?.[1]
+			return pid !== undefined && !alive(Number(pid)) ? [join(dir, name)] : []
+		})
+		yield* Effect.forEach(stale, removeTree, { discard: true })
+		return stale
+	})
+
 /**
  * Create a fresh in-memory store, deleted when the scope closes. Acquire it
- * before chDB opens so the release runs after chDB has closed.
+ * before chDB opens so the release runs after chDB has closed. First removes
+ * what killed runs left: stores, and discovery files in `discoveryDir`.
  */
-export const acquireInMemoryStore = Effect.acquireRelease(
-	Effect.gen(function* () {
-		const parent = yield* inMemoryStoreParent()
-		// Both candidates: a killed run may have used the other one (tmpfs filled up).
-		yield* Effect.forEach(sweepParents(), sweepAbandonedStores, { discard: true })
-		const root = yield* Effect.try({
-			try: () => mkdtempSync(join(parent.dir, IN_MEMORY_STORE_PREFIX)),
-			catch: (error) =>
-				new ServerStateFileError({
-					path: parent.dir,
-					message: `could not create an in-memory store under ${parent.dir}: ${error instanceof Error ? error.message : String(error)}`,
-				}),
-		})
-		return { root, dataDir: join(root, "data"), tmpfs: parent.tmpfs } satisfies InMemoryStore
-	}),
-	(store) => removeTree(store.root),
-)
+export const acquireInMemoryStore = (discoveryDir: string) =>
+	Effect.acquireRelease(
+		Effect.gen(function* () {
+			const parent = yield* inMemoryStoreParent()
+			// Both candidates: a killed run may have used the other one (tmpfs filled up).
+			yield* Effect.forEach(sweepParents(), sweepAbandonedStores, { discard: true })
+			yield* sweepStaleDiscoveryFiles(discoveryDir)
+			const root = yield* Effect.try({
+				try: () => mkdtempSync(join(parent.dir, IN_MEMORY_STORE_PREFIX)),
+				catch: (error) =>
+					new ServerStateFileError({
+						path: parent.dir,
+						message: `could not create an in-memory store under ${parent.dir}: ${error instanceof Error ? error.message : String(error)}`,
+					}),
+			})
+			return { root, dataDir: join(root, "data"), tmpfs: parent.tmpfs } satisfies InMemoryStore
+		}),
+		(store) => removeTree(store.root),
+	)
 
 /** Flags that only make sense for a store that outlives the process. */
 export const inMemoryConflicts = (flags: {

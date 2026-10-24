@@ -15,7 +15,7 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs"
-import { dirname, join, resolve } from "node:path"
+import { dirname, resolve } from "node:path"
 import { ServerBindError, startServer } from "../server/serve"
 import { ACCESS_TOKEN_ENV, INGEST_KEY_ENV, type RemoteAuth, remoteAuthFromEnv } from "../server/remote-auth"
 import { CURRENT_LOCAL_SCHEMA } from "../server/schema-identity"
@@ -50,7 +50,12 @@ import {
 } from "../server/checkpoints"
 import { resolveUiAssets } from "../server/ui-assets"
 import { clearStartFailures, guardStartFailures } from "./start-failures"
-import { acquireInMemoryStore, type InMemoryStore, inMemoryConflicts } from "./in-memory-store"
+import {
+	acquireInMemoryStore,
+	type InMemoryStore,
+	inMemoryConflicts,
+	inMemoryDiscoveryPath,
+} from "./in-memory-store"
 import { debugLog } from "../lib/debug"
 import { MAPLE_VERSION } from "../version"
 import { jsonFormatRequested, writeJson } from "./json-output"
@@ -608,16 +613,21 @@ const resetFlag = Flag.Boolean("reset").pipe(
 /** Default refresh cadence. A crash costs at most this much telemetry. */
 const CHECKPOINT_INTERVAL_DEFAULT = "30m"
 
-const checkpointIntervalFlag = Flag.String("checkpoint-interval").pipe(
-	Flag.withDescription(
-		"How often to refresh the store's restore point while running (e.g. 45s, 30m, 2h; `off` to disable)",
+// Optional, not defaulted: `--in-memory` refuses both even when given their default.
+const checkpointIntervalFlag = Flag.optional(
+	Flag.String("checkpoint-interval").pipe(
+		Flag.withDescription(
+			`How often to refresh the store's restore point while running (e.g. 45s, 30m, 2h; \`off\` to disable; default ${CHECKPOINT_INTERVAL_DEFAULT})`,
+		),
 	),
-	Flag.withDefault(CHECKPOINT_INTERVAL_DEFAULT),
 )
 
-const onDirtyStoreFlag = Flag.Literals("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
-	Flag.withDescription("Recovery policy when the local chDB store was not cleanly closed"),
-	Flag.withDefault("fail" as const),
+const onDirtyStoreFlag = Flag.optional(
+	Flag.Literals("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
+		Flag.withDescription(
+			"Recovery policy when the local chDB store was not cleanly closed (default: fail)",
+		),
+	),
 )
 
 const yesFlag = Flag.Boolean("yes").pipe(
@@ -1213,8 +1223,8 @@ export const start = Command.make("start", {
 						dataDir: Option.isSome(a.dataDir),
 						reset: a.reset,
 						minimumRawTelemetryRetentionDays: Option.isSome(a.minimumRawTelemetryRetentionDays),
-						checkpointIntervalSet: a.checkpointInterval !== CHECKPOINT_INTERVAL_DEFAULT,
-						onDirtyStoreSet: a.onDirtyStore !== "fail",
+						checkpointIntervalSet: Option.isSome(a.checkpointInterval),
+						onDirtyStoreSet: Option.isSome(a.onDirtyStore),
 					})
 				: []
 			if (conflicts.length > 0) {
@@ -1225,14 +1235,13 @@ export const start = Command.make("start", {
 			}
 			// Acquired on the handler's scope, outside the server's: the store is
 			// deleted only after chDB has closed.
-			const inMemory = a.inMemory ? yield* acquireInMemoryStore : undefined
+			const mapleDir = dirname(defaultDataDir())
+			const inMemory = a.inMemory ? yield* acquireInMemoryStore(mapleDir) : undefined
 			const dataDir = inMemory?.dataDir ?? resolve(Option.getOrUndefined(a.dataDir) ?? defaultDataDir())
-			// An in-memory store's own sidecars vanish with it, so its discovery
-			// file goes where query commands look (`~/.maple/*.maple-server.json`).
 			const discoveryPath =
 				inMemory === undefined
 					? serverDiscoveryPath(dataDir)
-					: join(dirname(defaultDataDir()), `in-memory-${process.pid}.maple-server.json`)
+					: inMemoryDiscoveryPath(mapleDir, process.pid)
 			const bindHost = yield* validatedHost("--host / MAPLE_LOCAL_BIND_HOST", a.host)
 			const auth = yield* Effect.fromResult(remoteAuthFromEnv(process.env)).pipe(
 				Effect.mapError(
@@ -1242,12 +1251,17 @@ export const start = Command.make("start", {
 			// Rejected up front, before anything is opened: a typo that quietly fell
 			// back to the default (or worse, to off) would reintroduce the data loss
 			// the refresh loop exists to prevent.
-			const checkpointInterval = parseCheckpointInterval(a.checkpointInterval)
+			const checkpointIntervalArg = Option.getOrElse(
+				a.checkpointInterval,
+				() => CHECKPOINT_INTERVAL_DEFAULT,
+			)
+			const onDirtyStore = Option.getOrElse(a.onDirtyStore, (): DirtyStorePolicy => "fail")
+			const checkpointInterval = parseCheckpointInterval(checkpointIntervalArg)
 			if (checkpointInterval === "invalid") {
 				return yield* new ServerOptionError({
 					source: "--checkpoint-interval",
 					message:
-						`invalid --checkpoint-interval: ${a.checkpointInterval}; ` +
+						`invalid --checkpoint-interval: ${checkpointIntervalArg}; ` +
 						"expected a duration like 45s, 30m or 2h, or `off`",
 				})
 			}
@@ -1403,7 +1417,7 @@ export const start = Command.make("start", {
 					// which we cannot catch. (`--reset` already wiped above, so the marker is gone.)
 					if (isStoreDirty(dataDir)) {
 						const availability = yield* Effect.promise(() => checkpointAvailability(dataDir))
-						if (a.onDirtyStore === "fail") {
+						if (onDirtyStore === "fail") {
 							return yield* new LocalStoreDirtyError({
 								dataDir,
 								policy: "fail",
@@ -1413,7 +1427,7 @@ export const start = Command.make("start", {
 									dirtyStoreRecoveryAdvice(availability, scope),
 							})
 						}
-						if (a.onDirtyStore === "restore-checkpoint") {
+						if (onDirtyStore === "restore-checkpoint") {
 							if (!availability.available) {
 								return yield* new LocalStoreDirtyError({
 									dataDir,
@@ -1487,9 +1501,9 @@ export const start = Command.make("start", {
 							offline: a.offline,
 							hostedUiUrl,
 							chdbConfigFile,
-							onDirtyStore: a.onDirtyStore,
+							onDirtyStore,
 							minimumRawTelemetryRetentionDays: requestedRetentionDays,
-							checkpointInterval: a.checkpointInterval,
+							checkpointInterval: checkpointIntervalArg,
 							scope,
 							authLine: authSummary(auth, bindHost),
 						})
