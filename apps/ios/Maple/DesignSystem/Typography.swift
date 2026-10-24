@@ -33,6 +33,8 @@ enum Typo {
 	/// Body / row titles — `text-sm`.
 	static let body = Font.custom(Face.mono, size: 14)
 	static let bodyMedium = Font.custom(Face.monoMedium, size: 14)
+	/// The Explore query text, between body and small.
+	static let query = Font.custom(Face.mono, size: 13)
 	/// `text-xs` secondary metadata.
 	static let small = Font.custom(Face.mono, size: 12)
 	static let smallMedium = Font.custom(Face.monoMedium, size: 12)
