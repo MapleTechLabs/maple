@@ -1,15 +1,15 @@
 import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
+import {
+	derivePlanetScaleSetup,
+	metricsAuthOf,
+	metricsLastError,
+} from "../../components/integrations/planetscale-setup-steps"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
-import * as CopyButton from "../../ui/copy-button"
 import { badge } from "../../ui/display"
-import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
 import { item, itemActions, itemContent, itemMedia } from "../../ui/item"
-import { keyValue, keyValueList } from "../../ui/key-value"
 import { panel } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
 import {
@@ -24,10 +24,10 @@ import { catalogEntry } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disconnectDialog } from "./view-disconnect"
-import { metricsHealth, metricsTokenForm, QUIET_LINK, setupChecklist } from "./view-planetscale-parts"
+import { metricsHealth, setupChecklist } from "./view-planetscale-parts"
 import { orgPicker, pickerDialog } from "./view-planetscale-picker"
 
-// `PlanetScaleIntegrationCard`, `FirstMetricsDetail` and `PlanetScaleWebhookSetup`.
+// `PlanetScaleIntegrationCard`, `FirstMetricsDetail` and `PlanetScaleWebhooks`.
 
 type H = HtmlBuilder<Message>
 
@@ -62,7 +62,7 @@ const notConnected = (h: H, model: Model): Html =>
 			{
 				label: "Branch health",
 				title: "CPU, memory, replication",
-				description: "Connections and replication lag per branch, scraped on a schedule.",
+				description: "Connections and replication lag per branch, collected every 5 minutes.",
 			},
 		]),
 		integrationEmptyCard(h, [
@@ -72,50 +72,26 @@ const notConnected = (h: H, model: Model): Html =>
 		]),
 	])
 
-const rotateButton = (h: H, className: string): Html =>
-	button(
-		h,
-		{
-			variant: className === "" ? "outline" : "link",
-			size: className === "" ? "sm" : "xs",
-			className: className === "" ? undefined : className,
-			attributes: [h.OnClick(Message.ClickedRotateToken())],
-		},
-		["Rotate token"],
-	)
-
-/** `FirstMetricsDetail`: an error, the first three minutes, or the permission hint. */
-const firstMetricsDetail = (h: H, model: Model, scrapeError: string | null): Html => {
-	if (scrapeError !== null)
-		return h.div(
-			[h.Class("space-y-2")],
-			[
-				h.p(
-					[h.Class("break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-muted-foreground")],
-					[scrapeError],
-				),
-				rotateButton(h, ""),
-			],
+/** `FirstMetricsDetail`: the collection error, or a reassurance while Maple waits. */
+const firstMetricsDetail = (h: H, model: Model, status: V2PlanetScaleIntegration): Html => {
+	const error = metricsLastError(status)
+	if (error !== null)
+		return h.p(
+			[h.Class("break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-muted-foreground")],
+			[error],
 		)
-	const watchedForMs = model.nowMs - (model.planetscaleCard.watchStartedAt ?? model.nowMs)
-	if (watchedForMs < 3 * 60 * 1000)
+	if (metricsAuthOf(status) === "api")
 		return h.p(
 			[h.Class("text-xs text-muted-foreground")],
-			["Usually under a minute — this updates on its own."],
+			["The first poll usually lands within 10 minutes. This updates on its own."],
 		)
-	return h.div(
-		[h.Class("space-y-2")],
+	const watchedForMs = model.nowMs - (model.planetscaleCard.watchStartedAt ?? model.nowMs)
+	return h.p(
+		[h.Class("text-xs text-muted-foreground")],
 		[
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				[
-					"Still nothing after a few minutes. The most common cause is a token without the",
-					" ",
-					inlineCode(h, {}, ["read_metrics_endpoints"]),
-					" permission — PlanetScale accepts the token and then serves no metrics.",
-				],
-			),
-			rotateButton(h, ""),
+			watchedForMs < 3 * 60 * 1000
+				? "Usually under a minute. This updates on its own."
+				: "Still nothing after a few minutes. Check that the service token still exists in PlanetScale.",
 		],
 	)
 }
@@ -142,119 +118,71 @@ const header = (
 		...actions,
 	])
 
-const webhookSetup = (h: H, model: Model): Html => {
-	const card = model.planetscaleCard
-	return panel(h, {}, [
+type Webhooks = NonNullable<V2PlanetScaleIntegration["webhooks"]>
+
+const WEBHOOK_EVENTS_LINE =
+	"Out-of-memory restarts, storage thresholds, anomalies, and deploy requests arrive as they happen."
+
+const webhookLine = (webhooks: Webhooks): string => {
+	switch (webhooks.state) {
+		case "active":
+			return `Registered on ${webhooks.databases === 1 ? "your database" : `all ${webhooks.databases} databases`}. ${WEBHOOK_EVENTS_LINE}`
+		case "pending":
+			return webhooks.databases === 0
+				? "Maple registers a webhook on each database once the inventory loads."
+				: `Registering on your databases: ${webhooks.registered_databases} of ${webhooks.databases} so far.`
+		case "failing":
+			return `Registered on ${webhooks.registered_databases} of ${webhooks.databases} databases. The last attempt failed:`
+		case "needs_reauthorization":
+			return "This authorization predates webhooks. Reauthorize so Maple can register them on your databases."
+	}
+}
+
+/** `PlanetScaleWebhooks`: Maple registers them itself, so this only reports. */
+const webhookStatus = (h: H, model: Model, webhooks: Webhooks): Html =>
+	panel(h, {}, [
 		item(h, { className: "items-start gap-3 rounded-none p-4" }, [
 			itemContent(
 				h,
 				[
-					h.h3([h.Class("text-sm font-semibold")], ["Webhooks"]),
-					h.p(
-						[h.Class("mt-1 text-xs text-muted-foreground")],
+					h.div(
+						[h.Class("flex items-center gap-2")],
 						[
-							"Register this endpoint in each database's webhook settings on PlanetScale — OOM restarts, storage thresholds, and anomalies then open triage issues in Maple.",
+							h.h3([h.Class("text-sm font-semibold")], ["Webhooks"]),
+							webhooks.state === "active"
+								? badge(h, { variant: "ok" }, ["Active"])
+								: webhooks.state === "pending"
+									? badge(h, { variant: "secondary" }, ["Registering"])
+									: badge(h, { variant: "warn" }, ["Needs attention"]),
 						],
 					),
+					h.p([h.Class("mt-1 text-xs text-muted-foreground")], [webhookLine(webhooks)]),
+					...(webhooks.state === "failing" && webhooks.last_error !== null
+						? [
+								h.p(
+									[
+										h.Class(
+											"mt-2 break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-muted-foreground",
+										),
+									],
+									[webhooks.last_error],
+								),
+							]
+						: []),
 				],
 				"gap-0",
 			),
-			...(card.isWebhookRevealed
-				? []
-				: [
-						itemActions(h, [
-							button(
-								h,
-								{
-									size: "sm",
-									variant: "outline",
-									attributes: [h.OnClick(Message.ClickedShowWebhookSetup())],
-								},
-								["Show setup"],
-							),
-						]),
-					]),
+			...(webhooks.state === "needs_reauthorization"
+				? [itemActions(h, [connectButton(h, model, "Reauthorize", false)])]
+				: []),
 		]),
-		...(card.isWebhookRevealed ? [webhookConfig(h, model)] : []),
 	])
-}
-
-const webhookConfig = (h: H, model: Model): Html => {
-	const data = model.planetscaleCard.webhookConfig.data
-	if (AsyncData.isIdle(data) || AsyncData.isLoading(data)) return skeleton(h, "mx-4 mb-4 h-16")
-	if (AsyncData.isFailure(data) || AsyncData.isStale(data))
-		return h.p(
-			[h.Class("px-4 pb-4 text-xs text-muted-foreground")],
-			["Couldn't load the webhook configuration — only org admins can view it."],
-		)
-	const config = data.data
-	if (
-		!config.configured ||
-		config.url === null ||
-		config.url === "" ||
-		config.secret === null ||
-		config.secret === ""
-	)
-		return h.p(
-			[h.Class("px-4 pb-4 text-xs text-muted-foreground")],
-			["No webhook secret on this connection yet — reconnect to mint one."],
-		)
-	return h.div(
-		[h.Class("space-y-3 border-t border-border/60 p-4")],
-		[
-			keyValueList(h, { layout: "stacked" }, [
-				keyValue(
-					h,
-					{
-						label: "Webhook URL",
-						labelContent: eyebrow(h, {}, ["Webhook URL"]),
-						mono: true,
-						wrap: true,
-						copy: {
-							status: model.planetscaleCard.urlCopy.status,
-							onCopy: Message.GotWebhookCopyMessage({
-								field: "url",
-								message: CopyButton.Message.ClickedCopy({ text: config.url }),
-							}),
-						},
-					},
-					[config.url],
-				),
-				keyValue(
-					h,
-					{
-						label: "Secret",
-						labelContent: eyebrow(h, {}, ["Secret"]),
-						mono: true,
-						wrap: true,
-						copy: {
-							status: model.planetscaleCard.secretCopy.status,
-							onCopy: Message.GotWebhookCopyMessage({
-								field: "secret",
-								message: CopyButton.Message.ClickedCopy({ text: config.secret }),
-							}),
-						},
-					},
-					[config.secret],
-				),
-			]),
-			h.p(
-				[h.Class("text-2xs text-muted-foreground")],
-				[
-					"PlanetScale signs each delivery with this secret (",
-					inlineCode(h, {}, ["X-PlanetScale-Signature"]),
-					"); Maple rejects anything that doesn't verify.",
-				],
-			),
-		],
-	)
-}
 
 const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, timeZone: string): Html => {
-	const card = model.planetscaleCard
 	const setup = derivePlanetScaleSetup(status, model.nowMs)
 	const busy = model.connect.isStarting || model.disconnect.isPending
 	const organization = h.span([h.Class("font-medium text-foreground")], [status.organization ?? ""])
+	const webhooks = status.webhooks ?? null
 	return h.div(
 		[h.Class("flex flex-col gap-4")],
 		[
@@ -324,57 +252,14 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 														"Reauthorize with read_databases",
 														false,
 													)
-												: id === "metrics-token"
-													? metricsTokenForm(
-															h,
-															model,
-															status.organization,
-															ENTRY.docsUrl,
-															"initial",
-															false,
-														)
-													: firstMetricsDetail(
-															h,
-															model,
-															status.scrape_target?.last_scrape_error ?? null,
-														),
+												: firstMetricsDetail(h, model, status),
 									),
 								],
 							),
 						]),
-				...(status.scrape_target !== null && setup.complete
-					? [
-							metricsHealth(
-								h,
-								model,
-								status.scrape_target,
-								status.metrics_auth,
-								timeZone,
-								status.metrics_auth === "service_token" && !card.isRotating
-									? rotateButton(h, `h-auto p-0 font-normal ${QUIET_LINK}`)
-									: null,
-							),
-						]
-					: []),
-				...(card.isRotating
-					? [
-							h.div(
-								[h.Class("border-t border-border/60 p-4")],
-								[
-									metricsTokenForm(
-										h,
-										model,
-										status.organization,
-										ENTRY.docsUrl,
-										"rotate",
-										true,
-									),
-								],
-							),
-						]
-					: []),
+				...(setup.complete ? [metricsHealth(h, model, status, timeZone)] : []),
 			]),
-			webhookSetup(h, model),
+			...(webhooks === null ? [] : [webhookStatus(h, model, webhooks)]),
 			pickerDialog(h, model),
 		],
 	)

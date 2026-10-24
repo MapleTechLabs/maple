@@ -79,6 +79,13 @@ export const PlanetscaleDatabases = PG.table("planetscale_databases", {
 		branchesJson: PG.column(PG.nullable(PG.jsonb(Schema.Array(PlanetScaleBranchInfo))), {
 			name: "branches_json",
 		}),
+		/** The webhook Maple registered on this database, and PlanetScale's signing secret for it. */
+		webhookId: PG.column(PG.nullable(PG.text), { name: "webhook_id" }),
+		webhookSecretCiphertext: PG.column(PG.nullable(PG.text), { name: "webhook_secret_ciphertext" }),
+		webhookSecretIv: PG.column(PG.nullable(PG.text), { name: "webhook_secret_iv" }),
+		webhookSecretTag: PG.column(PG.nullable(PG.text), { name: "webhook_secret_tag" }),
+		/** Why the last registration attempt for this database failed; null once registered. */
+		webhookError: PG.column(PG.nullable(PG.text), { name: "webhook_error" }),
 		deletedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "deleted_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),

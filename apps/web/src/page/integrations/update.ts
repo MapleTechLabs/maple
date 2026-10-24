@@ -4,7 +4,6 @@ import * as Keyed from "../../data/keyed"
 import { requestKey } from "../../data/request-key"
 import { AppRoute, hrefOf } from "../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
-import * as CopyButton from "../../ui/copy-button"
 import * as Dialog from "../../ui/dialog"
 import { chatConnectorOf, integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
@@ -380,10 +379,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),
 			}),
-		CompletedFetchWebhookConfig: ({ key, result }) =>
-			Planetscale.updateCard(model, {
-				webhookConfig: Keyed.accept(model.planetscaleCard.webhookConfig, key, result),
-			}),
 		ClickedChangeOrganization: () => Planetscale.clickedChange(model, context),
 		GotPickerDialogMessage: ({ message: child }) => Planetscale.gotPickerDialog(model, child),
 		SelectedOrganization: ({ name }) => Planetscale.updateCard(model, { selectedOrg: name }),
@@ -395,31 +390,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		SubmittedOrganization: () => Planetscale.submittedOrganization(model),
 		CompletedSelectOrganization: ({ organization, failure }) =>
 			Planetscale.completedSelect(model, context, organization, failure),
-		ClickedRotateToken: () => Planetscale.updateCard(model, { isRotating: true }),
-		ClickedRotateCancel: () => Planetscale.updateCard(model, { isRotating: false }),
-		GotMetricsTokenMessage: ({ field, message: child }) => Planetscale.gotTokenField(model, field, child),
-		PastedMetricsToken: ({ field, text }) => Planetscale.pastedToken(model, field, text),
-		SubmittedMetricsToken: () => Planetscale.submittedToken(model),
-		CompletedSetMetricsToken: ({ error }) => Planetscale.completedToken(model, context, error),
 		ClickedMetricsDetails: () =>
 			Planetscale.updateCard(model, { isDetailsOpen: !model.planetscaleCard.isDetailsOpen }),
-		ClickedShowWebhookSetup: () => Planetscale.clickedShowWebhook(model, context),
-		GotWebhookCopyMessage: ({ field, message: child }) => {
-			const card = model.planetscaleCard
-			const step = CopyButton.update(field === "url" ? card.urlCopy : card.secretCopy, child)
-			return {
-				model: {
-					...model,
-					planetscaleCard:
-						field === "url"
-							? { ...card, urlCopy: step.model }
-							: { ...card, secretCopy: step.model },
-				},
-				commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
-					Message.GotWebhookCopyMessage({ field, message: inner }),
-				),
-			}
-		},
 		TickedPlanetscaleWatch: () => {
 			const refreshed = requestStatus(model, context, "planetscale", "Refresh")
 			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
