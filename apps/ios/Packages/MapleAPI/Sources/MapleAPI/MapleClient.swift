@@ -208,6 +208,15 @@ public protocol MapleAPI: Sendable {
 	func widgetSummary() async throws -> WidgetSummaryPayload
 	func mintWidgetCredential(installationId: String) async throws -> WidgetCredential
 	func revokeWidgetCredential(installationId: String) async throws
+
+	// Device-bound widget credentials: see MapleClient+DeviceCredentials.swift
+	func deviceAttestationChallenge(installationId: String) async throws -> String
+	func registerDeviceCredential(
+		installationId: String,
+		key: DeviceKey,
+		attestation: DeviceAttestationPayload?
+	) async throws -> DeviceCredential
+	func revokeDeviceCredential(installationId: String) async throws
 }
 
 extension MapleAPI {
