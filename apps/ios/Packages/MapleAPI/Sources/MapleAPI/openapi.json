@@ -7872,7 +7872,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -12394,7 +12394,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
