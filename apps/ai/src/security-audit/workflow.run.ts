@@ -8,12 +8,20 @@
  */
 import { OrgId } from "@maple/domain/http"
 import type { SandboxError } from "@maple/backend/sandbox/contract"
-import { ORG_BUDGET_EXHAUSTED, type SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
+import {
+	ORG_BUDGET_EXHAUSTED,
+	ORG_SPEND_LIMIT_REACHED,
+	securityAuditSpendWindow,
+	type SecurityAuditWorkflowPayload,
+} from "@maple/domain/security-audit"
 import { durableStep } from "@maple/backend/platform/durable-step"
 import { trackSecurityAuditInvocations } from "@maple/backend/services/billing/autumn-tracker"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
-import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import {
+	type OrgReservation,
+	SecurityAuditStore,
+} from "@maple/backend/services/security-audit/SecurityAuditStore"
 import {
 	type AgentAnswer,
 	type AgentInvocation,
@@ -30,7 +38,18 @@ import {
 	runAudit,
 } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, type Context, Duration, Effect, Layer, Option, Predicate, Schedule, Schema } from "effect"
+import {
+	Cause,
+	Clock,
+	type Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Predicate,
+	Schedule,
+	Schema,
+} from "effect"
 import { HttpClient } from "effect/http"
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../platform/Llm"
 import { makeAuditAgents } from "./agents"
@@ -112,18 +131,20 @@ const messageOf = (error: unknown): string =>
 
 /**
  * Each invocation a durable step: a replay returns its recorded answer instead of running it again.
- * Before it, `admit` reserves the invocation from the org's monthly budget in its own durable step,
- * so a replay neither reserves nor bills it twice. The run's step context is captured once.
+ * Before it, `admit` checks the org's monthly spend and reserves the invocation from its plan in its
+ * own durable step, so a replay neither reserves nor bills it twice. After it, `charge` records what
+ * the agent cost, which is what the next `admit` counts. The run's step context is captured once.
  */
 const durableAgents = (
 	agents: AuditAgentsApi,
 	step: Context.Context<Cloudflare.WorkflowStep>,
-	admit: (agentId: string) => Effect.Effect<boolean, AuditStoreError>,
+	admit: (agentId: string) => Effect.Effect<OrgReservation, AuditStoreError>,
+	charge: (agentId: string, costUsd: number) => Effect.Effect<void, AuditStoreError>,
 ): AuditAgentsApi => ({
 	run: (invocation) => {
 		const refused = (message: string, reason: string) =>
 			new AuditBudgetExhaustedError({ message, agentId: invocation.agentId, reason })
-		const admitted: Effect.Effect<boolean, AuditBudgetExhaustedError> = durableStep(
+		const admitted: Effect.Effect<OrgReservation, AuditBudgetExhaustedError> = durableStep(
 			`org-budget:${invocation.agentId}`,
 			admit(invocation.agentId),
 			STEP_RETRY,
@@ -147,17 +168,47 @@ const durableAgents = (
 				),
 			),
 		)
+		const charged = (answer: AgentAnswer) =>
+			answer.usage?.costUsd === undefined
+				? Effect.void
+				: durableStep(
+						`agent-cost:${invocation.agentId}`,
+						charge(invocation.agentId, answer.usage.costUsd),
+						STEP_RETRY,
+					).pipe(
+						Effect.provide(step),
+						// An unrecorded cost undercounts the org's spend; it must not cost the answer.
+						Effect.catchCause((cause) =>
+							Effect.logWarning("Could not record a security audit agent's cost").pipe(
+								Effect.annotateLogs({
+									agentId: invocation.agentId,
+									cause: Cause.pretty(cause),
+								}),
+							),
+						),
+					)
 		return Effect.flatMap(
 			admitted,
-			(granted): Effect.Effect<AgentAnswer, AuditAgentError | AuditBudgetExhaustedError> =>
-				granted
-					? runAgentStep(agents, step, invocation)
-					: Effect.fail(
+			(reservation): Effect.Effect<AgentAnswer, AuditAgentError | AuditBudgetExhaustedError> => {
+				switch (reservation) {
+					case "granted":
+						return runAgentStep(agents, step, invocation).pipe(Effect.tap(charged))
+					case "spend_limit_reached":
+						return Effect.fail(
+							refused(
+								"the organization's monthly spend limit is reached",
+								ORG_SPEND_LIMIT_REACHED,
+							),
+						)
+					case "invocations_spent":
+						return Effect.fail(
 							refused(
 								"the organization's monthly invocation budget is spent",
 								ORG_BUDGET_EXHAUSTED,
 							),
-						),
+						)
+				}
+			},
 		)
 	},
 })
@@ -315,6 +366,7 @@ export const auditWithAgents = <E, R>(
 		const changedSincePrior = changedMatcher(changed)
 
 		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned))
+		const limits = yield* securityAuditLimits
 		const httpClient = yield* HttpClient.HttpClient
 		/**
 		 * One invocation from the org's cycle, billed once it is granted. Known gap: the Autumn track
@@ -323,25 +375,36 @@ export const auditWithAgents = <E, R>(
 		 * billing-cycle boundary keeps reserving against its payload's period; the run budget bounds that.
 		 */
 		const admit = (agentId: string) =>
-			store
-				.reserveOrgInvocation(
+			Effect.gen(function* () {
+				// Read live, so a limit an admin raises or lowers applies to the agents still to come.
+				const settings = yield* store.getSettings()
+				const limitUsd = Option.match(settings, {
+					onNone: () => limits.defaultMonthlySpendLimitUsd,
+					onSome: (row) => row.monthlySpendLimitUsd,
+				})
+				const { since } = securityAuditSpendWindow(yield* Clock.currentTimeMillis)
+				return yield* store.reserveOrgInvocation(
 					payload.runId,
 					agentId,
 					payload.orgBudget.period,
 					payload.orgBudget.limit,
+					{ since, limitUsd },
 				)
-				.pipe(
-					Effect.tap((granted) =>
-						granted
-							? trackSecurityAuditInvocations({
-									orgId,
-									runId: payload.runId,
-									agentId,
-									invocations: 1,
-								}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
-							: Effect.void,
-					),
-				)
+			}).pipe(
+				Effect.tap((reservation) =>
+					reservation === "granted"
+						? trackSecurityAuditInvocations({
+								orgId,
+								runId: payload.runId,
+								agentId,
+								invocations: 1,
+							}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+						: Effect.void,
+				),
+			)
+
+		const charge = (agentId: string, costUsd: number) =>
+			store.recordAgentCost(payload.runId, agentId, costUsd)
 
 		const result = yield* runAudit({
 			runId: payload.runId,
@@ -367,7 +430,12 @@ export const auditWithAgents = <E, R>(
 				Layer.mergeAll(
 					Layer.succeed(
 						AuditAgents,
-						durableAgents(agents, yield* Effect.context<Cloudflare.WorkflowStep>(), admit),
+						durableAgents(
+							agents,
+							yield* Effect.context<Cloudflare.WorkflowStep>(),
+							admit,
+							charge,
+						),
 					),
 					Layer.succeed(AuditStore, retried(store)),
 				),
@@ -454,7 +522,7 @@ export const auditWithAgents = <E, R>(
 		),
 	)
 
-/** The deployed run: discovery and validation on their own models, priced by OpenRouter. */
+/** The deployed run: discovery and validation on the models it started with, priced by OpenRouter. */
 export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) =>
 	auditWithAgents(payload, (source) =>
 		Effect.gen(function* () {
@@ -465,8 +533,13 @@ export const runSecurityAuditWorkflow = (payload: SecurityAuditWorkflowPayload) 
 				sessionId: `audit-${payload.runId}`,
 			}
 			const models = {
-				discovery: resolveSecurityAuditModel(settings, "discovery", tags),
-				validation: resolveSecurityAuditModel(settings, "validation", tags),
+				discovery: resolveSecurityAuditModel(settings, "discovery", tags, payload.models.discovery),
+				validation: resolveSecurityAuditModel(
+					settings,
+					"validation",
+					tags,
+					payload.models.validation,
+				),
 			}
 			return yield* makeAuditAgents(models, source).pipe(
 				// The Workflow run is the entry point that owns these clients.

@@ -117,6 +117,8 @@ export const AuditResources = {
 	security_audit_finding: { verbs: ["triaged"] },
 	/** An admin stopping an in-progress security audit run; target and run id in `metadata`. */
 	security_audit_run: { verbs: ["cancelled"] },
+	/** An admin changing the org's audit spend limit or default models; the new values in `metadata`. */
+	security_audit_settings: { verbs: ["updated"] },
 	/**
 	 * Reads of recorded browser sessions, the surface most likely to carry
 	 * end-user data. Recorded by the auth layers from the `AuditedRead` annotation.
@@ -177,6 +179,7 @@ export const AuditResourceLabels = {
 	scrape_target: "Scrape target",
 	security_audit_finding: "Security audit finding",
 	security_audit_run: "Security audit run",
+	security_audit_settings: "Security audit settings",
 	source: "Source",
 	session_replay: "Session replay",
 	support_channel: "Support channel",
@@ -272,6 +275,7 @@ export const AuditActionLabels = {
 	"scrape_target.deleted": "Deleted scrape target",
 	"security_audit_finding.triaged": "Triaged security audit finding",
 	"security_audit_run.cancelled": "Cancelled security audit run",
+	"security_audit_settings.updated": "Updated security audit spend limit and models",
 	"session_replay.read": "Viewed session replay",
 	"support_channel.created": "Created support channel",
 	"support_channel.invite_sent": "Sent support channel invite",

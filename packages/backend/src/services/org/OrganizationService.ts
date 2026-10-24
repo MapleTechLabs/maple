@@ -74,6 +74,7 @@ import {
 	PrReviewEdits,
 	SecurityAuditEvents,
 	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
 	SecurityAuditOrgUsage,
 	SecurityAuditFindings,
 	SecurityAuditRunFindings,
@@ -195,6 +196,7 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// Security audit evidence about the org's source code: exploit traces must not outlive the org.
 	SecurityAuditEvents,
 	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
 	SecurityAuditOrgUsage,
 	SecurityAuditRunFindings,
 	SecurityAuditFindings,

@@ -6,7 +6,7 @@ import {
 } from "@maple/domain/http"
 import { SecurityAuditRunId } from "@maple/domain/security-audit"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { eventsOf, findingsOf, RUN_IDS, runDetailOf, targetsOf, unitsOf } from "../../../lab/security-fixture"
@@ -113,13 +113,14 @@ describe("security run", () => {
 		)
 	})
 
-	test("a quick run that ran out of budget marks hunting with gaps and skips verification", () => {
+	test("a quick run stopped by the org's spend limit marks hunting with gaps and skips verification", () => {
 		const phases = phasesOf(runDetailOf(NOW, RUN_IDS.billing), eventsOf(NOW, RUN_IDS.billing).events)
 		expect(phases.map((phase) => phase.state)).toEqual(["done", "warn", "done", "skipped", "done"])
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(RUN_IDS.billing)),
-			expectView(text("Stopped at its budget of 120 invocations")).toExist(),
+			expectView(text("Stopped at the org's monthly spend limit")).toExist(),
+			expectView(role("link", { name: "Raise the limit" })).toExist(),
 			expectView(text("Gaps")).toExist(),
 		)
 	})
@@ -136,12 +137,12 @@ describe("security run", () => {
 		)
 	})
 
-	test("a cancelled run reads as cancelled, not as a budget gap", () => {
+	test("a cancelled run reads as cancelled, not as a spend limit stop", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(RUN_IDS.billingCancelled)),
 			expectView(text("Cancelled")).toExist(),
-			expectView(text(/^Stopped at its budget/)).not.toExist(),
+			expectView(text(/^Stopped at the org's/)).not.toExist(),
 		)
 	})
 

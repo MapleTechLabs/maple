@@ -2,7 +2,7 @@ import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/securit
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readIsAdmin } from "../../alerts/shared/commands"
-import { getRun, githubStatus, listFindings, listRuns, listTargets, startRun } from "../kit/api"
+import { getRun, getSettings, githubStatus, listFindings, listRuns, listTargets, startRun } from "../kit/api"
 import { Message } from "./model"
 
 // Every read and write the three tabs send. Names start with `SecurityApi` so the lab can drop them.
@@ -67,6 +67,13 @@ export const FetchGithubStatus = Command.define("SecurityApiGithubStatus", {
 	messages: [Message.CompletedFetchGithubStatus],
 	execute: ({ key }) =>
 		Effect.map(githubStatus, (result) => Message.CompletedFetchGithubStatus({ key, result })),
+})
+
+export const FetchSettings = Command.define("SecurityApiGetSettings", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSettings],
+	execute: ({ key }) =>
+		Effect.map(getSettings, (result) => Message.CompletedFetchSettings({ key, result })),
 })
 
 export const StartRun = Command.define("SecurityApiStartRun", {

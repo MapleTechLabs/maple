@@ -4,6 +4,7 @@ import {
 	SecurityAuditRun,
 	SecurityAuditRunDetail,
 	SecurityAuditRunsResponse,
+	SecurityAuditSettings,
 	SecurityAuditTargetsResponse,
 } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
@@ -14,6 +15,7 @@ import { LoadFailure } from "../../../data/load-failure"
 import { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
 import * as Select from "../../../ui/select"
 import * as AddTarget from "../kit/add-target"
+import * as SpendSettings from "../kit/spend-settings"
 
 // `/security`, `/security/findings` and `/security/runs` as one page instance: the three tabs read
 // the same targets, runs and findings, so a tab change reuses what the last one read.
@@ -40,7 +42,10 @@ export const Model = Schema.Struct({
 	/** Each target's latest run with its coverage counts. */
 	latestRuns: Schema.Record(Schema.String, KeyedSchema(SecurityAuditRunDetail, LoadFailure)),
 	githubStatus: KeyedSchema(GithubIntegrationStatus, LoadFailure),
+	/** The org's monthly spend limit, this month's spend and its default models. */
+	settings: KeyedSchema(SecurityAuditSettings, LoadFailure),
 	addTarget: AddTarget.Model,
+	spendSettings: SpendSettings.Model,
 	startingTargetId: Schema.NullOr(SecurityAuditTargetId),
 	searchDraft: Schema.String,
 	/** Bumped per keystroke; only the last one's debounce commits the search to the URL. */
@@ -68,10 +73,13 @@ export const Message = defineMessageUnion({
 	CompletedFetchFindings: { targetId: SecurityAuditTargetId, ...result(SecurityAuditFindingsResponse) },
 	CompletedFetchLatestRun: { runId: SecurityAuditRunId, ...result(SecurityAuditRunDetail) },
 	CompletedFetchGithubStatus: result(GithubIntegrationStatus),
+	CompletedFetchSettings: result(SecurityAuditSettings),
 	TickedPoll: { nowMs: Schema.Finite },
 	ClickedRetry: {},
 	ClickedAddTarget: {},
 	GotAddTargetMessage: { message: AddTarget.Message },
+	ClickedSpendAndModels: {},
+	GotSpendSettingsMessage: { message: SpendSettings.Message },
 	ClickedStartRun: { targetId: SecurityAuditTargetId },
 	CompletedStartRun: {
 		targetId: SecurityAuditTargetId,

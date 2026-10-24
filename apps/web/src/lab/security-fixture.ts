@@ -4,6 +4,7 @@ import {
 	SecurityAuditFindingsResponse,
 	SecurityAuditRunDetail,
 	SecurityAuditRunsResponse,
+	SecurityAuditSettings,
 	SecurityAuditTargetsResponse,
 	SecurityAuditUnitsResponse,
 } from "@maple/domain/http"
@@ -45,7 +46,9 @@ const target = (
 	enabled: true,
 	profile,
 	scopePaths,
-	budgetPerRun: profile === "quick" ? 120 : 400,
+	// The quick billing audit hunts on its own model; the rest follow the org's.
+	discoveryModel: profile === "quick" ? "openai/gpt-6-luna" : null,
+	validationModel: null,
 	createdBy: "user_maya",
 	createdAt: now - 20 * DAY,
 	updatedAt: now - 20 * DAY,
@@ -75,7 +78,6 @@ type RunSeed = Readonly<{
 	profile: "deep" | "quick"
 	scopePaths?: ReadonlyArray<string>
 	sourceRef: string
-	budget: number
 	spent: number
 	input: number
 	output: number
@@ -94,11 +96,14 @@ const run = (seed: RunSeed) => ({
 	sourceRef: seed.sourceRef,
 	profile: seed.profile,
 	scopePaths: seed.scopePaths ?? [],
-	budget: seed.budget,
+	budget: null,
 	invocationsSpent: seed.spent,
 	inputTokens: seed.input,
 	outputTokens: seed.output,
 	costUsd: seed.cost,
+	discoveryModel:
+		seed.profile === "quick" ? "openai/gpt-6-luna" : "deepseek/deepseek-v4.1-flash-1017:nitro",
+	validationModel: "anthropic/claude-sonnet-5.5",
 	incompleteReason: seed.incompleteReason ?? null,
 	error: seed.error ?? null,
 	startedAt: seed.startedAt,
@@ -112,7 +117,6 @@ const runSeeds = (now: number): ReadonlyArray<RunSeed> => [
 		status: "in_progress",
 		profile: "deep",
 		sourceRef: "4e9a1c7f0d2b8e6a1c3f5d7b9e0a2c4f6b8d0e1a",
-		budget: 400,
 		spent: 186,
 		input: 9_020_000,
 		output: 391_000,
@@ -126,7 +130,6 @@ const runSeeds = (now: number): ReadonlyArray<RunSeed> => [
 		status: "complete",
 		profile: "deep",
 		sourceRef: "9f3c2a1b7e0d4c6a8b2e1f3d5c7a9b0e2d4f6a8c",
-		budget: 400,
 		spent: 352,
 		input: 9_420_000,
 		output: 380_000,
@@ -141,14 +144,13 @@ const runSeeds = (now: number): ReadonlyArray<RunSeed> => [
 		profile: "quick",
 		scopePaths: ["services/billing/src"],
 		sourceRef: "b71d3e0a5c2f4e6b8d0a1c3e5f7b9d1a3c5e7f9b",
-		budget: 120,
 		spent: 120,
 		input: 5_610_000,
 		output: 224_000,
 		cost: 61.02,
 		startedAt: now - DAY - 126 * MINUTE,
 		finishedAt: now - DAY,
-		incompleteReason: "budget of 120 invocations reached",
+		incompleteReason: "org_spend_limit_reached",
 	},
 	{
 		id: RUN_IDS.billingCancelled,
@@ -157,7 +159,6 @@ const runSeeds = (now: number): ReadonlyArray<RunSeed> => [
 		profile: "quick",
 		scopePaths: ["services/billing/src"],
 		sourceRef: "51be0c9f4a2c6e8b0d1f3a5c7e9b1d3f5a7c9e0b",
-		budget: 120,
 		spent: 31,
 		input: 1_200_000,
 		output: 52_000,
@@ -173,7 +174,6 @@ const runSeeds = (now: number): ReadonlyArray<RunSeed> => [
 		profile: "deep",
 		scopePaths: ["modules"],
 		sourceRef: "main",
-		budget: 400,
 		spent: 0,
 		input: 0,
 		output: 0,
@@ -183,6 +183,19 @@ const runSeeds = (now: number): ReadonlyArray<RunSeed> => [
 		error: "The audit could not start: the sandbox did not come up in time.",
 	},
 ]
+
+/** The org's settings: $1,184 of its $2,000 this month, on the default models. */
+export const settingsOf = (now: number) => {
+	const date = new Date(now)
+	return Schema.decodeSync(SecurityAuditSettings)({
+		monthlySpendLimitUsd: 2_000,
+		spentUsd: 1_184.32,
+		since: Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1),
+		resetsAt: Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1),
+		discoveryModel: "deepseek/deepseek-v4.1-flash-1017:nitro",
+		validationModel: "anthropic/claude-sonnet-5.5",
+	})
+}
 
 export const runsOf = (now: number) =>
 	Schema.decodeUnknownSync(SecurityAuditRunsResponse)({ runs: runSeeds(now).map(run) })
@@ -207,7 +220,7 @@ const UNIT_COUNTS = new Map<string, Readonly<Record<string, number>>>([
 ])
 
 const REPORTS = {
-	report: "# Security audit report\n\nacme/billing-service at b71d3e0, quick profile, scope services/billing/src.\n\n## Summary\n\n3 confirmed findings, 1 needs validation, 1 rejected.\n\n## Coverage\n\n38 of 54 units closed. 16 units are gaps: 12 deferred when the budget ran out, 3 blocked on missing context, 1 planned and never assigned.\n",
+	report: "# Security audit report\n\nacme/billing-service at b71d3e0, quick profile, scope services/billing/src.\n\n## Summary\n\n3 confirmed findings, 1 needs validation, 1 rejected.\n\n## Coverage\n\n38 of 54 units closed. 16 units are gaps: 12 deferred when the org reached its monthly spend limit, 3 blocked on missing context, 1 planned and never assigned.\n",
 	findingsDetail:
 		"# Findings detail\n\n## Webhook replay accepted after signature window\n\nThe handler verifies the signature but never checks the timestamp against a window.\n",
 	needsValidation:
@@ -311,7 +324,7 @@ const EVENTS: ReadonlyArray<EventSeed> = [
 		ago: 53,
 		kind: "Phase",
 		phase: "ledger-seeded",
-		detail: "137 units mapped · 6 invocations",
+		detail: "137 units mapped · 6 agents",
 		message: "Recon complete. architecture.md written, 137 units in the ledger.",
 	},
 	{
@@ -335,7 +348,7 @@ const RECON: ReadonlyArray<EventSeed> = [
 	phase(
 		53,
 		"ledger-seeded",
-		"137 units mapped · 6 invocations",
+		"137 units mapped · 6 agents",
 		"Recon complete. architecture.md written, 137 units in the ledger.",
 	),
 	phase(60, "reconnaissance", "No prior ledger exists.", "Reconnaissance started."),
@@ -347,7 +360,7 @@ const EVENTS_BY_RUN = new Map<string, ReadonlyArray<EventSeed>>([
 	[
 		RUN_IDS.gateway,
 		[
-			phase(1, "finished", "complete, 352 invocations", "Run finished complete."),
+			phase(1, "finished", "complete, 352 agents run", "Run finished complete."),
 			phase(9, "record-verification", "12 records", "Fresh verifiers re-checked 12 records."),
 			phase(30, "candidate-validation", "14 unique candidates", "Validation of 14 candidates."),
 			phase(44, "wave-1", "196 hunters over 196 units", "Wave 1 started with 196 units."),
@@ -357,7 +370,7 @@ const EVENTS_BY_RUN = new Map<string, ReadonlyArray<EventSeed>>([
 	[
 		RUN_IDS.billing,
 		[
-			phase(-1, "finished", "incomplete, 120 invocations", "Run finished incomplete."),
+			phase(-1, "finished", "incomplete, 120 agents run", "Run finished incomplete."),
 			phase(-0.5, "candidate-validation", "5 candidates checked", "Validation of 5 candidates."),
 			...EVENTS,
 		],
@@ -501,7 +514,7 @@ export const unitsOf = () =>
 				"race condition on double submit",
 				"POST /refunds",
 				"payment provider",
-				{ unresolved: ["Not reached before the budget ran out"] },
+				{ unresolved: ["Not reached before the spend limit"] },
 			),
 			unit(
 				"u-invoice-pdf",
@@ -511,7 +524,7 @@ export const unitsOf = () =>
 				"path traversal",
 				"GET /invoices/:id/pdf",
 				"file storage",
-				{ unresolved: ["Not reached before the budget ran out"] },
+				{ unresolved: ["Not reached before the spend limit"] },
 			),
 			unit("u-legacy-7f2a91", "planned", 0, null, null, null, null, { stale: true }),
 			unit(

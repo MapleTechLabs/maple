@@ -25,6 +25,9 @@ import {
 	resolveDecisionModel,
 	resolveReviewModel,
 	resolveSecurityAuditModel,
+	securityAuditModelId,
+	securityAuditModelIds,
+	DEFAULT_AUDIT_MODELS,
 	resolveTriageModel,
 	type LlmCallTags,
 	type LlmSettings,
@@ -223,6 +226,39 @@ describe("resolveSecurityAuditModel", () => {
 			"validation",
 		).name
 		expect([defaults[0] !== defaults[1], overridden]).toEqual([true, "openai/gpt-6-luna"])
+	})
+
+	it("runs on the org's pick over the deployment's override", () => {
+		const env = { ...openRouterEnv, MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: "openai/gpt-6-luna" }
+		expect(
+			resolveSecurityAuditModel(env, "discovery", undefined, "anthropic/claude-haiku-5.5").name,
+		).toBe("anthropic/claude-haiku-5.5")
+	})
+
+	it("ignores a pick the region does not serve, or that cannot verify", () => {
+		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		expect([
+			securityAuditModelId(eu, "discovery", "deepseek/deepseek-v4.1-flash-1017:nitro"),
+			securityAuditModelId(openRouterEnv, "validation", "openai/gpt-6.1-sol"),
+			securityAuditModelId(openRouterEnv, "discovery", "not/a-listed-model"),
+		]).toEqual([
+			DEFAULT_AUDIT_MODELS.eu.discovery,
+			DEFAULT_AUDIT_MODELS.us.validation,
+			DEFAULT_AUDIT_MODELS.us.discovery,
+		])
+	})
+})
+
+describe("securityAuditModelIds", () => {
+	it("never verifies on the hunting model, even when the region's fallback lands both picks on one", () => {
+		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+		// DeepSeek has no EU provider, so the hunter falls back to Haiku, which this org verifies with.
+		expect(
+			securityAuditModelIds(eu, {
+				discovery: "deepseek/deepseek-v4.1-flash-1017:nitro",
+				validation: "anthropic/claude-haiku-5.5",
+			}),
+		).toEqual({ discovery: DEFAULT_AUDIT_MODELS.eu.validation, validation: "anthropic/claude-haiku-5.5" })
 	})
 })
 

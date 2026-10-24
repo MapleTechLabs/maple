@@ -1,4 +1,4 @@
-import { type GithubRepoSummary, SECURITY_AUDIT_MAX_BUDGET } from "@maple/domain/http"
+import type { GithubRepoSummary } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
@@ -22,6 +22,8 @@ import {
 	type Model,
 	MAX_SCOPE_PATHS,
 } from "./add-target"
+import { formatUsd } from "./format"
+import { modelPicker } from "./model-picker"
 
 // The Add audit target form inside the shared FormDialog.
 
@@ -41,7 +43,7 @@ const PROFILES = [
 		value: "deep",
 		label: "Deep",
 		hint: "Recommended",
-		description: "Waves repeat until two critics find no missed units. Hours, hundreds of invocations.",
+		description: "Waves repeat until two critics find no missed units. Takes hours.",
 	},
 	{
 		value: "quick",
@@ -286,35 +288,58 @@ const scopeField = (h: H, model: Model, error?: string): Html =>
 			),
 	)
 
-const budgetField = (h: H, model: Model, error?: string): Html =>
-	fieldShell(
-		h,
-		{
-			name: "budget",
-			label: "Budget per run",
-			description: `Up to ${SECURITY_AUDIT_MAX_BUDGET.toLocaleString("en-US")}. A run that reaches its budget ends incomplete and lists what it did not cover.`,
-			error,
-			isFilled: model.budget.value !== "",
-		},
-		(ids) =>
-			inputGroup(h, { className: "max-w-48" }, [
-				inputGroupInput(h, {
-					id: ids.control,
-					type: "number",
-					attributes: [
-						h.AriaLabelledBy(ids.label),
-						...(error === undefined ? [] : [h.AriaInvalid(true), h.AriaDescribedBy(ids.error)]),
-						h.Attribute("inputmode", "numeric"),
-						h.Attribute("min", "1"),
-						h.Attribute("max", String(SECURITY_AUDIT_MAX_BUDGET)),
-						...Field.controlAttributes(h, model.budget, (message) =>
-							Message.GotBudgetMessage({ message }),
+/** The models the target runs on, the org's unless changed here, and what the org has left. */
+const modelsField = (h: H, model: Model, error?: string): Html => {
+	const settings = model.orgSettings
+	const isOrgDefault =
+		settings !== null &&
+		model.discovery.value === settings.discoveryModel &&
+		model.validation.value === settings.validationModel
+	return h.div(
+		[h.Class("flex flex-col gap-2")],
+		[
+			h.div(
+				[h.Class("flex items-baseline justify-between gap-3")],
+				[
+					h.span([h.Class("text-sm font-medium")], ["Models"]),
+					...(isOrgDefault
+						? [h.span([h.Class("text-xs text-muted-foreground")], ["Using the org's defaults"])]
+						: []),
+				],
+			),
+			h.div(
+				[h.Class("grid grid-cols-2 gap-2")],
+				[
+					modelPicker(h, {
+						stage: "discovery",
+						model: model.discovery,
+						idPrefix: DIALOG_ID,
+						wrap: (message) => Message.GotDiscoveryMessage({ message }),
+					}),
+					modelPicker(h, {
+						stage: "validation",
+						model: model.validation,
+						idPrefix: DIALOG_ID,
+						wrap: (message) => Message.GotValidationMessage({ message }),
+					}),
+				],
+			),
+			...(error === undefined
+				? []
+				: [h.p([h.Role("alert"), h.Class("text-xs text-destructive")], [error])]),
+			...(settings === null
+				? []
+				: [
+						h.p(
+							[h.Class("text-xs text-muted-foreground")],
+							[
+								`${formatUsd(Math.max(0, settings.monthlySpendLimitUsd - settings.spentUsd))} left of the org's ${formatUsd(settings.monthlySpendLimitUsd)} monthly limit. A run that reaches it stops and lists what it did not cover.`,
+							],
 						),
-					],
-				}),
-				inputGroupAddon(h, { align: "inline-end" }, ["invocations"]),
-			]),
+					]),
+		],
 	)
+}
 
 const startNowToggle = (h: H, model: Model): Html => {
 	const inputId = `${DIALOG_ID}-start-now`
@@ -397,10 +422,10 @@ const addTargetDialog = (
 						model,
 						errors.scope ?? (server?.field === "scope" ? server.message : undefined),
 					),
-					budgetField(
+					modelsField(
 						h,
 						model,
-						errors.budget ?? (server?.field === "budget" ? server.message : undefined),
+						errors.models ?? (server?.field === "models" ? server.message : undefined),
 					),
 				]
 			: [notConnected(h)],

@@ -1,25 +1,24 @@
 import { NARROW_TWO_COLUMNS } from "../kit/layout"
-import {
-	type SecurityAuditRunDetail,
-	type SecurityAuditTarget,
-	SECURITY_AUDIT_MAX_BUDGET,
-} from "@maple/domain/http"
+import type { SecurityAuditRunDetail, SecurityAuditTarget } from "@maple/domain/http"
 import { executionModeLine } from "@maple/domain/security-audit"
 import { cn } from "@maple/ui/lib/utils"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
-import { button } from "../../../ui/button"
+import { AppRoute, hrefOf } from "../../../route"
+import { button, linkButton } from "../../../ui/button"
 import { icon } from "../../../ui/icon"
-import { meter } from "../../../ui/meter"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { detailTitle } from "../../kit/detail-header"
 import {
 	formatElapsed,
 	formatUsd,
+	incompleteReasonLabel,
 	isCancelled,
 	isLive,
+	isSpendLimitStop,
+	modelLabel,
 	PROFILE_LABEL,
 	RUN_KIND_LABEL,
 	runElapsed,
@@ -27,7 +26,7 @@ import {
 	refLabel,
 } from "../kit/format"
 import { iconTile, metaItem, runStatusBadge } from "../kit/parts"
-import { countOf, gapCount, type Phase, type PhaseState, raisedBudget, type Verdicts } from "./derive"
+import { countOf, gapCount, type Phase, type PhaseState, type Verdicts } from "./derive"
 import { Message, type Model } from "./model"
 
 // The run's title block, its stop banner, the phase strip and the four totals.
@@ -69,6 +68,9 @@ export const runTitle = (
 						h.span([h.Title(run.scopePaths.join("\n"))], [scopeLabel(run.scopePaths)]),
 					]),
 					metaItem(h, null, [PROFILE_LABEL[run.profile]]),
+					...(run.discoveryModel === null
+						? []
+						: [metaItem(h, null, [modelLabel(run.discoveryModel)])]),
 					metaItem(h, "ClockIcon", [time]),
 				],
 			),
@@ -123,7 +125,7 @@ export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 								{
 									size: "sm",
 									isDisabled: model.busy !== null,
-									attributes: [h.OnClick(Message.ClickedStartRun({ budget: null }))],
+									attributes: [h.OnClick(Message.ClickedStartRun())],
 								},
 								[
 									icon(h, "MediaPlayIcon"),
@@ -150,41 +152,32 @@ export const stopBanner = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 			icon(h, "CircleInfoIcon"),
 			alertTitle(h, ["Cancelled"]),
 			alertDescription(h, [
-				`An admin stopped this run after ${run.invocationsSpent.toLocaleString("en-US")} invocations. What it closed is kept; the next run starts with the rest.`,
+				"An admin stopped this run. What it closed is kept; the next run starts with the rest.",
 			]),
 		])
 	if (run.status !== "incomplete") return null
 	const gaps = gapCount(run)
-	const raised = raisedBudget(run.budget, SECURITY_AUDIT_MAX_BUDGET)
-	const isBudget = run.budget !== null && run.invocationsSpent >= run.budget
+	const isLimit = isSpendLimitStop(run)
 	return alert(h, { variant: "warn" }, [
 		icon(h, "AlertWarningIcon"),
 		alertTitle(h, [
-			isBudget
-				? `Stopped at its budget of ${run.budget?.toLocaleString("en-US")} invocations`
-				: "Stopped before it covered everything",
+			isLimit ? "Stopped at the org's monthly spend limit" : "Stopped before it covered everything",
 		]),
 		alertDescription(h, [
 			[
 				gaps > 0
 					? `${gaps} of ${run.unitTotal} units were not audited. They are listed as gaps below and are not counted as covered.`
-					: (run.incompleteReason ?? "The run ended early."),
+					: `The run ended early: ${incompleteReasonLabel(run.incompleteReason)}.`,
 				"The next run carries forward the closed units and starts with these gaps.",
+				...(isLimit ? ["The limit resets on the 1st of the month (UTC)."] : []),
 			].join(" "),
 		]),
-		...(model.isAdmin && raised !== null && raised > (run.budget ?? 0)
+		...(model.isAdmin && isLimit
 			? [
 					alertAction(h, [
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								isDisabled: model.busy !== null,
-								attributes: [h.OnClick(Message.ClickedStartRun({ budget: raised }))],
-							},
-							[`Run again with ${raised.toLocaleString("en-US")}`],
-						),
+						linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Security()) }, [
+							"Raise the limit",
+						]),
 					]),
 				]
 			: []),
@@ -292,49 +285,17 @@ export const phaseStrip = (h: H, phases: ReadonlyArray<Phase>): Html =>
 
 export const runStats = (h: H, run: SecurityAuditRunDetail, verdicts: Verdicts | null): Html => {
 	const tokens = run.inputTokens + run.outputTokens
-	const perInvocation =
-		run.costUsd !== null && run.invocationsSpent > 0 ? run.costUsd / run.invocationsSpent : null
 	const live = isLive(run)
 	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
-			eyebrow: "Invocations",
-			value: h.span(
-				[h.Class("flex flex-col gap-2")],
-				[
-					h.span(
-						[],
-						[
-							run.invocationsSpent.toLocaleString("en-US"),
-							...(run.budget === null
-								? []
-								: [
-										h.span(
-											[h.Class("ml-1.5 text-sm font-normal text-muted-foreground")],
-											[`of ${run.budget.toLocaleString("en-US")}`],
-										),
-									]),
-						],
-					),
-					...(run.budget === null
-						? []
-						: [
-								meter(h, {
-									value: run.invocationsSpent,
-									max: run.budget,
-									tone: run.invocationsSpent >= run.budget ? "warn" : undefined,
-									className: "w-40",
-									label: `${run.invocationsSpent} of ${run.budget} invocations`,
-								}),
-							]),
-				],
-			),
+			eyebrow: "Models",
+			value: run.discoveryModel === null ? "Not recorded" : modelLabel(run.discoveryModel),
+			valueClassName: "text-base",
 			compact: true,
 			subline:
-				run.budget !== null && run.invocationsSpent >= run.budget
-					? "budget used in full"
-					: live
-						? "spent so far"
-						: "spent",
+				run.validationModel === null
+					? "runs from before models were recorded"
+					: `verified by ${modelLabel(run.validationModel)}`,
 		}),
 		statRailItem(h, {
 			eyebrow: "Tokens",
@@ -347,9 +308,11 @@ export const runStats = (h: H, run: SecurityAuditRunDetail, verdicts: Verdicts |
 			value: formatUsd(run.costUsd),
 			compact: true,
 			subline:
-				perInvocation === null
-					? "no invocations priced yet"
-					: `${formatUsd(perInvocation)} per invocation on average`,
+				run.costUsd === null
+					? live
+						? "priced when the run settles"
+						: "not reported by the provider"
+					: "at the model provider's price",
 		}),
 		live || verdicts === null
 			? statRailItem(h, {

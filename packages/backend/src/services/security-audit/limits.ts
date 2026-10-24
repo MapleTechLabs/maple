@@ -17,6 +17,8 @@ export interface SecurityAuditLimits {
 	readonly maxHistoryCommits: number
 	/** Git LFS files: their content is not in the checkout, so the audit could not read them. */
 	readonly maxLfsFiles: number
+	/** An org's monthly spend limit in whole US dollars until an admin sets its own. */
+	readonly defaultMonthlySpendLimitUsd: number
 }
 
 export const SECURITY_AUDIT_LIMIT_DEFAULTS: SecurityAuditLimits = {
@@ -26,6 +28,7 @@ export const SECURITY_AUDIT_LIMIT_DEFAULTS: SecurityAuditLimits = {
 	maxFiles: 100_000,
 	maxHistoryCommits: 1_000_000,
 	maxLfsFiles: 0,
+	defaultMonthlySpendLimitUsd: 100,
 }
 
 /** Postgres `int4`: the reservation compares the monthly limit against it in SQL. */
@@ -65,6 +68,11 @@ const limitsConfig = Config.all({
 		SECURITY_AUDIT_LIMIT_DEFAULTS.maxHistoryCommits,
 	),
 	maxLfsFiles: limit("SECURITY_AUDIT_MAX_LFS_FILES", SECURITY_AUDIT_LIMIT_DEFAULTS.maxLfsFiles),
+	defaultMonthlySpendLimitUsd: limit(
+		"SECURITY_AUDIT_DEFAULT_MONTHLY_SPEND_USD",
+		SECURITY_AUDIT_LIMIT_DEFAULTS.defaultMonthlySpendLimitUsd,
+		MAX_LIMIT,
+	),
 })
 
 /** The limits from the current config provider (the Worker's env), defaults where unset. */

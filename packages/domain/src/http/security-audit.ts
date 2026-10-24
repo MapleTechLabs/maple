@@ -14,16 +14,16 @@ import {
 	SecurityAuditSeverity,
 	SecurityAuditTargetId,
 	SecurityAuditVerdict,
+	SecurityAuditDiscoveryModel,
+	SecurityAuditValidationModel,
 } from "../security-audit"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 
 // Request fields
 
-/** The hard cap on one run's agent invocations; a request asking for more is a 400. */
-export const SECURITY_AUDIT_MAX_BUDGET = 20_000
-/** Agent invocations a run gets when neither the request nor the target sets a budget. */
-export const DEFAULT_RUN_BUDGET = 400
+/** The highest monthly spend limit an org may set, in whole US dollars. */
+export const SECURITY_AUDIT_MAX_MONTHLY_SPEND_USD = 100_000
 /** Events per page, and the most one page may ask for. */
 export const SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT = 200
 const SECURITY_AUDIT_EVENTS_MAX_LIMIT = 1000
@@ -58,8 +58,6 @@ const ScopePath = Schema.String.check(
 )
 const ScopePaths = Schema.Array(ScopePath).check(Schema.isMaxLength(MAX_SCOPE_PATHS))
 
-const Budget = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: SECURITY_AUDIT_MAX_BUDGET }))
-
 const Fingerprint = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(1024))
 
 export const SecurityAuditCreateTargetRequest = Schema.Struct({
@@ -67,14 +65,15 @@ export const SecurityAuditCreateTargetRequest = Schema.Struct({
 	branch: SecurityAuditBranch,
 	profile: Schema.optionalKey(SecurityAuditProfile),
 	scopePaths: Schema.optionalKey(ScopePaths),
-	budgetPerRun: Schema.optionalKey(Budget),
+	/** Overrides the org's models for this target; absent runs on the org's pick. */
+	discoveryModel: Schema.optionalKey(SecurityAuditDiscoveryModel),
+	validationModel: Schema.optionalKey(SecurityAuditValidationModel),
 })
 export type SecurityAuditCreateTargetRequest = typeof SecurityAuditCreateTargetRequest.Type
 
 /** Runs started here are always `manual`; the scheduler picks the other kinds. */
 export const SecurityAuditStartRunRequest = Schema.Struct({
 	scopePaths: Schema.optionalKey(ScopePaths),
-	budget: Schema.optionalKey(Budget),
 })
 export type SecurityAuditStartRunRequest = typeof SecurityAuditStartRunRequest.Type
 
@@ -87,6 +86,15 @@ export const SecurityAuditUpdateFindingRequest = Schema.Struct({
 	reason: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(2000)),
 })
 export type SecurityAuditUpdateFindingRequest = typeof SecurityAuditUpdateFindingRequest.Type
+
+export const SecurityAuditUpdateSettingsRequest = Schema.Struct({
+	monthlySpendLimitUsd: Schema.Int.check(
+		Schema.isBetween({ minimum: 1, maximum: SECURITY_AUDIT_MAX_MONTHLY_SPEND_USD }),
+	),
+	discoveryModel: SecurityAuditDiscoveryModel,
+	validationModel: SecurityAuditValidationModel,
+})
+export type SecurityAuditUpdateSettingsRequest = typeof SecurityAuditUpdateSettingsRequest.Type
 
 export const SecurityAuditListRunsQuery = Schema.Struct({
 	targetId: Schema.optional(SecurityAuditTargetId),
@@ -118,7 +126,9 @@ export const SecurityAuditTarget = Schema.Struct({
 	enabled: Schema.Boolean,
 	profile: SecurityAuditProfile,
 	scopePaths: Schema.Array(Schema.String),
-	budgetPerRun: Schema.NullOr(Schema.Number),
+	/** The target's own models; null runs on the org's. */
+	discoveryModel: Schema.NullOr(Schema.String),
+	validationModel: Schema.NullOr(Schema.String),
 	createdBy: UserId,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
@@ -138,6 +148,9 @@ const runFields = {
 	inputTokens: Schema.Number,
 	outputTokens: Schema.Number,
 	costUsd: Schema.NullOr(Schema.Number),
+	/** The OpenRouter model ids the run used; null for runs from before they were recorded. */
+	discoveryModel: Schema.NullOr(Schema.String),
+	validationModel: Schema.NullOr(Schema.String),
 	incompleteReason: Schema.NullOr(Schema.String),
 	error: Schema.NullOr(Schema.String),
 	startedAt: Schema.Number,
@@ -145,6 +158,22 @@ const runFields = {
 }
 
 export const SecurityAuditRun = Schema.Struct(runFields)
+
+/** The org's monthly spend limit and what it has spent this UTC month, with its default models. */
+export const SecurityAuditSettings = Schema.Struct({
+	/** Whole US dollars per UTC month. */
+	monthlySpendLimitUsd: Schema.Number,
+	/** What the org's agents cost since `since`. */
+	spentUsd: Schema.Number,
+	/** Epoch ms: the start of the UTC month. */
+	since: Schema.Number,
+	/** Epoch ms: when the spend starts over. */
+	resetsAt: Schema.Number,
+	/** OpenRouter model ids a target without its own runs on. */
+	discoveryModel: Schema.String,
+	validationModel: Schema.String,
+})
+export type SecurityAuditSettings = typeof SecurityAuditSettings.Type
 export type SecurityAuditRun = typeof SecurityAuditRun.Type
 
 /** One run with its reports and how far its coverage ledger got. */
@@ -440,21 +469,37 @@ export class SecurityAuditRepositoryNotConnectedError extends HttpTaggedError<Se
 	},
 ) {}
 
-/** The budget cannot fund the profile's reserved reconnaissance, synthesis, critics and verifier. */
-export class SecurityAuditBudgetTooLowError extends HttpTaggedError<SecurityAuditBudgetTooLowError>()(
-	"@maple/http/security-audit/SecurityAuditBudgetTooLowError",
-	{
-		message: Schema.String,
-		budget: Schema.Number,
-		minimum: Schema.Number,
-		profile: SecurityAuditProfile,
-	},
+/** Verification would run on the hunter's model, which would share the hunter's blind spots. */
+export class SecurityAuditSameModelsError extends HttpTaggedError<SecurityAuditSameModelsError>()(
+	"@maple/http/security-audit/SecurityAuditSameModelsError",
+	{ message: Schema.String, model: Schema.String },
 	{
 		status: 400,
-		code: "security_audit_budget_too_low",
-		title: "Audit budget is too low",
+		code: "security_audit_same_models",
+		title: "Pick a different verification model",
 		retry: "never",
 		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The org has spent its monthly limit; runs start again when it resets or an admin raises it. */
+export class SecurityAuditSpendLimitReachedError extends HttpTaggedError<SecurityAuditSpendLimitReachedError>()(
+	"@maple/http/security-audit/SecurityAuditSpendLimitReachedError",
+	{
+		message: Schema.String,
+		limitUsd: Schema.Number,
+		spentUsd: Schema.Number,
+		/** When the spend starts over: the first of next month, UTC. */
+		resetsAt: IsoDateTimeString,
+	},
+	{
+		status: 402,
+		code: "security_audit_spend_limit_reached",
+		title: "Monthly spend limit reached",
+		retry: "after",
+		retryAt: (error) => error.resetsAt,
+		recovery: "retry",
 		exposure: "public_message",
 	},
 ) {}
@@ -476,8 +521,21 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				SecurityAuditRepositoryNotConnectedError,
 				SecurityAuditTargetExistsError,
 				SecurityAuditRepositoryTooLargeError,
-				SecurityAuditBudgetTooLowError,
+				SecurityAuditSameModelsError,
 			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("getSettings", "/settings", {
+			success: SecurityAuditSettings,
+			error: readErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("updateSettings", "/settings", {
+			payload: SecurityAuditUpdateSettingsRequest,
+			success: SecurityAuditSettings,
+			error: [...adminErrors, SecurityAuditSameModelsError],
 		}),
 	)
 	.add(
@@ -497,9 +555,9 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				SecurityAuditTargetDisabledError,
 				SecurityAuditRunInProgressError,
 				SecurityAuditBudgetExhaustedError,
+				SecurityAuditSpendLimitReachedError,
 				SecurityAuditRepositoryTooLargeError,
 				SecurityAuditStartError,
-				SecurityAuditBudgetTooLowError,
 			],
 		}),
 	)

@@ -38,8 +38,8 @@ const refs = {
 }
 const unitId = coverageId(refs)
 
-/** A deep run's agents, answering from the role alone; records who was called. */
-const scriptedAgents = (calls: Array<string>): AuditAgentsApi => ({
+/** A deep run's agents, answering from the role alone; records who was called and, given one, costs it. */
+const scriptedAgents = (calls: Array<string>, costUsd?: number): AuditAgentsApi => ({
 	run: (invocation: AgentInvocation) =>
 		Effect.sync(() => {
 			calls.push(invocation.agentId)
@@ -94,7 +94,9 @@ const scriptedAgents = (calls: Array<string>): AuditAgentsApi => ({
 									resolved_prior_leads: [],
 									stop: true,
 								})
-			return { text }
+			return costUsd === undefined
+				? { text }
+				: { text, usage: { inputTokens: 100, outputTokens: 10, costUsd } }
 		}),
 })
 
@@ -176,6 +178,10 @@ const payloadFor = (runId: string, priorRunId: string | null = null): SecurityAu
 	profile: "deep",
 	scopePaths: [],
 	budget: 400,
+	models: {
+		discovery: "deepseek/deepseek-v4.1-flash-1017:nitro",
+		validation: "anthropic/claude-sonnet-5.5",
+	},
 	priorRunId,
 	orgBudget: { period: "2026-10", limit: 20_000 },
 })
@@ -214,7 +220,10 @@ describe("auditWithAgents", () => {
 			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
 			// Other runs of the org spent 3 of its 9 after this one started with a budget of 400.
 			yield* Effect.forEach([1, 2, 3], (i) =>
-				store.reserveOrgInvocation(run.id, `other-${i}`, "2026-10", 9),
+				store.reserveOrgInvocation(run.id, `other-${i}`, "2026-10", 9, {
+					since: 0,
+					limitUsd: Number.MAX_SAFE_INTEGER,
+				}),
 			)
 			const calls: Array<string> = []
 			const result = yield* auditWithAgents(
@@ -239,6 +248,41 @@ describe("auditWithAgents", () => {
 				{ status: "incomplete", agents: 6, orgSpent: 9, row: Option.some(["incomplete", 6, true]) },
 			)
 		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect(
+		"stops launching agents once the org's spend reaches its monthly limit, ending incomplete",
+		() =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				yield* store.saveSettings({
+					monthlySpendLimitUsd: 1,
+					discoveryModel: "deepseek/deepseek-v4.1-flash-1017:nitro",
+					validationModel: "anthropic/claude-sonnet-5.5",
+					updatedBy: Schema.decodeUnknownSync(UserId)("user_a"),
+				})
+				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+				const calls: Array<string> = []
+				const result = yield* auditWithAgents(payloadFor(run.id), () =>
+					Effect.succeed(scriptedAgents(calls, 0.25)),
+				).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([])),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				)
+				const row = yield* store.getRun(run.id)
+				assert.deepStrictEqual(
+					{
+						status: result.status,
+						// Four agents at $0.25 reach the $1 limit; the fifth is refused.
+						agents: calls.length,
+						spent: yield* store.orgSpendUsd(0),
+						reason: Option.map(row, (r) =>
+							r.incompleteReason?.split("; ").includes("org_spend_limit_reached"),
+						),
+					},
+					{ status: "incomplete", agents: 4, spent: 1, reason: Option.some(true) },
+				)
+			}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect(
