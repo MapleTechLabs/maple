@@ -92,6 +92,12 @@ export const initialState: EngineState = {
 	usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
 }
 
+/** A value-free note for a discarded result: at most 8 failing paths, never the values at them. */
+export const discardSummary = (paths: ReadonlyArray<string>): string =>
+	paths.length === 0
+		? "result is not exactly one JSON object for its contract"
+		: `result broke its contract at: ${paths.slice(0, 8).join(", ")}${paths.length > 8 ? ` (+${paths.length - 8} more)` : ""}`
+
 export const makeEngine = (input: AuditRunInput) =>
 	Effect.gen(function* () {
 		const agents = yield* AuditAgents
@@ -185,7 +191,8 @@ export const makeEngine = (input: AuditRunInput) =>
 						role,
 						agentId,
 						outcome: "discarded",
-						message: decoded.failure.message,
+						// Only where it broke the contract: the decoder's message can quote agent output.
+						message: discardSummary(decoded.failure.issuePaths),
 						usage,
 					})
 					return undefined

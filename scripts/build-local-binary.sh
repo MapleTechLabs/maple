@@ -21,6 +21,7 @@
 # Usage:
 #   scripts/build-local-binary.sh                 # release build into ./dist
 #   OUT_DIR=/tmp/maple scripts/build-local-binary.sh
+#   MAPLE_TARGET=linux-arm64 scripts/build-local-binary.sh   # cross-compile (e.g. a container image from macOS)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,6 +32,21 @@ UI_EMBED="$REPO_ROOT/apps/cli/src/server/ui-embed.gen.ts"
 # Version baked into the binary via `bun build --define`. The release workflow
 # passes the tag; a local build defaults to `git describe` (or "dev").
 MAPLE_BUILD_VERSION="${MAPLE_BUILD_VERSION:-$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null || echo dev)}"
+
+# Target platform: the host by default, or MAPLE_TARGET for a cross-compiled bundle.
+# Only a cross-compile passes --target, so native builds compile exactly as before.
+COMPILE_TARGET=()
+if [ -n "${MAPLE_TARGET:-}" ]; then
+	COMPILE_TARGET=(--target "bun-$MAPLE_TARGET")
+else
+	case "$(uname -s)-$(uname -m)" in
+		Linux-x86_64)  MAPLE_TARGET="linux-x64" ;;
+		Linux-aarch64) MAPLE_TARGET="linux-arm64" ;;
+		Darwin-x86_64) MAPLE_TARGET="darwin-x64" ;;
+		Darwin-arm64)  MAPLE_TARGET="darwin-arm64" ;;
+		*) echo "ERROR: unsupported platform $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+	esac
+fi
 
 mkdir -p "$OUT_DIR"
 
@@ -52,15 +68,16 @@ echo "==> Compiling maple binary (bun build --compile) — version $MAPLE_BUILD_
 ( cd "$REPO_ROOT" && bun build apps/cli/src/bin.ts --compile \
 	--define "__MAPLE_VERSION__=\"$MAPLE_BUILD_VERSION\"" \
 	--define "__CHDB_VERSION__=\"$LIBCHDB_VERSION\"" \
+	${COMPILE_TARGET[@]+"${COMPILE_TARGET[@]}"} \
 	--outfile "$OUT_DIR/maple" )
 
-echo "==> Downloading libchdb $LIBCHDB_VERSION for this platform"
-case "$(uname -s)-$(uname -m)" in
-	Linux-x86_64)        ASSET="linux-x86_64-libchdb.tar.gz" ;;
-	Linux-aarch64)       ASSET="linux-aarch64-libchdb.tar.gz" ;;
-	Darwin-x86_64)       ASSET="macos-x86_64-libchdb.tar.gz" ;;
-	Darwin-arm64)        ASSET="macos-arm64-libchdb.tar.gz" ;;
-	*) echo "ERROR: unsupported platform $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+echo "==> Downloading libchdb $LIBCHDB_VERSION for $MAPLE_TARGET"
+case "$MAPLE_TARGET" in
+	linux-x64)    ASSET="linux-x86_64-libchdb.tar.gz" ;;
+	linux-arm64)  ASSET="linux-aarch64-libchdb.tar.gz" ;;
+	darwin-x64)   ASSET="macos-x86_64-libchdb.tar.gz" ;;
+	darwin-arm64) ASSET="macos-arm64-libchdb.tar.gz" ;;
+	*) echo "ERROR: unsupported MAPLE_TARGET $MAPLE_TARGET" >&2; exit 1 ;;
 esac
 # Expected sha256 per (LIBCHDB_VERSION, platform asset): release assets are
 # mutable even for a fixed tag, so this is verified before extraction. Bumping

@@ -60,10 +60,10 @@ export const subscribedRange = (model: Model): ReplayRange =>
 export const loadedThroughSeq = (loader: Loader): number =>
 	loader.loaded.reduce((max, entry) => Math.max(max, entry.lastChunkSeq), -1)
 
-export const seedEvents = (loader: Loader): ReadonlyArray<unknown> => loader.seed
+export const seedEvents = (loader: Pick<Loader, "seed">): ReadonlyArray<unknown> => loader.seed
 
 /** How far into the recording the seed starts: 0 for the opening seed, more after a seek rebuild. */
-export const seedShiftMs = (loader: Loader): number =>
+export const seedShiftMs = (loader: Pick<Loader, "originMs" | "seed">): number =>
 	loader.originMs === null || loader.seed.length === 0 ? 0 : Math.max(0, firstEventMs(loader.seed) - loader.originMs)
 
 /** Range answers kept for re-seeks; the oldest go first past this many. */
@@ -80,7 +80,7 @@ export const cacheRange = (
 }
 
 /** Ranges after the seed, for the feed Mounts. */
-export const trailingRanges = (loader: Loader): ReadonlyArray<LoadedRange> =>
+export const trailingRanges = (loader: Pick<Loader, "seedCount" | "loaded">): ReadonlyArray<LoadedRange> =>
 	loader.seedCount === 0 ? [] : loader.loaded.slice(loader.seedCount)
 
 const loadedUntilMs = (model: Model): number => {

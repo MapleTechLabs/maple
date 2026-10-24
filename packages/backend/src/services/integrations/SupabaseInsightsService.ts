@@ -115,7 +115,7 @@ export interface SupabaseInsightsServiceApi {
 export class SupabaseInsightsService extends Context.Service<
 	SupabaseInsightsService,
 	SupabaseInsightsServiceApi
->()("@maple/api/services/SupabaseInsightsService", {
+>()("@maple/backend/services/SupabaseInsightsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const oauth = yield* SupabaseOAuthService

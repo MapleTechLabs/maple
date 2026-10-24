@@ -73,7 +73,7 @@ export const planetScaleWebhookQueueJobBytes = (job: PlanetScaleWebhookJob): num
 export class PlanetScaleWebhookQueue extends Context.Service<
 	PlanetScaleWebhookQueue,
 	PlanetScaleWebhookQueueApi
->()("@maple/api/services/planetscale/PlanetScaleWebhookQueue", {
+>()("@maple/backend/services/planetscale/PlanetScaleWebhookQueue", {
 	make: Effect.gen(function* () {
 		const queue = yield* PlanetScaleWebhookQueueProducer
 

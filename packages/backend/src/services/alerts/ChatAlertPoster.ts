@@ -250,7 +250,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 )
 
 export class ChatAlertPoster extends Context.Service<ChatAlertPoster, ChatAlertPosterApi>()(
-	"@maple/api/services/ChatAlertPoster",
+	"@maple/backend/services/ChatAlertPoster",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))

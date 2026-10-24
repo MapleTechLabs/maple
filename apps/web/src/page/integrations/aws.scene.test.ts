@@ -1,8 +1,11 @@
 import { OrgId } from "@maple/domain"
 import { Timestamp, type V2AwsConnection, type V2AwsIntegration } from "@maple/domain/http/v2"
 import { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
+import { AwsMetricStream } from "@maple/domain/aws"
+import { AWS_METRIC_NAMESPACES } from "@maple/domain/primitives"
 import { Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
+import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Field from "../../ui/field"
 import { PageOutMessage, type PageContext } from "../contract"
@@ -11,10 +14,12 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { statusKey } from "./update-status"
 import { overviewOf } from "./derive"
+import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
 
@@ -35,11 +40,14 @@ const connection = (overrides: Partial<V2AwsConnection> = {}): V2AwsConnection =
 	last_checked_at: null,
 	last_check_error: null,
 	metric_stream: null,
+	metric_stream_changed_at: null,
 	metrics_last_received_at: null,
 	metrics_last_error: null,
 	created_at: Schema.decodeSync(Timestamp)("2026-10-21T12:00:00.000Z"),
 	...overrides,
 })
+
+const stream = Schema.decodeSync(AwsMetricStream)({ regions: ["us-east-1"], namespaces: ["AWS/ECS"] })
 
 const entered = (): Model => init({ search: { integration: "aws" } }, context).model
 
@@ -64,6 +72,109 @@ describe("aws card", () => {
 		const sent = pageUpdate(typed(" 1234-5678-9012 "), Message.SubmittedAwsAccount())
 		expect(names(sent.commands)).toEqual(["CreateAwsConnection"])
 		expect(names(pageUpdate(sent.model, Message.SubmittedAwsAccount()).commands)).toEqual([])
+	})
+
+	test("a new connection streams every namespace from the typed regions, and bad regions block it", () => {
+		const withRegions = (value: string) =>
+			pageUpdate(
+				typed("123456789012"),
+				Message.GotAwsRegionsMessage({ message: Field.Message.ChangedValue({ value }) }),
+			).model
+
+		const sent = pageUpdate(
+			withRegions("us-east-1, EU-central-1 us-east-1"),
+			Message.SubmittedAwsAccount(),
+		)
+		const [create] = sent.commands ?? []
+		expect(create?.name).toBe("CreateAwsConnection")
+		expect(create?.args).toMatchObject({
+			request: {
+				metric_stream: { regions: ["us-east-1", "eu-central-1"], namespaces: AWS_METRIC_NAMESPACES },
+			},
+		})
+
+		const bad = pageUpdate(withRegions("virginia"), Message.SubmittedAwsAccount())
+		expect(names(bad.commands)).toEqual([])
+		expect(bad.model.awsCard.createError).not.toBeNull()
+	})
+
+	test("a connected account without a stream gets one, then its setup opens to redeploy", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+		const model = withStatus(entered(), [connection({ verified_at })])
+		expect(overviewOf(model.statuses, model.nowMs, "aws")).toMatchObject({ issue: "Metrics off" })
+
+		const opened = pageUpdate(model, Message.ClickedAwsMetrics({ id: connectionId })).model
+		const edited = pageUpdate(
+			opened,
+			Message.GotAwsMetricsRegionsMessage({
+				message: Field.Message.ChangedValue({ value: "eu-central-1" }),
+			}),
+		).model
+		const sent = pageUpdate(edited, Message.SubmittedAwsMetrics())
+		const [update] = sent.commands ?? []
+		expect(update?.name).toBe("UpdateAwsMetricStream")
+		expect(update?.args).toMatchObject({ id: connectionId, metricStream: { regions: ["eu-central-1"] } })
+		// A second submit while saving sends nothing.
+		expect(names(pageUpdate(sent.model, Message.SubmittedAwsMetrics()).commands)).toEqual([])
+
+		const saved = pageUpdate(
+			sent.model,
+			Message.CompletedAwsMetricStream({
+				connection: connection({ verified_at, metric_stream: stream }),
+				error: null,
+			}),
+		)
+		expect(saved.model.awsCard.metricsId).toBeNull()
+		expect(saved.model.awsCard.setupId).toBe(connectionId)
+		expect(names(saved.commands)).toContain("LoadAwsSetup")
+		expect(names(saved.commands)).toContain("LoadIntegrationsAwsStatus")
+	})
+
+	test("a stream saved while the setup is open reads the script again", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+		const model = withStatus(entered(), [connection({ verified_at })])
+		const open = pageUpdate(model, Message.ClickedAwsSetup({ id: connectionId })).model
+		const loaded = pageUpdate(
+			open,
+			Message.CompletedLoadAwsSetup({
+				key: open.awsCard.setup.key ?? "",
+				result: Result.succeed({
+					object: "aws_connection.setup",
+					stack_name: "maple-integration",
+					stack_region: "us-east-1",
+					setup_script: "no stream",
+					cleanup_script: "",
+					cloudformation_template: "{}",
+					terraform: "",
+					metrics_stack_name: null,
+					metrics_cloudformation_template: null,
+				}),
+			}),
+		).model
+		const saved = pageUpdate(
+			loaded,
+			Message.CompletedAwsMetricStream({
+				connection: connection({ verified_at, metric_stream: stream }),
+				error: null,
+			}),
+		)
+		expect(names(saved.commands)).toContain("LoadAwsSetup")
+	})
+
+	test("a refused metric stream keeps the form open with the reason", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+		const opened = pageUpdate(
+			withStatus(entered(), [connection({ verified_at })]),
+			Message.ClickedAwsMetrics({ id: connectionId }),
+		).model
+		const sent = pageUpdate(opened, Message.SubmittedAwsMetrics()).model
+		const failed = pageUpdate(
+			sent,
+			Message.CompletedAwsMetricStream({ connection: null, error: "Not allowed." }),
+		).model
+		expect(failed.awsCard.metricsId).toBe(connectionId)
+		expect(failed.awsCard.metricsError).toBe("Not allowed.")
+		expect(failed.awsCard.isSavingMetrics).toBe(false)
 	})
 
 	test("a new connection opens its setup and re-reads the status", () => {
@@ -201,8 +312,130 @@ describe("aws card", () => {
 		const overview = overviewOf(model.statuses, model.nowMs, "aws")
 		expect(overview?.kind === "connected" && overview.health).toBe("attention")
 		expect(overview?.kind === "connected" && overview.issue).toBe("Update the stack")
-		const current = withStatus(entered(), [connection({ verified_at })])
-		expect(overviewOf(current.statuses, current.nowMs, "aws")).toMatchObject({ issue: null })
+	})
+
+	test("a verified stream is only fine while metrics arrive: the role check alone is not data", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
+		const at = (iso: string, connections: ReadonlyArray<V2AwsConnection>) =>
+			pageUpdate(
+				withStatus(entered(), connections),
+				Message.CompletedReadClock({ nowMs: Date.parse(iso) }),
+			).model
+		const overview = (model: Model) => overviewOf(model.statuses, model.nowMs, "aws")
+		const streaming = connection({ verified_at, metric_stream: stream })
+
+		// Minutes after the deploy the first delivery is on its way.
+		const fresh = at("2026-10-23T08:10:00.000Z", [streaming])
+		expect(overview(fresh)).toMatchObject({ health: "pending", issue: "Waiting for metrics" })
+		// An hour later with nothing delivered, it is not working, whatever the role check says.
+		const silent = at("2026-10-23T09:00:00.000Z", [streaming])
+		expect(overview(silent)).toMatchObject({ health: "attention", issue: "No metrics arriving" })
+
+		const delivering = connection({
+			verified_at,
+			metric_stream: stream,
+			metrics_last_received_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
+		})
+		expect(overview(at("2026-10-23T09:00:00.000Z", [delivering]))).toMatchObject({
+			health: "healthy",
+			issue: null,
+		})
+		expect(overview(at("2026-10-23T10:00:00.000Z", [delivering]))).toMatchObject({
+			health: "attention",
+			issue: "Metrics stopped",
+		})
+	})
+
+	test("the card says why nothing arrives, step by step", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
+		const model = pageUpdate(
+			withStatus(entered(), [connection({ verified_at, metric_stream: stream })]),
+			Message.CompletedReadClock({ nowMs: Date.parse("2026-10-23T09:00:00.000Z") }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("No metrics arriving")).toExist(),
+			expectView(
+				text("Maple assumes MapleIntegration-018f2b3c4d5e4f708192a3b4", { exact: false }),
+			).toExist(),
+			expectView(text("Nothing has arrived since the stream was set up", { exact: false })).toExist(),
+		)
+	})
+
+	test("a streaming connection's ingest is read with its status and shown by namespace and region", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
+		const delivering = connection({
+			verified_at,
+			metric_stream: Schema.decodeSync(AwsMetricStream)({
+				regions: ["us-east-1", "eu-central-1"],
+				namespaces: ["AWS/ECS"],
+			}),
+			metrics_last_received_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
+		})
+		const status: V2AwsIntegration = {
+			object: "aws_integration",
+			available: true,
+			modules: [],
+			// One without a stream sends nothing to read.
+			connections: [
+				delivering,
+				connection({
+					id: Schema.decodeSync(AwsConnectionId)("028f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8"),
+				}),
+			],
+		}
+		const arrived = pageUpdate(
+			pageUpdate(
+				entered(),
+				Message.CompletedReadClock({ nowMs: Date.parse("2026-10-23T09:00:00.000Z") }),
+			).model,
+			Message.CompletedLoadAws({ key: statusKey(context, "aws"), result: Result.succeed(status) }),
+		)
+		// Pages that do not show the AWS card never ask the warehouse.
+		const elsewhere = pageUpdate(
+			init({ search: {} }, context).model,
+			Message.CompletedLoadAws({ key: statusKey(context, "aws"), result: Result.succeed(status) }),
+		)
+		expect(names(elsewhere.commands)).not.toContain("LoadAwsIngest")
+		const loads = (arrived.commands ?? []).filter((command) => command.name === "LoadAwsIngest")
+		expect(loads.map((command) => command.args)).toEqual([{ key: expect.any(String), id: connectionId }])
+		const key = arrived.model.awsCard.ingest[connectionId]?.key ?? ""
+		const loaded = pageUpdate(
+			arrived.model,
+			Message.CompletedLoadAwsIngest({
+				id: connectionId,
+				key,
+				result: Result.succeed({
+					object: "aws_connection.ingest",
+					window_start: Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z"),
+					window_end: Schema.decodeSync(Timestamp)("2026-10-23T09:00:00.000Z"),
+					data_points: 3600,
+					last_point_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
+					groups: [
+						{
+							namespace: "AWS/ECS",
+							region: "us-east-1",
+							metrics: 12,
+							data_points: 3600,
+							resources: 9,
+							sample_resources: ["api", "checkout"],
+							last_point_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
+						},
+					],
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			expectView(text("Receiving metrics")).toExist(),
+			expectView(text("AWS/ECS")).toExist(),
+			expectView(text("in the last hour", { exact: false })).toExist(),
+			// A configured region that sent nothing is named, the one that did is not.
+			expectView(text("Nothing from eu-central-1 in the last hour", { exact: false })).toExist(),
+			expectView(text("Nothing from us-east-1 in the last hour", { exact: false })).not.toExist(),
+		)
 	})
 
 	test("a status read that finds the open setup verified closes it", () => {

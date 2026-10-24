@@ -35,18 +35,18 @@ export interface QueueProducer {
 
 /** Vendor-agnostic VCS sync jobs (commit backfill + webhook deltas). */
 export class VcsSyncQueueProducer extends Context.Service<VcsSyncQueueProducer, QueueProducer>()(
-	"@maple/api/platform/VcsSyncQueueProducer",
+	"@maple/backend/platform/VcsSyncQueueProducer",
 ) {}
 
 /** PlanetScale webhook deliveries, decoupled from the receiving request. */
 export class PlanetScaleWebhookQueueProducer extends Context.Service<
 	PlanetScaleWebhookQueueProducer,
 	QueueProducer
->()("@maple/api/platform/PlanetScaleWebhookQueueProducer") {}
+>()("@maple/backend/platform/PlanetScaleWebhookQueueProducer") {}
 
 /** Org audit-log entries on their way to the warehouse. */
 export class AuditEventsQueueProducer extends Context.Service<AuditEventsQueueProducer, QueueProducer>()(
-	"@maple/api/platform/AuditEventsQueueProducer",
+	"@maple/backend/platform/AuditEventsQueueProducer",
 ) {}
 
 // ── Rate limits ──────────────────────────────────────────────────────────────
@@ -65,16 +65,16 @@ export interface RateLimiter {
 }
 
 export class ApiV2RateLimit extends Context.Service<ApiV2RateLimit, RateLimiter>()(
-	"@maple/api/platform/ApiV2RateLimit",
+	"@maple/backend/platform/ApiV2RateLimit",
 ) {}
 export class CliAuthRateLimit extends Context.Service<CliAuthRateLimit, RateLimiter>()(
-	"@maple/api/platform/CliAuthRateLimit",
+	"@maple/backend/platform/CliAuthRateLimit",
 ) {}
 export class McpOAuthRateLimit extends Context.Service<McpOAuthRateLimit, RateLimiter>()(
-	"@maple/api/platform/McpOAuthRateLimit",
+	"@maple/backend/platform/McpOAuthRateLimit",
 ) {}
 export class McpToolsRateLimit extends Context.Service<McpToolsRateLimit, RateLimiter>()(
-	"@maple/api/platform/McpToolsRateLimit",
+	"@maple/backend/platform/McpToolsRateLimit",
 ) {}
 
 // ── Object store (R2) ────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ export interface ObjectStore {
 
 /** Session-replay rrweb payloads, written by the ingest gateway. */
 export class ReplayBlobBucket extends Context.Service<ReplayBlobBucket, ObjectStore>()(
-	"@maple/api/platform/ReplayBlobBucket",
+	"@maple/backend/platform/ReplayBlobBucket",
 ) {}
 
 // ── Application database (Hyperdrive) ────────────────────────────────────────
@@ -111,7 +111,7 @@ export interface DatabaseConnection {
 export class MapleDbConnection extends Context.Service<
 	MapleDbConnection,
 	Option.Option<DatabaseConnection>
->()("@maple/api/platform/MapleDbConnection") {}
+>()("@maple/backend/platform/MapleDbConnection") {}
 
 // ── Workflows ────────────────────────────────────────────────────────────────
 
@@ -132,7 +132,7 @@ export interface WorkflowStarter<Params> {
 export class SchemaApplyWorkflow extends Context.Service<
 	SchemaApplyWorkflow,
 	WorkflowStarter<{ readonly orgId: string }>
->()("@maple/api/platform/SchemaApplyWorkflow") {}
+>()("@maple/backend/platform/SchemaApplyWorkflow") {}
 
 // ── Email (send_email) ───────────────────────────────────────────────────────
 
@@ -159,24 +159,24 @@ export interface EmailSenderClient {
 
 /** The `send_email` binding, or `None` on a stage that does not bind it (everything but prd). */
 export class EmailSender extends Context.Service<EmailSender, Option.Option<EmailSenderClient>>()(
-	"@maple/api/platform/EmailSender",
+	"@maple/backend/platform/EmailSender",
 ) {}
 
 // ── Service bindings to other Maple Workers ─────────────────────────────────
 
 /** maple-ai, which serves `/mcp`, the chat surface and incident triage. `None` where the Worker does not bind it. */
 export class AiWorkerFetcher extends Context.Service<AiWorkerFetcher, Option.Option<Fetcher>>()(
-	"@maple/api/platform/AiWorkerFetcher",
+	"@maple/backend/platform/AiWorkerFetcher",
 ) {}
 
 /** The repository sandbox Worker. `None` on a deployment that did not provision one. */
 export class SandboxFetcher extends Context.Service<SandboxFetcher, Option.Option<Fetcher>>()(
-	"@maple/api/platform/SandboxFetcher",
+	"@maple/backend/platform/SandboxFetcher",
 ) {}
 
 /** The Worker Loader that runs the agents' `run_code` programs in Dynamic Workers. `None` where unbound. */
 export class CodeLoader extends Context.Service<CodeLoader, Option.Option<WorkerLoader>>()(
-	"@maple/api/platform/CodeLoader",
+	"@maple/backend/platform/CodeLoader",
 ) {}
 
 // ── Chat sessions (Durable Object) ───────────────────────────────────────────
@@ -187,5 +187,5 @@ export interface ChatSessionsApi {
 }
 
 export class ChatSessions extends Context.Service<ChatSessions, ChatSessionsApi>()(
-	"@maple/api/platform/ChatSessions",
+	"@maple/backend/platform/ChatSessions",
 ) {}

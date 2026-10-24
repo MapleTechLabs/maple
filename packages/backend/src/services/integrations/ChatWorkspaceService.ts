@@ -737,7 +737,7 @@ const make: Effect.Effect<
 })
 
 export class ChatWorkspaceService extends Context.Service<ChatWorkspaceService, ChatWorkspaceServiceApi>()(
-	"@maple/api/services/ChatWorkspaceService",
+	"@maple/backend/services/ChatWorkspaceService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

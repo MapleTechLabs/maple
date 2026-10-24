@@ -14,7 +14,7 @@ export interface VcsProviderRegistryApi {
 }
 
 export class VcsProviderRegistry extends Context.Service<VcsProviderRegistry, VcsProviderRegistryApi>()(
-	"@maple/api/services/vcs/VcsProviderRegistry",
+	"@maple/backend/services/vcs/VcsProviderRegistry",
 	{
 		make: Effect.gen(function* () {
 			const github = yield* GithubProvider

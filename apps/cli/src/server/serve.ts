@@ -3,7 +3,7 @@
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
 
-import { Clock, Context, Effect, Exit, Layer, Result, Schema, type Scope } from "effect"
+import { Clock, Context, Effect, Exit, Layer, Metric, Result, Schema, type Scope } from "effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { resolve } from "node:path"
 import { gunzipSync } from "node:zlib"
@@ -52,6 +52,20 @@ import {
 	READ_ONLY_REJECTION_PREFIX,
 	ReadOnlyQueryRejected,
 } from "./query-guard"
+import {
+	accessDenied,
+	issueSession,
+	LOGIN_ACTION_PATH,
+	LOGIN_PATH,
+	LoginThrottle,
+	loginPage,
+	hasValidSession,
+	NO_REMOTE_AUTH,
+	type RemoteAuth,
+	safeNextPath,
+	secretMatches,
+	sessionCookie,
+} from "./remote-auth"
 import { localServiceMapRollupLoop } from "./service-map-rollup"
 import { ensureStoreMarkerDurable, storeHasData } from "./store-version"
 import {
@@ -84,6 +98,8 @@ export interface ServerOptions {
 	readonly minimumRawTelemetryRetentionDays?: number
 	/** Serves the bundled SPA; omit to disable the UI (API-only). */
 	readonly assets?: AssetResolver
+	/** Ingest key and access token; omit for an open loopback server. */
+	readonly auth?: RemoteAuth
 }
 
 export class ServerBindError extends Schema.TaggedError<ServerBindError>()("@maple/cli/ServerBindError", {
@@ -113,6 +129,9 @@ export interface BrowserOriginPolicy {
 	readonly trustedOrigins: ReadonlySet<string>
 	/** Origins only honoured when the request itself targets loopback. */
 	readonly loopbackDevOrigins: ReadonlySet<string>
+	/** Accept same-origin from any Host on routes the access token guards: a
+	 * rebinding page can reach them but never holds the session cookie. */
+	readonly anySameOriginHost: boolean
 }
 
 const parseOrigin = (value: string): string | undefined => {
@@ -126,6 +145,7 @@ export const makeBrowserOriginPolicy = (options: {
 	readonly browserHosts: readonly string[]
 	readonly hostedOrigin?: string | undefined
 	readonly extraOrigins?: string | undefined
+	readonly anySameOriginHost?: boolean
 }): Result.Result<BrowserOriginPolicy, LocalServerConfigError> => {
 	const trusted = new Set<string>()
 	const hosted = options.hostedOrigin?.trim()
@@ -157,6 +177,7 @@ export const makeBrowserOriginPolicy = (options: {
 		browserHosts: options.browserHosts,
 		trustedOrigins: trusted,
 		loopbackDevOrigins: new Set(LOCAL_UI_DEV_ORIGINS),
+		anySameOriginHost: options.anySameOriginHost ?? false,
 	})
 }
 
@@ -187,7 +208,9 @@ export const isBrowserOriginAllowed = (
 	// a loopback name, so loopback aliases of this listener count as same-origin.
 	return (
 		originUrl.host === requestUrl.host &&
-		(policy.browserHosts.includes(originUrl.hostname) || isLoopbackHostname(originUrl.hostname))
+		((policy.anySameOriginHost && !requestUrl.pathname.startsWith("/v1/")) ||
+			policy.browserHosts.includes(originUrl.hostname) ||
+			isLoopbackHostname(originUrl.hostname))
 	)
 }
 
@@ -212,7 +235,8 @@ export const corsHeadersForAllowedOrigin = (
 				// `x-maple-sdk` is the SDK identity hint every browser SDK sends on
 				// every request; a listener that does not allow it fails preflight
 				// for the whole SDK.
-				"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk",
+				"access-control-allow-headers":
+					"content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key",
 				"access-control-allow-private-network": "true",
 				vary: "Origin",
 			}
@@ -1373,6 +1397,69 @@ const handleEventingRead = (
 	})
 }
 
+const MAX_LOGIN_BODY_BYTES = 4 * 1024
+
+const authRejections = Metric.counter("maple.local.auth_rejections_total", {
+	description: "Requests refused for a missing or wrong ingest key or access token",
+	incremental: true,
+})
+
+/** `GET /login`: the sign-in page, or home for a browser already signed in. */
+const signInPage = (auth: RemoteAuth, req: Request, url: URL): Response => {
+	if (auth.accessToken === undefined || hasValidSession(auth, req, Date.now()))
+		return new Response(null, { status: 303, headers: { location: "/" } })
+	return loginPage({ next: safeNextPath(url.searchParams.get("next")) })
+}
+
+/** `POST /local/auth/login`: exchange the access token for a session cookie. */
+const loginSpan = (
+	auth: RemoteAuth,
+	throttle: LoginThrottle,
+	req: Request,
+	url: URL,
+): Effect.Effect<Response> =>
+	Effect.gen(function* () {
+		const accessToken = auth.accessToken
+		if (accessToken === undefined) return text("not found", 404)
+		const body = yield* Effect.promise(() => readBoundedBytes(req, MAX_LOGIN_BODY_BYTES))
+		if (Result.isFailure(body)) return bodyFailureResponse(body.failure)
+		const form = new URLSearchParams(new TextDecoder().decode(body.success))
+		const next = safeNextPath(form.get("next"))
+		const nowMs = yield* Clock.currentTimeMillis
+		// Check, compare and record in one synchronous step, so parallel attempts cannot pass together.
+		const attempt = yield* Effect.sync(() => {
+			const retryAfterMs = throttle.retryAfterMs(nowMs)
+			if (retryAfterMs > 0) return { outcome: "throttled" as const, retryAfterMs }
+			if (secretMatches(accessToken, form.get("token"))) return { outcome: "ok" as const }
+			throttle.recordFailure(nowMs)
+			return { outcome: "invalid" as const }
+		})
+		yield* Effect.annotateCurrentSpan({ "maple.auth.outcome": attempt.outcome })
+		if (attempt.outcome === "throttled") {
+			const response = loginPage({
+				error: "Too many failed attempts. Try again in a minute.",
+				next,
+				status: 429,
+			})
+			response.headers.set("retry-after", String(Math.ceil(attempt.retryAfterMs / 1000)))
+			return response
+		}
+		if (attempt.outcome === "invalid")
+			return loginPage({ error: "That access token is not valid.", next, status: 401 })
+		return new Response(null, {
+			status: 303,
+			headers: {
+				location: next,
+				"set-cookie": sessionCookie(req, url, issueSession(accessToken, nowMs)),
+			},
+		})
+	}).pipe(
+		Effect.withSpan("POST /local/auth/login", {
+			kind: "server",
+			attributes: { "http.request.method": "POST", "http.route": LOGIN_ACTION_PATH },
+		}),
+	)
+
 interface ServerContext {
 	readonly db: Chdb
 	readonly options: ServerOptions
@@ -1384,6 +1471,10 @@ interface ServerContext {
 	readonly consumerToken: string
 	readonly readiness: ReadinessRetry
 	readonly status: ServerStatus
+	readonly auth: RemoteAuth
+	readonly loginThrottle: LoginThrottle
+	/** Counts a 401 without a span: refusals can come in floods. */
+	readonly countRejection: (route: "ingest" | "read") => void
 }
 
 /** `GET /local/status`: identity and liveness for the CLI probe and the UI. */
@@ -1413,7 +1504,27 @@ const makeFetch =
 		const corsHeaders = corsHeadersForAllowedOrigin(origin)
 		const respond = (response: Response): Response => withCors(response, corsHeaders)
 		if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders })
+		const denied = accessDenied(context.auth, { maintenanceToken, consumerToken }, req, url, Date.now())
+		if (denied !== null) {
+			if (denied.status === 401)
+				context.countRejection(url.pathname.startsWith("/v1/") ? "ingest" : "read")
+			return respond(denied)
+		}
 		if (url.pathname === "/health") return respond(text("OK"))
+		if (url.pathname === LOGIN_PATH && req.method === "GET")
+			return respond(signInPage(context.auth, req, url))
+		if (url.pathname === LOGIN_ACTION_PATH)
+			return respond(
+				req.method === "POST"
+					? await runSpan(loginSpan(context.auth, context.loginThrottle, req, url)).then(
+							(response) => {
+								if (response.status === 401) context.countRejection("read")
+								return response
+							},
+						)
+					: // A reload of a failed sign-in lands here; show the form again.
+						new Response(null, { status: 303, headers: { location: LOGIN_PATH } }),
+			)
 		if (req.method === "GET" && url.pathname === "/local/status")
 			return respond(statusResponse(context.status))
 		if (req.method === "POST") {
@@ -1505,6 +1616,7 @@ export const startServer = (
 				browserHosts: options.browserHosts,
 				hostedOrigin: options.corsOrigin,
 				extraOrigins: process.env[ALLOWED_ORIGINS_ENV],
+				anySameOriginHost: options.auth?.accessToken !== undefined,
 			}),
 		)
 		const existingRetention = yield* Effect.try({
@@ -1677,6 +1789,16 @@ export const startServer = (
 							consumerToken,
 							readiness,
 							status,
+							auth: options.auth ?? NO_REMOTE_AUTH,
+							loginThrottle: new LoginThrottle(),
+							countRejection: (route) => {
+								runtime.runFork(
+									Metric.update(
+										Metric.withAttributes(authRejections, { "maple.auth.route": route }),
+										1,
+									),
+								)
+							},
 						}),
 					}),
 				catch: (error) =>
@@ -1724,6 +1846,7 @@ export const __testables = {
 	handleScopedDelete,
 	handleProjectionActivation,
 	ingest,
+	loginSpan,
 	readBoundedJson,
 	recordServerResponse,
 	RequestQuiescenceGate,
