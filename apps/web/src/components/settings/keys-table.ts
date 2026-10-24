@@ -32,7 +32,7 @@ export const KEY_TYPE_LABELS = {
 	mcp: "MCP",
 } satisfies Record<KeyType, string>
 
-/** API and MCP keys. Device keys belong to the mobile app and are not managed here. */
+/** API and MCP keys. Device keys list apart, in `buildDeviceKeyRows`. */
 export function buildKeyRows(input: {
 	readonly apiKeys: ReadonlyArray<V2ApiKey>
 	readonly now: number
@@ -48,6 +48,21 @@ export function buildKeyRows(input: {
 			},
 		]
 	})
+}
+
+/**
+ * The live credentials phones mint for their Home Screen widgets, newest first. Revoked and
+ * expired ones are left out: every re-mint retires the previous key, so they pile up by design.
+ */
+export function buildDeviceKeyRows(input: {
+	readonly apiKeys: ReadonlyArray<V2ApiKey>
+	readonly now: number
+}): ReadonlyArray<KeyRow> {
+	return input.apiKeys
+		.filter((key) => key.kind === "device")
+		.map((key): KeyRow => ({ id: key.id, type: "api", key, status: apiKeyStatus(key, input.now) }))
+		.filter((row) => row.status === "active" || row.status === "expiring")
+		.toSorted((a, b) => Date.parse(b.key.created_at) - Date.parse(a.key.created_at))
 }
 
 const statusMatches = (row: KeyRow, status: KeyStatusFilter): boolean =>
