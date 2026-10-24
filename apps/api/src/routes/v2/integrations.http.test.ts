@@ -230,8 +230,10 @@ describe("v2 planetscale integration over HTTP", () => {
 		pendingOrgSelection: false,
 		organization: "acme",
 		connectedByUserId: null,
-		detectedPermissions: { readMetricsEndpoints: true },
+		detectedPermissions: { readDatabases: true },
 		metricsAuth: "service_token" as const,
+		apiMetrics: null,
+		webhooks: null,
 		scrapeTarget: {
 			id: Schema.decodeUnknownSync(ScrapeTargetId)("11111111-1111-4111-8111-111111111111"),
 			enabled: true,
@@ -271,6 +273,35 @@ describe("v2 planetscale integration over HTTP", () => {
 		// Public ID, not the raw UUID, and no camelCase leakage from the service.
 		expect(body.scrape_target.id).toMatch(/^scrp_/)
 		expect("metricsAuth" in body).toBe(false)
+		await harness.dispose()
+	})
+
+	it("reports metrics API polling and webhook registration in the wire shape", async () => {
+		const harness = makeHarness({
+			connection: {
+				getStatus: () =>
+					Effect.succeed({
+						...connectedStatus,
+						metricsAuth: "api" as const,
+						apiMetrics: { lastPolledAt: Date.parse("2026-08-05T12:05:00.000Z"), lastError: null },
+						webhooks: {
+							state: "pending" as const,
+							registeredDatabases: 1,
+							databases: 2,
+							lastError: null,
+						},
+					}),
+			},
+		})
+		const key = await harness.bootstrapAdminKey()
+
+		const { status, body } = await harness.request("GET", "/v2/integrations/planetscale", key.secret)
+		expect(status).toBe(200)
+		expect(body).toMatchObject({
+			metrics_auth: "api",
+			api_metrics: { last_polled_at: "2026-08-05T12:05:00.000Z", last_error: null },
+			webhooks: { state: "pending", registered_databases: 1, databases: 2, last_error: null },
+		})
 		await harness.dispose()
 	})
 

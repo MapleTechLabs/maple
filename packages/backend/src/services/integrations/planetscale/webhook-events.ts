@@ -371,6 +371,27 @@ const stateFromEvent = (event: string): string | null => {
 	return dot === -1 ? null : event.slice(dot + 1)
 }
 
+/** The events Maple subscribes its registered webhooks to: every one the map below acts on. */
+export const PLANETSCALE_WEBHOOK_EVENTS = [
+	"branch.out_of_memory",
+	"branch.anomaly",
+	"cluster.storage",
+	"keyspace.storage",
+	"deploy_request.opened",
+	"deploy_request.queued",
+	"deploy_request.in_progress",
+	"deploy_request.pending_cutover",
+	"deploy_request.schema_applied",
+	"deploy_request.errored",
+	"deploy_request.reverted",
+	"deploy_request.closed",
+	"branch.ready",
+	"branch.sleeping",
+	"branch.primary_promoted",
+	"branch.start_maintenance",
+	"database.access_request",
+] as const
+
 /**
  * Exhaustive event map.
  *

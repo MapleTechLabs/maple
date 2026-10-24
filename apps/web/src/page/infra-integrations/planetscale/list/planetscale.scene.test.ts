@@ -27,6 +27,7 @@ const status = (connected: boolean): PlanetscaleStatus => ({
 	detected_permissions: null,
 	metrics_auth: "service_token",
 	scrape_target: null,
+	webhooks: null,
 	last_inventory_at: null,
 	last_inventory_error: null,
 	revoked_at: null,
