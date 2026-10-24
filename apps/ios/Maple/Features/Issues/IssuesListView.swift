@@ -7,7 +7,8 @@ final class IssuesListModel {
 	private(set) var loader: ScreenLoader<[ErrorIssue]>!
 	private(set) var isLoadingMore = false
 
-	var query = IssueQuery(actionableOnly: false, sort: .lastSeen) {
+	/// Unresolved by default, as the triage design opens on it.
+	var query = IssueQuery(actionableOnly: true, sort: .lastSeen) {
 		didSet {
 			// The server rejects a cursor carried across a sort change
 			// (`cursor_sort_mismatch`), so any filter edit restarts pagination.
@@ -66,6 +67,15 @@ final class IssuesListModel {
 
 	var canLoadMore: Bool { hasMore }
 
+	/// The card's section label, named for the active chips.
+	var listTitle: String {
+		switch (query.actionableOnly, query.workflowState == .regressed) {
+		case (_, true): "Regressed issues"
+		case (true, false): "Unresolved issues"
+		case (false, false): "All issues"
+		}
+	}
+
 	/// Set when a row action fails; the list shows it as an alert.
 	var actionError: String?
 
@@ -95,64 +105,61 @@ final class IssuesListModel {
 	}
 }
 
-/// The Errors segment of the Alerts hub. Content only — the hub owns the
-/// `NavigationStack`, the org switcher, and the destinations; this view
-/// contributes its rows and its own filter menu.
+/// The Errors segment of the triage hub. Content only: the hub owns the
+/// `NavigationStack`, the header and the destinations; this view contributes
+/// its filter chips and the issues card.
 struct IssuesListContent: View {
 	/// Owned by the hub so switching segments doesn't refetch; see
 	/// `AlertsHubModels`.
 	let model: IssuesListModel
+	@State private var openSwipeID: String?
 
 	var body: some View {
 		LoadableView(
 			loader: model.loader,
 			emptyTitle: "No issues",
-			emptyMessage: model.query.actionableOnly
+			emptyMessage: model.query.workflowState == .regressed
+				? "No fix has failed to hold."
+				: model.query.actionableOnly
 				? "Nothing needs attention right now."
 				: "No error issues match these filters.",
-			skeletonRowHeight: 56
+			skeletonRowHeight: 84,
+			header: { IssueFilterChips(model: model) }
 		) { issues in
-			LazyVStack(spacing: 0) {
-				ForEach(issues, id: \.id) { issue in
-					NavigationLink(value: Route.issue(id: issue.id)) {
-						IssueRow(issue: issue, showsService: true)
-					}
-					.buttonStyle(RowButtonStyle())
-					.contextMenu {
-						// Offered by state, as the detail screen's action bar does.
-						if issue.workflowState.isClosed {
-							Button("Reopen", systemImage: "arrow.uturn.backward") {
-								Task { await model.perform(.reopen, on: issue.id) }
-							}
-						} else {
-							Button("Resolve", systemImage: "checkmark") {
-								Task { await model.perform(.resolve, on: issue.id) }
-							}
-							Button(issue.claimedAt == nil ? "Claim" : "Release", systemImage: "person") {
-								Task { await model.perform(issue.claimedAt == nil ? .claim : .release, on: issue.id) }
-							}
-							Button("Ignore", systemImage: "eye.slash") {
-								Task { await model.perform(.ignore, on: issue.id) }
-							}
-						}
-					}
-					Hairline()
+			VStack(alignment: .leading, spacing: 10) {
+				HStack(alignment: .firstTextBaseline) {
+					(Text(model.listTitle) + Text(" \(issues.count)\(model.canLoadMore ? "+" : "")"))
+						.sectionLabelStyle()
+						.tabularNumbers()
+						.accessibilityAddTraits(.isHeader)
+					Spacer()
+					Text("Last seen")
+						.font(Typo.tiny)
+						.foregroundStyle(Token.mutedForeground)
 				}
 
-				if model.canLoadMore {
-					// Trigger on the appearance of the trailing row rather than
-					// on a scroll offset — no geometry maths, and it keeps
-					// working if row heights change.
-					SkeletonList(rowHeight: 56, rows: 2)
-						.frame(height: 112)
-						.task { await model.loadMore() }
+				LazyVStack(spacing: 0) {
+					ForEach(issues, id: \.id) { issue in
+						row(issue)
+						if issue.id != issues.last?.id || model.canLoadMore { Hairline() }
+					}
+					if model.canLoadMore {
+						// Trigger on the appearance of the trailing row rather than
+						// on a scroll offset, so row heights never matter.
+						SkeletonList(rowHeight: 84, rows: 1)
+							.task { await model.loadMore() }
+					}
 				}
+				.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
+				.clipShape(.rect(cornerRadius: Token.Radius.lg))
+				.overlay(
+					RoundedRectangle(cornerRadius: Token.Radius.lg)
+						.stroke(Token.border, lineWidth: Token.hairline)
+				)
 			}
-		}
-		.toolbar {
-			ToolbarItem(placement: .topBarTrailing) {
-				FilterMenu(model: model)
-			}
+			.padding(.horizontal, 16)
+			.padding(.top, 4)
+			.padding(.bottom, 24)
 		}
 		.task {
 			await model.loader.loadIfNeeded()
@@ -167,43 +174,88 @@ struct IssuesListContent: View {
 		}
 		.mapleScreen(Screen.issues)
 	}
-}
 
-private struct FilterMenu: View {
-	@Bindable var model: IssuesListModel
-
-	var body: some View {
-		Menu {
-			Toggle("Needs attention", isOn: $model.query.actionableOnly)
-
-			Picker("Sort", selection: $model.query.sort) {
-				ForEach(IssueQuery.Sort.allCases, id: \.self) { sort in
-					Text(sort.title).tag(sort)
+	private func row(_ issue: ErrorIssue) -> some View {
+		SwipeActionRow(id: issue.id, openID: $openSwipeID, actions: swipeActions(for: issue)) {
+			NavigationLink(value: Route.issue(id: issue.id)) {
+				IssueListRow(issue: issue)
+			}
+			.buttonStyle(RowButtonStyle())
+		}
+		.contextMenu {
+			// Offered by state, as the detail screen's action bar does.
+			if issue.workflowState.isClosed {
+				Button("Reopen", systemImage: "arrow.uturn.backward") {
+					Task { await model.perform(.reopen, on: issue.id) }
+				}
+			} else {
+				Button("Resolve", systemImage: "checkmark") {
+					Task { await model.perform(.resolve, on: issue.id) }
+				}
+				Button(issue.claimedAt == nil ? "Claim" : "Release", systemImage: "person") {
+					Task { await model.perform(issue.claimedAt == nil ? .claim : .release, on: issue.id) }
+				}
+				Button("Ignore", systemImage: "eye.slash") {
+					Task { await model.perform(.ignore, on: issue.id) }
 				}
 			}
-
-			Picker("Severity", selection: $model.query.severity) {
-				Text("Any severity").tag(IssueSeverityFilter?.none)
-				ForEach(IssueSeverityFilter.allCases, id: \.self) { severity in
-					Text(severity.rawValue.capitalized).tag(IssueSeverityFilter?.some(severity))
-				}
-			}
-
-			Picker("State", selection: $model.query.workflowState) {
-				Text("Any state").tag(WorkflowState?.none)
-				ForEach(WorkflowState.allCases, id: \.self) { state in
-					Text(state.label).tag(WorkflowState?.some(state))
-				}
-			}
-		} label: {
-			Text(isFiltered ? "Filtered" : "Filter")
-				.font(Typo.smallMedium)
-				.foregroundStyle(isFiltered ? Token.primary : Token.foreground)
 		}
 	}
 
-	private var isFiltered: Bool {
-		model.query.actionableOnly || model.query.severity != nil || model.query.workflowState != nil
+	/// Assign (claim, or release when already claimed) and Resolve, or Reopen
+	/// once the issue is closed: the same calls the long-press menu makes.
+	private func swipeActions(for issue: ErrorIssue) -> [SwipeAction] {
+		let claimed = issue.claimedAt != nil
+		let assign = SwipeAction(
+			id: "assign", title: claimed ? "Release" : "Assign", icon: .user,
+			fill: Token.muted, tint: Token.foreground
+		) {
+			Task { await model.perform(claimed ? .release : .claim, on: issue.id) }
+		}
+		let close = issue.workflowState.isClosed
+			? SwipeAction(id: "reopen", title: "Reopen", icon: .circleCheck, fill: Token.muted, tint: Token.foreground) {
+				Task { await model.perform(.reopen, on: issue.id) }
+			}
+			: SwipeAction(id: "resolve", title: "Resolve", icon: .circleCheck, fill: Token.success, tint: Token.primaryForeground) {
+				Task { await model.perform(.resolve, on: issue.id) }
+			}
+		return [assign, close]
+	}
+}
+
+/// `Unresolved` and `Regressed`, the two list filters the v2 query carries.
+/// The design's `Mine` and `New 24h` have no backing filter in `IssueQuery`.
+private struct IssueFilterChips: View {
+	@Bindable var model: IssuesListModel
+
+	var body: some View {
+		HStack(spacing: 8) {
+			chip("Unresolved", isOn: model.query.actionableOnly) {
+				model.query.actionableOnly.toggle()
+			}
+			chip("Regressed", isOn: model.query.workflowState == .regressed) {
+				model.query.workflowState = model.query.workflowState == .regressed ? nil : .regressed
+			}
+			Spacer(minLength: 0)
+		}
+		.padding(.horizontal, 16)
+		.padding(.top, 14)
+		.padding(.bottom, 14)
+	}
+
+	private func chip(_ title: String, isOn: Bool, toggle: @escaping () -> Void) -> some View {
+		Button(action: toggle) {
+			Text(title)
+				.font(Typo.small)
+				.foregroundStyle(isOn ? Token.foreground : Token.mutedForeground)
+				.padding(.horizontal, 12)
+				.frame(height: 28)
+				.background(isOn ? Token.muted : .clear, in: .capsule)
+				.overlay(Capsule().stroke(isOn ? Token.input : Token.border, lineWidth: 1))
+				.contentShape(.capsule)
+		}
+		.buttonStyle(.plain)
+		.accessibilityAddTraits(isOn ? [.isSelected] : [])
 	}
 }
 
