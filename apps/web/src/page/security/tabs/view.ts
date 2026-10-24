@@ -2,12 +2,13 @@ import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import type { PageViewInputs } from "../../contract"
 import { addTargetView } from "../kit/add-target-view"
+import { spendSettingsView } from "../kit/spend-settings-view"
 import { securityLayout } from "../kit/layout"
 import { gateState } from "../kit/parts"
 import { activeRepositoriesOf, pageGateOf } from "./derive"
 import { Message, type Model } from "./model"
 import { findingsBody } from "./view-findings"
-import { addTargetButton, overviewBody } from "./view-overview"
+import { addTargetButton, overviewActions, overviewBody } from "./view-overview"
 import { runsBody, startRunAction } from "./view-runs"
 
 // The active tab inside the shared frame; a disabled org sees only the calm gate.
@@ -23,12 +24,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			viewInputs: { repositories: activeRepositoriesOf(model) },
 			toParentMessage: (message) => Message.GotAddTargetMessage({ message }),
 		}),
+		h.submodel({
+			slotId: "security-spend-settings-form",
+			model: model.spendSettings,
+			view: spendSettingsView,
+			viewInputs: {},
+			toParentMessage: (message) => Message.GotSpendSettingsMessage({ message }),
+		}),
 	]
 	switch (model.tab) {
 		case "overview":
 			return securityLayout(
 				h,
-				{ active: "overview", actions: addTargetButton(h, model), overlay },
+				{ active: "overview", actions: overviewActions(h, model), overlay },
 				overviewBody(h, model),
 			)
 		case "findings":

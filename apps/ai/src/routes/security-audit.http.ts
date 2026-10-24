@@ -2,12 +2,9 @@ import { HttpApiBuilder } from "effect/http-api"
 import {
 	CurrentTenant,
 	MapleAiApi,
-	DEFAULT_RUN_BUDGET,
 	SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT,
 	SecurityAuditBudgetExhaustedError,
 	SecurityAuditRepositoryTooLargeError,
-	SECURITY_AUDIT_MAX_BUDGET,
-	SecurityAuditBudgetTooLowError,
 	SecurityAuditDisabledError,
 	type SecurityAuditEvent,
 	type SecurityAuditFinding,
@@ -17,6 +14,9 @@ import {
 	SecurityAuditRepositoryNotConnectedError,
 	SecurityAuditRunInProgressError,
 	SecurityAuditRunNotInProgressError,
+	SecurityAuditSameModelsError,
+	type SecurityAuditSettings,
+	SecurityAuditSpendLimitReachedError,
 	type SecurityAuditUnit,
 	SecurityAuditTargetDisabledError,
 	SecurityAuditTargetExistsError,
@@ -28,8 +28,8 @@ import {
 } from "@maple/domain/http"
 import { IsoDateTimeString } from "@maple/domain/primitives"
 import {
-	type SecurityAuditProfile,
 	SecurityAuditRunId,
+	securityAuditSpendWindow,
 	type SecurityAuditTargetId,
 	type SecurityAuditWorkflowPayload,
 } from "@maple/domain/security-audit"
@@ -44,6 +44,7 @@ import { securityAuditLimits } from "@maple/backend/services/security-audit/limi
 import { SecurityAuditPlanBudget } from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { hostedSizeViolations, refusalReason } from "../security-audit/repo-size"
+import { loadLlmSettings, securityAuditModelIds } from "../platform/Llm"
 import {
 	type SecurityAuditEventRecord,
 	type SecurityAuditOrgStore,
@@ -58,7 +59,8 @@ const toTarget = (row: SecurityAuditTargetRow): SecurityAuditTarget => ({
 	enabled: row.enabled,
 	profile: row.profile,
 	scopePaths: row.scopePaths,
-	budgetPerRun: row.budgetPerRun,
+	discoveryModel: row.discoveryModel,
+	validationModel: row.validationModel,
 	createdBy: row.createdBy,
 	createdAt: row.createdAt,
 	updatedAt: row.updatedAt,
@@ -77,6 +79,8 @@ const toRun = (row: SecurityAuditRunRow): SecurityAuditRun => ({
 	inputTokens: row.inputTokens,
 	outputTokens: row.outputTokens,
 	costUsd: row.costUsd,
+	discoveryModel: row.discoveryModel,
+	validationModel: row.validationModel,
 	incompleteReason: row.incompleteReason,
 	error: row.error,
 	startedAt: row.startedAt,
@@ -157,27 +161,17 @@ const orUnavailable = <A, E, R>(effect: Effect.Effect<A, E | AuditStoreError, R>
 		),
 	)
 
-/**
- * The request's budget, else the target's, else the default; never above the hard cap or what the
- * org has left this month.
- */
-const resolveBudget = (requested: number | undefined, targetBudget: number | null, orgRemaining: number) =>
-	Math.min(requested ?? targetBudget ?? DEFAULT_RUN_BUDGET, SECURITY_AUDIT_MAX_BUDGET, orgRemaining)
-
-/** A budget the engine would refuse before reconnaissance is the caller's to fix: a 400, not a failed run. */
-const requireFundableBudget = (budget: number, profile: SecurityAuditProfile) => {
-	const minimum = minimumInvocations(profile)
-	return budget >= minimum
-		? Effect.void
-		: Effect.fail(
-				new SecurityAuditBudgetTooLowError({
-					message: `A ${profile} audit needs a budget of at least ${minimum} agent invocations; got ${budget}.`,
-					budget,
-					minimum,
-					profile,
+/** Verification on the hunter's model shares the hunter's blind spots: refused as the caller's to fix. */
+const requireDistinctModels = (discovery: string, validation: string) =>
+	discovery === validation
+		? Effect.fail(
+				new SecurityAuditSameModelsError({
+					message:
+						"Verification must run on a different model than hunting, so it does not share the hunter's blind spots.",
+					model: discovery,
 				}),
 			)
-}
+		: Effect.void
 
 const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
 const decodeIso = Schema.decodeSync(IsoDateTimeString)
@@ -215,6 +209,31 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				),
 			),
 		)
+
+		/**
+		 * The org's spend limit, what it spent this UTC month, and its models (the org's picks, else
+		 * the deployment's defaults, as this region serves them).
+		 */
+		const orgSettings = (store: SecurityAuditOrgStore) =>
+			Effect.gen(function* () {
+				const row = Option.getOrNull(yield* orUnavailable(store.getSettings()))
+				const llm = yield* loadLlmSettings
+				const window = securityAuditSpendWindow(yield* Clock.currentTimeMillis)
+				const spentUsd = yield* orUnavailable(store.orgSpendUsd(window.since))
+				const models = securityAuditModelIds(llm, {
+					discovery: row?.discoveryModel ?? null,
+					validation: row?.validationModel ?? null,
+				})
+				return {
+					monthlySpendLimitUsd:
+						row?.monthlySpendLimitUsd ?? (yield* securityAuditLimits).defaultMonthlySpendLimitUsd,
+					spentUsd,
+					since: window.since,
+					resetsAt: window.resetsAt,
+					discoveryModel: models.discovery,
+					validationModel: models.validation,
+				} satisfies SecurityAuditSettings
+			})
 
 		/** Refuses a repository GitHub already reports as over the limit, before anything is cloned. */
 		const refuseOversized = (orgId: SecurityAuditTargetRow["orgId"], repository: string) =>
@@ -290,8 +309,12 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			.handle("createTarget", ({ payload }) =>
 				Effect.gen(function* () {
 					const { tenant, store } = yield* adminAccess
-					if (payload.budgetPerRun !== undefined) {
-						yield* requireFundableBudget(payload.budgetPerRun, payload.profile ?? "deep")
+					if (payload.discoveryModel !== undefined || payload.validationModel !== undefined) {
+						const org = yield* orgSettings(store)
+						yield* requireDistinctModels(
+							payload.discoveryModel ?? org.discoveryModel,
+							payload.validationModel ?? org.validationModel,
+						)
 					}
 					const repository = yield* orUnavailable(store.findConnectedRepository(payload.repository))
 					if (Option.isNone(repository)) {
@@ -321,6 +344,21 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					return toTarget(row)
 				}).pipe(Effect.withSpan("HttpSecurityAudit.createTarget")),
 			)
+			.handle("getSettings", () =>
+				Effect.gen(function* () {
+					const { store } = yield* orgAccess
+					return yield* orgSettings(store)
+				}).pipe(Effect.withSpan("HttpSecurityAudit.getSettings")),
+			)
+			.handle("updateSettings", ({ payload }) =>
+				Effect.gen(function* () {
+					const { tenant, store } = yield* adminAccess
+					yield* requireDistinctModels(payload.discoveryModel, payload.validationModel)
+					yield* orUnavailable(store.saveSettings({ ...payload, updatedBy: tenant.userId }))
+					yield* recordHttpAudit("security_audit_settings.updated", { metadata: { ...payload } })
+					return yield* orgSettings(store)
+				}).pipe(Effect.withSpan("HttpSecurityAudit.updateSettings")),
+			)
 			.handle("listTargets", () =>
 				Effect.gen(function* () {
 					const { store } = yield* orgAccess
@@ -332,15 +370,20 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				Effect.gen(function* () {
 					const { tenant, store } = yield* adminAccess
 					const target = yield* requireTarget(store, params.targetId)
-					// The caller's own budget first: one the engine would refuse is a 400, before billing.
-					yield* requireFundableBudget(
-						resolveBudget(payload.budget, target.budgetPerRun, Number.POSITIVE_INFINITY),
-						target.profile,
-					)
+					// The org's own limit first: it is the one an admin can raise right away.
+					const org = yield* orgSettings(store)
+					if (org.spentUsd >= org.monthlySpendLimitUsd) {
+						return yield* new SecurityAuditSpendLimitReachedError({
+							message: `This organization has spent its $${org.monthlySpendLimitUsd.toLocaleString("en-US")} monthly security audit limit.`,
+							limitUsd: org.monthlySpendLimitUsd,
+							spentUsd: org.spentUsd,
+							resetsAt: decodeIso(new Date(org.resetsAt).toISOString()),
+						})
+					}
 					yield* refuseOversized(tenant.orgId, target.repository)
 					const prior = yield* orUnavailable(store.latestPriorRun(target.id))
 					const runId = newRunId()
-					// The org's cycle: its plan's limit less what its runs reserved, never more than
+					// The plan's allowance: its limit less what the org's runs reserved, never more than
 					// Autumn itself says is left.
 					const orgBudget = yield* planBudget
 						.budget(tenant.orgId, yield* Clock.currentTimeMillis)
@@ -367,14 +410,18 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						return yield* new SecurityAuditBudgetExhaustedError({
 							message:
 								orgBudget.limit === 0
-									? "This organization's plan does not include security audit invocations."
-									: `This organization has ${orgRemaining} security audit invocations left this billing cycle; a ${target.profile} run needs at least ${required}.`,
+									? "This organization's plan does not include security audits."
+									: "This organization's plan allowance for security audits is used up.",
 							remaining: orgRemaining,
 							required,
 							resetsAt: decodeIso(new Date(orgBudget.resetsAt).toISOString()),
 						})
 					}
-					const budget = resolveBudget(payload.budget, target.budgetPerRun, orgRemaining)
+					// The target's models, else the org's, as this region serves them; fixed for the run.
+					const models = securityAuditModelIds(yield* loadLlmSettings, {
+						discovery: target.discoveryModel ?? org.discoveryModel,
+						validation: target.validationModel ?? org.validationModel,
+					})
 					// The branch for now; the Workflow pins the commit it resolves to before any agent runs.
 					const run = yield* orUnavailable(
 						store.startRun({
@@ -384,7 +431,10 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 							sourceRef: target.branch,
 							workflowInstanceId: runId,
 							scopePaths: payload.scopePaths ?? target.scopePaths,
-							budget,
+							// Unbounded: the org's spend limit and its plan stop the run, not a count.
+							budget: null,
+							discoveryModel: models.discovery,
+							validationModel: models.validation,
 						}),
 					).pipe(
 						Effect.catchTags({
@@ -411,7 +461,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						ref: target.branch,
 						profile: run.profile,
 						scopePaths: run.scopePaths,
-						budget,
+						budget: null,
+						models,
 						priorRunId: Option.match(prior, { onNone: () => null, onSome: (r) => r.id }),
 						orgBudget: { period: orgBudget.period, limit: orgBudget.limit },
 					}

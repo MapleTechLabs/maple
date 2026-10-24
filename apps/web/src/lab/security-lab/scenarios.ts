@@ -28,6 +28,7 @@ import {
 	RUN_IDS,
 	runDetailOf,
 	runsOf,
+	settingsOf,
 	TARGET_IDS,
 	targetsOf,
 	unitsOf,
@@ -43,6 +44,7 @@ export const SCENARIOS = [
 	"add-target",
 	"add-target-invalid",
 	"add-target-exists",
+	"spend-and-models",
 	"findings",
 	"findings-member",
 	"runs",
@@ -126,6 +128,11 @@ const tabs = (
 			M.CompletedFetchRuns({
 				key: model.runs.key ?? "",
 				result: Result.succeed(options.empty === true ? { runs: [] } : runsOf(nowMs)),
+			}),
+		(model) =>
+			M.CompletedFetchSettings({
+				key: model.settings.key ?? "",
+				result: Result.succeed(settingsOf(nowMs)),
 			}),
 		(model) =>
 			M.CompletedFetchGithubStatus({
@@ -323,9 +330,13 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 							message: Field.Message.ChangedValue({ value: "../secrets" }),
 						}),
 					),
+					// Verifying on the hunting model is refused before the request.
 					addTarget(
-						AddTarget.Message.GotBudgetMessage({
-							message: Field.Message.ChangedValue({ value: "50000" }),
+						AddTarget.Message.GotValidationMessage({
+							message: Select.Message.SelectedItem({
+								index: 0,
+								value: "deepseek/deepseek-v4.1-flash-1017:nitro",
+							}),
 						}),
 					),
 					addTarget(AddTarget.Message.Submitted()),
@@ -351,6 +362,11 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 							}),
 						}),
 				]),
+			}
+		case "spend-and-models":
+			return {
+				_tag: "Tabs",
+				step: fold(tabs(overviewRoute, nowMs), tabsUpdate, [() => M.ClickedSpendAndModels()]),
 			}
 		case "findings":
 			return { _tag: "Tabs", step: tabs(AppRoute.SecurityFindings({ search: {} }), nowMs) }

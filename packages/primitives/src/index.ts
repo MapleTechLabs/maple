@@ -203,6 +203,10 @@ export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
 export const McpConnectionId = MapleUuidId("@maple/McpConnectionId", "MCP Connection ID")
 export type McpConnectionId = Schema.Schema.Type<typeof McpConnectionId>
 
+/** A device-bound (DPoP) credential: one registered public key for one installation and org. */
+export const DeviceCredentialId = MapleUuidId("@maple/DeviceCredentialId", "Device Credential ID")
+export type DeviceCredentialId = Schema.Schema.Type<typeof DeviceCredentialId>
+
 export const AgentFeedbackId = MapleUuidId("@maple/AgentFeedbackId", "Agent Feedback ID")
 export type AgentFeedbackId = Schema.Schema.Type<typeof AgentFeedbackId>
 

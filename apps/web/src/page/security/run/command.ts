@@ -75,12 +75,10 @@ export const FetchRunFindings = Command.define("SecurityApiListRunFindings", {
 })
 
 export const StartAnotherRun = Command.define("SecurityApiStartAnotherRun", {
-	args: { targetId: SecurityAuditTargetId, budget: Schema.NullOr(Schema.Finite) },
+	args: { targetId: SecurityAuditTargetId },
 	messages: [Message.CompletedStartRun],
-	execute: ({ targetId, budget }) =>
-		Effect.map(startRun(targetId, budget === null ? {} : { budget }), (result) =>
-			Message.CompletedStartRun({ result }),
-		),
+	execute: ({ targetId }) =>
+		Effect.map(startRun(targetId), (result) => Message.CompletedStartRun({ result })),
 })
 
 export const CancelRun = Command.define("SecurityApiCancelRun", {

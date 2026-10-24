@@ -4,7 +4,12 @@
 // and shape the wire model; this owns the queries, their profiles and contexts.
 // Aggregations that go through the query engine stay on `QueryEngineService`.
 
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
+import {
+	ServiceHealthBaselineRequest,
+	ServiceHealthSnapshotRequest,
+	ServiceOperationsRequest,
+} from "@maple/domain/http"
 import {
 	CH,
 	formatWarehouseDateTime,
@@ -15,7 +20,7 @@ import { LOGS_BODY_SEARCH_SETTINGS } from "@maple/query-engine/profiles"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { isMissingServiceOperationsRollup } from "@maple/backend/services/warehouse/missing-table"
+import { makeDashboardReads, operationsSparklineBucketSeconds } from "@maple/backend/queries/dashboard-reads"
 
 /** A validated window in warehouse literal form, at the precision of the table read. */
 export interface TelemetryWindow {
@@ -28,9 +33,6 @@ const PARTITION_HINT_RADIUS_MS = HOUR_MS
 // The latency baseline covers the seven days BEFORE the window being judged,
 // so a regression that is still running can't raise the bar it is measured against.
 const BASELINE_WINDOW_MS = 7 * 24 * HOUR_MS
-// Matches the `serviceHealthBaseline` registry definition the dashboard reads
-// through, so both surfaces re-read a week-wide aggregate at the same rate.
-const BASELINE_CACHE_SECONDS = 3600
 
 /**
  * The trailing p95 a service is judged against, keyed by service name. The
@@ -55,6 +57,7 @@ const collapseBaselines = (
 const make = Effect.gen(function* () {
 	const warehouse = yield* WarehouseQueryService
 	const queryEngine = yield* QueryEngineService
+	const reads = makeDashboardReads({ warehouse, queryEngine })
 
 	const searchTraces = Effect.fn("TelemetryReadService.searchTraces")(function* (
 		tenant: TenantContext,
@@ -65,18 +68,15 @@ const make = Effect.gen(function* () {
 		return yield* warehouse.compiledQuery(tenant, compiled, { profile: "list", context: "v2TraceSearch" })
 	})
 
-	/** Up to `SPAN_HIERARCHY_MAX_SPANS + 1` spans, so a caller can tell a truncated trace. */
+	/**
+	 * Every span of a trace, through the dashboard's own read: a probe bounds it to the trace's
+	 * partitions and the result is edge-cached under the dashboard's key.
+	 */
 	const traceSpans = Effect.fn("TelemetryReadService.traceSpans")(function* (
 		tenant: TenantContext,
 		traceId: string,
 	) {
-		const compiled = CH.compile(
-			CH.spanHierarchyQuery({ traceId, limit: CH.SPAN_HIERARCHY_MAX_SPANS + 1 }),
-			{
-				orgId: tenant.orgId,
-			},
-		)
-		return yield* warehouse.compiledQuery(tenant, compiled, { profile: "list", context: "v2GetTrace" })
+		return yield* reads.spanHierarchy(tenant, { traceId })
 	})
 
 	const span = Effect.fn("TelemetryReadService.span")(function* (
@@ -132,47 +132,39 @@ const make = Effect.gen(function* () {
 	})
 
 	/**
-	 * Trailing p95 per service for the seven days before `windowStartMs`.
-	 *
-	 * Hour-floored so a polling client's drifting window keeps hitting the same
-	 * cache entry, and cached for an hour. A missing baseline is a supported
-	 * state (clients fall back to absolute thresholds), so a failed read degrades
-	 * to no baselines instead of failing the caller.
+	 * Trailing p95 per (service, namespace, environment) for the seven days before `windowStartMs`,
+	 * through the dashboard's baseline definition and cache key. Degrades to no rows on failure.
 	 */
-	const serviceBaselines = (
+	const serviceBaselineRows = (
 		tenant: TenantContext,
 		windowStartMs: number,
 		filters: { readonly deploymentEnvironment?: string; readonly serviceNamespace?: string },
 	) =>
 		Effect.gen(function* () {
+			// Hour-floored, like the dashboard's, so a drifting client window keeps one cache entry.
 			const endMs = Math.floor(windowStartMs / HOUR_MS) * HOUR_MS
-			const window = {
+			const request = yield* Schema.decodeUnknownEffect(ServiceHealthBaselineRequest)({
 				startTime: formatWarehouseDateTime(endMs - BASELINE_WINDOW_MS),
 				endTime: formatWarehouseDateTime(endMs),
-			}
-			const compiled = CH.compile(
-				CH.serviceHealthBaselineQuery({
-					environments: filters.deploymentEnvironment ? [filters.deploymentEnvironment] : undefined,
-					namespaces: filters.serviceNamespace ? [filters.serviceNamespace] : undefined,
-				}),
-				{ orgId: tenant.orgId, ...window },
-			)
-			const rows = yield* queryEngine.cachedDirect(
-				tenant,
-				"v2ServiceHealthBaseline",
-				{ ...window, ...filters },
-				warehouse.compiledQuery(tenant, compiled, {
-					profile: "aggregation",
-					context: "v2ServiceHealthBaseline",
-				}),
-				BASELINE_CACHE_SECONDS,
-			)
-			return collapseBaselines(rows)
+				environments: filters.deploymentEnvironment ? [filters.deploymentEnvironment] : undefined,
+				namespaces: filters.serviceNamespace ? [filters.serviceNamespace] : undefined,
+			}).pipe(Effect.orDie)
+			return yield* reads.serviceHealthBaseline(tenant, request)
 		}).pipe(
 			Effect.catchCause((cause) =>
-				Effect.as(Effect.logWarning("v2 service baseline read failed", cause), collapseBaselines([])),
+				Effect.as(
+					Effect.logWarning("v2 service baseline read failed", cause),
+					[] as ReadonlyArray<CH.ServiceHealthBaselineOutput>,
+				),
 			),
 		)
+
+	/** The baseline rows collapsed by service name, as the catalog rows are. */
+	const serviceBaselines = (
+		tenant: TenantContext,
+		windowStartMs: number,
+		filters: { readonly deploymentEnvironment?: string; readonly serviceNamespace?: string },
+	) => Effect.map(serviceBaselineRows(tenant, windowStartMs, filters), collapseBaselines)
 
 	const serviceCatalog = Effect.fn("TelemetryReadService.serviceCatalog")(function* (
 		tenant: TenantContext,
@@ -185,38 +177,54 @@ const make = Effect.gen(function* () {
 	})
 
 	/**
-	 * Per-operation summary for one service. Same rollout state as the internal
-	 * Operations tab: the `service_operations_*` rollups reach a BYO cluster only
-	 * when its admin applies schema, so a missing table reads raw traces instead.
+	 * A service's busiest operations, through the dashboard's 30s Operations entry (same payload,
+	 * sparkline bucket included). A plain function, so fallbacks label the route's own span.
 	 */
 	const serviceOperations = (
 		tenant: TenantContext,
-		opts: CH.ServiceOperationsSummaryOpts,
+		opts: {
+			readonly serviceName: string
+			readonly environments?: ReadonlyArray<string> | undefined
+			readonly limit: number
+		},
 		window: TelemetryWindow,
-	) => {
-		const params = { orgId: tenant.orgId, ...window }
-		const rowSchema = { rowSchema: CH.serviceOperationsSummaryRowSchema }
-		const run = (rollup: boolean) =>
-			warehouse.compiledQuery(
-				tenant,
-				rollup
-					? CH.compile(CH.serviceOperationsSummaryQuery(opts), params, rowSchema)
-					: CH.compile(CH.serviceOperationsSummaryRawQuery(opts), params, rowSchema),
-				{
-					profile: "aggregation",
-					context: rollup ? "v2ServiceOverviewOperations" : "v2ServiceOverviewOperationsRaw",
-				},
-			)
-		return run(true).pipe(
-			Effect.catch((error) =>
-				isMissingServiceOperationsRollup(error)
-					? Effect.logWarning(
-							"service_operations rollup is absent on this cluster; reading raw traces for the v2 service overview.",
-						).pipe(Effect.annotateLogs({ orgId: tenant.orgId }), Effect.andThen(run(false)))
-					: Effect.fail(error),
-			),
-		)
-	}
+	) =>
+		Effect.gen(function* () {
+			// Built from a window the route already validated, so a decode failure is a defect.
+			const request = yield* Schema.decodeUnknownEffect(ServiceOperationsRequest)({
+				serviceName: opts.serviceName,
+				startTime: window.startTime,
+				endTime: window.endTime,
+				environments: opts.environments,
+				bucketSeconds: operationsSparklineBucketSeconds(window.startTime, window.endTime),
+				limit: opts.limit,
+			}).pipe(Effect.orDie)
+			// The sparklines are only what buys the shared entry; their failure must not cost the rows.
+			return yield* reads
+				.serviceOperations(tenant, request)
+				.pipe(
+					Effect.catch((error) =>
+						Effect.logWarning("Shared operations read failed; reading the summary alone").pipe(
+							Effect.annotateLogs({ orgId: tenant.orgId, error: error.message }),
+							Effect.andThen(reads.serviceOperationsSummary(tenant, request)),
+						),
+					),
+				)
+		})
+
+	/** Golden signals per (service, environment) from the hourly aggregate, as the overview reads them. */
+	const serviceHealthSnapshot = Effect.fn("TelemetryReadService.serviceHealthSnapshot")(function* (
+		tenant: TenantContext,
+		opts: { readonly environments?: ReadonlyArray<string> | undefined },
+		window: TelemetryWindow,
+	) {
+		const request = yield* Schema.decodeUnknownEffect(ServiceHealthSnapshotRequest)({
+			startTime: window.startTime,
+			endTime: window.endTime,
+			environments: opts.environments,
+		}).pipe(Effect.orDie)
+		return yield* reads.serviceHealthSnapshot(tenant, request)
+	})
 
 	/**
 	 * The deployment environments seen in the window. `"discovery"` rather than
@@ -262,9 +270,11 @@ const make = Effect.gen(function* () {
 		searchLogs,
 		log,
 		listMetrics,
+		serviceBaselineRows,
 		serviceBaselines,
 		serviceCatalog,
 		serviceOperations,
+		serviceHealthSnapshot,
 		environments,
 		serviceMap,
 	}

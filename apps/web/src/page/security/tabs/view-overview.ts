@@ -20,8 +20,10 @@ import {
 	formatUsd,
 	type Gate,
 	gateOf,
+	incompleteReasonLabel,
 	isLive,
 	locationOf,
+	modelLabel,
 	PROFILE_LABEL,
 	RUN_KIND_LABEL,
 	runLabelOf,
@@ -51,6 +53,7 @@ import {
 	openNeedsValidation,
 	runningRuns,
 	runsOf,
+	settingsOf,
 	spendThisMonth,
 	targetsOf,
 } from "./derive"
@@ -82,12 +85,82 @@ const findingsOfTarget = (
 /** What the spend covers, and plainly when it is not all of it. */
 const spendNote = (spend: Spend): string =>
 	[
-		`${spend.invocations.toLocaleString("en-US")} invocations · ${formatNumber(spend.tokens)} tokens`,
+		`${formatNumber(spend.tokens)} tokens`,
 		...(spend.unpriced === 0
 			? []
 			: [`excludes ${spend.unpriced} unpriced ${spend.unpriced === 1 ? "run" : "runs"}`]),
 		...(spend.isPartial ? [`newest ${RUN_LIST_CAP} runs per target only`] : []),
 	].join(" · ")
+
+const monthDay = (epochMs: number): string =>
+	new Date(epochMs).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+
+/** This month's spend against the org's limit; the runs' own costs until the settings load. */
+const spendTile = (h: H, model: Model): Html => {
+	const settings = settingsOf(model)
+	if (settings === null && AsyncData.isFailure(model.settings.data))
+		return statRailItem(h, {
+			eyebrow: "Spend this month",
+			value: "Unavailable",
+			valueClassName: "text-base",
+			compact: true,
+			action: h.button(
+				[
+					h.Type("button"),
+					h.OnClick(Message.ClickedRetry()),
+					h.Class(
+						"text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
+					),
+				],
+				["Retry"],
+			),
+			subline: "The spend limit could not be loaded",
+		})
+	if (settings === null) {
+		const spend = spendThisMonth(model)
+		return statRailItem(h, {
+			eyebrow: "Spend this month",
+			value: formatUsd(spend.costUsd),
+			compact: true,
+			subline: spendNote(spend),
+		})
+	}
+	const limit = settings.monthlySpendLimitUsd
+	const isReached = settings.spentUsd >= limit
+	return statRailItem(h, {
+		eyebrow: "Spend this month",
+		value: formatUsd(settings.spentUsd),
+		hint: `of ${formatUsd(limit)}`,
+		tone: isReached ? "warn" : undefined,
+		compact: true,
+		action: model.isAdmin
+			? h.button(
+					[
+						h.Type("button"),
+						h.OnClick(Message.ClickedSpendAndModels()),
+						h.Class(
+							"text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
+						),
+					],
+					["Edit limit"],
+				)
+			: undefined,
+		subline: h.span(
+			[h.Class("flex flex-col gap-1.5")],
+			[
+				meter(h, {
+					value: Math.min(settings.spentUsd, limit),
+					max: limit,
+					tone: isReached ? "warn" : undefined,
+					label: `${formatUsd(settings.spentUsd)} of ${formatUsd(limit)} spent this month`,
+				}),
+				isReached
+					? `Limit reached · runs resume ${monthDay(settings.resetsAt)}`
+					: `${formatUsd(limit - settings.spentUsd)} left · resets ${monthDay(settings.resetsAt)}`,
+			],
+		),
+	})
+}
 
 const kpis = (h: H, model: Model): Html => {
 	const state = findingsStateOf(model)
@@ -98,7 +171,6 @@ const kpis = (h: H, model: Model): Html => {
 	const unknown: Html | string | null =
 		state._tag === "Ready" ? null : state._tag === "Gated" ? "Admins only" : placeholder(h, "h-7 w-10")
 	const running = runningRuns(model).length
-	const spend = spendThisMonth(model)
 	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Open findings",
@@ -129,12 +201,7 @@ const kpis = (h: H, model: Model): Html => {
 					? "no audit running"
 					: `${running} ${running === 1 ? "audit" : "audits"} running now`,
 		}),
-		statRailItem(h, {
-			eyebrow: "Spend this month",
-			value: formatUsd(spend.costUsd),
-			compact: true,
-			subline: spendNote(spend),
-		}),
+		spendTile(h, model),
 	])
 }
 
@@ -163,11 +230,11 @@ const severityCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Ht
 const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Html => {
 	if (run === undefined) return h.span([h.Class("text-xs text-muted-foreground")], ["No run yet"])
 	const detail = isLive(run)
-		? `${run.invocationsSpent} / ${run.budget ?? "?"} invocations · ${formatElapsed(model.nowMs - run.startedAt)}`
+		? `running for ${formatElapsed(model.nowMs - run.startedAt)}`
 		: run.status === "failed"
 			? (run.error ?? "the audit could not start")
 			: run.status === "incomplete"
-				? (run.incompleteReason ?? "stopped early")
+				? incompleteReasonLabel(run.incompleteReason)
 				: `${formatElapsed((run.finishedAt ?? run.startedAt) - run.startedAt)} · ${refLabel(run.sourceRef)}`
 	return h.div(
 		[h.Class("flex min-w-0 flex-col items-start gap-1")],
@@ -201,6 +268,12 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
 	)
 }
 
+/** The model a target hunts with: its own pick, else the org's. */
+const targetModelOf = (model: Model, target: SecurityAuditTarget): string | null => {
+	const id = target.discoveryModel ?? settingsOf(model)?.discoveryModel ?? null
+	return id === null ? null : modelLabel(id)
+}
+
 const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 	const run = latestRunFor(model, target.id)
 	const findings = findingsOfTarget(model, target.id)
@@ -220,7 +293,11 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 								repositoryName(h, target.repository, "text-sm font-medium"),
 								h.span(
 									[h.Class("truncate text-xs text-muted-foreground")],
-									[targetLine(target)],
+									[
+										[targetLine(target), targetModelOf(model, target)]
+											.filter((part) => part !== null)
+											.join(" · "),
+									],
 								),
 							],
 						),
@@ -492,3 +569,21 @@ export const addTargetButton = (h: H, model: Model): Html | undefined =>
 				"Add target",
 			])
 		: undefined
+
+/** The Overview's actions: Spend & models once the settings are in, then Add target. */
+export const overviewActions = (h: H, model: Model): Html | undefined => {
+	const add = addTargetButton(h, model)
+	if (add === undefined) return undefined
+	if (settingsOf(model) === null) return add
+	return h.div(
+		[h.Class("flex items-center gap-2")],
+		[
+			button(
+				h,
+				{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedSpendAndModels())] },
+				[icon(h, "GearIcon"), "Spend & models"],
+			),
+			add,
+		],
+	)
+}

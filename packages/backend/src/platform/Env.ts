@@ -166,6 +166,15 @@ export interface EnvConfig {
 	 * the `{MAPLE_API_BASE_URL}/oidc/aws` issuer. Unset: AWS cannot be connected.
 	 */
 	readonly MAPLE_AWS_OIDC_SIGNING_KEY: Option.Option<Redacted.Redacted<string>>
+	/**
+	 * Signs device access tokens and App Attest challenges (PKCS#8 PEM, EC P-256). A sibling of the
+	 * AWS key, not the same one. Unset: device credentials can be registered but get no tokens.
+	 */
+	readonly MAPLE_DEVICE_TOKEN_SIGNING_KEY: Option.Option<Redacted.Redacted<string>>
+	/** The iOS app's bundle id; with `APNS_TEAM_ID` it is the App ID App Attest attests to. */
+	readonly MAPLE_IOS_BUNDLE_ID: string
+	/** Accept App Attest's `appattestdevelop` environment (Xcode builds). Never in production. */
+	readonly MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT: boolean
 	readonly CLOUDFLARE_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly CLOUDFLARE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly CLOUDFLARE_OAUTH_SCOPES: string
@@ -283,6 +292,11 @@ const envConfig = Config.all({
 	MAPLE_GCP_SERVICE_ACCOUNT_EMAIL: optionalString("MAPLE_GCP_SERVICE_ACCOUNT_EMAIL"),
 	MAPLE_GCP_SERVICE_ACCOUNT_KEY: optionalRedacted("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
 	MAPLE_AWS_OIDC_SIGNING_KEY: optionalRedacted("MAPLE_AWS_OIDC_SIGNING_KEY"),
+	MAPLE_DEVICE_TOKEN_SIGNING_KEY: optionalRedacted("MAPLE_DEVICE_TOKEN_SIGNING_KEY"),
+	MAPLE_IOS_BUNDLE_ID: stringWithDefault("MAPLE_IOS_BUNDLE_ID", "com.maple.mobile"),
+	MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT: stringWithDefault("MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT", "false").pipe(
+		Config.map((value) => value === "true"),
+	),
 	CLOUDFLARE_OAUTH_CLIENT_ID: optionalString("CLOUDFLARE_OAUTH_CLIENT_ID"),
 	CLOUDFLARE_OAUTH_CLIENT_SECRET: optionalRedacted("CLOUDFLARE_OAUTH_CLIENT_SECRET"),
 	// Cloudflare OAuth scope ids are DOT-delimited (mirroring API-token permission names;

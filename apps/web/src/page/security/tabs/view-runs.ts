@@ -15,6 +15,7 @@ import {
 	formatElapsed,
 	formatUsd,
 	isLive,
+	modelLabel,
 	PROFILE_LABEL,
 	RUN_KIND_LABEL,
 	runElapsed,
@@ -75,10 +76,8 @@ const runRow = (
 			tableCell(h, [runStatusBadge(h, run)]),
 			tableCell(
 				h,
-				[
-					`${run.invocationsSpent.toLocaleString("en-US")}${run.budget === null ? "" : ` / ${run.budget.toLocaleString("en-US")}`}`,
-				],
-				"text-right font-mono tabular-nums",
+				[run.discoveryModel === null ? "" : modelLabel(run.discoveryModel)],
+				"truncate text-xs text-muted-foreground",
 			),
 			tableCell(
 				h,
@@ -233,7 +232,7 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 								tableHead(h, ["Run"]),
 								tableHead(h, ["Target"]),
 								tableHead(h, ["Status"]),
-								tableHead(h, ["Invocations"], "text-right"),
+								tableHead(h, ["Model"]),
 								tableHead(h, ["Tokens"], "text-right"),
 								tableHead(h, ["Cost"], "text-right"),
 								tableHead(h, ["Started"], "text-right"),

@@ -1,12 +1,15 @@
 import { formatCost } from "@maple/agent-sessions"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
-import type {
-	SecurityAuditFindingStatus,
-	SecurityAuditProfile,
-	SecurityAuditRunKind,
-	SecurityAuditRunStatus,
-	SecurityAuditSeverity,
-	SecurityAuditVerdict,
+import {
+	ORG_BUDGET_EXHAUSTED,
+	ORG_SPEND_LIMIT_REACHED,
+	securityAuditModelOption,
+	type SecurityAuditFindingStatus,
+	type SecurityAuditProfile,
+	type SecurityAuditRunKind,
+	type SecurityAuditRunStatus,
+	type SecurityAuditSeverity,
+	type SecurityAuditVerdict,
 } from "@maple/domain/security-audit"
 import type { Tone } from "@maple/ui/lib/tone"
 import { shortId as shortDisplayId } from "@maple/ui/lib/ids"
@@ -50,7 +53,7 @@ const RUN_STATUS_TONE = {
 	failed: "crit",
 } satisfies Record<SecurityAuditRunStatus, Tone>
 
-/** The status a person reads: a cancelled run is not a budget gap. */
+/** The status a person reads: a cancelled run is not a coverage gap. */
 export const runLabelOf = (run: Pick<SecurityAuditRun, "status" | "incompleteReason">): string =>
 	isCancelled(run) ? "Cancelled" : RUN_STATUS_LABEL[run.status]
 
@@ -135,6 +138,29 @@ export const scopeLabel = (scopePaths: ReadonlyArray<string>): string =>
 
 export const targetLine = (target: SecurityAuditTarget): string =>
 	[target.branch, PROFILE_LABEL[target.profile], scopeLabel(target.scopePaths)].join(" · ")
+
+/** A model's name from the catalogue; an id it no longer lists reads as the id. */
+export const modelLabel = (id: string): string => securityAuditModelOption(id)?.label ?? id
+
+/** Why the host or engine stopped a run, as a person reads it; unknown reasons stay as written. */
+const INCOMPLETE_REASON_LABEL = new Map<string, string>([
+	[ORG_SPEND_LIMIT_REACHED, "reached the monthly spend limit"],
+	[ORG_BUDGET_EXHAUSTED, "the plan's audit allowance ran out"],
+	["org_budget_unavailable", "spend could not be checked"],
+	["cancelled", "cancelled"],
+])
+
+export const incompleteReasonLabel = (reason: string | null): string =>
+	reason === null
+		? "stopped early"
+		: reason
+				.split("; ")
+				.map((part) => INCOMPLETE_REASON_LABEL.get(part) ?? part.replaceAll("_", " "))
+				.join("; ")
+
+/** The org's limit stopped the run: an admin can raise it and run again. */
+export const isSpendLimitStop = (run: Pick<SecurityAuditRun, "incompleteReason">): boolean =>
+	run.incompleteReason?.split("; ").includes(ORG_SPEND_LIMIT_REACHED) === true
 
 /** `1h 12m`, `3h 41m`, `48s`: how long a run has taken (or took). */
 export const formatElapsed = (ms: number): string => {

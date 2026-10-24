@@ -20,6 +20,7 @@ import {
 	ApiWorker,
 	AiWorker,
 	SandboxWorker,
+	createMapleDeviceTokenKey,
 	formatMapleDeployment,
 	formatMapleStage,
 	ManagedMapleDb,
@@ -240,6 +241,7 @@ const MapleStackLive = Layer.effect(
 			devEnv,
 			db: yield* declareMapleDb(deployment, profile),
 			awsOidc: yield* createMapleAwsOidcKey(),
+			deviceToken: yield* createMapleDeviceTokenKey(),
 		}
 		return context
 	}),

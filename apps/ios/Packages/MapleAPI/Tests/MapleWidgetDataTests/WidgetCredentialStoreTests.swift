@@ -8,7 +8,7 @@ private let now = Date(timeIntervalSince1970: 1_800_000_000)
 private func credential(
 	organizationId: String = "org_1",
 	secret: String = "maple_ak_test",
-	expiresIn: TimeInterval = 30 * 24 * 60 * 60
+	expiresIn: TimeInterval = 14 * 24 * 60 * 60
 ) -> WidgetCredential {
 	WidgetCredential(
 		organizationId: organizationId,
@@ -28,13 +28,11 @@ private func withStore(_ body: (WidgetCredentialStore) throws -> Void) rethrows 
 
 @Suite("Widget credential")
 struct WidgetCredentialTests {
-	@Test("renews with a week to spare, not on the day")
+	@Test("renews with four days to spare, not on the day")
 	func renewalWindow() {
-		// A phone opened at weekends must not be one bad Monday from a Home
-		// Screen that has gone quiet with no way back.
-		#expect(credential(expiresIn: 30 * 24 * 3_600).needsRenewal(at: now) == false)
-		#expect(credential(expiresIn: 8 * 24 * 3_600).needsRenewal(at: now) == false)
-		#expect(credential(expiresIn: 6 * 24 * 3_600).needsRenewal(at: now))
+		#expect(credential(expiresIn: 14 * 24 * 3_600).needsRenewal(at: now) == false)
+		#expect(credential(expiresIn: 5 * 24 * 3_600).needsRenewal(at: now) == false)
+		#expect(credential(expiresIn: 3 * 24 * 3_600).needsRenewal(at: now))
 		#expect(credential(expiresIn: -1).needsRenewal(at: now))
 	}
 
@@ -55,6 +53,16 @@ struct WidgetCredentialStoreTests {
 			#expect(store.load(organizationId: "org_1")?.secret == "one")
 			#expect(store.load(organizationId: "org_2")?.secret == "two")
 		}
+	}
+
+	@Test("keeps the credentials directory out of device backups")
+	func excludedFromBackup() throws {
+		let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+			.appendingPathComponent("widget-credentials-backup-\(UUID().uuidString)", isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		#expect(WidgetCredentialStore(directory: directory).save(credential()))
+		let values = try directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
+		#expect(values.isExcludedFromBackup == true)
 	}
 
 	@Test("reads nothing before the app has ever minted")

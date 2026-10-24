@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { V2ApiKey } from "@maple/domain/http/v2"
-import { buildKeyRows, filterKeyRows, keyAccessSummary, type KeyRow } from "./keys-table"
+import { buildDeviceKeyRows, buildKeyRows, filterKeyRows, keyAccessSummary, type KeyRow } from "./keys-table"
 
 const NOW = Date.parse("2026-10-17T12:00:00Z")
 const inDays = (days: number) => new Date(NOW + days * 86_400_000).toISOString()
@@ -39,6 +39,22 @@ describe("buildKeyRows", () => {
 		})
 		expect(ids(rows)).toEqual(["key_a", "key_m"])
 		expect(rows.map((row) => row.type)).toEqual(["api", "mcp"])
+	})
+})
+
+describe("buildDeviceKeyRows", () => {
+	it("lists only live device keys, newest first", () => {
+		const rows = buildDeviceKeyRows({
+			apiKeys: [
+				apiKey({ id: "key_api" }),
+				apiKey({ id: "key_old", kind: "device", created_at: inDays(-10), expires_at: inDays(4) }),
+				apiKey({ id: "key_new", kind: "device", created_at: inDays(-1), expires_at: inDays(13) }),
+				apiKey({ id: "key_rolled", kind: "device", revoked: true, expires_at: inDays(5) }),
+				apiKey({ id: "key_lapsed", kind: "device", expires_at: inDays(-2) }),
+			],
+			now: NOW,
+		})
+		expect(ids(rows)).toEqual(["key_new", "key_old"])
 	})
 })
 

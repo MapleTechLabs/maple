@@ -1312,6 +1312,8 @@ export const spanHierarchy = defineQuery({
 				traceId: payload.traceId,
 				spanId: payload.spanId,
 				narrowByTime,
+				// One sentinel row past the cap, so callers can tell a truncated trace.
+				limit: CH.SPAN_HIERARCHY_MAX_SPANS + 1,
 			}),
 			narrowByTime ? { orgId, startTime: payload.startTime, endTime: payload.endTime } : { orgId },
 		)

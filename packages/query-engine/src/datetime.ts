@@ -65,6 +65,23 @@ export function formatWarehouseDateTime(epochMs: number): string {
  * `formatWarehouseDateTime` because truncating those to whole seconds
  * collapses events that must stay ordered.
  */
+const HOUR_MS = 3_600_000
+
+/**
+ * The whole hours `serviceHealthSnapshotQuery` reads for a window, [floor(start), ceil(end)),
+ * at the query's whole-second precision. Rates over that read divide by `seconds`.
+ */
+export function serviceHealthSnapshotHours(
+	startTime: string,
+	endTime: string,
+): { readonly startMs: number; readonly endMs: number; readonly seconds: number } {
+	const startSecondMs = Math.floor(parseWarehouseDateTime(startTime) / 1000) * 1000
+	const endSecondMs = Math.floor(parseWarehouseDateTime(endTime) / 1000) * 1000
+	const startMs = Math.floor(startSecondMs / HOUR_MS) * HOUR_MS
+	const endMs = Math.floor((endSecondMs + HOUR_MS - 1000) / HOUR_MS) * HOUR_MS
+	return { startMs, endMs, seconds: Math.max(0, endMs - startMs) / 1000 }
+}
+
 export function formatWarehouseDateTimeMs(epochMs: number): string {
 	return new Date(epochMs).toISOString().replace("T", " ").replace(/Z$/, "")
 }

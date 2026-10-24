@@ -19,6 +19,7 @@ import {
 	RUN_IDS,
 	runDetailOf,
 	runsOf,
+	settingsOf,
 	TARGET_IDS,
 	targetsOf,
 } from "../../../lab/security-fixture"
@@ -28,6 +29,7 @@ import * as Field from "../../../ui/field"
 import * as Select from "../../../ui/select"
 import type { PageContext } from "../../contract"
 import * as AddTarget from "../kit/add-target"
+import * as SpendSettings from "../kit/spend-settings"
 import { toCreateFailure } from "../kit/api"
 import {
 	filteredFindings,
@@ -92,6 +94,7 @@ describe("security tabs", () => {
 			expect.arrayContaining([
 				"SecurityApiListTargets",
 				"SecurityApiListRuns",
+				"SecurityApiGetSettings",
 				"SecurityApiGithubStatus",
 			]),
 		)
@@ -547,7 +550,7 @@ describe("security tabs", () => {
 			}),
 		).model
 		expect(runningRuns(idle)).toEqual([])
-		expect(spendThisMonth(idle).invocations).toBeGreaterThan(0)
+		expect(spendThisMonth(idle).tokens).toBeGreaterThan(0)
 		const nextMonth = Date.UTC(2026, 10, 1)
 		const tick = await Effect.runPromise(
 			Effect.gen(function* () {
@@ -561,12 +564,143 @@ describe("security tabs", () => {
 		)
 		const moved = pageUpdate(idle, Option.getOrThrow(tick)).model
 		expect(moved.nowMs).toBe(nextMonth + 60_000)
-		expect(spendThisMonth(moved).invocations).toBe(0)
+		expect(spendThisMonth(moved).tokens).toBe(0)
+	})
+})
+
+/** The org's settings answered on top of `loaded()`. */
+const withSettings = (model: Model = loaded()): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedFetchSettings({
+			key: model.settings.key ?? "",
+			result: Result.succeed(settingsOf(NOW)),
+		}),
+	).model
+
+describe("spend and models", () => {
+	const opened = () => pageUpdate(withSettings(), Message.ClickedSpendAndModels()).model
+	const send = (model: Model, message: SpendSettings.Message) =>
+		pageUpdate(model, Message.GotSpendSettingsMessage({ message }))
+	const pickValidation = (model: Model, value: string) =>
+		send(
+			model,
+			SpendSettings.Message.GotValidationMessage({
+				message: Select.Message.SelectedItem({ index: 0, value }),
+			}),
+		).model
+
+	test("the Overview shows this month's spend against the org's limit", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withSettings()),
+			expectView(text("of $2,000.00")).toExist(),
+			expectView(text(/^\$815\.68 left · resets Nov 1$/)).toExist(),
+			expectView(role("button", { name: "Spend & models" })).toExist(),
+		)
+	})
+
+	test("the form opens on the org's limit and models, and saving sends exactly what it shows", () => {
+		const form = opened()
+		expect([form.spendSettings.limit.value, form.spendSettings.discovery.value]).toEqual([
+			"2000",
+			"deepseek/deepseek-v4.1-flash-1017:nitro",
+		])
+		const raised = send(
+			form,
+			SpendSettings.Message.GotLimitMessage({
+				message: Field.Message.ChangedValue({ value: "2,500" }),
+			}),
+		).model
+		const saved = send(raised, SpendSettings.Message.Submitted())
+		expect(
+			saved.commands?.find((command) => command.name === "SecurityApiUpdateSettings")?.args,
+		).toMatchObject({
+			payload: {
+				monthlySpendLimitUsd: 2_500,
+				discoveryModel: "deepseek/deepseek-v4.1-flash-1017:nitro",
+				validationModel: "anthropic/claude-sonnet-5.5",
+			},
+		})
+	})
+
+	test("a comma read as a decimal separator is refused, a thousands separator is not", () => {
+		const typedLimit = (value: string) =>
+			send(
+				opened(),
+				SpendSettings.Message.GotLimitMessage({ message: Field.Message.ChangedValue({ value }) }),
+			).model.spendSettings
+		expect([
+			SpendSettings.requestOf(typedLimit("100,50"))?.monthlySpendLimitUsd ?? null,
+			SpendSettings.requestOf(typedLimit("1,500"))?.monthlySpendLimitUsd ?? null,
+		]).toEqual([null, 1_500])
+	})
+
+	test("a settings read that failed says so, and Retry reads it again", () => {
+		const model = withSettings()
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchSettings({
+				key: model.settings.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("unavailable"))),
+			}),
+		).model
+		const fresh = loaded()
+		const failedFresh = pageUpdate(
+			fresh,
+			Message.CompletedFetchSettings({
+				key: fresh.settings.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("unavailable"))),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failedFresh),
+			expectView(text("The spend limit could not be loaded")).toExist(),
+		)
+		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toContain("SecurityApiGetSettings")
+	})
+
+	test("verifying on the hunting model is refused before anything is sent", () => {
+		const same = pickValidation(opened(), "deepseek/deepseek-v4.1-flash-1017:nitro")
+		const submitted = send(same, SpendSettings.Message.Submitted())
+		expect(names(submitted.commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(submitted.model),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text(/^Pick a different model than the one hunting/)).toExist(),
+		)
+	})
+
+	test("a saved form re-reads the settings and says so", () => {
+		const pending = send(opened(), SpendSettings.Message.Submitted()).model
+		const saved = send(
+			pending,
+			SpendSettings.Message.CompletedSave({
+				attempt: pending.spendSettings.attempt,
+				result: Result.succeed({ ...settingsOf(NOW), monthlySpendLimitUsd: 2_500 }),
+			}),
+		)
+		expect([names(saved.commands).includes("SecurityApiGetSettings"), saved.outMessage?._tag]).toEqual([
+			true,
+			"RequestedToast",
+		])
+	})
+
+	test("a member gets no Spend & models control", () => {
+		const member = pageUpdate(withSettings(), Message.CompletedReadIsAdmin({ isAdmin: false })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(role("button", { name: "Spend & models" })).not.toExist(),
+			expectView(text("Edit limit")).not.toExist(),
+		)
 	})
 })
 
 describe("add target", () => {
-	const opened = () => pageUpdate(loaded(), Message.ClickedAddTarget()).model
+	const opened = () => pageUpdate(withSettings(), Message.ClickedAddTarget()).model
 	const send = (model: Model, message: AddTarget.Message) =>
 		pageUpdate(model, Message.GotAddTargetMessage({ message }))
 	const pick = (model: Model, value: string) =>
@@ -576,8 +710,11 @@ describe("add target", () => {
 				message: Select.Message.SelectedItem({ index: 1, value }),
 			}),
 		).model
-	const typed = (field: "GotScopeMessage" | "GotBudgetMessage", value: string) =>
+	const typed = (field: "GotScopeMessage", value: string) =>
 		AddTarget.Message[field]({ message: Field.Message.ChangedValue({ value }) })
+	const pickModel = (model: Model, field: "GotDiscoveryMessage" | "GotValidationMessage", value: string) =>
+		send(model, AddTarget.Message[field]({ message: Select.Message.SelectedItem({ index: 0, value }) }))
+			.model
 
 	test("an empty form says what is missing and sends nothing", () => {
 		const submitted = send(opened(), AddTarget.Message.Submitted())
@@ -590,15 +727,43 @@ describe("add target", () => {
 		)
 	})
 
-	test("the picked repository's branch and a custom budget are what the create sends", () => {
-		const form = send(pick(opened(), "acme/api-gateway"), typed("GotBudgetMessage", "1500")).model
-		expect(form.addTarget.branch.value).toBe("main")
+	test("the picked branch and only the models that differ from the org's are what the create sends", () => {
+		const form = pickModel(
+			pick(opened(), "acme/api-gateway"),
+			"GotDiscoveryMessage",
+			"anthropic/claude-haiku-5.5",
+		)
+		expect([form.addTarget.branch.value, form.addTarget.validation.value]).toEqual([
+			"main",
+			"anthropic/claude-sonnet-5.5",
+		])
 		const created = send(form, AddTarget.Message.Submitted())
-		expect(
-			created.commands?.find((command) => command.name === "SecurityApiCreateTarget")?.args,
-		).toMatchObject({
-			payload: { repository: "acme/api-gateway", branch: "main", profile: "deep", budgetPerRun: 1500 },
+		const args = created.commands?.find((command) => command.name === "SecurityApiCreateTarget")?.args
+		expect(args).toEqual({
+			attempt: form.addTarget.attempt,
+			payload: {
+				repository: "acme/api-gateway",
+				branch: "main",
+				profile: "deep",
+				discoveryModel: "anthropic/claude-haiku-5.5",
+			},
 		})
+	})
+
+	test("verifying on the hunting model is reported under the models and sends nothing", () => {
+		const form = pickModel(
+			pick(opened(), "acme/api-gateway"),
+			"GotValidationMessage",
+			"deepseek/deepseek-v4.1-flash-1017:nitro",
+		)
+		const submitted = send(form, AddTarget.Message.Submitted())
+		expect(names(submitted.commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(submitted.model),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text(/^Pick a different model to verify than to hunt/)).toExist(),
+		)
 	})
 
 	test("a created target starts its first run", () => {

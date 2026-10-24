@@ -279,12 +279,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		PickedUnitFilter: ({ filter }) => ({ model: { ...model, unitFilter: filter } }),
 		ToggledLedger: () => ({ model: { ...model, isLedgerOpen: !model.isLedgerOpen } }),
-		ClickedStartRun: ({ budget }) => {
+		ClickedStartRun: () => {
 			const run = runOf(model)
 			if (run === null || model.busy !== null) return { model }
 			return {
 				model: { ...model, busy: "start" },
-				commands: [StartAnotherRun({ targetId: run.targetId, budget })],
+				commands: [StartAnotherRun({ targetId: run.targetId })],
 			}
 		},
 		CompletedStartRun: ({ result }) =>

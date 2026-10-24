@@ -83,6 +83,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"DELETE /v2/dashboards/{id}",
 			"DELETE /v2/dashboards/{id}/share",
 			"DELETE /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"DELETE /v2/device_credentials/{installation_id}",
 			"DELETE /v2/integrations/aws/connections/{id}",
 			"DELETE /v2/integrations/chat_connectors/{connector}/identity",
 			"DELETE /v2/integrations/chat_workspaces/{id}",
@@ -122,6 +123,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/dashboards/{id}/versions",
 			"GET /v2/dashboards/{id}/versions/{version_id}",
 			"GET /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"GET /v2/device_credentials/{installation_id}/attestation_challenge",
 			"GET /v2/environments",
 			"GET /v2/error_issues",
 			"GET /v2/error_issues/service_counts",
@@ -196,6 +198,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/dashboards/{id}/versions/{version_id}/restore",
 			"POST /v2/dashboards/{id}/widget_data",
 			"POST /v2/dashboards/{id}/widgets/{widget_id}/share/rotate",
+			"POST /v2/device_tokens",
 			"POST /v2/error_issues/{id}/claim",
 			"POST /v2/error_issues/{id}/release",
 			"POST /v2/error_issues/{id}/transitions",
@@ -226,6 +229,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/onboarding/checklist/claim",
 			"POST /v2/scrape_targets",
 			"POST /v2/scrape_targets/{id}/probe",
+			"POST /v2/services/health",
 			"POST /v2/session_replays/for_trace",
 			"POST /v2/session_replays/search",
 			"POST /v2/share/alert-chart",
@@ -245,6 +249,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PUT /v2/anomalies/incidents/{id}/issue",
 			"PUT /v2/dashboards/{id}/share",
 			"PUT /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"PUT /v2/device_credentials/{installation_id}",
 			"PUT /v2/error_issues/{id}/severity",
 			"PUT /v2/mobile_devices/{token}",
 			"PUT /v2/mobile_devices/{token}/live_activities/{incident_id}",
@@ -276,6 +281,8 @@ describe("MapleApiV2 OpenAPI", () => {
 		"resolveShareOgCard",
 		"resolveAlertChart",
 		"resolveChatChart",
+		// The DPoP token endpoint: the signed proof in the `DPoP` header is the credential.
+		"issueDeviceToken",
 	])
 
 	/**
@@ -526,6 +533,7 @@ describe("MapleApiV2 OpenAPI", () => {
 		expect(responseErrorTags("get", "/v2/integrations/planetscale/organizations", "401")).toEqual([
 			"@maple/http/errors/IntegrationsRevokedError",
 			"@maple/http/v2/InvalidCredentialsError",
+			"@maple/http/v2/InvalidDpopProofError",
 			"@maple/http/errors/UnauthorizedError",
 		])
 		expect(responseErrorTags("get", "/v2/session_replays/{id}/events", "413")).toEqual([
