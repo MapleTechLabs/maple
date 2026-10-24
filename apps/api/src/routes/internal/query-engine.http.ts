@@ -126,9 +126,7 @@ import { DateTime, Effect, Option, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	isMissingProductEvents,
-	isMissingServiceApiColumns,
 	isMissingServiceEndpointDetails,
-	isMissingServiceOperationsRollup,
 } from "@maple/backend/services/warehouse/missing-table"
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audit/audit-access"
@@ -154,7 +152,12 @@ import {
 } from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
 import { productEventsFunnelOpts, productEventsPathsOpts } from "@maple/query-engine/registry"
-import { makeDashboardReads, makeRollupFallback, mapExecError } from "@maple/backend/queries/dashboard-reads"
+import {
+	makeDashboardReads,
+	makeRollupFallback,
+	mapExecError,
+	withServiceApiFallback,
+} from "@maple/backend/queries/dashboard-reads"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
 import * as Integrations from "@maple/query-engine-integrations"
@@ -169,12 +172,6 @@ import * as Integrations from "@maple/query-engine-integrations"
 const withProductEventsFallback = makeRollupFallback(
 	isMissingProductEvents,
 	"product_events is absent on this cluster; reading raw session_events. Apply ClickHouse schema to restore the fast path.",
-)
-
-// The API tab's reads also degrade when the rollups exist but predate migration 0048.
-const withServiceApiFallback = makeRollupFallback(
-	(error) => isMissingServiceOperationsRollup(error) || isMissingServiceApiColumns(error),
-	"service_operations rollup lacks migration 0048; reading raw traces. Apply ClickHouse schema to restore the fast path.",
 )
 
 /** Endpoint detail has no raw fallback: without migration 0048 the panel is empty. */

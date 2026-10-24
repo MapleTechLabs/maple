@@ -95,7 +95,7 @@ const withServiceOperationsFallback = makeRollupFallback(
 )
 
 // The API tab's reads also degrade when the rollups exist but predate migration 0048.
-const withServiceApiFallback = makeRollupFallback(
+export const withServiceApiFallback = makeRollupFallback(
 	(error) => isMissingServiceOperationsRollup(error) || isMissingServiceApiColumns(error),
 	"service_operations rollup lacks migration 0048; reading raw traces. Apply ClickHouse schema to restore the fast path.",
 )
