@@ -655,11 +655,18 @@ const loadCustomer: Step = (model) => {
 }
 
 /** A customer read for the current org settled: remember the access, then re-run the gates. */
+/** The quick start learns the plan is known: a save it loaded before the customer read settles. */
+const withSettledPlan = (step: UpdateReturn): UpdateReturn => {
+	if (step.model.onboarding?.screen._tag !== "QuickStart") return step
+	const next = updateOnboarding(step.model, Onboarding.settledPlanMessage)
+	return { ...next, commands: [...(step.commands ?? []), ...(next.commands ?? [])] }
+}
+
 const settledCustomer = (model: Model, orgId: string, data: CustomerSlot["data"]): UpdateReturn => {
 	if (model.customer.orgId !== orgId) return { model }
 	const next = modifyFields(model, { customer: () => ({ orgId, data }) })
 	const access = accessOf(next.customer)
-	const settled = settle(next)
+	const settled = withSettledPlan(settle(next))
 	return access === "app" || access === "onboarding"
 		? {
 				model: settled.model,
