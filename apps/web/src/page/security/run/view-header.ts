@@ -4,6 +4,7 @@ import {
 	type SecurityAuditTarget,
 	SECURITY_AUDIT_MAX_BUDGET,
 } from "@maple/domain/http"
+import { executionModeLine } from "@maple/domain/security-audit"
 import { cn } from "@maple/ui/lib/utils"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -71,6 +72,15 @@ export const runTitle = (
 					metaItem(h, "ClockIcon", [time]),
 				],
 			),
+			// Why execution-bound leads stay unvalidated: the run's own label, one quiet line.
+			...(run.executionProfile === null
+				? []
+				: [
+						h.p(
+							[h.Class("w-full text-sm text-muted-foreground")],
+							[metaItem(h, "FileCodeIcon", [executionModeLine(run.executionProfile)])],
+						),
+					]),
 		],
 	})
 }

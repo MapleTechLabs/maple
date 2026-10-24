@@ -17,6 +17,8 @@ import {
 	SecurityAuditEventDetail,
 	SecurityAuditEvents,
 	SecurityAuditFindings,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgUsage,
 	SecurityAuditRunFindings,
 	SecurityAuditRuns,
 	SecurityAuditTargets,
@@ -43,6 +45,7 @@ import {
 	RunMetadataRecord,
 	UnitStatus,
 } from "@maple/security-audit/schema"
+import { ExecutionProfile } from "@maple/security-audit/ecosystems"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -90,7 +93,7 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly createTarget: (
 		input: CreateTargetInput,
 	) => Effect.Effect<SecurityAuditTargetRow, AuditStoreError | SecurityAuditTargetExists>
-	/** The org's active connected repository by `owner/name`, case-insensitively. */
+	/** The org's active GitHub-connected repository by `owner/name`, case-insensitively. */
 	readonly findConnectedRepository: (
 		repository: string,
 	) => Effect.Effect<Option.Option<ConnectedRepository>, AuditStoreError>
@@ -158,6 +161,25 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		fingerprints: ReadonlyArray<string>,
 		runId: string,
 	) => Effect.Effect<number, AuditStoreError>
+	/** Records how the run may execute target code; a finished run keeps what it had. */
+	readonly setExecutionProfile: (
+		runId: string,
+		profile: ExecutionProfile,
+	) => Effect.Effect<void, AuditStoreError>
+	/** Agent invocations the org's runs reserved in `period` (UTC `YYYY-MM`). */
+	readonly orgInvocationsSpent: (period: string) => Effect.Effect<number, AuditStoreError>
+	/**
+	 * Reserves the invocation of `agentId` in `runId` against the org's `period`: true while the org
+	 * has spent fewer than `limit`, so concurrent runs never overspend. Idempotent per (run, agent):
+	 * a retry finds its earlier grant and counts nothing. False once the limit is reached, and for a
+	 * run that already finished (finished runs take no writes).
+	 */
+	readonly reserveOrgInvocation: (
+		runId: string,
+		agentId: string,
+		period: string,
+		limit: number,
+	) => Effect.Effect<boolean, AuditStoreError>
 	/** A person's triage of one finding, with why; None when the target has no such finding. */
 	readonly setFindingStatus: (
 		targetId: SecurityAuditTargetId,
@@ -254,6 +276,7 @@ const decodeUnitSummary = Schema.decodeUnknownOption(UnitSummaryFields)
 const decodeFinding = Schema.decodeUnknownOption(FindingSchema)
 const decodeRunMetadata = Schema.decodeUnknownOption(RunMetadataRecord)
 const decodeReports = Schema.decodeUnknownOption(AuditReportsRecord)
+const decodeExecutionProfile = Schema.decodeUnknownOption(ExecutionProfile)
 const decodeEventDetail = Schema.decodeUnknownOption(SecurityAuditEventDetail)
 
 /** A stored jsonb value under the current schema, or null when it was written under an older one. */
@@ -272,9 +295,10 @@ const warnStale = (what: string, stale: number, total: number) =>
 				Effect.annotateLogs({ stale, total }),
 			)
 
-type RawRunRow = Omit<SecurityAuditRunRow, "metadata" | "reports"> & {
+type RawRunRow = Omit<SecurityAuditRunRow, "metadata" | "reports" | "executionProfile"> & {
 	readonly metadata: unknown
 	readonly reports: unknown
+	readonly executionProfile: unknown
 }
 
 /** Runs with `metadata` and `reports` read leniently: an old shape becomes null, not a failure. */
@@ -286,9 +310,18 @@ const lenientRuns = (rows: ReadonlyArray<RawRunRow>) =>
 				decoded: decodeRunMetadata(row.metadata),
 			})
 			const reports = lenient({ isNull: row.reports === null, decoded: decodeReports(row.reports) })
+			const executionProfile = lenient({
+				isNull: row.executionProfile === null,
+				decoded: decodeExecutionProfile(row.executionProfile),
+			})
 			return {
-				row: { ...row, metadata: metadata.value, reports: reports.value },
-				stale: metadata.stale || reports.stale,
+				row: {
+					...row,
+					metadata: metadata.value,
+					reports: reports.value,
+					executionProfile: executionProfile.value,
+				},
+				stale: metadata.stale || reports.stale || executionProfile.stale,
 			}
 		})
 		yield* warnStale("run metadata or reports", decoded.filter((d) => d.stale).length, rows.length)
@@ -300,6 +333,7 @@ const selectRuns = () =>
 		...$,
 		metadata: PG.undecoded($.metadata),
 		reports: PG.undecoded($.reports),
+		executionProfile: PG.undecoded($.executionProfile),
 	}))
 
 /**
@@ -757,6 +791,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								.select("id", "fullName")
 								.where(($) => [
 									$.orgId.eq(orgId),
+									// The sandbox clones through the GitHub App: no other provider can be audited.
+									$.provider.eq("github"),
 									$.status.eq("active"),
 									PG.lower($.fullName).eq(repository.toLowerCase()),
 								])
@@ -995,8 +1031,14 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										.returning("id"),
 								)
 								if (rows.length === 0) return false
-								// Settle never runs for a cancelled run: its spend so far is its agents' events.
-								// The row is locked by the update, so no event can land after this sum.
+								// Settle never runs for a cancelled run: its spend is its reservations (an agent
+								// may have reserved without an event yet), its tokens its agents' events. The row
+								// is locked by the update, so neither can land after these reads.
+								const reserved = yield* db.run(
+									PG.from(SecurityAuditOrgReservations)
+										.select("agentId")
+										.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)]),
+								)
 								const agents = yield* db.run(
 									PG.from(SecurityAuditEvents)
 										.select(($) => ({
@@ -1021,7 +1063,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								yield* db.run(
 									PG.update(SecurityAuditRuns)
 										.set({
-											invocationsSpent: agents.length,
+											invocationsSpent: reserved.length,
 											inputTokens: agents.reduce((n, a) => n + (a.inputTokens ?? 0), 0),
 											outputTokens: agents.reduce(
 												(n, a) => n + (a.outputTokens ?? 0),
@@ -1336,10 +1378,85 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					return Option.some({ fingerprint, status, statusReason: reason, statusChangedAt: now })
 				})
 
+				const setExecutionProfile: SecurityAuditOrgStore["setExecutionProfile"] = Effect.fn(
+					"SecurityAuditStore.setExecutionProfile",
+				)(function* (rawRunId, profile) {
+					const runId = yield* decodeRunId(rawRunId)
+					yield* updateOpenRun(runId, { executionProfile: profile }, "execution profile")
+				})
+
+				const orgInvocationsSpent: SecurityAuditOrgStore["orgInvocationsSpent"] = Effect.fn(
+					"SecurityAuditStore.orgInvocationsSpent",
+				)(function* (period) {
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditOrgUsage)
+								.select("invocationsSpent")
+								.where(($) => [$.orgId.eq(orgId), $.period.eq(period)])
+								.limit(1),
+						),
+					)
+					return rows[0]?.invocationsSpent ?? 0
+				})
+
+				const reserveOrgInvocation: SecurityAuditOrgStore["reserveOrgInvocation"] = Effect.fn(
+					"SecurityAuditStore.reserveOrgInvocation",
+				)(function* (rawRunId, agentId, period, limit) {
+					yield* Effect.annotateCurrentSpan({ "maple.security_audit.org_limit": limit })
+					const runId = yield* decodeRunId(rawRunId)
+					const now = yield* Clock.currentTimeMillis
+					return yield* dbExecute((db) =>
+						db.transaction(
+							Effect.gen(function* () {
+								// A cancel or settle waits on this lock, and a finished run reserves nothing.
+								// It also serialises two tries of one agent, so the check below is race-free.
+								const open = yield* lockOpenRun(db, orgId, runId, "org invocation")
+								if (Option.isNone(open)) return false
+								const granted = yield* db.run(
+									PG.from(SecurityAuditOrgReservations)
+										.select("agentId")
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.runId.eq(runId),
+											$.agentId.eq(agentId),
+										])
+										.limit(1),
+								)
+								if (granted.length > 0) return true
+								// The insert path writes 1, so a limit below 1 must refuse before it.
+								if (limit < 1) return false
+								const rows = yield* db.run(
+									PG.insertInto(SecurityAuditOrgUsage)
+										.values({ orgId, period, invocationsSpent: 1, updatedAt: now })
+										.onConflictDoUpdate({
+											target: ["orgId", "period"],
+											set: ($) => ({
+												invocationsSpent: $.invocationsSpent.add(1),
+												updatedAt: now,
+											}),
+											where: ($) => $.invocationsSpent.lt(limit),
+										})
+										.returning("invocationsSpent"),
+								)
+								if (rows.length === 0) return false
+								yield* db.run(
+									PG.insertInto(SecurityAuditOrgReservations)
+										.values({ runId, agentId, orgId, period, createdAt: now })
+										.onConflictDoNothing({ target: ["runId", "agentId"] }),
+								)
+								return true
+							}),
+						),
+					)
+				})
+
 				return {
 					listTargets,
 					getTarget,
 					setFindingStatus,
+					orgInvocationsSpent,
+					reserveOrgInvocation,
+					setExecutionProfile,
 					findConnectedRepository,
 					latestPriorRun,
 					countUnits,

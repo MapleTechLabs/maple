@@ -1,5 +1,9 @@
 import { feature, plan, reward } from "atmn"
-import { OPENROUTER_BYOK_ADDON_ID, OPENROUTER_BYOK_FEATURE_ID } from "@maple/domain/billing"
+import {
+	OPENROUTER_BYOK_ADDON_ID,
+	OPENROUTER_BYOK_FEATURE_ID,
+	SECURITY_AUDIT_INVOCATIONS_FEATURE_ID,
+} from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
 
 // Features
@@ -62,6 +66,16 @@ export const aiInputTokens = feature({
 export const aiOutputTokens = feature({
 	id: "ai_output_tokens",
 	name: "AI Output Tokens",
+	type: "metered",
+	consumable: true,
+})
+
+// Security-audit agent invocations. A plan's included amount is the org's monthly audit budget
+// (`SecurityAuditPlanBudget`); each invocation a run reserves is tracked by `trackSecurityAuditInvocations`.
+// No plan includes it yet, so customer orgs cannot start an audit until one does.
+export const securityAuditInvocations = feature({
+	id: SECURITY_AUDIT_INVOCATIONS_FEATURE_ID,
+	name: "Security Audit Invocations",
 	type: "metered",
 	consumable: true,
 })

@@ -4,6 +4,8 @@
  */
 import { Schema } from "effect"
 
+export { executionModeLine, type ExecutionProfile } from "@maple/security-audit/ecosystems"
+
 export const SecurityAuditTargetId = Schema.String.check(Schema.isUUID()).pipe(
 	Schema.brand("@maple/SecurityAuditTargetId"),
 	Schema.annotate({ identifier: "@maple/SecurityAuditTargetId", title: "Security Audit Target ID" }),
@@ -51,8 +53,21 @@ export const SecurityAuditWorkflowPayload = Schema.Struct({
 	/** Max agent invocations; always finite, the API resolves a default before starting. */
 	budget: Schema.Int.check(Schema.isGreaterThan(0)),
 	priorRunId: Schema.NullOr(Schema.String),
+	/** The org's monthly invocation limit, resolved from its plan at start; checked before every agent. */
+	orgBudget: Schema.Struct({
+		/** The billing cycle the run's invocations count against; fixed at start so replays agree. */
+		period: Schema.String,
+		limit: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	}),
 })
 export type SecurityAuditWorkflowPayload = typeof SecurityAuditWorkflowPayload.Type
+
+/** The UTC month an org's audit invocations count against, `YYYY-MM`. */
+export const securityAuditBudgetPeriod = (epochMs: number): string =>
+	new Date(epochMs).toISOString().slice(0, 7)
+
+/** Why a run ends incomplete when the org's monthly invocations run out mid-run. */
+export const ORG_BUDGET_EXHAUSTED = "org_budget_exhausted"
 
 const PATH_FORBIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u
 const WINDOWS_RESERVED_COMPONENT =

@@ -273,6 +273,36 @@ The method is language-neutral; the platform around it is not. Before a customer
 - **Size limits.** Checkout size and history depth checks at prepare (LFS, very large repos); a
   repo that does not fit is refused with a reason, not partially scanned and reported as covered.
 
+**Phase 2.5 status, 2026-10-24.** Landed (platform parts, branch `feat/security-audit-readiness`):
+
+- **Metering.** An org's monthly invocation budget is its plan's `security_audit_invocations`
+  allotment (Autumn; unmetered orgs get `SECURITY_AUDIT_UNMETERED_MONTHLY_INVOCATIONS`).
+  `startRun` refuses with a 402 when the org cannot fund the profile's minimum and caps the run's
+  budget at what the org has left. Before every agent step the Workflow reserves one invocation
+  in `security_audit_org_usage` (conditional upsert, open runs only) and tracks it to Autumn with
+  source `security_audit`; a refusal ends the run `incomplete` with `org_budget_exhausted`.
+  Reports name every unit a run did not audit. The budget period is the subscription's own
+  billing cycle (the UTC month only when billing gives none), and a start is also capped by
+  Autumn's own remaining balance. Known gap: the Autumn track is fire-and-forget, so charges are
+  lost while Autumn is down; reconcile them later from `security_audit_org_reservations`. A run
+  that crosses a billing-cycle boundary keeps reserving against the period it started in, so it
+  can spend past the new cycle's start; that overspend is bounded by the run's own budget. Slice
+  size and cadence per plan wait on phase 3.
+- **Size limits.** Target creation and run start refuse a repository GitHub reports as over
+  `SECURITY_AUDIT_MAX_REPOSITORY_BYTES`, before any clone. After the clone, prepare measures
+  commits, tracked files and bytes, and Git LFS files; a repository over a limit
+  (`security-audit/limits.ts`, env-overridable) is refused and the run is marked failed with the
+  reason.
+- **Execution label.** Prepare detects ecosystems (node/bun, Python, Go, Rust, JVM) and private
+  dependency signals (registries, credentials, submodules, local `replace`, SSH git deps) and
+  stores an `executionProfile` on the run; every run is `source_only` with reasons, shown in the
+  reports and on the run page.
+- **GitHub only.** Targets resolve only through an active GitHub-connected repository.
+
+Waits on phase 1 (sandbox v2): per-ecosystem toolchain images, the trusted dependency install,
+hostile-code isolation with its external review and cross-tenant escape tests, and so any
+`executable` run. The multi-language eval is not started.
+
 What we can honestly ship at the end of this phase: full deep scans for JS/TS repos without
 private dependencies, and source-only deep review for everything else with execution-bound
 findings clearly labelled. GitHub only until another `VcsProviderId` exists. Cross-repo tracing

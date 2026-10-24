@@ -5,7 +5,8 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./schema": "./src/schema.ts"
+		"./schema": "./src/schema.ts",
+		"./ecosystems": "./src/ecosystems.ts"
 	},
 	"scripts": {
 		"test": "bun scripts/vendor-skill.ts --check && node --test skill/validate-findings.test.cjs skill/validate-coverage-ledger.test.cjs && vitest run",
