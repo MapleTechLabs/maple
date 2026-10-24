@@ -467,13 +467,32 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 								error,
 							): Effect.Effect<
 								never,
-								DeviceInstallationInUseError | DeviceCredentialPersistenceError
+								| DeviceInstallationInUseError
+								| DeviceKeyInUseError
+								| DeviceCredentialPersistenceError
 							> =>
 								postgresSqlState(error) === UNIQUE_VIOLATION
-									? Effect.fail(
-											new DeviceInstallationInUseError({
-												message: "A concurrent registration won; retry.",
-											}),
+									? // Which index lost: the key (jkt) or the installation's live slot.
+										dbExecute((db) =>
+											db.run(
+												PG.from(DeviceCredentials)
+													.select("id")
+													.where(($) => [$.jkt.eq(jkt)])
+													.limit(1),
+											),
+										).pipe(
+											Effect.flatMap((rows) =>
+												Effect.fail(
+													rows.length > 0
+														? new DeviceKeyInUseError({
+																message: "The key is already registered.",
+															})
+														: new DeviceInstallationInUseError({
+																message:
+																	"A concurrent registration won; retry.",
+															}),
+												),
+											),
 										)
 									: Effect.fail(
 											new DeviceCredentialPersistenceError({ message: error.message }),

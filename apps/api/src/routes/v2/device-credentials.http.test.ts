@@ -9,6 +9,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
+import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
 import { AppAttestTrustAnchor } from "@maple/backend/services/auth/device/app-attest"
@@ -156,7 +157,7 @@ const edgeCacheStub = Layer.succeed(EdgeCacheService, {
 	rawDelete: () => Effect.void,
 })
 
-const makeHarness = (trustAnchor?: Uint8Array) => {
+const makeHarness = (trustAnchor?: Uint8Array, limited?: (key: string) => boolean) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const base = Layer.mergeAll(envLive, testDb.layer, edgeCacheStub)
@@ -186,7 +187,14 @@ const makeHarness = (trustAnchor?: Uint8Array) => {
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
-		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
+		Layer.provideMerge(
+			limited === undefined
+				? ApiV2RateLimiterAllowAllLayer
+				: Layer.succeed(ApiV2RateLimiter, {
+						check: (key) =>
+							Effect.succeed(limited(key) ? ("limited" as const) : ("allowed" as const)),
+					}),
+		),
 		Layer.provideMerge(servicesLive),
 	)
 	const { handler, dispose: disposeHandler } = HttpRouter.toWebHandler(routes, { disableLogger: true })
@@ -897,4 +905,27 @@ describe("security hardening", () => {
 			expect(registered.status).toBe(400)
 		}),
 	)
+})
+
+describe("device token rate limits", () => {
+	it("limits the token endpoint per client IP before verifying anything", async () => {
+		const harness = makeHarness(undefined, (key) => key.startsWith("v2devip:203.0.113.9"))
+		try {
+			const { key } = await harness.enrolled()
+			const dpop = await proof(key, { htm: "POST", htu: `${BASE}/v2/device_tokens` })
+			const limited = await harness.send("POST", "/v2/device_tokens", {
+				dpop,
+				"cf-connecting-ip": "203.0.113.9",
+			})
+			expect(limited.status).toBe(429)
+			// Another address is unaffected, and the limited proof's jti was never spent.
+			const allowed = await harness.send("POST", "/v2/device_tokens", {
+				dpop,
+				"cf-connecting-ip": "198.51.100.4",
+			})
+			expect(allowed.status).toBe(200)
+		} finally {
+			await harness.dispose()
+		}
+	})
 })

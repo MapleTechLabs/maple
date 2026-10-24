@@ -189,7 +189,6 @@ public protocol MapleAPI: Sendable {
 	func searchTraces(_ search: TraceSearch, limit: Int, cursor: String?) async throws -> Page<TraceSummary>
 	func trace(id: String) async throws -> TraceDetail
 	func searchLogs(_ search: LogSearch, limit: Int, cursor: String?) async throws -> Page<LogRecord>
-	func logVolume(_ search: LogSearch, targetPoints: Int) async throws -> [Double]
 	func transitionIssue(id: String, to state: WorkflowState, note: String?) async throws -> ErrorIssue
 	func claimIssue(id: String) async throws -> ErrorIssue
 	func releaseIssue(id: String) async throws -> ErrorIssue
@@ -198,6 +197,12 @@ public protocol MapleAPI: Sendable {
 	func dashboard(id: String) async throws -> MobileDashboard
 	func dashboardWidgetData(dashboardId: String, widgetIds: [String], window: ResolvedTimeWindow, maxDataPoints: Int)
 		async throws -> [WidgetOutcome]
+
+	// The web dashboard's own reads: see MapleClient+Parity.swift
+	func serviceHealth(window: ResolvedTimeWindow, comparing previous: ResolvedTimeWindow?) async throws
+		-> ServiceHealthSnapshot
+	func logVolumeBySeverity(_ search: LogSearch, targetPoints: Int) async throws -> LogVolume
+	func previewAlertRule(_ rule: AlertRule, window: ResolvedTimeWindow) async throws -> AlertRulePreview
 
 	// Home Screen widgets — see MapleClient+WidgetSummary.swift
 	func widgetSummary() async throws -> WidgetSummaryPayload

@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "d80a4c54a0122f9c6d6d5a141c06351084b7d9220816a470f9ac890868a4b11b",
+	"id": "7eba9805670c72c0f149f7402145d7b09c829a0e2e812dae3c691fd379a5d217",
 	"prevIds": [
-		"40daa4bb952ee58d867efd70ef65970e66fbc99a809f5df4478d7f062823bd73"
+		"7e565355c58f7f969c82a52d78e6c66ad35f8da7bd8e4ffb2aea2212373c4c4b"
 	],
 	"entities": [
 		{
@@ -249,26 +249,6 @@
 				"columns": [
 					"org_id",
 					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "device_credentials",
-			"primaryKey": {
-				"name": "device_credentials_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "device_proof_replays",
-			"primaryKey": {
-				"name": "device_proof_replays_pkey",
-				"columns": [
-					"key"
 				]
 			}
 		},
@@ -773,6 +753,17 @@
 				"name": "security_audit_findings_pkey",
 				"columns": [
 					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "security_audit_org_usage",
+			"primaryKey": {
+				"name": "security_audit_org_usage_pkey",
+				"columns": [
+					"org_id",
+					"period"
 				]
 			}
 		},
@@ -3241,18 +3232,8 @@
 		{
 			"kind": "column",
 			"table": "aws_connections",
-			"name": "metric_stream_changed_at",
-			"position": 12,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "aws_connections",
 			"name": "stream_secret_ciphertext",
-			"position": 13,
+			"position": 12,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -3262,7 +3243,7 @@
 			"kind": "column",
 			"table": "aws_connections",
 			"name": "stream_secret_iv",
-			"position": 14,
+			"position": 13,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -3272,7 +3253,7 @@
 			"kind": "column",
 			"table": "aws_connections",
 			"name": "stream_secret_tag",
-			"position": 15,
+			"position": 14,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -3282,7 +3263,7 @@
 			"kind": "column",
 			"table": "aws_connections",
 			"name": "stream_secret_hash",
-			"position": 16,
+			"position": 15,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -3292,7 +3273,7 @@
 			"kind": "column",
 			"table": "aws_connections",
 			"name": "stream_last_received_at",
-			"position": 17,
+			"position": 16,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -3302,7 +3283,7 @@
 			"kind": "column",
 			"table": "aws_connections",
 			"name": "stream_last_error",
-			"position": 18,
+			"position": 17,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -3312,7 +3293,7 @@
 			"kind": "column",
 			"table": "aws_connections",
 			"name": "created_by",
-			"position": 19,
+			"position": 18,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -3322,7 +3303,7 @@
 			"kind": "column",
 			"table": "aws_connections",
 			"name": "created_at",
-			"position": 20,
+			"position": 19,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -3332,7 +3313,7 @@
 			"kind": "column",
 			"table": "aws_connections",
 			"name": "updated_at",
-			"position": 21,
+			"position": 20,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -4626,176 +4607,6 @@
 			"type": "integer",
 			"notNull": true,
 			"default": "0",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "user_id",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "installation_id",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "public_jwk",
-			"position": 4,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "jkt",
-			"position": 5,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "roles",
-			"position": 6,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "scopes",
-			"position": 7,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "attested",
-			"position": 8,
-			"type": "boolean",
-			"notNull": true,
-			"default": "false",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "attestation",
-			"position": 9,
-			"type": "jsonb",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "created_at",
-			"position": 10,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "last_used_at",
-			"position": 11,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "expires_at",
-			"position": 12,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "hard_expires_at",
-			"position": 13,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_credentials",
-			"name": "revoked_at",
-			"position": 14,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_proof_replays",
-			"name": "key",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "device_proof_replays",
-			"name": "expires_at",
-			"position": 1,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
 			"identity": null
 		},
 		{
@@ -9421,58 +9232,8 @@
 		{
 			"kind": "column",
 			"table": "planetscale_databases",
-			"name": "webhook_id",
-			"position": 9,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "planetscale_databases",
-			"name": "webhook_secret_ciphertext",
-			"position": 10,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "planetscale_databases",
-			"name": "webhook_secret_iv",
-			"position": 11,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "planetscale_databases",
-			"name": "webhook_secret_tag",
-			"position": 12,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "planetscale_databases",
-			"name": "webhook_error",
-			"position": 13,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "planetscale_databases",
 			"name": "deleted_at",
-			"position": 14,
+			"position": 9,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -9482,7 +9243,7 @@
 			"kind": "column",
 			"table": "planetscale_databases",
 			"name": "created_at",
-			"position": 15,
+			"position": 10,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -9492,7 +9253,7 @@
 			"kind": "column",
 			"table": "planetscale_databases",
 			"name": "updated_at",
-			"position": 16,
+			"position": 11,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -11733,6 +11494,46 @@
 			"table": "security_audit_findings",
 			"name": "updated_at",
 			"position": 17,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_org_usage",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_org_usage",
+			"name": "period",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_org_usage",
+			"name": "invocations_spent",
+			"position": 2,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_org_usage",
+			"name": "updated_at",
+			"position": 3,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -14290,51 +14091,6 @@
 		},
 		{
 			"kind": "index",
-			"table": "device_credentials",
-			"name": "device_credentials_jkt_unique",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"jkt\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "device_credentials",
-			"name": "device_credentials_live_installation_unique",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"installation_id\""
-			],
-			"where": "\"revoked_at\" IS NULL"
-		},
-		{
-			"kind": "index",
-			"table": "device_credentials",
-			"name": "device_credentials_user_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"user_id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "device_proof_replays",
-			"name": "device_proof_replays_expires_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"expires_at\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
 			"table": "digest_subscriptions",
 			"name": "digest_subscriptions_org_enabled_idx",
 			"unique": false,
@@ -15400,7 +15156,7 @@
 			"columns": [
 				"\"target_id\""
 			],
-			"where": "\"status\" = 'in_progress'"
+			"where": "\"finished_at\" IS NULL"
 		},
 		{
 			"kind": "index",

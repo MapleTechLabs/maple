@@ -42,6 +42,9 @@ enum Telemetry {
 		/// The second pass of a load: decoration fetched after the first paint,
 		/// so `screen.load` measures time-to-content and this measures the rest.
 		static let screenDecorate = "screen.decorate"
+		/// A screen's first visit from asking for data to the content (or its
+		/// empty / error answer) on screen: token, requests, decode and render.
+		static let screenReady = "screen.ready"
 		/// A Clerk session token, cached or freshly minted.
 		static let authToken = "auth.token"
 		static let authMemberships = "auth.memberships"
@@ -64,6 +67,9 @@ enum Telemetry {
 		static let screenName = "screen.name"
 		static let loadReason = "load.reason"
 		static let loadOutcome = "load.outcome"
+		/// What `screen.ready` painted from: `network`, or `cache` when a stored
+		/// snapshot painted before the request returned.
+		static let readySource = "maple.app.screen.ready_source"
 		/// OTel semconv. On a failed load this is the `MapleAPIError` case, not
 		/// the message — a message with an id in it is not groupable.
 		static let errorType = "error.type"
@@ -200,6 +206,7 @@ enum Screen {
 	static let dashboardDetail = "Dashboard"
 	static let notificationSettings = "Notification Settings"
 	static let organizationPicker = "Organization Picker"
+	static let search = "Search"
 }
 
 private struct ScreenSpanModifier: ViewModifier {
@@ -428,6 +435,32 @@ extension Telemetry {
 // MARK: - Screen loads
 
 extension Telemetry {
+	/// Open a screen's `screen.ready` span, parented to the visit like its load.
+	@MainActor
+	static func screenReadyBegan(screen: String, organizationId: String?) -> Span? {
+		var attributes: [String: AttributeValue] = [Key.screenName: .string(screen)]
+		if let organizationId { attributes[Key.organizationId] = .string(organizationId) }
+		let parent = PushOpen.parent(for: screen) ?? Visit.parent(for: screen)
+		let start = { MapleTracing.shared.startSpan(Name.screenReady, attributes: attributes) }
+		let span = parent.map { TraceContext.withSpan($0, start) } ?? start()
+		ActiveLoads.began(span)
+		return span
+	}
+
+	/// End `screen.ready` with the outcome the user saw.
+	@MainActor
+	static func screenReadyEnded(_ span: Span?, outcome: String, source: String, error: MapleAPIError? = nil) {
+		guard let span, !span.hasEnded else { return }
+		ActiveLoads.ended(span)
+		span.setAttribute(Key.loadOutcome, outcome)
+		span.setAttribute(Key.readySource, source)
+		if let error {
+			span.setAttribute(Key.errorType, error.telemetryType)
+			span.setStatus(.error(error.message))
+		}
+		span.end()
+	}
+
 	/// The `screen.load` / `screen.decorate` spans currently in flight, so
 	/// backgrounding can end them the moment the app suspends.
 	///

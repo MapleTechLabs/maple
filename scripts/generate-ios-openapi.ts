@@ -44,6 +44,7 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"listEnvironments",
 	"getService",
 	"getServiceOverview",
+	"queryServiceHealth",
 	"queryTraceTimeseries",
 	"queryTraceBreakdown",
 	// Errors
@@ -71,6 +72,8 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"getAlertIncident",
 	"listAlertRules",
 	"getAlertRule",
+	// Charts an incident's own signal, the read the dashboard's incident page draws from.
+	"previewAlertRule",
 	"listAlertRuleChecks",
 	"listAlertDeliveries",
 	// Anomalies

@@ -46,12 +46,23 @@ export class AuditAgentError extends Schema.TaggedError<AuditAgentError>()(
 	},
 ) {}
 
+/**
+ * The host refused to launch an agent because the org's invocation budget is spent. The engine
+ * launches nothing more and ends the run incomplete with `reason`.
+ */
+export class AuditBudgetExhaustedError extends Schema.TaggedError<AuditBudgetExhaustedError>()(
+	"@maple/security-audit/BudgetExhaustedError",
+	{ message: Schema.String, agentId: Schema.String, reason: Schema.String },
+) {}
+
 export interface AuditAgentsApi {
 	/**
 	 * Runs one fresh agent and returns its final text. Each call is a new agent with no memory of
 	 * another; the role picks its model and tools (discovery and validation use different models).
 	 */
-	readonly run: (invocation: AgentInvocation) => Effect.Effect<AgentAnswer, AuditAgentError>
+	readonly run: (
+		invocation: AgentInvocation,
+	) => Effect.Effect<AgentAnswer, AuditAgentError | AuditBudgetExhaustedError>
 }
 
 export class AuditAgents extends Context.Service<AuditAgents, AuditAgentsApi>()(

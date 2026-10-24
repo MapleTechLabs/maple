@@ -182,7 +182,8 @@ out. Instead the widget authenticates with a **device-bound credential**
 
 A stolen App Group copy is therefore useless off the phone. Against an API that
 answers 404 to device credentials, the app falls back to the legacy `maple_ak_`
-key (`PUT /v2/widget_credentials`), and deletes it once a device credential works.
+key (`PUT /v2/widget_credentials`: read-only, 14 days, re-minted with 4 left, kept
+in a backup-excluded App Group directory), and deletes it once a device credential works.
 
 The extension still does not link `MapleAPI`: it gets ~30MB and a few seconds,
 and the generated client is 30k lines plus `OpenAPIRuntime`. The hand-written

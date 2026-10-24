@@ -49,6 +49,25 @@ enum AppConfig {
 		return url
 	}()
 
+	/// The dashboard beside the API: `api.maple.dev` -> `app.maple.dev`, and the
+	/// same swap for EU (`api.eu.maple.dev`) and previews (`api-pr-12.maple.dev`).
+	/// A local API maps to the local dashboard.
+	static let webBaseURL: URL = {
+		let fallback = URL(string: "https://app.maple.dev")!
+		guard let api = apiBaseURL, let host = api.host else { return fallback }
+		if host == "localhost" || host == "127.0.0.1" { return URL(string: "http://localhost:3471")! }
+		guard host.hasPrefix("api") else { return fallback }
+		var components = URLComponents()
+		components.scheme = api.scheme ?? "https"
+		components.host = "app" + host.dropFirst(3)
+		return components.url ?? fallback
+	}()
+
+	/// A dashboard path such as `/services/checkout`, on the web host above.
+	static func webURL(_ path: String) -> URL {
+		webBaseURL.appending(path: path)
+	}
+
 	private static func string(forKey key: String) -> String? {
 		(Bundle.main.object(forInfoDictionaryKey: key) as? String)?
 			.trimmingCharacters(in: .whitespacesAndNewlines)
