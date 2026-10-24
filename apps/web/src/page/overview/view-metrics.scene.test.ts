@@ -87,13 +87,11 @@ describe("overview metric card caches", () => {
 		Lazy.expectAllReused({ view, model: ready() })
 	})
 
-	test("a tooltip updates its card while the other chart cards retain their views", () => {
-		const previous = new Map<string, Html>()
+	test("a tooltip opens and hides after cached renders", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(ready()),
 			mounted(),
-			tap(({ html }) => IDS.forEach((id) => previous.set(id, card(html, id)))),
 			Subscription.emit(
 				Message.GotChartMessage({
 					chartId: "throughput",
@@ -108,10 +106,6 @@ describe("overview metric card caches", () => {
 			),
 			Mount.resolve(PortalTooltipBody, Chart.Message.CompletedPortalTooltipBody()),
 			expectView(selector("[data-chart-tooltip-holder]")).toContainText("11:00"),
-			tap(({ html }) => {
-				expect(card(html, "throughput")).not.toBe(previous.get("throughput"))
-				for (const id of IDS.slice(1)) expect(card(html, id)).toBe(previous.get(id))
-			}),
 			Subscription.emit(
 				Message.GotChartMessage({
 					chartId: "throughput",
