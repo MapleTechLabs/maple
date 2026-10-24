@@ -1,12 +1,9 @@
 #if DEBUG
 	import Foundation
 
-	/// `maple://debug/<path>`: puts any screen on top for the latency harness
-	/// (`scripts/measure-latency.sh`) and screenshots. Debug builds only.
-	///
-	/// Paths: `org/<id>`, `home`, `services`, `triage/<errors|incidents|anomalies>`,
-	/// `explore/<traces|logs|dashboards>`, `search`, `service/<name>`,
-	/// `issue/<id>`, `incident/<id>`, `anomaly/<id>`, `trace/<id>`, `dashboard/<id>`.
+	/// `maple://debug/<path>` opens any screen for the latency harness and screenshots
+	/// (Debug only): `home`, `services`, `triage/<segment>`, `explore/<segment>`,
+	/// `search`, `org|service|issue|incident|anomaly|trace|dashboard/<id>`.
 	enum DebugRoute {
 		@MainActor
 		static func open(_ url: URL, navigation: AppNavigation, session: SessionController) -> Bool {

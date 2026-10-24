@@ -52,8 +52,12 @@ struct TabRootHeader: View {
 
 extension View {
 	/// A tab root draws its own header in the scroll content, so the system bar
-	/// stays hidden there and returns on pushed screens.
+	/// stays hidden there and returns on pushed screens. A background band under
+	/// the status bar keeps scrolled content from running beneath the clock.
 	func tabRootChrome() -> some View {
 		toolbar(.hidden, for: .navigationBar)
+			.safeAreaInset(edge: .top, spacing: 0) {
+				Color.clear.frame(height: 0).background(Token.background)
+			}
 	}
 }

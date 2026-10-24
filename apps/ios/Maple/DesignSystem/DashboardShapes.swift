@@ -10,6 +10,8 @@ import SwiftUI
 struct UnderlineTabs<Option: Hashable>: View {
 	let options: [(Option, String)]
 	@Binding var selection: Option
+	/// An optional count beside a label, such as `Errors 12`. Nil draws none.
+	var badge: (Option) -> UnderlineTabBadge? = { _ in nil }
 
 	var body: some View {
 		ScrollView(.horizontal, showsIndicators: false) {
@@ -20,9 +22,17 @@ struct UnderlineTabs<Option: Hashable>: View {
 						selection = option
 					} label: {
 						VStack(spacing: 8) {
-							Text(label)
-								.font(selected ? Typo.smallMedium : Typo.small)
-								.foregroundStyle(selected ? Token.foreground : Token.mutedForeground)
+							HStack(alignment: .firstTextBaseline, spacing: 6) {
+								Text(label)
+									.font(selected ? Typo.smallMedium : Typo.small)
+									.foregroundStyle(selected ? Token.foreground : Token.mutedForeground)
+								if let badge = badge(option) {
+									Text(badge.text)
+										.font(Typo.tiny)
+										.tabularNumbers()
+										.foregroundStyle(badge.tint)
+								}
+							}
 							Rectangle()
 								.fill(selected ? Token.foreground : .clear)
 								.frame(height: 1.5)
@@ -41,6 +51,12 @@ struct UnderlineTabs<Option: Hashable>: View {
 	}
 }
 
+/// The count an `UnderlineTabs` label can carry, in its own tint.
+struct UnderlineTabBadge {
+	let text: String
+	var tint: Color = Token.mutedForeground
+}
+
 // MARK: - Percentiles
 
 /// `p50 24ms  p95 118ms  p99 402ms` in the chart palette, the same colours the
@@ -50,9 +66,11 @@ struct PercentileTriplet: View {
 	let p95: Double
 	let p99: Double
 	var font: Font = Typo.tiny
+	/// False drops the `p50`/`p95`/`p99` captions when a header names them.
+	var showsLabels = true
 
 	var body: some View {
-		HStack(spacing: 10) {
+		HStack(spacing: showsLabels ? 10 : 12) {
 			item("p50", p50, Token.chartP50)
 			item("p95", p95, Token.chartP95)
 			item("p99", p99, Token.chartP99)
@@ -62,8 +80,10 @@ struct PercentileTriplet: View {
 
 	private func item(_ label: String, _ ms: Double, _ tint: Color) -> some View {
 		HStack(spacing: 3) {
-			Text(label)
-				.foregroundStyle(Token.mutedForeground.opacity(0.7))
+			if showsLabels {
+				Text(label)
+					.foregroundStyle(Token.mutedForeground.opacity(0.7))
+			}
 			Text(Format.latency(ms))
 				.foregroundStyle(tint)
 		}
@@ -80,10 +100,22 @@ struct PercentileTriplet: View {
 struct TableCard<Content: View>: View {
 	/// Header labels; the first is leading-aligned, the rest trailing.
 	let columns: [String]
+	/// A widget-style title row above the header. Nil draws none.
+	var title: String? = nil
 	@ViewBuilder let content: Content
 
 	var body: some View {
 		VStack(spacing: 0) {
+			if let title {
+				Text(title)
+					.font(Typo.small)
+					.foregroundStyle(Token.foreground)
+					.lineLimit(1)
+					.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+					.padding(.horizontal, 12)
+					.accessibilityAddTraits(.isHeader)
+				Hairline()
+			}
 			HStack(spacing: 12) {
 				ForEach(Array(columns.enumerated()), id: \.offset) { index, column in
 					if index == 0 {
@@ -106,12 +138,7 @@ struct TableCard<Content: View>: View {
 				}
 			}
 		}
-		.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
-		.clipShape(.rect(cornerRadius: Token.Radius.lg))
-		.overlay(
-			RoundedRectangle(cornerRadius: Token.Radius.lg)
-				.stroke(Token.border, lineWidth: Token.hairline)
-		)
+		.hairlineCard()
 	}
 }
 
@@ -192,17 +219,27 @@ struct StatDelta: Hashable {
 	}
 
 	var text: String {
+		guard !rendersAsZero else { return "no change \(comparison)" }
 		let sign = change >= 0 ? "+" : "\u{2212}"
+		return "\(sign)\(magnitude) \(comparison)"
+	}
+
+	/// The unsigned move at the precision it is shown: `6.2%`, `0.12 pts`, `18ms`.
+	private var magnitude: String {
 		switch style {
 		case .percent:
 			let percent = abs(relativeChange) * 100
-			let value = percent >= 10 ? String(format: "%.0f", percent) : String(format: "%.1f", percent)
-			return "\(sign)\(value)% \(comparison)"
+			return (percent >= 10 ? String(format: "%.0f", percent) : String(format: "%.1f", percent)) + "%"
 		case .points:
-			return "\(sign)\(String(format: "%.2f", abs(change) * 100)) pts \(comparison)"
+			return String(format: "%.2f", abs(change) * 100) + " pts"
 		case .milliseconds:
-			return "\(sign)\(Format.latency(abs(change))) \(comparison)"
+			return Format.latency(abs(change))
 		}
+	}
+
+	/// The move rounds to zero at the shown precision, so `-0.00 pts` never renders.
+	private var rendersAsZero: Bool {
+		!magnitude.contains { $0.isNumber && $0 != "0" }
 	}
 
 	/// Green when the move is good, red when bad, muted when it is noise.

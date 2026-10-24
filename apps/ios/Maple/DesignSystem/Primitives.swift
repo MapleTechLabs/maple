@@ -14,6 +14,8 @@ struct MapleBadge: View {
 	/// Fill opacity. The web convention is a /10 or /15 wash under
 	/// full-strength text.
 	var fillOpacity: Double = 0.12
+	/// A tinted border instead of the wash: `Critical`, `Resolved`, `New`.
+	var outlined: Bool = false
 
 	var body: some View {
 		Text(text)
@@ -21,7 +23,12 @@ struct MapleBadge: View {
 			.foregroundStyle(tint)
 			.padding(.horizontal, 6)
 			.frame(height: 20)
-			.background(tint.opacity(fillOpacity), in: .rect(cornerRadius: Token.Radius.sm))
+			.background(tint.opacity(outlined ? 0 : fillOpacity), in: .rect(cornerRadius: Token.Radius.sm))
+			.overlay {
+				if outlined {
+					RoundedRectangle(cornerRadius: Token.Radius.sm).stroke(tint.opacity(0.6), lineWidth: 1)
+				}
+			}
 			.fixedSize()
 	}
 }
@@ -50,8 +57,8 @@ extension IssueSeverity {
 	}
 }
 
-/// Severity chip. A null severity renders an em dash rather than a badge —
-/// matching the web, which shows `—` in muted text.
+/// Severity chip. A null severity renders the muted placeholder dash rather
+/// than a badge, as the web does.
 struct SeverityBadge: View {
 	let severity: IssueSeverity?
 
@@ -65,7 +72,7 @@ struct SeverityBadge: View {
 				.background(severity.fill.opacity(0.12), in: .rect(cornerRadius: Token.Radius.sm))
 				.fixedSize()
 		} else {
-			Text("—")
+			Text(Format.placeholder)
 				.font(Typo.small)
 				.foregroundStyle(Token.mutedForeground.opacity(0.6))
 		}
@@ -102,27 +109,6 @@ extension WorkflowState {
 		case .done: Token.success
 		case .todo, .cancelled, .wontfix: Token.mutedForeground
 		}
-	}
-
-	var fill: Color {
-		switch self {
-		case .triage: Token.amberFill
-		case .regressed: Token.destructive
-		case .inProgress: Token.blueFill
-		case .inReview: Token.purpleFill
-		case .verifying: Token.tealFill
-		case .done: Token.success
-		case .todo, .cancelled, .wontfix: Token.muted
-		}
-	}
-}
-
-struct WorkflowBadge: View {
-	let state: WorkflowState
-
-	var body: some View {
-		MapleBadge(text: state.label, tint: state.tint)
-			.background(state.fill.opacity(0.12), in: .rect(cornerRadius: Token.Radius.sm))
 	}
 }
 
@@ -379,8 +365,17 @@ enum Tone {
 /// signal" and "which sort". Not a system segmented control: that draws its
 /// own material and type, and reads as someone else's app.
 struct SegmentChips<Option: Hashable>: View {
+	/// `plain` is bare chips; `framed` sits them in a hairline group (the time
+	/// window row); `framedCompact` is the smaller in-card switch.
+	enum Style {
+		case plain, framed, framedCompact
+	}
+
 	let options: [(Option, String)]
 	@Binding var selection: Option
+	var style: Style = .plain
+
+	private var compact: Bool { style == .framedCompact }
 
 	var body: some View {
 		HStack(spacing: 4) {
@@ -391,18 +386,25 @@ struct SegmentChips<Option: Hashable>: View {
 					selection = option
 				} label: {
 					Text(label)
-						.font(selected ? Typo.smallMedium : Typo.small)
+						.font(compact ? (selected ? Typo.tinyMedium : Typo.tiny) : (selected ? Typo.smallMedium : Typo.small))
 						.foregroundStyle(selected ? Token.foreground : Token.mutedForeground)
-						.padding(.horizontal, 10)
-						.frame(height: 26)
+						.padding(.horizontal, compact ? 8 : (style == .framed ? 12 : 10))
+						.frame(height: compact ? 24 : (style == .framed ? 28 : 26))
 						.background(
 							selected ? Token.muted : .clear,
-							in: .rect(cornerRadius: Token.Radius.md)
+							in: .rect(cornerRadius: compact ? Token.Radius.sm : Token.Radius.md)
 						)
 						.contentShape(.rect)
 				}
 				.buttonStyle(.plain)
 				.accessibilityAddTraits(selected ? [.isSelected] : [])
+			}
+		}
+		.padding(style == .plain ? 0 : (compact ? 2 : 4))
+		.overlay {
+			if style != .plain {
+				RoundedRectangle(cornerRadius: compact ? Token.Radius.md : Token.Radius.lg)
+					.stroke(Token.border, lineWidth: Token.hairline)
 			}
 		}
 		.animation(.easeOut(duration: 0.15), value: selection)
@@ -419,6 +421,21 @@ struct Hairline: View {
 	}
 }
 
+extension View {
+	/// The full-width hairline card every section, list and tile sits in.
+	func hairlineCard(padding: CGFloat = 0) -> some View {
+		self
+			.padding(padding)
+			.frame(maxWidth: .infinity, alignment: .leading)
+			.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
+			.clipShape(.rect(cornerRadius: Token.Radius.lg))
+			.overlay(
+				RoundedRectangle(cornerRadius: Token.Radius.lg)
+					.stroke(Token.border, lineWidth: Token.hairline)
+			)
+	}
+}
+
 /// The uppercase section heading:
 /// `text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground`.
 struct SectionLabel: View {
@@ -429,6 +446,82 @@ struct SectionLabel: View {
 	var body: some View {
 		Text(text)
 			.sectionLabelStyle()
+	}
+}
+
+extension View {
+	/// The 2pt leading rail marking a row's severity; nil draws none.
+	func severityRail(_ tint: Color?) -> some View {
+		overlay(alignment: .leading) {
+			if let tint {
+				Rectangle().fill(tint).frame(width: 2)
+			}
+		}
+	}
+}
+
+/// `OPEN ALERTS 3` with a trailing note or link: every section's header.
+struct SectionHeader<Trailing: View>: View {
+	let title: String
+	/// Muted beside the title: `3`, `50+`.
+	var count: String? = nil
+	@ViewBuilder var trailing: Trailing
+
+	var body: some View {
+		HStack(alignment: .firstTextBaseline, spacing: 6) {
+			SectionLabel(title)
+				.accessibilityAddTraits(.isHeader)
+			if let count {
+				Text(count)
+					.font(Typo.micro)
+					.tabularNumbers()
+					.foregroundStyle(Token.mutedForeground)
+			}
+			Spacer(minLength: 8)
+			trailing
+				.font(Typo.tiny)
+				.tabularNumbers()
+				.foregroundStyle(Token.mutedForeground)
+				.lineLimit(1)
+				.buttonStyle(.plain)
+		}
+	}
+}
+
+extension SectionHeader where Trailing == EmptyView {
+	init(title: String, count: String? = nil) {
+		self.init(title: title, count: count) { EmptyView() }
+	}
+}
+
+extension SectionHeader where Trailing == Text? {
+	init(title: String, count: String? = nil, note: String?) {
+		self.init(title: title, count: count) { note.map { Text($0) } }
+	}
+}
+
+extension SectionHeader where Trailing == Button<Text> {
+	/// A trailing link to the screen holding the full list: `Triage`.
+	init(title: String, count: String? = nil, link: String, action: @escaping () -> Void) {
+		self.init(title: title, count: count) { Button(link, action: action) }
+	}
+}
+
+/// A `SectionHeader` over its content, the same gap on every screen.
+struct TitledSection<Trailing: View, Content: View>: View {
+	let header: SectionHeader<Trailing>
+	@ViewBuilder let content: Content
+
+	init(_ header: SectionHeader<Trailing>, @ViewBuilder content: () -> Content) {
+		self.header = header
+		self.content = content()
+	}
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 10) {
+			header
+			content
+		}
 	}
 }
 
@@ -470,11 +563,7 @@ struct StatTile: View {
 		.padding(12)
 		// Fill the grid row, so a tile without a delta matches its neighbour.
 		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-		.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
-		.overlay(
-			RoundedRectangle(cornerRadius: Token.Radius.lg)
-				.stroke(Token.border, lineWidth: Token.hairline)
-		)
+		.hairlineCard()
 	}
 }
 

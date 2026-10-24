@@ -225,6 +225,10 @@ struct FixtureAPI: MapleAPI {
 		try await pause()
 		var items = issues
 		if let service = query.serviceName { items = items.filter { $0.serviceName == service } }
+		if let state = query.workflowState { items = items.filter { $0.workflowState == state } }
+		if query.actionableOnly {
+			items = items.filter { [.triage, .regressed, .todo, .inProgress, .inReview].contains($0.workflowState) }
+		}
 		if let window {
 			items = items.filter { issue in
 				guard let last = ResolvedTimeWindow.parse(issue.lastSeenAt) else { return false }
@@ -265,7 +269,16 @@ struct FixtureAPI: MapleAPI {
 			priority: issue.priority,
 			regressionCount: issue.regressionCount,
 			resolvedVersions: issue.resolvedVersions,
-			sampleTraces: [],
+			sampleTraces: [(-40.0, 842_000.0), (-95, 1_120_000), (-260, 211_000)].enumerated().map { index, sample in
+				ErrorIssueSampleTrace(
+					durationMicros: sample.1,
+					exceptionMessage: issue.exceptionMessage,
+					serviceName: issue.serviceName,
+					spanId: "span\(index)00000000000",
+					timestamp: stamp(sample.0),
+					traceId: "\(index)4bf92f3577b34da6a3ce929d0e0e4736"
+				)
+			},
 			serviceName: issue.serviceName,
 			severity: issue.severity,
 			severitySource: issue.severitySource,
@@ -337,7 +350,7 @@ struct FixtureAPI: MapleAPI {
 		)
 	}
 
-	private var incidents: [AlertIncident] {
+	var incidents: [AlertIncident] {
 		[
 			AlertIncident(
 				comparator: .gt,
