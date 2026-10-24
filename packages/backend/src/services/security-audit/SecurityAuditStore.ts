@@ -18,6 +18,7 @@ import {
 	SecurityAuditEvents,
 	SecurityAuditFindings,
 	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
 	SecurityAuditOrgUsage,
 	SecurityAuditRunFindings,
 	SecurityAuditRuns,
@@ -26,6 +27,7 @@ import {
 	VcsRepositories,
 	type SecurityAuditEventRow,
 	type SecurityAuditFindingRow,
+	type SecurityAuditOrgSettingsRow,
 	type SecurityAuditRunRow,
 	type SecurityAuditTargetRow,
 	type SecurityAuditUnitRow,
@@ -60,8 +62,9 @@ export interface CreateTargetInput {
 	readonly scopePaths?: ReadonlyArray<string>
 	readonly sliceIntervalHours?: number
 	readonly revalidateOnPush?: boolean
-	readonly budgetPerRun?: number
-	readonly monthlyInvocationBudget?: number
+	/** OpenRouter model ids overriding the org's; absent runs on the org's pick. */
+	readonly discoveryModel?: string
+	readonly validationModel?: string
 }
 
 export interface StartRunInput {
@@ -74,7 +77,30 @@ export interface StartRunInput {
 	readonly profile?: SecurityAuditProfile
 	readonly scopePaths?: ReadonlyArray<string>
 	readonly budget?: number | null
+	/** The OpenRouter model ids the run uses, resolved by the caller. */
+	readonly discoveryModel?: string
+	readonly validationModel?: string
 	readonly workflowInstanceId?: string
+}
+
+export interface SaveSettingsInput {
+	readonly monthlySpendLimitUsd: number
+	readonly discoveryModel: string
+	readonly validationModel: string
+	readonly updatedBy: UserId
+}
+
+/**
+ * Whether an agent may launch: `granted`, or why not. A finished run reads as `invocations_spent`
+ * too: it takes no writes, and the engine has stopped asking.
+ */
+export type OrgReservation = "granted" | "invocations_spent" | "spend_limit_reached"
+
+export interface OrgSpendCheck {
+	/** Epoch ms the org's spend counts from (the start of the UTC month). */
+	readonly since: number
+	/** Whole US dollars; the agent is refused once the org has spent this much since `since`. */
+	readonly limitUsd: number
 }
 
 export type FinishRunOutcome =
@@ -179,7 +205,23 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		agentId: string,
 		period: string,
 		limit: number,
-	) => Effect.Effect<boolean, AuditStoreError>
+		spend: OrgSpendCheck,
+	) => Effect.Effect<OrgReservation, AuditStoreError>
+	/**
+	 * Sets what OpenRouter charged for one granted agent (absolute, so a replay cannot double-count).
+	 * A run that finished meanwhile still records it: the money is spent either way.
+	 */
+	readonly recordAgentCost: (
+		runId: string,
+		agentId: string,
+		costUsd: number,
+	) => Effect.Effect<void, AuditStoreError>
+	/** What the org's agents cost since `since` (epoch ms), in US dollars. */
+	readonly orgSpendUsd: (since: number) => Effect.Effect<number, AuditStoreError>
+	readonly getSettings: () => Effect.Effect<Option.Option<SecurityAuditOrgSettingsRow>, AuditStoreError>
+	readonly saveSettings: (
+		input: SaveSettingsInput,
+	) => Effect.Effect<SecurityAuditOrgSettingsRow, AuditStoreError>
 	/** A person's triage of one finding, with why; None when the target has no such finding. */
 	readonly setFindingStatus: (
 		targetId: SecurityAuditTargetId,
@@ -469,6 +511,16 @@ const lockOpenRun = (db: MapleDb, orgId: OrgId, runId: SecurityAuditRunId, write
 				)
 			}),
 		)
+
+/** What the org's priced agents cost since `since` (epoch ms), in US dollars. */
+const sumSpend = (db: MapleDb, orgId: OrgId, since: number) =>
+	db
+		.run(
+			PG.from(SecurityAuditOrgReservations)
+				.select(($) => ({ total: PG.sum($.costUsd) }))
+				.where(($) => [$.orgId.eq(orgId), $.createdAt.gte(since)]),
+		)
+		.pipe(Effect.map((rows) => rows[0]?.total ?? 0))
 
 export class SecurityAuditStore extends Context.Service<SecurityAuditStore, SecurityAuditStoreApi>()(
 	"@maple/backend/services/security-audit/SecurityAuditStore",
@@ -762,8 +814,10 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									scopePaths: input.scopePaths ?? [],
 									sliceIntervalHours: input.sliceIntervalHours ?? null,
 									revalidateOnPush: input.revalidateOnPush ?? false,
-									budgetPerRun: input.budgetPerRun ?? null,
-									monthlyInvocationBudget: input.monthlyInvocationBudget ?? null,
+									budgetPerRun: null,
+									monthlyInvocationBudget: null,
+									discoveryModel: input.discoveryModel ?? null,
+									validationModel: input.validationModel ?? null,
 									createdBy: input.createdBy,
 									createdAt: now,
 									updatedAt: now,
@@ -908,6 +962,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 													input.budget === undefined
 														? target.budgetPerRun
 														: input.budget,
+												discoveryModel: input.discoveryModel ?? null,
+												validationModel: input.validationModel ?? null,
 												metadata: null,
 												status: "in_progress",
 												workflowInstanceId: input.workflowInstanceId ?? null,
@@ -1401,8 +1457,11 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 
 				const reserveOrgInvocation: SecurityAuditOrgStore["reserveOrgInvocation"] = Effect.fn(
 					"SecurityAuditStore.reserveOrgInvocation",
-				)(function* (rawRunId, agentId, period, limit) {
-					yield* Effect.annotateCurrentSpan({ "maple.security_audit.org_limit": limit })
+				)(function* (rawRunId, agentId, period, limit, spend) {
+					yield* Effect.annotateCurrentSpan({
+						"maple.security_audit.org_limit": limit,
+						"maple.security_audit.spend_limit_usd": spend.limitUsd,
+					})
 					const runId = yield* decodeRunId(rawRunId)
 					const now = yield* Clock.currentTimeMillis
 					return yield* dbExecute((db) =>
@@ -1411,7 +1470,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								// A cancel or settle waits on this lock, and a finished run reserves nothing.
 								// It also serialises two tries of one agent, so the check below is race-free.
 								const open = yield* lockOpenRun(db, orgId, runId, "org invocation")
-								if (Option.isNone(open)) return false
+								if (Option.isNone(open)) return "invocations_spent" as const
 								const granted = yield* db.run(
 									PG.from(SecurityAuditOrgReservations)
 										.select("agentId")
@@ -1422,9 +1481,13 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										])
 										.limit(1),
 								)
-								if (granted.length > 0) return true
+								if (granted.length > 0) return "granted" as const
+								// Agents in flight are not priced yet, so concurrent agents can pass
+								// together; the overshoot is at most what those agents cost.
+								const spent = yield* sumSpend(db, orgId, spend.since)
+								if (spent >= spend.limitUsd) return "spend_limit_reached" as const
 								// The insert path writes 1, so a limit below 1 must refuse before it.
-								if (limit < 1) return false
+								if (limit < 1) return "invocations_spent" as const
 								const rows = yield* db.run(
 									PG.insertInto(SecurityAuditOrgUsage)
 										.values({ orgId, period, invocationsSpent: 1, updatedAt: now })
@@ -1438,19 +1501,85 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										})
 										.returning("invocationsSpent"),
 								)
-								if (rows.length === 0) return false
+								if (rows.length === 0) return "invocations_spent" as const
 								yield* db.run(
 									PG.insertInto(SecurityAuditOrgReservations)
-										.values({ runId, agentId, orgId, period, createdAt: now })
+										.values({
+											runId,
+											agentId,
+											orgId,
+											period,
+											costUsd: null,
+											createdAt: now,
+										})
 										.onConflictDoNothing({ target: ["runId", "agentId"] }),
 								)
-								return true
+								return "granted" as const
 							}),
 						),
 					)
 				})
 
+				const recordAgentCost: SecurityAuditOrgStore["recordAgentCost"] = Effect.fn(
+					"SecurityAuditStore.recordAgentCost",
+				)(function* (rawRunId, agentId, costUsd) {
+					const runId = yield* decodeRunId(rawRunId)
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(SecurityAuditOrgReservations)
+								.set({ costUsd })
+								.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId), $.agentId.eq(agentId)]),
+						),
+					)
+				})
+
+				const orgSpendUsd: SecurityAuditOrgStore["orgSpendUsd"] = Effect.fn(
+					"SecurityAuditStore.orgSpendUsd",
+				)(function* (since) {
+					return yield* dbExecute((db) => sumSpend(db, orgId, since))
+				})
+
+				const getSettings: SecurityAuditOrgStore["getSettings"] = Effect.fn(
+					"SecurityAuditStore.getSettings",
+				)(function* () {
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditOrgSettings)
+								.select()
+								.where(($) => [$.orgId.eq(orgId)])
+								.limit(1),
+						),
+					)
+					return Option.fromUndefinedOr(rows[0])
+				})
+
+				const saveSettings: SecurityAuditOrgStore["saveSettings"] = Effect.fn(
+					"SecurityAuditStore.saveSettings",
+				)(function* (input) {
+					const now = yield* Clock.currentTimeMillis
+					const values = {
+						monthlySpendLimitUsd: input.monthlySpendLimitUsd,
+						discoveryModel: input.discoveryModel,
+						validationModel: input.validationModel,
+						updatedBy: input.updatedBy,
+						updatedAt: now,
+					}
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.insertInto(SecurityAuditOrgSettings)
+								.values({ orgId, ...values })
+								.onConflictDoUpdate({ target: ["orgId"], set: () => values })
+								.returning(),
+						),
+					)
+					return yield* firstOrFail(rows, "Security audit settings were not saved")
+				})
+
 				return {
+					recordAgentCost,
+					orgSpendUsd,
+					getSettings,
+					saveSettings,
 					listTargets,
 					getTarget,
 					setFindingStatus,

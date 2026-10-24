@@ -25,7 +25,7 @@ export const auditSteps = (h: H): Html =>
 			title: "What one audit run does",
 			action: h.span(
 				[h.Class("text-xs text-muted-foreground")],
-				["Each run has an invocation budget and reports tokens and cost"],
+				["Runs stop at the org's monthly spend limit and report tokens and cost"],
 			),
 		}),
 		h.ol(

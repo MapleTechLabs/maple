@@ -14,6 +14,8 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 const orgA = Schema.decodeUnknownSync(OrgId)("org_a")
 const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
 const user = Schema.decodeUnknownSync(UserId)("user_a")
+/** A spend check no test reaches, for tests about the plan's invocations. */
+const NO_SPEND_LIMIT = { since: 0, limitUsd: Number.MAX_SAFE_INTEGER }
 
 const withStore = <A, E>(body: (store: SecurityAuditStoreApi) => Effect.Effect<A, E>) =>
 	Effect.gen(function* () {
@@ -1073,7 +1075,7 @@ describe("SecurityAuditStore writes after a run finished", () => {
 				const tokens = { inputTokens: 100, outputTokens: 10 }
 				// hunter-4 reserved its invocation but was cancelled before it reported.
 				yield* Effect.forEach(["hunter-1", "hunter-2", "hunter-3", "hunter-4"], (id) =>
-					scoped.reserveOrgInvocation(runId, id, "2026-10", 100),
+					scoped.reserveOrgInvocation(runId, id, "2026-10", 100, NO_SPEND_LIMIT),
 				)
 				yield* scoped.recordEvent(runId, agent("hunter-1", { ...tokens, costUsd: 0.25 }))
 				yield* scoped.recordEvent(runId, agent("hunter-2", { ...tokens, costUsd: 0.5 }))
@@ -1137,22 +1139,39 @@ describe("SecurityAuditStore org invocation budget", () => {
 				const runB = (yield* seedRun(store, orgB, "abc")).runId
 				const grants = yield* Effect.forEach(
 					Array.from({ length: 10 }, (_, i) => i),
-					(i) => a.reserveOrgInvocation(runA, `hunter-${i}`, "2026-10", 3),
+					(i) => a.reserveOrgInvocation(runA, `hunter-${i}`, "2026-10", 3, NO_SPEND_LIMIT),
 					{ concurrency: "unbounded" },
 				)
-				const otherMonth = yield* a.reserveOrgInvocation(runA, "recon-1", "2026-11", 3)
-				const otherOrg = yield* store.forOrg(orgB).reserveOrgInvocation(runB, "recon-1", "2026-10", 3)
-				const noPlan = yield* store.forOrg(orgB).reserveOrgInvocation(runB, "recon-2", "2026-12", 0)
+				const otherMonth = yield* a.reserveOrgInvocation(
+					runA,
+					"recon-1",
+					"2026-11",
+					3,
+					NO_SPEND_LIMIT,
+				)
+				const otherOrg = yield* store
+					.forOrg(orgB)
+					.reserveOrgInvocation(runB, "recon-1", "2026-10", 3, NO_SPEND_LIMIT)
+				const noPlan = yield* store
+					.forOrg(orgB)
+					.reserveOrgInvocation(runB, "recon-2", "2026-12", 0, NO_SPEND_LIMIT)
 				assert.deepStrictEqual(
 					{
-						granted: grants.filter(Boolean).length,
+						granted: grants.filter((grant) => grant === "granted").length,
 						spent: yield* a.orgInvocationsSpent("2026-10"),
 						otherMonth,
 						otherOrg,
 						noPlan,
 						noPlanSpent: yield* store.forOrg(orgB).orgInvocationsSpent("2026-12"),
 					},
-					{ granted: 3, spent: 3, otherMonth: true, otherOrg: true, noPlan: false, noPlanSpent: 0 },
+					{
+						granted: 3,
+						spent: 3,
+						otherMonth: "granted",
+						otherOrg: "granted",
+						noPlan: "invocations_spent",
+						noPlanSpent: 0,
+					},
 				)
 			}),
 		),
@@ -1164,12 +1183,24 @@ describe("SecurityAuditStore org invocation budget", () => {
 				const a = store.forOrg(orgA)
 				const { runId } = yield* seedRun(store, orgA, "abc")
 				// The first try committed but its step was never recorded; the retry must not count again.
-				const first = yield* a.reserveOrgInvocation(runId, "hunter-w1-1", "2026-10", 1)
-				const retry = yield* a.reserveOrgInvocation(runId, "hunter-w1-1", "2026-10", 1)
-				const next = yield* a.reserveOrgInvocation(runId, "hunter-w1-2", "2026-10", 1)
+				const first = yield* a.reserveOrgInvocation(
+					runId,
+					"hunter-w1-1",
+					"2026-10",
+					1,
+					NO_SPEND_LIMIT,
+				)
+				const retry = yield* a.reserveOrgInvocation(
+					runId,
+					"hunter-w1-1",
+					"2026-10",
+					1,
+					NO_SPEND_LIMIT,
+				)
+				const next = yield* a.reserveOrgInvocation(runId, "hunter-w1-2", "2026-10", 1, NO_SPEND_LIMIT)
 				assert.deepStrictEqual(
 					[first, retry, next, yield* a.orgInvocationsSpent("2026-10")],
-					[true, true, false, 1],
+					["granted", "granted", "invocations_spent", 1],
 				)
 			}),
 		),
@@ -1181,13 +1212,98 @@ describe("SecurityAuditStore org invocation budget", () => {
 				const a = store.forOrg(orgA)
 				const { runId } = yield* seedRun(store, orgA, "abc")
 				yield* a.cancelRun(runId, user)
-				const afterCancel = yield* a.reserveOrgInvocation(runId, "recon-1", "2026-10", 100)
+				const afterCancel = yield* a.reserveOrgInvocation(
+					runId,
+					"recon-1",
+					"2026-10",
+					100,
+					NO_SPEND_LIMIT,
+				)
 				const crossOrg = yield* Effect.exit(
-					store.forOrg(orgB).reserveOrgInvocation(runId, "recon-1", "2026-10", 100),
+					store.forOrg(orgB).reserveOrgInvocation(runId, "recon-1", "2026-10", 100, NO_SPEND_LIMIT),
 				)
 				assert.deepStrictEqual(
 					[afterCancel, crossOrg._tag, yield* a.orgInvocationsSpent("2026-10")],
-					[false, "Failure", 0],
+					["invocations_spent", "Failure", 0],
+				)
+			}),
+		),
+	)
+})
+
+describe("SecurityAuditStore org spend limit", () => {
+	it.effect(
+		"refuses an agent once the org's priced agents reach its limit, counting only its own org",
+		() =>
+			withStore((store) =>
+				Effect.gen(function* () {
+					const a = store.forOrg(orgA)
+					const b = store.forOrg(orgB)
+					const runA = (yield* seedRun(store, orgA, "abc")).runId
+					const runB = (yield* seedRun(store, orgB, "abc")).runId
+					const limit = { since: 0, limitUsd: 5 }
+					yield* a.reserveOrgInvocation(runA, "recon-1", "2026-10", 100, limit)
+					yield* a.recordAgentCost(runA, "recon-1", 3.5)
+					const underLimit = yield* a.reserveOrgInvocation(runA, "hunter-1", "2026-10", 100, limit)
+					// A replayed cost write sets the same value, it does not add it again.
+					yield* a.recordAgentCost(runA, "hunter-1", 1.5)
+					yield* a.recordAgentCost(runA, "hunter-1", 1.5)
+					const atLimit = yield* a.reserveOrgInvocation(runA, "hunter-2", "2026-10", 100, limit)
+					// A grant from before the limit was reached is still honoured on retry.
+					const retried = yield* a.reserveOrgInvocation(runA, "hunter-1", "2026-10", 100, limit)
+					const otherOrg = yield* b.reserveOrgInvocation(runB, "recon-1", "2026-10", 100, limit)
+					const laterMonth = yield* a.orgSpendUsd(1)
+					assert.deepStrictEqual(
+						{
+							underLimit,
+							atLimit,
+							retried,
+							otherOrg,
+							spentA: yield* a.orgSpendUsd(0),
+							spentB: yield* b.orgSpendUsd(0),
+							laterMonth,
+						},
+						{
+							underLimit: "granted",
+							atLimit: "spend_limit_reached",
+							retried: "granted",
+							otherOrg: "granted",
+							spentA: 5,
+							spentB: 0,
+							laterMonth: 0,
+						},
+					)
+				}),
+			),
+	)
+
+	it.effect("saves an org's settings over its earlier ones, and never shows them to another org", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const a = store.forOrg(orgA)
+				const before = yield* a.getSettings()
+				yield* a.saveSettings({
+					monthlySpendLimitUsd: 50,
+					discoveryModel: "deepseek/deepseek-v4.1-flash-1017:nitro",
+					validationModel: "anthropic/claude-sonnet-5.5",
+					updatedBy: user,
+				})
+				const saved = yield* a.saveSettings({
+					monthlySpendLimitUsd: 250,
+					discoveryModel: "anthropic/claude-haiku-5.5",
+					validationModel: "anthropic/claude-sonnet-5.5",
+					updatedBy: user,
+				})
+				const read = yield* a.getSettings()
+				const otherOrg = yield* store.forOrg(orgB).getSettings()
+				assert.deepStrictEqual(
+					[
+						Option.isNone(before),
+						saved.monthlySpendLimitUsd,
+						Option.map(read, (row) => [row.monthlySpendLimitUsd, row.discoveryModel]),
+						Option.isNone(otherOrg),
+					],
+					[true, 250, Option.some([250, "anthropic/claude-haiku-5.5"]), true],
 				)
 			}),
 		),

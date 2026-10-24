@@ -3,6 +3,7 @@ import type {
 	SecurityAuditFinding,
 	SecurityAuditRun,
 	SecurityAuditRunDetail,
+	SecurityAuditSettings,
 	SecurityAuditTarget,
 } from "@maple/domain/http"
 import type { SecurityAuditFindingStatus, SecurityAuditSeverity } from "@maple/domain/security-audit"
@@ -125,7 +126,7 @@ const targetRunsOf = (model: Model, targetId: string): ReadonlyArray<SecurityAud
 		),
 	)?.runs ?? null
 
-/** Of two copies of one run, the further along: finished beats live, then more invocations spent. */
+/** Of two copies of one run, the further along: finished beats live, then more agents run. */
 const fresher = (a: SecurityAuditRun, b: SecurityAuditRun): SecurityAuditRun =>
 	a.finishedAt !== null && b.finishedAt === null
 		? a
@@ -169,9 +170,12 @@ export const runsForTab = (
 	return { runs, isCapped: listed.length >= RUN_LIST_CAP }
 }
 
+/** The org's settings once read; null while loading or when the read failed. */
+export const settingsOf = (model: Model): SecurityAuditSettings | null =>
+	Option.getOrNull(AsyncData.getData(model.settings.data))
+
 export type Spend = Readonly<{
 	costUsd: number
-	invocations: number
 	tokens: number
 	/** Runs this month with no cost recorded: their spend is not in `costUsd`. */
 	unpriced: number
@@ -188,12 +192,11 @@ export const spendThisMonth = (model: Model): Spend => {
 		.reduce<Spend>(
 			(sum, run) => ({
 				costUsd: sum.costUsd + (run.costUsd ?? 0),
-				invocations: sum.invocations + run.invocationsSpent,
 				tokens: sum.tokens + run.inputTokens + run.outputTokens,
 				unpriced: sum.unpriced + (run.costUsd === null ? 1 : 0),
 				isPartial: sum.isPartial,
 			}),
-			{ costUsd: 0, invocations: 0, tokens: 0, unpriced: 0, isPartial },
+			{ costUsd: 0, tokens: 0, unpriced: 0, isPartial },
 		)
 }
 

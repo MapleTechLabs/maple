@@ -184,7 +184,7 @@ const ledgerToggle = (h: H, label: string): Html =>
 
 /** Every gap status, as `gapCount` adds them up, so the header and the cells agree. */
 const GAP_SUMMARY = [
-	{ statuses: ["deferred"], label: "deferred, budget reached" },
+	{ statuses: ["deferred"], label: "deferred, not reached" },
 	{ statuses: ["blocked"], label: "blocked, missing context" },
 	{ statuses: ["planned", "in_progress"], label: "planned or unfinished, not closed" },
 ] as const

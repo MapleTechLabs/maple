@@ -3,7 +3,9 @@ import {
 	SecurityAuditBudgetExhaustedError,
 	type SecurityAuditCreateTargetRequest,
 	type SecurityAuditFindingTriageStatus,
+	SecurityAuditSpendLimitReachedError,
 	type SecurityAuditStartRunRequest,
+	type SecurityAuditUpdateSettingsRequest,
 } from "@maple/domain/http"
 import type { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Effect, Schema } from "effect"
@@ -22,6 +24,9 @@ const call = <A, E, R>(run: (api: Ai) => Effect.Effect<A, E, R>) =>
 	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 export const listTargets = call((api) => api.securityAudit.listTargets())
+
+/** The org's monthly spend limit, this month's spend and its default models. */
+export const getSettings = call((api) => api.securityAudit.getSettings())
 
 export const listRuns = (targetId?: SecurityAuditTargetId) =>
 	call((api) => api.securityAudit.listRuns({ query: targetId === undefined ? {} : { targetId } }))
@@ -91,19 +96,34 @@ export const createTarget = (payload: SecurityAuditCreateTargetRequest) =>
 		return yield* api.securityAudit.createTarget({ payload })
 	}).pipe(Effect.mapError(toCreateFailure), Effect.result)
 
-const isBudgetExhausted = Schema.is(SecurityAuditBudgetExhaustedError)
+export const updateSettings = (payload: SecurityAuditUpdateSettingsRequest) =>
+	Effect.gen(function* () {
+		const api = yield* MapleAiClient
+		return yield* api.securityAudit.updateSettings({ payload })
+	}).pipe(Effect.mapError(toCreateFailure), Effect.result)
 
-/** A refused start, saying when an exhausted budget resets (the end of the billing cycle, UTC). */
-export const toStartFailure = (error: unknown): LoadFailure => {
-	const failure = toLoadFailure(error)
-	if (!isBudgetExhausted(error)) return failure
-	const resets = new Date(error.resetsAt).toLocaleDateString("en-US", {
+const isBudgetExhausted = Schema.is(SecurityAuditBudgetExhaustedError)
+const isSpendLimitReached = Schema.is(SecurityAuditSpendLimitReachedError)
+
+const resetDay = (resetsAt: string) =>
+	new Date(resetsAt).toLocaleDateString("en-US", {
 		month: "long",
 		day: "numeric",
 		year: "numeric",
 		timeZone: "UTC",
 	})
-	return { ...failure, message: `${error.message} The budget resets on ${resets}.` }
+
+/** A refused start, saying when the limit resets (UTC) and how to go on before then. */
+export const toStartFailure = (error: unknown): LoadFailure => {
+	const failure = toLoadFailure(error)
+	if (isSpendLimitReached(error))
+		return {
+			...failure,
+			message: `${error.message} It resets on ${resetDay(error.resetsAt)}, or an admin can raise it under Spend & models.`,
+		}
+	if (isBudgetExhausted(error))
+		return { ...failure, message: `${error.message} It resets on ${resetDay(error.resetsAt)}.` }
+	return failure
 }
 
 export const startRun = (targetId: SecurityAuditTargetId, payload: SecurityAuditStartRunRequest = {}) =>

@@ -15,6 +15,7 @@ import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
 import { EU_DEFAULT_OPENROUTER_MODEL } from "@maple/domain/organization-regions"
+import { securityAuditModelOption } from "@maple/domain/security-audit"
 import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
 import { Config, Duration, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import type * as DecisionModel from "effect/ai/DecisionModel"
@@ -584,13 +585,46 @@ export const resolveReviewModel = (
 				true,
 			)
 
-/** Security-audit discovery default: a frontier model, since flash-class models missed seeded bugs. */
-export const DEFAULT_AUDIT_DISCOVERY_MODEL = "anthropic/claude-sonnet-5.5"
 /**
- * Validation runs on a different model than discovery, so a verifier does not share the hunter's
- * blind spots. Not gpt-6.1-sol: in the phase 0 eval it refused verifier prompts or answered prose.
+ * Security-audit defaults per region. Discovery hunts on a cheap model so whole-repository audits
+ * stay affordable; validation runs on a different model, so a verifier does not share the hunter's
+ * blind spots. The EU instance has no DeepSeek provider, so it hunts on Claude Haiku there.
  */
-export const DEFAULT_AUDIT_VALIDATION_MODEL = "anthropic/claude-opus-5.5"
+export const DEFAULT_AUDIT_MODELS = {
+	us: { discovery: "deepseek/deepseek-v4.1-flash-1017:nitro", validation: "anthropic/claude-sonnet-5.5" },
+	eu: { discovery: "anthropic/claude-haiku-5.5", validation: "anthropic/claude-sonnet-5.5" },
+} as const satisfies Record<OpenRouterRegion, Record<"discovery" | "validation", string>>
+
+export type SecurityAuditStage = "discovery" | "validation"
+
+/**
+ * The OpenRouter id a security-audit stage runs on: the org's or target's pick when the catalogue
+ * lists it, this region serves it and (for validation) it verifies; then the deployment's override;
+ * then the region default.
+ */
+export const securityAuditModelId = (
+	settings: LlmSettings,
+	stage: SecurityAuditStage,
+	chosen: string | null = null,
+): string => {
+	const region = openRouterRegion(settings)
+	const option = chosen === null ? undefined : securityAuditModelOption(chosen)
+	if (
+		option !== undefined &&
+		(region !== "eu" || option.eu) &&
+		(stage === "discovery" || option.verifies)
+	) {
+		return option.id
+	}
+	return (
+		readString(
+			settings,
+			stage === "discovery"
+				? "MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER"
+				: "MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER",
+		) ?? DEFAULT_AUDIT_MODELS[region][stage]
+	)
+}
 
 /**
  * A security-audit stage's model. Unattended like a review: deltas coalesce and long calls retry.
@@ -598,18 +632,15 @@ export const DEFAULT_AUDIT_VALIDATION_MODEL = "anthropic/claude-opus-5.5"
  */
 export const resolveSecurityAuditModel = (
 	settings: LlmSettings,
-	stage: "discovery" | "validation",
+	stage: SecurityAuditStage,
 	tags?: LlmCallTags,
+	chosen: string | null = null,
 ): ResolvedModel =>
 	resolveLlmProvider(settings) === "workers-ai"
 		? resolveTriageModel(settings, tags)
 		: openRouterModel(
 				settings,
-				stage === "discovery"
-					? (readString(settings, "MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER") ??
-							DEFAULT_AUDIT_DISCOVERY_MODEL)
-					: (readString(settings, "MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER") ??
-							DEFAULT_AUDIT_VALIDATION_MODEL),
+				securityAuditModelId(settings, stage, chosen),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				"high",
 				tags,

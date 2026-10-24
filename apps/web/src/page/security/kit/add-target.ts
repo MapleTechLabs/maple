@@ -1,15 +1,19 @@
 import {
-	DEFAULT_RUN_BUDGET,
 	type GithubRepoSummary,
-	SECURITY_AUDIT_MAX_BUDGET,
 	SecurityAuditBranch,
 	SecurityAuditCreateTargetRequest,
 	SecurityAuditRepository,
 	SecurityAuditRun,
+	SecurityAuditSettings,
 	SecurityAuditTarget,
 } from "@maple/domain/http"
-import { isSafeScopePath, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Effect, Option, Result, Schema } from "effect"
+import {
+	isSafeScopePath,
+	SecurityAuditDiscoveryModel,
+	SecurityAuditTargetId,
+	SecurityAuditValidationModel,
+} from "@maple/domain/security-audit"
+import { Effect, Option, Result, Schema, type Types } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../data/load-failure"
@@ -19,9 +23,10 @@ import * as Field from "../../../ui/field"
 import * as RadioGroup from "../../../ui/radio-group"
 import * as Select from "../../../ui/select"
 import { createTarget, INVALID_REQUEST_CODE, startRun } from "./api"
+import { modelIdsFor, type ModelStage } from "./model-picker"
 
-// The Add target dialog: repository, branch, profile, scope and budget, then the first run.
-// The parent holds the GitHub status; this module owns the form and its two writes.
+// The Add target dialog: repository, branch, profile, scope and models, then the first run.
+// The parent holds the GitHub status and the org's settings; this module owns the form and its writes.
 
 type ProfileChoice = "deep" | "quick"
 
@@ -37,7 +42,10 @@ export const Model = Schema.Struct({
 	profile: RadioGroup.Model,
 	scopeDraft: Field.Model,
 	scopePaths: Schema.Array(Schema.String),
-	budget: Field.Model,
+	discovery: Select.Model,
+	validation: Select.Model,
+	/** The org's settings when the form opened: its default models and what is left to spend. */
+	orgSettings: Schema.NullOr(SecurityAuditSettings),
 	startNow: Schema.Boolean,
 	/** Errors show once the form was submitted, so an untouched field is not red. */
 	isSubmitted: Schema.Boolean,
@@ -50,6 +58,11 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
+const modelSelect = (stage: ModelStage, value: string): Select.Model => {
+	const index = modelIdsFor(stage).indexOf(value)
+	return Select.init(`${DIALOG_ID}-${stage}`, { value, selectedIndex: index === -1 ? null : index })
+}
+
 export const init = (): Model => ({
 	dialog: Dialog.init(DIALOG_ID, "dialog"),
 	repository: Select.init(`${DIALOG_ID}-repository`, { value: "", selectedIndex: null }),
@@ -57,7 +70,9 @@ export const init = (): Model => ({
 	profile: RadioGroup.init("deep"),
 	scopeDraft: Field.init(),
 	scopePaths: [],
-	budget: Field.init(String(DEFAULT_RUN_BUDGET)),
+	discovery: modelSelect("discovery", ""),
+	validation: modelSelect("validation", ""),
+	orgSettings: null,
 	startNow: true,
 	isSubmitted: false,
 	isPending: false,
@@ -74,7 +89,8 @@ export const Message = defineMessageUnion({
 	GotScopeMessage: { message: Field.Message },
 	AddedScopePath: {},
 	RemovedScopePath: { path: Schema.String },
-	GotBudgetMessage: { message: Field.Message },
+	GotDiscoveryMessage: { message: Select.Message },
+	GotValidationMessage: { message: Select.Message },
 	ToggledStartNow: {},
 	Submitted: {},
 	CompletedCreate: { attempt: Schema.Finite, result: Schema.Result(SecurityAuditTarget, LoadFailure) },
@@ -113,15 +129,11 @@ export type Errors = Readonly<{
 	repository: string | undefined
 	branch: string | undefined
 	scope: string | undefined
-	budget: string | undefined
+	models: string | undefined
 }>
 
-const parseBudget = (value: string): number | null => {
-	const trimmed = value.trim()
-	if (trimmed === "") return DEFAULT_RUN_BUDGET
-	const parsed = Number(trimmed)
-	return Number.isInteger(parsed) && parsed >= 1 && parsed <= SECURITY_AUDIT_MAX_BUDGET ? parsed : null
-}
+const isDiscoveryModel = Schema.is(SecurityAuditDiscoveryModel)
+const isValidationModel = Schema.is(SecurityAuditValidationModel)
 
 /** The draft path is a scope path once added; a bad one is reported on the draft. */
 /** The paths the request would send: the added ones and the draft, once. */
@@ -148,9 +160,9 @@ export const errorsOf = (model: Model): Errors => ({
 	repository: isRepository(model.repository.value) ? undefined : "Pick a repository.",
 	branch: isBranch(model.branch.value.trim()) ? undefined : "Enter a branch name git would accept.",
 	scope: scopeError(model),
-	budget:
-		parseBudget(model.budget.value) === null
-			? `Enter a whole number from 1 to ${SECURITY_AUDIT_MAX_BUDGET.toLocaleString("en-US")}.`
+	models:
+		model.discovery.value !== "" && model.discovery.value === model.validation.value
+			? "Pick a different model to verify than to hunt, so it does not share the hunter's blind spots."
 			: undefined,
 })
 
@@ -158,7 +170,7 @@ export const NO_ERRORS: Errors = {
 	repository: undefined,
 	branch: undefined,
 	scope: undefined,
-	budget: undefined,
+	models: undefined,
 }
 
 export const hasErrors = (errors: Errors): boolean =>
@@ -173,16 +185,22 @@ export const requestOf = (model: Model): SecurityAuditCreateTargetRequest | null
 	const draft = model.scopeDraft.value.trim()
 	const scopePaths =
 		draft === "" || model.scopePaths.includes(draft) ? model.scopePaths : [...model.scopePaths, draft]
-	const request: SecurityAuditCreateTargetRequest = {
+	const request: Types.Mutable<SecurityAuditCreateTargetRequest> = {
 		repository: model.repository.value,
 		branch: model.branch.value.trim(),
 		profile: profileOf(model),
-		budgetPerRun: parseBudget(model.budget.value) ?? DEFAULT_RUN_BUDGET,
 	}
+	// Only a pick that differs from the org's default is the target's own: the rest follow the org.
+	const discovery = model.discovery.value
+	if (isDiscoveryModel(discovery) && discovery !== model.orgSettings?.discoveryModel)
+		request.discoveryModel = discovery
+	const validation = model.validation.value
+	if (isValidationModel(validation) && validation !== model.orgSettings?.validationModel)
+		request.validationModel = validation
 	return scopePaths.length === 0 ? request : { ...request, scopePaths }
 }
 
-type FormField = "repository" | "branch" | "scope" | "budget"
+type FormField = "repository" | "branch" | "scope" | "models"
 
 /** Which form field a request path such as `scopePaths[0]` names. */
 const fieldOfParam = (param: string): FormField | null =>
@@ -192,8 +210,8 @@ const fieldOfParam = (param: string): FormField | null =>
 			? "branch"
 			: param.startsWith("repository")
 				? "repository"
-				: param.startsWith("budgetPerRun")
-					? "budget"
+				: param.startsWith("discoveryModel") || param.startsWith("validationModel")
+					? "models"
 					: null
 
 /** A server answer that belongs next to a field rather than above the form. */
@@ -207,6 +225,7 @@ export const fieldFailure = (
 			message:
 				"Maple's GitHub App cannot read this repository. Grant it access in GitHub, then try again.",
 		}
+	if (failure.code === "security_audit_same_models") return { field: "models", message: failure.message }
 	if (failure.code === "security_audit_target_exists")
 		return {
 			field: "branch",
@@ -228,12 +247,19 @@ const defaultBranch = (repo: GithubRepoSummary): string =>
 
 const DISMISSALS: ReadonlySet<string> = new Set(["ClickedClose", "PressedEscape", "PressedOutside"])
 
-/** Opening resets the form, so the dialog never shows a previous attempt. */
-export const open = (model: Model): Return => {
+/** Opening resets the form to the org's models, so the dialog never shows a previous attempt. */
+export const open = (model: Model, orgSettings: SecurityAuditSettings | null): Return => {
 	const fresh = init()
 	const step = Dialog.open(model.dialog)
 	return {
-		model: { ...fresh, dialog: step.model, attempt: model.attempt + 1 },
+		model: {
+			...fresh,
+			dialog: step.model,
+			discovery: modelSelect("discovery", orgSettings?.discoveryModel ?? ""),
+			validation: modelSelect("validation", orgSettings?.validationModel ?? ""),
+			orgSettings,
+			attempt: model.attempt + 1,
+		},
 		commands: Command.mapMessages(step.commands ?? [], (message) =>
 			Message.GotDialogMessage({ message }),
 		),
@@ -319,9 +345,34 @@ export const update = (
 		RemovedScopePath: ({ path }) => ({
 			model: { ...model, scopePaths: model.scopePaths.filter((candidate) => candidate !== path) },
 		}),
-		GotBudgetMessage: ({ message: inner }) => ({
-			model: { ...model, budget: Field.update(model.budget, inner).model },
-		}),
+		GotDiscoveryMessage: ({ message: inner }) => {
+			const step = Select.update(model.discovery, inner)
+			const picked = step.outMessage
+			return {
+				model: {
+					...model,
+					discovery: picked === undefined ? step.model : { ...step.model, value: picked.value },
+					failure: null,
+				},
+				commands: Command.mapMessages(step.commands ?? [], (next) =>
+					Message.GotDiscoveryMessage({ message: next }),
+				),
+			}
+		},
+		GotValidationMessage: ({ message: inner }) => {
+			const step = Select.update(model.validation, inner)
+			const picked = step.outMessage
+			return {
+				model: {
+					...model,
+					validation: picked === undefined ? step.model : { ...step.model, value: picked.value },
+					failure: null,
+				},
+				commands: Command.mapMessages(step.commands ?? [], (next) =>
+					Message.GotValidationMessage({ message: next }),
+				),
+			}
+		},
 		ToggledStartNow: () => ({ model: { ...model, startNow: !model.startNow } }),
 		Submitted: () => {
 			if (model.isPending) return { model }
