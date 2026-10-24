@@ -164,9 +164,10 @@ spending every one of those wake-ups re-rendering the same bytes.
 It still holds no Clerk session — those tokens live one minute, and two
 processes refreshing the same rotating refresh token is a way to sign the user
 out. Instead the app mints a **device credential** for it (`WidgetCredential`,
-`PUT /v2/widget_credentials/{installation_id}`): read-only, 30 days, and fenced
+`PUT /v2/widget_credentials/{installation_id}`): read-only, 14 days (re-minted with 4 left), and fenced
 by the server to `/v2/widget_summary` and nothing else. It lives as a file in
-the App Group with `completeUntilFirstUserAuthentication` — not `UserDefaults`,
+the App Group with `completeUntilFirstUserAuthentication`, in a directory
+excluded from backups — not `UserDefaults`,
 which would be a bearer token in cleartext in a backup, and not the app's
 keychain group, which is where Clerk keeps the session this design exists to
 keep out of the extension.
