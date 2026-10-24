@@ -419,9 +419,9 @@ export class SecurityAuditBudgetExhaustedError extends HttpTaggedError<SecurityA
 		status: 402,
 		code: "security_audit_budget_exhausted",
 		title: "Security audit budget used up",
-		retry: "never",
+		retry: "after",
 		retryAt: (error) => error.resetsAt,
-		recovery: "fix_request",
+		recovery: "retry",
 		exposure: "public_message",
 	},
 ) {}
