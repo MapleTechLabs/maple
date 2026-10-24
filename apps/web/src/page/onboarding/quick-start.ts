@@ -6,7 +6,7 @@ import { Effect, Schema } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
-import { load, pushUrl } from "foldkit/navigation"
+import { load, replaceUrl } from "foldkit/navigation"
 import { trackProduct } from "../../data/analytics"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { clerkTry, currentClerkOrganization } from "../../platform/clerk"
@@ -19,6 +19,7 @@ import {
 	isQuickStartFinished,
 	QuickStartState,
 	readQuickStartState,
+	reopenedForPlan,
 	resolveQuickStartStep,
 	STEP_IDS,
 	withStack,
@@ -119,11 +120,11 @@ export const ChooseRegion = Command.define("ChooseOrganizationRegion", {
 		),
 })
 
-/** Onboarding is done: on to where they were going. */
+/** Onboarding is done: on to where they were going, replacing the wizard so Back does not return to it. */
 export const Finish = Command.define("FinishQuickStart", {
 	args: { url: Schema.String },
 	messages: [Message.CompletedFinish],
-	execute: ({ url }) => pushUrl(url).pipe(Effect.as(Message.CompletedFinish())),
+	execute: ({ url }) => replaceUrl(url).pipe(Effect.as(Message.CompletedFinish())),
 })
 
 /** The steps' dithered backdrop, drawn until the canvas unmounts. */
@@ -193,11 +194,11 @@ const toPricing = (message: PricingCards.Message) => Message.GotPricingMessage({
  * A step's data is read when it mounts: the Clerk team (its name and pending invitations) on the
  * team step, the plan catalog on the plan step (cached after the first read, like the atom).
  */
-const entered = (previous: Model, result: UpdateReturn): UpdateReturn => {
+const entered = (previous: Model, result: UpdateReturn, hasPlan: boolean): UpdateReturn => {
 	const { model } = result
 	if (model.state === null || isQuickStartFinished(model.state)) return result
-	const step = resolveQuickStartStep(model.state)
-	const wasOn = previous.state === null ? null : resolveQuickStartStep(previous.state)
+	const step = resolveQuickStartStep(model.state, hasPlan)
+	const wasOn = previous.state === null ? null : resolveQuickStartStep(previous.state, hasPlan)
 	if (step === wasOn) return result
 	if (step === "team" && isClerkAuthEnabled)
 		return {
@@ -226,9 +227,11 @@ const saved = (model: Model, next: (state: QuickStartState) => QuickStartState):
 	}
 }
 
-export const update = (model: Model, message: Message): UpdateReturn => entered(model, step(model, message))
+/** `hasPlan` is the root's (`hasPlanOf`): the steps resolve as the view shows them. */
+export const update = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
+	entered(model, step(model, message, hasPlan), hasPlan)
 
-const step = (model: Model, message: Message): UpdateReturn =>
+const step = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		GotTeamMessage: ({ message: child }) => {
 			const next = updateTeam(model.team, child)
@@ -245,11 +248,14 @@ const step = (model: Model, message: Message): UpdateReturn =>
 				outMessage: next.outMessage,
 			}
 		},
-		// Someone who already finished and comes back is sent straight on.
-		LoadedQuickStartState: ({ state }) => ({
-			model: { ...model, state },
-			commands: isQuickStartFinished(state) ? [Finish({ url: model.redirectUrl })] : [],
-		}),
+		// Someone who already finished is sent straight on; without a plan the gate would send them
+		// back, so they land on the plan step instead.
+		LoadedQuickStartState: ({ state }) =>
+			!isQuickStartFinished(state)
+				? { model: { ...model, state } }
+				: hasPlan
+					? { model: { ...model, state }, commands: [Finish({ url: model.redirectUrl })] }
+					: { model: { ...model, state: reopenedForPlan(state) } },
 		ToggledLanguage: ({ language }) =>
 			saved(model, (state) =>
 				withStack(state, { ...state.stack, languages: toggled(state.stack.languages, language) }),
@@ -260,8 +266,8 @@ const step = (model: Model, message: Message): UpdateReturn =>
 			),
 		ClickedContinue: ({ step }) => {
 			if (model.state === null) return { model }
-			const next = saved(model, (state) => completeStep(state, step))
-			const isLast = next.model.state !== null && isQuickStartFinished(next.model.state)
+			const next = saved(model, (state) => completeStep(state, step, hasPlan))
+			const isLast = hasPlan && next.model.state !== null && isQuickStartFinished(next.model.state)
 			return {
 				...next,
 				commands: [
