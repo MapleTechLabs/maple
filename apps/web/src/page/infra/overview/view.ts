@@ -73,8 +73,8 @@ const addSource = (h: H, missing: ReadonlyArray<SourceId>): Html =>
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const sources = presentSources(surfacesOf(model, inputs.context))
-	const missing = SOURCE_IDS.filter((id) => !sources.includes(id))
-	const states = sources.map((id) => ({ id, state: sourceState(model, id) }))
+	const missing = sources === null ? [] : SOURCE_IDS.filter((id) => !sources.includes(id))
+	const states = sources === null ? null : sources.map((id) => ({ id, state: sourceState(model, id) }))
 	const time = pickTimeSearch(model.search)
 	return h.div(
 		[h.Class("contents")],
@@ -91,11 +91,15 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							pageHero(h, {
 								title: "Infrastructure",
 								description:
-									sources.length > 0
-										? `${countLabel(sources.length, "source")} reporting. What needs a look comes first.`
-										: "Nothing is reporting yet. Install a collector or connect a provider to get started.",
+									sources === null
+										? "Checking which sources report. What needs a look comes first."
+										: sources.length > 0
+											? `${countLabel(sources.length, "source")} reporting. What needs a look comes first.`
+											: "Nothing is reporting yet. Install a collector or connect a provider to get started.",
 							}),
-							...(sources.length > 0 ? [needsAttention(h, states, time), sourcesTable(h, states, time)] : []),
+							...(sources === null || sources.length > 0
+								? [needsAttention(h, states, time), sourcesTable(h, states, time)]
+								: []),
 							...(missing.length > 0 ? [addSource(h, missing)] : []),
 						],
 					),

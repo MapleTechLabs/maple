@@ -336,6 +336,14 @@ export const changeContext = (current: PageSlot | null, context: PageContext): P
 				onSome: (page) => toTransition(page.contextChanged(current, context), current),
 			})
 
+export const settleInfraSurfaces = (current: PageSlot | null, context: PageContext): PageTransition =>
+	current === null
+		? unchanged(current)
+		: Option.match(pageById(current._tag), {
+				onNone: () => unchanged(current),
+				onSome: (page) => toTransition(page.infraSurfacesSettled(current, context), current),
+			})
+
 export const pageBreadcrumbs = (slot: PageSlotBase): ReadonlyArray<BreadcrumbEntry> =>
 	Option.match(pageById(slot._tag), { onNone: () => [], onSome: (page) => page.breadcrumbs(slot) })
 
