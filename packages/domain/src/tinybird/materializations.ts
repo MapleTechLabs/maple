@@ -1917,9 +1917,8 @@ export const serviceEndpointDetailsHourlyMv = defineMaterializedView("service_en
 	description:
 		"Pre-aggregates HTTP server spans hourly per normalized endpoint, status code and error.type: counts, latency and body-size t-digests, top user agents and the slowest request.",
 	datasource: serviceEndpointDetailsHourly,
-	// The target keeps 90 days and `traces` 30, so a rebuild at promotion would cut it to a
-	// month. `alter` keeps every later change in place; the table fills forward from creation.
-	deploymentMethod: "alter",
+	// No `alter` yet: Tinybird refuses it on a pipe that does not exist. Once this view is live,
+	// add it back, since the target keeps 90 days and a rebuild from `traces` keeps only 30.
 	nodes: [
 		node({
 			name: "service_endpoint_details_hourly_mv_node",
