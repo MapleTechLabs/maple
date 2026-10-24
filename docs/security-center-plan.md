@@ -11,6 +11,10 @@ Status, 2026-10-23: phases 0 to 2 are in a PR stack (`feat/security-audit-*`), i
 
 First measured run (quick, scoped to `apps/sandbox/src`, budget 10): 8 invocations, about 3.7M
 input tokens, no findings, six real hardening notes; the upstream validators pass on its output.
+
+Phase 0 eval, 2026-10-24: 57% of 21 known bugs raised as `needs_validation` across Maple and five
+public repos, about $13 per scoped run (see "Phase 0 results").
+
 Anthropic models stream a tool call with no arguments without its parameter end, which the agent
 engine rejects, so every audit tool takes a required argument.
 
@@ -240,6 +244,48 @@ here.
 
 Exit: the skill finds a meaningful share of the known bugs, and we know the cost per slice.
 
+### Phase 0 results (2026-10-24)
+
+Harness: `bun run --cwd apps/ai security:eval <cases.json>...` (`apps/ai/scripts/security-audit-eval.ts`,
+cases in `scripts/security-audit-eval/cases/`). A case is one scoped run at a commit that still holds
+its known bugs; a bug is graded by hand against the run's records. Maple cases name only PR numbers,
+commits and paths; graded detail stays outside the repository. Source-only throughout (no sandbox),
+`quick` profile, budget 16 invocations, concurrency 3, discovery `anthropic/claude-sonnet-5.5`,
+validation `anthropic/claude-opus-5.5`.
+
+| Slice                        | Runs | Known bugs | Hit (needs_validation) | Miss | Cost  | Cost per run | Invocations per run |
+| ---------------------------- | ---- | ---------- | ---------------------- | ---- | ----- | ------------ | ------------------- |
+| Maple, TypeScript            | 9    | 15         | 7 (47%)                | 8    | $145  | $16.1        | 13.8                |
+| Maple, Rust (ingest)         | 1    | 1          | 1                      | 0    | $17   | $16.8        | 16                  |
+| Public, Python (aiohttp)     | 1    | 1          | 1                      | 0    | $7.7  | $7.7         | 15                  |
+| Public, Go (chall-manager)   | 1    | 1          | 1                      | 0    | $6.9  | $6.9         | 16                  |
+| Public, Rust (redlib)        | 1    | 1          | 1                      | 0    | $9.7  | $9.7         | 16                  |
+| Public, Java (pgjdbc)        | 1    | 1          | 1                      | 0    | $10.4 | $10.4        | 15                  |
+| Public, JavaScript (ws)      | 1    | 1          | 0                      | 1    | $3.9  | $3.9         | 13                  |
+| **All, final configuration** | 15   | 21         | 12 (57%)               | 9    | $200  | $13.4        | 14.3                |
+
+- **No `confirmed` records.** Without execution the skill cannot confirm, so every hit is
+  `needs_validation`. All 28 needs_validation records cite missing execution; 5 cite nothing else,
+  the other 23 also need a deployment or owner fact.
+- **Unrelated records:** 12, spot-checked privately; none were false positives.
+- **Wall clock:** about 8 minutes per run. Input is about 4.6M tokens per run.
+- **Reconnaissance is 56% of spend** and does not shrink with scope: a one-file Maple scope cost
+  $10 of recon. Hunters cost $0.15 to $1.20 each. Grouping bugs that share a commit into one slice
+  is what kept the eval affordable; raising the budget adds hunters cheaply.
+- **Misses:** 9; in each the hunter reviewed the unit and passed it, and none was lost to budget
+  at 16. Categories are in the private results. Of multi-part fixes, usually one part was raised.
+- **Engine issues found:** `openai/gpt-6.1-sol` (the old validation default) refused verifier
+  prompts as cybersecurity risk or answered prose, dropping every candidate (2 runs, $22.5,
+  superseded above); the default is now Opus. The same root cause often lands as two records (4 runs); critic units missing `canonical_refs.lifecycle` are refused by the ledger; a failed agent's tokens are not
+  metered (the provider bill ran up to 3% above the engine's own sum).
+- **Total spend:** $235 by the engine's metering, $242 by the provider key, including calibration
+  and the superseded runs.
+
+Recommendations: `quick` with budget 16 to 24 for slices (budget 10 deferred the unit holding a
+known bug); `standard` only for slices with a prior candidate. Keep discovery on Sonnet 5.5 and
+validation on Opus 5.5. Prompt caching for reconnaissance and a shared recon pass per commit are
+the largest cost levers. Sandbox v2 is what turns hits into `confirmed`.
+
 ### Phase 1: sandbox v2
 
 Every row of the sandbox table, verified by `verify:image` on the deployed runtime. Nothing in
@@ -301,7 +347,7 @@ The method is language-neutral; the platform around it is not. Before a customer
 
 Waits on phase 1 (sandbox v2): per-ecosystem toolchain images, the trusted dependency install,
 hostile-code isolation with its external review and cross-tenant escape tests, and so any
-`executable` run. The multi-language eval is not started.
+`executable` run. The multi-language eval ran with phase 0 (see "Phase 0 results"): one public repo per language so far.
 
 What we can honestly ship at the end of this phase: full deep scans for JS/TS repos without
 private dependencies, and source-only deep review for everything else with execution-bound
