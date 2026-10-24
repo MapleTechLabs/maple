@@ -7,7 +7,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { icon } from "../../../ui/icon"
 import { platformMeta } from "../kit/platforms"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { FlowHost, Model } from "./model"
 import { createSourceForm } from "./view-form"
 import { integrationStep } from "./view-integration"
 import { integrationMeta, platformPicker } from "./view-picker"
@@ -33,7 +33,7 @@ const metaOf = (model: Model) =>
 			: null
 
 /** The source's mark, its title and the trail under it. */
-const titleContent = (h: H, model: Model): Html => {
+export const titleContent = (h: H, model: Model): Html => {
 	const meta = metaOf(model)
 	return h.div(
 		[h.Class("flex items-center gap-4")],
@@ -68,15 +68,19 @@ const cancel = (h: H): Html =>
 		["Cancel"],
 	)
 
+/** The current step: the token once a source exists, the push form, an integration's step, or the picker. */
+export const stepBody = (h: H, model: Model, timeZone: string, host: FlowHost): Html =>
+	model.created !== null
+		? tokenStep(h, model, model.created, host)
+		: model.platform !== null
+			? createSourceForm(h, model, model.platform)
+			: model.integration !== null
+				? integrationStep(h, model, model.integration, timeZone, host)
+				: platformPicker(h, model)
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	dashboardPage(h, { titleContent: titleContent(h, model), actions: cancel(h) }, [
-		model.created !== null
-			? tokenStep(h, model, model.created)
-			: model.platform !== null
-				? createSourceForm(h, model, model.platform)
-				: model.integration !== null
-					? integrationStep(h, model, model.integration, inputs.context.timeZone)
-					: platformPicker(h, model),
+		stepBody(h, model, inputs.context.timeZone, "page"),
 	]),
 )
 

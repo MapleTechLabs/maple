@@ -15,6 +15,9 @@ import * as CliLogin from "./cli-login"
 import * as ClerkScreens from "./clerk-screens"
 import * as ClerkSignIn from "./clerk-sign-in"
 import * as CreateOrg from "./create-org"
+import type { PageContext, PageSubscriptionInput } from "../contract"
+import type * as SourcesFlow from "../sources/new/embed"
+import { DrawerMessage } from "./quick-start-drawer"
 import type { Inputs } from "./inputs"
 import * as McpAuthorize from "./mcp-authorize"
 import * as QuickStart from "./quick-start"
@@ -74,8 +77,9 @@ export const Message = defineMessageUnion({
 export type Message = typeof Message.Type
 
 /** What the root does for a screen: a changed plan refreshes the customer, a failure toasts. */
-export const OutMessage = PricingCards.OutMessage
-export type OutMessage = PricingCards.OutMessage
+export const PricingOutMessage = PricingCards.OutMessage
+/** Plus the connect drawer's page facts (a flow's toast or a link it followed). */
+export type OutMessage = QuickStart.OutMessage
 
 export interface Step {
 	readonly model: Model
@@ -217,6 +221,31 @@ export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Optio
 
 // UPDATE
 
+/** The connect drawer's flow reads as a page does, in the active org (no namespace pin here). */
+const contextOf = (inputs: Inputs): PageContext | null =>
+	Option.match(inputs.maybeOrgId, {
+		onNone: () => null,
+		onSome: (orgId) => ({ orgId, pinnedNamespace: null, timeZone: inputs.timeZone }),
+	})
+
+/** The open connect drawer's flow, as its Subscriptions (the OAuth popup, the polls) read it. */
+export const connectFlowOf = (
+	model: Model,
+	inputs: Inputs,
+): Option.Option<PageSubscriptionInput<SourcesFlow.Model>> => {
+	const { screen } = model
+	const context = contextOf(inputs)
+	return screen._tag === "QuickStart" &&
+		screen.drawer !== null &&
+		screen.drawer.dialog.isOpen &&
+		context !== null
+		? Option.some({ model: screen.drawer.flow, context })
+		: Option.none()
+}
+
+export const fromConnectFlow = (message: SourcesFlow.Message): Message =>
+	toQuickStart(QuickStart.Message.GotDrawerMessage({ message: DrawerMessage.GotFlowMessage({ message }) }))
+
 const unchanged = (model: Model): Step => ({ model, commands: [] })
 
 /** `signOut()` (Clerk routes to its sign-in), or the self-hosted token cleared and `/sign-in`. */
@@ -288,7 +317,7 @@ export const update = (model: Model, message: Message, inputs: Inputs): Step => 
 		CompletedMountClerkCard: () => unchanged(model),
 		GotQuickStartMessage: ({ message: child }) => {
 			if (screen._tag !== "QuickStart") return unchanged(model)
-			const next = QuickStart.update(screen, child, planOf(inputs.customer))
+			const next = QuickStart.update(screen, child, planOf(inputs.customer), contextOf(inputs))
 			const step = withScreen(model, next, toQuickStart)
 			return next.outMessage === undefined ? step : { ...step, outMessage: next.outMessage }
 		},

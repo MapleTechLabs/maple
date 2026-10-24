@@ -14,7 +14,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
-import { button, linkButton } from "../../ui/button"
+import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import { type PixelGlyphName, pixelGlyph } from "./option-card"
 import * as CopyButton from "../../ui/copy-button"
@@ -23,6 +23,7 @@ import { presenceOf, type TelemetrySignalKind } from "../kit/signal-presence"
 import { ConnectMessage, STATUS_PROVIDERS } from "./quick-start-connect"
 import type { LiveFindings } from "./quick-start-live"
 import { regionStep } from "./quick-start-region-view"
+import { drawerView } from "./quick-start-drawer-view"
 import * as QuickStartTeamView from "./quick-start-team-view"
 import { STEP_BODY_CLASS, STEP_FOOTER_CLASS } from "./step-layout"
 import { Message, type Model, MountDitherField } from "./quick-start"
@@ -467,17 +468,11 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 
 const toConnect = (message: ConnectMessage): Message => Message.GotConnectMessage({ message })
 
-/** Each platform's own setup page under Sources: an integration's connect step or a push platform's snippets. */
 /** The picked language's guide for the Instrument tab; without one it keeps the snippet's own. */
 const docsFor = (stack: StackAnswers): Readonly<{ docs?: GuidedSetup.InstructionsDocs }> => {
 	const docs = languageDocsOf(stack)
 	return docs === undefined ? {} : { docs }
 }
-
-const setupHrefOf = (platform: StackPlatform): string =>
-	platform === "kubernetes" || platform === "docker"
-		? hrefOf(AppRoute.SourcesNew({ search: { platform } }))
-		: hrefOf(AppRoute.SourcesNew({ search: { integration: platform } }))
 
 const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
 	const item = STACK_PLATFORMS[platform]
@@ -506,19 +501,17 @@ const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
 						[h.Class("flex items-center gap-1.5 text-sm text-success")],
 						[icon(h, "CircleCheckIcon", { size: 14 }), "Connected"],
 					)
-				: linkButton(
+				: button(
 						h,
 						{
-							href: setupHrefOf(platform),
 							variant: "outline",
 							size: "sm",
 							attributes: [
-								h.Target("_blank"),
-								h.Rel("noopener"),
-								h.AriaLabel(`Set up ${item.label} (opens a new tab)`),
+								h.AriaLabel(`Set up ${item.label}`),
+								h.OnClick(Message.ClickedSetUp({ platform })),
 							],
 						},
-						["Set up", icon(h, "ExternalLinkIcon", { size: 12 })],
+						["Set up"],
 					),
 		],
 	)
@@ -540,7 +533,7 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 					h.p(
 						[h.Class("text-[15px] leading-relaxed text-muted-foreground")],
 						[
-							"Providers connect on their own page. Your code sends its traces, logs and metrics with OpenTelemetry: one prompt to your coding agent, or a few lines by hand.",
+							"Set up each provider here, step by step. Your code sends its traces, logs and metrics with OpenTelemetry: one prompt to your coding agent, or a few lines by hand.",
 						],
 					),
 				],
@@ -984,11 +977,12 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 																	`Connect ${STACK_PLATFORMS[platform].label}`,
 																],
 															),
-															h.a(
+															h.button(
 																[
-																	h.Href(setupHrefOf(platform)),
-																	h.Target("_blank"),
-																	h.Rel("noopener"),
+																	h.Type("button"),
+																	h.OnClick(
+																		Message.ClickedSetUp({ platform }),
+																	),
 																	h.Class(
 																		"text-xs text-primary hover:underline",
 																	),
@@ -1071,6 +1065,8 @@ export type QuickStartParts = Readonly<{
 	/** The org already holds a plan, so its step is done and skipped. */
 	hasPlan: boolean
 	orgName: string
+	/** The connect drawer's flow shows times in it. */
+	timeZone: string
 }>
 
 const trailOf = (
@@ -1116,24 +1112,34 @@ export const view = (h: H, model: Model, parts: QuickStartParts): Html | null =>
 		aside,
 		step,
 	})
+	// The drawer portals to the body; any step can hold it (an OAuth return lands on the current one).
+	const drawer = drawerView(h, model.drawer, parts.timeZone, (message) =>
+		Message.GotDrawerMessage({ message }),
+	)
 	switch (step) {
 		case "region":
-			return shell(h, options(null), [motionStep(h, "region", regionStep(h, model.region))])
+			return shell(h, options(null), [motionStep(h, "region", regionStep(h, model.region)), drawer])
 		case "plan":
-			return shell(h, options(null), [motionStep(h, "plan", parts.planStep)])
+			return shell(h, options(null), [motionStep(h, "plan", parts.planStep), drawer])
 		case "stack":
 			return shell(h, options(stackPreview(h, parts.orgName, state)), [
 				motionStep(h, "stack", stackStep(h, state)),
+				drawer,
 			])
 		case "connect":
 			return shell(h, options(connectPreview(h, parts.orgName, model, state)), [
 				motionStep(h, "connect", connectStep(h, model, state)),
+				drawer,
 			])
 		case "live":
-			return shell(h, options(null), [motionStep(h, "live", liveStep(h, model, state, parts.orgName))])
+			return shell(h, options(null), [
+				motionStep(h, "live", liveStep(h, model, state, parts.orgName)),
+				drawer,
+			])
 		case "team":
 			return shell(h, options(QuickStartTeamView.teamPreview(h)), [
 				motionStep(h, "team", parts.teamStep(state)),
+				drawer,
 			])
 	}
 }

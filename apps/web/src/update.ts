@@ -406,6 +406,7 @@ export const onboardingInputsOf = (model: Model): Option.Option<Onboarding.Input
 		memberships: Option.match(snapshot, { onNone: () => [], onSome: (clerkSnapshot) => clerkSnapshot.memberships }),
 		maybeUser: Option.flatMap(snapshot, (clerkSnapshot) => clerkSnapshot.maybeUser),
 		customer: model.customer,
+		timeZone: model.timeZone,
 	}
 	return Session.match(model.session, {
 		Resolving: (): Option.Option<Onboarding.Inputs> => Option.none(),
@@ -450,11 +451,29 @@ const loadOnboarding: Step = (model) => {
 	})
 }
 
+/** The connect drawer's flow toasts as a page does; a link it followed leaves onboarding. */
+const connectFlowOut =
+	(out: PageOutMessage): Step =>
+	(model) =>
+		out._tag === "RequestedToast"
+			? showPageToast(model, out)
+			: out._tag === "RequestedNavigation"
+				? Option.match(Option.fromUndefinedOr(out.toast), {
+						onNone: () => ({ model, commands: [navigateTo(model, out.url, out.isReplace)] }),
+						onSome: (toast) => {
+							const shown = showPageToast(model, PageOutMessage.RequestedToast({ ...toast, timeoutMs: null, action: null }))
+							return { model: shown.model, commands: [navigateTo(model, out.url, out.isReplace), ...shown.commands] }
+						},
+					})
+				: { model }
+
 /** A plan change re-reads the customer (`refreshCustomer()`) and toasts, as `PricingCards` does. */
 const onboardingOut =
 	(out: Onboarding.OutMessage): Step =>
 	(model) =>
-		Onboarding.OutMessage.match(out, {
+		out._tag === "RequestedConnectFlowOut"
+			? connectFlowOut(out.out)(model)
+			: Onboarding.PricingOutMessage.match(out, {
 			ChangedPlan: ({ isLeavingForCheckout }) => {
 				const toasted = isLeavingForCheckout
 					? { model, commands: [] }

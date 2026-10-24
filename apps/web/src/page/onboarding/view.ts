@@ -156,6 +156,7 @@ const quickStartView = Submodel.defineView<
 				needsRegion: needsRegion(inputs.maybeOrganization),
 				// A failed plan read fails open, as the gate does, rather than asking for a plan again.
 				hasPlan: hasPlanOf(inputs.customer),
+				timeZone: inputs.timeZone,
 				orgName: Option.match(inputs.maybeOrganization, {
 					onNone: () => "Your team",
 					onSome: (org) => org.name,

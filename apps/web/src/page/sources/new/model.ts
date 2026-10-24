@@ -11,7 +11,10 @@ import { DataIntegration } from "../../integrations/embed"
 import { FlowStage } from "../../integrations/flow"
 import { Model as IntegrationModel } from "../../integrations/model"
 
-// `/sources/new`: pick a platform, name it, copy the token.
+// `/sources/new`: pick a platform, name it, copy the token. Onboarding's drawer runs the same flow.
+
+/** Where the flow shows: its own page, or onboarding's drawer (no links away, Done closes it). */
+export type FlowHost = "page" | "drawer"
 
 /** The create's answer: the source and its one-time token, held in memory only. */
 export const Created = Schema.Struct({ source: V2Source, secret: Schema.String })

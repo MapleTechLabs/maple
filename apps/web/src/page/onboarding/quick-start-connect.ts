@@ -135,6 +135,15 @@ const reads = (orgId: string, platforms: ReadonlyArray<StackPlatform>) => {
 	]
 }
 
+/** The drawer closed: the picked providers' connections, read once outside the poll. */
+export const refreshConnected = (
+	orgId: string,
+	platforms: ReadonlyArray<StackPlatform>,
+): Step["commands"] => {
+	const providers = platforms.filter(isStatusProvider)
+	return providers.length === 0 ? [] : [LoadConnected({ orgId, providers })]
+}
+
 /** The step opens: the key once, then presence and providers on a poll until it closes. */
 export const openConnect = (
 	connect: Connect,

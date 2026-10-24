@@ -25,6 +25,7 @@ const inputs: Inputs = {
 	memberships: [organization],
 	maybeUser: Option.none(),
 	customer: initCustomer(),
+	timeZone: "UTC",
 }
 
 describe("wrong-region screen", () => {
