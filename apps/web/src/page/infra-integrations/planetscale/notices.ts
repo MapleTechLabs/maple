@@ -1,4 +1,9 @@
-import type { SetupStep } from "../../../components/integrations/planetscale-setup-steps"
+import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
+import {
+	metricsAuthOf,
+	metricsLastError,
+	type SetupStep,
+} from "../../../components/integrations/planetscale-setup-steps"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -19,8 +24,6 @@ import { relativeTime } from "../../kit/relative-time"
 
 // PlanetScale absence notices, setup state and the setup checklist.
 
-export const METRICS_PAUSED_MESSAGE = "Branch metrics are paused. Add a metrics token to collect them."
-export const METRICS_PAUSED_SHORT = "metrics paused"
 export const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
 export const BRANCH_ABSENCE_COPY = {
 	excluded: "Excluded from metrics collection by this connection's branch filters.",
@@ -29,19 +32,22 @@ export const BRANCH_ABSENCE_COPY = {
 
 const INTEGRATION_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "planetscale" } }))
 
-export const metricsNotice = <M>(h: HtmlBuilder<M>): Html =>
-	alert(h, { variant: "warn" }, [
+/** `PlanetScaleMetricsNotice`: metrics arrived before and have stopped. */
+export const metricsNotice = <M>(h: HtmlBuilder<M>, status: V2PlanetScaleIntegration): Html => {
+	const error = metricsLastError(status)
+	const source = metricsAuthOf(status) === "api" ? "poll" : "scrape"
+	return alert(h, { variant: "warn" }, [
 		icon(h, "AlertWarningIcon"),
-		alertTitle(h, ["Branch metrics aren't being collected"]),
+		alertTitle(h, ["Branch metrics stopped arriving"]),
 		alertDescription(h, [
-			"Databases and branches are up to date, and query insights still work. Connections, CPU, memory, storage, and replica lag need a PlanetScale service token with the read_metrics_endpoints permission.",
+			"Databases and branches are up to date, and query insights still work. Connections, CPU, memory, storage, and replica lag are not updating.",
+			...(error === null ? [] : [` The last ${source} failed: ${error}`]),
 		]),
 		alertAction(h, [
-			linkButton(h, { size: "sm", variant: "outline", href: INTEGRATION_HREF }, [
-				"Add a metrics token",
-			]),
+			linkButton(h, { size: "sm", variant: "outline", href: INTEGRATION_HREF }, ["View integration"]),
 		]),
 	])
+}
 
 export const revokedNotice = <M>(h: HtmlBuilder<M>): Html =>
 	alert(h, { variant: "crit" }, [
@@ -75,7 +81,8 @@ export const inventoryNotice = <M>(
 						" ",
 						options.lastInventoryAt === null
 							? "never"
-							: relativeTime(h, { tooltip: "title",
+							: relativeTime(h, {
+									tooltip: "title",
 									value: options.lastInventoryAt,
 									nowMs: options.nowMs,
 									timeZone: options.timeZone,
@@ -177,7 +184,7 @@ export const setupState = <M>(h: HtmlBuilder<M>, steps: ReadonlyArray<SetupStep>
 			{
 				label: "Utilization",
 				title: "CPU, memory, connections",
-				description: "Per branch, scraped from PlanetScale on a schedule.",
+				description: "Per branch, collected from PlanetScale every 5 minutes.",
 			},
 			{
 				label: "Storage",
@@ -193,12 +200,10 @@ export const setupState = <M>(h: HtmlBuilder<M>, steps: ReadonlyArray<SetupStep>
 		integrationEmptyCard(h, [
 			integrationEmptyMedia(h, BRAND),
 			integrationEmptyHint(h, [
-				"Branch metrics need one more step. PlanetScale only serves them to service tokens, so the OAuth authorization alone can't collect them.",
+				"Branch metrics start arriving within minutes of connecting. Maple collects them on your PlanetScale authorization.",
 			]),
 			setupChecklist(h, steps, "w-full max-w-md text-left"),
-			linkButton(h, { href: INTEGRATION_HREF }, ["Finish setup"]),
-			integrationEmptyFooter(h, [
-				"One read-only permission · takes about a minute · your databases below are already live.",
-			]),
+			linkButton(h, { href: INTEGRATION_HREF }, ["View integration"]),
+			integrationEmptyFooter(h, ["Nothing to install · your databases below are already live."]),
 		]),
 	])

@@ -200,7 +200,7 @@ export const ClerkOrganization = Schema.Struct({
 	isServedHere: Schema.Boolean,
 	/** `organizationRegionOpen` at the time of the emit: onboarding may still ask for the region. */
 	isRegionOpen: Schema.Boolean,
-	flags: Schema.Struct({ aiAutoTriage: Schema.Boolean, releases: Schema.Boolean }),
+	flags: Schema.Struct({ aiAutoTriage: Schema.Boolean, releases: Schema.Boolean, securityAudit: Schema.Boolean }),
 })
 export type ClerkOrganization = typeof ClerkOrganization.Type
 

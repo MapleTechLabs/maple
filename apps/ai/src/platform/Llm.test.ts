@@ -24,6 +24,7 @@ import {
 	loadLlmSettings,
 	resolveDecisionModel,
 	resolveReviewModel,
+	resolveSecurityAuditModel,
 	resolveTriageModel,
 	type LlmCallTags,
 	type LlmSettings,
@@ -209,6 +210,20 @@ describe("reasoning effort", () => {
 			expect(captured.body).not.toHaveProperty("reasoning")
 		}),
 	)
+})
+
+describe("resolveSecurityAuditModel", () => {
+	it("resolves discovery and validation to different models, each overridable", () => {
+		const defaults = [
+			resolveSecurityAuditModel(openRouterEnv, "discovery").name,
+			resolveSecurityAuditModel(openRouterEnv, "validation").name,
+		]
+		const overridden = resolveSecurityAuditModel(
+			{ ...openRouterEnv, MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER: "openai/gpt-6-luna" },
+			"validation",
+		).name
+		expect([defaults[0] !== defaults[1], overridden]).toEqual([true, "openai/gpt-6-luna"])
+	})
 })
 
 describe("resolveReviewModel", () => {

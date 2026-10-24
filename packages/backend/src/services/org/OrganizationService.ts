@@ -72,6 +72,14 @@ import {
 	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
+	SecurityAuditEvents,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgUsage,
+	SecurityAuditFindings,
+	SecurityAuditRunFindings,
+	SecurityAuditRuns,
+	SecurityAuditTargets,
+	SecurityAuditUnits,
 	VcsInstallations,
 	VcsRepositories,
 } from "@maple/db/tables"
@@ -184,6 +192,15 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	LiveActivities,
 	// Nothing secret, but the channel belongs to the org; a recreated org starts fresh.
 	OrgSupportChannels,
+	// Security audit evidence about the org's source code: exploit traces must not outlive the org.
+	SecurityAuditEvents,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgUsage,
+	SecurityAuditRunFindings,
+	SecurityAuditFindings,
+	SecurityAuditUnits,
+	SecurityAuditRuns,
+	SecurityAuditTargets,
 ]
 
 /**

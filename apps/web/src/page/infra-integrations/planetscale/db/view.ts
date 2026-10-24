@@ -1,4 +1,7 @@
-import { derivePlanetScaleSetup } from "../../../../components/integrations/planetscale-setup-steps"
+import {
+	derivePlanetScaleSetup,
+	metricsCollectionFailing,
+} from "../../../../components/integrations/planetscale-setup-steps"
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -24,13 +27,7 @@ import { pageHero } from "../../../infra/kit/page-parts"
 import { formatAbsolute } from "../../../kit/relative-time"
 import { pageTime } from "../../kit/page-time"
 import { activeFilterChips, applyBranchFilters } from "../filters"
-import {
-	BRANCH_ABSENCE_COPY,
-	METRICS_PAUSED_MESSAGE,
-	metricsNotice,
-	revokedNotice,
-	setupState,
-} from "../notices"
+import { BRANCH_ABSENCE_COPY, metricsNotice, revokedNotice, setupState } from "../notices"
 import {
 	candidatesOf,
 	databaseOf,
@@ -150,8 +147,6 @@ const dataSections = (
 	const selected = filters.branches ?? []
 	const candidates = applyBranchFilters(candidatesOf(model), filters)
 	const selectedBranch = selectedBranchOf(model)
-	const status = statusOf(model)
-	const metricsPaused = status?.metrics_auth === "missing"
 	const selectedCandidate = candidates.find((candidate) => candidate.name === selectedBranch?.name) ?? null
 	const reason = selectedCandidate === null ? null : absenceReason(selectedCandidate)
 	const events =
@@ -172,11 +167,7 @@ const dataSections = (
 									theme,
 									timeZone: clock.timeZone,
 									markers: eventsToChartMarkers(events),
-									emptyMessage: metricsPaused
-										? METRICS_PAUSED_MESSAGE
-										: reason !== null
-											? BRANCH_ABSENCE_COPY[reason]
-											: undefined,
+									emptyMessage: reason !== null ? BRANCH_ABSENCE_COPY[reason] : undefined,
 									selected,
 									trigger,
 								}),
@@ -209,9 +200,7 @@ const dataSections = (
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: true,
-								emptyMessage: metricsPaused
-									? METRICS_PAUSED_MESSAGE
-									: "No branches match these filters.",
+								emptyMessage: "No branches match these filters.",
 							}),
 						onSuccess: () =>
 							breakdownPanel(h, {
@@ -220,9 +209,7 @@ const dataSections = (
 								measure: model.measure,
 								sort: model.breakdownSort,
 								isWaiting: false,
-								emptyMessage: metricsPaused
-									? METRICS_PAUSED_MESSAGE
-									: "No branches match these filters.",
+								emptyMessage: "No branches match these filters.",
 							}),
 					}),
 				],
@@ -366,7 +353,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				]
 			: [
 					...(status?.revoked_at != null ? [revokedNotice(h)] : []),
-					...(status?.metrics_auth === "missing" && !never ? [metricsNotice(h)] : []),
+					...(status !== null &&
+					status.revoked_at === null &&
+					!never &&
+					metricsCollectionFailing(status, clock.nowMs)
+						? [metricsNotice(h, status)]
+						: []),
 					...(never && status !== null
 						? [setupState(h, derivePlanetScaleSetup(status, clock.nowMs).steps)]
 						: []),

@@ -61,6 +61,16 @@ import {
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
+import {
+	SecurityAuditEvents,
+	SecurityAuditFindings,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgUsage,
+	SecurityAuditRunFindings,
+	SecurityAuditRuns,
+	SecurityAuditTargets,
+	SecurityAuditUnits,
+} from "./security-audit"
 import { SupabaseConnections, SupabaseProjectInsights, SupabaseProjects } from "./supabase"
 import { OrgSupportChannels } from "./support-channels"
 import {
@@ -114,6 +124,7 @@ export * from "./planetscale-inventory"
 export * from "./openrouter-keys"
 export * from "./railway"
 export * from "./scrape-targets"
+export * from "./security-audit"
 export * from "./sources"
 export * from "./supabase"
 export * from "./support-channels"
@@ -186,6 +197,14 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	RailwayEnvironments,
 	ScrapeTargets,
 	ScrapeTargetChecks,
+	SecurityAuditTargets,
+	SecurityAuditRuns,
+	SecurityAuditUnits,
+	SecurityAuditRunFindings,
+	SecurityAuditFindings,
+	SecurityAuditEvents,
+	SecurityAuditOrgUsage,
+	SecurityAuditOrgReservations,
 	SupabaseConnections,
 	SupabaseProjects,
 	SupabaseProjectInsights,

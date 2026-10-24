@@ -24,7 +24,7 @@ import { type Context, shownEntries } from "./update"
 
 // `CommandPalette`'s popup: the input, the grouped entries (or "No results"), the footer hints.
 
-export type ViewInputs = Readonly<{ context: Context; isReleasesVisible: boolean }>
+export type ViewInputs = Readonly<{ context: Context; visibleFlagged: ReadonlyArray<string> }>
 
 const GLYPH_CLASS = "shrink-0 text-muted-foreground"
 
@@ -79,10 +79,10 @@ export const paletteView = <M>(
 	const toList = (message: Combobox.Message) =>
 		toMessage(
 			message._tag === "PressedInputKey" && message.key === "Enter"
-				? Message.PressedEnter({ isReleasesVisible: inputs.isReleasesVisible })
+				? Message.PressedEnter({ visibleFlagged: inputs.visibleFlagged })
 				: Message.GotListMessage({ message }),
 		)
-	const shown = shownEntries(model, inputs.context, inputs.isReleasesVisible)
+	const shown = shownEntries(model, inputs.context, inputs.visibleFlagged)
 	const groups = groupsOf(h, shown.entries)
 	return h.submodel({
 		slotId: "command-palette",
