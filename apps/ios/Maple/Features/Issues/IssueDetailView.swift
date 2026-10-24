@@ -92,15 +92,13 @@ struct IssueDetailView: View {
 		}
 		.toolbar {
 			ToolbarItemGroup(placement: .topBarTrailing) {
-				if let url = IssueWebLink.url(issueID: issueID) {
-					Link(destination: url) {
-						PixelIcon.externalLink.image
-							.resizable()
-							.frame(width: 16, height: 16)
-							.foregroundStyle(Token.foreground)
-					}
-					.accessibilityLabel("Open on the web")
+				Link(destination: MapleWeb.issue(issueID)) {
+					PixelIcon.externalLink.image
+						.resizable()
+						.frame(width: 16, height: 16)
+						.foregroundStyle(Token.foreground)
 				}
+				.accessibilityLabel("Open on the web")
 				if let model, let issue = model.state.value {
 					IssueMoreMenu(issue: issue) { action in
 						Task { await model.perform(action) }
@@ -130,14 +128,6 @@ struct IssueDetailView: View {
 			self.model = model
 			await model.loader.loadIfNeeded()
 		}
-	}
-}
-
-/// The issue on the web dashboard, for the nav bar's open-on-web button.
-enum IssueWebLink {
-	static func url(issueID: String) -> URL? {
-		guard let id = issueID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
-		return URL(string: "https://app.maple.dev/errors/issues/\(id)")
 	}
 }
 

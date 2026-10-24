@@ -87,9 +87,7 @@ struct TraceDetailView: View {
 					Button("Copy trace ID", systemImage: "doc.on.doc") {
 						UIPasteboard.general.string = traceID
 					}
-					if let url = MapleWeb.trace(traceID) {
-						Button("Open on web", systemImage: "safari") { openURL(url) }
-					}
+					Button("Open on web", systemImage: "safari") { openURL(MapleWeb.trace(traceID)) }
 				} label: {
 					PixelIcon.dotsVertical.image
 						.resizable()

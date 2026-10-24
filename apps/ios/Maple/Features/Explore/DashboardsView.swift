@@ -226,18 +226,16 @@ struct DashboardDetailView: View {
 		.navigationTitle("")
 		.navigationBarTitleDisplayMode(.inline)
 		.toolbar {
-			if let url = MapleWeb.dashboard(dashboardID) {
-				ToolbarItem(placement: .topBarTrailing) {
-					Menu {
-						Button("Open on web", systemImage: "safari") { openURL(url) }
-					} label: {
-						PixelIcon.dotsVertical.image
-							.resizable()
-							.frame(width: 16, height: 16)
-							.foregroundStyle(Token.mutedForeground)
-					}
-					.accessibilityLabel("More")
+			ToolbarItem(placement: .topBarTrailing) {
+				Menu {
+					Button("Open on web", systemImage: "safari") { openURL(MapleWeb.dashboard(dashboardID)) }
+				} label: {
+					PixelIcon.dotsVertical.image
+						.resizable()
+						.frame(width: 16, height: 16)
+						.foregroundStyle(Token.mutedForeground)
 				}
+				.accessibilityLabel("More")
 			}
 		}
 		.mapleScreen(Screen.dashboardDetail)

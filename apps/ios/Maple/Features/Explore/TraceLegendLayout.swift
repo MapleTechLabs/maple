@@ -53,16 +53,3 @@ struct WrappingLegendLayout: Layout {
 		return lines
 	}
 }
-
-/// Links into the web dashboard, for the "Open on web" menu items.
-enum MapleWeb {
-	private static let origin = "https://app.maple.dev"
-
-	static func trace(_ id: String) -> URL? { url("/traces/\(id)") }
-	static func dashboard(_ id: String) -> URL? { url("/dashboards/\(id)") }
-
-	private static func url(_ path: String) -> URL? {
-		guard let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
-		return URL(string: origin + encoded)
-	}
-}

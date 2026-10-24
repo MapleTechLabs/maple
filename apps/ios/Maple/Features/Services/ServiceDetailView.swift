@@ -199,18 +199,16 @@ struct ServiceDetailView: View {
 				.accessibilityElement(children: .combine)
 				.accessibilityAddTraits(.isHeader)
 			}
-			if let url = ServiceWebLink.url(serviceName: serviceName) {
-				ToolbarItem(placement: .topBarTrailing) {
-					Button {
-						openURL(url)
-					} label: {
-						PixelIcon.externalLink.image
-							.resizable()
-							.frame(width: 14, height: 14)
-							.foregroundStyle(Token.mutedForeground)
-					}
-					.accessibilityLabel("Open on web")
+			ToolbarItem(placement: .topBarTrailing) {
+				Button {
+					openURL(MapleWeb.service(serviceName))
+				} label: {
+					PixelIcon.externalLink.image
+						.resizable()
+						.frame(width: 14, height: 14)
+						.foregroundStyle(Token.mutedForeground)
 				}
+				.accessibilityLabel("Open on web")
 			}
 		}
 		.mapleScreen(Screen.serviceDetail)

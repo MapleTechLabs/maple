@@ -21,24 +21,6 @@ enum ServicesFormat {
 	}
 }
 
-/// The dashboard page for a service, for the open-on-web button.
-enum ServiceWebLink {
-	/// `app.maple.dev` unless the API is pointed elsewhere, in which case the
-	/// dashboard host is the API host with its `api` label swapped for `app`.
-	static func url(serviceName: String) -> URL? {
-		var components = URLComponents()
-		components.scheme = "https"
-		components.host = "app.maple.dev"
-		if let api = AppConfig.apiBaseURL, let host = api.host, host.hasPrefix("api") {
-			components.scheme = api.scheme
-			components.host = "app" + host.dropFirst(3)
-			components.port = api.port
-		}
-		components.path = "/services/\(serviceName)"
-		return components.url
-	}
-}
-
 /// The window chips every Services screen carries: `1h 6h 24h 7d`.
 struct WindowChips: View {
 	@Binding var window: TimeWindow
