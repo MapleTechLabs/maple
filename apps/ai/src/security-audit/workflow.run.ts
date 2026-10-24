@@ -8,16 +8,22 @@
  */
 import { OrgId } from "@maple/domain/http"
 import type { SandboxError } from "@maple/backend/sandbox/contract"
-import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
+import { ORG_BUDGET_EXHAUSTED, type SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { durableStep } from "@maple/backend/platform/durable-step"
+import { trackSecurityAuditInvocations } from "@maple/backend/services/billing/autumn-tracker"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
+import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import {
+	type AgentAnswer,
+	type AgentInvocation,
 	AuditAgents,
 	AuditAgentError,
 	type AuditAgentsApi,
+	AuditBudgetExhaustedError,
 	AuditStore,
 	type AuditStoreApi,
+	type AuditStoreError,
 	changedMatcher,
 	EVERYTHING_CHANGED,
 	type PriorRun,
@@ -25,9 +31,18 @@ import {
 } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, type Context, Duration, Effect, Layer, Option, Predicate, Schedule, Schema } from "effect"
+import { HttpClient } from "effect/http"
 import { layerLlm, loadLlmSettings, resolveSecurityAuditModel } from "../platform/Llm"
 import { makeAuditAgents } from "./agents"
 import { changedPaths } from "./changed-paths"
+import { inspectDependencies } from "./dependencies"
+import {
+	AuditRepositoryRefusedError,
+	parseRepoSize,
+	REPO_SIZE_COMMAND,
+	refusalReason,
+	repoLimitViolations,
+} from "./repo-size"
 import { sandboxSource } from "./sandbox-source"
 import { AUDIT_TOOL_GUIDANCE, type SourceReaderApi } from "./source"
 
@@ -74,6 +89,9 @@ const AGENT_STEP = {
 	timeout: "30 minutes",
 } as const
 
+/** Counting a very large tree takes a while; the sandbox's own ceiling is 120 seconds. */
+const REPO_SIZE_TIMEOUT_SECONDS = 120
+
 /** Store writes retried on transient database errors; every write is a replacement or idempotent. */
 const retried = (store: AuditStoreApi): AuditStoreApi => {
 	const policy = Schedule.max([Schedule.exponential("500 millis", 2.0), Schedule.recurs(3)])
@@ -87,41 +105,90 @@ const retried = (store: AuditStoreApi): AuditStoreApi => {
 	}
 }
 
+const messageOf = (error: unknown): string =>
+	Predicate.hasProperty(error, "message") && Predicate.isString(error.message)
+		? error.message
+		: String(error)
+
 /**
  * Each invocation a durable step: a replay returns its recorded answer instead of running it again.
- * The run's step context is captured once, so `run` itself has no requirements.
+ * Before it, `admit` reserves the invocation from the org's monthly budget in its own durable step,
+ * so a replay neither reserves nor bills it twice. The run's step context is captured once.
  */
 const durableAgents = (
 	agents: AuditAgentsApi,
 	step: Context.Context<Cloudflare.WorkflowStep>,
+	admit: (agentId: string) => Effect.Effect<boolean, AuditStoreError>,
 ): AuditAgentsApi => ({
-	run: (invocation) =>
-		durableStep(`agent:${invocation.agentId}`, agents.run(invocation), AGENT_STEP).pipe(
+	run: (invocation) => {
+		const refused = (message: string, reason: string) =>
+			new AuditBudgetExhaustedError({ message, agentId: invocation.agentId, reason })
+		const admitted: Effect.Effect<boolean, AuditBudgetExhaustedError> = durableStep(
+			`org-budget:${invocation.agentId}`,
+			admit(invocation.agentId),
+			STEP_RETRY,
+		).pipe(
 			Effect.provide(step),
-			// A replayed failure keeps its fields but not its class, so it is rebuilt from them.
-			Effect.mapError(
-				(error) =>
-					new AuditAgentError({
-						message:
-							Predicate.hasProperty(error, "message") && Predicate.isString(error.message)
-								? error.message
-								: String(error),
-						role: invocation.role,
-						agentId: invocation.agentId,
-					}),
-			),
-			// A step that dies (its timeout, an isolate past its CPU limit) costs that agent, not the run.
-			Effect.catchDefect((defect) =>
-				Effect.fail(
-					new AuditAgentError({
-						message: `agent step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
-						role: invocation.role,
-						agentId: invocation.agentId,
-					}),
+			// A budget that cannot be read is not a budget with room: the run stops rather than overspend.
+			Effect.mapError((error) =>
+				refused(
+					`the organization's invocation budget could not be read: ${messageOf(error)}`,
+					"org_budget_unavailable",
 				),
 			),
-		),
+			// A step that dies (its timeout, an isolate past its CPU limit) refuses too, as an agent
+			// step's death costs that agent: the run settles incomplete instead of staying open.
+			Effect.catchDefect((defect) =>
+				Effect.fail(
+					refused(
+						`the organization's invocation budget step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
+						"org_budget_unavailable",
+					),
+				),
+			),
+		)
+		return Effect.flatMap(
+			admitted,
+			(granted): Effect.Effect<AgentAnswer, AuditAgentError | AuditBudgetExhaustedError> =>
+				granted
+					? runAgentStep(agents, step, invocation)
+					: Effect.fail(
+							refused(
+								"the organization's monthly invocation budget is spent",
+								ORG_BUDGET_EXHAUSTED,
+							),
+						),
+		)
+	},
 })
+
+const runAgentStep = (
+	agents: AuditAgentsApi,
+	step: Context.Context<Cloudflare.WorkflowStep>,
+	invocation: AgentInvocation,
+) =>
+	durableStep(`agent:${invocation.agentId}`, agents.run(invocation), AGENT_STEP).pipe(
+		Effect.provide(step),
+		// A replayed failure keeps its fields but not its class, so it is rebuilt from them.
+		Effect.mapError(
+			(error) =>
+				new AuditAgentError({
+					message: messageOf(error),
+					role: invocation.role,
+					agentId: invocation.agentId,
+				}),
+		),
+		// A step that dies (its timeout, an isolate past its CPU limit) costs that agent, not the run.
+		Effect.catchDefect((defect) =>
+			Effect.fail(
+				new AuditAgentError({
+					message: `agent step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
+					role: invocation.role,
+					agentId: invocation.agentId,
+				}),
+			),
+		),
+	)
 
 /**
  * The Workflow body over an agent factory: the deployed run passes real models, tests pass scripted
@@ -170,6 +237,52 @@ export const auditWithAgents = <E, R>(
 		)
 		const pinned = { repository: payload.repository, ref: sha }
 
+		// Measured before any agent: a repository over a limit is refused whole, never partly audited.
+		// The limits are read inside the step, so a deploy that changes them cannot flip a replay.
+		const { violations } = yield* durableStep(
+			"repo-size",
+			Effect.gen(function* () {
+				const result = yield* sandbox
+					.exec(orgId, pinned, { ...REPO_SIZE_COMMAND, timeoutSeconds: REPO_SIZE_TIMEOUT_SECONDS })
+					.pipe(Effect.mapError(toSandboxStepError("repo-size")))
+				const size =
+					result.exitCode === 0 && !result.truncated ? parseRepoSize(result.stdout) : Option.none()
+				if (Option.isNone(size)) {
+					return {
+						violations: [
+							`its size could not be measured (exit ${result.exitCode}: ${result.stderr.trim().slice(0, 300)})`,
+						],
+					}
+				}
+				return { violations: repoLimitViolations(size.value, yield* securityAuditLimits) }
+			}),
+			STEP_RETRY,
+		)
+		if (violations.length > 0) {
+			const reason = refusalReason(violations)
+			// Its own retried step, so a transient write error cannot replace the refusal's reason.
+			yield* durableStep(
+				"refuse",
+				Effect.gen(function* () {
+					yield* store.recordEvent(payload.runId, { _tag: "Note", message: reason })
+					yield* store.finishRun(payload.runId, { status: "failed", error: reason })
+				}),
+				STEP_RETRY,
+			)
+			return yield* new AuditRepositoryRefusedError({ message: reason, violations })
+		}
+		// Labelling only: which ecosystems it builds with, and what it could not install.
+		const executionProfile = yield* durableStep(
+			"execution-profile",
+			inspectDependencies(sandbox, orgId, pinned),
+			STEP_RETRY,
+		)
+		yield* durableStep(
+			"save-execution-profile",
+			store.setExecutionProfile(payload.runId, executionProfile),
+			STEP_RETRY,
+		)
+
 		// Prior records are read, not stepped: a finished run never changes, so a replay reads the same.
 		// Only a finished run of the same repository counts; anything else would make replays disagree.
 		const priorRow = Option.filter(
@@ -202,6 +315,33 @@ export const auditWithAgents = <E, R>(
 		const changedSincePrior = changedMatcher(changed)
 
 		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned))
+		const httpClient = yield* HttpClient.HttpClient
+		/**
+		 * One invocation from the org's cycle, billed once it is granted. Known gap: the Autumn track
+		 * is fire-and-forget, so a charge is lost while Autumn is down; reconcile it later from
+		 * `security_audit_org_reservations`, which stays the ledger of record. A run that crosses a
+		 * billing-cycle boundary keeps reserving against its payload's period; the run budget bounds that.
+		 */
+		const admit = (agentId: string) =>
+			store
+				.reserveOrgInvocation(
+					payload.runId,
+					agentId,
+					payload.orgBudget.period,
+					payload.orgBudget.limit,
+				)
+				.pipe(
+					Effect.tap((granted) =>
+						granted
+							? trackSecurityAuditInvocations({
+									orgId,
+									runId: payload.runId,
+									agentId,
+									invocations: 1,
+								}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+							: Effect.void,
+					),
+				)
 
 		const result = yield* runAudit({
 			runId: payload.runId,
@@ -216,6 +356,7 @@ export const auditWithAgents = <E, R>(
 				blocker:
 					"the repository sandbox does not yet provide per-agent scratch space, resource limits and artifact promotion",
 			},
+			executionProfile,
 			toolGuidance: AUDIT_TOOL_GUIDANCE,
 			prior,
 			changedSincePrior,
@@ -226,7 +367,7 @@ export const auditWithAgents = <E, R>(
 				Layer.mergeAll(
 					Layer.succeed(
 						AuditAgents,
-						durableAgents(agents, yield* Effect.context<Cloudflare.WorkflowStep>()),
+						durableAgents(agents, yield* Effect.context<Cloudflare.WorkflowStep>(), admit),
 					),
 					Layer.succeed(AuditStore, retried(store)),
 				),

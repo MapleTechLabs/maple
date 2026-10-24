@@ -1,5 +1,6 @@
 import {
 	ApiRequestValidationError,
+	SecurityAuditBudgetExhaustedError,
 	type SecurityAuditCreateTargetRequest,
 	type SecurityAuditFindingTriageStatus,
 	type SecurityAuditStartRunRequest,
@@ -90,8 +91,26 @@ export const createTarget = (payload: SecurityAuditCreateTargetRequest) =>
 		return yield* api.securityAudit.createTarget({ payload })
 	}).pipe(Effect.mapError(toCreateFailure), Effect.result)
 
+const isBudgetExhausted = Schema.is(SecurityAuditBudgetExhaustedError)
+
+/** A refused start, saying when an exhausted budget resets (the end of the billing cycle, UTC). */
+export const toStartFailure = (error: unknown): LoadFailure => {
+	const failure = toLoadFailure(error)
+	if (!isBudgetExhausted(error)) return failure
+	const resets = new Date(error.resetsAt).toLocaleDateString("en-US", {
+		month: "long",
+		day: "numeric",
+		year: "numeric",
+		timeZone: "UTC",
+	})
+	return { ...failure, message: `${error.message} The budget resets on ${resets}.` }
+}
+
 export const startRun = (targetId: SecurityAuditTargetId, payload: SecurityAuditStartRunRequest = {}) =>
-	call((api) => api.securityAudit.startRun({ params: { targetId }, payload }))
+	Effect.gen(function* () {
+		const api = yield* MapleAiClient
+		return yield* api.securityAudit.startRun({ params: { targetId }, payload })
+	}).pipe(Effect.mapError(toStartFailure), Effect.result)
 
 export const updateFindingStatus = (
 	targetId: SecurityAuditTargetId,

@@ -124,6 +124,18 @@ describe("security run", () => {
 		)
 	})
 
+	test("a source-only run says, under its title, why it executed no target code", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(RUN_IDS.billing)),
+			expectView(
+				text(
+					/^Source-only review: no execution sandbox for Node\.js, Go yet; private dependencies detected/,
+				),
+			).toExist(),
+		)
+	})
+
 	test("a cancelled run reads as cancelled, not as a budget gap", () => {
 		scene(
 			{ update: pageUpdate, view },

@@ -11,7 +11,7 @@ import {
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
 } from "@maple/domain/organization-feature-flags"
 import { OrgId, RoleName, UserId } from "@maple/domain/primitives"
-import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
+import { securityAuditBudgetPeriod, type SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { type Finding, minimumInvocations } from "@maple/security-audit"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import {
@@ -30,8 +30,13 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import {
+	type OrgAuditBudget,
+	SecurityAuditPlanBudget,
+} from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
+import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { HttpSecurityAuditLive } from "./security-audit.http"
@@ -40,6 +45,24 @@ class SecurityAuditOnlyApi extends HttpApi.make("MapleAiApi")
 	.add(SecurityAuditApiGroup)
 	.middleware(ApiSchemaErrors)
 	.middleware(ApiUnexpectedErrors) {}
+
+/** The route's clock in every test: mid-October 2026, UTC. */
+const NOW = Date.UTC(2026, 9, 15, 12)
+const PERIOD = securityAuditBudgetPeriod(NOW)
+
+/** A clock fixed at `nowMs`; sleeps still wait in real time. */
+const fixedClock = (nowMs: number): Clock.Clock => ({
+	currentTimeMillisUnsafe: () => nowMs,
+	currentTimeMillis: Effect.succeed(nowMs),
+	currentTimeNanosUnsafe: () => BigInt(nowMs) * 1_000_000n,
+	currentTimeNanos: Effect.succeed(BigInt(nowMs) * 1_000_000n),
+	monotonicTimeNanosUnsafe: () => process.hrtime.bigint(),
+	monotonicTimeNanos: Effect.sync(() => process.hrtime.bigint()),
+	sleep: (duration) =>
+		Effect.promise(
+			() => new Promise<void>((resolve) => setTimeout(resolve, Duration.toMillis(duration))),
+		),
+})
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -75,6 +98,12 @@ const makeHarness = (
 		readonly enabled?: boolean
 		readonly startFails?: boolean
 		readonly cancelFails?: boolean
+		/** The org's monthly invocation limit from its plan, over the UTC month. */
+		readonly orgLimit?: number
+		/** The org's whole budget, for a billing cycle or Autumn's own remaining balance. */
+		readonly budget?: Partial<OrgAuditBudget> & { readonly limit: number }
+		/** Repository sizes GitHub reports, by `owner/name`; read on every call. */
+		readonly repositoryBytes?: Record<string, number>
 	} = {},
 ) => {
 	const db = createTestDb(trackedDbs)
@@ -115,6 +144,10 @@ const makeHarness = (
 				storeLayer,
 				starter,
 				Layer.succeed(AuditLogService, auditLog),
+				SecurityAuditPlanBudget.fixed(options.budget ?? { limit: options.orgLimit ?? 20_000 }),
+				// The route reads this clock, so the tests derive the budget period from it too.
+				Layer.succeed(Clock.Clock, fixedClock(NOW)),
+				SecurityAuditRepositorySize.fixed(options.repositoryBytes ?? {}),
 				OrganizationFeatureFlagsService.fixed(
 					options.enabled === false
 						? DISABLED_ORGANIZATION_FEATURE_FLAGS
@@ -365,6 +398,80 @@ describe("/api/security-audit targets", () => {
 	})
 })
 
+describe("/api/security-audit size before clone", () => {
+	it("refuses a repository GitHub reports as over the limit, at creation and at run start", async () => {
+		const huge = 3 * 1024 * 1024 * 1024
+		const sizes = { "acme/api": huge }
+		const harness = makeHarness({ repositoryBytes: sizes })
+		try {
+			const refused = await harness.call("POST", "/targets", { body: TARGET })
+			sizes["acme/api"] = 10 * 1024 * 1024
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			// The repository grew past the limit after its target was created.
+			sizes["acme/api"] = huge
+			const start = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			const reason =
+				"repository_refused: the repository was not audited because GitHub reports it at 3072 MiB, over the 2048 MiB limit."
+			expect([refused.status, refused.body._tag, refused.body.message, target.status]).toEqual([
+				422,
+				tag("SecurityAuditRepositoryTooLargeError"),
+				reason,
+				200,
+			])
+			expect([start.status, start.body.message, harness.started]).toEqual([422, reason, []])
+			expect(await harness.count("security_audit_runs")).toBe(0)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit GitHub only", () => {
+	it("refuses a repository connected through anything but an active GitHub connection", async () => {
+		const harness = makeHarness()
+		try {
+			// The same org, connected through another provider, and a GitHub repository it disconnected.
+			await harness.sql(
+				`INSERT INTO vcs_repositories (id, org_id, provider, installation_id, external_repo_id, owner, name,
+					full_name, tracked_branch, html_url, created_at, updated_at)
+				 VALUES ($1, $2, 'gitlab', $3, '2002', 'acme', 'web', 'acme/web', 'main', 'https://gitlab.com/acme/web', now(), now())`,
+				[crypto.randomUUID(), ORG_A, crypto.randomUUID()],
+			)
+			await harness.sql(
+				`INSERT INTO vcs_repositories (id, org_id, provider, installation_id, external_repo_id, owner, name,
+					full_name, tracked_branch, html_url, status, created_at, updated_at)
+				 VALUES ($1, $2, 'github', $3, '3003', 'acme', 'old', 'acme/old', 'main', 'https://github.com/acme/old', 'removed', now(), now())`,
+				[crypto.randomUUID(), ORG_A, crypto.randomUUID()],
+			)
+			const gitlab = await harness.call("POST", "/targets", {
+				body: { ...TARGET, repository: "acme/web" },
+			})
+			const removed = await harness.call("POST", "/targets", {
+				body: { ...TARGET, repository: "acme/old" },
+			})
+			const github = await harness.call("POST", "/targets", { body: TARGET })
+
+			expect([
+				gitlab.status,
+				gitlab.body._tag,
+				gitlab.body.message,
+				removed.status,
+				github.status,
+			]).toEqual([
+				404,
+				tag("SecurityAuditRepositoryNotConnectedError"),
+				"Security audits read GitHub repositories only. Connect this repository through the GitHub integration first.",
+				404,
+				200,
+			])
+			expect(await harness.count("security_audit_targets")).toBe(1)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
 describe("/api/security-audit runs", () => {
 	it("starts manual runs one at a time, with a finite budget and the best prior run", async () => {
 		const harness = makeHarness()
@@ -414,6 +521,85 @@ describe("/api/security-audit runs", () => {
 				[next.body.id, "main", [], 300, whole.body.id],
 				[expect.any(String), "next", [], 400, null],
 			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a run the org's monthly invocations cannot fund, and starts none", async () => {
+		const deepMin = minimumInvocations("deep")
+		const noPlan = makeHarness({ orgLimit: 0 })
+		const spent = makeHarness({ orgLimit: 20 })
+		try {
+			const refusedTarget = await noPlan.call("POST", "/targets", { body: TARGET })
+			const refused = await noPlan.call("POST", `/targets/${refusedTarget.body.id}/runs`, { body: {} })
+
+			const target = await spent.call("POST", "/targets", { body: TARGET })
+			// Other runs this month reserved 14 of 20: too few left to fund a deep run's recon and reserves.
+			await spent.sql(
+				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 14, now())`,
+				[ORG_A, PERIOD],
+			)
+			const short = await spent.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			expect([
+				refused.status,
+				refused.body._tag,
+				refused.body.remaining,
+				refused.body.required,
+				refused.body.resetsAt,
+			]).toEqual([
+				402,
+				tag("SecurityAuditBudgetExhaustedError"),
+				0,
+				deepMin,
+				"2026-11-01T00:00:00.000Z",
+			])
+			expect([short.status, short.body.remaining, short.body.required]).toEqual([402, 6, deepMin])
+			expect([noPlan.started, spent.started]).toEqual([[], []])
+			expect([
+				await noPlan.count("security_audit_runs"),
+				await spent.count("security_audit_runs"),
+			]).toEqual([0, 0])
+		} finally {
+			await noPlan.dispose()
+			await spent.dispose()
+		}
+	})
+
+	it("caps a run's budget at what the org has left this month and passes the org limit on", async () => {
+		const harness = makeHarness({ orgLimit: 50 })
+		try {
+			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
+			await harness.sql(
+				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 20, now())`,
+				[ORG_A, PERIOD],
+			)
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			expect([run.status, run.body.budget]).toEqual([200, 30])
+			expect(harness.started.map((p) => [p.budget, p.orgBudget])).toEqual([
+				[30, { period: PERIOD, limit: 50 }],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("counts against the subscription's own cycle, and never past what Autumn says is left", async () => {
+		const cycle = "cycle:2026-10-07T09:00:00.000Z"
+		const harness = makeHarness({ budget: { limit: 50, period: cycle, autumnRemaining: 12 } })
+		try {
+			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
+			// Spend under the calendar month is another cycle's: it does not count here.
+			await harness.sql(
+				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 45, now())`,
+				[ORG_A, PERIOD],
+			)
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			expect([run.status, run.body.budget]).toEqual([200, 12])
+			expect(harness.started.map((p) => p.orgBudget)).toEqual([{ period: cycle, limit: 50 }])
 		} finally {
 			await harness.dispose()
 		}
@@ -773,13 +959,20 @@ describe("/api/security-audit cancellation of an unsettled run", () => {
 			const target = await harness.call("POST", "/targets", { body: TARGET })
 			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
 			await harness.withStore((store) =>
-				store.forOrg(ORG_A).recordEvent(run.body.id, {
-					_tag: "Agent",
-					role: "hunter",
-					agentId: "hunter-1",
-					outcome: "ok",
-					usage: { inputTokens: 120, outputTokens: 12, costUsd: 0.4 },
-				}),
+				store
+					.forOrg(ORG_A)
+					.reserveOrgInvocation(run.body.id, "hunter-1", PERIOD, 100)
+					.pipe(
+						Effect.andThen(
+							store.forOrg(ORG_A).recordEvent(run.body.id, {
+								_tag: "Agent",
+								role: "hunter",
+								agentId: "hunter-1",
+								outcome: "ok",
+								usage: { inputTokens: 120, outputTokens: 12, costUsd: 0.4 },
+							}),
+						),
+					),
 			)
 			// The engine's own status, written before its settle step runs.
 			await harness.sql(`UPDATE security_audit_runs SET status = 'complete' WHERE id = $1`, [

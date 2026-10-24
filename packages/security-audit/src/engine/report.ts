@@ -2,6 +2,7 @@
  * Phase 6: `REPORT.md`, `FINDINGS-DETAIL.md` and `NEEDS-VALIDATION.md`, derived only from the final
  * records and the ledger. Prose never changes a verdict, severity, blocker or impact.
  */
+import { executionModeLine } from "../ecosystems"
 import type { Finding } from "../schema"
 import type { LedgerUnit } from "./ledger"
 import type { AuditReports } from "./ports"
@@ -11,6 +12,15 @@ type Confirmed = Extract<Finding, { readonly verdict: "confirmed" }>
 type NeedsValidation = Extract<Finding, { readonly verdict: "needs_validation" }>
 
 const SEVERITY_ORDER = ["critical", "high", "medium", "low", "informational"] as const
+
+/** Unit statuses that mean the run did not audit the unit. */
+const UNFINISHED: ReadonlySet<string> = new Set([
+	"planned",
+	"in_progress",
+	"blocked",
+	"deferred",
+	"out_of_scope",
+])
 
 const cell = (text: string) => text.replaceAll("|", "\\|").replaceAll("\n", " ")
 
@@ -70,6 +80,13 @@ export const buildReports = (
 				SEVERITY_ORDER.indexOf(b.severity.overall_severity),
 		)
 	const pending = findings.filter((f): f is NeedsValidation => f.verdict === "needs_validation")
+	const modeLine =
+		input.executionProfile === undefined ? undefined : executionModeLine(input.executionProfile)
+	// Why execution-bound leads stay here: the run-level reason, beside each record's own blocker.
+	const executionNote =
+		modeLine === undefined || input.executionProfile?.mode !== "source_only"
+			? ""
+			: `${modeLine}. Leads whose deciding fact needs execution stay here.\n\n`
 	const counts = countBy(s.ledger)
 	const unvalidated = [
 		...new Set([...s.candidates.keys(), ...s.carried.map((c) => c.record.fingerprint)]),
@@ -79,8 +96,7 @@ export const buildReports = (
 		input.scopePaths.length > 0 ||
 		s.gaps.length > 0 ||
 		status === "incomplete"
-	const deferred = s.ledger.filter((u) => u.status === "deferred")
-	const outOfScope = s.ledger.filter((u) => u.status === "out_of_scope")
+	const unfinished = s.ledger.filter((u) => UNFINISHED.has(u.status))
 	const carried = s.ledger.filter((u) => u.prior_status === "prior_confirmed_same_source").length
 	const revalidated = s.ledger.filter((u) => u.prior_status === "prior_confirmed_changed_source").length
 	const hardening = [...new Set(s.ledger.flatMap((u) => u.hardening ?? []))]
@@ -90,6 +106,7 @@ export const buildReports = (
 		`- Profile: ${input.profile}. Scope: ${input.scopePaths.length === 0 ? "whole repository" : input.scopePaths.join(", ")}. Source ref: \`${input.sourceRef}\`.`,
 		`- Budget: ${input.budget === null ? "none set" : `${input.budget} agent invocations`}; spent ${s.spent}.`,
 		`- Execution: sandboxed source-and-local-only. ${input.execution._tag === "Available" ? `Bounded local checks were available (${input.execution.limits}).` : `No target code was executed: ${input.execution.blocker}.`}`,
+		...(modeLine === undefined ? [] : [`- ${modeLine}.`]),
 		`- Prior runs: ${input.prior === null ? "none; this run had no prior ledger" : `${input.prior.runId} at \`${input.prior.sourceRef}\`; ${carried} same-source confirmations carried for re-verification, ${revalidated} changed-source revalidations`}.`,
 		`- Status: **${status}**${s.incomplete.length === 0 ? "" : ` (${s.incomplete.join("; ")})`}.${partial ? " This is a partial pass." : ""}`,
 		...(unvalidated.length === 0
@@ -125,8 +142,8 @@ export const buildReports = (
 
 	const needsTable =
 		pending.length === 0
-			? "## NEEDS VALIDATION\n\nNone."
-			: `## NEEDS VALIDATION\n\n| Title | Entry | Blocker | Local next step | Owner check |\n| --- | --- | --- | --- | --- |\n${pending
+			? `## NEEDS VALIDATION\n\n${executionNote}None.`
+			: `## NEEDS VALIDATION\n\n${executionNote}| Title | Entry | Blocker | Local next step | Owner check |\n| --- | --- | --- | --- | --- |\n${pending
 					.map(
 						(f) =>
 							`| ${cell(f.title)} | \`${f.trace[0]?.file ?? ""}:${f.trace[0]?.line ?? ""}\` | ${cell(f.blockers.join("; "))} | ${cell(f.validation_plan.local ?? "-")} | ${cell(f.validation_plan.deployment ?? "-")} |`,
@@ -141,14 +158,12 @@ export const buildReports = (
 			.sort(([a], [b]) => (a < b ? -1 : 1))
 			.map(([status, n]) => `- ${status}: ${n}`)
 			.join("\n"),
-		...(deferred.length === 0
+		// Never a silent cut: every unit this run did not finish is named, however many there are.
+		...(unfinished.length === 0
 			? []
 			: [
-					`Deferred units:\n${deferred.map((u) => `- ${u.surface} / ${u.attack_class}: ${u.unresolved.join("; ")}`).join("\n")}`,
+					`Not covered by this run (${unfinished.length} ${unfinished.length === 1 ? "unit" : "units"}):\n${unfinished.map((u) => `- ${u.status}: ${u.surface} / ${u.attack_class}${u.unresolved.length === 0 ? "" : ` (${u.unresolved.join("; ")})`}`).join("\n")}`,
 				]),
-		...(outOfScope.length === 0
-			? []
-			: [`Out of scope: ${outOfScope.length} units recorded for later runs.`]),
 	].join("\n\n")
 
 	const report = [`# Security audit: ${input.repo}`, run, posture, table, needsTable, notes, coverage].join(
@@ -158,6 +173,6 @@ export const buildReports = (
 		["critical", "high", "medium"].includes(f.severity.overall_severity),
 	)
 	const findingsDetail = `# Findings detail\n\n${detailed.length === 0 ? "No confirmed medium, high or critical findings." : detailed.map(confirmedDetail).join("\n\n")}`
-	const needsValidation = `# Needs validation\n\n${pending.length === 0 ? "No unresolved leads." : pending.map(needsValidationDetail).join("\n\n")}`
+	const needsValidation = `# Needs validation\n\n${executionNote}${pending.length === 0 ? "No unresolved leads." : pending.map(needsValidationDetail).join("\n\n")}`
 	return { report, findingsDetail, needsValidation }
 }

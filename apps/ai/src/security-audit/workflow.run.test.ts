@@ -14,9 +14,16 @@ import {
 import { OrgId as OrgIdSchema } from "@maple/domain/http"
 import { UserId } from "@maple/domain/primitives"
 import type { SecurityAuditTargetId, SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
-import { type AgentInvocation, type AuditAgentsApi, coverageId, type Finding } from "@maple/security-audit"
+import {
+	type AgentInvocation,
+	type AuditAgentsApi,
+	AuditStoreError,
+	coverageId,
+	type Finding,
+} from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import { HttpClient } from "effect/http"
 import { auditWithAgents, toSandboxStepError } from "./workflow.run"
 
 const trackedDbs: TestDb[] = []
@@ -91,13 +98,31 @@ const scriptedAgents = (calls: Array<string>): AuditAgentsApi => ({
 		}),
 })
 
-const sandbox = (commands: Array<string>): RepoSandboxServiceApi => {
+/** `<commits> <files> <bytes> <lfs files>`, as the size probe prints it: a small repository. */
+const SMALL_REPO = "120 40 81920 0\n"
+
+const sandbox = (
+	commands: Array<string>,
+	size: string = SMALL_REPO,
+	/** The manifests and config files the checkout tracks, by path. */
+	tree: Record<string, string> = {},
+): RepoSandboxServiceApi => {
 	const ok = (stdout: string) =>
 		Effect.succeed({ exitCode: 0, stdout, stderr: "", wallTimeMs: 1, truncated: false })
 	return {
 		prepare: () => Effect.void,
 		exec: (_org, _target, options) =>
 			Effect.suspend(() => {
+				if (options.command === "bash") {
+					commands.push("measure size")
+					return ok(size)
+				}
+				if (options.args.includes("ls-files")) {
+					commands.push("list manifests")
+					return ok(Object.keys(tree).join("\n"))
+				}
+				const shown = options.args.find((arg) => arg.startsWith("HEAD:"))?.slice("HEAD:".length)
+				if (shown !== undefined) return ok(tree[shown] ?? "")
 				commands.push([options.command, ...options.args].join(" "))
 				return ok(options.args[0] === "rev-parse" ? `${SHA}\n` : "src/routes/keys.ts\n")
 			}),
@@ -123,6 +148,16 @@ const replayingStep = (recorded: Map<string, unknown>): Cloudflare.WorkflowStep[
 	waitForEvent: () => Effect.die("unused"),
 })
 
+/** The store over a fresh database, and an HTTP client no test reaches: billing is unconfigured. */
+const testLayer = () =>
+	Layer.mergeAll(
+		SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+		Layer.succeed(
+			HttpClient.HttpClient,
+			HttpClient.make(() => Effect.die("no network in tests")),
+		),
+	)
+
 const setup = Effect.gen(function* () {
 	const store = (yield* SecurityAuditStore).forOrg(Schema.decodeUnknownSync(OrgIdSchema)("org_a"))
 	const target = yield* store.createTarget({
@@ -142,6 +177,7 @@ const payloadFor = (runId: string, priorRunId: string | null = null): SecurityAu
 	scopePaths: [],
 	budget: 400,
 	priorRunId,
+	orgBudget: { period: "2026-10", limit: 20_000 },
 })
 
 describe("auditWithAgents", () => {
@@ -168,8 +204,199 @@ describe("auditWithAgents", () => {
 				// The row records the pinned commit, which the next run diffs against.
 				["complete", Option.some(["complete", SHA]), ["covered"]],
 			)
-			assert.deepStrictEqual(commands, ["git rev-parse HEAD"])
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+			assert.deepStrictEqual(commands, ["git rev-parse HEAD", "measure size", "list manifests"])
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("stops launching agents once the org's month is spent, ending incomplete within it", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			// Other runs of the org spent 3 of its 9 after this one started with a budget of 400.
+			yield* Effect.forEach([1, 2, 3], (i) =>
+				store.reserveOrgInvocation(run.id, `other-${i}`, "2026-10", 9),
+			)
+			const calls: Array<string> = []
+			const result = yield* auditWithAgents(
+				{ ...payloadFor(run.id), orgBudget: { period: "2026-10", limit: 9 } },
+				() => Effect.succeed(scriptedAgents(calls)),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				{
+					status: result.status,
+					agents: calls.length,
+					orgSpent: yield* store.orgInvocationsSpent("2026-10"),
+					row: Option.map(row, (r) => [
+						r.status,
+						r.invocationsSpent,
+						r.incompleteReason?.split("; ").includes("org_budget_exhausted"),
+					]),
+				},
+				{ status: "incomplete", agents: 6, orgSpent: 9, row: Option.some(["incomplete", 6, true]) },
+			)
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect(
+		"refuses a repository over a size limit before any agent, marking the run failed with why",
+		() =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+				const calls: Array<string> = []
+				// 250,000 tracked files, 3 of them in Git LFS.
+				const exit = yield* Effect.exit(
+					auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
+						Effect.provideService(RepoSandboxService, sandbox([], "5000 250000 524288000 3\n")),
+						Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+					),
+				)
+				const row = yield* store.getRun(run.id)
+				assert.deepStrictEqual(
+					{
+						exit: exit._tag,
+						agents: calls.length,
+						orgSpent: yield* store.orgInvocationsSpent("2026-10"),
+						row: Option.map(row, (r) => [r.status, r.error, r.invocationsSpent]),
+					},
+					{
+						exit: "Failure",
+						agents: 0,
+						orgSpent: 0,
+						row: Option.some([
+							"failed",
+							"repository_refused: the repository was not audited because it tracks 250000 files, over the 100000 limit; it stores 3 files in Git LFS, whose content the checkout does not hold (limit 0).",
+							0,
+						]),
+					},
+				)
+			}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect(
+		"labels the run source-only with its ecosystems and private dependencies, in row and report",
+		() =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+				const tree = {
+					"package.json": "{}",
+					".npmrc": "@acme:registry=https://npm.pkg.github.com",
+					"tools/go.mod": "module acme.dev/tools\n",
+				}
+				yield* auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([], SMALL_REPO, tree)),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				)
+				const row = yield* store.getRun(run.id)
+				const line =
+					"Source-only review: no execution sandbox for Node.js, Go yet; private dependencies detected, which cannot be installed without credentials (.npmrc: private source npm.pkg.github.com)"
+				assert.deepStrictEqual(
+					Option.map(row, (r) => ({
+						mode: r.executionProfile?.mode ?? "none",
+						ecosystems: r.executionProfile?.ecosystems.join(",") ?? "none",
+						inReport: r.reports?.report.includes(`- ${line}.`) ?? false,
+						inNeedsValidation: r.reports?.needsValidation.includes(line) ?? false,
+					})),
+					Option.some({
+						mode: "source_only",
+						ecosystems: "node,go",
+						inReport: true,
+						inNeedsValidation: true,
+					}),
+				)
+			}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("keeps a recorded size verdict on replay when the limits changed since", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			// A deploy lowered the file limit below this repository's 40 files after the step recorded.
+			const lowered = ConfigProvider.layer(
+				ConfigProvider.fromUnknown({ SECURITY_AUDIT_MAX_FILES: "10" }),
+			)
+			const replayed = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const recorded = new Map<string, unknown>([["repo-size", { violations: [] }]])
+			const replay = yield* auditWithAgents(payloadFor(replayed.id), () =>
+				Effect.succeed(scriptedAgents([])),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(recorded)),
+				Effect.provide(lowered),
+			)
+			// A fresh run under the new limit is refused, so the limit itself is in force.
+			const fresh = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const freshExit = yield* Effect.exit(
+				auditWithAgents(payloadFor(fresh.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([])),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+					Effect.provide(lowered),
+				),
+			)
+			assert.deepStrictEqual([replay.status, freshExit._tag], ["complete", "Failure"])
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("refuses a repository whose size cannot be measured", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const calls: Array<string> = []
+			yield* Effect.exit(
+				auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([], "")),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				[
+					calls.length,
+					Option.map(row, (r) => [r.status, r.error?.includes("could not be measured")]),
+				],
+				[0, Option.some(["failed", true])],
+			)
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("settles the run incomplete when its org-budget step dies, launching no agent", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const replaying = replayingStep(new Map())
+			// The reservation step times out, which the step surfaces as a defect.
+			const step: Cloudflare.WorkflowStep["Service"] = {
+				...replaying,
+				do: (options) =>
+					options.name.startsWith("org-budget:")
+						? Effect.die(new Error("step timed out after 30 seconds"))
+						: replaying.do(options),
+			}
+			const calls: Array<string> = []
+			const result = yield* auditWithAgents(payloadFor(run.id), () =>
+				Effect.succeed(scriptedAgents(calls)),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, step),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				{
+					status: result.status,
+					agents: calls.length,
+					row: Option.map(row, (r) => [
+						r.status,
+						r.finishedAt !== null,
+						r.incompleteReason?.split("; ").includes("org_budget_unavailable"),
+					]),
+				},
+				{ status: "incomplete", agents: 0, row: Option.some(["incomplete", true, true]) },
+			)
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("marks the run failed when the sandbox cannot pin the commit", () =>
@@ -194,7 +421,7 @@ describe("auditWithAgents", () => {
 				],
 				["Failure", Option.some(["failed", true])],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("replays recorded agent steps instead of running those agents again", () =>
@@ -204,20 +431,38 @@ describe("auditWithAgents", () => {
 			const recorded = new Map<string, unknown>()
 			const first: Array<string> = []
 			const second: Array<string> = []
-			const step = replayingStep(recorded)
+			const replaying = replayingStep(recorded)
+			// The first pass is evicted at settle, so the run is still open when it replays.
+			const evictions = { settle: 1 }
+			const step: Cloudflare.WorkflowStep["Service"] = {
+				...replaying,
+				do: (options) => {
+					if (options.name !== "settle" || evictions.settle === 0) return replaying.do(options)
+					evictions.settle -= 1
+					return Effect.interrupt
+				},
+			}
 			const once = (calls: Array<string>) =>
 				auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
 					Effect.provideService(RepoSandboxService, sandbox([])),
 					Effect.provideService(Cloudflare.WorkflowStep, step),
 				)
-			yield* once(first)
+			const evicted = yield* Effect.exit(once(first))
+			const spentBefore = yield* store.orgInvocationsSpent("2026-10")
 			const replay = yield* once(second)
+			assert.isTrue(Exit.hasInterrupts(evicted))
 			assert.isTrue(first.length >= 8)
 			assert.deepStrictEqual(
-				[second, replay.status, [...recorded.keys()].filter((k) => k.startsWith("agent:")).length],
-				[[], "complete", first.length],
+				[
+					second,
+					replay.status,
+					[...recorded.keys()].filter((k) => k.startsWith("agent:")).length,
+					spentBefore,
+					yield* store.orgInvocationsSpent("2026-10"),
+				],
+				[[], "complete", first.length, first.length, first.length],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("diffs against the prior run's commit and hands the engine its ledger", () =>
@@ -246,12 +491,14 @@ describe("auditWithAgents", () => {
 				[
 					[
 						"git rev-parse HEAD",
+						"measure size",
+						"list manifests",
 						`git --no-optional-locks -c core.quotePath=false diff --name-only --no-renames ${SHA} HEAD --`,
 					],
 					["prior_covered_changed_source"],
 				],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 })
 
@@ -277,9 +524,9 @@ describe("auditWithAgents, prior runs", () => {
 			const units = yield* store.listUnits(run.id)
 			assert.deepStrictEqual(
 				[commands, units.map((u) => u.unit.prior_status)],
-				[["git rev-parse HEAD"], ["none"]],
+				[["git rev-parse HEAD", "measure size", "list manifests"], ["none"]],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("treats a failed diff against the prior commit as everything changed", () =>
@@ -297,18 +544,26 @@ describe("auditWithAgents, prior runs", () => {
 			})
 			const unreachable: RepoSandboxServiceApi = {
 				...sandbox([]),
-				exec: (_org, _target, options) =>
-					Effect.succeed(
-						options.args[0] === "rev-parse"
-							? { exitCode: 0, stdout: `${SHA}\n`, stderr: "", wallTimeMs: 1, truncated: false }
-							: {
-									exitCode: 128,
-									stdout: "",
-									stderr: "fatal: bad object",
-									wallTimeMs: 1,
-									truncated: false,
-								},
-					),
+				exec: (org, target, options) =>
+					options.command === "bash"
+						? sandbox([]).exec(org, target, options)
+						: Effect.succeed(
+								options.args[0] === "rev-parse"
+									? {
+											exitCode: 0,
+											stdout: `${SHA}\n`,
+											stderr: "",
+											wallTimeMs: 1,
+											truncated: false,
+										}
+									: {
+											exitCode: 128,
+											stdout: "",
+											stderr: "fatal: bad object",
+											wallTimeMs: 1,
+											truncated: false,
+										},
+							),
 			}
 			yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
 				Effect.succeed(scriptedAgents([])),
@@ -321,7 +576,7 @@ describe("auditWithAgents, prior runs", () => {
 				units.map((u) => u.unit.prior_status),
 				["prior_covered_changed_source"],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 })
 
@@ -384,18 +639,26 @@ describe("auditWithAgents, settling", () => {
 			})
 			const unreadable: RepoSandboxServiceApi = {
 				...sandbox([]),
-				exec: (_org, _target, options) =>
-					Effect.succeed(
-						options.args[0] === "rev-parse"
-							? { exitCode: 0, stdout: `${SHA}\n`, stderr: "", wallTimeMs: 1, truncated: false }
-							: {
-									exitCode: 0,
-									stdout: "src/a.ts\n",
-									stderr: "",
-									wallTimeMs: 1,
-									truncated: true,
-								},
-					),
+				exec: (org, target, options) =>
+					options.command === "bash"
+						? sandbox([]).exec(org, target, options)
+						: Effect.succeed(
+								options.args[0] === "rev-parse"
+									? {
+											exitCode: 0,
+											stdout: `${SHA}\n`,
+											stderr: "",
+											wallTimeMs: 1,
+											truncated: false,
+										}
+									: {
+											exitCode: 0,
+											stdout: "src/a.ts\n",
+											stderr: "",
+											wallTimeMs: 1,
+											truncated: true,
+										},
+							),
 			}
 			yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
 				Effect.succeed(scriptedAgents([])),
@@ -408,7 +671,7 @@ describe("auditWithAgents, settling", () => {
 				findings.map((f) => f.status),
 				["open"],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("leaves a finding open when the run that missed it was only a quick pass", () =>
@@ -436,7 +699,7 @@ describe("auditWithAgents, settling", () => {
 				findings.map((f) => f.status),
 				["open"],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect("does nothing for a run its starter already marked failed", () =>
@@ -455,48 +718,53 @@ describe("auditWithAgents, settling", () => {
 				[calls, commands, Option.map(row, (r) => r.status)],
 				[[], [], Option.some("failed")],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
 	)
 
-	it.effect("keeps a run cancelled mid-flight cancelled and marks nothing fixed when it settles", () =>
-		Effect.gen(function* () {
-			const { store, target } = yield* setup
-			yield* seedOpenFinding(store, target.id)
-			const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
-			yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
-				Effect.provideService(RepoSandboxService, sandbox([])),
-				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
-			)
-			const next = yield* store.startRun({
-				targetId: target.id,
-				kind: "revalidation",
-				sourceRef: "main",
-			})
-			const scripted = scriptedAgents([])
-			// An admin cancels while agents are in flight; the run still completes and settles after.
-			const cancelling: AuditAgentsApi = {
-				run: (invocation) =>
-					store
-						.cancelRun(next.id, Schema.decodeUnknownSync(UserId)("user_admin"))
-						.pipe(Effect.orDie, Effect.andThen(scripted.run(invocation))),
-			}
-			const result = yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
-				Effect.succeed(cancelling),
-			).pipe(
-				Effect.provideService(RepoSandboxService, sandbox([])),
-				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
-			)
-			const row = yield* store.getRun(next.id)
-			const findings = yield* store.listFindings(target.id)
-			assert.deepStrictEqual(
-				[
-					result.status,
-					Option.map(row, (r) => [r.status, r.incompleteReason]),
-					findings.map((f) => f.status),
-				],
-				["complete", Option.some(["incomplete", "cancelled"]), ["open"]],
-			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	it.effect(
+		"keeps a run cancelled mid-flight cancelled, admits no agent after it, and marks nothing fixed",
+		() =>
+			Effect.gen(function* () {
+				const { store, target } = yield* setup
+				yield* seedOpenFinding(store, target.id)
+				const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+				yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([])),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				)
+				const next = yield* store.startRun({
+					targetId: target.id,
+					kind: "revalidation",
+					sourceRef: "main",
+				})
+				const calls: Array<string> = []
+				const scripted = scriptedAgents(calls)
+				// An admin cancels while the first agent is in flight; the run still settles after.
+				const cancelling: AuditAgentsApi = {
+					run: (invocation) =>
+						store
+							.cancelRun(next.id, Schema.decodeUnknownSync(UserId)("user_admin"))
+							.pipe(Effect.orDie, Effect.andThen(scripted.run(invocation))),
+				}
+				const result = yield* auditWithAgents(payloadFor(next.id, prior.id), () =>
+					Effect.succeed(cancelling),
+				).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([])),
+					Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				)
+				const row = yield* store.getRun(next.id)
+				const findings = yield* store.listFindings(target.id)
+				assert.deepStrictEqual(
+					[
+						result.status,
+						calls.every((id) => id.startsWith("recon-")),
+						Option.map(row, (r) => [r.status, r.incompleteReason]),
+						findings.map((f) => f.status),
+					],
+					// Only the reconnaissance already admitted alongside the first agent ran; nothing after.
+					["incomplete", true, Option.some(["incomplete", "cancelled"]), ["open"]],
+				)
+			}).pipe(Effect.provide(testLayer())),
 	)
 
 	it.effect(
@@ -526,9 +794,7 @@ describe("auditWithAgents, settling", () => {
 					findings.map((f) => [f.fingerprint, f.status]),
 					[["keys/roll-missing-org-scope", "fixed"]],
 				)
-			}).pipe(
-				Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer))),
-			),
+			}).pipe(Effect.provide(testLayer())),
 	)
 })
 
@@ -662,6 +928,83 @@ describe("sandbox failures across a step", () => {
 					Option.some("failed"),
 				],
 			)
-		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("retries a refusal's writes through a transient store error and keeps its reason", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const attempts: Array<string> = []
+			const exit = yield* Effect.exit(
+				auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([], "5000 250000 524288000 0\n")),
+					Effect.provideServiceEffect(Cloudflare.WorkflowStep, nativeStep(attempts)),
+					Effect.provideServiceEffect(SecurityAuditStore, flakyStore("finishRun")),
+				),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				[
+					exit._tag,
+					attempts.filter((name) => name === "refuse").length,
+					Option.map(row, (r) => [r.status, r.error?.startsWith("repository_refused:")]),
+				],
+				["Failure", 2, Option.some(["failed", true])],
+			)
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("retries the execution-profile write instead of failing a run whose repository is fine", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const attempts: Array<string> = []
+			const result = yield* auditWithAgents(payloadFor(run.id), () =>
+				Effect.succeed(scriptedAgents([])),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideServiceEffect(Cloudflare.WorkflowStep, nativeStep(attempts)),
+				Effect.provideServiceEffect(SecurityAuditStore, flakyStore("setExecutionProfile")),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				[
+					result.status,
+					attempts.filter((name) => name === "save-execution-profile").length,
+					Option.map(row, (r) => [r.status, r.executionProfile?.mode]),
+				],
+				["complete", 2, Option.some(["complete", "source_only"])],
+			)
+		}).pipe(Effect.provide(testLayer())),
 	)
 })
+
+/** The real store, whose `method` fails once with a transient error before it works. */
+const flakyStore = (method: "finishRun" | "setExecutionProfile") =>
+	Effect.map(SecurityAuditStore, (real): SecurityAuditStore["Service"] => {
+		const failures = { left: 1 }
+		const transient = Effect.suspend(() =>
+			failures.left > 0
+				? Effect.sync(() => {
+						failures.left -= 1
+					}).pipe(Effect.andThen(Effect.fail(new AuditStoreError({ message: "connection reset" }))))
+				: Effect.void,
+		)
+		return {
+			...real,
+			forOrg: (orgId) => {
+				const org = real.forOrg(orgId)
+				return method === "finishRun"
+					? {
+							...org,
+							finishRun: (id, outcome) => Effect.andThen(transient, org.finishRun(id, outcome)),
+						}
+					: {
+							...org,
+							setExecutionProfile: (id, profile) =>
+								Effect.andThen(transient, org.setExecutionProfile(id, profile)),
+						}
+			},
+		}
+	})
