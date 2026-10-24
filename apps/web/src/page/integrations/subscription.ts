@@ -1,6 +1,5 @@
 import { Duration, Effect, Option, Queue, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
-import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { gcpConnectionState } from "../../components/integrations/gcp-connector-state"
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
@@ -12,10 +11,12 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { unsyncedEnvironments } from "./railway"
 import { githubStatusOf } from "./update-github"
+import { isAwaitingFirstMetrics, isWatchExpired } from "./planetscale"
+import { planetscaleStatusOf } from "./update-planetscale"
 import { CAPABILITIES, CAPABILITY_IDS } from "./gcp-configure-copy"
 import { runConfirmed } from "./gcp-configure-derive"
 import { configureConnector } from "./update-gcp-configure"
-import { pollTicks, whenPresent } from "../../data/poll"
+import { backoffPollTicks, pollTicks, whenPresent } from "../../data/poll"
 
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
 
@@ -184,10 +185,15 @@ const isAwsStreaming = (model: Model): boolean => {
 	)
 }
 
-const isAwaitingFirstScrape = (model: Model): boolean => {
+/** Polls at 5 s for the first 2 minutes, then every minute, until the watch runs out. */
+const PLANETSCALE_FAST_POLLS = 24
+
+const isWatchingPlanetscale = (model: Model): boolean => {
 	if (integrationOfSearch(model.search.integration) !== "planetscale") return false
-	const status = Option.getOrNull(AsyncData.getData(model.statuses.planetscale.data))
-	return status !== null && derivePlanetScaleSetup(status, model.nowMs).awaitingFirstScrape
+	return (
+		isAwaitingFirstMetrics(planetscaleStatusOf(model), model.nowMs) &&
+		!isWatchExpired(model.planetscaleCard, model.nowMs)
+	)
 }
 
 const gcpRefreshInterval = (model: Model): number | null => {
@@ -392,13 +398,17 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					isShown ? every(SUPABASE_CLOCK_MS, () => Message.TickedSupabaseClock()) : Stream.empty,
 			},
 		),
-		/** `useIntervalRefresh(refreshStatus, { intervalMs: 5_000, enabled: awaitingFirstScrape })`. */
+		/** Watches for the first metrics; the card offers "Check again" once the watch runs out. */
 		planetscaleWatch: entry(
 			{ isWatching: Schema.Boolean },
 			{
-				modelToDependencies: ({ model }) => ({ isWatching: isAwaitingFirstScrape(model) }),
+				modelToDependencies: ({ model }) => ({ isWatching: isWatchingPlanetscale(model) }),
 				dependenciesToStream: ({ isWatching }) =>
-					isWatching ? every(5_000, () => Message.TickedPlanetscaleWatch()) : Stream.empty,
+					isWatching
+						? backoffPollTicks("5 seconds", PLANETSCALE_FAST_POLLS, "1 minute").pipe(
+								Stream.map(() => Message.TickedPlanetscaleWatch()),
+							)
+						: Stream.empty,
 			},
 		),
 		/** `useIntervalRefresh(refreshStatus, { intervalMs: settling ? 10_000 : 60_000 })` with the live clock. */

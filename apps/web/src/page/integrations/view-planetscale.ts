@@ -23,6 +23,7 @@ import {
 import { catalogEntry } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { isWatchExpired } from "./planetscale"
 import { disconnectDialog } from "./view-disconnect"
 import { metricsHealth, setupChecklist } from "./view-planetscale-parts"
 import { orgPicker, pickerDialog } from "./view-planetscale-picker"
@@ -72,13 +73,32 @@ const notConnected = (h: H, model: Model): Html =>
 		]),
 	])
 
-/** `FirstMetricsDetail`: the collection error, or a reassurance while Maple waits. */
+/** `FirstMetricsDetail`: the collection error, a reassurance while Maple waits, or "Check again". */
 const firstMetricsDetail = (h: H, model: Model, status: V2PlanetScaleIntegration): Html => {
 	const error = metricsLastError(status)
 	if (error !== null)
 		return h.p(
 			[h.Class("break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-muted-foreground")],
 			[error],
+		)
+	if (isWatchExpired(model.planetscaleCard, model.nowMs))
+		return h.div(
+			[h.Class("flex flex-col items-start gap-2")],
+			[
+				h.p(
+					[h.Class("text-xs text-muted-foreground")],
+					["Still no metrics after 30 minutes, so this stopped checking on its own."],
+				),
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						attributes: [h.OnClick(Message.ClickedPlanetscaleCheckAgain())],
+					},
+					["Check again"],
+				),
+			],
 		)
 	if (metricsAuthOf(status) === "api")
 		return h.p(

@@ -8,8 +8,11 @@ import * as Field from "../../ui/field"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { integrationOfSearch } from "./catalog"
+import { ReadClock } from "./command"
 import {
 	FetchOrganizations,
+	isAwaitingFirstMetrics,
 	parsePatternList,
 	type PlanetscaleCardModel,
 	SelectOrganization,
@@ -33,9 +36,49 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 export const planetscaleStatusOf = (model: Model) =>
 	Option.getOrNull(AsyncData.getData(model.statuses.planetscale.data))
 
+/**
+ * The watch starts at the first clock read while the card is shown and awaits first metrics,
+ * and resets otherwise, so a later connection or visit gets its own full window.
+ */
+export const withWatchStart = (model: Model, readAtMs: number | null): Model => {
+	const startedAt = model.planetscaleCard.watchStartedAt
+	const isWatched =
+		integrationOfSearch(model.search.integration) === "planetscale" &&
+		isAwaitingFirstMetrics(planetscaleStatusOf(model), model.nowMs)
+	return withCard(model, { watchStartedAt: isWatched ? (startedAt ?? readAtMs) : null })
+}
+
+/** A renewed grant or organization gets its own full window from the next clock read. */
+export const restartWatch = (model: Model): Model => withCard(model, { watchStartedAt: null })
+
+/** A status load that starts awaiting first metrics reads the clock to open the window. */
+export const loadedStatus = (model: Model): Return => {
+	const watched = withWatchStart(model, null)
+	return integrationOfSearch(watched.search.integration) === "planetscale" &&
+		watched.planetscaleCard.watchStartedAt === null &&
+		isAwaitingFirstMetrics(planetscaleStatusOf(watched), watched.nowMs)
+		? { model: watched, commands: [ReadClock()] }
+		: { model: watched }
+}
+
+/** Each visit to the card starts a fresh watch from a fresh clock. */
+export const enterPlanetscale = (model: Model): Return => ({
+	model: withCard(model, { watchStartedAt: null }),
+	commands: [ReadClock()],
+})
+
+/** A watch tick, or "Check again" after the watch ran out: read the status and the clock. */
+export const refreshWatch = (model: Model, context: PageContext): Return => {
+	const refreshed = requestStatus(model, context, "planetscale", "Refresh")
+	return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
+}
+
+export const clickedCheckAgain = (model: Model, context: PageContext): Return =>
+	refreshWatch(withCard(model, { watchStartedAt: null }), context)
+
 /** A write's `planetscaleIntegration` `reactivityKeys` (the target list carries no key). */
 const refreshAfterWrite = (model: Model, context: PageContext): Return =>
-	chain(model, [
+	chain(restartWatch(model), [
 		(next) => requestStatus(next, context, "planetscale", "Supersede"),
 		(next) => requestStatus(next, context, "planetscaleDatabases", "Supersede"),
 	])
