@@ -340,7 +340,7 @@ const createClient = (
 let sqlClientFactory: typeof createClient = createClient
 
 export class WarehouseQueryService extends Context.Service<WarehouseQueryService, WarehouseQueryServiceApi>()(
-	"@maple/api/lib/WarehouseQueryService",
+	"@maple/backend/lib/WarehouseQueryService",
 	{
 		make: Effect.gen(function* () {
 			// Captured once: every driver the executor builds runs on this client.

@@ -1,10 +1,12 @@
+import { AwsMetricStream } from "@maple/domain/aws"
 import {
 	V2AwsConnection,
 	V2AwsCreateConnectionRequest,
+	V2AwsIngest,
 	type V2AwsIntegration,
 	V2AwsSetup,
 } from "@maple/domain/http/v2"
-import { AwsConnectionId } from "@maple/domain/primitives"
+import { AWS_METRIC_NAMESPACES, AwsConnectionId } from "@maple/domain/primitives"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Effect, Option, Schema } from "effect"
@@ -24,6 +26,8 @@ export { AwsRemovedStack, AwsSetupMethod } from "./aws-schema"
 
 export const AwsCardModel = Schema.Struct({
 	accountId: Field.Model,
+	/** The regions a new connection streams metrics from. */
+	regions: Field.Model,
 	isCreating: Schema.Boolean,
 	createError: Schema.NullOr(Schema.String),
 	/** The add form while connections exist; with none it always shows. */
@@ -39,11 +43,21 @@ export const AwsCardModel = Schema.Struct({
 	disconnectDialog: Dialog.Model,
 	isDisconnecting: Schema.Boolean,
 	removed: Schema.Array(AwsRemovedStack),
+	/** The connection whose metric stream form is open, its regions, and its save. */
+	metricsId: Schema.NullOr(AwsConnectionId),
+	metricsRegions: Field.Model,
+	isSavingMetrics: Schema.Boolean,
+	metricsError: Schema.NullOr(Schema.String),
+	/** What each streaming connection stored in the last hour, by connection id. */
+	ingest: Schema.Record(Schema.String, KeyedSchema(V2AwsIngest, LoadFailure)),
 })
 export type AwsCardModel = typeof AwsCardModel.Type
 
+export const DEFAULT_METRIC_REGIONS = "us-east-1"
+
 export const initAwsCard = (): AwsCardModel => ({
 	accountId: Field.init(),
+	regions: Field.init(DEFAULT_METRIC_REGIONS),
 	isCreating: false,
 	createError: null,
 	isAdding: false,
@@ -56,9 +70,32 @@ export const initAwsCard = (): AwsCardModel => ({
 	disconnectDialog: Dialog.init("aws-disconnect", "alert-dialog"),
 	isDisconnecting: false,
 	removed: [],
+	metricsId: null,
+	metricsRegions: Field.init(DEFAULT_METRIC_REGIONS),
+	isSavingMetrics: false,
+	metricsError: null,
+	ingest: {},
 })
 
 export const decodeCreateRequest = Schema.decodeUnknownOption(V2AwsCreateConnectionRequest)
+
+const decodeMetricStream = Schema.decodeUnknownOption(AwsMetricStream)
+
+/** Typed regions (`us-east-1, eu-central-1`) as a stream of every namespace Maple reads; None when invalid. */
+export const metricStreamOf = (value: string) =>
+	decodeMetricStream({
+		regions: [
+			...new Set(
+				value
+					.toLowerCase()
+					.split(/[\s,]+/u)
+					.filter((region) => region !== ""),
+			),
+		],
+		namespaces: AWS_METRIC_NAMESPACES,
+	})
+
+export const METRIC_REGIONS_HINT = "Region codes separated by commas, like us-east-1, eu-central-1."
 
 /** Account ids are often pasted with the console's dashes: `1234-5678-9012`. */
 export const normalizeAccountId = (value: string) => value.replaceAll(/[\s-]/gu, "")
@@ -89,6 +126,28 @@ export const CreateAwsConnection = Command.define("CreateAwsConnection", {
 		),
 })
 
+export const UpdateAwsMetricStream = Command.define("UpdateAwsMetricStream", {
+	args: { id: AwsConnectionId, metricStream: AwsMetricStream },
+	messages: [Message.CompletedAwsMetricStream],
+	execute: ({ id, metricStream }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			return yield* client.awsIntegration.updateConnection({
+				params: { id },
+				payload: { metric_stream: metricStream },
+			})
+		}).pipe(
+			Effect.match({
+				onFailure: (error) =>
+					Message.CompletedAwsMetricStream({
+						connection: null,
+						error: messageOf(error, "Failed to turn on the metric stream."),
+					}),
+				onSuccess: (connection) => Message.CompletedAwsMetricStream({ connection, error: null }),
+			}),
+		),
+})
+
 export const LoadAwsSetup = Command.define("LoadAwsSetup", {
 	args: { key: Schema.String, id: AwsConnectionId },
 	messages: [Message.CompletedLoadAwsSetup],
@@ -100,6 +159,20 @@ export const LoadAwsSetup = Command.define("LoadAwsSetup", {
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedLoadAwsSetup({ key, result })),
+		),
+})
+
+export const LoadAwsIngest = Command.define("LoadAwsIngest", {
+	args: { key: Schema.String, id: AwsConnectionId },
+	messages: [Message.CompletedLoadAwsIngest],
+	execute: ({ key, id }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			return yield* client.awsIntegration.ingest({ params: { id } })
+		}).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedLoadAwsIngest({ id, key, result })),
 		),
 })
 

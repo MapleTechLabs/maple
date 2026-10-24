@@ -26,7 +26,10 @@ export const isIntegrationConnected = (model: Model, integration: DataIntegratio
 		: overviewOf(model.integrations.statuses, model.integrations.nowMs, integration)?.kind === "connected"
 
 /** The sources an integration feeds. */
-const sourcesOfIntegration = (model: Model, integration: Exclude<DataIntegration, "warpstream">): ReadonlyArray<V2Source> =>
+const sourcesOfIntegration = (
+	model: Model,
+	integration: Exclude<DataIntegration, "warpstream">,
+): ReadonlyArray<V2Source> =>
 	AsyncData.getOrElse(model.list.data, (): ReadonlyArray<V2Source> => []).filter(
 		(source) => source.platform === integration,
 	)
@@ -36,14 +39,37 @@ const connectedNotice = (h: H, model: Model, integration: DataIntegration): Html
 	// A WarpStream target is one Prometheus source among others: the list, not a guess at which.
 	const sources = integration === "warpstream" ? [] : sourcesOfIntegration(model, integration)
 	const only = sources.length === 1 ? sources[0] : undefined
-	return alert(h, { variant: "ok" }, [
-		icon(h, "CircleCheckIcon"),
-		alertTitle(h, [integrationMeta(integration).label, " is connected"]),
-		alertDescription(h, ["Each account or target it collects from shows up as its own source."]),
+	// Connected is not collecting: until the overview is healthy, the notice says what is left.
+	const overview =
+		integration === "warpstream"
+			? null
+			: overviewOf(model.integrations.statuses, model.integrations.nowMs, integration)
+	const open = overview?.kind === "connected" && overview.health !== "healthy" ? overview : null
+	const label = integrationMeta(integration).label
+	const what = open?.issue ?? open?.stateLabel
+	return alert(h, { variant: open === null ? "ok" : "warn" }, [
+		icon(h, open === null ? "CircleCheckIcon" : "CircleWarningIcon"),
+		alertTitle(
+			h,
+			open === null
+				? [label, " is connected"]
+				: open.health === "pending"
+					? [label, " is added, not collecting yet"]
+					: [label, " needs attention"],
+		),
+		alertDescription(h, [
+			open === null
+				? "Each account or target it collects from shows up as its own source."
+				: `${what}. See the steps below.`,
+		]),
 		alertAction(h, [
 			only === undefined
-				? linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Sources()) }, ["View sources"])
-				: linkButton(h, { size: "sm", variant: "outline", href: sourceHref(only, "connection") }, ["Open source"]),
+				? linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Sources()) }, [
+						"View sources",
+					])
+				: linkButton(h, { size: "sm", variant: "outline", href: sourceHref(only, "connection") }, [
+						"Open source",
+					]),
 		]),
 	])
 }

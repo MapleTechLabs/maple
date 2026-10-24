@@ -37,20 +37,35 @@ export const ciResultBadge = <M>(h: HtmlBuilder<M>, result: string, attempt = 1,
 		],
 	)
 
-/** The trace page, narrowed to the run's start so the lookup prunes partitions. */
-export const traceLink = <M>(h: HtmlBuilder<M>, run: CodeReviewCiRun, className?: string): Html =>
-	linkButton(
-		h,
-		{
-			variant: "ghost",
-			size: "xs",
-			className,
-			href: hrefOf(
-				AppRoute.Trace({
-					traceId: run.traceId,
-					search: { t: new Date(run.startedAt).toISOString() },
-				}),
-			),
-		},
-		["View trace"],
-	)
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** `traces` drops a span 30 days after its UTC day; `ci_runs` keeps a year, so older runs have no trace. */
+export const traceKept = (startedAtMs: number, nowMs: number): boolean =>
+	nowMs < Math.floor(startedAtMs / DAY_MS) * DAY_MS + 30 * DAY_MS
+
+/** The trace page, narrowed to the run's start so the lookup prunes partitions; none once expired. */
+export const traceLink = <M>(
+	h: HtmlBuilder<M>,
+	run: CodeReviewCiRun,
+	nowMs: number,
+	className?: string,
+): ReadonlyArray<Html> =>
+	!traceKept(run.startedAt, nowMs)
+		? []
+		: [
+				linkButton(
+					h,
+					{
+						variant: "ghost",
+						size: "xs",
+						className,
+						href: hrefOf(
+							AppRoute.Trace({
+								traceId: run.traceId,
+								search: { t: new Date(run.startedAt).toISOString() },
+							}),
+						),
+					},
+					["View trace"],
+				),
+			]

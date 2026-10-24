@@ -190,7 +190,7 @@ const drain = (
 	)
 
 export class RepoSandboxService extends Context.Service<RepoSandboxService, RepoSandboxServiceApi>()(
-	"@maple/api/services/sandbox/RepoSandboxService",
+	"@maple/backend/services/sandbox/RepoSandboxService",
 	{
 		make: Effect.gen(function* () {
 			const sandbox = yield* Sandbox

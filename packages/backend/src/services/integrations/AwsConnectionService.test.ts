@@ -266,6 +266,8 @@ describe("AwsConnectionService", () => {
 				modules: [],
 				metricStream: { regions, namespaces: ["AWS/ECS", "AWS/ApplicationELB"] },
 			})
+			// The stream's first delivery is due from when it was asked for.
+			assert.strictEqual(created.metricStreamChangedAt, created.createdAt)
 			const setup = yield* service.setup(orgId, created.id)
 			const accessKey = accessKeyOf(setup.setupScript)
 			assert.isDefined(accessKey)
@@ -293,15 +295,18 @@ describe("AwsConnectionService", () => {
 			// Turning the stream off leaves a setup that only removes its stacks.
 			const off = yield* service.update(orgId, created.id, { metricStream: null })
 			assert.isNull(off.metricStream)
+			assert.isNull(off.metricStreamChangedAt)
 			const removed = yield* service.setup(orgId, created.id)
 			assert.isNull(removed.metricsStackName)
 			assert.isUndefined(accessKeyOf(removed.setupScript))
 			assert.include(removed.setupScript, "describe-regions")
 			// The old secret stops matching; turning the stream back on deploys a new one.
 			assert.isNull(yield* streamSecretHash(created.id))
-			yield* service.update(orgId, created.id, {
+			yield* TestClock.adjust("1 hour")
+			const back = yield* service.update(orgId, created.id, {
 				metricStream: { regions, namespaces: ["AWS/ECS"] },
 			})
+			assert.strictEqual(back.metricStreamChangedAt, created.createdAt + 3_600_000)
 			const again = accessKeyOf((yield* service.setup(orgId, created.id)).setupScript)
 			assert.isDefined(again)
 			assert.notStrictEqual(again, accessKey)

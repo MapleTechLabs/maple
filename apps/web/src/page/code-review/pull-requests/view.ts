@@ -105,8 +105,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			h,
 			active: "pull-requests",
 			search: model.search,
-			nowMs: model.frame.nowMs,
-			timeZone: inputs.context.timeZone,
 			toolbar: filtersView(h, {
 				frame: model.frame,
 				search: model.search,

@@ -20,14 +20,21 @@ const PRESENCE_IDLE_TTL_MS = 300_000
 /** The window `useInfraSurfaces()` probes when it is given none. */
 export const lastHourWindow = (nowMs: number): TimeWindow => {
 	const end = Math.floor(nowMs / PRESENCE_BUCKET_MS) * PRESENCE_BUCKET_MS
-	return { startTime: formatWarehouseDateTime(end - PRESENCE_WINDOW_MS), endTime: formatWarehouseDateTime(end) }
+	return {
+		startTime: formatWarehouseDateTime(end - PRESENCE_WINDOW_MS),
+		endTime: formatWarehouseDateTime(end),
+	}
 }
 
 export const presenceKey = (orgId: string, window: TimeWindow) =>
 	requestKey(orgId, "infraPresence", { data: { startTime: window.startTime, endTime: window.endTime } })
 
 /** `infraPresenceResultAtom({ data: window })`: one request per org and window, shared by every reader. */
-export const loadInfraPresence = (orgId: string, window: TimeWindow, options?: { readonly refresh?: boolean }) =>
+export const loadInfraPresence = (
+	orgId: string,
+	window: TimeWindow,
+	options?: { readonly refresh?: boolean },
+) =>
 	readThrough(
 		{
 			key: presenceKey(orgId, window),
@@ -50,6 +57,7 @@ export interface IntegrationFlags {
 	readonly planetscale: boolean
 	readonly gcp: boolean
 	readonly supabase: boolean
+	readonly aws: boolean
 }
 
 /** The probe's surfaces plus the connected integrations; `null` while the probe is unknown. */
@@ -58,6 +66,8 @@ export const infraSurfacesOf = (
 	integrations: IntegrationFlags,
 ): ReadonlySet<NavSurface> | null => {
 	if (presence === null) return null
-	const connected = (["cloudflare", "planetscale", "railway", "gcp", "supabase"] as const).filter((id) => integrations[id])
+	const connected = (["cloudflare", "planetscale", "railway", "gcp", "supabase", "aws"] as const).filter(
+		(id) => integrations[id],
+	)
 	return new Set<NavSurface>([...presence, ...connected])
 }

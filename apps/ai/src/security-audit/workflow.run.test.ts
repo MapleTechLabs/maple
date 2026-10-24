@@ -1,5 +1,8 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { durableStep } from "@maple/backend/platform/durable-step"
+import { SandboxTimeoutError } from "@maple/backend/sandbox/contract"
+import { REPO_SANDBOX_IMPLEMENTATION } from "@maple/backend/services/sandbox/repo-mount"
 import {
 	RepoSandboxService,
 	type RepoSandboxServiceApi,
@@ -13,8 +16,8 @@ import { UserId } from "@maple/domain/primitives"
 import type { SecurityAuditTargetId, SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { type AgentInvocation, type AuditAgentsApi, coverageId, type Finding } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect, Layer, Option, Schema } from "effect"
-import { auditWithAgents } from "./workflow.run"
+import { Cause, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import { auditWithAgents, toSandboxStepError } from "./workflow.run"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -241,7 +244,10 @@ describe("auditWithAgents", () => {
 			assert.deepStrictEqual(
 				[commands, units.map((u) => u.unit.prior_status)],
 				[
-					["git rev-parse HEAD", `git diff --name-only --no-renames ${SHA} HEAD`],
+					[
+						"git rev-parse HEAD",
+						`git --no-optional-locks -c core.quotePath=false diff --name-only --no-renames ${SHA} HEAD --`,
+					],
 					["prior_covered_changed_source"],
 				],
 			)
@@ -523,5 +529,139 @@ describe("auditWithAgents, settling", () => {
 			}).pipe(
 				Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer))),
 			),
+	)
+})
+
+interface StepRetries {
+	readonly retries?: { readonly limit: number }
+}
+
+interface StepAttempt {
+	readonly step: { readonly name: string; readonly count: number }
+	readonly attempt: number
+	readonly config: StepRetries
+}
+
+interface NativeStep {
+	readonly do: <T>(
+		name: string,
+		config: StepRetries,
+		callback: (context: StepAttempt) => Promise<T>,
+	) => Promise<T>
+}
+
+/**
+ * alchemy exports only the whole bridge; its step wrapper holds the failure encoder under test. A
+ * computed specifier keeps the typecheck out of alchemy's sources.
+ */
+const BRIDGE = new URL(
+	"../../../../node_modules/alchemy/src/Cloudflare/Workflows/WorkflowBridge.ts",
+	import.meta.url,
+).href
+const loadBridge = Effect.promise(
+	(): Promise<{
+		readonly wrapWorkflowStep: (
+			step: NativeStep,
+			identity: { readonly workflow: string; readonly instanceId: string },
+		) => Cloudflare.WorkflowStep["Service"]
+	}> => import(BRIDGE),
+)
+
+/**
+ * Cloudflare's native step under alchemy's real wrapper: retried per its config while the callback
+ * rejects with an encoded application failure, and terminal on anything else.
+ */
+const nativeStep = (attempts: Array<string>) =>
+	Effect.map(loadBridge, ({ wrapWorkflowStep }) => {
+		const attempt = <T>(
+			name: string,
+			config: StepRetries,
+			callback: (context: StepAttempt) => Promise<T>,
+			n: number,
+		): Promise<T> => {
+			attempts.push(name)
+			return callback({ step: { name, count: 1 }, attempt: n, config }).catch((error: unknown) =>
+				error instanceof Error &&
+				error.message.startsWith("[alchemy-workflow-failure:v1]") &&
+				n <= (config.retries?.limit ?? 0)
+					? attempt(name, config, callback, n + 1)
+					: Promise.reject(error),
+			)
+		}
+		return wrapWorkflowStep(
+			{ do: (name, config, callback) => attempt(name, config, callback, 1) },
+			{ workflow: "security-audit", instanceId: "run" },
+		)
+	})
+
+const timeout = new SandboxTimeoutError({
+	implementation: REPO_SANDBOX_IMPLEMENTATION,
+	maxWallTime: Duration.seconds(30),
+})
+const retries = { retries: { limit: 2, delay: "1 second", backoff: "constant" } } as const
+
+describe("sandbox failures across a step", () => {
+	it.effect("a raw sandbox timeout cannot be encoded, so the step is terminal", () =>
+		Effect.gen(function* () {
+			const attempts: Array<string> = []
+			const exit = yield* Effect.exit(
+				durableStep("s", Effect.fail(timeout), retries).pipe(
+					Effect.provideServiceEffect(Cloudflare.WorkflowStep, nativeStep(attempts)),
+				),
+			)
+			assert.deepStrictEqual(
+				[attempts.length, Exit.isFailure(exit) && Cause.hasDies(exit.cause)],
+				[1, true],
+			)
+		}),
+	)
+
+	it.effect("a mapped sandbox timeout is retried and reaches the run as a typed failure", () =>
+		Effect.gen(function* () {
+			const attempts: Array<string> = []
+			const exit = yield* Effect.exit(
+				durableStep(
+					"s",
+					Effect.fail(timeout).pipe(Effect.mapError(toSandboxStepError("s"))),
+					retries,
+				).pipe(Effect.provideServiceEffect(Cloudflare.WorkflowStep, nativeStep(attempts))),
+			)
+			const failure = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : Option.none()
+			assert.deepStrictEqual(
+				[attempts.length, Option.map(failure, (e) => [e._tag, e.message])],
+				[
+					3,
+					Option.some(["@maple/ai/security-audit/SandboxStepError", "s: timed out after 30000 ms"]),
+				],
+			)
+		}),
+	)
+
+	it.effect("retries a run whose commit lookup times out, then marks it failed", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const attempts: Array<string> = []
+			const slow: RepoSandboxServiceApi = { ...sandbox([]), prepare: () => Effect.fail(timeout) }
+			const exit = yield* Effect.exit(
+				auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, slow),
+					Effect.provideServiceEffect(Cloudflare.WorkflowStep, nativeStep(attempts)),
+				),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				[
+					attempts,
+					Exit.isFailure(exit) && !Cause.hasDies(exit.cause),
+					Option.map(row, (r) => r.status),
+				],
+				[
+					["resolve-commit", "resolve-commit", "resolve-commit", "resolve-commit"],
+					true,
+					Option.some("failed"),
+				],
+			)
+		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
 	)
 })

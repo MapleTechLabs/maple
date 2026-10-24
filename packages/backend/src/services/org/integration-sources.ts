@@ -1,5 +1,6 @@
 import type { MapleDb } from "@maple/db/client"
 import {
+	type AwsConnectionRow,
 	AwsConnections,
 	GcpConnectors,
 	OAuthConnections,
@@ -10,6 +11,7 @@ import {
 	SupabaseConnections,
 	VcsInstallations,
 } from "@maple/db/tables"
+import { AWS_METRICS_OFF, AWS_NO_DELIVERY, awsStreamState } from "@maple/domain/aws"
 import { scrapeStaleAfterMs } from "@maple/domain/integration-inventory"
 import type { SourceResourceCount } from "@maple/domain/source-health"
 import { SourcePublicId } from "@maple/domain/http/v2"
@@ -170,7 +172,9 @@ export const reportPoll = (db: MapleDb, sourceId: SourceId | null, outcome: Poll
 					PG.or(
 						$.lastPollAt.isNull(),
 						$.lastPollAt.lt(now - POLL_REPORT_INTERVAL_MS),
-						outcome._tag === "Disconnected" ? $.disconnectedAt.isNull() : $.disconnectedAt.isNotNull(),
+						outcome._tag === "Disconnected"
+							? $.disconnectedAt.isNull()
+							: $.disconnectedAt.isNotNull(),
 						error === null
 							? $.lastPollError.isNotNull()
 							: PG.or($.lastPollError.isNull(), $.lastPollError.neq(error)),
@@ -193,7 +197,11 @@ const scrapeOverrides = (
 	const enabled = group.filter((target) => target.enabled)
 	return enabled.length === 0
 		? { turnedOff: SCRAPING_OFF }
-		: { staleAfterMs: Math.max(...enabled.map((target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds))) }
+		: {
+				staleAfterMs: Math.max(
+					...enabled.map((target) => scrapeStaleAfterMs(target.scrapeIntervalSeconds)),
+				),
+			}
 }
 
 const overridesBySource = (
@@ -204,42 +212,126 @@ const overridesBySource = (
 	}>,
 ) => {
 	const bySource = Arr.groupBy(
-		targets.flatMap((target) => (target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }])),
+		targets.flatMap((target) =>
+			target.sourceId === null ? [] : [{ ...target, sourceId: target.sourceId }],
+		),
 		(target) => target.sourceId,
 	)
 	return new Map(
-		Object.values(bySource).map(
-			(group): readonly [SourceId, SourceHealthOverrides] => [group[0].sourceId, scrapeOverrides(group)],
-		),
+		Object.values(bySource).map((group): readonly [SourceId, SourceHealthOverrides] => [
+			group[0].sourceId,
+			scrapeOverrides(group),
+		]),
 	)
 }
 
-/** What each of an org's Prometheus sources' targets add to its health, reading only scrape targets. */
-export const readScrapeOverrides = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId) {
-	const targets = yield* db.run(
-		PG.from(ScrapeTargets)
-			.select("sourceId", "enabled", "scrapeIntervalSeconds")
-			.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
+type AwsHealthRow = Pick<
+	AwsConnectionRow,
+	| "sourceId"
+	| "verifiedAt"
+	| "metricStream"
+	| "metricStreamChangedAt"
+	| "streamLastReceivedAt"
+	| "streamLastError"
+>
+
+/**
+ * What an AWS connection adds to its source's health: the stream is all it reads, so no stream is
+ * off, and a refused delivery or a stream that never delivered fails. Silence is the row's own.
+ */
+export const awsHealthOverrides = (connection: AwsHealthRow, now: number): SourceHealthOverrides => {
+	const state = awsStreamState(
+		{
+			verifiedAt: connection.verifiedAt,
+			metricStream: connection.metricStream,
+			metricStreamChangedAt: connection.metricStreamChangedAt,
+			metricsLastReceivedAt: connection.streamLastReceivedAt,
+			metricsLastError: connection.streamLastError,
+		},
+		now,
 	)
-	return overridesBySource(targets)
+	switch (state._tag) {
+		// Before the role is deployed the setup is still being done: the source stays pending.
+		case "off":
+			return connection.verifiedAt === null ? {} : { turnedOff: AWS_METRICS_OFF }
+		case "refused":
+			return { failing: state.error }
+		case "undelivered":
+			return { failing: AWS_NO_DELIVERY }
+		case "waiting":
+		case "silent":
+		case "delivering":
+			return {}
+	}
+}
+
+const AWS_HEALTH_COLUMNS = [
+	"id",
+	"sourceId",
+	"verifiedAt",
+	"metricStream",
+	"metricStreamChangedAt",
+	"streamLastReceivedAt",
+	"streamLastError",
+] as const
+
+const readAwsHealth = (db: MapleDb, orgId: OrgId) =>
+	db.run(
+		PG.from(AwsConnections)
+			.select(...AWS_HEALTH_COLUMNS)
+			.where(($) => [$.orgId.eq(orgId)]),
+	)
+
+const awsOverridesBySource = (connections: ReadonlyArray<AwsHealthRow>, now: number) =>
+	connections.flatMap((connection): ReadonlyArray<readonly [SourceId, SourceHealthOverrides]> =>
+		connection.sourceId === null ? [] : [[connection.sourceId, awsHealthOverrides(connection, now)]],
+	)
+
+/** What each of an org's integration sources' own rows add to its health: scrape targets, AWS streams. */
+export const readHealthOverrides = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId, now: number) {
+	const [targets, connections] = yield* Effect.all(
+		[
+			db.run(
+				PG.from(ScrapeTargets)
+					.select("sourceId", "enabled", "scrapeIntervalSeconds")
+					.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
+			),
+			readAwsHealth(db, orgId),
+		],
+		{ concurrency: "unbounded" },
+	)
+	return new Map([...overridesBySource(targets), ...awsOverridesBySource(connections, now)])
 })
 
 /**
  * For each of an org's integration sources: the integration row it stands for (a scrape target,
  * a connector, a connection; a PlanetScale-managed target sends as its connection), and what its
- * scrape targets add to its health.
+ * scrape targets and AWS streams add to its health.
  */
-export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId) {
-	const [targets, ...owners] = yield* Effect.all(
+export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId, now: number) {
+	const [targets, awsConnections, ...owners] = yield* Effect.all(
 		[
 			db.run(
 				PG.from(ScrapeTargets)
 					.select("id", "sourceId", "enabled", "scrapeIntervalSeconds")
 					.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
 			),
-			db.run(PG.from(GcpConnectors).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
-			db.run(PG.from(RailwayConnections).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
-			db.run(PG.from(PlanetscaleConnections).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
+			readAwsHealth(db, orgId),
+			db.run(
+				PG.from(GcpConnectors)
+					.select("id", "sourceId")
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
+			db.run(
+				PG.from(RailwayConnections)
+					.select("id", "sourceId")
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
+			db.run(
+				PG.from(PlanetscaleConnections)
+					.select("id", "sourceId")
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
 			db.run(
 				PG.from(SupabaseConnections)
 					.select("id", "sourceId")
@@ -250,16 +342,19 @@ export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId:
 					.select("id", "sourceId")
 					.where(($) => [$.orgId.eq(orgId), $.sourceId.isNotNull()]),
 			),
-			db.run(PG.from(VcsInstallations).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
-			db.run(PG.from(AwsConnections).select("id", "sourceId").where(($) => [$.orgId.eq(orgId)])),
+			db.run(
+				PG.from(VcsInstallations)
+					.select("id", "sourceId")
+					.where(($) => [$.orgId.eq(orgId)]),
+			),
 		],
 		{ concurrency: "unbounded" },
 	)
-	const linked = [...targets, ...owners.flat()].flatMap((owner) =>
+	const linked = [...targets, ...awsConnections, ...owners.flat()].flatMap((owner) =>
 		owner.sourceId === null ? [] : [[owner.sourceId, owner.id] as const],
 	)
 	return {
 		integrationIds: new Map(linked),
-		overrides: overridesBySource(targets),
+		overrides: new Map([...overridesBySource(targets), ...awsOverridesBySource(awsConnections, now)]),
 	}
 })

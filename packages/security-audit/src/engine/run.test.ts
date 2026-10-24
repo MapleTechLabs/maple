@@ -19,6 +19,7 @@ import {
 	SEARCH,
 } from "./__fixtures__/harness"
 import type { AgentInvocation } from "./ports"
+import { isMaterial } from "./validate"
 
 const ALL = [KEYS, SEARCH, EXPORT].map(idOf)
 
@@ -163,8 +164,9 @@ describe("runAudit, deep profile", () => {
 })
 
 describe("runAudit, budget", () => {
-	it("launches no agent when the budget cannot fund reconnaissance and its reserves", async () => {
-		const { result, recorded } = await runScripted(baseInput({ budget: 7 }), happy())
+	it("launches no agent when the budget cannot fund reconnaissance, a hunter and the reserves", async () => {
+		// 8 covers reconnaissance, synthesis, two critics and a verifier, but no hunter.
+		const { result, recorded } = await runScripted(baseInput({ budget: 8 }), happy())
 		expect(recorded.invocations).toEqual([])
 		expect(result.status).toBe("incomplete")
 		expect(result.incompleteReasons).toEqual(["budget_cannot_fund_reconnaissance_and_reserves"])
@@ -504,5 +506,78 @@ describe("runAudit, third review regressions", () => {
 				(i) => i.role === "hunter" && i.prompt.includes(`"coverage_id": "${idOf(KEYS)}"`),
 			),
 		).toBe(true)
+	})
+})
+
+describe("runAudit, fourth review regressions", () => {
+	it("decides every unit that carries the same prior record with one verifier", async () => {
+		const searchId = idOf(SEARCH)
+		// Run 1: the search unit's hunter raises the keys record too, so both units link it.
+		const { result: first } = await runScripted(baseInput(), (i) => {
+			if (i.role !== "hunter") return happy()(i)
+			const answer = hunterAnswer(i, ALL)
+			const owned = answer.units.some((u) => u.coverage_id === searchId)
+			return json({
+				...answer,
+				units: answer.units.map((u) =>
+					u.coverage_id === searchId
+						? { ...u, disposition: "candidate", candidate_fingerprints: [FINGERPRINT] }
+						: u,
+				),
+				candidates: owned && answer.candidates.length === 0 ? [keysCandidate] : answer.candidates,
+			})
+		})
+		const prior = { runId: "run-1", sourceRef: "abc123", ledger: first.ledger, findings: first.findings }
+		const { result, recorded } = await runScripted(baseInput({ runId: "run-2", prior }), happy())
+		const status = (id: string) => result.ledger.find((u) => u.coverage_id === id)?.status
+		expect([status(idOf(KEYS)), status(searchId)]).toEqual(["candidate", "candidate"])
+		expect(recorded.invocations.filter((i) => i.role === "candidate-verifier")).toHaveLength(1)
+		expect(result.status).toBe("complete")
+		expect(ledgerErrors(result.ledger)).toEqual([])
+	})
+
+	it("reports a run whose budget leaves no hunter for its planned units as incomplete", async () => {
+		const prior = await runScripted(baseInput(), happy())
+		const { result, recorded } = await runScripted(
+			baseInput({
+				runId: "run-2",
+				budget: 9,
+				prior: {
+					runId: "run-1",
+					sourceRef: "abc123",
+					ledger: prior.result.ledger,
+					findings: prior.result.findings,
+				},
+			}),
+			happy(),
+		)
+		expect(recorded.invocations.some((i) => i.role === "hunter")).toBe(false)
+		expect(result.status).toBe("incomplete")
+		expect(result.incompleteReasons).toContain("budget_cannot_fund_a_hunter")
+	})
+
+	it("does not treat a reworded reason as a material replacement", () => {
+		const reworded = confirmed({
+			severity: {
+				likelihood: { score: "medium", reason: "an attacker needs a valid key id" },
+				impact: { score: "high", reason: "writes across tenants" },
+				overall_severity: "high",
+			},
+			confidence: { score: "medium", reason: "the full source trace was read" },
+		})
+		expect(isMaterial(confirmed(), reworded)).toBe(false)
+		expect(isMaterial(confirmed(), lowered())).toBe(true)
+	})
+
+	it("logs only where a discarded result broke its contract", async () => {
+		const { recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "hunter-w1-2" ? json({ units: "token-ABC123-do-not-log" }) : happy()(i),
+		)
+		const discarded = recorded.events.find(
+			(e) => e._tag === "Agent" && e.agentId === "hunter-w1-2" && e.outcome === "discarded",
+		)
+		const message = discarded?._tag === "Agent" ? discarded.message : undefined
+		expect(message).toContain("at: units")
+		expect(message).not.toContain("ABC123")
 	})
 })

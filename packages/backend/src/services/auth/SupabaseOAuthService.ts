@@ -133,7 +133,7 @@ export interface SupabaseOAuthServiceApi {
 }
 
 export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, SupabaseOAuthServiceApi>()(
-	"@maple/api/services/SupabaseOAuthService",
+	"@maple/backend/services/SupabaseOAuthService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

@@ -416,9 +416,6 @@
 .pair-cell > :not([aria-hidden="true"]) {
 	position: relative;
 }
-.pair-cell canvas {
-	display: block;
-}
 
 /* ──────────────────────────────────────────────────────────────
    Live artifact frame.

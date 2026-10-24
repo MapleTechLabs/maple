@@ -5,6 +5,7 @@ import {
 	DEFAULT_RUN_BUDGET,
 	SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT,
 	SECURITY_AUDIT_MAX_BUDGET,
+	SecurityAuditBudgetTooLowError,
 	SecurityAuditDisabledError,
 	type SecurityAuditEvent,
 	type SecurityAuditFinding,
@@ -24,12 +25,13 @@ import {
 	SecurityAuditTargetNotFoundError,
 } from "@maple/domain/http"
 import {
+	type SecurityAuditProfile,
 	SecurityAuditRunId,
 	type SecurityAuditTargetId,
 	type SecurityAuditWorkflowPayload,
 } from "@maple/domain/security-audit"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
-import { AuditStoreError } from "@maple/security-audit"
+import { AuditStoreError, minimumInvocations } from "@maple/security-audit"
 import { Effect, Option, Schema } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
@@ -152,6 +154,21 @@ const orUnavailable = <A, E, R>(effect: Effect.Effect<A, E | AuditStoreError, R>
 const resolveBudget = (requested: number | undefined, targetBudget: number | null) =>
 	Math.min(requested ?? targetBudget ?? DEFAULT_RUN_BUDGET, SECURITY_AUDIT_MAX_BUDGET)
 
+/** A budget the engine would refuse before reconnaissance is the caller's to fix: a 400, not a failed run. */
+const requireFundableBudget = (budget: number, profile: SecurityAuditProfile) => {
+	const minimum = minimumInvocations(profile)
+	return budget >= minimum
+		? Effect.void
+		: Effect.fail(
+				new SecurityAuditBudgetTooLowError({
+					message: `A ${profile} audit needs a budget of at least ${minimum} agent invocations; got ${budget}.`,
+					budget,
+					minimum,
+					profile,
+				}),
+			)
+}
+
 const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
 
 /** `/api/security-audit/*`: targets, runs and findings for the caller's org, behind `securityAudit`. */
@@ -247,6 +264,9 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			.handle("createTarget", ({ payload }) =>
 				Effect.gen(function* () {
 					const { tenant, store } = yield* adminAccess
+					if (payload.budgetPerRun !== undefined) {
+						yield* requireFundableBudget(payload.budgetPerRun, payload.profile ?? "deep")
+					}
 					const repository = yield* orUnavailable(store.findConnectedRepository(payload.repository))
 					if (Option.isNone(repository)) {
 						return yield* new SecurityAuditRepositoryNotConnectedError({
@@ -284,9 +304,10 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				Effect.gen(function* () {
 					const { tenant, store } = yield* adminAccess
 					const target = yield* requireTarget(store, params.targetId)
+					const budget = resolveBudget(payload.budget, target.budgetPerRun)
+					yield* requireFundableBudget(budget, target.profile)
 					const prior = yield* orUnavailable(store.latestPriorRun(target.id))
 					const runId = newRunId()
-					const budget = resolveBudget(payload.budget, target.budgetPerRun)
 					// The branch for now; the Workflow pins the commit it resolves to before any agent runs.
 					const run = yield* orUnavailable(
 						store.startRun({

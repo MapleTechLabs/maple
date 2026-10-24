@@ -20,7 +20,14 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const resolved = Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, locale: "en-US", mode: "Load" })
 
-const NO_INTEGRATIONS = { cloudflare: false, railway: false, planetscale: false, gcp: false, supabase: false }
+const NO_INTEGRATIONS = {
+	cloudflare: false,
+	railway: false,
+	planetscale: false,
+	gcp: false,
+	supabase: false,
+	aws: false,
+}
 
 /** The StatefulSet kind with an empty answer for the window. */
 const emptyKind = () => {
@@ -39,9 +46,15 @@ const emptyKind = () => {
 
 describe("workloads", () => {
 	test("the kind pivot writes the kind and drops a name filter of the old kind", () => {
-		const model = pageUpdate(init({ search: { workloadNames: ["payment-svc"] } }, context).model, Message.GotFrameMessage({ message: resolved })).model
+		const model = pageUpdate(
+			init({ search: { workloadNames: ["payment-svc"] } }, context).model,
+			Message.GotFrameMessage({ message: resolved }),
+		).model
 		expect(pageUpdate(model, Message.ChangedKind({ kind: "job" })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/infra/kubernetes/workloads?kind=job", isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/kubernetes/workloads?kind=job",
+				isReplace: false,
+			}),
 		)
 	})
 
@@ -58,10 +71,22 @@ describe("workloads", () => {
 	})
 
 	test("the workload page asks for the aggregate series once the breakdown is unticked", () => {
-		const route = { kind: "deployment" as const, workloadName: "payment-svc", search: { namespace: "shop" } }
+		const route = {
+			kind: "deployment" as const,
+			workloadName: "payment-svc",
+			search: { namespace: "shop" },
+		}
 		const entered = WorkloadDetail.init(route, context).model
-		const windowed = WorkloadDetail.update(entered, DetailMessage.GotFrameMessage({ message: resolved }), context).model
-		const aggregate = WorkloadDetail.update(windowed, DetailMessage.ToggledGroupByPod({ isChecked: false }), context)
+		const windowed = WorkloadDetail.update(
+			entered,
+			DetailMessage.GotFrameMessage({ message: resolved }),
+			context,
+		).model
+		const aggregate = WorkloadDetail.update(
+			windowed,
+			DetailMessage.ToggledGroupByPod({ isChecked: false }),
+			context,
+		)
 		expect((aggregate.commands ?? []).map(({ name }) => name)).toEqual(["FetchInfraWorkloadSeries"])
 	})
 	test("an empty kind in a reporting cluster says so, without the install advice", () => {

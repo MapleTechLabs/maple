@@ -247,6 +247,31 @@ describe("SecurityAuditStore findings lifecycle", () => {
 	)
 })
 
+describe("SecurityAuditStore triage survives a resave", () => {
+	it.effect("a resave that drops a finding this run opened keeps it once a person triaged it", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const run = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(run.runId, [confirmed("triaged"), confirmed("draft")])
+				const db = trackedDbs[0]
+				assert.isDefined(db)
+				yield* Effect.promise(() =>
+					db.pglite.query(
+						`UPDATE security_audit_findings SET status = 'dismissed' WHERE fingerprint = 'triaged'`,
+					),
+				)
+				yield* scoped.saveFindings(run.runId, [])
+				const findings = yield* scoped.listFindings(run.targetId)
+				assert.deepStrictEqual(
+					findings.map((f) => [f.fingerprint, f.status]),
+					[["triaged", "dismissed"]],
+				)
+			}),
+		),
+	)
+})
+
 describe("SecurityAuditStore runs and events", () => {
 	it.effect("appends events in order, keeping each agent's usage", () =>
 		withStore((store) =>
@@ -326,9 +351,12 @@ describe("SecurityAuditStore runs and events", () => {
 					execution_policy: "sandboxed-source-and-local-only",
 					execution: { _tag: "Unavailable", blocker: "no sandbox" },
 					prior_runs: [],
-					run_status: "in_progress",
+					run_status: "complete",
 				}
 				yield* scoped.saveMetadata(metadata)
+				// The engine's status is its own; the row stays in progress until the run settles.
+				const unsettled = Option.getOrThrow(yield* scoped.getRun(runId))
+				assert.deepStrictEqual([unsettled.status, unsettled.finishedAt], ["in_progress", null])
 				yield* scoped.saveArchitecture(runId, "# Architecture")
 				const usage = { invocations: 3, inputTokens: 150, outputTokens: 15, costUsd: 0.5 }
 				// Written twice, as a retried settle step would: totals are set, never added.
@@ -652,6 +680,26 @@ describe("SecurityAuditStore run admission", () => {
 				assert.deepStrictEqual(
 					[early._tag, next.status, abandoned.status, abandoned.finishedAt === null],
 					["@maple/backend/security-audit/RunInProgress", "in_progress", "failed", false],
+				)
+			}),
+		),
+	)
+
+	it.effect("keeps a long run that is still recording events", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* TestClock.adjust("47 hours")
+				yield* scoped.recordEvent(runId, { _tag: "Note", message: "still hunting" })
+				yield* TestClock.adjust("2 hours")
+				const refused = yield* Effect.flip(
+					scoped.startRun({ targetId, kind: "manual", sourceRef: "sha-2" }),
+				)
+				const live = Option.getOrThrow(yield* scoped.getRun(runId))
+				assert.deepStrictEqual(
+					[refused._tag, live.status, live.finishedAt],
+					["@maple/backend/security-audit/RunInProgress", "in_progress", null],
 				)
 			}),
 		),

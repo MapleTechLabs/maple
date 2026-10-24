@@ -36,7 +36,7 @@ export type RegisteredChatConnector = ChatConnector<HttpClient.HttpClient | Conn
  * and exercise it without a chat platform on the other end.
  */
 export class ChatConnectorRegistry extends Context.Reference<ReadonlyArray<RegisteredChatConnector>>(
-	"@maple/api/services/ChatConnectorRegistry",
+	"@maple/backend/services/ChatConnectorRegistry",
 	{ defaultValue: (): ReadonlyArray<RegisteredChatConnector> => connectors },
 ) {}
 

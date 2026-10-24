@@ -33,6 +33,9 @@ import {
 	errorFingerprintsMinutely,
 	aiTraceIndex,
 	aiCrawlerRequests,
+	CI_SERVICE_NAME,
+	ciJobs,
+	ciRuns,
 	TRACE_BUCKET_EXPR,
 	traceIndex,
 	traceListMv,
@@ -1231,6 +1234,81 @@ export const aiCrawlerRequestsMv = defineMaterializedView("ai_crawler_requests_m
         WHERE SpanKind = 'Server'
           AND ${AI_CRAWLER_INDEX_SQL} > 0
           AND ${REQUEST_PATH_SQL} != ''
+      `,
+		}),
+	],
+})
+
+/** Populates `ci_runs` with the root span of each CI trace: one row per workflow run attempt. */
+export const ciRunsMv = defineMaterializedView("ci_runs_mv", {
+	description:
+		"Populates ci_runs with the root span of every github-actions trace, pre-extracting repository, workflow, result, branch, revision and pull request.",
+	datasource: ciRuns,
+	nodes: [
+		node({
+			name: "ci_runs_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          SpanId,
+          ResourceAttributes['vcs.owner.name'] AS Owner,
+          ResourceAttributes['vcs.repository.name'] AS Repository,
+          SpanAttributes['cicd.pipeline.name'] AS Pipeline,
+          SpanAttributes['cicd.pipeline.run.id'] AS RunId,
+          toUInt64OrZero(SpanAttributes['maple.cicd.run_number']) AS RunNumber,
+          toUInt16OrZero(SpanAttributes['maple.cicd.run_attempt']) AS Attempt,
+          SpanAttributes['cicd.pipeline.result'] AS Result,
+          Duration,
+          SpanAttributes['cicd.pipeline.run.url.full'] AS Url,
+          SpanAttributes['vcs.ref.head.name'] AS Branch,
+          SpanAttributes['vcs.ref.head.revision'] AS Revision,
+          SpanAttributes['maple.cicd.trigger_event'] AS TriggerEvent,
+          SpanAttributes['maple.cicd.actor'] AS Actor,
+          toUInt32OrZero(SpanAttributes['vcs.change.id']) AS PullRequest,
+          SpanAttributes['maple.cicd.workflow_path'] AS WorkflowPath
+        FROM traces
+        WHERE ServiceName = '${CI_SERVICE_NAME}'
+          AND ParentSpanId = ''
+      `,
+		}),
+	],
+})
+
+/** Populates `ci_jobs` with each run's jobs: children that name a task but not a step. */
+export const ciJobsMv = defineMaterializedView("ci_jobs_mv", {
+	description:
+		"Populates ci_jobs with the job spans of every github-actions trace, pre-extracting workflow, job, result, queue time, runner and failure reason.",
+	datasource: ciJobs,
+	nodes: [
+		node({
+			name: "ci_jobs_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          SpanId,
+          ResourceAttributes['vcs.owner.name'] AS Owner,
+          ResourceAttributes['vcs.repository.name'] AS Repository,
+          SpanAttributes['cicd.pipeline.name'] AS Pipeline,
+          SpanAttributes['cicd.pipeline.run.id'] AS RunId,
+          toUInt16OrZero(SpanAttributes['maple.cicd.run_attempt']) AS Attempt,
+          SpanAttributes['cicd.pipeline.task.name'] AS Job,
+          SpanAttributes['cicd.pipeline.task.run.result'] AS Result,
+          StatusCode,
+          Duration,
+          toUInt32OrZero(SpanAttributes['maple.cicd.queue_duration_ms']) AS QueueMs,
+          SpanAttributes['cicd.pipeline.task.run.url.full'] AS Url,
+          SpanAttributes['maple.cicd.failure.reason'] AS FailureReason,
+          SpanAttributes['cicd.worker.name'] AS RunnerName,
+          SpanAttributes['maple.cicd.runner_labels'] AS RunnerLabels
+        FROM traces
+        WHERE ServiceName = '${CI_SERVICE_NAME}'
+          AND ParentSpanId != ''
+          AND SpanAttributes['cicd.pipeline.task.name'] != ''
+          AND SpanAttributes['maple.cicd.step.number'] = ''
       `,
 		}),
 	],
