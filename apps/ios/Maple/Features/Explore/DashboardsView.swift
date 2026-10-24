@@ -343,7 +343,7 @@ private struct DashboardWindowPill: View {
 
 	var body: some View {
 		Menu {
-			Picker("Time range", selection: Binding(get: { window }, set: select)) {
+			Picker("Time range", selection: Binding(get: { window }, set: { select($0) })) {
 				ForEach(TimeWindow.allCases) { option in
 					Text(option.title).tag(option)
 				}

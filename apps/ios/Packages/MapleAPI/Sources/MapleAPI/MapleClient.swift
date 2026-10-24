@@ -189,7 +189,6 @@ public protocol MapleAPI: Sendable {
 	func searchTraces(_ search: TraceSearch, limit: Int, cursor: String?) async throws -> Page<TraceSummary>
 	func trace(id: String) async throws -> TraceDetail
 	func searchLogs(_ search: LogSearch, limit: Int, cursor: String?) async throws -> Page<LogRecord>
-	func logVolume(_ search: LogSearch, targetPoints: Int) async throws -> [Double]
 	func transitionIssue(id: String, to state: WorkflowState, note: String?) async throws -> ErrorIssue
 	func claimIssue(id: String) async throws -> ErrorIssue
 	func releaseIssue(id: String) async throws -> ErrorIssue

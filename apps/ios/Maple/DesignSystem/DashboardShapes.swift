@@ -224,6 +224,7 @@ struct StatDelta: Hashable {
 	}
 
 	var text: String {
+		guard !rendersAsZero else { return "no change \(comparison)" }
 		let sign = change >= 0 ? "+" : "\u{2212}"
 		switch style {
 		case .percent:
@@ -234,6 +235,15 @@ struct StatDelta: Hashable {
 			return "\(sign)\(String(format: "%.2f", abs(change) * 100)) pts \(comparison)"
 		case .milliseconds:
 			return "\(sign)\(Format.latency(abs(change))) \(comparison)"
+		}
+	}
+
+	/// A move too small to show at this style's precision.
+	private var rendersAsZero: Bool {
+		switch style {
+		case .percent: abs(relativeChange) < 0.0005
+		case .points: abs(change) < 0.00005
+		case .milliseconds: abs(change) < 0.0005
 		}
 	}
 

@@ -168,7 +168,7 @@ extension FixtureAPI {
 		return Page(items: Array(items.prefix(limit)), hasMore: false, nextCursor: nil)
 	}
 
-	func logVolume(_ search: LogSearch, targetPoints: Int) async throws -> [Double] {
+	func logVolumeTotals(targetPoints: Int) async throws -> [Double] {
 		try await pause()
 		return (0..<targetPoints).map { index -> Double in
 			let base = 120 + 40 * sin(Double(index) / 4)

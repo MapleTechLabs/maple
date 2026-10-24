@@ -28,7 +28,7 @@ extension FixtureAPI {
 	}
 
 	func logVolumeBySeverity(_ search: LogSearch, targetPoints: Int) async throws -> LogVolume {
-		let totals = try await logVolume(search, targetPoints: targetPoints)
+		let totals = try await logVolumeTotals(targetPoints: targetPoints)
 		let severe: [LogVolume.Series] = [
 			.init(severity: "ERROR", values: totals.map { ($0 / 6).rounded() }),
 			.init(severity: "WARN", values: totals.map { ($0 / 3).rounded() }),
