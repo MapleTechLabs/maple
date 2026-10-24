@@ -110,6 +110,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
 		`- [Dynatrace pricing, explained](${url("/guides/dynatrace-pricing")})`,
+		`- [Python logging levels and how to set them](${url("/guides/python-logging-levels")})`,
 		"",
 
 		"## Maple API",
