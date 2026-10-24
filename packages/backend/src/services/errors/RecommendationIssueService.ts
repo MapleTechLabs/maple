@@ -76,7 +76,7 @@ const rowToIssue = (row: IssueRow): RecommendationIssue =>
 export class RecommendationIssueService extends Context.Service<
 	RecommendationIssueService,
 	RecommendationIssueServiceApi
->()("@maple/api/services/RecommendationIssueService", {
+>()("@maple/backend/services/RecommendationIssueService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService

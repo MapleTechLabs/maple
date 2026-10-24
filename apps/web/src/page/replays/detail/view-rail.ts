@@ -12,8 +12,9 @@ import {
 	toggleGroupStyles,
 } from "@maple/ui/styles/ui/toggle-group"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import { stableSlice } from "../../kit/stable-slice"
 import { emptyMessage } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { httpSpanLabel } from "../../../ui/http-span-label"
@@ -22,7 +23,7 @@ import { inlineCode } from "../../../ui/inline-code"
 import { meter } from "../../../ui/meter"
 import { skeleton } from "../../../ui/skeleton"
 import { togglePrimitive } from "../../../ui/toggle"
-import { realOffsetOf, timelineOf } from "./derive"
+import { realOffsetFrom, timelineFrom } from "./derive"
 import { Message } from "./message"
 import type { EventFilter, EventRow, Model, RailTab, ReplayDetail, TraceSummary } from "./model"
 import { sessionTab } from "./view-session"
@@ -109,10 +110,26 @@ const isSlowRequest = (ms: number): boolean => {
 	return level === "slow" || level === "critical"
 }
 
+/** What the rail reads: no playhead, so a playback tick reuses the whole rail. */
+const railOf = stableSlice((model: Model) => ({
+	sessionId: model.sessionId,
+	copies: model.copies,
+	railTab: model.railTab,
+	eventFilter: model.eventFilter,
+	openEventIndex: model.openEventIndex,
+	transcript: model.transcript,
+	traceSummaries: model.traceSummaries,
+	startTime: model.meta.startTime,
+	inactiveIntervals: model.meta.inactiveIntervals,
+	totalMs: model.player.totalMs,
+	isSkippingIdle: model.player.isSkippingIdle,
+}))
+type RailView = ReturnType<typeof railOf>
+
 /** `useClockAt`: a warehouse timestamp's clock offset in the recording. */
-const clockAt = (model: Model, timestamp: string): string => {
-	const offset = realOffsetOf(model, timestamp)
-	return offset === undefined ? EMPTY_VALUE : formatClock(timelineOf(model).toDisplay(offset))
+const clockAt = (model: RailView, timestamp: string): string => {
+	const offset = realOffsetFrom(model.startTime, model.totalMs, timestamp)
+	return offset === undefined ? EMPTY_VALUE : formatClock(timelineFrom(model).toDisplay(offset))
 }
 
 const filterButton = (
@@ -137,7 +154,7 @@ const filterButton = (
 		[...children, h.span([h.Class("font-mono text-3xs tabular-nums")], [String(config.count)])],
 	)
 
-const filterBar = (h: H, model: Model, events: ReadonlyArray<EventRow>): Html => {
+const filterBar = (h: H, model: RailView, events: ReadonlyArray<EventRow>): Html => {
 	const countOf = (filter: EventFilter) =>
 		filter === "all" ? events.length : events.filter((ev) => ev.type === filter).length
 	return h.div(
@@ -215,7 +232,7 @@ const eventDetail = (h: H, ev: EventRow): Html => {
 	])
 }
 
-const eventLine = (h: H, model: Model, ev: EventRow, index: number, showNetworkBar: boolean): Html => {
+const eventLine = (h: H, model: RailView, ev: EventRow, index: number, showNetworkBar: boolean): Html => {
 	const visual = eventVisual(ev)
 	const isError = ev.type === "error" || isFailedRequest(ev)
 	const isOpen = model.openEventIndex === index
@@ -275,7 +292,7 @@ const eventLine = (h: H, model: Model, ev: EventRow, index: number, showNetworkB
 	])
 }
 
-const eventsTab = (h: H, model: Model): Html =>
+const eventsTab = (h: H, model: RailView): Html =>
 	AsyncData.matchData(model.transcript.data, {
 		onEmpty: () => skeleton(h, "m-3 min-h-0 flex-1 rounded-md"),
 		onFailure: (failure) =>
@@ -299,7 +316,7 @@ const eventsTab = (h: H, model: Model): Html =>
 		},
 	})
 
-const traceListRow = (h: H, model: Model, summary: TraceSummary): Html => {
+const traceListRow = (h: H, model: RailView, summary: TraceSummary): Html => {
 	const isError = summary.hasError > 0
 	return h.li(
 		[h.Key(summary.traceId), h.Class(cn("relative flex flex-col gap-0.5 px-3 py-2.5 hover:bg-muted/50", isError && "bg-severity-error/5"))],
@@ -347,7 +364,7 @@ const traceListRow = (h: H, model: Model, summary: TraceSummary): Html => {
 	)
 }
 
-const tracesTab = (h: H, model: Model, traceIds: ReadonlyArray<string>): Html =>
+const tracesTab = (h: H, model: RailView, traceIds: ReadonlyArray<string>): Html =>
 	traceIds.length === 0
 		? emptyMessage(h, { className: "leading-relaxed" }, noLinkedTraces(inlineCode(h, {}, ["@maple-dev/browser"])))
 		: AsyncData.matchData(model.traceSummaries.data, {
@@ -363,7 +380,7 @@ const tracesTab = (h: H, model: Model, traceIds: ReadonlyArray<string>): Html =>
 							),
 			})
 
-const railTabItem = (h: H, model: Model, tab: RailTab, label: string, count?: number): Html =>
+const railTabItem = (h: H, model: RailView, tab: RailTab, label: string, count?: number): Html =>
 	togglePrimitive(
 		h,
 		{
@@ -379,8 +396,13 @@ const railTabItem = (h: H, model: Model, tab: RailTab, label: string, count?: nu
 		[label, ...(count === undefined ? [] : [h.span([h.Class("font-mono text-3xs tabular-nums text-muted-foreground")], [String(count)])])],
 	)
 
+const railSlot = createLazy()
+
 /** The right rail: Events / Traces / Session. */
 export const sessionRail = (h: H, model: Model, session: ReplayDetail): Html =>
+	railSlot(railView, [h, railOf(model), session])
+
+const railView = (h: H, model: RailView, session: ReplayDetail): Html =>
 	h.section(
 		[
 			h.Class(

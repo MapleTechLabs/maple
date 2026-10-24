@@ -242,7 +242,7 @@ export interface SecurityAuditStoreApi {
 
 const DEFAULT_RUN_LIST_LIMIT = 50
 
-/** Longer than any audit run lasts; an `in_progress` run older than this was abandoned. */
+/** Longer than any agent lasts; an unfinished run with no event this recent was abandoned. */
 const STALE_RUN_MS = 48 * 60 * 60 * 1000
 
 /** Ledger units per insert: 7 binds each keeps one statement far under Postgres's 65,535. */
@@ -503,8 +503,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 							profile: metadata.profile,
 							scopePaths: metadata.scope_paths,
 							budget: metadata.budget,
-							status: metadata.run_status,
-							incompleteReason: metadata.incomplete_reason ?? null,
+							// `status` is the row's lifecycle, settled by finishRun; the engine's stays in metadata.
 						},
 						"metadata",
 					)
@@ -565,7 +564,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				/**
 				 * Replaces the run's findings, then folds them into the target's lifecycle rows: a new
 				 * fingerprint opens, a `fixed` one regresses to open, dismissed and accepted stay put.
-				 * Lifecycle rows this run created that its latest save dropped are removed again.
+				 * Lifecycle rows this run created that its latest save dropped are removed again while
+				 * still open; a triaged one (dismissed, accepted) stays.
 				 */
 				const saveFindings: AuditStoreApi["saveFindings"] = Effect.fn(
 					"SecurityAuditStore.saveFindings",
@@ -596,6 +596,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										$.firstSeenRunId.eq(runId),
 										$.lastSeenRunId.eq(runId),
 										$.fingerprint.notIn(...fingerprints),
+										$.status.eq("open"),
+										$.statusChangedAt.isNull(),
 									]),
 								)
 								if (!Arr.isReadonlyArrayNonEmpty(unique)) return
@@ -802,15 +804,11 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											targetId: input.targetId,
 										})
 									}
-									// A run with no settlement for longer than any run lasts is abandoned (an
+									// A run with no activity for longer than any agent lasts is abandoned (an
 									// externally terminated instance, a lost settle): it must not block the target.
-									yield* db.run(
-										PG.update(SecurityAuditRuns)
-											.set({
-												status: "failed",
-												error: "abandoned: no settlement within 48 hours",
-												finishedAt: now,
-											})
+									const old = yield* db.run(
+										PG.from(SecurityAuditRuns)
+											.select("id")
 											.where(($) => [
 												$.orgId.eq(orgId),
 												$.targetId.eq(input.targetId),
@@ -818,6 +816,35 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												$.startedAt.lt(now - STALE_RUN_MS),
 											]),
 									)
+									const abandoned = yield* Effect.filter(old, (run) =>
+										db
+											.run(
+												PG.from(SecurityAuditEvents)
+													.select("id")
+													.where(($) => [
+														$.orgId.eq(orgId),
+														$.runId.eq(run.id),
+														$.at.gte(now - STALE_RUN_MS),
+													])
+													.limit(1),
+											)
+											.pipe(Effect.map((recent) => recent.length === 0)),
+									)
+									if (Arr.isReadonlyArrayNonEmpty(abandoned)) {
+										yield* db.run(
+											PG.update(SecurityAuditRuns)
+												.set({
+													status: "failed",
+													error: "abandoned: no activity within 48 hours",
+													finishedAt: now,
+												})
+												.where(($) => [
+													$.orgId.eq(orgId),
+													$.id.in_(...Arr.map(abandoned, (run) => run.id)),
+													$.finishedAt.isNull(),
+												]),
+										)
+									}
 									const running = yield* db.run(
 										PG.from(SecurityAuditRuns)
 											.select("id")
@@ -886,6 +913,20 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										$.targetId.eq(targetId),
 										$.status.in_("complete", "incomplete"),
 										$.finishedAt.isNotNull(),
+										// A cancelled run's ledger and findings are partial; one with no reports or
+										// ledger never finished saving. Neither may stand in for the target's state.
+										PG.or(
+											$.incompleteReason.isNull(),
+											$.incompleteReason.neq("cancelled"),
+										),
+										$.metadata.isNotNull(),
+										$.reports.isNotNull(),
+										PG.inSubquery(
+											$.id,
+											PG.from(SecurityAuditUnits)
+												.select("runId")
+												.where(($unit) => [$unit.orgId.eq(orgId)]),
+										),
 										unscopedOnly ? $.scopePaths.eq([]) : undefined,
 									])
 									.orderBy(($) => [[$.startedAt, "desc"]])

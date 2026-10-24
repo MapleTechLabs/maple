@@ -35,7 +35,7 @@ import type {
 } from "@maple/domain/http/v2"
 import type { DashboardShare, DashboardShareMode, ShareWidgetDataOutcome } from "@maple/domain/http"
 import type { DashboardId } from "@maple/domain/primitives"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Ref, Schema } from "effect"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
 import { getTemplateById, listTemplateMetadata } from "@maple/backend/dashboard-templates"
@@ -516,27 +516,26 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 							new Date(yield* Clock.currentTimeMillis).toISOString(),
 						)
 						// Capture the pre-state the mutate callback already reads, for the diff.
-						let previous: DashboardDocument | undefined
+						const previous = yield* Ref.make(Option.none<DashboardDocument>())
 						const dashboard = yield* persistence.mutate(
 							tenant.orgId,
 							tenant.userId,
 							params.id,
 							(current) => {
-								previous = current
 								const next = applyUpdate(current, payload, updatedAt)
-								return requireRawSqlScopes(tenant.scopes, current.widgets, next.widgets).pipe(
+								return Ref.set(previous, Option.some(current)).pipe(
+									Effect.andThen(
+										requireRawSqlScopes(tenant.scopes, current.widgets, next.widgets),
+									),
 									Effect.as(next),
 								)
 							},
 						)
-						const changes =
-							previous === undefined
-								? undefined
-								: dashboardAuditDiff(
-										payload,
-										toV2Dashboard(previous),
-										toV2Dashboard(dashboard),
-									)
+						const changes = Option.match(yield* Ref.get(previous), {
+							onNone: () => undefined,
+							onSome: (before) =>
+								dashboardAuditDiff(payload, toV2Dashboard(before), toV2Dashboard(dashboard)),
+						})
 						yield* recordHttpAudit("dashboard.updated", {
 							resourceId: dashboard.id,
 							changes,

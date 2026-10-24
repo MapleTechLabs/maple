@@ -13,6 +13,7 @@
 // moving them would make the two packages circular.
 
 export * from "./ai/index"
+export * from "./aws/index"
 export * from "./cloudflare/index"
 export * from "./gcp/index"
 export * from "./planetscale/index"

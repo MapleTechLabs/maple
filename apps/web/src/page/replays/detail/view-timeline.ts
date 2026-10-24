@@ -1,10 +1,10 @@
 import { formatClock } from "@maple/ui/lib/replay-format"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { cn } from "@maple/ui/lib/utils"
-import { parseChTimestampMs, spanDisplayRange } from "../../../components/replays/replay-timeline"
+import { parseChTimestampMs, spanDisplayRange, type Timeline } from "../../../components/replays/replay-timeline"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
 import { emptyMessage } from "../../../ui/empty"
@@ -15,11 +15,12 @@ import { icon } from "../../../ui/icon"
 import { iconButton } from "../../../ui/icon-button"
 import { panel } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
+import { stableSlice } from "../../kit/stable-slice"
 import { MARKER_LABELS, MARKER_STYLES } from "../kit/replay-meta"
-import { timelineOf } from "./derive"
+import { timelineFrom } from "./derive"
 import { Message } from "./message"
 import type { Model, SpanRow, TraceSummary } from "./model"
-import { displayState, idleBandsLayer, markersLayer } from "./view-player"
+import { idleBandsTrack, markersTrack, type Playhead, playheadOf } from "./view-player"
 
 // The replay editor timeline.
 // TODO(tooltip): the trace and span bars' hover tooltips.
@@ -73,42 +74,42 @@ const timeRuler = (h: H, totalMs: number): Html => {
 	])
 }
 
-const activityTrack = (h: H, model: Model): Html => {
-	const display = displayState(model)
-	return h.div([h.Class("flex items-stretch border-b border-border/60")], [
-		h.div(
-			[
-				h.Class(
-					cn(
-						LANE_GUTTER,
-						"flex shrink-0 items-center gap-1.5 border-r border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground",
-					),
-				),
-			],
-			[icon(h, "CursorIcon", { className: "size-3.5 opacity-70" }), "Activity"],
-		),
+const activityTrack = (h: H, model: Model, playhead: Playhead): Html =>
+	h.div([h.Class("flex items-stretch border-b border-border/60")], [
+		activityGutterSlot(activityGutter, [h]),
 		h.div([h.Class("relative h-9 flex-1")], [
 			h.div([h.Class("absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted")], [
-				...idleBandsLayer(h, display),
+				idleBandsTrack(h, model, "timeline"),
 				h.div(
-					[h.Class("relative h-full rounded-full bg-primary"), h.Style({ width: `${pct(display.currentMs, display.totalMs)}%` })],
+					[h.Class("relative h-full rounded-full bg-primary"), h.Style({ width: `${pct(playhead.currentMs, playhead.totalMs)}%` })],
 					[],
 				),
 			]),
-			...markersLayer(h, display),
+			markersTrack(h, model, "timeline"),
 		]),
 	])
-}
 
-const scrubSurface = (h: H, model: Model): Html => {
-	const display = displayState(model)
-	return h.div(
+const activityGutter = (h: H): Html =>
+	h.div(
+		[
+			h.Class(
+				cn(
+					LANE_GUTTER,
+					"flex shrink-0 items-center gap-1.5 border-r border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground",
+				),
+			),
+		],
+		[icon(h, "CursorIcon", { className: "size-3.5 opacity-70" }), "Activity"],
+	)
+
+const scrubSurface = (h: H, playhead: Playhead): Html =>
+	h.div(
 		[
 			h.Role("slider"),
 			h.AriaLabel("Seek"),
 			h.AriaValuemin(0),
-			h.AriaValuemax(Math.round(display.totalMs)),
-			h.AriaValuenow(Math.round(display.currentMs)),
+			h.AriaValuemax(Math.round(playhead.totalMs)),
+			h.AriaValuenow(Math.round(playhead.currentMs)),
 			h.Tabindex(0),
 			h.DataAttribute("replay-scrub", "timeline"),
 			h.OnPointerDown((_type, _button, _screenX, _screenY, _time, clientX) =>
@@ -118,7 +119,6 @@ const scrubSurface = (h: H, model: Model): Html => {
 		],
 		[],
 	)
-}
 
 /** The text both empty traces states share (the track and the rail's tab). */
 export const noLinkedTraces = (code: Html): ReadonlyArray<Html | string> => [
@@ -141,21 +141,33 @@ const tracesHeader = (h: H, count: number | null): Html =>
 		],
 	)
 
-type SeekFrame = Readonly<{ model: Model; displayTotalMs: number }>
+/** What the traces track reads: its rows only move when the recording or the traces change. */
+const tracesOf = stableSlice((model: Model) => ({
+	traceSummaries: model.traceSummaries,
+	spans: model.spans,
+	expandedTraces: model.expandedTraces,
+	startTime: model.meta.startTime,
+	inactiveIntervals: model.meta.inactiveIntervals,
+	totalMs: model.player.totalMs,
+	isSkippingIdle: model.player.isSkippingIdle,
+}))
+type TracesView = ReturnType<typeof tracesOf>
+
+type SeekFrame = Readonly<{ view: TracesView; timeline: Timeline }>
 
 const rangeOf = (frame: SeekFrame, startTime: string, durationMs: number) =>
 	spanDisplayRange({
 		spanStartIso: startTime,
 		durationMs,
-		recordingStartEpochMs: frame.model.meta.startTime,
-		realTotalMs: frame.model.player.totalMs,
-		timeline: timelineOf(frame.model),
+		recordingStartEpochMs: frame.view.startTime,
+		realTotalMs: frame.view.totalMs,
+		timeline: frame.timeline,
 	})
 
 const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 	const range = rangeOf(frame, span.startTime, span.durationMs)
-	const leftPct = pct(range.displayStartMs, frame.displayTotalMs)
-	const widthPct = Math.max(0.4, pct(range.displayEndMs, frame.displayTotalMs) - leftPct)
+	const leftPct = pct(range.displayStartMs, frame.timeline.activeTotalMs)
+	const widthPct = Math.max(0.4, pct(range.displayEndMs, frame.timeline.activeTotalMs) - leftPct)
 	return h.div([h.Key(span.spanId), h.Class("flex items-stretch")], [
 		h.div(
 			[
@@ -198,7 +210,7 @@ const spanRowItem = (h: H, frame: SeekFrame, span: SpanRow): Html => {
 }
 
 const spanLane = (h: H, frame: SeekFrame, traceId: string): Html => {
-	const data = frame.model.spans[traceId] ?? AsyncData.Loading()
+	const data = frame.view.spans[traceId] ?? AsyncData.Loading()
 	return AsyncData.matchData(data, {
 		onEmpty: () => h.div([h.Class("bg-muted/10 px-3 py-2")], [skeleton(h, "h-3 w-1/2")]),
 		onFailure: (failure) =>
@@ -221,11 +233,11 @@ const spanLane = (h: H, frame: SeekFrame, traceId: string): Html => {
 }
 
 const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
-	const isExpanded = frame.model.expandedTraces.includes(summary.traceId)
+	const isExpanded = frame.view.expandedTraces.includes(summary.traceId)
 	const range = rangeOf(frame, summary.startTime, summary.durationMs)
 	const isError = summary.hasError > 0
-	const leftPct = pct(range.displayStartMs, frame.displayTotalMs)
-	const widthPct = Math.max(0.6, pct(range.displayEndMs, frame.displayTotalMs) - leftPct)
+	const leftPct = pct(range.displayStartMs, frame.timeline.activeTotalMs)
+	const widthPct = Math.max(0.6, pct(range.displayEndMs, frame.timeline.activeTotalMs) - leftPct)
 	return h.li([h.Key(summary.traceId), h.Class("border-b border-border/40 last:border-b-0")], [
 		h.div([h.Class("flex items-stretch")], [
 			h.div([h.Class(cn(LANE_GUTTER, "flex shrink-0 items-center gap-1.5 border-r border-border/60 pr-2 pl-2 text-xs"))], [
@@ -295,8 +307,8 @@ const traceRow = (h: H, frame: SeekFrame, summary: TraceSummary): Html => {
 	])
 }
 
-const tracesTrack = (h: H, model: Model, traceIds: ReadonlyArray<string>): Html => {
-	const frame: SeekFrame = { model, displayTotalMs: displayState(model).totalMs }
+const tracesTrack = (h: H, view: TracesView, traceIds: ReadonlyArray<string>): Html => {
+	const frame: SeekFrame = { view, timeline: timelineFrom(view) }
 	if (traceIds.length === 0)
 		return h.div([], [
 			tracesHeader(h, 0),
@@ -304,7 +316,7 @@ const tracesTrack = (h: H, model: Model, traceIds: ReadonlyArray<string>): Html 
 		])
 	return h.div(
 		[],
-		AsyncData.matchData(model.traceSummaries.data, {
+		AsyncData.matchData(view.traceSummaries.data, {
 			onEmpty: () => [
 				tracesHeader(h, null),
 				h.div([h.Class("space-y-2 px-3 py-3")], [skeleton(h, "h-4 w-2/3"), skeleton(h, "h-4 w-1/2")]),
@@ -323,25 +335,37 @@ const tracesTrack = (h: H, model: Model, traceIds: ReadonlyArray<string>): Html 
 	)
 }
 
-/** The timeline panel: legend, ruler, activity, traces, one playhead over them. */
-export const replayTimeline = (h: H, model: Model, traceIds: ReadonlyArray<string>): Html =>
-	panel(h, { className: "shadow-sm" }, [
-		h.div([h.Class("flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-3 py-2")], [
-			eyebrow(h, { variant: "label" }, ["Timeline"]),
-			markerLegend(h),
-		]),
-		h.div([h.Class("relative")], [
-			h.div([h.Class("relative")], [timeRuler(h, displayState(model).totalMs), activityTrack(h, model), scrubSurface(h, model)]),
-			tracesTrack(h, model, traceIds),
-			playhead(h, model),
-		]),
+const headerSlot = createLazy()
+const activityGutterSlot = createLazy()
+const rulerSlot = createLazy()
+const tracesSlot = createLazy()
+
+const timelineHeader = (h: H): Html =>
+	h.div([h.Class("flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-3 py-2")], [
+		eyebrow(h, { variant: "label" }, ["Timeline"]),
+		markerLegend(h),
 	])
 
-const playhead = (h: H, model: Model): Html => {
-	const display = displayState(model)
-	return h.div([h.Class("pointer-events-none absolute inset-y-0 right-0 left-28 sm:left-36")], [
-		h.div([h.Class("absolute inset-y-0 w-px bg-primary/80"), h.Style({ left: `${pct(display.currentMs, display.totalMs)}%` })], [
-			h.div([h.Class("absolute -top-0.5 left-1/2 size-2 -translate-x-1/2 rounded-full bg-primary shadow-sm")], []),
+/** The timeline panel: legend, ruler, activity, traces, one playhead over them. A tick rebuilds the playhead only. */
+export const replayTimeline = (h: H, model: Model, traceIds: ReadonlyArray<string>): Html => {
+	const playhead = playheadOf(model)
+	return panel(h, { className: "shadow-sm" }, [
+		headerSlot(timelineHeader, [h]),
+		h.div([h.Class("relative")], [
+			h.div([h.Class("relative")], [
+				rulerSlot(timeRuler, [h, playhead.totalMs]),
+				activityTrack(h, model, playhead),
+				scrubSurface(h, playhead),
+			]),
+			tracesSlot(tracesTrack, [h, tracesOf(model), traceIds]),
+			playheadLine(h, playhead),
 		]),
 	])
 }
+
+const playheadLine = (h: H, playhead: Playhead): Html =>
+	h.div([h.Class("pointer-events-none absolute inset-y-0 right-0 left-28 sm:left-36")], [
+		h.div([h.Class("absolute inset-y-0 w-px bg-primary/80"), h.Style({ left: `${pct(playhead.currentMs, playhead.totalMs)}%` })], [
+			h.div([h.Class("absolute -top-0.5 left-1/2 size-2 -translate-x-1/2 rounded-full bg-primary shadow-sm")], []),
+		]),
+	])

@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/organization-feature-flags"
 import { OrgId, RoleName, UserId } from "@maple/domain/primitives"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
-import type { Finding } from "@maple/security-audit"
+import { type Finding, minimumInvocations } from "@maple/security-audit"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import {
 	SecurityAuditWorkflowStarter,
@@ -305,6 +305,36 @@ describe("/api/security-audit targets", () => {
 		}
 	})
 
+	it("refuses a per-run budget that cannot fund the target's profile", async () => {
+		const harness = makeHarness()
+		try {
+			const quickMin = minimumInvocations("quick")
+			const tooLowQuick = await harness.call("POST", "/targets", {
+				body: { ...TARGET, profile: "quick", budgetPerRun: quickMin - 1 },
+			})
+			// An omitted profile is a deep audit, so its minimum applies.
+			const tooLowDeep = await harness.call("POST", "/targets", {
+				body: { ...TARGET, budgetPerRun: minimumInvocations("deep") - 1 },
+			})
+			const exact = await harness.call("POST", "/targets", {
+				body: { ...TARGET, profile: "quick", budgetPerRun: quickMin },
+			})
+
+			expect([
+				tooLowQuick.status,
+				tooLowQuick.body._tag,
+				tooLowQuick.body.minimum,
+				tooLowQuick.body.profile,
+			]).toEqual([400, tag("SecurityAuditBudgetTooLowError"), quickMin, "quick"])
+			expect(tooLowQuick.body.message).toContain(String(quickMin))
+			expect([tooLowDeep.status, tooLowDeep.body.minimum]).toEqual([400, minimumInvocations("deep")])
+			expect([exact.status, exact.body.budgetPerRun]).toEqual([200, quickMin])
+			expect(await harness.count("security_audit_targets")).toBe(1)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("resolves the repository through the org's connection and refuses duplicates", async () => {
 		const harness = makeHarness()
 		try {
@@ -341,8 +371,21 @@ describe("/api/security-audit runs", () => {
 		try {
 			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
 			const runs = `/targets/${target.body.id}/runs`
-			const finish = (runId: string) =>
-				harness.withStore((store) => store.forOrg(ORG_A).finishRun(runId, { status: "complete" }))
+			// A finished run that counts as prior has saved its metadata, reports and ledger.
+			const finish = async (runId: string) => {
+				await harness.sql(
+					`UPDATE security_audit_runs SET metadata = '{}'::jsonb, reports = '{}'::jsonb WHERE id = $1`,
+					[runId],
+				)
+				await harness.sql(
+					`INSERT INTO security_audit_units (run_id, coverage_id, org_id, status, wave, agent_id, unit)
+					 VALUES ($1, 'u1', $2, 'covered', 1, null, '{}'::jsonb)`,
+					[runId, ORG_A],
+				)
+				await harness.withStore((store) =>
+					store.forOrg(ORG_A).finishRun(runId, { status: "complete" }),
+				)
+			}
 
 			// `kind` is not the client's to set: the API only starts manual runs.
 			const whole = await harness.call("POST", runs, { body: { kind: "revalidation" } })
@@ -371,6 +414,35 @@ describe("/api/security-audit runs", () => {
 				[next.body.id, "main", [], 300, whole.body.id],
 				[expect.any(String), "next", [], 400, null],
 			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a run whose budget cannot fund reconnaissance, without starting a workflow", async () => {
+		const harness = makeHarness()
+		try {
+			const deepMin = minimumInvocations("deep")
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const runs = `/targets/${target.body.id}/runs`
+			const requested = await harness.call("POST", runs, { body: { budget: deepMin - 1 } })
+			// A stored per-run budget below the minimum (e.g. after the profile changed) is refused too.
+			await harness.sql(`UPDATE security_audit_targets SET budget_per_run = $1 WHERE id = $2`, [
+				deepMin - 1,
+				target.body.id,
+			])
+			const stored = await harness.call("POST", runs, { body: {} })
+			const funded = await harness.call("POST", runs, { body: { budget: deepMin } })
+
+			expect([
+				requested.status,
+				requested.body._tag,
+				requested.body.budget,
+				requested.body.minimum,
+			]).toEqual([400, tag("SecurityAuditBudgetTooLowError"), deepMin - 1, deepMin])
+			expect([stored.status, stored.body._tag]).toEqual([400, tag("SecurityAuditBudgetTooLowError")])
+			expect([funded.status, harness.started.map((p) => p.budget)]).toEqual([200, [deepMin]])
+			expect(await harness.count("security_audit_runs")).toBe(1)
 		} finally {
 			await harness.dispose()
 		}

@@ -170,7 +170,7 @@ export interface InvestigationServiceApi {
 }
 
 export class InvestigationService extends Context.Service<InvestigationService, InvestigationServiceApi>()(
-	"@maple/api/services/InvestigationService",
+	"@maple/backend/services/InvestigationService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

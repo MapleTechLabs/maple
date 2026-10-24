@@ -12,6 +12,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { Message as SetupMessage } from "./setup-checklist"
 import { realServices as realServicesOf } from "./setup-checklist-update"
+import { subscriptions } from "./subscription"
 import { initWith, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -196,6 +197,21 @@ describe("overview setup checklist", () => {
 			...pageMounts,
 			expectView(text("Couldn't check whether your app is sending data")).toExist(),
 		)
+	})
+
+	test("the card polls while it waits for a real service and stops once one lands", () => {
+		const polling = (model: Model) => subscriptions.setupPoll.modelToDependencies({ model, context }).isPolling
+		const read = entered(true).read.model
+		expect(polling(read)).toBe(true)
+		expect(polling(withServices(read, ["demo-frontend"]))).toBe(true)
+		const connected = withServices(read, ["demo-frontend", "checkout"])
+		expect(polling(connected)).toBe(false)
+		expect(polling(failOverview(connected))).toBe(false)
+	})
+
+	test("a dismissed card does not poll", () => {
+		const { read } = entered(true, { ...DEFAULT_QUICK_START_STATE, checklistDismissed: true })
+		expect(subscriptions.setupPoll.modelToDependencies({ model: read.model, context }).isPolling).toBe(false)
 	})
 
 	test("a stored dismissal sends none of the card's reads", () => {

@@ -22,10 +22,12 @@ import {
 import { Message } from "./message"
 import type { Model } from "./model"
 import { healthList, healthOverview, type SliceSearch } from "./view-health"
-import { gridItems, metricsGrid, THEME_TOKENS } from "./view-metrics"
+import { metricsGrid, THEME_TOKENS } from "./view-metrics"
 import { usageCards } from "./view-usage"
 
 import * as SetupChecklistView from "./setup-checklist-view"
+
+const EMPTY_COLORS = {}
 
 type H = HtmlBuilder<Message>
 
@@ -97,18 +99,6 @@ const facetsError = (h: H, model: Model): ReadonlyArray<Html> =>
 			)
 		: []
 
-/** The exact-volume refinement failed: a footer note instead of the total. */
-const refinementError = (h: H, model: Model): Option.Option<Html> =>
-	Option.map(AsyncData.getError(model.refinement.data), (failure) =>
-		errorState(h, {
-			failure,
-			variant: "inline",
-			title: "Exact request volume unavailable",
-			onRetry: Message.ClickedRetry({ target: "Refinement" }),
-			className: "py-0",
-		}),
-	)
-
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const slice: SliceSearch = {
 		startTime: model.window?.startTime,
@@ -118,20 +108,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	}
 	const nowMs = model.nowMs ?? 0
 	const environments = environmentFilter(model)
-	const items = gridItems(
-		h,
-		model,
-		{
-			colors: model.themeColors ?? {},
-			isChartReady: model.themeColors !== null && isChartRuntimeReady(model.chartRuntime),
-			timeZone: inputs.context.timeZone,
-			nowMs,
-			useRefinement: environments === undefined,
-		},
-		environments === undefined ? refinementError(h, model) : Option.none(),
-	)
-	const isWaiting =
-		AsyncData.isRefreshing(model.overviewSeries.data) || AsyncData.isRefreshing(model.logSeries.data)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
@@ -149,7 +125,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				...facetsError(h, model),
 				healthOverview(h, { model, slice, nowMs }),
 				usageCards(h, model),
-				metricsGrid(h, model, items, isWaiting),
+				metricsGrid(h, model, {
+					colors: model.themeColors ?? EMPTY_COLORS,
+					isChartReady: model.themeColors !== null && isChartRuntimeReady(model.chartRuntime),
+					timeZone: inputs.context.timeZone,
+					nowMs,
+					useRefinement: environments === undefined,
+				}),
 				healthList(h, {
 					model,
 					slice,

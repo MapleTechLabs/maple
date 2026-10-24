@@ -75,7 +75,7 @@ export interface PgConnectionScopeApi {
  * entrypoints, tests, any future entry point that forgets to wrap).
  */
 export class PgConnectionScope extends Context.Reference<PgConnectionScopeApi | undefined>(
-	"@maple/api/platform/PgConnectionScope",
+	"@maple/backend/platform/PgConnectionScope",
 	{ defaultValue: () => undefined },
 ) {}
 
@@ -105,7 +105,7 @@ export class PgConnectionScopeClosedError extends Schema.TaggedError<PgConnectio
  * the forked work.
  */
 export class DrainRunOnInterrupt extends Context.Reference<boolean>(
-	"@maple/api/platform/DrainRunOnInterrupt",
+	"@maple/backend/platform/DrainRunOnInterrupt",
 	{ defaultValue: () => false },
 ) {}
 

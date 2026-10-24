@@ -15,9 +15,11 @@ const HEIGHT = 28
 const PAD = 2
 
 /** Each unbroken run of points as `[x, y]` in a 100 x 28 box, x by timestamp across the window. */
+/** `floor` pins the bottom of the scale (0 for a share or a count), so noise stays small. */
 export const sparkSegments = (
 	points: ReadonlyArray<SparkPoint>,
 	window: SparkWindow,
+	floor?: number,
 ): ReadonlyArray<ReadonlyArray<readonly [number, number]>> => {
 	const span = window.endMs - window.startMs
 	const placed = points
@@ -28,7 +30,7 @@ export const sparkSegments = (
 		point.value === null || !Number.isFinite(point.value) ? [] : [point.value],
 	)
 	if (span <= 0 || values.length === 0) return []
-	const min = Math.min(...values)
+	const min = Math.min(...values, ...(floor === undefined ? [] : [floor]))
 	const max = Math.max(...values)
 	const x = (at: number) => Math.min(Math.max(((at - window.startMs) / span) * WIDTH, 0), WIDTH)
 	const y = (value: number) =>
@@ -62,6 +64,7 @@ export type WindowSparklineOptions = Readonly<{
 	color: string
 	className?: string
 	label?: string
+	floor?: number
 }>
 
 export const windowSparkline = <M>(h: HtmlBuilder<M>, options: WindowSparklineOptions): Html =>
@@ -77,7 +80,7 @@ export const windowSparkline = <M>(h: HtmlBuilder<M>, options: WindowSparklineOp
 		],
 		[
 			h.path([
-				h.Attribute("d", pathOf(sparkSegments(options.points, options.window))),
+				h.Attribute("d", pathOf(sparkSegments(options.points, options.window, options.floor))),
 				h.Attribute("stroke", options.color),
 				h.Attribute("stroke-width", "1.5"),
 				h.Attribute("stroke-linecap", "round"),

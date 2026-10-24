@@ -431,7 +431,7 @@ const callUpdateBillingControls = (
  * here, the check stays per call.
  */
 export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>()(
-	"@maple/api/services/billing/AutumnClient",
+	"@maple/backend/services/billing/AutumnClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

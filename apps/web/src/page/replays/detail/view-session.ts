@@ -23,6 +23,9 @@ import type { Model, ReplayDetail } from "./model"
 
 type H = HtmlBuilder<Message>
 
+/** What the Session tab reads off the Model. */
+export type SessionView = Pick<Model, "sessionId" | "copies">
+
 const row = (
 	h: H,
 	options: Readonly<{ icon: IconName; label: string; hint?: string | undefined; title?: string }>,
@@ -33,7 +36,7 @@ const value = (h: H, text: string, options: Readonly<{ isMono?: boolean; classNa
 	h.span([h.Class(cn("text-xs text-foreground", options.isMono === true && "font-mono tabular-nums", options.className))], [text])
 
 /** `CopyButton iconSize={12} className="ml-1 size-5 shrink-0" toast={false}`. */
-export const copy = (h: H, model: Model, key: string, text: string, label: string, className = "ml-1 size-5 shrink-0"): Html =>
+export const copy = (h: H, model: Pick<Model, "copies">, key: string, text: string, label: string, className = "ml-1 size-5 shrink-0"): Html =>
 	CopyButton.view(h, {
 		model: model.copies[key] ?? CopyButton.init(),
 		toParentMessage: (message) => Message.GotCopyMessage({ key, message }),
@@ -110,7 +113,7 @@ const summary = (h: H, session: ReplayDetail): Html => {
 	])
 }
 
-const identity = (h: H, model: Model, session: ReplayDetail): Html | null => {
+const identity = (h: H, model: SessionView, session: ReplayDetail): Html | null => {
 	const traits = Object.entries(parseAttributes(session.userTraits))
 	const userId = session.userId ?? ""
 	const { userName, userEmail, groupName, groupId } = session
@@ -205,7 +208,7 @@ const acquisition = (h: H, session: ReplayDetail): Html | null =>
 			])
 		: null
 
-const context = (h: H, model: Model, session: ReplayDetail): Html => {
+const context = (h: H, model: SessionView, session: ReplayDetail): Html => {
 	const recorded = recordedMarker(session.resourceAttributes)
 	return detailRailGroup(h, "Context", [
 		...(session.serviceName
@@ -241,7 +244,7 @@ const context = (h: H, model: Model, session: ReplayDetail): Html => {
 }
 
 /** The Session tab: the recording's numbers, then identity, visitor, acquisition, environment and context. */
-export const sessionTab = (h: H, model: Model, session: ReplayDetail): Html =>
+export const sessionTab = (h: H, model: SessionView, session: ReplayDetail): Html =>
 	h.div(
 		[h.Class("min-h-0 flex-1 overflow-y-auto")],
 		[

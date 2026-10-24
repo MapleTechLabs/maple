@@ -228,6 +228,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadAws: ({ key, result }) =>
 			Aws.statusArrived(
 				accepted(model, { ...s, aws: Keyed.accept(s.aws, key, result) }).model,
+				context,
 				Aws.connectionsOf(model),
 			),
 		CompletedLoadSupabase: ({ key, result }) => {
@@ -330,6 +331,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
 		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
+		GotAwsRegionsMessage: ({ message: child }) => Aws.gotRegions(model, child),
 		SubmittedAwsAccount: () => Aws.submittedAccount(model),
 		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),
 		FailedAwsCreate: ({ error }) => Aws.failedCreate(model, error),
@@ -338,9 +340,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAwsSetup: ({ id }) => Aws.openSetup(model, context, id),
 		ClickedAwsSetupClose: () => Aws.closeSetup(model),
 		CompletedLoadAwsSetup: ({ key, result }) => Aws.completedLoadSetup(model, key, result),
+		CompletedLoadAwsIngest: ({ id, key, result }) => Aws.completedIngest(model, id, key, result),
 		ClickedAwsSetupMethod: ({ method }) => Aws.setMethod(model, method),
 		ClickedAwsCheck: ({ id }) => Aws.clickedCheck(model, id),
 		TickedAwsPending: () => Aws.tickedPending(model),
+		TickedAwsWatch: () => Aws.tickedWatch(model, context),
 		CompletedAwsCheck: ({ id, quiet, connection, failure }) =>
 			Aws.completedCheck(model, context, id, quiet, connection, failure),
 		GotAwsCopyMessage: ({ id, message: child }) => Aws.gotCopy(model, id, child),
@@ -352,6 +356,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		DismissedAwsRemoved: ({ connectionId }) => Aws.dismissedRemoved(model, context, connectionId),
 		CompletedReadAwsRemoved: ({ removed }) => Aws.completedReadRemoved(model, removed),
 		CompletedWriteAwsRemoved: () => ({ model }),
+		ClickedAwsMetrics: ({ id }) => Aws.clickedMetrics(model, id),
+		ClickedAwsMetricsCancel: () => Aws.cancelledMetrics(model),
+		GotAwsMetricsRegionsMessage: ({ message: child }) => Aws.gotMetricsRegions(model, child),
+		SubmittedAwsMetrics: () => Aws.submittedMetrics(model),
+		CompletedAwsMetricStream: ({ connection, error }) =>
+			Aws.completedMetricStream(model, context, connection, error),
 		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
 		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
 		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),

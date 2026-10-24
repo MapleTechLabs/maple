@@ -65,15 +65,25 @@ MAPLE_LOCAL_ADVERTISE_HOST=maple.home.arpa \
 # Equivalent: maple start --host 0.0.0.0 --advertise-host maple.home.arpa --offline
 ```
 
-Binding outside loopback exposes the complete, unauthenticated local-mode
-listener: OTLP ingest, `/local/query` read-only SQL, `/local/status`, `/health`, and the bundled UI.
-Maple restricts browser requests to the advertised same-origin UI and the exact
-configured hosted UI origin, but non-browser clients on the network still need
-no credentials. Use it only on a trusted network or behind a TLS proxy with
-browser-compatible authentication (for example, a session cookie or HTTP
-authentication). The bundled UI does not inject a Bearer API key or propagate
-an entry-page query parameter to its API requests. Open the advertised URL from
-another machine. The default UI hosted at `local.maple.dev` always talks to the
+Off loopback, set two secrets (`apps/cli/src/server/remote-auth.ts`), each at
+least 16 characters:
+
+- `MAPLE_LOCAL_INGEST_KEY` guards `/v1/*` (`Authorization: Bearer` or
+  `x-maple-ingest-key`, as hosted ingest). Write-only: it never opens a read.
+- `MAPLE_LOCAL_ACCESS_TOKEN` guards every other route but `/health`. `/login`
+  exchanges it for a stateless HMAC session cookie (30 days, keyed by the
+  token, so rotating it signs everyone out); scripts and the CLI send it as a
+  Bearer token. The server's own maintenance token still opens `/local/*` and
+  the event-consumer token still opens claims and acks. Failed sign-ins are
+  throttled globally (10 a minute).
+
+With an access token, a browser request is same-origin when its `Origin` host
+matches the request's `Host`, so a platform hostname works without
+`--advertise-host`; a DNS-rebinding page reaches the listener but never holds
+the cookie. Ingest keeps the advertised-host rule. Without the secrets the
+listener is open as before and the startup banner says so; use that only on a
+trusted network. Open the advertised URL from another machine. The default UI
+hosted at `local.maple.dev` always talks to the
 browser machine's loopback address, so it cannot reach a remote local-mode server.
 
 By default `maple start` points you at the auto-updating dashboard hosted at
@@ -701,6 +711,39 @@ tricks are needed.
 
 ```bash
 scripts/build-local-binary.sh               # full 2-file bundle into ./dist
+MAPLE_TARGET=linux-arm64 scripts/build-local-binary.sh   # cross-compile (linux-x64, linux-arm64, darwin-x64, darwin-arm64)
+```
+
+## Container image
+
+`apps/cli/docker/` packages the Linux bundle as the self-hosted image
+`ghcr.io/mapletechlabs/maple` (user docs: `apps/landing/src/content/docs/self-hosting.md`).
+
+- `Dockerfile` takes prebuilt bundles from its context
+  (`linux-{amd64,arm64}/{maple,libchdb.so}`); the final stage only copies files,
+  so a multi-arch build needs no emulation. `HOME=/data` puts the store, sidecars
+  and config on the volume, so CLI defaults work under `docker exec`.
+- `entrypoint.sh` refuses `start` without `MAPLE_LOCAL_INGEST_KEY` and
+  `MAPLE_LOCAL_ACCESS_TOKEN`, binds `0.0.0.0:${PORT:-4318}` with `--offline`,
+  chowns a root-owned `/data` and drops to uid 10001 with `setpriv`. Its dirty-store
+  policy is `restore-checkpoint` once a checkpoint exists and `wipe` before that,
+  so a container killed before its first checkpoint starts instead of crash-looping.
+  Any other command runs `maple` as is.
+- `build-image.sh <tag> [platforms]` cross-compiles the bundles (or takes
+  `BUNDLES=<dir>`) and builds; `image-smoke.sh <image>` is the end-to-end check:
+  secrets, a root-owned volume, uid, auth through the published port,
+  `docker exec`, clean stop, restart, and kill recovery.
+- CI's `Local checkpoint native` job builds the amd64 image from its bundle and
+  runs the smoke. The release workflow's `image` job smokes the amd64 image and,
+  for a tag, pushes both platforms as `:<tag>` (and `:latest` unless it is a
+  pre-release) with a provenance attestation. A new GHCR package starts
+  private: after the first push, set `ghcr.io/mapletechlabs/maple` to public in
+  the organization's package settings, or anonymous pulls fail.
+- The entrypoint's dirty-store check reads `$HOME/.maple/data`, so the image's
+  data dir is fixed at `/data/.maple/data`; don't pass `--data-dir`.
+
+```bash
+apps/cli/docker/build-image.sh maple-local:dev && apps/cli/docker/image-smoke.sh maple-local:dev
 ```
 
 ## Release signing

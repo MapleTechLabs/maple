@@ -615,7 +615,7 @@ interface ResolvedAppConfig {
 }
 
 export class GithubAppClient extends Context.Service<GithubAppClient>()(
-	"@maple/api/services/vcs/vendor/github/GithubAppClient",
+	"@maple/backend/services/vcs/vendor/github/GithubAppClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
