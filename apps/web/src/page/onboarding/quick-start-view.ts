@@ -14,6 +14,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import { type PixelGlyphName, pixelGlyph } from "./option-card"
+import { sdkSnippets } from "../../components/quick-start/sdk-snippets"
 import * as GuidedSetup from "../kit/guided-setup"
 import { presenceOf, type TelemetrySignalKind } from "../kit/signal-presence"
 import { ConnectMessage, STATUS_PROVIDERS } from "./quick-start-connect"
@@ -509,9 +510,38 @@ const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
 	)
 }
 
+/** The SDK the snippets are for: the framework the stack step picked, by its snippet label. */
+const frameworkLabelOf = (framework: string): string =>
+	sdkSnippets.find((snippet) => snippet.language === framework)?.label ?? "Your app"
+
+const sectionHeading = (h: H, glyph: Html, title: string, line: string): Html =>
+	h.div(
+		[h.Class("flex items-start gap-3")],
+		[
+			h.span(
+				[
+					h.AriaHidden(true),
+					h.Class(
+						"flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-card",
+					),
+				],
+				[glyph],
+			),
+			h.div(
+				[h.Class("flex min-w-0 flex-col gap-1")],
+				[
+					h.h2([h.Class("text-base font-semibold")], [title]),
+					h.p([h.Class("text-sm leading-relaxed text-muted-foreground")], [line]),
+				],
+			),
+		],
+	)
+
 const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
-	const { platforms } = state.stack
+	const { platforms, languages } = state.stack
 	const { connect } = model
+	const framework = state.selectedFramework ?? "nodejs"
+	const picked = languages.map((language) => STACK_LANGUAGES[language].label)
 	return h.div(
 		[h.Class(STEP_BODY_CLASS)],
 		[
@@ -525,42 +555,25 @@ const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
 					h.p(
 						[h.Class("text-[15px] leading-relaxed text-muted-foreground")],
 						[
-							"Providers connect on their own page. Your code takes one prompt to your coding agent.",
+							platforms.length === 0
+								? "Most of what Maple shows comes from your own code. Instrument it once and data starts arriving."
+								: "Most of what Maple shows comes from your own code, so start there. The providers it runs on come next.",
 						],
 					),
 				],
 			),
-			...(platforms.length === 0
-				? []
-				: [
-						h.section(
-							[h.Class("flex flex-col gap-3")],
-							[
-								h.h2(
-									[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
-									["Providers"],
-								),
-								h.ul(
-									[
-										h.Class(
-											"flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card",
-										),
-									],
-									platforms.map((platform) => providerRow(h, model, platform)),
-								),
-							],
-						),
-					]),
 			h.section(
-				[h.Class("flex flex-col gap-3")],
+				[h.Class("flex flex-col gap-4")],
 				[
-					h.h2(
-						[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
-						["Your code"],
+					sectionHeading(
+						h,
+						icon(h, "FrameworkOpenTelemetryIcon", { size: 18 }),
+						"Instrument your code with OpenTelemetry",
+						`Your ${picked.length === 0 ? frameworkLabelOf(framework) : new Intl.ListFormat("en", { type: "conjunction" }).format(picked)} code sends traces, logs and metrics to Maple over OTLP, the open standard. Hand the prompt to your coding agent, or install the ${frameworkLabelOf(framework)} SDK yourself.`,
 					),
 					GuidedSetup.connectInstructions(h, {
 						slot: "onboarding-connect",
-						framework: state.selectedFramework ?? "nodejs",
+						framework,
 						apiKey: connect.keys._tag === "Ready" ? connect.keys.privateKey : "",
 						setupTabs: connect.setupTabs,
 						packageTabs: connect.packageTabs,
@@ -584,6 +597,29 @@ const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
 						: []),
 				],
 			),
+			...(platforms.length === 0
+				? []
+				: [
+						h.section(
+							[h.Class("flex flex-col gap-4")],
+							[
+								sectionHeading(
+									h,
+									icon(h, "ServerIcon", { size: 18 }),
+									"Then connect where it runs",
+									"Maple reads metrics and logs from these providers directly. Each one connects on its own page.",
+								),
+								h.ul(
+									[
+										h.Class(
+											"flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card",
+										),
+									],
+									platforms.map((platform) => providerRow(h, model, platform)),
+								),
+							],
+						),
+					]),
 			stepFooter(h, [
 				h.span([h.Class("text-sm text-muted-foreground")], ["We keep listening while you move on."]),
 				button(
