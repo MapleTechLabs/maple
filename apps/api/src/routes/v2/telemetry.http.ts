@@ -1108,6 +1108,17 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 										...windowOptions,
 										params: { start: "previous_start_time", end: "previous_end_time" },
 									})
+						if (
+							previousBounds !== undefined &&
+							parseWarehouseDateTime(previousBounds.endTime) >
+								parseWarehouseDateTime(window.startTime)
+						) {
+							return yield* Effect.fail(
+								V2TimeRangeInvalid.make("previous_end_time must not be after start_time.", {
+									param: "previous_end_time",
+								}),
+							)
+						}
 						const environments = payload.deployment_environment
 							? [payload.deployment_environment]
 							: undefined
