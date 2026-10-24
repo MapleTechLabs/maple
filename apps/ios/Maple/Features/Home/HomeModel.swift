@@ -101,8 +101,10 @@ struct HomeSnapshot: Codable {
 	/// The slowest service's p95; there is no org-wide p95 to show. Nil with
 	/// no services, where 0 would be a claim.
 	var slowestP95: Double? { services.map(\.p95LatencyMs).max() }
-	var previousRequests: Double? { previousServices.map { $0.reduce(0) { $0 + $1.requestCount } } }
-	var previousErrorRate: Double? { previousServices.map(Self.errorRate) }
+	/// Nil when the comparison window had no traffic: a 0 there would read as a change.
+	var previousRequests: Double? { previous.map { $0.reduce(0) { $0 + $1.requestCount } } }
+	var previousErrorRate: Double? { previous.map(Self.errorRate) }
+	private var previous: [ServiceSummary]? { previousServices.flatMap { $0.isEmpty ? nil : $0 } }
 	var previousSlowestP95: Double? { previousServices.flatMap { $0.map(\.p95LatencyMs).max() } }
 
 	/// Request-weighted, so a quiet service at 50% does not outweigh a busy one.
