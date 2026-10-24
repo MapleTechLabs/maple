@@ -126,6 +126,30 @@ describe("sidebar collapse", () => {
 		)
 	})
 
+	test.each(["Releases", "Security"])(
+		"the flagged %s row shows its tooltip on the collapsed rail",
+		(title) => {
+			const row = role("link", { name: title })
+			scene(
+				{ update, view },
+				given(signedIn({ isSidebarOpen: false })),
+				Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+				hover(row),
+				Command.resolve(Tooltip.WaitOpenDelay, Tooltip.Message.ElapsedOpenDelay({ generation: 1 })),
+				Mount.resolve(Tooltip.MountTooltip, Tooltip.Message.CompletedMountTooltip()),
+				Command.resolve(
+					Animation.WaitForPaint,
+					Animation.Message.CompletedWaitForPaint({ generation: 1 }),
+				),
+				Command.resolve(
+					Animation.WaitForAnimationSettled,
+					Animation.Message.EndedAnimation({ generation: 1 }),
+				),
+				expect(selector('[data-slot="tooltip-popup"]')).toHaveText(title),
+			)
+		},
+	)
+
 	test("below md the trigger opens the nav as a sheet, reading its data once, and the backdrop closes it", () => {
 		const open = () => [
 			click(toggle),
