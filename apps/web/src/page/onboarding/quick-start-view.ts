@@ -40,9 +40,8 @@ export const accountClusterOf = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<H
  * `MotionStep key={step}` at rest (reduced motion: no slide). A new step is a new element, as
  * AnimatePresence remounts it, so no card is patched over from the previous step.
  */
-/** A quiet fade and rise as each step mounts; keyed, so a new step plays it again. */
-export const ENTER_CLASS =
-	"animate-in fade-in slide-in-from-bottom-1 ease-out [animation-duration:280ms] motion-reduce:animate-none"
+/** A fade out of blur as each step mounts (`theme.css`); keyed, so a new step plays it again. */
+export const ENTER_CLASS = "onboarding-enter"
 
 export const motionStep = <M>(h: HtmlBuilder<M>, step: string, child: Html): Html =>
 	h.div([h.Key(step), h.Class(cn("flex flex-1 flex-col", ENTER_CLASS))], [child])
@@ -216,7 +215,7 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 												h.Class(
 													cn(
 														"relative m-auto w-full max-w-[540px] rounded-2xl border border-border bg-sidebar p-5",
-														"animate-in fade-in ease-out [animation-duration:420ms] motion-reduce:animate-none",
+														"onboarding-enter-preview",
 													),
 												),
 											],
