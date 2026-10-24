@@ -40,6 +40,8 @@ import * as serviceInfraQueries from "../ch/queries/service-infra"
 import * as serviceMapRollupQueries from "../ch/queries/service-map-rollup"
 import * as serviceMapQueries from "../ch/queries/service-map"
 import * as serviceEndpointQueries from "../ch/queries/service-endpoints"
+import * as serviceApiQueries from "../ch/queries/service-api"
+import * as serviceEndpointDetailQueries from "../ch/queries/service-endpoint-details"
 import * as serviceOperationQueries from "../ch/queries/service-operations"
 import * as prReviewQueries from "../ch/queries/pr-review"
 import * as serviceQueries from "../ch/queries/services"
@@ -278,6 +280,8 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"service-map-rollup": serviceMapRollupQueries,
 	"service-map": serviceMapQueries,
 	"service-endpoints": serviceEndpointQueries,
+	"service-api": serviceApiQueries,
+	"service-endpoint-details": serviceEndpointDetailQueries,
 	"pr-review": prReviewQueries,
 	"service-operations": serviceOperationQueries,
 	services: serviceQueries,
