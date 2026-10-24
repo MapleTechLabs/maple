@@ -188,10 +188,19 @@ const keyed = (text: string, keys: ReadonlyArray<string>) =>
 		.join("\n")
 
 /** The text inside the XML elements a Maven file declares repositories with. */
+const REPOSITORY_TAGS = ["repository", "pluginRepository", "snapshotRepository", "mirror"] as const
+
+/** Scanned with `indexOf`, not a lazy regex: repository text must not cost quadratic time. */
 const repositoryBlocks = (xml: string) =>
-	[...xml.matchAll(/<(repository|pluginRepository|snapshotRepository|mirror)>[\s\S]*?<\/\1>/gu)]
-		.map((m) => m[0])
-		.join("\n")
+	REPOSITORY_TAGS.flatMap((tag) =>
+		xml
+			.split(`<${tag}>`)
+			.slice(1)
+			.flatMap((rest) => {
+				const end = rest.indexOf(`</${tag}>`)
+				return end === -1 ? [] : [`<${tag}>${rest.slice(0, end)}</${tag}>`]
+			}),
+	).join("\n")
 
 /** The part of a config file that can name where dependencies come from; never homepages or docs. */
 const sourceText = (name: string, text: string): string => {
@@ -272,7 +281,10 @@ const REQUIREMENTS = /^requirements[\w.-]*\.txt$/u
 const uncommented = (text: string) =>
 	lines(text)
 		.filter((line) => !line.startsWith("#"))
-		.map((line) => line.replace(/\s+#.*$/u, ""))
+		.map((line) => {
+			const comment = line.search(/\s#/u)
+			return comment === -1 ? line : line.slice(0, comment).trimEnd()
+		})
 		.join("\n")
 
 /** The private-dependency signals one config file carries. */
