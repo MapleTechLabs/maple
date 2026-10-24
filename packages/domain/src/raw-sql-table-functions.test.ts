@@ -116,4 +116,45 @@ describe("rawSqlIssue table sources", () => {
 	])("accepts a column, alias or literal named system: %s", (sql) => {
 		expect(rawSqlIssue(sql)).toBeNull()
 	})
+
+	it.each([
+		"SELECT hasColumnInTable('system', 'tables', 'name') AS h FROM traces WHERE $__orgFilter",
+		"SELECT dictGet('d', 'v', toUInt64(1)) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGetOrDefault('d', 'v', 1, 'x') AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGetOrNull('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGetString('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGetUInt64('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictHas('d', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGetHierarchy('d', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictIsIn('d', 1, 2) AS v FROM traces WHERE $__orgFilter",
+		"SELECT joinGet('db.j', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT joinGetOrNull('db.j', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT getMacro('shard') AS v FROM traces WHERE $__orgFilter",
+		"SELECT getSetting('max_memory_usage') AS v FROM traces WHERE $__orgFilter",
+		"SELECT getSettingOrDefault('x', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT getServerSetting('path') AS v FROM traces WHERE $__orgFilter",
+		"SELECT getMergeTreeSetting('index_granularity') AS v FROM traces WHERE $__orgFilter",
+		"SELECT getClientHTTPHeader('Authorization') AS v FROM traces WHERE $__orgFilter",
+		"SELECT currentUser() AS u, currentRoles() AS r FROM traces WHERE $__orgFilter",
+		// Spelling does not hide the call.
+		"SELECT DICTGET('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT `dictGet`('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT \"hasColumnInTable\"('system', 'tables', 'name') AS h FROM traces WHERE $__orgFilter",
+		"SELECT “getMacro”('shard') AS v FROM traces WHERE $__orgFilter",
+		"SELECT `\\x64ictGet`('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT dictGet /* c */ ('d', 'v', 1) AS v FROM traces WHERE $__orgFilter",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanName = (SELECT getSetting('x'))",
+	])("rejects functions that read outside the query's tables: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
+	})
+
+	it.each([
+		"SELECT currentDatabase() AS db, timezone() AS tz FROM traces WHERE $__orgFilter",
+		"SELECT dictionary_name, getsetting, user FROM traces WHERE $__orgFilter",
+		"SELECT 'dictGet(1)' AS a FROM traces WHERE $__orgFilter -- getSetting('x')",
+		"SELECT has(ResourceAttributes, 'k') AS h FROM traces WHERE $__orgFilter",
+		"SELECT getSubcolumn(t, 'a') AS a FROM traces WHERE $__orgFilter",
+	])("accepts functions and columns that only read the query's tables: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
+	})
 })

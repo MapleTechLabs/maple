@@ -349,6 +349,57 @@ const disallowedTableFunction = (sql: string): string | null => {
 	return null
 }
 
+// Scalars that read dictionaries, other tables, server settings, accounts or the binary.
+// Prefixes cover families (`dictGetString`, `getSettingOrDefault`, `joinGetOrNull`).
+const SERVER_READER_PREFIXES = [
+	"dictget",
+	"dicthas",
+	"dictis",
+	"joinget",
+	"getsetting",
+	"getserversetting",
+	"getmergetreesetting",
+	"getmaxtablenamelength",
+	"addressto",
+]
+const SERVER_READER_NAMES = new Set([
+	"hascolumnintable",
+	"getmacro",
+	"getclienthttpheader",
+	"getserverport",
+	"getoskernelversion",
+	"showcertificate",
+	"catboostevaluate",
+	"naivebayesclassifier",
+	"demangle",
+	"logtrace",
+	"currentuser",
+	"user",
+	"session_user",
+	"currentroles",
+	"enabledroles",
+	"defaultroles",
+	"currentprofiles",
+	"enabledprofiles",
+	"defaultprofiles",
+])
+
+/** The first server-reading scalar called anywhere, or null; quoting and comments do not hide it. */
+const disallowedServerFunction = (sql: string): string | null => {
+	const tokens = tokenizeSql(sql)
+	const hit = tokens.find((t, i) => {
+		const next = tokens[i + 1]
+		return (
+			t.ident &&
+			next !== undefined &&
+			!next.ident &&
+			next.v === "(" &&
+			(SERVER_READER_NAMES.has(t.v) || SERVER_READER_PREFIXES.some((prefix) => t.v.startsWith(prefix)))
+		)
+	})
+	return hit?.v ?? null
+}
+
 // Databases whose tables describe the whole server rather than this org's data.
 const SYSTEM_DATABASES = new Set(["system", "information_schema"])
 
@@ -681,6 +732,13 @@ export const rawSqlIssue = (
 		return issue(
 			"DisallowedFunction",
 			`Table function '${tableFunction}' is not allowed in raw SQL. Queries may only read Maple's own tables.`,
+		)
+	}
+	const serverFunction = disallowedServerFunction(sql)
+	if (serverFunction !== null) {
+		return issue(
+			"DisallowedFunction",
+			`Function '${serverFunction}' is not allowed in raw SQL. It reads server configuration or data outside Maple's tables.`,
 		)
 	}
 	// The row cap nests the query, and a `SETTINGS` clause at any depth (a
