@@ -813,7 +813,7 @@ const chip = (h: H, children: ReadonlyArray<Html | string>): Html =>
 		children,
 	)
 
-const liveStep = (h: H, model: Model, state: QuickStartState, orgName: string): Html => {
+export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: string): Html => {
 	const findings = AsyncData.getOrElse(model.live, (): LiveFindings | null => null)
 	const signals = SIGNALS.map((entry) => ({
 		...entry,
@@ -824,8 +824,9 @@ const liveStep = (h: H, model: Model, state: QuickStartState, orgName: string): 
 		STATUS_PROVIDERS.some((provider) => provider === platform),
 	)
 	const connected = providers.filter((platform) => model.connect.connected[platform] === true)
-	const notConnected = state.stack.platforms.filter((platform) => !connected.includes(platform))
-	const isLive = arriving.length > 0 || connected.length > 0
+	// Only what Maple can see as connected waits here; a connected provider is not data yet.
+	const notConnected = providers.filter((platform) => !connected.includes(platform))
+	const isLive = arriving.length > 0
 	const invited = model.team.invited.length
 	return h.div(
 		[h.Class("relative flex flex-1 flex-col items-center px-6 pb-12 pt-10 sm:px-12")],
