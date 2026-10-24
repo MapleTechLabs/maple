@@ -22,6 +22,12 @@ export const V2WarehouseReadErrors = publicErrors(...warehouseReadHttpErrors)
 /** Exact public schemas for failures added by the higher-level query engine. */
 export const V2QueryEngineRouteErrors = publicErrors(QueryEngineValidationError, QueryEngineTimeoutError)
 
+/** A cached direct read: the warehouse errors plus the cache's own deadline. */
+export const V2CachedWarehouseReadErrors = [
+	...V2WarehouseReadErrors,
+	...publicErrors(QueryEngineTimeoutError),
+] as const
+
 export const V2QueryEngineErrors = [
 	...V2QueryEngineRouteErrors,
 	...publicErrors(QueryEngineResultMismatchError),

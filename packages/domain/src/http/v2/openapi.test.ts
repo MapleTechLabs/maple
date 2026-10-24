@@ -226,6 +226,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/onboarding/checklist/claim",
 			"POST /v2/scrape_targets",
 			"POST /v2/scrape_targets/{id}/probe",
+			"POST /v2/services/health",
 			"POST /v2/session_replays/for_trace",
 			"POST /v2/session_replays/search",
 			"POST /v2/share/alert-chart",

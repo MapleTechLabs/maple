@@ -30,6 +30,7 @@ import {
 	type V2Metric,
 	type V2MetricFilters,
 	type V2Service,
+	type V2ServiceHealthEntry,
 	type V2ServiceMapEdge,
 	type V2ServiceOperation,
 	type V2ServiceOverviewPoint,
@@ -63,6 +64,7 @@ import {
 	type ServiceBaselines,
 } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import type { OperationRow } from "@maple/backend/queries/dashboard-reads"
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeSpanId = Schema.decodeSync(SpanId)
@@ -108,6 +110,8 @@ const parseWindow = (
 		readonly precision: WindowPrecision
 		readonly maxSeconds?: number
 		readonly rangeLabel?: string
+		/** The request's names for the two bounds, when they are not `start_time`/`end_time`. */
+		readonly params?: { readonly start: string; readonly end: string }
 	},
 ) =>
 	Effect.gen(function* () {
@@ -120,9 +124,10 @@ const parseWindow = (
 		const endMs = parseWarehouseDateTime(end)
 		if (endMs <= startMs) {
 			return yield* Effect.fail(
-				V2TimeRangeInvalid.make("end_time must be later than start_time.", {
-					param: "end_time",
-				}),
+				V2TimeRangeInvalid.make(
+					`${options.params?.end ?? "end_time"} must be later than ${options.params?.start ?? "start_time"}.`,
+					{ param: options.params?.end ?? "end_time" },
+				),
 			)
 		}
 		const rangeSeconds = (endMs - startMs) / 1000
@@ -131,7 +136,7 @@ const parseWindow = (
 			return yield* Effect.fail(
 				V2TelemetryRangeTooLarge.make(
 					`${options.rangeLabel ?? "Telemetry queries"} support a maximum time range of ${formatRangeSeconds(maxSeconds)}.`,
-					{ param: "start_time" },
+					{ param: options.params?.start ?? "start_time" },
 				),
 			)
 		}
@@ -599,10 +604,9 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const rows = yield* telemetry.traceSpans(tenant, params.trace_id)
+					const { rows, truncated } = yield* telemetry.traceSpans(tenant, params.trace_id)
 					if (rows.length === 0) return yield* Effect.fail(V2TraceNotFound.make())
-					const truncated = rows.length > CH.SPAN_HIERARCHY_MAX_SPANS
-					const spans = rows.slice(0, CH.SPAN_HIERARCHY_MAX_SPANS).map(toSpan)
+					const spans = rows.map(toSpan)
 					const startMs = Math.min(...spans.map((span) => parseWarehouseDateTime(span.start_time)))
 					const endMs = Math.max(
 						...spans.map((span) => parseWarehouseDateTime(span.start_time) + span.duration_ms),
@@ -997,7 +1001,21 @@ const toOverviewPoints = (
 		p99_latency_ms: Number(point.series.p99_duration ?? 0),
 	}))
 
-const toOperation = (row: CH.ServiceOperationsSummaryOutput): V2ServiceOperation => ({
+const toServiceHealthEntry = (
+	row: CH.ServiceHealthSnapshotOutput,
+	window: { readonly rangeSeconds: number },
+): V2ServiceHealthEntry => ({
+	object: "service_health.service",
+	service_name: decodeServiceName(row.serviceName),
+	deployment_environment: row.environment === "" ? null : row.environment,
+	request_count: row.requestCount,
+	error_count: row.errorCount,
+	error_rate: row.requestCount > 0 ? row.errorCount / row.requestCount : 0,
+	p95_latency_ms: row.p95LatencyMs,
+	throughput: row.requestCount / Math.max(window.rangeSeconds, 1),
+})
+
+const toOperation = (row: OperationRow): V2ServiceOperation => ({
 	name: row.spanName,
 	span_count: row.spanCount,
 	estimated_span_count: row.estimatedSpanCount,
@@ -1051,6 +1069,73 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							}),
 						)
 						return { object: "list" as const, ...page }
+					}),
+				)
+				/**
+				 * The dashboard overview's health snapshot, for both windows a "vs previous" tile
+				 * needs, run concurrently in one invocation under the dashboard's cache key.
+				 */
+				.handle("health", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const windowOptions = {
+							maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
+							// Reads the hourly aggregate, whose Hour is a plain DateTime.
+							precision: "second",
+							rangeLabel: "Service health queries",
+						} as const
+						const window = yield* parseWindow(payload.start_time, payload.end_time, windowOptions)
+						const previousStart = payload.previous_start_time
+						const previousEnd = payload.previous_end_time
+						const previousWindow =
+							previousStart === undefined || previousEnd === undefined
+								? undefined
+								: {
+										start_time: timestamp(previousStart),
+										end_time: timestamp(previousEnd),
+										bounds: yield* parseWindow(previousStart, previousEnd, {
+											...windowOptions,
+											params: {
+												start: "previous_start_time",
+												end: "previous_end_time",
+											},
+										}),
+									}
+						const environments = payload.deployment_environment
+							? [payload.deployment_environment]
+							: undefined
+						const read = (bounds: { startTime: string; endTime: string; rangeSeconds: number }) =>
+							telemetry
+								.serviceHealthSnapshot(tenant, { environments }, bounds)
+								.pipe(
+									Effect.map((rows) =>
+										rows.map((row) => toServiceHealthEntry(row, bounds)),
+									),
+								)
+
+						yield* warehouse.warmRoute(tenant)
+						const [services, previous] = yield* Effect.all(
+							[
+								read(window),
+								previousWindow === undefined
+									? Effect.succeed(null)
+									: read(previousWindow.bounds).pipe(
+											Effect.map((rows) => ({
+												start_time: previousWindow.start_time,
+												end_time: previousWindow.end_time,
+												services: rows,
+											})),
+										),
+							],
+							{ concurrency: 2 },
+						)
+						return {
+							object: "service_health" as const,
+							start_time: timestamp(payload.start_time),
+							end_time: timestamp(payload.end_time),
+							services,
+							previous,
+						}
 					}),
 				)
 				.handle("retrieve", ({ params, query }) =>
