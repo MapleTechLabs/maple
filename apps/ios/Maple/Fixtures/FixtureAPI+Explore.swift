@@ -39,7 +39,7 @@ extension FixtureAPI {
 				httpMethod: String(route.1.split(separator: " ").first ?? "GET"),
 				httpRoute: String(route.1.split(separator: " ").last ?? "/"),
 				httpStatusCode: route.3 ? "500" : "200",
-				id: index == 0 ? Self.checkoutTrace : String(format: "%032x", index * 7_919),
+				id: index == 0 ? Self.checkoutTrace : String(format: "%08x%024x", (index * 2_654_435_761) & 0xffff_ffff, index * 7_919),
 				object: .trace,
 				rootHasError: route.3,
 				rootServiceName: route.0,

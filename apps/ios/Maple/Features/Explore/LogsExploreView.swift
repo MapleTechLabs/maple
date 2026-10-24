@@ -1,7 +1,7 @@
 import MapleAPI
 import SwiftUI
 
-/// The minimum-severity chips, as OTel severity numbers.
+/// The severity chip's floors, as OTel severity numbers.
 enum LogLevelFilter: Int, CaseIterable, Identifiable {
 	case all = 0
 	case warn = 13
@@ -12,15 +12,33 @@ enum LogLevelFilter: Int, CaseIterable, Identifiable {
 	var title: String {
 		switch self {
 		case .all: "All levels"
-		case .warn: "Warn+"
-		case .error: "Error+"
+		case .warn: "Warn and above"
+		case .error: "Error and above"
+		}
+	}
+
+	/// The chip's value after `severity >=`; nil when unfiltered.
+	var chipValue: String? {
+		switch self {
+		case .all: nil
+		case .warn: "warn"
+		case .error: "error"
+		}
+	}
+
+	var tint: Color {
+		switch self {
+		case .all: Token.foreground
+		case .warn: Token.severityWarn
+		case .error: Token.severityError
 		}
 	}
 }
 
 struct LogsSnapshot: Sendable {
 	var logs: [LogRecord]
-	var volume: [Double]
+	/// Nil when the volume read failed; the list still shows.
+	var volume: LogsVolumeBands?
 }
 
 @MainActor
@@ -38,10 +56,11 @@ final class LogsExploreModel {
 		self.api = api
 		loader = ScreenLoader(session: session, screen: Screen.logs, isEmpty: { $0.logs.isEmpty }) { [unowned self] in
 			let search = self.search
-			// The list and its volume chart share one filter, as on the web Logs page.
+			// The list and its histogram share one filter; the histogram is the
+			// web Logs page's severity-grouped timeseries.
 			async let logs = self.api.searchLogs(search, limit: 100, cursor: nil)
-			async let volume = self.api.logVolume(search, targetPoints: 40)
-			return LogsSnapshot(logs: try await logs.items, volume: (try? await volume) ?? [])
+			async let volume = self.api.logVolumeBySeverity(search, targetPoints: 40)
+			return LogsSnapshot(logs: try await logs.items, volume: (try? await volume).map(LogsVolumeBands.init))
 		}
 	}
 
@@ -55,6 +74,13 @@ final class LogsExploreModel {
 	}
 
 	var queryKey: String { "\(window.rawValue)|\(service ?? "")|\(level.rawValue)" }
+
+	/// `412 logs`: the histogram's total when it loaded, else the rows on screen.
+	var countLabel: String? {
+		guard let snapshot = loader.state.value else { return loader.state.hasContent ? "0 logs" : nil }
+		let total = snapshot.volume.map(\.total).flatMap { $0 > 0 ? $0 : nil } ?? Double(snapshot.logs.count)
+		return "\(Format.count(total)) logs"
+	}
 }
 
 struct LogsExploreView: View {
@@ -63,48 +89,45 @@ struct LogsExploreView: View {
 	@State private var model: LogsExploreModel?
 
 	var body: some View {
-		VStack(spacing: 10) {
+		VStack(spacing: 0) {
 			if let model {
 				@Bindable var model = model
-				ExploreSearchField(prompt: "Search log body", text: $model.text) {
+				ExploreFilterBar(prompt: "Search log body", text: $model.text, count: model.countLabel) {
 					Task { await model.loader.load(.replace) }
-				}
-				ExploreChipRow(window: $model.window, service: $model.service, services: model.services.names) {
-					Menu {
-						Picker("Level", selection: $model.level) {
+				} chips: {
+					ExploreWindowChip(window: $model.window)
+					ExploreServiceChip(service: $model.service, services: model.services.names)
+					ExploreChip(
+						key: model.level == .all ? "severity" : "severity >=",
+						value: model.level.chipValue,
+						valueTint: model.level.tint,
+						clear: { model.level = .all }
+					) {
+						EmptyView()
+					} options: {
+						Picker("Severity", selection: $model.level) {
 							ForEach(LogLevelFilter.allCases) { Text($0.title).tag($0) }
 						}
-					} label: {
-						FilterChip(label: model.level.title, isOn: model.level != .all, showsMenuIndicator: true)
 					}
 				}
-				Hairline()
+				.padding(.top, 12)
 				LoadableView(
 					loader: model.loader,
 					emptyTitle: "No logs",
 					emptyMessage: "Nothing matches these filters in \(model.window.phrase).",
-					skeletonRowHeight: 52
+					skeletonRowHeight: 64
 				) { snapshot in
 					VStack(alignment: .leading, spacing: 0) {
-						if !snapshot.volume.isEmpty {
-							VStack(alignment: .leading, spacing: 8) {
-								HStack {
-									SectionLabel("Volume")
-									Spacer()
-									Text("\(Format.count(snapshot.volume.reduce(0, +))) logs")
-										.font(Typo.tiny)
-										.tabularNumbers()
-										.foregroundStyle(Token.mutedForeground)
-								}
-								VolumeBars(values: snapshot.volume)
-									.frame(height: 44)
-							}
-							.padding(16)
-							Hairline()
+						if let volume = snapshot.volume, !volume.isEmpty {
+							LogsVolumeHistogram(bands: volume)
+								.padding(.horizontal, 16)
+								.padding(.top, 16)
 						}
+						Hairline()
+							.padding(.top, 16)
 						LazyVStack(spacing: 0) {
 							ForEach(snapshot.logs) { log in
-								ExpandableLogRow(log: log)
+								LogsListRow(log: log)
 								Hairline()
 							}
 						}
@@ -116,35 +139,12 @@ struct LogsExploreView: View {
 				.task(id: model.window) { await model.services.load(api: model.api, window: model.window) }
 			}
 		}
-		.padding(.top, 10)
 		.mapleScreen(Screen.logs)
 		.task {
 			if model == nil {
 				model = LogsExploreModel(api: session.api.scoped(toEnvironment: environments.selected), session: session)
 			}
 		}
-	}
-}
-
-/// Volume as bars, the web Logs histogram at phone width.
-struct VolumeBars: View {
-	let values: [Double]
-	var tint: Color = Token.mutedForeground.opacity(0.55)
-
-	var body: some View {
-		GeometryReader { proxy in
-			let peak = max(values.max() ?? 1, 1)
-			HStack(alignment: .bottom, spacing: 2) {
-				ForEach(Array(values.enumerated()), id: \.offset) { _, value in
-					RoundedRectangle(cornerRadius: 1)
-						.fill(tint)
-						.frame(height: max(proxy.size.height * value / peak, value > 0 ? 1 : 0))
-						.frame(maxWidth: .infinity)
-				}
-			}
-			.frame(maxHeight: .infinity, alignment: .bottom)
-		}
-		.accessibilityHidden(true)
 	}
 }
 
@@ -200,43 +200,5 @@ struct LogRowView: View {
 	private var timeLabel: String {
 		guard let date = ResolvedTimeWindow.parse(log.timestamp) else { return "" }
 		return date.formatted(.dateTime.hour().minute().second())
-	}
-}
-
-/// Tap to expand: the whole body, attributes, and a jump to its trace.
-private struct ExpandableLogRow: View {
-	let log: LogRecord
-	@State private var expanded = false
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 10) {
-			Button {
-				withAnimation(.snappy(duration: 0.2)) { expanded.toggle() }
-			} label: {
-				LogRowView(log: log, lineLimit: expanded ? nil : 2)
-			}
-			.buttonStyle(.plain)
-
-			if expanded {
-				VStack(alignment: .leading, spacing: 12) {
-					if let traceId = log.traceId {
-						NavigationLink(value: Route.trace(id: traceId, spanId: log.spanId)) {
-							HStack(spacing: 4) {
-								Text("View trace")
-								Image(systemName: "arrow.right")
-									.font(.system(size: 10, weight: .semibold))
-							}
-							.font(Typo.smallMedium)
-							.foregroundStyle(Token.foreground)
-						}
-					}
-					AttributeTable(title: "Attributes", values: log.logAttributes.additionalProperties)
-					AttributeTable(title: "Resource", values: log.resourceAttributes.additionalProperties)
-				}
-				.padding(.leading, 12)
-				.padding(.bottom, 10)
-			}
-		}
-		.padding(.horizontal, 16)
 	}
 }
