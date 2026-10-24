@@ -440,6 +440,19 @@ describe("the API tab's endpoint drawer", () => {
 		expect(names(reloaded.commands)).toContain("FetchServiceEndpointSeries")
 	})
 
+	test("retrying the drawer re-reads a failed tab series its charts come from", () => {
+		const { model } = loadedApi({ endpoint: "GET /b" })
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchEndpointSeries({
+				key: model.endpointSeries.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		).model
+		const retried = pageUpdate(failed, peekMessage(PeekMessage.Message.ClickedRetryDetail()))
+		expect(names(retried.commands)).toContain("FetchServiceEndpointSeries")
+	})
+
 	test("a step past the last row stays put", () => {
 		const { model } = loadedApi({ endpoint: "GET /c" })
 		expect(

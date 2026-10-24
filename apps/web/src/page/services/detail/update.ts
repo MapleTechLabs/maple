@@ -732,8 +732,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			syncPeek({ model: { ...model, endpointFilter: filter } }, context, "Load"),
 		ChangedEndpointQuery: ({ value }) =>
 			syncPeek({ model: { ...model, endpointQuery: value } }, context, "Load"),
-		GotEndpointPeekMessage: ({ message: inner }) =>
-			liftPeek(
+		GotEndpointPeekMessage: ({ message: inner }) => {
+			const lifted = liftPeek(
 				model,
 				EndpointPeekUpdate.update(
 					model.endpointPeek,
@@ -741,7 +741,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					peekScope(model, context),
 					peekOf(model),
 				),
-			),
+			)
+			// The drawer's charts may read the tab's sparkline series; a retry re-reads it when it failed.
+			if (inner._tag !== "ClickedRetryDetail" || !AsyncData.isFailure(model.endpointSeries.data))
+				return lifted
+			const retried = sync({ ...lifted.model, endpointSeries: Keyed.idle() }, context, "Load")
+			return { ...retried, commands: [...(lifted.commands ?? []), ...(retried.commands ?? [])] }
+		},
 		ClickedToggleEndpointGroup: ({ kind }) =>
 			syncPeek(
 				{
