@@ -13,12 +13,11 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
  * `kind`: a client that is compromised — or simply wrong — cannot widen any of
  * them.
  *
- * The TTL is long enough that a phone used weekly never sees a widget go quiet,
- * and short enough that a credential lifted off a lost device stops working
- * without anyone having to notice. The app re-mints a week ahead of it, on a
- * foreground it was making anyway.
+ * Two weeks: a credential lifted off a lost device dies on its own soon, and the
+ * app re-mints four days ahead (`WidgetCredential.renewalLead` on iOS), on a
+ * foreground it was making anyway. Older builds re-mint at seven days, still inside it.
  */
-const WIDGET_CREDENTIAL_TTL_SECONDS = 60 * 60 * 24 * 30
+const WIDGET_CREDENTIAL_TTL_SECONDS = 60 * 60 * 24 * 14
 /**
  * The fence. `requiredScopeForRoute` derives an API key's required scope from
  * the first path segment, so this reaches `/v2/widget_summary` and nothing

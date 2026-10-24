@@ -35,20 +35,19 @@ public struct WidgetCredential: Codable, Sendable, Equatable {
 
 	public func isExpired(at date: Date) -> Bool { date >= expiresAt }
 
-	/// Re-mint with a week to spare.
+	/// Re-mint with four days to spare, of the server's fourteen.
 	///
-	/// The window is generous on purpose: renewal needs a signed-in foreground,
-	/// and a phone that only gets opened at the weekend must not be one bad
-	/// Monday away from a Home Screen that has gone quiet with no way to
-	/// recover on its own.
-	public static let renewalLead: TimeInterval = 7 * 24 * 60 * 60
+	/// Renewal needs a signed-in foreground, so the lead covers a phone opened
+	/// every few days without letting a lifted credential live long.
+	public static let renewalLead: TimeInterval = 4 * 24 * 60 * 60
 
 	public func needsRenewal(at date: Date) -> Bool {
 		date.addingTimeInterval(Self.renewalLead) >= expiresAt
 	}
 }
 
-/// Where the credential lives: a file in the shared App Group container.
+/// Where the credential lives: a file in the shared App Group container, in a
+/// directory excluded from backups.
 ///
 /// **Not `UserDefaults`, unlike the snapshots.** A suite plist is a bearer
 /// credential sitting in cleartext in a backup; a file can carry a data
@@ -127,6 +126,8 @@ public struct WidgetCredentialStore: Sendable {
 			let data = try? Self.encoder.encode(credential)
 		else { return false }
 		try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		// Never in an iCloud or computer backup: a restored phone mints its own.
+		Self.excludeFromBackup(directory)
 		do {
 			try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
 			return true
@@ -146,6 +147,15 @@ public struct WidgetCredentialStore: Sendable {
 	public func clearAll() {
 		guard let directory else { return }
 		try? FileManager.default.removeItem(at: directory)
+	}
+
+	/// Set on every save, not just at creation, so a directory left by an older
+	/// build gets the flag too.
+	static func excludeFromBackup(_ directory: URL) {
+		var values = URLResourceValues()
+		values.isExcludedFromBackup = true
+		var url = directory
+		try? url.setResourceValues(values)
 	}
 
 	private static var encoder: JSONEncoder { WidgetJSON.encoder }
