@@ -3,6 +3,7 @@ import {
 	apiKpis,
 	knownStatusMix,
 	latencyHistogram,
+	kpiSparks,
 	matchesFilter,
 	responseRows,
 	routeList,
@@ -219,4 +220,22 @@ describe("responses chart rows", () => {
 test("out-of-order t-digest quantiles never give a bin a negative share", () => {
 	const bins = latencyHistogram([0.1, 0.5, 0.9, 0.99], [1, 5, 4, 40])
 	expect(bins.every((bin) => bin.share >= 0)).toBe(true)
+})
+
+test("a bucket the service was silent in reads 0 on the spark, not a gap", () => {
+	const bucket = (iso: string, estimatedSpanCount: number): ApiBucket => ({
+		bucket: iso,
+		spanName: "",
+		estimatedSpanCount,
+		httpClassifiedSpanCount: 1,
+		httpStatusCount: 1,
+		http4xxCount: 0,
+		http5xxCount: 0,
+		requestBodyBytes: 0,
+		p50DurationMs: 1,
+		p95DurationMs: 1,
+		p99DurationMs: 1,
+	})
+	const sparks = kpiSparks([bucket("2026-10-24T03:00:00.000Z", 60), bucket("2026-10-24T03:03:00.000Z", 120)], 60)
+	expect(sparks.requests).toEqual([1, 0, 0, 2])
 })

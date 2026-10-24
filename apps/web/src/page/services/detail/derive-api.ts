@@ -1,3 +1,4 @@
+import { parseBucketMs } from "@maple/ui/lib/format"
 import type { ApiBucket, ApiTotals, Endpoint, StatusRow } from "./model-tabs"
 
 // Pure halves of the API tab: status mix, KPI figures, the responses chart, the non-2xx breakdown,
@@ -59,13 +60,50 @@ export const apiKpis = (totals: ApiTotals, previous: ApiTotals | null, seconds: 
 })
 
 /** One series per KPI tile, in bucket order. */
-export const kpiSparks = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number) => ({
-	requests: buckets.map((bucket) => bucket.estimatedSpanCount / Math.max(1, bucketSeconds)),
-	client: buckets.map((bucket) => statusMix(bucket)?.client ?? 0),
-	server: buckets.map((bucket) => statusMix(bucket)?.server ?? 0),
-	p95: buckets.map((bucket) => bucket.p95DurationMs),
-	bytes: buckets.map((bucket) => bucket.requestBodyBytes / Math.max(1, bucketSeconds)),
-})
+/**
+ * The read's time axis: every bucket from the first to the last one returned, a bucket apart.
+ * The warehouse leaves out buckets without traffic, so series are laid on this axis, zero-filled.
+ */
+export const bucketAxis = (
+	buckets: ReadonlyArray<ApiBucket>,
+	bucketSeconds: number,
+): ReadonlyArray<number> => {
+	const times = buckets.flatMap((bucket) => {
+		const ms = parseBucketMs(bucket.bucket)
+		return ms === null ? [] : [ms]
+	})
+	if (times.length === 0) return []
+	const first = Math.min(...times)
+	const last = Math.max(...times)
+	const step = Math.max(1, bucketSeconds) * 1000
+	return Array.from({ length: Math.floor((last - first) / step) + 1 }, (_, index) => first + index * step)
+}
+
+/** `value` of each bucket on the axis, summed per slot, 0 where the read had none. */
+export const onAxis = (
+	axis: ReadonlyArray<number>,
+	buckets: ReadonlyArray<ApiBucket>,
+	value: (bucket: ApiBucket) => number,
+): ReadonlyArray<number> => {
+	const sums = buckets.reduce((acc, bucket) => {
+		const ms = parseBucketMs(bucket.bucket)
+		return ms === null ? acc : acc.set(ms, (acc.get(ms) ?? 0) + value(bucket))
+	}, new Map<number, number>())
+	return axis.map((time) => sums.get(time) ?? 0)
+}
+
+/** One series per KPI tile on the read's axis; a silent bucket reads 0, not a gap. */
+export const kpiSparks = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number) => {
+	const axis = bucketAxis(buckets, bucketSeconds)
+	const perSecond = Math.max(1, bucketSeconds)
+	return {
+		requests: onAxis(axis, buckets, (bucket) => bucket.estimatedSpanCount / perSecond),
+		client: onAxis(axis, buckets, (bucket) => statusMix(bucket)?.client ?? 0),
+		server: onAxis(axis, buckets, (bucket) => statusMix(bucket)?.server ?? 0),
+		p95: onAxis(axis, buckets, (bucket) => bucket.p95DurationMs),
+		bytes: onAxis(axis, buckets, (bucket) => bucket.requestBodyBytes / perSecond),
+	}
+}
 
 export const STATUS_CLASSES = ["2xx", "4xx", "5xx", "unknown"] as const
 export type StatusClass = (typeof STATUS_CLASSES)[number]

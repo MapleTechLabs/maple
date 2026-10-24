@@ -24,6 +24,7 @@ import {
 	latencyHistogram,
 	reasonPhrase,
 } from "../derive-api"
+import type { LoadFailure } from "../../../../data/load-failure"
 import type { ApiBucket, EndpointDetail, StatusRow } from "../model-tabs"
 import { type ChartContext, latencyChart, STATUS_COLORS, statusChart } from "../view-api-charts"
 import { methodLabel } from "../view-api"
@@ -39,8 +40,8 @@ type H = HtmlBuilder<Message>
 
 export type ViewInputs = Readonly<{
 	peek: Peek | null
-	/** The peeked endpoint's buckets (from the tab's per-endpoint series). */
-	buckets: ReadonlyArray<ApiBucket>
+	/** The peeked endpoint's buckets, from the tab's per-endpoint read or the drawer's own. */
+	series: AsyncData.AsyncData<ReadonlyArray<ApiBucket>, LoadFailure>
 	bucketSeconds: number
 	statusRows: ReadonlyArray<StatusRow>
 	chartContext: ChartContext | null
@@ -148,6 +149,15 @@ const chartSection = (h: H, title: string, legend: ReadonlyArray<Html>, body: Ht
 	)
 
 const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => {
+	if (AsyncData.isFailure(inputs.series))
+		return [
+			errorState(h, {
+				failure: inputs.series.error,
+				title: "Failed to load this endpoint's requests and latency",
+				onRetry: Message.ClickedRetryDetail(),
+			}),
+		]
+	const buckets = AsyncData.getOrElse(inputs.series, () => [])
 	const context = inputs.chartContext
 	return [
 		chartSection(
@@ -163,7 +173,7 @@ const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => 
 				: statusChart(h, {
 						chartId: "peek-requests",
 						chart: model.charts["peek-requests"],
-						buckets: inputs.buckets,
+						buckets,
 						bucketSeconds: inputs.bucketSeconds,
 						context,
 						className: "h-[120px] w-full",
@@ -183,7 +193,7 @@ const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => 
 				: latencyChart(h, {
 						chartId: "peek-latency",
 						chart: model.charts["peek-latency"],
-						buckets: inputs.buckets,
+						buckets,
 						context,
 						className: "h-[120px] w-full",
 						toMessage: toChart("peek-latency"),

@@ -167,13 +167,13 @@ const scopeLabel = (model: Model): string => {
 	return [model.serviceName, environment, range].join(" · ")
 }
 
-/** The peeked endpoint's buckets: from the tab's sparkline read, or the drawer's own. */
-const peekBuckets = (model: Model, spanName: string) =>
+/** The peeked endpoint's buckets: the tab's sparkline read, or the drawer's own for the rest. */
+const peekSeries = (model: Model, spanName: string) =>
 	seriesSpanNames(model).includes(spanName)
-		? AsyncData.getOrElse(model.endpointSeries.data, () => []).filter(
-				(bucket) => bucket.spanName === spanName,
+		? AsyncData.map(model.endpointSeries.data, (buckets) =>
+				buckets.filter((bucket) => bucket.spanName === spanName),
 			)
-		: AsyncData.getOrElse(model.endpointPeek.series[spanName]?.data ?? AsyncData.Idle(), () => [])
+		: (model.endpointPeek.series[spanName]?.data ?? AsyncData.Idle())
 
 const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSeconds: number): Html => {
 	const peek = peekOf(model)
@@ -185,7 +185,7 @@ const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSecond
 		view: EndpointPeekView.view,
 		viewInputs: {
 			peek,
-			buckets: peek === null ? [] : peekBuckets(model, spanName),
+			series: peek === null ? AsyncData.Idle() : peekSeries(model, spanName),
 			bucketSeconds,
 			statusRows: AsyncData.getOrElse(model.statusBreakdown.data, () => []),
 			chartContext:

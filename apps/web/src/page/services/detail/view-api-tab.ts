@@ -33,6 +33,8 @@ import {
 	routeList,
 	slowestEndpoint,
 	type StatusCodeSummary,
+	bucketAxis,
+	onAxis,
 	statusCodeSummaries,
 	statusMix,
 	hasUnknownBuckets,
@@ -462,6 +464,14 @@ const toolbar = (h: H, model: Model, count: number): Html =>
 		[h.Class("flex flex-wrap items-center gap-3 border-b px-4 py-2")],
 		[
 			h.span([h.Class("text-ui font-medium")], ["Endpoints"]),
+			...(AsyncData.isFailure(model.endpointSeries.data)
+				? [
+						h.span(
+							[h.Class("text-2xs text-destructive-foreground")],
+							["Trends failed to load; Reload to retry."],
+						),
+					]
+				: []),
 			h.span(
 				[h.Class("rounded-sm bg-muted px-1.5 text-2xs text-muted-foreground tabular-nums")],
 				[formatNumber(count)],
@@ -486,15 +496,19 @@ const toolbar = (h: H, model: Model, count: number): Html =>
 		],
 	)
 
-/** Request rate per bucket by span name; buckets arrive in time order. */
+/** Request rate per bucket by span name on one axis; a bucket an endpoint was quiet in reads 0. */
 const sparksBySpanName = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number) => {
-	const sparks = new Map<string, Array<number>>()
-	for (const bucket of buckets) {
-		const values = sparks.get(bucket.spanName) ?? []
-		values.push(bucket.estimatedSpanCount / Math.max(1, bucketSeconds))
-		sparks.set(bucket.spanName, values)
-	}
-	return sparks
+	const axis = bucketAxis(buckets, bucketSeconds)
+	const bySpanName = buckets.reduce(
+		(acc, bucket) => acc.set(bucket.spanName, [...(acc.get(bucket.spanName) ?? []), bucket]),
+		new Map<string, ReadonlyArray<ApiBucket>>(),
+	)
+	return new Map(
+		[...bySpanName].map(([spanName, rows]) => [
+			spanName,
+			onAxis(axis, rows, (bucket) => bucket.estimatedSpanCount / Math.max(1, bucketSeconds)),
+		]),
+	)
 }
 
 const endpointsTable = (
