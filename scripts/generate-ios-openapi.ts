@@ -85,6 +85,11 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"endLiveActivity",
 	"mintWidgetCredential",
 	"revokeWidgetCredential",
+	// Device-bound widget credentials (DPoP): register a key, then trade proofs for tokens.
+	"registerDeviceCredential",
+	"revokeDeviceCredential",
+	"getDeviceAttestationChallenge",
+	"issueDeviceToken",
 	// Home Screen widgets — one read, and the only one a device credential reaches.
 	"getWidgetSummary",
 ]

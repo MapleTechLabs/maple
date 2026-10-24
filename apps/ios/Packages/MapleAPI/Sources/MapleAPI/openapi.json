@@ -1259,6 +1259,32 @@
         "title": "Anomaly timeseries bucket",
         "type": "object"
       },
+      "AttestationChallenge": {
+        "additionalProperties": false,
+        "description": "A server challenge that binds an App Attest attestation to this server, user and installation.",
+        "properties": {
+          "challenge": {
+            "description": "Opaque and single-use. Pass it back unchanged in `attestation.challenge`.",
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "object": {
+            "enum": [
+              "attestation_challenge"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "challenge",
+          "expires_at"
+        ],
+        "title": "App Attest challenge",
+        "type": "object"
+      },
       "AttributeFilter": {
         "anyOf": [
           {
@@ -3147,6 +3173,237 @@
           }
         ],
         "title": "Dashboard widget data source"
+      },
+      "DeviceAttestation": {
+        "additionalProperties": false,
+        "description": "Optional proof that the key was registered by a genuine instance of the Maple app. Verified against Apple's App Attest root; a failure rejects the registration.",
+        "properties": {
+          "attestation_object": {
+            "description": "The attestation object `attestKey` returned, base64.",
+            "maxLength": 32768,
+            "minLength": 1,
+            "type": "string"
+          },
+          "challenge": {
+            "description": "The `challenge` from `GET /v2/device_credentials/{installation_id}/attestation_challenge`, unchanged. The `clientDataHash` passed to `attestKey` must be SHA-256 of the UTF-8 string `<challenge>.<jkt>`, where `jkt` is the RFC 7638 thumbprint of `public_jwk`.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "key_id": {
+            "description": "The App Attest key identifier (`generateKey`), base64.",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "attestation_object",
+          "challenge"
+        ],
+        "title": "App Attest attestation",
+        "type": "object"
+      },
+      "DeviceCredential": {
+        "additionalProperties": false,
+        "description": "A public key registered for one installation and organization. Tokens are issued only to requests signed by its private key.",
+        "examples": [
+          {
+            "attested": true,
+            "created_at": "2026-10-24T09:10:00.000Z",
+            "expires_at": "2026-11-23T09:10:00.000Z",
+            "hard_expires_at": "2027-01-22T09:10:00.000Z",
+            "id": "dcred_3mJr7AoUXx2Wqd8bGFd1KZ",
+            "installation_id": "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9",
+            "jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I",
+            "object": "device_credential",
+            "organization_id": "org_2abcDEF",
+            "scopes": [
+              "widget_summary:read"
+            ]
+          }
+        ],
+        "properties": {
+          "attested": {
+            "description": "Whether an App Attest attestation for this installation verified.",
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "hard_expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/_maple_DeviceCredentialId"
+          },
+          "installation_id": {
+            "description": "A stable, client-generated identifier for one app installation — on iOS, `identifierForVendor`. Opaque to Maple, and only ever compared against itself: it decides which credential a re-mint replaces.",
+            "examples": [
+              "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
+            ],
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Installation ID",
+            "type": "string"
+          },
+          "jkt": {
+            "description": "RFC 7638 SHA-256 thumbprint of the registered key; the `cnf.jkt` of every token.",
+            "type": "string"
+          },
+          "object": {
+            "description": "The object type, always `\"device_credential\"`.",
+            "enum": [
+              "device_credential"
+            ],
+            "type": "string"
+          },
+          "organization_id": {
+            "$ref": "#/components/schemas/_maple_OrgId"
+          },
+          "scopes": {
+            "description": "Fixed by the server. Today, exactly `widget_summary:read`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "object",
+          "id",
+          "organization_id",
+          "installation_id",
+          "jkt",
+          "scopes",
+          "attested",
+          "created_at",
+          "expires_at",
+          "hard_expires_at"
+        ],
+        "title": "Device credential",
+        "type": "object"
+      },
+      "DeviceCredentialDeleteResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "object": {
+            "enum": [
+              "device_credential"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "deleted"
+        ],
+        "title": "Device credential delete response",
+        "type": "object"
+      },
+      "DeviceCredentialRegisterParams": {
+        "additionalProperties": false,
+        "properties": {
+          "attestation": {
+            "$ref": "#/components/schemas/DeviceAttestation"
+          },
+          "public_jwk": {
+            "$ref": "#/components/schemas/DevicePublicJwk"
+          }
+        },
+        "required": [
+          "public_jwk"
+        ],
+        "title": "Register a device credential",
+        "type": "object"
+      },
+      "DevicePublicJwk": {
+        "additionalProperties": false,
+        "description": "The public half of the installation's signing key as an RFC 7517 JWK. EC P-256 only; members other than `kty`, `crv`, `x` and `y` are rejected rather than stored.",
+        "properties": {
+          "crv": {
+            "enum": [
+              "P-256"
+            ],
+            "type": "string"
+          },
+          "kty": {
+            "enum": [
+              "EC"
+            ],
+            "type": "string"
+          },
+          "x": {
+            "description": "a base64url P-256 coordinate (32 bytes)",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "y": {
+            "description": "a base64url P-256 coordinate (32 bytes)",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kty",
+          "crv",
+          "x",
+          "y"
+        ],
+        "title": "Device public key",
+        "type": "object"
+      },
+      "DeviceToken": {
+        "additionalProperties": false,
+        "description": "An RFC 9449 DPoP-bound access token response.",
+        "properties": {
+          "access_token": {
+            "description": "A JWT bound to the device key. Send it as `Authorization: DPoP <access_token>` with a fresh `DPoP` proof whose `ath` is its hash.",
+            "type": "string"
+          },
+          "expires_in": {
+            "description": "Seconds until the token expires.",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "object": {
+            "enum": [
+              "device_token"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "description": "Space-delimited granted scopes.",
+            "type": "string"
+          },
+          "token_type": {
+            "enum": [
+              "DPoP"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "access_token",
+          "token_type",
+          "expires_in",
+          "scope"
+        ],
+        "title": "Device access token",
+        "type": "object"
       },
       "Environment": {
         "additionalProperties": false,
@@ -6170,6 +6427,15 @@
         "title": "Dashboard Variable Name",
         "type": "string"
       },
+      "_maple_DeviceCredentialId": {
+        "description": "Opaque, prefixed public object ID (e.g. `dcred_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
+        "examples": [
+          "dcred_YofPTrK9782DWwcnXhpcCw"
+        ],
+        "format": "maple.public_id",
+        "title": "Public ID",
+        "type": "string"
+      },
       "_maple_ErrorIncidentId": {
         "description": "Opaque, prefixed public object ID (e.g. `einc_YofPTrK9782DWwcnXhpcCw`). A reversible base58 encoding of the internal ID — treat it as an opaque string.",
         "examples": [
@@ -6335,7 +6601,7 @@
     "securitySchemes": {
       "bearer": {
         "bearerFormat": "maple_ak_… API key or session JWT",
-        "description": "Authenticate every request with a Bearer token: `Authorization: Bearer <token>`. Accepts a Maple API key (`maple_ak_…`) or a dashboard session token (Clerk / self-hosted JWT). API keys may be restricted with scopes — see the `Scope` schema.",
+        "description": "Authenticate every request with a Bearer token: `Authorization: Bearer <token>`. Accepts a Maple API key (`maple_ak_…`) or a dashboard session token (Clerk / self-hosted JWT). API keys may be restricted with scopes (see the `Scope` schema). A device-bound access token from `POST /v2/device_tokens` is sent as `Authorization: DPoP <token>` together with a `DPoP` proof header (RFC 9449) instead.",
         "scheme": "Bearer",
         "type": "http"
       }
@@ -6430,7 +6696,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -6583,7 +6849,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -6707,7 +6973,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -6854,7 +7120,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -6978,7 +7244,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7169,7 +7435,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7384,7 +7650,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7508,7 +7774,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7658,7 +7924,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7815,7 +8081,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -7939,7 +8205,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8083,7 +8349,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8174,6 +8440,531 @@
         ]
       }
     },
+    "/v2/device_credentials/{installation_id}": {
+      "delete": {
+        "description": "Revokes the installation's device credential for this organization. Tokens already issued for it stop working on their next request. Idempotent. Requires the `device_credentials:write` scope.",
+        "operationId": "revokeDeviceCredential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "description": "A stable, client-generated identifier for one app installation — on iOS, `identifierForVendor`. Opaque to Maple, and only ever compared against itself: it decides which credential a re-mint replaces.",
+              "examples": [
+                "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
+              ],
+              "maxLength": 128,
+              "minLength": 8,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Installation ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCredentialDeleteResponse"
+                }
+              }
+            },
+            "description": "DeviceCredentialDeleteResponse"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceCredentialPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Revoke this installation's device key",
+        "tags": [
+          "Device Credentials"
+        ]
+      },
+      "put": {
+        "description": "Registers the public half of a device-held P-256 key for this installation and organization, revoking the key it had before in the same transaction. Registering the same key again refreshes it: the rolling 30-day expiry moves out (never past 90 days from creation) and the roles are re-pinned to the caller's. Requires the `device_credentials:write` scope, which a device token never has, so registration always comes from a signed-in session.",
+        "operationId": "registerDeviceCredential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "description": "A stable, client-generated identifier for one app installation — on iOS, `identifierForVendor`. Opaque to Maple, and only ever compared against itself: it decides which credential a re-mint replaces.",
+              "examples": [
+                "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
+              ],
+              "maxLength": 128,
+              "minLength": 8,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Installation ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceCredentialRegisterParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCredential"
+                }
+              }
+            },
+            "description": "A public key registered for one installation and organization. Tokens are issued only to requests signed by its private key."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceKeyInvalidError failure. HTTP 400. | The @maple/http/errors/DeviceAttestationInvalidError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceKeyInUseError failure. HTTP 409."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceCredentialPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Register this installation's device key",
+        "tags": [
+          "Device Credentials"
+        ]
+      }
+    },
+    "/v2/device_credentials/{installation_id}/attestation_challenge": {
+      "get": {
+        "description": "Returns a single-use challenge, valid for five minutes, for an App Attest attestation of this installation's registration. Requires the `device_credentials:read` scope.",
+        "operationId": "getDeviceAttestationChallenge",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "description": "A stable, client-generated identifier for one app installation — on iOS, `identifierForVendor`. Opaque to Maple, and only ever compared against itself: it decides which credential a re-mint replaces.",
+              "examples": [
+                "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
+              ],
+              "maxLength": 128,
+              "minLength": 8,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Installation ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationChallenge"
+                }
+              }
+            },
+            "description": "A server challenge that binds an App Attest attestation to this server, user and installation."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceTokensUnavailableError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get an App Attest challenge",
+        "tags": [
+          "Device Credentials"
+        ]
+      }
+    },
+    "/v2/device_tokens": {
+      "post": {
+        "description": "Exchanges a `DPoP` proof (RFC 9449: `typ` `dpop+jwt`, `alg` `ES256`, the registered key as `jwk`, `htm` `POST`, `htu` this URL, a unique `jti` and an `iat` within 60 seconds) for a one-hour access token bound to that key. Takes no bearer credential: the proof is the credential. Fails with `invalid_device_credential` when the key is unknown, revoked or expired.",
+        "operationId": "issueDeviceToken",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "dpop",
+            "required": false,
+            "schema": {
+              "description": "The DPoP proof JWT (RFC 9449 section 4.2) for this request.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceToken"
+                }
+              }
+            },
+            "description": "An RFC 9449 DPoP-bound access token response."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DpopProofInvalidError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceCredentialInvalidError failure. HTTP 401."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/DeviceTokensUnavailableError failure. HTTP 503. | The @maple/http/errors/DeviceCredentialPersistenceError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [],
+        "summary": "Issue a DPoP-bound access token",
+        "tags": [
+          "Device Tokens"
+        ]
+      }
+    },
     "/v2/environments": {
       "get": {
         "description": "Lists the deployment environments observed in an explicit time window, in name order. The list is unpaginated — `has_more` is always false — because an organization has tens of environments, not thousands. Requires `environments:read`.",
@@ -8225,7 +9016,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8506,7 +9297,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8631,7 +9422,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8787,7 +9578,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -8941,7 +9732,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9095,7 +9886,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9249,7 +10040,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9393,7 +10184,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9538,7 +10329,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9673,7 +10464,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9807,7 +10598,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -9942,7 +10733,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10073,7 +10864,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10222,7 +11013,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10361,7 +11152,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10518,7 +11309,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10697,7 +11488,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -10847,7 +11638,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11024,7 +11815,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11169,7 +11960,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11304,7 +12095,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11439,7 +12230,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11573,7 +12364,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11725,7 +12516,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -11877,7 +12668,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -12007,7 +12798,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -12131,7 +12922,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/v2/InvalidDpopProofError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
           },
           "403": {
             "content": {
@@ -12378,6 +13169,14 @@
     {
       "description": "Device-scoped, read-only credentials for the Maple mobile Home Screen widgets. Minted by a signed-in app for one installation at a time.",
       "name": "Widget Credentials"
+    },
+    {
+      "description": "Device-held keys for the Maple mobile Home Screen widgets. A signed-in app registers a key; the widget then authenticates with DPoP (RFC 9449) proofs signed by it.",
+      "name": "Device Credentials"
+    },
+    {
+      "description": "The DPoP token endpoint for device credentials. Unauthenticated apart from the proof.",
+      "name": "Device Tokens"
     }
   ]
 }
