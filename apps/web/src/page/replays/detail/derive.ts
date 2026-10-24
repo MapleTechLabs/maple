@@ -1,3 +1,4 @@
+import { formatWarehouseDateTime } from "@maple/query-engine"
 import { isSessionLive, sessionDurationMs } from "@maple/ui/lib/replay-format"
 import { buildTimeline, parseChTimestampMs, type Timeline } from "../../../components/replays/replay-timeline"
 import { Option } from "effect"
@@ -12,6 +13,23 @@ import type { Model, ReplayDetail } from "./model"
 export type PlayerStatus = "loading" | "error" | "empty" | "unrecorded" | "ready"
 
 export const windowOf = (model: Model): ReplayPartitionWindow | undefined => replayPartitionWindow(model.search.t)
+
+const TRACE_WINDOW_MARGIN_MS = 15 * 60 * 1000
+const MAX_SESSION_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The trace bars' window: the session's own span plus slack (`sessionTraceWindow` on the server).
+ * Far tighter than the `t` hint's day, which the summaries query read and timed out on.
+ */
+export const traceWindowOf = (model: Model, session: ReplayDetail): ReplayPartitionWindow | undefined => {
+	const startMs = parseChTimestampMs(session.startTime)
+	if (!Number.isFinite(startMs)) return windowOf(model)
+	const endMs = startMs + (durationOf(session) ?? MAX_SESSION_MS)
+	return {
+		windowStart: formatWarehouseDateTime(startMs - TRACE_WINDOW_MARGIN_MS),
+		windowEnd: formatWarehouseDateTime(endMs + TRACE_WINDOW_MARGIN_MS),
+	}
+}
 
 export const detailOf = (model: Model): ReplayDetail | undefined =>
 	Option.getOrUndefined(Option.flatMap(AsyncData.getData(model.detail.data), Option.fromNullishOr))
