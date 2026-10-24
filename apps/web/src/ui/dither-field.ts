@@ -8,9 +8,9 @@ const BAYER_8 = [
 	63, 31, 55, 23, 61, 29, 53, 21,
 ].map((rank) => (rank + 0.5) / 64)
 
+/** On screen each cell is 8 CSS px holding a 4 px square; the canvas stores it as 2x2 pixels, one lit. */
 const CELL = 8
-const PIXEL = 4
-const FRAME_MS = 40
+const FRAME_MS = 66
 /** Above the dither threshold by this much a pixel takes the full colour, below it the dimmer shade. */
 const BRIGHT_MARGIN = 0.45
 
@@ -49,19 +49,26 @@ export const startDitherField = (canvas: HTMLCanvasElement): (() => void) => {
 	const color = getComputedStyle(canvas).getPropertyValue("--primary").trim() || "#e8872a"
 	const state = { frame: 0, last: 0, seconds: 0, reach: readReach(canvas), width: 0, height: 0 }
 
+	// The canvas is drawn at cell resolution and scaled up without smoothing: a few thousand pixels a
+	// frame instead of a full-screen retina bitmap. Its box is a whole number of cells, clipped by the parent.
+	canvas.style.imageRendering = "pixelated"
+	const parent = canvas.parentElement ?? canvas
+
 	const resize = () => {
-		const ratio = window.devicePixelRatio || 1
-		state.width = canvas.clientWidth
-		state.height = canvas.clientHeight
-		canvas.width = Math.round(state.width * ratio)
-		canvas.height = Math.round(state.height * ratio)
-		context.setTransform(ratio, 0, 0, ratio, 0, 0)
+		state.width = parent.clientWidth
+		state.height = parent.clientHeight
+		const columns = Math.ceil(state.width / CELL)
+		const rows = Math.ceil(state.height / CELL)
+		canvas.width = columns * 2
+		canvas.height = rows * 2
+		canvas.style.width = `${columns * CELL}px`
+		canvas.style.height = `${rows * CELL}px`
 	}
 
 	const draw = () => {
-		const columns = Math.ceil(state.width / CELL)
-		const rows = Math.ceil(state.height / CELL)
-		context.clearRect(0, 0, state.width, state.height)
+		const columns = canvas.width / 2
+		const rows = canvas.height / 2
+		context.clearRect(0, 0, canvas.width, canvas.height)
 		context.fillStyle = color
 		Array.from({ length: rows }, (_, row) =>
 			Array.from({ length: columns }, (_, column) => {
@@ -72,7 +79,7 @@ export const startDitherField = (canvas: HTMLCanvasElement): (() => void) => {
 				)
 				if (level === 0) return
 				context.globalAlpha = level === 2 ? 1 : 0.55
-				context.fillRect(column * CELL, row * CELL, PIXEL, PIXEL)
+				context.fillRect(column * 2, row * 2, 1, 1)
 			}),
 		)
 		context.globalAlpha = 1
@@ -105,7 +112,7 @@ export const startDitherField = (canvas: HTMLCanvasElement): (() => void) => {
 		run()
 	})
 	const reaches = new MutationObserver(run)
-	resizes.observe(canvas)
+	resizes.observe(parent)
 	reaches.observe(canvas, { attributes: true, attributeFilter: ["data-reach"] })
 	resize()
 	run()

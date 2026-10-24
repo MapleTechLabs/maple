@@ -1,10 +1,15 @@
 import { REPLAY_BLOCK_CLASS } from "../../components/common/replay-privacy"
-import { ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "../../components/ingest/onboard-skill"
+import {
+	agentSetupPrompt,
+	ONBOARD_SKILL_COMMAND,
+	onboardSkillPrompt,
+} from "../../components/ingest/onboard-skill"
 import { type FrameworkId, sdkSnippets } from "../../components/quick-start/sdk-snippets"
 import { type DocsPage, docsUrl } from "../../lib/docs"
 import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../../ui/button"
 import * as CopyButton from "../../ui/copy-button"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon, type IconName } from "../../ui/icon"
@@ -101,6 +106,99 @@ export const frameworkPicker = <M>(
 
 export type InstructionsDocs = Readonly<{ label: string; page: DocsPage }>
 
+const AGENT_MARKS = [
+	{ name: "ClaudeIcon", className: "text-[#D97757]" },
+	{ name: "OpenAiIcon", className: "text-foreground" },
+	{ name: "CursorIcon", className: "text-foreground" },
+] as const satisfies ReadonlyArray<Readonly<{ name: IconName; className: string }>>
+
+const AGENT_LABELS = {
+	idle: "Build with your agent",
+	copied: "Prompt copied",
+	error: "Could not copy",
+} as const satisfies Record<CopyButton.CopyStatus, string>
+
+/**
+ * maple.dev's "Build with your agent": one prompt for Claude Code, Codex or Cursor, here with the
+ * org's endpoint and key. Without a key (a member, or the key store is down) the skill uses its
+ * `MAPLE_TEST` placeholder and says where to get one.
+ */
+export const agentPromptButton = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		apiKey: string
+		copy: CopyButton.Model
+		toCopyMessage: (message: CopyButton.Message) => M
+	}>,
+): Html =>
+	button(
+		h,
+		{
+			variant: "outline",
+			size: "lg",
+			className: "agent-prompt group/agent w-full justify-between gap-3",
+			attributes: [
+				h.DataAttribute("copy-state", options.copy.status),
+				h.Title("Copy a setup prompt for Claude Code, Codex or Cursor"),
+				h.OnClick(
+					options.toCopyMessage(
+						CopyButton.Message.ClickedCopy({ text: agentSetupPrompt(ingestUrl, options.apiKey) }),
+					),
+				),
+			],
+		},
+		[
+			h.span(
+				[h.Class("flex items-center gap-3")],
+				[
+					h.span(
+						[h.AriaHidden(true), h.Class("flex")],
+						AGENT_MARKS.map((mark, index) =>
+							h.span(
+								[
+									h.Attribute("style", `--n:${index}`),
+									h.Class(
+										cn(
+											"agent-prompt__mark grid size-6 place-items-center rounded-full border border-border bg-card ring-2 ring-background transition-transform duration-200 ease-out",
+											index > 0 && "-ml-1.5",
+											index === 1 && "group-hover/agent:translate-x-0.5",
+											index === 2 && "group-hover/agent:translate-x-1",
+										),
+									),
+								],
+								[icon(h, mark.name, { size: 13, className: mark.className })],
+							),
+						),
+					),
+					// Every label stays in the grid, so the button keeps the longest one's width; the
+					// current one's letters blur in (`theme.css` `.agent-prompt`).
+					h.span(
+						[h.Class("agent-prompt__text")],
+						[
+							h.span(
+								[h.Class("sr-only"), h.AriaLive("polite")],
+								[AGENT_LABELS[options.copy.status]],
+							),
+							...CopyButton.CopyStatus.literals.map((state) =>
+								h.span(
+									[
+										h.AriaHidden(true),
+										h.Class("agent-prompt__label"),
+										h.DataAttribute("label", state),
+									],
+									[...AGENT_LABELS[state]].map((char, index) =>
+										h.span([h.Attribute("style", `--i:${index}`)], [char]),
+									),
+								),
+							),
+						],
+					),
+				],
+			),
+			CopyButton.copyIndicator(h, { status: options.copy.status, iconSize: 14 }),
+		],
+	)
+
 /** The parent's state for `ConnectInstructions`: its tabs, snippet copy states and Messages. */
 export type InstructionsParts<M> = Readonly<{
 	/** Slot id prefix, unique per page (`ingestion`, `overview-setup`). */
@@ -126,11 +224,13 @@ const block = <M>(
 	code: string,
 	language: string,
 	className?: string,
+	isPlain = false,
 ): Html =>
 	codeBlock(h, {
 		code,
 		language,
 		className,
+		isPlain,
 		copy: parts.snippetCopies[key] ?? CopyButton.init(),
 		toCopyMessage: (message) => parts.toSnippetCopy(key, message),
 	})
@@ -179,9 +279,12 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 			labels: ["Install", "Instrument", "Claude Code"],
 			className: "flex flex-col",
 			listClassName: "h-9",
-			tabClassName: "gap-2",
+			tabClassName: "gap-2 max-sm:px-1.5",
 			tabContent: (value, label) => [
-				icon(h, isSetupTab(value) ? SETUP_TAB_ICONS[value] : "CodeIcon", { size: 14 }),
+				icon(h, isSetupTab(value) ? SETUP_TAB_ICONS[value] : "CodeIcon", {
+					size: 14,
+					className: "max-sm:hidden",
+				}),
 				label,
 			],
 			wrapList: (list) =>
@@ -192,13 +295,14 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 						),
 					],
 					[
-						list,
+						// On a phone the three tabs barely fit: they scroll rather than push the mark out.
+						h.div([h.Class("min-w-0 overflow-x-auto [scrollbar-width:none]")], [list]),
 						h.span(
 							[
 								h.Role("img"),
 								h.AriaLabel("OpenTelemetry"),
 								h.Title("OpenTelemetry"),
-								h.Class("text-muted-foreground"),
+								h.Class("text-muted-foreground max-sm:hidden"),
 							],
 							[icon(h, "FrameworkOpenTelemetryIcon", { size: 16 })],
 						),
@@ -263,8 +367,9 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 						parts,
 						"skill-prompt",
 						onboardSkillPrompt(ingestUrl, apiKey),
-						"shell",
+						"prompt",
 						REPLAY_BLOCK_CLASS,
+						true,
 					),
 				]
 			},

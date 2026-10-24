@@ -13,7 +13,7 @@ import { Effect, Option, Schema, SchemaGetter } from "effect"
 // The quick start wizard's progress in localStorage `maple-onboarding-v6-<orgId>`, with normalisation
 // of older saves (their role and intent steps are gone; the answers still feed the setup checklist).
 
-export const STEP_IDS = ["plan", "stack", "connect", "team"] as const
+export const STEP_IDS = ["plan", "stack", "connect", "team", "live"] as const
 export type StepId = (typeof STEP_IDS)[number]
 
 const IntentSchema = Schema.Literals(ONBOARDING_INTENT_IDS)

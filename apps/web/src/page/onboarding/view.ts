@@ -160,15 +160,7 @@ const quickStartView = Submodel.defineView<
 					onNone: () => "Your team",
 					onSome: (org) => org.name,
 				}),
-				teamStep: () =>
-					QuickStartTeamView.teamStep(
-						h,
-						model.team,
-						Option.match(inputs.maybeOrganization, {
-							onNone: () => "Maple",
-							onSome: (org) => org.name,
-						}),
-					),
+				teamStep: () => QuickStartTeamView.teamStep(h, model.team),
 				planStep: QuickStartTeamView.planStep(
 					h,
 					accessOf(inputs.customer) === "loading",

@@ -3,7 +3,7 @@ import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
 import { MapleRegion } from "@maple/domain/organization-regions"
 import { currentRegion, regionAppUrl } from "../../lib/region"
 import { Effect, Schema } from "effect"
-import { Command, Mount, type Update } from "foldkit"
+import { AsyncData, Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { load, replaceUrl } from "foldkit/navigation"
@@ -21,6 +21,7 @@ import {
 	openConnect,
 	updateConnect,
 } from "./quick-start-connect"
+import { LiveData, LiveMessage, LoadLiveFindings, updateLive } from "./quick-start-live"
 import { LoadTeam, loadingTeam, selfHostedTeam, Team, TeamMessage, updateTeam } from "./quick-start-team"
 import {
 	completeStep,
@@ -65,6 +66,7 @@ export const Model = Schema.TaggedStruct("QuickStart", {
 	redirectUrl: Schema.String,
 	orgId: Schema.String,
 	connect: Connect,
+	live: LiveData.schema,
 	/** Whether an update has run with the plan known: the save can load before the customer read. */
 	isPlanKnown: Schema.Boolean,
 })
@@ -73,6 +75,7 @@ export type Model = typeof Model.Type
 export const Message = defineMessageUnion({
 	GotTeamMessage: { message: TeamMessage },
 	GotConnectMessage: { message: ConnectMessage },
+	GotLiveMessage: { message: LiveMessage },
 	GotPricingMessage: { message: PricingCards.Message },
 	LoadedQuickStartState: { state: QuickStartState },
 	ToggledLanguage: { language: Schema.Literals(STACK_LANGUAGE_IDS) },
@@ -201,6 +204,7 @@ export const init = (
 		redirectUrl,
 		orgId,
 		connect: initConnect(),
+		live: AsyncData.Idle(),
 		isPlanKnown: false,
 	},
 	commands: [LoadQuickStartState({ key: storageKey })],
@@ -208,6 +212,7 @@ export const init = (
 
 const toTeam = (message: TeamMessage) => Message.GotTeamMessage({ message })
 const toConnect = (message: ConnectMessage) => Message.GotConnectMessage({ message })
+const toLive = (message: LiveMessage) => Message.GotLiveMessage({ message })
 const toPricing = (message: PricingCards.Message) => Message.GotPricingMessage({ message })
 
 /**
@@ -219,11 +224,25 @@ const entered = (previous: Model, result: UpdateReturn, hasPlan: boolean): Updat
 	const step = resolveQuickStartStep(result.model.state, hasPlan)
 	const wasOn = previous.state === null ? null : resolveQuickStartStep(previous.state, hasPlan)
 	if (step === wasOn) return result
-	// Leaving the connect step stops its polling.
+	// Leaving the connect step (or the last screen, which re-reads what arrived) stops their polling.
 	const model =
-		wasOn === "connect" ? { ...result.model, connect: closeConnect(result.model.connect) } : result.model
+		wasOn === "connect" || wasOn === "live"
+			? { ...result.model, connect: closeConnect(result.model.connect) }
+			: result.model
 	const state = result.model.state
 	const commands = result.commands ?? []
+	if (step === "live") {
+		const opened = openConnect(model.connect, model.orgId, state.stack.platforms)
+		return {
+			...result,
+			model: { ...model, connect: opened.connect, live: AsyncData.Loading() },
+			commands: [
+				...commands,
+				...Command.mapMessages(opened.commands, toConnect),
+				Command.mapMessage(toLive)(LoadLiveFindings({ timeZone: "UTC" })),
+			],
+		}
+	}
 	if (step === "connect") {
 		const opened = openConnect(model.connect, model.orgId, state.stack.platforms)
 		return {
@@ -248,6 +267,12 @@ const entered = (previous: Model, result: UpdateReturn, hasPlan: boolean): Updat
 	}
 	return { ...result, model }
 }
+
+/** How many signals the last presence read found arriving. */
+const presentCount = (connect: Connect): number =>
+	Object.values(AsyncData.getOrElse(connect.presence, () => ({}))).filter(
+		(presence) => presence.status === "present",
+	).length
 
 /** Every change is written through, as the atom's `setState` is. */
 const saved = (model: Model, next: (state: QuickStartState) => QuickStartState): UpdateReturn => {
@@ -295,11 +320,22 @@ const step = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
 		GotConnectMessage: ({ message: child }) => {
 			const platforms = model.state?.stack.platforms ?? []
 			const next = updateConnect(model.connect, child, model.orgId, platforms)
+			// On the last screen, a signal that just arrived re-reads the cards' findings.
+			const isOnLive = model.state !== null && resolveQuickStartStep(model.state, hasPlan) === "live"
+			const isNewSignal = presentCount(next.connect) > presentCount(model.connect)
 			return {
 				model: { ...model, connect: next.connect },
-				commands: Command.mapMessages(next.commands, toConnect),
+				commands: [
+					...Command.mapMessages(next.commands, toConnect),
+					...(isOnLive && isNewSignal
+						? [Command.mapMessage(toLive)(LoadLiveFindings({ timeZone: "UTC" }))]
+						: []),
+				],
 			}
 		},
+		GotLiveMessage: ({ message: child }) => ({
+			model: { ...model, live: updateLive(model.live, child) },
+		}),
 		GotPricingMessage: ({ message: child }) => {
 			const next = PricingCards.update(model.pricing, child)
 			return {

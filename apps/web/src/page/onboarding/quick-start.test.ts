@@ -1,5 +1,5 @@
 import { CatalogPlan, CatalogPlansResponse } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Effect, Result } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as PricingCards from "./pricing-cards"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
@@ -56,7 +56,9 @@ describe("quick start", () => {
 		expect(resolveQuickStartStep(stateOf(skipped), true)).toBe("connect")
 		const connected = update(skipped, Message.ClickedContinue({ step: "connect" })).model
 		expect(resolveQuickStartStep(stateOf(connected), true)).toBe("team")
-		const done = update(connected, Message.ClickedContinue({ step: "team" }))
+		const teamed = update(connected, Message.ClickedContinue({ step: "team" })).model
+		expect(resolveQuickStartStep(stateOf(teamed), true)).toBe("live")
+		const done = update(teamed, Message.ClickedContinue({ step: "live" }))
 		expect(done.commands?.map((command) => [command.name, command.args]).at(-1)).toEqual([
 			"FinishQuickStart",
 			{ url: "/traces" },
@@ -66,7 +68,7 @@ describe("quick start", () => {
 	test("someone who already finished is sent straight on when the page loads", () => {
 		const finished = {
 			...DEFAULT_QUICK_START_STATE,
-			completedSteps: { plan: true, stack: true, connect: true, team: true },
+			completedSteps: { plan: true, stack: true, connect: true, team: true, live: true },
 		}
 		const loading = init("maple-onboarding-v6-org_1").model
 		expect(names(update(loading, Message.LoadedQuickStartState({ state: finished })))).toEqual([
@@ -138,6 +140,46 @@ describe("quick start", () => {
 		const loading = init("maple-onboarding-v6-legacy").model
 		expect(names(update(loading, Message.LoadedQuickStartState({ state })))).toEqual(["FinishQuickStart"])
 		vi.unstubAllGlobals()
+	})
+})
+
+describe("quick start live step", () => {
+	const presence = (present: ReadonlyArray<string>) =>
+		Message.GotConnectMessage({
+			message: ConnectMessage.LoadedPresence({
+				result: Result.succeed(
+					Object.fromEntries(
+						present.map((signal) => [signal, { status: "present", lastSeenMs: 1 }]),
+					),
+				),
+			}),
+		})
+
+	test("opened straight from a save, it reads what is arriving once the plan is known", () => {
+		const atLive = {
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "live",
+			completedSteps: { stack: true, connect: true, team: true },
+		}
+		const loading = init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model
+		const early = updateWith(loading, Message.LoadedQuickStartState({ state: atLive }), null)
+		const settled = updateWith(early.model, Message.SettledPlan(), true)
+		expect(names(settled)).toEqual(
+			expect.arrayContaining(["LoadOnboardingConnectPresence", "LoadOnboardingLiveFindings"]),
+		)
+		expect(settled.model.connect.isActive).toBe(true)
+	})
+
+	test("a signal arriving while it shows re-reads the findings; a poll with nothing new does not", () => {
+		const atLive = {
+			...init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model,
+			state: { ...DEFAULT_QUICK_START_STATE, activeStep: "live" },
+		}
+		const waiting = update(atLive, presence([]))
+		expect(names(waiting)).not.toContain("LoadOnboardingLiveFindings")
+		const arrived = update(waiting.model, presence(["traces"]))
+		expect(names(arrived)).toContain("LoadOnboardingLiveFindings")
+		expect(names(update(arrived.model, presence(["traces"])))).not.toContain("LoadOnboardingLiveFindings")
 	})
 })
 
