@@ -265,7 +265,7 @@ export interface DashboardPersistenceServiceApi {
 export class DashboardPersistenceService extends Context.Service<
 	DashboardPersistenceService,
 	DashboardPersistenceServiceApi
->()("@maple/api/services/DashboardPersistenceService", {
+>()("@maple/backend/services/DashboardPersistenceService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "DashboardPersistenceService", toPersistenceError)

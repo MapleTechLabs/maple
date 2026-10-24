@@ -9,8 +9,11 @@ import type { PageSubscriptionInput } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { Message as SetupMessage } from "./setup-checklist"
-import { isMounted } from "./setup-checklist-update"
-import { pollTicks } from "../../data/poll"
+import { isPolling as isSetupPolling } from "./setup-checklist-update"
+import { backoffPollTicks } from "../../data/poll"
+
+/** Five minutes of 15 s polls before the setup card slows to one a minute. */
+const SETUP_FAST_POLLS = 20
 
 const withSet = (
 	orgId: string,
@@ -98,16 +101,16 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		),
 		rules: entry({ orgId: Schema.String }, byOrg(rules)),
 		ruleStates: entry({ orgId: Schema.String }, byOrg(ruleStates)),
-		/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the setup card is mounted. */
+		/** Waits for the first real service: every 15 s for five minutes, then every minute. */
 		setupPoll: entry(
 			{ isPolling: Schema.Boolean },
 			{
 				modelToDependencies: ({ model }) => ({
-					isPolling: model.setup !== null && isMounted(model.setup) && model.setup.window !== null,
+					isPolling: model.setup !== null && isSetupPolling(model.setup),
 				}),
 				dependenciesToStream: ({ isPolling }) =>
 					isPolling
-						? pollTicks("15 seconds").pipe(
+						? backoffPollTicks("15 seconds", SETUP_FAST_POLLS, "1 minute").pipe(
 								Stream.map(() => Message.GotSetupMessage({ message: SetupMessage.TickedPoll() })),
 							)
 						: Stream.empty,

@@ -95,7 +95,8 @@ export const headlineStrip = (
 						eyebrow: stat.label,
 						value: stat.value,
 						delta: stat.delta,
-						subline: versus,
+						// No previous runs: an older period the tables no longer hold, or a new workflow.
+						subline: previous.runs === 0 ? undefined : versus,
 					}),
 				],
 			),

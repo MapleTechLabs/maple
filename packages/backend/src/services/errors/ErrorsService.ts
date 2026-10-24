@@ -1864,7 +1864,7 @@ const make: Effect.Effect<
 })
 
 export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceApi>()(
-	"@maple/api/services/ErrorsService",
+	"@maple/backend/services/ErrorsService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

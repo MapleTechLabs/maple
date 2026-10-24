@@ -17,7 +17,7 @@ import {
 	ResolveClock,
 	ToggleFullscreen,
 } from "./command"
-import { detailOf, manifestTotalMs, playerStatus, realOffsetOf, timelineOf, windowOf } from "./derive"
+import { detailOf, manifestTotalMs, playerStatus, realOffsetOf, timelineOf, traceWindowOf, windowOf } from "./derive"
 import { advance, cacheRange, emptyLoader, planOnce, reportProgress, requestSeek, subscribedRange } from "./loader"
 import { Message } from "./message"
 import type { Model, Player } from "./model"
@@ -72,7 +72,7 @@ const requestEntry = (model: Model, context: PageContext, mode: Keyed.RequestMod
 const requestStudio = (model: Model, context: PageContext): Return => {
 	const session = detailOf(model)
 	if (session === undefined) return { model }
-	const window = windowOf(model)
+	const window = traceWindowOf(model, session)
 	const summariesKey = requestKey(context.orgId, "getSessionTraceSummaries", {
 		data: { traceIds: session.traceIds, ...window },
 	})

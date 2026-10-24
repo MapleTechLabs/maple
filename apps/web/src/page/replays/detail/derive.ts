@@ -1,3 +1,4 @@
+import { formatWarehouseDateTime } from "@maple/query-engine"
 import { isSessionLive, sessionDurationMs } from "@maple/ui/lib/replay-format"
 import { buildTimeline, parseChTimestampMs, type Timeline } from "../../../components/replays/replay-timeline"
 import { Option } from "effect"
@@ -13,6 +14,23 @@ export type PlayerStatus = "loading" | "error" | "empty" | "unrecorded" | "ready
 
 export const windowOf = (model: Model): ReplayPartitionWindow | undefined => replayPartitionWindow(model.search.t)
 
+const TRACE_WINDOW_MARGIN_MS = 15 * 60 * 1000
+const MAX_SESSION_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The trace bars' window: the session's own span plus slack (`sessionTraceWindow` on the server).
+ * Far tighter than the `t` hint's day, which the summaries query read and timed out on.
+ */
+export const traceWindowOf = (model: Model, session: ReplayDetail): ReplayPartitionWindow | undefined => {
+	const startMs = parseChTimestampMs(session.startTime)
+	if (!Number.isFinite(startMs)) return windowOf(model)
+	const endMs = startMs + (durationOf(session) ?? MAX_SESSION_MS)
+	return {
+		windowStart: formatWarehouseDateTime(startMs - TRACE_WINDOW_MARGIN_MS),
+		windowEnd: formatWarehouseDateTime(endMs + TRACE_WINDOW_MARGIN_MS),
+	}
+}
+
 export const detailOf = (model: Model): ReplayDetail | undefined =>
 	Option.getOrUndefined(Option.flatMap(AsyncData.getData(model.detail.data), Option.fromNullishOr))
 
@@ -23,7 +41,8 @@ const livenessOf = (session: ReplayDetail) => ({
 	durationMs: session.durationMs,
 })
 
-export const isActive = (model: Model, session: ReplayDetail): boolean => isSessionLive(livenessOf(session), model.nowMs)
+export const isActive = (model: Pick<Model, "nowMs">, session: ReplayDetail): boolean =>
+	isSessionLive(livenessOf(session), model.nowMs)
 
 export const durationOf = (session: ReplayDetail): number | null => sessionDurationMs(livenessOf(session))
 
@@ -55,13 +74,26 @@ export const playerStatus = (model: Model, session: ReplayDetail): { status: Pla
 
 export const manifestTotalMs = (model: Model): number => manifestDurationMs(chunksOf(model))
 
+/** What the real⇄display mapping reads, flat so a view can hold it by reference across ticks. */
+export type TimelineInputs = Readonly<{
+	isSkippingIdle: boolean
+	totalMs: number
+	inactiveIntervals: Model["meta"]["inactiveIntervals"]
+}>
+
+export const timelineFrom = (inputs: TimelineInputs): Timeline =>
+	buildTimeline(inputs.isSkippingIdle ? inputs.inactiveIntervals : [], inputs.totalMs)
+
 /** Real⇄display mapping: idle gaps collapse while skip-idle is on. */
 export const timelineOf = (model: Model): Timeline =>
-	buildTimeline(model.player.isSkippingIdle ? model.meta.inactiveIntervals : [], model.player.totalMs)
+	timelineFrom({ ...model.player, inactiveIntervals: model.meta.inactiveIntervals })
 
-/** A warehouse timestamp as a real offset into the recording, clamped. */
-export const realOffsetOf = (model: Model, timestamp: string): number | undefined => {
+/** A warehouse timestamp as a real offset into a recording `totalMs` long from `startTime`, clamped. */
+export const realOffsetFrom = (startTime: number, totalMs: number, timestamp: string): number | undefined => {
 	const epoch = parseChTimestampMs(timestamp)
 	if (Number.isNaN(epoch)) return undefined
-	return Math.max(0, Math.min(epoch - model.meta.startTime, model.player.totalMs))
+	return Math.max(0, Math.min(epoch - startTime, totalMs))
 }
+
+export const realOffsetOf = (model: Model, timestamp: string): number | undefined =>
+	realOffsetFrom(model.meta.startTime, model.player.totalMs, timestamp)

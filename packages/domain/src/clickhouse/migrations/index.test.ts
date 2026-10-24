@@ -1,6 +1,6 @@
 import { String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { isBackfill, renderStatementFull } from "../backfill"
+import { type BackfillSpec, isBackfill, renderStatementFull } from "../backfill"
 import { migration_0004_service_namespace_projections } from "./0004_service_namespace_projections"
 import {
 	migration_0008_service_operations_minutely,
@@ -239,10 +239,15 @@ describe("ClickHouse migrations", () => {
 		// identity_links and trace_index are exempt because a replay is a merge
 		// no-op: their only aggregates are SimpleAggregateFunction(min/max) keyed by
 		// the full sorting key, so re-inserted rows collapse to the values stored.
+		// A backfill that skips every span its target already holds (0047) converges
+		// without emptying a target that outlives its source.
 		const mergeIdempotentTargets = new Set(["identity_links", "trace_index"])
+		const skipsStored = (stmt: BackfillSpec) =>
+			stmt.where?.includes(`(TraceId, SpanId) NOT IN (SELECT TraceId, SpanId FROM ${stmt.target})`) ===
+			true
 		for (const migration of migrations) {
 			migration.statements.forEach((stmt, index) => {
-				if (!isBackfill(stmt) || mergeIdempotentTargets.has(stmt.target)) return
+				if (!isBackfill(stmt) || mergeIdempotentTargets.has(stmt.target) || skipsStored(stmt)) return
 				const before = migration.statements
 					.slice(0, index)
 					.filter((s): s is string => typeof s === "string")

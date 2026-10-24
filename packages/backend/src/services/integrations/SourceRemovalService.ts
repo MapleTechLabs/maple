@@ -32,7 +32,7 @@ export interface SourceRemoval {
  * the row alone would leave the integration collecting.
  */
 export class SourceRemovalService extends Context.Service<SourceRemovalService>()(
-	"@maple/api/services/SourceRemovalService",
+	"@maple/backend/services/SourceRemovalService",
 	{
 		make: Effect.gen(function* () {
 			const dbExecute = makeDbExecute(yield* Database, "SourceRemovalService", toPersistenceError)

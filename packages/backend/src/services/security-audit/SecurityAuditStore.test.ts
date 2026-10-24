@@ -221,6 +221,31 @@ describe("SecurityAuditStore findings lifecycle", () => {
 	)
 })
 
+describe("SecurityAuditStore triage survives a resave", () => {
+	it.effect("a resave that drops a finding this run opened keeps it once a person triaged it", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const run = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(run.runId, [confirmed("triaged"), confirmed("draft")])
+				const db = trackedDbs[0]
+				assert.isDefined(db)
+				yield* Effect.promise(() =>
+					db.pglite.query(
+						`UPDATE security_audit_findings SET status = 'dismissed' WHERE fingerprint = 'triaged'`,
+					),
+				)
+				yield* scoped.saveFindings(run.runId, [])
+				const findings = yield* scoped.listFindings(run.targetId)
+				assert.deepStrictEqual(
+					findings.map((f) => [f.fingerprint, f.status]),
+					[["triaged", "dismissed"]],
+				)
+			}),
+		),
+	)
+})
+
 describe("SecurityAuditStore runs and events", () => {
 	it.effect("appends events in order, keeping each agent's usage", () =>
 		withStore((store) =>
@@ -300,9 +325,12 @@ describe("SecurityAuditStore runs and events", () => {
 					execution_policy: "sandboxed-source-and-local-only",
 					execution: { _tag: "Unavailable", blocker: "no sandbox" },
 					prior_runs: [],
-					run_status: "in_progress",
+					run_status: "complete",
 				}
 				yield* scoped.saveMetadata(metadata)
+				// The engine's status is its own; the row stays in progress until the run settles.
+				const unsettled = Option.getOrThrow(yield* scoped.getRun(runId))
+				assert.deepStrictEqual([unsettled.status, unsettled.finishedAt], ["in_progress", null])
 				yield* scoped.saveArchitecture(runId, "# Architecture")
 				const usage = { invocations: 3, inputTokens: 150, outputTokens: 15, costUsd: 0.5 }
 				// Written twice, as a retried settle step would: totals are set, never added.
@@ -331,14 +359,12 @@ describe("SecurityAuditStore runs and events", () => {
 			Effect.gen(function* () {
 				const repositoryId = Schema.decodeUnknownSync(VcsRepositoryId)(crypto.randomUUID())
 				const refused = yield* Effect.flip(
-					store
-						.forOrg(orgA)
-						.createTarget({
-							repository: "acme/api",
-							branch: "main",
-							createdBy: user,
-							vcsRepositoryId: repositoryId,
-						}),
+					store.forOrg(orgA).createTarget({
+						repository: "acme/api",
+						branch: "main",
+						createdBy: user,
+						vcsRepositoryId: repositoryId,
+					}),
 				)
 				assert.strictEqual(refused.message, "Repository is not connected to this org")
 			}),

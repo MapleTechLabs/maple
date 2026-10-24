@@ -35,11 +35,12 @@ npm install @maple-dev/effect-sdk@effect-v3 effect @effect/platform @effect/open
 
 ## Pick your platform
 
-The SDK ships three entry points, each with its own page:
+The SDK ships four entry points, each with its own page:
 
 - [**Server**](/docs/sdks/effect-server): Node.js, Bun, Deno. Background export fiber, configuration from environment variables, graceful shutdown.
 - [**Browser**](/docs/sdks/effect-client): single-page apps. Configuration passed in code, browser metadata added to resource attributes, session replay.
 - [**Cloudflare Workers**](/docs/sdks/effect-cloudflare): short-lived isolates. In-isolate buffering, `flush()` in `ctx.waitUntil`, configuration read from the Worker `env` on first flush.
+- [**Foldkit**](/docs/sdks/effect-foldkit): Foldkit apps. Wraps the browser entry point and groups Command spans under page loads and navigations, with crash reports and slow-phase spans.
 
 ## Custom spans
 

@@ -352,7 +352,7 @@ const make = Effect.gen(function* () {
 export class OnboardingChecklistService extends Context.Service<
 	OnboardingChecklistService,
 	OnboardingChecklistServiceApi
->()("@maple/api/services/OnboardingChecklistService", { make }) {
+>()("@maple/backend/services/OnboardingChecklistService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(

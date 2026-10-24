@@ -13,6 +13,7 @@ import {
 import {
 	V2AwsConnection,
 	V2AwsIntegration,
+	V2AwsIngest,
 	V2AwsSetup,
 	V2ChatConnectorList,
 	V2GcpConnector,
@@ -25,7 +26,13 @@ import {
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
-import { AwsConnectionId, ChatWorkspaceId, GcpConnectorId, GcpLogRuntime, SupabaseProjectRef } from "@maple/domain/primitives"
+import {
+	AwsConnectionId,
+	ChatWorkspaceId,
+	GcpConnectorId,
+	GcpLogRuntime,
+	SupabaseProjectRef,
+} from "@maple/domain/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
@@ -191,6 +198,7 @@ export const Message = defineMessageUnion({
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
 	GotAwsAccountIdMessage: { message: Field.Message },
+	GotAwsRegionsMessage: { message: Field.Message },
 	SubmittedAwsAccount: {},
 	SucceededAwsCreate: { connection: V2AwsConnection },
 	FailedAwsCreate: { error: Schema.String },
@@ -199,10 +207,13 @@ export const Message = defineMessageUnion({
 	ClickedAwsSetup: { id: AwsConnectionId },
 	ClickedAwsSetupClose: {},
 	CompletedLoadAwsSetup: result(V2AwsSetup),
+	CompletedLoadAwsIngest: { id: AwsConnectionId, ...result(V2AwsIngest) },
 	ClickedAwsSetupMethod: { method: AwsSetupMethod },
 	ClickedAwsCheck: { id: AwsConnectionId },
 	/** The background re-check of connections still waiting for their stack. */
 	TickedAwsPending: {},
+	/** A streaming connection's status and ingest are read again. */
+	TickedAwsWatch: {},
 	CompletedAwsCheck: {
 		id: AwsConnectionId,
 		quiet: Schema.Boolean,
@@ -221,6 +232,14 @@ export const Message = defineMessageUnion({
 	DismissedAwsRemoved: { connectionId: Schema.String },
 	CompletedReadAwsRemoved: { removed: Schema.Array(AwsRemovedStack) },
 	CompletedWriteAwsRemoved: {},
+	ClickedAwsMetrics: { id: AwsConnectionId },
+	ClickedAwsMetricsCancel: {},
+	GotAwsMetricsRegionsMessage: { message: Field.Message },
+	SubmittedAwsMetrics: {},
+	CompletedAwsMetricStream: {
+		connection: Schema.NullOr(V2AwsConnection),
+		error: Schema.NullOr(Schema.String),
+	},
 	ClickedSupabaseSync: {},
 	/** Every minute while the connected Supabase card is shown, so its window and ages advance. */
 	TickedSupabaseClock: {},

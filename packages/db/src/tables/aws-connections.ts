@@ -31,6 +31,10 @@ export const AwsConnections = PG.table("aws_connections", {
 		checkLeaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "check_lease_until" }),
 		// Null: no metric stream. The setup deploys one stack per region in it.
 		metricStream: PG.column(PG.nullable(PG.jsonb(AwsMetricStream)), { name: "metric_stream" }),
+		// When the stream was last turned on or changed: its first delivery is due after the next deploy.
+		metricStreamChangedAt: PG.column(PG.nullable(PG.timestamptzMillis), {
+			name: "metric_stream_changed_at",
+		}),
 		// Null on connections made before metric streams; minted when their setup is next read.
 		streamSecretCiphertext: PG.column(PG.nullable(PG.text), { name: "stream_secret_ciphertext" }),
 		streamSecretIv: PG.column(PG.nullable(PG.text), { name: "stream_secret_iv" }),

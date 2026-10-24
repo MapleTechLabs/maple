@@ -11,6 +11,7 @@ import {
 	summarizeSupabase,
 } from "../../../components/infra/overview/summaries"
 import { getCloudflareZones } from "@maple/web-data/warehouse/cloudflare-infra"
+import { getAwsInfraFleet } from "@maple/web-data/warehouse/aws-infra"
 import { getGcpInfraFleet } from "@maple/web-data/warehouse/gcp-infra"
 import { containersSummary, listHosts, podsSummary } from "@maple/web-data/warehouse/infra"
 import { getRailwayServices } from "@maple/web-data/warehouse/railway-infra"
@@ -24,6 +25,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { Message } from "./message"
 import { SourceId, type SourceReading } from "./model"
+import { summarizeAws } from "./summarize-aws"
 
 // One read per source.
 
@@ -74,6 +76,8 @@ const read = (source: SourceId, window: TimeWindow) => {
 			return Effect.map(getGcpInfraFleet({ data }), ({ services }) =>
 				reading(summarizeGcp(gcpFleet(services))),
 			)
+		case "aws":
+			return Effect.map(getAwsInfraFleet({ data }), ({ kinds }) => reading(summarizeAws(kinds)))
 	}
 }
 
