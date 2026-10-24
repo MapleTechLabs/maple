@@ -215,7 +215,8 @@ const runCritic = (
 				kind: kind === "post-wave" ? "post-wave" : "final-clean",
 				architectureMd: s.architectureMd,
 				ledger: criticLedger(s.ledger),
-				candidateStates: [...s.candidates.keys()].map((fingerprint) => ({
+				// Sorted, not hunter-completion order, so a replay sends the critic the same prompt.
+				candidateStates: [...s.candidates.keys()].sort().map((fingerprint) => ({
 					fingerprint,
 					state: "candidate",
 				})),
@@ -223,7 +224,10 @@ const runCritic = (
 					engine.input.prior === null
 						? "No prior ledger exists."
 						: `Prior run ${engine.input.prior.runId}.`,
-				hunterUncovered: s.uncovered,
+				hunterUncovered: s.uncovered
+					.map((surface) => ({ surface, key: JSON.stringify(surface) }))
+					.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+					.map(({ surface }) => surface),
 			},
 			engine.context(agentId),
 		)
@@ -263,9 +267,21 @@ const runCritic = (
 				`coverage critic ${agentId} reassigned this unit`,
 			)
 			const resolved = new Set(result.resolved_prior_leads)
+			// A carried unit links its prior record through `carried_fingerprint`; earlier critics' marks stay.
 			const marked = reopened.map((unit) => {
-				const leads = unit.result_fingerprints.filter((fp) => resolved.has(fp))
-				return leads.length === 0 ? unit : { ...unit, resolved_prior_leads: leads }
+				const linked =
+					unit.carried_fingerprint === undefined
+						? unit.result_fingerprints
+						: [...unit.result_fingerprints, unit.carried_fingerprint]
+				const leads = linked.filter((fp) => resolved.has(fp))
+				return leads.length === 0
+					? unit
+					: {
+							...unit,
+							resolved_prior_leads: [
+								...new Set([...(unit.resolved_prior_leads ?? []), ...leads]),
+							],
+						}
 			})
 			const planned = new Set(
 				[...newIds, ...reassign].filter(

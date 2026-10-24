@@ -241,6 +241,31 @@ failure in `start-failures.json` beside the store (a `-d` child uses
 most once an hour, and from the third consecutive non-interactive repeat waits
 before exiting (1s, doubling, capped at 60s). A successful start clears both.
 
+### In-memory mode
+
+`maple start --in-memory` keeps telemetry for one run only, for CI jobs, tests
+and throwaway sessions. It never touches `~/.maple/data`
+(`apps/cli/src/commands/in-memory-store.ts`).
+
+chDB cannot hold MergeTree tables in RAM: ClickHouse removed the `memory` disk
+type, and the C API treats `--path=:memory:` as an ordinary directory name. The
+store is therefore a fresh temp directory, deleted after chDB closes. On Linux
+it goes on `/dev/shm` (tmpfs, so it really is in RAM) when at least 1 GiB is
+free there. Docker caps `/dev/shm` at 64 MiB by default, so containers fall
+back to the OS temp dir unless run with `--shm-size`. Other platforms always
+use the OS temp dir. The banner prints `in memory` or `temporary` and the path.
+
+Nothing about durability applies: no checkpoints, no store-version or
+dirty-store checks, no migrations. The flag is refused with `--background`,
+`--data-dir`, `--reset`, `--checkpoint-interval`, `--on-dirty-store` and
+`--minimum-raw-telemetry-retention-days`. Stop the server with Ctrl-C (or
+SIGTERM); `maple stop` only finds servers with a data dir. Query commands find
+it through `~/.maple/in-memory-<pid>.maple-server.json`, removed on exit.
+Start failures are recorded in `~/.maple/in-memory.start-failures.json`, so a
+supervisor retrying a failing `--in-memory` start still backs off. A run
+killed with `kill -9` leaves its temp directory behind, and the next
+`--in-memory` start deletes every such directory whose server is gone.
+
 ### Service map rollup
 
 `service_map_edges_hourly` has no materialized view: an edge needs a
@@ -728,6 +753,8 @@ MAPLE_TARGET=linux-arm64 scripts/build-local-binary.sh   # cross-compile (linux-
   chowns a root-owned `/data` and drops to uid 10001 with `setpriv`. Its dirty-store
   policy is `restore-checkpoint` once a checkpoint exists and `wipe` before that,
   so a container killed before its first checkpoint starts instead of crash-looping.
+  `start --in-memory` gets no policy flag (it has no store to recover); pair it
+  with `--shm-size=1g` or more to keep the store in RAM.
   Any other command runs `maple` as is.
 - `build-image.sh <tag> [platforms]` cross-compiles the bundles (or takes
   `BUNDLES=<dir>`) and builds; `image-smoke.sh <image>` is the end-to-end check:
