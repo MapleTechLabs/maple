@@ -266,7 +266,11 @@ const step = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
 			),
 		ClickedContinue: ({ step }) => {
 			if (model.state === null) return { model }
-			const next = saved(model, (state) => completeStep(state, step, hasPlan))
+			// Done without a plan (a save from before the plan came first): back to the plan step, not on.
+			const next = saved(model, (state) => {
+				const completed = completeStep(state, step, hasPlan)
+				return !hasPlan && isQuickStartFinished(completed) ? reopenedForPlan(completed) : completed
+			})
 			const isLast = hasPlan && next.model.state !== null && isQuickStartFinished(next.model.state)
 			return {
 				...next,
