@@ -24,6 +24,14 @@ struct RootView: View {
 
 			case .signedOut:
 				AuthView()
+				#if DEBUG
+					// `MAPLE_DEBUG_SIGNIN_TICKET`: a Clerk sign-in token minted by
+					// `scripts/measure-latency.sh`, so the harness can sign in unattended.
+					.task {
+						guard let ticket = ProcessInfo.processInfo.environment["MAPLE_DEBUG_SIGNIN_TICKET"] else { return }
+						_ = try? await clerk.auth.signInWithTicket(ticket)
+					}
+				#endif
 
 			case .needsOrganization:
 				OrganizationPickerView(mode: .gate)
@@ -52,7 +60,7 @@ struct RootView: View {
 		// exist yet, and `AppNavigation` holds the destination until they do.
 		.onOpenURL { url in
 			#if DEBUG
-				if DebugRoute.open(url, navigation: navigation) { return }
+				if DebugRoute.open(url, navigation: navigation, session: session) { return }
 			#endif
 			Task { await opener.open(url, source: .widget) }
 		}
