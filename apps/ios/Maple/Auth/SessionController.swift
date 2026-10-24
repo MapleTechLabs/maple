@@ -73,6 +73,17 @@ final class SessionController {
 
 	/// A session that is already signed in to a fixture organization and never
 	/// consults Clerk. See `FixtureAPI`.
+	/// Keep the session token minted while the app is in front, the way Clerk's
+	/// web SDK polls, so a screen load does not wait on a Clerk round-trip
+	/// (about 0.9 s on a phone) before its first request. A cached token costs nothing.
+	func keepTokenWarm() async {
+		guard case .ready = phase, !isFixture else { return }
+		while !Task.isCancelled {
+			_ = try? await tokens.token()
+			try? await Task.sleep(for: .seconds(20))
+		}
+	}
+
 	static func fixture(api: any MapleAPI, tokens: ClerkTokenProvider) -> SessionController {
 		SessionController(fixtureAPI: api, tokens: tokens)
 	}
@@ -126,7 +137,8 @@ final class SessionController {
 	/// `setActive` settles. Reading the two together is what let the widgets
 	/// record one organization's id under another's name.
 	var activeOrganizationName: String? {
-		currentOrganizationId.flatMap(name(of:))
+		if isFixture { return FixtureSession.organizationName }
+		return currentOrganizationId.flatMap(name(of:))
 	}
 
 	/// The display name for an organization the user belongs to, for the line

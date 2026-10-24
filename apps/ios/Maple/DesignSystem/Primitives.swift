@@ -432,64 +432,64 @@ struct SectionLabel: View {
 	}
 }
 
-/// A stat tile, following `AlertStatStrip`: hairline-separated cells built from
-/// a `bg-border` backplate showing through 1px gaps, uppercase eyebrow, large
-/// tabular value.
+/// A stat tile: its own hairline card with an uppercase label, a display-face
+/// value and an optional delta or note line, as on the web overview.
 struct StatTile: View {
 	let label: String
 	let value: String
 	var tint: Color = Token.foreground
-	/// The web's `+6.2% vs previous hour` line. Nil hides it.
+	/// The web's `+6.2% vs prev hour` line. Nil hides it.
 	var delta: StatDelta? = nil
+	/// A plain line in place of a delta, such as `2 new today`.
+	var note: (text: String, tint: Color)? = nil
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 8) {
+		VStack(alignment: .leading, spacing: 6) {
 			Text(label)
-				.sectionLabelStyle()
+				.font(Typo.micro)
+				.tracking(0.55)
+				.textCase(.uppercase)
+				.foregroundStyle(Token.mutedForeground)
 				.lineLimit(1)
 			Text(value)
 				.font(Typo.statValue)
+				.tracking(-0.5)
 				.tabularNumbers()
 				.foregroundStyle(tint)
 				.lineLimit(1)
 				.minimumScaleFactor(0.7)
-			if let delta {
-				Text(delta.text)
+			if let line = delta.map({ ($0.text, $0.tint) }) ?? note.map({ ($0.text, $0.tint) }) {
+				Text(line.0)
 					.font(Typo.micro)
 					.tabularNumbers()
-					.foregroundStyle(delta.tint)
+					.foregroundStyle(line.1)
 					.lineLimit(1)
 					.minimumScaleFactor(0.8)
 			}
 		}
-		.padding(.horizontal, 16)
-		.padding(.vertical, 14)
+		.padding(12)
 		// Fill the grid row, so a tile without a delta matches its neighbour.
 		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-		.background(Token.card)
+		.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
+		.overlay(
+			RoundedRectangle(cornerRadius: Token.Radius.lg)
+				.stroke(Token.border, lineWidth: Token.hairline)
+		)
 	}
 }
 
-/// A grid of stat tiles separated by hairlines, produced the way the web does
-/// it — a border-coloured backplate with 1px gaps — rather than by drawing
-/// dividers.
+/// Stat tiles two (or more) to a row, 8pt apart.
 struct StatGrid<Content: View>: View {
 	let columns: Int
 	@ViewBuilder let content: Content
 
 	var body: some View {
 		LazyVGrid(
-			columns: Array(repeating: GridItem(.flexible(), spacing: Token.hairline), count: columns),
-			spacing: Token.hairline
+			columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columns),
+			spacing: 8
 		) {
 			content
 		}
-		.background(Token.border)
-		.clipShape(.rect(cornerRadius: Token.Radius.lg))
-		.overlay(
-			RoundedRectangle(cornerRadius: Token.Radius.lg)
-				.stroke(Token.border, lineWidth: Token.hairline)
-		)
 	}
 }
 

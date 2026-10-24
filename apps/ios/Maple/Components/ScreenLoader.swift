@@ -1,4 +1,5 @@
 import Foundation
+import Maple
 import MapleAPI
 import Observation
 
@@ -51,6 +52,9 @@ final class ScreenLoader<Value: Sendable> {
 	private let isEmpty: @MainActor (Value) -> Bool
 	private let fetch: @MainActor () async throws -> Value
 	private var current: Task<Void, Never>?
+	/// `screen.ready` for this model's first answer; nil once it has painted.
+	private var readySpan: Span?
+	private var readyPending = true
 
 	/// - Parameters:
 	///   - isEmpty: maps a loaded value to `.empty`, so "no services in the
@@ -91,6 +95,7 @@ final class ScreenLoader<Value: Sendable> {
 			current = nil
 		}
 
+		if !state.hasContent { beginReady() }
 		generation += 1
 		let mine = generation
 		switch reason {
@@ -146,7 +151,30 @@ final class ScreenLoader<Value: Sendable> {
 	/// A no-op once any load has run or is running: live data beats cache.
 	func seed(_ value: Value) {
 		guard case .loading = state, !isLoading else { return }
+		beginReady()
 		state = isEmpty(value) ? .empty : .loaded(value)
+		readySource = "cache"
+	}
+
+	private func beginReady() {
+		guard readyPending, readySpan == nil else { return }
+		readySpan = Telemetry.screenReadyBegan(screen: screen, organizationId: session.currentOrganizationId)
+	}
+
+	private var readySource = "network"
+
+	/// The view drew this loader's first answer: content, empty or error.
+	func markPainted() {
+		guard readyPending, let span = readySpan else { return }
+		readyPending = false
+		readySpan = nil
+		switch state {
+		case .loaded: Telemetry.screenReadyEnded(span, outcome: "loaded", source: readySource)
+		case .empty: Telemetry.screenReadyEnded(span, outcome: "empty", source: readySource)
+		case .failed(let error):
+			Telemetry.screenReadyEnded(span, outcome: "failed", source: readySource, error: error)
+		case .loading: break
+		}
 	}
 
 	/// The error state's button and the refresh strip's button.
