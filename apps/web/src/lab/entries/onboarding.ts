@@ -6,11 +6,13 @@ import * as PricingCardsView from "../../page/onboarding/pricing-cards-view"
 import * as QuickStartTeamView from "../../page/onboarding/quick-start-team-view"
 import * as QuickStartView from "../../page/onboarding/quick-start-view"
 import { button } from "../../ui/button"
+import * as CopyButton from "../../ui/copy-button"
 import { icon } from "../../ui/icon"
 import { defineLabWithFlags } from "../define"
 import { defineMessageUnion } from "foldkit/message"
 import * as PricingCards from "../../page/onboarding/pricing-cards"
 import * as QuickStart from "../../page/onboarding/quick-start"
+import { ConnectMessage } from "../../page/onboarding/quick-start-connect"
 import { DEFAULT_QUICK_START_STATE, STEP_IDS } from "../../page/onboarding/quick-start-state"
 import { ready, TeamMessage, updateTeam } from "../../page/onboarding/quick-start-team"
 
@@ -107,11 +109,34 @@ const screenStep = (model: Model, message: QuickStart.Message): Model =>
 		team: model.quickStart.team,
 	})
 
+/** A snippet's or the agent prompt's copy, run for real: the clipboard needs nothing the lab lacks. */
+const copyStep = (model: Model, snippet: string, message: CopyButton.Message): Return => {
+	const connect = model.quickStart.connect
+	const next = CopyButton.update(connect.snippetCopies[snippet] ?? CopyButton.init(), message)
+	return {
+		model: withQuickStart(model, {
+			...model.quickStart,
+			connect: { ...connect, snippetCopies: { ...connect.snippetCopies, [snippet]: next.model } },
+		}),
+		commands: Command.mapMessages(next.commands ?? [], (child) =>
+			Message.GotStepMessage({
+				message: QuickStart.Message.GotConnectMessage({
+					message: ConnectMessage.GotSnippetCopyMessage({ snippet, message: child }),
+				}),
+			}),
+		),
+	}
+}
+
 /** The screen's own update, minus its saves, analytics and navigation; a sample plan's checkout just succeeds. */
 const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 	switch (message._tag) {
 		case "GotTeamMessage":
 			return teamStep(model, message.message)
+		case "GotConnectMessage":
+			return message.message._tag === "GotSnippetCopyMessage"
+				? copyStep(model, message.message.snippet, message.message.message)
+				: { model: screenStep(model, message) }
 		case "GotPricingMessage":
 			return message.message._tag === "ClickedPlan" ? { model: { ...model, hasPlan: true } } : { model }
 		case "ClickedContinue":
