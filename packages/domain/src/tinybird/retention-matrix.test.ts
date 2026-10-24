@@ -103,21 +103,15 @@ describe("Tinybird retention matrix", () => {
 	 * data movement, which is the only correct shape here. Migration 0023's first
 	 * deploy attempt failed on exactly this.
 	 */
-	it("applies service-operations rollup changes by ALTER, never by rebuild", () => {
-		for (const name of ["service_operations_minutely_mv", "service_operations_hourly_mv"]) {
+	it("applies service-operations and endpoint-details rollup changes by ALTER, never by rebuild", () => {
+		for (const name of [
+			"service_operations_minutely_mv",
+			"service_operations_hourly_mv",
+			"service_endpoint_details_hourly_mv",
+		]) {
 			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
 			expect(pipe, name).toBeDefined()
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
 		}
-	})
-
-	// The deploy rejects ALTER on a pipe it has not created yet; move this view to the list
-	// above once it is live.
-	it("creates the endpoint-details rollup without ALTER on its first deploy", () => {
-		const pipe = tinybirdProjectManifest.pipes.find(
-			(candidate) => candidate.name === "service_endpoint_details_hourly_mv",
-		)
-		expect(pipe).toBeDefined()
-		expect(pipe?.content).not.toContain("DEPLOYMENT_METHOD")
 	})
 })
