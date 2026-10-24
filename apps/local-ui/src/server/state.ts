@@ -12,6 +12,8 @@ export const RECHECK_MS = 1_000
 export const PROBE_TIMEOUT_MS = 3_000
 /** Legacy binaries (no `/local/status`): newest span/log in this window stands in for arrival time. */
 export const LEGACY_WINDOW_MS = 10 * 60 * 1000
+/** The server-rendered sign-in page of a self-hosted server with an access token. */
+export const LOGIN_PATH = "/login"
 
 export const Reachability = Schema.Literals(["connected", "busy", "refused", "rejected", "failing"])
 export type Reachability = typeof Reachability.Type

@@ -327,7 +327,7 @@ const DISCONNECTED: PollOutcome = {
 }
 
 export class PlanetScaleService extends Context.Service<PlanetScaleService, PlanetScaleServiceApi>()(
-	"@maple/api/services/PlanetScaleService",
+	"@maple/backend/services/PlanetScaleService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

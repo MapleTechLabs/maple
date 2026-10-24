@@ -23,12 +23,12 @@ import type { Model, ShellClerk } from "./model"
 import {
 	isNavItemActive,
 	matchSubItem,
-	NAV_PREVIEW_MAX_GLYPHS,
 	type NavGroup,
 	type NavItem,
 	type NavSubItem,
 	type NavSurface,
 	navGroups,
+	navPreview,
 	partitionSubItems,
 } from "./nav"
 import { ACTIVE_RAIL, GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } from "./view-sidebar"
@@ -58,18 +58,6 @@ export const presenceOf = (model: Model): ReadonlyArray<InfraSurfaceLiteral> | n
 /** `useInfraSurfaces`: the probe's surfaces plus connected integrations; `null` until the probe answers. */
 export const surfacesOf = (model: Model): ReadonlySet<NavSurface> | null =>
 	infraSurfacesOf(presenceOf(model), model.integrations)
-
-/** Brand marks of a closed section (all or nothing, deduplicated, the section's own page left out). */
-const previewOf = (item: NavItem, isOpen: boolean): ReadonlyArray<NavSubItem> | undefined => {
-	const subItems = item.subItems
-	if (isOpen || subItems === undefined || !subItems.every((sub) => sub.icon !== undefined)) return undefined
-	if (!subItems.some((sub) => sub.iconColor !== undefined)) return undefined
-	const candidates = subItems.filter((sub) => sub.href !== item.href)
-	const unique = candidates.filter(
-		(sub, index) => candidates.findIndex((other) => other.icon === sub.icon) === index,
-	)
-	return unique.length > NAV_PREVIEW_MAX_GLYPHS ? undefined : unique
-}
 
 const activeSubHrefOf = (subItems: ReadonlyArray<NavSubItem>, currentPath: string): string | undefined =>
 	subItems.reduce<{ href: string; length: number } | undefined>((best, sub) => {
@@ -149,7 +137,7 @@ const navRow = (
 	if (isCollapsed && subItems !== undefined && subItems.length > 0)
 		return collapsedSectionRow(h, model, item, isActive)
 	const isOpen = subItems !== undefined && subItems.length > 0 && isActive
-	const preview = previewOf(item, isOpen)
+	const preview = isOpen || subItems === undefined ? undefined : navPreview(item, subItems)
 	return sidebarMenuItem(h, undefined, [
 		sidebarMenuButton(
 			h,
@@ -172,16 +160,21 @@ const navRow = (
 										"flex shrink-0 items-center gap-0.5 text-muted-foreground group-data-[collapsible=icon]:hidden",
 									),
 								],
-								preview.flatMap((sub) =>
-									sub.icon === undefined
-										? []
-										: [
-												icon(h, sub.icon, {
-													className: "size-3",
-													...iconColor(sub.iconColor),
-												}),
-											],
-								),
+								[
+									...preview.glyphs.flatMap((sub) =>
+										sub.icon === undefined
+											? []
+											: [
+													icon(h, sub.icon, {
+														className: "size-3",
+														...iconColor(sub.iconColor),
+													}),
+												],
+									),
+									...(preview.overflow > 0
+										? [h.span([h.Class("ms-0.5 text-2xs tabular-nums")], [`+${preview.overflow}`])]
+										: []),
+								],
 							),
 						]),
 			],

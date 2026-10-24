@@ -181,6 +181,26 @@ describe("getSessionTraces", () => {
 		}),
 	)
 
+	it.effect("bounds the summaries read to the session's span plus 15 minutes", () =>
+		Effect.gen(function* () {
+			const captured: Captured = { sqls: [] }
+			yield* getSessionTraces({ sessionId: "s1" }).pipe(
+				Effect.provide(
+					makeLayer(
+						makeExecutor(captured, {
+							detail: [sessionRow({ sessionId: "s1", traceIds: traceIds(3) })],
+						}),
+					),
+				),
+			)
+
+			const summarySql = sqlFor(captured, "FROM trace_index")!
+			assert.include(summarySql, "traces.Timestamp >= '2025-12-31 23:45:00'")
+			assert.include(summarySql, "traces.Timestamp <= '2026-01-01 00:20:00'")
+			assert.include(summarySql, "trace_index.Bucket <= toDateTime64('2026-01-01 00:20:00.000', 9)")
+		}),
+	)
+
 	it.effect("caps an oversized explicit limit at 100", () =>
 		Effect.gen(function* () {
 			const captured: Captured = { sqls: [] }

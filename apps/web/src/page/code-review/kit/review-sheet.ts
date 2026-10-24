@@ -22,7 +22,7 @@ export const ReviewSheet = Schema.Struct({
 	reviewId: Schema.NullOr(PrReviewId),
 	detail: KeyedSchema(CodeReviewDetail, LoadFailure),
 	detailCache: ResponseCache(CodeReviewDetail),
-	/** The pull request's runs over two weeks up to `ciNowMs` (read once the detail is in). */
+	/** The pull request's runs over 90 days up to `ciNowMs` (read once the detail is in). */
 	ciRuns: KeyedSchema(CodeReviewCiRunsResponse, LoadFailure),
 	ciCache: ResponseCache(CodeReviewCiRunsResponse),
 	nowMs: Schema.Number,
@@ -74,4 +74,3 @@ export const FetchPullRequestRuns = Command.define("FetchCodeReviewPullRequestRu
 			Effect.map((result) => SheetMessage.CompletedFetchCiRuns({ key, result })),
 		),
 })
-

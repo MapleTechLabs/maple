@@ -111,7 +111,6 @@
 		"effect": {
 			"@effect/ai-openai-compat": "4.0.5",
 			"@effect/ai-openrouter": "4.0.5",
-			"@effect/atom-react": "4.0.5",
 			"@effect/language-service": "^0.87.4",
 			"@effect/platform-bun": "4.0.5",
 			"@effect/platform-node": "4.0.5",

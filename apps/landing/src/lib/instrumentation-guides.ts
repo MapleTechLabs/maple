@@ -129,6 +129,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 				icon: { mark: "javascript" },
 			},
 			lang("effect", "Effect SDK in the browser", "/docs/sdks/effect-client"),
+			lang("effect", "Effect SDK for Foldkit apps", "/docs/sdks/effect-foldkit"),
 			{
 				name: "Product events API",
 				hint: "Server-side track() over NDJSON",

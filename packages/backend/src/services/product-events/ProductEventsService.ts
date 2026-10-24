@@ -188,7 +188,7 @@ export const makeProductEvents = (options: {
 }
 
 export class ProductEventsService extends Context.Service<ProductEventsService, ProductEventsApi>()(
-	"@maple/api/services/product-events/ProductEventsService",
+	"@maple/backend/services/product-events/ProductEventsService",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

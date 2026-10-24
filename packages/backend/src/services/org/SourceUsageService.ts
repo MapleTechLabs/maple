@@ -17,7 +17,7 @@ const usageWindow = Effect.map(Clock.currentTimeMillis, (now) => {
 })
 
 export class SourceUsageService extends Context.Service<SourceUsageService>()(
-	"@maple/api/services/SourceUsageService",
+	"@maple/backend/services/SourceUsageService",
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService

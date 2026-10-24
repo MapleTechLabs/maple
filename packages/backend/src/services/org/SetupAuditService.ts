@@ -627,7 +627,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 )
 
 export class SetupAuditService extends Context.Service<SetupAuditService, SetupAuditServiceApi>()(
-	"@maple/api/services/SetupAuditService",
+	"@maple/backend/services/SetupAuditService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

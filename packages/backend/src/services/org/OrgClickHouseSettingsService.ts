@@ -922,7 +922,7 @@ const parseJsonEachRow = <A>(text: string, decode: (line: string) => Option.Opti
 export class OrgClickHouseSettingsService extends Context.Service<
 	OrgClickHouseSettingsService,
 	OrgClickHouseSettingsServiceApi
->()("@maple/api/services/OrgClickHouseSettingsService", {
+>()("@maple/backend/services/OrgClickHouseSettingsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "OrgClickHouseSettingsService", toPersistenceError)
