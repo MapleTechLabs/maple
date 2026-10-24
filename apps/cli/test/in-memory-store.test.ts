@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { Effect, Option } from "effect"
+import * as BunServices from "@effect/platform-bun/BunServices"
+import { Effect, Exit, Option } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -8,6 +9,7 @@ import {
 	IN_MEMORY_STORE_PREFIX,
 	inMemoryConflicts,
 	inMemoryDiscoveryPath,
+	inMemoryStartFailuresKey,
 	inMemoryStoreParent,
 	isAbandonedStore,
 	MIN_TMPFS_FREE_BYTES,
@@ -15,6 +17,8 @@ import {
 	sweepParents,
 	sweepStaleDiscoveryFiles,
 } from "../src/commands/in-memory-store"
+import { guardStartFailures, readStartFailureRecord } from "../src/commands/start-failures"
+import { ChdbError } from "../src/server/chdb"
 
 const NO_FLAGS = {
 	background: false,
@@ -125,6 +129,34 @@ describe("sweepStaleDiscoveryFiles", () => {
 
 		expect(removed).toEqual([dead])
 		expect([dead, live, persistent, otherStore].map(existsSync)).toEqual([false, true, true, true])
+	})
+})
+
+describe("inMemoryStartFailuresKey", () => {
+	let dir: string
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "maple-in-memory-failures-"))
+	})
+	afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+	it("keeps the failure streak across runs, outside any store root", async () => {
+		const key = inMemoryStartFailuresKey(dir)
+		const fail = () =>
+			Effect.runPromiseExit(
+				Effect.fail(new ChdbError({ message: "could not load libchdb" })).pipe(
+					guardStartFailures(key),
+					Effect.provide(BunServices.layer),
+				),
+			)
+		const exitCode = process.exitCode
+		expect(Exit.isFailure(await fail())).toBe(true)
+		await fail()
+		process.exitCode = exitCode
+
+		const record = await Effect.runPromise(
+			readStartFailureRecord(key).pipe(Effect.provide(BunServices.layer)),
+		)
+		expect(Option.map(record, (r) => r.consecutive)).toEqual(Option.some(2))
 	})
 })
 

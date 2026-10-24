@@ -55,6 +55,7 @@ import {
 	type InMemoryStore,
 	inMemoryConflicts,
 	inMemoryDiscoveryPath,
+	inMemoryStartFailuresKey,
 } from "./in-memory-store"
 import { debugLog } from "../lib/debug"
 import { MAPLE_VERSION } from "../version"
@@ -1242,6 +1243,7 @@ export const start = Command.make("start", {
 				inMemory === undefined
 					? serverDiscoveryPath(dataDir)
 					: inMemoryDiscoveryPath(mapleDir, process.pid)
+			const startFailuresKey = inMemory === undefined ? dataDir : inMemoryStartFailuresKey(mapleDir)
 			const bindHost = yield* validatedHost("--host / MAPLE_LOCAL_BIND_HOST", a.host)
 			const auth = yield* Effect.fromResult(remoteAuthFromEnv(process.env)).pipe(
 				Effect.mapError(
@@ -1536,7 +1538,7 @@ export const start = Command.make("start", {
 						auth,
 					})
 					started = true
-					yield* clearStartFailures(dataDir)
+					yield* clearStartFailures(startFailuresKey)
 
 					const bindAddr = serverUrl(bindHost, boundPort)
 					const connectAddr = serverUrl(advertiseHost, boundPort)
@@ -1619,7 +1621,7 @@ export const start = Command.make("start", {
 
 					return yield* Effect.never
 				}),
-			).pipe(guardStartFailures(dataDir, { detachedChild: pidHandoverFrom() !== undefined }))
+			).pipe(guardStartFailures(startFailuresKey, { detachedChild: pidHandoverFrom() !== undefined }))
 		}, Effect.scoped),
 	),
 )

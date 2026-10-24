@@ -260,7 +260,9 @@ dirty-store checks, no migrations. The flag is refused with `--background`,
 `--data-dir`, `--reset`, `--checkpoint-interval`, `--on-dirty-store` and
 `--minimum-raw-telemetry-retention-days`. Stop the server with Ctrl-C (or
 SIGTERM); `maple stop` only finds servers with a data dir. Query commands find
-it through `~/.maple/in-memory-<pid>.maple-server.json`, removed on exit. A run
+it through `~/.maple/in-memory-<pid>.maple-server.json`, removed on exit.
+Start failures are recorded in `~/.maple/in-memory.start-failures.json`, so a
+supervisor retrying a failing `--in-memory` start still backs off. A run
 killed with `kill -9` leaves its temp directory behind, and the next
 `--in-memory` start deletes every such directory whose server is gone.
 

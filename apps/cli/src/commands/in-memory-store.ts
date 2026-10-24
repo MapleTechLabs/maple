@@ -118,6 +118,11 @@ const DISCOVERY_FILE = /^in-memory-(\d+)\.maple-server\.json$/
 export const inMemoryDiscoveryPath = (dir: string, pid: number): string =>
 	join(dir, `in-memory-${pid}.maple-server.json`)
 
+/** The `dataDir` key for an in-memory server's start-failure record. The
+ *  store's own sidecars vanish on exit, which would reset every failure streak
+ *  and defeat the backoff; this lands it at `<dir>/in-memory.start-failures.json`. */
+export const inMemoryStartFailuresKey = (dir: string): string => join(dir, "in-memory")
+
 /** Delete in-memory discovery files under `dir` whose server is gone. Never fails. */
 export const sweepStaleDiscoveryFiles = (
 	dir: string,
