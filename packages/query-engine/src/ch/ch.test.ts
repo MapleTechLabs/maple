@@ -953,18 +953,20 @@ describe("converted queries", () => {
 		expect(sql).toContain("LIMIT 10")
 	})
 
-	it("traceTimeProbeQuery reads the earliest MinTimestamp of the trace from trace_index", () => {
+	it("traceTimeProbeQuery aggregates the trace's first and last span over its trace_index rows", () => {
 		const q = traceTimeProbeQuery({ traceId: "abc123" })
 		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the trace start is the earliest index row MinTimestamp
-		expect(sql).toContain("trace_index.MinTimestamp AS timestamp")
+		// The window must span every index row, not the earliest one.
+		expect(sql).toContain("min(trace_index.MinTimestamp) AS timestamp")
+		// A long trace's tail lives in later rows.
+		expect(sql).toContain("max(trace_index.MaxTimestamp) AS endTimestamp")
 		expect(sql).toContain("FROM trace_index")
 		expect(sql).toContain("TraceId = 'abc123'")
 		expect(sql).toContain("OrgId = 'org_1'")
-		// A trace spans several index rows; the earliest one wins.
-		expect(sql).toMatch(/ORDER BY timestamp ASC\s+LIMIT 1/)
+		// Grouped, so an unknown trace returns no row rather than epoch-zero aggregates.
+		expect(sql).toMatch(/GROUP BY traceId\s+LIMIT 1/)
 		expect(sql).not.toContain("toJSONString")
-		// Unbounded fallback shape — no time predicate.
+		// Unbounded fallback shape: no time predicate.
 		expect(sql).not.toContain("Timestamp >=")
 	})
 

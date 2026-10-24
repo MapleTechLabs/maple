@@ -494,6 +494,56 @@
         "title": "Query-builder draft",
         "type": "object"
       },
+      "AlertQueryTiming": {
+        "additionalProperties": false,
+        "description": "Raw SQL rules only: one check timed against the time limit of the rule's interval.",
+        "properties": {
+          "elapsed_ms": {
+            "description": "Milliseconds one check of the latest window took, or null when it did not finish within `probe_limit_ms`.",
+            "type": "number"
+          },
+          "failure": {
+            "description": "Why the check did not finish, when it did not.",
+            "enum": [
+              "query_too_slow",
+              "query_too_much_memory"
+            ],
+            "type": "string"
+          },
+          "fits_interval_minutes": {
+            "description": "Check intervals whose time limit the query fits with a fifth to spare.",
+            "items": {
+              "enum": [
+                1,
+                5,
+                10,
+                15,
+                30,
+                60
+              ],
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "interval_minutes": {
+            "type": "number"
+          },
+          "limit_ms": {
+            "type": "number"
+          },
+          "probe_limit_ms": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "probe_limit_ms",
+          "interval_minutes",
+          "limit_ms",
+          "fits_interval_minutes"
+        ],
+        "title": "Alert query timing",
+        "type": "object"
+      },
       "AlertRule": {
         "additionalProperties": false,
         "description": "A monitor that evaluates a built-in signal, query-builder query, or raw SQL over a rolling window and opens incidents when the threshold condition holds for enough consecutive checks. Metrics use the same query-builder path as metric charts. Notifications are delivered to the referenced alert destinations.",
@@ -863,6 +913,193 @@
         "title": "Alert Rule",
         "type": "object"
       },
+      "AlertRuleCreateParams": {
+        "additionalProperties": false,
+        "description": "Request body for creating an alert rule. Signal-specific fields (`apdex_threshold_ms`, `query_builder_draft`, `raw_query_*`) are required by their respective `signal_type` and validated server-side.",
+        "examples": [
+          {
+            "comparator": "gt",
+            "destination_ids": [
+              "dest_oybbpTBhtSFGShMjjLiCrh"
+            ],
+            "name": "Checkout error rate",
+            "service_names": [
+              "checkout"
+            ],
+            "severity": "critical",
+            "signal_type": "error_rate",
+            "threshold": 0.05,
+            "window_minutes": 5
+          }
+        ],
+        "properties": {
+          "alert_on_no_data": {
+            "description": "Count a window with no data (e.g. a raw query returning no rows) as a breach, so a rule that goes blind opens an incident. Default `false`: such windows are skipped. Not supported on grouped rules, where a group that stops reporting keeps its incident open until telemetry returns.",
+            "type": "boolean"
+          },
+          "apdex_threshold_ms": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "breaches_out_of": {
+            "exclusiveMinimum": 0,
+            "maximum": 30,
+            "type": "integer"
+          },
+          "comparator": {
+            "$ref": "#/components/schemas/_maple_AlertComparator"
+          },
+          "consecutive_breaches_required": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "consecutive_healthy_required": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "destination_ids": {
+            "description": "Destinations (`dest_…`) of a single-threshold rule.",
+            "items": {
+              "$ref": "#/components/schemas/_maple_AlertDestinationId"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "description": "Whether the rule starts enabled. Defaults to `true`.",
+            "type": "boolean"
+          },
+          "environments": {
+            "description": "Deployment environments to scope the rule to. Omit or pass `[]` for all environments.",
+            "examples": [
+              [
+                "production"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "evaluation_interval_minutes": {
+            "description": "Minutes between checks: 1, 5, 10, 15, 30 or 60, at most `window_minutes`. Raw SQL rules checked less often may run longer queries (5s at 1 minute, 15s at 5, 25s at 10 or more). `null` checks every fifth of the window, 1 to 5 minutes.",
+            "enum": [
+              1,
+              5,
+              10,
+              15,
+              30,
+              60
+            ],
+            "examples": [
+              10
+            ],
+            "type": "number"
+          },
+          "exclude_service_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "group_by": {
+            "items": {
+              "minLength": 1,
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "minimum_sample_count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Human-readable name of the rule. Required, non-empty.",
+            "examples": [
+              "Checkout error rate"
+            ],
+            "minLength": 1,
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "notification_template": {
+            "$ref": "#/components/schemas/_maple_AlertNotificationTemplate"
+          },
+          "query_builder_draft": {
+            "$ref": "#/components/schemas/AlertQueryBuilderDraft"
+          },
+          "raw_query_reducer": {
+            "$ref": "#/components/schemas/_maple_QueryEngineAlertReducer"
+          },
+          "raw_query_sql": {
+            "type": "string"
+          },
+          "renotify_interval_minutes": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "service_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/_maple_AlertSeverity"
+          },
+          "signal_type": {
+            "$ref": "#/components/schemas/_maple_AlertSignalType"
+          },
+          "tags": {
+            "items": {
+              "maxLength": 32,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "threshold": {
+            "type": "number"
+          },
+          "threshold_upper": {
+            "type": "number"
+          },
+          "thresholds": {
+            "description": "Severity tiers (at most one `warning` and one `critical`). When set, `severity`, `threshold`, `threshold_upper` and `destination_ids` are ignored.",
+            "items": {
+              "$ref": "#/components/schemas/AlertThreshold"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array"
+          },
+          "window_minutes": {
+            "description": "Length of the evaluation window in minutes.",
+            "examples": [
+              5
+            ],
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "signal_type",
+          "comparator",
+          "window_minutes"
+        ],
+        "title": "Alert rule create parameters",
+        "type": "object"
+      },
       "AlertRuleList": {
         "additionalProperties": false,
         "description": "A cursor-paginated page of alert rules.",
@@ -905,6 +1142,228 @@
           "has_more"
         ],
         "title": "Alert rule list",
+        "type": "object"
+      },
+      "AlertRulePreviewFiringSpan": {
+        "additionalProperties": false,
+        "description": "A span during which the rule's state machine would have held an open incident.",
+        "properties": {
+          "end": {
+            "type": "string"
+          },
+          "group_key": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/_maple_AlertSeverity"
+          },
+          "start": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_key",
+          "start",
+          "end",
+          "severity"
+        ],
+        "title": "Alert rule preview firing span",
+        "type": "object"
+      },
+      "AlertRulePreviewParams": {
+        "additionalProperties": false,
+        "description": "Request body for previewing what a rule definition would have observed over a historical range.",
+        "properties": {
+          "end_time": {
+            "type": "string"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/AlertRuleCreateParams"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "start_time",
+          "end_time"
+        ],
+        "title": "Alert rule preview parameters",
+        "type": "object"
+      },
+      "AlertRulePreviewPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/_maple_AlertSeverity"
+          },
+          "provisional": {
+            "description": "Set on the trailing in-progress window: evaluated over less than a full window, so its value may still move.",
+            "type": "boolean"
+          },
+          "sample_count": {
+            "type": "number"
+          },
+          "skip_reason": {
+            "$ref": "#/components/schemas/_maple_AlertSkipReason"
+          },
+          "status": {
+            "$ref": "#/components/schemas/_maple_AlertEvaluationStatus"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "bucket",
+          "sample_count",
+          "status"
+        ],
+        "title": "Alert rule preview point",
+        "type": "object"
+      },
+      "AlertRulePreviewResult": {
+        "additionalProperties": false,
+        "description": "Evaluator-faithful preview of a rule over a historical range: the per-window observations the scheduler would have computed, and when incidents would have fired.",
+        "examples": [
+          {
+            "bucket_seconds": 300,
+            "comparator": "gt",
+            "object": "alert_rule.preview",
+            "series": [
+              {
+                "group_key": "__total__",
+                "points": [
+                  {
+                    "bucket": "2026-07-15T09:10:00.000Z",
+                    "sample_count": 132,
+                    "status": "breached",
+                    "value": 0.09
+                  }
+                ]
+              }
+            ],
+            "threshold": 0.05,
+            "threshold_upper": null,
+            "thresholds": [
+              {
+                "destination_ids": [
+                  "dest_oybbpTBhtSFGShMjjLiCrh"
+                ],
+                "recovery_value": null,
+                "severity": "critical",
+                "upper": null,
+                "value": 0.05
+              }
+            ],
+            "truncated_to_start": null,
+            "window_minutes": 5,
+            "would_fire": [
+              {
+                "end": "2026-07-15T09:40:00.000Z",
+                "group_key": "__total__",
+                "severity": "critical",
+                "start": "2026-07-15T09:10:00.000Z"
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "bucket_seconds": {
+            "type": "number"
+          },
+          "comparator": {
+            "$ref": "#/components/schemas/_maple_AlertComparator"
+          },
+          "object": {
+            "description": "The object type — always `\"alert_rule.preview\"`.",
+            "enum": [
+              "alert_rule.preview"
+            ],
+            "type": "string"
+          },
+          "query_timing": {
+            "$ref": "#/components/schemas/AlertQueryTiming"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/AlertRulePreviewSeries"
+            },
+            "type": "array"
+          },
+          "series_failure": {
+            "description": "Raw SQL rules only: the range was too heavy to chart within the longest limit, so `series` is empty. `query_timing` still says whether one check fits. Preview a shorter range to chart it.",
+            "enum": [
+              "query_too_slow",
+              "query_too_much_memory"
+            ],
+            "type": "string"
+          },
+          "threshold": {
+            "type": "number"
+          },
+          "threshold_upper": {
+            "type": "number"
+          },
+          "thresholds": {
+            "items": {
+              "$ref": "#/components/schemas/AlertThreshold"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array"
+          },
+          "truncated_to_start": {
+            "description": "Set when the requested range was clamped to the preview bucket cap.",
+            "type": "string"
+          },
+          "window_minutes": {
+            "type": "number"
+          },
+          "would_fire": {
+            "description": "Spans during which the rule would have held an open incident.",
+            "items": {
+              "$ref": "#/components/schemas/AlertRulePreviewFiringSpan"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "object",
+          "bucket_seconds",
+          "window_minutes",
+          "threshold",
+          "thresholds",
+          "comparator",
+          "series",
+          "would_fire"
+        ],
+        "title": "Alert rule preview result",
+        "type": "object"
+      },
+      "AlertRulePreviewSeries": {
+        "additionalProperties": false,
+        "properties": {
+          "group_key": {
+            "description": "The group this series describes, or `\"__total__\"` for ungrouped rules.",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/AlertRulePreviewPoint"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "group_key",
+          "points"
+        ],
+        "title": "Alert rule preview series",
         "type": "object"
       },
       "AlertThreshold": {
@@ -4911,6 +5370,161 @@
         "title": "Service",
         "type": "object"
       },
+      "ServiceHealth": {
+        "additionalProperties": false,
+        "description": "Per-service golden signals for a window, and optionally for a comparison window, read from the same hourly aggregate as the dashboard overview.",
+        "examples": [
+          {
+            "end_time": "2026-07-15T13:00:00.000Z",
+            "object": "service_health",
+            "previous": null,
+            "services": [
+              {
+                "baseline_p95_latency_ms": 120,
+                "deployment_environment": "production",
+                "error_count": 12,
+                "error_rate": 0.00027,
+                "object": "service_health.service",
+                "p95_latency_ms": 142.9,
+                "request_count": 45000,
+                "service_name": "api",
+                "throughput": 12.5
+              }
+            ],
+            "start_time": "2026-07-15T12:00:00.000Z"
+          }
+        ],
+        "properties": {
+          "end_time": {
+            "type": "string"
+          },
+          "object": {
+            "enum": [
+              "service_health"
+            ],
+            "type": "string"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/ServiceHealthWindow"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceHealthEntry"
+            },
+            "type": "array"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "start_time",
+          "end_time",
+          "services"
+        ],
+        "title": "Service health",
+        "type": "object"
+      },
+      "ServiceHealthEntry": {
+        "additionalProperties": false,
+        "description": "One service in one deployment environment, with its request volume, errors and p95 latency.",
+        "properties": {
+          "baseline_p95_latency_ms": {
+            "type": "number"
+          },
+          "baseline_span_count": {
+            "type": "number"
+          },
+          "deployment_environment": {
+            "type": "string"
+          },
+          "error_count": {
+            "type": "number"
+          },
+          "error_rate": {
+            "type": "number"
+          },
+          "object": {
+            "enum": [
+              "service_health.service"
+            ],
+            "type": "string"
+          },
+          "p95_latency_ms": {
+            "type": "number"
+          },
+          "request_count": {
+            "type": "number"
+          },
+          "service_name": {
+            "$ref": "#/components/schemas/_maple_ServiceName"
+          },
+          "throughput": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "object",
+          "service_name",
+          "request_count",
+          "error_count",
+          "error_rate",
+          "p95_latency_ms",
+          "throughput"
+        ],
+        "title": "Service health entry",
+        "type": "object"
+      },
+      "ServiceHealthParams": {
+        "additionalProperties": false,
+        "properties": {
+          "deployment_environment": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "previous_end_time": {
+            "type": "string"
+          },
+          "previous_start_time": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time"
+        ],
+        "type": "object"
+      },
+      "ServiceHealthWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "end_time": {
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceHealthEntry"
+            },
+            "type": "array"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time",
+          "services"
+        ],
+        "title": "Service health window",
+        "type": "object"
+      },
       "ServiceList": {
         "additionalProperties": false,
         "description": "Cursor-paginated list envelope wrapping a page of objects.",
@@ -5805,7 +6419,7 @@
         "examples": [
           {
             "created_at": "2026-08-21T09:10:00.000Z",
-            "expires_at": "2026-09-20T09:10:00.000Z",
+            "expires_at": "2026-09-04T09:10:00.000Z",
             "object": "widget_credential",
             "organization_id": "org_2abcDEF",
             "scopes": [
@@ -6188,6 +6802,19 @@
           "chat"
         ],
         "title": "Alert Destination Type",
+        "type": "string"
+      },
+      "_maple_AlertEvaluationStatus": {
+        "description": "The evaluation verdict: `breached`, `healthy`, or `skipped` (not enough samples / no data).",
+        "enum": [
+          "breached",
+          "healthy",
+          "skipped"
+        ],
+        "examples": [
+          "breached"
+        ],
+        "title": "Alert Evaluation Status",
         "type": "string"
       },
       "_maple_AlertEventType": {
@@ -7196,6 +7823,141 @@
           }
         ],
         "summary": "List alert rules",
+        "tags": [
+          "Alert Rules"
+        ]
+      }
+    },
+    "/v2/alerts/rules/preview": {
+      "post": {
+        "description": "Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope.",
+        "operationId": "previewAlertRule",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRulePreviewParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertRulePreviewResult"
+                }
+              }
+            },
+            "description": "Evaluator-faithful preview of a rule over a historical range: the per-window observations the scheduler would have computed, and when incidents would have fired."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ParameterInvalidError failure. HTTP 400. | The @maple/http/errors/AlertValidationError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/errors/QueryEngineValidationError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/AlertForbiddenError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/errors/TinybirdOrgTokenConfigError failure. HTTP 500. | The @maple/http/errors/TinybirdOrgTokenMintError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/QueryEngineTimeoutError failure. HTTP 504. | The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Preview an alert rule",
         "tags": [
           "Alert Rules"
         ]
@@ -11588,6 +12350,141 @@
         ]
       }
     },
+    "/v2/services/health": {
+      "post": {
+        "description": "Returns request volume, error rate and p95 latency per (service, environment) for a window, and for an optional comparison window in the same call. Reads the hourly entry-span aggregate the dashboard overview reads, so each window widens to the whole hours it touches (end exclusive), the response carries those hours, and `throughput` is per second over them. Requires `services:read`.",
+        "operationId": "queryServiceHealth",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceHealthParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceHealth"
+                }
+              }
+            },
+            "description": "Per-service golden signals for a window, and optionally for a comparison window, read from the same hourly aggregate as the dashboard overview."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/QueryEngineTimeoutError failure. HTTP 504. | The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Query service health",
+        "tags": [
+          "Services"
+        ]
+      }
+    },
     "/v2/services/{name}": {
       "get": {
         "description": "Returns one service aggregated across environments and namespaces. Requires `services:read`.",
@@ -12460,7 +13357,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+            "description": "The @maple/http/errors/QueryEngineTimeoutError failure. HTTP 504. | The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
           }
         },
         "security": [

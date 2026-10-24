@@ -119,27 +119,7 @@ extension MapleClient {
 		}
 	}
 
-	/// Log volume per bucket for the same filters as the list under it.
-	public func logVolume(_ search: LogSearch, targetPoints: Int = 40) async throws -> [Double] {
-		try await mapping {
-			let output = try await client.queryLogTimeseries(
-				.init(
-					body: .json(
-						.init(
-							aggregation: .count,
-							bucketSeconds: search.window.bucketSeconds(targetPoints: targetPoints),
-							endTime: search.window.endTime,
-							filters: logFilters(search),
-							startTime: search.window.startTime
-						)
-					)
-				)
-			)
-			return try output.ok.body.json.series.first?.points.map(\.value) ?? []
-		}
-	}
-
-	private func logFilters(_ search: LogSearch) -> Components.Schemas.LogFilters {
+	func logFilters(_ search: LogSearch) -> Components.Schemas.LogFilters {
 		.init(
 			bodySearch: search.bodySearch.flatMap { $0.isEmpty ? nil : $0 },
 			deploymentEnvironment: environment,

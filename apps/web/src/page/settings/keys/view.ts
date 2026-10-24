@@ -1,4 +1,5 @@
 import {
+	buildDeviceKeyRows,
 	buildKeyRows,
 	filterKeyRows,
 	type KeyTypeFilter,
@@ -16,14 +17,14 @@ import * as SelectView from "../../../ui/select-view"
 import { skeletonList } from "../../../ui/skeleton"
 import { errorState } from "../../../ui/error-state"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
-import { settingsSection, settingsSections } from "../kit/section"
+import { sectionNote, settingsSection, settingsSections } from "../kit/section"
 import * as CreateDialogView from "./create-dialog-view"
 import { Message } from "./message"
 import type { Model } from "./model"
 import * as RollDialog from "./roll-dialog"
 import { STATUS_VALUES } from "./update"
 import { apiReference, oauthPointer } from "./view-reference"
-import { keysEmpty, keysTable } from "./view-table"
+import { devicesTable, keysEmpty, keysTable } from "./view-table"
 
 // `ApiKeysSection`.
 
@@ -38,7 +39,10 @@ const STATUS_LABELS = { active: "Active", expired: "Expired", revoked: "Revoked"
 const createKeyButton = (h: H, model: Model): Html => {
 	const plus = icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] })
 	if (!model.isAdmin)
-		return button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedCreateKey())] }, [plus, "Create MCP key"])
+		return button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedCreateKey())] }, [
+			plus,
+			"Create MCP key",
+		])
 	return h.div(
 		[h.Class("flex")],
 		[
@@ -105,9 +109,10 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 				view: SelectView.view,
 				toParentMessage: (message) => Message.GotStatusSelectMessage({ message }),
 				viewInputs: {
-					entries: STATUS_VALUES.map(
-						(status): SelectView.SelectEntry => ({ _tag: "Item", item: { value: status, label: STATUS_LABELS[status] } }),
-					),
+					entries: STATUS_VALUES.map((status): SelectView.SelectEntry => ({
+						_tag: "Item",
+						item: { value: status, label: STATUS_LABELS[status] },
+					})),
 					ariaLabel: "Key status",
 					size: "sm",
 					className: "w-36",
@@ -115,7 +120,10 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 					renderItem: (option) => [
 						option.label,
 						" · ",
-						String(new Map<string, number>(Object.entries(counts.statusCounts)).get(option.value) ?? 0),
+						String(
+							new Map<string, number>(Object.entries(counts.statusCounts)).get(option.value) ??
+								0,
+						),
 					],
 					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
@@ -142,9 +150,57 @@ const SYNC_UNAVAILABLE = makeClientErrorBody({
 	recovery: "retry",
 })
 
+/** Revoking a phone's key: what stops, and what can bring it back. */
+const revokeDescription = (h: H, model: Model): ReadonlyArray<Html | string> | string => {
+	if (model.revoking === null)
+		return "Any integrations using this key will stop working immediately. This action cannot be undone."
+	const subject = [
+		h.span([h.Class("text-foreground font-medium")], [model.revoking.name]),
+		" (",
+		h.span([h.Class("font-mono text-xs")], [model.revoking.key_prefix]),
+		")",
+	]
+	return model.revoking.kind === "device"
+		? [
+				...subject,
+				" stop refreshing on that phone immediately. The app mints a new key only while it stays signed in there.",
+			]
+		: [...subject, " will stop working immediately. This action cannot be undone."]
+}
+
+/** `MobileDevicesSection`: the widget keys phones minted, revocable here when a phone is lost. */
+const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
+	const rows = buildDeviceKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
+	return settingsSection(
+		h,
+		{
+			id: "keys-devices-heading",
+			title: "Mobile devices",
+			description: [
+				"Each phone with Maple Home Screen widgets holds a read-only key for them. Revoke one when a phone is lost or no longer yours.",
+			],
+			framed: false,
+			width: "wide",
+		},
+		[
+			panel(h, {}, [
+				model.apiKeys === null
+					? skeletonList(h, { rows: 1, rowClassName: "h-[44px]", gap: "2", className: "p-4" })
+					: rows.length === 0
+						? sectionNote(h, "No phones have Home Screen widgets for this organization.")
+						: devicesTable(h, model, rows, inputs),
+			]),
+		],
+	)
+}
+
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const rows = buildKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
-	const counts = filterKeyRows(rows, { type: model.typeFilter, status: model.statusFilter, search: model.search })
+	const counts = filterKeyRows(rows, {
+		type: model.typeFilter,
+		status: model.statusFilter,
+		search: model.search,
+	})
 	const isLoading = model.apiKeys === null && !model.isLoadFailed
 	const isFailed = model.apiKeys === null && model.isLoadFailed
 	return settingsSections(h, "wide", [
@@ -169,13 +225,19 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								className: "py-12",
 							})
 						: isLoading
-							? skeletonList(h, { rows: 3, rowClassName: "h-[52px]", gap: "2", className: "p-4" })
+							? skeletonList(h, {
+									rows: 3,
+									rowClassName: "h-[52px]",
+									gap: "2",
+									className: "p-4",
+								})
 							: counts.visible.length === 0
 								? keysEmpty(h, model)
 								: keysTable(h, model, counts.visible, inputs),
 				]),
 			],
 		),
+		...(model.isLoadFailed && model.apiKeys === null ? [] : [mobileDevicesSection(h, model, inputs)]),
 		oauthPointer(h),
 		apiReference(h, model),
 		h.submodel({
@@ -196,16 +258,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			slotId: "keys-revoke-dialog",
 			model: model.revokeDialog,
 			toParentMessage: (message) => Message.GotRevokeDialogMessage({ message }),
-			title: "Revoke key?",
-			description:
-				model.revoking === null
-					? "Any integrations using this key will stop working immediately. This action cannot be undone."
-					: [
-							h.span([h.Class("text-foreground font-medium")], [model.revoking.name]),
-							" (",
-							h.span([h.Class("font-mono text-xs")], [model.revoking.key_prefix]),
-							") will stop working immediately. This action cannot be undone.",
-						],
+			title: model.revoking?.kind === "device" ? "Revoke device key?" : "Revoke key?",
+			description: revokeDescription(h, model),
 			confirmLabel: "Revoke key",
 			onConfirm: Message.ClickedConfirmRevoke(),
 			isPending: model.isRevoking,

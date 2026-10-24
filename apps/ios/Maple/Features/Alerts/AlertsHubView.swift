@@ -20,11 +20,13 @@ struct AlertsHubView: View {
 			ZStack {
 				Token.background.ignoresSafeArea()
 				VStack(spacing: 0) {
+					TabRootHeader(title: "Triage")
 					UnderlineTabs(
 						options: AlertsSegment.allCases.map { ($0, $0.title) },
-						selection: $navigation.alertsSegment
+						selection: $navigation.alertsSegment,
+						badge: { models?.badge(for: $0) }
 					)
-					.padding(.top, 4)
+					.padding(.top, 12)
 					if let models {
 						switch navigation.alertsSegment {
 						case .incidents: IncidentsListView(model: models.incidents)
@@ -38,16 +40,9 @@ struct AlertsHubView: View {
 					}
 				}
 			}
+			// Hidden on the root; it names the back button on pushed screens.
 			.navigationTitle("Triage")
-			.navigationBarTitleDisplayMode(.large)
-			.toolbar {
-				ToolbarItem(placement: .topBarLeading) {
-					OrganizationSwitcherButton()
-				}
-				ToolbarItem(placement: .topBarLeading) {
-					EnvironmentPickerView()
-				}
-			}
+			.tabRootChrome()
 			.mapleDestinations()
 		}
 		// Re-runs on an org switch or an environment change, replacing all three
@@ -63,7 +58,7 @@ struct AlertsHubView: View {
 	private var segmentRowHeight: CGFloat {
 		switch navigation.alertsSegment {
 		case .incidents: 72
-		case .errors: 56
+		case .errors: 84
 		case .anomalies: 64
 		}
 	}
@@ -94,43 +89,28 @@ final class AlertsHubModels {
 		anomalies = AnomaliesListModel(api: api, session: session)
 		self.scope = scope
 	}
-}
 
-/// Maple's segmented toggle: hairline frame, the active segment lifted one
-/// tonal step. No system `Picker` — its capsule and its font would be the
-/// only two non-Maple pixels on the screen.
-struct SegmentedControl: View {
-	@Binding var selection: AlertsSegment
-	@Namespace private var namespace
-
-	var body: some View {
-		HStack(spacing: 2) {
-			ForEach(AlertsSegment.allCases) { segment in
-				Button {
-					withAnimation(.snappy(duration: 0.22)) { selection = segment }
-				} label: {
-					Text(segment.title)
-						.font(Typo.smallMedium)
-						.foregroundStyle(selection == segment ? Token.foreground : Token.mutedForeground)
-						.frame(maxWidth: .infinity)
-						.frame(height: 28)
-						.background {
-							if selection == segment {
-								RoundedRectangle(cornerRadius: Token.Radius.sm)
-									.fill(Token.muted)
-									.matchedGeometryEffect(id: "segment", in: namespace)
-							}
-						}
-						.contentShape(.rect)
-				}
-				.buttonStyle(.plain)
-			}
+	/// The segment's count once its first load has answered; nil before, so a
+	/// label never shows a number that is not real yet. Alerts turn red when open.
+	func badge(for segment: AlertsSegment) -> UnderlineTabBadge? {
+		switch segment {
+		case .errors:
+			guard let count = Self.count(issues.state) else { return nil }
+			return UnderlineTabBadge(text: issues.canLoadMore ? "\(count)+" : "\(count)")
+		case .incidents:
+			guard let count = Self.count(incidents.state) else { return nil }
+			return UnderlineTabBadge(text: "\(count)", tint: count > 0 ? Token.destructive : Token.mutedForeground)
+		case .anomalies:
+			guard let count = Self.count(anomalies.state) else { return nil }
+			return UnderlineTabBadge(text: "\(count)")
 		}
-		.padding(2)
-		.background(Token.card, in: .rect(cornerRadius: Token.Radius.md))
-		.overlay(
-			RoundedRectangle(cornerRadius: Token.Radius.md)
-				.stroke(Token.border, lineWidth: Token.hairline)
-		)
+	}
+
+	private static func count<Element>(_ state: LoadState<[Element]>) -> Int? {
+		switch state {
+		case .loaded(let items): items.count
+		case .empty: 0
+		case .loading, .failed: nil
+		}
 	}
 }
