@@ -1,8 +1,8 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { VcsRepositoryId } from "@maple/domain/http/vcs"
-import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
-import type { AuditEvent, CoverageUnit, Finding, RunMetadata } from "@maple/security-audit"
+import type { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
+import type { AgentUsage, AuditEvent, CoverageUnit, Finding, RunMetadata } from "@maple/security-audit"
 import { Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -93,6 +93,32 @@ const seedRun = (
 		})
 		const run = yield* scoped.startRun({ targetId: target, kind: "baseline", sourceRef })
 		return { targetId: target, runId: run.id }
+	})
+
+/** What a run that ran to its end leaves behind: metadata, reports and a ledger. */
+const persistRunState = (
+	store: SecurityAuditStoreApi,
+	org: OrgId,
+	runId: SecurityAuditRunId,
+	scopePaths: ReadonlyArray<string> = [],
+) =>
+	Effect.gen(function* () {
+		const scoped = store.forOrg(org)
+		yield* scoped.saveMetadata({
+			run_id: runId,
+			repo: "acme/api",
+			target: "acme/api@main",
+			source_ref: "sha-1",
+			profile: "deep",
+			scope_paths: scopePaths,
+			budget: 40,
+			execution_policy: "sandboxed-source-and-local-only",
+			execution: { _tag: "Unavailable", blocker: "no sandbox" },
+			prior_runs: [],
+			run_status: "complete",
+		})
+		yield* scoped.saveReports(runId, { report: "r", findingsDetail: "d", needsValidation: "n" })
+		yield* scoped.saveLedger(runId, [unit("u1", "covered", 1)])
 	})
 
 describe("SecurityAuditStore ledger", () => {
@@ -533,12 +559,13 @@ describe("SecurityAuditStore triage", () => {
 		withStore((store) =>
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
+				// Each run settles before the next starts: a settled run keeps its first outcome.
 				const done = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.finishRun(done.runId, { status: "complete" })
 				const failed = yield* seedRun(store, orgA, "sha-2", done.targetId)
+				yield* scoped.finishRun(failed.runId, { status: "failed", error: "boom" })
 				yield* seedRun(store, orgA, "sha-3", done.targetId)
 				const other = yield* seedRun(store, orgB, "sha-1")
-				yield* scoped.finishRun(done.runId, { status: "complete" })
-				yield* scoped.finishRun(failed.runId, { status: "failed", error: "boom" })
 
 				const finished = yield* scoped.listRuns({
 					targetId: done.targetId,
@@ -731,7 +758,10 @@ describe("SecurityAuditStore run admission", () => {
 							sourceRef: "main",
 							scopePaths,
 						})
-						if (finish) yield* scoped.finishRun(run.id, { status: "complete" })
+						if (finish) {
+							yield* persistRunState(store, orgA, run.id, scopePaths)
+							yield* scoped.finishRun(run.id, { status: "complete" })
+						}
 						return run.id
 					})
 				const none = yield* scoped.latestPriorRun(target.id)
@@ -748,6 +778,29 @@ describe("SecurityAuditStore run admission", () => {
 						Option.map(preferred, (r) => r.id),
 					],
 					[true, Option.some(scopedOnly), Option.some(whole)],
+				)
+			}),
+		),
+	)
+
+	it.effect("skips cancelled runs and runs that never saved a ledger or reports", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const usable = yield* seedRun(store, orgA, "sha-1")
+				yield* persistRunState(store, orgA, usable.runId)
+				yield* scoped.finishRun(usable.runId, { status: "complete" })
+				// Partial state, then cancelled: newer, but its ledger says nothing about what is fixed.
+				const cancelled = yield* seedRun(store, orgA, "sha-2", usable.targetId)
+				yield* persistRunState(store, orgA, cancelled.runId)
+				yield* scoped.cancelRun(cancelled.runId, user)
+				// Finished without ever saving its ledger or reports.
+				const empty = yield* seedRun(store, orgA, "sha-3", usable.targetId)
+				yield* scoped.finishRun(empty.runId, { status: "incomplete", reason: "budget_exhausted" })
+				const prior = yield* scoped.latestPriorRun(usable.targetId)
+				assert.deepStrictEqual(
+					Option.map(prior, (r) => r.id),
+					Option.some(usable.runId),
 				)
 			}),
 		),
@@ -847,6 +900,224 @@ describe("SecurityAuditStore lenient run and event reads", () => {
 				assert.deepStrictEqual(
 					[newest.map((e) => e.id), older.map((e) => e.id), counts],
 					[["e4", "e5"], ["e2", "e3"], { covered: 2, planned: 1 }],
+				)
+			}),
+		),
+	)
+})
+
+describe("SecurityAuditStore cancellation", () => {
+	it.effect("cancels an in-progress run once, records who did it, and refuses a finished run", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const done = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.finishRun(done.runId, { status: "complete" })
+				const { runId } = yield* seedRun(store, orgA, "sha-2", done.targetId)
+
+				const cancelled = yield* scoped.cancelRun(runId, user)
+				const again = yield* scoped.cancelRun(runId, user)
+				const finished = yield* scoped.cancelRun(done.runId, user)
+				const foreign = yield* store.forOrg(orgB).cancelRun(done.runId, user)
+				const events = yield* scoped.listEvents(runId)
+
+				assert.deepStrictEqual(
+					Option.map(cancelled, (r) => [r.status, r.incompleteReason, r.finishedAt === null]),
+					Option.some(["incomplete", "cancelled", false]),
+				)
+				assert.deepStrictEqual(
+					[Option.isNone(again), Option.isNone(finished), Option.isNone(foreign)],
+					[true, true, true],
+				)
+				assert.deepStrictEqual(
+					events.map((e) => [e.kind, e.detail?.message]),
+					[["Note", `Run cancelled by ${user}`]],
+				)
+			}),
+		),
+	)
+
+	it.effect("keeps a cancelled run cancelled when a late settle or metadata write arrives", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.cancelRun(runId, user)
+				yield* scoped.saveMetadata({
+					run_id: runId,
+					repo: "acme/api",
+					target: "acme/api@main",
+					source_ref: "sha-1",
+					profile: "deep",
+					scope_paths: [],
+					budget: 40,
+					execution_policy: "sandboxed-source-and-local-only",
+					execution: { _tag: "Unavailable", blocker: "no sandbox" },
+					prior_runs: [],
+					run_status: "complete",
+				})
+				yield* scoped.finishRun(runId, { status: "complete" })
+				yield* scoped.finishRun(runId, { status: "failed", error: "interrupted" })
+				const missing = yield* Effect.flip(
+					scoped.finishRun(crypto.randomUUID(), { status: "complete" }),
+				)
+
+				const run = Option.getOrThrow(yield* scoped.getRun(runId))
+				assert.deepStrictEqual(
+					[run.status, run.incompleteReason, run.error, run.metadata],
+					["incomplete", "cancelled", null, null],
+				)
+				assert.include(missing.message, "not found")
+			}),
+		),
+	)
+})
+
+describe("SecurityAuditStore unit summaries", () => {
+	it.effect("lists every unit leanly, keeping one stored under an older shape with null fields", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveLedger(runId, [
+					{ ...unit("u1", "candidate", 2), priority: 3, result_fingerprints: ["f1"] },
+				])
+				const db = trackedDbs[0]
+				assert.isDefined(db)
+				yield* Effect.promise(() =>
+					db.pglite.query(
+						`INSERT INTO security_audit_units (run_id, coverage_id, org_id, status, wave, agent_id, unit)
+						 VALUES ($1, 'u0', $2, 'blocked', 1, null, '{"coverage_id":"u0"}'::jsonb),
+						        ($1, 'u9', $2, 'not-a-status', 1, null, '{"coverage_id":"u9"}'::jsonb)`,
+						[runId, orgA],
+					),
+				)
+
+				const units = yield* scoped.listUnitSummaries(runId)
+				const foreign = yield* store.forOrg(orgB).listUnitSummaries(runId)
+
+				assert.deepStrictEqual(
+					units.map((u) => [u.coverageId, u.status, u.wave, u.fields?.subsystem ?? null]),
+					[
+						["u0", "blocked", 1, null],
+						["u1", "candidate", 2, "sub"],
+					],
+				)
+				assert.deepStrictEqual(
+					[units[1]?.fields?.priority, units[1]?.fields?.result_fingerprints, foreign],
+					[3, ["f1"], []],
+				)
+			}),
+		),
+	)
+})
+
+describe("SecurityAuditStore writes after a run finished", () => {
+	it.effect("turns every engine write to a cancelled run into a no-op, never an error", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const prior = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(prior.runId, [confirmed("f1")])
+				yield* scoped.finishRun(prior.runId, { status: "complete" })
+				const { runId } = yield* seedRun(store, orgA, "sha-2", prior.targetId)
+				yield* scoped.cancelRun(runId, user)
+
+				// A replayed or still-running Workflow keeps writing after the cancel landed.
+				yield* scoped.saveLedger(runId, [unit("u1", "covered", 1)])
+				yield* scoped.saveFindings(runId, [confirmed("f1", "low"), confirmed("f2")])
+				yield* scoped.saveArchitecture(runId, "# late")
+				yield* scoped.saveReports(runId, { report: "late", findingsDetail: "", needsValidation: "" })
+				yield* scoped.setUsage(runId, {
+					invocations: 99,
+					inputTokens: 1,
+					outputTokens: 1,
+					costUsd: 9,
+				})
+				yield* scoped.recordEvent(runId, { _tag: "Phase", phase: "late", detail: "after cancel" })
+				const fixed = yield* scoped.markFixed(prior.targetId, ["f1"], runId)
+
+				const run = Option.getOrThrow(yield* scoped.getRun(runId))
+				const findings = yield* scoped.listFindings(prior.targetId)
+				assert.deepStrictEqual(
+					[
+						fixed,
+						run.architectureMd,
+						run.reports,
+						run.invocationsSpent,
+						(yield* scoped.listUnits(runId)).length,
+						(yield* scoped.listEvents(runId)).map((e) => e.kind),
+					],
+					[0, null, null, 0, 0, ["Note"]],
+				)
+				assert.deepStrictEqual(
+					findings.map((f) => [f.fingerprint, f.status, f.lastSeenRunId, f.overallSeverity]),
+					[["f1", "open", prior.runId, "high"]],
+				)
+			}),
+		),
+	)
+
+	it.effect("records a cancelled run's spend from its agents' events", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "sha-1")
+				const agent = (agentId: string, usage: AgentUsage): AuditEvent => ({
+					_tag: "Agent",
+					role: "hunter",
+					agentId,
+					outcome: "ok",
+					usage,
+				})
+				const tokens = { inputTokens: 100, outputTokens: 10 }
+				yield* scoped.recordEvent(runId, agent("hunter-1", { ...tokens, costUsd: 0.25 }))
+				yield* scoped.recordEvent(runId, agent("hunter-2", { ...tokens, costUsd: 0.5 }))
+				// An agent whose price is unknown still counts its invocation and tokens.
+				yield* scoped.recordEvent(runId, agent("hunter-3", tokens))
+				yield* scoped.recordEvent(runId, { _tag: "Phase", phase: "wave", detail: "1" })
+
+				const cancelled = yield* scoped.cancelRun(runId, user)
+				assert.deepStrictEqual(
+					Option.map(cancelled, (r) => [
+						r.invocationsSpent,
+						r.inputTokens,
+						r.outputTokens,
+						r.costUsd,
+					]),
+					Option.some([3, 300, 30, 0.75]),
+				)
+			}),
+		),
+	)
+
+	it.effect("treats a run the engine marked complete but that has not settled as unfinished", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveMetadata({
+					run_id: runId,
+					repo: "acme/api",
+					target: "acme/api@main",
+					source_ref: "sha-1",
+					profile: "deep",
+					scope_paths: [],
+					budget: 40,
+					execution_policy: "sandboxed-source-and-local-only",
+					execution: { _tag: "Unavailable", blocker: "no sandbox" },
+					prior_runs: [],
+					run_status: "complete",
+				})
+				const second = yield* Effect.flip(
+					scoped.startRun({ targetId, kind: "manual", sourceRef: "main" }),
+				)
+				const prior = yield* scoped.latestPriorRun(targetId)
+				const cancelled = yield* scoped.cancelRun(runId, user)
+
+				assert.deepStrictEqual(
+					[second._tag, Option.isNone(prior), Option.map(cancelled, (r) => r.incompleteReason)],
+					["@maple/backend/security-audit/RunInProgress", true, Option.some("cancelled")],
 				)
 			}),
 		),

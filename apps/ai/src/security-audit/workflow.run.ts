@@ -176,6 +176,8 @@ export const auditWithAgents = <E, R>(
 			payload.priorRunId === null ? Option.none() : yield* store.getRun(payload.priorRunId),
 			(row) =>
 				(row.status === "complete" || row.status === "incomplete") &&
+				// A cancelled run's ledger and findings are partial, so it says nothing about what is fixed.
+				row.incompleteReason !== "cancelled" &&
 				row.metadata !== null &&
 				row.metadata.repo === payload.repository,
 		)
@@ -262,7 +264,9 @@ export const auditWithAgents = <E, R>(
 				prior !== null &&
 				// An unread or cut diff is evidence of nothing; claiming a fix needs the diff.
 				!changed.includes(EVERYTHING_CHANGED) &&
-				Option.isSome(row)
+				Option.isSome(row) &&
+				// Cancelled (or otherwise finished) meanwhile: never mark fixed, and finishRun keeps its outcome.
+				row.value.finishedAt === null
 			) {
 				const reported = new Set(result.findings.map((f) => f.fingerprint))
 				const gone = (yield* store.listFindings(row.value.targetId)).filter(

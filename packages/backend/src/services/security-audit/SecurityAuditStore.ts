@@ -112,7 +112,16 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly latestPriorRun: (
 		targetId: SecurityAuditTargetId,
 	) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
+	/** Settles an unsettled run; a run that already finished (settled or cancelled) is left as it is. */
 	readonly finishRun: (runId: string, outcome: FinishRunOutcome) => Effect.Effect<void, AuditStoreError>
+	/**
+	 * Marks an in-progress run `incomplete` with reason `cancelled` and records who did it, in one
+	 * conditional write. None when the run is missing or already finished.
+	 */
+	readonly cancelRun: (
+		runId: string,
+		actor: UserId,
+	) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
 	/** Sets the run's totals (absolute, so a retried or replayed write cannot double-count). */
 	readonly setUsage: (runId: string, usage: RunUsage) => Effect.Effect<void, AuditStoreError>
 	readonly getRun: (runId: string) => Effect.Effect<Option.Option<SecurityAuditRunRow>, AuditStoreError>
@@ -122,6 +131,10 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		readonly limit?: number
 	}) => Effect.Effect<ReadonlyArray<SecurityAuditRunRow>, AuditStoreError>
 	readonly listUnits: (runId: string) => Effect.Effect<ReadonlyArray<SecurityAuditUnitRow>, AuditStoreError>
+	/** Every ledger unit as a lean summary; a unit stored under an older shape keeps its columns. */
+	readonly listUnitSummaries: (
+		runId: string,
+	) => Effect.Effect<ReadonlyArray<SecurityAuditUnitSummary>, AuditStoreError>
 	/** Ledger units per status, counted in SQL. */
 	readonly countUnits: (runId: string) => Effect.Effect<Record<string, number>, AuditStoreError>
 	/** One run's final records, the input a later run carries forward. */
@@ -139,7 +152,7 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly listFindings: (
 		targetId: SecurityAuditTargetId,
 	) => Effect.Effect<ReadonlyArray<SecurityAuditFindingRow>, AuditStoreError>
-	/** Findings a revalidation no longer finds: open ones become `fixed`; returns how many did. */
+	/** Findings a revalidation no longer finds: open ones become `fixed`; returns how many did (0 once the run finished). */
 	readonly markFixed: (
 		targetId: SecurityAuditTargetId,
 		fingerprints: ReadonlyArray<string>,
@@ -168,6 +181,41 @@ export interface ConnectedRepository {
 	readonly fullName: string
 }
 
+/** A ledger unit's columns plus its human fields; `fields` is null when the stored unit no longer decodes. */
+export interface SecurityAuditUnitSummary {
+	readonly coverageId: string
+	readonly status: UnitStatus
+	readonly wave: number
+	readonly agentId: string | null
+	readonly fields: UnitSummaryFields | null
+}
+
+/** The few fields of a stored unit a listing shows; other keys are ignored, so drift there is harmless. */
+const UnitSummaryFields = Schema.Struct({
+	subsystem: CoverageUnit.fields.subsystem,
+	surface: CoverageUnit.fields.surface,
+	boundary: CoverageUnit.fields.boundary,
+	attack_class: CoverageUnit.fields.attack_class,
+	prior_status: CoverageUnit.fields.prior_status,
+	priority: CoverageUnit.fields.priority,
+	failed_attempts: CoverageUnit.fields.failed_attempts,
+	result_fingerprints: CoverageUnit.fields.result_fingerprints,
+	carried_fingerprint: CoverageUnit.fields.carried_fingerprint,
+	unresolved: CoverageUnit.fields.unresolved,
+})
+export type UnitSummaryFields = typeof UnitSummaryFields.Type
+
+/**
+ * Only those keys of the stored unit, picked in SQL so a listing never ships prompts, paths or
+ * attempts. Absent keys are stripped, which is what the optional fields expect. A constant: no input.
+ */
+const UNIT_SUMMARY_EXPR = PG.rawExpr(
+	`jsonb_strip_nulls(jsonb_build_object(${Object.keys(UnitSummaryFields.fields)
+		.map((key) => `'${key}', "unit"->'${key}'`)
+		.join(", ")}))`,
+	PG.jsonb(),
+)
+
 /** An event row whose `detail` is null when it was written under an older shape. */
 export type SecurityAuditEventRecord = Omit<SecurityAuditEventRow, "detail"> & {
 	readonly detail: SecurityAuditEventRow["detail"] | null
@@ -194,7 +242,7 @@ export interface SecurityAuditStoreApi {
 
 const DEFAULT_RUN_LIST_LIMIT = 50
 
-/** Longer than any audit run lasts; an `in_progress` run older than this was abandoned. */
+/** Longer than any agent lasts; an unfinished run with no event this recent was abandoned. */
 const STALE_RUN_MS = 48 * 60 * 60 * 1000
 
 /** Ledger units per insert: 7 binds each keeps one statement far under Postgres's 65,535. */
@@ -202,6 +250,7 @@ const LEDGER_INSERT_CHUNK = 500
 
 const decodeCoverageUnit = Schema.decodeUnknownOption(CoverageUnit)
 const decodeUnitStatus = Schema.decodeUnknownOption(UnitStatus)
+const decodeUnitSummary = Schema.decodeUnknownOption(UnitSummaryFields)
 const decodeFinding = Schema.decodeUnknownOption(FindingSchema)
 const decodeRunMetadata = Schema.decodeUnknownOption(RunMetadataRecord)
 const decodeReports = Schema.decodeUnknownOption(AuditReportsRecord)
@@ -317,19 +366,74 @@ const runNotFound = (runId: string) =>
 const overallSeverity = (finding: Finding) =>
 	finding.verdict === "confirmed" ? finding.severity.overall_severity : null
 
-/** The run's own row, read inside the caller's transaction; absent for another org's run. */
-const requireRun = (db: MapleDb, orgId: OrgId, runId: SecurityAuditRunId) =>
+/** The stored row for one engine event; its id makes a replayed insert a no-op. */
+const eventRow = (orgId: OrgId, runId: SecurityAuditRunId, event: AuditEvent) =>
+	Effect.gen(function* () {
+		const at = yield* Clock.currentTimeMillis
+		const id = yield* eventId(runId, event)
+		const base = { id, runId, orgId, at, kind: event._tag }
+		const row: PG.InsertRowOf<typeof SecurityAuditEvents> =
+			event._tag === "Agent"
+				? {
+						...base,
+						role: event.role,
+						agentId: event.agentId,
+						outcome: event.outcome,
+						detail: {
+							message: event.message ?? null,
+							phase: null,
+							detail: null,
+							costUsd: event.usage?.costUsd ?? null,
+						},
+						inputTokens: event.usage?.inputTokens ?? null,
+						outputTokens: event.usage?.outputTokens ?? null,
+					}
+				: {
+						...base,
+						role: null,
+						agentId: null,
+						outcome: null,
+						detail:
+							event._tag === "Phase"
+								? { message: null, phase: event.phase, detail: event.detail, costUsd: null }
+								: { message: event.message, phase: null, detail: null, costUsd: null },
+						inputTokens: null,
+						outputTokens: null,
+					}
+		return row
+	})
+
+const insertEvent = (db: MapleDb, row: PG.InsertRowOf<typeof SecurityAuditEvents>) =>
+	db.run(
+		PG.insertInto(SecurityAuditEvents)
+			.values(row)
+			.onConflictDoNothing({ target: ["id"] }),
+	)
+
+/**
+ * The run's own row, locked for the caller's transaction so a concurrent cancel or settle waits.
+ * Fails for a missing (or another org's) run; None once the run finished, so a late write from a
+ * replayed or terminated Workflow is a logged no-op rather than an error it would retry.
+ */
+const lockOpenRun = (db: MapleDb, orgId: OrgId, runId: SecurityAuditRunId, write: string) =>
 	db
 		.run(
 			PG.from(SecurityAuditRuns)
-				.select("id", "targetId", "sourceRef")
+				.select("id", "targetId", "sourceRef", "finishedAt")
 				.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)])
-				.limit(1),
+				.limit(1)
+				.forUpdate(),
 		)
 		.pipe(
-			Effect.flatMap((rows) =>
-				rows[0] === undefined ? Effect.fail(runNotFound(runId)) : Effect.succeed(rows[0]),
-			),
+			Effect.flatMap((rows) => {
+				const row = rows[0]
+				if (row === undefined) return Effect.fail(runNotFound(runId))
+				if (row.finishedAt === null) return Effect.succeed(Option.some(row))
+				return Effect.logInfo("Skipped a write to a finished security audit run").pipe(
+					Effect.annotateLogs({ runId, write }),
+					Effect.as(Option.none<typeof row>()),
+				)
+			}),
 		)
 
 export class SecurityAuditStore extends Context.Service<SecurityAuditStore, SecurityAuditStoreApi>()(
@@ -340,21 +444,23 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 			const dbExecute = makeDbExecute(database, "SecurityAuditStore", toStoreError)
 
 			const forOrg = (orgId: OrgId): SecurityAuditOrgStore => {
-				/** Updates the org's run and fails when no such run exists. */
-				const updateRun = (
+				/** Updates the org's run while it is unfinished; fails when no such run exists. */
+				const updateOpenRun = (
 					runId: SecurityAuditRunId,
 					values: PG.UpdateSetOf<typeof SecurityAuditRuns>,
+					write: string,
 				) =>
 					dbExecute((db) =>
-						db.run(
-							PG.update(SecurityAuditRuns)
-								.set(values)
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)])
-								.returning("id"),
-						),
-					).pipe(
-						Effect.flatMap((rows) =>
-							rows.length === 0 ? Effect.fail(runNotFound(runId)) : Effect.void,
+						db.transaction(
+							Effect.gen(function* () {
+								const open = yield* lockOpenRun(db, orgId, runId, write)
+								if (Option.isNone(open)) return
+								yield* db.run(
+									PG.update(SecurityAuditRuns)
+										.set(values)
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)]),
+								)
+							}),
 						),
 					)
 
@@ -389,27 +495,31 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					"SecurityAuditStore.saveMetadata",
 				)(function* (metadata) {
 					const runId = yield* decodeRunId(metadata.run_id)
-					yield* updateRun(runId, {
-						metadata,
-						sourceRef: metadata.source_ref,
-						profile: metadata.profile,
-						scopePaths: metadata.scope_paths,
-						budget: metadata.budget,
-						// `status` is the row's lifecycle, settled by finishRun; the engine's stays in metadata.
-					})
+					yield* updateOpenRun(
+						runId,
+						{
+							metadata,
+							sourceRef: metadata.source_ref,
+							profile: metadata.profile,
+							scopePaths: metadata.scope_paths,
+							budget: metadata.budget,
+							// `status` is the row's lifecycle, settled by finishRun; the engine's stays in metadata.
+						},
+						"metadata",
+					)
 				})
 
 				const saveArchitecture: AuditStoreApi["saveArchitecture"] = Effect.fn(
 					"SecurityAuditStore.saveArchitecture",
 				)(function* (rawRunId, architectureMd) {
 					const runId = yield* decodeRunId(rawRunId)
-					yield* updateRun(runId, { architectureMd })
+					yield* updateOpenRun(runId, { architectureMd }, "architecture")
 				})
 
 				const saveReports: AuditStoreApi["saveReports"] = Effect.fn("SecurityAuditStore.saveReports")(
 					function* (rawRunId, reports) {
 						const runId = yield* decodeRunId(rawRunId)
-						yield* updateRun(runId, { reports })
+						yield* updateOpenRun(runId, { reports }, "reports")
 					},
 				)
 
@@ -419,7 +529,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						yield* dbExecute((db) =>
 							db.transaction(
 								Effect.gen(function* () {
-									yield* requireRun(db, orgId, runId)
+									const open = yield* lockOpenRun(db, orgId, runId, "ledger")
+									if (Option.isNone(open)) return
 									yield* db.run(
 										PG.deleteFrom(SecurityAuditUnits).where(($) => [
 											$.orgId.eq(orgId),
@@ -469,7 +580,9 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					yield* dbExecute((db) =>
 						db.transaction(
 							Effect.gen(function* () {
-								const run = yield* requireRun(db, orgId, runId)
+								const open = yield* lockOpenRun(db, orgId, runId, "findings")
+								if (Option.isNone(open)) return
+								const run = open.value
 								yield* db.run(
 									PG.deleteFrom(SecurityAuditRunFindings).where(($) => [
 										$.orgId.eq(orgId),
@@ -566,56 +679,13 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				const recordEvent: AuditStoreApi["recordEvent"] = Effect.fn("SecurityAuditStore.recordEvent")(
 					function* (rawRunId, event) {
 						const runId = yield* decodeRunId(rawRunId)
-						const at = yield* Clock.currentTimeMillis
-						const id = yield* eventId(runId, event)
-						const base = { id, runId, orgId, at, kind: event._tag }
-						const row: PG.InsertRowOf<typeof SecurityAuditEvents> =
-							event._tag === "Agent"
-								? {
-										...base,
-										role: event.role,
-										agentId: event.agentId,
-										outcome: event.outcome,
-										detail: {
-											message: event.message ?? null,
-											phase: null,
-											detail: null,
-											costUsd: event.usage?.costUsd ?? null,
-										},
-										inputTokens: event.usage?.inputTokens ?? null,
-										outputTokens: event.usage?.outputTokens ?? null,
-									}
-								: {
-										...base,
-										role: null,
-										agentId: null,
-										outcome: null,
-										detail:
-											event._tag === "Phase"
-												? {
-														message: null,
-														phase: event.phase,
-														detail: event.detail,
-														costUsd: null,
-													}
-												: {
-														message: event.message,
-														phase: null,
-														detail: null,
-														costUsd: null,
-													},
-										inputTokens: null,
-										outputTokens: null,
-									}
+						const row = yield* eventRow(orgId, runId, event)
 						yield* dbExecute((db) =>
 							db.transaction(
 								Effect.gen(function* () {
-									yield* requireRun(db, orgId, runId)
-									yield* db.run(
-										PG.insertInto(SecurityAuditEvents)
-											.values(row)
-											.onConflictDoNothing({ target: ["id"] }),
-									)
+									const open = yield* lockOpenRun(db, orgId, runId, "event")
+									if (Option.isNone(open)) return
+									yield* insertEvent(db, row)
 								}),
 							),
 						)
@@ -742,7 +812,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											.where(($) => [
 												$.orgId.eq(orgId),
 												$.targetId.eq(input.targetId),
-												$.status.eq("in_progress"),
+												$.finishedAt.isNull(),
 												$.startedAt.lt(now - STALE_RUN_MS),
 											]),
 									)
@@ -771,7 +841,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												.where(($) => [
 													$.orgId.eq(orgId),
 													$.id.in_(...Arr.map(abandoned, (run) => run.id)),
-													$.status.eq("in_progress"),
+													$.finishedAt.isNull(),
 												]),
 										)
 									}
@@ -781,7 +851,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											.where(($) => [
 												$.orgId.eq(orgId),
 												$.targetId.eq(input.targetId),
-												$.status.eq("in_progress"),
+												$.finishedAt.isNull(),
 											])
 											.limit(1),
 									)
@@ -817,7 +887,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											.where(($) => [
 												$.orgId.eq(orgId),
 												$.targetId.eq(input.targetId),
-												$.status.eq("in_progress"),
+												$.finishedAt.isNull(),
 											])
 											.limit(1),
 									)
@@ -842,6 +912,21 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										$.orgId.eq(orgId),
 										$.targetId.eq(targetId),
 										$.status.in_("complete", "incomplete"),
+										$.finishedAt.isNotNull(),
+										// A cancelled run's ledger and findings are partial; one with no reports or
+										// ledger never finished saving. Neither may stand in for the target's state.
+										PG.or(
+											$.incompleteReason.isNull(),
+											$.incompleteReason.neq("cancelled"),
+										),
+										$.metadata.isNotNull(),
+										$.reports.isNotNull(),
+										PG.inSubquery(
+											$.id,
+											PG.from(SecurityAuditUnits)
+												.select("runId")
+												.where(($unit) => [$unit.orgId.eq(orgId)]),
+										),
 										unscopedOnly ? $.scopePaths.eq([]) : undefined,
 									])
 									.orderBy(($) => [[$.startedAt, "desc"]])
@@ -857,32 +942,120 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				)(function* (rawRunId, outcome) {
 					const runId = yield* decodeRunId(rawRunId)
 					const now = yield* Clock.currentTimeMillis
-					yield* updateRun(runId, {
-						status: outcome.status,
-						finishedAt: now,
-						incompleteReason: outcome.status === "incomplete" ? outcome.reason : null,
-						error: outcome.status === "failed" ? outcome.error : null,
+					const settled = yield* dbExecute((db) =>
+						db.run(
+							PG.update(SecurityAuditRuns)
+								.set({
+									status: outcome.status,
+									finishedAt: now,
+									incompleteReason: outcome.status === "incomplete" ? outcome.reason : null,
+									error: outcome.status === "failed" ? outcome.error : null,
+								})
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(runId), $.finishedAt.isNull()])
+								.returning("id"),
+						),
+					)
+					if (settled.length > 0) return
+					// Nothing settled: a missing run is an error, a finished one keeps its outcome.
+					const existing = yield* getRun(runId)
+					if (Option.isNone(existing)) return yield* runNotFound(runId)
+					yield* Effect.logInfo("Security audit run already finished; outcome kept").pipe(
+						Effect.annotateLogs({
+							runId,
+							kept: existing.value.status,
+							attempted: outcome.status,
+						}),
+					)
+				})
+
+				const cancelRun: SecurityAuditOrgStore["cancelRun"] = Effect.fn(
+					"SecurityAuditStore.cancelRun",
+				)(function* (rawRunId, actor) {
+					const runId = yield* decodeRunId(rawRunId)
+					const now = yield* Clock.currentTimeMillis
+					const event = yield* eventRow(orgId, runId, {
+						_tag: "Note",
+						message: `Run cancelled by ${actor}`,
 					})
+					const cancelled = yield* dbExecute((db) =>
+						db.transaction(
+							Effect.gen(function* () {
+								const rows = yield* db.run(
+									PG.update(SecurityAuditRuns)
+										.set({
+											status: "incomplete",
+											incompleteReason: "cancelled",
+											finishedAt: now,
+										})
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.id.eq(runId),
+											$.finishedAt.isNull(),
+										])
+										.returning("id"),
+								)
+								if (rows.length === 0) return false
+								// Settle never runs for a cancelled run: its spend so far is its agents' events.
+								// The row is locked by the update, so no event can land after this sum.
+								const agents = yield* db.run(
+									PG.from(SecurityAuditEvents)
+										.select(($) => ({
+											inputTokens: $.inputTokens,
+											outputTokens: $.outputTokens,
+											detail: PG.undecoded($.detail),
+										}))
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.runId.eq(runId),
+											$.kind.eq("Agent"),
+										]),
+								)
+								const costs = Arr.getSomes(
+									agents.map((a) =>
+										Option.flatMapNullishOr(
+											decodeEventDetail(a.detail),
+											(d) => d.costUsd,
+										),
+									),
+								)
+								yield* db.run(
+									PG.update(SecurityAuditRuns)
+										.set({
+											invocationsSpent: agents.length,
+											inputTokens: agents.reduce((n, a) => n + (a.inputTokens ?? 0), 0),
+											outputTokens: agents.reduce(
+												(n, a) => n + (a.outputTokens ?? 0),
+												0,
+											),
+											costUsd:
+												costs.length === 0
+													? undefined
+													: costs.reduce((n, c) => n + c, 0),
+										})
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)]),
+								)
+								yield* insertEvent(db, event)
+								return true
+							}),
+						),
+					)
+					return cancelled ? yield* getRun(runId) : Option.none()
 				})
 
 				const setUsage: SecurityAuditOrgStore["setUsage"] = Effect.fn("SecurityAuditStore.setUsage")(
 					function* (rawRunId, usage) {
 						const runId = yield* decodeRunId(rawRunId)
 						const cost = usage.costUsd
-						const rows = yield* dbExecute((db) =>
-							db.run(
-								PG.update(SecurityAuditRuns)
-									.set({
-										invocationsSpent: usage.invocations,
-										inputTokens: usage.inputTokens,
-										outputTokens: usage.outputTokens,
-										costUsd: cost === undefined ? undefined : cost,
-									})
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)])
-									.returning("id"),
-							),
+						yield* updateOpenRun(
+							runId,
+							{
+								invocationsSpent: usage.invocations,
+								inputTokens: usage.inputTokens,
+								outputTokens: usage.outputTokens,
+								costUsd: cost === undefined ? undefined : cost,
+							},
+							"usage",
 						)
-						if (rows.length === 0) return yield* runNotFound(runId)
 					},
 				)
 
@@ -943,6 +1116,47 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 								unit: decodeCoverageUnit(row.unit),
 							}).pipe(Option.map((decoded) => ({ ...row, ...decoded }))),
 						"ledger units",
+					)
+				})
+
+				const listUnitSummaries: SecurityAuditOrgStore["listUnitSummaries"] = Effect.fn(
+					"SecurityAuditStore.listUnitSummaries",
+				)(function* (rawRunId) {
+					const runId = yield* decodeRunId(rawRunId)
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditUnits)
+								.select(($) => ({
+									coverageId: $.coverageId,
+									status: PG.undecoded($.status),
+									wave: $.wave,
+									agentId: $.agentId,
+									unit: UNIT_SUMMARY_EXPR,
+								}))
+								.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)])
+								.orderBy(($) => [[$.coverageId, "asc"]]),
+						),
+					)
+					const summaries = rows.map((row) => ({
+						status: decodeUnitStatus(row.status),
+						summary: {
+							coverageId: row.coverageId,
+							wave: row.wave,
+							agentId: row.agentId,
+							fields: Option.getOrNull(decodeUnitSummary(row.unit)),
+						},
+					}))
+					yield* warnStale(
+						"ledger unit fields",
+						summaries.filter((s) => s.summary.fields === null).length,
+						rows.length,
+					)
+					// The status column is written from the typed ledger; a row without one cannot be shown.
+					return yield* keepDecodable(
+						summaries,
+						({ status, summary }): Option.Option<SecurityAuditUnitSummary> =>
+							Option.map(status, (decoded) => ({ ...summary, status: decoded })),
+						"ledger unit statuses",
 					)
 				})
 
@@ -1043,20 +1257,27 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					const runId = yield* decodeRunId(rawRunId)
 					if (!Arr.isReadonlyArrayNonEmpty(fingerprints)) return 0
 					const now = yield* Clock.currentTimeMillis
-					const rows = yield* dbExecute((db) =>
-						db.run(
-							PG.update(SecurityAuditFindings)
-								.set({ status: "fixed", fixedRunId: runId, updatedAt: now })
-								.where(($) => [
-									$.orgId.eq(orgId),
-									$.targetId.eq(targetId),
-									$.status.eq("open"),
-									$.fingerprint.in_(...fingerprints),
-								])
-								.returning("id"),
+					// Only while the run is unfinished, under its row lock: a cancel cannot slip in between.
+					return yield* dbExecute((db) =>
+						db.transaction(
+							Effect.gen(function* () {
+								const open = yield* lockOpenRun(db, orgId, runId, "fixed")
+								if (Option.isNone(open)) return 0
+								const rows = yield* db.run(
+									PG.update(SecurityAuditFindings)
+										.set({ status: "fixed", fixedRunId: runId, updatedAt: now })
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.targetId.eq(targetId),
+											$.status.eq("open"),
+											$.fingerprint.in_(...fingerprints),
+										])
+										.returning("id"),
+								)
+								return rows.length
+							}),
 						),
 					)
-					return rows.length
 				})
 
 				const listTargets: SecurityAuditOrgStore["listTargets"] = Effect.fn(
@@ -1131,10 +1352,12 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					createTarget,
 					startRun,
 					finishRun,
+					cancelRun,
 					setUsage,
 					getRun,
 					listRuns,
 					listUnits,
+					listUnitSummaries,
 					listRunFindings,
 					listEvents,
 					listFindings,
