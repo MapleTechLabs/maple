@@ -73,19 +73,19 @@ final class SessionController {
 
 	/// A session that is already signed in to a fixture organization and never
 	/// consults Clerk. See `FixtureAPI`.
+	static func fixture(api: any MapleAPI, tokens: ClerkTokenProvider) -> SessionController {
+		SessionController(fixtureAPI: api, tokens: tokens)
+	}
+
 	/// Keep the session token minted while the app is in front, the way Clerk's
 	/// web SDK polls, so a screen load does not wait on a Clerk round-trip
-	/// (about 0.9 s on a phone) before its first request. A cached token costs nothing.
+	/// (about 0.9 s on a phone) before its first request.
 	func keepTokenWarm() async {
 		guard case .ready = phase, !isFixture else { return }
 		while !Task.isCancelled {
-			_ = try? await tokens.token()
+			await tokens.warm()
 			try? await Task.sleep(for: .seconds(20))
 		}
-	}
-
-	static func fixture(api: any MapleAPI, tokens: ClerkTokenProvider) -> SessionController {
-		SessionController(fixtureAPI: api, tokens: tokens)
 	}
 
 	var activeOrganizationId: String? {

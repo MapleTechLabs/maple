@@ -16,6 +16,7 @@
 #   SELECT ResourceAttributes['deployment.environment'] run, SpanAttributes['screen.name'] screen,
 #     count() n, quantile(0.5)(Duration)/1e6 p50_ms, quantile(0.95)(Duration)/1e6 p95_ms
 #   FROM traces WHERE ServiceName = 'maple-ios' AND SpanName = 'screen.ready'
+#     AND SpanAttributes['load.outcome'] IN ('loaded', 'empty', 'failed')
 #     AND ResourceAttributes['deployment.environment'] LIKE 'latency-%' GROUP BY run, screen
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -61,11 +62,15 @@ fi
 
 if [[ -n "$signin" ]]; then
 	: "${CLERK_SECRET_KEY:?run under infisical run --env prod}"
-	user_id=$(curl -sf -G https://api.clerk.com/v1/users --data-urlencode "email_address=$signin" \
-		-H "Authorization: Bearer $CLERK_SECRET_KEY" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["id"])')
-	ticket=$(curl -sf https://api.clerk.com/v1/sign_in_tokens -H "Authorization: Bearer $CLERK_SECRET_KEY" \
-		-H "Content-Type: application/json" -d "{\"user_id\":\"$user_id\",\"expires_in_seconds\":300}" |
+	# The secret goes to curl on stdin, never in argv where `ps` would show it.
+	auth="Authorization: Bearer $CLERK_SECRET_KEY"
+	user_id=$(curl -sf -G https://api.clerk.com/v1/users --data-urlencode "email_address=$signin" -H @- <<<"$auth" |
+		python3 -c 'import json,sys; users=json.load(sys.stdin); print(users[0]["id"] if users else "")')
+	[[ -n "$user_id" ]] || { echo "no Clerk user with email $signin" >&2; exit 1; }
+	ticket=$(curl -sf https://api.clerk.com/v1/sign_in_tokens -H @- -H "Content-Type: application/json" \
+		-d "{\"user_id\":\"$user_id\",\"expires_in_seconds\":300}" <<<"$auth" |
 		python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+	unset auth
 	xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
 	SIMCTL_CHILD_MAPLE_DEBUG_SIGNIN_TICKET="$ticket" xcrun simctl launch "$udid" "$bundle" >/dev/null
 	unset ticket

@@ -165,16 +165,25 @@ final class ScreenLoader<Value: Sendable> {
 
 	/// The view drew this loader's first answer: content, empty or error.
 	func markPainted() {
+		switch state {
+		case .loaded: endReady(outcome: "loaded")
+		case .empty: endReady(outcome: "empty")
+		case .failed(let error): endReady(outcome: "failed", error: error)
+		case .loading: break
+		}
+	}
+
+	/// The screen went away before its first answer painted: end the span as
+	/// `abandoned` so it is not left running until the app backgrounds.
+	func abandonReady() {
+		endReady(outcome: "abandoned")
+	}
+
+	private func endReady(outcome: String, error: MapleAPIError? = nil) {
 		guard readyPending, let span = readySpan else { return }
 		readyPending = false
 		readySpan = nil
-		switch state {
-		case .loaded: Telemetry.screenReadyEnded(span, outcome: "loaded", source: readySource)
-		case .empty: Telemetry.screenReadyEnded(span, outcome: "empty", source: readySource)
-		case .failed(let error):
-			Telemetry.screenReadyEnded(span, outcome: "failed", source: readySource, error: error)
-		case .loading: break
-		}
+		Telemetry.screenReadyEnded(span, outcome: outcome, source: readySource, error: error)
 	}
 
 	/// The error state's button and the refresh strip's button.
@@ -185,7 +194,9 @@ final class ScreenLoader<Value: Sendable> {
 	private func finish(_ next: LoadState<Value>?, reason: LoadReason) {
 		isLoading = false
 		isReplacing = false
-		guard let next else { return }
+		// Cancelled from outside (a newer model for this screen took over), so
+		// this model will never paint its first answer.
+		guard let next else { return endReady(outcome: "superseded") }
 		switch next {
 		case .loaded(let value):
 			state = isEmpty(value) ? .empty : .loaded(value)
