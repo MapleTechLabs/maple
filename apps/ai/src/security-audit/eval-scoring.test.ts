@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
 	aggregate,
+	decodeCaseFile,
+	decodeGrades,
 	type CaseResult,
 	estimateCost,
 	type Finding,
@@ -9,6 +11,7 @@ import {
 	isExecutionOnly,
 	locationMatches,
 	metricsOf,
+	parseEventLines,
 	scoreRun,
 } from "../../scripts/security-audit-eval/scoring"
 
@@ -200,5 +203,49 @@ describe("security eval scoring", () => {
 		expect(estimate).toBe(20)
 		expect(fitsCap(235, estimate, 250)).toBe(false)
 		expect(estimateCost(10, [], 1.5)).toBe(15)
+	})
+
+	it("refuses a hit grade that names no matched record, so its record is never counted unrelated", () => {
+		expect(() =>
+			decodeGrades({ bugs: [{ key: "k", bug: "b", verdict: "hit-confirmed" }], spotChecks: [] }),
+		).toThrow(/matched record fingerprints/)
+		expect(
+			decodeGrades({ bugs: [{ key: "k", bug: "b", verdict: "miss" }], spotChecks: [] }).bugs[0]
+				?.verdict,
+		).toBe("miss")
+	})
+
+	it("matches execution blockers on whole words only", () => {
+		expect(
+			isExecutionOnly(needsValidation("a", "f", ["Epoch handling in the deployment is unknown"])),
+		).toBe(false)
+		expect(isExecutionOnly(needsValidation("b", "f", ["Nothing was executed; no PoC ran"]))).toBe(true)
+	})
+
+	it("skips a half-written last event line instead of failing", () => {
+		const text = `${JSON.stringify({ _tag: "Agent", at: "t", outcome: "ok", usage: { inputTokens: 1, outputTokens: 1, costUsd: 2 } })}\n{"_tag":"Agent","at":`
+		expect(parseEventLines(text)).toHaveLength(1)
+	})
+
+	it("refuses a case whose commit, repository name or url could reach git as an option or path", () => {
+		const file = (repo: { name: string; url: string }, sha: string) => ({
+			defaults: { profile: "quick", budget: 10, concurrency: 1 },
+			cases: [
+				{
+					id: "c",
+					corpus: "public",
+					language: "go",
+					repo,
+					sha,
+					scope: [],
+					bugs: [{ id: "b", reference: "r", fixSha: "a".repeat(40), touchedFiles: [] }],
+				},
+			],
+		})
+		const ok = { name: "ws", url: "https://github.com/websockets/ws.git" }
+		expect(decodeCaseFile(file(ok, "a".repeat(40))).cases).toHaveLength(1)
+		expect(() => decodeCaseFile(file(ok, "--upload-pack=x"))).toThrow()
+		expect(() => decodeCaseFile(file({ ...ok, name: ".." }, "a".repeat(40)))).toThrow()
+		expect(() => decodeCaseFile(file({ ...ok, url: "ext::sh -c id" }, "a".repeat(40)))).toThrow()
 	})
 })

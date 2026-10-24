@@ -5,21 +5,26 @@
  * security-audit-eval/cases/ (format: `CaseFile` in ./security-audit-eval/scoring.ts); grades in
  * `<results>/grades.json` (`Grades`).
  *
- * Options: --results <dir> (required) · --repos <dir> (/tmp/security-eval-repos) · --only <id,...>
+ * The spend cap applies per results directory: it sums every run under it (finished, aborted,
+ * in flight), is checked before each launch and every poll, and stops a run that passes it.
+ *
+ * Options: --results <dir> (required) · --repos <dir> (~/.cache/maple-security-eval/repos) · --only <id,...>
  * · --variant <name> with --profile/--budget/--concurrency overrides · --cap-usd <n> (250)
  * · --per-invocation-usd <n> (1.5, the estimate before any run) · --grades <file> (<results>/grades.json)
  * · --discovery-model / --validation-model <openrouter id> · --score-only · --dry-run
  */
 import { spawn, spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { Effect } from "effect"
 import {
 	aggregate,
 	type CaseResult,
 	decodeCaseFile,
 	decodeCaseResult,
-	decodeEventLine,
+	parseEventLines,
 	decodeFindings,
 	decodeGrades,
 	decodeRunStatus,
@@ -105,7 +110,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	return {
 		caseFiles: parsed.positional.map((path) => resolve(path)),
 		results: resolve(results),
-		repos: resolve(flag("repos") ?? "/tmp/security-eval-repos"),
+		repos: resolve(flag("repos") ?? join(homedir(), ".cache", "maple-security-eval", "repos")),
 		only: flag("only") === undefined ? null : new Set((flag("only") ?? "").split(",")),
 		variant,
 		profile,
@@ -130,41 +135,46 @@ const git = (dir: string, args: ReadonlyArray<string>) => {
 	}
 }
 
-/**
- * The case's repository with its commit present. A new repository is a fresh, empty directory; its
- * content is only ever read through git at the commit, never checked out or run.
- */
-const ensureRepo = (
-	repos: string,
-	c: EvalCase,
-):
+type RepoCheck =
 	| { readonly dir: string; readonly error?: undefined }
-	| { readonly dir?: undefined; readonly error: string } => {
+	| { readonly dir?: undefined; readonly error: string }
+
+const hasCommit = (dir: string, sha: string) => git(dir, ["cat-file", "-e", "--", `${sha}^{commit}`]).ok
+
+/**
+ * The case's repository with its commit and every fix commit present. A new repository is a fresh,
+ * empty directory; its content is only read through git at the commit, never checked out or run.
+ * Fetches are blobless with full history, so the fix-containment check below can actually run.
+ */
+const ensureRepo = (repos: string, c: EvalCase): RepoCheck => {
 	const dir = join(repos, c.repo.name)
 	if (!existsSync(dir)) {
 		mkdirSync(dir, { recursive: true })
 		git(dir, ["init", "-q"])
-		git(dir, ["remote", "add", "origin", c.repo.url])
+		git(dir, ["remote", "add", "--", "origin", c.repo.url])
 	}
-	if (!git(dir, ["cat-file", "-e", `${c.sha}^{commit}`]).ok) {
-		const fetched = git(dir, ["fetch", "-q", "--depth", "1", "origin", c.sha])
-		if (!fetched.ok) return { error: `cannot fetch ${c.sha} from ${c.repo.url}: ${fetched.stderr}` }
+	const origin = git(dir, ["remote", "get-url", "--", "origin"])
+	if (!origin.ok || origin.stdout !== c.repo.url)
+		return { error: `${dir} exists with origin ${origin.stdout || "(none)"}, not ${c.repo.url}` }
+	const missing = [c.sha, ...c.bugs.map((bug) => bug.fixSha)].filter((sha) => !hasCommit(dir, sha))
+	if (missing.length > 0) {
+		const fetched = git(dir, ["fetch", "-q", "--filter=blob:none", "--", "origin", ...missing])
+		if (!fetched.ok)
+			return { error: `cannot fetch ${missing.join(", ")} from ${c.repo.url}: ${fetched.stderr}` }
 	}
-	// A run at a commit that already contains a fix would score a fixed bug as missed. A shallow
-	// clone may lack the fix commit; then the case file's own claim stands.
-	const fixed = c.bugs.filter((bug) => git(dir, ["merge-base", "--is-ancestor", bug.fixSha, c.sha]).ok)
+	// An unknown fix commit cannot be checked, so it fails the case rather than reading as "not contained".
+	const unknown = [c.sha, ...c.bugs.map((bug) => bug.fixSha)].filter((sha) => !hasCommit(dir, sha))
+	if (unknown.length > 0) return { error: `commits not present after fetch: ${unknown.join(", ")}` }
+	// A run at a commit that already contains a fix would score a fixed bug as missed.
+	const fixed = c.bugs.filter(
+		(bug) => git(dir, ["merge-base", "--is-ancestor", "--", bug.fixSha, c.sha]).ok,
+	)
 	return fixed.length > 0
 		? { error: `${c.sha} already contains the fix for ${fixed.map((b) => b.id).join(", ")}` }
 		: { dir }
 }
 
-const readJsonLines = (path: string) =>
-	existsSync(path)
-		? readFileSync(path, "utf8")
-				.split("\n")
-				.filter((line) => line.trim() !== "")
-				.map((line) => decodeEventLine(JSON.parse(line)))
-		: []
+const readJsonLines = (path: string) => (existsSync(path) ? parseEventLines(readFileSync(path, "utf8")) : [])
 
 const readFindings = (runDir: string): ReadonlyArray<Finding> => {
 	const path = join(runDir, "findings.json")
@@ -188,10 +198,32 @@ const loadResults = (results: string): ReadonlyArray<CaseResult> =>
  * Everything spent under the results directory: finished, aborted and in-flight runs alike, so
  * parallel invocations and abandoned runs count against the cap.
  */
+const RUN_DIR = /^run(\.aborted-\d+)?$/
+
 const spentUsd = (results: string) =>
-	readdirSync(results)
-		.map((name) => join(results, name, "run", "events.jsonl"))
+	readdirSync(results, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.flatMap((entry) =>
+			readdirSync(join(results, entry.name))
+				.filter((name) => RUN_DIR.test(name))
+				.map((name) => join(results, entry.name, name, "events.jsonl")),
+		)
 		.reduce((acc, path) => acc + usageOf(readJsonLines(path)).costUsd, 0)
+
+/**
+ * Claims a key for this process: an exclusive create, so two harnesses never run the same key.
+ * The claim is removed when the run ends; one left by a killed harness is removed by hand.
+ */
+const claim = (results: string, key: string) =>
+	Effect.runSync(
+		Effect.result(
+			Effect.try(() =>
+				writeFileSync(join(results, `${key}.claim`), `${process.pid}\n`, { flag: "wx" }),
+			),
+		),
+	)._tag === "Success"
+
+const release = (results: string, key: string) => rmSync(join(results, `${key}.claim`), { force: true })
 
 const settingsFor = (
 	args: Args,
@@ -206,12 +238,14 @@ const settingsFor = (
 const runCase = (
 	args: Args,
 	c: EvalCase,
-	settings: { profile: Profile; budget: number; concurrency: number },
+	settings: Settings,
 	key: string,
 	repoDir: string,
 ): Promise<CaseResult> => {
 	const out = join(args.results, key)
 	const runDir = join(out, "run")
+	// A run left by a crash keeps its spend on the books but never mixes with the new one.
+	if (existsSync(runDir)) renameSync(runDir, join(out, `run.aborted-${Date.now()}`))
 	mkdirSync(runDir, { recursive: true })
 	const started = Date.now()
 	const runnerArgs = [
@@ -238,12 +272,19 @@ const runCase = (
 		const append = (chunk: Buffer) => writeFileSync(log, chunk, { flag: "a" })
 		child.stdout.on("data", append)
 		child.stderr.on("data", append)
+		const stopped = new Set<string>()
 		const progress = setInterval(() => {
 			const events = readJsonLines(join(runDir, "events.jsonl"))
 			const m = metricsOf({ status: "running", events, findings: [], wallClockSeconds: 0 })
+			const spent = spentUsd(args.results)
 			console.log(
-				`  ${key}: ${m.invocations} invocations, $${m.costUsd.toFixed(2)}, ${Math.round((Date.now() - started) / 60_000)}m`,
+				`  ${key}: ${m.invocations} invocations, $${m.costUsd.toFixed(2)}, ${Math.round((Date.now() - started) / 60_000)}m; directory spend $${spent.toFixed(2)}`,
 			)
+			if (spent > args.capUsd && !stopped.has("cap")) {
+				stopped.add("cap")
+				console.log(`  ${key}: stopping, spend $${spent.toFixed(2)} passed the $${args.capUsd} cap`)
+				child.kill("SIGTERM")
+			}
 		}, POLL_MS)
 		child.on("close", (code) => {
 			clearInterval(progress)
@@ -255,7 +296,7 @@ const runCase = (
 				budget: settings.budget,
 				exitCode: code ?? 1,
 				metrics: metricsOf({
-					status: readStatus(runDir),
+					status: stopped.has("cap") ? "stopped_at_cap" : readStatus(runDir),
 					events: readJsonLines(join(runDir, "events.jsonl")),
 					findings,
 					wallClockSeconds: (Date.now() - started) / 1000,
@@ -302,6 +343,42 @@ const writeSummary = (args: Args) => {
 	console.log(renderTable([...byLanguage, ...total]))
 }
 
+type Settings = { readonly profile: Profile; readonly budget: number; readonly concurrency: number }
+
+/** One case under its claim: skip a finished key, check the cap and the repository, then run. */
+const runClaimed = async (args: Args, c: EvalCase, settings: Settings, key: string) => {
+	const existing = loadResults(args.results)
+	if (existing.some((r) => r.key === key)) {
+		console.log(`skip ${key}: already has a result`)
+		return
+	}
+	const spent = spentUsd(args.results)
+	const estimate = estimateCost(
+		settings.budget,
+		existing.map((r) => r.metrics),
+		args.perInvocationUsd,
+	)
+	if (!fitsCap(spent, estimate, args.capUsd)) {
+		console.log(
+			`stop before ${key}: spent $${spent.toFixed(2)} + estimated $${estimate.toFixed(2)} exceeds the $${args.capUsd} cap`,
+		)
+		return
+	}
+	console.log(
+		`run ${key} (${settings.profile}, budget ${settings.budget}); spent $${spent.toFixed(2)}, estimate $${estimate.toFixed(2)}`,
+	)
+	const repo = ensureRepo(args.repos, c)
+	if (repo.error !== undefined) {
+		console.log(`skip ${key}: ${repo.error}`)
+		return
+	}
+	if (args.dryRun) return
+	const result = await runCase(args, c, settings, key, repo.dir)
+	console.log(
+		`done ${key}: ${result.metrics.status}, ${result.metrics.invocations} invocations, $${result.metrics.costUsd.toFixed(2)}, ${result.metrics.confirmed}/${result.metrics.needsValidation}/${result.metrics.rejected} C/NV/R`,
+	)
+}
+
 const main = async () => {
 	const args = parseArgs(process.argv.slice(2))
 	mkdirSync(args.results, { recursive: true })
@@ -317,41 +394,19 @@ const main = async () => {
 			.map((c) => ({ c, settings: settingsFor(args, file.defaults, c) })),
 	)
 	// Sequential on purpose: each run already fans out to its own agents, and the cap is checked
-	// against real spend before every launch.
+	// against real spend before every launch and while each run is in flight.
 	await queue.reduce<Promise<void>>(
 		(previous, { c, settings }) =>
-			previous.then(async () => {
+			previous.then(() => {
 				const key = args.variant === undefined ? c.id : `${c.id}@${args.variant}`
-				const existing = loadResults(args.results)
-				if (existing.some((r) => r.key === key)) {
-					console.log(`skip ${key}: already has a result`)
-					return
+				if (!args.dryRun && !claim(args.results, key)) {
+					console.log(`skip ${key}: claimed by another harness (${key}.claim)`)
+					return undefined
 				}
-				const spent = spentUsd(args.results)
-				const estimate = estimateCost(
-					settings.budget,
-					existing.map((r) => r.metrics),
-					args.perInvocationUsd,
-				)
-				if (!fitsCap(spent, estimate, args.capUsd)) {
-					console.log(
-						`stop before ${key}: spent $${spent.toFixed(2)} + estimated $${estimate.toFixed(2)} exceeds the $${args.capUsd} cap`,
-					)
-					return
-				}
-				console.log(
-					`run ${key} (${settings.profile}, budget ${settings.budget}); spent $${spent.toFixed(2)}, estimate $${estimate.toFixed(2)}`,
-				)
-				const repo = ensureRepo(args.repos, c)
-				if (repo.error !== undefined) {
-					console.log(`skip ${key}: ${repo.error}`)
-					return
-				}
-				if (args.dryRun) return
-				const result = await runCase(args, c, settings, key, repo.dir)
-				console.log(
-					`done ${key}: ${result.metrics.status}, ${result.metrics.invocations} invocations, $${result.metrics.costUsd.toFixed(2)}, ${result.metrics.confirmed}/${result.metrics.needsValidation}/${result.metrics.rejected} C/NV/R`,
-				)
+				// Every exit after the claim, early or not, releases it.
+				return runClaimed(args, c, settings, key).finally(() => {
+					if (!args.dryRun) release(args.results, key)
+				})
 			}),
 		Promise.resolve(),
 	)

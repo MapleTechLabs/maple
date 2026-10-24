@@ -3,7 +3,7 @@
  * I/O. Verdicts come from explicit human grades; location overlap only suggests what to grade.
  */
 import { Findings } from "@maple/security-audit"
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 
 export const Language = Schema.Literals(["typescript", "javascript", "python", "go", "rust", "java"])
 export type Language = typeof Language.Type
@@ -11,12 +11,22 @@ export type Language = typeof Language.Type
 export const Profile = Schema.Literals(["quick", "standard", "deep"])
 export type Profile = typeof Profile.Type
 
+/** A full lowercase commit id: never a ref or an option, so it is safe to hand to git. */
+export const CommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/u))
+/** A repository directory name: one path segment, no traversal. */
+export const RepoName = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9._-]+$/u)).check(
+	Schema.makeFilter((name: string) => (name !== "." && name !== ".." ? true : "not a directory name")),
+)
+export const RepoUrl = Schema.String.check(
+	Schema.isPattern(/^https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(\.git)?$/u),
+)
+
 /** One labelled bug. The run's commit must not contain `fixSha`. */
 export const KnownBug = Schema.Struct({
 	id: Schema.String,
 	/** A pull request (`MapleTechLabs/maple#712`) or a public advisory id (GHSA/CVE). */
 	reference: Schema.String,
-	fixSha: Schema.String,
+	fixSha: CommitSha,
 	/** Non-test files the fix changed: where a matching record should point. */
 	touchedFiles: Schema.Array(Schema.String),
 })
@@ -27,8 +37,8 @@ export const EvalCase = Schema.Struct({
 	id: Schema.String,
 	corpus: Schema.Literals(["maple", "public"]),
 	language: Language,
-	repo: Schema.Struct({ name: Schema.String, url: Schema.String }),
-	sha: Schema.String,
+	repo: Schema.Struct({ name: RepoName, url: RepoUrl }),
+	sha: CommitSha,
 	scope: Schema.Array(Schema.String),
 	bugs: Schema.NonEmptyArray(KnownBug),
 	profile: Schema.optionalKey(Profile),
@@ -108,17 +118,25 @@ export const SpotClass = Schema.Literals(["real", "plausible", "false-positive"]
 export type SpotClass = typeof SpotClass.Type
 
 /** Human grades: per known bug, which records are it; per unrelated record spot-checked, a class. */
-export const Grades = Schema.Struct({
-	bugs: Schema.Array(
-		Schema.Struct({
-			key: Schema.String,
-			bug: Schema.String,
-			verdict: Schema.optionalKey(BugVerdict),
-			matched: Schema.optionalKey(Schema.Array(Schema.String)),
-			missReason: Schema.optionalKey(Schema.String),
-			notes: Schema.optionalKey(Schema.String),
-		}),
+export const BugGradeRecord = Schema.Struct({
+	key: Schema.String,
+	bug: Schema.String,
+	verdict: Schema.optionalKey(BugVerdict),
+	matched: Schema.optionalKey(Schema.Array(Schema.String)),
+	missReason: Schema.optionalKey(Schema.String),
+	notes: Schema.optionalKey(Schema.String),
+}).check(
+	// A hit names its records, or they would also be counted as unrelated.
+	Schema.makeFilter((grade: { readonly verdict?: BugVerdict; readonly matched?: ReadonlyArray<string> }) =>
+		(grade.verdict === "hit-confirmed" || grade.verdict === "hit-needs-validation") &&
+		(grade.matched ?? []).length === 0
+			? "a hit verdict needs the matched record fingerprints"
+			: true,
 	),
+)
+
+export const Grades = Schema.Struct({
+	bugs: Schema.Array(BugGradeRecord),
 	spotChecks: Schema.Array(
 		Schema.Struct({
 			key: Schema.String,
@@ -133,6 +151,14 @@ export type BugGrade = Grades["bugs"][number]
 
 export const decodeCaseFile = Schema.decodeUnknownSync(CaseFile)
 export const decodeEventLine = Schema.decodeUnknownSync(EventLine)
+const decodeEventJson = Schema.decodeUnknownOption(Schema.fromJsonString(EventLine))
+
+/** A run's `events.jsonl` text. A line that does not decode (a write in progress) is skipped. */
+export const parseEventLines = (text: string): ReadonlyArray<EventLine> =>
+	text
+		.split("\n")
+		.filter((line) => line.trim() !== "")
+		.flatMap((line) => Option.toArray(decodeEventJson(line)))
 export const decodeFindings = Schema.decodeUnknownSync(Findings)
 export const decodeCaseResult = Schema.decodeUnknownSync(CaseResult)
 export const decodeGrades = Schema.decodeUnknownSync(Grades)
@@ -142,7 +168,7 @@ export const decodeRunStatus = Schema.decodeUnknownSync(Schema.Struct({ run_stat
 export type Finding = (typeof Findings.Type)[number]
 
 const EXECUTION_BLOCKER =
-	/execut|sandbox|(could|can)not (be )?run|not run|unable to run|no (local )?runtime|dynamic|reproduc|poc|proof of concept|test harness|run the/i
+	/\b(execut\w*|sandbox\w*|(could|can)not (be )?run|not run|unable to run|no (local )?runtime|dynamic(ally)?|reproduc\w*|pocs?|proof of concept|test harness|run the)\b/i
 
 /** A record left unvalidated only because nothing could run: every blocker names execution. */
 export const isExecutionOnly = (finding: Finding): boolean =>
