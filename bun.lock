@@ -691,6 +691,7 @@
         "@maple-dev/effect-orm": "0.5.0",
         "@maple/primitives": "workspace:*",
         "@maple/query-model": "workspace:*",
+        "@maple/security-audit": "workspace:*",
         "@maple/widgets": "workspace:*",
         "effect": "catalog:effect",
       },

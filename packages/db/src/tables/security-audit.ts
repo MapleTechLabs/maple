@@ -52,7 +52,10 @@ export const SecurityAuditTargets = PG.table("security_audit_targets", {
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
 	primaryKey: ["id"],
-	indexes: [PG.index("security_audit_targets_org_created_idx", ["orgId", "createdAt"])],
+	indexes: [
+		PG.index("security_audit_targets_org_created_idx", ["orgId", "createdAt"]),
+		PG.uniqueIndex("security_audit_targets_org_repo_branch_idx", ["orgId", "repository", "branch"]),
+	],
 	tenantColumn: "orgId",
 })
 
@@ -87,6 +90,10 @@ export const SecurityAuditRuns = PG.table("security_audit_runs", {
 	indexes: [
 		PG.index("security_audit_runs_org_started_idx", ["orgId", "startedAt"]),
 		PG.index("security_audit_runs_target_started_idx", ["targetId", "startedAt"]),
+		// One run in progress per target; the store refuses a second before the insert reaches this.
+		PG.uniqueIndex("security_audit_runs_one_running_idx", ["targetId"], {
+			where: ($) => $.status.eq("in_progress"),
+		}),
 	],
 	tenantColumn: "orgId",
 })
@@ -146,6 +153,10 @@ export const SecurityAuditFindings = PG.table("security_audit_findings", {
 		lastSeenRef: PG.column(PG.text, { name: "last_seen_ref" }),
 		/** The revalidation that no longer found it; cleared when it regresses. */
 		fixedRunId: PG.column(PG.nullable(PG.brand(PG.text, SecurityAuditRunId)), { name: "fixed_run_id" }),
+		/** Why a person last set `status` (dismissed, accepted risk, reopened); null until one does. */
+		statusReason: PG.column(PG.nullable(PG.text), { name: "status_reason" }),
+		statusChangedBy: PG.column(PG.nullable(PG.brand(PG.text, UserId)), { name: "status_changed_by" }),
+		statusChangedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "status_changed_at" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},

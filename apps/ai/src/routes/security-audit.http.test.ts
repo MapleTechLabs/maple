@@ -1,0 +1,548 @@
+// SAFETY-FILE: JSON in this test is emitted by the handler under test before its fields are asserted.
+import { afterEach, describe, expect, it } from "@effect/vitest"
+import {
+	ApiSchemaErrors,
+	ApiUnexpectedErrors,
+	CurrentTenant,
+	SecurityAuditApiGroup,
+} from "@maple/domain/http"
+import {
+	DISABLED_ORGANIZATION_FEATURE_FLAGS,
+	ENABLED_ORGANIZATION_FEATURE_FLAGS,
+} from "@maple/domain/organization-feature-flags"
+import { OrgId, RoleName, UserId } from "@maple/domain/primitives"
+import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
+import { type Finding, minimumInvocations } from "@maple/security-audit"
+import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { SecurityAuditWorkflowStarter, WorkflowStartError } from "@maple/backend/platform/bindings"
+import { envPorts } from "@maple/backend/platform/env-ports"
+import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
+import { WorkerPlatformLive } from "@maple/infra/worker-http"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import { Context, Effect, Layer, Schema } from "effect"
+import { HttpRouter, HttpServerRequest } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
+import { HttpSecurityAuditLive } from "./security-audit.http"
+
+class SecurityAuditOnlyApi extends HttpApi.make("MapleAiApi")
+	.add(SecurityAuditApiGroup)
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
+
+const trackedDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(trackedDbs))
+
+const ORG_A = Schema.decodeUnknownSync(OrgId)("org_audit_a")
+const ORG_B = Schema.decodeUnknownSync(OrgId)("org_audit_b")
+const USER = Schema.decodeUnknownSync(UserId)("user_audit")
+const decodeRole = Schema.decodeUnknownSync(RoleName)
+
+/** The bearer token names the caller: `<orgId>|<role>`, so one harness serves several tenants. */
+const AuthorizationStubLayer = Layer.succeed(
+	CurrentTenant.SessionAuthorization,
+	CurrentTenant.SessionAuthorization.of({
+		bearer: (httpEffect) =>
+			Effect.gen(function* () {
+				const request = yield* HttpServerRequest.HttpServerRequest
+				const [org = "", role = ""] = (request.headers.authorization ?? "")
+					.replace("Bearer ", "")
+					.split("|")
+				const tenant = new CurrentTenant.TenantSchema({
+					orgId: Schema.decodeUnknownSync(OrgId)(org),
+					userId: USER,
+					roles: [decodeRole(role)],
+					authMode: "clerk",
+				})
+				return yield* Effect.provideService(httpEffect, CurrentTenant.Context, tenant)
+			}),
+	}),
+)
+
+const makeHarness = (options: { readonly enabled?: boolean; readonly startFails?: boolean } = {}) => {
+	const db = createTestDb(trackedDbs)
+	const started: Array<SecurityAuditWorkflowPayload> = []
+	const starter = Layer.succeed(SecurityAuditWorkflowStarter, {
+		create: (payload) =>
+			options.startFails === true
+				? Effect.fail(new WorkflowStartError({ message: "instance limit reached", cause: null }))
+				: Effect.sync(() => {
+						started.push(payload)
+					}),
+	})
+	const auditLog = makeMemoryAuditLog()
+	const storeLayer = SecurityAuditStore.layer.pipe(Layer.provide(db.layer))
+	// The org's GitHub connection: a target can only name a repository it has connected.
+	const connected = executeSql(
+		db,
+		`INSERT INTO vcs_repositories (id, org_id, provider, installation_id, external_repo_id, owner, name,
+			full_name, tracked_branch, html_url, created_at, updated_at)
+		 VALUES ($1, $2, 'github', $3, '1001', 'acme', 'api', 'acme/api', 'main', 'https://github.com/acme/api', now(), now())`,
+		[crypto.randomUUID(), ORG_A, crypto.randomUUID()],
+	)
+	const routes = HttpApiBuilder.layer(SecurityAuditOnlyApi).pipe(
+		Layer.provide(HttpSecurityAuditLive),
+		Layer.provide(ApiErrorBoundaryLive),
+		Layer.provide(WorkerPlatformLive),
+		Layer.provideMerge(AuthorizationStubLayer),
+		Layer.provideMerge(
+			Layer.mergeAll(
+				envPorts({}),
+				storeLayer,
+				starter,
+				Layer.succeed(AuditLogService, auditLog),
+				OrganizationFeatureFlagsService.fixed(
+					options.enabled === false
+						? DISABLED_ORGANIZATION_FEATURE_FLAGS
+						: ENABLED_ORGANIZATION_FEATURE_FLAGS,
+				),
+			),
+		),
+	)
+	const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
+
+	const call = async (
+		method: string,
+		path: string,
+		options: { readonly as?: string; readonly body?: unknown } = {},
+	) => {
+		await connected
+		const response = await handler(
+			new Request(`http://maple.test/api/security-audit${path}`, {
+				method,
+				headers: {
+					authorization: `Bearer ${options.as ?? `${ORG_A}|org:admin`}`,
+					"content-type": "application/json",
+				},
+				body: options.body === undefined ? null : JSON.stringify(options.body),
+			}),
+			Context.empty(),
+		)
+		const text = await response.text()
+		return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
+	}
+
+	/** Runs `body` against the same database the routes use, for seeding what the engine writes. */
+	const withStore = <A, E>(body: (store: SecurityAuditStore["Service"]) => Effect.Effect<A, E>) =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				return yield* body(yield* SecurityAuditStore)
+			}).pipe(Effect.provide(storeLayer)),
+		)
+
+	const count = async (table: string) =>
+		Number((await queryFirstRow<{ n: number }>(db, `SELECT count(*)::int AS n FROM ${table}`))?.n)
+
+	const sql = (statement: string, params: Array<unknown> = []) => executeSql(db, statement, params)
+
+	return { call, dispose, started, withStore, count, sql, auditLog }
+}
+
+const confirmed = (fingerprint: string): Finding => ({
+	verdict: "confirmed",
+	fingerprint,
+	title: `Finding ${fingerprint}`,
+	description: "rollKey looks the key up by id alone.",
+	root_cause: "missing org predicate",
+	intended_behavior: "scoped to the caller's org",
+	trace: [],
+	evidence: [],
+	conditions: [],
+	execution: { attacker_perspective: "member", payloads: [], instructions: [], observed_result: "rolled" },
+	remediation: { strategy: "filter by org" },
+	severity: {
+		likelihood: { score: "medium", reason: "needs an id" },
+		impact: { score: "high", reason: "cross-tenant" },
+		overall_severity: "high",
+	},
+	confidence: { score: "high", reason: "reproduced" },
+})
+
+const rejected = (fingerprint: string): Finding => ({
+	verdict: "rejected",
+	fingerprint,
+	title: `Claim ${fingerprint}`,
+	description: "claimed bypass",
+	trace: [],
+	evidence: [],
+	claimed_root_cause: "unchecked id",
+	reason: "the gateway filters by org",
+})
+
+const TARGET = { repository: "acme/api", branch: "main" }
+
+const tag = (name: string) => `@maple/http/security-audit/${name}`
+
+describe("/api/security-audit access", () => {
+	it("refuses every call with a 403 while the org is outside the rollout, and writes nothing", async () => {
+		const harness = makeHarness({ enabled: false })
+		try {
+			const create = await harness.call("POST", "/targets", { body: TARGET })
+			const list = await harness.call("GET", "/targets")
+
+			expect([create.status, create.body._tag, list.status, list.body._tag]).toEqual([
+				403,
+				tag("SecurityAuditDisabledError"),
+				403,
+				tag("SecurityAuditDisabledError"),
+			])
+			expect(await harness.count("security_audit_targets")).toBe(0)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("lets members list targets and runs, and keeps findings, reports and writes to admins", async () => {
+		const harness = makeHarness()
+		try {
+			const member = `${ORG_A}|org:member`
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const memberCalls = await Promise.all([
+				harness.call("GET", "/targets", { as: member }),
+				harness.call("GET", "/runs", { as: member }),
+				harness.call("GET", `/runs/${run.body.id}`, { as: member }),
+				harness.call("GET", `/runs/${run.body.id}/events`, { as: member }),
+				harness.call("GET", `/targets/${target.body.id}/findings`, { as: member }),
+				harness.call("POST", "/targets", { as: member, body: { ...TARGET, branch: "next" } }),
+				harness.call("PATCH", `/targets/${target.body.id}/findings/f1`, {
+					as: member,
+					body: { status: "dismissed", reason: "no" },
+				}),
+			])
+
+			expect(memberCalls.map((r) => r.status)).toEqual([200, 200, 403, 403, 403, 403, 403])
+			expect(memberCalls[5]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
+			expect(harness.started.map((p) => p.runId)).toEqual([run.body.id])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("answers 404 for another org's target, run and finding ids", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			await harness.withStore((store) =>
+				store.forOrg(ORG_A).saveFindings(run.body.id, [confirmed("f1")]),
+			)
+			const other = `${ORG_B}|org:admin`
+
+			const responses = await Promise.all([
+				harness.call("GET", `/runs/${run.body.id}`, { as: other }),
+				harness.call("GET", `/runs/${run.body.id}/events`, { as: other }),
+				harness.call("POST", `/targets/${target.body.id}/runs`, { as: other, body: {} }),
+				harness.call("GET", `/targets/${target.body.id}/findings`, { as: other }),
+				harness.call("PATCH", `/targets/${target.body.id}/findings/f1`, {
+					as: other,
+					body: { status: "dismissed", reason: "not mine" },
+				}),
+			])
+			const foreignRuns = await harness.call("GET", "/runs", { as: other })
+
+			expect(responses.map((r) => r.status)).toEqual([404, 404, 404, 404, 404])
+			expect(foreignRuns.body.runs).toEqual([])
+			expect(harness.started.map((p) => p.orgId)).toEqual([ORG_A])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit targets", () => {
+	it("rejects an unsafe repository, scope path, budget or page size at the boundary", async () => {
+		const harness = makeHarness()
+		try {
+			const statuses = await Promise.all(
+				[
+					{ ...TARGET, repository: "acme" },
+					{ ...TARGET, repository: "acme/../etc" },
+					{ ...TARGET, branch: "--upload-pack=x" },
+					{ ...TARGET, scopePaths: ["../secrets"] },
+					{ ...TARGET, scopePaths: ["/etc/passwd"] },
+					{ ...TARGET, budgetPerRun: 0 },
+					{ ...TARGET, budgetPerRun: 20_001 },
+				].map((body) => harness.call("POST", "/targets", { body }).then((r) => r.status)),
+			)
+			const run = "00000000-0000-4000-8000-000000000000"
+			const pages = await Promise.all(
+				["limit=0", "limit=1001", "beforeAt=-1"].map((q) =>
+					harness.call("GET", `/runs/${run}/events?${q}`).then((r) => r.status),
+				),
+			)
+			expect([statuses, pages]).toEqual([
+				[400, 400, 400, 400, 400, 400, 400],
+				[400, 400, 400],
+			])
+			expect(await harness.count("security_audit_targets")).toBe(0)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a per-run budget that cannot fund the target's profile", async () => {
+		const harness = makeHarness()
+		try {
+			const quickMin = minimumInvocations("quick")
+			const tooLowQuick = await harness.call("POST", "/targets", {
+				body: { ...TARGET, profile: "quick", budgetPerRun: quickMin - 1 },
+			})
+			// An omitted profile is a deep audit, so its minimum applies.
+			const tooLowDeep = await harness.call("POST", "/targets", {
+				body: { ...TARGET, budgetPerRun: minimumInvocations("deep") - 1 },
+			})
+			const exact = await harness.call("POST", "/targets", {
+				body: { ...TARGET, profile: "quick", budgetPerRun: quickMin },
+			})
+
+			expect([
+				tooLowQuick.status,
+				tooLowQuick.body._tag,
+				tooLowQuick.body.minimum,
+				tooLowQuick.body.profile,
+			]).toEqual([400, tag("SecurityAuditBudgetTooLowError"), quickMin, "quick"])
+			expect(tooLowQuick.body.message).toContain(String(quickMin))
+			expect([tooLowDeep.status, tooLowDeep.body.minimum]).toEqual([400, minimumInvocations("deep")])
+			expect([exact.status, exact.body.budgetPerRun]).toEqual([200, quickMin])
+			expect(await harness.count("security_audit_targets")).toBe(1)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("resolves the repository through the org's connection and refuses duplicates", async () => {
+		const harness = makeHarness()
+		try {
+			const created = await harness.call("POST", "/targets", {
+				body: { ...TARGET, repository: "Acme/API" },
+			})
+			const duplicate = await harness.call("POST", "/targets", { body: TARGET })
+			const unconnected = await harness.call("POST", "/targets", {
+				body: { ...TARGET, repository: "acme/web" },
+			})
+
+			expect([created.status, created.body.repository]).toEqual([200, "acme/api"])
+			expect([
+				duplicate.status,
+				duplicate.body._tag,
+				unconnected.status,
+				unconnected.body._tag,
+			]).toEqual([
+				409,
+				tag("SecurityAuditTargetExistsError"),
+				404,
+				tag("SecurityAuditRepositoryNotConnectedError"),
+			])
+			expect(await harness.count("security_audit_targets")).toBe(1)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit runs", () => {
+	it("starts manual runs one at a time, with a finite budget and the best prior run", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
+			const runs = `/targets/${target.body.id}/runs`
+			const finish = (runId: string) =>
+				harness.withStore((store) => store.forOrg(ORG_A).finishRun(runId, { status: "complete" }))
+
+			// `kind` is not the client's to set: the API only starts manual runs.
+			const whole = await harness.call("POST", runs, { body: { kind: "revalidation" } })
+			const whileRunning = await harness.call("POST", runs, { body: {} })
+			await finish(whole.body.id)
+			const scoped = await harness.call("POST", runs, {
+				body: { scopePaths: ["apps/api/src/routes"], budget: 40 },
+			})
+			await finish(scoped.body.id)
+			const next = await harness.call("POST", runs, { body: {} })
+
+			const unbudgeted = await harness.call("POST", "/targets", { body: { ...TARGET, branch: "next" } })
+			await harness.call("POST", `/targets/${unbudgeted.body.id}/runs`, { body: {} })
+
+			expect([whole.body.kind, whileRunning.status, whileRunning.body._tag]).toEqual([
+				"manual",
+				409,
+				tag("SecurityAuditRunInProgressError"),
+			])
+			expect(
+				harness.started.map((p) => [p.runId, p.ref, p.scopePaths, p.budget, p.priorRunId]),
+			).toEqual([
+				[whole.body.id, "main", [], 300, null],
+				[scoped.body.id, "main", ["apps/api/src/routes"], 40, whole.body.id],
+				// The whole-target run is preferred over the later scoped one.
+				[next.body.id, "main", [], 300, whole.body.id],
+				[expect.any(String), "next", [], 400, null],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a run whose budget cannot fund reconnaissance, without starting a workflow", async () => {
+		const harness = makeHarness()
+		try {
+			const deepMin = minimumInvocations("deep")
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const runs = `/targets/${target.body.id}/runs`
+			const requested = await harness.call("POST", runs, { body: { budget: deepMin - 1 } })
+			// A stored per-run budget below the minimum (e.g. after the profile changed) is refused too.
+			await harness.sql(`UPDATE security_audit_targets SET budget_per_run = $1 WHERE id = $2`, [
+				deepMin - 1,
+				target.body.id,
+			])
+			const stored = await harness.call("POST", runs, { body: {} })
+			const funded = await harness.call("POST", runs, { body: { budget: deepMin } })
+
+			expect([
+				requested.status,
+				requested.body._tag,
+				requested.body.budget,
+				requested.body.minimum,
+			]).toEqual([400, tag("SecurityAuditBudgetTooLowError"), deepMin - 1, deepMin])
+			expect([stored.status, stored.body._tag]).toEqual([400, tag("SecurityAuditBudgetTooLowError")])
+			expect([funded.status, harness.started.map((p) => p.budget)]).toEqual([200, [deepMin]])
+			expect(await harness.count("security_audit_runs")).toBe(1)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a run on a disabled target", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			await harness.sql(`UPDATE security_audit_targets SET enabled = false WHERE id = $1`, [
+				target.body.id,
+			])
+			const start = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			expect([start.status, start.body._tag, harness.started]).toEqual([
+				409,
+				tag("SecurityAuditTargetDisabledError"),
+				[],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("marks the run failed when its workflow does not start, freeing the target", async () => {
+		const harness = makeHarness({ startFails: true })
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const start = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const retry = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const runs = await harness.call("GET", `/runs?targetId=${target.body.id}`)
+
+			expect([start.status, start.body._tag, retry.body._tag]).toEqual([
+				503,
+				tag("SecurityAuditStartError"),
+				tag("SecurityAuditStartError"),
+			])
+			expect(runs.body.runs.map((r: { status: string; error: string }) => [r.status, r.error])).toEqual(
+				[
+					["failed", "The audit workflow did not start: instance limit reached"],
+					["failed", "The audit workflow did not start: instance limit reached"],
+				],
+			)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("serves a run whose stored reports predate the current shape, with unit counts", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			await harness.sql(
+				`UPDATE security_audit_runs SET reports = '{"report":1}'::jsonb WHERE id = $1`,
+				[run.body.id],
+			)
+			const detail = await harness.call("GET", `/runs/${run.body.id}`)
+
+			expect([
+				detail.status,
+				detail.body.reports,
+				detail.body.unitCounts,
+				detail.body.unitTotal,
+			]).toEqual([200, null, {}, 0])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit findings", () => {
+	it("hides rejected findings unless asked, and records a dismissal with its reason", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const fingerprint = "authz/rollKey:missing-org"
+			await harness.withStore((store) =>
+				store.forOrg(ORG_A).saveFindings(run.body.id, [confirmed(fingerprint), rejected("f2")]),
+			)
+			const findingsPath = `/targets/${target.body.id}/findings`
+			const findingPath = `${findingsPath}/${encodeURIComponent(fingerprint)}`
+
+			const visible = await harness.call("GET", findingsPath)
+			const all = await harness.call("GET", `${findingsPath}?includeRejected=true`)
+			const dismiss = await harness.call("PATCH", findingPath, {
+				body: { status: "dismissed", reason: "fixture data, not reachable" },
+			})
+			const missingReason = await harness.call("PATCH", findingPath, {
+				body: { status: "accepted_risk" },
+			})
+			const after = await harness.call("GET", findingsPath)
+			const audit = await Effect.runPromise(
+				harness.auditLog.list(ORG_A, {
+					action: "security_audit_finding.triaged",
+					limit: 10,
+					offset: 0,
+				}),
+			)
+
+			const fingerprints = (body: { findings: ReadonlyArray<{ fingerprint: string }> }) =>
+				body.findings.map((f) => f.fingerprint)
+			expect([fingerprints(visible.body), fingerprints(all.body)]).toEqual([
+				[fingerprint],
+				[fingerprint, "f2"],
+			])
+			expect([dismiss.status, missingReason.status]).toEqual([200, 400])
+			expect(
+				after.body.findings.map(
+					(f: { status: string; statusReason: string; statusChangedBy: string }) => [
+						f.status,
+						f.statusReason,
+						f.statusChangedBy,
+					],
+				),
+			).toEqual([["dismissed", "fixture data, not reachable", USER]])
+			expect(audit.map((entry) => [entry.userId, entry.metadata])).toEqual([
+				[
+					USER,
+					{
+						targetId: target.body.id,
+						fingerprint,
+						status: "dismissed",
+						reason: "fixture data, not reachable",
+					},
+				],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})

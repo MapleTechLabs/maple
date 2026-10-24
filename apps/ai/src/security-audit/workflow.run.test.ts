@@ -137,7 +137,7 @@ const payloadFor = (runId: string, priorRunId: string | null = null): SecurityAu
 	ref: "main",
 	profile: "deep",
 	scopePaths: [],
-	budget: null,
+	budget: 400,
 	priorRunId,
 })
 
@@ -256,7 +256,13 @@ describe("auditWithAgents, prior runs", () => {
 	it.effect("ignores a prior run that has not finished", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
-			const unfinished = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+			// One target holds one running run, so the unfinished prior run belongs to a sibling branch target.
+			const sibling = yield* store.createTarget({
+				repository: "acme/api",
+				branch: "release",
+				createdBy: Schema.decodeUnknownSync(UserId)("user_a"),
+			})
+			const unfinished = yield* store.startRun({ targetId: sibling.id, kind: "manual", sourceRef: SHA })
 			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
 			const commands: Array<string> = []
 			yield* auditWithAgents(payloadFor(run.id, unfinished.id), () =>
@@ -384,6 +390,34 @@ describe("auditWithAgents, settling", () => {
 				Effect.succeed(scriptedAgents([])),
 			).pipe(
 				Effect.provideService(RepoSandboxService, unreadable),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const findings = yield* store.listFindings(target.id)
+			assert.deepStrictEqual(
+				findings.map((f) => f.status),
+				["open"],
+			)
+		}).pipe(Effect.provide(SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)))),
+	)
+
+	it.effect("leaves a finding open when the run that missed it was only a quick pass", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const prior = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: SHA })
+			yield* auditWithAgents(payloadFor(prior.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			yield* store.saveFindings(prior.id, [keysFinding])
+			const next = yield* store.startRun({
+				targetId: target.id,
+				kind: "revalidation",
+				sourceRef: "main",
+			})
+			yield* auditWithAgents({ ...payloadFor(next.id, prior.id), profile: "quick" }, () =>
+				Effect.succeed(scriptedAgents([])),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
 				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
 			)
 			const findings = yield* store.listFindings(target.id)

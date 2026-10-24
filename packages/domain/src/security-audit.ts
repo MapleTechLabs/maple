@@ -48,7 +48,35 @@ export const SecurityAuditWorkflowPayload = Schema.Struct({
 	ref: Schema.String,
 	profile: SecurityAuditProfile,
 	scopePaths: Schema.Array(Schema.String),
-	budget: Schema.NullOr(Schema.Int),
+	/** Max agent invocations; always finite, the API resolves a default before starting. */
+	budget: Schema.Int.check(Schema.isGreaterThan(0)),
 	priorRunId: Schema.NullOr(Schema.String),
 })
 export type SecurityAuditWorkflowPayload = typeof SecurityAuditWorkflowPayload.Type
+
+const PATH_FORBIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u
+const WINDOWS_RESERVED_COMPONENT =
+	/^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu
+
+/**
+ * A repository-relative path the engine accepts as a scope path. Mirrors `isSafeRelativePath` in
+ * `@maple/security-audit`, which domain cannot import (it pulls in `node:path`).
+ */
+export const isSafeScopePath = (value: string): boolean =>
+	value.length > 0 &&
+	value.trim() === value &&
+	!PATH_FORBIDDEN_CHARACTER.test(value) &&
+	!value.includes("\\") &&
+	!value.includes(":") &&
+	!value.startsWith("/") &&
+	!value.startsWith("~") &&
+	value
+		.split("/")
+		.every(
+			(segment) =>
+				segment !== "" &&
+				segment !== "." &&
+				segment !== ".." &&
+				!/[ .]$/u.test(segment) &&
+				!WINDOWS_RESERVED_COMPONENT.test(segment),
+		)
