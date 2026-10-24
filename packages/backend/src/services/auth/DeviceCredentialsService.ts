@@ -316,7 +316,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 							).pipe(
 								Effect.tapError((error) =>
 									Effect.annotateCurrentSpan(
-										"maple.device_credential.attestation_failure",
+										"maple.device.attestation_rejected_reason",
 										error.reason,
 									),
 								),
@@ -494,8 +494,13 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 			}
 
 			/** `POST /v2/device_tokens`: a proof signed by a registered key earns a bound token. */
-			const issueToken = Effect.fn("DeviceCredentialsService.issueToken")(function* (
+			/**
+			 * `admit` runs once the key is known to belong to a live credential and before any
+			 * write or signing, so the caller's rate limit bounds the expensive half of issuance.
+			 */
+			const issueToken = Effect.fn("DeviceCredentialsService.issueToken")(function* <E>(
 				request: DpopRequest,
+				admit: (credentialId: DeviceCredentialId) => Effect.Effect<void, E>,
 			) {
 				const found = yield* requireSigner
 				const now = yield* Clock.currentTimeMillis
@@ -514,12 +519,13 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 				if (row === undefined || !isLive(row, now)) {
 					const reason =
 						row === undefined ? "unknown" : row.revokedAt !== null ? "revoked" : "expired"
-					yield* Effect.annotateCurrentSpan("maple.device_credential.rejected_reason", reason)
+					yield* Effect.annotateCurrentSpan("maple.device.token_request_rejected_reason", reason)
 					return yield* new DeviceCredentialInvalidError({
 						message: `Device credential ${reason}`,
 						reason,
 					})
 				}
+				yield* admit(row.id)
 				yield* consumeProof(proof).pipe(
 					Effect.catchTag("@maple/backend/auth/device/DpopProofRejected", (error) =>
 						Effect.fail(toInvalidProof(error)),
