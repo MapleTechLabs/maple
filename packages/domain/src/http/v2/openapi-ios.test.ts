@@ -72,8 +72,15 @@ const IOS_OPERATIONS = [
 	"endLiveActivity",
 	"mintWidgetCredential",
 	"revokeWidgetCredential",
+	"registerDeviceCredential",
+	"revokeDeviceCredential",
+	"getDeviceAttestationChallenge",
+	"issueDeviceToken",
 	"getWidgetSummary",
 ] as const
+
+/** The DPoP token endpoint: its credential is the `DPoP` proof header, not a bearer. */
+const UNAUTHENTICATED_OPERATIONS: ReadonlySet<string> = new Set(["issueDeviceToken"])
 
 /**
  * Unions that are *real* — discriminated request shapes, not Effect's
@@ -242,7 +249,8 @@ describe("iOS OpenAPI spec", () => {
 		expect(spec.servers).toEqual([{ url: "https://api.maple.dev", description: "Production" }])
 		expect(Object.keys(spec.components.securitySchemes)).toEqual(["bearer"])
 		for (const operation of operations()) {
-			expect(operation.security, operation.operationId as string).toEqual([{ bearer: [] }])
+			const id = operation.operationId as string
+			expect(operation.security, id).toEqual(UNAUTHENTICATED_OPERATIONS.has(id) ? [] : [{ bearer: [] }])
 		}
 	})
 })

@@ -7,6 +7,7 @@ import type { WorkerDev } from "@maple/alchemy-portless"
 import { type DevApp, isDevApp } from "../dev-urls.ts"
 import { Stage } from "alchemy/Stage"
 import type { MapleAwsOidcEnv } from "../aws/oidc-signing-key.ts"
+import type { MapleDeviceTokenEnv } from "./device-token-key.ts"
 import type { MapleProfile } from "../profile.ts"
 import type { MapleRegion } from "../region.ts"
 import {
@@ -62,6 +63,8 @@ export interface MapleStackContext {
 	readonly db: MapleDbResources | undefined
 	/** The AWS integration's OIDC signing key, as api's and alerting's env. */
 	readonly awsOidc: MapleAwsOidcEnv
+	/** The device-token signing key (DPoP device credentials), as api's env. */
+	readonly deviceToken: MapleDeviceTokenEnv
 }
 
 /** The deploy context Worker props read. Plan-time only: read behind `__ALCHEMY_RUNTIME__`. */

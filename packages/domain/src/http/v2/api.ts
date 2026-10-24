@@ -8,6 +8,7 @@ import { V2ApiKeysApiGroup } from "./api-keys"
 import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
 import { V2AuditLogApiGroup } from "./audit-log"
 import { V2DashboardsApiGroup } from "./dashboards"
+import { V2DeviceCredentialsApiGroup, V2DeviceTokensApiGroup } from "./device-credentials"
 import { V2IngestKeysApiGroup } from "./ingest-keys"
 import { V2SourcesApiGroup } from "./sources"
 import { V2ChatIntegrationsApiGroup } from "./integrations-chat"
@@ -129,6 +130,8 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2SharePublicApiGroup)
 	.add(V2WidgetSummaryApiGroup)
 	.add(V2WidgetCredentialsApiGroup)
+	.add(V2DeviceCredentialsApiGroup)
+	.add(V2DeviceTokensApiGroup)
 	.middleware(V2SchemaErrors)
 	.middleware(V2UnexpectedErrors)
 	.annotateMerge(

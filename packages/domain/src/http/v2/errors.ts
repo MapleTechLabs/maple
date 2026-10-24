@@ -136,6 +136,21 @@ export const V2InvalidCredentials = defineV2Error({
 	identifier: "InvalidCredentialsError",
 })
 
+/**
+ * A `DPoP`-scheme request whose proof is missing or does not verify (RFC 9449 section 7.1). The
+ * response also carries `WWW-Authenticate: DPoP error="invalid_dpop_proof"`.
+ */
+export const V2InvalidDpopProof = defineV2Error({
+	tag: "@maple/http/v2/InvalidDpopProofError",
+	status: 401,
+	code: "invalid_dpop_proof",
+	title: "Invalid DPoP proof",
+	message: "The DPoP proof is missing or invalid.",
+	retry: "never",
+	recovery: "reauthenticate",
+	identifier: "InvalidDpopProofError",
+})
+
 export const V2InsufficientScope = defineV2Error({
 	tag: "@maple/http/v2/InsufficientScopeError",
 	status: 403,
