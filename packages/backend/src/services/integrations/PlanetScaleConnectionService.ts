@@ -6,6 +6,7 @@ import {
 	IntegrationsRevokedError,
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
+	PlanetScaleApiMetricsStatus,
 	PlanetScaleIntegrationStatus,
 	PlanetScaleScrapeTargetSummary,
 	ScrapeTargetId,
@@ -33,11 +34,9 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
-import {
-	HttpSdResponse,
-	PlanetScaleDiscoveryService,
-	subTargetsFromGroup,
-} from "./PlanetScaleDiscoveryService"
+import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
+import { PLANETSCALE_METRICS_DATASET } from "./planetscale/poll-state"
+import { scrapesWithToken } from "./PlanetScaleMetricsService"
 import {
 	PlanetScaleOAuthService,
 	planetScaleBearerHeader,
@@ -68,7 +67,6 @@ const PROBE_TIMEOUT = Duration.seconds(10)
 /** Permission keys stored in `detectedPermissionsJson` / surfaced in status. */
 export interface PlanetScaleDetectedPermissions {
 	readonly readOrganization: boolean
-	readonly readMetricsEndpoints: boolean
 	readonly readDatabases: boolean
 }
 
@@ -236,90 +234,25 @@ export class PlanetScaleConnectionService extends Context.Service<
 			return response.status
 		})
 
-		const decodeHttpSd = Schema.decodeUnknownEffect(Schema.fromJsonString(HttpSdResponse))
-
-		/**
-		 * Whether an ACTUAL branch-metrics scrape works. The SD endpoint on
-		 * api.planetscale.com accepting the credential proves nothing about the
-		 * data plane: metrics.psdb.cloud authenticates with the signed `?sig=&exp=`
-		 * URL params minted in the SD response, so we probe a discovered endpoint
-		 * via its `signedUrl` and let `readMetricsEndpoints` reflect scraping, not
-		 * listing. Inconclusive outcomes (no branches discovered yet, transport
-		 * blip, undecodable payload) keep the control-plane answer instead of
-		 * pausing a possibly-working target.
-		 */
-		const probeDataPlaneScrape = Effect.fn("PlanetScaleConnectionService.probeDataPlaneScrape")(
-			function* (organization: string, bearer: string) {
-				const org = encodeURIComponent(organization)
-				const outcome: "ok" | "rejected" | "inconclusive" = yield* Effect.gen(function* () {
-					const sd = yield* probeUrl(`${apiBase}/v1/organizations/${org}/metrics`, bearer)
-					if (sd.status === 401 || sd.status === 403) return "rejected" as const
-					if (sd.status < 200 || sd.status >= 300) return "inconclusive" as const
-
-					const groups = yield* decodeHttpSd(sd.text).pipe(
-						Effect.tapError((error) =>
-							Effect.logWarning(
-								"PlanetScale metrics discovery payload could not be decoded",
-							).pipe(Effect.annotateLogs({ error: String(error) })),
-						),
-						Effect.orElseSucceed(() => null),
-					)
-					if (groups === null) return "inconclusive" as const
-
-					// subTargetsFromGroup already SSRF-validates the discovered URLs.
-					const first = groups.flatMap((group) => subTargetsFromGroup(group).ok)[0]
-					if (first === undefined) return "inconclusive" as const
-
-					// signedUrl carries the `?sig=&exp=` params the data plane requires.
-					const scrape = yield* probeUrl(first.signedUrl, bearer)
-					return scrape.status >= 200 && scrape.status < 300
-						? ("ok" as const)
-						: ("rejected" as const)
-				}).pipe(
-					Effect.catchTag("@maple/http/errors/IntegrationsUpstreamError", (error) =>
-						Effect.logWarning(
-							"PlanetScale data-plane scrape probe failed; keeping SD result",
-						).pipe(
-							Effect.annotateLogs({ organization, error: error.message }),
-							Effect.as("inconclusive" as const),
-						),
-					),
-				)
-				yield* Effect.annotateCurrentSpan("maple.planetscale.probe_outcome", outcome)
-				if (outcome !== "ok") {
-					yield* Effect.logInfo("PlanetScale data-plane scrape probe outcome").pipe(
-						Effect.annotateLogs({ organization, outcome }),
-					)
-				}
-				return outcome
-			},
-		)
-
 		const probePermissions = Effect.fn("PlanetScaleConnectionService.probePermissions")(function* (
 			organization: string,
 			accessToken: string,
 		) {
 			const org = encodeURIComponent(organization)
 			const bearer = planetScaleBearerHeader(accessToken)
-			const [orgStatus, metricsStatus, databasesStatus] = yield* Effect.all(
+			const [orgStatus, databasesStatus] = yield* Effect.all(
 				[
 					probeStatus(`/v1/organizations/${org}`, bearer),
-					probeStatus(`/v1/organizations/${org}/metrics`, bearer),
 					probeStatus(`/v1/organizations/${org}/databases?per_page=1`, bearer),
 				],
-				{ concurrency: 3 },
+				{ concurrency: 2 },
 			)
 			const ok = (status: number) => status >= 200 && status < 300
-			// The SD listing passing is necessary but not sufficient for scraping —
-			// confirm against the data plane before declaring the bearer scrape-capable.
-			const readMetricsEndpoints =
-				ok(metricsStatus) && (yield* probeDataPlaneScrape(organization, bearer)) !== "rejected"
 			const permissions: PlanetScaleDetectedPermissions = {
 				readOrganization: ok(orgStatus),
-				readMetricsEndpoints,
 				readDatabases: ok(databasesStatus),
 			}
-			return { permissions, orgStatus, metricsStatus }
+			return { permissions, orgStatus }
 		})
 
 		const selectConnection = Effect.fn("PlanetScaleConnectionService.selectConnection")(function* (
@@ -363,7 +296,8 @@ export class PlanetScaleConnectionService extends Context.Service<
 				return new PlanetScaleIntegrationStatus({
 					connected: false,
 					pendingOrgSelection,
-					metricsAuth: "missing",
+					metricsAuth: "api",
+					apiMetrics: null,
 					organization: null,
 					connectedByUserId: null,
 					detectedPermissions: null,
@@ -384,23 +318,42 @@ export class PlanetScaleConnectionService extends Context.Service<
 						.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
 				),
 			)
-			// How scraping authenticates: a stored service token wins; grant-resolved
-			// bearer auth counts only while the target is enabled (finalize disables
-			// it unless the bearer passed an end-to-end data-plane scrape probe —
-			// PlanetScale's metrics endpoints only document service-token auth);
-			// anything else means scraping is paused until a token is added.
-			const metricsAuth =
-				target === null
-					? ("missing" as const)
-					: target.authType === "token" && target.authCredentialsCiphertext !== null
-						? ("service_token" as const)
-						: target.authType === "planetscale_oauth" && target.enabled
-							? ("oauth" as const)
-							: ("missing" as const)
+			// A stored service token keeps Prometheus scraping; everything else is polled
+			// from the metrics API (PlanetScaleMetricsService, which skips the former).
+			const metricsAuth = scrapesWithToken(target) ? ("service_token" as const) : ("api" as const)
+			// Branch rows carry each branch's last ingest; the org row ("") the last tick's failures.
+			const metricsPoll =
+				metricsAuth === "api"
+					? yield* dbExecute((db) =>
+							db.run(
+								PG.from(PlanetscalePollState)
+									.select("databaseId", "lastSuccessAt", "lastError")
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.dataset.eq(PLANETSCALE_METRICS_DATASET),
+									]),
+							),
+						)
+					: []
+			const lastPolledAt = metricsPoll.reduce<number | null>(
+				(latest, row) =>
+					row.databaseId === "" || row.lastSuccessAt === null
+						? latest
+						: Math.max(latest ?? 0, row.lastSuccessAt),
+				null,
+			)
 			return new PlanetScaleIntegrationStatus({
 				connected: true,
 				pendingOrgSelection: false,
 				metricsAuth,
+				apiMetrics:
+					metricsAuth === "api"
+						? new PlanetScaleApiMetricsStatus({
+								lastPolledAt,
+								lastError:
+									metricsPoll.find((row) => row.databaseId === "")?.lastError ?? null,
+							})
+						: null,
 				organization: connection.psOrganization,
 				connectedByUserId: decodeUserIdSync(connection.connectedByUserId),
 				detectedPermissions: connection.detectedPermissionsJson ?? null,
@@ -476,12 +429,8 @@ export class PlanetScaleConnectionService extends Context.Service<
 					)
 				}
 
-				// Probe what the grant can do against this org (readMetricsEndpoints
-				// requires an actual data-plane scrape to pass — see probePermissions).
-				// The metrics endpoints only document service-token auth, so a failing
-				// bearer probe does NOT block the binding — inventory/insights/webhooks
-				// work on the grant, and scraping stays paused until a service token is
-				// added via setMetricsToken (the card's follow-up step).
+				// Probe what the grant can do against this org. Branch metrics come from the
+				// metrics API on the same grant (PlanetScaleMetricsService).
 				const { permissions } = yield* probePermissions(organization, accessToken)
 
 				// Attribution comes from the grant, so finalize behaves identically when
@@ -522,9 +471,8 @@ export class PlanetScaleConnectionService extends Context.Service<
 				const connectionId = existing?.id ?? randomUUID()
 				const managedBy = managedByForConnection(connectionId)
 
-				// Provision or adopt the scrape target that feeds branch metrics. Managed
-				// targets carry no credentials — the scraper resolves the OAuth grant at
-				// scrape time (authType "planetscale_oauth").
+				// Provision or adopt the managed scrape target. It holds the branch filters;
+				// it scrapes only when it carries a service token (an adopted user row).
 				const adoptable = yield* findAdoptableTarget(orgId, organization)
 				let scrapeTargetId: ScrapeTargetId
 				let createdTarget = false
@@ -550,7 +498,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 										excludeBranches: request.excludeBranches,
 									}
 								: undefined),
-							enabled: keepsToken || permissions.readMetricsEndpoints,
+							enabled: keepsToken,
 						},
 						// The integration owns this row, so it writes past the
 						// managed-row guard the generic scrape API is held to.
@@ -573,9 +521,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 									excludeBranches: request.excludeBranches,
 								}
 							: undefined),
-						// Paused until a service token arrives when the bearer probe
-						// failed — an enabled target would just 401 every scrape.
-						enabled: permissions.readMetricsEndpoints,
+						// Holds the branch filters for the metrics API poller; Prometheus
+						// discovery rejects the OAuth grant, so it never scrapes.
+						enabled: false,
 					})
 					scrapeTargetId = created.id
 					createdTarget = true

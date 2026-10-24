@@ -115,6 +115,13 @@ const toPlanetScaleStatus = (status: PlanetScaleIntegrationStatus): V2PlanetScal
 	connected_by_user_id: status.connectedByUserId,
 	detected_permissions: status.detectedPermissions,
 	metrics_auth: status.metricsAuth,
+	api_metrics:
+		status.apiMetrics === null
+			? null
+			: {
+					last_polled_at: isoTimestampOrNull(status.apiMetrics.lastPolledAt),
+					last_error: status.apiMetrics.lastError,
+				},
 	scrape_target:
 		status.scrapeTarget === null
 			? null

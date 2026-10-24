@@ -1,11 +1,14 @@
 import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
+import {
+	derivePlanetScaleSetup,
+	metricsAuthOf,
+	metricsLastError,
+} from "../../components/integrations/planetscale-setup-steps"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
 import { icon } from "../../ui/icon"
-import { inlineCode } from "../../ui/inline-code"
 import { item, itemActions, itemContent, itemMedia } from "../../ui/item"
 import { panel } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
@@ -21,7 +24,7 @@ import { catalogEntry } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disconnectDialog } from "./view-disconnect"
-import { metricsHealth, metricsTokenForm, QUIET_LINK, setupChecklist } from "./view-planetscale-parts"
+import { metricsHealth, setupChecklist } from "./view-planetscale-parts"
 import { orgPicker, pickerDialog } from "./view-planetscale-picker"
 
 // `PlanetScaleIntegrationCard`, `FirstMetricsDetail` and `PlanetScaleWebhooks`.
@@ -59,7 +62,7 @@ const notConnected = (h: H, model: Model): Html =>
 			{
 				label: "Branch health",
 				title: "CPU, memory, replication",
-				description: "Connections and replication lag per branch, scraped on a schedule.",
+				description: "Connections and replication lag per branch, collected every 5 minutes.",
 			},
 		]),
 		integrationEmptyCard(h, [
@@ -69,50 +72,26 @@ const notConnected = (h: H, model: Model): Html =>
 		]),
 	])
 
-const rotateButton = (h: H, className: string): Html =>
-	button(
-		h,
-		{
-			variant: className === "" ? "outline" : "link",
-			size: className === "" ? "sm" : "xs",
-			className: className === "" ? undefined : className,
-			attributes: [h.OnClick(Message.ClickedRotateToken())],
-		},
-		["Rotate token"],
-	)
-
-/** `FirstMetricsDetail`: an error, the first three minutes, or the permission hint. */
-const firstMetricsDetail = (h: H, model: Model, scrapeError: string | null): Html => {
-	if (scrapeError !== null)
-		return h.div(
-			[h.Class("space-y-2")],
-			[
-				h.p(
-					[h.Class("break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-muted-foreground")],
-					[scrapeError],
-				),
-				rotateButton(h, ""),
-			],
+/** `FirstMetricsDetail`: the collection error, or a reassurance while Maple waits. */
+const firstMetricsDetail = (h: H, model: Model, status: V2PlanetScaleIntegration): Html => {
+	const error = metricsLastError(status)
+	if (error !== null)
+		return h.p(
+			[h.Class("break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-muted-foreground")],
+			[error],
 		)
-	const watchedForMs = model.nowMs - (model.planetscaleCard.watchStartedAt ?? model.nowMs)
-	if (watchedForMs < 3 * 60 * 1000)
+	if (metricsAuthOf(status) === "api")
 		return h.p(
 			[h.Class("text-xs text-muted-foreground")],
-			["Usually under a minute — this updates on its own."],
+			["The first poll usually lands within 10 minutes. This updates on its own."],
 		)
-	return h.div(
-		[h.Class("space-y-2")],
+	const watchedForMs = model.nowMs - (model.planetscaleCard.watchStartedAt ?? model.nowMs)
+	return h.p(
+		[h.Class("text-xs text-muted-foreground")],
 		[
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				[
-					"Still nothing after a few minutes. The most common cause is a token without the",
-					" ",
-					inlineCode(h, {}, ["read_metrics_endpoints"]),
-					" permission — PlanetScale accepts the token and then serves no metrics.",
-				],
-			),
-			rotateButton(h, ""),
+			watchedForMs < 3 * 60 * 1000
+				? "Usually under a minute. This updates on its own."
+				: "Still nothing after a few minutes. Check that the service token still exists in PlanetScale.",
 		],
 	)
 }
@@ -200,7 +179,6 @@ const webhookStatus = (h: H, model: Model, webhooks: Webhooks): Html =>
 	])
 
 const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, timeZone: string): Html => {
-	const card = model.planetscaleCard
 	const setup = derivePlanetScaleSetup(status, model.nowMs)
 	const busy = model.connect.isStarting || model.disconnect.isPending
 	const organization = h.span([h.Class("font-medium text-foreground")], [status.organization ?? ""])
@@ -274,55 +252,12 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 														"Reauthorize with read_databases",
 														false,
 													)
-												: id === "metrics-token"
-													? metricsTokenForm(
-															h,
-															model,
-															status.organization,
-															ENTRY.docsUrl,
-															"initial",
-															false,
-														)
-													: firstMetricsDetail(
-															h,
-															model,
-															status.scrape_target?.last_scrape_error ?? null,
-														),
+												: firstMetricsDetail(h, model, status),
 									),
 								],
 							),
 						]),
-				...(status.scrape_target !== null && setup.complete
-					? [
-							metricsHealth(
-								h,
-								model,
-								status.scrape_target,
-								status.metrics_auth,
-								timeZone,
-								status.metrics_auth === "service_token" && !card.isRotating
-									? rotateButton(h, `h-auto p-0 font-normal ${QUIET_LINK}`)
-									: null,
-							),
-						]
-					: []),
-				...(card.isRotating
-					? [
-							h.div(
-								[h.Class("border-t border-border/60 p-4")],
-								[
-									metricsTokenForm(
-										h,
-										model,
-										status.organization,
-										ENTRY.docsUrl,
-										"rotate",
-										true,
-									),
-								],
-							),
-						]
-					: []),
+				...(setup.complete ? [metricsHealth(h, model, status, timeZone)] : []),
 			]),
 			...(webhooks === null ? [] : [webhookStatus(h, model, webhooks)]),
 			pickerDialog(h, model),

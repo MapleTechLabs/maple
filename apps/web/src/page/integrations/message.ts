@@ -275,13 +275,6 @@ export const Message = defineMessageUnion({
 	ClickedPickerCancel: {},
 	SubmittedOrganization: {},
 	CompletedSelectOrganization: { organization: Schema.String, failure: Schema.NullOr(LoadFailure) },
-	ClickedRotateToken: {},
-	ClickedRotateCancel: {},
-	GotMetricsTokenMessage: { field: Schema.Literals(["id", "secret"]), message: Field.Message },
-	/** A paste into a token field (`normalizeTokenPaste`): an `id:secret` line fills both. */
-	PastedMetricsToken: { field: Schema.Literals(["id", "secret"]), text: Schema.String },
-	SubmittedMetricsToken: {},
-	CompletedSetMetricsToken: { error: Schema.NullOr(Schema.String) },
 	ClickedMetricsDetails: {},
 	/** Every 5 s while the first scrape is awaited. */
 	TickedPlanetscaleWatch: {},
