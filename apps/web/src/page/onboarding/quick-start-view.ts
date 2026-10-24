@@ -40,11 +40,12 @@ export const accountClusterOf = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<H
  * `MotionStep key={step}` at rest (reduced motion: no slide). A new step is a new element, as
  * AnimatePresence remounts it, so no card is patched over from the previous step.
  */
+/** A quiet fade and rise as each step mounts; keyed, so a new step plays it again. */
+export const ENTER_CLASS =
+	"animate-in fade-in slide-in-from-bottom-1 ease-out [animation-duration:280ms] motion-reduce:animate-none"
+
 export const motionStep = <M>(h: HtmlBuilder<M>, step: string, child: Html): Html =>
-	h.div(
-		[h.Key(step), h.Class("flex flex-1 flex-col"), h.Style({ opacity: "1", transform: "none" })],
-		[child],
-	)
+	h.div([h.Key(step), h.Class(cn("flex flex-1 flex-col", ENTER_CLASS))], [child])
 
 /** How far the backdrop has spread by each step (`/org-required` starts it at 0.55). */
 const REACH = {
@@ -108,6 +109,8 @@ type ShellOptions = Readonly<{
 	reach: string
 	/** The step's preview; without one the step takes the whole width. */
 	aside: Html | null
+	/** Keys the preview card, so it fades in again with each step. */
+	step: string
 }>
 
 /**
@@ -209,8 +212,12 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 									[
 										h.div(
 											[
+												h.Key(options.step),
 												h.Class(
-													"relative m-auto w-full max-w-[540px] rounded-2xl border border-border bg-sidebar p-5",
+													cn(
+														"relative m-auto w-full max-w-[540px] rounded-2xl border border-border bg-sidebar p-5",
+														"animate-in fade-in ease-out [animation-duration:420ms] motion-reduce:animate-none",
+													),
 												),
 											],
 											[options.aside],
@@ -1092,6 +1099,7 @@ export const view = (h: H, model: Model, parts: QuickStartParts): Html | null =>
 		trail: trail(h, trailOf(state, parts, step)),
 		reach: REACH[step],
 		aside,
+		step,
 	})
 	switch (step) {
 		case "region":
