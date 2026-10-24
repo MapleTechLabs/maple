@@ -8531,6 +8531,77 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
+-- builder:traces:traceSummariesQuery:root-scope  [cb2173a6]
+SELECT
+          trace_list_mv.TraceId AS traceId,
+          min(trace_list_mv.Timestamp) AS startTime,
+          argMin(trace_list_mv.Duration, trace_list_mv.Timestamp) / 1000000 AS durationMs,
+          argMin(trace_list_mv.SpanName, trace_list_mv.Timestamp) AS rootSpanName,
+          argMin(trace_list_mv.SpanKind, trace_list_mv.Timestamp) AS rootSpanKind,
+          argMin(trace_list_mv.ServiceName, trace_list_mv.Timestamp) AS rootServiceName,
+          argMin(trace_list_mv.StatusCode, trace_list_mv.Timestamp) AS statusCode,
+          max(trace_list_mv.HasError) AS hasError,
+          argMin(trace_list_mv.DeploymentEnv, trace_list_mv.Timestamp) AS deploymentEnvironment,
+          argMin(trace_list_mv.ServiceNamespace, trace_list_mv.Timestamp) AS serviceNamespace,
+          argMin(trace_list_mv.HttpMethod, trace_list_mv.Timestamp) AS httpMethod,
+          argMin(trace_list_mv.HttpRoute, trace_list_mv.Timestamp) AS httpRoute,
+          argMin(trace_list_mv.HttpStatusCode, trace_list_mv.Timestamp) AS httpStatusCode
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (Timestamp, TraceId) IN (SELECT ts, traceId FROM (SELECT
+          trace_list_mv.Timestamp AS ts,
+          trace_list_mv.TraceId AS traceId
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 51))
+        GROUP BY traceId
+        ORDER BY startTime DESC, traceId DESC
+        LIMIT 51
+        OFFSET 0
+        FORMAT JSON
+
+-- builder:traces:traceSummariesQuery:root-scope-raw  [e14df082]
+SELECT
+          trace_list_mv.TraceId AS traceId,
+          min(trace_list_mv.Timestamp) AS startTime,
+          argMin(trace_list_mv.Duration, trace_list_mv.Timestamp) / 1000000 AS durationMs,
+          argMin(trace_list_mv.SpanName, trace_list_mv.Timestamp) AS rootSpanName,
+          argMin(trace_list_mv.SpanKind, trace_list_mv.Timestamp) AS rootSpanKind,
+          argMin(trace_list_mv.ServiceName, trace_list_mv.Timestamp) AS rootServiceName,
+          argMin(trace_list_mv.StatusCode, trace_list_mv.Timestamp) AS statusCode,
+          max(trace_list_mv.HasError) AS hasError,
+          argMin(trace_list_mv.DeploymentEnv, trace_list_mv.Timestamp) AS deploymentEnvironment,
+          argMin(trace_list_mv.ServiceNamespace, trace_list_mv.Timestamp) AS serviceNamespace,
+          argMin(trace_list_mv.HttpMethod, trace_list_mv.Timestamp) AS httpMethod,
+          argMin(trace_list_mv.HttpRoute, trace_list_mv.Timestamp) AS httpRoute,
+          argMin(trace_list_mv.HttpStatusCode, trace_list_mv.Timestamp) AS httpStatusCode
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_list_mv.Timestamp <= '2026-01-03 14:15:00'
+          AND (Timestamp, TraceId) IN (SELECT ts, traceId FROM (SELECT
+          toDateTime(traces.Timestamp) AS ts,
+          traces.TraceId AS traceId
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.StatusCode = 'Error'
+          AND SpanAttributes['http.route'] = '/users/:id'
+          AND traces.ParentSpanId = ''
+        ORDER BY ts DESC, traceId DESC
+        LIMIT 51))
+        GROUP BY traceId
+        ORDER BY startTime DESC, traceId DESC
+        LIMIT 51
+        OFFSET 0
+        FORMAT JSON
+
 -- builder:web-analytics-ai:webAnalyticsAiCrawledPagesQuery:default  [56486fc0]
 SELECT
           ai_crawler_requests.Host AS host,

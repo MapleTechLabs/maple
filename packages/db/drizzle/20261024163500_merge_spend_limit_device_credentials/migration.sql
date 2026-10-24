@@ -1,2 +1,0 @@
--- Custom SQL migration. Separate statements with a line holding only:
--- --> statement-breakpoint
