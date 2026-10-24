@@ -149,32 +149,65 @@ struct TableCell: View {
 
 // MARK: - Stat delta
 
-/// The `+6.2% vs previous hour` line under a stat tile's value.
+/// The `+6.2% vs prev hour` line under a stat tile's value.
 struct StatDelta: Hashable {
-	/// Fractional change, `0.062` for +6.2%.
-	let change: Double
+	enum Style: Hashable {
+		/// Relative change: `+6.2%`.
+		case percent
+		/// A ratio's change in percentage points: `+0.12 pts` (values are 0-1).
+		case points
+		/// A latency's absolute change: `-18 ms`.
+		case milliseconds
+	}
+
+	let current: Double
+	let previous: Double
+	let style: Style
 	/// Whether an increase is good (throughput) or bad (errors, latency).
 	let higherIsBetter: Bool
 	let comparison: String
 
 	/// Nil when there is no usable previous value to compare against.
-	init?(current: Double, previous: Double?, higherIsBetter: Bool, comparison: String = "vs previous hour") {
-		guard let previous, previous > 0, current.isFinite else { return nil }
-		self.change = (current - previous) / previous
+	init?(
+		current: Double,
+		previous: Double?,
+		higherIsBetter: Bool,
+		style: Style = .percent,
+		comparison: String = "vs prev hour"
+	) {
+		guard let previous, current.isFinite, previous.isFinite else { return nil }
+		if style == .percent, previous <= 0 { return nil }
+		self.current = current
+		self.previous = previous
+		self.style = style
 		self.higherIsBetter = higherIsBetter
 		self.comparison = comparison
 	}
 
+	private var change: Double { current - previous }
+
+	/// Relative size of the move, for deciding whether it is noise.
+	private var relativeChange: Double {
+		previous == 0 ? (current == 0 ? 0 : 1) : change / previous
+	}
+
 	var text: String {
-		let percent = abs(change) * 100
-		let sign = change >= 0 ? "+" : "-"
-		let value = percent >= 10 ? String(format: "%.0f", percent) : String(format: "%.1f", percent)
-		return "\(sign)\(value)% \(comparison)"
+		let sign = change >= 0 ? "+" : "\u{2212}"
+		switch style {
+		case .percent:
+			let percent = abs(relativeChange) * 100
+			let value = percent >= 10 ? String(format: "%.0f", percent) : String(format: "%.1f", percent)
+			return "\(sign)\(value)% \(comparison)"
+		case .points:
+			return "\(sign)\(String(format: "%.2f", abs(change) * 100)) pts \(comparison)"
+		case .milliseconds:
+			return "\(sign)\(Format.latency(abs(change))) \(comparison)"
+		}
 	}
 
 	/// Green when the move is good, red when bad, muted when it is noise.
 	var tint: Color {
-		if abs(change) < 0.02 { return Token.mutedForeground }
-		return (change > 0) == higherIsBetter ? Token.success : Token.destructive
+		if abs(relativeChange) < 0.02 { return Token.mutedForeground }
+		return (change > 0) == higherIsBetter ? Token.severityInfo : Token.severityError
 	}
 }

@@ -19,11 +19,12 @@ struct ExploreView: View {
 			ZStack {
 				Token.background.ignoresSafeArea()
 				VStack(spacing: 0) {
+					TabRootHeader(title: "Explore")
 					UnderlineTabs(
 						options: ExploreSegment.allCases.map { ($0, $0.title) },
 						selection: $navigation.exploreSegment
 					)
-					.padding(.top, 4)
+					.padding(.top, 12)
 					// Keyed on the scope so an org or environment switch starts each
 					// segment from a fresh query rather than showing stale rows.
 					Group {
@@ -36,16 +37,7 @@ struct ExploreView: View {
 					.id(scope)
 				}
 			}
-			.navigationTitle("Explore")
-			.navigationBarTitleDisplayMode(.large)
-			.toolbar {
-				ToolbarItem(placement: .topBarLeading) {
-					OrganizationSwitcherButton()
-				}
-				ToolbarItem(placement: .topBarLeading) {
-					EnvironmentPickerView()
-				}
-			}
+			.tabRootChrome()
 			.mapleDestinations()
 		}
 	}
