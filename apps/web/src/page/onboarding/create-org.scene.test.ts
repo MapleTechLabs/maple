@@ -107,6 +107,32 @@ describe("create your first organization", () => {
 		)
 	})
 
+	test("an org created but not opened is opened on retry, never created twice", () => {
+		scene(
+			{ update, view },
+			given(init(user).model),
+			mounted,
+			submit(form),
+			Command.resolve(CreateOrganization, Message.SucceededCreate({ orgId: "org_acme" })),
+			Command.resolve(LeaveFor, Message.FailedLeave({ message: "Couldn't open that organization." })),
+			expectView(nameField).toBeDisabled(),
+			submit(form),
+			Command.expectExact(LeaveFor({ orgId: "org_acme", targetUrl: null })),
+			Command.resolve(LeaveFor, Message.CompletedLeave()),
+		)
+	})
+
+	test("a failed invitation read says so instead of looking like none", () => {
+		scene(
+			{ update, view },
+			given(
+				update(init(user).model, Message.FailedLoadInvitations({ message: "Session expired" })).model,
+			),
+			mounted,
+			expectView(text("Couldn't check whether anyone invited you: Session expired")).toExist(),
+		)
+	})
+
 	test("an empty name cannot be submitted", () => {
 		scene(
 			{ update, view },
