@@ -77,6 +77,13 @@ describe("quick start", () => {
 		).not.toContain("FinishQuickStart")
 	})
 
+	test("the step a fresh save opens on loads its own data: the plans without a plan, nothing with one", () => {
+		const loading = init("maple-onboarding-v6-org_1").model
+		const load = Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE })
+		expect(names(updateWith(loading, load, false))).toContain("LoadPlans")
+		expect(names(updateWith(loading, load, true))).not.toContain("LoadPlans")
+	})
+
 	test("a finished save with no plan behind it goes back to the plan step instead of bouncing off the gate", () => {
 		const finished = {
 			...DEFAULT_QUICK_START_STATE,
