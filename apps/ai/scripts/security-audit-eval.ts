@@ -8,15 +8,24 @@
  * The spend cap applies per results directory: it sums every run under it (finished, aborted,
  * in flight), is checked before each launch and every poll, and stops a run that passes it.
  *
- * Options: --results <dir> (required) · --repos <dir> (~/.cache/maple-security-eval/repos) · --only <id,...>
+ * Options: --results <dir> (~/.cache/maple-security-eval/results, never inside this repo) · --repos <dir> (~/.cache/maple-security-eval/repos) · --only <id,...>
  * · --variant <name> with --profile/--budget/--concurrency overrides · --cap-usd <n> (250)
  * · --per-invocation-usd <n> (1.5, the estimate before any run) · --grades <file> (<results>/grades.json)
  * · --discovery-model / --validation-model <openrouter id> · --score-only · --dry-run
  */
 import { spawn, spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs"
 import { homedir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import {
@@ -45,6 +54,25 @@ import {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const AI_DIR = resolve(SCRIPT_DIR, "..")
 const POLL_MS = 30_000
+const EVAL_CACHE = join(homedir(), ".cache", "maple-security-eval")
+
+/** `path` with symlinks resolved, through its nearest existing ancestor when it does not exist yet. */
+const realPath = (path: string): string =>
+	existsSync(path) || dirname(path) === path
+		? realpathSync(path)
+		: join(realPath(dirname(path)), basename(path))
+
+/** Whether `path` is `dir` or inside it, both already real. */
+const isWithin = (path: string, dir: string) => {
+	const rel = relative(dir, path)
+	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+}
+
+/** The Maple checkout this script runs from: results (case repos, findings) must stay out of it. */
+const repoRoot = () => {
+	const top = spawnSync("git", ["-C", AI_DIR, "rev-parse", "--show-toplevel"], { encoding: "utf8" })
+	return realPath(top.status === 0 ? top.stdout.trim() : resolve(AI_DIR, "..", ".."))
+}
 
 interface Args {
 	readonly caseFiles: ReadonlyArray<string>
@@ -66,7 +94,7 @@ interface Args {
 
 const usage = () => {
 	console.error(
-		"usage: bun run security:eval <cases.json>... --results <dir> [--repos <dir>] [--only <id,...>] [--variant <name> --profile <p> --budget <n> --concurrency <n>] [--cap-usd <n>] [--per-invocation-usd <n>] [--grades <file>] [--score-only] [--dry-run]",
+		"usage: bun run security:eval <cases.json>... [--results <dir>] [--repos <dir>] [--only <id,...>] [--variant <name> --profile <p> --budget <n> --concurrency <n>] [--cap-usd <n>] [--per-invocation-usd <n>] [--grades <file>] [--score-only] [--dry-run]",
 	)
 	return process.exit(2)
 }
@@ -100,17 +128,21 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		if (!Number.isFinite(value) || value <= 0) usage()
 		return value
 	}
-	const results = flag("results")
+	const results = realPath(resolve(flag("results") ?? join(EVAL_CACHE, "results")))
 	const profile = flag("profile")
-	if (parsed.positional.length === 0 || results === undefined) return usage()
+	if (parsed.positional.length === 0) return usage()
+	if (isWithin(results, repoRoot())) {
+		console.error(`--results ${results} is inside the Maple repository; pick a directory outside it.`)
+		return process.exit(2)
+	}
 	if (profile !== undefined && !isProfile(profile)) return usage()
 	const variant = flag("variant")
 	// An override without a variant name would overwrite the default run's results.
 	if (variant === undefined && (profile !== undefined || flag("budget") !== undefined)) return usage()
 	return {
 		caseFiles: parsed.positional.map((path) => resolve(path)),
-		results: resolve(results),
-		repos: resolve(flag("repos") ?? join(homedir(), ".cache", "maple-security-eval", "repos")),
+		results,
+		repos: resolve(flag("repos") ?? join(EVAL_CACHE, "repos")),
 		only: flag("only") === undefined ? null : new Set((flag("only") ?? "").split(",")),
 		variant,
 		profile,
