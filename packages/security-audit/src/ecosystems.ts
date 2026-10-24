@@ -187,6 +187,23 @@ const keyed = (text: string, keys: ReadonlyArray<string>) =>
 		.filter((line) => keys.some((key) => new RegExp(`^["']?${key}["']?\\s*[=:"\\s]`, "u").test(line)))
 		.join("\n")
 
+/** Config text without whole-line `//` and `#` comments: commented-out config is not a source. */
+const withoutLineComments = (text: string) =>
+	lines(text)
+		.filter((line) => !line.startsWith("//") && !line.startsWith("#"))
+		.join("\n")
+
+/** XML without `<!-- -->` comments; an unterminated comment runs to the end, as XML reads it. */
+const withoutXmlComments = (xml: string) =>
+	xml
+		.split("<!--")
+		.map((part, index) => {
+			if (index === 0) return part
+			const end = part.indexOf("-->")
+			return end === -1 ? "" : part.slice(end + 3)
+		})
+		.join("")
+
 /** The text inside the XML elements a Maven file declares repositories with. */
 const REPOSITORY_TAGS = ["repository", "pluginRepository", "snapshotRepository", "mirror"] as const
 
@@ -217,12 +234,12 @@ const sourceText = (name: string, text: string): string => {
 			return keyed(text, ["url", "index-url", "extra-index-url", "index_url", "extra_index_url"])
 		case "pom.xml":
 		case "settings.xml":
-			return repositoryBlocks(text)
+			return repositoryBlocks(withoutXmlComments(text))
 		case "build.gradle":
 		case "build.gradle.kts":
 		case "settings.gradle":
 		case "settings.gradle.kts":
-			return lines(text)
+			return lines(withoutLineComments(text))
 				.filter((line) => /\burl\b|maven\s*\(/u.test(line))
 				.join("\n")
 		case "Cargo.toml":
@@ -292,7 +309,9 @@ const signalsIn = (path: string, text: string): ReadonlyArray<string> => {
 	const name = basename(path)
 	const at = (what: string) => `${path}: ${what}`
 	const sources = privateUrls(sourceText(name, text)).map((url) => at(`private source ${hostOf(url)}`))
-	const goPrivate = [...text.matchAll(GO_PRIVATE)].map((m) => at(`${m[1]} set to ${m[2]}`))
+	const goPrivate = [...withoutLineComments(text).matchAll(GO_PRIVATE)].map((m) =>
+		at(`${m[1]} set to ${m[2]}`),
+	)
 	if (isWorkflow(path)) return goPrivate
 	switch (name) {
 		case "package.json":

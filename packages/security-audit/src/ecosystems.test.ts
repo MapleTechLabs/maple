@@ -213,6 +213,29 @@ describe("scanDependencies, hostile config text", () => {
 	})
 })
 
+describe("scanDependencies, commented-out config", () => {
+	it("ignores private sources that only appear in comments", () => {
+		expect(
+			scan({
+				"pom.xml":
+					"<project><!-- <repositories><repository><url>https://nexus.acme.internal/m2</url></repository></repositories> --></project>",
+				"build.gradle": '// maven { url "https://nexus.acme.internal/libs" }',
+				Makefile: "# GOPRIVATE: go.acme.dev\nbuild:\n\tgo build ./...",
+			}).privateDependencies,
+		).toEqual([])
+	})
+
+	it("still reads the live config around a comment", () => {
+		expect(
+			scan({
+				"pom.xml":
+					"<project><!-- old --><repositories><repository><url>https://nexus.acme.internal/m2</url></repository></repositories></project>",
+				Makefile: "# private modules\nexport GOPRIVATE=go.acme.dev",
+			}).privateDependencies,
+		).toEqual(["pom.xml: private source nexus.acme.internal", "Makefile: GOPRIVATE set to go.acme.dev"])
+	})
+})
+
 describe("executionProfile", () => {
 	it("is source-only today, naming the ecosystems without a sandbox and the private dependencies", () => {
 		const profile = executionProfile({
