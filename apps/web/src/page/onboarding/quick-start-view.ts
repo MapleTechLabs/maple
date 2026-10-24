@@ -13,7 +13,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { icon } from "../../ui/icon"
-import { optionCard, type PixelGlyphName, pixelGlyph } from "./option-card"
+import { type PixelGlyphName, pixelGlyph } from "./option-card"
 import * as GuidedSetup from "../kit/guided-setup"
 import { presenceOf, type TelemetrySignalKind } from "../kit/signal-presence"
 import { ConnectMessage, STATUS_PROVIDERS } from "./quick-start-connect"
@@ -103,22 +103,56 @@ type ShellOptions = Readonly<{
 	aside: Html | null
 }>
 
-const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html =>
-	h.div(
-		[h.Class("relative flex min-h-dvh bg-background text-foreground")],
+/**
+ * One screen high: the header stays, only the step scrolls (its footer pinned to the bottom), and the
+ * preview with its backdrop stays put, scrolling on its own when it is taller than the window.
+ */
+const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html => {
+	const canvas = h.canvas(
 		[
+			h.AriaHidden(true),
+			h.Class(
+				cn(
+					"absolute left-0 top-0 size-full",
+					options.aside === null &&
+						"opacity-60 [mask-image:linear-gradient(to_right,black,transparent_14%)]",
+				),
+			),
+			h.DataAttribute("reach", options.reach),
+			h.OnMount(MountDitherField()),
+		],
+		[],
+	)
+	return h.div(
+		[h.Class("relative flex h-dvh overflow-hidden bg-background text-foreground")],
+		[
+			...(options.aside === null
+				? [
+						h.div(
+							[
+								h.AriaHidden(true),
+								h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
+							],
+							[canvas],
+						),
+					]
+				: []),
 			h.div(
 				[
 					h.Class(
 						cn(
-							"relative z-10 flex min-w-0 flex-col",
+							"relative z-10 flex h-dvh min-w-0 flex-col",
 							options.aside === null ? "flex-1" : "w-full lg:w-[760px] lg:shrink-0",
 						),
 					),
 				],
 				[
 					h.header(
-						[h.Class("flex items-center justify-between gap-4 px-6 py-5 sm:px-12 lg:px-16")],
+						[
+							h.Class(
+								"flex shrink-0 items-center justify-between gap-4 px-6 py-5 sm:px-12 lg:px-16",
+							),
+						],
 						[
 							h.div(
 								[h.Class("flex items-center gap-2")],
@@ -136,89 +170,134 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 							options.accountCluster(options.trail),
 						],
 					),
-					h.main([h.Class("flex flex-1 flex-col")], children),
+					h.main(
+						[h.Class("flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain")],
+						children,
+					),
 				],
 			),
+			...(options.aside === null
+				? []
+				: [
+						h.div(
+							[
+								h.Class(
+									"relative hidden h-dvh flex-1 border-l border-border bg-sidebar lg:block",
+								),
+							],
+							[
+								h.div(
+									[
+										h.AriaHidden(true),
+										h.Class("pointer-events-none absolute inset-0 overflow-hidden"),
+									],
+									[canvas],
+								),
+								h.div(
+									[
+										h.Class(
+											"absolute inset-0 flex flex-col overflow-y-auto overscroll-contain p-14",
+										),
+									],
+									[
+										h.div(
+											[
+												h.Class(
+													"relative m-auto w-full max-w-[540px] rounded-2xl border border-border bg-sidebar p-5",
+												),
+											],
+											[options.aside],
+										),
+									],
+								),
+							],
+						),
+					]),
+		],
+	)
+}
+
+// STACK
+
+/** A compact pick: one line of label and description, so the whole stack fits on a laptop screen. */
+const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message): Html =>
+	h.label(
+		[h.Class("group relative cursor-pointer")],
+		[
+			h.input([
+				h.Type("checkbox"),
+				h.Class("peer sr-only"),
+				h.Checked(isChecked),
+				h.AriaLabel(item.label),
+				h.OnChange(() => onChange),
+			]),
 			h.div(
 				[
 					h.Class(
 						cn(
-							"pointer-events-none overflow-hidden",
-							options.aside === null
-								? "absolute inset-0"
-								: "relative hidden h-dvh flex-1 items-center justify-center border-l border-border bg-sidebar p-14 lg:sticky lg:top-0 lg:flex",
+							"flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+							isChecked
+								? "border-primary bg-primary/5"
+								: "border-border group-hover:border-foreground/30",
 						),
 					),
 				],
 				[
-					h.canvas(
+					h.span(
+						[h.AriaHidden(true), h.Class("flex size-7 shrink-0 items-center justify-center")],
+						[icon(h, item.icon, { size: 18 })],
+					),
+					h.span(
+						[h.Class("flex min-w-0 flex-1 flex-col")],
+						[
+							h.span([h.Class("truncate text-sm font-medium")], [item.label]),
+							h.span([h.Class("truncate text-xs text-muted-foreground")], [item.description]),
+						],
+					),
+					h.span(
 						[
 							h.AriaHidden(true),
 							h.Class(
 								cn(
-									"absolute inset-0 size-full",
-									options.aside === null &&
-										"opacity-60 [mask-image:linear-gradient(to_right,black,transparent_14%)]",
+									"flex size-4 shrink-0 items-center justify-center rounded-sm border",
+									isChecked
+										? "border-primary bg-primary text-primary-foreground"
+										: "border-input",
 								),
 							),
-							h.DataAttribute("reach", options.reach),
-							h.OnMount(MountDitherField()),
 						],
-						[],
+						isChecked ? [icon(h, "CheckIcon", { size: 12 })] : [],
 					),
-					...(options.aside === null
-						? []
-						: [
-								h.div(
-									[
-										h.Class(
-											"pointer-events-auto relative w-full max-w-[540px] rounded-2xl border border-border bg-sidebar p-5",
-										),
-									],
-									[options.aside],
-								),
-							]),
 				],
 			),
 		],
 	)
-
-// STACK
-
-const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message): Html =>
-	optionCard(h, {
-		type: "checkbox",
-		isChecked,
-		onChange,
-		label: item.label,
-		title: item.label,
-		description: item.description,
-		media: h.span(
-			[
-				h.AriaHidden(true),
-				h.Class("flex size-9 shrink-0 items-center justify-center rounded-md border border-border"),
-			],
-			[icon(h, item.icon, { size: 18 })],
-		),
-	})
 
 const stackGroup = (h: H, legend: string, cards: ReadonlyArray<Html>): Html =>
 	h.fieldset(
 		[h.Class("flex min-w-0 flex-col gap-3")],
 		[
 			h.legend([h.Class("mb-3 text-2xs uppercase tracking-widest text-muted-foreground")], [legend]),
-			h.div([h.Class("grid gap-2.5 sm:grid-cols-2 2xl:grid-cols-3")], cards),
+			h.div([h.Class("grid gap-2 sm:grid-cols-2 xl:grid-cols-3")], cards),
 		],
 	)
 
+/** A step's column: side padding on everything but its footer, which pads itself. */
+export const STEP_BODY_CLASS =
+	"flex flex-1 flex-col gap-7 pt-4 [&>:not(:last-child)]:px-6 sm:[&>:not(:last-child)]:px-12 lg:[&>:not(:last-child)]:px-16"
+
+/** The step's actions, pinned to the bottom of the scrolling column so Continue never scrolls away. */
+export const STEP_FOOTER_CLASS =
+	"sticky bottom-0 z-10 mt-auto flex items-center justify-end gap-4 border-t border-border bg-background px-6 py-4 sm:px-12 lg:px-16"
+
 const stepFooter = (h: H, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("mt-auto flex items-center justify-end gap-4 border-t border-border pt-5")], children)
+	h.div([h.Class(STEP_FOOTER_CLASS)], children)
 
 const stackStep = (h: H, state: QuickStartState): Html => {
 	const { languages, platforms } = state.stack
 	const picked = languages.length + platforms.length
 	return h.div(
-		[h.Class("flex flex-1 flex-col gap-8 px-6 pb-8 pt-4 sm:px-12 lg:px-16")],
+		[h.Class(STEP_BODY_CLASS)],
 		[
 			h.div(
 				[h.Class("flex flex-col gap-2.5")],
@@ -434,7 +513,7 @@ const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
 	const { platforms } = state.stack
 	const { connect } = model
 	return h.div(
-		[h.Class("flex flex-1 flex-col gap-8 px-6 pb-8 pt-4 sm:px-12 lg:px-16")],
+		[h.Class(STEP_BODY_CLASS)],
 		[
 			h.div(
 				[h.Class("flex flex-col gap-2.5")],
