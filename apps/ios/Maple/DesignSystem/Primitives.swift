@@ -110,27 +110,6 @@ extension WorkflowState {
 		case .todo, .cancelled, .wontfix: Token.mutedForeground
 		}
 	}
-
-	var fill: Color {
-		switch self {
-		case .triage: Token.amberFill
-		case .regressed: Token.destructive
-		case .inProgress: Token.blueFill
-		case .inReview: Token.purpleFill
-		case .verifying: Token.tealFill
-		case .done: Token.success
-		case .todo, .cancelled, .wontfix: Token.muted
-		}
-	}
-}
-
-struct WorkflowBadge: View {
-	let state: WorkflowState
-
-	var body: some View {
-		MapleBadge(text: state.label, tint: state.tint)
-			.background(state.fill.opacity(0.12), in: .rect(cornerRadius: Token.Radius.sm))
-	}
 }
 
 // MARK: - Health

@@ -247,21 +247,3 @@ struct RowButtonStyle: ButtonStyle {
 	}
 }
 
-/// The time-range control every data screen carries.
-struct TimeWindowMenu: View {
-	@Binding var window: TimeWindow
-
-	var body: some View {
-		Menu {
-			Picker("Time range", selection: $window) {
-				ForEach(TimeWindow.allCases) { option in
-					Text(option.title).tag(option)
-				}
-			}
-		} label: {
-			Text(window.title)
-				.font(Typo.smallMedium)
-				.foregroundStyle(Token.foreground)
-		}
-	}
-}

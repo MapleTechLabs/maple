@@ -180,10 +180,10 @@ struct IssuesListContent: View {
 					Task { await model.perform(.reopen, on: issue.id) }
 				}
 			} else {
-				Button("Resolve", systemImage: "checkmark") {
+				Button("Resolve", pixelIcon: .circleCheck) {
 					Task { await model.perform(.resolve, on: issue.id) }
 				}
-				Button(issue.claimedAt == nil ? "Claim" : "Release", systemImage: "person") {
+				Button(issue.claimedAt == nil ? "Claim" : "Release", pixelIcon: .user) {
 					Task { await model.perform(issue.claimedAt == nil ? .claim : .release, on: issue.id) }
 				}
 				Button("Ignore", systemImage: "eye.slash") {
@@ -211,93 +211,5 @@ struct IssuesListContent: View {
 				Task { await model.perform(.resolve, on: issue.id) }
 			}
 		return [assign, close]
-	}
-}
-
-/// The issue row, following `issue-row.tsx`: severity chip, then the exception
-/// type with its message trailing on the same line in muted text, then service,
-/// count, and a terse relative time.
-struct IssueRow: View {
-	let issue: ErrorIssue
-	let showsService: Bool
-
-	/// See `ErrorIssue.displayTitle` — shared with the Home Screen widget, so
-	/// the same issue names itself the same way on both surfaces.
-	private var title: String { issue.displayTitle }
-	private var subtitle: String? { issue.displaySubtitle }
-
-	var body: some View {
-		HStack(alignment: .top, spacing: 10) {
-			// Fixed-width severity lane, mirroring the web's `w-[60px]`. Without
-			// it the title starts at a different x on every row, because a badge
-			// and an em dash are different widths.
-			SeverityBadge(severity: issue.severity)
-				.frame(width: 56, alignment: .leading)
-
-			VStack(alignment: .leading, spacing: 4) {
-				HStack(alignment: .firstTextBaseline, spacing: 8) {
-					Text(title)
-						.font(Typo.bodyMedium)
-						.foregroundStyle(Token.foreground)
-						.lineLimit(1)
-					Spacer(minLength: 4)
-					Text(Format.ago(issue.lastSeenAt))
-						.font(Typo.tiny)
-						.tabularNumbers()
-						.foregroundStyle(Token.mutedForeground)
-						.layoutPriority(1)
-				}
-
-				if let subtitle {
-					Text(subtitle)
-						.font(Typo.small)
-						.foregroundStyle(Token.mutedForeground)
-						.lineLimit(2)
-						.fixedSize(horizontal: false, vertical: true)
-				}
-
-				// One line, truncating. Wrapping metadata destroys the row rhythm
-				// that makes a dense list scannable.
-				HStack(spacing: 10) {
-					if showsService {
-						HStack(spacing: 5) {
-							ServiceDot(serviceName: issue.serviceName, size: 6)
-							Text(issue.serviceName)
-								.font(Typo.tiny)
-								.foregroundStyle(Token.mutedForeground)
-						}
-						.fixedSize()
-					}
-
-					// The web carries this as a bare number with a tooltip; a
-					// phone has no hover, so the unit has to be on the row or
-					// the count reads as an orphan digit.
-					Text("\(Format.count(issue.occurrenceCount)) events")
-						.font(Typo.tiny)
-						.tabularNumbers()
-						.foregroundStyle(Token.mutedForeground)
-						.fixedSize()
-
-					if issue.hasOpenIncident {
-						HStack(spacing: 4) {
-							Circle()
-								.fill(Token.destructive)
-								.frame(width: 5, height: 5)
-							Text("Incident")
-								.font(Typo.tinyMedium)
-								.foregroundStyle(Token.destructive)
-						}
-						.fixedSize()
-					}
-
-					Spacer(minLength: 0)
-				}
-				.lineLimit(1)
-			}
-		}
-		.padding(.horizontal, 16)
-		.padding(.vertical, 12)
-		.frame(minHeight: 56)
-		.contentShape(.rect)
 	}
 }

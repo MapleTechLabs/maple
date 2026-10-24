@@ -114,10 +114,12 @@ struct TraceSpanSheet: View {
 			} else {
 				LazyVStack(spacing: 0) {
 					ForEach(logs, id: \.id) { log in
-						LogRowView(log: log)
+						LogsListRow(log: log, showsTrace: false)
 						Hairline()
 					}
 				}
+				// Rows bleed to the sheet's edges, as on the Logs list.
+				.padding(.horizontal, -16)
 			}
 		} else {
 			SkeletonList(rowHeight: 44, rows: 2)

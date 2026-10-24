@@ -24,3 +24,12 @@ enum PixelIcon: String, CaseIterable {
 
 	var image: Image { Image(assetName) }
 }
+
+extension Button where Label == SwiftUI.Label<Text, Image> {
+	/// A menu or context-menu item with a pixel glyph instead of an SF Symbol.
+	init(_ title: String, pixelIcon: PixelIcon, action: @escaping () -> Void) {
+		self.init(action: action) {
+			SwiftUI.Label { Text(title) } icon: { pixelIcon.image }
+		}
+	}
+}

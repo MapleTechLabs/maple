@@ -350,7 +350,7 @@ private struct ServiceDetailContent: View {
 				VStack(spacing: 0) {
 					ForEach(Array(detail.issues.enumerated()), id: \.element.id) { index, issue in
 						NavigationLink(value: Route.issue(id: issue.id)) {
-							IssueRow(issue: issue, showsService: false)
+							IssueListRow(issue: issue)
 						}
 						.buttonStyle(RowButtonStyle())
 						if index < detail.issues.count - 1 { Hairline() }

@@ -5,6 +5,8 @@ import SwiftUI
 /// attributes, and a jump to the trace that wrote it.
 struct LogsListRow: View {
 	let log: LogRecord
+	/// Off where the row already sits inside its trace, such as the span sheet.
+	var showsTrace = true
 	@State private var expanded = false
 
 	var body: some View {
@@ -59,7 +61,7 @@ struct LogsListRow: View {
 
 	@ViewBuilder private var actions: some View {
 		HStack {
-			if let traceId = log.traceId, !traceId.isEmpty {
+			if showsTrace, let traceId = log.traceId, !traceId.isEmpty {
 				NavigationLink(value: Route.trace(id: traceId, spanId: log.spanId)) {
 					Text("View trace \(traceId.prefix(8))")
 						.font(Typo.smallMedium)

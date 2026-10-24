@@ -83,7 +83,7 @@ struct TraceDetailView: View {
 		.toolbar {
 			ToolbarItem(placement: .topBarTrailing) {
 				Menu {
-					Button("Copy trace ID", systemImage: "doc.on.doc") {
+					Button("Copy trace ID", pixelIcon: .copy) {
 						UIPasteboard.general.string = traceID
 					}
 					OpenOnWebButton(url: MapleWeb.trace(traceID), style: .menuItem)
@@ -333,35 +333,3 @@ private struct TraceWaterfallRow: View {
 	}
 }
 
-/// Key/value pairs in a hairline table, keys sorted so the same span reads the
-/// same way every time.
-struct AttributeTable: View {
-	let title: String
-	let values: [String: String]
-
-	var body: some View {
-		if !values.isEmpty {
-			VStack(alignment: .leading, spacing: 10) {
-				SectionLabel(title)
-				VStack(spacing: 0) {
-					ForEach(values.keys.sorted(), id: \.self) { key in
-						HStack(alignment: .firstTextBaseline, spacing: 12) {
-							Text(key)
-								.font(Typo.tiny)
-								.foregroundStyle(Token.mutedForeground)
-								.frame(width: 130, alignment: .leading)
-								.lineLimit(2)
-							Text(values[key] ?? "")
-								.font(Typo.tiny)
-								.foregroundStyle(Token.foreground)
-								.frame(maxWidth: .infinity, alignment: .leading)
-								.textSelection(.enabled)
-						}
-						.padding(.vertical, 8)
-						Hairline()
-					}
-				}
-			}
-		}
-	}
-}
