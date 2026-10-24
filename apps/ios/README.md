@@ -161,15 +161,28 @@ published, which meant the Home Screen was as fresh as the app's last run — fo
 most people, hours. The provider was already being woken roughly hourly; it was
 spending every one of those wake-ups re-rendering the same bytes.
 
-It still holds no Clerk session — those tokens live one minute, and two
+It still holds no Clerk session: those tokens live one minute, and two
 processes refreshing the same rotating refresh token is a way to sign the user
-out. Instead the app mints a **device credential** for it (`WidgetCredential`,
-`PUT /v2/widget_credentials/{installation_id}`): read-only, 30 days, and fenced
-by the server to `/v2/widget_summary` and nothing else. It lives as a file in
-the App Group with `completeUntilFirstUserAuthentication` — not `UserDefaults`,
-which would be a bearer token in cleartext in a backup, and not the app's
-keychain group, which is where Clerk keeps the session this design exists to
-keep out of the extension.
+out. Instead the widget authenticates with a **device-bound credential**
+(RFC 9449 DPoP):
+
+- The app creates one P-256 key per organization, in the Secure Enclave where
+  there is one and as a this-device-only software key where there is not (the
+  simulator). It lives in its own keychain group, `com.maple.mobile.widget-keys`,
+  shared with the extension; Clerk's group is not. Items are
+  `AfterFirstUnlockThisDeviceOnly` so Lock Screen widgets can sign while locked.
+- The app registers the public key with `PUT /v2/device_credentials/{installation_id}`
+  (a `DPoP` proof signed by that key, plus an App Attest attestation when
+  `DCAppAttestService.isSupported`), re-registers it a week before `expires_at`,
+  rotates on 409 or near the 90-day hard cap, and deletes it on sign-out.
+- The extension trades a proof for a one-hour token at `POST /v2/device_tokens`,
+  caches it in memory and the App Group, and sends `Authorization: DPoP` with an
+  `ath`-bound proof. `invalid_token` earns one new token; `invalid_device_credential`
+  stops fetching and adds "open Maple" to the age line until the app registers again.
+
+A stolen App Group copy is therefore useless off the phone. Against an API that
+answers 404 to device credentials, the app falls back to the legacy `maple_ak_`
+key (`PUT /v2/widget_credentials`), and deletes it once a device credential works.
 
 The extension still does not link `MapleAPI`: it gets ~30MB and a few seconds,
 and the generated client is 30k lines plus `OpenAPIRuntime`. The hand-written

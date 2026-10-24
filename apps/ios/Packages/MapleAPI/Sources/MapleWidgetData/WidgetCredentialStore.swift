@@ -57,11 +57,9 @@ public struct WidgetCredential: Codable, Sendable, Equatable {
 /// accessories on a locked phone, so anything stricter would make the widget
 /// fail exactly where it is most visible.
 ///
-/// **Not the Keychain either, yet.** The app's keychain access group is where
-/// Clerk keeps the session, and sharing *that* group with the extension would
-/// hand it the session this whole design exists to keep out of it. A separate
-/// group is the eventual home; it needs a provisioning change, and this store's
-/// interface is what lets that happen later without touching the wire.
+/// Device-bound credentials keep only public facts and a DPoP-bound token
+/// here; their private keys live in a widget-only keychain group (see
+/// `KeychainDeviceKeyStore`), never Clerk's.
 public struct WidgetCredentialStore: Sendable {
 	private let appGroupIdentifier: String
 	/// Tests only. `containerURL(forSecurityApplicationGroupIdentifier:)` answers
