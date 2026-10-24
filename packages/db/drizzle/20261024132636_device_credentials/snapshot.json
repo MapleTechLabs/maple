@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "d80a4c54a0122f9c6d6d5a141c06351084b7d9220816a470f9ac890868a4b11b",
+	"id": "19e84c7ea76f3198064431282454b55f4a7d7351ab1d24c45947009c42d80e84",
 	"prevIds": [
 		"40daa4bb952ee58d867efd70ef65970e66fbc99a809f5df4478d7f062823bd73"
 	],
@@ -14302,14 +14302,14 @@
 		{
 			"kind": "index",
 			"table": "device_credentials",
-			"name": "device_credentials_live_installation_unique",
-			"unique": true,
+			"name": "device_credentials_org_installation_idx",
+			"unique": false,
 			"method": "btree",
 			"columns": [
 				"\"org_id\"",
 				"\"installation_id\""
 			],
-			"where": "\"revoked_at\" IS NULL"
+			"where": null
 		},
 		{
 			"kind": "index",
