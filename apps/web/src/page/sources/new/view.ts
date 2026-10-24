@@ -45,7 +45,7 @@ const titleContent = (h: H, model: Model): Html => {
 							[
 								h.AriaHidden(true),
 								h.Class(
-									"inline-flex size-12 shrink-0 items-center justify-center rounded-lg border bg-card",
+									"hidden size-12 shrink-0 items-center justify-center rounded-lg border bg-card sm:inline-flex",
 								),
 							],
 							[icon(h, meta.icon, { size: 22 })],

@@ -218,7 +218,7 @@ const chooseStep = (h: H, model: Model, configure: ConfigureModel): Html => {
 			[
 				...(connector.logs_enabled
 					? [
-							stepCard(h, { icon: "LayersIcon", title: "Log filter" }, [
+							stepCard(h, { icon: "LayersIcon", title: "Which logs to forward" }, [
 								logFilter(h, configure, {
 									sinkExists: connector.applied_logs_enabled === true,
 								}),
