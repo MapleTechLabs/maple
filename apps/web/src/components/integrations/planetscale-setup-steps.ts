@@ -1,60 +1,81 @@
 // Setup progression for the PlanetScale integration.
 //
-// Connecting PlanetScale is genuinely two-part and the UI used to hide that. The
-// OAuth grant covers the management plane (inventory, query insights, webhooks),
-// but PlanetScale's metrics data plane only accepts service tokens — so the
-// bearer probe almost always fails and a freshly-connected org sits at
-// `metricsAuth: "missing"` with a paused scrape target. Presenting that as a
-// warning badge on an otherwise "Connected" card taught people the integration
-// was broken. Presenting it as step 3 of 4 teaches them it isn't finished.
+// The OAuth grant covers everything: inventory, query insights, webhooks, and
+// branch metrics, which Maple polls from PlanetScale's metrics API every 5
+// minutes. Older connections may still scrape Prometheus with a service token
+// (`metrics_auth: "service_token"`); health is derived from whichever source
+// the connection uses, so the status row and the checklist always agree.
 //
 // Pure, so the progression rules are testable on their own
 // (same shape as branch-selection.ts).
 
-import type { V2PlanetScaleIntegration, V2PlanetScaleScrapeTarget } from "@maple/domain/http/v2"
+import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 
-export type MetricsAuth = "oauth" | "service_token" | "missing"
+/** Where branch metrics come from. Legacy wire values ("oauth", "missing") mean the API poller. */
+export type MetricsAuth = "api" | "service_token"
+
+type MetricsStatus = Pick<V2PlanetScaleIntegration, "metrics_auth" | "api_metrics" | "scrape_target">
+
+export const metricsAuthOf = (status: Pick<V2PlanetScaleIntegration, "metrics_auth">): MetricsAuth =>
+	status.metrics_auth === "service_token" ? "service_token" : "api"
+
+/** The poller runs every 5 minutes and reads up to 2 behind, so 20 minutes of silence is a fault. */
+const API_POLL_STALL_MS = 20 * 60 * 1000
 
 /**
- * Outcome-level health of the managed branch-metrics scrape. One machine, shared
- * by the status row and the setup checklist, so the two can never disagree about
+ * Outcome-level health of branch-metrics collection. One machine, shared by the
+ * status row and the setup checklist, so the two can never disagree about
  * whether metrics are flowing.
  *
- * `unconfigured` is distinct from `waiting`: nothing has been *asked* to scrape
- * yet, versus a scrape that was asked for and hasn't landed.
+ * `unconfigured` is distinct from `waiting`: a service-token connection whose
+ * scrape target row is missing, versus collection that hasn't landed yet.
  */
 export type MetricsHealthState = "unconfigured" | "waiting" | "healthy" | "stalled" | "degraded"
 
-export function metricsHealthState(
-	target: V2PlanetScaleScrapeTarget | null,
-	metricsAuth: MetricsAuth,
-	nowMs: number,
-): MetricsHealthState {
-	if (metricsAuth === "missing" || target === null) return "unconfigured"
-	if (target.last_scrape_error !== null) return "degraded"
-	if (target.last_scrape_at === null) return "waiting"
-	// Three intervals of silence: one missed scrape is jitter, three is a fault.
-	const lastScrapeMs = Date.parse(target.last_scrape_at)
-	if (nowMs - lastScrapeMs > 3 * target.scrape_interval_seconds * 1000) return "stalled"
-	return "healthy"
+/** When metrics last landed, from whichever source the connection uses. */
+export const metricsLastCollectedAt = (status: MetricsStatus): string | null =>
+	metricsAuthOf(status) === "service_token"
+		? (status.scrape_target?.last_scrape_at ?? null)
+		: (status.api_metrics?.last_polled_at ?? null)
+
+/** The most recent collection error, from whichever source the connection uses. */
+export const metricsLastError = (status: MetricsStatus): string | null =>
+	metricsAuthOf(status) === "service_token"
+		? (status.scrape_target?.last_scrape_error ?? null)
+		: (status.api_metrics?.last_error ?? null)
+
+export function metricsHealthState(status: MetricsStatus, nowMs: number): MetricsHealthState {
+	const target = status.scrape_target
+	if (metricsAuthOf(status) === "service_token" && target === null) return "unconfigured"
+	if (metricsLastError(status) !== null) return "degraded"
+	const lastAt = metricsLastCollectedAt(status)
+	if (lastAt === null) return "waiting"
+	// Scrapes: three intervals of silence, since one missed scrape is jitter.
+	const stallMs =
+		target !== null && metricsAuthOf(status) === "service_token"
+			? 3 * target.scrape_interval_seconds * 1000
+			: API_POLL_STALL_MS
+	return nowMs - Date.parse(lastAt) > stallMs ? "stalled" : "healthy"
+}
+
+/** Collection broke after working: an error, or silence well past the cadence. */
+export const metricsCollectionFailing = (status: MetricsStatus, nowMs: number): boolean => {
+	const state = metricsHealthState(status, nowMs)
+	return state === "degraded" || state === "stalled"
 }
 
 /**
- * No branch metric has ever been collected for this connection — as opposed to
+ * No branch metric has ever been collected for this connection, as opposed to
  * "collection broke", which still has history worth rendering.
  *
- * The infra pages branch on this: never-collected shows the setup card, because
- * a stat rail and a table of dashes over a connection that was never asked to
- * scrape reads as a broken product rather than an unfinished setup. Once one
- * scrape has landed the pages render normally forever after, and degradation is
- * carried by the inline notices instead.
+ * The infra pages branch on this: never-collected shows the setup card instead
+ * of a stat rail full of dashes. Once metrics have landed the pages render
+ * normally, and degradation is carried by the inline notices instead.
  */
 export const metricsNeverCollected = (status: V2PlanetScaleIntegration): boolean =>
-	status.metrics_auth === "missing" ||
-	status.scrape_target === null ||
-	status.scrape_target.last_scrape_at === null
+	metricsLastCollectedAt(status) === null
 
-export type SetupStepId = "connected" | "permissions" | "metrics-token" | "first-metrics"
+export type SetupStepId = "connected" | "permissions" | "first-metrics"
 
 /**
  * `blocked` is not `pending`: something is wrong and the operator has to act.
@@ -82,8 +103,8 @@ export interface PlanetScaleSetup {
 	/** Every step done — the card collapses to its quiet connected form. */
 	readonly complete: boolean
 	/**
-	 * A token exists and the first scrape hasn't landed. The card polls status
-	 * while this is true so "waiting" resolves to "streaming" without a reload.
+	 * The first scrape or poll hasn't landed. The card polls status while this is
+	 * true so "waiting" resolves to "streaming" without a reload.
 	 */
 	readonly awaitingFirstScrape: boolean
 	readonly health: MetricsHealthState
@@ -92,17 +113,16 @@ export interface PlanetScaleSetup {
 }
 
 /**
- * Derive the four-step progression from the status the card already fetches.
+ * Derive the three-step progression from the status the card already fetches.
  * Everything here is a function of `status` — no extra requests, no local state.
  */
 export function derivePlanetScaleSetup(status: V2PlanetScaleIntegration, nowMs: number): PlanetScaleSetup {
-	const target = status.scrape_target
-	const health = metricsHealthState(target, status.metrics_auth, nowMs)
+	const health = metricsHealthState(status, nowMs)
+	const viaApi = metricsAuthOf(status) === "api"
 	const revoked = status.revoked_at !== null
 	// `detected_permissions` is null before the org is bound; absent is unknown,
 	// not denied — only an explicit `false` blocks.
 	const readDatabasesDenied = status.detected_permissions?.readDatabases === false
-	const hasToken = status.metrics_auth !== "missing"
 
 	const step = (
 		id: SetupStepId,
@@ -139,61 +159,54 @@ export function derivePlanetScaleSetup(status: V2PlanetScaleIntegration, nowMs: 
 				)
 			: step("permissions", "Permissions", "done", "Inventory, query insights, and webhooks are live.")
 
-	// The token step is only *current* once the two above are settled, so the
-	// card never asks for a token while the grant itself is broken.
 	const upstreamBlocked = revoked || readDatabasesDenied
-	const metricsToken = hasToken
-		? step(
-				"metrics-token",
-				"Branch metrics access",
-				"done",
-				status.metrics_auth === "oauth"
-					? "The authorization covers the metrics endpoints — no token needed."
-					: "Authenticated with a service token.",
-			)
-		: step(
-				"metrics-token",
-				"Branch metrics access",
-				upstreamBlocked ? "pending" : "current",
-				"PlanetScale only serves branch metrics to service tokens. Add one to finish.",
-			)
+	const notYetCollected = health === "waiting" || health === "unconfigured"
 
 	const firstMetrics = ((): SetupStep => {
 		const title = "Metrics arriving"
-		if (!hasToken) {
-			return step(
-				"first-metrics",
-				title,
-				"pending",
-				"Starts automatically once branch metrics access is set up.",
-			)
+		// Nothing is collected while the grant is broken, so don't spin over it.
+		if (upstreamBlocked && notYetCollected) {
+			return step("first-metrics", title, "pending", "Starts once the authorization is restored.")
 		}
 		switch (health) {
 			case "healthy":
 				return step("first-metrics", title, "done", "Streaming branch metrics.")
 			case "degraded":
-				return step("first-metrics", title, "blocked", "The last scrape failed.")
+				return step(
+					"first-metrics",
+					title,
+					"blocked",
+					viaApi ? "The last poll failed." : "The last scrape failed.",
+				)
 			case "stalled":
 				return step(
 					"first-metrics",
 					title,
 					"blocked",
-					"Metrics stopped arriving — collection has stalled.",
+					"Metrics stopped arriving, collection has stalled.",
 				)
 			default:
-				// The only step where nothing is asked of the operator: Maple is
-				// scraping and the first sample hasn't landed.
-				return step("first-metrics", title, "current", "Waiting for the first scrape.", true)
+				// Nothing is asked of the operator: Maple is collecting and the first
+				// sample hasn't landed.
+				return step(
+					"first-metrics",
+					title,
+					"current",
+					viaApi
+						? "Waiting for the first poll. Maple polls PlanetScale every 5 minutes."
+						: "Waiting for the first scrape.",
+					true,
+				)
 		}
 	})()
 
-	const steps = [connected, permissions, metricsToken, firstMetrics]
+	const steps = [connected, permissions, firstMetrics]
 	const activeIndex = steps.findIndex((step) => step.state === "current" || step.state === "blocked")
 
 	return {
 		steps,
 		complete: activeIndex === -1,
-		awaitingFirstScrape: hasToken && (health === "waiting" || health === "unconfigured"),
+		awaitingFirstScrape: !upstreamBlocked && notYetCollected,
 		health,
 		activeStepNumber: activeIndex === -1 ? null : activeIndex + 1,
 	}
