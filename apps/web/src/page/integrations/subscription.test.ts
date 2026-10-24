@@ -154,4 +154,42 @@ describe("planetscale first-metrics watch", () => {
 			true,
 		)
 	})
+
+	test("a reconnect on a card whose watch ran out watches again", async () => {
+		const stuck = await leftOpen(cardOn(status({})), 1)
+		expect(isWatching(stuck.model)).toBe(false)
+		const reconnected = update(
+			stuck.model,
+			Message.ReceivedConnectMessage({ provider: "planetscale", status: "success", message: null }),
+			context,
+		).model
+		const loaded = update(
+			reconnected,
+			Message.CompletedLoadPlanetscale({
+				key: reconnected.statuses.planetscale.key ?? "",
+				result: Result.succeed(status({})),
+			}),
+			context,
+		)
+		expect(names(loaded.commands)).toContain("ReadIntegrationsClock")
+		const read = step(loaded.model, Message.CompletedReadClock({ nowMs: stuck.model.nowMs + 1_000 }))
+		expect(isWatching(read)).toBe(true)
+	})
+
+	test("choosing another organization on a card whose watch ran out watches again", async () => {
+		const stuck = await leftOpen(cardOn(status({})), 1)
+		const selected = step(
+			stuck.model,
+			Message.CompletedSelectOrganization({ organization: "acme", failure: null }),
+		)
+		const loaded = step(
+			selected,
+			Message.CompletedLoadPlanetscale({
+				key: selected.statuses.planetscale.key ?? "",
+				result: Result.succeed(status({})),
+			}),
+		)
+		const read = step(loaded, Message.CompletedReadClock({ nowMs: stuck.model.nowMs + 1_000 }))
+		expect(isWatching(read)).toBe(true)
+	})
 })

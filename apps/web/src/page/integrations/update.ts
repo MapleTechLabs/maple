@@ -200,10 +200,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...s,
 				planetscale: Keyed.accept(s.planetscale, key, result),
 			}).model
-			const watched = Planetscale.withWatchStart(read, null)
-			return integrationOfSearch(watched.search.integration) === "planetscale"
-				? Planetscale.ensurePendingPicker(watched, context)
-				: { model: watched }
+			return chain(read, [
+				(next) => Planetscale.loadedStatus(next),
+				(next) =>
+					integrationOfSearch(next.search.integration) === "planetscale"
+						? Planetscale.ensurePendingPicker(next, context)
+						: { model: next },
+			])
 		},
 		CompletedLoadPlanetscaleDatabases: ({ key, result }) =>
 			accepted(model, {

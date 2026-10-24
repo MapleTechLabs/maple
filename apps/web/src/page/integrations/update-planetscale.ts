@@ -48,6 +48,19 @@ export const withWatchStart = (model: Model, readAtMs: number | null): Model => 
 	return withCard(model, { watchStartedAt: isWatched ? (startedAt ?? readAtMs) : null })
 }
 
+/** A renewed grant or organization gets its own full window from the next clock read. */
+export const restartWatch = (model: Model): Model => withCard(model, { watchStartedAt: null })
+
+/** A status load that starts awaiting first metrics reads the clock to open the window. */
+export const loadedStatus = (model: Model): Return => {
+	const watched = withWatchStart(model, null)
+	return integrationOfSearch(watched.search.integration) === "planetscale" &&
+		watched.planetscaleCard.watchStartedAt === null &&
+		isAwaitingFirstMetrics(planetscaleStatusOf(watched), watched.nowMs)
+		? { model: watched, commands: [ReadClock()] }
+		: { model: watched }
+}
+
 /** Each visit to the card starts a fresh watch from a fresh clock. */
 export const enterPlanetscale = (model: Model): Return => ({
 	model: withCard(model, { watchStartedAt: null }),
@@ -65,7 +78,7 @@ export const clickedCheckAgain = (model: Model, context: PageContext): Return =>
 
 /** A write's `planetscaleIntegration` `reactivityKeys` (the target list carries no key). */
 const refreshAfterWrite = (model: Model, context: PageContext): Return =>
-	chain(model, [
+	chain(restartWatch(model), [
 		(next) => requestStatus(next, context, "planetscale", "Supersede"),
 		(next) => requestStatus(next, context, "planetscaleDatabases", "Supersede"),
 	])
