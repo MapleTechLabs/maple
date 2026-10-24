@@ -1,10 +1,15 @@
 import { REPLAY_BLOCK_CLASS } from "../../components/common/replay-privacy"
-import { ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "../../components/ingest/onboard-skill"
+import {
+	agentSetupPrompt,
+	ONBOARD_SKILL_COMMAND,
+	onboardSkillPrompt,
+} from "../../components/ingest/onboard-skill"
 import { type FrameworkId, sdkSnippets } from "../../components/quick-start/sdk-snippets"
 import { type DocsPage, docsUrl } from "../../lib/docs"
 import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../../ui/button"
 import * as CopyButton from "../../ui/copy-button"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon, type IconName } from "../../ui/icon"
@@ -100,6 +105,78 @@ export const frameworkPicker = <M>(
 }
 
 export type InstructionsDocs = Readonly<{ label: string; page: DocsPage }>
+
+const AGENT_MARKS = [
+	{ name: "ClaudeIcon", className: "text-[#D97757]" },
+	{ name: "OpenAiIcon", className: "text-foreground" },
+	{ name: "CursorIcon", className: "text-foreground" },
+] as const satisfies ReadonlyArray<Readonly<{ name: IconName; className: string }>>
+
+/**
+ * maple.dev's "Build with your agent": one prompt for Claude Code, Codex or Cursor, here with the
+ * org's endpoint and key. Without a key (a member, or the key store is down) the skill uses its
+ * `MAPLE_TEST` placeholder and says where to get one.
+ */
+export const agentPromptButton = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		apiKey: string
+		copy: CopyButton.Model
+		toCopyMessage: (message: CopyButton.Message) => M
+	}>,
+): Html =>
+	button(
+		h,
+		{
+			variant: "outline",
+			size: "lg",
+			className: "group/agent w-full justify-between gap-3",
+			attributes: [
+				h.Title("Copy a setup prompt for Claude Code, Codex or Cursor"),
+				h.OnClick(
+					options.toCopyMessage(
+						CopyButton.Message.ClickedCopy({ text: agentSetupPrompt(ingestUrl, options.apiKey) }),
+					),
+				),
+			],
+		},
+		[
+			h.span(
+				[h.Class("flex items-center gap-3")],
+				[
+					h.span(
+						[h.AriaHidden(true), h.Class("flex")],
+						AGENT_MARKS.map((mark, index) =>
+							h.span(
+								[
+									h.Class(
+										cn(
+											"grid size-6 place-items-center rounded-full border border-border bg-card ring-2 ring-background transition-transform duration-200 ease-out",
+											index > 0 && "-ml-1.5",
+											index === 1 && "group-hover/agent:translate-x-0.5",
+											index === 2 && "group-hover/agent:translate-x-1",
+										),
+									),
+								],
+								[icon(h, mark.name, { size: 13, className: mark.className })],
+							),
+						),
+					),
+					h.span(
+						[h.AriaLive("polite")],
+						[
+							options.copy.status === "copied"
+								? "Prompt copied"
+								: options.copy.status === "error"
+									? "Could not copy"
+									: "Build with your agent",
+						],
+					),
+				],
+			),
+			CopyButton.copyIndicator(h, { status: options.copy.status, iconSize: 14 }),
+		],
+	)
 
 /** The parent's state for `ConnectInstructions`: its tabs, snippet copy states and Messages. */
 export type InstructionsParts<M> = Readonly<{

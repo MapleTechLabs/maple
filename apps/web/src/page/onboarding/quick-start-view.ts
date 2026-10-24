@@ -17,6 +17,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import { type PixelGlyphName, pixelGlyph } from "./option-card"
+import * as CopyButton from "../../ui/copy-button"
 import * as GuidedSetup from "../kit/guided-setup"
 import { presenceOf, type TelemetrySignalKind } from "../kit/signal-presence"
 import { ConnectMessage, STATUS_PROVIDERS } from "./quick-start-connect"
@@ -40,6 +41,9 @@ export const accountClusterOf = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<H
  * `MotionStep key={step}` at rest (reduced motion: no slide). A new step is a new element, as
  * AnimatePresence remounts it, so no card is patched over from the previous step.
  */
+/** The agent prompt's copy state, kept with the snippets'. */
+const AGENT_PROMPT_COPY = "agent-prompt"
+
 /** A fade out of blur as each step mounts (`theme.css`); keyed, so a new step plays it again. */
 export const ENTER_CLASS = "onboarding-enter"
 
@@ -520,7 +524,7 @@ const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
 	)
 }
 
-const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
+export const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
 	const { platforms } = state.stack
 	const { connect } = model
 	return h.div(
@@ -602,6 +606,14 @@ const connectStep = (h: H, model: Model, state: QuickStartState): Html => {
 							),
 						],
 					),
+					GuidedSetup.agentPromptButton(h, {
+						apiKey: connect.keys._tag === "Ready" ? connect.keys.privateKey : "",
+						copy: connect.snippetCopies[AGENT_PROMPT_COPY] ?? CopyButton.init(),
+						toCopyMessage: (message) =>
+							toConnect(
+								ConnectMessage.GotSnippetCopyMessage({ snippet: AGENT_PROMPT_COPY, message }),
+							),
+					}),
 					GuidedSetup.connectInstructions(h, {
 						slot: "onboarding-connect",
 						framework: state.selectedFramework ?? "nodejs",
