@@ -50,6 +50,13 @@ import {
 } from "../server/checkpoints"
 import { resolveUiAssets } from "../server/ui-assets"
 import { clearStartFailures, guardStartFailures } from "./start-failures"
+import {
+	acquireInMemoryStore,
+	type InMemoryStore,
+	inMemoryConflicts,
+	inMemoryDiscoveryPath,
+	inMemoryStartFailuresKey,
+} from "./in-memory-store"
 import { debugLog } from "../lib/debug"
 import { MAPLE_VERSION } from "../version"
 import { jsonFormatRequested, writeJson } from "./json-output"
@@ -186,6 +193,7 @@ const startBanner = (
 	offline: boolean,
 	scope: CommandScope,
 	authLine: string | undefined,
+	inMemory: InMemoryStore | undefined,
 ): string => {
 	// No leading indent here: the gutter below supplies it.
 	const row = (key: string, value: string) => `${dim(key.padEnd(11))}${value}`
@@ -205,9 +213,17 @@ const startBanner = (
 					...(offline ? [] : [`${" ".repeat(11)}${dim("· bundled UI: pass --offline")}`]),
 				]
 			: []),
-		row("data", prettyPath(dataDir)),
+		inMemory === undefined
+			? row("data", prettyPath(dataDir))
+			: row(
+					"data",
+					`${inMemory.tmpfs ? "in memory" : "temporary"}  ${dim(`· deleted on exit (${prettyPath(inMemory.root)})`)}`,
+				),
 		...(authLine === undefined ? [] : [row("auth", authLine)]),
-		row("pid", `${process.pid}  ${dim("· stop with")} ${bold(mapleCommand("stop", scope))}`),
+		row(
+			"pid",
+			`${process.pid}  ${dim("· stop with")} ${inMemory === undefined ? bold(mapleCommand("stop", scope)) : bold("Ctrl-C")}`,
+		),
 	]
 
 	// The mark rides in a left gutter rather than sitting above the rows, so it
@@ -470,9 +486,9 @@ const adoptSidecars = (dataDir: string): Effect.Effect<void, ServerStateFileErro
 
 const decodeDiscovery = Schema.decodeUnknownOption(Schema.fromJsonString(ServerDiscovery))
 
-const readDiscovery = (dataDir: string): Effect.Effect<Option.Option<ServerDiscovery>> =>
+const readDiscovery = (path: string): Effect.Effect<Option.Option<ServerDiscovery>> =>
 	Effect.try({
-		try: () => readFileSync(serverDiscoveryPath(dataDir), "utf8"),
+		try: () => readFileSync(path, "utf8"),
 		catch: (error) => error,
 	}).pipe(
 		Effect.map(decodeDiscovery),
@@ -480,24 +496,24 @@ const readDiscovery = (dataDir: string): Effect.Effect<Option.Option<ServerDisco
 	)
 
 /** Delete the discovery file when (and only when) it names `pid`. */
-const removeDiscoveryFor = (dataDir: string, pid: number): Effect.Effect<void> =>
+const removeDiscoveryFor = (path: string, pid: number): Effect.Effect<void> =>
 	Effect.gen(function* () {
-		const current = yield* readDiscovery(dataDir)
+		const current = yield* readDiscovery(path)
 		if (Option.isSome(current) && current.value.pid === pid) {
-			yield* ignoreFailure(() => unlinkSync(serverDiscoveryPath(dataDir)))
+			yield* ignoreFailure(() => unlinkSync(path))
 		}
 	})
 
 /** Delete a discovery file whose server is gone (crash, `kill -9`). */
-const removeStaleDiscovery = (dataDir: string): Effect.Effect<void> =>
+const removeStaleDiscovery = (path: string): Effect.Effect<void> =>
 	Effect.gen(function* () {
-		const current = yield* readDiscovery(dataDir)
+		const current = yield* readDiscovery(path)
 		if (
 			Option.isSome(current) &&
 			current.value.pid !== process.pid &&
 			!isProcessAlive(current.value.pid)
 		) {
-			yield* ignoreFailure(() => unlinkSync(serverDiscoveryPath(dataDir)))
+			yield* ignoreFailure(() => unlinkSync(path))
 		}
 	})
 
@@ -598,16 +614,21 @@ const resetFlag = Flag.Boolean("reset").pipe(
 /** Default refresh cadence. A crash costs at most this much telemetry. */
 const CHECKPOINT_INTERVAL_DEFAULT = "30m"
 
-const checkpointIntervalFlag = Flag.String("checkpoint-interval").pipe(
-	Flag.withDescription(
-		"How often to refresh the store's restore point while running (e.g. 45s, 30m, 2h; `off` to disable)",
+// Optional, not defaulted: `--in-memory` refuses both even when given their default.
+const checkpointIntervalFlag = Flag.optional(
+	Flag.String("checkpoint-interval").pipe(
+		Flag.withDescription(
+			`How often to refresh the store's restore point while running (e.g. 45s, 30m, 2h; \`off\` to disable; default ${CHECKPOINT_INTERVAL_DEFAULT})`,
+		),
 	),
-	Flag.withDefault(CHECKPOINT_INTERVAL_DEFAULT),
 )
 
-const onDirtyStoreFlag = Flag.Literals("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
-	Flag.withDescription("Recovery policy when the local chDB store was not cleanly closed"),
-	Flag.withDefault("fail" as const),
+const onDirtyStoreFlag = Flag.optional(
+	Flag.Literals("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
+		Flag.withDescription(
+			"Recovery policy when the local chDB store was not cleanly closed (default: fail)",
+		),
+	),
 )
 
 const yesFlag = Flag.Boolean("yes").pipe(
@@ -620,6 +641,13 @@ const checkpointIdFlag = Flag.optional(
 	Flag.String("checkpoint-id").pipe(
 		Flag.withDescription("Restore one immutable checkpoint ID instead of the selected current"),
 	),
+)
+
+const inMemoryFlag = Flag.Boolean("in-memory").pipe(
+	Flag.withDescription(
+		"Keep telemetry for this run only: a throwaway store (tmpfs on Linux when it has room) deleted on exit, with no checkpoints",
+	),
+	Flag.withDefault(false),
 )
 
 const offlineFlag = Flag.Boolean("offline").pipe(
@@ -1082,7 +1110,7 @@ const startDetached = (options: DetachedStart) =>
 				// is only written once the child is listening.
 				const discovery: Option.Option<ServerDiscovery> = Option.isSome(status)
 					? Option.none()
-					: yield* readDiscovery(options.dataDir)
+					: yield* readDiscovery(serverDiscoveryPath(options.dataDir))
 				if (
 					(Option.isSome(status) && status.value.pid === child.pid) ||
 					(Option.isSome(discovery) && discovery.value.pid === child.pid)
@@ -1184,12 +1212,38 @@ export const start = Command.make("start", {
 	reset: resetFlag,
 	onDirtyStore: onDirtyStoreFlag,
 	checkpointInterval: checkpointIntervalFlag,
+	inMemory: inMemoryFlag,
 }).pipe(
 	Command.withDescription("Start the local ingest + query server (embedded ClickHouse via chDB)"),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const fs = yield* FileSystem
-			const dataDir = resolve(Option.getOrUndefined(a.dataDir) ?? defaultDataDir())
+			const conflicts = a.inMemory
+				? inMemoryConflicts({
+						background: a.background,
+						dataDir: Option.isSome(a.dataDir),
+						reset: a.reset,
+						minimumRawTelemetryRetentionDays: Option.isSome(a.minimumRawTelemetryRetentionDays),
+						checkpointIntervalSet: Option.isSome(a.checkpointInterval),
+						onDirtyStoreSet: Option.isSome(a.onDirtyStore),
+					})
+				: []
+			if (conflicts.length > 0) {
+				return yield* new ServerOptionError({
+					source: "--in-memory",
+					message: `--in-memory keeps nothing after the run, so it cannot be combined with ${conflicts.join(", ")}`,
+				})
+			}
+			// Acquired on the handler's scope, outside the server's: the store is
+			// deleted only after chDB has closed.
+			const mapleDir = dirname(defaultDataDir())
+			const inMemory = a.inMemory ? yield* acquireInMemoryStore(mapleDir) : undefined
+			const dataDir = inMemory?.dataDir ?? resolve(Option.getOrUndefined(a.dataDir) ?? defaultDataDir())
+			const discoveryPath =
+				inMemory === undefined
+					? serverDiscoveryPath(dataDir)
+					: inMemoryDiscoveryPath(mapleDir, process.pid)
+			const startFailuresKey = inMemory === undefined ? dataDir : inMemoryStartFailuresKey(mapleDir)
 			const bindHost = yield* validatedHost("--host / MAPLE_LOCAL_BIND_HOST", a.host)
 			const auth = yield* Effect.fromResult(remoteAuthFromEnv(process.env)).pipe(
 				Effect.mapError(
@@ -1199,12 +1253,17 @@ export const start = Command.make("start", {
 			// Rejected up front, before anything is opened: a typo that quietly fell
 			// back to the default (or worse, to off) would reintroduce the data loss
 			// the refresh loop exists to prevent.
-			const checkpointInterval = parseCheckpointInterval(a.checkpointInterval)
+			const checkpointIntervalArg = Option.getOrElse(
+				a.checkpointInterval,
+				() => CHECKPOINT_INTERVAL_DEFAULT,
+			)
+			const onDirtyStore = Option.getOrElse(a.onDirtyStore, (): DirtyStorePolicy => "fail")
+			const checkpointInterval = parseCheckpointInterval(checkpointIntervalArg)
 			if (checkpointInterval === "invalid") {
 				return yield* new ServerOptionError({
 					source: "--checkpoint-interval",
 					message:
-						`invalid --checkpoint-interval: ${a.checkpointInterval}; ` +
+						`invalid --checkpoint-interval: ${checkpointIntervalArg}; ` +
 						"expected a duration like 45s, 30m or 2h, or `off`",
 				})
 			}
@@ -1257,7 +1316,7 @@ export const start = Command.make("start", {
 						() => releasePidFile(pidPath),
 					)
 					// Holding the claim, any discovery file left behind is a dead server's.
-					yield* removeStaleDiscovery(dataDir)
+					yield* removeStaleDiscovery(discoveryPath)
 
 					// A taken port fails here, before anything touches the store, rather
 					// than after a reset or wipe (or, detached, only in the child's log).
@@ -1360,7 +1419,7 @@ export const start = Command.make("start", {
 					// which we cannot catch. (`--reset` already wiped above, so the marker is gone.)
 					if (isStoreDirty(dataDir)) {
 						const availability = yield* Effect.promise(() => checkpointAvailability(dataDir))
-						if (a.onDirtyStore === "fail") {
+						if (onDirtyStore === "fail") {
 							return yield* new LocalStoreDirtyError({
 								dataDir,
 								policy: "fail",
@@ -1370,7 +1429,7 @@ export const start = Command.make("start", {
 									dirtyStoreRecoveryAdvice(availability, scope),
 							})
 						}
-						if (a.onDirtyStore === "restore-checkpoint") {
+						if (onDirtyStore === "restore-checkpoint") {
 							if (!availability.available) {
 								return yield* new LocalStoreDirtyError({
 									dataDir,
@@ -1429,10 +1488,11 @@ export const start = Command.make("start", {
 					}
 
 					const requestedRetentionDays = Option.getOrUndefined(a.minimumRawTelemetryRetentionDays)
-					const chdbConfigFile = yield* resolveChdbConfigFile(
-						dataDir,
-						Option.getOrUndefined(a.chdbConfigFile),
-					)
+					// No backups config in memory: nothing is ever checkpointed.
+					const chdbConfigFile =
+						inMemory === undefined
+							? yield* resolveChdbConfigFile(dataDir, Option.getOrUndefined(a.chdbConfigFile))
+							: Option.getOrUndefined(a.chdbConfigFile)
 
 					if (a.background) {
 						return yield* startDetached({
@@ -1443,9 +1503,9 @@ export const start = Command.make("start", {
 							offline: a.offline,
 							hostedUiUrl,
 							chdbConfigFile,
-							onDirtyStore: a.onDirtyStore,
+							onDirtyStore,
 							minimumRawTelemetryRetentionDays: requestedRetentionDays,
-							checkpointInterval: a.checkpointInterval,
+							checkpointInterval: checkpointIntervalArg,
 							scope,
 							authLine: authSummary(auth, bindHost),
 						})
@@ -1478,7 +1538,7 @@ export const start = Command.make("start", {
 						auth,
 					})
 					started = true
-					yield* clearStartFailures(dataDir)
+					yield* clearStartFailures(startFailuresKey)
 
 					const bindAddr = serverUrl(bindHost, boundPort)
 					const connectAddr = serverUrl(advertiseHost, boundPort)
@@ -1486,11 +1546,16 @@ export const start = Command.make("start", {
 					const boundScope = commandScope({ dataDir, port: boundPort, host: bindHost })
 
 					// Non-fatal: it only helps other CLI processes find a non-default port.
+					if (inMemory !== undefined) {
+						yield* fs
+							.makeDirectory(dirname(discoveryPath), { recursive: true })
+							.pipe(Effect.ignore)
+					}
 					yield* Effect.acquireRelease(
 						Effect.tryPromise({
 							try: () =>
 								durableWrite(
-									serverDiscoveryPath(dataDir),
+									discoveryPath,
 									`${JSON.stringify(
 										{
 											pid: process.pid,
@@ -1502,13 +1567,13 @@ export const start = Command.make("start", {
 										2,
 									)}\n`,
 								),
-							catch: stateFileError(serverDiscoveryPath(dataDir), "write"),
+							catch: stateFileError(discoveryPath, "write"),
 						}).pipe(
 							Effect.catch((error) =>
 								Effect.sync(() => process.stderr.write(dim(`◌ ${error.message}\n`))),
 							),
 						),
-						() => removeDiscoveryFor(dataDir, process.pid),
+						() => removeDiscoveryFor(discoveryPath, process.pid),
 					)
 
 					// Default: send users to the auto-updating UI on local.maple.dev (it
@@ -1530,6 +1595,7 @@ export const start = Command.make("start", {
 								a.offline,
 								boundScope,
 								authSummary(auth, bindHost),
+								inMemory,
 							),
 						),
 					)
@@ -1542,6 +1608,7 @@ export const start = Command.make("start", {
 					}
 					// After the banner, never before it: the server is already listening
 					// and the user has their URL. See `ensureInitialCheckpoint`.
+					if (inMemory !== undefined) return yield* Effect.never
 					const initialTakenAt = yield* ensureInitialCheckpoint(target, storeHadLiveData)
 
 					// Forked into this scope AFTER the server, so shutdown stops it (and
@@ -1554,8 +1621,8 @@ export const start = Command.make("start", {
 
 					return yield* Effect.never
 				}),
-			).pipe(guardStartFailures(dataDir, { detachedChild: pidHandoverFrom() !== undefined }))
-		}),
+			).pipe(guardStartFailures(startFailuresKey, { detachedChild: pidHandoverFrom() !== undefined }))
+		}, Effect.scoped),
 	),
 )
 
@@ -1602,7 +1669,7 @@ const statusConfirmsPid = (
 	scope: CommandScope,
 ): Effect.Effect<boolean, never, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
-		const discovery = yield* readDiscovery(dataDir)
+		const discovery = yield* readDiscovery(serverDiscoveryPath(dataDir))
 		const urls = [
 			...(Option.isSome(discovery) && discovery.value.pid === pid ? [discovery.value.url] : []),
 			serverProbeUrl(
@@ -1626,7 +1693,7 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 			const located = yield* locatePidFile(dataDir)
 
 			if (Option.isNone(located)) {
-				yield* removeStaleDiscovery(dataDir)
+				yield* removeStaleDiscovery(serverDiscoveryPath(dataDir))
 				return yield* new ServerStateError({
 					message: `maple is not running for ${prettyPath(dataDir)} (no PID file found)`,
 				})
@@ -1638,7 +1705,8 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 				if (Option.isSome(current) && sameSnapshot(current.value, snapshot)) {
 					yield* ignoreFailure(() => unlinkSync(pidPath))
 				}
-				if (snapshot.pid !== undefined) yield* removeDiscoveryFor(dataDir, snapshot.pid)
+				if (snapshot.pid !== undefined)
+					yield* removeDiscoveryFor(serverDiscoveryPath(dataDir), snapshot.pid)
 				return yield* new ServerStateError({
 					message: `maple is not running for ${prettyPath(dataDir)} (stale PID file, cleaned up)`,
 				})
@@ -1710,7 +1778,7 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 			const current = yield* readPidSnapshot(pidPath)
 			if (Option.isSome(current) && current.value.pid === pid)
 				yield* ignoreFailure(() => unlinkSync(pidPath))
-			yield* removeDiscoveryFor(dataDir, pid)
+			yield* removeDiscoveryFor(serverDiscoveryPath(dataDir), pid)
 			yield* Effect.sync(() => process.stderr.write(`\n${green("✓")} maple stopped\n`))
 		}),
 	),
@@ -1785,7 +1853,7 @@ export const checkpoint = Command.make("checkpoint", {
 			// store started on a non-default port is checkpointed without repeating it.
 			const discovered = Option.isSome(a.port)
 				? Option.none<URL>()
-				: Option.flatMap(yield* readDiscovery(dataDir), (found) =>
+				: Option.flatMap(yield* readDiscovery(serverDiscoveryPath(dataDir)), (found) =>
 						isProcessAlive(found.pid) && URL.canParse(found.url)
 							? Option.some(new URL(found.url))
 							: Option.none(),
