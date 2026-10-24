@@ -196,6 +196,23 @@ describe("scanDependencies, private dependencies", () => {
 	})
 })
 
+describe("scanDependencies, hostile config text", () => {
+	it("reads repeated unclosed tags and long whitespace runs in linear time", () => {
+		const started = performance.now()
+		const result = scan({
+			"pom.xml": `${"<mirror>".repeat(50_000)}<repository><url>https://nexus.acme.internal/m2</url></repository>`,
+			"requirements.txt": `pytest${" ".repeat(100_000)}x\n--index-url https://pypi.acme.internal/simple # mirror`,
+		})
+		expect([performance.now() - started < 1_000, result.privateDependencies]).toEqual([
+			true,
+			[
+				"pom.xml: private source nexus.acme.internal",
+				"requirements.txt: private source pypi.acme.internal",
+			],
+		])
+	})
+})
+
 describe("executionProfile", () => {
 	it("is source-only today, naming the ecosystems without a sandbox and the private dependencies", () => {
 		const profile = executionProfile({
