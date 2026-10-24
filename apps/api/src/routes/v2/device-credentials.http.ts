@@ -94,21 +94,26 @@ export const HttpV2DeviceTokensLive = HttpApiBuilder.group(MapleApiV2, "deviceTo
 		return handlers.handle("issue", ({ headers }) =>
 			Effect.gen(function* () {
 				const request = yield* HttpServerRequest.HttpServerRequest
-				const issued = yield* devices.issueToken({
-					proof: headers.dpop,
-					method: request.method,
-					path: request.url,
-				})
-				// The same per-credential budget its requests draw from.
-				const outcome = yield* rateLimiter.check(deviceRateLimitKey(issued.row.id))
-				yield* Effect.annotateCurrentSpan("maple.rate_limit.outcome", outcome)
-				if (outcome === "limited") {
-					return yield* Effect.fail(
-						V2RateLimited.make(undefined, {
-							retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
-						}),
+				// The same per-credential budget its requests draw from, checked before issuance.
+				const admit = (credentialId: string) =>
+					rateLimiter.check(deviceRateLimitKey(credentialId)).pipe(
+						Effect.tap((outcome) =>
+							Effect.annotateCurrentSpan("maple.rate_limit.outcome", outcome),
+						),
+						Effect.flatMap((outcome) =>
+							outcome === "limited"
+								? Effect.fail(
+										V2RateLimited.make(undefined, {
+											retryAfterSeconds: API_V2_RATE_LIMIT_PERIOD_SECONDS,
+										}),
+									)
+								: Effect.void,
+						),
 					)
-				}
+				const issued = yield* devices.issueToken(
+					{ proof: headers.dpop, method: request.method, path: request.url },
+					admit,
+				)
 				return {
 					object: "device_token" as const,
 					access_token: issued.accessToken,
