@@ -172,6 +172,7 @@ function render(): { text: string; doc: JsonObject } {
 	const doc = structuredClone(OpenApi.fromApi(MapleApiV2)) as unknown as JsonObject
 
 	prunePaths(doc)
+	dropPropertyNames(doc)
 	collapseNullableUnions(doc)
 	collapseErrorResponses(doc)
 	mergeDuplicateComponents(doc)
@@ -222,6 +223,20 @@ function prunePaths(doc: JsonObject): void {
 		)
 		process.exit(1)
 	}
+}
+
+/**
+ * Pass 1b: drop `propertyNames`. Effect emits it beside `additionalProperties: false` for a
+ * struct that rejects extra members (`DevicePublicJwk`); it restates the declared keys as a
+ * union Swift cannot use, and `additionalProperties: false` already says the same thing.
+ */
+function dropPropertyNames(node: JsonValue | undefined): void {
+	const array = asArray(node)
+	if (array !== undefined) return array.forEach(dropPropertyNames)
+	const object = asObject(node)
+	if (object === undefined) return
+	delete object.propertyNames
+	Object.values(object).forEach(dropPropertyNames)
 }
 
 /**

@@ -23,6 +23,11 @@ export type EcPublicJwk = Schema.Schema.Type<typeof EcPublicJwk>
 const ES256 = { name: "ECDSA", namedCurve: "P-256" } as const
 const ES256_SIGN = { name: "ECDSA", hash: "SHA-256" } as const
 const COORDINATE = /^[A-Za-z0-9_-]{43}$/u
+const SEGMENT = /^[A-Za-z0-9_-]*$/u
+
+/** Unpadded base64url that re-encodes to itself: no stray bits, so one value has one spelling. */
+const isCanonicalBase64url = (value: string): boolean =>
+	SEGMENT.test(value) && Buffer.from(value, "base64url").toString("base64url") === value
 
 export const base64url = (bytes: Uint8Array | string): string =>
 	(typeof bytes === "string" ? Buffer.from(bytes, "utf8") : Buffer.from(bytes)).toString("base64url")
@@ -44,7 +49,10 @@ export const jwkThumbprint = (jwk: EcPublicJwk): string =>
 
 /** Import an EC P-256 public JWK for ES256 verification; an off-curve point fails here. */
 export const importEcPublicJwk = (jwk: EcPublicJwk) =>
-	COORDINATE.test(jwk.x) && COORDINATE.test(jwk.y)
+	COORDINATE.test(jwk.x) &&
+	COORDINATE.test(jwk.y) &&
+	isCanonicalBase64url(jwk.x) &&
+	isCanonicalBase64url(jwk.y)
 		? Effect.tryPromise({
 				try: () =>
 					crypto.subtle.importKey(
@@ -57,7 +65,7 @@ export const importEcPublicJwk = (jwk: EcPublicJwk) =>
 				catch: () => new JoseError({ message: "The key is not a valid P-256 point.", reason: "jwk" }),
 			})
 		: Effect.fail(
-				new JoseError({ message: "The key coordinates are not 32-byte base64url.", reason: "jwk" }),
+				new JoseError({ message: "The key coordinates are not canonical 32-byte base64url.", reason: "jwk" }),
 			)
 
 export interface CompactJws {
@@ -70,7 +78,7 @@ export interface CompactJws {
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 const parseJsonSegment = (segment: string): Option.Option<unknown> =>
-	/^[A-Za-z0-9_-]*$/u.test(segment)
+	SEGMENT.test(segment)
 		? decodeJson(Buffer.from(segment, "base64url").toString("utf8"))
 		: Option.none()
 
@@ -85,6 +93,9 @@ export const parseCompactJws = (token: string): Effect.Effect<CompactJws, JoseEr
 		signaturePart === undefined
 	) {
 		return Effect.fail(new JoseError({ message: "Not a compact JWS.", reason: "malformed" }))
+	}
+	if (!SEGMENT.test(signaturePart)) {
+		return Effect.fail(new JoseError({ message: "The JWS signature is not base64url.", reason: "malformed" }))
 	}
 	const header = parseJsonSegment(headerPart)
 	const payload = parseJsonSegment(payloadPart)

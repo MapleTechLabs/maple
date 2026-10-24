@@ -42,6 +42,8 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/DashboardVersionNotFoundError",
 	"@maple/http/errors/DeviceAttestationInvalidError",
 	"@maple/http/errors/DeviceCredentialInvalidError",
+	"@maple/http/errors/DeviceCredentialSessionRequiredError",
+	"@maple/http/errors/DeviceInstallationInUseError",
 	"@maple/http/errors/DeviceKeyInUseError",
 	"@maple/http/errors/DeviceKeyInvalidError",
 	"@maple/http/errors/DigestEmailUnavailableError",

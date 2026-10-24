@@ -82,6 +82,10 @@ export const verifyDpopProof = Effect.fn("DpopProof.verify")(function* (check: D
 	if (Option.isNone(header)) {
 		return yield* reject("header", "The proof header must have typ dpop+jwt, alg ES256 and a jwk.")
 	}
+	// No extension may be marked critical: none is understood here (RFC 7515 section 4.1.11).
+	if (typeof jws.header === "object" && jws.header !== null && "crit" in jws.header) {
+		return yield* reject("header", "The proof header must not carry crit.")
+	}
 	// A private key in the header would be a client bug worth refusing loudly (section 4.2).
 	if ("d" in header.value.jwk)
 		return yield* reject("header", "The proof jwk must not contain a private key.")

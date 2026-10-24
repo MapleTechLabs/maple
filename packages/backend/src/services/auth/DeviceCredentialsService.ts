@@ -5,6 +5,7 @@ import {
 	DeviceAttestationInvalidError,
 	DeviceCredentialInvalidError,
 	DeviceCredentialPersistenceError,
+	DeviceInstallationInUseError,
 	DeviceKeyInUseError,
 	DeviceKeyInvalidError,
 	DeviceTokensUnavailableError,
@@ -17,6 +18,7 @@ import { DeviceCredentialId } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
+import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
 import { Env } from "@maple/backend/platform/Env"
 import { AppAttestTrustAnchor, verifyAppAttestation } from "./device/app-attest"
 import {
@@ -44,6 +46,10 @@ const CHALLENGE_TTL_SECONDS = 5 * 60
 /** A proof's jti stays recorded until no proof with that iat could be accepted any more. */
 const REPLAY_RETENTION_SECONDS = DPOP_MAX_SKEW_SECONDS * 2
 const LAST_USED_HEARTBEAT_MS = 5 * 60_000
+/** Bound on the per-isolate last-used memo; the oldest entry goes first. */
+const LAST_USED_MEMO_MAX = 10_000
+/** SQLSTATE `unique_violation`: a concurrent registration won the live-installation or jkt index. */
+const UNIQUE_VIOLATION = "23505"
 
 /** A DPoP-authenticated request's credential, resolved and live. */
 export interface ResolvedDeviceCredential {
@@ -102,9 +108,12 @@ const replayKey = (kind: string, ...parts: ReadonlyArray<string>) =>
 const isLive = (row: DeviceCredentialRow, now: number) =>
 	row.revokedAt === null && row.expiresAt > now && row.hardExpiresAt > now
 
-const liveForInstallation =
-	(orgId: OrgId, installationId: string) => ($: PG.ColumnAccessor<typeof DeviceCredentials.columns>) => [
+/** The caller's own live credentials for one installation: nobody touches another member's. */
+const ownLiveForInstallation =
+	(orgId: OrgId, userId: UserId, installationId: string) =>
+	($: PG.ColumnAccessor<typeof DeviceCredentials.columns>) => [
 		$.orgId.eq(orgId),
+		$.userId.eq(userId),
 		$.installationId.eq(installationId),
 		$.revokedAt.isNull(),
 	]
@@ -254,35 +263,29 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 					nowMs: now,
 					rootCertificate: trustAnchor,
 				})
-				// Consumed only once it verified, so a failed attempt can retry with the same challenge.
-				const fresh = yield* consumeOnce(
-					replayKey("attest", claims.value.jti),
-					claims.value.exp * 1000,
-				).pipe(
-					Effect.mapError(
-						() =>
-							new DeviceAttestationInvalidError({
-								reason: "challenge",
-								message: "The challenge could not be recorded.",
-							}),
-					),
-				)
-				if (!fresh) return yield* attestationFailure("challenge", "The challenge was already used.")
+				// The challenge is spent inside the registration transaction, so a registration
+				// that fails afterwards (key in use, installation taken) does not burn it.
 				return {
-					keyId: attestation.keyId,
-					environment: result.environment,
-					counter: result.counter,
-					...(result.receipt === undefined
-						? undefined
-						: { receipt: Buffer.from(result.receipt).toString("base64") }),
-					verifiedAt: now,
+					challengeKey: replayKey("attest", claims.value.jti),
+					challengeExpiresAt: claims.value.exp * 1000,
+					metadata: {
+						keyId: attestation.keyId,
+						environment: result.environment,
+						counter: result.counter,
+						...(result.receipt === undefined
+							? undefined
+							: { receipt: Buffer.from(result.receipt).toString("base64") }),
+						verifiedAt: now,
+					},
 				}
 			})
 
 			/**
-			 * Register (or refresh) the installation's key. A new key retires the installation's
-			 * previous credential in the same transaction; the same key again extends the rolling
-			 * expiry, never past the hard cap, and re-pins the session's current roles.
+			 * Register (or refresh) the caller's key for an installation. The request must carry a
+			 * DPoP proof signed by that key. A new key retires the caller's previous credential for
+			 * the installation in the same transaction; the same key again extends the rolling
+			 * expiry, never past the hard cap, and re-pins the session's current roles. Another
+			 * member's live credential for the installation is left alone and answers 409.
 			 */
 			const register = Effect.fn("DeviceCredentialsService.register")(function* (
 				tenant: {
@@ -291,6 +294,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 					readonly roles: ReadonlyArray<RoleName>
 				},
 				params: RegisterDeviceCredentialParams,
+				request: DpopRequest,
 			) {
 				yield* Effect.annotateCurrentSpan({
 					orgId: tenant.orgId,
@@ -303,6 +307,21 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 				)
 				const jkt = jwkThumbprint(params.publicJwk)
 				const now = yield* Clock.currentTimeMillis
+				const toInvalidProof = (error: DpopProofRejected) =>
+					new DpopProofInvalidError({ message: error.message, reason: error.reason })
+				// Proof of possession: whoever registers a key must be able to sign with it.
+				const proof = yield* checkProof(request, now).pipe(Effect.mapError(toInvalidProof))
+				if (proof.jkt !== jkt) {
+					return yield* new DpopProofInvalidError({
+						message: "The proof is not signed by the key being registered.",
+						reason: "key",
+					})
+				}
+				yield* consumeProof(proof).pipe(
+					Effect.catchTag("@maple/backend/auth/device/DpopProofRejected", (error) =>
+						Effect.fail(toInvalidProof(error)),
+					),
+				)
 				const attestation =
 					params.attestation === undefined
 						? undefined
@@ -322,77 +341,145 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 								),
 							)
 
-				const row = yield* dbExecute((db) =>
-					db.transaction(
-						Effect.gen(function* () {
-							const [existing] = yield* db.run(
-								PG.from(DeviceCredentials)
-									.select()
-									.where(($) => [$.jkt.eq(jkt)])
-									.limit(1),
-							)
-							if (existing !== undefined) {
-								const sameRegistration =
-									existing.orgId === tenant.orgId &&
-									existing.userId === tenant.userId &&
-									existing.installationId === params.installationId &&
-									isLive(existing, now)
-								if (!sameRegistration)
-									return yield* new DeviceKeyInUseError({
-										message: "The key is already registered.",
-									})
-								const [refreshed] = yield* db.run(
-									PG.update(DeviceCredentials)
-										.set({
-											expiresAt: Math.min(now + ROLLING_TTL_MS, existing.hardExpiresAt),
-											roles: [...tenant.roles],
-											...(attestation === undefined
-												? undefined
-												: { attested: true, attestation }),
+				const row = yield* database
+					.execute((db) =>
+						db.transaction(
+							Effect.gen(function* () {
+								if (attestation !== undefined) {
+									const spent = yield* db.run(
+										PG.insertInto(DeviceProofReplays)
+											.values({
+												key: attestation.challengeKey,
+												expiresAt: attestation.challengeExpiresAt,
+											})
+											.onConflictDoNothing()
+											.returning(($) => ({ key: $.key })),
+									)
+									if (spent.length === 0) {
+										return yield* new DeviceAttestationInvalidError({
+											reason: "challenge",
+											message: "The challenge was already used.",
 										})
-										.where(($) => [$.id.eq(existing.id), $.revokedAt.isNull()])
+									}
+								}
+								const [existing] = yield* db.run(
+									PG.from(DeviceCredentials)
+										.select()
+										.where(($) => [$.jkt.eq(jkt)])
+										.limit(1),
+								)
+								if (existing !== undefined) {
+									const sameRegistration =
+										existing.orgId === tenant.orgId &&
+										existing.userId === tenant.userId &&
+										existing.installationId === params.installationId &&
+										isLive(existing, now)
+									if (!sameRegistration)
+										return yield* new DeviceKeyInUseError({
+											message: "The key is already registered.",
+										})
+									const [refreshed] = yield* db.run(
+										PG.update(DeviceCredentials)
+											.set({
+												expiresAt: Math.min(
+													now + ROLLING_TTL_MS,
+													existing.hardExpiresAt,
+												),
+												roles: [...tenant.roles],
+												...(attestation === undefined
+													? undefined
+													: { attested: true, attestation: attestation.metadata }),
+											})
+											.where(($) => [$.id.eq(existing.id), $.revokedAt.isNull()])
+											.returning(),
+									)
+									return (
+										refreshed ??
+										(yield* new DeviceKeyInUseError({ message: "The key was revoked." }))
+									)
+								}
+								// Retire the caller's own row, and anyone's row that has already expired.
+								yield* db.run(
+									PG.update(DeviceCredentials)
+										.set({ revokedAt: now })
+										.where(($) => [
+											$.orgId.eq(tenant.orgId),
+											$.installationId.eq(params.installationId),
+											$.revokedAt.isNull(),
+											PG.or(
+												$.userId.eq(tenant.userId),
+												$.expiresAt.lte(now),
+												$.hardExpiresAt.lte(now),
+											),
+										]),
+								)
+								const [held] = yield* db.run(
+									PG.from(DeviceCredentials)
+										.select("id")
+										.where(($) => [
+											$.orgId.eq(tenant.orgId),
+											$.installationId.eq(params.installationId),
+											$.revokedAt.isNull(),
+										])
+										.limit(1),
+								)
+								if (held !== undefined) {
+									return yield* new DeviceInstallationInUseError({
+										message:
+											"Another member holds a live credential for this installation.",
+									})
+								}
+								const [inserted] = yield* db.run(
+									PG.insertInto(DeviceCredentials)
+										.values({
+											id: decodeCredentialId(randomUUID()),
+											orgId: tenant.orgId,
+											userId: tenant.userId,
+											installationId: params.installationId,
+											publicJwk: params.publicJwk,
+											jkt,
+											roles: [...tenant.roles],
+											scopes: [...DEVICE_CREDENTIAL_SCOPES],
+											attested: attestation !== undefined,
+											attestation: attestation?.metadata ?? null,
+											createdAt: now,
+											lastUsedAt: null,
+											expiresAt: now + ROLLING_TTL_MS,
+											hardExpiresAt: now + HARD_CAP_MS,
+											revokedAt: null,
+										})
 										.returning(),
 								)
 								return (
-									refreshed ??
-									(yield* new DeviceKeyInUseError({ message: "The key was revoked." }))
+									inserted ??
+									(yield* new DeviceCredentialPersistenceError({
+										message: "Insert returned no row",
+									}))
 								)
-							}
-							yield* db.run(
-								PG.update(DeviceCredentials)
-									.set({ revokedAt: now })
-									.where(liveForInstallation(tenant.orgId, params.installationId)),
-							)
-							const [inserted] = yield* db.run(
-								PG.insertInto(DeviceCredentials)
-									.values({
-										id: decodeCredentialId(randomUUID()),
-										orgId: tenant.orgId,
-										userId: tenant.userId,
-										installationId: params.installationId,
-										publicJwk: params.publicJwk,
-										jkt,
-										roles: [...tenant.roles],
-										scopes: [...DEVICE_CREDENTIAL_SCOPES],
-										attested: attestation !== undefined,
-										attestation: attestation ?? null,
-										createdAt: now,
-										lastUsedAt: null,
-										expiresAt: now + ROLLING_TTL_MS,
-										hardExpiresAt: now + HARD_CAP_MS,
-										revokedAt: null,
-									})
-									.returning(),
-							)
-							return (
-								inserted ??
-								(yield* new DeviceCredentialPersistenceError({
-									message: "Insert returned no row",
-								}))
-							)
-						}),
-					),
-				)
+							}),
+						),
+					)
+					.pipe(
+						// A concurrent registration took the live slot (or the key) first.
+						Effect.catchTag(
+							"@maple/backend/lib/DatabaseError",
+							(
+								error,
+							): Effect.Effect<
+								never,
+								DeviceInstallationInUseError | DeviceCredentialPersistenceError
+							> =>
+								postgresSqlState(error) === UNIQUE_VIOLATION
+									? Effect.fail(
+											new DeviceInstallationInUseError({
+												message: "A concurrent registration won; retry.",
+											}),
+										)
+									: Effect.fail(
+											new DeviceCredentialPersistenceError({ message: error.message }),
+										),
+						),
+					)
 				yield* Effect.annotateCurrentSpan({
 					"maple.device.credential_id": row.id,
 					"maple.device.attested": row.attested,
@@ -400,8 +487,10 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 				return row
 			})
 
+			/** Revoke the caller's own credential for an installation; never another member's. */
 			const revoke = Effect.fn("DeviceCredentialsService.revoke")(function* (
 				orgId: OrgId,
+				userId: UserId,
 				installationId: string,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.device.installation_id": installationId })
@@ -410,7 +499,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 					db.run(
 						PG.update(DeviceCredentials)
 							.set({ revokedAt: now })
-							.where(liveForInstallation(orgId, installationId))
+							.where(ownLiveForInstallation(orgId, userId, installationId))
 							.returning("id"),
 					),
 				)
@@ -480,6 +569,11 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 			const touchLastUsed = (row: DeviceCredentialRow, now: number) => {
 				const touched = lastUsedMemo.get(row.id) ?? row.lastUsedAt ?? 0
 				if (touched > now - LAST_USED_HEARTBEAT_MS) return Effect.void
+				lastUsedMemo.delete(row.id)
+				if (lastUsedMemo.size >= LAST_USED_MEMO_MAX) {
+					const oldest = lastUsedMemo.keys().next()
+					if (oldest.done !== true) lastUsedMemo.delete(oldest.value)
+				}
 				lastUsedMemo.set(row.id, now)
 				return dbExecute((db) =>
 					db.run(
