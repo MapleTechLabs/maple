@@ -4,8 +4,14 @@ import {
 	groupEndpoints,
 	leafLabel,
 } from "../../../components/services/endpoint-grouping"
-import { countLabel, formatBytes, formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import {
+	countLabel,
+	formatBytes,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatRate,
+} from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ThemeColors } from "../../../charts/theme-colors"
@@ -15,7 +21,7 @@ import { tableCell, tableRow } from "../../../ui/table"
 import { truncatedText } from "../../../ui/truncated-text"
 import { latencyValue } from "../../../ui/values"
 import { callsPerSecond } from "./derive"
-import { knownStatusMix, type StatusMix } from "./derive-api"
+import { knownStatusMix, serverShare, type StatusMix } from "./derive-api"
 import { Message } from "./message"
 import type { Endpoint } from "./model-tabs"
 import { SPARK_TOKENS, sparkline } from "./view-api-charts"
@@ -56,10 +62,7 @@ const methodTone = (method: string): string =>
 			: "text-muted-foreground"
 
 export const methodLabel = <M>(h: HtmlBuilder<M>, method: string, className = "w-10"): Html =>
-	h.span(
-		[h.Class(cn("shrink-0 text-2xs font-medium uppercase", methodTone(method), className))],
-		[method],
-	)
+	h.span([h.Class(cn("shrink-0 text-2xs font-medium uppercase", methodTone(method), className))], [method])
 
 const COLLAPSED_COPY = {
 	unrouted: {
@@ -105,10 +108,6 @@ const shareText = (h: H, share: number | null, tone: string): Html =>
 const rateText = (endpoint: Endpoint, seconds: number) =>
 	`${endpoint.estimatedSpanCount > endpoint.spanCount ? "~" : ""}${formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds))}`
 
-/** `ServiceErrorRate` falls back to Error-status spans where the status counters predate the window. */
-const serverShare = (endpoint: Endpoint, mix: StatusMix | null): number =>
-	mix === null ? endpoint.errorRate : mix.server
-
 /** The slowest endpoint's p50/p95 sit in a chip so the eye lands on them. */
 const latencyCell = (h: H, ms: number, scale: "p50" | "p95" | "p99", isChip: boolean, width: string) =>
 	tableCell(
@@ -117,7 +116,10 @@ const latencyCell = (h: H, ms: number, scale: "p50" | "p95" | "p99", isChip: boo
 			latencyValue(h, {
 				ms,
 				scale,
-				className: cn("text-ui", isChip && "rounded-sm bg-muted px-1.5 py-0.5 text-warning-foreground"),
+				className: cn(
+					"text-ui",
+					isChip && "rounded-sm bg-muted px-1.5 py-0.5 text-warning-foreground",
+				),
 			}),
 		],
 		cn(numeric, "py-0 pr-0", width),
@@ -138,9 +140,22 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 					h.div(
 						[h.Class("flex min-w-0 items-center gap-3")],
 						[
+							// The row's click opens the drawer; this button is its keyboard and screen-reader trigger.
+							h.button(
+								[
+									h.Type("button"),
+									h.Class("sr-only focus:not-sr-only"),
+									h.AriaHasPopup("dialog"),
+									h.AriaExpanded(isSelected),
+									h.AriaLabel(`Open ${endpoint.spanName}`),
+								],
+								[],
+							),
 							methodLabel(h, endpoint.method),
 							truncatedText(h, { text: endpoint.route, className: "text-ui" }, [
-								...(head.length > 0 ? [h.span([h.Class("text-muted-foreground")], [head])] : []),
+								...(head.length > 0
+									? [h.span([h.Class("text-muted-foreground")], [head])]
+									: []),
 								h.span([h.Class("text-foreground")], [tail]),
 							]),
 							...(isSlowest
@@ -174,10 +189,18 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 										token: SPARK_TOKENS.requests,
 										theme: context.theme,
 										className: cn("h-5 w-[88px]", isQuiet && "opacity-60"),
-										toMessage: (message) => Message.GotChartMessage({ chartId: "sparkline", message }),
+										toMessage: (message) =>
+											Message.GotChartMessage({ chartId: "sparkline", message }),
 									}),
 							h.span(
-								[h.Class(cn("w-12 text-right", isQuiet ? "text-muted-foreground" : "text-foreground"))],
+								[
+									h.Class(
+										cn(
+											"w-12 text-right",
+											isQuiet ? "text-muted-foreground" : "text-foreground",
+										),
+									),
+								],
 								[rateText(endpoint, context.seconds)],
 							),
 						],
@@ -190,18 +213,32 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 				[
 					h.div(
 						[h.Class("flex items-center justify-end gap-3")],
-						[statusMixBar(h, mix), h.span([h.Class("w-12 text-right")], [shareText(h, mix?.client ?? null, "text-warning-foreground")])],
+						[
+							statusMixBar(h, mix),
+							h.span(
+								[h.Class("w-12 text-right")],
+								[shareText(h, mix?.client ?? null, "text-warning-foreground")],
+							),
+						],
 					),
 				],
 				cn(numeric, "py-0 pr-0", COLUMN.mix),
 			),
-			tableCell(h, [shareText(h, serverShare(endpoint, mix), "text-destructive-foreground")], cn(numeric, "py-0 pr-0", COLUMN.err)),
+			tableCell(
+				h,
+				[shareText(h, serverShare(endpoint), "text-destructive-foreground")],
+				cn(numeric, "py-0 pr-0", COLUMN.err),
+			),
 			latencyCell(h, endpoint.p50DurationMs, "p50", isSlowest, COLUMN.p50),
 			latencyCell(h, endpoint.p95DurationMs, "p95", isSlowest, COLUMN.p95),
 			latencyCell(h, endpoint.p99DurationMs, "p99", false, COLUMN.p99),
 			tableCell(
 				h,
-				[endpoint.requestBodyCount === 0 ? "—" : formatBytes(endpoint.requestBodyBytes / endpoint.requestBodyCount)],
+				[
+					endpoint.requestBodyCount === 0
+						? "—"
+						: formatBytes(endpoint.requestBodyBytes / endpoint.requestBodyCount),
+				],
 				cn(numeric, "py-0 pr-0 text-muted-foreground", COLUMN.body),
 			),
 			tableCell(
@@ -216,30 +253,27 @@ const endpointRow = (h: H, endpoint: Endpoint, stem: string, context: RowContext
 			),
 		],
 		cn(
-			"group/row h-12 cursor-pointer border-b text-ui last:border-b-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+			"group/row h-12 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
 			isSelected ? "bg-accent hover:bg-accent" : "hover:bg-muted/40",
 		),
-		[
-			h.Key(endpoint.spanName),
-			h.Attribute("tabindex", "0"),
-			...(isSelected ? [h.AriaSelected(true)] : []),
-			h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName })),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter" || key === " "
-					? Option.some(Message.ClickedEndpoint({ spanName: endpoint.spanName }))
-					: Option.none(),
-			),
-		],
+		[h.Key(endpoint.spanName), h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName }))],
 	)
 }
 
 /** `GroupHeaderRow`: the group's totals; p95/p99 are the worst in the group. */
 const groupHeaderRow = (
 	h: H,
-	options: Readonly<{ title: string; count: string; group: EndpointGroup<Endpoint>; seconds: number; muted: boolean }>,
+	options: Readonly<{
+		title: string
+		count: string
+		group: EndpointGroup<Endpoint>
+		seconds: number
+		muted: boolean
+	}>,
 ) => {
 	const { group } = options
-	const sum = (pick: (endpoint: Endpoint) => number) => group.endpoints.reduce((acc, endpoint) => acc + pick(endpoint), 0)
+	const sum = (pick: (endpoint: Endpoint) => number) =>
+		group.endpoints.reduce((acc, endpoint) => acc + pick(endpoint), 0)
 	const mix = knownStatusMix({
 		httpClassifiedSpanCount: sum((endpoint) => endpoint.httpClassifiedSpanCount),
 		httpStatusCount: sum((endpoint) => endpoint.httpStatusCount),
@@ -257,10 +291,18 @@ const groupHeaderRow = (
 					h.div(
 						[h.Class("flex min-w-0 items-center gap-2")],
 						[
-							icon(h, "ChevronDownIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
+							icon(h, "ChevronDownIcon", {
+								size: 14,
+								className: "shrink-0 text-muted-foreground",
+							}),
 							h.span(
 								[
-									h.Class(cn("truncate text-ui", options.muted ? "text-muted-foreground" : "text-foreground")),
+									h.Class(
+										cn(
+											"truncate text-ui",
+											options.muted ? "text-muted-foreground" : "text-foreground",
+										),
+									),
 									h.Title(options.title),
 								],
 								[options.title],
@@ -276,7 +318,9 @@ const groupHeaderRow = (
 			cell(
 				formatErrorRate(mix === null ? group.totals.errorRate : mix.server),
 				COLUMN.err,
-				(mix === null ? group.totals.errorRate : mix.server) > 0 ? "text-destructive-foreground" : undefined,
+				(mix === null ? group.totals.errorRate : mix.server) > 0
+					? "text-destructive-foreground"
+					: undefined,
 			),
 			cell("—", COLUMN.p50),
 			cell(formatLatencyText(group.totals.p95DurationMs), COLUMN.p95),
@@ -321,10 +365,18 @@ export const groupRows = (
 									h.div(
 										[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
 										[
-											h.span([h.Class("text-xs text-muted-foreground")], [copy.explainer]),
+											h.span(
+												[h.Class("text-xs text-muted-foreground")],
+												[copy.explainer],
+											),
 											h.span(
 												[h.Class("truncate text-2xs text-muted-foreground/50")],
-												[sample.join("  ·  "), remaining > 0 ? `  ·  ${formatNumber(remaining)} more` : ""],
+												[
+													sample.join("  ·  "),
+													remaining > 0
+														? `  ·  ${formatNumber(remaining)} more`
+														: "",
+												],
 											),
 										],
 									),
@@ -334,7 +386,11 @@ export const groupRows = (
 											variant: "outline",
 											size: "sm",
 											className: "shrink-0",
-											attributes: [h.OnClick(Message.ClickedToggleEndpointGroup({ kind: group.kind }))],
+											attributes: [
+												h.OnClick(
+													Message.ClickedToggleEndpointGroup({ kind: group.kind }),
+												),
+											],
 										},
 										[isExpanded ? "Hide" : "Show anyway"],
 									),
@@ -377,7 +433,9 @@ export const visibleEndpoints = (
 	expanded: ReadonlyArray<string>,
 ): ReadonlyArray<Endpoint> =>
 	groups.flatMap((group) =>
-		(group.kind === "unrouted" || group.kind === "probes") && !expanded.includes(group.kind) ? [] : group.endpoints,
+		(group.kind === "unrouted" || group.kind === "probes") && !expanded.includes(group.kind)
+			? []
+			: group.endpoints,
 	)
 
 const ENDPOINT_SORTS: ReadonlyArray<EndpointSort> = ["traffic", "path", "errorRate", "p50", "p95", "p99"]

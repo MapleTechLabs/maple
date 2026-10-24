@@ -2,7 +2,10 @@ import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import { formatBytes, formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
+import type * as Chart from "../../../../charts/chart"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { linkButton } from "../../../../ui/button"
@@ -48,15 +51,20 @@ export type ViewInputs = Readonly<{
 	/** /traces searches over the drawer's endpoint (the page owns the window clamp). */
 	tracesHref: (filter: Readonly<{ statusCode?: string; slowest?: boolean }>) => string
 	alertHref: string
-	locale: string
+	timeZone: string
 }>
 
-const toChart = (chartId: string) => (message: Parameters<typeof Message.GotChartMessage>[0]["message"]) =>
-	Message.GotChartMessage({ chartId, message })
+const toChart = (chartId: string) => (message: Chart.Message) => Message.GotChartMessage({ chartId, message })
 
 const eyebrowClass = "text-2xs uppercase tracking-wider text-muted-foreground"
 
-const card = (h: H, label: string, aside: Html | null, children: ReadonlyArray<Html>, className?: string): Html =>
+const card = (
+	h: H,
+	label: string,
+	aside: Html | null,
+	children: ReadonlyArray<Html>,
+	className?: string,
+): Html =>
 	h.section(
 		[h.Key(label), h.Class(cn("flex min-w-0 flex-col gap-2.5 rounded-md border bg-card p-3", className))],
 		[
@@ -87,7 +95,12 @@ const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, 
 	return h.div(
 		[h.Class("grid grid-cols-4 overflow-hidden rounded-lg border bg-card")],
 		[
-			stat(h, "Req/s", formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds)), `${formatNumber(Math.round(endpoint.estimatedSpanCount))} total`),
+			stat(
+				h,
+				"Req/s",
+				formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds)),
+				`${formatNumber(Math.round(endpoint.estimatedSpanCount))} total`,
+			),
 			stat(
 				h,
 				"4xx",
@@ -99,10 +112,17 @@ const stats = (h: H, peek: Peek, codes: ReturnType<typeof endpointStatusCodes>, 
 				h,
 				"5xx",
 				mix === null ? formatErrorRate(endpoint.errorRate) : formatErrorRate(mix.server),
-				(mix?.server ?? endpoint.errorRate) === 0 ? "none in window" : `${formatNumber(endpoint.http5xxCount)} responses`,
+				(mix?.server ?? endpoint.errorRate) === 0
+					? "none in window"
+					: `${formatNumber(Math.round(endpoint.estimatedSpanCount * (mix?.server ?? endpoint.errorRate)))} responses`,
 				(mix?.server ?? endpoint.errorRate) > 0 ? "text-destructive-foreground" : undefined,
 			),
-			stat(h, "p95", formatLatency(endpoint.p95DurationMs), `p99 ${formatLatency(endpoint.p99DurationMs)}`),
+			stat(
+				h,
+				"p95",
+				formatLatency(endpoint.p95DurationMs),
+				`p99 ${formatLatency(endpoint.p99DurationMs)}`,
+			),
 		],
 	)
 }
@@ -175,7 +195,11 @@ const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => 
 
 const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Html => {
 	const codes = endpointStatusCodes(rows, spanName)
-	const errorType = rows.filter((row) => row.spanName === spanName && row.errorType !== "" && Number(row.httpStatusCode) >= 400).toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)[0]
+	const errorType = rows
+		.filter(
+			(row) => row.spanName === spanName && row.errorType !== "" && Number(row.httpStatusCode) >= 400,
+		)
+		.toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)[0]
 	return card(h, "Status codes", null, [
 		...(codes.length === 0
 			? [h.p([h.Class("text-2xs text-muted-foreground")], ["No status codes recorded in this window."])]
@@ -191,13 +215,26 @@ const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Htm
 							h.div(
 								[h.Class("flex justify-between gap-2 text-2xs tabular-nums")],
 								[
-									h.span([h.Class(cn("truncate", tone.text))], [`${code.name} ${reasonPhrase(code.name)}`.trim()]),
-									h.span([h.Class("shrink-0")], [`${formatNumber(Math.round(code.count))} · ${formatErrorRate(code.share)}`]),
+									h.span(
+										[h.Class(cn("truncate", tone.text))],
+										[`${code.name} ${reasonPhrase(code.name)}`.trim()],
+									),
+									h.span(
+										[h.Class("shrink-0")],
+										[
+											`${formatNumber(Math.round(code.count))} · ${formatErrorRate(code.share)}`,
+										],
+									),
 								],
 							),
 							h.div(
 								[h.Class("h-1 rounded-full bg-muted")],
-								[h.div([h.Class(cn("h-1 rounded-full", tone.bar)), h.Style({ width: `${Math.max(code.share * 100, 1)}%` })])],
+								[
+									h.div([
+										h.Class(cn("h-1 rounded-full", tone.bar)),
+										h.Style({ width: `${Math.max(code.share * 100, 1)}%` }),
+									]),
+								],
 							),
 						],
 					)
@@ -207,7 +244,11 @@ const statusCard = (h: H, rows: ReadonlyArray<StatusRow>, spanName: string): Htm
 			: [
 					h.span(
 						[h.Class("mt-auto truncate text-3xs text-muted-foreground")],
-						[`error.type `, h.span([h.Class("text-foreground/80")], [errorType.errorType]), ` on most ${errorType.httpStatusCode}s`],
+						[
+							`error.type `,
+							h.span([h.Class("text-foreground/80")], [errorType.errorType]),
+							` on most ${errorType.httpStatusCode}s`,
+						],
 					),
 				]),
 	])
@@ -226,7 +267,10 @@ const distributionCard = (h: H, detail: EndpointDetail): Html => {
 	const last = bins[bins.length - 1]
 	return card(h, "Distribution", hint(h, "log scale"), [
 		bins.length === 0 || first === undefined || last === undefined
-			? h.p([h.Class("text-2xs text-muted-foreground")], ["Not enough requests to draw a distribution."])
+			? h.p(
+					[h.Class("text-2xs text-muted-foreground")],
+					["Not enough requests to draw a distribution."],
+				)
 			: h.div(
 					[h.Class("flex flex-col gap-1.5")],
 					[
@@ -236,38 +280,56 @@ const distributionCard = (h: H, detail: EndpointDetail): Html => {
 								h.div([
 									h.Key(String(index)),
 									h.Class(cn("flex-1 rounded-t-[2px]", BAND_CLASS[bin.band])),
-									h.Style({ height: `${peak > 0 ? Math.max((bin.share / peak) * 100, 2) : 2}%` }),
-									h.Title(`${formatLatency(bin.fromMs)} to ${formatLatency(bin.toMs)}: ${formatErrorRate(bin.share)} of requests`),
+									h.Style({
+										height: `${peak > 0 ? Math.max((bin.share / peak) * 100, 2) : 2}%`,
+									}),
+									h.Title(
+										`${formatLatency(bin.fromMs)} to ${formatLatency(bin.toMs)}: ${formatErrorRate(bin.share)} of requests`,
+									),
 								]),
 							),
 						),
 						h.div(
 							[h.Class("flex justify-between text-3xs text-muted-foreground tabular-nums")],
-							[h.span([], [formatLatency(first.fromMs)]), h.span([], [formatLatency(last.toMs)])],
+							[
+								h.span([], [formatLatency(first.fromMs)]),
+								h.span([], [formatLatency(last.toMs)]),
+							],
 						),
 					],
 				),
 	])
 }
 
-const clientsCard = (h: H, detail: EndpointDetail): Html => {
-	const total = detail.userAgents.reduce((sum, agent) => sum + (agent.count ?? 0), 0)
+/** User-agent counts are stored spans, so their share is of the endpoint's stored spans. */
+const clientsCard = (h: H, detail: EndpointDetail, spanCount: number): Html => {
+	const total = spanCount
 	return card(h, "Top clients", hint(h, "user_agent.original"), [
 		detail.userAgents.length === 0
 			? h.p([h.Class("text-2xs text-muted-foreground")], ["No requests carried a user agent."])
 			: h.div(
 					[h.Class("flex flex-col gap-1.5 text-2xs tabular-nums")],
-					detail.userAgents.slice(0, 5).map((agent) =>
-						h.div(
-							[h.Key(agent.value), h.Class("flex items-center gap-2")],
-							[
-								h.span([h.Class("min-w-0 flex-1 truncate"), h.Title(agent.value)], [agent.value === "" ? "(no user agent)" : agent.value]),
-								...(agent.count === null || total === 0
-									? []
-									: [h.span([h.Class("shrink-0 text-muted-foreground")], [formatErrorRate(agent.count / total)])]),
-							],
+					detail.userAgents
+						.slice(0, 5)
+						.map((agent) =>
+							h.div(
+								[h.Key(agent.value), h.Class("flex items-center gap-2")],
+								[
+									h.span(
+										[h.Class("min-w-0 flex-1 truncate"), h.Title(agent.value)],
+										[agent.value === "" ? "(no user agent)" : agent.value],
+									),
+									...(agent.count === null || total === 0
+										? []
+										: [
+												h.span(
+													[h.Class("shrink-0 text-muted-foreground")],
+													[formatErrorRate(agent.count / total)],
+												),
+											]),
+								],
+							),
 						),
-					),
 				),
 	])
 }
@@ -277,7 +339,11 @@ const bodyCard = (h: H, detail: EndpointDetail): Html =>
 		detail.body === null
 			? h.p(
 					[h.Class("text-2xs text-muted-foreground")],
-					["No request carried ", h.span([h.Class("text-foreground/80")], ["http.request.body.size"]), "."],
+					[
+						"No request carried ",
+						h.span([h.Class("text-foreground/80")], ["http.request.body.size"]),
+						".",
+					],
 				)
 			: h.div(
 					[h.Class("flex flex-col gap-2")],
@@ -285,15 +351,15 @@ const bodyCard = (h: H, detail: EndpointDetail): Html =>
 						h.div(
 							[h.Class("grid grid-cols-3 gap-2")],
 							[
-								["p50", detail.body.p50Bytes],
-								["p95", detail.body.p95Bytes],
-								["max", detail.body.maxBytes],
-							].map(([label, bytes]) =>
+								{ label: "p50", bytes: detail.body.p50Bytes },
+								{ label: "p95", bytes: detail.body.p95Bytes },
+								{ label: "max", bytes: detail.body.maxBytes },
+							].map(({ label, bytes }) =>
 								h.div(
-									[h.Key(String(label)), h.Class("flex flex-col")],
+									[h.Key(label), h.Class("flex flex-col")],
 									[
-										h.span([h.Class("text-3xs text-muted-foreground")], [String(label)]),
-										h.span([h.Class("text-ui tabular-nums")], [formatBytes(Number(bytes))]),
+										h.span([h.Class("text-3xs text-muted-foreground")], [label]),
+										h.span([h.Class("text-ui tabular-nums")], [formatBytes(bytes)]),
 									],
 								),
 							),
@@ -310,25 +376,49 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 			h.div(
 				[h.Class("flex h-9 items-center justify-between border-b px-3")],
 				[
-					h.h3([h.Class(eyebrowClass)], ["Slowest requests"]),
+					h.div(
+						[h.Class("flex items-baseline gap-2")],
+						[
+							h.h3([h.Class(eyebrowClass)], ["Slowest requests"]),
+							hint(h, "slowest per hour and status"),
+						],
+					),
 					h.a(
-						[h.Class("flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground"), h.Href(inputs.tracesHref({ slowest: true }))],
+						[
+							h.Class(
+								"flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground",
+							),
+							h.Href(inputs.tracesHref({ slowest: true })),
+						],
 						["All traces", icon(h, "ArrowRightIcon", { size: 12 })],
 					),
 				],
 			),
 			...(detail.slowest.length === 0
-				? [h.p([h.Class("px-3 py-4 text-2xs text-muted-foreground")], ["No requests in this window."])]
+				? [
+						h.p(
+							[h.Class("px-3 py-4 text-2xs text-muted-foreground")],
+							["No requests in this window."],
+						),
+					]
 				: detail.slowest.map((request) =>
 						h.a(
 							[
 								h.Key(`${request.traceId}-${request.timestamp}`),
 								h.Href(hrefOf(AppRoute.Trace({ traceId: request.traceId, search: {} }))),
-								h.Class("flex h-9 items-center gap-3 border-b px-3 text-2xs tabular-nums last:border-b-0 hover:bg-muted/40"),
+								h.Class(
+									"flex h-9 items-center gap-3 border-b px-3 text-2xs tabular-nums last:border-b-0 hover:bg-muted/40",
+								),
 							],
 							[
-								h.span([h.Class("w-20 shrink-0 text-info-foreground")], [request.traceId.slice(0, 8)]),
-								h.span([h.Class("w-14 shrink-0 text-right")], [formatLatency(request.durationMs)]),
+								h.span(
+									[h.Class("w-20 shrink-0 text-info-foreground")],
+									[request.traceId.slice(0, 8)],
+								),
+								h.span(
+									[h.Class("w-14 shrink-0 text-right")],
+									[formatLatency(request.durationMs)],
+								),
 								h.span(
 									[
 										h.Class(
@@ -344,8 +434,18 @@ const slowestCard = (h: H, detail: EndpointDetail, inputs: ViewInputs): Html =>
 									],
 									[request.httpStatusCode],
 								),
-								h.span([h.Class("flex-1 text-muted-foreground")], [request.bodyBytes === null ? "" : formatBytes(request.bodyBytes)]),
-								h.span([h.Class("text-muted-foreground")], [request.timestamp.slice(11, 16)]),
+								h.span(
+									[h.Class("flex-1 text-muted-foreground")],
+									[request.bodyBytes === null ? "" : formatBytes(request.bodyBytes)],
+								),
+								h.span(
+									[h.Class("text-muted-foreground")],
+									[
+										formatTimestampInTimezone(toEpochMs(request.timestamp), {
+											timeZone: inputs.timeZone,
+										}),
+									],
+								),
 							],
 						),
 					)),
@@ -359,24 +459,44 @@ const detailSections = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Rea
 		onEmpty: () => [
 			h.div(
 				[h.Key("detail-loading"), h.Class("grid grid-cols-2 gap-3"), h.AriaBusy(true)],
-				[0, 1, 2, 3].map((index) => h.div([h.Key(String(index))], [skeleton(h, "h-[148px] w-full rounded-md")])),
+				[0, 1, 2, 3].map((index) =>
+					h.div([h.Key(String(index))], [skeleton(h, "h-[148px] w-full rounded-md")]),
+				),
 			),
 			skeleton(h, "h-[180px] w-full rounded-md"),
 		],
 		onFailure: (failure) => [
-			errorState(h, { failure, title: "Failed to load endpoint details", onRetry: Message.ClickedRetryDetail() }),
+			errorState(h, {
+				failure,
+				title: "Failed to load endpoint details",
+				onRetry: Message.ClickedRetryDetail(),
+			}),
 		],
 		onData: (detail) => [
 			h.div(
-				[h.Key("detail-grid"), h.Class(cn("grid grid-cols-2 gap-3", refreshingClass(AsyncData.isRefreshing(data))))],
-				[statusCard(h, inputs.statusRows, peek.endpoint.spanName), distributionCard(h, detail), clientsCard(h, detail), bodyCard(h, detail)],
+				[
+					h.Key("detail-grid"),
+					h.Class(cn("grid grid-cols-2 gap-3", refreshingClass(AsyncData.isRefreshing(data)))),
+				],
+				[
+					statusCard(h, inputs.statusRows, peek.endpoint.spanName),
+					distributionCard(h, detail),
+					clientsCard(h, detail, peek.endpoint.spanCount),
+					bodyCard(h, detail),
+				],
 			),
 			slowestCard(h, detail, inputs),
 		],
 	})
 }
 
-const stepButton = (h: H, label: string, iconName: "ChevronUpIcon" | "ChevronDownIcon", isEnabled: boolean, step: 1 | -1) =>
+const stepButton = (
+	h: H,
+	label: string,
+	iconName: "ChevronUpIcon" | "ChevronDownIcon",
+	isEnabled: boolean,
+	step: 1 | -1,
+) =>
 	iconButton(
 		h,
 		{
@@ -399,7 +519,9 @@ const header = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Html =>
 					methodLabel(h, peek.endpoint.method, ""),
 					h.h2(
 						[
-							h.Class(cn(SheetStyles.sheetTitleStyles, "min-w-0 truncate text-title font-medium")),
+							h.Class(
+								cn(SheetStyles.sheetTitleStyles, "min-w-0 truncate text-title font-medium"),
+							),
 							h.DataAttribute("slot", "sheet-title"),
 							h.Id(Dialog.titleId(model.dialog.id)),
 							h.Title(peek.endpoint.route),
@@ -438,23 +560,37 @@ const footer = (h: H, peek: Peek, inputs: ViewInputs): Html => {
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
-					linkButton(h, { size: "sm", variant: "outline", href: inputs.tracesHref({}) }, ["Traces", icon(h, "ArrowRightIcon")]),
+					linkButton(h, { size: "sm", variant: "outline", href: inputs.tracesHref({}) }, [
+						"Traces",
+						icon(h, "ArrowRightIcon"),
+					]),
 					...(topError === undefined
 						? []
 						: [
 								linkButton(
 									h,
-									{ size: "sm", variant: "outline", href: inputs.tracesHref({ statusCode: topError.name }) },
+									{
+										size: "sm",
+										variant: "outline",
+										href: inputs.tracesHref({ statusCode: topError.name }),
+									},
 									[`${topError.name} traces`, icon(h, "ArrowRightIcon")],
 								),
 							]),
 					h.span(
-						[h.Class("ml-1 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex")],
+						[
+							h.Class(
+								"ml-1 hidden items-center gap-1 text-2xs text-muted-foreground sm:inline-flex",
+							),
+						],
 						[kbd(h, undefined, ["↑"]), kbd(h, undefined, ["↓"]), " walk the list"],
 					),
 				],
 			),
-			linkButton(h, { size: "sm", variant: "ghost", href: inputs.alertHref }, [icon(h, "BellIcon"), "Create alert"]),
+			linkButton(h, { size: "sm", variant: "ghost", href: inputs.alertHref }, [
+				icon(h, "BellIcon"),
+				"Create alert",
+			]),
 		],
 		"flex-row items-center justify-between gap-3 border-t sm:justify-between",
 	)

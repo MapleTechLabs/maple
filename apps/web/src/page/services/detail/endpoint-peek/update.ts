@@ -1,4 +1,7 @@
-import { getServiceEndpointDetail } from "@maple/web-data/warehouse/service-endpoints"
+import {
+	getServiceEndpointDetail,
+	getServiceEndpointsTimeseries,
+} from "@maple/web-data/warehouse/service-endpoints"
 import { Effect, Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import * as Chart from "../../../../charts/chart"
@@ -38,6 +41,9 @@ export type PeekScope = Readonly<{
 	window: TimeWindow | null
 	serviceName: string
 	environments: ReadonlyArray<string> | undefined
+	bucketSeconds: number
+	/** The endpoints the tab's sparkline read already covers; the drawer reads the rest itself. */
+	tabSeriesNames: ReadonlyArray<string>
 }>
 
 export const DetailInput = Schema.Struct({
@@ -55,11 +61,42 @@ export const FetchEndpointDetail = Command.define("FetchServiceEndpointDetail", 
 	messages: [Message.CompletedFetchDetail],
 	execute: ({ spanName, key, input }) =>
 		getServiceEndpointDetail({
-			data: { ...input, environments: input.environments === undefined ? undefined : [...input.environments] },
+			data: {
+				...input,
+				environments: input.environments === undefined ? undefined : [...input.environments],
+			},
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchDetail({ spanName, key, result })),
+		),
+})
+
+export const SeriesInput = Schema.Struct({
+	...DetailInput.fields,
+	bucketSeconds: Schema.Number,
+})
+export type SeriesInput = typeof SeriesInput.Type
+
+/** `getServiceEndpointsTimeseries` for the one peeked endpoint. */
+export const FetchEndpointPeekSeries = Command.define("FetchServiceEndpointPeekSeries", {
+	args: { spanName: Schema.String, key: Schema.String, input: SeriesInput },
+	messages: [Message.CompletedFetchSeries],
+	execute: ({ spanName, key, input }) =>
+		getServiceEndpointsTimeseries({
+			data: {
+				serviceName: input.serviceName,
+				startTime: input.startTime,
+				endTime: input.endTime,
+				environments: input.environments === undefined ? undefined : [...input.environments],
+				bucketSeconds: input.bucketSeconds,
+				spanNames: [input.spanName],
+			},
+		}).pipe(
+			Effect.map((response) => response.buckets),
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSeries({ spanName, key, result })),
 		),
 })
 
@@ -72,7 +109,7 @@ const detailInputOf = (scope: PeekScope, window: TimeWindow, spanName: string): 
 })
 
 /** The detail of each endpoint not already holding (or loading) its key. */
-const request = (
+const requestDetails = (
 	model: Model,
 	scope: PeekScope,
 	window: TimeWindow,
@@ -98,6 +135,39 @@ const request = (
 		{ model },
 	)
 
+/** The peeked endpoint's buckets when the tab's sparkline read leaves it out. */
+const requestSeries = (
+	model: Model,
+	scope: PeekScope,
+	window: TimeWindow,
+	endpoint: Endpoint,
+	mode: Keyed.RequestMode,
+): Return => {
+	if (scope.tabSeriesNames.includes(endpoint.spanName)) return { model }
+	const input = { ...detailInputOf(scope, window, endpoint.spanName), bucketSeconds: scope.bucketSeconds }
+	const key = requestKey(scope.context.orgId, "getServiceEndpointsTimeseries", { data: input })
+	const slot = model.series[endpoint.spanName] ?? Keyed.idle()
+	return Option.match(Keyed.request(slot, key, mode), {
+		onNone: () => ({ model }),
+		onSome: (next) => ({
+			model: { ...model, series: { ...model.series, [endpoint.spanName]: next } },
+			commands: [FetchEndpointPeekSeries({ spanName: endpoint.spanName, key: next.key, input })],
+		}),
+	})
+}
+
+const request = (
+	model: Model,
+	scope: PeekScope,
+	window: TimeWindow,
+	peek: Peek,
+	mode: Keyed.RequestMode,
+): Return => {
+	const details = requestDetails(model, scope, window, [peek.endpoint, ...peek.neighbors], mode)
+	const series = requestSeries(details.model, scope, window, peek.endpoint, mode)
+	return { model: series.model, commands: [...(details.commands ?? []), ...(series.commands ?? [])] }
+}
+
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: result.model },
 	commands: Command.mapMessages(result.commands ?? [], (message) => Message.GotDialogMessage({ message })),
@@ -111,7 +181,7 @@ export const sync = (model: Model, scope: PeekScope, peek: Peek | null, mode: Ke
 	if (peek === null) return model.dialog.isOpen ? liftDialog(model, Dialog.close(model.dialog)) : { model }
 	const opened = model.dialog.isOpen ? { model } : liftDialog(model, Dialog.open(model.dialog))
 	if (scope.window === null) return opened
-	const requested = request(opened.model, scope, scope.window, [peek.endpoint, ...peek.neighbors], mode)
+	const requested = request(opened.model, scope, scope.window, peek, mode)
 	return { model: requested.model, commands: [...(opened.commands ?? []), ...(requested.commands ?? [])] }
 }
 
@@ -121,14 +191,30 @@ export const update = (model: Model, message: Message, scope: PeekScope, peek: P
 			const slot = model.details[spanName]
 			return slot === undefined
 				? { model }
-				: { model: { ...model, details: { ...model.details, [spanName]: Keyed.accept(slot, key, result) } } }
+				: {
+						model: {
+							...model,
+							details: { ...model.details, [spanName]: Keyed.accept(slot, key, result) },
+						},
+					}
+		},
+		CompletedFetchSeries: ({ spanName, key, result }) => {
+			const slot = model.series[spanName]
+			return slot === undefined
+				? { model }
+				: {
+						model: {
+							...model,
+							series: { ...model.series, [spanName]: Keyed.accept(slot, key, result) },
+						},
+					}
 		},
 		ClickedStep: ({ step }) => ({ model, outMessage: OutMessage.RequestedStep({ step }) }),
 		PressedStepKey: ({ step }) => ({ model, outMessage: OutMessage.RequestedStep({ step }) }),
 		ClickedRetryDetail: () =>
 			peek === null || scope.window === null
 				? { model }
-				: request(model, scope, scope.window, [peek.endpoint], "Refresh"),
+				: requestDetails(model, scope, scope.window, [peek.endpoint], "Refresh"),
 		GotChartMessage: ({ chartId, message: inner }) => {
 			const chart = model.charts[chartId] ?? Chart.init()
 			const next = Chart.update(chart, inner)
@@ -142,6 +228,8 @@ export const update = (model: Model, message: Message, scope: PeekScope, peek: P
 		GotDialogMessage: ({ message: inner }) => {
 			const result = Dialog.update(model.dialog, inner)
 			const lifted = liftDialog(model, result)
-			return result.outMessage?._tag === "Closed" ? { ...lifted, outMessage: OutMessage.Closed() } : lifted
+			return result.outMessage?._tag === "Closed"
+				? { ...lifted, outMessage: OutMessage.Closed() }
+				: lifted
 		},
 	})

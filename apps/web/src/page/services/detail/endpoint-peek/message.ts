@@ -3,7 +3,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../../charts/chart"
 import { LoadFailure } from "../../../../data/load-failure"
 import * as Dialog from "../../../../ui/dialog"
-import { EndpointDetail } from "../model-tabs"
+import { ApiBucket, EndpointDetail } from "../model-tabs"
 
 export const Step = Schema.Literals([1, -1])
 export type Step = typeof Step.Type
@@ -13,6 +13,11 @@ export const Message = defineMessageUnion({
 		spanName: Schema.String,
 		key: Schema.String,
 		result: Schema.Result(EndpointDetail, LoadFailure),
+	},
+	CompletedFetchSeries: {
+		spanName: Schema.String,
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(ApiBucket), LoadFailure),
 	},
 	ClickedStep: { step: Step },
 	/** `MountPeekKeys`: down/J forward, up/K back. */

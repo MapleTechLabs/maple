@@ -20,9 +20,10 @@ export const STATUS_COLORS = {
 	"2xx": "var(--chart-3)",
 	"4xx": "var(--warning)",
 	"5xx": "var(--severity-error)",
+	unknown: "var(--muted-foreground)",
 } as const satisfies Record<StatusClass, string>
 
-const STACK_ORDER = ["5xx", "4xx", "2xx"] as const
+const STACK_ORDER = ["5xx", "4xx", "2xx", "unknown"] as const
 
 export const SPARK_TOKENS = {
 	requests: "--chart-p50",
@@ -36,6 +37,7 @@ export const SPARK_TOKENS = {
 export const API_THEME_TOKENS = [
 	...Object.values(SPARK_TOKENS),
 	"--chart-3",
+	"--muted-foreground",
 	...LATENCY_SERIES.map((series) => series.token),
 	"--border",
 	"--background",
@@ -92,19 +94,22 @@ type StatusChartInputs = Readonly<{
 	reportPlot: boolean
 }>
 
-const StatusChartView = Submodel.defineView<Chart.Model, Chart.Message, StatusChartInputs>((model, inputs, h) =>
-	plotFrame(h, {
-		chartId: inputs.chartId,
-		spec: inputs.spec,
-		ariaLabel: "Responses by status",
-		className: inputs.className,
-		overlay: inputs.overlay,
-		reportPlot: inputs.reportPlot,
-		tooltipBody: (portal) =>
-			Option.flatMap(model.tooltip, (tooltip) =>
-				tooltip._tag === "Bucket" ? Option.some(bucketTooltipBody(h, tooltip, portal)) : Option.none(),
-			),
-	}),
+const StatusChartView = Submodel.defineView<Chart.Model, Chart.Message, StatusChartInputs>(
+	(model, inputs, h) =>
+		plotFrame(h, {
+			chartId: inputs.chartId,
+			spec: inputs.spec,
+			ariaLabel: "Responses by status",
+			className: inputs.className,
+			overlay: inputs.overlay,
+			reportPlot: inputs.reportPlot,
+			tooltipBody: (portal) =>
+				Option.flatMap(model.tooltip, (tooltip) =>
+					tooltip._tag === "Bucket"
+						? Option.some(bucketTooltipBody(h, tooltip, portal))
+						: Option.none(),
+				),
+		}),
 )
 
 /** One endpoint's p50/p95/p99 over the window, on the service page's latency chart. */
@@ -139,7 +144,10 @@ export const latencyChart = <M>(
 					border: resolveColor(options.context.theme, "--border"),
 					background: resolveColor(options.context.theme, "--background"),
 					...Object.fromEntries(
-						LATENCY_SERIES.map((series) => [series.key, resolveColor(options.context.theme, series.token)]),
+						LATENCY_SERIES.map((series) => [
+							series.key,
+							resolveColor(options.context.theme, series.token),
+						]),
 					),
 				},
 				perSecond: false,

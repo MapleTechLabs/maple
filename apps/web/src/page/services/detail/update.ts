@@ -37,6 +37,7 @@ import {
 	environmentsOf,
 	ISSUES_DETAIL_LIMIT_MS,
 	OPERATIONS_LIMIT,
+	apiBucketSeconds,
 	operationsBucketSeconds,
 	previousWindow,
 	type ServiceTab,
@@ -296,20 +297,29 @@ const tabSteps = (model: Model, context: PageContext, window: TimeWindow, mode: 
 	}
 }
 
-/** Row sparklines for the busiest endpoints; past this many the rows go without one. */
-const SPARKLINE_ENDPOINTS = 49
+/** Row sparklines for the busiest endpoints; the read takes at most 50 names. */
+const SPARKLINE_ENDPOINTS = 50
 
-const loadedEndpoints = (model: Model): ReadonlyArray<Endpoint> => AsyncData.getOrElse(model.endpoints.data, () => [])
+const loadedEndpoints = (model: Model): ReadonlyArray<Endpoint> =>
+	AsyncData.getOrElse(model.endpoints.data, () => [])
 
-/** The busiest endpoints by traffic, plus the peeked one, sorted so the key is stable. */
-const seriesSpanNames = (model: Model): ReadonlyArray<string> => {
-	const busiest = loadedEndpoints(model)
-		.toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)
-		.slice(0, SPARKLINE_ENDPOINTS)
-		.map((endpoint) => endpoint.spanName)
-	const peeked = model.search.endpoint
-	return [...new Set([...busiest, ...(peeked === undefined ? [] : [peeked])])].toSorted()
-}
+/** Groups the probes and unrouted paths fold into; their rows stay hidden until opened. */
+const isCollapsedKind = (kind: string) => kind === "probes" || kind === "unrouted"
+
+/**
+ * The busiest endpoints the table can show, sorted so the key is stable. Only once the endpoints
+ * answered for the current window, so a window change does not read the old names first.
+ */
+export const seriesSpanNames = (model: Model): ReadonlyArray<string> =>
+	!AsyncData.isSuccess(model.endpoints.data)
+		? []
+		: groupsOf(loadedEndpoints(model), model.sorts.endpoints)
+				.filter((group) => !isCollapsedKind(group.kind))
+				.flatMap((group) => group.endpoints)
+				.toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)
+				.slice(0, SPARKLINE_ENDPOINTS)
+				.map((endpoint) => endpoint.spanName)
+				.toSorted()
 
 /** What `ServiceApiTab` mounts: the endpoints, the KPI overview, the status rows and the sparklines. */
 const apiTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
@@ -327,7 +337,7 @@ const apiTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode
 		const input = {
 			...detailInput(model, window),
 			...previousWindow(window),
-			bucketSeconds: operationsBucketSeconds(window),
+			bucketSeconds: apiBucketSeconds(window),
 		}
 		return keyed(
 			model.apiOverview,
@@ -350,7 +360,7 @@ const apiTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode
 	(model) => {
 		const spanNames = seriesSpanNames(model)
 		if (spanNames.length === 0) return NONE
-		const input = { ...detailInput(model, window), bucketSeconds: operationsBucketSeconds(window), spanNames }
+		const input = { ...detailInput(model, window), bucketSeconds: apiBucketSeconds(window), spanNames }
 		return keyed(
 			model.endpointSeries,
 			requestKey(context.orgId, "getServiceEndpointsTimeseries", { data: input }),
@@ -365,7 +375,9 @@ const apiTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode
 export const tableRows = (model: Model): ReadonlyArray<Endpoint> =>
 	visibleEndpoints(
 		groupsOf(
-			loadedEndpoints(model).filter((endpoint) => matchesFilter(endpoint, model.endpointFilter, model.endpointQuery)),
+			loadedEndpoints(model).filter((endpoint) =>
+				matchesFilter(endpoint, model.endpointFilter, model.endpointQuery),
+			),
 			model.sorts.endpoints,
 		),
 		model.expandedEndpointGroups,
@@ -373,40 +385,93 @@ export const tableRows = (model: Model): ReadonlyArray<Endpoint> =>
 
 /** The drawer's endpoint on the API tab, `null` elsewhere or when no row matches. */
 export const peekOf = (model: Model): EndpointPeekUpdate.Peek | null =>
-	tabOf(model.search) === "api" ? EndpointPeekUpdate.resolvePeek(tableRows(model), model.search.endpoint) : null
+	tabOf(model.search) === "api"
+		? EndpointPeekUpdate.resolvePeek(tableRows(model), model.search.endpoint)
+		: null
 
 const peekScope = (model: Model, context: PageContext): EndpointPeekUpdate.PeekScope => ({
 	context,
 	window: model.window,
 	serviceName: model.serviceName,
 	environments: environmentsOf(model.search),
+	bucketSeconds: model.window === null ? 60 : apiBucketSeconds(model.window),
+	tabSeriesNames: seriesSpanNames(model),
 })
 
 const liftPeek = (model: Model, result: EndpointPeekUpdate.Return): Return => {
-	const commands = Command.mapMessages(result.commands ?? [], (message) => Message.GotEndpointPeekMessage({ message }))
+	const commands = Command.mapMessages(result.commands ?? [], (message) =>
+		Message.GotEndpointPeekMessage({ message }),
+	)
 	const next = { ...model, endpointPeek: result.model }
 	if (result.outMessage === undefined) return { model: next, commands }
 	const out = result.outMessage
-	const search =
-		out._tag === "Closed"
-			? { ...model.search, endpoint: undefined }
-			: { ...model.search, endpoint: stepTarget(model, out.step) ?? model.search.endpoint }
-	return { model: next, commands, outMessage: navigate(next, search, true).outMessage }
+	if (out._tag === "Closed") {
+		return {
+			model: next,
+			commands,
+			outMessage: navigate(next, { ...model.search, endpoint: undefined }, true).outMessage,
+		}
+	}
+	// At either end of the table a step has nowhere to go.
+	const target = stepTarget(model, out.step)
+	return target === undefined
+		? { model: next, commands }
+		: {
+				model: next,
+				commands,
+				outMessage: navigate(next, { ...model.search, endpoint: target }, true).outMessage,
+			}
 }
 
 const stepTarget = (model: Model, step: 1 | -1): string | undefined => {
-	const peek = peekOf(model)
-	if (peek === null) return undefined
-	return tableRows(model)[peek.index + step]?.spanName
+	const rows = tableRows(model)
+	const index = rows.findIndex((row) => row.spanName === model.search.endpoint)
+	return index < 0 ? undefined : rows[index + step]?.spanName
+}
+
+/**
+ * A URL endpoint the settled table cannot show: inside a collapsed group it opens that group,
+ * otherwise (gone from the window, hidden by the filter) it leaves the URL, so it cannot reopen
+ * on its own later.
+ */
+const reconcilePeek = (model: Model): Readonly<{ model: Model; clear: boolean }> => {
+	const spanName = model.search.endpoint
+	if (spanName === undefined || tabOf(model.search) !== "api" || !AsyncData.isSuccess(model.endpoints.data))
+		return { model, clear: false }
+	if (tableRows(model).some((row) => row.spanName === spanName)) return { model, clear: false }
+	const group = groupsOf(loadedEndpoints(model), model.sorts.endpoints).find(
+		(candidate) =>
+			isCollapsedKind(candidate.kind) && candidate.endpoints.some((row) => row.spanName === spanName),
+	)
+	return group === undefined || model.expandedEndpointGroups.includes(group.kind)
+		? { model, clear: true }
+		: {
+				model: { ...model, expandedEndpointGroups: [...model.expandedEndpointGroups, group.kind] },
+				clear: false,
+			}
 }
 
 /** The drawer follows the URL and the loaded rows; run after every request pass. */
 const syncPeek = (result: Return, context: PageContext, mode: RequestMode): Return => {
+	const reconciled = reconcilePeek(result.model)
 	const peeked = liftPeek(
-		result.model,
-		EndpointPeekUpdate.sync(result.model.endpointPeek, peekScope(result.model, context), peekOf(result.model), mode),
+		reconciled.model,
+		EndpointPeekUpdate.sync(
+			reconciled.model.endpointPeek,
+			peekScope(reconciled.model, context),
+			peekOf(reconciled.model),
+			mode,
+		),
 	)
-	return { ...result, model: peeked.model, commands: [...(result.commands ?? []), ...(peeked.commands ?? [])] }
+	const commands = [...(result.commands ?? []), ...(peeked.commands ?? [])]
+	return reconciled.clear
+		? {
+				model: peeked.model,
+				commands,
+				outMessage: navigate(peeked.model, { ...peeked.model.search, endpoint: undefined }, true)
+					.outMessage,
+			}
+		: { ...result, model: peeked.model, commands }
 }
 
 /**
@@ -658,11 +723,25 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, statusBreakdown: Keyed.accept(model.statusBreakdown, key, result) },
 		}),
 		ClickedEndpoint: ({ spanName }) =>
-			navigate(model, { ...model.search, endpoint: model.search.endpoint === spanName ? undefined : spanName }, false),
-		ClickedEndpointFilter: ({ filter }) => syncPeek({ model: { ...model, endpointFilter: filter } }, context, "Load"),
-		ChangedEndpointQuery: ({ value }) => syncPeek({ model: { ...model, endpointQuery: value } }, context, "Load"),
+			navigate(
+				model,
+				{ ...model.search, endpoint: model.search.endpoint === spanName ? undefined : spanName },
+				false,
+			),
+		ClickedEndpointFilter: ({ filter }) =>
+			syncPeek({ model: { ...model, endpointFilter: filter } }, context, "Load"),
+		ChangedEndpointQuery: ({ value }) =>
+			syncPeek({ model: { ...model, endpointQuery: value } }, context, "Load"),
 		GotEndpointPeekMessage: ({ message: inner }) =>
-			liftPeek(model, EndpointPeekUpdate.update(model.endpointPeek, inner, peekScope(model, context), peekOf(model))),
+			liftPeek(
+				model,
+				EndpointPeekUpdate.update(
+					model.endpointPeek,
+					inner,
+					peekScope(model, context),
+					peekOf(model),
+				),
+			),
 		ClickedToggleEndpointGroup: ({ kind }) =>
 			syncPeek(
 				{
@@ -720,7 +799,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			sync({ ...model, isDeploysExpanded: !model.isDeploysExpanded }, context, "Load"),
 		ClickedSort: ({ table, key }) =>
 			syncPeek(
-				{ model: { ...model, sorts: { ...model.sorts, [table]: nextSort(table, model.sorts[table], key) } } },
+				{
+					model: {
+						...model,
+						sorts: { ...model.sorts, [table]: nextSort(table, model.sorts[table], key) },
+					},
+				},
 				context,
 				"Load",
 			),

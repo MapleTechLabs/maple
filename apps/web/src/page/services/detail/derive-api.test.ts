@@ -4,11 +4,12 @@ import {
 	knownStatusMix,
 	latencyHistogram,
 	matchesFilter,
+	responseRows,
 	routeList,
 	slowestEndpoint,
 	statusCodeSummaries,
 } from "./derive-api"
-import type { ApiTotals, Endpoint, StatusRow } from "./model-tabs"
+import type { ApiBucket, ApiTotals, Endpoint, StatusRow } from "./model-tabs"
 
 const endpoint = (spanName: string, patch: Partial<Endpoint> = {}): Endpoint => ({
 	spanName,
@@ -57,11 +58,25 @@ const status = (spanName: string, code: string, errorType: string, count: number
 
 describe("status mix", () => {
 	test("rows sealed before the status counters read as unknown, not as zero errors", () => {
-		expect(knownStatusMix({ httpClassifiedSpanCount: 0, httpStatusCount: 0, http4xxCount: 0, http5xxCount: 0 })).toBeNull()
+		expect(
+			knownStatusMix({
+				httpClassifiedSpanCount: 0,
+				httpStatusCount: 0,
+				http4xxCount: 0,
+				http5xxCount: 0,
+			}),
+		).toBeNull()
 	})
 
 	test("splits the responses that carried a status code", () => {
-		expect(knownStatusMix({ httpClassifiedSpanCount: 10, httpStatusCount: 8, http4xxCount: 2, http5xxCount: 2 })).toEqual({
+		expect(
+			knownStatusMix({
+				httpClassifiedSpanCount: 10,
+				httpStatusCount: 8,
+				http4xxCount: 2,
+				http5xxCount: 2,
+			}),
+		).toEqual({
 			ok: 0.5,
 			client: 0.25,
 			server: 0.25,
@@ -79,7 +94,11 @@ describe("KPIs", () => {
 	})
 
 	test("an empty previous window gives no p95 change, and no body sizes give no byte rate", () => {
-		const kpis = apiKpis(totals({ requestBodyCount: 0, requestBodyBytes: 0 }), totals({ spanCount: 0 }), 100)
+		const kpis = apiKpis(
+			totals({ requestBodyCount: 0, requestBodyBytes: 0 }),
+			totals({ spanCount: 0 }),
+			100,
+		)
 		expect(kpis.p95Change).toBeNull()
 		expect(kpis.bytesPerSecond).toBeNull()
 	})
@@ -128,7 +147,9 @@ describe("table filters", () => {
 	const slow = endpoint("POST /slow", { p95DurationMs: 400 })
 
 	test("rejecting keeps endpoints answering more than 5% non-2xx", () => {
-		expect([quiet, rejecting, slow].filter((row) => matchesFilter(row, "rejecting", ""))).toEqual([rejecting])
+		expect([quiet, rejecting, slow].filter((row) => matchesFilter(row, "rejecting", ""))).toEqual([
+			rejecting,
+		])
 	})
 
 	test("slow keeps p95 above 100ms, and the search matches the span name case-insensitively", () => {
@@ -162,4 +183,40 @@ describe("latency histogram", () => {
 	test("a single value has no distribution to draw", () => {
 		expect(latencyHistogram(levels, [5, 5, 5, 5, 5])).toEqual([])
 	})
+})
+
+describe("responses chart rows", () => {
+	const bucket = (patch: Partial<ApiBucket>): ApiBucket => ({
+		bucket: "2026-10-24T03:00:00.000Z",
+		spanName: "",
+		estimatedSpanCount: 600,
+		httpClassifiedSpanCount: 30,
+		httpStatusCount: 30,
+		http4xxCount: 6,
+		http5xxCount: 3,
+		requestBodyBytes: 0,
+		p50DurationMs: 1,
+		p95DurationMs: 2,
+		p99DurationMs: 3,
+		...patch,
+	})
+
+	test("splits each bucket's request rate by status class", () => {
+		expect(responseRows([bucket({})], 60).map((row) => [row.attributeValue, row.value])).toEqual([
+			["2xx", 7],
+			["4xx", 2],
+			["5xx", 1],
+		])
+	})
+
+	test("a bucket sealed before the status counters is unknown, not 2xx", () => {
+		expect(responseRows([bucket({ httpClassifiedSpanCount: 0, httpStatusCount: 0 })], 60)).toEqual([
+			{ bucket: "2026-10-24T03:00:00.000Z", attributeValue: "unknown", value: 10 },
+		])
+	})
+})
+
+test("out-of-order t-digest quantiles never give a bin a negative share", () => {
+	const bins = latencyHistogram([0.1, 0.5, 0.9, 0.99], [1, 5, 4, 40])
+	expect(bins.every((bin) => bin.share >= 0)).toBe(true)
 })

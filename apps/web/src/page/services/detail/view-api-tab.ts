@@ -1,10 +1,18 @@
 import { ENDPOINTS_LIMIT, isTruncated } from "../../../components/services/service-endpoints"
-import { formatBytes, formatBytesPerSecond, formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
+import {
+	formatBytes,
+	formatBytesPerSecond,
+	formatErrorRate,
+	formatLatency,
+	formatNumber,
+	formatRate,
+} from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type * as Chart from "../../../charts/chart"
 import type { ThemeColors } from "../../../charts/theme-colors"
 import { errorState } from "../../../ui/error-state"
 import { panel } from "../../../ui/panel"
@@ -27,6 +35,7 @@ import {
 	type StatusCodeSummary,
 	statusCodeSummaries,
 	statusMix,
+	hasUnknownBuckets,
 } from "./derive-api"
 import { commitMarkers, markerLayout } from "./derive-markers"
 import { TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
@@ -43,8 +52,7 @@ import { headLabel, sortColumnHead } from "./view-table-cells"
 
 type H = HtmlBuilder<Message>
 
-const toChart = (chartId: string) => (message: Parameters<typeof Message.GotChartMessage>[0]["message"]) =>
-	Message.GotChartMessage({ chartId, message })
+const toChart = (chartId: string) => (message: Chart.Message) => Message.GotChartMessage({ chartId, message })
 
 /** The tab's charts and sparklines share one bucket size (`operationsBucketSeconds`). */
 export type ApiTabInputs = Readonly<{ bucketSeconds: number; timeZone: string }>
@@ -65,22 +73,42 @@ type Tile = Readonly<{
 
 const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
 	h.div(
-		[h.Key(tile.label), h.Class("flex min-w-0 flex-col gap-2 border-b p-4 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0")],
+		[
+			h.Key(tile.label),
+			h.Class(
+				"flex min-w-0 flex-col gap-2 border-b p-4 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0",
+			),
+		],
 		[
 			h.div(
 				[h.Class("flex items-center gap-1.5")],
 				[
-					...(tile.dot === undefined ? [] : [h.span([h.Class(cn("size-1.5 rounded-full", tile.dot))])]),
-					h.span([h.Class("text-2xs uppercase tracking-wider text-muted-foreground")], [tile.label]),
+					...(tile.dot === undefined
+						? []
+						: [h.span([h.Class(cn("size-1.5 rounded-full", tile.dot))])]),
+					h.span(
+						[h.Class("text-2xs uppercase tracking-wider text-muted-foreground")],
+						[tile.label],
+					),
 				],
 			),
 			h.div(
 				[h.Class("flex min-w-0 items-baseline gap-2")],
 				[
-					h.span([h.Class(cn("text-[22px] font-medium leading-7 tabular-nums", tile.valueClassName))], [tile.value]),
-					...(tile.unit === undefined ? [] : [h.span([h.Class("text-ui text-muted-foreground")], [tile.unit])]),
 					h.span(
-						[h.Class(cn("ml-auto truncate text-2xs text-muted-foreground", tile.asideClassName)), h.Title(tile.aside)],
+						[h.Class(cn("text-[22px] font-medium leading-7 tabular-nums", tile.valueClassName))],
+						[tile.value],
+					),
+					...(tile.unit === undefined
+						? []
+						: [h.span([h.Class("text-ui text-muted-foreground")], [tile.unit])]),
+					h.span(
+						[
+							h.Class(
+								cn("ml-auto truncate text-2xs text-muted-foreground", tile.asideClassName),
+							),
+							h.Title(tile.aside),
+						],
 						[tile.aside],
 					),
 				],
@@ -98,8 +126,9 @@ const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
 		],
 	)
 
-/** "402 · 79% of them": the code most of a class's responses carried. */
-const leadingCode = (summaries: ReadonlyArray<StatusCodeSummary>, isServer: boolean): string => {
+/** "mostly 402 (98%)": the code most of a class's responses carried; blank while it loads. */
+const leadingCode = (summaries: ReadonlyArray<StatusCodeSummary> | null, isServer: boolean): string => {
+	if (summaries === null) return ""
 	const codes = summaries.filter((summary) => isServerError(summary.code) === isServer)
 	const total = codes.reduce((sum, summary) => sum + summary.count, 0)
 	const [top] = codes
@@ -120,7 +149,7 @@ const formatChange = (change: number) => `${change > 0 ? "+" : "−"}${formatErr
 const kpiStrip = (
 	h: H,
 	overview: ApiOverview,
-	summaries: ReadonlyArray<StatusCodeSummary>,
+	summaries: ReadonlyArray<StatusCodeSummary> | null,
 	seconds: number,
 	inputs: ApiTabInputs,
 	theme: ThemeColors | null,
@@ -154,6 +183,7 @@ const kpiStrip = (
 			value: server === null ? "—" : formatErrorRate(server),
 			valueClassName: server !== null && server > 0.01 ? "text-destructive-foreground" : undefined,
 			aside: server === null ? "no status codes" : leadingCode(summaries, true),
+			asideClassName: server !== null && server > 0 ? "text-destructive-foreground" : undefined,
 			values: sparks.server,
 			token: SPARK_TOKENS.server,
 		},
@@ -173,7 +203,8 @@ const kpiStrip = (
 		{
 			label: "Request bytes",
 			...splitUnit(kpis.bytesPerSecond === null ? "—" : formatBytesPerSecond(kpis.bytesPerSecond)),
-			aside: kpis.avgBodyBytes === null ? "no body sizes" : `avg body ${formatBytes(kpis.avgBodyBytes)}`,
+			aside:
+				kpis.avgBodyBytes === null ? "no body sizes" : `avg body ${formatBytes(kpis.avgBodyBytes)}`,
 			values: sparks.bytes,
 			token: SPARK_TOKENS.bytes,
 		},
@@ -186,10 +217,18 @@ const kpiStrip = (
 
 const kpiSkeleton = (h: H): Html =>
 	h.div(
-		[h.Class("grid w-full grid-cols-1 overflow-hidden rounded-lg border bg-card md:grid-cols-5"), h.AriaBusy(true)],
+		[
+			h.Class("grid w-full grid-cols-1 overflow-hidden rounded-lg border bg-card md:grid-cols-5"),
+			h.AriaBusy(true),
+		],
 		Array.from({ length: 5 }, (_, index) =>
 			h.div(
-				[h.Key(String(index)), h.Class("flex flex-col gap-2.5 border-b p-4 md:border-r md:border-b-0 md:last:border-r-0")],
+				[
+					h.Key(String(index)),
+					h.Class(
+						"flex flex-col gap-2.5 border-b p-4 md:border-r md:border-b-0 md:last:border-r-0",
+					),
+				],
 				[skeleton(h, "h-2.5 w-20"), skeleton(h, "h-6 w-24"), skeleton(h, "h-7 w-full")],
 			),
 		),
@@ -246,15 +285,34 @@ const responsesChart = (
 					h.div(
 						[h.Class("flex items-center gap-4 text-2xs text-muted-foreground")],
 						[
-							legendItem(h, swatch(h, STATUS_COLORS["2xx"]), `2xx ${mix === null ? "—" : formatErrorRate(mix.ok)}`),
-							legendItem(h, swatch(h, STATUS_COLORS["4xx"]), `4xx ${mix === null ? "—" : formatErrorRate(mix.client)}`),
-							legendItem(h, swatch(h, STATUS_COLORS["5xx"]), `5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`),
+							legendItem(
+								h,
+								swatch(h, STATUS_COLORS["2xx"]),
+								`2xx ${mix === null ? "—" : formatErrorRate(mix.ok)}`,
+							),
+							legendItem(
+								h,
+								swatch(h, STATUS_COLORS["4xx"]),
+								`4xx ${mix === null ? "—" : formatErrorRate(mix.client)}`,
+							),
+							legendItem(
+								h,
+								swatch(h, STATUS_COLORS["5xx"]),
+								`5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`,
+							),
+							...(hasUnknownBuckets(overview.buckets)
+								? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "before status tracking")]
+								: []),
 							...(markers.length === 0
 								? []
 								: [
 										legendItem(
 											h,
-											h.span([h.Class("h-2.5 w-0 border-l border-dashed border-muted-foreground")]),
+											h.span([
+												h.Class(
+													"h-2.5 w-0 border-l border-dashed border-muted-foreground",
+												),
+											]),
 											"deploy",
 										),
 									]),
@@ -303,7 +361,10 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 					),
 					h.span([h.Class("truncate text-foreground")], [reasonPhrase(summary.code)]),
 					h.span([h.Class("ml-auto text-foreground")], [formatNumber(Math.round(summary.count))]),
-					h.span([h.Class("w-11 text-right text-muted-foreground")], [formatErrorRate(summary.share)]),
+					h.span(
+						[h.Class("w-11 text-right text-muted-foreground")],
+						[formatErrorRate(summary.share)],
+					),
 				],
 			),
 			h.div(
@@ -318,7 +379,9 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 			h.span(
 				[h.Class("block w-full truncate text-3xs text-muted-foreground")],
 				[
-					...(errorType === undefined ? [] : [h.span([h.Class("text-foreground/80")], [errorType.name]), " · "]),
+					...(errorType === undefined
+						? []
+						: [h.span([h.Class("text-foreground/80")], [errorType.name]), " · "]),
 					routeList(summary.routes),
 				],
 			),
@@ -326,10 +389,18 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 	)
 }
 
-const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null, windowLabel: string): Html => {
+const breakdownPanel = (
+	h: H,
+	summaries: ReadonlyArray<StatusCodeSummary> | null,
+	windowLabel: string,
+): Html => {
 	const total = summaries?.reduce((sum, summary) => sum + summary.count, 0) ?? 0
 	return h.div(
-		[h.Class("flex w-full shrink-0 flex-col gap-3 overflow-hidden rounded-lg border bg-card p-4 lg:w-[400px]")],
+		[
+			h.Class(
+				"flex w-full shrink-0 flex-col gap-3 overflow-hidden rounded-lg border bg-card p-4 lg:w-[400px]",
+			),
+		],
 		[
 			h.div(
 				[h.Class("flex items-baseline justify-between gap-2")],
@@ -337,14 +408,30 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 					h.span([h.Class("text-ui font-medium")], ["Non-2xx responses"]),
 					...(summaries === null
 						? []
-						: [h.span([h.Class("text-2xs text-muted-foreground tabular-nums")], [`${formatNumber(Math.round(total))} in ${windowLabel}`])]),
+						: [
+								h.span(
+									[h.Class("text-2xs text-muted-foreground tabular-nums")],
+									[`${formatNumber(Math.round(total))} in ${windowLabel}`],
+								),
+							]),
 				],
 			),
 			summaries === null
-				? h.div([h.Class("flex flex-col gap-3"), h.AriaBusy(true)], [0, 1, 2, 3].map((index) => h.div([h.Key(String(index))], [skeleton(h, "h-9 w-full")])))
+				? h.div(
+						[h.Class("flex flex-col gap-3"), h.AriaBusy(true)],
+						[0, 1, 2, 3].map((index) =>
+							h.div([h.Key(String(index))], [skeleton(h, "h-9 w-full")]),
+						),
+					)
 				: summaries.length === 0
-					? h.p([h.Class("py-6 text-center text-xs text-muted-foreground")], ["Every response in this window was below 400."])
-					: h.div([h.Class("flex flex-col gap-3")], summaries.slice(0, 4).map((summary) => codeRow(h, summary))),
+					? h.p(
+							[h.Class("py-6 text-center text-xs text-muted-foreground")],
+							["Every response in this window was below 400."],
+						)
+					: h.div(
+							[h.Class("flex flex-col gap-3")],
+							summaries.slice(0, 4).map((summary) => codeRow(h, summary)),
+						),
 		],
 	)
 }
@@ -360,7 +447,9 @@ const filterChip = (h: H, filter: EndpointFilter, active: EndpointFilter): Html 
 			h.Class(
 				cn(
 					"rounded-sm px-2 py-1 transition-colors",
-					filter === active ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+					filter === active
+						? "bg-accent text-foreground"
+						: "text-muted-foreground hover:text-foreground",
 				),
 			),
 			h.OnClick(Message.ClickedEndpointFilter({ filter })),
@@ -373,9 +462,16 @@ const toolbar = (h: H, model: Model, count: number): Html =>
 		[h.Class("flex flex-wrap items-center gap-3 border-b px-4 py-2")],
 		[
 			h.span([h.Class("text-ui font-medium")], ["Endpoints"]),
-			h.span([h.Class("rounded-sm bg-muted px-1.5 text-2xs text-muted-foreground tabular-nums")], [formatNumber(count)]),
+			h.span(
+				[h.Class("rounded-sm bg-muted px-1.5 text-2xs text-muted-foreground tabular-nums")],
+				[formatNumber(count)],
+			),
 			h.div(
-				[h.Class("ml-3 flex items-center gap-1 text-2xs"), h.Role("group"), h.AriaLabel("Filter endpoints")],
+				[
+					h.Class("ml-3 flex items-center gap-1 text-2xs"),
+					h.Role("group"),
+					h.AriaLabel("Filter endpoints"),
+				],
 				ENDPOINT_FILTERS.map((filter) => filterChip(h, filter, model.endpointFilter)),
 			),
 			searchInput(h, {
@@ -390,11 +486,16 @@ const toolbar = (h: H, model: Model, count: number): Html =>
 		],
 	)
 
-const sparksBySpanName = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number) =>
-	buckets.reduce((acc, bucket) => {
-		const values = acc.get(bucket.spanName) ?? []
-		return acc.set(bucket.spanName, [...values, bucket.estimatedSpanCount / Math.max(1, bucketSeconds)])
-	}, new Map<string, ReadonlyArray<number>>())
+/** Request rate per bucket by span name; buckets arrive in time order. */
+const sparksBySpanName = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number) => {
+	const sparks = new Map<string, Array<number>>()
+	for (const bucket of buckets) {
+		const values = sparks.get(bucket.spanName) ?? []
+		values.push(bucket.estimatedSpanCount / Math.max(1, bucketSeconds))
+		sparks.set(bucket.spanName, values)
+	}
+	return sparks
+}
 
 const endpointsTable = (
 	h: H,
@@ -405,17 +506,29 @@ const endpointsTable = (
 ): Html => {
 	const sort = model.sorts.endpoints
 	const seconds = model.window === null ? 0 : windowSeconds(model.window)
-	const visible = endpoints.filter((endpoint) => matchesFilter(endpoint, model.endpointFilter, model.endpointQuery))
+	const visible = endpoints.filter((endpoint) =>
+		matchesFilter(endpoint, model.endpointFilter, model.endpointQuery),
+	)
 	const groups = groupsOf(visible, sort)
 	const context: RowContext = {
 		seconds,
-		sparks: sparksBySpanName(AsyncData.getOrElse(model.endpointSeries.data, () => []), inputs.bucketSeconds),
+		sparks: sparksBySpanName(
+			AsyncData.getOrElse(model.endpointSeries.data, () => []),
+			inputs.bucketSeconds,
+		),
 		theme,
 		selected: model.search.endpoint,
 		slowest: slowestEndpoint(visible),
 	}
 	const column = (sortKey: string, label: string, className: string, align?: "left") =>
-		sortColumnHead(h, { table: "endpoints", sortKey, label, sort, className: cn(className, "pr-0"), align })
+		sortColumnHead(h, {
+			table: "endpoints",
+			sortKey,
+			label,
+			sort,
+			className: cn(className, "pr-0"),
+			align,
+		})
 	return h.div(
 		[h.Class("flex w-full flex-col overflow-hidden rounded-lg border bg-card")],
 		[
@@ -446,14 +559,24 @@ const endpointsTable = (
 									h,
 									[
 										h.td(
-											[h.Attribute("colspan", String(COLUMN_COUNT)), h.Class("py-8 text-center text-xs text-muted-foreground")],
+											[
+												h.Attribute("colspan", String(COLUMN_COUNT)),
+												h.Class("py-8 text-center text-xs text-muted-foreground"),
+											],
 											["No endpoint matches this filter."],
 										),
 									],
 									"hover:bg-transparent",
 								),
 							]
-						: groups.flatMap((group) => groupRows(h, group, context, model.expandedEndpointGroups.includes(group.kind))),
+						: groups.flatMap((group) =>
+								groupRows(
+									h,
+									group,
+									context,
+									model.expandedEndpointGroups.includes(group.kind),
+								),
+							),
 				),
 			]),
 		],
@@ -469,15 +592,28 @@ const loadingState = (h: H): Html =>
 			kpiSkeleton(h),
 			h.div(
 				[h.Class("flex flex-col gap-4 lg:flex-row")],
-				[skeleton(h, "h-[262px] flex-1 rounded-lg"), skeleton(h, "h-[262px] w-full rounded-lg lg:w-[400px]")],
+				[
+					skeleton(h, "h-[262px] flex-1 rounded-lg"),
+					skeleton(h, "h-[262px] w-full rounded-lg lg:w-[400px]"),
+				],
 			),
 			panel(h, {}, [
 				h.div(
 					[h.AriaBusy(true), h.Class("flex flex-col")],
 					Array.from({ length: 8 }, (_, index) =>
 						h.div(
-							[h.Key(String(index)), h.Class("flex h-12 items-center gap-3 border-b px-4 last:border-b-0")],
-							[skeleton(h, "h-2.5 w-9"), skeleton(h, "h-2.5 w-40"), h.span([h.Class("flex-1")]), skeleton(h, "h-2.5 w-[88px]"), skeleton(h, "h-2.5 w-24"), skeleton(h, "h-2.5 w-12")],
+							[
+								h.Key(String(index)),
+								h.Class("flex h-12 items-center gap-3 border-b px-4 last:border-b-0"),
+							],
+							[
+								skeleton(h, "h-2.5 w-9"),
+								skeleton(h, "h-2.5 w-40"),
+								h.span([h.Class("flex-1")]),
+								skeleton(h, "h-2.5 w-[88px]"),
+								skeleton(h, "h-2.5 w-24"),
+								skeleton(h, "h-2.5 w-12"),
+							],
 						),
 					),
 				),
@@ -536,28 +672,54 @@ const loaded = (
 ): Html => {
 	if (endpoints.length === 0) return emptyState(h, model.serviceName)
 	const seconds = model.window === null ? 0 : windowSeconds(model.window)
-	const statusRows: ReadonlyArray<StatusRow> | null = Option.getOrNull(AsyncData.getData(model.statusBreakdown.data))
+	const statusRows: ReadonlyArray<StatusRow> | null = Option.getOrNull(
+		AsyncData.getData(model.statusBreakdown.data),
+	)
 	const summaries = statusRows === null ? null : statusCodeSummaries(statusRows)
 	const overview = AsyncData.getData(model.apiOverview.data)
-	const overviewFailure = AsyncData.isFailure(model.apiOverview.data) ? model.apiOverview.data.error : null
+	const overviewFailure = Option.getOrNull(AsyncData.getError(model.apiOverview.data))
+	const breakdownFailure = Option.getOrNull(AsyncData.getError(model.statusBreakdown.data))
 	return h.div(
-		[h.Class(cn("flex flex-col gap-4", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+		[
+			h.Class(cn("flex flex-col gap-4", refreshingClass(isWaiting))),
+			...(isWaiting ? [h.AriaBusy(true)] : []),
+		],
 		[
 			...notes(h, endpoints.length, seconds),
 			overviewFailure !== null
 				? errorState(h, { failure: overviewFailure, title: "Failed to load API overview" })
 				: Option.match(overview, {
 						onNone: () => kpiSkeleton(h),
-						onSome: (data) => kpiStrip(h, data, summaries ?? [], seconds, inputs, theme),
+						onSome: (data) => kpiStrip(h, data, summaries, seconds, inputs, theme),
 					}),
 			h.div(
 				[h.Class("flex flex-col gap-4 lg:flex-row")],
 				[
-					Option.match(overview, {
-						onNone: () => skeleton(h, "h-[262px] flex-1 rounded-lg"),
-						onSome: (data) => responsesChart(h, model, data, inputs, theme),
-					}),
-					breakdownPanel(h, summaries, windowLabelOf(seconds)),
+					overviewFailure !== null
+						? h.div(
+								[h.Class("min-w-0 flex-1")],
+								[
+									errorState(h, {
+										failure: overviewFailure,
+										title: "Failed to load responses",
+									}),
+								],
+							)
+						: Option.match(overview, {
+								onNone: () => skeleton(h, "h-[262px] flex-1 rounded-lg"),
+								onSome: (data) => responsesChart(h, model, data, inputs, theme),
+							}),
+					breakdownFailure !== null
+						? h.div(
+								[h.Class("w-full shrink-0 lg:w-[400px]")],
+								[
+									errorState(h, {
+										failure: breakdownFailure,
+										title: "Failed to load status codes",
+									}),
+								],
+							)
+						: breakdownPanel(h, summaries, windowLabelOf(seconds)),
 				],
 			),
 			endpointsTable(h, model, endpoints, inputs, theme),

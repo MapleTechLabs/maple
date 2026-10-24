@@ -67,20 +67,28 @@ export const kpiSparks = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: numb
 	bytes: buckets.map((bucket) => bucket.requestBodyBytes / Math.max(1, bucketSeconds)),
 })
 
-export const STATUS_CLASSES = ["2xx", "4xx", "5xx"] as const
+export const STATUS_CLASSES = ["2xx", "4xx", "5xx", "unknown"] as const
 export type StatusClass = (typeof STATUS_CLASSES)[number]
 
-/** The responses chart's long rows: each bucket's request rate split by status class. */
+/**
+ * The responses chart's long rows: each bucket's request rate split by status class. A bucket
+ * sealed before the status counters existed is all "unknown", never 2xx.
+ */
 export const responseRows = (buckets: ReadonlyArray<ApiBucket>, bucketSeconds: number) =>
 	buckets.flatMap((bucket) => {
 		const rate = bucket.estimatedSpanCount / Math.max(1, bucketSeconds)
-		const mix = statusMix(bucket) ?? { ok: 1, client: 0, server: 0 }
+		const mix = knownStatusMix(bucket)
+		if (mix === null) return [{ bucket: bucket.bucket, attributeValue: "unknown", value: rate }]
 		return [
 			{ bucket: bucket.bucket, attributeValue: "2xx", value: rate * mix.ok },
 			{ bucket: bucket.bucket, attributeValue: "4xx", value: rate * mix.client },
 			{ bucket: bucket.bucket, attributeValue: "5xx", value: rate * mix.server },
 		]
 	})
+
+/** Whether any bucket's status mix is unknown, so the chart legend names the grey band. */
+export const hasUnknownBuckets = (buckets: ReadonlyArray<ApiBucket>) =>
+	buckets.some((bucket) => knownStatusMix(bucket) === null && bucket.estimatedSpanCount > 0)
 
 /** Status-code reason phrases the breakdown names; unknown codes print bare. */
 const REASON_PHRASES = new Map<string, string>([
@@ -117,7 +125,8 @@ type Ranked = ReadonlyArray<Readonly<{ name: string; count: number }>>
 const ranked = (counts: ReadonlyMap<string, number>): Ranked =>
 	[...counts].map(([name, count]) => ({ name, count })).toSorted((a, b) => b.count - a.count)
 
-const add = (map: Map<string, number>, key: string, count: number) => map.set(key, (map.get(key) ?? 0) + count)
+const add = (map: Map<string, number>, key: string, count: number) =>
+	map.set(key, (map.get(key) ?? 0) + count)
 
 export type StatusCodeSummary = Readonly<{
 	code: string
@@ -187,16 +196,21 @@ export const ENDPOINT_FILTER_LABELS = {
 	slow: "p95 > 100ms",
 } as const satisfies Record<EndpointFilter, string>
 
+/**
+ * An endpoint's 5xx share; rows older than the status counters fall back to their Error-status
+ * share, which for server spans is the 5xx share by convention.
+ */
+export const serverShare = (endpoint: Endpoint): number =>
+	knownStatusMix(endpoint)?.server ?? endpoint.errorRate
+
 export const matchesFilter = (endpoint: Endpoint, filter: EndpointFilter, query: string): boolean => {
 	const needle = query.trim().toLowerCase()
 	if (needle !== "" && !endpoint.spanName.toLowerCase().includes(needle)) return false
 	switch (filter) {
 		case "all":
 			return true
-		case "rejecting": {
-			const mix = knownStatusMix(endpoint)
-			return mix !== null && mix.client + mix.server > REJECTING_SHARE
-		}
+		case "rejecting":
+			return (knownStatusMix(endpoint)?.client ?? 0) + serverShare(endpoint) > REJECTING_SHARE
 		case "slow":
 			return endpoint.p95DurationMs > SLOW_P95_MS
 	}
@@ -231,9 +245,17 @@ export const latencyHistogram = (
 	levels: ReadonlyArray<number>,
 	valuesMs: ReadonlyArray<number>,
 ): ReadonlyArray<HistogramBin> => {
+	// t-digest quantiles can dip out of order; a running max keeps the CDF monotone.
 	const points = levels
 		.map((level, index) => ({ level, ms: Math.max(MIN_LATENCY_MS, valuesMs[index] ?? 0) }))
 		.filter((point) => Number.isFinite(point.ms))
+		.reduce<Array<{ level: number; ms: number }>>(
+			(acc, point) => [
+				...acc,
+				{ level: point.level, ms: Math.max(point.ms, acc[acc.length - 1]?.ms ?? 0) },
+			],
+			[],
+		)
 	const first = points[0]
 	const last = points[points.length - 1]
 	if (first === undefined || last === undefined || last.ms <= first.ms) return []
@@ -249,8 +271,7 @@ export const latencyHistogram = (
 		const span = logOf(hi.ms) - logOf(lo.ms)
 		return span <= 0 ? hi.level : lo.level + ((x - logOf(lo.ms)) / span) * (hi.level - lo.level)
 	}
-	const quantileAt = (level: number) =>
-		points.find((point) => point.level >= level)?.ms ?? last.ms
+	const quantileAt = (level: number) => points.find((point) => point.level >= level)?.ms ?? last.ms
 	const p95 = quantileAt(0.95)
 	const p99 = quantileAt(0.99)
 	const step = (logOf(last.ms) - logOf(first.ms)) / HISTOGRAM_BINS

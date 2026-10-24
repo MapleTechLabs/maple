@@ -12,16 +12,21 @@ import * as SelectView from "../../../ui/select-view"
 import { serviceDot } from "../../../ui/values"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { timeControls } from "../../kit/time-controls"
+import { presetLabel, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { ALL_ENVIRONMENTS, DEFAULT_PRESET, environmentsOf, SERVICE_TABS, tabOf } from "./derive"
-import { presetLabel } from "../../kit/time-controls"
+import {
+	ALL_ENVIRONMENTS,
+	apiBucketSeconds,
+	DEFAULT_PRESET,
+	environmentsOf,
+	SERVICE_TABS,
+	tabOf,
+	windowSeconds,
+} from "./derive"
+import * as EndpointPeekView from "./endpoint-peek/view"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { searchHref, tabSearch } from "./update"
-import { windowSeconds, operationsBucketSeconds } from "./derive"
-import * as EndpointPeekView from "./endpoint-peek/view"
-import { traceSearch, peekOf } from "./update"
+import { peekOf, searchHref, seriesSpanNames, tabSearch, traceSearch } from "./update"
 import { apiTab } from "./view-api-tab"
 import { API_THEME_TOKENS } from "./view-api-charts"
 import { dependenciesTab } from "./view-dependencies"
@@ -142,7 +147,7 @@ const body = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<Html> =
 		case "operations":
 			return [operationsTab(h, model, model.themeColors)]
 		case "api": {
-			const bucketSeconds = model.window === null ? 60 : operationsBucketSeconds(model.window)
+			const bucketSeconds = model.window === null ? 60 : apiBucketSeconds(model.window)
 			return [
 				apiTab(h, model, { bucketSeconds, timeZone: inputs.context.timeZone }, model.themeColors),
 				endpointDrawer(h, model, inputs, bucketSeconds),
@@ -156,10 +161,19 @@ const body = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<Html> =
 /** "ingest · production · last 12 hours": what the drawer's numbers are scoped to. */
 const scopeLabel = (model: Model): string => {
 	const environment = environmentsOf(model.search)?.join(", ") ?? "all environments"
-	const preset = model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_PRESET : undefined)
+	const preset =
+		model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_PRESET : undefined)
 	const range = preset === undefined ? "custom range" : presetLabel(preset).toLowerCase()
 	return [model.serviceName, environment, range].join(" · ")
 }
+
+/** The peeked endpoint's buckets: from the tab's sparkline read, or the drawer's own. */
+const peekBuckets = (model: Model, spanName: string) =>
+	seriesSpanNames(model).includes(spanName)
+		? AsyncData.getOrElse(model.endpointSeries.data, () => []).filter(
+				(bucket) => bucket.spanName === spanName,
+			)
+		: AsyncData.getOrElse(model.endpointPeek.series[spanName]?.data ?? AsyncData.Idle(), () => [])
 
 const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSeconds: number): Html => {
 	const peek = peekOf(model)
@@ -171,10 +185,11 @@ const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSecond
 		view: EndpointPeekView.view,
 		viewInputs: {
 			peek,
-			buckets: AsyncData.getOrElse(model.endpointSeries.data, () => []).filter((bucket) => bucket.spanName === spanName),
+			buckets: peek === null ? [] : peekBuckets(model, spanName),
 			bucketSeconds,
 			statusRows: AsyncData.getOrElse(model.statusBreakdown.data, () => []),
-			chartContext: theme === null ? null : { theme, timeZone: inputs.context.timeZone, nowMs: model.nowMs ?? 0 },
+			chartContext:
+				theme === null ? null : { theme, timeZone: inputs.context.timeZone, nowMs: model.nowMs ?? 0 },
 			seconds: model.window === null ? 0 : windowSeconds(model.window),
 			scopeLabel: scopeLabel(model),
 			tracesHref: (filter) =>
@@ -182,14 +197,15 @@ const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSecond
 					AppRoute.Traces({
 						search: {
 							...traceSearch(model, spanName),
-							httpStatusCodes: filter.statusCode === undefined ? undefined : [filter.statusCode],
+							httpStatusCodes:
+								filter.statusCode === undefined ? undefined : [filter.statusCode],
 							sortBy: filter.slowest === true ? "durationMs" : undefined,
 							sortDir: filter.slowest === true ? "desc" : undefined,
 						},
 					}),
 				),
 			alertHref: hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } })),
-			locale: "en-US",
+			timeZone: inputs.context.timeZone,
 		},
 		toParentMessage: (message) => Message.GotEndpointPeekMessage({ message }),
 	})
@@ -197,7 +213,10 @@ const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSecond
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
-		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: [...THEME_TOKENS, ...API_THEME_TOKENS] }))],
+		[
+			h.Class("contents"),
+			h.OnMount(ResolveThemeColors({ tokens: [...THEME_TOKENS, ...API_THEME_TOKENS] })),
+		],
 		[
 			dashboardPage(
 				h,

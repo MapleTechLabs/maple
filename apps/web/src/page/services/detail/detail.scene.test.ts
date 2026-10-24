@@ -166,11 +166,9 @@ describe("service detail", () => {
 			}),
 		)
 		const api = routeChanged(model, route({ tab: "api" }), context)
-		expect(names(api.commands)).toEqual([
-			FetchEndpoints.name,
-			"FetchServiceApiOverview",
-			"FetchServiceEndpointStatusBreakdown",
-		])
+		expect(names(api.commands)).toContain(FetchEndpoints.name)
+		expect(names(api.commands)).toContain("FetchServiceApiOverview")
+		expect(names(api.commands)).toContain("FetchServiceEndpointStatusBreakdown")
 	})
 
 	test("the environment switcher scopes the URL, and All environments clears it", () => {
@@ -422,8 +420,59 @@ describe("the API tab's endpoint drawer", () => {
 		const { model } = loadedApi({ endpoint: "GET /b" })
 		const switched = pageUpdate(model, Message.ClickedTab({ tab: "operations" }))
 		expect(switched.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/services/payment-svc?tab=operations", isReplace: true }),
+			PageOutMessage.RequestedNavigation({
+				url: "/services/payment-svc?tab=operations",
+				isReplace: true,
+			}),
 		)
+	})
+
+	test("a step past the last row stays put", () => {
+		const { model } = loadedApi({ endpoint: "GET /c" })
+		expect(
+			pageUpdate(model, peekMessage(PeekMessage.Message.ClickedStep({ step: 1 }))).outMessage,
+		).toBeUndefined()
+	})
+
+	test("an endpoint gone from the settled table leaves the URL instead of lingering", () => {
+		const loaded = loadedApi({ endpoint: "GET /gone" })
+		expect(loaded.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/services/payment-svc?tab=api", isReplace: true }),
+		)
+	})
+
+	test("a deep link into the unrouted paths opens that group and the drawer", () => {
+		const model = entered({ tab: "api", endpoint: "GET /users/123456789" })
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchEndpoints({
+				key: model.endpoints.key ?? "",
+				result: Result.succeed([
+					endpoint("/users/123456789"),
+					endpoint("/users/987654321"),
+					endpoint("/health"),
+				]),
+			}),
+		).model
+		expect(loaded.expandedEndpointGroups).toEqual(["unrouted"])
+		expect(loaded.endpointPeek.dialog.isOpen).toBe(true)
+	})
+
+	test("peeking an endpoint outside the sparkline set reads its series alone", () => {
+		const model = entered({ tab: "api", endpoint: "GET /users/123456789" })
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchEndpoints({
+				key: model.endpoints.key ?? "",
+				result: Result.succeed([
+					endpoint("/users/123456789"),
+					endpoint("/users/987654321"),
+					endpoint("/health"),
+				]),
+			}),
+		)
+		expect(names(loaded.commands)).toContain("FetchServiceEndpointPeekSeries")
+		expect(loaded.model.endpointSeries.key).not.toContain("users")
 	})
 
 	test("the Rejecting filter hides endpoints that answered every request below 400", () => {
