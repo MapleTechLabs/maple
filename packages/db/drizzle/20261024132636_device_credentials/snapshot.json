@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "6f361962073017c199ee2a56ec788b6b6846baeaff6b4b4002cf2491fa4e77d3",
+	"id": "19e84c7ea76f3198064431282454b55f4a7d7351ab1d24c45947009c42d80e84",
 	"prevIds": [
-		"a995e2a03b940a318c865703407f1f6f3e7782a98d942eb87599cad47ec6b4be"
+		"40daa4bb952ee58d867efd70ef65970e66fbc99a809f5df4478d7f062823bd73"
 	],
 	"entities": [
 		{
@@ -753,6 +753,68 @@
 				"name": "scrape_targets_pkey",
 				"columns": [
 					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "security_audit_events",
+			"primaryKey": {
+				"name": "security_audit_events_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "security_audit_findings",
+			"primaryKey": {
+				"name": "security_audit_findings_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "security_audit_run_findings",
+			"primaryKey": {
+				"name": "security_audit_run_findings_pkey",
+				"columns": [
+					"run_id",
+					"fingerprint"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "security_audit_runs",
+			"primaryKey": {
+				"name": "security_audit_runs_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "security_audit_targets",
+			"primaryKey": {
+				"name": "security_audit_targets_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "security_audit_units",
+			"primaryKey": {
+				"name": "security_audit_units_pkey",
+				"columns": [
+					"run_id",
+					"coverage_id"
 				]
 			}
 		},
@@ -11388,6 +11450,786 @@
 		},
 		{
 			"kind": "column",
+			"table": "security_audit_events",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_events",
+			"name": "run_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_events",
+			"name": "org_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_events",
+			"name": "at",
+			"position": 3,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_events",
+			"name": "kind",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_events",
+			"name": "role",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_events",
+			"name": "agent_id",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_events",
+			"name": "outcome",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_events",
+			"name": "detail",
+			"position": 8,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_events",
+			"name": "input_tokens",
+			"position": 9,
+			"type": "bigint",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_events",
+			"name": "output_tokens",
+			"position": 10,
+			"type": "bigint",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "target_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "fingerprint",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "verdict",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "overall_severity",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "record",
+			"position": 6,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "status",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": "'open'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "first_seen_run_id",
+			"position": 8,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "last_seen_run_id",
+			"position": 9,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "first_seen_ref",
+			"position": 10,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "last_seen_ref",
+			"position": 11,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "fixed_run_id",
+			"position": 12,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "status_reason",
+			"position": 13,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "status_changed_by",
+			"position": 14,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "status_changed_at",
+			"position": 15,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "created_at",
+			"position": 16,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_findings",
+			"name": "updated_at",
+			"position": 17,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_run_findings",
+			"name": "run_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_run_findings",
+			"name": "fingerprint",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_run_findings",
+			"name": "org_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_run_findings",
+			"name": "verdict",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_run_findings",
+			"name": "overall_severity",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_run_findings",
+			"name": "record",
+			"position": 5,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "target_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "kind",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "source_ref",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "profile",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "scope_paths",
+			"position": 6,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "budget",
+			"position": 7,
+			"type": "integer",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "metadata",
+			"position": 8,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "status",
+			"position": 9,
+			"type": "text",
+			"notNull": true,
+			"default": "'in_progress'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "incomplete_reason",
+			"position": 10,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "architecture_md",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "reports",
+			"position": 12,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "invocations_spent",
+			"position": 13,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "input_tokens",
+			"position": 14,
+			"type": "bigint",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "output_tokens",
+			"position": 15,
+			"type": "bigint",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "cost_usd",
+			"position": 16,
+			"type": "double precision",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "workflow_instance_id",
+			"position": 17,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "started_at",
+			"position": 18,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "finished_at",
+			"position": 19,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_runs",
+			"name": "error",
+			"position": 20,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "repository",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "vcs_repository_id",
+			"position": 3,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "branch",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "enabled",
+			"position": 5,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "profile",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": "'deep'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "scope_paths",
+			"position": 7,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "slice_interval_hours",
+			"position": 8,
+			"type": "integer",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "revalidate_on_push",
+			"position": 9,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "budget_per_run",
+			"position": 10,
+			"type": "integer",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "monthly_invocation_budget",
+			"position": 11,
+			"type": "integer",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "created_by",
+			"position": 12,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "created_at",
+			"position": 13,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_targets",
+			"name": "updated_at",
+			"position": 14,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_units",
+			"name": "run_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_units",
+			"name": "coverage_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_units",
+			"name": "org_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_units",
+			"name": "status",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_units",
+			"name": "wave",
+			"position": 4,
+			"type": "integer",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_units",
+			"name": "agent_id",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "security_audit_units",
+			"name": "unit",
+			"position": 6,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "sources",
 			"name": "id",
 			"position": 0,
@@ -14510,6 +15352,102 @@
 			"method": "btree",
 			"columns": [
 				"\"source_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "security_audit_events",
+			"name": "security_audit_events_run_at_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"run_id\"",
+				"\"at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "security_audit_findings",
+			"name": "security_audit_findings_org_created_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"created_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "security_audit_findings",
+			"name": "security_audit_findings_target_fingerprint_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"target_id\"",
+				"\"fingerprint\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "security_audit_runs",
+			"name": "security_audit_runs_one_running_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"target_id\""
+			],
+			"where": "\"status\" = 'in_progress'"
+		},
+		{
+			"kind": "index",
+			"table": "security_audit_runs",
+			"name": "security_audit_runs_org_started_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"started_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "security_audit_runs",
+			"name": "security_audit_runs_target_started_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"target_id\"",
+				"\"started_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "security_audit_targets",
+			"name": "security_audit_targets_org_created_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"created_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "security_audit_targets",
+			"name": "security_audit_targets_org_repo_branch_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"repository\"",
+				"\"branch\""
 			],
 			"where": null
 		},
