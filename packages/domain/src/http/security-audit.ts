@@ -1,7 +1,8 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { AuditReportsRecord, Finding } from "@maple/security-audit/schema"
-import { UserId } from "../primitives"
+import { ExecutionProfile } from "@maple/security-audit/ecosystems"
+import { AuditReportsRecord, Finding, UnitStatus } from "@maple/security-audit/schema"
+import { IsoDateTimeString, UserId } from "../primitives"
 import {
 	isSafeScopePath,
 	SecurityAuditEventKind,
@@ -30,20 +31,30 @@ const MAX_SCOPE_PATHS = 100
 
 /** `owner/name`, as GitHub spells it. */
 export const SecurityAuditRepository = Schema.String.check(
-	Schema.isPattern(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u),
+	Schema.isPattern(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u, {
+		message: "Expected a GitHub repository as owner/name, like acme/api",
+	}),
 )
 
 /** A branch name git would accept, without the shapes a ref or an option could hide behind. */
 export const SecurityAuditBranch = Schema.String.check(
-	Schema.isPattern(/^(?![-/.])(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/+-]{1,255}$/u),
+	Schema.isPattern(/^(?![-/.])(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/+-]{1,255}$/u, {
+		message:
+			"Expected a branch name of letters, digits and . _ / + -, not starting with - / or . and without '..', '//' or '@{'",
+	}),
 	Schema.makeFilter((value: string) => !value.endsWith("/") && !value.endsWith(".lock"), {
 		description: "a branch name",
+		message: "Expected a branch name that does not end in '/' or '.lock'",
 	}),
 )
 
 const ScopePath = Schema.String.check(
 	Schema.isMaxLength(512),
-	Schema.makeFilter(isSafeScopePath, { description: "a safe repository-relative path" }),
+	Schema.makeFilter(isSafeScopePath, {
+		description: "a safe repository-relative path",
+		message:
+			"Expected a repository-relative path like src/api: no '..', '~', ':', backslashes, leading '/', empty segments or surrounding spaces",
+	}),
 )
 const ScopePaths = Schema.Array(ScopePath).check(Schema.isMaxLength(MAX_SCOPE_PATHS))
 
@@ -141,6 +152,8 @@ export const SecurityAuditRunDetail = Schema.Struct({
 	...runFields,
 	reports: Schema.NullOr(AuditReportsRecord),
 	architectureMd: Schema.NullOr(Schema.String),
+	/** How the run may execute target code and why not; null until prepare inspects the repository. */
+	executionProfile: Schema.NullOr(ExecutionProfile),
 	/** Ledger units per unit status. */
 	unitCounts: Schema.Record(Schema.String, Schema.Number),
 	unitTotal: Schema.Number,
@@ -193,10 +206,37 @@ export const SecurityAuditFinding = Schema.Struct({
 })
 export type SecurityAuditFinding = typeof SecurityAuditFinding.Type
 
+/**
+ * One coverage-ledger unit, lean: no prompts, paths or attempt history. The human fields are null
+ * (and `stale` true) when the stored unit predates the current schema.
+ */
+export const SecurityAuditUnit = Schema.Struct({
+	coverageId: Schema.String,
+	status: UnitStatus,
+	wave: Schema.Number,
+	agentId: Schema.NullOr(Schema.String),
+	stale: Schema.Boolean,
+	subsystem: Schema.NullOr(Schema.String),
+	surface: Schema.NullOr(Schema.String),
+	boundary: Schema.NullOr(Schema.String),
+	attackClass: Schema.NullOr(Schema.String),
+	priorStatus: Schema.NullOr(Schema.String),
+	priority: Schema.NullOr(Schema.Number),
+	failedAttempts: Schema.NullOr(Schema.Number),
+	/** Fingerprints of the candidates or findings this unit produced, the first 20. */
+	resultFingerprints: Schema.Array(Schema.String),
+	/** The prior run's finding this unit re-checks, if any. */
+	carriedFingerprint: Schema.NullOr(Schema.String),
+	/** Why the unit is not done (blocked, deferred), each entry trimmed. */
+	unresolved: Schema.Array(Schema.String),
+})
+export type SecurityAuditUnit = typeof SecurityAuditUnit.Type
+
 export const SecurityAuditTargetsResponse = Schema.Struct({ targets: Schema.Array(SecurityAuditTarget) })
 export const SecurityAuditRunsResponse = Schema.Struct({ runs: Schema.Array(SecurityAuditRun) })
 export const SecurityAuditEventsResponse = Schema.Struct({ events: Schema.Array(SecurityAuditEvent) })
 export const SecurityAuditFindingsResponse = Schema.Struct({ findings: Schema.Array(SecurityAuditFinding) })
+export const SecurityAuditUnitsResponse = Schema.Struct({ units: Schema.Array(SecurityAuditUnit) })
 
 // Errors
 
@@ -309,6 +349,20 @@ export class SecurityAuditRunInProgressError extends HttpTaggedError<SecurityAud
 	},
 ) {}
 
+/** The run already finished (complete, incomplete or failed), so there is nothing to cancel. */
+export class SecurityAuditRunNotInProgressError extends HttpTaggedError<SecurityAuditRunNotInProgressError>()(
+	"@maple/http/security-audit/SecurityAuditRunNotInProgressError",
+	{ message: Schema.String, runId: SecurityAuditRunId },
+	{
+		status: 409,
+		code: "security_audit_run_not_in_progress",
+		title: "The audit is not running",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
 export class SecurityAuditTargetDisabledError extends HttpTaggedError<SecurityAuditTargetDisabledError>()(
 	"@maple/http/security-audit/SecurityAuditTargetDisabledError",
 	{ message: Schema.String, targetId: SecurityAuditTargetId },
@@ -331,6 +385,43 @@ export class SecurityAuditTargetExistsError extends HttpTaggedError<SecurityAudi
 		title: "Audit target already exists",
 		retry: "never",
 		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
+/** The repository is over a size limit, by what GitHub reports, before anything is cloned. */
+export class SecurityAuditRepositoryTooLargeError extends HttpTaggedError<SecurityAuditRepositoryTooLargeError>()(
+	"@maple/http/security-audit/SecurityAuditRepositoryTooLargeError",
+	{ message: Schema.String, repository: Schema.String },
+	{
+		status: 422,
+		code: "security_audit_repository_too_large",
+		title: "Repository too large to audit",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
+/** The org's monthly audit invocations, from its plan, cannot fund a run of this profile. */
+export class SecurityAuditBudgetExhaustedError extends HttpTaggedError<SecurityAuditBudgetExhaustedError>()(
+	"@maple/http/security-audit/SecurityAuditBudgetExhaustedError",
+	{
+		message: Schema.String,
+		/** Invocations the org has left this month. */
+		remaining: Schema.Number,
+		/** The fewest invocations a run of the target's profile needs to start. */
+		required: Schema.Number,
+		/** When the org's budget resets: the end of its billing cycle. */
+		resetsAt: IsoDateTimeString,
+	},
+	{
+		status: 402,
+		code: "security_audit_budget_exhausted",
+		title: "Security audit budget used up",
+		retry: "after",
+		retryAt: (error) => error.resetsAt,
+		recovery: "retry",
 		exposure: "public_message",
 	},
 ) {}
@@ -384,6 +475,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				...adminErrors,
 				SecurityAuditRepositoryNotConnectedError,
 				SecurityAuditTargetExistsError,
+				SecurityAuditRepositoryTooLargeError,
 				SecurityAuditBudgetTooLowError,
 			],
 		}),
@@ -404,6 +496,8 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				SecurityAuditTargetNotFoundError,
 				SecurityAuditTargetDisabledError,
 				SecurityAuditRunInProgressError,
+				SecurityAuditBudgetExhaustedError,
+				SecurityAuditRepositoryTooLargeError,
 				SecurityAuditStartError,
 				SecurityAuditBudgetTooLowError,
 			],
@@ -420,6 +514,20 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		HttpApiEndpoint.get("getRun", "/runs/:runId", {
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditRunDetail,
+			error: [...adminErrors, SecurityAuditRunNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("cancelRun", "/runs/:runId/cancel", {
+			params: { runId: SecurityAuditRunId },
+			success: SecurityAuditRun,
+			error: [...adminErrors, SecurityAuditRunNotFoundError, SecurityAuditRunNotInProgressError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("listRunUnits", "/runs/:runId/units", {
+			params: { runId: SecurityAuditRunId },
+			success: SecurityAuditUnitsResponse,
 			error: [...adminErrors, SecurityAuditRunNotFoundError],
 		}),
 	)

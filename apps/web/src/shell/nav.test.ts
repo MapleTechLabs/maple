@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { navGroups, navPreview, partitionSubItems } from "./nav"
 
-const infrastructure = navGroups({ releases: false })
+const infrastructure = navGroups({ releases: false, securityAudit: false })
 	.flatMap((group) => group.items)
 	.find((item) => item.title === "Infrastructure")
 const subItems = infrastructure?.subItems ?? []

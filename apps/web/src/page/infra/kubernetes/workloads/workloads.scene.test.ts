@@ -93,7 +93,12 @@ describe("workloads", () => {
 		const model = emptyKind()
 		const reporting: PageContext = {
 			...context,
-			infra: { presence: ["k8sPods"], isPresenceFailed: false, integrations: NO_INTEGRATIONS },
+			infra: {
+				presence: ["k8sPods"],
+				isPresenceFailed: false,
+				integrations: NO_INTEGRATIONS,
+				remembered: undefined,
+			},
 		}
 		scene(
 			{ update: pageUpdate, view: withViewInputs(pageView, { context: reporting })() },
@@ -107,7 +112,12 @@ describe("workloads", () => {
 		const model = emptyKind()
 		const probing: PageContext = {
 			...context,
-			infra: { presence: null, isPresenceFailed: false, integrations: NO_INTEGRATIONS },
+			infra: {
+				presence: null,
+				isPresenceFailed: false,
+				integrations: NO_INTEGRATIONS,
+				remembered: undefined,
+			},
 		}
 		scene(
 			{ update: pageUpdate, view: withViewInputs(pageView, { context: probing })() },
@@ -117,7 +127,12 @@ describe("workloads", () => {
 		)
 		const failed: PageContext = {
 			...context,
-			infra: { presence: null, isPresenceFailed: true, integrations: NO_INTEGRATIONS },
+			infra: {
+				presence: null,
+				isPresenceFailed: true,
+				integrations: NO_INTEGRATIONS,
+				remembered: undefined,
+			},
 		}
 		scene(
 			{ update: pageUpdate, view: withViewInputs(pageView, { context: failed })() },

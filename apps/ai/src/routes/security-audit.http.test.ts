@@ -11,10 +11,14 @@ import {
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
 } from "@maple/domain/organization-feature-flags"
 import { OrgId, RoleName, UserId } from "@maple/domain/primitives"
-import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
+import { securityAuditBudgetPeriod, type SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { type Finding, minimumInvocations } from "@maple/security-audit"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
-import { SecurityAuditWorkflowStarter, WorkflowStartError } from "@maple/backend/platform/bindings"
+import {
+	SecurityAuditWorkflowStarter,
+	WorkflowCancelError,
+	WorkflowStartError,
+} from "@maple/backend/platform/bindings"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { WorkerPlatformLive } from "@maple/infra/worker-http"
@@ -26,8 +30,13 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import {
+	type OrgAuditBudget,
+	SecurityAuditPlanBudget,
+} from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
+import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { HttpSecurityAuditLive } from "./security-audit.http"
@@ -36,6 +45,24 @@ class SecurityAuditOnlyApi extends HttpApi.make("MapleAiApi")
 	.add(SecurityAuditApiGroup)
 	.middleware(ApiSchemaErrors)
 	.middleware(ApiUnexpectedErrors) {}
+
+/** The route's clock in every test: mid-October 2026, UTC. */
+const NOW = Date.UTC(2026, 9, 15, 12)
+const PERIOD = securityAuditBudgetPeriod(NOW)
+
+/** A clock fixed at `nowMs`; sleeps still wait in real time. */
+const fixedClock = (nowMs: number): Clock.Clock => ({
+	currentTimeMillisUnsafe: () => nowMs,
+	currentTimeMillis: Effect.succeed(nowMs),
+	currentTimeNanosUnsafe: () => BigInt(nowMs) * 1_000_000n,
+	currentTimeNanos: Effect.succeed(BigInt(nowMs) * 1_000_000n),
+	monotonicTimeNanosUnsafe: () => process.hrtime.bigint(),
+	monotonicTimeNanos: Effect.sync(() => process.hrtime.bigint()),
+	sleep: (duration) =>
+		Effect.promise(
+			() => new Promise<void>((resolve) => setTimeout(resolve, Duration.toMillis(duration))),
+		),
+})
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -66,15 +93,34 @@ const AuthorizationStubLayer = Layer.succeed(
 	}),
 )
 
-const makeHarness = (options: { readonly enabled?: boolean; readonly startFails?: boolean } = {}) => {
+const makeHarness = (
+	options: {
+		readonly enabled?: boolean
+		readonly startFails?: boolean
+		readonly cancelFails?: boolean
+		/** The org's monthly invocation limit from its plan, over the UTC month. */
+		readonly orgLimit?: number
+		/** The org's whole budget, for a billing cycle or Autumn's own remaining balance. */
+		readonly budget?: Partial<OrgAuditBudget> & { readonly limit: number }
+		/** Repository sizes GitHub reports, by `owner/name`; read on every call. */
+		readonly repositoryBytes?: Record<string, number>
+	} = {},
+) => {
 	const db = createTestDb(trackedDbs)
 	const started: Array<SecurityAuditWorkflowPayload> = []
+	const cancelled: Array<string> = []
 	const starter = Layer.succeed(SecurityAuditWorkflowStarter, {
 		create: (payload) =>
 			options.startFails === true
 				? Effect.fail(new WorkflowStartError({ message: "instance limit reached", cause: null }))
 				: Effect.sync(() => {
 						started.push(payload)
+					}),
+		cancel: (runId) =>
+			options.cancelFails === true
+				? Effect.fail(new WorkflowCancelError({ message: "binding unavailable", cause: null }))
+				: Effect.sync(() => {
+						cancelled.push(runId)
 					}),
 	})
 	const auditLog = makeMemoryAuditLog()
@@ -98,6 +144,10 @@ const makeHarness = (options: { readonly enabled?: boolean; readonly startFails?
 				storeLayer,
 				starter,
 				Layer.succeed(AuditLogService, auditLog),
+				SecurityAuditPlanBudget.fixed(options.budget ?? { limit: options.orgLimit ?? 20_000 }),
+				// The route reads this clock, so the tests derive the budget period from it too.
+				Layer.succeed(Clock.Clock, fixedClock(NOW)),
+				SecurityAuditRepositorySize.fixed(options.repositoryBytes ?? {}),
 				OrganizationFeatureFlagsService.fixed(
 					options.enabled === false
 						? DISABLED_ORGANIZATION_FEATURE_FLAGS
@@ -142,7 +192,7 @@ const makeHarness = (options: { readonly enabled?: boolean; readonly startFails?
 
 	const sql = (statement: string, params: Array<unknown> = []) => executeSql(db, statement, params)
 
-	return { call, dispose, started, withStore, count, sql, auditLog }
+	return { call, dispose, started, cancelled, withStore, count, sql, auditLog }
 }
 
 const confirmed = (fingerprint: string): Finding => ({
@@ -348,14 +398,101 @@ describe("/api/security-audit targets", () => {
 	})
 })
 
+describe("/api/security-audit size before clone", () => {
+	it("refuses a repository GitHub reports as over the limit, at creation and at run start", async () => {
+		const huge = 3 * 1024 * 1024 * 1024
+		const sizes = { "acme/api": huge }
+		const harness = makeHarness({ repositoryBytes: sizes })
+		try {
+			const refused = await harness.call("POST", "/targets", { body: TARGET })
+			sizes["acme/api"] = 10 * 1024 * 1024
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			// The repository grew past the limit after its target was created.
+			sizes["acme/api"] = huge
+			const start = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			const reason =
+				"repository_refused: the repository was not audited because GitHub reports it at 3072 MiB, over the 2048 MiB limit."
+			expect([refused.status, refused.body._tag, refused.body.message, target.status]).toEqual([
+				422,
+				tag("SecurityAuditRepositoryTooLargeError"),
+				reason,
+				200,
+			])
+			expect([start.status, start.body.message, harness.started]).toEqual([422, reason, []])
+			expect(await harness.count("security_audit_runs")).toBe(0)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit GitHub only", () => {
+	it("refuses a repository connected through anything but an active GitHub connection", async () => {
+		const harness = makeHarness()
+		try {
+			// The same org, connected through another provider, and a GitHub repository it disconnected.
+			await harness.sql(
+				`INSERT INTO vcs_repositories (id, org_id, provider, installation_id, external_repo_id, owner, name,
+					full_name, tracked_branch, html_url, created_at, updated_at)
+				 VALUES ($1, $2, 'gitlab', $3, '2002', 'acme', 'web', 'acme/web', 'main', 'https://gitlab.com/acme/web', now(), now())`,
+				[crypto.randomUUID(), ORG_A, crypto.randomUUID()],
+			)
+			await harness.sql(
+				`INSERT INTO vcs_repositories (id, org_id, provider, installation_id, external_repo_id, owner, name,
+					full_name, tracked_branch, html_url, status, created_at, updated_at)
+				 VALUES ($1, $2, 'github', $3, '3003', 'acme', 'old', 'acme/old', 'main', 'https://github.com/acme/old', 'removed', now(), now())`,
+				[crypto.randomUUID(), ORG_A, crypto.randomUUID()],
+			)
+			const gitlab = await harness.call("POST", "/targets", {
+				body: { ...TARGET, repository: "acme/web" },
+			})
+			const removed = await harness.call("POST", "/targets", {
+				body: { ...TARGET, repository: "acme/old" },
+			})
+			const github = await harness.call("POST", "/targets", { body: TARGET })
+
+			expect([
+				gitlab.status,
+				gitlab.body._tag,
+				gitlab.body.message,
+				removed.status,
+				github.status,
+			]).toEqual([
+				404,
+				tag("SecurityAuditRepositoryNotConnectedError"),
+				"Security audits read GitHub repositories only. Connect this repository through the GitHub integration first.",
+				404,
+				200,
+			])
+			expect(await harness.count("security_audit_targets")).toBe(1)
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
 describe("/api/security-audit runs", () => {
 	it("starts manual runs one at a time, with a finite budget and the best prior run", async () => {
 		const harness = makeHarness()
 		try {
 			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
 			const runs = `/targets/${target.body.id}/runs`
-			const finish = (runId: string) =>
-				harness.withStore((store) => store.forOrg(ORG_A).finishRun(runId, { status: "complete" }))
+			// A finished run that counts as prior has saved its metadata, reports and ledger.
+			const finish = async (runId: string) => {
+				await harness.sql(
+					`UPDATE security_audit_runs SET metadata = '{}'::jsonb, reports = '{}'::jsonb WHERE id = $1`,
+					[runId],
+				)
+				await harness.sql(
+					`INSERT INTO security_audit_units (run_id, coverage_id, org_id, status, wave, agent_id, unit)
+					 VALUES ($1, 'u1', $2, 'covered', 1, null, '{}'::jsonb)`,
+					[runId, ORG_A],
+				)
+				await harness.withStore((store) =>
+					store.forOrg(ORG_A).finishRun(runId, { status: "complete" }),
+				)
+			}
 
 			// `kind` is not the client's to set: the API only starts manual runs.
 			const whole = await harness.call("POST", runs, { body: { kind: "revalidation" } })
@@ -384,6 +521,85 @@ describe("/api/security-audit runs", () => {
 				[next.body.id, "main", [], 300, whole.body.id],
 				[expect.any(String), "next", [], 400, null],
 			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a run the org's monthly invocations cannot fund, and starts none", async () => {
+		const deepMin = minimumInvocations("deep")
+		const noPlan = makeHarness({ orgLimit: 0 })
+		const spent = makeHarness({ orgLimit: 20 })
+		try {
+			const refusedTarget = await noPlan.call("POST", "/targets", { body: TARGET })
+			const refused = await noPlan.call("POST", `/targets/${refusedTarget.body.id}/runs`, { body: {} })
+
+			const target = await spent.call("POST", "/targets", { body: TARGET })
+			// Other runs this month reserved 14 of 20: too few left to fund a deep run's recon and reserves.
+			await spent.sql(
+				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 14, now())`,
+				[ORG_A, PERIOD],
+			)
+			const short = await spent.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			expect([
+				refused.status,
+				refused.body._tag,
+				refused.body.remaining,
+				refused.body.required,
+				refused.body.resetsAt,
+			]).toEqual([
+				402,
+				tag("SecurityAuditBudgetExhaustedError"),
+				0,
+				deepMin,
+				"2026-11-01T00:00:00.000Z",
+			])
+			expect([short.status, short.body.remaining, short.body.required]).toEqual([402, 6, deepMin])
+			expect([noPlan.started, spent.started]).toEqual([[], []])
+			expect([
+				await noPlan.count("security_audit_runs"),
+				await spent.count("security_audit_runs"),
+			]).toEqual([0, 0])
+		} finally {
+			await noPlan.dispose()
+			await spent.dispose()
+		}
+	})
+
+	it("caps a run's budget at what the org has left this month and passes the org limit on", async () => {
+		const harness = makeHarness({ orgLimit: 50 })
+		try {
+			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
+			await harness.sql(
+				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 20, now())`,
+				[ORG_A, PERIOD],
+			)
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			expect([run.status, run.body.budget]).toEqual([200, 30])
+			expect(harness.started.map((p) => [p.budget, p.orgBudget])).toEqual([
+				[30, { period: PERIOD, limit: 50 }],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("counts against the subscription's own cycle, and never past what Autumn says is left", async () => {
+		const cycle = "cycle:2026-10-07T09:00:00.000Z"
+		const harness = makeHarness({ budget: { limit: 50, period: cycle, autumnRemaining: 12 } })
+		try {
+			const target = await harness.call("POST", "/targets", { body: { ...TARGET, budgetPerRun: 300 } })
+			// Spend under the calendar month is another cycle's: it does not count here.
+			await harness.sql(
+				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 45, now())`,
+				[ORG_A, PERIOD],
+			)
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+
+			expect([run.status, run.body.budget]).toEqual([200, 12])
+			expect(harness.started.map((p) => p.orgBudget)).toEqual([{ period: cycle, limit: 50 }])
 		} finally {
 			await harness.dispose()
 		}
@@ -540,6 +756,278 @@ describe("/api/security-audit findings", () => {
 						reason: "fixture data, not reachable",
 					},
 				],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit run cancellation", () => {
+	it("terminates the workflow, marks the run cancelled, and records the event and audit entry", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const asMember = await harness.call("POST", `/runs/${run.body.id}/cancel`, {
+				as: `${ORG_A}|org:member`,
+			})
+			const cancel = await harness.call("POST", `/runs/${run.body.id}/cancel`)
+			const again = await harness.call("POST", `/runs/${run.body.id}/cancel`)
+			const events = await harness.call("GET", `/runs/${run.body.id}/events`)
+			const next = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const audit = await Effect.runPromise(
+				harness.auditLog.list(ORG_A, {
+					action: "security_audit_run.cancelled",
+					limit: 10,
+					offset: 0,
+				}),
+			)
+
+			expect([asMember.status, cancel.status, again.status, again.body._tag]).toEqual([
+				403,
+				200,
+				409,
+				tag("SecurityAuditRunNotInProgressError"),
+			])
+			expect([cancel.body.status, cancel.body.incompleteReason, cancel.body.finishedAt > 0]).toEqual([
+				"incomplete",
+				"cancelled",
+				true,
+			])
+			// Terminated once; the second call found the run finished and never reached the workflow.
+			expect(harness.cancelled).toEqual([run.body.id])
+			expect(
+				events.body.events.map((e: { kind: string; message: string }) => [e.kind, e.message]),
+			).toEqual([["Note", `Run cancelled by ${USER}`]])
+			// The cancelled run frees the target.
+			expect(next.status).toBe(200)
+			expect(audit.map((entry) => [entry.userId, entry.metadata])).toEqual([
+				[USER, { targetId: target.body.id, runId: run.body.id }],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a run that already finished, and a run of another org, without touching the workflow", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const foreign = await harness.call("POST", `/runs/${run.body.id}/cancel`, {
+				as: `${ORG_B}|org:admin`,
+			})
+			await harness.withStore((store) =>
+				store.forOrg(ORG_A).finishRun(run.body.id, { status: "complete" }),
+			)
+			const finished = await harness.call("POST", `/runs/${run.body.id}/cancel`)
+			const detail = await harness.call("GET", `/runs/${run.body.id}`)
+
+			expect([foreign.status, foreign.body._tag, finished.status, finished.body._tag]).toEqual([
+				404,
+				tag("SecurityAuditRunNotFoundError"),
+				409,
+				tag("SecurityAuditRunNotInProgressError"),
+			])
+			expect([detail.body.status, detail.body.incompleteReason, harness.cancelled]).toEqual([
+				"complete",
+				null,
+				[],
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("leaves the run running when its workflow cannot be terminated", async () => {
+		const harness = makeHarness({ cancelFails: true })
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const cancel = await harness.call("POST", `/runs/${run.body.id}/cancel`)
+			const detail = await harness.call("GET", `/runs/${run.body.id}`)
+
+			expect([cancel.status, cancel.body._tag, detail.body.status]).toEqual([
+				503,
+				tag("SecurityAuditPersistenceError"),
+				"in_progress",
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit run units", () => {
+	it("lists the run's units leanly, keeps a malformed stored unit, and is admin and org scoped", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			await harness.sql(
+				`INSERT INTO security_audit_units (run_id, coverage_id, org_id, status, wave, agent_id, unit)
+				 VALUES ($1, 'u1', $2, 'candidate', 2, 'hunter-1', $3::jsonb),
+				        ($1, 'u2', $2, 'blocked', 1, null, '{"coverage_id":"u2"}'::jsonb)`,
+				[
+					run.body.id,
+					ORG_A,
+					JSON.stringify({
+						coverage_id: "u1",
+						canonical_refs: { surface: "s", boundary: "b", subsystem: "sub", attack_class: "ac" },
+						surface: "POST /keys",
+						boundary: "org scope",
+						subsystem: "src",
+						attack_class: "Access control",
+						starting_paths: ["src/routes/keys.ts"],
+						ordinary_attack_class_block: null,
+						selected_companion_blocks: [],
+						excluded_blocks: [],
+						prior_status: "none",
+						attempts: [],
+						wave: 2,
+						status: "candidate",
+						agent_id: "hunter-1",
+						reviewed_paths: [],
+						local_checks: [],
+						result_fingerprints: ["keys/roll"],
+						unresolved: ["x".repeat(500)],
+						priority: 1,
+					}),
+				],
+			)
+			const units = await harness.call("GET", `/runs/${run.body.id}/units`)
+			const member = await harness.call("GET", `/runs/${run.body.id}/units`, {
+				as: `${ORG_A}|org:member`,
+			})
+			const foreign = await harness.call("GET", `/runs/${run.body.id}/units`, {
+				as: `${ORG_B}|org:admin`,
+			})
+
+			expect(units.status).toBe(200)
+			expect(units.body.units).toEqual([
+				{
+					coverageId: "u1",
+					status: "candidate",
+					wave: 2,
+					agentId: "hunter-1",
+					stale: false,
+					subsystem: "src",
+					surface: "POST /keys",
+					boundary: "org scope",
+					attackClass: "Access control",
+					priorStatus: "none",
+					priority: 1,
+					failedAttempts: null,
+					resultFingerprints: ["keys/roll"],
+					carriedFingerprint: null,
+					unresolved: ["x".repeat(300)],
+				},
+				{
+					coverageId: "u2",
+					status: "blocked",
+					wave: 1,
+					agentId: null,
+					stale: true,
+					subsystem: null,
+					surface: null,
+					boundary: null,
+					attackClass: null,
+					priorStatus: null,
+					priority: null,
+					failedAttempts: null,
+					resultFingerprints: [],
+					carriedFingerprint: null,
+					unresolved: [],
+				},
+			])
+			expect([member.status, foreign.status, foreign.body._tag]).toEqual([
+				403,
+				404,
+				tag("SecurityAuditRunNotFoundError"),
+			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit cancellation of an unsettled run", () => {
+	it("cancels a run the engine already marked complete before settle, and reports its spend", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			await harness.withStore((store) =>
+				store
+					.forOrg(ORG_A)
+					.reserveOrgInvocation(run.body.id, "hunter-1", PERIOD, 100)
+					.pipe(
+						Effect.andThen(
+							store.forOrg(ORG_A).recordEvent(run.body.id, {
+								_tag: "Agent",
+								role: "hunter",
+								agentId: "hunter-1",
+								outcome: "ok",
+								usage: { inputTokens: 120, outputTokens: 12, costUsd: 0.4 },
+							}),
+						),
+					),
+			)
+			// The engine's own status, written before its settle step runs.
+			await harness.sql(`UPDATE security_audit_runs SET status = 'complete' WHERE id = $1`, [
+				run.body.id,
+			])
+			const whileUnsettled = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const cancel = await harness.call("POST", `/runs/${run.body.id}/cancel`)
+
+			expect([whileUnsettled.status, whileUnsettled.body._tag]).toEqual([
+				409,
+				tag("SecurityAuditRunInProgressError"),
+			])
+			expect([
+				cancel.status,
+				cancel.body.incompleteReason,
+				cancel.body.invocationsSpent,
+				cancel.body.inputTokens,
+				cancel.body.outputTokens,
+				cancel.body.costUsd,
+			]).toEqual([200, "cancelled", 1, 120, 12, 0.4])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
+describe("/api/security-audit unit payload", () => {
+	it("caps a unit's result fingerprints", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const fingerprints = Array.from({ length: 25 }, (_, i) => `f${i}`)
+			await harness.sql(
+				`INSERT INTO security_audit_units (run_id, coverage_id, org_id, status, wave, agent_id, unit)
+				 VALUES ($1, 'u1', $2, 'candidate', 1, null, $3::jsonb)`,
+				[
+					run.body.id,
+					ORG_A,
+					JSON.stringify({
+						subsystem: "src",
+						surface: "POST /keys",
+						boundary: "org scope",
+						attack_class: "Access control",
+						prior_status: "none",
+						result_fingerprints: fingerprints,
+						unresolved: [],
+					}),
+				],
+			)
+			const units = await harness.call("GET", `/runs/${run.body.id}/units`)
+
+			expect([units.body.units[0].stale, units.body.units[0].resultFingerprints]).toEqual([
+				false,
+				fingerprints.slice(0, 20),
 			])
 		} finally {
 			await harness.dispose()

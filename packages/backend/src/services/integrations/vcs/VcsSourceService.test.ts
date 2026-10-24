@@ -55,6 +55,11 @@ const makeLayer = (providerCalls: string[]) => {
 				providerCalls.push(`resolve:${repo.owner}/${repo.name}:${ref}`)
 				return ref === "gone" ? Option.none() : Option.some("d".repeat(40) as GitCommitSha)
 			}),
+		repositorySizeBytes: (_installation, repo) =>
+			Effect.sync(() => {
+				providerCalls.push(`size:${repo.owner}/${repo.name}`)
+				return 5 * 1024 * 1024
+			}),
 		fetchCloneCredentials: (_installation, repo) =>
 			Effect.sync(() => {
 				providerCalls.push(`clone:${repo.owner}/${repo.name}`)
@@ -109,6 +114,19 @@ describe("VcsSourceService", () => {
 				"search:octo/shop:checkout",
 				"read:octo/shop:src/checkout.ts:production",
 			])
+		}).pipe(Effect.provide(makeLayer(calls)))
+	})
+
+	it.effect("reads a connected repository's size from its provider, and only the org's own", () => {
+		const calls: string[] = []
+		return Effect.gen(function* () {
+			const source = yield* VcsSourceService
+			const bytes = yield* source.repositorySizeBytes(ORG, "Octo/Shop")
+			const other = yield* Effect.exit(source.repositorySizeBytes(OTHER_ORG, "octo/shop"))
+			assert.deepStrictEqual(
+				[bytes, Exit.isFailure(other), calls],
+				[5 * 1024 * 1024, true, ["size:octo/shop"]],
+			)
 		}).pipe(Effect.provide(makeLayer(calls)))
 	})
 

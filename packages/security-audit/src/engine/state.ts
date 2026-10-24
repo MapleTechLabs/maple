@@ -4,6 +4,7 @@
  * single permit, and the store sees each new snapshot before the next decision.
  */
 import { Effect, Ref, type Schema, Semaphore } from "effect"
+import type { ExecutionProfile } from "../ecosystems"
 import type { AgentContext, ExecutionPolicy } from "../prompts"
 import type { Candidate, UncoveredSurface } from "../results"
 import { decodeAgentJson } from "../results"
@@ -32,6 +33,8 @@ export interface AuditRunInput {
 	/** Maximum agent invocations across all phases, or null for none. */
 	readonly budget: number | null
 	readonly execution: ExecutionPolicy
+	/** The run-level label: which ecosystems and dependencies kept it from executing target code. */
+	readonly executionProfile?: ExecutionProfile
 	readonly toolGuidance: string
 	readonly prior: PriorRun | null
 	/** Whether any of these paths changed between the prior run's source and this one. */
@@ -73,6 +76,8 @@ export interface EngineState {
 	readonly criticClean: boolean
 	/** Every agent id this run spent, so none is ever reused. */
 	readonly usedIds: ReadonlySet<string>
+	/** Why the host stopped launching agents (the org's budget is spent); null while it launches. */
+	readonly halted: string | null
 	readonly usage: { readonly inputTokens: number; readonly outputTokens: number; readonly costUsd: number }
 }
 
@@ -89,6 +94,7 @@ export const initialState: EngineState = {
 	incomplete: [],
 	criticClean: false,
 	usedIds: new Set(),
+	halted: null,
 	usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
 }
 
@@ -117,7 +123,7 @@ export const makeEngine = (input: AuditRunInput) =>
 		)
 
 		const remaining = Effect.map(Ref.get(state), (s) =>
-			input.budget === null ? Number.POSITIVE_INFINITY : input.budget - s.spent,
+			s.halted !== null ? 0 : input.budget === null ? Number.POSITIVE_INFINITY : input.budget - s.spent,
 		)
 
 		const context = (agentId: string): AgentContext => ({
@@ -131,26 +137,57 @@ export const makeEngine = (input: AuditRunInput) =>
 		 * already used (an id is a durable step's name, so a repeat would replay another agent's answer).
 		 */
 		const reserve = (agentId: string) =>
-			Ref.modify(state, (s): readonly ["ok" | "budget" | "duplicate", EngineState] =>
+			Ref.modify(state, (s): readonly ["ok" | "budget" | "duplicate" | "halted", EngineState] =>
 				s.usedIds.has(agentId)
 					? ["duplicate", s]
-					: input.budget !== null && s.spent >= input.budget
-						? ["budget", s]
-						: ["ok", { ...s, spent: s.spent + 1, usedIds: new Set(s.usedIds).add(agentId) }],
+					: s.halted !== null
+						? ["halted", s]
+						: input.budget !== null && s.spent >= input.budget
+							? ["budget", s]
+							: ["ok", { ...s, spent: s.spent + 1, usedIds: new Set(s.usedIds).add(agentId) }],
 			)
+
+		const fail = (reason: string) =>
+			Effect.andThen(
+				Ref.update(state, (s) =>
+					s.incomplete.includes(reason) ? s : { ...s, incomplete: [...s.incomplete, reason] },
+				),
+				event({ _tag: "Note", message: `incomplete: ${reason}` }),
+			)
+
+		/**
+		 * The host refused the agent: it never ran, so its invocation is given back (its id stays
+		 * used), and nothing launches after it.
+		 */
+		const halt = (reason: string) =>
+			Effect.andThen(
+				Ref.update(state, (s) => ({ ...s, spent: s.spent - 1, halted: s.halted ?? reason })),
+				fail(reason),
+			)
+
+		const refusal = {
+			budget: "budget exhausted",
+			duplicate: "duplicate agent id",
+			halted: "the organization's invocation budget is spent",
+		} as const
 
 		/** One fresh agent's final text, or undefined when it was refused or failed (recorded either way). */
 		const call = (role: AuditRole, agentId: string, prompt: string) =>
 			Effect.gen(function* () {
 				const reserved = yield* reserve(agentId)
 				if (reserved !== "ok") {
-					yield* event({
-						_tag: "Note",
-						message: `${agentId} not run: ${reserved === "budget" ? "budget exhausted" : "duplicate agent id"}`,
-					})
+					yield* event({ _tag: "Note", message: `${agentId} not run: ${refusal[reserved]}` })
 					return undefined
 				}
 				const answer = yield* Effect.result(agents.run({ role, agentId, prompt }))
+				if (
+					answer._tag === "Failure" &&
+					answer.failure._tag === "@maple/security-audit/BudgetExhaustedError"
+				) {
+					yield* event({ _tag: "Note", message: `${agentId} not run: ${answer.failure.message}` })
+					yield* halt(answer.failure.reason)
+					return undefined
+				}
 				if (answer._tag === "Failure") {
 					yield* event({
 						_tag: "Agent",
@@ -225,14 +262,6 @@ export const makeEngine = (input: AuditRunInput) =>
 			Effect.andThen(
 				Ref.update(state, (s) => (s.gaps.includes(reason) ? s : { ...s, gaps: [...s.gaps, reason] })),
 				event({ _tag: "Note", message: reason }),
-			)
-
-		const fail = (reason: string) =>
-			Effect.andThen(
-				Ref.update(state, (s) =>
-					s.incomplete.includes(reason) ? s : { ...s, incomplete: [...s.incomplete, reason] },
-				),
-				event({ _tag: "Note", message: `incomplete: ${reason}` }),
 			)
 
 		return {

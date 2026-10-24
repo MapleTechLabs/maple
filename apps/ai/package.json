@@ -12,6 +12,7 @@
 		"review:eval": "bun --env-file=../../.env.local scripts/pr-review-eval.ts",
 		"review:checklist": "bun scripts/pr-review-checklist.ts",
 		"security:local": "bun --env-file=../../.env.local scripts/security-audit-local.ts",
+		"security:eval": "bun scripts/security-audit-eval.ts",
 		"mcp:docs": "bun run scripts/generate-dashboard-skill.ts",
 		"measure-tokens": "bun run scripts/measure-token-cost.ts",
 		"test": "vitest run",

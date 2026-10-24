@@ -4,6 +4,8 @@ import {
 	MapleAiApi,
 	DEFAULT_RUN_BUDGET,
 	SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT,
+	SecurityAuditBudgetExhaustedError,
+	SecurityAuditRepositoryTooLargeError,
 	SECURITY_AUDIT_MAX_BUDGET,
 	SecurityAuditBudgetTooLowError,
 	SecurityAuditDisabledError,
@@ -14,6 +16,8 @@ import {
 	SecurityAuditPersistenceError,
 	SecurityAuditRepositoryNotConnectedError,
 	SecurityAuditRunInProgressError,
+	SecurityAuditRunNotInProgressError,
+	type SecurityAuditUnit,
 	SecurityAuditTargetDisabledError,
 	SecurityAuditTargetExistsError,
 	type SecurityAuditRun,
@@ -22,6 +26,7 @@ import {
 	type SecurityAuditTarget,
 	SecurityAuditTargetNotFoundError,
 } from "@maple/domain/http"
+import { IsoDateTimeString } from "@maple/domain/primitives"
 import {
 	type SecurityAuditProfile,
 	SecurityAuditRunId,
@@ -30,15 +35,20 @@ import {
 } from "@maple/domain/security-audit"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
 import { AuditStoreError, minimumInvocations } from "@maple/security-audit"
-import { Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
+import { SecurityAuditPlanBudget } from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
+import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
+import { hostedSizeViolations, refusalReason } from "../security-audit/repo-size"
 import {
 	type SecurityAuditEventRecord,
 	type SecurityAuditOrgStore,
 	SecurityAuditStore,
+	type SecurityAuditUnitSummary,
 } from "@maple/backend/services/security-audit/SecurityAuditStore"
 
 const toTarget = (row: SecurityAuditTargetRow): SecurityAuditTarget => ({
@@ -107,6 +117,31 @@ const toFinding = (row: SecurityAuditFindingRow): SecurityAuditFinding => ({
 	updatedAt: row.updatedAt,
 })
 
+/** Each unresolved note trimmed, and only the first few: the list stays lean for large ledgers. */
+const MAX_UNRESOLVED = 3
+const MAX_UNRESOLVED_CHARS = 300
+const MAX_RESULT_FINGERPRINTS = 20
+
+const toUnit = (row: SecurityAuditUnitSummary): SecurityAuditUnit => ({
+	coverageId: row.coverageId,
+	status: row.status,
+	wave: row.wave,
+	agentId: row.agentId,
+	stale: row.fields === null,
+	subsystem: row.fields?.subsystem ?? null,
+	surface: row.fields?.surface ?? null,
+	boundary: row.fields?.boundary ?? null,
+	attackClass: row.fields?.attack_class ?? null,
+	priorStatus: row.fields?.prior_status ?? null,
+	priority: row.fields?.priority ?? null,
+	failedAttempts: row.fields?.failed_attempts ?? null,
+	resultFingerprints: (row.fields?.result_fingerprints ?? []).slice(0, MAX_RESULT_FINGERPRINTS),
+	carriedFingerprint: row.fields?.carried_fingerprint ?? null,
+	unresolved: (row.fields?.unresolved ?? [])
+		.slice(0, MAX_UNRESOLVED)
+		.map((note) => note.slice(0, MAX_UNRESOLVED_CHARS)),
+})
+
 /** A store failure is the database's, never the caller's: a 503 that names the operation. */
 const orUnavailable = <A, E, R>(effect: Effect.Effect<A, E | AuditStoreError, R>) =>
 	effect.pipe(
@@ -122,9 +157,12 @@ const orUnavailable = <A, E, R>(effect: Effect.Effect<A, E | AuditStoreError, R>
 		),
 	)
 
-/** The request's budget, else the target's, else the default; never above the hard cap. */
-const resolveBudget = (requested: number | undefined, targetBudget: number | null) =>
-	Math.min(requested ?? targetBudget ?? DEFAULT_RUN_BUDGET, SECURITY_AUDIT_MAX_BUDGET)
+/**
+ * The request's budget, else the target's, else the default; never above the hard cap or what the
+ * org has left this month.
+ */
+const resolveBudget = (requested: number | undefined, targetBudget: number | null, orgRemaining: number) =>
+	Math.min(requested ?? targetBudget ?? DEFAULT_RUN_BUDGET, SECURITY_AUDIT_MAX_BUDGET, orgRemaining)
 
 /** A budget the engine would refuse before reconnaissance is the caller's to fix: a 400, not a failed run. */
 const requireFundableBudget = (budget: number, profile: SecurityAuditProfile) => {
@@ -142,6 +180,7 @@ const requireFundableBudget = (budget: number, profile: SecurityAuditProfile) =>
 }
 
 const newRunId = () => Schema.decodeSync(SecurityAuditRunId)(crypto.randomUUID())
+const decodeIso = Schema.decodeSync(IsoDateTimeString)
 
 /** `/api/security-audit/*`: targets, runs and findings for the caller's org, behind `securityAudit`. */
 export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityAudit", (handlers) =>
@@ -149,6 +188,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 		const stores = yield* SecurityAuditStore
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const workflow = yield* SecurityAuditWorkflowStarter
+		const planBudget = yield* SecurityAuditPlanBudget
+		const repositorySize = yield* SecurityAuditRepositorySize
 
 		/** The caller's org store, once the org is in the rollout. The org is the tenant's, never the request's. */
 		const orgAccess = Effect.gen(function* () {
@@ -174,6 +215,19 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				),
 			),
 		)
+
+		/** Refuses a repository GitHub already reports as over the limit, before anything is cloned. */
+		const refuseOversized = (orgId: SecurityAuditTargetRow["orgId"], repository: string) =>
+			Effect.gen(function* () {
+				const bytes = yield* repositorySize.bytes(orgId, repository)
+				if (Option.isNone(bytes)) return
+				const violations = hostedSizeViolations(bytes.value, yield* securityAuditLimits)
+				if (violations.length === 0) return
+				return yield* new SecurityAuditRepositoryTooLargeError({
+					message: refusalReason(violations),
+					repository,
+				})
+			})
 
 		const requireTarget = (store: SecurityAuditOrgStore, targetId: SecurityAuditTargetId) =>
 			orUnavailable(store.getTarget(targetId)).pipe(
@@ -242,10 +296,12 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					const repository = yield* orUnavailable(store.findConnectedRepository(payload.repository))
 					if (Option.isNone(repository)) {
 						return yield* new SecurityAuditRepositoryNotConnectedError({
-							message: "This organization has no connected repository by that name.",
+							message:
+								"Security audits read GitHub repositories only. Connect this repository through the GitHub integration first.",
 							repository: payload.repository,
 						})
 					}
+					yield* refuseOversized(tenant.orgId, repository.value.fullName)
 					const row = yield* orUnavailable(
 						store.createTarget({
 							...payload,
@@ -276,10 +332,49 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 				Effect.gen(function* () {
 					const { tenant, store } = yield* adminAccess
 					const target = yield* requireTarget(store, params.targetId)
-					const budget = resolveBudget(payload.budget, target.budgetPerRun)
-					yield* requireFundableBudget(budget, target.profile)
+					// The caller's own budget first: one the engine would refuse is a 400, before billing.
+					yield* requireFundableBudget(
+						resolveBudget(payload.budget, target.budgetPerRun, Number.POSITIVE_INFINITY),
+						target.profile,
+					)
+					yield* refuseOversized(tenant.orgId, target.repository)
 					const prior = yield* orUnavailable(store.latestPriorRun(target.id))
 					const runId = newRunId()
+					// The org's cycle: its plan's limit less what its runs reserved, never more than
+					// Autumn itself says is left.
+					const orgBudget = yield* planBudget
+						.budget(tenant.orgId, yield* Clock.currentTimeMillis)
+						.pipe(
+							Effect.catchTag("@maple/backend/security-audit/PlanUnavailable", (error) =>
+								Effect.fail(
+									new SecurityAuditPersistenceError({
+										message: "Could not confirm the organization's plan with billing.",
+										cause: error.message,
+									}),
+								),
+							),
+						)
+					const spent = yield* orUnavailable(store.orgInvocationsSpent(orgBudget.period))
+					const orgRemaining = Math.max(
+						0,
+						Math.min(
+							orgBudget.limit - spent,
+							orgBudget.autumnRemaining ?? Number.POSITIVE_INFINITY,
+						),
+					)
+					const required = minimumInvocations(target.profile)
+					if (orgRemaining < required) {
+						return yield* new SecurityAuditBudgetExhaustedError({
+							message:
+								orgBudget.limit === 0
+									? "This organization's plan does not include security audit invocations."
+									: `This organization has ${orgRemaining} security audit invocations left this billing cycle; a ${target.profile} run needs at least ${required}.`,
+							remaining: orgRemaining,
+							required,
+							resetsAt: decodeIso(new Date(orgBudget.resetsAt).toISOString()),
+						})
+					}
+					const budget = resolveBudget(payload.budget, target.budgetPerRun, orgRemaining)
 					// The branch for now; the Workflow pins the commit it resolves to before any agent runs.
 					const run = yield* orUnavailable(
 						store.startRun({
@@ -318,6 +413,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						scopePaths: run.scopePaths,
 						budget,
 						priorRunId: Option.match(prior, { onNone: () => null, onSome: (r) => r.id }),
+						orgBudget: { period: orgBudget.period, limit: orgBudget.limit },
 					}
 					yield* workflow
 						.create(workflowPayload)
@@ -343,10 +439,49 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 						...toRun(run),
 						reports: run.reports,
 						architectureMd: run.architectureMd,
+						executionProfile: run.executionProfile,
 						unitCounts,
 						unitTotal: Object.values(unitCounts).reduce((sum, n) => sum + n, 0),
 					}
 				}).pipe(Effect.withSpan("HttpSecurityAudit.getRun")),
+			)
+			.handle("cancelRun", ({ params }) =>
+				Effect.gen(function* () {
+					const { tenant, store } = yield* adminAccess
+					const run = yield* requireRun(store, params.runId)
+					const notInProgress = new SecurityAuditRunNotInProgressError({
+						message: "This audit run has already finished.",
+						runId: run.id,
+					})
+					// Finished means settled: the engine may already say complete while settle has not run.
+					if (run.finishedAt !== null) return yield* notInProgress
+					// Stop the agents first; the row is only marked once nothing can still settle it.
+					yield* workflow.cancel(run.id).pipe(
+						Effect.catchTag("@maple/backend/platform/WorkflowCancelError", (error) =>
+							Effect.fail(
+								new SecurityAuditPersistenceError({
+									message: "The audit could not be cancelled.",
+									cause: error.message,
+								}),
+							),
+						),
+					)
+					const cancelled = yield* orUnavailable(store.cancelRun(run.id, tenant.userId))
+					// Settled between the read and the write: its own outcome stands.
+					if (Option.isNone(cancelled)) return yield* notInProgress
+					yield* recordHttpAudit("security_audit_run.cancelled", {
+						metadata: { targetId: run.targetId, runId: run.id },
+					})
+					return toRun(cancelled.value)
+				}).pipe(Effect.withSpan("HttpSecurityAudit.cancelRun")),
+			)
+			.handle("listRunUnits", ({ params }) =>
+				Effect.gen(function* () {
+					const { store } = yield* adminAccess
+					const run = yield* requireRun(store, params.runId)
+					const rows = yield* orUnavailable(store.listUnitSummaries(run.id))
+					return { units: rows.map(toUnit) }
+				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunUnits")),
 			)
 			.handle("listRunEvents", ({ params, query }) =>
 				Effect.gen(function* () {

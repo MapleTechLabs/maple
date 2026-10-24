@@ -8,6 +8,8 @@ import { Message, Theme } from "./message"
 
 /** `maple.global-namespace.<orgId>`. */
 export const NAMESPACE_STORAGE_PREFIX = "maple.global-namespace."
+/** `maple.infra-surfaces.<orgId>`: the org's last settled infra surfaces, JSON. */
+export const INFRA_SURFACES_STORAGE_PREFIX = "maple.infra-surfaces."
 /** The theme key the app and the pre-paint script in index.html share. */
 export const THEME_STORAGE_KEY = "maple-theme"
 
@@ -69,6 +71,17 @@ export const SaveNamespace = Command.define("SaveNamespace", {
 			onSome: (namespace) => Effect.sync(() => writeLocalStorage(key, namespace)),
 		}).pipe(Effect.as(Message.CompletedSaveNamespace()))
 	},
+})
+
+/** Remembers the org's settled surfaces, so the next boot lays the sidebar out from them. */
+export const SaveInfraSurfaces = Command.define("SaveInfraSurfaces", {
+	args: { orgId: Schema.String, surfaces: Schema.Array(Schema.String) },
+	messages: [Message.CompletedSaveInfraSurfaces],
+	execute: ({ orgId, surfaces }) =>
+		Effect.sync(() => {
+			writeLocalStorage(`${INFRA_SURFACES_STORAGE_PREFIX}${orgId}`, JSON.stringify(surfaces))
+			return Message.CompletedSaveInfraSurfaces()
+		}),
 })
 
 /** `SidebarProvider.setOpen`: the `sidebar_state` cookie (7 days). Never read back. */

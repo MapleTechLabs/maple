@@ -62,6 +62,7 @@ const renderPage = (
 	presence: ShellInfraSurfaces["presence"] | undefined,
 	isPresenceFailed: boolean | undefined,
 	integrations: ShellInfraSurfaces["integrations"] | undefined,
+	remembered: ShellInfraSurfaces["remembered"],
 	isMobile: boolean,
 	isBelowSm: boolean,
 	isBelowLg: boolean,
@@ -76,7 +77,7 @@ const renderPage = (
 				timeZone,
 				...(presence === undefined || isPresenceFailed === undefined || integrations === undefined
 					? undefined
-					: { infra: { presence, isPresenceFailed, integrations } }),
+					: { infra: { presence, isPresenceFailed, integrations, remembered } }),
 			},
 			isMobile,
 			isBelowSm,
@@ -102,6 +103,7 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 				infra?.presence,
 				infra?.isPresenceFailed,
 				infra?.integrations,
+				infra?.remembered,
 				model.shell.isMobile,
 				model.shell.isBelowSm,
 				model.shell.isFilterCollapsed,
