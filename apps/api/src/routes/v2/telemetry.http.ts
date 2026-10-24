@@ -1,3 +1,4 @@
+import { timestampMs } from "@maple/backend/platform/time"
 import { HttpApiBuilder } from "effect/http-api"
 import {
 	CurrentTenant,
@@ -1108,10 +1109,11 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 										...windowOptions,
 										params: { start: "previous_start_time", end: "previous_end_time" },
 									})
+						// Compared as sent: the parsed windows are rounded to the second.
 						if (
+							previousEnd !== undefined &&
 							previousBounds !== undefined &&
-							parseWarehouseDateTime(previousBounds.endTime) >
-								parseWarehouseDateTime(window.startTime)
+							timestampMs(previousEnd) > timestampMs(payload.start_time)
 						) {
 							return yield* Effect.fail(
 								V2TimeRangeInvalid.make("previous_end_time must not be after start_time.", {
@@ -1181,6 +1183,21 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 												end_time: isoAt(previousHours.endMs),
 												services: rows,
 											})),
+											// The comparison is optional: losing it must not lose the current window.
+											Effect.catch((error) =>
+												Effect.logWarning(
+													"Service health comparison read failed",
+												).pipe(
+													Effect.annotateLogs({ error: error.message }),
+													Effect.andThen(
+														Effect.annotateCurrentSpan(
+															"maple.service_health.previous_failed",
+															true,
+														),
+													),
+													Effect.as(null),
+												),
+											),
 										),
 								baselines,
 							],

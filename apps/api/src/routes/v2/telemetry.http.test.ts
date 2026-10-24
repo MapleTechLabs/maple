@@ -1308,6 +1308,29 @@ describe("v2 reads shared with the dashboard", () => {
 		await harness.dispose()
 	})
 
+	it("returns the current window when only the comparison read fails", async () => {
+		// Rows that do not decode fail the read the way a warehouse error would.
+		const previousFails = (sql: string) =>
+			sql.includes("AS requestCount") && sql.includes("2026-07-15 11:00:00")
+				? [{ unexpected: true }]
+				: snapshotRows(sql)
+		const harness = makeHarness(observingWarehouse([], previousFails))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: START,
+			end_time: END,
+			previous_start_time: "2026-07-15T11:00:00.000Z",
+			previous_end_time: START,
+		})
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(response.body.previous).toBeNull()
+		expect(response.body.services.map((entry: { service_name: string }) => entry.service_name)).toEqual([
+			"api",
+			"worker",
+		])
+		await harness.dispose()
+	})
+
 	it("omits the comparison window unless both of its bounds are sent", async () => {
 		const harness = makeHarness(observingWarehouse([], snapshotRows))
 		const key = await harness.bootstrapKey(["services:read"])
@@ -1342,6 +1365,15 @@ describe("v2 reads shared with the dashboard", () => {
 		})
 		expect(afterCurrent.status).toBe(400)
 		expect(afterCurrent.body.error.param).toBe("previous_end_time")
+
+		// Within one second, so only the request's own precision can tell them apart.
+		const subSecond = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: "2026-07-15T12:00:00.100Z",
+			end_time: END,
+			previous_start_time: "2026-07-15T11:00:00.000Z",
+			previous_end_time: "2026-07-15T12:00:00.900Z",
+		})
+		expect(subSecond.status).toBe(400)
 		await harness.dispose()
 	})
 
