@@ -45,7 +45,6 @@ const UsageTotals = Schema.Struct({
 	logs: Schema.Number,
 	traces: Schema.Number,
 	metrics: Schema.Number,
-	dataSize: Schema.Number,
 })
 export type UsageTotals = typeof UsageTotals.Type
 

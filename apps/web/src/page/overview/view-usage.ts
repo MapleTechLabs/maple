@@ -1,4 +1,4 @@
-import { EMPTY_VALUE, formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { delta } from "../../ui/delta"
@@ -12,17 +12,16 @@ const CARDS: ReadonlyArray<{ title: string; key: keyof UsageTotals; format: (val
 	{ title: "Total Logs", key: "logs", format: formatNumber },
 	{ title: "Total Traces", key: "traces", format: formatNumber },
 	{ title: "Total Metrics", key: "metrics", format: formatNumber },
-	{ title: "Data Size", key: "dataSize", format: formatStorageBytes },
 ]
 
 /** Loading tiles; on failure a quiet "Couldn't load" rail (the charts carry the full message). */
 export const usageCards = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 	AsyncData.matchData(model.usage.data, {
-		onEmpty: () => statRailLoading(h),
+		onEmpty: () => statRailLoading(h, CARDS.length, 3),
 		onFailure: () =>
 			statRail(
 				h,
-				{},
+				{ columns: 3 },
 				CARDS.map((card) =>
 					statRailItem(h, {
 						eyebrow: card.title,
@@ -35,7 +34,7 @@ export const usageCards = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 		onData: ({ totals, previous }) =>
 			statRail(
 				h,
-				{},
+				{ columns: 3 },
 				CARDS.map((card) =>
 					statRailItem(h, {
 						eyebrow: card.title,
