@@ -1,5 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { click, Command, expect as expectView, given, Mount, role, scene, text } from "foldkit/scene"
+import { click, Command, expect as expectView, given, Mount, role, scene } from "foldkit/scene"
 import { describe, test } from "vitest"
 import { agentSetupPrompt } from "../../components/ingest/onboard-skill"
 import { ingestUrl } from "../../lib/services/common/ingest-url"
@@ -43,7 +43,7 @@ describe("build with your agent", () => {
 			{ update, view },
 			given(atConnect()),
 			indicatorMeasured(),
-			click(role("button", { name: /Build with your agent/ })),
+			click(role("button", { name: "Build with your agent" })),
 			Command.expectExact(
 				CopyButton.WriteClipboard({
 					text: agentSetupPrompt(ingestUrl, "maple_sk_test"),
@@ -51,12 +51,15 @@ describe("build with your agent", () => {
 				}),
 			),
 			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
-			expectView(text("Prompt copied")).toExist(),
+			expectView(role("button", { name: "Prompt copied" })).toHaveAttr("data-copy-state", "copied"),
 			Command.resolve(
 				CopyButton.WaitCopyStatus,
 				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
 			),
-			expectView(text("Build with your agent")).toExist(),
+			expectView(role("button", { name: "Build with your agent" })).toHaveAttr(
+				"data-copy-state",
+				"idle",
+			),
 		)
 	})
 })

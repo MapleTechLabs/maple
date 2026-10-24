@@ -112,6 +112,12 @@ const AGENT_MARKS = [
 	{ name: "CursorIcon", className: "text-foreground" },
 ] as const satisfies ReadonlyArray<Readonly<{ name: IconName; className: string }>>
 
+const AGENT_LABELS = {
+	idle: "Build with your agent",
+	copied: "Prompt copied",
+	error: "Could not copy",
+} as const satisfies Record<CopyButton.CopyStatus, string>
+
 /**
  * maple.dev's "Build with your agent": one prompt for Claude Code, Codex or Cursor, here with the
  * org's endpoint and key. Without a key (a member, or the key store is down) the skill uses its
@@ -130,8 +136,9 @@ export const agentPromptButton = <M>(
 		{
 			variant: "outline",
 			size: "lg",
-			className: "group/agent w-full justify-between gap-3",
+			className: "agent-prompt group/agent w-full justify-between gap-3",
 			attributes: [
+				h.DataAttribute("copy-state", options.copy.status),
 				h.Title("Copy a setup prompt for Claude Code, Codex or Cursor"),
 				h.OnClick(
 					options.toCopyMessage(
@@ -149,9 +156,10 @@ export const agentPromptButton = <M>(
 						AGENT_MARKS.map((mark, index) =>
 							h.span(
 								[
+									h.Attribute("style", `--n:${index}`),
 									h.Class(
 										cn(
-											"grid size-6 place-items-center rounded-full border border-border bg-card ring-2 ring-background transition-transform duration-200 ease-out",
+											"agent-prompt__mark grid size-6 place-items-center rounded-full border border-border bg-card ring-2 ring-background transition-transform duration-200 ease-out",
 											index > 0 && "-ml-1.5",
 											index === 1 && "group-hover/agent:translate-x-0.5",
 											index === 2 && "group-hover/agent:translate-x-1",
@@ -162,14 +170,27 @@ export const agentPromptButton = <M>(
 							),
 						),
 					),
+					// Every label stays in the grid, so the button keeps the longest one's width; the
+					// current one's letters blur in (`theme.css` `.agent-prompt`).
 					h.span(
-						[h.AriaLive("polite")],
+						[h.Class("agent-prompt__text")],
 						[
-							options.copy.status === "copied"
-								? "Prompt copied"
-								: options.copy.status === "error"
-									? "Could not copy"
-									: "Build with your agent",
+							h.span(
+								[h.Class("sr-only"), h.AriaLive("polite")],
+								[AGENT_LABELS[options.copy.status]],
+							),
+							...CopyButton.CopyStatus.literals.map((state) =>
+								h.span(
+									[
+										h.AriaHidden(true),
+										h.Class("agent-prompt__label"),
+										h.DataAttribute("label", state),
+									],
+									[...AGENT_LABELS[state]].map((char, index) =>
+										h.span([h.Attribute("style", `--i:${index}`)], [char]),
+									),
+								),
+							),
 						],
 					),
 				],
