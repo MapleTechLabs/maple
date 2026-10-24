@@ -16,6 +16,8 @@ export type CodeBlockOptions<M> = Readonly<{
 	toCopyMessage: (message: CopyButton.Message) => M
 	/** Pre-highlighted HTML for a caller that refines the tokens. */
 	highlighted?: string
+	/** Prose, not code (a prompt for a coding agent): shown as typed, without highlighting. */
+	isPlain?: boolean
 }>
 
 export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): Html =>
@@ -40,7 +42,14 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 				[
 					h.pre(
 						[h.Class("text-xs leading-relaxed")],
-						[h.code([h.InnerHTML(options.highlighted ?? highlightCode(options.code))], [])],
+						[
+							options.isPlain === true
+								? h.code([h.Class("whitespace-pre-wrap")], [options.code])
+								: h.code(
+										[h.InnerHTML(options.highlighted ?? highlightCode(options.code))],
+										[],
+									),
+						],
 					),
 				],
 			),

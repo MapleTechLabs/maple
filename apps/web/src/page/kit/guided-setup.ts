@@ -224,11 +224,13 @@ const block = <M>(
 	code: string,
 	language: string,
 	className?: string,
+	isPlain = false,
 ): Html =>
 	codeBlock(h, {
 		code,
 		language,
 		className,
+		isPlain,
 		copy: parts.snippetCopies[key] ?? CopyButton.init(),
 		toCopyMessage: (message) => parts.toSnippetCopy(key, message),
 	})
@@ -277,9 +279,12 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 			labels: ["Install", "Instrument", "Claude Code"],
 			className: "flex flex-col",
 			listClassName: "h-9",
-			tabClassName: "gap-2",
+			tabClassName: "gap-2 max-sm:px-1.5",
 			tabContent: (value, label) => [
-				icon(h, isSetupTab(value) ? SETUP_TAB_ICONS[value] : "CodeIcon", { size: 14 }),
+				icon(h, isSetupTab(value) ? SETUP_TAB_ICONS[value] : "CodeIcon", {
+					size: 14,
+					className: "max-sm:hidden",
+				}),
 				label,
 			],
 			wrapList: (list) =>
@@ -290,13 +295,14 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 						),
 					],
 					[
-						list,
+						// On a phone the three tabs barely fit: they scroll rather than push the mark out.
+						h.div([h.Class("min-w-0 overflow-x-auto [scrollbar-width:none]")], [list]),
 						h.span(
 							[
 								h.Role("img"),
 								h.AriaLabel("OpenTelemetry"),
 								h.Title("OpenTelemetry"),
-								h.Class("text-muted-foreground"),
+								h.Class("text-muted-foreground max-sm:hidden"),
 							],
 							[icon(h, "FrameworkOpenTelemetryIcon", { size: 16 })],
 						),
@@ -361,8 +367,9 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 						parts,
 						"skill-prompt",
 						onboardSkillPrompt(ingestUrl, apiKey),
-						"shell",
+						"prompt",
 						REPLAY_BLOCK_CLASS,
+						true,
 					),
 				]
 			},

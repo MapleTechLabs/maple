@@ -72,7 +72,7 @@ const trail = (h: H, items: ReadonlyArray<TrailItem>): Html =>
 				items.map((item, index) =>
 					h.li(
 						[
-							h.Class("flex items-center gap-2"),
+							h.Class("flex items-center gap-2 whitespace-nowrap"),
 							...(item.isCurrent ? [h.AriaCurrent("step")] : []),
 						],
 						[
@@ -1094,10 +1094,14 @@ const trailOf = (
 		},
 		{
 			label: "Connect",
-			answer: state.completedSteps.connect === true && step !== "connect" ? "Done" : null,
+			answer: state.completedSteps.connect === true && step !== "connect" ? "Connect" : null,
 			isCurrent: step === "connect",
 		},
-		{ label: "Team", answer: null, isCurrent: step === "team" },
+		{
+			label: "Team",
+			answer: state.completedSteps.team === true && step !== "team" ? "Team" : null,
+			isCurrent: step === "team",
+		},
 	]
 }
 
