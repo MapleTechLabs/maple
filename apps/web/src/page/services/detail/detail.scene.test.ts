@@ -157,7 +157,7 @@ describe("service detail", () => {
 		expect(names(again.commands)).toEqual([])
 	})
 
-	test("a tab click replaces the URL; the API tab then reads its endpoints", () => {
+	test("a tab click replaces the URL; the API tab then reads its endpoints, KPIs and status codes", () => {
 		const model = entered()
 		expect(pageUpdate(model, Message.ClickedTab({ tab: "operations" })).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
@@ -166,7 +166,11 @@ describe("service detail", () => {
 			}),
 		)
 		const api = routeChanged(model, route({ tab: "api" }), context)
-		expect(names(api.commands)).toEqual([FetchEndpoints.name])
+		expect(names(api.commands)).toEqual([
+			FetchEndpoints.name,
+			"FetchServiceApiOverview",
+			"FetchServiceEndpointStatusBreakdown",
+		])
 	})
 
 	test("the environment switcher scopes the URL, and All environments clears it", () => {
@@ -364,7 +368,7 @@ describe("the API tab's endpoint drawer", () => {
 		const clicked = pageUpdate(loadedApi().model, Message.ClickedEndpoint({ spanName: "GET /b" }))
 		expect(clicked.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/services/payment-svc?tab=api&endpoint=GET%20%2Fb",
+				url: "/services/payment-svc?tab=api&endpoint=GET+%2Fb",
 				isReplace: false,
 			}),
 		)
@@ -385,7 +389,7 @@ describe("the API tab's endpoint drawer", () => {
 		const stepped = pageUpdate(model, peekMessage(PeekMessage.Message.ClickedStep({ step: 1 })))
 		expect(stepped.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/services/payment-svc?tab=api&endpoint=GET%20%2Fc",
+				url: "/services/payment-svc?tab=api&endpoint=GET+%2Fc",
 				isReplace: true,
 			}),
 		)
