@@ -266,23 +266,17 @@ validation `anthropic/claude-opus-5.5`.
 
 - **No `confirmed` records.** Without execution the skill cannot confirm, so every hit is
   `needs_validation`. All 28 needs_validation records cite missing execution; 5 cite nothing else,
-  the other 23 also need a deployment fact (edge headers, network policy, product intent).
-- **Unrelated records:** 12, all spot-checked: 5 real (two match later public advisories or
-  later Maple fixes), 7 plausible, 0 false positives.
+  the other 23 also need a deployment or owner fact.
+- **Unrelated records:** 12, spot-checked privately; none were false positives.
 - **Wall clock:** about 8 minutes per run. Input is about 4.6M tokens per run.
 - **Reconnaissance is 56% of spend** and does not shrink with scope: a one-file Maple scope cost
   $10 of recon. Hunters cost $0.15 to $1.20 each. Grouping bugs that share a commit into one slice
   is what kept the eval affordable; raising the budget adds hunters cheaply.
-- **Misses:** in all 9 a hunter reviewed the unit holding the bug and passed it; none was lost to
-  budget at 16. The missed bugs are a missing binding or check across a flow rather than a faulty
-  line (5), need knowledge outside the source such as runtime header limits or a provider's
-  permission model (2), or rest on a trust fact in a file the scope left `out_of_scope` (1); one
-  run raised a sibling of the bug, not the bug. Partial hits were common: of multi-part fixes,
-  usually one part was raised.
+- **Misses:** 9; in each the hunter reviewed the unit and passed it, and none was lost to budget
+  at 16. Categories are in the private results. Of multi-part fixes, usually one part was raised.
 - **Engine issues found:** `openai/gpt-6.1-sol` (the old validation default) refused verifier
   prompts as cybersecurity risk or answered prose, dropping every candidate (2 runs, $22.5,
-  superseded above); the default is now Opus. The same root cause often lands as two records (4 runs); critic
-  units missing `canonical_refs.lifecycle` are refused by the ledger; a failed agent's tokens are not
+  superseded above); the default is now Opus. The same root cause often lands as two records (4 runs); critic units missing `canonical_refs.lifecycle` are refused by the ledger; a failed agent's tokens are not
   metered (the provider bill ran up to 3% above the engine's own sum).
 - **Total spend:** $235 by the engine's metering, $242 by the provider key, including calibration
   and the superseded runs.

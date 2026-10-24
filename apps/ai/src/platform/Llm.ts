@@ -260,7 +260,7 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	"anthropic/claude-sonnet-5.5": { context: 950_000, output: 128_000 },
 	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.
 	"anthropic/claude-haiku-5.5": { context: 950_000, output: 128_000 },
-	// OpenRouter's catalogue: context_length 1_000_000. A security-audit validation candidate.
+	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.
 	"anthropic/claude-opus-5.5": { context: 950_000, output: 128_000 },
 	// Moonshot's own kimi-k2.6 is 262_144, but Cloudflare does not publish the window its Workers AI
 	// deployment actually serves. Held at the conservative default until someone measures it.
