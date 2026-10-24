@@ -22,36 +22,34 @@ const readTheme = (): Theme => {
 	)
 }
 
-/** Every org's pinned namespace, so the shell knows the active org's before the session resolves. */
-const readPinnedNamespaces: Effect.Effect<Record<string, string>> = Effect.try(() =>
-	Object.fromEntries(
-		Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-			.filter((key): key is string => key !== null && key.startsWith(NAMESPACE_STORAGE_PREFIX))
-			.map(
-				(key) =>
-					[key.slice(NAMESPACE_STORAGE_PREFIX.length), localStorage.getItem(key) ?? ""] as const,
-			)
-			.filter(([, value]) => value.length > 0),
-	),
-).pipe(Effect.orElseSucceed(() => ({})))
+/** Every `<prefix><orgId>` entry whose value decodes, keyed by org. */
+const readPrefixed = <A>(
+	prefix: string,
+	decode: (raw: string) => Option.Option<A>,
+): Effect.Effect<Record<string, A>> =>
+	Effect.try(() =>
+		Object.fromEntries(
+			Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+				.filter((key): key is string => key !== null && key.startsWith(prefix))
+				.flatMap((key) =>
+					Option.match(Option.flatMap(readLocalStorage(key), decode), {
+						onNone: () => [],
+						onSome: (value) => [[key.slice(prefix.length), value] as const],
+					}),
+				),
+		),
+	).pipe(Effect.orElseSucceed(() => ({})))
 
-const decodeSurfaces = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(NavSurface)))
+/** Every org's pinned namespace, so the shell knows the active org's before the session resolves. */
+const readPinnedNamespaces = readPrefixed(NAMESPACE_STORAGE_PREFIX, (raw) =>
+	raw.length > 0 ? Option.some(raw) : Option.none(),
+)
 
 /** Every org's remembered infra surfaces; an entry that no longer decodes is skipped. */
-const readRememberedSurfaces: Effect.Effect<Record<string, ReadonlyArray<NavSurface>>> = Effect.try(() =>
-	Object.fromEntries(
-		Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-			.filter((key): key is string => key !== null && key.startsWith(INFRA_SURFACES_STORAGE_PREFIX))
-			.flatMap((key) =>
-				Option.match(decodeSurfaces(localStorage.getItem(key)), {
-					onNone: () => [],
-					onSome: (surfaces) => [
-						[key.slice(INFRA_SURFACES_STORAGE_PREFIX.length), surfaces] as const,
-					],
-				}),
-			),
-	),
-).pipe(Effect.orElseSucceed(() => ({})))
+const readRememberedSurfaces = readPrefixed(
+	INFRA_SURFACES_STORAGE_PREFIX,
+	Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(NavSurface))),
+)
 
 /** Persisted shell UI state, read once before the first render. */
 export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* () {

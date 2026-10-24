@@ -1,6 +1,7 @@
 import { InfraPresenceRequest, InfraPresenceResponse, type InfraSurfaceLiteral } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
+import { AsyncData } from "foldkit"
 import { MapleInternalApiClient } from "../platform/api-clients"
 import type { NavSurface } from "../shell/nav"
 import { readThrough } from "./read-cache"
@@ -75,6 +76,11 @@ export type InfraSurfaces =
 
 /** The probe's answer: its surfaces, `"failed"`, or `null` while it is in flight. */
 export type PresenceProbe = ReadonlyArray<InfraSurfaceLiteral> | "failed" | null
+
+/** A probe's slot as `resolveInfraSurfaces` reads it; a re-read keeps the last answer. */
+export const probeOf = <E>(
+	data: AsyncData.AsyncData<ReadonlyArray<InfraSurfaceLiteral>, E>,
+): PresenceProbe => (AsyncData.isFailure(data) ? "failed" : Option.getOrNull(AsyncData.getData(data)))
 
 /** The live answer when it is complete, else the set remembered from the last visit. */
 export const resolveInfraSurfaces = (

@@ -127,7 +127,7 @@ export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState
 /** A source row before the org's sources are known: same height, no name yet. */
 const sourceRowPending = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
-		[h.Class(cn(ROW_CLASS, "py-3.5 hover:bg-transparent"))],
+		[h.Class("flex items-center gap-4 px-4 py-3.5")],
 		[
 			h.span(
 				[h.Class("flex w-52 shrink-0 items-center gap-3")],

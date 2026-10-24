@@ -43,6 +43,7 @@ import { type PageContext, PageOutMessage, type RootToastAction } from "./page/c
 import * as Preload from "./page/preload"
 import {
 	changeContext,
+	settleInfraSurfaces,
 	blockNavigation,
 	enterRoute,
 	parkPages,
@@ -100,6 +101,12 @@ const shellFoldConfig = {
 			Option.match(pageContextOf(model), {
 				onNone: () => ({ model }),
 				onSome: (context) => applyPage(changeContext(model.page, context))(model),
+			}),
+		// A page waiting on the org's surfaces (the /infra overview) requests its reads now.
+		SettledInfraSurfaces: () => (model) =>
+			Option.match(pageContextOf(model), {
+				onNone: () => ({ model }),
+				onSome: (context) => applyPage(settleInfraSurfaces(model.page, context))(model),
 			}),
 		RequestedOrganizationSwitch:
 			({ orgId }) =>

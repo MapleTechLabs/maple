@@ -115,6 +115,8 @@ export type Message = typeof Message.Type
 export const OutMessage = defineMessageUnion({
 	/** The org-global namespace pin changed: pages rebuild their queries under the new scope. */
 	ChangedGlobalNamespace: { maybeNamespace: Schema.Option(Schema.String) },
+	/** The org's probe and every integration status answered: pages waiting on its surfaces read now. */
+	SettledInfraSurfaces: {},
 	/** Clerk: an org other than the active one was picked (`setActive`, then reload). */
 	RequestedOrganizationSwitch: { orgId: Schema.String },
 	/** Clerk: Log out in the user menu (`signOut()`). */

@@ -9,7 +9,7 @@ import * as Frame from "../kit/frame"
 import { Message } from "./message"
 import type { Model, SourceId, SourceReading } from "./model"
 import { presentSources, sourceState, surfacesOf } from "./state"
-import { init, update } from "./update"
+import { contextChanged, init, update } from "./update"
 import { view } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -54,6 +54,7 @@ const probed = (model: Model, surfaces: ReadonlyArray<InfraSurfaceLiteral>) =>
 		Message.CompletedFetchPresence({ key: model.presence.key ?? "", result: Result.succeed(surfaces) }),
 		context,
 	)
+const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const shown = (model: Model) => presentSources(surfacesOf(model, context))
 
 const quiet: SourceReading = { summary: null }
@@ -111,6 +112,10 @@ describe("infra overview", () => {
 		)
 		expect(presentSources(surfacesOf(answered.model, waiting))).toBeNull()
 		expect(sourceReads(answered.commands)).toEqual([])
+		// The last status lands after the probe: the shell's settle step requests the sources.
+		const settled = contextChanged(answered.model, context)
+		expect(sourceReads(settled.commands)).toHaveLength(2)
+		expect(sourceReads(contextChanged(settled.model, context).commands)).toEqual([])
 	})
 
 	test("the remembered sources are read on entry, before the probe answers", () => {
@@ -156,13 +161,13 @@ describe("infra overview", () => {
 		const hostsIn = complete(known, "hosts", Result.succeed(withFindings))
 		const page = withViewInputs(view, { context })()
 		scene(
-			{ update: (model: Model, message: Message) => update(model, message, context), view: page },
+			{ update: pageUpdate, view: page },
 			given(hostsIn),
 			expectView(text("b at 99% CPU")).not.toExist(),
 		)
 		const allIn = complete(hostsIn, "cloudflare", Result.succeed(quiet))
 		scene(
-			{ update: (model: Model, message: Message) => update(model, message, context), view: page },
+			{ update: pageUpdate, view: page },
 			given(allIn),
 			expectView(text("b at 99% CPU")).toExist(),
 			expectView(text("Couldn't check this source. Its page shows the error.")).toExist(),

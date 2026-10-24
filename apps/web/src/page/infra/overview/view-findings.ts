@@ -63,7 +63,7 @@ export const findingRow = <M>(h: HtmlBuilder<M>, finding: Finding, time: TimeSea
 
 const findingRowLoading = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
-		[h.Class(cn(ROW_CLASS, FINDINGS_ROW_CLASS, "hover:bg-transparent"))],
+		[h.Class(cn("flex items-center gap-4 px-4 py-3", FINDINGS_ROW_CLASS))],
 		[
 			skeleton(h, "size-2 shrink-0 rounded-full"),
 			h.span([h.Class("flex w-32 shrink-0 items-center")], [skeleton(h, "h-3 w-20")]),

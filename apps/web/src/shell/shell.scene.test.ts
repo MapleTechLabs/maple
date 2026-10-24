@@ -512,6 +512,44 @@ describe("infrastructure section", () => {
 		)
 	})
 
+	test("the answer that completes the live set tells the pages, once", () => {
+		const settledBy = (model: Model, message: Message) => update(model, message).outMessage?._tag
+		const probeFirst = update(
+			signedIn(),
+			Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: ["hosts"] }),
+		).model
+		expectVitest(
+			settledBy(signedIn(), Message.SucceededLoadInfraPresence({ orgId: "org_parity", surfaces: [] })),
+		).toBe(undefined)
+		const settled = answered(signedIn(), true).model
+		expectVitest(
+			settledBy(
+				{ ...settled, integrations: { ...settled.integrations, aws: null } },
+				Message.SucceededLoadIntegration({
+					orgId: "org_parity",
+					integration: "aws",
+					isConnected: false,
+				}),
+			),
+		).toBe("SettledInfraSurfaces")
+		expectVitest(
+			settledBy(
+				settled,
+				Message.SucceededLoadIntegration({
+					orgId: "org_parity",
+					integration: "aws",
+					isConnected: true,
+				}),
+			),
+		).toBe(undefined)
+		expectVitest(
+			settledBy(
+				probeFirst,
+				Message.SucceededLoadIntegration({ orgId: "org_b", integration: "aws", isConnected: true }),
+			),
+		).toBe(undefined)
+	})
+
 	test("a settled answer is remembered only when it differs from the remembered set", () => {
 		const first = answered(signedIn(), true)
 		expectVitest(first.model.rememberedSurfaces).toEqual({ org_parity: ["cloudflare", "hosts"] })

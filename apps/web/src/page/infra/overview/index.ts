@@ -14,6 +14,7 @@ export const page = definePage(
 		update,
 		routeChanged,
 		contextChanged,
+		infraSurfacesSettled: contextChanged,
 		view,
 		breadcrumbs: () => [{ label: "Infrastructure" }],
 	},

@@ -57,7 +57,14 @@ const NO_SURFACES: ReadonlySet<NavSurface> = new Set()
  */
 export const surfacesOf = (model: Model): ReadonlySet<NavSurface> | null => {
 	const surfaces = shellSurfaces(model)
-	return surfaces._tag === "Every" ? null : surfaces._tag === "Only" ? surfaces.surfaces : NO_SURFACES
+	switch (surfaces._tag) {
+		case "Pending":
+			return NO_SURFACES
+		case "Every":
+			return null
+		case "Only":
+			return surfaces.surfaces
+	}
 }
 
 const activeSubHrefOf = (subItems: ReadonlyArray<NavSubItem>, currentPath: string): string | undefined =>

@@ -166,6 +166,8 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	readonly revive?: (model: Model, route: RouteOf<Tags>, context: PageContext) => PageReturn<Model, Message>
 	/** The namespace pin or time zone changed (an org change builds a new instance). */
 	readonly contextChanged?: (model: Model, context: PageContext) => PageReturn<Model, Message>
+	/** The org's probe and every integration status answered, after a page may have entered without them. */
+	readonly infraSurfacesSettled?: (model: Model, context: PageContext) => PageReturn<Model, Message>
 	readonly view: Submodel.View<Model, Message, PageViewInputs>
 	readonly subscriptions?: Subscription.Subscriptions<PageSubscriptionInput<Model>, Message, Resources>
 	/** `DashboardPage`'s `breadcrumbs`. */
@@ -391,6 +393,17 @@ export const definePage = <
 		contextChanged: (slot: PageSlotBase, context: PageContext) =>
 			isOwnSlot(slot) && spec.contextChanged
 				? Option.some(step(slot.key, slot.instance, context, spec.contextChanged(slot.model, context)))
+				: Option.none<PageStep<SlotType, WrappedType>>(),
+		infraSurfacesSettled: (slot: PageSlotBase, context: PageContext) =>
+			isOwnSlot(slot) && spec.infraSurfacesSettled
+				? Option.some(
+						step(
+							slot.key,
+							slot.instance,
+							context,
+							spec.infraSurfacesSettled(slot.model, context),
+						),
+					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		breadcrumbs: (slot: PageSlotBase): ReadonlyArray<BreadcrumbEntry> =>
 			isOwnSlot(slot) ? spec.breadcrumbs(slot.model) : [],

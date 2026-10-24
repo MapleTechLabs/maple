@@ -1,6 +1,10 @@
-import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import { type InfraSurfaces, type IntegrationFlags, resolveInfraSurfaces } from "../../../data/infra-surfaces"
+import {
+	type InfraSurfaces,
+	type IntegrationFlags,
+	probeOf,
+	resolveInfraSurfaces,
+} from "../../../data/infra-surfaces"
 import type { NavSurface } from "../../../shell/nav"
 import type { PageContext } from "../../contract"
 import type { Model, SourceId, SourceSummary } from "./model"
@@ -45,17 +49,21 @@ const NOT_CONNECTED: IntegrationFlags = {
 /** `useInfraSurfaces(window)`: the page's probe (the last answer while a new window loads) and the shell's statuses. */
 export const surfacesOf = (model: Model, context: PageContext): InfraSurfaces =>
 	resolveInfraSurfaces(
-		AsyncData.isFailure(model.presence.data)
-			? "failed"
-			: Option.getOrNull(AsyncData.getData(model.presence.data)),
+		probeOf(model.presence.data),
 		context.infra?.integrations ?? NOT_CONNECTED,
 		context.infra?.remembered,
 	)
 
 /** The sources an org has, `null` while that is pending. A failed probe shows every source rather than hiding one. */
-export const presentSources = (surfaces: InfraSurfaces): ReadonlyArray<SourceId> | null =>
-	surfaces._tag === "Pending"
-		? null
-		: surfaces._tag === "Every"
-			? SOURCE_IDS
-			: SOURCE_IDS.filter((id) => SOURCE_SURFACES[id].some((surface) => surfaces.surfaces.has(surface)))
+export const presentSources = (surfaces: InfraSurfaces): ReadonlyArray<SourceId> | null => {
+	switch (surfaces._tag) {
+		case "Pending":
+			return null
+		case "Every":
+			return SOURCE_IDS
+		case "Only":
+			return SOURCE_IDS.filter((id) =>
+				SOURCE_SURFACES[id].some((surface) => surfaces.surfaces.has(surface)),
+			)
+	}
+}

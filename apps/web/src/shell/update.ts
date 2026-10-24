@@ -1,5 +1,5 @@
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
-import { Option, Record } from "effect"
+import { Array, Equal, Option, Record } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import * as Dialog from "../ui/dialog"
@@ -146,18 +146,28 @@ const forOrg = (model: Model, orgId: string, apply: (model: Model) => Model): Up
 	model: Option.contains(model.maybeOrgId, orgId) ? apply(model) : model,
 })
 
-/** A probe or status answer for the org: once the live set is complete, remember it if it changed. */
-const surfacesAnswered = (model: Model, orgId: string, apply: (model: Model) => Model): UpdateReturn => {
-	if (!Option.contains(model.maybeOrgId, orgId)) return { model }
-	const next = apply(model)
-	const settled = settledSurfaces(shellProbe(next), next.integrations)
-	const remembered = next.rememberedSurfaces[orgId]
-	if (settled === null || (remembered !== undefined && remembered.join() === settled.join()))
-		return { model: next }
+/** Once the org's live surfaces are complete, remember them if they changed. */
+const rememberSettled = (orgId: string, step: UpdateReturn): UpdateReturn => {
+	const model = step.model
+	const settled = settledSurfaces(shellProbe(model), model.integrations)
+	const remembered = model.rememberedSurfaces[orgId]
+	if (
+		settled === null ||
+		(remembered !== undefined && Array.makeEquivalence(Equal.equals)(remembered, settled))
+	)
+		return step
 	return {
-		model: modifyFields(next, { rememberedSurfaces: (all) => Record.set(all, orgId, settled) }),
+		model: modifyFields(model, { rememberedSurfaces: (all) => Record.set(all, orgId, settled) }),
 		commands: [SaveInfraSurfaces({ orgId, surfaces: settled })],
 	}
+}
+
+/** A probe or status answer for the org; the one that completes the live set tells the pages. */
+const surfacesAnswered = (model: Model, orgId: string, apply: (model: Model) => Model): UpdateReturn => {
+	const step = rememberSettled(orgId, forOrg(model, orgId, apply))
+	const wasSettled = settledSurfaces(shellProbe(model), model.integrations) !== null
+	const isSettled = settledSurfaces(shellProbe(step.model), step.model.integrations) !== null
+	return !wasSettled && isSettled ? { ...step, outMessage: OutMessage.SettledInfraSurfaces() } : step
 }
 
 const toChecklist = Command.mapMessage((message: Checklist.Message) =>

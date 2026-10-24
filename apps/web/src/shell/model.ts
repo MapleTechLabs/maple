@@ -20,6 +20,7 @@ import {
 	type InfraSurfaces,
 	PENDING_INTEGRATIONS,
 	type PresenceProbe,
+	probeOf,
 	resolveInfraSurfaces,
 } from "../data/infra-surfaces"
 
@@ -168,10 +169,7 @@ export const init = (flags: ShellFlags): Model => ({
 })
 
 /** The sidebar's last-hour probe as `resolveInfraSurfaces` reads it; a re-read keeps the last answer. */
-export const shellProbe = (model: Model): PresenceProbe =>
-	AsyncData.isFailure(model.infraPresence)
-		? "failed"
-		: Option.getOrNull(AsyncData.getData(model.infraPresence))
+export const shellProbe = (model: Model): PresenceProbe => probeOf(model.infraPresence)
 
 /** `useInfraSurfaces()`: the live answer once complete, else the org's remembered set. */
 export const shellSurfaces = (model: Model): InfraSurfaces =>
