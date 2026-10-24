@@ -4,6 +4,7 @@ import { MapleApiV2, isoTimestamp } from "@maple/domain/http/v2"
 import { Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
 
 /**
  * The widget credential's ceilings, all of them the server's.
@@ -34,12 +35,16 @@ const WIDGET_CREDENTIAL_NAME = "Home Screen widgets"
 export const HttpV2WidgetCredentialsLive = HttpApiBuilder.group(MapleApiV2, "widgetCredentials", (handlers) =>
 	Effect.gen(function* () {
 		const apiKeys = yield* ApiKeysService
+		const auth = yield* AuthService
 
 		return handlers
 			.handle("mint", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					// The owner the dashboard's Mobile devices list shows, to pick a lost phone out.
+					const createdByEmail = yield* auth.getUserEmail(tenant.userId)
 					const credential = yield* apiKeys.replaceDeviceKey(tenant.orgId, tenant.userId, {
+						createdByEmail,
 						deviceId: params.installation_id,
 						name: WIDGET_CREDENTIAL_NAME,
 						scopes: WIDGET_CREDENTIAL_SCOPES,
