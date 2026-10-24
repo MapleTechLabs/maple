@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import * as PricingCards from "./pricing-cards"
 import { init, Message, type Model, update } from "./quick-start"
 import { DEFAULT_QUICK_START_STATE, resolveQuickStartStep } from "./quick-start-state"
+import { ConnectMessage } from "./quick-start-connect"
 import { LoadTeam, loadingTeam, TeamMessage, updateTeam } from "./quick-start-team"
 
 const loaded = (): Model => ({ ...init("maple-onboarding-v6-org_1").model, state: DEFAULT_QUICK_START_STATE })
@@ -44,8 +45,10 @@ describe("quick start", () => {
 			state: DEFAULT_QUICK_START_STATE,
 		}
 		const skipped = update(start, Message.ClickedContinue({ step: "stack" })).model
-		expect(resolveQuickStartStep(stateOf(skipped), true)).toBe("team")
-		const done = update(skipped, Message.ClickedContinue({ step: "team" }))
+		expect(resolveQuickStartStep(stateOf(skipped), true)).toBe("connect")
+		const connected = update(skipped, Message.ClickedContinue({ step: "connect" })).model
+		expect(resolveQuickStartStep(stateOf(connected), true)).toBe("team")
+		const done = update(connected, Message.ClickedContinue({ step: "team" }))
 		expect(done.commands?.map((command) => [command.name, command.args]).at(-1)).toEqual([
 			"FinishQuickStart",
 			{ url: "/traces" },
@@ -55,7 +58,7 @@ describe("quick start", () => {
 	test("someone who already finished is sent straight on when the page loads", () => {
 		const finished = {
 			...DEFAULT_QUICK_START_STATE,
-			completedSteps: { plan: true, stack: true, team: true },
+			completedSteps: { plan: true, stack: true, connect: true, team: true },
 		}
 		const loading = init("maple-onboarding-v6-org_1").model
 		expect(names(update(loading, Message.LoadedQuickStartState({ state: finished })))).toEqual([
@@ -64,6 +67,44 @@ describe("quick start", () => {
 		expect(
 			names(update(loading, Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE }))),
 		).not.toContain("FinishQuickStart")
+	})
+})
+
+describe("quick start connect step", () => {
+	const atStack = (): Model => ({
+		...init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model,
+		state: {
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "stack",
+			stack: { languages: ["nodejs"], platforms: ["cloudflare", "docker"] },
+		},
+	})
+
+	test("opening it reads the ingest key, what is arriving, and the providers Maple can check", () => {
+		const opened = update(atStack(), Message.ClickedContinue({ step: "stack" }))
+		expect(names(opened)).toEqual(
+			expect.arrayContaining([
+				"FetchOnboardingConnectKeys",
+				"LoadOnboardingConnectPresence",
+				"LoadOnboardingConnectedProviders",
+			]),
+		)
+		const providers = (opened.commands ?? []).find(
+			(command) => command.name === "LoadOnboardingConnectedProviders",
+		)
+		expect(providers?.args).toEqual({ orgId: "org_1", providers: ["cloudflare"] })
+		expect(opened.model.connect.isActive).toBe(true)
+	})
+
+	test("it keeps polling while it shows and stops once they move on", () => {
+		const open = update(atStack(), Message.ClickedContinue({ step: "stack" })).model
+		const polled = update(open, Message.GotConnectMessage({ message: ConnectMessage.ElapsedPoll() }))
+		expect(names(polled)).toContain("LoadOnboardingConnectPresence")
+		const left = update(open, Message.ClickedContinue({ step: "connect" })).model
+		expect(left.connect.isActive).toBe(false)
+		expect(
+			names(update(left, Message.GotConnectMessage({ message: ConnectMessage.ElapsedPoll() }))),
+		).toEqual([])
 	})
 })
 
