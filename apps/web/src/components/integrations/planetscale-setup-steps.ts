@@ -2,9 +2,9 @@
 //
 // The OAuth grant covers everything: inventory, query insights, webhooks, and
 // branch metrics, which Maple polls from PlanetScale's metrics API every 5
-// minutes. Older connections may still scrape Prometheus with a service token
+// minutes. A service token switches metrics to Prometheus scraping
 // (`metrics_auth: "service_token"`); health is derived from whichever source
-// the connection uses, so the status row and the checklist always agree.
+// the connection uses, so the status row and the Go live checks always agree.
 //
 // Pure, so the progression rules are testable on their own
 // (same shape as branch-selection.ts).
@@ -75,139 +75,184 @@ export const metricsCollectionFailing = (status: MetricsStatus, nowMs: number): 
 export const metricsNeverCollected = (status: V2PlanetScaleIntegration): boolean =>
 	metricsLastCollectedAt(status) === null
 
-export type SetupStepId = "connected" | "permissions" | "first-metrics"
+export type LiveCheckId = "access" | "resources" | "first-metrics" | "webhooks"
 
-/**
- * `blocked` is not `pending`: something is wrong and the operator has to act.
- * `current` is the one step the card expands.
- */
-export type SetupStepState = "done" | "current" | "blocked" | "pending"
+/** `failed` is not `waiting`: something is wrong and the operator has to act. */
+export type LiveCheckState = "done" | "working" | "waiting" | "failed"
 
-export interface SetupStep {
-	readonly id: SetupStepId
+export interface LiveCheck {
+	readonly id: LiveCheckId
+	readonly state: LiveCheckState
 	readonly title: string
-	readonly state: SetupStepState
-	/** One line: what happened, or what to do next. Rendered under the title. */
+	/** One line: what happened, or what to do next. */
 	readonly detail: string
-	/**
-	 * The step is `current` because Maple is working, not because the operator
-	 * is. Drives whether the marker spins — a spinner next to a step that is
-	 * waiting on a paste reads as "don't touch this", which is the opposite of
-	 * what it means.
-	 */
-	readonly waitingOnMaple: boolean
 }
 
+export type LiveHealth = "pending" | "healthy" | "attention"
+
 export interface PlanetScaleSetup {
-	readonly steps: ReadonlyArray<SetupStep>
-	/** Every step done — the card collapses to its quiet connected form. */
-	readonly complete: boolean
+	/** Go live's checklist: access, resources, first metrics, then webhooks when Maple reports them. */
+	readonly checks: ReadonlyArray<LiveCheck>
+	/** The grant can't be used: revoked, or it can't read databases. */
+	readonly accessBlocked: boolean
 	/**
-	 * The first scrape or poll hasn't landed. The card polls status while this is
+	 * The first scrape or poll hasn't landed. The page polls status while this is
 	 * true so "waiting" resolves to "streaming" without a reload.
 	 */
 	readonly awaitingFirstScrape: boolean
 	readonly health: MetricsHealthState
-	/** 1-based index of the `current`/`blocked` step, or null once complete. */
-	readonly activeStepNumber: number | null
+	readonly live: LiveHealth
 }
 
+/** What the inventory found, when it has loaded. */
+export type InventoryCounts = Readonly<{ databases: number; branches: number }>
+
+const plural = (count: number, noun: string, nouns: string) => `${count} ${count === 1 ? noun : nouns}`
+
 /**
- * Derive the three-step progression from the status the card already fetches.
- * Everything here is a function of `status` — no extra requests, no local state.
+ * Derive Go live's checks from the status the page already fetches.
+ * Everything here is a function of `status` and the inventory counts: no extra requests, no local state.
  */
-export function derivePlanetScaleSetup(status: V2PlanetScaleIntegration, nowMs: number): PlanetScaleSetup {
+export function derivePlanetScaleSetup(
+	status: V2PlanetScaleIntegration,
+	nowMs: number,
+	inventory: InventoryCounts | null = null,
+): PlanetScaleSetup {
 	const health = metricsHealthState(status, nowMs)
 	const viaApi = metricsAuthOf(status) === "api"
 	const revoked = status.revoked_at !== null
-	// `detected_permissions` is null before the org is bound; absent is unknown,
-	// not denied — only an explicit `false` blocks.
+	// `detected_permissions` is null before the org is bound; absent is unknown, not denied.
 	const readDatabasesDenied = status.detected_permissions?.readDatabases === false
-
-	const step = (
-		id: SetupStepId,
-		title: string,
-		state: SetupStepState,
-		detail: string,
-		waitingOnMaple = false,
-	): SetupStep => ({ id, title, state, detail, waitingOnMaple })
-
-	const connected = revoked
-		? step(
-				"connected",
-				"Authorization",
-				"blocked",
-				"The PlanetScale authorization was revoked — reconnect to resume collection.",
-			)
-		: step(
-				"connected",
-				"Authorization",
-				"done",
-				status.organization !== null
-					? `Connected to ${status.organization}`
-					: "OAuth authorization stored",
-			)
-
-	const permissions = revoked
-		? step("permissions", "Permissions", "pending", "Checked once the authorization is restored.")
-		: readDatabasesDenied
-			? step(
-					"permissions",
-					"Permissions",
-					"blocked",
-					"The authorization can't read databases — grant the read_databases scope, then reconnect.",
-				)
-			: step("permissions", "Permissions", "done", "Inventory, query insights, and webhooks are live.")
-
-	const upstreamBlocked = revoked || readDatabasesDenied
+	const accessBlocked = revoked || readDatabasesDenied
 	const notYetCollected = health === "waiting" || health === "unconfigured"
+	const organization = status.organization ?? "your organization"
 
-	const firstMetrics = ((): SetupStep => {
-		const title = "Metrics arriving"
+	const check = (id: LiveCheckId, state: LiveCheckState, title: string, detail: string): LiveCheck => ({
+		id,
+		state,
+		title,
+		detail,
+	})
+
+	const access = revoked
+		? check(
+				"access",
+				"failed",
+				"Authorization revoked",
+				"Maple can no longer read this organization. Reconnect to resume collection.",
+			)
+		: readDatabasesDenied
+			? check(
+					"access",
+					"failed",
+					"Can't read databases",
+					"The grant is missing the read_databases scope. Reconnect and keep it checked.",
+				)
+			: check(
+					"access",
+					"done",
+					"Access works",
+					viaApi
+						? `The grant reads ${organization}`
+						: `The grant reads ${organization}, the service token reads metrics endpoints`,
+				)
+
+	const resources = accessBlocked
+		? check("resources", "waiting", "Databases and branches", "Listed once access is restored.")
+		: status.last_inventory_error !== null
+			? check("resources", "failed", "Listing databases failed", status.last_inventory_error)
+			: status.last_inventory_at === null
+				? check("resources", "working", "Listing databases and branches", "Usually within a minute")
+				: check(
+						"resources",
+						"done",
+						"Resources found",
+						inventory === null
+							? "Databases and branches listed"
+							: `${plural(inventory.databases, "database", "databases")}, ${plural(inventory.branches, "branch", "branches")}`,
+					)
+
+	const metricsTitle = viaApi ? "First poll, branch metrics" : "First scrape, branch metrics"
+	const firstMetrics = (() => {
 		// Nothing is collected while the grant is broken, so don't spin over it.
-		if (upstreamBlocked && notYetCollected) {
-			return step("first-metrics", title, "pending", "Starts once the authorization is restored.")
-		}
+		if (accessBlocked && notYetCollected)
+			return check("first-metrics", "waiting", metricsTitle, "Starts once access is restored.")
 		switch (health) {
 			case "healthy":
-				return step("first-metrics", title, "done", "Streaming branch metrics.")
-			case "degraded":
-				return step(
+				return check(
 					"first-metrics",
-					title,
-					"blocked",
-					viaApi ? "The last poll failed." : "The last scrape failed.",
+					"done",
+					"Branch metrics arriving",
+					viaApi ? "Polled from PlanetScale every 5 minutes" : "Scraped with the service token",
+				)
+			case "degraded":
+				return check(
+					"first-metrics",
+					"failed",
+					metricsTitle,
+					`${viaApi ? "The last poll failed" : "The last scrape failed"}: ${metricsLastError(status) ?? ""}`,
 				)
 			case "stalled":
-				return step(
+				return check(
 					"first-metrics",
-					title,
-					"blocked",
+					"failed",
+					"Branch metrics stopped",
 					"Metrics stopped arriving, collection has stalled.",
 				)
 			default:
-				// Nothing is asked of the operator: Maple is collecting and the first
-				// sample hasn't landed.
-				return step(
+				return check(
 					"first-metrics",
-					title,
-					"current",
-					viaApi
-						? "Waiting for the first poll. Maple polls PlanetScale every 5 minutes."
-						: "Waiting for the first scrape.",
-					true,
+					"working",
+					metricsTitle,
+					viaApi ? "Usually within 10 minutes" : "Usually under a minute",
 				)
 		}
 	})()
 
-	const steps = [connected, permissions, firstMetrics]
-	const activeIndex = steps.findIndex((step) => step.state === "current" || step.state === "blocked")
+	const webhooks = status.webhooks ?? null
+	const webhookCheck =
+		webhooks === null
+			? []
+			: [
+					webhooks.state === "active"
+						? check(
+								"webhooks",
+								"done",
+								"Webhooks registered",
+								plural(webhooks.databases, "database", "databases"),
+							)
+						: webhooks.state === "pending"
+							? check(
+									"webhooks",
+									"working",
+									"Registering webhooks",
+									`${webhooks.registered_databases} of ${webhooks.databases} databases so far`,
+								)
+							: webhooks.state === "failing"
+								? check(
+										"webhooks",
+										"failed",
+										"Webhooks failing",
+										`${webhooks.registered_databases} of ${webhooks.databases} databases. ${webhooks.last_error ?? ""}`.trim(),
+									)
+								: check(
+										"webhooks",
+										"failed",
+										"Webhooks need reauthorization",
+										"This grant predates webhooks. Reconnect so Maple can register them.",
+									),
+				]
 
 	return {
-		steps,
-		complete: activeIndex === -1,
-		awaitingFirstScrape: !upstreamBlocked && notYetCollected,
+		checks: [access, resources, firstMetrics, ...webhookCheck],
+		accessBlocked,
+		awaitingFirstScrape: !accessBlocked && notYetCollected,
 		health,
-		activeStepNumber: activeIndex === -1 ? null : activeIndex + 1,
+		live:
+			accessBlocked || health === "degraded" || health === "stalled"
+				? "attention"
+				: health === "healthy"
+					? "healthy"
+					: "pending",
 	}
 }

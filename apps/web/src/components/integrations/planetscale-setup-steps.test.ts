@@ -7,7 +7,7 @@ import {
 	derivePlanetScaleSetup,
 	metricsHealthState,
 	metricsNeverCollected,
-	type SetupStepId,
+	type LiveCheckId,
 } from "./planetscale-setup-steps"
 
 const NOW = Date.parse("2026-08-04T12:00:00Z")
@@ -44,8 +44,8 @@ const status = (over: Partial<V2PlanetScaleIntegration> = {}): V2PlanetScaleInte
 	...over,
 })
 
-const stateOf = (s: V2PlanetScaleIntegration, id: SetupStepId) =>
-	derivePlanetScaleSetup(s, NOW).steps.find((step) => step.id === id)?.state
+const stateOf = (s: V2PlanetScaleIntegration, id: LiveCheckId) =>
+	derivePlanetScaleSetup(s, NOW).checks.find((check) => check.id === id)?.state
 
 /** A connection on the metrics API poller, the default since service tokens were retired. */
 const viaApi = (
@@ -130,73 +130,83 @@ describe("metricsHealthState (metrics API)", () => {
 })
 
 describe("derivePlanetScaleSetup", () => {
-	it("completes when the grant, permissions, and first scrape are all settled", () => {
-		const setup = derivePlanetScaleSetup(status(), NOW)
-		expect(setup.complete).toBe(true)
-		expect(setup.activeStepNumber).toBeNull()
+	it("is live when access, resources and the first scrape are all settled", () => {
+		const setup = derivePlanetScaleSetup(status(), NOW, { databases: 4, branches: 9 })
+		expect(setup.live).toBe("healthy")
 		expect(setup.awaitingFirstScrape).toBe(false)
-		expect(setup.steps.map((s) => s.state)).toEqual(["done", "done", "done"])
+		expect(setup.checks.map((c) => c.state)).toEqual(["done", "done", "done"])
+		expect(setup.checks[1]!.detail).toBe("4 databases, 9 branches")
 	})
 
-	it("waits on Maple, not the operator, before the first poll of a fresh connection", () => {
+	it("works on the first poll of a fresh connection, and the page keeps polling", () => {
 		const setup = derivePlanetScaleSetup(viaApi({ last_polled_at: null, last_error: null }), NOW)
-		expect(setup.activeStepNumber).toBe(3)
-		expect(setup.steps[2]!.state).toBe("current")
-		expect(setup.steps[2]!.waitingOnMaple).toBe(true)
+		expect(stateOf(viaApi({ last_polled_at: null, last_error: null }), "first-metrics")).toBe("working")
+		expect(setup.live).toBe("pending")
 		expect(setup.awaitingFirstScrape).toBe(true)
 	})
 
-	it("completes once the first poll lands", () => {
+	it("is live once the first poll lands", () => {
 		const setup = derivePlanetScaleSetup(
 			viaApi({ last_polled_at: iso(NOW - 60_000), last_error: null }),
 			NOW,
 		)
-		expect(setup.complete).toBe(true)
+		expect(setup.live).toBe("healthy")
 		expect(setup.awaitingFirstScrape).toBe(false)
 	})
 
-	it("blocks on a failed poll and stops polling status", () => {
-		const setup = derivePlanetScaleSetup(
-			viaApi({ last_polled_at: null, last_error: "rate limited" }),
-			NOW,
-		)
-		expect(setup.steps[2]!.state).toBe("blocked")
+	it("fails on a failed poll, says why, and stops polling status", () => {
+		const s = viaApi({ last_polled_at: null, last_error: "rate limited" })
+		const setup = derivePlanetScaleSetup(s, NOW)
+		expect(stateOf(s, "first-metrics")).toBe("failed")
+		expect(setup.checks[2]!.detail).toBe("The last poll failed: rate limited")
+		expect(setup.live).toBe("attention")
 		expect(setup.awaitingFirstScrape).toBe(false)
 	})
 
 	it("polls while a service token's first scrape hasn't landed", () => {
-		const setup = derivePlanetScaleSetup(status({ scrape_target: target({ last_scrape_at: null }) }), NOW)
-		expect(setup.awaitingFirstScrape).toBe(true)
-		expect(setup.activeStepNumber).toBe(3)
-		expect(setup.steps[2]!.state).toBe("current")
+		const s = status({ scrape_target: target({ last_scrape_at: null }) })
+		expect(derivePlanetScaleSetup(s, NOW).awaitingFirstScrape).toBe(true)
+		expect(stateOf(s, "first-metrics")).toBe("working")
 	})
 
 	it("stops polling once the scrape degrades, waiting forever would be a lie", () => {
-		const setup = derivePlanetScaleSetup(
-			status({ scrape_target: target({ last_scrape_error: "403 Forbidden" }) }),
-			NOW,
-		)
-		expect(setup.awaitingFirstScrape).toBe(false)
-		expect(setup.steps[2]!.state).toBe("blocked")
+		const s = status({ scrape_target: target({ last_scrape_error: "403 Forbidden" }) })
+		expect(derivePlanetScaleSetup(s, NOW).awaitingFirstScrape).toBe(false)
+		expect(stateOf(s, "first-metrics")).toBe("failed")
 	})
 
-	it("blocks on a revoked grant and does not wait for metrics underneath it", () => {
+	it("fails access on a revoked grant and does not wait for anything underneath it", () => {
 		const s = viaApi({ last_polled_at: null, last_error: null }, { revoked_at: iso(NOW - 1000) })
-		expect(stateOf(s, "connected")).toBe("blocked")
-		expect(stateOf(s, "permissions")).toBe("pending")
-		expect(stateOf(s, "first-metrics")).toBe("pending")
-		expect(derivePlanetScaleSetup(s, NOW).activeStepNumber).toBe(1)
+		expect(stateOf(s, "access")).toBe("failed")
+		expect(stateOf(s, "resources")).toBe("waiting")
+		expect(stateOf(s, "first-metrics")).toBe("waiting")
+		expect(derivePlanetScaleSetup(s, NOW).live).toBe("attention")
 		expect(derivePlanetScaleSetup(s, NOW).awaitingFirstScrape).toBe(false)
 	})
 
-	it("blocks on an explicitly denied read_databases scope", () => {
+	it("fails access on an explicitly denied read_databases scope", () => {
 		const s = status({ detected_permissions: { readDatabases: false } })
-		expect(stateOf(s, "permissions")).toBe("blocked")
+		expect(stateOf(s, "access")).toBe("failed")
+		expect(derivePlanetScaleSetup(s, NOW).accessBlocked).toBe(true)
 	})
 
 	it("treats unknown permissions as not-denied", () => {
 		// Null before the org is bound, and an absent key is not a denial.
-		expect(stateOf(status({ detected_permissions: null }), "permissions")).toBe("done")
-		expect(stateOf(status({ detected_permissions: {} }), "permissions")).toBe("done")
+		expect(stateOf(status({ detected_permissions: null }), "access")).toBe("done")
+		expect(stateOf(status({ detected_permissions: {} }), "access")).toBe("done")
+	})
+
+	it("works while the inventory is first listed, and fails on its error", () => {
+		expect(stateOf(status({ last_inventory_at: null }), "resources")).toBe("working")
+		expect(stateOf(status({ last_inventory_error: "502 Bad Gateway" }), "resources")).toBe("failed")
+	})
+
+	it("adds a webhooks check only when Maple reports webhooks", () => {
+		expect(stateOf(status(), "webhooks")).toBeUndefined()
+		const failing = status({
+			webhooks: { state: "failing", registered_databases: 1, databases: 2, last_error: "limit" },
+		})
+		expect(stateOf(failing, "webhooks")).toBe("failed")
+		expect(derivePlanetScaleSetup(failing, NOW).live).toBe("healthy")
 	})
 })

@@ -3,6 +3,13 @@ import type { DataIntegration } from "../../route/data-integrations"
 import { overviewOf } from "./derive"
 import type { Model } from "./model"
 import { railwayFlow } from "./flow-railway"
+import { gcpFlow } from "./flow-gcp"
+import { planetscaleFlow } from "./flow-planetscale"
+import { prometheusFlow } from "./flow-prometheus"
+import { cloudflareFlow } from "./flow-cloudflare"
+import { githubFlow } from "./flow-github"
+import { supabaseFlow } from "./flow-supabase"
+import { awsFlow } from "./flow-aws"
 
 // Where a source stands in `/sources/new`'s flow: Connect, Choose data, Go live.
 // Each source answers it from its own status; the page frames the steps and owns which one shows.
@@ -29,17 +36,9 @@ export type FlowContext = Readonly<{
 	hasAddedTarget: boolean
 }>
 
-const genericFlow = (model: Model, integration: DataIntegration, context: FlowContext): FlowSpec => {
-	const overview =
-		integration === "warpstream" ? null : overviewOf(model.statuses, model.nowMs, integration)
-	const connected =
-		integration === "warpstream"
-			? context.hasAddedTarget
-				? "Target added"
-				: null
-			: overview?.kind === "connected"
-				? (overview.context ?? "Connected")
-				: null
+const genericFlow = (model: Model, integration: DataIntegration): FlowSpec => {
+	const overview = overviewOf(model.statuses, model.nowMs, integration)
+	const connected = overview?.kind === "connected" ? (overview.context ?? "Connected") : null
 	const live: LiveHealth =
 		overview?.kind !== "connected" ? (connected === null ? "pending" : "healthy") : overview.health
 	return {
@@ -60,10 +59,25 @@ const genericFlow = (model: Model, integration: DataIntegration, context: FlowCo
 
 export const flowOf = (model: Model, integration: DataIntegration, context: FlowContext): FlowSpec => {
 	switch (integration) {
+		case "prometheus":
+		case "warpstream":
+			return prometheusFlow(model, integration, context)
 		case "railway":
 			return railwayFlow(model)
+		case "aws":
+			return awsFlow(model)
+		case "gcp":
+			return gcpFlow(model)
+		case "planetscale":
+			return planetscaleFlow(model)
+		case "cloudflare":
+			return cloudflareFlow(model)
+		case "github":
+			return githubFlow(model)
+		case "supabase":
+			return supabaseFlow(model)
 		default:
-			return genericFlow(model, integration, context)
+			return genericFlow(model, integration)
 	}
 }
 

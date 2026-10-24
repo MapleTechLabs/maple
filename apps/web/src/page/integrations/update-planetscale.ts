@@ -13,10 +13,11 @@ import {
 	parsePatternList,
 	type PlanetscaleCardModel,
 	SelectOrganization,
+	SetMetricsToken,
 } from "./planetscale"
 import { chain, requestStatus } from "./update-status"
 
-// `PlanetScaleIntegrationCard`'s state changes.
+// `PlanetScaleIntegrationCard`'s and its connect flow's state changes.
 
 type Return = PageReturn<Model, Message>
 
@@ -51,12 +52,26 @@ export const requestOrganizations = (model: Model, context: PageContext, mode: K
 	})
 }
 
-/** The inline picker mounts (and reads the organizations) while the org is still to be chosen. */
-export const ensurePendingPicker = (model: Model, context: PageContext): Return => {
+/** The picker, seeded once with the saved binding. */
+const seededPicker = (model: Model): Partial<PlanetscaleCardModel> => {
 	const status = planetscaleStatusOf(model)
-	return status !== null && !status.connected && status.pending_org_selection
-		? requestOrganizations(model, context, "Load")
-		: { model }
+	return {
+		selectedOrg: status?.organization ?? null,
+		includeBranches: Field.init(status?.scrape_target?.include_branches.join(", ") ?? ""),
+		excludeBranches: Field.init(status?.scrape_target?.exclude_branches.join(", ") ?? ""),
+	}
+}
+
+/** Once authorized, Choose data's picker reads the organizations; a bound org seeds it once. */
+export const ensurePicker = (model: Model, context: PageContext): Return => {
+	const status = planetscaleStatusOf(model)
+	if (status === null || (!status.connected && !status.pending_org_selection)) return { model }
+	const card = model.planetscaleCard
+	const seeded =
+		status.connected && card.selectedOrg === null && !card.isSelecting
+			? withCard(model, seededPicker(model))
+			: model
+	return requestOrganizations(seeded, context, "Load")
 }
 
 const dialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
@@ -66,14 +81,9 @@ const dialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 	),
 })
 
-/** "Change organization": the picker seeded with the current binding. */
+/** "Edit data": the picker dialog, seeded with the current binding. */
 export const clickedChange = (model: Model, context: PageContext): Return => {
-	const status = planetscaleStatusOf(model)
-	const seeded = withCard(model, {
-		selectedOrg: status?.organization ?? null,
-		includeBranches: Field.init(status?.scrape_target?.include_branches.join(", ") ?? ""),
-		excludeBranches: Field.init(status?.scrape_target?.exclude_branches.join(", ") ?? ""),
-	})
+	const seeded = withCard(model, seededPicker(model))
 	return chain(seeded, [
 		(next) => dialogStep(next, Dialog.open(next.planetscaleCard.pickerDialog)),
 		(next) => requestOrganizations(next, context, "Load"),
@@ -104,7 +114,7 @@ export const gotBranchField = (
 	}
 }
 
-/** Cancel closes the dialog; in the pending state the same button disconnects. */
+/** Cancel closes the dialog. */
 export const clickedPickerCancel = (model: Model): Return =>
 	model.planetscaleCard.pickerDialog.isOpen
 		? dialogStep(model, Dialog.close(model.planetscaleCard.pickerDialog))
@@ -148,3 +158,40 @@ export const completedSelect = (
 export const updateCard = (model: Model, card: Partial<PlanetscaleCardModel>): Return => ({
 	model: withCard(model, card),
 })
+
+export const gotTokenField = (model: Model, field: "id" | "secret", message: Field.Message): Return => {
+	const current = field === "id" ? model.planetscaleCard.tokenId : model.planetscaleCard.tokenSecret
+	const step = Field.update(current, message)
+	return {
+		model: withCard(model, field === "id" ? { tokenId: step.model } : { tokenSecret: step.model }),
+		commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
+			Message.GotPlanetscaleTokenField({ field, message: inner }),
+		),
+	}
+}
+
+export const submittedToken = (model: Model): Return => {
+	const card = model.planetscaleCard
+	const tokenId = card.tokenId.value.trim()
+	const tokenSecret = card.tokenSecret.value.trim()
+	if (card.isSavingToken || tokenId === "" || tokenSecret === "") return { model }
+	return {
+		model: withCard(model, { isSavingToken: true, tokenError: null }),
+		commands: [SetMetricsToken({ tokenId, tokenSecret })],
+	}
+}
+
+/** PlanetScale checks the token before Maple stores it, so a failure saved nothing. */
+export const completedToken = (model: Model, context: PageContext, failure: LoadFailure | null): Return =>
+	failure !== null
+		? { model: withCard(model, { isSavingToken: false, tokenError: failure.message }) }
+		: refreshAfterWrite(
+				withCard(model, {
+					isSavingToken: false,
+					tokenError: null,
+					isReplacingToken: false,
+					tokenId: Field.init(),
+					tokenSecret: Field.init(),
+				}),
+				context,
+			)

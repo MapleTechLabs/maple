@@ -7,6 +7,13 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { cardView } from "./view"
 import { railwayFlowView } from "./view-flow-railway"
+import { gcpFlowView } from "./view-flow-gcp"
+import { planetscaleFlowView } from "./view-flow-planetscale"
+import { prometheusFlowView } from "./view-flow-prometheus"
+import { cloudflareFlowView } from "./view-flow-cloudflare"
+import { githubFlowView } from "./view-flow-github"
+import { supabaseFlowView } from "./view-flow-supabase"
+import { awsFlowView } from "./view-flow-aws"
 
 // The body of `/sources/new`'s current step for a data integration: the step card and its rail.
 
@@ -21,8 +28,7 @@ const genericFlowView = (
 	timeZone: string,
 ): Html => {
 	if (stage !== "live") return flowColumns(h, [...cardView(h, model, integration, timeZone)], null)
-	const overview =
-		integration === "warpstream" ? null : overviewOf(model.statuses, model.nowMs, integration)
+	const overview = overviewOf(model.statuses, model.nowMs, integration)
 	const connected = overview?.kind === "connected" ? overview : null
 	return flowColumns(
 		h,
@@ -63,8 +69,23 @@ export const flowView = (
 	timeZone: string,
 ): Html => {
 	switch (integration) {
+		case "prometheus":
+		case "warpstream":
+			return prometheusFlowView(h, model, integration, stage, timeZone)
 		case "railway":
 			return railwayFlowView(h, model, stage, timeZone)
+		case "aws":
+			return awsFlowView(h, model, stage, timeZone)
+		case "gcp":
+			return gcpFlowView(h, model, stage, timeZone)
+		case "planetscale":
+			return planetscaleFlowView(h, model, stage)
+		case "cloudflare":
+			return cloudflareFlowView(h, model, stage)
+		case "github":
+			return githubFlowView(h, model, stage)
+		case "supabase":
+			return supabaseFlowView(h, model, stage)
 		default:
 			return genericFlowView(h, model, integration, stage, timeZone)
 	}

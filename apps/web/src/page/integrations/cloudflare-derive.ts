@@ -65,7 +65,7 @@ export const describeCloudflareError = (raw: string): CloudflareErrorInfo => {
 	const has = (...needles: ReadonlyArray<string>) => needles.some((needle) => s.includes(needle))
 	if (has("revoked", "no longer valid"))
 		return {
-			summary: "Cloudflare access was revoked — reconnect to resume.",
+			summary: "Cloudflare access was revoked. Reconnect to resume.",
 			tone: "crit",
 			scope: "account",
 		}
@@ -73,13 +73,13 @@ export const describeCloudflareError = (raw: string): CloudflareErrorInfo => {
 		return { summary: "Reconnect to grant Maple analytics access.", tone: "warn", scope: "account" }
 	if (has("cloudflare_oauth_client_id", "is required", "ingest key unavailable"))
 		return {
-			summary: "Traffic collection is temporarily unavailable — try again shortly.",
+			summary: "Traffic collection is temporarily unavailable. Try again shortly.",
 			tone: "crit",
 			scope: "account",
 		}
 	if (has("not authenticated", "not authorized", "unauthorized", "access denied"))
 		return {
-			summary: "Cloudflare denied the request — reconnect to refresh access.",
+			summary: "Cloudflare denied the request. Reconnect to refresh access.",
 			tone: "crit",
 			scope: "account",
 		}

@@ -116,11 +116,14 @@ const withMetrics = (rows: ReadonlyArray<SupabaseProjectRow>): Model => {
 }
 
 describe("supabase card", () => {
-	test("a disconnected organization offers the OAuth connect", () => {
+	test("a disconnected organization links back to the connect flow", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withStatus(status({ connected: false, organization: null, projects: [] }))),
-			expectView(role("button", { name: "Connect Supabase" })).toExist(),
+			expectView(role("link", { name: "Reconnect" })).toHaveAttr(
+				"href",
+				"/sources/new?integration=supabase",
+			),
 		)
 	})
 
@@ -132,7 +135,7 @@ describe("supabase card", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			expectView(text("Supabase isn't configured on this deployment.")).toExist(),
-			expectView(role("button", { name: "Connect Supabase" })).toBeAbsent(),
+			expectView(role("link", { name: "Reconnect" })).toBeAbsent(),
 		)
 		expect(overviewOf(model.statuses, model.nowMs, "supabase")).toEqual({ kind: "unavailable" })
 	})

@@ -10,6 +10,7 @@ import { sourceHref } from "../kit/shared"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { flowSpecOf } from "./update"
+import { flowFooter } from "./view-footer"
 
 // `/sources/new?integration=`: the integration's current step, then the footer that moves between them.
 
@@ -33,38 +34,22 @@ const openSource = (h: H, model: Model, integration: DataIntegration): Html => {
 }
 
 const footer = (h: H, model: Model, integration: DataIntegration, spec: FlowSpec): Html =>
-	h.footer(
-		[
-			h.Class(
-				"sticky bottom-0 -mx-1 mt-2 flex items-center justify-between gap-4 border-t border-border bg-background px-1 py-4",
-			),
-		],
-		[
-			button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedStepBack())] }, [
-				icon(h, "ArrowLeftIcon", { size: 14 }),
-				"Back",
-			]),
-			h.div(
-				[h.Class("flex items-center gap-4")],
-				[
-					h.span(
-						[h.Class("hidden text-xs text-muted-foreground @2xl/page:inline")],
-						[spec.hint[model.stage]],
+	flowFooter(h, {
+		back: Message.ClickedStepBack(),
+		hint: spec.hint[model.stage],
+		actions: [
+			model.stage === "live"
+				? openSource(h, model, integration)
+				: button(
+						h,
+						{
+							isDisabled: !canContinue(spec, model.stage),
+							attributes: [h.OnClick(Message.ClickedContinue())],
+						},
+						["Continue", icon(h, "ArrowRightIcon", { size: 14 })],
 					),
-					model.stage === "live"
-						? openSource(h, model, integration)
-						: button(
-								h,
-								{
-									isDisabled: !canContinue(spec, model.stage),
-									attributes: [h.OnClick(Message.ClickedContinue())],
-								},
-								["Continue", icon(h, "ArrowRightIcon", { size: 14 })],
-							),
-				],
-			),
 		],
-	)
+	})
 
 export const integrationStep = (h: H, model: Model, integration: DataIntegration, timeZone: string): Html => {
 	const spec = flowSpecOf(model)

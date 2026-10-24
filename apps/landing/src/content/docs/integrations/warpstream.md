@@ -16,7 +16,7 @@ https://api.warpstream.com/api/v1/monitoring/prometheus/virtual_clusters/$VIRTUA
 ```
 
 1. In WarpStream, create a **read-only Agent Key** for the cluster (least privilege; an account-level API key also works if you want one key for several clusters).
-2. In Maple, open **Integrations → WarpStream** (or **Prometheus**), click **Add Target**, and configure:
+2. In Maple, open **Sources**, click **Connect source**, pick **WarpStream** (or **Prometheus**), and configure:
     - **URL**: the hosted endpoint above, with your virtual cluster ID (`vci_…`)
     - **Authentication**: **Basic Auth**, with **Username** `prometheus` and **Password** set to the API key
     - **Scrape Interval (seconds)**: 30 to 60 is enough for control-plane metrics
@@ -56,4 +56,4 @@ Once samples arrive, build dashboards and alert rules on these like any other Ma
 
 - **401 from the hosted endpoint.** The Basic Auth username must be exactly `prometheus`. The password is the API or Agent key.
 - **Timeouts scraping Agents.** Confirm the Agent's internal port (8080 by default) and that the endpoint is reachable from the internet. `curl $AGENT_IP:8080/v1/status` should return `OK`.
-- Use the target's **Test** button in Maple to see the exact upstream error.
+- The connect step checks the endpoint when you save and shows the exact upstream error. Later, **Sync now** on the source page runs the same check.

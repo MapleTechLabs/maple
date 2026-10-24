@@ -1,226 +1,37 @@
 import { AWS_METRICS_OFF } from "@maple/domain/aws"
-import type { V2AwsConnection, V2AwsIngest, V2AwsIntegration, V2AwsSetup } from "@maple/domain/http/v2"
+import type { V2AwsConnection, V2AwsIngest, V2AwsIntegration } from "@maple/domain/http/v2"
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
+import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "../../ui/button"
 import { confirmDialog } from "../../ui/confirm-dialog"
-import * as CopyButton from "../../ui/copy-button"
 import { badge } from "../../ui/display"
 import { errorState } from "../../ui/error-state"
-import * as Field from "../../ui/field"
 import { icon } from "../../ui/icon"
 import type { IconName } from "../../ui/icons.generated"
-import { input } from "../../ui/input"
 import { item, itemContent, itemMedia } from "../../ui/item"
 import { skeleton } from "../../ui/skeleton"
 import { relativeTime } from "../kit/relative-time"
-import {
-	integrationEmpty,
-	integrationEmptyCard,
-	integrationEmptyFeatures,
-	integrationEmptyFooter,
-	integrationEmptyHint,
-	integrationEmptyMedia,
-	integrationIconPlate,
-} from "../infra-integrations/kit/integration-empty"
-import {
-	type AwsSetupMethod,
-	decodeCreateRequest,
-	METRIC_REGIONS_HINT,
-	metricStreamOf,
-	normalizeAccountId,
-} from "./aws"
-import { codeBlock } from "../settings/kit/code-block"
-import { segmentedSelect } from "../../ui/segmented-select"
-import { externalLink } from "./view-gcp-configure-parts"
+import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
+import { isSelectionSaved, metricStreamOf, selectionOf } from "./aws"
 import { AWS_ACCENT } from "./catalog"
 import { AWS_CONDITION_LABEL, type AwsConnectionCondition, awsConditionOf, awsStreamOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { dataPicker } from "./view-aws-choose"
+import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody } from "./view-aws-setup"
+import { externalLink } from "./view-gcp-configure-parts"
 
 // `AwsIntegrationCard`.
 
 type H = HtmlBuilder<Message>
 
 const BRAND = { icon: "AwsIcon", accent: AWS_ACCENT, iconClassName: "text-foreground" } as const
-// The stack's region (`stack_region`, always us-east-1): the console opens where the scripts deploy.
-const CLOUDSHELL_URL = "https://us-east-1.console.aws.amazon.com/cloudshell/home?region=us-east-1"
-const CREATE_STACK_URL =
-	"https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create"
-const SMALL = "text-xs text-muted-foreground"
 
-const FEATURES = [
-	{
-		label: "Access",
-		title: "One read-only role",
-		description: "A CloudFormation stack creates it. Maple reads metadata, never your data.",
-	},
-	{
-		label: "Security",
-		title: "No stored secret",
-		description: "The role trusts only short-lived tokens Maple signs for this connection.",
-	},
-	{
-		label: "Modules",
-		title: "One role for every module",
-		description: "Metrics, inventory, security and cost each add their own policy to the same role.",
-	},
-]
-
-const ACCOUNT_IDS: Field.FieldIds = {
-	control: "aws-account-id",
-	label: "aws-account-id-label",
-	error: "aws-account-id-error",
-}
-
-const REGION_IDS: Field.FieldIds = {
-	control: "aws-metric-regions",
-	label: "aws-metric-regions-label",
-	error: "aws-metric-regions-error",
-	description: "aws-metric-regions-description",
-}
-
-/** The regions a metric stream reads, typed as codes; `actions` sit beside the input. */
-const regionsField = (
-	h: H,
-	options: Readonly<{
-		ids: Field.FieldIds
-		label: string
-		field: Field.Model
-		toMessage: (message: Field.Message) => Message
-		error: string | null
-		actions: ReadonlyArray<Html>
-	}>,
-): Html => {
-	const isInvalid =
-		options.error !== null ||
-		(options.field.isTouched && Option.isNone(metricStreamOf(options.field.value)))
-	const state = Field.stateOf(options.field, isInvalid)
-	return Field.field(h, { className: "items-stretch gap-2", state }, [
-		Field.fieldLabel(h, { ids: options.ids, state }, options.label),
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-2")],
-			[
-				input(h, {
-					id: options.ids.control,
-					className: "min-w-48 flex-1",
-					controlClassName: "font-mono",
-					fieldState: state,
-					attributes: [
-						h.Autocomplete("off"),
-						h.Placeholder("us-east-1, eu-central-1"),
-						...Field.controlAttributes(h, options.field, options.toMessage),
-						h.AriaLabelledBy(options.ids.label),
-						...(isInvalid ? [h.AriaInvalid(true)] : []),
-					],
-				}),
-				...options.actions,
-			],
-		),
-		options.error === null
-			? Field.fieldDescription(h, { ids: options.ids, state }, METRIC_REGIONS_HINT)
-			: Field.fieldError(h, { ids: options.ids, state, attributes: [h.Role("alert")] }, options.error),
-	])
-}
-
-const accountForm = (h: H, model: Model, canCancel: boolean): Html => {
-	const card = model.awsCard
-	const typed = normalizeAccountId(card.accountId.value)
-	const isValid =
-		Option.isSome(decodeCreateRequest({ account_id: typed })) &&
-		Option.isSome(metricStreamOf(card.regions.value))
-	const state = Field.stateOf(card.accountId, card.createError !== null)
-	return h.form(
-		[h.Class("flex w-full flex-col gap-2 text-left"), h.OnSubmit(Message.SubmittedAwsAccount())],
-		[
-			Field.field(h, { className: "items-stretch gap-2", state }, [
-				Field.fieldLabel(h, { ids: ACCOUNT_IDS, state }, "AWS account ID"),
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-2")],
-					[
-						input(h, {
-							id: ACCOUNT_IDS.control,
-							className: "min-w-48 flex-1",
-							controlClassName: "font-mono tabular-nums",
-							fieldState: state,
-							attributes: [
-								h.Autocomplete("off"),
-								h.Placeholder("123456789012"),
-								h.InputMode("numeric"),
-								...Field.controlAttributes(h, card.accountId, (message) =>
-									Message.GotAwsAccountIdMessage({ message }),
-								),
-								h.AriaLabelledBy(ACCOUNT_IDS.label),
-								...(card.createError === null ? [] : [h.AriaInvalid(true)]),
-							],
-						}),
-						...(canCancel
-							? [
-									button(
-										h,
-										{
-											variant: "outline",
-											isDisabled: card.isCreating,
-											attributes: [h.OnClick(Message.ClickedAwsAddCancel())],
-										},
-										["Cancel"],
-									),
-								]
-							: []),
-						button(h, { type: "submit", isDisabled: !isValid, isLoading: card.isCreating }, [
-							icon(h, "AwsIcon"),
-							"Connect AWS",
-						]),
-					],
-				),
-				...(card.createError === null
-					? []
-					: [
-							Field.fieldError(
-								h,
-								{ ids: ACCOUNT_IDS, state, attributes: [h.Role("alert")] },
-								card.createError,
-							),
-						]),
-			]),
-			regionsField(h, {
-				ids: REGION_IDS,
-				label: "Stream CloudWatch metrics from",
-				field: card.regions,
-				toMessage: (message) => Message.GotAwsRegionsMessage({ message }),
-				error: null,
-				actions: [],
-			}),
-		],
-	)
-}
-
-/** Unavailable on this deployment: the card says so, without steps the reader can't take. */
-const connectCard = (h: H, model: Model, status: V2AwsIntegration): Html =>
-	integrationEmpty(h, [
-		integrationEmptyFeatures(h, FEATURES),
-		integrationEmptyCard(
-			h,
-			status.available
-				? [
-						integrationEmptyMedia(h, BRAND),
-						integrationEmptyHint(h, [
-							"Enter the account to connect. Maple then gives you a stack to deploy from AWS CloudShell, and confirms it by assuming the role.",
-						]),
-						accountForm(h, model, false),
-						integrationEmptyFooter(h, [
-							"You need permission to create IAM roles in the account. Each account connects separately.",
-						]),
-					]
-				: [
-						integrationEmptyMedia(h, BRAND),
-						integrationEmptyHint(h, ["AWS can't be connected on this Maple deployment yet."]),
-					],
-		),
-	])
+export const AWS_FLOW_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } }))
 
 const CONDITION_VARIANT = {
 	setup: "muted",
@@ -233,25 +44,35 @@ const CONDITION_VARIANT = {
 	receiving: "ok",
 } satisfies Record<AwsConnectionCondition, "ok" | "warn" | "crit" | "muted">
 
-const METRICS_IDS: Field.FieldIds = {
-	control: "aws-stream-regions",
-	label: "aws-stream-regions-label",
-	error: "aws-stream-regions-error",
-	description: "aws-stream-regions-description",
-}
-
-const metricsForm = (h: H, model: Model): Html => {
+/** Edit data: the regions and services to stream, saved with the stack's script reopened. */
+const editDataPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 	const card = model.awsCard
+	const selection = selectionOf(connection, card.selection)
 	return h.form(
-		[h.Class("flex w-full flex-col gap-2"), h.OnSubmit(Message.SubmittedAwsMetrics())],
 		[
-			regionsField(h, {
-				ids: METRICS_IDS,
-				label: "Stream CloudWatch metrics from",
-				field: card.metricsRegions,
-				toMessage: (message) => Message.GotAwsMetricsRegionsMessage({ message }),
-				error: card.metricsError,
-				actions: [
+			h.Class("flex w-full flex-col gap-4 rounded-lg border bg-muted/20 p-3"),
+			h.OnSubmit(Message.SubmittedAwsMetrics({ id: connection.id })),
+		],
+		[
+			...dataPicker(h, model, connection),
+			...(card.metricsError === null
+				? []
+				: [h.p([h.Class("text-xs text-severity-error"), h.Role("alert")], [card.metricsError])]),
+			h.div(
+				[h.Class("flex flex-wrap gap-2")],
+				[
+					button(
+						h,
+						{
+							size: "sm",
+							type: "submit",
+							isDisabled:
+								Option.isNone(metricStreamOf(selection)) ||
+								isSelectionSaved(connection, selection),
+							isLoading: card.isSavingMetrics,
+						},
+						["Save"],
+					),
 					button(
 						h,
 						{
@@ -262,23 +83,14 @@ const metricsForm = (h: H, model: Model): Html => {
 						},
 						["Cancel"],
 					),
-					button(
-						h,
-						{
-							size: "sm",
-							type: "submit",
-							isDisabled: Option.isNone(metricStreamOf(card.metricsRegions.value)),
-							isLoading: card.isSavingMetrics,
-						},
-						["Stream metrics"],
-					),
 				],
-			}),
+			),
 		],
 	)
 }
 
-const roleName = (connection: V2AwsConnection) => connection.role_arn.split("/").at(-1) ?? connection.role_arn
+export const roleName = (connection: V2AwsConnection) =>
+	connection.role_arn.split("/").at(-1) ?? connection.role_arn
 
 type StepState = "done" | "current" | "warn" | "crit" | "todo"
 
@@ -407,7 +219,7 @@ const roleStep = (h: H, model: Model, connection: V2AwsConnection, timeZone: str
 	return { title: "Role", state: "done", detail: [`Maple assumes ${roleName(connection)}`, ...checked] }
 }
 
-const streamStep = (h: H, model: Model, connection: V2AwsConnection): Step => {
+const streamStep = (connection: V2AwsConnection): Step => {
 	const stream = connection.metric_stream
 	if (stream !== null) {
 		const scope = `${stream.regions.join(", ")} · ${countLabel(stream.namespaces.length, "namespace")}`
@@ -420,28 +232,10 @@ const streamStep = (h: H, model: Model, connection: V2AwsConnection): Step => {
 				}
 			: { title: "Metric stream", state: "done", detail: [`${scope}. Each region has its own stack.`] }
 	}
-	const isOpen = model.awsCard.metricsId === connection.id
 	return {
 		title: "Metric stream",
 		state: connection.verified_at === null ? "todo" : "warn",
-		detail: [`${AWS_METRICS_OFF}.`],
-		extra: isOpen
-			? [metricsForm(h, model)]
-			: [
-					h.div(
-						[],
-						[
-							button(
-								h,
-								{
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedAwsMetrics({ id: connection.id }))],
-								},
-								["Stream metrics"],
-							),
-						],
-					),
-				],
+		detail: [`${AWS_METRICS_OFF}. Edit data picks the regions and services to stream.`],
 	}
 }
 
@@ -653,7 +447,7 @@ const ingestBody = (
 	]
 }
 
-const ingestPanel = (
+export const ingestPanel = (
 	h: H,
 	model: Model,
 	connection: V2AwsConnection,
@@ -690,6 +484,25 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 	const condition = awsConditionOf(connection, model.nowMs)
 	const isChecking = model.awsCard.checking.some((entry) => entry.id === connection.id)
 	const isOpen = model.awsCard.setupId === connection.id
+	const isEditing = model.awsCard.metricsId === connection.id
+	const action = (
+		label: string,
+		message: Message,
+		extra: Readonly<{ isLoading?: boolean; isExpanded?: boolean }> = {},
+	) =>
+		button(
+			h,
+			{
+				size: "sm",
+				variant: extra.isExpanded === true ? "secondary" : "outline",
+				isLoading: extra.isLoading,
+				attributes: [
+					h.OnClick(message),
+					...(extra.isExpanded === undefined ? [] : [h.AriaExpanded(extra.isExpanded)]),
+				],
+			},
+			[label],
+		)
 	return item(h, { variant: "card", className: "items-start gap-4 p-4" }, [
 		itemMedia(h, {}, [integrationIconPlate(h, BRAND)]),
 		itemContent(
@@ -707,121 +520,44 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 				),
 				stepList(h, [
 					roleStep(h, model, connection, timeZone),
-					streamStep(h, model, connection),
+					streamStep(connection),
 					...deliverySteps(h, model, connection, timeZone),
 				]),
 				...ingestPanel(h, model, connection, timeZone),
 				h.div(
 					[h.Class("flex flex-wrap gap-2 pt-1")],
 					[
-						button(
-							h,
-							{
-								size: "sm",
-								variant: isOpen ? "secondary" : "outline",
-								attributes: [
-									h.OnClick(
-										isOpen
-											? Message.ClickedAwsSetupClose()
-											: Message.ClickedAwsSetup({ id: connection.id }),
+						// Reconnect deploys the stack again: it finishes a setup and updates an old one.
+						action(
+							"Reconnect",
+							isOpen
+								? Message.ClickedAwsSetupClose()
+								: Message.ClickedAwsSetup({ id: connection.id }),
+							{ isExpanded: isOpen },
+						),
+						...(connection.verified_at === null
+							? []
+							: [
+									action(
+										"Edit data",
+										isEditing
+											? Message.ClickedAwsMetricsCancel()
+											: Message.ClickedAwsMetrics({ id: connection.id }),
+										{ isExpanded: isEditing },
 									),
-									h.AriaExpanded(isOpen),
-								],
-							},
-							[connection.verified_at === null ? "Set up" : "Redeploy stack"],
-						),
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								isLoading: isChecking,
-								attributes: [h.OnClick(Message.ClickedAwsCheck({ id: connection.id }))],
-							},
-							["Check connection"],
-						),
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								attributes: [h.OnClick(Message.ClickedAwsDisconnect({ id: connection.id }))],
-							},
-							["Disconnect"],
-						),
+								]),
+						action("Sync now", Message.ClickedAwsCheck({ id: connection.id }), {
+							isLoading: isChecking,
+						}),
+						action("Disconnect", Message.ClickedAwsDisconnect({ id: connection.id })),
 					],
 				),
+				...(isEditing ? [editDataPanel(h, model, connection)] : []),
 				...(isOpen ? [setupPanel(h, model, connection)] : []),
 			],
 			"gap-3",
 		),
 	])
-}
-
-/** A generated file to copy, its name in the eyebrow; a long one scrolls under its copy button. */
-const fileBlock = (h: H, model: Model, id: string, name: string, text: string): Html =>
-	codeBlock(h, {
-		code: text.trimEnd(),
-		language: name,
-		bodyClassName: "max-h-72 overflow-y-auto",
-		copy: model.awsCard.copies[id] ?? CopyButton.init(),
-		toCopyMessage: (message) => Message.GotAwsCopyMessage({ id, message }),
-	})
-
-const METHOD_OPTIONS: ReadonlyArray<Readonly<{ value: AwsSetupMethod; label: string }>> = [
-	{ value: "cloudshell", label: "CloudShell" },
-	{ value: "console", label: "Console" },
-	{ value: "terraform", label: "Terraform" },
-]
-
-const methodBody = (
-	h: H,
-	model: Model,
-	connection: V2AwsConnection,
-	setup: V2AwsSetup,
-): ReadonlyArray<Html> => {
-	switch (model.awsCard.method) {
-		case "cloudshell":
-			return [
-				h.p(
-					[h.Class(SMALL)],
-					[
-						"Open ",
-						externalLink(h, CLOUDSHELL_URL, "AWS CloudShell"),
-						` signed in to account ${connection.account_id}, paste this, and press Enter. It deploys the stack ${setup.stack_name}.`,
-					],
-				),
-				fileBlock(h, model, "aws-setup-script", "setup.sh", setup.setup_script),
-			]
-		case "console":
-			return [
-				h.p(
-					[h.Class(SMALL)],
-					[
-						"Save this template, then ",
-						externalLink(h, CREATE_STACK_URL, "create a stack"),
-						` with it in account ${connection.account_id}, region ${setup.stack_region}. Name it ${setup.stack_name} and acknowledge that it creates IAM resources.`,
-					],
-				),
-				fileBlock(
-					h,
-					model,
-					"aws-template",
-					`${setup.stack_name}.json`,
-					setup.cloudformation_template,
-				),
-			]
-		case "terraform":
-			return [
-				h.p(
-					[h.Class(SMALL)],
-					[
-						`Apply this with the aws provider, using credentials for account ${connection.account_id}.`,
-					],
-				),
-				fileBlock(h, model, "aws-terraform", "maple-aws.tf", setup.terraform),
-			]
-	}
 }
 
 const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
@@ -836,40 +572,16 @@ const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
 						[h.Class("text-sm font-medium")],
 						[waiting ? "Deploy the stack" : "Deploy the stack again"],
 					),
-					h.span(
-						[h.Class("ml-auto")],
-						[
-							segmentedSelect(h, {
-								options: METHOD_OPTIONS,
-								value: model.awsCard.method,
-								onChange: (method) => Message.ClickedAwsSetupMethod({ method }),
-								size: "sm",
-								ariaLabel: "Setup method",
-							}),
-						],
-					),
+					h.span([h.Class("ml-auto")], [methodSelect(h, model, "role")]),
 				],
 			),
-			...AsyncData.match(model.awsCard.setup.data, {
-				onIdle: () => [skeleton(h, "h-40 w-full rounded-lg")],
-				onLoading: () => [skeleton(h, "h-40 w-full rounded-lg")],
-				onFailure: (failure) => [
-					errorState(h, {
-						failure,
-						title: "Failed to load the setup",
-						onRetry: Message.ClickedAwsSetup({ id: connection.id }),
-					}),
-				],
-				onStale: ({ data }) => methodBody(h, model, connection, data),
-				onRefreshing: (data) => methodBody(h, model, connection, data),
-				onSuccess: (data) => methodBody(h, model, connection, data),
-			}),
+			...setupBody(h, model, connection, "role"),
 			h.p(
 				[h.Class(SMALL)],
 				[
 					waiting
 						? "Maple checks the connection every 10 seconds while this is open."
-						: "After changing what Maple reads, deploy the stack again and check the connection.",
+						: "After changing what Maple reads, deploy the stack again and sync.",
 				],
 			),
 		],
@@ -965,28 +677,34 @@ const connectedView = (
 			...shown.map((connection) => connectionRow(h, model, connection, timeZone)),
 			...(focusId !== null || !status.available
 				? []
-				: model.awsCard.isAdding
-					? [h.div([h.Class("rounded-lg border p-4")], [accountForm(h, model, true)])]
-					: [
-							h.div(
-								[],
-								[
-									button(
-										h,
-										{
-											size: "sm",
-											variant: "outline",
-											attributes: [h.OnClick(Message.ClickedAwsAdd())],
-										},
-										[icon(h, "PlusIcon", { size: 14 }), "Connect another account"],
-									),
-								],
-							),
-						]),
+				: [
+						h.div(
+							[],
+							[
+								linkButton(h, { size: "sm", variant: "outline", href: AWS_FLOW_HREF }, [
+									icon(h, "PlusIcon", { size: 14 }),
+									"Add another account",
+								]),
+							],
+						),
+					]),
 			...(focusId === null ? [awsDisconnectDialog(h, model)] : []),
 		],
 	)
 }
+
+/** A source whose connection was removed: the way back is the connect flow. */
+const reconnectLink = (h: H): Html =>
+	h.p(
+		[h.Class(SMALL)],
+		[
+			"This AWS account is no longer connected. ",
+			h.a(
+				[h.Href(AWS_FLOW_HREF), h.Class("text-foreground underline-offset-4 hover:underline")],
+				["Reconnect"],
+			),
+		],
+	)
 
 const byStatus = (
 	h: H,
@@ -995,12 +713,9 @@ const byStatus = (
 	timeZone: string,
 	focusId: string | null,
 ): Html =>
-	status.connections.length === 0
-		? h.div(
-				[h.Class("flex flex-col gap-3")],
-				[...removedPanel(h, model, focusId), connectCard(h, model, status)],
-			)
-		: connectedView(h, model, status, timeZone, focusId)
+	status.connections.some((connection) => focusId === null || connection.id === focusId)
+		? connectedView(h, model, status, timeZone, focusId)
+		: h.div([h.Class("flex flex-col gap-3")], [...removedPanel(h, model, focusId), reconnectLink(h)])
 
 export const awsCard = (h: H, model: Model, timeZone: string, focusId: string | null): Html =>
 	AsyncData.match(model.statuses.aws.data, {

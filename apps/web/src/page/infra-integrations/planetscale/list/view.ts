@@ -15,13 +15,19 @@ import { icon } from "../../../../ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink, emptyActions } from "../../../kit/signal-empty-state"
-import { integrationNotConnected } from "../../kit/empty-states"
 import { pageHero } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import type { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
 import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../metrics"
-import { inventoryIsStale, inventoryNotice, metricsNotice, revokedNotice, setupState } from "../notices"
+import {
+	inventoryIsStale,
+	inventoryNotice,
+	metricsNotice,
+	planetscaleConnectCta,
+	revokedNotice,
+	setupState,
+} from "../notices"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, neverCollected, sortOf } from "./update"
 import { databaseTable, databaseTableLoading } from "./view-table"
@@ -128,7 +134,17 @@ const content = (
 					variant: "row",
 				}),
 			),
-			...(never ? [setupState(h, derivePlanetScaleSetup(status, clock.nowMs).steps)] : []),
+			...(never
+				? [
+						setupState(
+							h,
+							derivePlanetScaleSetup(status, clock.nowMs, {
+								databases: inventory.databases.length,
+								branches: branchTotal,
+							}).checks,
+						),
+					]
+				: []),
 			statRail(h, {}, [
 				statRailItem(h, {
 					compact: true,
@@ -182,15 +198,7 @@ const failure = (h: H, error: LoadFailure): Html => errorState(h, { failure: err
 
 const connected = (h: H, model: Model, status: PlanetscaleStatus, clock: Clock): Html =>
 	!status.connected
-		? integrationNotConnected(h, {
-				icon: icon(h, "PlanetScaleIcon", { size: 16 }),
-				title: "Connect PlanetScale to see database health",
-				description:
-					"Authorize your PlanetScale organization with one click and Maple tracks every branch's health (connections, CPU, memory, replication lag) with nothing to install.",
-				integration: "planetscale",
-				actionLabel: "Connect PlanetScale",
-				docsPage: "planetscale",
-			})
+		? planetscaleConnectCta(h)
 		: AsyncData.match(model.databases.data, {
 				onIdle: () => loading(h),
 				onLoading: () => loading(h),

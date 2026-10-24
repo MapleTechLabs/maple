@@ -35,7 +35,10 @@ import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHero, searchToolbar } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import type { Status, ZoneRow } from "../data"
-import { ingestBanner, ingestEmpty, notConnected } from "../ingest"
+import { ingestBanner, ingestEmpty, needsPermissions } from "../ingest"
+import { integrationConnectCta } from "../../kit/integration-empty"
+import { CLOUDFLARE_ACCENT } from "../../../integrations/catalog"
+import { AppRoute, hrefOf } from "../../../../route"
 import {
 	accountCounts,
 	accountShares,
@@ -383,9 +386,37 @@ const dataView = (h: H, model: Model, status: Status, spark: SparkContext): Html
 	return listPage(h, model, status, data, spark)
 }
 
+const FEATURES = [
+	{
+		label: "Zone analytics",
+		title: "Requests and cache per zone",
+		description: "Traffic, cache hit rate and errors for every zone.",
+	},
+	{
+		label: "Workers",
+		title: "Scripts on the service map",
+		description: "Every Worker appears as a node with request volume and errors next to your traces.",
+	},
+	{
+		label: "DNS and security",
+		title: "Firewall events with context",
+		description: "DNS queries and WAF activity land alongside your traces and logs.",
+	},
+]
+
+/** Nothing connected: what this page will show, and the way to the connect flow. */
+const cloudflareConnectCta = (h: H): Html =>
+	integrationConnectCta(h, {
+		brand: { icon: "CloudflareBrandIcon", backerIcon: "CloudflareMonoIcon", accent: CLOUDFLARE_ACCENT },
+		features: FEATURES,
+		hint: "Read-only. Your zones and Workers appear here within about 15 minutes of connecting.",
+		label: "Connect Cloudflare",
+		href: hrefOf(AppRoute.SourcesNew({ search: { integration: "cloudflare" } })),
+	})
+
 const connectedView = (h: H, model: Model, status: Status, spark: SparkContext): Html => {
-	if (!status.connected) return notConnected(h, "not-connected")
-	if (!status.analyticsCapable) return notConnected(h, "needs-permissions")
+	if (!status.connected) return cloudflareConnectCta(h)
+	if (!status.analyticsCapable) return needsPermissions(h)
 	return dataView(h, model, status, spark)
 }
 

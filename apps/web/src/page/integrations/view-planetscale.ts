@@ -1,100 +1,42 @@
 import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
-import {
-	derivePlanetScaleSetup,
-	metricsAuthOf,
-	metricsLastError,
-} from "../../components/integrations/planetscale-setup-steps"
+import { derivePlanetScaleSetup } from "../../components/integrations/planetscale-setup-steps"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "../../ui/button"
+import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "../../ui/button"
 import { badge } from "../../ui/display"
-import { icon } from "../../ui/icon"
 import { item, itemActions, itemContent, itemMedia } from "../../ui/item"
 import { panel } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
-import {
-	integrationEmpty,
-	integrationEmptyCard,
-	integrationEmptyFeatures,
-	integrationEmptyHint,
-	integrationEmptyMedia,
-	integrationIconPlate,
-} from "../infra-integrations/kit/integration-empty"
+import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
+import { liveChecklist } from "../kit/connect-flow"
 import { catalogEntry } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { disconnectDialog } from "./view-disconnect"
-import { metricsHealth, setupChecklist } from "./view-planetscale-parts"
-import { orgPicker, pickerDialog } from "./view-planetscale-picker"
+import { inventoryCountsOf } from "./flow-planetscale"
+import { metricsHealth } from "./view-planetscale-parts"
+import { pickerDialog } from "./view-planetscale-picker"
 
-// `PlanetScaleIntegrationCard`, `FirstMetricsDetail` and `PlanetScaleWebhooks`.
+// `PlanetScaleIntegrationCard` and `PlanetScaleWebhooks`: the source page's Connection tab.
 
 type H = HtmlBuilder<Message>
 
 const ENTRY = catalogEntry("planetscale")
 const BRAND = { icon: "PlanetScaleIcon", accent: ENTRY.accent } as const
 
-const connectButton = (h: H, model: Model, label: string, withIcon: boolean): Html =>
+const reconnectButton = (h: H, model: Model): Html =>
 	button(
 		h,
 		{
-			size: withIcon ? undefined : "sm",
+			size: "sm",
+			variant: "outline",
 			isDisabled: model.connect.isStarting || model.disconnect.isPending,
 			isLoading: model.connect.isStarting,
 			attributes: [h.OnClick(Message.ClickedConnect())],
 		},
-		withIcon ? [icon(h, "PlanetScaleIcon"), label] : [label],
+		["Reconnect"],
 	)
-
-const notConnected = (h: H, model: Model): Html =>
-	integrationEmpty(h, [
-		integrationEmptyFeatures(h, [
-			{
-				label: "Service map",
-				title: "Databases join the map",
-				description: "Linked to the services that query them, with branches tracked automatically.",
-			},
-			{
-				label: "Query insights",
-				title: "Top queries per branch",
-				description: "Calls, rows read, and time per query — proxied straight from PlanetScale.",
-			},
-			{
-				label: "Branch health",
-				title: "CPU, memory, replication",
-				description: "Connections and replication lag per branch, collected every 5 minutes.",
-			},
-		]),
-		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, BRAND),
-			integrationEmptyHint(h, ["Your databases and branches will appear here after connecting."]),
-			connectButton(h, model, "Connect PlanetScale", true),
-		]),
-	])
-
-/** `FirstMetricsDetail`: the collection error, or a reassurance while Maple waits. */
-const firstMetricsDetail = (h: H, model: Model, status: V2PlanetScaleIntegration): Html => {
-	const error = metricsLastError(status)
-	if (error !== null)
-		return h.p(
-			[h.Class("break-all rounded-md bg-muted/40 p-2 font-mono text-xs text-muted-foreground")],
-			[error],
-		)
-	if (metricsAuthOf(status) === "api")
-		return h.p(
-			[h.Class("text-xs text-muted-foreground")],
-			["The first poll usually lands within 10 minutes. This updates on its own."],
-		)
-	const watchedForMs = model.nowMs - (model.planetscaleCard.watchStartedAt ?? model.nowMs)
-	return h.p(
-		[h.Class("text-xs text-muted-foreground")],
-		[
-			watchedForMs < 3 * 60 * 1000
-				? "Usually under a minute. This updates on its own."
-				: "Still nothing after a few minutes. Check that the service token still exists in PlanetScale.",
-		],
-	)
-}
 
 const header = (
 	h: H,
@@ -134,7 +76,7 @@ const webhookLine = (webhooks: Webhooks): string => {
 		case "failing":
 			return `Registered on ${webhooks.registered_databases} of ${webhooks.databases} databases. The last attempt failed:`
 		case "needs_reauthorization":
-			return "This authorization predates webhooks. Reauthorize so Maple can register them on your databases."
+			return "This authorization predates webhooks. Reconnect so Maple can register them on your databases."
 	}
 }
 
@@ -173,42 +115,36 @@ const webhookStatus = (h: H, model: Model, webhooks: Webhooks): Html =>
 				"gap-0",
 			),
 			...(webhooks.state === "needs_reauthorization"
-				? [itemActions(h, [connectButton(h, model, "Reauthorize", false)])]
+				? [itemActions(h, [reconnectButton(h, model)])]
 				: []),
 		]),
 	])
 
 const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, timeZone: string): Html => {
-	const setup = derivePlanetScaleSetup(status, model.nowMs)
+	const setup = derivePlanetScaleSetup(status, model.nowMs, inventoryCountsOf(model))
 	const busy = model.connect.isStarting || model.disconnect.isPending
 	const organization = h.span([h.Class("font-medium text-foreground")], [status.organization ?? ""])
 	const webhooks = status.webhooks ?? null
+	const isLive = setup.live === "healthy"
 	return h.div(
 		[h.Class("flex flex-col gap-4")],
 		[
 			panel(h, {}, [
 				header(
 					h,
-					setup.complete
+					isLive
 						? badge(h, { variant: "ok" }, ["Connected"])
-						: badge(h, { variant: "warn" }, [
-								"Step ",
-								String(setup.activeStepNumber ?? ""),
-								" of ",
-								String(setup.steps.length),
-							]),
-					setup.complete
+						: setup.live === "attention"
+							? badge(h, { variant: "warn" }, ["Needs attention"])
+							: badge(h, { variant: "secondary" }, ["Starting"]),
+					isLive
 						? ["Streaming branch metrics from", " ", organization]
-						: [
-								"Connected to",
-								" ",
-								organization,
-								" — inventory, insights, and webhooks are live.",
-							],
+						: ["Connected to", " ", organization],
 					[
 						itemActions(
 							h,
 							[
+								...(setup.accessBlocked ? [reconnectButton(h, model)] : []),
 								button(
 									h,
 									{
@@ -217,7 +153,7 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 										isDisabled: busy,
 										attributes: [h.OnClick(Message.ClickedChangeOrganization())],
 									},
-									["Change organization"],
+									["Edit data"],
 								),
 								button(
 									h,
@@ -236,46 +172,18 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 						),
 					],
 				),
-				...(setup.complete
-					? []
-					: [
-							h.div(
-								[h.Class("border-t border-border/60 p-4")],
-								[
-									setupChecklist(h, setup.steps, (id) =>
-										id === "connected"
-											? connectButton(h, model, "Reconnect", false)
-											: id === "permissions"
-												? connectButton(
-														h,
-														model,
-														"Reauthorize with read_databases",
-														false,
-													)
-												: firstMetricsDetail(h, model, status),
-									),
-								],
-							),
-						]),
-				...(setup.complete ? [metricsHealth(h, model, status, timeZone)] : []),
+				isLive
+					? metricsHealth(h, model, status, timeZone)
+					: h.div(
+							[h.Class("border-t border-border/60 p-4")],
+							[liveChecklist(h, { title: "Checking the connection", rows: setup.checks })],
+						),
 			]),
 			...(webhooks === null ? [] : [webhookStatus(h, model, webhooks)]),
 			pickerDialog(h, model),
 		],
 	)
 }
-
-const pendingSelection = (h: H, model: Model): Html =>
-	panel(h, {}, [
-		header(
-			h,
-			badge(h, { variant: "secondary" }, ["Authorized"]),
-			["The authorization covers multiple PlanetScale organizations — choose which one to connect."],
-			[],
-		),
-		h.div([h.Class("border-t border-border/60 p-4")], [orgPicker(h, model, "Disconnect")]),
-		disconnectDialog(h, model, "planetscale"),
-	])
 
 export const planetscaleCard = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.statuses.planetscale.data, {
@@ -290,9 +198,30 @@ export const planetscaleCard = (h: H, model: Model, timeZone: string): Html =>
 const byStatus = (h: H, model: Model, status: V2PlanetScaleIntegration, timeZone: string): Html =>
 	status.connected
 		? connectedView(h, model, status, timeZone)
-		: status.pending_org_selection
-			? pendingSelection(h, model)
-			: notConnected(h, model)
+		: planetscaleReconnect(
+				h,
+				status.pending_org_selection
+					? "PlanetScale is authorized, but no organization is picked yet."
+					: "PlanetScale is not connected.",
+			)
+
+/** A source page whose connection was removed: the way back is the connect flow. */
+const planetscaleReconnect = (h: H, text: string): Html =>
+	h.div(
+		[
+			h.Class(
+				"flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 text-sm",
+			),
+		],
+		[
+			h.span([h.Class("text-muted-foreground")], [text]),
+			linkButton(
+				h,
+				{ size: "sm", href: hrefOf(AppRoute.SourcesNew({ search: { integration: "planetscale" } })) },
+				["Reconnect"],
+			),
+		],
+	)
 
 /** A failed status read is not "not connected": no connect offer over a maybe-authorized org. */
 const statusFailed = (h: H): Html =>
@@ -302,7 +231,7 @@ const statusFailed = (h: H): Html =>
 			h.h3([h.Class("text-sm font-semibold")], ["PlanetScale"]),
 			h.p(
 				[h.Class("text-xs text-muted-foreground")],
-				["Couldn't load the PlanetScale connection status — refresh the page to try again."],
+				["Couldn't load the PlanetScale connection status. Refresh the page to try again."],
 			),
 		]),
 	])

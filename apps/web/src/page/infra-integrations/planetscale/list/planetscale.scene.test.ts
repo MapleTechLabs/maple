@@ -83,7 +83,7 @@ describe("planetscale list", () => {
 			given(step.model),
 			expectView(role("link", { name: "Connect PlanetScale" })).toHaveAttr(
 				"href",
-				"/integrations?integration=planetscale",
+				"/sources/new?integration=planetscale",
 			),
 		)
 	})
