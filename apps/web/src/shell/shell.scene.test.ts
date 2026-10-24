@@ -558,6 +558,16 @@ describe("infrastructure section", () => {
 		).toBe(undefined)
 	})
 
+	test("a late answer for an org the shell has left remembers nothing", () => {
+		const onB = answered(signedIn({ maybeOrgId: Option.some("org_parity") }), true).model
+		const late = update(
+			onB,
+			Message.SucceededLoadIntegration({ orgId: "org_a", integration: "aws", isConnected: true }),
+		)
+		expectVitest(late.model.rememberedSurfaces).toEqual({ org_parity: ["cloudflare", "hosts"] })
+		expectVitest(late.commands ?? []).toEqual([])
+	})
+
 	test("a settled answer is remembered only when it differs from the remembered set", () => {
 		const first = answered(signedIn(), true)
 		expectVitest(first.model.rememberedSurfaces).toEqual({ org_parity: ["cloudflare", "hosts"] })

@@ -164,7 +164,9 @@ const rememberSettled = (orgId: string, step: UpdateReturn): UpdateReturn => {
 
 /** A probe or status answer for the org; the last status to answer tells the pages. */
 const surfacesAnswered = (model: Model, orgId: string, apply: (model: Model) => Model): UpdateReturn => {
-	const step = rememberSettled(orgId, forOrg(model, orgId, apply))
+	// A late answer for an org the shell has left must not file this org's set under it.
+	if (!Option.contains(model.maybeOrgId, orgId)) return { model }
+	const step = rememberSettled(orgId, { model: apply(model) })
 	return !integrationsAnswered(model.integrations) && integrationsAnswered(step.model.integrations)
 		? { ...step, outMessage: OutMessage.SettledInfraSurfaces() }
 		: step
