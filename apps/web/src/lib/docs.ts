@@ -5,6 +5,13 @@
  */
 export const DOCS = {
 	instrumentation: "/docs/instrumentation",
+	nodejsGuide: "/docs/guides/instrumentation-nodejs",
+	nextjsGuide: "/docs/guides/instrumentation-nextjs",
+	pythonGuide: "/docs/guides/instrumentation-python",
+	goGuide: "/docs/guides/instrumentation-go",
+	javaGuide: "/docs/guides/instrumentation-java",
+	rustGuide: "/docs/guides/instrumentation-rust",
+	effectSdk: "/docs/sdks/effect",
 	quickstart: "/docs/getting-started/quickstart",
 	otelConventions: "/docs/concepts/otel-conventions",
 	samplingThroughput: "/docs/concepts/sampling-throughput",
