@@ -96,8 +96,8 @@ export const planGate = ({ route, organization, customer, isKnownToRenderApp }: 
 		})
 	}
 	const access = accessOf(customer)
-	if (route._tag === "QuickStart" && !needsRegion(organization) && access !== "loading")
-		return access === "onboarding" ? app : redirectTo("/")
+	// The plan is onboarding's first step, so a subscriber keeps the wizard until it sends them home.
+	if (route._tag === "QuickStart") return app
 	if (access === "unknown") return app
 	if (access === "loading") return isAllowedWithoutPlan(route) || isKnownToRenderApp ? app : splash
 	if (access !== "app" && !isAllowedWithoutPlan(route)) return redirectTo(quickStart)

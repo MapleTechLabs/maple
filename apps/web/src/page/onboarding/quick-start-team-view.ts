@@ -115,7 +115,7 @@ export const teamStep = (h: H, team: Team): Html => {
 						[
 							button(
 								h,
-								{ variant: "ghost", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedBack({ to: "intent" }))] },
+								{ variant: "ghost", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedBack({ to: "stack" }))] },
 								[icon(h, "ArrowLeftIcon"), "Back"],
 							),
 							button(
@@ -157,7 +157,7 @@ const pricingSkeleton = (h: H): Html =>
 		),
 	)
 
-/** `StepPlan` / `StepPlanLayout`: the trial pitch over the pricing cards, and Back. */
+/** `StepPlan` / `StepPlanLayout`: the trial pitch over the pricing cards; it is the first step, so no Back. */
 export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html =>
 	h.div(
 		[h.Class("flex-1 flex flex-col items-center px-6 py-12 overflow-auto")],
@@ -183,16 +183,6 @@ export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html 
 						],
 					),
 					isCustomerLoading ? pricingSkeleton(h) : pricing,
-					h.div(
-						[h.Class("mt-8 flex items-center justify-start")],
-						[
-							button(
-								h,
-								{ variant: "ghost", className: "gap-2", attributes: [h.OnClick(Message.ClickedBack({ to: "team" }))] },
-								[icon(h, "ArrowLeftIcon"), "Back"],
-							),
-						],
-					),
 				],
 			),
 		],

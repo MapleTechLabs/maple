@@ -66,10 +66,10 @@ describe("product events", () => {
 
 	test("a completed quick-start step is onboarding_step_completed", () => {
 		const loaded = { ...QuickStart.init("maple-onboarding-v6-org_1").model, state: DEFAULT_QUICK_START_STATE }
-		const picked = QuickStart.update(loaded, QuickStart.Message.PickedRole({ role: "backend" })).model
-		const next = QuickStart.update(picked, QuickStart.Message.ClickedContinue({ step: "role" }))
-		expect(tracked(next, "TrackOnboardingStepCompleted")).toEqual({ step: "role" })
-		expect(tracked(QuickStart.update(loaded, QuickStart.Message.ClickedContinue({ step: "role" })), "TrackOnboardingStepCompleted")).toBeUndefined()
+		const picked = QuickStart.update(loaded, QuickStart.Message.ToggledLanguage({ language: "nodejs" }))
+		expect(tracked(picked, "TrackOnboardingStepCompleted")).toBeUndefined()
+		const next = QuickStart.update(picked.model, QuickStart.Message.ClickedContinue({ step: "stack" }))
+		expect(tracked(next, "TrackOnboardingStepCompleted")).toEqual({ step: "stack" })
 	})
 
 	test("a checkout return that times out is plan_checkout_returned, unconfirmed", () => {

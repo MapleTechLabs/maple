@@ -1,32 +1,32 @@
-import { ONBOARDING_INTENT_IDS } from "../../lib/onboarding-intent"
-import { ONBOARDING_ROLE_IDS } from "../../lib/onboarding-role"
+import { STACK_LANGUAGE_IDS, STACK_PLATFORM_IDS, toggled } from "../../lib/onboarding-stack"
 import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
 import { MapleRegion } from "@maple/domain/organization-regions"
 import { currentRegion, regionAppUrl } from "../../lib/region"
 import { Effect, Schema } from "effect"
-import { Command, type Update } from "foldkit"
+import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
-import { load } from "foldkit/navigation"
+import { load, pushUrl } from "foldkit/navigation"
 import { trackProduct } from "../../data/analytics"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { clerkTry, currentClerkOrganization } from "../../platform/clerk"
+import { startDitherField } from "../../ui/dither-field"
 import type { Resources } from "../../platform/resources"
 import * as PricingCards from "./pricing-cards"
 import { LoadTeam, loadingTeam, selfHostedTeam, Team, TeamMessage, updateTeam } from "./quick-start-team"
 import {
 	completeStep,
-	pickedRole,
+	isQuickStartFinished,
 	QuickStartState,
 	readQuickStartState,
 	resolveQuickStartStep,
 	STEP_IDS,
-	toggledIntent,
+	withStack,
 	writeQuickStartState,
 } from "./quick-start-state"
 
-// `/quick-start`: role, intent, team and plan, one step at a time, resumed from localStorage. The plan and
-// region gates around it are the root's (`plan-gate.ts`).
+// `/quick-start`: plan, stack and team, one step at a time, resumed from localStorage, then the app.
+// The region gate and the plan step's skip once a plan exists come from the root (`plan-gate.ts`).
 
 export const Step = Schema.Literals(STEP_IDS)
 
@@ -52,6 +52,8 @@ export const Model = Schema.TaggedStruct("QuickStart", {
 	region: RegionChoice,
 	/** Counted for the rest of the visit once shown, so the step total does not shrink. */
 	isRegionStepShown: Schema.Boolean,
+	/** Where the last step sends them (`redirect_url`, else home). */
+	redirectUrl: Schema.String,
 })
 export type Model = typeof Model.Type
 
@@ -59,9 +61,8 @@ export const Message = defineMessageUnion({
 	GotTeamMessage: { message: TeamMessage },
 	GotPricingMessage: { message: PricingCards.Message },
 	LoadedQuickStartState: { state: QuickStartState },
-	PickedRole: { role: Schema.Literals(ONBOARDING_ROLE_IDS) },
-	ChangedRoleDetail: { value: Schema.String },
-	ToggledIntent: { intent: Schema.Literals(ONBOARDING_INTENT_IDS) },
+	ToggledLanguage: { language: Schema.Literals(STACK_LANGUAGE_IDS) },
+	ToggledPlatform: { platform: Schema.Literals(STACK_PLATFORM_IDS) },
 	ClickedContinue: { step: Step },
 	ClickedBack: { to: Step },
 	CompletedSaveQuickStartState: {},
@@ -73,13 +74,16 @@ export const Message = defineMessageUnion({
 	FailedChooseRegion: { message: Schema.String },
 	CompletedReloadOrganization: {},
 	CompletedLeaveForRegion: {},
+	CompletedFinish: {},
+	CompletedMountDitherField: {},
 })
 export type Message = typeof Message.Type
 
 export const LoadQuickStartState = Command.define("LoadQuickStartState", {
 	args: { key: Schema.String },
 	messages: [Message.LoadedQuickStartState],
-	execute: ({ key }) => Effect.map(readQuickStartState(key), (state) => Message.LoadedQuickStartState({ state })),
+	execute: ({ key }) =>
+		Effect.map(readQuickStartState(key), (state) => Message.LoadedQuickStartState({ state })),
 })
 
 /** `completeStep(id)`'s funnel event, sent once per Continue. */
@@ -87,7 +91,9 @@ export const TrackStepCompleted = Command.define("TrackOnboardingStepCompleted",
 	args: { step: Schema.String },
 	messages: [Message.CompletedTrackStepCompleted],
 	execute: ({ step }) =>
-		trackProduct("onboarding_step_completed", { step }).pipe(Effect.as(Message.CompletedTrackStepCompleted())),
+		trackProduct("onboarding_step_completed", { step }).pipe(
+			Effect.as(Message.CompletedTrackStepCompleted()),
+		),
 })
 
 export const SaveQuickStartState = Command.define("SaveQuickStartState", {
@@ -104,12 +110,37 @@ export const ChooseRegion = Command.define("ChooseOrganizationRegion", {
 	execute: ({ region }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
-			const result = yield* client.organizationRegion.choose({ payload: new ChooseOrganizationRegionRequest({ region }) })
+			const result = yield* client.organizationRegion.choose({
+				payload: new ChooseOrganizationRegionRequest({ region }),
+			})
 			return Message.SucceededChooseRegion({ region: result.region })
-		}).pipe(Effect.catch((error) => Effect.succeed(Message.FailedChooseRegion({ message: error.message })))),
+		}).pipe(
+			Effect.catch((error) => Effect.succeed(Message.FailedChooseRegion({ message: error.message }))),
+		),
 })
 
-type FollowedRegion = ReturnType<typeof Message.CompletedLeaveForRegion | typeof Message.CompletedReloadOrganization>
+/** Onboarding is done: on to where they were going. */
+export const Finish = Command.define("FinishQuickStart", {
+	args: { url: Schema.String },
+	messages: [Message.CompletedFinish],
+	execute: ({ url }) => pushUrl(url).pipe(Effect.as(Message.CompletedFinish())),
+})
+
+/** The steps' dithered backdrop, drawn until the canvas unmounts. */
+export const MountDitherField = Mount.define("MountQuickStartDitherField", {
+	messages: [Message.CompletedMountDitherField],
+	execute: ({ element }) =>
+		Effect.acquireRelease(
+			Effect.sync(() =>
+				element instanceof HTMLCanvasElement ? startDitherField(element) : () => undefined,
+			),
+			(stop) => Effect.sync(stop),
+		).pipe(Effect.as(Message.CompletedMountDitherField())),
+})
+
+type FollowedRegion = ReturnType<
+	typeof Message.CompletedLeaveForRegion | typeof Message.CompletedReloadOrganization
+>
 
 /**
  * Another region continues onboarding on its own dashboard (the save stays pending as the page
@@ -134,7 +165,12 @@ export const FollowChosenRegion = Command.define("FollowChosenRegion", {
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PricingCards.OutMessage, Resources>
 
 /** `needsRegion`: the org has no region yet, so the region step comes first. */
-export const init = (storageKey: string, isCheckoutReturn = false, needsRegion = false): UpdateReturn => ({
+export const init = (
+	storageKey: string,
+	isCheckoutReturn = false,
+	needsRegion = false,
+	redirectUrl = "/",
+): UpdateReturn => ({
 	model: {
 		_tag: "QuickStart",
 		storageKey,
@@ -145,6 +181,7 @@ export const init = (storageKey: string, isCheckoutReturn = false, needsRegion =
 		team: isClerkAuthEnabled ? loadingTeam() : selfHostedTeam(),
 		pricing: PricingCards.init(),
 		isPlansRequested: false,
+		redirectUrl,
 	},
 	commands: [LoadQuickStartState({ key: storageKey })],
 })
@@ -158,7 +195,7 @@ const toPricing = (message: PricingCards.Message) => Message.GotPricingMessage({
  */
 const entered = (previous: Model, result: UpdateReturn): UpdateReturn => {
 	const { model } = result
-	if (model.state === null) return result
+	if (model.state === null || isQuickStartFinished(model.state)) return result
 	const step = resolveQuickStartStep(model.state)
 	const wasOn = previous.state === null ? null : resolveQuickStartStep(previous.state)
 	if (step === wasOn) return result
@@ -189,24 +226,16 @@ const saved = (model: Model, next: (state: QuickStartState) => QuickStartState):
 	}
 }
 
-/** "Something else" needs its free-text answer before the role step can continue. */
-export const roleNeedsDetail = (state: QuickStartState): boolean =>
-	state.qualifyAnswers.role === "other" && state.qualifyAnswers.roleDetail.trim() === ""
-
-const canContinue = (state: QuickStartState, step: (typeof STEP_IDS)[number]): boolean =>
-	step === "role"
-		? state.qualifyAnswers.role !== null && !roleNeedsDetail(state)
-		: step === "intent"
-			? state.qualifyAnswers.intents.length > 0
-			: true
-
 export const update = (model: Model, message: Message): UpdateReturn => entered(model, step(model, message))
 
 const step = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		GotTeamMessage: ({ message: child }) => {
 			const next = updateTeam(model.team, child)
-			return { model: { ...model, team: next.team }, commands: Command.mapMessages(next.commands, toTeam) }
+			return {
+				model: { ...model, team: next.team },
+				commands: Command.mapMessages(next.commands, toTeam),
+			}
 		},
 		GotPricingMessage: ({ message: child }) => {
 			const next = PricingCards.update(model.pricing, child)
@@ -216,44 +245,65 @@ const step = (model: Model, message: Message): UpdateReturn =>
 				outMessage: next.outMessage,
 			}
 		},
-		LoadedQuickStartState: ({ state }) => ({ model: { ...model, state } }),
-		PickedRole: ({ role }) =>
-			saved(model, (state) => ({
-				...state,
-				qualifyAnswers: pickedRole(
-					state.qualifyAnswers,
-					role,
-					role === "other" ? state.qualifyAnswers.roleDetail : "",
-				),
-			})),
-		ChangedRoleDetail: ({ value }) =>
-			saved(model, (state) => ({ ...state, qualifyAnswers: pickedRole(state.qualifyAnswers, "other", value) })),
-		ToggledIntent: ({ intent }) =>
-			saved(model, (state) => ({ ...state, qualifyAnswers: toggledIntent(state.qualifyAnswers, intent) })),
+		// Someone who already finished and comes back is sent straight on.
+		LoadedQuickStartState: ({ state }) => ({
+			model: { ...model, state },
+			commands: isQuickStartFinished(state) ? [Finish({ url: model.redirectUrl })] : [],
+		}),
+		ToggledLanguage: ({ language }) =>
+			saved(model, (state) =>
+				withStack(state, { ...state.stack, languages: toggled(state.stack.languages, language) }),
+			),
+		ToggledPlatform: ({ platform }) =>
+			saved(model, (state) =>
+				withStack(state, { ...state.stack, platforms: toggled(state.stack.platforms, platform) }),
+			),
 		ClickedContinue: ({ step }) => {
-			if (model.state === null || !canContinue(model.state, step)) return { model }
+			if (model.state === null) return { model }
 			const next = saved(model, (state) => completeStep(state, step))
-			return { ...next, commands: [TrackStepCompleted({ step }), ...(next.commands ?? [])] }
+			const isLast = next.model.state !== null && isQuickStartFinished(next.model.state)
+			return {
+				...next,
+				commands: [
+					TrackStepCompleted({ step }),
+					...(next.commands ?? []),
+					...(isLast ? [Finish({ url: model.redirectUrl })] : []),
+				],
+			}
 		},
 		ClickedBack: ({ to }) => saved(model, (state) => ({ ...state, activeStep: to })),
 		CompletedSaveQuickStartState: () => ({ model }),
 		CompletedTrackStepCompleted: () => ({ model }),
 		PickedRegion: ({ region }) =>
-			model.region.isSaving ? { model } : { model: { ...model, region: { ...model.region, selected: region } } },
+			model.region.isSaving
+				? { model }
+				: { model: { ...model, region: { ...model.region, selected: region } } },
 		ClickedRegionContinue: () =>
 			model.region.isSaving
 				? { model }
 				: {
-						model: { ...model, isRegionStepShown: true, region: { ...model.region, isSaving: true, errorMessage: null } },
+						model: {
+							...model,
+							isRegionStepShown: true,
+							region: { ...model.region, isSaving: true, errorMessage: null },
+						},
 						commands: [ChooseRegion({ region: model.region.selected })],
 					},
 		SucceededChooseRegion: ({ region }) => ({ model, commands: [FollowChosenRegion({ region })] }),
 		FailedChooseRegion: ({ message: failure }) => ({
 			model: {
 				...model,
-				region: { ...model.region, isSaving: false, errorMessage: failure === "" ? "Could not save the data region" : failure },
+				region: {
+					...model.region,
+					isSaving: false,
+					errorMessage: failure === "" ? "Could not save the data region" : failure,
+				},
 			},
 		}),
-		CompletedReloadOrganization: () => ({ model: { ...model, region: { ...model.region, isSaving: false } } }),
+		CompletedReloadOrganization: () => ({
+			model: { ...model, region: { ...model.region, isSaving: false } },
+		}),
 		CompletedLeaveForRegion: () => ({ model }),
+		CompletedFinish: () => ({ model }),
+		CompletedMountDitherField: () => ({ model }),
 	})

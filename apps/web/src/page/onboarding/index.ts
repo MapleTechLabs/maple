@@ -158,7 +158,12 @@ export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Optio
 			QuickStart: ({ search }) =>
 				fresh(
 					key,
-					QuickStart.init(storageKeyOf(inputs.maybeOrgId), search.checkout === "complete", needsRegion(inputs.maybeOrganization)),
+					QuickStart.init(
+						storageKeyOf(inputs.maybeOrgId),
+						search.checkout === "complete",
+						needsRegion(inputs.maybeOrganization),
+						validateInternalRedirect(search.redirect_url ?? null) ?? "/",
+					),
 					toQuickStart,
 				),
 			SelectPlan: ({ search }) => fresh(key, SelectPlan.init(search.checkout === "complete"), toSelectPlan),
