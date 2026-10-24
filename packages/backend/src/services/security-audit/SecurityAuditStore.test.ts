@@ -658,6 +658,26 @@ describe("SecurityAuditStore run admission", () => {
 		),
 	)
 
+	it.effect("keeps a long run that is still recording events", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* TestClock.adjust("47 hours")
+				yield* scoped.recordEvent(runId, { _tag: "Note", message: "still hunting" })
+				yield* TestClock.adjust("2 hours")
+				const refused = yield* Effect.flip(
+					scoped.startRun({ targetId, kind: "manual", sourceRef: "sha-2" }),
+				)
+				const live = Option.getOrThrow(yield* scoped.getRun(runId))
+				assert.deepStrictEqual(
+					[refused._tag, live.status, live.finishedAt],
+					["@maple/backend/security-audit/RunInProgress", "in_progress", null],
+				)
+			}),
+		),
+	)
+
 	it.effect("refuses a second target for the same repository branch in the org only", () =>
 		withStore((store) =>
 			Effect.gen(function* () {

@@ -484,6 +484,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 										$.lastSeenRunId.eq(runId),
 										$.fingerprint.notIn(...fingerprints),
 										$.status.eq("open"),
+										$.statusChangedAt.isNull(),
 									]),
 								)
 								if (!Arr.isReadonlyArrayNonEmpty(unique)) return
@@ -733,15 +734,11 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											targetId: input.targetId,
 										})
 									}
-									// A run with no settlement for longer than any run lasts is abandoned (an
+									// A run with no activity for longer than any agent lasts is abandoned (an
 									// externally terminated instance, a lost settle): it must not block the target.
-									yield* db.run(
-										PG.update(SecurityAuditRuns)
-											.set({
-												status: "failed",
-												error: "abandoned: no settlement within 48 hours",
-												finishedAt: now,
-											})
+									const old = yield* db.run(
+										PG.from(SecurityAuditRuns)
+											.select("id")
 											.where(($) => [
 												$.orgId.eq(orgId),
 												$.targetId.eq(input.targetId),
@@ -749,6 +746,35 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												$.startedAt.lt(now - STALE_RUN_MS),
 											]),
 									)
+									const abandoned = yield* Effect.filter(old, (run) =>
+										db
+											.run(
+												PG.from(SecurityAuditEvents)
+													.select("id")
+													.where(($) => [
+														$.orgId.eq(orgId),
+														$.runId.eq(run.id),
+														$.at.gte(now - STALE_RUN_MS),
+													])
+													.limit(1),
+											)
+											.pipe(Effect.map((recent) => recent.length === 0)),
+									)
+									if (Arr.isReadonlyArrayNonEmpty(abandoned)) {
+										yield* db.run(
+											PG.update(SecurityAuditRuns)
+												.set({
+													status: "failed",
+													error: "abandoned: no activity within 48 hours",
+													finishedAt: now,
+												})
+												.where(($) => [
+													$.orgId.eq(orgId),
+													$.id.in_(...Arr.map(abandoned, (run) => run.id)),
+													$.status.eq("in_progress"),
+												]),
+										)
+									}
 									const running = yield* db.run(
 										PG.from(SecurityAuditRuns)
 											.select("id")
