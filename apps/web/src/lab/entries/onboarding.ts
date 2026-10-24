@@ -155,7 +155,7 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>(
 			needsRegion: false,
 			hasPlan: model.hasPlan,
 			orgName: "Acme",
-			teamStep: () => QuickStartTeamView.teamStep(h, model.quickStart.team),
+			teamStep: () => QuickStartTeamView.teamStep(h, model.quickStart.team, "Acme"),
 			planStep: QuickStartTeamView.planStep(
 				h,
 				false,

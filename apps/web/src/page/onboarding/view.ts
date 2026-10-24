@@ -132,7 +132,12 @@ const quickStartView = Submodel.defineView<
 				// A failed plan read fails open, as the gate does, rather than asking for a plan again.
 				hasPlan: accessOf(inputs.customer) === "app" || accessOf(inputs.customer) === "unknown",
 				orgName: Option.match(inputs.maybeOrganization, { onNone: () => "Your team", onSome: (org) => org.name }),
-				teamStep: () => QuickStartTeamView.teamStep(h, model.team),
+				teamStep: () =>
+					QuickStartTeamView.teamStep(
+						h,
+						model.team,
+						Option.match(inputs.maybeOrganization, { onNone: () => "Maple", onSome: (org) => org.name }),
+					),
 				planStep: QuickStartTeamView.planStep(
 					h,
 					accessOf(inputs.customer) === "loading",

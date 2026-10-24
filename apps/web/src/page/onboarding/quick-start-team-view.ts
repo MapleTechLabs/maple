@@ -1,55 +1,20 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { TRIAL_DURATION_DAYS } from "../../lib/billing/plans"
-import { button } from "../../ui/button"
+import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "../../ui/button"
 import { eyebrow } from "../../ui/eyebrow"
 import { panel } from "../../ui/panel"
 import { skeleton } from "../../ui/skeleton"
-import { icon } from "../../ui/icon"
+import { icon, type IconName } from "../../ui/icon"
 import { input } from "../../ui/input"
 import { label } from "../../ui/label"
 import { Message } from "./quick-start"
-import { isAlreadyInvited, isNameDirty, type Team, TeamMessage } from "./quick-start-team"
+import { isAlreadyInvited, type Team, TeamMessage } from "./quick-start-team"
 
 type H = HtmlBuilder<Message>
 
 const toTeam = (message: TeamMessage) => Message.GotTeamMessage({ message })
-
-const nameForm = (h: H, team: Team, isBusy: boolean): Html =>
-	h.form(
-		[h.Class("space-y-3"), h.OnSubmit(toTeam(TeamMessage.SubmittedRename()))],
-		[
-			label(h, { attributes: [h.For("onboarding-workspace-name")] }, ["Workspace name"]),
-			h.div(
-				[h.Class("flex flex-wrap gap-2")],
-				[
-					input(h, {
-						id: "onboarding-workspace-name",
-						type: "text",
-						className: "min-w-40 flex-1",
-						isDisabled: !team.canManage || isBusy,
-						attributes: [
-							h.Autocomplete("organization"),
-							h.Value(team.name),
-							h.Required(true),
-							h.Maxlength(256),
-							h.OnInput((value) => toTeam(TeamMessage.ChangedWorkspaceName({ value }))),
-						],
-					}),
-					button(
-						h,
-						{
-							type: "submit",
-							variant: "outline",
-							isLoading: team.pending === "rename",
-							isDisabled: !team.canManage || isBusy || team.name.trim() === "" || !isNameDirty(team),
-						},
-						["Save name"],
-					),
-				],
-			),
-		],
-	)
 
 const invitedList = (h: H, invited: ReadonlyArray<string>): ReadonlyArray<Html> =>
 	invited.length === 0
@@ -70,66 +35,216 @@ const invitedList = (h: H, invited: ReadonlyArray<string>): ReadonlyArray<Html> 
 				),
 			]
 
-/** `StepTeamConnected`: the loading line while Clerk reads the org, then `StepTeam`. */
-export const teamStep = (h: H, team: Team): Html => {
-	if (!team.isLoaded)
-		return h.output([h.Class("p-12 text-center text-sm text-muted-foreground")], ["Loading your workspace…"])
+type Tool = Readonly<{ icon: IconName; name: string; line: string; action: string; href: string }>
+
+/** Where Maple shows up besides the dashboard; each opens its own setup page in a new tab. */
+const TOOLS: ReadonlyArray<Tool> = [
+	{
+		icon: "GithubIcon",
+		name: "GitHub",
+		line: "Deploy markers on every chart, and reviews of pull requests against production traces.",
+		action: "Connect",
+		href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })),
+	},
+	{
+		icon: "SlackIcon",
+		name: "Slack",
+		line: "Alerts and incident updates in a channel, with the trace one click away.",
+		action: "Add to Slack",
+		href: hrefOf(AppRoute.Integrations({ search: { integration: "chat-slack" } })),
+	},
+	{
+		icon: "ClaudeIcon",
+		name: "Maple in your editor",
+		line: "Ask Claude, Codex or Cursor about production while you code.",
+		action: "Set up",
+		href: hrefOf(AppRoute.Mcp()),
+	},
+]
+
+const toolRow = (h: H, tool: Tool): Html =>
+	h.li(
+		[h.Class("flex items-center gap-3.5 px-4 py-4")],
+		[
+			h.span(
+				[
+					h.AriaHidden(true),
+					h.Class(
+						"flex size-10 shrink-0 items-center justify-center rounded-md border border-border",
+					),
+				],
+				[icon(h, tool.icon, { size: 20 })],
+			),
+			h.div(
+				[h.Class("flex min-w-0 flex-1 flex-col gap-1")],
+				[
+					h.span([h.Class("text-sm font-medium")], [tool.name]),
+					h.span([h.Class("text-xs leading-snug text-muted-foreground")], [tool.line]),
+				],
+			),
+			linkButton(
+				h,
+				{
+					href: tool.href,
+					variant: "outline",
+					size: "sm",
+					attributes: [
+						h.Target("_blank"),
+						h.Rel("noopener"),
+						h.AriaLabel(`${tool.action}: ${tool.name} (opens a new tab)`),
+					],
+				},
+				[tool.action, icon(h, "ExternalLinkIcon", { size: 12 })],
+			),
+		],
+	)
+
+/** `StepTeam`: the tools Maple plugs into, then teammates. Every part is optional. */
+export const teamStep = (h: H, team: Team, orgName: string): Html => {
 	const isBusy = team.pending !== null
 	return h.div(
-		[h.Class("flex flex-1 flex-col items-center justify-center px-6 py-12")],
+		[h.Class("flex flex-1 flex-col gap-8 px-6 pb-8 pt-4 sm:px-12 lg:px-16")],
 		[
 			h.div(
-				[h.Class("w-full max-w-xl space-y-8")],
+				[h.Class("flex flex-col gap-2.5")],
 				[
-					h.div(
-						[h.Class("space-y-3 text-center")],
+					h.h1(
+						[h.Class("font-display text-3xl font-semibold tracking-tight")],
+						["Bring in your team and tools"],
+					),
+					h.p(
+						[h.Class("text-[15px] leading-relaxed text-muted-foreground")],
+						["Maple shows up where you already work. Every one of these is optional."],
+					),
+				],
+			),
+			h.ul(
+				[
+					h.AriaLabel("Tools"),
+					h.Class(
+						"flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border bg-card",
+					),
+				],
+				TOOLS.map((tool) => toolRow(h, tool)),
+			),
+			team.isLoaded
+				? h.div(
+						[h.Class("flex flex-col gap-4")],
 						[
-							h.h1([h.Class("text-3xl font-semibold tracking-tight")], ["Bring your team"]),
-							h.p(
-								[h.Class("text-sm leading-relaxed text-muted-foreground")],
+							...(team.unavailableReason === null
+								? []
+								: [
+										h.p(
+											[h.Class("text-sm text-muted-foreground")],
+											[team.unavailableReason],
+										),
+									]),
+							inviteForm(h, team, isBusy),
+							...invitedList(h, team.invited),
+							h.div(
+								[h.AriaLive("polite"), h.AriaAtomic(true), h.Class("min-h-5 text-xs")],
 								[
-									"A shared place for the people behind your services.",
-									h.br([]),
-									"Flying solo? You can invite teammates later.",
+									h.p(
+										[
+											h.Class(
+												team.feedback?.isError === true
+													? TONE_TEXT.crit
+													: "text-muted-foreground",
+											),
+										],
+										team.feedback === null ? [] : [team.feedback.message],
+									),
 								],
 							),
 						],
+					)
+				: h.output([h.Class("text-sm text-muted-foreground")], ["Loading your team…"]),
+			h.div(
+				[
+					h.Class(
+						"mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5",
 					),
-					...(team.unavailableReason === null
-						? []
-						: [h.p([h.Class("text-sm text-muted-foreground")], [team.unavailableReason])]),
-					nameForm(h, team, isBusy),
-					inviteForm(h, team, isBusy),
-					...invitedList(h, team.invited),
-					h.div(
-						[h.AriaLive("polite"), h.AriaAtomic(true), h.Class("min-h-5 text-xs")],
-						[
-							h.p(
-								[h.Class(team.feedback?.isError === true ? TONE_TEXT.crit : "text-muted-foreground")],
-								team.feedback === null ? [] : [team.feedback.message],
-							),
-						],
+				],
+				[
+					button(
+						h,
+						{
+							variant: "ghost",
+							isDisabled: isBusy,
+							attributes: [h.OnClick(Message.ClickedBack({ to: "connect" }))],
+						},
+						[icon(h, "ArrowLeftIcon"), "Back"],
 					),
-					h.div(
-						[h.Class("flex flex-wrap items-center justify-between gap-3")],
-						[
-							button(
-								h,
-								{ variant: "ghost", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedBack({ to: "stack" }))] },
-								[icon(h, "ArrowLeftIcon"), "Back"],
-							),
-							button(
-								h,
-								{ size: "lg", isDisabled: isBusy, attributes: [h.OnClick(Message.ClickedContinue({ step: "team" }))] },
-								[isNameDirty(team) || team.email.trim() !== "" ? "Skip for now" : "Continue to plans"],
-							),
-						],
+					button(
+						h,
+						{
+							size: "lg",
+							isDisabled: isBusy,
+							attributes: [h.OnClick(Message.ClickedContinue({ step: "team" }))],
+						},
+						[`Open ${orgName}`, icon(h, "ArrowRightIcon", { size: 16 })],
 					),
 				],
 			),
 		],
 	)
 }
+
+type Surface = Readonly<{ icon: IconName; where: string; title: string; body: string }>
+
+/** Illustrations of what each tool looks like once connected; none of it is the org's data. */
+const SURFACES: ReadonlyArray<Surface> = [
+	{
+		icon: "SlackIcon",
+		where: "#alerts",
+		title: "checkout-api p95 latency is 1.2s, over 800ms",
+		body: "Started 4 min after deploy 3f9a1c2. Slowest span: db.query orders.",
+	},
+	{
+		icon: "GithubIcon",
+		where: "Pull request review",
+		title: "maple reviewed this pull request",
+		body: "getOrders runs 14k times an hour in production. This change removes an N+1 that accounts for 61% of its time.",
+	},
+	{
+		icon: "ClaudeIcon",
+		where: "Claude Code",
+		title: "> why did signups drop this morning?",
+		body: "POST /signup started returning 502 at 09:12. 214 errors, all one issue: TimeoutError in sendWelcomeEmail.",
+	},
+]
+
+/** `TeamPreview`: where Maple shows up, as examples. */
+export const teamPreview = (h: H): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-3.5")],
+		[
+			h.div(
+				[h.Class("mb-1 flex flex-col gap-1")],
+				[
+					h.span(
+						[h.Class("text-2xs uppercase tracking-widest text-muted-foreground")],
+						["Where Maple shows up"],
+					),
+					h.span([h.Class("font-display text-xl font-semibold")], ["Right where the work happens"]),
+				],
+			),
+			...SURFACES.map((surface) =>
+				h.div(
+					[h.Class("flex flex-col gap-2.5 rounded-xl border border-border bg-background p-3.5")],
+					[
+						h.div(
+							[h.Class("flex items-center gap-2 text-xs text-muted-foreground")],
+							[icon(h, surface.icon, { size: 14 }), surface.where],
+						),
+						h.span([h.Class("text-[13px] font-medium")], [surface.title]),
+						h.span([h.Class("text-xs leading-snug text-muted-foreground")], [surface.body]),
+					],
+				),
+			),
+			h.span([h.Class("text-2xs text-muted-foreground")], ["Examples of what each one looks like."]),
+		],
+	)
 
 /** `PricingSkeleton`: while the customer is still loading. */
 const pricingSkeleton = (h: H): Html =>
@@ -169,7 +284,10 @@ export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html 
 						[h.Class("text-center mb-10")],
 						[
 							eyebrow(h, { variant: "label", className: "text-primary" }, ["Pick a plan"]),
-							h.h2([h.Class("text-3xl font-semibold tracking-tight mt-2")], ["Pick a plan to keep going"]),
+							h.h2(
+								[h.Class("text-3xl font-semibold tracking-tight mt-2")],
+								["Pick a plan to keep going"],
+							),
 							h.p(
 								[h.Class("text-muted-foreground text-sm mt-3 max-w-lg mx-auto")],
 								[
@@ -220,7 +338,11 @@ const inviteForm = (h: H, team: Team, isBusy: boolean): Html =>
 							type: "submit",
 							variant: "outline",
 							isLoading: team.pending === "invite",
-							isDisabled: !team.canManage || isBusy || team.email.trim() === "" || isAlreadyInvited(team),
+							isDisabled:
+								!team.canManage ||
+								isBusy ||
+								team.email.trim() === "" ||
+								isAlreadyInvited(team),
 						},
 						["Send invitation"],
 					),

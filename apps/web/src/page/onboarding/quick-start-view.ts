@@ -18,6 +18,7 @@ import * as GuidedSetup from "../kit/guided-setup"
 import { presenceOf, type TelemetrySignalKind } from "../kit/signal-presence"
 import { ConnectMessage, STATUS_PROVIDERS } from "./quick-start-connect"
 import { regionStep } from "./quick-start-region-view"
+import * as QuickStartTeamView from "./quick-start-team-view"
 import { Message, type Model, MountDitherField } from "./quick-start"
 import { type QuickStartState, resolveQuickStartStep, type StepId } from "./quick-start-state"
 
@@ -704,6 +705,8 @@ export const view = (h: H, model: Model, parts: QuickStartParts): Html | null =>
 				motionStep(h, "connect", connectStep(h, model, state)),
 			])
 		case "team":
-			return shell(h, options(null), [motionStep(h, "team", parts.teamStep(state))])
+			return shell(h, options(QuickStartTeamView.teamPreview(h)), [
+				motionStep(h, "team", parts.teamStep(state)),
+			])
 	}
 }
