@@ -24,6 +24,14 @@ struct RootView: View {
 
 			case .signedOut:
 				AuthView()
+				#if DEBUG
+					// `MAPLE_DEBUG_SIGNIN_TICKET`: a Clerk sign-in token minted by a
+					// verification harness, so the simulator can sign in unattended.
+					.task {
+						guard let ticket = ProcessInfo.processInfo.environment["MAPLE_DEBUG_SIGNIN_TICKET"] else { return }
+						_ = try? await clerk.auth.signInWithTicket(ticket)
+					}
+				#endif
 
 			case .needsOrganization:
 				OrganizationPickerView(mode: .gate)
