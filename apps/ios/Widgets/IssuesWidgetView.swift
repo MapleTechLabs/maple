@@ -44,7 +44,7 @@ private struct SmallView: View {
 					IssueRowView(issue: top, now: entry.date, showsCount: false, showsTrailingTime: false)
 				}
 
-				UpdatedFooter(snapshot: snapshot, now: entry.date)
+				UpdatedFooter(snapshot: snapshot, now: entry.date, needsApp: entry.needsApp)
 			}
 		}
 		.widgetURL(IssuesWidgetKind.issuesListURL(organizationId: entry.organizationId))
@@ -95,7 +95,7 @@ private struct ListView: View {
 				Spacer(minLength: 0)
 
 				if isLarge {
-					UpdatedFooter(snapshot: snapshot, now: entry.date)
+					UpdatedFooter(snapshot: snapshot, now: entry.date, needsApp: entry.needsApp)
 				}
 			}
 		}
@@ -488,9 +488,10 @@ private struct DisconnectedView: View {
 private struct UpdatedFooter: View {
 	let snapshot: IssuesSnapshot
 	let now: Date
+	var needsApp = false
 
 	var body: some View {
-		Text(WidgetTime.updated(snapshot.age(at: now)))
+		Text(WidgetTime.updated(snapshot.age(at: now), needsApp: needsApp))
 			.font(Typo.micro)
 			.tabularNumbers()
 			.foregroundStyle(Token.mutedForeground)

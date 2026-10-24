@@ -52,6 +52,9 @@ struct ThroughputEntry: TimelineEntry {
 	var showsOrganization = false
 	/// Pinned to an organization the app no longer publishes.
 	var isOrganizationUnavailable = false
+	/// The widget's credential was refused and only the app can register it
+	/// again: the last snapshot stays, with a hint to open Maple.
+	var needsApp = false
 
 	/// The organization to name in the header, or nil when naming it is noise.
 	var headerOrganizationName: String? {
@@ -110,7 +113,8 @@ struct ThroughputProvider: AppIntentTimelineProvider {
 			// "Not a member any more", not "nothing fetched yet" — see
 			// `IssuesProvider.makeEntry`.
 			isOrganizationUnavailable: configuredId != nil
-				&& !known.contains { $0.id == organizationId }
+				&& !known.contains { $0.id == organizationId },
+			needsApp: WidgetFetchStateStore().load(organizationId: organizationId).isCredentialRejected
 		)
 	}
 
