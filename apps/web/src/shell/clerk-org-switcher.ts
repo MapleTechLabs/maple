@@ -7,7 +7,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { load } from "foldkit/navigation"
 import { modifyFields } from "foldkit/struct"
 import { MapleInternalApiClient } from "../platform/api-clients"
-import { setActiveOrganization } from "../platform/clerk"
+import { activateOrganization, type ClerkActionError, setActiveOrganization } from "../platform/clerk"
 import type { Resources } from "../platform/resources"
 import * as Dialog from "../ui/dialog"
 import * as Menu from "../ui/menu"
@@ -203,6 +203,10 @@ const landOn = (targetUrl: string | null): Effect.Effect<void> =>
 /** `setActive`, then a reload of this dashboard or the region's own app. */
 export const switchToOrganization = (orgId: string, targetUrl: string | null): Effect.Effect<void> =>
 	setActiveOrganization(orgId).pipe(Effect.andThen(landOn(targetUrl)))
+
+/** As `switchToOrganization`, but a refused `setActive` fails instead of reloading onto no org. */
+export const openOrganization = (orgId: string, targetUrl: string | null): Effect.Effect<void, ClerkActionError> =>
+	activateOrganization(orgId).pipe(Effect.andThen(landOn(targetUrl)))
 
 /** `switchOrganization` / the create dialog's ending: `setActive`, then reload or the region's app. */
 export const SwitchOrganization = Command.define("SwitchOrganization", {
