@@ -186,6 +186,51 @@ describe("runAudit, budget", () => {
 	})
 })
 
+describe("runAudit, disclosed coverage", () => {
+	it("names every unit a budget-cut run did not audit in its report", async () => {
+		const { result } = await runScripted(baseInput({ budget: 9 }), happy())
+		const unaudited = result.ledger.filter((u) => u.status !== "covered" && u.status !== "candidate")
+		expect(unaudited.length).toBeGreaterThan(0)
+		expect(result.reports.report).toContain(
+			`Not covered by this run (${unaudited.length} ${unaudited.length === 1 ? "unit" : "units"}):`,
+		)
+		const unnamed = unaudited.filter(
+			(unit) =>
+				!result.reports.report.includes(`- ${unit.status}: ${unit.surface} / ${unit.attack_class}`),
+		)
+		expect(unnamed).toEqual([])
+	})
+})
+
+describe("runAudit, execution mode", () => {
+	it("labels a source-only run in its report and in both needs-validation documents", async () => {
+		const line =
+			"Source-only review: no execution sandbox for Go yet; private dependencies detected, which cannot be installed without credentials (go.mod: replace directive to the local module ../shared)"
+		const { result } = await runScripted(
+			baseInput({
+				executionProfile: {
+					mode: "source_only",
+					ecosystems: ["go"],
+					privateDependencies: ["go.mod: replace directive to the local module ../shared"],
+					reasons: [
+						"no execution sandbox for Go yet",
+						"private dependencies detected, which cannot be installed without credentials (go.mod: replace directive to the local module ../shared)",
+					],
+				},
+			}),
+			happy(),
+		)
+		const sections = result.reports.report.split("\n## ")
+		expect([
+			sections.find((s) => s.startsWith("Run"))?.includes(`- ${line}.`),
+			sections
+				.find((s) => s.startsWith("NEEDS VALIDATION"))
+				?.includes(`${line}. Leads whose deciding fact needs execution stay here.`),
+			result.reports.needsValidation.startsWith(`# Needs validation\n\n${line}.`),
+		]).toEqual([true, true, true])
+	})
+})
+
 describe("runAudit, record verification", () => {
 	it("applies a material replacement only after a fresh verifier agrees", async () => {
 		const { result, recorded } = await runScripted(

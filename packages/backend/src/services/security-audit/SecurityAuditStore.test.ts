@@ -1003,3 +1003,69 @@ describe("SecurityAuditStore writes after a run finished", () => {
 		),
 	)
 })
+
+describe("SecurityAuditStore org invocation budget", () => {
+	it.effect("reserves concurrent invocations up to the limit and never past it, per org and month", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const a = store.forOrg(orgA)
+				const runA = (yield* seedRun(store, orgA, "abc")).runId
+				const runB = (yield* seedRun(store, orgB, "abc")).runId
+				const grants = yield* Effect.forEach(
+					Array.from({ length: 10 }, (_, i) => i),
+					(i) => a.reserveOrgInvocation(runA, `hunter-${i}`, "2026-10", 3),
+					{ concurrency: "unbounded" },
+				)
+				const otherMonth = yield* a.reserveOrgInvocation(runA, "recon-1", "2026-11", 3)
+				const otherOrg = yield* store.forOrg(orgB).reserveOrgInvocation(runB, "recon-1", "2026-10", 3)
+				const noPlan = yield* store.forOrg(orgB).reserveOrgInvocation(runB, "recon-2", "2026-12", 0)
+				assert.deepStrictEqual(
+					{
+						granted: grants.filter(Boolean).length,
+						spent: yield* a.orgInvocationsSpent("2026-10"),
+						otherMonth,
+						otherOrg,
+						noPlan,
+						noPlanSpent: yield* store.forOrg(orgB).orgInvocationsSpent("2026-12"),
+					},
+					{ granted: 3, spent: 3, otherMonth: true, otherOrg: true, noPlan: false, noPlanSpent: 0 },
+				)
+			}),
+		),
+	)
+
+	it.effect("grants a retried reservation of the same agent once, even at the limit", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const a = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "abc")
+				// The first try committed but its step was never recorded; the retry must not count again.
+				const first = yield* a.reserveOrgInvocation(runId, "hunter-w1-1", "2026-10", 1)
+				const retry = yield* a.reserveOrgInvocation(runId, "hunter-w1-1", "2026-10", 1)
+				const next = yield* a.reserveOrgInvocation(runId, "hunter-w1-2", "2026-10", 1)
+				assert.deepStrictEqual(
+					[first, retry, next, yield* a.orgInvocationsSpent("2026-10")],
+					[true, true, false, 1],
+				)
+			}),
+		),
+	)
+
+	it.effect("reserves nothing for a run that already finished, and refuses another org's run", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const a = store.forOrg(orgA)
+				const { runId } = yield* seedRun(store, orgA, "abc")
+				yield* a.cancelRun(runId, user)
+				const afterCancel = yield* a.reserveOrgInvocation(runId, "recon-1", "2026-10", 100)
+				const crossOrg = yield* Effect.exit(
+					store.forOrg(orgB).reserveOrgInvocation(runId, "recon-1", "2026-10", 100),
+				)
+				assert.deepStrictEqual(
+					[afterCancel, crossOrg._tag, yield* a.orgInvocationsSpent("2026-10")],
+					[false, "Failure", 0],
+				)
+			}),
+		),
+	)
+})

@@ -1,7 +1,8 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
+import { ExecutionProfile } from "@maple/security-audit/ecosystems"
 import { AuditReportsRecord, Finding, UnitStatus } from "@maple/security-audit/schema"
-import { UserId } from "../primitives"
+import { IsoDateTimeString, UserId } from "../primitives"
 import {
 	isSafeScopePath,
 	SecurityAuditEventKind,
@@ -30,12 +31,17 @@ const MAX_SCOPE_PATHS = 100
 
 /** `owner/name`, as GitHub spells it. */
 export const SecurityAuditRepository = Schema.String.check(
-	Schema.isPattern(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u),
+	Schema.isPattern(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u, {
+		message: "Expected a GitHub repository as owner/name, like acme/api",
+	}),
 )
 
 /** A branch name git would accept, without the shapes a ref or an option could hide behind. */
 export const SecurityAuditBranch = Schema.String.check(
-	Schema.isPattern(/^(?![-/.])(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/+-]{1,255}$/u),
+	Schema.isPattern(/^(?![-/.])(?!.*\.\.)(?!.*\/\/)(?!.*@\{)[A-Za-z0-9._/+-]{1,255}$/u, {
+		message:
+			"Expected a branch name of letters, digits and . _ / + -, not starting with - / or . and without '..', '//' or '@{'",
+	}),
 	Schema.makeFilter((value: string) => !value.endsWith("/") && !value.endsWith(".lock"), {
 		description: "a branch name",
 		message: "Expected a branch name that does not end in '/' or '.lock'",
@@ -146,6 +152,8 @@ export const SecurityAuditRunDetail = Schema.Struct({
 	...runFields,
 	reports: Schema.NullOr(AuditReportsRecord),
 	architectureMd: Schema.NullOr(Schema.String),
+	/** How the run may execute target code and why not; null until prepare inspects the repository. */
+	executionProfile: Schema.NullOr(ExecutionProfile),
 	/** Ledger units per unit status. */
 	unitCounts: Schema.Record(Schema.String, Schema.Number),
 	unitTotal: Schema.Number,
@@ -381,6 +389,43 @@ export class SecurityAuditTargetExistsError extends HttpTaggedError<SecurityAudi
 	},
 ) {}
 
+/** The repository is over a size limit, by what GitHub reports, before anything is cloned. */
+export class SecurityAuditRepositoryTooLargeError extends HttpTaggedError<SecurityAuditRepositoryTooLargeError>()(
+	"@maple/http/security-audit/SecurityAuditRepositoryTooLargeError",
+	{ message: Schema.String, repository: Schema.String },
+	{
+		status: 422,
+		code: "security_audit_repository_too_large",
+		title: "Repository too large to audit",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
+/** The org's monthly audit invocations, from its plan, cannot fund a run of this profile. */
+export class SecurityAuditBudgetExhaustedError extends HttpTaggedError<SecurityAuditBudgetExhaustedError>()(
+	"@maple/http/security-audit/SecurityAuditBudgetExhaustedError",
+	{
+		message: Schema.String,
+		/** Invocations the org has left this month. */
+		remaining: Schema.Number,
+		/** The fewest invocations a run of the target's profile needs to start. */
+		required: Schema.Number,
+		/** When the org's budget resets: the end of its billing cycle. */
+		resetsAt: IsoDateTimeString,
+	},
+	{
+		status: 402,
+		code: "security_audit_budget_exhausted",
+		title: "Security audit budget used up",
+		retry: "never",
+		retryAt: (error) => error.resetsAt,
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
 /** The org has no connected repository by that name. */
 export class SecurityAuditRepositoryNotConnectedError extends HttpTaggedError<SecurityAuditRepositoryNotConnectedError>()(
 	"@maple/http/security-audit/SecurityAuditRepositoryNotConnectedError",
@@ -407,7 +452,12 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		HttpApiEndpoint.post("createTarget", "/targets", {
 			payload: SecurityAuditCreateTargetRequest,
 			success: SecurityAuditTarget,
-			error: [...adminErrors, SecurityAuditRepositoryNotConnectedError, SecurityAuditTargetExistsError],
+			error: [
+				...adminErrors,
+				SecurityAuditRepositoryNotConnectedError,
+				SecurityAuditTargetExistsError,
+				SecurityAuditRepositoryTooLargeError,
+			],
 		}),
 	)
 	.add(
@@ -426,6 +476,8 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				SecurityAuditTargetNotFoundError,
 				SecurityAuditTargetDisabledError,
 				SecurityAuditRunInProgressError,
+				SecurityAuditBudgetExhaustedError,
+				SecurityAuditRepositoryTooLargeError,
 				SecurityAuditStartError,
 			],
 		}),

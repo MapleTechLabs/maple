@@ -19,6 +19,7 @@ import {
 	RunMetadataRecord,
 	UnitStatus,
 } from "@maple/security-audit/schema"
+import { ExecutionProfile } from "@maple/security-audit/ecosystems"
 import { Schema } from "effect"
 
 // Scheduled security audits. A target is one repository branch an org audits; each run writes
@@ -77,6 +78,8 @@ export const SecurityAuditRuns = PG.table("security_audit_runs", {
 		incompleteReason: PG.column(PG.nullable(PG.text), { name: "incomplete_reason" }),
 		architectureMd: PG.column(PG.nullable(PG.text), { name: "architecture_md" }),
 		reports: PG.nullable(PG.jsonb(AuditReportsRecord)),
+		/** How the run may execute target code and why not; null until prepare inspects the repository. */
+		executionProfile: PG.column(PG.nullable(PG.jsonb(ExecutionProfile)), { name: "execution_profile" }),
 		invocationsSpent: PG.column(PG.int4, { name: "invocations_spent", default: 0 }),
 		inputTokens: PG.column(PG.int8, { name: "input_tokens", default: 0 }),
 		outputTokens: PG.column(PG.int8, { name: "output_tokens", default: 0 }),
@@ -196,9 +199,43 @@ export const SecurityAuditEvents = PG.table("security_audit_events", {
 	tenantColumn: "orgId",
 })
 
+/**
+ * An org's security-audit agent invocations per UTC month. The Workflow reserves one row unit
+ * before every agent step, conditionally on the org's plan limit, so concurrent runs never overspend.
+ */
+export const SecurityAuditOrgUsage = PG.table("security_audit_org_usage", {
+	columns: {
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		/** UTC month, `YYYY-MM`. */
+		period: PG.text,
+		invocationsSpent: PG.column(PG.int4, { name: "invocations_spent", default: 0 }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: ["orgId", "period"],
+	tenantColumn: "orgId",
+})
+
+/**
+ * One granted invocation per (run, agent): a retried or replayed reservation finds its grant here
+ * instead of counting it again in `security_audit_org_usage`.
+ */
+export const SecurityAuditOrgReservations = PG.table("security_audit_org_reservations", {
+	columns: {
+		runId: PG.column(PG.brand(PG.text, SecurityAuditRunId), { name: "run_id" }),
+		agentId: PG.column(PG.text, { name: "agent_id" }),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		period: PG.text,
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	},
+	primaryKey: ["runId", "agentId"],
+	indexes: [PG.index("security_audit_org_reservations_org_idx", ["orgId", "period"])],
+	tenantColumn: "orgId",
+})
+
 export type SecurityAuditTargetRow = PG.SelectRowOf<typeof SecurityAuditTargets>
 export type SecurityAuditRunRow = PG.SelectRowOf<typeof SecurityAuditRuns>
 export type SecurityAuditUnitRow = PG.SelectRowOf<typeof SecurityAuditUnits>
 export type SecurityAuditRunFindingRow = PG.SelectRowOf<typeof SecurityAuditRunFindings>
 export type SecurityAuditFindingRow = PG.SelectRowOf<typeof SecurityAuditFindings>
 export type SecurityAuditEventRow = PG.SelectRowOf<typeof SecurityAuditEvents>
+export type SecurityAuditOrgUsageRow = PG.SelectRowOf<typeof SecurityAuditOrgUsage>

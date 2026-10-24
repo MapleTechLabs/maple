@@ -222,6 +222,18 @@ export const runDetailOf = (now: number, runId: string) => {
 		...run(seed),
 		reports: seed.finishedAt === null || seed.status === "failed" ? null : REPORTS,
 		architectureMd: null,
+		executionProfile:
+			seed.status === "failed"
+				? null
+				: {
+						mode: "source_only",
+						ecosystems: ["node", "go"],
+						privateDependencies: [".npmrc: private source npm.pkg.github.com"],
+						reasons: [
+							"no execution sandbox for Node.js, Go yet",
+							"private dependencies detected, which cannot be installed without credentials (.npmrc: private source npm.pkg.github.com)",
+						],
+					},
 		unitCounts: counts,
 		unitTotal: Object.values(counts).reduce((sum, count) => sum + count, 0),
 	})
