@@ -166,12 +166,7 @@ private struct TraceContent: View {
 						row(at: index)
 					}
 				}
-				.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
-				.clipShape(.rect(cornerRadius: Token.Radius.lg))
-				.overlay(
-					RoundedRectangle(cornerRadius: Token.Radius.lg)
-						.stroke(Token.border, lineWidth: Token.hairline)
-				)
+				.hairlineCard()
 			}
 			.padding(.horizontal, 16)
 		}

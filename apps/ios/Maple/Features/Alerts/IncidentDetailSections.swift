@@ -20,8 +20,7 @@ struct RuleSignalSection: View {
 					.font(Typo.small)
 					.foregroundStyle(Token.mutedForeground)
 					.frame(maxWidth: .infinity, alignment: .leading)
-					.padding(12)
-					.alertCard()
+					.hairlineCard(padding: 12)
 			} else {
 				VStack(alignment: .leading, spacing: 12) {
 					RuleBars(bars: bars, signal: detail.ruleSignal, unit: detail.display.unit)
@@ -29,8 +28,7 @@ struct RuleSignalSection: View {
 					axis(bars)
 					legend
 				}
-				.padding(12)
-				.alertCard()
+				.hairlineCard(padding: 12)
 			}
 		}
 	}
@@ -264,7 +262,7 @@ private struct ChangeTile: View {
 		}
 		.padding(10)
 		.frame(maxWidth: .infinity, alignment: .leading)
-		.alertCard()
+		.hairlineCard()
 		.accessibilityElement(children: .combine)
 	}
 }
@@ -305,7 +303,7 @@ struct LikelyCauseSection: View {
 						operations
 					}
 				}
-				.alertCard()
+				.hairlineCard()
 			}
 		}
 	}

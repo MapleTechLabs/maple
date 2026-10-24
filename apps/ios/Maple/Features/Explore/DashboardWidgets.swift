@@ -84,7 +84,7 @@ struct DashboardWidgetCard: View {
 				header
 				content
 			}
-			.dashboardCard(padding: 12)
+			.hairlineCard(padding: 12)
 		}
 	}
 

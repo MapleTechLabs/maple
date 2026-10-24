@@ -107,7 +107,7 @@ private struct AnomalyDetailContent: View {
 						.contentShape(.rect)
 					}
 					.buttonStyle(RowButtonStyle())
-					.alertCard()
+					.hairlineCard()
 				}
 			}
 			facts
@@ -173,7 +173,7 @@ private struct AnomalyDetailContent: View {
 				}
 			}
 			.padding(.horizontal, 12)
-			.alertCard()
+			.hairlineCard()
 		}
 	}
 
@@ -231,8 +231,7 @@ private struct AnomalySignalChart: View {
 					.frame(maxWidth: .infinity, alignment: .leading)
 			}
 		}
-		.padding(12)
-		.alertCard()
+		.hairlineCard(padding: 12)
 	}
 
 	private func chart(_ series: AnomalyIncidentTimeseries, _ buckets: [Bucket]) -> some View {

@@ -38,7 +38,7 @@ struct DashboardsListView: View {
 					if dashboard.id != dashboards.last?.id { Hairline() }
 				}
 			}
-			.dashboardCard()
+			.hairlineCard()
 			.padding(16)
 		}
 		.mapleScreen(Screen.dashboards)
@@ -82,21 +82,6 @@ private struct DashboardRow: View {
 			.compactMap { $0 }
 			.filter { !$0.isEmpty }
 			.joined(separator: " · ")
-	}
-}
-
-extension View {
-	/// The hairline card every dashboard surface sits in.
-	func dashboardCard(padding: CGFloat = 0) -> some View {
-		self
-			.padding(padding)
-			.frame(maxWidth: .infinity, alignment: .leading)
-			.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
-			.clipShape(.rect(cornerRadius: Token.Radius.lg))
-			.overlay(
-				RoundedRectangle(cornerRadius: Token.Radius.lg)
-					.stroke(Token.border, lineWidth: Token.hairline)
-			)
 	}
 }
 

@@ -150,12 +150,7 @@ struct IssuesListContent: View {
 							.task { await model.loadMore() }
 					}
 				}
-				.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
-				.clipShape(.rect(cornerRadius: Token.Radius.lg))
-				.overlay(
-					RoundedRectangle(cornerRadius: Token.Radius.lg)
-						.stroke(Token.border, lineWidth: Token.hairline)
-				)
+				.hairlineCard()
 			}
 			.padding(.horizontal, 16)
 			.padding(.top, 4)

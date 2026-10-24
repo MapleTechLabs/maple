@@ -154,12 +154,7 @@ struct ServiceIncidentRow: View {
 			.padding(.vertical, 10)
 		}
 		.fixedSize(horizontal: false, vertical: true)
-		.background(Token.card)
-		.clipShape(.rect(cornerRadius: Token.Radius.lg))
-		.overlay(
-			RoundedRectangle(cornerRadius: Token.Radius.lg)
-				.stroke(Token.border, lineWidth: Token.hairline)
-		)
+		.hairlineCard()
 		.contentShape(.rect)
 		.accessibilityElement(children: .combine)
 	}

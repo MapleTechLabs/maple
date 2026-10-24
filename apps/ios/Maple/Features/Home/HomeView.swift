@@ -265,17 +265,12 @@ struct IncidentCardView: View {
 		.padding(.leading, 16)
 		.padding(.trailing, 14)
 		.padding(.vertical, 14)
-		.background(Token.card)
 		.overlay(alignment: .leading) {
 			Rectangle()
 				.fill(incident.severity.tint)
 				.frame(width: 2)
 		}
-		.clipShape(.rect(cornerRadius: Token.Radius.lg))
-		.overlay(
-			RoundedRectangle(cornerRadius: Token.Radius.lg)
-				.stroke(Token.border, lineWidth: Token.hairline)
-		)
+		.hairlineCard()
 		.contentShape(.rect)
 	}
 

@@ -442,6 +442,21 @@ struct Hairline: View {
 	}
 }
 
+extension View {
+	/// The full-width hairline card every section, list and tile sits in.
+	func hairlineCard(padding: CGFloat = 0) -> some View {
+		self
+			.padding(padding)
+			.frame(maxWidth: .infinity, alignment: .leading)
+			.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
+			.clipShape(.rect(cornerRadius: Token.Radius.lg))
+			.overlay(
+				RoundedRectangle(cornerRadius: Token.Radius.lg)
+					.stroke(Token.border, lineWidth: Token.hairline)
+			)
+	}
+}
+
 /// The uppercase section heading:
 /// `text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground`.
 struct SectionLabel: View {
@@ -493,11 +508,7 @@ struct StatTile: View {
 		.padding(12)
 		// Fill the grid row, so a tile without a delta matches its neighbour.
 		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-		.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
-		.overlay(
-			RoundedRectangle(cornerRadius: Token.Radius.lg)
-				.stroke(Token.border, lineWidth: Token.hairline)
-		)
+		.hairlineCard()
 	}
 }
 

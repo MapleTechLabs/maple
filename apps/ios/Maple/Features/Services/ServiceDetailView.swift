@@ -365,12 +365,7 @@ private struct ServiceDetailContent: View {
 						if index < detail.issues.count - 1 { Hairline() }
 					}
 				}
-				.background(Token.card)
-				.clipShape(.rect(cornerRadius: Token.Radius.lg))
-				.overlay(
-					RoundedRectangle(cornerRadius: Token.Radius.lg)
-						.stroke(Token.border, lineWidth: Token.hairline)
-				)
+				.hairlineCard()
 			}
 		}
 		.padding(.horizontal, 16)
@@ -460,11 +455,7 @@ private struct SignalCard: View {
 			}
 		}
 		.padding(12)
-		.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
-		.overlay(
-			RoundedRectangle(cornerRadius: Token.Radius.lg)
-				.stroke(Token.border, lineWidth: Token.hairline)
-		)
+		.hairlineCard()
 	}
 
 	/// `612 ms  p95 now · peak 702 ms`, or the scrubbed bucket's time.

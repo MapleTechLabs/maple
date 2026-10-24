@@ -26,18 +26,6 @@ struct AlertSection<Content: View>: View {
 	}
 }
 
-extension View {
-	/// The hairline card the alert screens sit their sections and lists in.
-	func alertCard() -> some View {
-		background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
-			.clipShape(.rect(cornerRadius: Token.Radius.lg))
-			.overlay(
-				RoundedRectangle(cornerRadius: Token.Radius.lg)
-					.stroke(Token.border, lineWidth: Token.hairline)
-			)
-	}
-}
-
 /// A bordered badge with no fill: `Critical`, `Resolved`.
 struct AlertOutlineBadge: View {
 	let text: String
@@ -159,7 +147,7 @@ struct TriageListCard<Content: View>: View {
 			LazyVStack(spacing: 0) {
 				content
 			}
-			.alertCard()
+			.hairlineCard()
 		}
 		.padding(.horizontal, 16)
 		.padding(.top, 4)

@@ -20,8 +20,7 @@ struct IssueDetailContent: View {
 						.font(Typo.small)
 						.foregroundStyle(Token.foreground)
 						.frame(maxWidth: .infinity, alignment: .leading)
-						.padding(14)
-						.issueCard()
+						.hairlineCard(padding: 14)
 				}
 			}
 		}
@@ -48,18 +47,6 @@ private struct IssueSection<Content: View>: View {
 			}
 			content
 		}
-	}
-}
-
-extension View {
-	/// The hairline card every section on this screen sits in.
-	fileprivate func issueCard() -> some View {
-		background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
-			.clipShape(.rect(cornerRadius: Token.Radius.lg))
-			.overlay(
-				RoundedRectangle(cornerRadius: Token.Radius.lg)
-					.stroke(Token.border, lineWidth: Token.hairline)
-			)
 	}
 }
 
@@ -220,8 +207,7 @@ private struct IssueOccurrences: View {
 					.font(Typo.micro)
 					.foregroundStyle(Token.mutedForeground)
 				}
-				.padding(14)
-				.issueCard()
+				.hairlineCard(padding: 14)
 				.accessibilityElement(children: .ignore)
 				.accessibilityLabel("Occurrences, last 24 hours, peak \(Format.count(peak)) an hour")
 			}
@@ -253,8 +239,7 @@ private struct IssueStackTrace: View {
 					}
 				}
 				.frame(maxWidth: .infinity, alignment: .leading)
-				.padding(14)
-				.issueCard()
+				.hairlineCard(padding: 14)
 			}
 		}
 	}
@@ -298,7 +283,7 @@ private struct IssueSamples: View {
 						if sample.traceId != samples.last?.traceId { Hairline() }
 					}
 				}
-				.issueCard()
+				.hairlineCard()
 			}
 		}
 	}
@@ -375,7 +360,7 @@ private struct IssueIncidents: View {
 						if incident.id != incidents.last?.id { Hairline() }
 					}
 				}
-				.issueCard()
+				.hairlineCard()
 			}
 		}
 	}
@@ -411,11 +396,7 @@ struct IssueActionBar: View {
 		}
 		.disabled(pending != nil)
 		.padding(8)
-		.background(Token.card, in: .rect(cornerRadius: Token.Radius.xl))
-		.overlay(
-			RoundedRectangle(cornerRadius: Token.Radius.xl)
-				.stroke(Token.border, lineWidth: Token.hairline)
-		)
+		.hairlineCard()
 		.padding(.horizontal, 16)
 		.padding(.bottom, 8)
 	}

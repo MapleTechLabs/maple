@@ -174,12 +174,7 @@ struct ServicesListView: View {
 						if index < visible.count - 1 { Hairline() }
 					}
 				}
-				.background(Token.card)
-				.clipShape(.rect(cornerRadius: Token.Radius.lg))
-				.overlay(
-					RoundedRectangle(cornerRadius: Token.Radius.lg)
-						.stroke(Token.border, lineWidth: Token.hairline)
-				)
+				.hairlineCard()
 			}
 		}
 	}

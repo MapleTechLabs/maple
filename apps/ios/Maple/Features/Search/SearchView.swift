@@ -177,7 +177,7 @@ private struct SearchResults: View {
 			SectionLabel(title)
 				.accessibilityAddTraits(.isHeader)
 			VStack(spacing: 0) { content() }
-				.dashboardCard()
+				.hairlineCard()
 		}
 	}
 }
