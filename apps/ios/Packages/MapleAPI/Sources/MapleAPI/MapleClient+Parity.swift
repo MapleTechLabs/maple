@@ -39,6 +39,28 @@ public struct LogVolume: Hashable, Sendable {
 		self.series = series
 	}
 
+	/// Lays sparse per-severity points onto one bucket timeline from `start` to
+	/// `end`, so every series has the same length and index `i` is the same bucket.
+	public init(
+		points: [(severity: String, points: [(timestamp: Date, value: Double)])],
+		start: Date,
+		end: Date,
+		bucketSeconds: Int
+	) {
+		let step = Double(max(bucketSeconds, 1))
+		// Buckets snap to the interval, as `toStartOfInterval` does server side.
+		let origin = (start.timeIntervalSince1970 / step).rounded(.down) * step
+		let count = max(Int(((end.timeIntervalSince1970 - origin) / step).rounded(.up)), 1)
+		self.series = points.map { entry in
+			var values = Array(repeating: 0.0, count: count)
+			for point in entry.points {
+				let index = Int(((point.timestamp.timeIntervalSince1970 - origin) / step).rounded(.down))
+				if values.indices.contains(index) { values[index] += point.value }
+			}
+			return Series(severity: entry.severity, values: values)
+		}
+	}
+
 	/// Every severity summed per bucket.
 	public var totals: [Double] {
 		let width = series.map(\.values.count).max() ?? 0
@@ -87,10 +109,21 @@ extension MapleClient {
 					)
 				)
 			)
-			let series = try output.ok.body.json.series.map { series in
-				LogVolume.Series(severity: series.group ?? "UNSET", values: series.points.map(\.value))
+			let body = try output.ok.body.json
+			let points = body.series.map { series in
+				(
+					severity: series.group ?? "UNSET",
+					points: series.points.compactMap { point in
+						ResolvedTimeWindow.parse(point.timestamp).map { (timestamp: $0, value: point.value) }
+					}
+				)
 			}
-			return LogVolume(series: series)
+			return LogVolume(
+				points: points,
+				start: search.window.start,
+				end: search.window.end,
+				bucketSeconds: body.bucketSeconds
+			)
 		}
 	}
 
