@@ -1,6 +1,6 @@
 import { HttpServerRequest } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant } from "@maple/domain/http"
+import { CurrentTenant, DeviceCredentialSessionRequiredError } from "@maple/domain/http"
 import { MapleApiV2, isoTimestamp, V2RateLimited } from "@maple/domain/http/v2"
 import type { DeviceCredentialRow } from "@maple/db/tables"
 import { Effect } from "effect"
@@ -11,6 +11,7 @@ import {
 	deviceRateLimitKey,
 	deviceTokenIpRateLimitKey,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
 
 const toWire = (row: DeviceCredentialRow) => ({
@@ -26,27 +27,52 @@ const toWire = (row: DeviceCredentialRow) => ({
 	hard_expires_at: isoTimestamp(row.hardExpiresAt),
 })
 
+/**
+ * A device credential pins its creator's roles and outlives any API key, so only a signed-in
+ * person may manage one: API keys (even unscoped ones) and device tokens are refused.
+ */
+const requireSession = Effect.gen(function* () {
+	const actor = yield* CurrentAuditActor
+	const tenant = yield* CurrentTenant.Context
+	if (actor?.type !== "user" || actor.source !== "dashboard") {
+		return yield* new DeviceCredentialSessionRequiredError({
+			message: "Device credentials require a signed-in session.",
+		})
+	}
+	return tenant
+})
+
 export const HttpV2DeviceCredentialsLive = HttpApiBuilder.group(MapleApiV2, "deviceCredentials", (handlers) =>
 	Effect.gen(function* () {
 		const devices = yield* DeviceCredentialsService
 
 		return handlers
-			.handle("register", ({ params, payload }) =>
+			.handle("register", ({ params, payload, headers }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const row = yield* devices.register(tenant, {
-						installationId: params.installation_id,
-						publicJwk: payload.public_jwk,
-						...(payload.attestation === undefined
-							? undefined
-							: {
-									attestation: {
-										keyId: payload.attestation.key_id,
-										attestationObject: payload.attestation.attestation_object,
-										challenge: payload.attestation.challenge,
-									},
-								}),
-					})
+					const tenant = yield* requireSession
+					const request = yield* HttpServerRequest.HttpServerRequest
+					const row = yield* devices.register(
+						tenant,
+						{
+							installationId: params.installation_id,
+							publicJwk: {
+								kty: payload.public_jwk.kty,
+								crv: payload.public_jwk.crv,
+								x: payload.public_jwk.x,
+								y: payload.public_jwk.y,
+							},
+							...(payload.attestation === undefined
+								? undefined
+								: {
+										attestation: {
+											keyId: payload.attestation.key_id,
+											attestationObject: payload.attestation.attestation_object,
+											challenge: payload.attestation.challenge,
+										},
+									}),
+						},
+						{ proof: headers.dpop, method: request.method, path: request.url },
+					)
 					yield* recordHttpAudit("device_credential.registered", {
 						resourceId: row.id,
 						metadata: {
@@ -60,9 +86,9 @@ export const HttpV2DeviceCredentialsLive = HttpApiBuilder.group(MapleApiV2, "dev
 			)
 			.handle("revoke", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* requireSession
 					// Idempotent like the widget credential revoke: this is the sign-out path.
-					yield* devices.revoke(tenant.orgId, params.installation_id)
+					yield* devices.revoke(tenant.orgId, tenant.userId, params.installation_id)
 					yield* recordHttpAudit("device_credential.revoked", {
 						metadata: { installation_id: params.installation_id },
 					})
@@ -71,7 +97,7 @@ export const HttpV2DeviceCredentialsLive = HttpApiBuilder.group(MapleApiV2, "dev
 			)
 			.handle("attestationChallenge", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
+					const tenant = yield* requireSession
 					const issued = yield* devices.attestationChallenge(
 						tenant.orgId,
 						tenant.userId,

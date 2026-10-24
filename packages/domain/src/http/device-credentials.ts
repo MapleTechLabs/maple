@@ -124,3 +124,34 @@ export class DeviceTokensUnavailableError extends HttpTaggedError<DeviceTokensUn
 		exposure: "redacted",
 	},
 ) {}
+
+/** Another member's live credential holds this installation; only they (or its expiry) free it. */
+export class DeviceInstallationInUseError extends HttpTaggedError<DeviceInstallationInUseError>()(
+	"@maple/http/errors/DeviceInstallationInUseError",
+	{ message: Schema.String },
+	{
+		status: 409,
+		code: "device_installation_in_use",
+		title: "Installation registered by someone else",
+		message: "Another member has a live device credential for this installation. Retry once it is revoked.",
+		param: "installation_id",
+		retry: "never",
+		recovery: "none",
+		exposure: "redacted",
+	},
+) {}
+
+/** Device credentials are managed by a signed-in person, never by an API key or a device token. */
+export class DeviceCredentialSessionRequiredError extends HttpTaggedError<DeviceCredentialSessionRequiredError>()(
+	"@maple/http/errors/DeviceCredentialSessionRequiredError",
+	{ message: Schema.String },
+	{
+		status: 403,
+		code: "session_required",
+		title: "Sign-in required",
+		message: "Device credentials can only be managed from a signed-in session.",
+		retry: "never",
+		recovery: "reauthenticate",
+		exposure: "redacted",
+	},
+) {}

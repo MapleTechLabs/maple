@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { EdgeCacheService } from "@maple/cache"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Exit, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
@@ -45,6 +45,7 @@ const TEAM_ID = "TEAMID1234"
 const APP_ID = `${TEAM_ID}.com.maple.mobile`
 const ORG = Schema.decodeUnknownSync(OrgId)("org_device_cred")
 const USER = Schema.decodeUnknownSync(UserId)("user_device_cred")
+const OTHER_USER = Schema.decodeUnknownSync(UserId)("user_device_other")
 const INSTALLATION = "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
 const SIGNING_KEY = generateKeyPairSync("ec", {
 	namedCurve: "P-256",
@@ -91,10 +92,14 @@ interface ProofOptions {
 	readonly ath?: string
 	/** Sign with this key while still presenting `key.jwk` in the header. */
 	readonly signWith?: CryptoKey
+	/** Extra protected-header members, or a replacement `jwk`. */
+	readonly header?: Record<string, unknown>
+	/** Appended to the signature segment as-is. */
+	readonly signatureSuffix?: string
 }
 
 const proof = async (key: DeviceKey, options: ProofOptions) => {
-	const header = b64url(JSON.stringify({ typ: "dpop+jwt", alg: "ES256", jwk: key.jwk }))
+	const header = b64url(JSON.stringify({ typ: "dpop+jwt", alg: "ES256", jwk: key.jwk, ...options.header }))
 	const ath =
 		options.ath ??
 		(options.accessToken === undefined
@@ -114,8 +119,13 @@ const proof = async (key: DeviceKey, options: ProofOptions) => {
 		options.signWith ?? key.keys.privateKey,
 		new TextEncoder().encode(`${header}.${payload}`),
 	)
-	return `${header}.${payload}.${b64url(new Uint8Array(signature))}`
+	return `${header}.${payload}.${b64url(new Uint8Array(signature))}${options.signatureSuffix ?? ""}`
 }
+
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+/** The same 32 bytes spelled differently: the last character's unused low bit set. */
+const nonCanonical = (coordinate: string) =>
+	`${coordinate.slice(0, -1)}${ALPHABET[ALPHABET.indexOf(coordinate.slice(-1)) | 1]}`
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -126,7 +136,7 @@ const testConfig = () =>
 			TINYBIRD_TOKEN: "test-token",
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
-			MAPLE_DEFAULT_ORG_ID: "default",
+			MAPLE_DEFAULT_ORG_ID: ORG,
 			MAPLE_API_BASE_URL: BASE,
 			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
@@ -202,7 +212,16 @@ const makeHarness = (trustAnchor?: Uint8Array) => {
 		}
 	}
 
+	/** A signed-in (self-hosted root) session: the only principal that may manage device keys. */
 	const sessionKey = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const service = yield* AuthService
+				return (yield* service.loginSelfHosted("test-root-password")).token
+			}),
+		)
+
+	const apiKey = () =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
@@ -210,21 +229,32 @@ const makeHarness = (trustAnchor?: Uint8Array) => {
 			}),
 		)
 
-	const register = (
-		secret: string,
-		key: DeviceKey,
-		attestation?: AttestationWire,
-		installation = INSTALLATION,
-	) =>
-		send(
+	interface RegisterOptions {
+		readonly attestation?: AttestationWire
+		readonly installation?: string
+		/** `null` sends no proof; a key signs the proof in place of the registered one. */
+		readonly prover?: DeviceKey | null
+		readonly publicJwk?: unknown
+	}
+
+	const register = async (secret: string, key: DeviceKey, options: RegisterOptions = {}) => {
+		const path = `/v2/device_credentials/${options.installation ?? INSTALLATION}`
+		const prover = options.prover === undefined ? key : options.prover
+		return send(
 			"PUT",
-			`/v2/device_credentials/${installation}`,
-			{ authorization: `Bearer ${secret}` },
+			path,
 			{
-				public_jwk: key.jwk,
-				...(attestation === undefined ? undefined : { attestation }),
+				authorization: `Bearer ${secret}`,
+				...(prover === null
+					? undefined
+					: { dpop: await proof(prover, { htm: "PUT", htu: `${BASE}${path}` }) }),
+			},
+			{
+				public_jwk: options.publicJwk ?? key.jwk,
+				...(options.attestation === undefined ? undefined : { attestation: options.attestation }),
 			},
 		)
+	}
 
 	const token = async (key: DeviceKey, options: Partial<ProofOptions> = {}) =>
 		send("POST", "/v2/device_tokens", {
@@ -254,17 +284,24 @@ const makeHarness = (trustAnchor?: Uint8Array) => {
 		return { secret, key, accessToken: String(issued.body.access_token) }
 	}
 
+	/** Whoever the self-hosted session resolves to, read back from the registered row. */
+	const sessionUser = Effect.promise(() =>
+		testDb.pglite.query<{ user_id: string }>("select user_id from device_credentials limit 1"),
+	).pipe(Effect.map((result) => Schema.decodeUnknownSync(UserId)(result.rows[0]?.user_id)))
+
 	const sql = (statement: string, params: ReadonlyArray<unknown>) =>
 		testDb.pglite.query(statement, [...params])
 
 	return {
 		send,
 		sessionKey,
+		apiKey,
 		register,
 		token,
 		call,
 		enrolled,
 		sql,
+		sessionUser,
 		runtime,
 		dispose: async () => {
 			await disposeHandler()
@@ -285,6 +322,21 @@ const withHarness = (body: (harness: Harness) => Promise<void>, trustAnchor?: Ui
 }
 
 const isAuthorized = (status: number) => status !== 401 && status !== 403
+
+/** Register as an arbitrary member, which the self-hosted session cannot be. */
+const registerAs = (harness: Harness, userId: UserId, key: DeviceKey) =>
+	harness.runtime.runPromiseExit(
+		Effect.gen(function* () {
+			const devices = yield* DeviceCredentialsService
+			const path = `/v2/device_credentials/${INSTALLATION}`
+			const dpop = yield* Effect.promise(() => proof(key, { htm: "PUT", htu: `${BASE}${path}` }))
+			return yield* devices.register(
+				{ orgId: ORG, userId, roles: [] },
+				{ installationId: INSTALLATION, publicJwk: key.jwk },
+				{ proof: dpop, method: "PUT", path },
+			)
+		}),
+	)
 
 describe("device credential registration", () => {
 	it(
@@ -603,7 +655,7 @@ describe("device credential lifecycle", () => {
 			await harness.runtime.runPromise(
 				Effect.gen(function* () {
 					const revocation = yield* MembershipRevocationService
-					const summary = yield* revocation.revokeMembership(ORG, USER)
+					const summary = yield* revocation.revokeMembership(ORG, yield* harness.sessionUser)
 					expect(summary.deviceCredentialsRevoked).toBe(1)
 				}),
 			)
@@ -666,7 +718,7 @@ describe("App Attest at registration", () => {
 
 	it("marks a credential attested when its attestation verifies", () =>
 		run(async (harness, { secret, key }, attestation) => {
-			const registered = await harness.register(secret, key, attestation)
+			const registered = await harness.register(secret, key, { attestation })
 			expect(registered.status).toBe(200)
 			expect(registered.body.attested).toBe(true)
 		}))
@@ -674,7 +726,7 @@ describe("App Attest at registration", () => {
 	it("rejects an attestation bound to a different key", () =>
 		run(
 			async (harness, { secret, key }, attestation) => {
-				const registered = await harness.register(secret, key, attestation)
+				const registered = await harness.register(secret, key, { attestation })
 				expect(registered.status).toBe(400)
 				expect(registered.body.error.code).toBe("device_attestation_invalid")
 			},
@@ -683,22 +735,166 @@ describe("App Attest at registration", () => {
 
 	it("accepts each challenge once", () =>
 		run(async (harness, { secret, key }, attestation) => {
-			expect((await harness.register(secret, key, attestation)).status).toBe(200)
+			expect((await harness.register(secret, key, { attestation })).status).toBe(200)
 			// The same key and attestation again: only the spent challenge differs from success.
-			const replayed = await harness.register(secret, key, attestation)
+			const replayed = await harness.register(secret, key, { attestation })
 			expect(replayed.status).toBe(400)
 			expect(replayed.body.error.code).toBe("device_attestation_invalid")
 		}))
 
+	it("does not spend the challenge on a registration that fails afterwards", () =>
+		run(async (harness, { secret, key }, attestation) => {
+			const squatter = await newDeviceKey()
+			expect(Exit.isSuccess(await registerAs(harness, OTHER_USER, squatter))).toBe(true)
+			expect((await harness.register(secret, key, { attestation })).status).toBe(409)
+			await harness.runtime.runPromise(
+				Effect.gen(function* () {
+					const devices = yield* DeviceCredentialsService
+					yield* devices.revoke(ORG, OTHER_USER, INSTALLATION)
+				}),
+			)
+			const retried = await harness.register(secret, key, { attestation })
+			expect(retried.status).toBe(200)
+			expect(retried.body.attested).toBe(true)
+		}))
+
 	it("rejects a challenge issued for another installation", () =>
 		run(async (harness, { secret, key }, attestation) => {
-			const registered = await harness.register(
-				secret,
-				key,
+			const registered = await harness.register(secret, key, {
 				attestation,
-				"A1B2C3D4-8F2A-4C6D-9E1B-4C08F2A4C6D9",
-			)
+				installation: "A1B2C3D4-8F2A-4C6D-9E1B-4C08F2A4C6D9",
+			})
 			expect(registered.status).toBe(400)
 			expect(registered.body.error.code).toBe("device_attestation_invalid")
 		}))
+})
+
+describe("security hardening", () => {
+	it(
+		"refuses API keys, even unscoped ones, on every device credential endpoint",
+		withHarness(async (harness) => {
+			const key = await harness.apiKey()
+			const registered = await harness.register(key, await newDeviceKey())
+			expect(registered.status).toBe(403)
+			expect(registered.body.error.code).toBe("session_required")
+			const headers = { authorization: `Bearer ${key}` }
+			const path = `/v2/device_credentials/${INSTALLATION}`
+			expect((await harness.send("DELETE", path, headers)).status).toBe(403)
+			expect((await harness.send("GET", `${path}/attestation_challenge`, headers)).status).toBe(403)
+		}),
+	)
+
+	it(
+		"does not let another member replace or revoke an installation's credential",
+		withHarness(async (harness) => {
+			const owner = await harness.enrolled()
+			const exit = await registerAs(harness, OTHER_USER, await newDeviceKey())
+			expect(Exit.isFailure(exit) && JSON.stringify(exit.cause)).toContain(
+				"DeviceInstallationInUseError",
+			)
+			const revoked = await harness.runtime.runPromise(
+				Effect.gen(function* () {
+					const devices = yield* DeviceCredentialsService
+					return yield* devices.revoke(ORG, OTHER_USER, INSTALLATION)
+				}),
+			)
+			expect(revoked).toBe(0)
+			expect((await harness.token(owner.key)).status).toBe(200)
+		}),
+	)
+
+	it(
+		"keeps one live credential per installation under concurrent registrations",
+		withHarness(async (harness) => {
+			const secret = await harness.sessionKey()
+			const results = await Promise.all([
+				harness.register(secret, await newDeviceKey()),
+				harness.register(secret, await newDeviceKey()),
+			])
+			expect(results.every((result) => result.status === 200 || result.status === 409)).toBe(true)
+			const live = await harness.sql("select id from device_credentials where revoked_at is null", [])
+			expect(live.rows).toHaveLength(1)
+			// The index itself refuses a second live row, whatever the code path.
+			const row = await harness.sql(
+				"select org_id, user_id, installation_id, roles, scopes, created_at, expires_at, hard_expires_at from device_credentials where revoked_at is null",
+				[],
+			)
+			const values = row.rows[0] as Record<string, unknown>
+			await expect(
+				harness.sql(
+					`insert into device_credentials (id, org_id, user_id, installation_id, public_jwk, jkt, roles, scopes, created_at, expires_at, hard_expires_at)
+					 values ($1, $2, $3, $4, '{}'::jsonb, $5, $6, $7, $8, $9, $10)`,
+					[
+						randomUUID(),
+						values.org_id,
+						values.user_id,
+						values.installation_id,
+						"other-jkt",
+						JSON.stringify(values.roles),
+						JSON.stringify(values.scopes),
+						values.created_at,
+						values.expires_at,
+						values.hard_expires_at,
+					],
+				),
+			).rejects.toThrow()
+		}),
+	)
+
+	it(
+		"rejects a non-canonical key spelling at registration and in proofs",
+		withHarness(async (harness) => {
+			const { secret, key } = await harness.enrolled()
+			const fresh = await newDeviceKey()
+			const respelled = { ...fresh.jwk, x: nonCanonical(fresh.jwk.x) }
+			expect((await harness.register(secret, fresh, { publicJwk: respelled })).status).toBe(400)
+			// The registered key, respelled: a different thumbprint for the same point.
+			const issued = await harness.token(key, {
+				header: { jwk: { ...key.jwk, x: nonCanonical(key.jwk.x) } },
+			})
+			expect(issued.status).toBe(400)
+			expect(issued.body.error.code).toBe("invalid_dpop_proof")
+		}),
+	)
+
+	it(
+		"rejects a proof whose signature segment is not base64url",
+		withHarness(async (harness) => {
+			const { key } = await harness.enrolled()
+			const issued = await harness.token(key, { signatureSuffix: "!" })
+			expect(issued.status).toBe(400)
+		}),
+	)
+
+	it(
+		"rejects a proof carrying crit",
+		withHarness(async (harness) => {
+			const { key } = await harness.enrolled()
+			expect((await harness.token(key, { header: { crit: ["exp"] } })).status).toBe(400)
+		}),
+	)
+
+	it(
+		"requires proof of possession of the key being registered",
+		withHarness(async (harness) => {
+			const secret = await harness.sessionKey()
+			const key = await newDeviceKey()
+			const missing = await harness.register(secret, key, { prover: null })
+			expect(missing.status).toBe(400)
+			expect(missing.body.error.code).toBe("invalid_dpop_proof")
+			const otherKey = await harness.register(secret, key, { prover: await newDeviceKey() })
+			expect(otherKey.status).toBe(400)
+			expect(otherKey.body.error.code).toBe("invalid_dpop_proof")
+		}),
+	)
+
+	it(
+		"rejects extra JWK members instead of stripping them",
+		withHarness(async (harness) => {
+			const secret = await harness.sessionKey()
+			const key = await newDeviceKey()
+			const registered = await harness.register(secret, key, { publicJwk: { ...key.jwk, d: "secret" } })
+			expect(registered.status).toBe(400)
+		}),
+	)
 })

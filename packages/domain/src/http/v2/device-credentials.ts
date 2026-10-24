@@ -4,6 +4,8 @@ import {
 	DeviceAttestationInvalidError,
 	DeviceCredentialInvalidError,
 	DeviceCredentialPersistenceError,
+	DeviceCredentialSessionRequiredError,
+	DeviceInstallationInUseError,
 	DeviceKeyInUseError,
 	DeviceKeyInvalidError,
 	DeviceTokensUnavailableError,
@@ -26,16 +28,27 @@ import { InstallationId } from "./widget-credentials"
  * bearer secret: a copy of the widget's storage, without the device's key, authenticates nothing.
  */
 
+// Canonical only: the 43rd character carries two unused bits, which must be zero, so a key has
+// exactly one spelling (and one thumbprint).
 const Base64UrlCoordinate = Schema.String.check(
-	Schema.isPattern(/^[A-Za-z0-9_-]{43}$/u, { description: "a base64url P-256 coordinate (32 bytes)" }),
+	Schema.isPattern(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u, {
+		description: "a canonical base64url P-256 coordinate (32 bytes, no padding)",
+	}),
 )
 
-export const V2DevicePublicJwk = Schema.Struct({
-	kty: Schema.Literal("EC"),
-	crv: Schema.Literal("P-256"),
-	x: Base64UrlCoordinate,
-	y: Base64UrlCoordinate,
-}).annotate({
+const JWK_MEMBERS: ReadonlySet<string> = new Set(["kty", "crv", "x", "y"])
+/** Any member besides the four: a private `d`, `kid`, `use`... rejected, not silently stripped. */
+const ExtraJwkMember = Schema.String.check(Schema.makeFilter((key: string) => !JWK_MEMBERS.has(key)))
+
+export const V2DevicePublicJwk = Schema.StructWithRest(
+	Schema.Struct({
+		kty: Schema.Literal("EC"),
+		crv: Schema.Literal("P-256"),
+		x: Base64UrlCoordinate,
+		y: Base64UrlCoordinate,
+	}),
+	[Schema.Record(ExtraJwkMember, Schema.Never)],
+).annotate({
 	identifier: "DevicePublicJwk",
 	title: "Device public key",
 	description:
@@ -157,17 +170,22 @@ const DpopHeader = Schema.Struct({
 })
 
 const persistence = publicError(DeviceCredentialPersistenceError)
+const sessionRequired = publicError(DeviceCredentialSessionRequiredError)
 
 export class V2DeviceCredentialsApiGroup extends HttpApiGroup.make("deviceCredentials")
 	.add(
 		HttpApiEndpoint.put("register", "/:installation_id", {
 			params: { installation_id: InstallationId },
+			headers: DpopHeader,
 			payload: V2DeviceCredentialRegisterParams,
 			success: V2DeviceCredential,
 			error: [
 				publicError(DeviceKeyInvalidError),
+				publicError(DpopProofInvalidError),
 				publicError(DeviceKeyInUseError),
+				publicError(DeviceInstallationInUseError),
 				publicError(DeviceAttestationInvalidError),
+				sessionRequired,
 				persistence,
 			],
 		}).annotateMerge(
@@ -175,7 +193,7 @@ export class V2DeviceCredentialsApiGroup extends HttpApiGroup.make("deviceCreden
 				identifier: "registerDeviceCredential",
 				summary: "Register this installation's device key",
 				description:
-					"Registers the public half of a device-held P-256 key for this installation and organization, revoking the key it had before in the same transaction. Registering the same key again refreshes it: the rolling 30-day expiry moves out (never past 90 days from creation) and the roles are re-pinned to the caller's. Requires the `device_credentials:write` scope, which a device token never has, so registration always comes from a signed-in session.",
+					"Registers the public half of a device-held P-256 key for this installation and organization, revoking the caller's previous key for it in the same transaction. Registering the same key again refreshes it: the rolling 30-day expiry moves out (never past 90 days from creation) and the roles are re-pinned to the caller's. Signed-in sessions only (API keys and device tokens get `session_required`). The request must also carry a `DPoP` proof signed by the submitted key (`htm` `PUT`, `htu` this URL, no `ath`), proving the caller holds it. An installation another member holds a live credential for answers `device_installation_in_use`.",
 			}),
 		),
 	)
@@ -183,13 +201,13 @@ export class V2DeviceCredentialsApiGroup extends HttpApiGroup.make("deviceCreden
 		HttpApiEndpoint.delete("revoke", "/:installation_id", {
 			params: { installation_id: InstallationId },
 			success: V2DeviceCredentialDeleteResponse,
-			error: [persistence],
+			error: [sessionRequired, persistence],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "revokeDeviceCredential",
 				summary: "Revoke this installation's device key",
 				description:
-					"Revokes the installation's device credential for this organization. Tokens already issued for it stop working on their next request. Idempotent. Requires the `device_credentials:write` scope.",
+					"Revokes the caller's own device credential for this installation and organization. Tokens already issued for it stop working on their next request. Idempotent. Signed-in sessions only; there is no path to revoke another member's device (removing the member does that).",
 			}),
 		),
 	)
@@ -197,13 +215,13 @@ export class V2DeviceCredentialsApiGroup extends HttpApiGroup.make("deviceCreden
 		HttpApiEndpoint.get("attestationChallenge", "/:installation_id/attestation_challenge", {
 			params: { installation_id: InstallationId },
 			success: V2AttestationChallenge,
-			error: [publicError(DeviceTokensUnavailableError)],
+			error: [sessionRequired, publicError(DeviceTokensUnavailableError)],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getDeviceAttestationChallenge",
 				summary: "Get an App Attest challenge",
 				description:
-					"Returns a single-use challenge, valid for five minutes, for an App Attest attestation of this installation's registration. Requires the `device_credentials:read` scope.",
+					"Returns a single-use challenge, valid for five minutes, for an App Attest attestation of this installation's registration. Signed-in sessions only.",
 			}),
 		),
 	)
