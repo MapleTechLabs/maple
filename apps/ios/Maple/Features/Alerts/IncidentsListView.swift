@@ -85,31 +85,28 @@ struct IncidentsListView: View {
 			emptyMessage: model.openOnly
 				? "Every alert rule is within its threshold."
 				: "No alert rule has fired yet.",
-			skeletonRowHeight: 72
+			skeletonRowHeight: 84,
+			header: {
+				TriageFilterBar {
+					TriageFilterChip(title: "Open", isOn: model.openOnly) { model.openOnly = true }
+					TriageFilterChip(title: "All", isOn: !model.openOnly) { model.openOnly = false }
+				}
+			}
 		) { cards in
-			LazyVStack(spacing: 0) {
+			TriageListCard(
+				title: model.openOnly ? "Open alerts" : "Alerts",
+				count: "\(cards.count)\(model.canLoadMore ? "+" : "")"
+			) {
 				ForEach(cards) { card in
 					NavigationLink(value: Route.incident(id: card.id)) {
 						IncidentRow(card: card)
 					}
 					.buttonStyle(RowButtonStyle())
-					Hairline()
+					if card.id != cards.last?.id || model.canLoadMore { Hairline() }
 				}
 				if model.canLoadMore {
-					SkeletonList(rowHeight: 72, rows: 2)
-						.frame(height: 144)
+					SkeletonList(rowHeight: 84, rows: 1)
 						.task { await model.loadMore() }
-				}
-			}
-		}
-		.toolbar {
-			ToolbarItem(placement: .topBarTrailing) {
-				Button {
-					model.openOnly.toggle()
-				} label: {
-					Text(model.openOnly ? "Open" : "All")
-						.font(Typo.smallMedium)
-						.foregroundStyle(model.openOnly ? Token.primary : Token.foreground)
 				}
 			}
 		}
@@ -118,7 +115,8 @@ struct IncidentsListView: View {
 	}
 }
 
-/// Severity lane, rule name, age or resolution, services, breach.
+/// Rule name and severity, the breach, then service and age; a severity rail
+/// while open.
 struct IncidentRow: View {
 	let card: IncidentCard
 
@@ -127,43 +125,21 @@ struct IncidentRow: View {
 	private var tint: Color { isOpen ? incident.severity.tint : Token.mutedForeground }
 
 	var body: some View {
-		HStack(alignment: .top, spacing: 12) {
-			Rectangle()
-				.fill(isOpen ? incident.severity.tint : .clear)
-				.frame(width: 2)
-
+		SeverityRailRow(tint: isOpen ? incident.severity.tint : nil) {
 			VStack(alignment: .leading, spacing: 5) {
-				HStack(alignment: .firstTextBaseline, spacing: 8) {
+				HStack(spacing: 8) {
 					Text(incident.ruleName)
 						.font(Typo.bodyMedium)
 						.foregroundStyle(isOpen ? Token.foreground : Token.mutedForeground)
 						.lineLimit(1)
-					Spacer(minLength: 4)
-					if isOpen {
-						Text(Format.duration(from: incident.firstTriggeredAt))
-							.font(Typo.tiny)
-							.tabularNumbers()
-							.foregroundStyle(Token.mutedForeground)
-					} else {
-						Text("resolved \(Format.lastSeen(incident.resolvedAt ?? incident.lastTriggeredAt))")
-							.font(Typo.tiny)
-							.tabularNumbers()
-							.foregroundStyle(Token.mutedForeground)
-					}
+					AlertOutlineBadge(text: isOpen ? incident.severity.label : "Resolved", tint: isOpen ? tint : Token.success)
+					Spacer(minLength: 0)
 				}
 
-				HStack(spacing: 8) {
-					MapleBadge(text: incident.severity.label, tint: tint)
-					if let first = card.serviceNames.first {
-						HStack(spacing: 5) {
-							ServiceDot(serviceName: first, size: 6)
-							Text(card.serviceNames.count > 1 ? "\(first) +\(card.serviceNames.count - 1)" : first)
-								.font(Typo.tiny)
-								.foregroundStyle(Token.mutedForeground)
-								.lineLimit(1)
-						}
-					}
-					Spacer(minLength: 0)
+				HStack(spacing: 6) {
+					Text(card.display.label)
+						.foregroundStyle(Token.mutedForeground)
+						.lineLimit(1)
 					Text(
 						Format.breach(
 							observed: incident.lastObservedValue,
@@ -173,16 +149,33 @@ struct IncidentRow: View {
 							unit: card.display.unit
 						)
 					)
-					.font(Typo.tiny)
-					.tabularNumbers()
 					.foregroundStyle(tint)
-					.lineLimit(1)
+					.fixedSize()
 				}
+				.font(Typo.small)
+				.tabularNumbers()
+
+				HStack(spacing: 6) {
+					if let first = card.serviceNames.first {
+						ServiceDot(serviceName: first)
+						Text(card.serviceNames.count > 1 ? "\(first) +\(card.serviceNames.count - 1)" : first)
+							.lineLimit(1)
+						Text("·")
+					}
+					Text(
+						isOpen
+							? "open \(Format.duration(from: incident.firstTriggeredAt))"
+							: "resolved \(IssueFormat.ago(incident.resolvedAt ?? incident.lastTriggeredAt))"
+					)
+					.fixedSize()
+					Spacer(minLength: 0)
+				}
+				.font(Typo.tiny)
+				.tabularNumbers()
+				.foregroundStyle(Token.mutedForeground)
 			}
 		}
-		.padding(.trailing, 16)
-		.padding(.vertical, 12)
-		.frame(minHeight: 64)
-		.contentShape(.rect)
+		.frame(minHeight: 84)
+		.accessibilityElement(children: .combine)
 	}
 }

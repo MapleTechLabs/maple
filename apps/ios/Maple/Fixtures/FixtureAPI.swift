@@ -350,7 +350,7 @@ struct FixtureAPI: MapleAPI {
 		)
 	}
 
-	private var incidents: [AlertIncident] {
+	var incidents: [AlertIncident] {
 		[
 			AlertIncident(
 				comparator: .gt,
