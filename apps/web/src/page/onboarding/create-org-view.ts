@@ -79,7 +79,7 @@ const nameField = (h: H, model: Model): Html =>
 						size: "lg",
 						className: "flex-1",
 						controlClassName: "h-12 text-base",
-						isDisabled: model.isCreating,
+						isDisabled: model.isCreating || model.createdOrgId !== null,
 						attributes: [
 							h.Maxlength(100),
 							h.Placeholder("Organization name"),
@@ -115,7 +115,7 @@ const regionField = (h: H, model: Model): Html =>
 						name: "org-required-region",
 						layout: "stacked",
 						isChecked: model.region === region,
-						isDisabled: model.isCreating,
+						isDisabled: model.isCreating || model.createdOrgId !== null,
 						onChange: Message.PickedRegion({ region }),
 						label: REGION_CARDS[region].name,
 						title: REGION_CARDS[region].name,
@@ -237,10 +237,21 @@ const form = (h: H, model: Model, memberships: ReadonlyArray<ClerkOrganization>)
 								model.joiningId !== null ||
 								model.openingId !== null,
 						},
-						[`Create ${nameOf(model.name)}`, icon(h, "ArrowRightIcon", { size: 16 })],
+						[
+							`${model.createdOrgId === null ? "Create" : "Open"} ${nameOf(model.name)}`,
+							icon(h, "ArrowRightIcon", { size: 16 }),
+						],
 					),
 					...memberships.map((organization) => membershipRow(h, model, organization)),
 					...(model.invitations ?? []).map((invitation) => invitationRow(h, model, invitation)),
+					...(model.invitationsError === null
+						? []
+						: [
+								h.p(
+									[h.Class("text-xs text-muted-foreground")],
+									[`Couldn't check whether anyone invited you: ${model.invitationsError}`],
+								),
+							]),
 				],
 			),
 		],
