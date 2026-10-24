@@ -1058,27 +1058,43 @@ const snapshotRows = (sql: string) =>
 		: rowsForSql(sql)
 
 describe("v2 reads shared with the dashboard", () => {
-	it("bounds a trace read by the probed start and caches it under the dashboard's key", async () => {
+	it("returns spans 90 minutes after the root, cached under the dashboard's key", async () => {
 		const observedSql: string[] = []
 		const calls: CachedDirectCall[] = []
-		const probed = (sql: string) =>
-			sql.includes("FROM trace_index") && !readsTraceSpans(sql)
-				? [{ timestamp: "2026-07-15 12:00:00" }]
+		const lateSpan = {
+			...hierarchyRow,
+			spanId: "1123456789abcdef",
+			parentSpanId: SPAN_ID,
+			startTime: "2026-07-15 13:30:00.000",
+		}
+		const probed = (sql: string) => {
+			if (sql.includes("AS relationship")) return [hierarchyRow, lateSpan]
+			return sql.includes("FROM trace_index") && !readsTraceSpans(sql)
+				? [
+						{
+							traceId: TRACE_ID,
+							timestamp: "2026-07-15 12:00:00",
+							endTimestamp: "2026-07-15 13:30:00",
+						},
+					]
 				: rowsForSql(sql)
+		}
 		const harness = makeHarness(observingWarehouse(observedSql, probed), recordingQueryEngine(calls))
 		const key = await harness.bootstrapKey(["traces:read"])
 
 		const trace = await harness.request("GET", `/v2/traces/${TRACE_ID}`, key.secret)
 		expect(trace.status, JSON.stringify(trace.body)).toBe(200)
 		expect(trace.body.truncated).toBe(false)
+		expect(trace.body.spans.map((span: { id: string }) => span.id)).toEqual([SPAN_ID, "1123456789abcdef"])
 		expect(calls.map(({ route, payload }) => ({ route, payload }))).toEqual([
 			{ route: "spanHierarchy", payload: { traceId: TRACE_ID } },
 		])
+		// An hour before the first span and an hour after the last, not an hour around the root.
 		const hierarchySql = observedSql.find(
 			(sql) => readsTraceSpans(sql) && sql.includes("AS relationship"),
 		)
 		expect(hierarchySql).toContain("'2026-07-15 11:00:00'")
-		expect(hierarchySql).toContain("'2026-07-15 13:00:00'")
+		expect(hierarchySql).toContain("'2026-07-15 14:30:00'")
 		await harness.dispose()
 	})
 
@@ -1125,6 +1141,23 @@ describe("v2 reads shared with the dashboard", () => {
 			},
 			policy: 30,
 		})
+		await harness.dispose()
+	})
+
+	it("keeps overview operations when only their sparkline read fails", async () => {
+		const sparklineFails = (sql: string) => {
+			if (sql.includes("service_operations_minutely") && sql.includes("AS bucket")) {
+				return [{ bucket: "not a timestamp", spanName: "GET /checkout", count: "8" }]
+			}
+			return rowsForSql(sql)
+		}
+		const harness = makeHarness(observingWarehouse([], sparklineFails))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("GET", `/v2/services/api/overview?${windowQuery}`, key.secret)
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(response.body.operations.map((operation: { name: string }) => operation.name)).toEqual([
+			"GET /checkout",
+		])
 		await harness.dispose()
 	})
 
@@ -1176,12 +1209,26 @@ describe("v2 reads shared with the dashboard", () => {
 				throughput: 0,
 			},
 		]
+		// Only the current window carries the baseline: the busiest namespace's for that pair.
+		const [api, worker] = services
 		expect(response.body).toEqual({
 			object: "service_health",
 			start_time: START,
 			end_time: END,
-			services,
+			services: [
+				{ ...api, baseline_p95_latency_ms: 35 },
+				{ ...worker, baseline_p95_latency_ms: null },
+			],
 			previous: { start_time: "2026-07-15T11:00:00.000Z", end_time: START, services },
+		})
+		// The dashboard's baseline read: the 7 days before the window's hour.
+		expect(calls.find((call) => call.route === "serviceHealthBaseline")?.payload).toMatchObject({
+			definition: "serviceHealthBaseline",
+			input: {
+				startTime: "2026-07-08 12:00:00",
+				endTime: "2026-07-15 12:00:00",
+				environments: ["production"],
+			},
 		})
 		expect(
 			calls.filter((call) => call.route === "serviceHealthSnapshot").map((call) => call.payload),
@@ -1203,6 +1250,54 @@ describe("v2 reads shared with the dashboard", () => {
 				},
 			},
 		])
+		await harness.dispose()
+	})
+
+	it("widens health windows to whole hours and never reads an hour twice", async () => {
+		const calls: CachedDirectCall[] = []
+		const harness = makeHarness(observingWarehouse([], snapshotRows), recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: "2026-07-15T12:30:00.000Z",
+			end_time: "2026-07-15T13:30:00.000Z",
+			previous_start_time: "2026-07-15T11:30:00.000Z",
+			previous_end_time: "2026-07-15T12:30:00.000Z",
+		})
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		// Hours 12 and 13 were read, so 7200 requests are one a second.
+		expect(response.body).toMatchObject({
+			start_time: "2026-07-15T12:00:00.000Z",
+			end_time: "2026-07-15T14:00:00.000Z",
+			previous: { start_time: "2026-07-15T11:00:00.000Z", end_time: "2026-07-15T12:00:00.000Z" },
+		})
+		expect(response.body.services[0].throughput).toBe(1)
+		expect(response.body.previous.services[0].throughput).toBe(2)
+		expect(
+			calls.filter((call) => call.route === "serviceHealthSnapshot").map((call) => call.payload),
+		).toMatchObject([
+			{ input: { startTime: "2026-07-15 12:30:00", endTime: "2026-07-15 13:30:00" } },
+			{ input: { startTime: "2026-07-15 11:00:00", endTime: "2026-07-15 12:00:00" } },
+		])
+		await harness.dispose()
+	})
+
+	it("returns an empty comparison when it falls inside the current window's first hour", async () => {
+		const calls: CachedDirectCall[] = []
+		const harness = makeHarness(observingWarehouse([], snapshotRows), recordingQueryEngine(calls))
+		const key = await harness.bootstrapKey(["services:read"])
+		const response = await harness.request("POST", "/v2/services/health", key.secret, {
+			start_time: "2026-07-15T12:40:00.000Z",
+			end_time: "2026-07-15T12:50:00.000Z",
+			previous_start_time: "2026-07-15T12:30:00.000Z",
+			previous_end_time: "2026-07-15T12:40:00.000Z",
+		})
+		expect(response.status).toBe(200)
+		expect(response.body.previous).toEqual({
+			start_time: "2026-07-15T12:00:00.000Z",
+			end_time: "2026-07-15T12:00:00.000Z",
+			services: [],
+		})
+		expect(calls.filter((call) => call.route === "serviceHealthSnapshot")).toHaveLength(1)
 		await harness.dispose()
 	})
 

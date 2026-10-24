@@ -45,6 +45,7 @@ import {
 	parseUtc,
 	formatWarehouseDateTimeMs,
 	parseWarehouseDateTime,
+	serviceHealthSnapshotHours,
 } from "@maple/query-engine"
 import {
 	computeBucketSeconds,
@@ -1001,9 +1002,21 @@ const toOverviewPoints = (
 		p99_latency_ms: Number(point.series.p99_duration ?? 0),
 	}))
 
+const baselineKey = (serviceName: string, environment: string) => JSON.stringify([serviceName, environment])
+
+/** Baseline p95 per (service, environment); of several namespaces, the busiest one's. */
+const baselineByServiceEnvironment = (rows: ReadonlyArray<CH.ServiceHealthBaselineOutput>) =>
+	new Map(
+		[...rows]
+			.sort((left, right) => left.baselineSpanCount - right.baselineSpanCount)
+			.map((row) => [baselineKey(row.serviceName, row.environment), row.baselineP95LatencyMs] as const),
+	)
+
+const isoAt = (epochMs: number): Timestamp => timestamp(new Date(epochMs).toISOString())
+
 const toServiceHealthEntry = (
 	row: CH.ServiceHealthSnapshotOutput,
-	window: { readonly rangeSeconds: number },
+	seconds: number,
 ): V2ServiceHealthEntry => ({
 	object: "service_health.service",
 	service_name: decodeServiceName(row.serviceName),
@@ -1012,7 +1025,7 @@ const toServiceHealthEntry = (
 	error_count: row.errorCount,
 	error_rate: row.requestCount > 0 ? row.errorCount / row.requestCount : 0,
 	p95_latency_ms: row.p95LatencyMs,
-	throughput: row.requestCount / Math.max(window.rangeSeconds, 1),
+	throughput: row.requestCount / seconds,
 })
 
 const toOperation = (row: OperationRow): V2ServiceOperation => ({
@@ -1085,54 +1098,95 @@ export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (
 							rangeLabel: "Service health queries",
 						} as const
 						const window = yield* parseWindow(payload.start_time, payload.end_time, windowOptions)
+						const hours = serviceHealthSnapshotHours(window.startTime, window.endTime)
 						const previousStart = payload.previous_start_time
 						const previousEnd = payload.previous_end_time
-						const previousWindow =
+						const previousBounds =
 							previousStart === undefined || previousEnd === undefined
 								? undefined
-								: {
-										start_time: timestamp(previousStart),
-										end_time: timestamp(previousEnd),
-										bounds: yield* parseWindow(previousStart, previousEnd, {
-											...windowOptions,
-											params: {
-												start: "previous_start_time",
-												end: "previous_end_time",
-											},
-										}),
-									}
+								: yield* parseWindow(previousStart, previousEnd, {
+										...windowOptions,
+										params: { start: "previous_start_time", end: "previous_end_time" },
+									})
 						const environments = payload.deployment_environment
 							? [payload.deployment_environment]
 							: undefined
-						const read = (bounds: { startTime: string; endTime: string; rangeSeconds: number }) =>
-							telemetry
-								.serviceHealthSnapshot(tenant, { environments }, bounds)
-								.pipe(
-									Effect.map((rows) =>
-										rows.map((row) => toServiceHealthEntry(row, bounds)),
-									),
-								)
+						const read = (
+							bounds: { readonly startTime: string; readonly endTime: string },
+							seconds: number,
+						) =>
+							seconds <= 0
+								? Effect.succeed([])
+								: telemetry
+										.serviceHealthSnapshot(tenant, { environments }, bounds)
+										.pipe(
+											Effect.map((rows) =>
+												rows.map((row) => toServiceHealthEntry(row, seconds)),
+											),
+										)
+						// The comparison stops where the current window's first hour starts, so the two
+						// never count the same hour; it can come out shorter, or empty.
+						const previousHours =
+							previousBounds === undefined
+								? undefined
+								: (() => {
+										const widened = serviceHealthSnapshotHours(
+											previousBounds.startTime,
+											previousBounds.endTime,
+										)
+										const endMs = Math.max(
+											widened.startMs,
+											Math.min(widened.endMs, hours.startMs),
+										)
+										return {
+											startMs: widened.startMs,
+											endMs,
+											seconds: (endMs - widened.startMs) / 1000,
+										}
+									})()
+
+						// The baseline the dashboard judges latency by: trailing 7 days before the window.
+						const baselines = telemetry
+							.serviceBaselineRows(tenant, parseWarehouseDateTime(window.startTime), {
+								deploymentEnvironment: payload.deployment_environment,
+							})
+							.pipe(Effect.map(baselineByServiceEnvironment))
 
 						yield* warehouse.warmRoute(tenant)
-						const [services, previous] = yield* Effect.all(
+						const [current, previous, baselineMap] = yield* Effect.all(
 							[
-								read(window),
-								previousWindow === undefined
+								read(window, hours.seconds),
+								previousHours === undefined
 									? Effect.succeed(null)
-									: read(previousWindow.bounds).pipe(
+									: read(
+											{
+												startTime: formatWarehouseDateTime(previousHours.startMs),
+												endTime: formatWarehouseDateTime(previousHours.endMs),
+											},
+											previousHours.seconds,
+										).pipe(
 											Effect.map((rows) => ({
-												start_time: previousWindow.start_time,
-												end_time: previousWindow.end_time,
+												start_time: isoAt(previousHours.startMs),
+												end_time: isoAt(previousHours.endMs),
 												services: rows,
 											})),
 										),
+								baselines,
 							],
-							{ concurrency: 2 },
+							{ concurrency: 3 },
 						)
+						const services = current.map((entry) => ({
+							...entry,
+							baseline_p95_latency_ms:
+								baselineMap.get(
+									baselineKey(entry.service_name, entry.deployment_environment ?? ""),
+								) ?? null,
+						}))
 						return {
 							object: "service_health" as const,
-							start_time: timestamp(payload.start_time),
-							end_time: timestamp(payload.end_time),
+							// The whole hours actually read, which every rate here is per.
+							start_time: isoAt(hours.startMs),
+							end_time: isoAt(hours.endMs),
 							services,
 							previous,
 						}
