@@ -200,6 +200,7 @@ public struct WidgetCredentialStore: Sendable {
 			let data = try? Self.encoder.encode(value)
 		else { return false }
 		try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		Self.excludeFromBackup(directory)
 		do {
 			try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
 			return true
@@ -269,14 +270,16 @@ public struct DeviceCredential: Codable, Sendable, Equatable {
 
 	public func isExpired(at date: Date) -> Bool { date >= expiresAt }
 
-	/// Re-register the same key a week early, like the legacy credential.
+	/// Re-register the same key this long before `expires_at` (30-day rolling).
+	public static let refreshLead: TimeInterval = 7 * 24 * 60 * 60
+
 	public func needsRefresh(at date: Date) -> Bool {
-		date.addingTimeInterval(WidgetCredential.renewalLead) >= expiresAt
+		date.addingTimeInterval(Self.refreshLead) >= expiresAt
 	}
 
 	/// A refresh can no longer help: rotate to a new key instead.
 	public func needsRotation(at date: Date) -> Bool {
-		date.addingTimeInterval(WidgetCredential.renewalLead) >= hardExpiresAt
+		date.addingTimeInterval(Self.refreshLead) >= hardExpiresAt
 	}
 }
 
