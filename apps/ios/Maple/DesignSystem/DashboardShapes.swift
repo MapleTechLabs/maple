@@ -100,10 +100,22 @@ struct PercentileTriplet: View {
 struct TableCard<Content: View>: View {
 	/// Header labels; the first is leading-aligned, the rest trailing.
 	let columns: [String]
+	/// A widget-style title row above the header. Nil draws none.
+	var title: String? = nil
 	@ViewBuilder let content: Content
 
 	var body: some View {
 		VStack(spacing: 0) {
+			if let title {
+				Text(title)
+					.font(Typo.small)
+					.foregroundStyle(Token.foreground)
+					.lineLimit(1)
+					.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+					.padding(.horizontal, 12)
+					.accessibilityAddTraits(.isHeader)
+				Hairline()
+			}
 			HStack(spacing: 12) {
 				ForEach(Array(columns.enumerated()), id: \.offset) { index, column in
 					if index == 0 {
