@@ -247,6 +247,9 @@ export const ServicePlatformsHourly = Datasources.servicePlatformsHourly
 
 export const ServiceOperationsHourly = Datasources.serviceOperationsHourly
 
+/** HTTP server endpoint detail per status code and `error.type`, hourly (migration 0048). */
+export const ServiceEndpointDetailsHourly = Datasources.serviceEndpointDetailsHourly
+
 export const AlertChecks = Datasources.alertChecks
 
 export const AuditLog = Datasources.auditLog

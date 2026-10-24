@@ -128,6 +128,7 @@ export const TABLE_DELETE_PLAN = {
 		reason: "Null engine: stores no rows; its view writes service_map_edges_hourly",
 	},
 	service_map_spans: derived("Timestamp"),
+	service_endpoint_details_hourly: derived("Hour"),
 	service_operations_hourly: derived("Hour"),
 	service_operations_minutely: derived("Minute"),
 	service_overview_hourly: derived("Hour", { namespace: SERVICE_NAMESPACE }),

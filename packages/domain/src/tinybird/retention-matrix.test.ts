@@ -27,6 +27,8 @@ const RETENTION_DAYS = {
 	metrics_histogram: 90,
 	metrics_sum: 90,
 	service_address_resolutions_hourly: 365,
+	// Hour-grain only, read for windows of days; a year would be a second annual table.
+	service_endpoint_details_hourly: 90,
 	service_external_edges_hourly: 365,
 	service_map_children: 30,
 	service_map_db_edges_hourly: 365,
@@ -101,8 +103,12 @@ describe("Tinybird retention matrix", () => {
 	 * data movement, which is the only correct shape here. Migration 0023's first
 	 * deploy attempt failed on exactly this.
 	 */
-	it("applies service-operations rollup changes by ALTER, never by rebuild", () => {
-		for (const name of ["service_operations_minutely_mv", "service_operations_hourly_mv"]) {
+	it("applies service-operations and endpoint-details rollup changes by ALTER, never by rebuild", () => {
+		for (const name of [
+			"service_operations_minutely_mv",
+			"service_operations_hourly_mv",
+			"service_endpoint_details_hourly_mv",
+		]) {
 			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
 			expect(pipe, name).toBeDefined()
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")

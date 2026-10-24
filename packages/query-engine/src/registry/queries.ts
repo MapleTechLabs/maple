@@ -1431,3 +1431,118 @@ export const serviceOperationsTimeseriesRaw = defineQuery({
 			bucketSeconds: payload.bucketSeconds,
 		}),
 })
+
+// Service API tab. Totals and timeseries share the operations splice and its raw
+// fallback; the endpoint detail reads only service_endpoint_details_hourly.
+
+interface ServiceApiWindowInput {
+	readonly serviceName: string
+	readonly startTime: string
+	readonly endTime: string
+	readonly environments?: ReadonlyArray<string> | undefined
+}
+
+type ServiceApiTimeseriesInput = ServiceApiWindowInput & {
+	readonly bucketSeconds: number
+	readonly spanNames?: ReadonlyArray<string> | undefined
+}
+
+const serviceApiWindowParams = (payload: ServiceApiWindowInput, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+})
+
+const serviceApiScope = (payload: ServiceApiWindowInput, tiers: CH.ServiceApiTiers) => ({
+	serviceName: payload.serviceName,
+	environments: payload.environments,
+	tiers,
+})
+
+const serviceApiTotalsFor = (tiers: CH.ServiceApiTiers) =>
+	defineQuery({
+		id: "serviceApiTotals",
+		profile: "aggregation",
+		settings: tiers === "raw" ? SERVICE_OPERATIONS_RAW_SETTINGS : undefined,
+		cache: undefined,
+		compile: (payload: ServiceApiWindowInput, orgId: OrgId) =>
+			CH.compile(
+				CH.serviceApiTotalsQuery(serviceApiScope(payload, tiers)),
+				serviceApiWindowParams(payload, orgId),
+				{
+					rowSchema: CH.serviceApiTotalsRowSchema,
+				},
+			),
+	})
+
+export const serviceApiTotals = serviceApiTotalsFor("spliced")
+export const serviceApiTotalsRaw = serviceApiTotalsFor("raw")
+
+const serviceApiTimeseriesFor = (tiers: CH.ServiceApiTiers) =>
+	defineQuery({
+		id: "serviceApiTimeseries",
+		profile: "aggregation",
+		settings: tiers === "raw" ? SERVICE_OPERATIONS_RAW_SETTINGS : undefined,
+		cache: undefined,
+		compile: (payload: ServiceApiTimeseriesInput, orgId: OrgId) =>
+			CH.compile(
+				CH.serviceApiTimeseriesQuery({
+					...serviceApiScope(payload, tiers),
+					bucketSeconds: payload.bucketSeconds,
+					spanNames: payload.spanNames,
+				}),
+				{ ...serviceApiWindowParams(payload, orgId), bucketSeconds: payload.bucketSeconds },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	})
+
+export const serviceApiTimeseries = serviceApiTimeseriesFor("spliced")
+export const serviceApiTimeseriesRaw = serviceApiTimeseriesFor("raw")
+
+export const serviceEndpointStatusBreakdown = defineQuery({
+	id: "serviceEndpointStatusBreakdown",
+	profile: "aggregation",
+	cache: undefined,
+	compile: (payload: ServiceApiWindowInput & { readonly spanName?: string | undefined }, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceEndpointStatusBreakdownQuery({
+				serviceName: payload.serviceName,
+				environments: payload.environments,
+				spanName: payload.spanName,
+			}),
+			serviceApiWindowParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointStatusBreakdownRowSchema },
+		),
+})
+
+type ServiceEndpointDetailInput = ServiceApiWindowInput & { readonly spanName: string }
+
+const endpointDetailOpts = (payload: ServiceEndpointDetailInput) => ({
+	serviceName: payload.serviceName,
+	environments: payload.environments,
+	spanName: payload.spanName,
+})
+
+export const serviceEndpointDistribution = defineQuery({
+	id: "serviceEndpointDistribution",
+	profile: "aggregation",
+	cache: undefined,
+	compile: (payload: ServiceEndpointDetailInput, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceEndpointDistributionQuery(endpointDetailOpts(payload)),
+			serviceApiWindowParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointDistributionRowSchema },
+		),
+})
+
+export const serviceEndpointSlowest = defineQuery({
+	id: "serviceEndpointSlowest",
+	profile: "aggregation",
+	cache: undefined,
+	compile: (payload: ServiceEndpointDetailInput, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceEndpointSlowestQuery(endpointDetailOpts(payload)),
+			serviceApiWindowParams(payload, orgId),
+			{ rowSchema: CH.serviceEndpointSlowestRowSchema },
+		),
+})
