@@ -236,6 +236,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			title: "Replays",
 			filters: filtersRail(h, model),
 			actions: h.div([h.Class("flex flex-wrap items-center gap-2")], [headerActions(h, model), timeCluster]),
 			sticky: replaysToolbar(h, {

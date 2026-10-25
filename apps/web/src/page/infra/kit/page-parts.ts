@@ -50,7 +50,7 @@ export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =
 					),
 					...(options.description === undefined || options.description === ""
 						? []
-						: [h.p([h.Class("max-w-2xl text-sm text-muted-foreground")], [options.description])]),
+						: [h.p([h.Class("max-w-2xl font-prose text-sm text-muted-foreground")], [options.description])]),
 					...(options.meta === undefined
 						? []
 						: [h.div([h.Class("mt-2 flex flex-wrap items-center gap-2")], options.meta)]),

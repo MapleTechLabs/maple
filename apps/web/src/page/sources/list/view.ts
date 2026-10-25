@@ -328,5 +328,5 @@ const body = (h: H, model: Model): Html => {
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
-	dashboardPage(h, { actions: connectButton(h) }, [body(h, model)]),
+	dashboardPage(h, { title: "Sources", actions: connectButton(h) }, [body(h, model)]),
 )

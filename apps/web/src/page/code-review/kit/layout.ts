@@ -105,6 +105,7 @@ export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: Readonl
 	const page = dashboardPage(
 		options.h,
 		{
+			title: "Code Review",
 			actions: options.toolbar,
 			tabs: tabs(options),
 			scrollClassName: "gap-6 pb-8",

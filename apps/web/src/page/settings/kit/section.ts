@@ -39,7 +39,7 @@ export const settingsSection = <M>(h: HtmlBuilder<M>, options: SettingsSectionOp
 					sectionHeading(h, { id: options.id, title: options.title, actions: options.actions }),
 					...(options.description === undefined || options.description.length === 0
 						? []
-						: [h.p([h.Class("text-sm text-muted-foreground")], options.description)]),
+						: [h.p([h.Class("font-prose text-sm text-muted-foreground")], options.description)]),
 				],
 			),
 			...((options.framed ?? true) ? [panel(h, { padded: options.padded ?? true }, children)] : children),

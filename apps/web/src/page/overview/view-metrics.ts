@@ -20,7 +20,7 @@ import {
 } from "../../charts/fixed-metric-series"
 import { ChartSpec, type FixedMetricRow } from "../../charts/chart-spec"
 import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
-import type { LoadFailure } from "../../data/load-failure"
+import { FAILURE_KEY_SEPARATOR, failureKey, type LoadFailure } from "../../data/load-failure"
 import { errorState } from "../../ui/error-state"
 import { presenceOf } from "../kit/signal-presence"
 import { stableSlice } from "../kit/stable-slice"
@@ -104,6 +104,8 @@ export type GridContext = Readonly<{
 	nowMs: number
 	/** `overviewSamplingActive` over every environment: the refinement is merged and may fail. */
 	useRefinement: boolean
+	/** The strips' `failureKey`s joined (a string keeps the cards cached); a card failing the same way says so in one line. */
+	pageFailureKeys: string
 }>
 
 const specOf = (
@@ -290,17 +292,32 @@ const gridItem = (
 	}
 }
 
-const cardContent = (h: HtmlBuilder<Message>, chart: Chart.Model, item: GridItem): Html => {
+const cardContent = (
+	h: HtmlBuilder<Message>,
+	chart: Chart.Model,
+	item: GridItem,
+	pageFailureKeys: string,
+): Html => {
 	switch (item.body._tag) {
 		case "Loading":
 			return chartSkeleton(h, item.skeleton)
-		case "Failed":
+		case "Failed": {
+			const { failure: cardFailure, retry } = item.body
+			if (pageFailureKeys.split(FAILURE_KEY_SEPARATOR).includes(failureKey(cardFailure)))
+				return errorState(h, {
+					failure: cardFailure,
+					variant: "quiet",
+					title: "Couldn't load",
+					onRetry: Message.ClickedRetry({ target: retry }),
+					className: "h-full flex-col justify-center gap-1",
+				})
 			return errorState(h, {
-				failure: item.body.failure,
+				failure: cardFailure,
 				variant: "panel",
 				className: "border-0",
-				onRetry: Message.ClickedRetry({ target: item.body.retry }),
+				onRetry: Message.ClickedRetry({ target: retry }),
 			})
+		}
 		case "Empty":
 			// A wider window only helps when the signal was seen; a failed presence read says nothing.
 			return chartEmpty(h, item.body.isPresent ? { hint: "Try a wider time range" } : {}, [
@@ -354,7 +371,7 @@ const metricCard = (
 					headerValue: item.headerValue,
 					footer: item.footer,
 				},
-				cardContent(h, chart, item),
+				cardContent(h, chart, item, context.pageFailureKeys),
 			),
 		],
 	)

@@ -207,7 +207,7 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 		],
 		[
 			h.p(
-				[h.Class("text-muted-foreground text-sm")],
+				[h.Class("font-prose text-muted-foreground text-sm")],
 				[
 					"Cloudflare, Prometheus, GitHub and the other integrations that bring data in are under ",
 					h.a(

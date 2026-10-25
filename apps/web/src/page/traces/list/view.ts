@@ -86,6 +86,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			title: "Traces",
 			filters: filtersRail(h, model, inputs.context.pinnedNamespace),
 			actions: h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],

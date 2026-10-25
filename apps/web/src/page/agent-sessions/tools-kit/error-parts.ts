@@ -67,7 +67,7 @@ const headingToken = <M>(h: HtmlBuilder<M>, token: ErrorTextToken): ReadonlyArra
 const headingTokens = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>) =>
 	tokens.flatMap((token) => headingToken(h, token))
 
-const HEADING = "font-mono text-lg leading-6.5 font-semibold tracking-[-0.01em] text-foreground"
+const HEADING = "font-mono text-lg leading-6.5 font-semibold tracking-tight text-foreground"
 
 /** `ErrorTextHeading`: the message whole, its path on a line of its own in the error colour. */
 export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<ErrorTextToken>): Html => {
@@ -85,7 +85,7 @@ export const errorTextHeading = <M>(h: HtmlBuilder<M>, tokens: ReadonlyArray<Err
 				[
 					h.span([h.Class("text-muted-foreground")], ["at"]),
 					h.span(
-						[h.Class(cn("break-all font-semibold tracking-[-0.01em]", TONE_TEXT.crit))],
+						[h.Class(cn("break-all font-semibold tracking-tight", TONE_TEXT.crit))],
 						path?.kind === "path" ? pathParts(h, path.parts, "", HEADING_MASK) : [],
 					),
 				],

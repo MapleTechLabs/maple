@@ -1,5 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { isSameFailure, type LoadFailure } from "../../../data/load-failure"
+import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { skeleton } from "../../../ui/skeleton"
 import { statusDot } from "../../../ui/status-dot"
@@ -102,6 +104,22 @@ const entriesOf = <M>(
 			? [{ rank: RANK.error, row: findingRowError(h, id) }]
 			: []
 
+/** Every source failed for one reason: that reason once, instead of a row per source. */
+const sharedFailure = (
+	sources: ReadonlyArray<Readonly<{ id: SourceId; state: SourceState }>>,
+): LoadFailure | undefined => {
+	const failures = sources.flatMap(({ state }) =>
+		state.status === "error" && state.failure !== undefined ? [state.failure] : [],
+	)
+	const [first] = failures
+	return first !== undefined &&
+		sources.length > 1 &&
+		failures.length === sources.length &&
+		failures.every((failure) => isSameFailure(failure, first))
+		? first
+		: undefined
+}
+
 const findingsList = <M>(h: HtmlBuilder<M>, rows: ReadonlyArray<Html>): Html =>
 	h.div([h.Class(FINDINGS_LIST_CLASS)], rows)
 
@@ -128,13 +146,16 @@ export const needsAttention = <M>(
 				.toSorted((a, b) => a.rank - b.rank)
 				.map(({ row }) => row)
 		: []
+	const shared = isSettled ? sharedFailure(sources) : undefined
 	return h.section(
 		[h.Class("space-y-3")],
 		[
 			sectionHeading(h, { title: "Needs attention", hint: "across every source, worst first" }),
 			!isSettled
 				? needsAttentionLoading(h)
-				: rows.length > 0
+				: shared !== undefined
+					? errorState(h, { failure: shared, variant: "row" })
+					: rows.length > 0
 					? findingsList(h, rows)
 					: h.p(
 							[

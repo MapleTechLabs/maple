@@ -994,35 +994,3 @@ width = its duration */
 		animation: none;
 	}
 }
-
-/* Sidebar badge text: a light band sweeps through the label, then it rests. */
-@keyframes badge-shiny {
-	from {
-		background-position: 130% 0;
-	}
-	45%,
-	to {
-		background-position: -30% 0;
-	}
-}
-
-.badge-shiny {
-	background: linear-gradient(
-			110deg,
-			var(--primary-foreground) 40%,
-			oklch(0.98 0.03 85) 50%,
-			var(--primary-foreground) 60%
-		)
-		0 0 / 250% 100%;
-	background-clip: text;
-	color: transparent;
-	animation: badge-shiny 3.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.badge-shiny {
-		animation: none;
-		background: none;
-		color: var(--primary-foreground);
-	}
-}

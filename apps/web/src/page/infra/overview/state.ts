@@ -5,6 +5,7 @@ import {
 	probeOf,
 	resolveInfraSurfaces,
 } from "../../../data/infra-surfaces"
+import type { LoadFailure } from "../../../data/load-failure"
 import type { NavSurface } from "../../../shell/nav"
 import type { PageContext } from "../../contract"
 import type { Model, SourceId, SourceSummary } from "./model"
@@ -14,13 +15,14 @@ import { SOURCE_IDS } from "./model"
 
 export type SourceState =
 	| { readonly status: "loading" }
-	| { readonly status: "error" }
+	/** `failure` is the read's error; a reading with nothing usable has none. */
+	| { readonly status: "error"; readonly failure?: LoadFailure }
 	| { readonly status: "ready"; readonly summary: SourceSummary }
 
 export const sourceState = (model: Model, id: SourceId): SourceState =>
 	AsyncData.matchData(model.sources[id].data, {
 		onEmpty: (): SourceState => ({ status: "loading" }),
-		onFailure: (): SourceState => ({ status: "error" }),
+		onFailure: (failure): SourceState => ({ status: "error", failure }),
 		onData: ({ summary }): SourceState =>
 			summary === null ? { status: "error" } : { status: "ready", summary },
 	})

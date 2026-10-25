@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { Result, Schema } from "effect"
-import { all, expect as expectView, given, nth, scene, text, withViewInputs } from "foldkit/scene"
+import { all, expect as expectView, expectAll, given, nth, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import type { PageContext } from "../../contract"
@@ -118,7 +118,7 @@ describe("infra overview", () => {
 		// A source that already failed keeps its error row instead of loading again.
 		const failed = complete(settled.model, "hosts", Result.fail(toLoadFailure("boom")))
 		expect(sourceReads(infraSurfacesSettled(failed, context).commands)).toEqual([])
-		expect(sourceState(failed, "hosts")).toEqual({ status: "error" })
+		expect(sourceState(failed, "hosts")).toEqual({ status: "error", failure: toLoadFailure("boom") })
 	})
 
 	test("the remembered sources are read on entry, before the probe answers", () => {
@@ -177,6 +177,22 @@ describe("infra overview", () => {
 			// Findings are the page's first links: worst first, regardless of the source's order.
 			expectView(nth(all.role("link"), 0)).toContainText("b at 99% CPU"),
 			expectView(nth(all.role("link"), 1)).toContainText("a went quiet"),
+		)
+	})
+
+	test("every source failing for one reason shows that reason once, not a row per source", () => {
+		const failure = toLoadFailure("boom")
+		const known = probed(entered().model, ["hosts"]).model
+		const allFailed = complete(
+			complete(known, "hosts", Result.fail(failure)),
+			"cloudflare",
+			Result.fail(failure),
+		)
+		scene(
+			{ update: pageUpdate, view: withViewInputs(view, { context })() },
+			given(allFailed),
+			expectAll(all.role("alert")).toHaveCount(1),
+			expectView(text(failure.title)).toExist(),
 		)
 	})
 })

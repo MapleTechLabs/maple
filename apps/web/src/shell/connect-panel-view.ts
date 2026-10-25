@@ -240,8 +240,9 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 					withTrigger(
 						button(
 							h,
-							{ size: "sm", variant: "default", className: "gap-2", slot: "popover-trigger", attributes: trigger },
-							[icon(h, "ConnectionIcon"), "Connect"],
+							// Outline: each page's own primary action keeps the orange; empty states carry the on-ramp.
+							{ size: "sm", variant: "outline", className: "gap-2", slot: "popover-trigger", attributes: trigger },
+							[icon(h, "ConnectionIcon", { className: "text-primary" }), "Connect"],
 						),
 					),
 				),

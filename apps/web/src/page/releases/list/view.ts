@@ -188,6 +188,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			title: "Releases",
 			filters: filtersRail(h, model),
 			actions: timeControls(h, {
 				search: model.search,

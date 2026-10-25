@@ -1,5 +1,6 @@
 import { getServiceColor } from "@maple/ui/lib/colors"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
+import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kbd } from "../../../ui/display"
@@ -137,7 +138,13 @@ export const filtersRail = (h: HtmlBuilder<Message>, model: Model, pinnedNamespa
 		[
 			AsyncData.matchData(model.facets.data, {
 				onEmpty: () => filterSidebarLoading(h, 3),
-				onFailure: (failure) => filterSidebarError(h, failure, Message.ClickedRetryFacets()),
+				onFailure: (failure) =>
+					filterSidebarError(
+						h,
+						failure,
+						Message.ClickedRetryFacets(),
+						Option.getOrUndefined(AsyncData.getError(model.firstPage.data)),
+					),
 				onData: (facets) => loadedRail(h, model, facets, pinnedNamespace),
 			}),
 		],

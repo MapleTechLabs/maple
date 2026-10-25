@@ -85,6 +85,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			title: "Agent Sessions",
 			filters: filtersRail(h, model),
 			tabs: agentSessionsTabs(h, {
 				active: "sessions",

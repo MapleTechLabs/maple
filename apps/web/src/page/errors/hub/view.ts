@@ -65,6 +65,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	dashboardPage(
 		h,
 		{
+			title: "Errors",
 			filters: filtersRail(h, model),
 			actions: refreshButton(h, {
 				onRefresh: Message.ClickedReload(),

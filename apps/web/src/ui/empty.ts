@@ -25,8 +25,8 @@ const part =
 
 export const empty = part(emptyStyles, "empty")
 export const emptyHeader = part(emptyHeaderStyles, "empty-header")
-export const emptyTitle = part(emptyTitleStyles, "empty-title")
-export const emptyDescription = part(emptyDescriptionStyles, "empty-description")
+export const emptyTitle = part(cn(emptyTitleStyles, "font-prose"), "empty-title")
+export const emptyDescription = part(cn(emptyDescriptionStyles, "font-prose"), "empty-description")
 export const emptyContent = part(emptyContentStyles, "empty-content")
 
 /** `EmptyMedia`; the `icon` variant stacks two tilted frames behind the icon tile. */
