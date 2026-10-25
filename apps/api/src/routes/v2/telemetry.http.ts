@@ -56,6 +56,7 @@ import {
 	MAX_QUERY_RANGE_SECONDS,
 	MAX_TIMESERIES_POINTS as MAX_TIMESERIES_BUCKETS,
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
+	timeWindowViolation,
 } from "@maple/query-engine/runtime"
 import { DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
@@ -124,7 +125,9 @@ const parseWindow = (
 		// start_time", blaming the wrong parameter.
 		const startMs = parseWarehouseDateTime(start)
 		const endMs = parseWarehouseDateTime(end)
-		if (endMs <= startMs) {
+		const maxSeconds = options.maxSeconds ?? MAX_QUERY_RANGE_SECONDS
+		const violation = timeWindowViolation(startMs, endMs, maxSeconds)
+		if (violation === "empty") {
 			return yield* Effect.fail(
 				V2TimeRangeInvalid.make(
 					`${options.params?.end ?? "end_time"} must be later than ${options.params?.start ?? "start_time"}.`,
@@ -132,9 +135,7 @@ const parseWindow = (
 				),
 			)
 		}
-		const rangeSeconds = (endMs - startMs) / 1000
-		const maxSeconds = options.maxSeconds ?? MAX_QUERY_RANGE_SECONDS
-		if (rangeSeconds > maxSeconds) {
+		if (violation === "too_wide") {
 			return yield* Effect.fail(
 				V2TelemetryRangeTooLarge.make(
 					`${options.rangeLabel ?? "Telemetry queries"} support a maximum time range of ${formatRangeSeconds(maxSeconds)}.`,
@@ -142,6 +143,7 @@ const parseWindow = (
 				),
 			)
 		}
+		const rangeSeconds = (endMs - startMs) / 1000
 		const format = options.precision === "second" ? formatWarehouseDateTime : formatWarehouseDateTimeMs
 		return {
 			startTime: format(startMs),

@@ -9,6 +9,7 @@
 
 import { Effect, Predicate, Schema } from "effect"
 import { MetricName, ServiceName, SpanId, TraceId } from "@maple/domain"
+import { MAX_LIST_RANGE_SECONDS } from "@maple/query-engine"
 import { clusterLogPatterns } from "@maple/query-engine/observability"
 import type {
 	InspectTraceOutput,
@@ -223,6 +224,18 @@ const buildSpanTree = (
 
 const TRACE_NOT_FOUND_TAG = "@maple/http/v2/TraceNotFoundError"
 
+/**
+ * The log search window for a trace's own bounds. A trace whose spans share one
+ * instant (workerd only advances the clock across I/O) has an empty window, and
+ * a long-running one can outlast the search cap; the logs search rejects both.
+ * Both bounds are inclusive, so 1 ms is enough to cover the instant.
+ */
+export const traceLogWindow = (start: string, end: string) => {
+	const startMs = Date.parse(start)
+	const endMs = Math.min(Math.max(Date.parse(end), startMs + 1), startMs + MAX_LIST_RANGE_SECONDS * 1000)
+	return { start_time: start, end_time: new Date(endMs).toISOString() }
+}
+
 export const inspectTrace = (
 	client: MapleV2Client,
 	p: { traceId: string },
@@ -244,8 +257,7 @@ export const inspectTrace = (
 		// window its logs fall in.
 		const logs = yield* client.logs.search({
 			payload: {
-				start_time: trace.start_time,
-				end_time: trace.end_time,
+				...traceLogWindow(trace.start_time, trace.end_time),
 				limit: V2_LIST_MAX,
 				filters: { trace_id: id },
 			},

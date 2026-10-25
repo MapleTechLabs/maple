@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it } from "bun:test"
-import { Cause, Effect, Exit, Option, Schema } from "effect"
+import { Arbitrary, Cause, Effect, Exit, Option, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { V2LogSearchParams, V2TelemetryWindowQuery } from "@maple/domain/http/v2"
+import { MAX_LIST_RANGE_SECONDS, timeWindowViolation } from "@maple/query-engine"
 import { CliNotFoundError } from "../lib/errors"
 import * as Remote from "./remote-ops"
-import { makeV2Client } from "./v2-client"
+import { resolveRangeChecked } from "./time"
+import { makeV2Client, toV2Window } from "./v2-client"
 
 // These tests exist because the endpoint this replaced broke silently.
 //
@@ -173,6 +176,32 @@ describe("remote-ops request shapes", () => {
 			start_time: "2026-08-15T12:30:00.000Z",
 			end_time: "2026-08-15T12:30:02.000Z",
 			filters: { trace_id: traceId },
+		})
+	})
+
+	it("inspectTrace widens the log window when every span shares one instant", async () => {
+		const traceId = "671403778c461093dbe435b41b677d18"
+		const requests = stubV2((url) =>
+			url.includes("/logs/search")
+				? listEnvelope([])
+				: {
+						id: traceId,
+						object: "trace",
+						start_time: "2026-10-24T22:04:19.898Z",
+						end_time: "2026-10-24T22:04:19.898Z",
+						duration_ms: 0,
+						span_count: 0,
+						service_count: 0,
+						truncated: false,
+						spans: [],
+					},
+		)
+		await Effect.runPromise(Effect.flatMap(v2Client, (v2) => Remote.inspectTrace(v2, { traceId })))
+
+		// The logs search rejects `end_time == start_time` with invalid_time_range.
+		expect(requests[1]!.body).toMatchObject({
+			start_time: "2026-10-24T22:04:19.898Z",
+			end_time: "2026-10-24T22:04:19.899Z",
 		})
 	})
 
@@ -346,5 +375,125 @@ describe("serviceHasTelemetry", () => {
 			},
 		})
 		expect(present).toBe(false)
+	})
+})
+
+// Property tests for windows the CLI builds itself. The server refuses an empty
+// window and one wider than the endpoint's cap; these generate inputs skewed
+// toward exactly those edges and check every window against the server's rule.
+describe("remote-ops window properties", () => {
+	const int = (minimum: number, maximum: number) =>
+		Arbitrary.schema(Schema.Int.check(Schema.isBetween({ minimum, maximum })))
+	const pick = <const L extends ReadonlyArray<string>>(literals: L) =>
+		Arbitrary.schema(Schema.Literals(literals))
+
+	const DAY_MS = 86_400_000
+	const SEARCH_CAP_MS = MAX_LIST_RANGE_SECONDS * 1000
+	// 2020-01-01 .. 2030-01-01, as epoch ms.
+	const epochMs = int(1_577_836_800_000, 1_893_456_000_000)
+	const traceDurationMs = Arbitrary.flatMap(
+		pick(["instant", "tiny", "at_cap", "past_cap", "any"]),
+		(span) => {
+			switch (span) {
+				case "instant":
+					return Arbitrary.Constant(0)
+				case "tiny":
+					return int(1, 5)
+				case "at_cap":
+					return int(SEARCH_CAP_MS - 2, SEARCH_CAP_MS + 2)
+				case "past_cap":
+					return int(SEARCH_CAP_MS, 60 * DAY_MS)
+				case "any":
+					return int(0, SEARCH_CAP_MS)
+			}
+		},
+	)
+	const decodeLogSearch = Schema.decodeUnknownOption(V2LogSearchParams)
+	const decodeWindowQuery = Schema.decodeUnknownOption(V2TelemetryWindowQuery)
+
+	it("inspectTrace asks for logs in a window the logs search accepts, for any trace bounds", async () => {
+		const traces = Arbitrary.all({ startMs: epochMs, durationMs: traceDurationMs })
+		const result = await Effect.runPromise(
+			Arbitrary.checkEffect(
+				traces,
+				({ startMs, durationMs }) =>
+					Effect.gen(function* () {
+						const start = new Date(startMs).toISOString()
+						const sent = stubV2((url) =>
+							url.includes("/logs/search")
+								? listEnvelope([])
+								: {
+										id: "671403778c461093dbe435b41b677d18",
+										object: "trace",
+										start_time: start,
+										end_time: new Date(startMs + durationMs).toISOString(),
+										duration_ms: durationMs,
+										span_count: 0,
+										service_count: 0,
+										truncated: false,
+										spans: [],
+									},
+						)
+						const before = sent.length
+						const v2 = yield* v2Client
+						yield* Remote.inspectTrace(v2, { traceId: "671403778c461093dbe435b41b677d18" })
+						const body = sent.slice(before).find((r) => r.url.includes("/logs/search"))?.body
+						// The logs search reads the raw logs table, so it carries the list cap.
+						return Option.exists(
+							decodeLogSearch(body),
+							(search) =>
+								search.start_time === start &&
+								timeWindowViolation(
+									Date.parse(search.start_time),
+									Date.parse(search.end_time),
+									MAX_LIST_RANGE_SECONDS,
+								) === undefined,
+						)
+					}),
+				{ runs: 200 },
+			),
+		)
+		expect(Arbitrary.formatCheckFailure(result)).toBeUndefined()
+	})
+
+	it("every range the CLI accepts becomes a non-empty v2 window", async () => {
+		// `--start`/`--end` one second either side of each other, or the same instant.
+		const flags = Arbitrary.all({
+			since: pick(["0m", "1m", "30m", "6h", "7d", "2w"]),
+			startMs: epochMs,
+			deltaSeconds: Arbitrary.flatMap(pick(["near", "any"]), (gap) =>
+				gap === "near" ? int(-1, 1) : int(-7 * 86_400, 7 * 86_400),
+			),
+			bounds: pick(["both", "start", "end", "none"]),
+		})
+		const iso = (ms: number) => new Date(Math.floor(ms / 1000) * 1000).toISOString()
+		const result = await Effect.runPromise(
+			Arbitrary.checkEffect(flags, ({ since, startMs, deltaSeconds, bounds }) =>
+				resolveRangeChecked({
+					since,
+					start:
+						bounds === "both" || bounds === "start" ? Option.some(iso(startMs)) : Option.none(),
+					end:
+						bounds === "both" || bounds === "end"
+							? Option.some(iso(startMs + deltaSeconds * 1000))
+							: Option.none(),
+				}).pipe(
+					Effect.map((range) => {
+						return Option.exists(
+							decodeWindowQuery(toV2Window(range)),
+							(window) =>
+								timeWindowViolation(
+									Date.parse(window.start_time),
+									Date.parse(window.end_time),
+									Number.POSITIVE_INFINITY,
+								) === undefined,
+						)
+					}),
+					// A refused range never reaches the server, which is the point.
+					Effect.catchTag("@maple/cli/TimeRangeError", () => Effect.succeed(true)),
+				),
+			),
+		)
+		expect(Arbitrary.formatCheckFailure(result)).toBeUndefined()
 	})
 })

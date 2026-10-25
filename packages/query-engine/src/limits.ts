@@ -73,6 +73,23 @@ export function maxRangeSecondsForKind(kind: QueryRangeKind): number {
 	}
 }
 
+export type TimeWindowViolation = "empty" | "too_wide"
+
+/**
+ * Why the API refuses a `[startMs, endMs]` window, or `undefined` when it serves
+ * it. Shared so clients that derive a window from a response (a trace's own
+ * bounds) can be property-tested against the rule the server enforces.
+ */
+export function timeWindowViolation(
+	startMs: number,
+	endMs: number,
+	maxSeconds: number,
+): TimeWindowViolation | undefined {
+	if (!(endMs > startMs)) return "empty"
+	if ((endMs - startMs) / 1000 > maxSeconds) return "too_wide"
+	return undefined
+}
+
 const SECONDS_PER_HOUR = 3600
 const SECONDS_PER_DAY = SECONDS_PER_HOUR * 24
 
