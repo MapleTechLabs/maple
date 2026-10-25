@@ -20,7 +20,7 @@ import { type PixelGlyphName, pixelGlyph } from "./option-card"
 import * as CopyButton from "../../ui/copy-button"
 import * as GuidedSetup from "../kit/guided-setup"
 import { presenceOf, type TelemetrySignalKind } from "../kit/signal-presence"
-import { ConnectMessage, STATUS_PROVIDERS } from "./quick-start-connect"
+import { ConnectMessage } from "./quick-start-connect"
 import type { LiveFindings } from "./quick-start-live"
 import { regionStep } from "./quick-start-region-view"
 import { isResumable } from "./quick-start-drawer"
@@ -683,9 +683,7 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 		presence: presenceOf(model.connect.presence, entry.signal),
 	}))
 	const arriving = rows.filter((row) => row.presence.status === "present").length
-	const providers = state.stack.platforms.filter((platform) =>
-		STATUS_PROVIDERS.some((provider) => provider === platform),
-	)
+	const providers = state.stack.platforms
 	return h.div(
 		[h.Class("flex flex-col gap-4"), h.AriaLive("polite")],
 		[
@@ -854,11 +852,9 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 		presence: presenceOf(model.connect.presence, entry.signal),
 	}))
 	const arriving = signals.filter((row) => row.presence.status === "present")
-	const providers = state.stack.platforms.filter((platform) =>
-		STATUS_PROVIDERS.some((provider) => provider === platform),
-	)
+	const providers = state.stack.platforms
 	const connected = providers.filter((platform) => model.connect.connected[platform] === true)
-	// Only what Maple can see as connected waits here; a connected provider is not data yet.
+	// A connected provider is not data yet; what is not connected yet waits here.
 	const notConnected = providers.filter((platform) => !connected.includes(platform))
 	const isLive = arriving.length > 0
 	const invited = model.team.invited.length

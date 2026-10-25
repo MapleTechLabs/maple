@@ -193,7 +193,7 @@ describe("quick start connect step", () => {
 		},
 	})
 
-	test("opening it reads the ingest key, what is arriving, and the providers Maple can check", () => {
+	test("opening it reads the ingest key, what is arriving, and whether each picked platform is connected", () => {
 		const opened = update(atStack(), Message.ClickedContinue({ step: "stack" }))
 		expect(names(opened)).toEqual(
 			expect.arrayContaining([
@@ -205,7 +205,8 @@ describe("quick start connect step", () => {
 		const providers = (opened.commands ?? []).find(
 			(command) => command.name === "LoadOnboardingConnectedProviders",
 		)
-		expect(providers?.args).toEqual({ orgId: "org_1", providers: ["cloudflare"] })
+		// Docker has no integration status; its sources say whether it is connected.
+		expect(providers?.args).toEqual({ orgId: "org_1", platforms: ["cloudflare", "docker"] })
 		expect(opened.model.connect.isActive).toBe(true)
 	})
 

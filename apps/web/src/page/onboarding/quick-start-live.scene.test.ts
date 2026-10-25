@@ -46,13 +46,13 @@ describe("you're live step", () => {
 		)
 	})
 
-	test("a connected provider is not data yet, and a provider Maple cannot check is not listed", () => {
+	test("a connected provider is not data yet, and every picked platform not connected yet still waits", () => {
 		scene(
 			{ update, view },
 			given(atLive([], { cloudflare: true })),
 			expectView(role("heading", { name: "Acme is ready for its first data." })).toExist(),
 			expectView(text("Connect Cloudflare")).not.toExist(),
-			expectView(text("Connect AWS")).not.toExist(),
+			expectView(text("Connect AWS")).toExist(),
 		)
 	})
 

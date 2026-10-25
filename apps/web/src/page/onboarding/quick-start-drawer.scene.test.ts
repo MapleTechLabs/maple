@@ -11,6 +11,7 @@ import * as Tabs from "../../ui/tabs"
 import type { PageContext } from "../contract"
 import { Message as FlowMessage } from "../sources/new/message"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
+import { ConnectMessage } from "./quick-start-connect"
 import { DrawerMessage, isDrawerListening } from "./quick-start-drawer"
 import { drawerView } from "./quick-start-drawer-view"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
@@ -169,6 +170,14 @@ describe("onboarding connect drawer", () => {
 		const done = update(made, toFlow(FlowMessage.ClickedDone()))
 		expect(done.model.drawer?.dialog.isOpen).toBe(false)
 		expect(done.model.connect.connected["kubernetes"]).toBe(true)
+		// A sources read that started before the create cannot untick it.
+		const stale = update(
+			done.model,
+			Message.GotConnectMessage({
+				message: ConnectMessage.LoadedConnected({ connected: { kubernetes: false } }),
+			}),
+		)
+		expect(stale.model.connect.connected["kubernetes"]).toBe(true)
 		scene(
 			{ update, view },
 			given({ ...done.model, drawer: null }),

@@ -1,22 +1,24 @@
-import { Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import { baseKey } from "../../data/keyed"
 import { LoadFailure } from "../../data/load-failure"
 import { IntegrationStatuses } from "../../data/integration-statuses"
-import type { StackPlatform } from "../../lib/onboarding-stack"
+import { STACK_PLATFORM_IDS, type StackPlatform } from "../../lib/onboarding-stack"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import type { Resources } from "../../platform/resources"
 import * as CopyButton from "../../ui/copy-button"
 import * as Tabs from "../../ui/tabs"
 import { PACKAGE_TAB_VALUES, SETUP_TAB_VALUES } from "../kit/guided-setup"
+import { loadSources, sourcesListKey } from "../sources/kit/data"
 import { loadSignalPresences, SignalPresenceData, SignalPresences } from "../kit/signal-presence"
 
 // The connect step's state: the ingest key for the coding-agent prompt and SDK snippets, whether data
 // is arriving, and which picked providers are already connected. All of it is re-read while the step shows.
 
-/** Providers whose connection Maple can read; the rest of the stack is set up on its own page. */
-export const STATUS_PROVIDERS = ["cloudflare", "railway", "supabase", "planetscale"] as const
-export type StatusProvider = (typeof STATUS_PROVIDERS)[number]
+/** Providers with an integration status of their own; every platform also counts its sources. */
+const STATUS_PROVIDERS = ["cloudflare", "railway", "supabase", "planetscale"] as const
+type StatusProvider = (typeof STATUS_PROVIDERS)[number]
 
 const isStatusProvider = (platform: StackPlatform): platform is StatusProvider =>
 	STATUS_PROVIDERS.some((provider) => provider === platform)
@@ -79,11 +81,14 @@ const LoadConnectPresence = Command.define("LoadOnboardingConnectPresence", {
 		Effect.map(loadSignalPresences(orgId), (result) => ConnectMessage.LoadedPresence({ result })),
 })
 
-/** Each picked provider's `connected`, read fresh; one that fails to answer is left out. */
+/**
+ * Each picked platform's `connected`, read fresh: its integration status where it has one, or any
+ * source of its platform (a push source, an AWS account, a scrape target). A read that fails is left out.
+ */
 const LoadConnected = Command.define("LoadOnboardingConnectedProviders", {
-	args: { orgId: Schema.String, providers: Schema.Array(Schema.Literals(STATUS_PROVIDERS)) },
+	args: { orgId: Schema.String, platforms: Schema.Array(Schema.Literals(STACK_PLATFORM_IDS)) },
 	messages: [ConnectMessage.LoadedConnected],
-	execute: ({ orgId, providers }) =>
+	execute: ({ orgId, platforms }) =>
 		Effect.gen(function* () {
 			const statuses = yield* IntegrationStatuses
 			const options = { refresh: true, orgId }
@@ -95,23 +100,34 @@ const LoadConnected = Command.define("LoadOnboardingConnectedProviders", {
 						: provider === "supabase"
 							? Effect.map(statuses.supabase(options), (status) => status.connected)
 							: Effect.map(statuses.planetscale(options), (status) => status.connected)
-			const entries = yield* Effect.forEach(
-				providers,
-				(provider) =>
-					read(provider).pipe(
-						Effect.map(
-							(
-								isConnected,
-							): ReadonlyArray<
-								Readonly<{ provider: StatusProvider; isConnected: boolean }>
-							> => [{ provider, isConnected }],
-						),
-						Effect.orElseSucceed(() => []),
+			const [entries, maybeSources] = yield* Effect.all(
+				[
+					Effect.forEach(
+						platforms.filter(isStatusProvider),
+						(provider) =>
+							read(provider).pipe(
+								Effect.map((isConnected): ReadonlyArray<readonly [string, boolean]> => [
+									[provider, isConnected],
+								]),
+								Effect.orElseSucceed(() => []),
+							),
+						{ concurrency: "unbounded" },
 					),
+					loadSources(baseKey(sourcesListKey(orgId)), true).pipe(Effect.option),
+				],
 				{ concurrency: "unbounded" },
 			)
+			const byStatus: Readonly<Record<string, boolean>> = Object.fromEntries(entries.flat())
 			const connected = Object.fromEntries(
-				entries.flat().map((entry) => [entry.provider, entry.isConnected]),
+				platforms.flatMap((platform): ReadonlyArray<readonly [string, boolean]> => {
+					const hasSource = Option.map(maybeSources, (sources) =>
+						sources.some((source) => source.platform === platform),
+					)
+					const status = byStatus[platform]
+					return status === undefined && Option.isNone(hasSource)
+						? []
+						: [[platform, status === true || Option.getOrElse(hasSource, () => false)]]
+				}),
 			)
 			return ConnectMessage.LoadedConnected({ connected })
 		}),
@@ -128,13 +144,8 @@ type Step = Readonly<{
 }>
 
 /** The drawer closed: the picked providers' connections, read once outside the poll. */
-export const refreshConnected = (
-	orgId: string,
-	platforms: ReadonlyArray<StackPlatform>,
-): Step["commands"] => {
-	const providers = platforms.filter(isStatusProvider)
-	return providers.length === 0 ? [] : [LoadConnected({ orgId, providers })]
-}
+export const refreshConnected = (orgId: string, platforms: ReadonlyArray<StackPlatform>): Step["commands"] =>
+	platforms.length === 0 ? [] : [LoadConnected({ orgId, platforms })]
 
 const reads = (orgId: string, platforms: ReadonlyArray<StackPlatform>): Step["commands"] => [
 	LoadConnectPresence({ orgId }),
@@ -169,8 +180,17 @@ export const updateConnect = (
 			connect: { ...connect, presence: AsyncData.settle(connect.presence, result) },
 			commands: connect.isActive ? [WaitConnectPoll()] : [],
 		}),
+		// Connected stays connected for the visit: a list read before a fresh create cannot untick it.
 		LoadedConnected: ({ connected }) => ({
-			connect: { ...connect, connected: { ...connect.connected, ...connected } },
+			connect: {
+				...connect,
+				connected: Object.fromEntries(
+					Object.entries({ ...connect.connected, ...connected }).map(([platform, isConnected]) => [
+						platform,
+						isConnected || connect.connected[platform] === true,
+					]),
+				),
+			},
 			commands: [],
 		}),
 		ElapsedPoll: () => ({ connect, commands: connect.isActive ? reads(orgId, platforms) : [] }),
