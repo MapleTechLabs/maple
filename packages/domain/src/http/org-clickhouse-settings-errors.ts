@@ -36,8 +36,8 @@ export class OrgClickHouseSettingsPersistenceError extends HttpTaggedError<OrgCl
 	{
 		status: 503,
 		code: "clickhouse_settings_unavailable",
-		title: "Data connection temporarily unavailable",
-		message: "Maple can't reach this organization's data connection right now. Retry in a few seconds.",
+		title: "Data connection settings temporarily unavailable",
+		message: "Maple couldn't load or save this organization's data connection settings. Retry in a few seconds.",
 		retry: "backoff",
 		recovery: "retry",
 		exposure: "redacted",
