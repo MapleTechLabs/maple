@@ -52,10 +52,11 @@ export const heroFieldChipParts = <M>(
 	h: HtmlBuilder<M>,
 	options: HeroFieldChipOptions,
 ): ReadonlyArray<Html> => {
-	const label = h.span([h.Class("shrink-0")], [options.label])
 	const value = h.span([h.Class("min-w-0 truncate text-foreground")], [options.value])
+	// An empty label leaves the value alone, with no stray gap before it.
+	const label = options.label === "" ? [] : [h.span([h.Class("shrink-0")], [options.label])]
 	return [
-		...(options.isValueFirst === true ? [value, label] : [label, value]),
+		...(options.isValueFirst === true ? [value, ...label] : [...label, value]),
 		...(options.isPicker === true
 			? [icon(h, "ChevronDownIcon", { className: "size-3 shrink-0 opacity-60" })]
 			: []),

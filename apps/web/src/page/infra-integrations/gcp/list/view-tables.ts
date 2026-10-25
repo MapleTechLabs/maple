@@ -66,6 +66,7 @@ import {
 	spark,
 	SUB,
 	volumeCell,
+	volumeHead,
 	workloadHref,
 	workloadRow,
 } from "./view-rows"
@@ -95,7 +96,10 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 	if (row.requests === 0)
 		return GCP_SERVICE_RULES.inScope(row, "idle")
 			? h.div(
-					[h.Class(cn("hidden w-[170px] md:block", SUB, TONE_TEXT.warn)), h.Title("No requests, instance time billed")],
+					[
+						h.Class(cn("hidden w-[170px] md:block", SUB, TONE_TEXT.warn)),
+						h.Title("No requests, instance time billed"),
+					],
 					["idle, still billed"],
 				)
 			: h.div([h.Class(cn("hidden w-[170px] md:block", SUB))], ["no traffic"])
@@ -157,7 +161,9 @@ const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyAr
 	const last = items[items.length - 1]
 	// A string keeps metaLine's 28ch cap, which it applies only to plain strings.
 	const capped = typeof last === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [last]) : last
-	return last === undefined ? [note] : [...items.slice(0, -1), h.span([h.Class("flex min-w-0 items-center gap-x-2")], [capped, note])]
+	return last === undefined
+		? [note]
+		: [...items.slice(0, -1), h.span([h.Class("flex min-w-0 items-center gap-x-2")], [capped, note])]
 }
 
 export const servicesTable = (
@@ -172,7 +178,7 @@ export const servicesTable = (
 		[
 			dotLane(h),
 			head(h, "Service", NAME),
-			head(h, "Requests", "w-[180px]"),
+			volumeHead(h, "Requests"),
 			head(h, "Status mix", "w-[170px]", undefined, "hidden md:flex"),
 			head(h, "5xx", "w-[64px]", "right"),
 			head(h, "Latency p95", "w-[88px]", "right"),
@@ -264,7 +270,7 @@ export const subscriptionsTable = (
 		[
 			dotLane(h),
 			head(h, "Subscription", NAME),
-			head(h, "Delivered", "w-[180px]"),
+			volumeHead(h, "Delivered"),
 			head(h, "Backlog", "w-[200px]"),
 			head(h, "Oldest unacked", "w-[104px]", "right"),
 			head(h, "Push failed", "w-[84px]", "right", "hidden md:flex"),
@@ -562,7 +568,7 @@ export const databasesTable = (
 		[
 			dotLane(h),
 			head(h, "Instance", NAME),
-			head(h, "Queries", "w-[180px]", undefined, "hidden md:flex"),
+			volumeHead(h, "Queries", "hidden md:flex"),
 			head(h, "Query p95", "w-[80px]", "right"),
 			head(h, "CPU", "w-[72px]", "right"),
 			head(h, "Memory", "w-[72px]", "right", "hidden md:flex"),

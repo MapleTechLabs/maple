@@ -92,10 +92,16 @@ const usageCell = (h: H, label: string, fraction: number | null): Html => {
 				className: "h-1 w-20 shrink-0",
 				label: fraction === null ? undefined : `${label} ${formatPercent(fraction)}`,
 			}),
-			numberCell(
-				h,
-				fraction === null ? null : formatPercent(fraction),
-				tone === "warn" ? "warn" : undefined,
+			// A fixed right-aligned slot, so "20%" and "1.7%" line up down the column.
+			h.span(
+				[h.Class("w-10 shrink-0 text-right")],
+				[
+					numberCell(
+						h,
+						fraction === null ? null : formatPercent(fraction),
+						tone === "warn" ? "warn" : undefined,
+					),
+				],
 			),
 		],
 	)
@@ -146,13 +152,16 @@ const rateCell = (h: H, rate: number | null): Html =>
 		rate !== null && rate >= 0.01 ? "crit" : undefined,
 	)
 
+// Takes the row's slack once the name column hits its cap.
+const TREND_WIDTH = "min-w-32 flex-1"
+
 const COLUMNS = {
 	ecs: [
 		{ label: "CPU", width: "w-36", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
 		{ label: "Memory", width: "w-36", cell: (h, view) => usageCell(h, "Memory", memoryShare(view)) },
 		{
 			label: "CPU trend",
-			width: "w-32",
+			width: TREND_WIDTH,
 			hidden: "hidden md:flex",
 			cell: (h, view, context) => sparkCell(h, view, context),
 		},
@@ -162,7 +171,7 @@ const COLUMNS = {
 		{ label: "CPU", width: "w-36", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
 		{
 			label: "CPU trend",
-			width: "w-32",
+			width: TREND_WIDTH,
 			hidden: "hidden md:flex",
 			cell: (h, view, context) => sparkCell(h, view, context),
 		},
@@ -341,7 +350,8 @@ const columnsOf = (kind: AwsInfraKindId, showTraced = true): ReadonlyArray<Colum
 const anyTraced = (views: ReadonlyArray<ResourceView>, traced: TableContext["traced"]): boolean =>
 	traced === null || views.some((view) => tracedAs(traced, view) !== null)
 
-const NAME_COLUMN = { label: "", width: "w-0 flex-1 min-w-48" }
+// Grows far ahead of a CPU trend column, so it reaches its cap before the trend widens.
+const NAME_COLUMN = { label: "", width: "w-0 min-w-48 max-w-[480px] flex-[999_1_0%]" }
 
 const heads = (h: H, kind: AwsInfraKindId, nameLabel: string, showTraced = true): ReadonlyArray<Html> => [
 	columnHead(h, { label: nameLabel, width: NAME_COLUMN.width }),
@@ -362,7 +372,7 @@ export const awsTableLoading = (h: H, kind: AwsInfraKindId, nameLabel: string): 
 		heads(h, kind, nameLabel),
 		skeletonRows(h, 5, () => [
 			h.div(
-				[h.Class("w-0 min-w-48 flex-1 space-y-1.5")],
+				[h.Class(cn(NAME_COLUMN.width, "space-y-1.5"))],
 				[skeleton(h, "h-3.5 w-36"), skeleton(h, "h-2.5 w-48")],
 			),
 			...columnsOf(kind).map((column) => skeleton(h, cn("h-3", column.width, column.hidden))),
@@ -390,7 +400,7 @@ const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolea
 		],
 		[
 			h.div(
-				[h.Class("flex w-0 min-w-48 flex-1 items-start gap-2.5")],
+				[h.Class(cn("flex items-start gap-2.5", NAME_COLUMN.width))],
 				[
 					h.span([h.Class(cn("mt-1.5 size-1.5 shrink-0 rounded-full", DOT[view.health]))]),
 					h.div(
