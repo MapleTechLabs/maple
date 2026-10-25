@@ -230,6 +230,7 @@ describe("runSetupAudit — baseline", () => {
 					sourceKey: `gone.key.${i}`,
 					targetKey: "http.request.method",
 					operation: "copy",
+					updatedAt: NOW - 10 * 24 * HOUR,
 				})),
 			}
 			const telemetry: WarehouseAuditInputs = {
@@ -687,6 +688,7 @@ describe("CFG-MAP-01 / CFG-MAP-02 — mapping liveness", () => {
 		sourceKey: "http.status_code",
 		targetKey: "http.response.status_code",
 		operation: "copy",
+		updatedAt: NOW - 10 * 24 * HOUR,
 	}
 	const move = { ...mapping, operation: "move" }
 
@@ -736,6 +738,18 @@ describe("CFG-MAP-01 / CFG-MAP-02 — mapping liveness", () => {
 		)
 		expect(check(moveReport, "CFG-MAP-01").status).toBe("pass")
 		expect(check(moveReport, "CFG-MAP-02").status).toBe("pass")
+	})
+
+	it("does not flag a move changed inside the lookback, while older spans keep the source", () => {
+		const report = runSetupAudit(
+			inputsWith(
+				warehouse({
+					attributeKeys: [spanKey("http.status_code", 9), spanKey("http.response.status_code", 9)],
+				}),
+				{ attributeMappings: [{ ...move, updatedAt: NOW - HOUR }] },
+			),
+		)
+		expect(check(report, "CFG-MAP-02").status).toBe("pass")
 	})
 
 	it("flags a move mapping whose source survives because the target already arrives", () => {
