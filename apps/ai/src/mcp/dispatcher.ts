@@ -31,6 +31,8 @@ import { IntegrationInventoryService } from "@maple/backend/services/integration
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { withoutInvocationContext } from "@maple/backend/platform/invocation-context"
+import * as Cloudflare from "alchemy/Cloudflare"
 
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
@@ -39,7 +41,7 @@ import { Context, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { McpToolResult } from "./tools/types"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
-import { CurrentMcpTenant } from "./lib/query-warehouse"
+import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./lib/query-warehouse"
 import { recordExpectedMcpFailure } from "./expected-failures"
 import { loadRegistry } from "./tool-catalog"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -287,7 +289,13 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 	"@maple/ai/mcp/McpToolExecutor",
 	{
 		make: Effect.gen(function* () {
-			const runtimeServices = yield* Effect.context<McpToolRuntimeRequirements>()
+			// Provided on every later call, so it must not carry this build's request (its Postgres
+			// scope, Scope, span or tenant): those would override the calling request's own.
+			const runtimeServices = Context.omit(
+				CurrentMcpRequestTenant,
+				CurrentMcpTenant,
+				Cloudflare.WorkerExecutionContext,
+			)(withoutInvocationContext(yield* Effect.context<McpToolRuntimeRequirements>()))
 			const sandbox = yield* RepoSandboxService
 			const source = yield* VcsSourceService
 
