@@ -17,7 +17,6 @@ import {
 	ReadFramework,
 	RollIngestKey,
 	SaveFramework,
-	SendTestEvent,
 	ToggleMapping,
 	TriageRecommendation,
 } from "./command"
@@ -45,7 +44,6 @@ export const init = (options: InitOptions): Return => ({
 		isAdmin: options.isAdmin,
 		overview: AsyncData.Loading(),
 		ingest: AsyncData.Loading(),
-		isSendingTest: false,
 		endpointCopy: CopyButton.init(),
 		revealedKeys: [],
 		keyCopies: {},
@@ -171,23 +169,6 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 			model: { ...model, overview: refresh(model.overview) },
 			commands: [FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace })],
 		}),
-		ClickedSendTestEvent: () => {
-			const publicKey = AsyncData.getOrElse(AsyncData.map(model.ingest, (keys) => keys.public_key), () => "")
-			return model.isSendingTest || publicKey === ""
-				? { model }
-				: { model: { ...model, isSendingTest: true }, commands: [SendTestEvent({ publicKey })] }
-		},
-		CompletedSendTestEvent: ({ isSent }) =>
-			isSent
-				? {
-						model: { ...model, isSendingTest: false, overview: refresh(model.overview) },
-						commands: [FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace })],
-						outMessage: toast("success", "Test event sent. Watch for it to land in traces."),
-					}
-				: {
-						model: { ...model, isSendingTest: false },
-						outMessage: toast("error", "Failed to reach the ingest endpoint", "Double-check your API key."),
-					},
 		GotEndpointCopyMessage: ({ message: child }) => {
 			const step = CopyButton.update(model.endpointCopy, child)
 			return {

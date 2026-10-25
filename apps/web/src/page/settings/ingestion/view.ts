@@ -31,7 +31,6 @@ const connectionOf = (model: Model) => {
 		isConnected: real.length > 0,
 		serviceCount: real.length,
 		spansPerMinute: real.reduce((sum, row) => sum + row.spanCount, 0) / 60,
-		publicKey: AsyncData.getOrElse(AsyncData.map(model.ingest, (keys) => keys.public_key), () => ""),
 		privateKey: AsyncData.getOrElse(AsyncData.map(model.ingest, (keys) => keys.private_key), () => ""),
 	}
 }
@@ -55,27 +54,16 @@ const statusBanner = (h: H, model: Model): Html => {
 			],
 		),
 		h.div([h.Class("grow")], []),
-		connection.isConnected
-			? h.a(
+		...(connection.isConnected
+			? [h.a(
 					[
 						h.Href("/traces"),
 						h.Class(cn(buttonVariants({ variant: "ghost", size: "sm", className: "text-muted-foreground hover:text-foreground gap-1.5" }))),
 						h.DataAttribute("slot", "button"),
 					],
 					["Explore traces", icon(h, "ArrowRightIcon")],
-				)
-			: button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						className: "shrink-0 gap-2",
-						isLoading: model.isSendingTest,
-						isDisabled: connection.publicKey === "",
-						attributes: [h.OnClick(Message.ClickedSendTestEvent())],
-					},
-					[icon(h, "PaperPlaneIcon"), "Send test event"],
-				),
+				)]
+			: []),
 	])
 }
 

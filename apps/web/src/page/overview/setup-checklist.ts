@@ -40,7 +40,6 @@ export const Model = Schema.Struct({
 	window: Schema.NullOr(TimeWindow),
 	/** An overview read is out: a poll waits for it, so a slow answer still matches `window`. */
 	isOverviewInFlight: Schema.Boolean,
-	isSendingTest: Schema.Boolean,
 	copies: Schema.Struct({ endpoint: CopyButton.Model, privateKey: CopyButton.Model }),
 	isPrivateKeyVisible: Schema.Boolean,
 	setupTabs: Tabs.Model,
@@ -57,15 +56,13 @@ export const Message = defineMessageUnion({
 	FailedLoadOverview: { window: TimeWindow, failure: LoadFailure },
 	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the card is mounted. */
 	TickedPoll: {},
-	/** A poll or a sent test event read the clock: the last hour up to now. */
+	/** A poll read the clock: the last hour up to now. */
 	ResolvedPollWindow: { window: TimeWindow },
 	ClickedToggleExpanded: {},
 	ClickedDismiss: {},
 	ClickedDismissCelebration: {},
 	ClickedExploreTraces: {},
 	ClickedFramework: { framework: Schema.String },
-	ClickedSendTestEvent: {},
-	CompletedSendTestEvent: { isSent: Schema.Boolean },
 	CompletedSaveState: {},
 	ClickedRevealPrivateKey: {},
 	GotCopyMessage: { field: CopyField, message: CopyButton.Message },
