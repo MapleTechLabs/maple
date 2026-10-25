@@ -21,7 +21,14 @@ const withMap = (): Model => {
 		Message.CompletedResolveWindow({ window, timeZone: "UTC", facetsWindow, nowMs: 0, mode: "Load" }),
 	)
 	const stored = step(resolved, Message.CompletedReadStored({ stored: STORED }))
-	const bundle = { edges: [], dbEdges: [], overview: [], platforms: [], workloads: [] }
+	const bundle = {
+		edges: [],
+		dbEdges: [],
+		dbEdgesTimedOut: false,
+		overview: [],
+		platforms: [],
+		workloads: [],
+	}
 	return step(
 		stored,
 		Message.CompletedFetchBundle({

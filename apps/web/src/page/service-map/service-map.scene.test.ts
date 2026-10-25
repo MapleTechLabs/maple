@@ -86,12 +86,13 @@ const BUNDLE: Bundle = {
 			samplingWeight: 1,
 		},
 	],
+	dbEdgesTimedOut: false,
 	overview: [overview("checkout"), overview("payments")],
 	platforms: [],
 	workloads: [],
 }
 
-const EMPTY_BUNDLE: Bundle = { edges: [], dbEdges: [], overview: [], platforms: [], workloads: [] }
+const EMPTY_BUNDLE: Bundle = { edges: [], dbEdges: [], dbEdgesTimedOut: false, overview: [], platforms: [], workloads: [] }
 
 /** Entered, windowed and with the stored prefs read. */
 const windowed = (search: Model["search"] = {}): Model => {
@@ -285,6 +286,22 @@ describe("service map page: view", () => {
 			given(absent),
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 			expectView(text("No service calls yet")).toExist(),
+		)
+	})
+
+	test("database edges dropped past their budget are called out, not shown as no databases", () => {
+		const notice = "Databases took too long to load for this time range and are not shown. A shorter range loads them."
+		scene(
+			{ update: pageUpdate, view },
+			given(withBundle(windowed(), { ...BUNDLE, dbEdges: [], dbEdgesTimedOut: true })),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(role("status")).toContainText(notice),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withBundle(windowed(), BUNDLE)),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text(notice)).not.toExist(),
 		)
 	})
 })

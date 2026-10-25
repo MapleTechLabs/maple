@@ -571,6 +571,51 @@ export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_ho
 export type ServiceMapDbEdgesHourlyRow = InferRow<typeof serviceMapDbEdgesHourly>
 
 /**
+ * Minute-grain twin of `service_map_db_edges_hourly`: the same keys, derivation
+ * and measures the read uses, `Minute` for `Hour`. It drops the hourly table's
+ * Sampled/UnsampledSpanCount (no query reads them) and adds `FirstInsertedAt`. It serves the partial hours at the ends of a map
+ * window, which `serviceDbEdges` used to read from raw `traces` by decoding both
+ * attribute maps of every Client span (24s and 30 GB for one heavy org's 12h map).
+ *
+ * Created without a backfill (`BACKFILL skip`): replaying 30 days of `traces`
+ * through the view is the deploy-time burst we avoid. The read path finds where
+ * this table's coverage starts (`FirstInsertedAt`) and keeps raw `traces` for
+ * anything before it.
+ * 30 days, like the raw tier it replaces: an older window has no raw edges either.
+ */
+export const serviceMapDbEdgesMinutely = defineDatasource("service_map_db_edges_minutely", {
+	tenantColumn: "OrgId",
+	description:
+		"Pre-aggregated per-minute service-to-database edges for the partial hours at the ends of a service map window. Same keys and read measures as service_map_db_edges_hourly, plus FirstInsertedAt. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Minute: utcDateTime(),
+		ServiceName: t.string().lowCardinality(),
+		DbSystem: t.string().lowCardinality(),
+		DbNamespace: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
+		CallCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ErrorCount: t.simpleAggregateFunction("sum", t.uint64()),
+		DurationSumMs: t.simpleAggregateFunction("sum", t.float64()),
+		MaxDurationMs: t.simpleAggregateFunction("max", t.float64()),
+		SampleRateSum: t.simpleAggregateFunction("sum", t.float64()),
+		DurationQuantiles: t.aggregateFunction("quantilesTDigestWeighted(0.5, 0.95), UInt64", t.uint32()),
+		// When the view first wrote this org's rows: coverage starts the minute after.
+		// Insert time, not `Minute`: a late span with an old timestamp lands in a minute
+		// whose earlier spans went into `traces` before the view existed.
+		FirstInsertedAt: t.simpleAggregateFunction("min", utcDateTime()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Minute)",
+		sortingKey: ["OrgId", "Minute", "DeploymentEnv", "ServiceName", "DbSystem", "DbNamespace"],
+		ttl: "toDate(Minute) + INTERVAL 30 DAY",
+	}),
+})
+
+export type ServiceMapDbEdgesMinutelyRow = InferRow<typeof serviceMapDbEdgesMinutely>
+
+/**
  * Pre-aggregated hourly database *query shapes* for the service map's database
  * detail panel ("Query Activity" + "Top Query Shapes"). One row per
  * (OrgId, Hour, ServiceName, DbSystem, DbNamespace, DeploymentEnv, QueryKey) where `QueryKey`

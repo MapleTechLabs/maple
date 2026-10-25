@@ -121,6 +121,7 @@ export const TABLE_DELETE_PLAN = {
 	service_external_edges_hourly: derived("Hour"),
 	service_map_children: derived("Timestamp"),
 	service_map_db_edges_hourly: derived("Hour"),
+	service_map_db_edges_minutely: derived("Minute"),
 	service_map_db_query_shapes_hourly: derived("Hour"),
 	service_map_edges_hourly: edges("TargetService"),
 	service_map_edges_hourly_ingest: {

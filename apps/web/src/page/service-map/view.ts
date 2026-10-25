@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { serviceMapLoading } from "../../service-map/map/loading"
 import * as ServiceMap from "../../service-map/map/service-map"
 import { view as mapView } from "../../service-map/map/view"
+import { alert, alertDescription } from "../../ui/alert"
 import { errorState } from "../../ui/error-state"
 import { segmentedSelect } from "../../ui/segmented-select"
 import type * as Select from "../../ui/select"
@@ -125,6 +126,22 @@ const detailPanel =
 
 const toScene3d = (message: Scene3d.Message) => Message.GotScene3dMessage({ message })
 
+/** The API dropped the database edges past their budget: say so rather than draw a map with no databases. */
+const dbEdgesTimedOutNotice = (h: H, model: Model): ReadonlyArray<Html> =>
+	Option.match(AsyncData.getData(model.bundle.data), {
+		onNone: () => [],
+		onSome: (bundle) =>
+			bundle.value.dbEdgesTimedOut
+				? [
+						alert(h, { variant: "warn", size: "sm", role: "status", className: "mb-3" }, [
+							alertDescription(h, [
+								"Databases took too long to load for this time range and are not shown. A shorter range loads them.",
+							]),
+						]),
+					]
+				: [],
+	})
+
 /** `ResultView` over the bundle: the loading skeleton, the error, or the map. */
 const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.bundle.data, {
@@ -164,7 +181,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							onRetry: Message.ClickedRetryFacets(),
 						}),
 					onNone: () =>
-						h.div([h.Class("-mx-4 -mb-4 h-[calc(100vh-10rem)]")], [mapArea(h, model, inputs)]),
+						h.div(
+							[h.Class("contents")],
+							[
+								...dbEdgesTimedOutNotice(h, model),
+								h.div(
+									[h.Class("-mx-4 -mb-4 h-[calc(100vh-10rem)]")],
+									[mapArea(h, model, inputs)],
+								),
+							],
+						),
 				}),
 			]),
 		],

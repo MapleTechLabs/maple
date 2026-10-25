@@ -517,7 +517,7 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		expect(sql).toContain(RAW_NAMESPACE)
 		// …and every GROUP BY carries it so distinct databases stay distinct rows
 		const matches = sql.match(/GROUP BY sourceService, dbSystem, dbNamespace/g)
-		expect(matches?.length).toBe(3)
+		expect(matches?.length).toBe(4)
 	})
 
 	it("guards the org-wide raw branch against unnamed spans (ServiceName != '')", () => {
@@ -527,14 +527,27 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		expect(sql).toContain("ServiceName != ''")
 	})
 
-	it("filters ServiceName on both branches (hourly MV + raw traces)", () => {
+	it("filters ServiceName on every branch (hourly, minutely, raw traces)", () => {
 		const { sql } = compileUnsafe(
 			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
 			baseParams,
 		)
-		const matches = sql.match(/ServiceName = 'artifacts-api'/g)
-		// One in the hourly branch, one in the raw-traces fallback.
-		expect(matches && matches.length === 2).toBe(true)
+		expect(sql.match(/ServiceName = 'artifacts-api'/g)?.length).toBe(3)
+	})
+
+	it("reads whole minutes of the partial hours from the minute rollup, raw only past its coverage", () => {
+		const { sql } = Effect.runSync(serviceDbEdgesSQL({}, baseParams))
+		expect(sql).toContain("FROM service_map_db_edges_minutely")
+		// Raw keeps the partial minutes, plus anything before the view's first write.
+		expect(sql).toContain("toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE")
+		expect(sql).toContain("OR traces.Timestamp < (SELECT if(count() = 0,")
+	})
+
+	it("without the minute tier (no migration 0049), reads the partial hours from raw traces only", () => {
+		const { sql } = Effect.runSync(serviceDbEdgesSQL({ minuteTier: false }, baseParams))
+		expect(sql).not.toContain("service_map_db_edges_minutely")
+		expect(sql).toContain("FROM service_map_db_edges_hourly")
+		expect(sql).toContain("FROM traces")
 	})
 
 	it("unions service_map_db_edges_hourly with raw traces for the in-progress hour", () => {

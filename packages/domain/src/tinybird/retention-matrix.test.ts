@@ -32,6 +32,8 @@ const RETENTION_DAYS = {
 	service_external_edges_hourly: 365,
 	service_map_children: 30,
 	service_map_db_edges_hourly: 365,
+	// Serves only the partial hours of a map window, which raw traces answered before it: 30 like them.
+	service_map_db_edges_minutely: 30,
 	service_map_db_query_shapes_hourly: 365,
 	service_map_edges_hourly: 365,
 	service_map_spans: 30,

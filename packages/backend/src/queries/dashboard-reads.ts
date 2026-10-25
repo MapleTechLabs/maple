@@ -16,7 +16,7 @@ import {
 } from "@maple/query-engine"
 import { makeDirectRouteCachePolicy, type QueryEngineDirectError } from "@maple/query-engine/runtime"
 import { Queries, type QueryDefinition } from "@maple/query-engine/registry"
-import { Cause, Clock, DateTime, Effect, Option, Schema } from "effect"
+import { Cause, Clock, DateTime, type Duration, Effect, Option, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { partitionWindowAround } from "@maple/backend/queries/query-helpers"
 import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/query-runner"
@@ -88,6 +88,34 @@ export const makeRollupFallback =
 				})
 			}),
 		)
+
+/**
+ * Run a decoration read under a budget shorter than its request's, so one slow layer
+ * cannot fail the whole page. Past it the read is interrupted and `empty` stands in,
+ * flagged `timedOut` for the client to say so.
+ */
+export const withinBudget = <A, E, R>(
+	read: Effect.Effect<A, E, R>,
+	budget: Duration.Input,
+	empty: A,
+	context: { readonly orgId: string; readonly layer: string },
+): Effect.Effect<{ readonly value: A; readonly timedOut: boolean }, E, R> =>
+	read.pipe(
+		Effect.timeoutOption(budget),
+		Effect.tap((result) =>
+			Option.isSome(result)
+				? Effect.void
+				: Effect.logWarning("Read exceeded its budget; returning it empty").pipe(
+						Effect.annotateLogs(context),
+						Effect.andThen(Effect.annotateCurrentSpan("maple.read.timed_out", context.layer)),
+					),
+		),
+		Effect.map((result) =>
+			Option.isSome(result)
+				? { value: result.value, timedOut: false }
+				: { value: empty, timedOut: true },
+		),
+	)
 
 const withServiceOperationsFallback = makeRollupFallback(
 	isMissingServiceOperationsRollup,

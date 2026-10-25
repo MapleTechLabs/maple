@@ -1600,5 +1600,33 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// Purely additive and filled forward only: the read path keeps raw traces for any
+		// minute before the view's first write, so nothing needs backfilling.
+		id: "local-0040-to-0041-service-map-db-edges-minutely",
+		from: 40,
+		to: 41,
+		description: "service_map_db_edges_minutely + its view: per-minute service-to-database edges",
+		clonedBefore: "additive DDL runs",
+		plan: [
+			[
+				"install-service-map-db-edges-minutely",
+				"Install the service_map_db_edges_minutely rollup and its materialized view via the v41 bootstrap",
+			],
+		],
+		verifies: "Verify the v41 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "service_map_db_edges_minutely",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Filled forward from traces writes; the service map reads raw traces for minutes before the view's first write.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

@@ -122,13 +122,14 @@ import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { isAiContentFormat } from "@maple/domain/ai-traffic"
-import { DateTime, Effect, Option, Schema } from "effect"
+import { DateTime, Duration, Effect, Option, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	isMissingProductEvents,
 	isMissingServiceEndpointDetails,
+	isMissingServiceMapDbEdgesMinutely,
 } from "@maple/backend/services/warehouse/missing-table"
-import { makeExecuteRawSql } from "@maple/query-engine/runtime"
+import { makeExecuteRawSql, type QueryEngineDirectError } from "@maple/query-engine/runtime"
 import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audit/audit-access"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
@@ -156,10 +157,12 @@ import {
 	makeDashboardReads,
 	makeRollupFallback,
 	mapExecError,
+	withinBudget,
 	withServiceApiFallback,
 } from "@maple/backend/queries/dashboard-reads"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
+import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import * as Integrations from "@maple/query-engine-integrations"
 
 /**
@@ -173,6 +176,17 @@ const withProductEventsFallback = makeRollupFallback(
 	isMissingProductEvents,
 	"product_events is absent on this cluster; reading raw session_events. Apply ClickHouse schema to restore the fast path.",
 )
+
+const withDbEdgesMinutelyFallback = makeRollupFallback(
+	isMissingServiceMapDbEdgesMinutely,
+	"service_map_db_edges_minutely is absent on this cluster; reading raw traces for the partial hours. Apply ClickHouse schema to restore the fast path.",
+)
+
+/**
+ * The map's database edges are a decoration on the service graph, so they get a budget
+ * under the request's own 30s: past it the map renders without them instead of 504ing.
+ */
+const DB_EDGES_BUDGET = Duration.seconds(12)
 
 /** Endpoint detail has no raw fallback: without migration 0048 the panel is empty. */
 const orEmptyWithoutEndpointDetails = <A, E, R>(effect: Effect.Effect<A, E, R>, empty: A) =>
@@ -316,6 +330,17 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 		const warehouse = yield* WarehouseQueryService
 		const reads = makeDashboardReads({ warehouse, queryEngine })
 		const { runQuery, runQueryFirst } = reads
+
+		const dbEdgesWithinBudget = <A, P, E extends QueryEngineDirectError, R>(
+			rollup: (tenant: TenantContext, payload: P) => Effect.Effect<ReadonlyArray<A>, E, R>,
+			raw: (tenant: TenantContext, payload: P) => Effect.Effect<ReadonlyArray<A>, E, R>,
+			tenant: TenantContext,
+			payload: P,
+		) =>
+			withinBudget(withDbEdgesMinutelyFallback(rollup, raw, tenant, payload), DB_EDGES_BUDGET, [], {
+				orgId: tenant.orgId,
+				layer: "serviceDbEdges",
+			})
 
 		const executeRawSql = makeExecuteRawSql<
 			ExecutionTenant,
@@ -1268,7 +1293,15 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const [dependencyRows, dbEdgeRows, externalEdgeRows] = yield* Effect.all(
 							[
 								runQuery(Queries.serviceDependenciesForService, tenant, payload),
-								runQuery(Queries.serviceDbEdgesForService, tenant, payload),
+								// One service's edges stay cheap, so no budget: the tab has no way to say they were dropped.
+								withDbEdgesMinutelyFallback(
+									(t, pl: typeof payload) =>
+										runQuery(Queries.serviceDbEdgesForService, t, pl),
+									(t, pl: typeof payload) =>
+										runQuery(Queries.serviceDbEdgesForServiceRaw, t, pl),
+									tenant,
+									payload,
+								),
 								runQuery(Queries.serviceExternalEdges, tenant, payload),
 							],
 							{ concurrency: 3 },
@@ -1285,11 +1318,16 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const tenant = yield* CurrentTenant.Context
 						// Resolve warehouse routing once before the fan-out.
 						yield* warehouse.warmRoute(tenant)
-						const [dependencyRows, overviewRows, dbEdgeRows, platformRows] = yield* Effect.all(
+						const [dependencyRows, overviewRows, dbEdges, platformRows] = yield* Effect.all(
 							[
 								runQuery(Queries.serviceDependencies, tenant, payload),
 								runQuery(Queries.serviceOverview, tenant, payload),
-								runQuery(Queries.serviceDbEdges, tenant, payload),
+								dbEdgesWithinBudget(
+									(t, pl: typeof payload) => runQuery(Queries.serviceDbEdges, t, pl),
+									(t, pl: typeof payload) => runQuery(Queries.serviceDbEdgesRaw, t, pl),
+									tenant,
+									payload,
+								),
 								runQuery(Queries.servicePlatforms, tenant, payload),
 							],
 							{ concurrency: 4 },
@@ -1316,7 +1354,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 
 						return new ServiceMapBundleResponse({
 							dependencies: dependencyRows.map((row) => ({ ...row })),
-							dbEdges: dbEdgeRows.map((row) => ({ ...row })),
+							dbEdges: dbEdges.value.map((row) => ({ ...row })),
+							dbEdgesTimedOut: dbEdges.timedOut,
 							overview: overviewRows.map((row) => ({ ...row })),
 							platforms: platformRows.map(toServicePlatformRow),
 							workloads: workloadRows.map(toServiceWorkloadRow),
