@@ -249,6 +249,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				engagedSessions: engagedCount(model),
 				isEngagedOnly: selectedTags(search).includes("engaged"),
 				onToggleEngagedOnly: Message.ToggledEngagedOnly(),
+				isFailed: AsyncData.isFailure(model.firstPage.data),
 				isWaiting:
 					AsyncData.isIdle(model.firstPage.data) ||
 					AsyncData.isLoading(model.firstPage.data) ||

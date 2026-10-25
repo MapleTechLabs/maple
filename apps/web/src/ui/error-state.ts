@@ -230,7 +230,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 			[
 				h.p(
 					[h.Class("font-prose text-xs text-muted-foreground")],
-					[heading, h.span([h.Class("sr-only")], [`. ${message}`])],
+					[heading, h.span([h.Class("sr-only")], [heading === "" ? message : `. ${message}`])],
 				),
 				...retry("ghost", "h-6 px-2 font-prose text-xs text-muted-foreground hover:text-foreground sm:text-xs"),
 			],
@@ -302,7 +302,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 		[
 			h.div([h.Class("rounded-md border bg-card/50 px-3 py-2.5")], [droppedSignalGlyph(h, false)]),
 			h.div(
-				[h.Class("max-w-xs space-y-1")],
+				[h.Class("max-w-sm space-y-1")],
 				[
 					h.p([h.Class("font-prose text-sm font-medium text-foreground")], [heading]),
 					h.p([h.Class("font-prose text-xs whitespace-pre-wrap text-muted-foreground")], [message]),

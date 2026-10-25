@@ -22,6 +22,8 @@ export type ReplaysToolbarOptions<M> = Readonly<{
 	isEngagedOnly: boolean
 	onToggleEngagedOnly: M
 	isWaiting?: boolean
+	/** The list failed: the triage chips have nothing to filter. */
+	isFailed?: boolean
 }>
 
 const triageChip = <M>(
@@ -30,7 +32,8 @@ const triageChip = <M>(
 	onClick: M,
 	tone: Tone,
 	children: ReadonlyArray<Html | string>,
-): Html => filterChip(h, { isPressed, onClick, tone, hasDot: true }, children)
+	isDisabled = false,
+): Html => filterChip(h, { isPressed, isDisabled, onClick, tone, hasDot: true }, children)
 
 export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOptions<M>): Html => {
 	const isWaiting = options.isWaiting ?? false
@@ -54,13 +57,13 @@ export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOpti
 					...(options.errorSessions === undefined
 						? ["with errors"]
 						: [h.span([h.Class("tabular-nums")], [formatNumber(options.errorSessions)]), " with errors"]),
-				]),
+				], options.isFailed),
 				triageChip(h, options.isEngagedOnly, options.onToggleEngagedOnly, "ok", [
 					...(options.engagedSessions === undefined
 						? []
 						: [h.span([h.Class("tabular-nums")], [formatNumber(options.engagedSessions)])]),
 					"engaged",
-				]),
+				], options.isFailed),
 			],
 		),
 	])

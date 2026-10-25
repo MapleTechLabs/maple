@@ -307,7 +307,8 @@ const cardContent = (
 				return errorState(h, {
 					failure: cardFailure,
 					variant: "quiet",
-					title: "Couldn't load",
+					// The strip above already says what failed; the card stays an empty frame.
+					title: "",
 					onRetry: Message.ClickedRetry({ target: retry }),
 					hidesRetryButton: true,
 					className: "h-full flex-col justify-center gap-1",

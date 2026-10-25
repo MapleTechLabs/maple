@@ -12,6 +12,8 @@ import { togglePrimitive } from "./toggle"
 
 export type FilterChipOptions<Message> = Readonly<{
 	isPressed: boolean
+	/** Not usable right now (the data it filters failed to load). */
+	isDisabled?: boolean
 	/** `onPressedChange`: the parent owns `pressed`, as in @maple/ui. */
 	onClick: Message
 	tone?: Tone
@@ -35,6 +37,7 @@ export const filterChip = <Message>(
 		h,
 		{
 			isPressed: options.isPressed,
+			isDisabled: options.isDisabled,
 			onClick: options.onClick,
 			className: cn(
 				filterChipVariants({ size: options.size }),

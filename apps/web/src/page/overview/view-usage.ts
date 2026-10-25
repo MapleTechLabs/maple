@@ -15,7 +15,7 @@ const CARDS: ReadonlyArray<{ title: string; key: keyof UsageTotals; format: (val
 ]
 
 /** Loading tiles; on failure a quiet "Couldn't load" rail (the charts carry the full message). */
-export const usageCards = <M>(h: HtmlBuilder<M>, model: Model): Html =>
+export const usageCards = <M>(h: HtmlBuilder<M>, model: Model, hasPageFailure: boolean): Html =>
 	AsyncData.matchData(model.usage.data, {
 		onEmpty: () => statRailLoading(h, CARDS.length, 3),
 		onFailure: () =>
@@ -26,7 +26,8 @@ export const usageCards = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 					statRailItem(h, {
 						eyebrow: card.title,
 						value: EMPTY_VALUE,
-						subline: h.span([h.Class("font-prose")], ["Couldn't load"]),
+						// Under the page strip the tile shows only its empty value; the strip says why.
+						subline: hasPageFailure ? undefined : h.span([h.Class("font-prose")], ["Couldn't load"]),
 						compact: true,
 					}),
 				),
