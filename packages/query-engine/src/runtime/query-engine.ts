@@ -49,6 +49,7 @@ import {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 } from "../limits"
+import { rawBreakdownSpanVerdict, spanBudgetApplies } from "./breakdown-span-budget"
 import {
 	attributeIndexMode,
 	hasWarehouseTable,
@@ -952,6 +953,49 @@ const executeCHQuery = Effect.fnUntraced(function* <
 	return yield* annotateWarehouseError(warehouse.compiledQuery(tenant, compiled, options), context)
 })
 
+/**
+ * Refuse a raw-`traces` breakdown whose window holds more spans than one query can
+ * aggregate in time: a 400 naming a window that fits, not a 30s timeout. Fails open.
+ */
+const enforceRawBreakdownSpanBudget = Effect.fn("QueryEngineService.enforceRawBreakdownSpanBudget")(
+	function* <T extends QueryTenant>(
+		warehouse: QueryEngineWarehouse<T>,
+		tenant: T,
+		request: QueryEngineExecuteRequest,
+		range: TimeRangeBounds,
+		filter: Parameters<typeof rawBreakdownSpanVerdict>[1],
+	) {
+		const compiled = CH.compile(
+			CH.traceSpanVolumeByServiceQuery(),
+			{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
+			{ rowSchema: CH.traceSpanVolumeRowSchema },
+		)
+		const rows = yield* warehouse
+			.compiledQuery(tenant, compiled, { profile: "list", context: "breakdownSpanEstimate" })
+			.pipe(
+				Effect.catch((error) =>
+					Effect.as(
+						Effect.annotateCurrentSpan("maple.query_engine.span_estimate_error", error._tag),
+						undefined,
+					),
+				),
+			)
+		if (rows === undefined) return
+
+		const verdict = rawBreakdownSpanVerdict(rows, filter, range.rangeSeconds)
+		yield* Effect.annotateCurrentSpan({
+			"maple.query_engine.estimated_spans": verdict.estimatedSpans,
+			"maple.query_engine.span_budget_exceeded": verdict.exceeded !== undefined,
+		})
+		if (verdict.exceeded) {
+			return yield* new QueryEngineValidationError({
+				message: verdict.exceeded.message,
+				details: [...verdict.exceeded.details],
+			})
+		}
+	},
+)
+
 // A whole-range counter needs each series' last sample before the window. Two
 // widths reach at least as far back as the epoch-aligned grid (and its hourly rollup) did.
 const wholeRangeCounterLookbackSeconds = (range: {
@@ -1764,6 +1808,16 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		if (request.query.source === "traces" && request.query.kind === "breakdown") {
 			const tracesQuery = request.query
 			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
+			if (
+				spanBudgetApplies(opts, range.rangeSeconds) &&
+				CH.tracesBreakdownReadsRaw({
+					...opts,
+					metric: tracesQuery.metric,
+					groupBy: tracesQuery.groupBy,
+				})
+			) {
+				yield* enforceRawBreakdownSpanBudget(warehouse, tenant, request, range, opts)
+			}
 			const rows = yield* executeCHQuery(
 				warehouse,
 				tenant,

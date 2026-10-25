@@ -988,6 +988,13 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 	{
+		// runtime span estimate before a raw traces breakdown.
+		module: "services",
+		name: "traceSpanVolumeByServiceQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.traceSpanVolumeByServiceQuery(), window),
+	},
+	{
 		// backend TelemetryReadService, v2 trace search.
 		module: "traces",
 		name: "traceSummariesQuery",

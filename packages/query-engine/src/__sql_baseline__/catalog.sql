@@ -7062,6 +7062,17 @@ SELECT
         ORDER BY totalSizeBytes DESC
         FORMAT JSON
 
+-- builder:services:traceSpanVolumeByServiceQuery:default  [2407c0ab]
+SELECT
+          service_usage.ServiceName AS serviceName,
+          sum(service_usage.TraceCount) AS spanCount
+        FROM service_usage
+        WHERE service_usage.OrgId = 'org_sql_catalog'
+          AND service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_usage.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        FORMAT JSON
+
 -- builder:session-events:sessionActivityQuery:default  [bb249b01]
 SELECT
           g.sessionId AS sessionId,
@@ -15982,7 +15993,40 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- spec:traces-breakdown-by-attribute:baseline  [d1515770]
+-- spec:traces-breakdown-by-attribute#1:baseline  [2407c0ab]
+SELECT
+          service_usage.ServiceName AS serviceName,
+          sum(service_usage.TraceCount) AS spanCount
+        FROM service_usage
+        WHERE service_usage.OrgId = 'org_sql_catalog'
+          AND service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_usage.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        FORMAT JSON
+
+-- spec:traces-breakdown-by-attribute#1:bloom  [2407c0ab]
+SELECT
+          service_usage.ServiceName AS serviceName,
+          sum(service_usage.TraceCount) AS spanCount
+        FROM service_usage
+        WHERE service_usage.OrgId = 'org_sql_catalog'
+          AND service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_usage.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        FORMAT JSON
+
+-- spec:traces-breakdown-by-attribute#1:text  [2407c0ab]
+SELECT
+          service_usage.ServiceName AS serviceName,
+          sum(service_usage.TraceCount) AS spanCount
+        FROM service_usage
+        WHERE service_usage.OrgId = 'org_sql_catalog'
+          AND service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_usage.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        FORMAT JSON
+
+-- spec:traces-breakdown-by-attribute#2:baseline  [d1515770]
 SELECT
           traces.SpanAttributes['http.route'] AS name,
           sum(traces.SampleRate) AS count,
@@ -16006,7 +16050,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- spec:traces-breakdown-by-attribute:bloom  [d1515770]
+-- spec:traces-breakdown-by-attribute#2:bloom  [d1515770]
 SELECT
           traces.SpanAttributes['http.route'] AS name,
           sum(traces.SampleRate) AS count,
@@ -16030,7 +16074,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- spec:traces-breakdown-by-attribute:text  [d1515770]
+-- spec:traces-breakdown-by-attribute#2:text  [d1515770]
 SELECT
           traces.SpanAttributes['http.route'] AS name,
           sum(traces.SampleRate) AS count,
@@ -16054,7 +16098,18 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- spec:traces-breakdown:baseline  [4f4cd31c]
+-- spec:traces-breakdown#1:baseline  [2407c0ab]
+SELECT
+          service_usage.ServiceName AS serviceName,
+          sum(service_usage.TraceCount) AS spanCount
+        FROM service_usage
+        WHERE service_usage.OrgId = 'org_sql_catalog'
+          AND service_usage.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_usage.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        FORMAT JSON
+
+-- spec:traces-breakdown#2:baseline  [4f4cd31c]
 SELECT
           traces.ServiceName AS name,
           sum(traces.SampleRate) AS count,

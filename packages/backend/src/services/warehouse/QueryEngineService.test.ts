@@ -5,6 +5,7 @@ import { Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
 import { strict as nodeAssert } from "node:assert"
 import { MetricName, OrgId, ServiceName, UserId } from "@maple/domain"
 import {
+	QueryEngineValidationError,
 	RawSqlValidationError,
 	WarehouseConfigError,
 	WarehouseQuotaExceededError,
@@ -1173,6 +1174,91 @@ describe("makeQueryEngineExecute", () => {
 			)
 
 			assert.isTrue(called)
+		}),
+	)
+})
+
+describe("raw breakdown span budget", () => {
+	const getFailure = <A, E>(exit: Exit.Exit<A, E>): E | undefined =>
+		Option.getOrUndefined(Exit.findErrorOption(exit))
+
+	// Four days, span-name grouping: not servable from the entry-span rollup.
+	const spanNameBreakdown: QueryEngineExecuteRequest = {
+		startTime: "2026-01-01 00:00:00",
+		endTime: "2026-01-05 00:00:00",
+		query: {
+			kind: "breakdown",
+			source: "traces",
+			metric: "count",
+			groupBy: "span_name",
+			filters: { serviceName: asServiceName("checkout") },
+		},
+	}
+
+	const stubWithVolume = (volume: Effect.Effect<ReadonlyArray<unknown>, WarehouseUpstreamError>) => {
+		const ran: Array<string> = []
+		const execute = makeQueryEngineExecute(
+			makeTinybirdStub({
+				sqlQuery: (_tenant: unknown, sql: unknown) => {
+					if (String(sql).includes("FROM service_usage")) return volume
+					ran.push(String(sql))
+					return Effect.succeed([])
+				},
+			}),
+		)
+		return { execute, ran }
+	}
+
+	it.effect("refuses a breakdown whose services hold more spans than the budget, before scanning", () =>
+		Effect.gen(function* () {
+			// Only checkout counts: the other service is outside the filter. 64-bit
+			// sums may arrive as JSON strings.
+			const { execute, ran } = stubWithVolume(
+				Effect.succeed([
+					{ serviceName: "checkout", spanCount: "300000000" },
+					{ serviceName: "ingest", spanCount: "5000000000" },
+				]),
+			)
+
+			const failure = getFailure(yield* Effect.exit(execute(tenant, spanNameBreakdown)))
+
+			assert.ok(failure instanceof QueryEngineValidationError)
+			assert.include(failure.details.join("\n"), "Narrow the time range to 64 hours or less")
+			assert.deepStrictEqual(ran, [])
+		}),
+	)
+
+	it.effect("runs a breakdown whose services fit the budget even when the org does not", () =>
+		Effect.gen(function* () {
+			const { execute, ran } = stubWithVolume(
+				Effect.succeed([
+					{ serviceName: "checkout", spanCount: "50000000" },
+					{ serviceName: "ingest", spanCount: "5000000000" },
+				]),
+			)
+
+			yield* execute(tenant, spanNameBreakdown)
+
+			assert.strictEqual(ran.length, 1)
+			assert.include(ran[0] ?? "", "FROM traces")
+		}),
+	)
+
+	it.effect("runs the breakdown when the span estimate fails", () =>
+		Effect.gen(function* () {
+			const { execute, ran } = stubWithVolume(
+				Effect.fail(
+					new WarehouseUpstreamError({
+						pipeName: "breakdownSpanEstimate",
+						message: "temporary failure",
+						upstreamStatus: 503,
+					}),
+				),
+			)
+
+			yield* execute(tenant, spanNameBreakdown)
+
+			assert.strictEqual(ran.length, 1)
 		}),
 	)
 })
