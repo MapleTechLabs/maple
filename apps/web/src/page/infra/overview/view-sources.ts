@@ -118,7 +118,8 @@ export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState
 								),
 							),
 						],
-						[state.status === "ready" ? state.summary.headline : "Open the page for details"],
+						// A failed row already says "Couldn't load"; the chevron says the page has the details.
+						[state.status === "ready" ? state.summary.headline : ""],
 					),
 			icon(h, "ChevronRightIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 		],

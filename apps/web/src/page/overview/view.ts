@@ -92,11 +92,12 @@ type PageFailure = Readonly<{ failure: LoadFailure; title: string; onRetry: Mess
 const pageFailures = (model: Model): ReadonlyArray<PageFailure> => {
 	const facets = Option.getOrUndefined(AsyncData.getError(model.facets.data))
 	const setup = model.setup === null ? undefined : SetupChecklistView.setupFailure(model.setup)
-	const facetsRetry = Message.ClickedRetry({ target: "Facets" })
+	// The strip stands for every card under it, so its Try again reloads the whole page.
+	const stripRetry = Message.ClickedReload()
 	if (facets !== undefined && setup !== undefined && isSameFailure(facets, setup))
-		return [{ failure: facets, title: facets.title, onRetry: facetsRetry }]
+		return [{ failure: facets, title: facets.title, onRetry: stripRetry }]
 	return [
-		...(facets === undefined ? [] : [{ failure: facets, title: "Couldn't load environments", onRetry: facetsRetry }]),
+		...(facets === undefined ? [] : [{ failure: facets, title: "Couldn't load environments", onRetry: stripRetry }]),
 		...(setup === undefined
 			? []
 			: [

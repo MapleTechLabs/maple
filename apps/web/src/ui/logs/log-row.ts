@@ -137,7 +137,7 @@ const chipButton = <Message>(
 		[
 			h.span([rowClass(h, "shrink-0 opacity-70")], [chip.displayKey]),
 			h.span([rowClass(h, "shrink-0 opacity-40")], [":"]),
-			h.span([rowClass(h, "min-w-0 truncate")], [chip.displayValue]),
+			h.span([rowClass(h, "min-w-0 max-w-[18ch] truncate")], [chip.displayValue]),
 		],
 	)
 
@@ -319,7 +319,8 @@ const messageLane = <Message>(
 					rowClass(
 						h,
 						cn(
-							"min-w-[60%]",
+							// The message keeps most of the row; chips past the lane's 40% wrap out of view.
+							"min-w-[55%] flex-1",
 							QUIET_SEVERITIES.has(row.severity) ? "text-muted-foreground" : "text-foreground",
 							state.wrap ? "whitespace-pre-wrap break-words" : "truncate",
 						),
@@ -347,7 +348,7 @@ const messageLane = <Message>(
 							[
 								rowClass(
 									h,
-									"ml-auto hidden h-[18px] min-w-0 flex-wrap justify-end gap-1 overflow-hidden pl-2 @3xl/log:flex",
+									"ml-auto hidden h-[18px] max-w-[40%] shrink-0 flex-wrap justify-end gap-1 overflow-hidden pl-2 @3xl/log:flex",
 								),
 							],
 							row.chips.map((chip) => chipButton(h, events, index, chip)),

@@ -21,6 +21,8 @@ export type ErrorStateOptions<M> = Readonly<{
 	failure: LoadFailure
 	title?: string
 	onRetry?: M
+	/** Keep the auto-retry but draw no button: a page-level strip already offers Try again. */
+	hidesRetryButton?: boolean
 	/** `quiet`: one muted line (the title) under a page-level error that already explains it. */
 	variant?: "panel" | "row" | "inline" | "quiet"
 	className?: string
@@ -202,9 +204,13 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					),
 				]
 			: []
-	const message = autoRetry.length > 0 ? `${failure.message} Retrying automatically…` : failure.message
+	// "Retry in a few seconds" contradicts the auto-retry note, so the note replaces it.
+	const message =
+		autoRetry.length > 0
+			? `${failure.message.replace(/\s*Retry in a few seconds\.$/, "")} Retrying automatically…`
+			: failure.message
 	const retry = (variant: "ghost" | "outline", className?: string) =>
-		options.onRetry === undefined || !canRetry
+		options.onRetry === undefined || !canRetry || options.hidesRetryButton === true
 			? []
 			: [
 					button(h, { size: "sm", variant, className, attributes: [h.OnClick(options.onRetry)] }, [

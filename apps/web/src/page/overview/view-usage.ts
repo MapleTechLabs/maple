@@ -26,7 +26,7 @@ export const usageCards = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 					statRailItem(h, {
 						eyebrow: card.title,
 						value: EMPTY_VALUE,
-						subline: "Couldn't load",
+						subline: h.span([h.Class("font-prose")], ["Couldn't load"]),
 						compact: true,
 					}),
 				),

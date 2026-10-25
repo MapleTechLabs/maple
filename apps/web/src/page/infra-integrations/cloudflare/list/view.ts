@@ -472,7 +472,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					scrollClassName: "gap-6",
-					titleContent: pageHeroParts(h, { title: TITLE, trailing: hero.trailing }).title,
+					titleContent: pageHeroParts(h, {
+						title: TITLE,
+						trailing: hero.trailing,
+						description: "Traffic, errors and cache for your zones and Workers.",
+					}).title,
 					actions:
 						headerActions(h, hero.actions, timeControls),
 				},
