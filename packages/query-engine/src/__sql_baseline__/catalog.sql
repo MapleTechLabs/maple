@@ -1635,7 +1635,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- builder:infra:hostDetailSummaryQuery:default  [c6dd860a]
+-- builder:infra:hostDetailSummaryQuery:default  [7efc71f2]
 SELECT
           metrics_gauge.ResourceAttributes['host.name'] AS hostName,
           any(metrics_gauge.ResourceAttributes['os.type']) AS osType,
@@ -1646,7 +1646,7 @@ SELECT
           max(metrics_gauge.TimeUnix) AS lastSeen,
           greatest(1 - ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'system.cpu.utilization' AND metrics_gauge.Attributes['state'] = 'idle')), 1), 0) AS cpuPct,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'system.memory.utilization' AND metrics_gauge.Attributes['state'] = 'used')), 0), 0) AS memoryPct,
-          ifNotFinite(maxIf(metrics_gauge.Value, ((metrics_gauge.MetricName = 'system.filesystem.utilization' AND metrics_gauge.Attributes['state'] = 'used') AND metrics_gauge.Attributes['type'] NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs'))), 0) AS diskPct,
+          ifNotFinite(maxIf(metrics_gauge.Value, ((metrics_gauge.MetricName = 'system.filesystem.utilization' AND metrics_gauge.Attributes['state'] IN ('used', '')) AND metrics_gauge.Attributes['type'] NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs'))), 0) AS diskPct,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'system.cpu.load_average.15m'), 0), 0) AS load15
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
@@ -1657,19 +1657,20 @@ SELECT
         GROUP BY hostName
         FORMAT JSON
 
--- builder:infra:hostFilesystemsQuery:default  [c12d4b7b]
+-- builder:infra:hostFilesystemsQuery:default  [069b2fb8]
 SELECT
           metrics_gauge.Attributes['mountpoint'] AS mountpoint,
           any(metrics_gauge.Attributes['device']) AS device,
-          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.Attributes['state'] = 'used'), 0), 0) AS usedAvg,
-          ifNotFinite(maxIf(metrics_gauge.Value, metrics_gauge.Attributes['state'] = 'used'), 0) AS usedMax
+          ifNull(ifNotFinite(avg(metrics_gauge.Value), 0), 0) AS usedAvg,
+          ifNotFinite(max(metrics_gauge.Value), 0) AS usedMax
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
           AND metrics_gauge.MetricName = 'system.filesystem.utilization'
-          AND metrics_gauge.Attributes['state'] = 'used'
+          AND metrics_gauge.Attributes['state'] IN ('used', '')
+          AND metrics_gauge.Attributes['type'] NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs')
         GROUP BY mountpoint
         ORDER BY usedMax DESC
         LIMIT 20
@@ -1772,7 +1773,7 @@ SELECT
         LIMIT 1
 FORMAT JSON
 
--- builder:infra:listHostsQuery:searchPaged  [44319e94]
+-- builder:infra:listHostsQuery:searchPaged  [d86faa60]
 SELECT
           metrics_gauge.ResourceAttributes['host.name'] AS hostName,
           any(metrics_gauge.ResourceAttributes['os.type']) AS osType,
@@ -1781,7 +1782,7 @@ SELECT
           max(metrics_gauge.TimeUnix) AS lastSeen,
           greatest(1 - ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'system.cpu.utilization' AND metrics_gauge.Attributes['state'] = 'idle')), 1), 0) AS cpuPct,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'system.memory.utilization' AND metrics_gauge.Attributes['state'] = 'used')), 0), 0) AS memoryPct,
-          ifNotFinite(maxIf(metrics_gauge.Value, ((metrics_gauge.MetricName = 'system.filesystem.utilization' AND metrics_gauge.Attributes['state'] = 'used') AND metrics_gauge.Attributes['type'] NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs'))), 0) AS diskPct,
+          ifNotFinite(maxIf(metrics_gauge.Value, ((metrics_gauge.MetricName = 'system.filesystem.utilization' AND metrics_gauge.Attributes['state'] IN ('used', '')) AND metrics_gauge.Attributes['type'] NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs'))), 0) AS diskPct,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'system.cpu.load_average.15m'), 0), 0) AS load15
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'

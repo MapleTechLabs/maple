@@ -5,7 +5,8 @@
 //
 //   - system.cpu.utilization           gauge, 0..1, attributes: cpu, state
 //   - system.memory.utilization        gauge, 0..1, attributes: state
-//   - system.filesystem.utilization    gauge, 0..1, attributes: device, mountpoint, state
+//   - system.filesystem.utilization    gauge, 0..1, attributes: device, mode, mountpoint, type
+//                                      (the hostmetrics receiver sets no state; some shippers add state=used)
 //   - system.cpu.load_average.1m|5m|15m  gauge, absolute, no attributes
 //   - system.network.io                sum,   bytes, attributes: device, direction
 //
@@ -46,13 +47,19 @@ const hostCpuPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
 	)
 
 // Read-only and virtual mounts (snap squashfs, container overlays) always report ~100%.
-const PSEUDO_FS_TYPES = ["squashfs", "overlay", "tmpfs", "devtmpfs", "iso9660", "ramfs"] as const
+export const PSEUDO_FS_TYPES = ["squashfs", "overlay", "tmpfs", "devtmpfs", "iso9660", "ramfs"] as const
+
+// The hostmetrics receiver emits utilization with no `state` (Map get returns ''); other
+// shippers split it into used/free/reserved rows. Both shapes keep only the used share.
+export const FILESYSTEM_USED_STATES = ["used", ""] as const
+const filesystemUsedState = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+	CH.inList($.Attributes.get("state"), FILESYSTEM_USED_STATES)
 
 const hostDiskPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
 	maxIfOrZero(
 		$.Value,
 		$.MetricName.eq("system.filesystem.utilization")
-			.and($.Attributes.get("state").eq("used"))
+			.and(filesystemUsedState($))
 			.and(CH.notInList($.Attributes.get("type"), PSEUDO_FS_TYPES)),
 	)
 
@@ -165,9 +172,11 @@ export interface HostGaugeTimeseriesOpts {
 	hostName: string
 	metricName: string
 	groupByAttributeKey?: string
-	// Pins one data-point attribute, e.g. `state = 'used'` for filesystem
-	// utilization, which otherwise averages used/free/reserved together.
-	attributeEquals?: { readonly key: string; readonly value: string }
+	// Keeps points whose attribute is one of `values` ('' matches a missing key), e.g.
+	// filesystem utilization's used state, which otherwise averages used/free/reserved.
+	attributeIn?: { readonly key: string; readonly values: readonly string[] }
+	// Drops points whose attribute is one of `values`, e.g. pseudo filesystem types.
+	attributeNotIn?: { readonly key: string; readonly values: readonly string[] }
 }
 
 export interface HostGaugeTimeseriesOutput {
@@ -191,8 +200,11 @@ export function hostGaugeTimeseriesQuery(opts: HostGaugeTimeseriesOpts) {
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq(opts.metricName),
-			opts.attributeEquals
-				? $.Attributes.get(opts.attributeEquals.key).eq(opts.attributeEquals.value)
+			opts.attributeIn
+				? CH.inList($.Attributes.get(opts.attributeIn.key), opts.attributeIn.values)
+				: undefined,
+			opts.attributeNotIn
+				? CH.notInList($.Attributes.get(opts.attributeNotIn.key), opts.attributeNotIn.values)
 				: undefined,
 		])
 
@@ -236,8 +248,8 @@ export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 		.format("JSON")
 }
 
-// Host filesystems: used fraction per mountpoint. `state` must be pinned to `used`;
-// averaging across used/free/reserved reads every disk as about a third full.
+// Host filesystems: used fraction per mountpoint. Rows split by state must keep only
+// `used`; averaging used/free/reserved reads every disk as about a third full.
 
 export interface HostFilesystemsOpts {
 	hostName: string
@@ -256,8 +268,8 @@ export function hostFilesystemsQuery(opts: HostFilesystemsOpts) {
 		.select(($) => ({
 			mountpoint: $.Attributes.get("mountpoint"),
 			device: CH.any_($.Attributes.get("device")),
-			usedAvg: avgIfOrZero($.Value, $.Attributes.get("state").eq("used")),
-			usedMax: maxIfOrZero($.Value, $.Attributes.get("state").eq("used")),
+			usedAvg: finiteOrZero(CH.avg($.Value)),
+			usedMax: CH.ifNotFinite(CH.max_($.Value), 0),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -265,7 +277,8 @@ export function hostFilesystemsQuery(opts: HostFilesystemsOpts) {
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq("system.filesystem.utilization"),
-			$.Attributes.get("state").eq("used"),
+			filesystemUsedState($),
+			CH.notInList($.Attributes.get("type"), PSEUDO_FS_TYPES),
 		])
 		.groupBy("mountpoint")
 		.orderBy(["usedMax", "desc"])
