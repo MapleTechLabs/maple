@@ -41,6 +41,8 @@ describe("onboarding stack", () => {
 		const ruby = { languages: ["ruby"], platforms: [] } as const
 		expect(frameworkOf(ruby)).toBe("otel")
 		expect(languageDocsOf(ruby)?.page).toBe("instrumentation")
+		// Bun is not Node: the Node snippet starts the app with `node --import`.
+		expect(frameworkOf({ languages: ["bun"], platforms: [] })).toBe("otel")
 		expect(frameworkOf({ languages: ["effect"], platforms: [] })).toBe("effect")
 	})
 
