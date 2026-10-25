@@ -45,9 +45,14 @@ export const parsePatch = (patch: string | null): ReadonlyArray<DiffLine> => {
 
 /** Files whose strings say nothing about what production emits. */
 const NOT_RUNTIME =
-	/(^|\/)(__tests__|__mocks__|__fixtures__|test|tests|testdata|fixtures?|mocks?|seeds?|labs?|e2e|docs?|examples?)\/|\.(test|spec|stories|e2e|mocks?|fixtures?|seed)\.[a-z]+$|\.(md|mdx|txt|snap|lock|json|ya?ml)$/i
+	/(^|\/)(__tests__|__mocks__|__fixtures__|test|tests|fixtures|e2e|docs?|examples?)\/|\.(test|spec|stories|e2e)\.[a-z]+$|\.(md|mdx|txt|snap|lock|json|ya?ml)$/i
 
 export const isRuntimeSource = (path: string): boolean => !NOT_RUNTIME.test(path)
+
+/** Mock, seed and lab data: it runs, so privacy still scans it, but it emits no production telemetry. */
+const MOCK_DATA = /(^|\/)(testdata|fixtures?|mocks?|seeds?|labs?)\/|\.(mocks?|fixtures?|seed)\.[a-z]+$/i
+
+export const isMockData = (path: string): boolean => MOCK_DATA.test(path)
 
 /** A string literal in a line of code, and where it starts. */
 export interface Literal {

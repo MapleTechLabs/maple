@@ -242,6 +242,19 @@ describe("analyzeTelemetry", () => {
 		)
 	})
 
+	it("still reports a resource key a service sets by hand", () => {
+		const telemetry = analyzeTelemetry({
+			files: [file("src/telemetry.ts", `@@ -1,1 +1,0 @@\n-span.setAttribute("service.namespace", ns)`)],
+			catalog: { ...catalog, attributeKeys: new Map([["service.namespace", 7_000]]) },
+			sources: [{ kind: "alert", id: "rule-4", name: "By namespace", texts: ["service.namespace"] }],
+			issues: [],
+		})
+		assert.deepStrictEqual(
+			telemetry.contractBreaks.map((item) => item.name),
+			["service.namespace"],
+		)
+	})
+
 	it("ignores mock and lab data", () => {
 		const telemetry = analyzeTelemetry({
 			files: [

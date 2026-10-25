@@ -19,6 +19,7 @@ import {
 	emittedNames,
 	isCommentLine,
 	isLogCall,
+	isMockData,
 	isRuntimeSource,
 	literalsOf,
 	parsePatch,
@@ -102,27 +103,14 @@ export const frameMatchesPath = (frame: string, path: string): boolean => {
 }
 
 /**
- * Resource keys every service's SDK sets. One file dropping a literal can never stop them
- * arriving, so their removal is never a contract break.
+ * Resource keys every OTel SDK sets on its own, whatever the code does. One file dropping a literal
+ * can never stop them arriving; keys a service may set by hand are not here.
  */
 const UNIVERSAL_RESOURCE_KEYS: ReadonlySet<string> = new Set([
 	"service.name",
-	"service.namespace",
-	"service.version",
-	"service.instance.id",
-	"deployment.environment",
-	"deployment.environment.name",
 	"telemetry.sdk.name",
 	"telemetry.sdk.language",
 	"telemetry.sdk.version",
-	"host.name",
-	"host.arch",
-	"os.type",
-	"process.pid",
-	"process.runtime.name",
-	"process.runtime.version",
-	"cloud.provider",
-	"cloud.region",
 ])
 
 const perDay = (count: number, windowDays: number) => Math.round(count / Math.max(1, windowDays))
@@ -166,7 +154,7 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 				: catalog.metricNames.get(value)
 
 	const files = input.files
-		.filter((file) => isRuntimeSource(file.path) && file.patch !== null)
+		.filter((file) => isRuntimeSource(file.path) && !isMockData(file.path) && file.patch !== null)
 		.map((file) => ({ path: file.path, lines: parsePatch(file.patch) }))
 
 	// A name added anywhere in the pull request is moved, not removed. A comment or a log message
