@@ -14,7 +14,6 @@ import {
 	ReadSetupState,
 	ResolveSetupPollWindow,
 	SaveSetupState,
-	SendSetupTestEvent,
 } from "./setup-checklist-command"
 import { type CopyField, Message, type Model, type ServiceRow, ServicesData } from "./setup-checklist"
 
@@ -40,7 +39,6 @@ export const init = (storageKey: string): Return => ({
 		services: ServicesData.Idle(),
 		window: null,
 		isOverviewInFlight: false,
-		isSendingTest: false,
 		copies: { endpoint: CopyButton.init(), privateKey: CopyButton.init() },
 		isPrivateKeyVisible: false,
 		setupTabs: Tabs.init({ idBase: 40, values: SETUP_TAB_VALUES, selected: "install" }),
@@ -55,7 +53,6 @@ export const revived = (model: Model): Return => ({
 	model: {
 		...model,
 		isOverviewInFlight: false,
-		isSendingTest: false,
 		copies: { endpoint: CopyButton.init(), privateKey: CopyButton.init() },
 		snippetCopies: {},
 	},
@@ -203,24 +200,6 @@ export const update = (model: Model, message: Message, context: SetupContext): R
 			model.state === null
 				? { model }
 				: saveState({ ...model, snippetCopies: {} }, { ...model.state, selectedFramework: framework }),
-		ClickedSendTestEvent: () =>
-			model.keys._tag !== "Ready" || model.keys.publicKey === "" || model.isSendingTest
-				? { model }
-				: {
-						model: { ...model, isSendingTest: true },
-						commands: [SendSetupTestEvent({ publicKey: model.keys.publicKey })],
-					},
-		CompletedSendTestEvent: ({ isSent }) =>
-			isSent
-				? {
-						model: { ...model, isSendingTest: false },
-						commands: resolvePoll,
-						outMessage: toast("success", "Test event sent. Watch for it to land below."),
-					}
-				: {
-						model: { ...model, isSendingTest: false },
-						outMessage: toast("error", "Couldn't reach the ingest endpoint. Double-check your API key."),
-					},
 		CompletedSaveState: () => ({ model }),
 		ClickedRevealPrivateKey: () => ({ model: { ...model, isPrivateKeyVisible: !model.isPrivateKeyVisible } }),
 		GotCopyMessage: ({ field, message: inner }) => copyStep(model, field, inner),

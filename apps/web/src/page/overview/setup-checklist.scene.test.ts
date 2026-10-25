@@ -155,11 +155,6 @@ describe("overview setup checklist", () => {
 		])
 	})
 
-	test("a sent test event re-reads the clock before asking the overview again", () => {
-		const sent = pageUpdate(entered(true).read.model, setup(SetupMessage.CompletedSendTestEvent({ isSent: true })))
-		expect(names(sent.commands)).toEqual(["ResolveSetupChecklistPollWindow"])
-	})
-
 	test("a failed poll keeps the services already found", () => {
 		const found = withServices(entered(true).read.model, ["checkout"])
 		const failed = failOverview(found)
