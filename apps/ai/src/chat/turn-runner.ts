@@ -630,7 +630,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					held = undefined
 					const continued = yield* recoverAutonomousFailure(
 						run({
-							text: PR_REVIEW_CONTINUE_PROMPT,
+							// The replayed history keeps only its newest part, which can drop the kickoff.
+							text: `${PR_REVIEW_CONTINUE_PROMPT}\n\n${text}`,
 							history: withToolTranscript(input.session.history()),
 							agent: {
 								...agent,
