@@ -74,5 +74,11 @@ describe("spanBudgetApplies", () => {
 			),
 		).toBe(true)
 		expect(spanBudgetApplies({ attributeFilters: [{ key: "user.id", mode: "exists" }] }, DAY)).toBe(true)
+		expect(
+			spanBudgetApplies(
+				{ resourceAttributeFilters: [{ key: "k8s.pod.name", value: "api-1", mode: "equals" }] },
+				DAY,
+			),
+		).toBe(false)
 	})
 })
