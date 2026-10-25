@@ -122,9 +122,9 @@ export const issueSeverityOf = (severity: SecurityAuditSeverity | null) =>
 
 export const formatUsd = (usd: number | null): string => (usd === null ? "not reported" : formatCost(usd))
 
-/** What a run charged in AI credits, models and sandbox; null until its model cost is known. */
+/** What a run charged in AI credits so far, models and sandbox; null while it has charged nothing. */
 export const runTotalUsd = (run: Pick<SecurityAuditRun, "costUsd" | "sandboxUsd">): number | null =>
-	run.costUsd === null ? null : run.costUsd + run.sandboxUsd
+	run.costUsd === null && run.sandboxUsd === 0 ? null : (run.costUsd ?? 0) + run.sandboxUsd
 
 /** The engine's run id is long; the first block is what people say out loud. */
 export const shortId = (id: string): string => id.replace(/^run[_-]/u, "").slice(0, 8)
