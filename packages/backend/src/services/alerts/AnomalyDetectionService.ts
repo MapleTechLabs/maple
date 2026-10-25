@@ -120,7 +120,12 @@ const DETECTOR_STATE_FETCH_CHUNK = 500
 const RETENTION_PHASE_EVERY_N_TICKS = 36
 const TICK_CADENCE_MS = 5 * 60 * 1000
 const ERROR_SPIKE_BASELINE_CACHE_BUCKET = "anomaly-errbase"
-/** KV buckets for the cached 7-day matched-hours baselines (golden + logs). */
+/**
+ * Read deadline for the cached 7-day baselines. A miss is a 300-400ms warehouse query, so
+ * waiting out a queued read is cheaper; at the 40ms default ~1 read in 5 was lost (2026-10-25).
+ */
+const BASELINE_CACHE_READ_TIMEOUT_MS = 250
+/** Edge-cache buckets for the cached 7-day matched-hours baselines (golden + logs). */
 const GOLDEN_BASELINE_CACHE_BUCKET = "anomaly-goldenbase"
 const LOG_BASELINE_CACHE_BUCKET = "anomaly-logbase"
 /** Active-org discovery window — covers the in-progress hour plus the prior one
@@ -879,7 +884,7 @@ const make: Effect.Effect<
 		const hourBucket = Math.floor(nowMs / HOUR_MS)
 
 		// The 7-day matched-hours baseline only changes when the hour rolls over,
-		// so compute it once per org per hour and share the blob from KV. Only the
+		// so compute it once per org per hour and share the blob from the edge cache. Only the
 		// in-progress hour is fetched fresh each tick (a single-hour scan) — this
 		// cuts the heavy 7-day scan from 12×/hour to 1×/hour per org.
 		const { value: baselineRows } = yield* edgeCache.getOrCompute(
@@ -887,6 +892,7 @@ const make: Effect.Effect<
 				bucket: GOLDEN_BASELINE_CACHE_BUCKET,
 				key: `${tenant.orgId}:${hourBucket}`,
 				ttlSeconds: 3600,
+				readTimeoutMs: BASELINE_CACHE_READ_TIMEOUT_MS,
 			},
 			Effect.gen(function* () {
 				const compiled = CH.compile(CH.anomalyTraceSignalsQuery({ hoursOfDay }), {
@@ -978,6 +984,7 @@ const make: Effect.Effect<
 				bucket: LOG_BASELINE_CACHE_BUCKET,
 				key: `${tenant.orgId}:${hourBucket}`,
 				ttlSeconds: 3600,
+				readTimeoutMs: BASELINE_CACHE_READ_TIMEOUT_MS,
 			},
 			Effect.gen(function* () {
 				const compiled = CH.compile(CH.anomalyLogVolumeQuery({ hoursOfDay }), {
@@ -1063,7 +1070,7 @@ const make: Effect.Effect<
 		}
 
 		// The 7d baseline blob is expensive relative to the tick cadence, so it
-		// is computed once per hour per org and shared from KV (one query, one
+		// is computed once per hour per org and shared from the edge cache (one query, one
 		// blob — deliberately NOT the bucket cache, which fans out).
 		const hourBucket = Math.floor(nowMs / HOUR_MS)
 		const { value: baselineRows } = yield* edgeCache.getOrCompute(
@@ -1071,6 +1078,7 @@ const make: Effect.Effect<
 				bucket: ERROR_SPIKE_BASELINE_CACHE_BUCKET,
 				key: `${tenant.orgId}:${hourBucket}`,
 				ttlSeconds: 3600,
+				readTimeoutMs: BASELINE_CACHE_READ_TIMEOUT_MS,
 			},
 			Effect.gen(function* () {
 				const baselineCompiled = CH.compile(CH.anomalyErrorSpikeBaselineQuery({}), {
