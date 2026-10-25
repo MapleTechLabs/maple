@@ -194,22 +194,13 @@ const fromGithubError = (error: GithubAppError) =>
 			})
 
 /**
- * Refuses a connect. The callback still answers 200 with this copy, so the refusal is also stamped
- * as `maple.vcs.connect.*` attributes and a span event that an alert can count.
+ * Refuses a connect. The callback still answers 200 with this copy, so the refusal is also flagged
+ * with `maple.vcs.connect.refused` and a span event that an alert can count by `vcs.connect.outcome`.
  */
 const refuseConnect = (orgId: OrgId, outcome: string, reason: string, message: string) =>
 	Effect.gen(function* () {
-		const attributes = {
-			"maple.vcs.connect.refused": true,
-			"maple.vcs.connect.outcome": outcome,
-			"maple.vcs.connect.reason": reason,
-		}
-		yield* Effect.annotateCurrentSpan({
-			orgId,
-			"vcs.connect.outcome": outcome,
-			"vcs.connect.reason": reason,
-			...attributes,
-		})
+		const attributes = { "vcs.connect.outcome": outcome, "vcs.connect.reason": reason }
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.vcs.connect.refused": true, ...attributes })
 		const at = yield* Clock.currentTimeNanos
 		yield* Effect.currentSpan.pipe(
 			Effect.map((span) => span.event("maple.vcs.connect.refused", at, attributes)),

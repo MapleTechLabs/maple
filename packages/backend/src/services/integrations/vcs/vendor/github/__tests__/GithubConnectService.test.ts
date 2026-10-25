@@ -341,9 +341,9 @@ describe("GithubConnectService", () => {
 				const [span] = spansNamed(spans, "GithubConnectService.completeConnect")
 				assert.isDefined(span)
 				assert.strictEqual(span.attributes.get("maple.vcs.connect.refused"), true)
-				assert.strictEqual(span.attributes.get("maple.vcs.connect.outcome"), c.outcome)
+				assert.strictEqual(span.attributes.get("vcs.connect.outcome"), c.outcome)
 				assert.deepStrictEqual(
-					span.events.map(([name, , attributes]) => [name, attributes["maple.vcs.connect.outcome"]]),
+					span.events.map(([name, , attributes]) => [name, attributes["vcs.connect.outcome"]]),
 					[["maple.vcs.connect.refused", c.outcome]],
 				)
 			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
