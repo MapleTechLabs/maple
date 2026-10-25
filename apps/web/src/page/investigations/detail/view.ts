@@ -180,7 +180,7 @@ const investigationLead = (h: H, investigation: V2Investigation): Html =>
 		? emptyNotice(
 				h,
 				"Investigating",
-				"Maple is gathering evidence — the Transcript tab shows what it is doing as it goes. You can ask a question here without waiting for it to finish.",
+				"Maple is gathering evidence. The Transcript tab shows what it is doing as it goes. You can ask a question here without waiting for it to finish.",
 			)
 		: investigation.status === "failed"
 			? emptyNotice(
@@ -279,7 +279,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			return dashboardPage(h, {}, [
 				errorState(h, {
 					failure: toLoadFailure({ message: "The live connection to this investigation was lost" }),
-					title: "This investigation could not be loaded",
+					title: "Couldn't load this investigation",
 					onRetry: Message.ClickedRetrySync(),
 				}),
 			])

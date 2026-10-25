@@ -52,7 +52,7 @@ describe("kubernetes node", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			themed(),
-			expectView(text("Failed to load pods on this node")).toExist(),
+			expectView(text("Couldn't load pods on this node")).toExist(),
 			expectView(text(PODS_FAILURE.message)).toExist(),
 		)
 	})

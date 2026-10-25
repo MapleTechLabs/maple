@@ -36,7 +36,7 @@ const tabLink = <M>(
 				cn(
 					underlineTabClass(options.isActive),
 					"px-3 font-mono text-xs first:pl-0.5",
-					options.isActive ? "[&_svg]:text-primary" : "[&_svg]:text-muted-foreground",
+					options.isActive ? "[&_svg]:text-foreground" : "[&_svg]:text-muted-foreground",
 					options.isLinkActive && "active",
 				),
 			),
@@ -54,7 +54,9 @@ const tabLink = <M>(
 								h.Class(
 									cn(
 										"text-2xs tabular-nums",
-										options.isActive ? "text-primary" : "text-muted-foreground/60",
+										options.isActive
+											? "text-muted-foreground"
+											: "text-muted-foreground/60",
 									),
 								),
 							],

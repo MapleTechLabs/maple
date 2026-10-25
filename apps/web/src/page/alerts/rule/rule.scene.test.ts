@@ -105,7 +105,7 @@ describe("alert rule", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			themeResolved(),
-			expectView(text("Failed to load checks")).toExist(),
+			expectView(text("Couldn't load checks")).toExist(),
 		)
 	})
 

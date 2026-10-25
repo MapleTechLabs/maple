@@ -67,7 +67,7 @@ const toolCallCard = (
 				result: payload(call.resultText),
 				isFailed: options.isFailed,
 				resultMeta: options.isFailed ? `span status ${options.statusCode}` : undefined,
-				missingResultNote: "not captured — whether the call succeeded is unknown.",
+				missingResultNote: "not captured, so whether the call succeeded is unknown.",
 				keyPrefix: options.keyPrefix,
 			}),
 		],
@@ -166,7 +166,7 @@ const spanAttributesView = Submodel.defineView<PanelState, PanelMessage, PanelIn
 				[p.Class("flex flex-col gap-2")],
 				[skeleton(p, "h-4 w-32"), skeleton(p, "h-24 w-full"), skeleton(p, "h-4 w-32"), skeleton(p, "h-24 w-full")],
 			),
-		onFailure: () => emptyMessage(p, {}, ["Failed to load this span's full attributes."]),
+		onFailure: () => emptyMessage(p, {}, ["Couldn't load this span's full attributes."]),
 		onData: (detail) =>
 			attributesSection(p, state, "span", detail.spanAttributes, "Span attributes", { isFilterable: false }),
 	}),

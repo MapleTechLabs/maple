@@ -153,7 +153,7 @@ export const toolsSection = (h: H, model: Model): Html => {
 		},
 		AsyncData.matchData(model.tools, {
 			onEmpty: () => [h.div([h.Class("p-4")], [skeletonList(h, { rows: 6 })])],
-			onFailure: () => [sectionNote(h, "The tool list could not be loaded.")],
+			onFailure: () => [sectionNote(h, "Couldn't load the tool list.")],
 			onData: (tools) => catalog(h, model, tools),
 		}),
 	)

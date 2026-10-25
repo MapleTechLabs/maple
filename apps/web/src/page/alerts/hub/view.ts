@@ -101,7 +101,7 @@ const headerActions = (h: H, model: Model): Html =>
 const SYNC_UNAVAILABLE = makeClientErrorBody({
 	_tag: "@maple/web/errors/SyncUnavailable",
 	code: "sync_unavailable",
-	title: "Failed to load alerts",
+	title: "Couldn't load alerts",
 	message: "Live sync is unavailable, so alerts couldn’t be loaded. Try again.",
 	retryable: false,
 	recovery: "retry",
@@ -125,7 +125,7 @@ const hubBody = (
 			model.isLoadFailed
 				? errorState(h, {
 						failure: SYNC_UNAVAILABLE,
-						title: "Failed to load alerts",
+						title: "Couldn't load alerts",
 						onRetry: Message.ClickedRetryLoad(),
 						className: "py-12",
 					})

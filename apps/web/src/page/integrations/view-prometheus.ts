@@ -355,13 +355,13 @@ export const scrapeTargetsSection = (
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load scrape targets",
+				title: "Couldn't load scrape targets",
 				onRetry: Message.ClickedRetryStatus({ name: "scrapeTargets" }),
 			}),
 		onStale: ({ error }) =>
 			errorState(h, {
 				failure: error,
-				title: "Failed to load scrape targets",
+				title: "Couldn't load scrape targets",
 				onRetry: Message.ClickedRetryStatus({ name: "scrapeTargets" }),
 			}),
 		onRefreshing: () => list(),

@@ -174,7 +174,7 @@ const containersArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load containers",
+				title: "Couldn't load containers",
 				onRetry: Message.ClickedRetryContainers(),
 			}),
 		onData: (page) => tableArea(h, model, page, inputs),

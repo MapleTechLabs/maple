@@ -379,13 +379,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				placeholder(h, "h-40 w-full"),
 				placeholder(h, "h-64 w-full"),
 			]),
-		onFailure: (failure) => failed(h, failure, "Failed to load the finding"),
+		onFailure: (failure) => failed(h, failure, "Couldn't load the finding"),
 		onData: () => {
 			const finding = findingOf(model)
 			if (finding === null) return dashboardPage(h, {}, [findingNotFound(h)])
 			// A failed targets read is not a removed target: show it, with a retry.
 			return AsyncData.isFailure(model.targets.data)
-				? failed(h, model.targets.data.error, "Failed to load the finding's target")
+				? failed(h, model.targets.data.error, "Couldn't load the finding's target")
 				: loaded(h, model, finding, inputs.context.timeZone)
 		},
 	}),

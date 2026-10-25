@@ -369,7 +369,7 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 		return [
 			errorState(h, {
 				failure: state.failure,
-				title: "Failed to load findings",
+				title: "Couldn't load findings",
 				onRetry: Message.ClickedRetry(),
 			}),
 		]

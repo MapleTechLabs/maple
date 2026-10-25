@@ -61,7 +61,7 @@ export const issuesPanel = (
 		[
 			keyedBody(h, model.issues, {
 				rows: 4,
-				failureTitle: "Failed to load errors and warnings",
+				failureTitle: "Couldn't load errors and warnings",
 				onRetry: Message.ClickedRetry({ section: "issues" }),
 				render: (response) =>
 					response.issues.length > 0

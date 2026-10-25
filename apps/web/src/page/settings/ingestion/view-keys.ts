@@ -44,7 +44,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 	const copyAttributes = value === null ? [] : [h.OnClick(options.onCopy(value))]
 	const valueCell =
 		value === null && options.isFailed === true
-			? h.span([h.Class("text-muted-foreground text-xs")], ["Could not load this key."])
+			? h.span([h.Class("text-muted-foreground text-xs")], ["Couldn't load this key."])
 			: value === null
 				? skeleton(h, "h-4 w-40 max-w-full")
 				: h.button(

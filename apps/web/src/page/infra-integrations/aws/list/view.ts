@@ -136,7 +136,7 @@ const tableContext = (model: Model): TableContext => {
 const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html => {
 	if (read.failed)
 		return dataTableEmpty(h, [
-			`Failed to load the ${AWS_INFRA_KINDS[read.kind].title} metrics. `,
+			`Couldn't load the ${AWS_INFRA_KINDS[read.kind].title} metrics. `,
 			button(
 				h,
 				{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetryFleet())] },
@@ -269,7 +269,7 @@ const fleet = (h: H, model: Model, status: AwsStatus): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load AWS metrics",
+				title: "Couldn't load AWS metrics",
 				onRetry: Message.ClickedRetryFleet(),
 			}),
 		onStale: ({ data }) => fleetView(h, model, status, data, true),
@@ -284,7 +284,7 @@ const statusView = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the AWS integration",
+				title: "Couldn't load the AWS integration",
 				onRetry: Message.ClickedRetryStatus(),
 			}),
 		onStale: ({ data }) => fleet(h, model, data),

@@ -72,7 +72,7 @@ describe("recommendation detail", () => {
 			entered,
 			Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.fail(toLoadFailure(new Error("boom"))) }),
 		).model
-		scene({ update: pageUpdate, view }, given(failed), expectView(text("Failed to load recommendation")).toExist())
+		scene({ update: pageUpdate, view }, given(failed), expectView(text("Couldn't load recommendation")).toExist())
 	})
 
 	test("Dismiss sends one request and refreshes the list", () => {

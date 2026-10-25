@@ -54,7 +54,9 @@ const dataRow = (h: H, feature: FeatureRow, isDetailed: boolean): Html => {
 			h.div(
 				[h.Class("text-muted-foreground flex items-center gap-2.5")],
 				[
-					...(iconName === undefined ? [] : [icon(h, iconName, { className: "size-4 opacity-70" })]),
+					...(iconName === undefined
+						? []
+						: [icon(h, iconName, { className: "size-4 opacity-70" })]),
 					h.span([h.Class("font-medium")], [feature.label]),
 				],
 			),
@@ -65,7 +67,12 @@ const dataRow = (h: H, feature: FeatureRow, isDetailed: boolean): Html => {
 							value,
 							...(feature.detail === null
 								? []
-								: [h.p([h.Class("text-muted-foreground/70 text-3xs mt-0.5 font-medium")], [feature.detail])]),
+								: [
+										h.p(
+											[h.Class("text-muted-foreground/70 text-3xs mt-0.5 font-medium")],
+											[feature.detail],
+										),
+									]),
 						],
 					)
 				: value,
@@ -85,11 +92,16 @@ const platformFeatures = (h: H, slug: string): Html =>
 						[h.Class("flex items-start gap-2.5 text-sm")],
 						[
 							icon(h, PLATFORM_FEATURE_ICONS.get(feature.icon) ?? "CircleCheckIcon", {
-								className: "text-primary size-4 shrink-0 mt-0.5",
+								className: "text-muted-foreground opacity-70 size-4 shrink-0 mt-0.5",
 							}),
 							h.span([h.Class("text-muted-foreground leading-snug")], [feature.label]),
 							...(feature.value
-								? [h.span([h.Class("font-semibold tabular-nums text-xs ml-auto shrink-0")], [feature.value])]
+								? [
+										h.span(
+											[h.Class("font-semibold tabular-nums text-xs ml-auto shrink-0")],
+											[feature.value],
+										),
+									]
 								: []),
 						],
 					),
@@ -118,7 +130,13 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 						...(isActive
 							? [badge(h, { variant: "secondary", size: "xs" }, ["Current"])]
 							: isUpgrade
-								? [badge(h, { variant: "secondary", size: "xs", className: "text-primary" }, ["Recommended"])]
+								? [
+										badge(
+											h,
+											{ variant: "secondary", size: "xs", className: "text-primary" },
+											["Recommended"],
+										),
+									]
 								: []),
 					],
 				),
@@ -126,13 +144,15 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 					[h.Class("mt-3 flex items-baseline gap-1")],
 					[
 						h.span([h.Class("text-3xl font-semibold tracking-tight tabular-nums")], [price]),
-						...(interval === undefined ? [] : [eyebrow(h, { variant: "label", className: "ml-1" }, [interval])]),
+						...(interval === undefined
+							? []
+							: [eyebrow(h, { variant: "label", className: "ml-1" }, [interval])]),
 					],
 				),
 				cardDescription(
 					h,
 					[plan.description ?? getPlanDescription(getPlanSlug(plan))],
-					"mt-2 text-sm leading-relaxed text-muted-foreground",
+					"mt-2 font-display text-sm leading-relaxed text-muted-foreground",
 				),
 			]),
 			cardPanel(
@@ -156,16 +176,29 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 							className: "w-full font-medium",
 							attributes: [h.OnClick(Message.ClickedPlan({ planId: plan.id }))],
 						},
-						[isTrial ? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial` : config.label],
+						[
+							isTrial
+								? `Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
+								: config.label,
+						],
 					),
 					...(isTrial
-						? [h.p([h.Class("text-2xs text-muted-foreground text-center tabular-nums")], ["$0 due today · Card required · Cancel anytime"])]
+						? [
+								h.p(
+									[h.Class("text-2xs text-muted-foreground text-center tabular-nums")],
+									["$0 due today · Card required · Cancel anytime"],
+								),
+							]
 						: []),
 				],
 				"mt-auto flex-col gap-2 items-stretch",
 			),
 		],
-		cn("flex flex-col transition-colors", isActive && "bg-muted/40", isUpgrade && "bg-muted/30 ring-1 ring-primary/30"),
+		cn(
+			"flex flex-col transition-colors",
+			isActive && "bg-muted/40",
+			isUpgrade && "bg-muted/30 ring-1 ring-primary/30",
+		),
 	)
 }
 
@@ -186,7 +219,7 @@ const enterpriseCard = (h: H): Html =>
 				cardDescription(
 					h,
 					["For high-volume teams with custom retention, compliance, and dedicated support."],
-					"mt-2 text-sm leading-relaxed text-muted-foreground",
+					"mt-2 font-display text-sm leading-relaxed text-muted-foreground",
 				),
 			]),
 			cardPanel(
@@ -222,14 +255,18 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 	model.checkoutReturn === "Confirming"
 		? checkoutConfirming(h)
 		: AsyncData.match(model.plans, {
-		onIdle: () => loadingGrid(h),
-		onLoading: () => loadingGrid(h),
-		onRefreshing: (response) => plansGrid(h, response.plans, model),
-		onStale: ({ data }) => plansGrid(h, data.plans, model),
-		onSuccess: (response) => plansGrid(h, response.plans, model),
-		onFailure: (message) =>
-			errorState(h, { title: "Unable to load pricing plans", failure: message, variant: "row" }),
-	}),
+				onIdle: () => loadingGrid(h),
+				onLoading: () => loadingGrid(h),
+				onRefreshing: (response) => plansGrid(h, response.plans, model),
+				onStale: ({ data }) => plansGrid(h, data.plans, model),
+				onSuccess: (response) => plansGrid(h, response.plans, model),
+				onFailure: (message) =>
+					errorState(h, {
+						title: "Unable to load pricing plans",
+						failure: message,
+						variant: "row",
+					}),
+			}),
 )
 
 /** `CheckoutConfirmingPanel`: back from Stripe, before Autumn has the plan; the offer is withheld. */
@@ -254,11 +291,19 @@ const checkoutConfirming = (h: H): Html =>
 
 /** `CheckoutTimedOutNotice`: the wait gave up, so a slow sync does not read as a failure. */
 const checkoutTimedOut = (h: H): Html =>
-	panel(h, { tone: "muted", className: "px-4 py-3 text-sm text-muted-foreground", attributes: [h.Role("status")] }, [
-		"We haven't heard back from Stripe yet. If you completed checkout, your plan will appear here shortly; there's no need to subscribe again. If you left checkout, ",
-		"pick a plan below",
-		".",
-	])
+	panel(
+		h,
+		{
+			tone: "muted",
+			className: "px-4 py-3 text-sm text-muted-foreground",
+			attributes: [h.Role("status")],
+		},
+		[
+			"We haven't heard back from Stripe yet. If you completed checkout, your plan will appear here shortly; there's no need to subscribe again. If you left checkout, ",
+			"pick a plan below",
+			".",
+		],
+	)
 
 const loadingGrid = (h: H): Html =>
 	h.div([h.Class("grid grid-cols-1 gap-4 sm:grid-cols-2")], [loadingCard(h), loadingCard(h)])
@@ -298,6 +343,9 @@ const dataIncluded = (h: H, rows: ReadonlyArray<FeatureRow>, isDetailed: boolean
 		[],
 		[
 			eyebrow(h, { className: "mb-3", as: "div" }, ["Data included"]),
-			h.div([h.Class("space-y-2.5")], rows.map((row) => dataRow(h, row, isDetailed))),
+			h.div(
+				[h.Class("space-y-2.5")],
+				rows.map((row) => dataRow(h, row, isDetailed)),
+			),
 		],
 	)

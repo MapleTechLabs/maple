@@ -217,7 +217,7 @@ export const runsList = (h: H, model: Model, time: TimeContext, canClear: boolea
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load CI runs",
+				title: "Couldn't load CI runs",
 				onRetry: Message.ClickedRetryRuns(),
 			}),
 		onData: (response) => {

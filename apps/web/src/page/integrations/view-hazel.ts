@@ -160,7 +160,7 @@ export const hazelCard = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the Hazel integration",
+				title: "Couldn't load the Hazel integration",
 				onRetry: Message.ClickedRetryStatus({ name: "hazel" }),
 			}),
 		onStale: ({ data }) => (data.connected ? connected(h, model, data) : notConnected(h, model)),

@@ -84,43 +84,56 @@ const SORT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = SORT_OPTIONS.map((op
 	item: { value: option.value, label: option.label },
 }))
 
-const kindLabel = (value: string): string => KIND_FILTER_LABEL[KIND_FILTER_VALUES.find((kind) => kind === value) ?? "all"]
-const sortLabel = (value: string): string => SORT_OPTIONS.find((option) => option.value === value)?.label ?? SORT_OPTIONS[0].label
+const kindLabel = (value: string): string =>
+	KIND_FILTER_LABEL[KIND_FILTER_VALUES.find((kind) => kind === value) ?? "all"]
+const sortLabel = (value: string): string =>
+	SORT_OPTIONS.find((option) => option.value === value)?.label ?? SORT_OPTIONS[0].label
 
-const toolbar = (h: H, model: Model, all: ReadonlyArray<V2Investigation>, visible: ReadonlyArray<V2Investigation>, hasMore: boolean): Html => {
+const toolbar = (
+	h: H,
+	model: Model,
+	all: ReadonlyArray<V2Investigation>,
+	visible: ReadonlyArray<V2Investigation>,
+	hasMore: boolean,
+): Html => {
 	const activeCount = all.filter(isActive).length
 	const counts = new Map([
 		["active", activeCount],
 		["history", all.length - activeCount],
 	])
 	const stats = triageStatsOf(all, model.nowMs)
+	// Two rows: tabs beside the triage counters, then the filters with room for their labels.
 	return h.div(
-		[h.Class("flex flex-wrap items-center gap-2 gap-y-1.5 border-b border-border/60 px-2 py-1.5")],
+		[h.Class("flex flex-col gap-1.5 border-b border-border/60 px-2 py-1.5")],
 		[
-			h.submodel({
-				slotId: "investigations-view-tabs",
-				model: model.tabs,
-				view: TabsView.view,
-				viewInputs: {
-					labels: ["Active", "History"],
-					ariaLabel: "Filter investigations",
-					tabClassName: "group/tab h-7 grow-0 px-2.5 text-xs sm:h-7 sm:text-xs",
-					tabContent: (value, label) => [
-						label,
-						h.span(
-							[h.Class("text-muted-foreground/70 tabular-nums group-data-active/tab:text-muted-foreground")],
-							[String(counts.get(value) ?? 0)],
-						),
-					],
-					panel: () => undefined,
-				},
-				toParentMessage: (message) => Message.GotTabsMessage({ message }),
-			}),
 			h.div(
-				[h.Class("ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2")],
+				[h.Class("flex min-w-0 items-center gap-2")],
 				[
+					h.submodel({
+						slotId: "investigations-view-tabs",
+						model: model.tabs,
+						view: TabsView.view,
+						viewInputs: {
+							labels: ["Active", "History"],
+							ariaLabel: "Filter investigations",
+							tabClassName: "group/tab h-7 grow-0 px-2.5 text-xs sm:h-7 sm:text-xs",
+							tabContent: (value, label) => [
+								label,
+								h.span(
+									[
+										h.Class(
+											"text-muted-foreground/70 tabular-nums group-data-active/tab:text-muted-foreground",
+										),
+									],
+									[String(counts.get(value) ?? 0)],
+								),
+							],
+							panel: () => undefined,
+						},
+						toParentMessage: (message) => Message.GotTabsMessage({ message }),
+					}),
 					h.div(
-						[h.Class("flex items-center gap-4 hidden sm:flex")],
+						[h.Class("ml-auto hidden items-center gap-4 sm:flex")],
 						[
 							stat(h, stats.running, "investigating", stats.running > 0 ? "info" : undefined),
 							stat(
@@ -132,13 +145,18 @@ const toolbar = (h: H, model: Model, all: ReadonlyArray<V2Investigation>, visibl
 							stat(h, stats.resolved, "resolved in 24h"),
 						],
 					),
+				],
+			),
+			h.div(
+				[h.Class("flex min-w-0 flex-wrap items-center gap-2")],
+				[
 					h.submodel({
 						slotId: model.kindSelect.id,
 						model: model.kindSelect,
 						view: SelectView.view,
 						viewInputs: {
 							entries: KIND_ENTRIES,
-							className: "w-[122px]",
+							className: "w-[140px]",
 							renderValue: (value) => [kindLabel(value)],
 							toView: (parts) => h.div([h.Class("contents")], parts),
 						},
@@ -150,7 +168,7 @@ const toolbar = (h: H, model: Model, all: ReadonlyArray<V2Investigation>, visibl
 						view: SelectView.view,
 						viewInputs: {
 							entries: SORT_ENTRIES,
-							className: "w-[136px]",
+							className: "w-[168px]",
 							renderValue: (value) => [sortLabel(value)],
 							toView: (parts) => h.div([h.Class("contents")], parts),
 						},
@@ -159,17 +177,21 @@ const toolbar = (h: H, model: Model, all: ReadonlyArray<V2Investigation>, visibl
 					searchInput(h, {
 						id: "investigations-search",
 						size: "default",
-						className: cn("max-w-sm", "w-[200px]"),
+						className: "w-auto min-w-56 max-w-sm flex-1",
 						placeholder: "Search subjects and findings",
 						value: model.searchDraft,
 						onInput: (value) => Message.ChangedSearchDraft({ value }),
 						onClear: Message.ChangedSearchDraft({ value: "" }),
 					}),
 					h.span(
-						[h.Class("text-xs text-muted-foreground tabular-nums")],
+						[h.Class("ml-auto text-xs text-muted-foreground tabular-nums")],
 						hasMore
 							? [`Showing ${visible.length} of the ${all.length} most recent`]
-							: [String(visible.length), " ", visible.length === 1 ? "investigation" : "investigations"],
+							: [
+									String(visible.length),
+									" ",
+									visible.length === 1 ? "investigation" : "investigations",
+								],
 					),
 				],
 			),
@@ -203,45 +225,62 @@ const rowFinding = (h: H, investigation: V2Investigation): Html => {
 const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: string): Html => {
 	const headline = investigationHeadline(investigation)
 	const scope = investigationScope(investigation)
-	return listRow(h, {
-		as: "li",
-		divided: true,
-		className: "cursor-pointer gap-3.5 py-3.5",
-		leading: h.span(
-			[h.Class("flex w-5 items-center justify-center")],
-			[kindMarker(h, investigation.subject, investigation.seeded_by)],
-		),
-		title: h.span(
-			[h.Class("flex min-w-0 items-baseline gap-2")],
-			[
-				h.a(
-					[
-						h.Href(hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} }))),
-						h.Class("min-w-0 truncate font-medium text-sm text-foreground hover:underline"),
-						h.Title(headline),
-					],
-					[headline],
-				),
-				...(scope ? [truncatedText(h, { text: scope, className: "max-w-[40%] shrink font-normal text-xs text-muted-foreground" })] : []),
-			],
-		),
-		meta: rowFinding(h, investigation),
-		trailing: h.span(
-			[h.Class("flex items-center gap-3.5")],
-			[
-				h.span([h.Class("w-20 shrink-0 max-md:hidden")], [confidenceMeter(h, investigation.confidence)]),
-				h.span([h.Class("w-18 shrink-0 max-sm:hidden")], [severityBadge(h, investigationSeverity(investigation))]),
-				h.span([h.Class("w-24 shrink-0 max-lg:hidden")], [statusBadge(h, investigation.status)]),
-				relativeTime(h, {
-					value: investigation.updated_at,
-					nowMs,
-					timeZone,
-					tooltip: "title",
-					className: "w-13 shrink-0 text-right text-xs text-muted-foreground",
-				}),
-			],
-		),
-	}, [h.Key(investigation.id), h.Attribute(ROW_ATTRIBUTE, investigation.id)])
+	return listRow(
+		h,
+		{
+			as: "li",
+			divided: true,
+			className: "cursor-pointer gap-3.5 py-3.5",
+			leading: h.span(
+				[h.Class("flex w-5 items-center justify-center")],
+				[kindMarker(h, investigation.subject, investigation.seeded_by)],
+			),
+			title: h.span(
+				[h.Class("flex min-w-0 items-baseline gap-2")],
+				[
+					h.a(
+						[
+							h.Href(hrefOf(AppRoute.Investigation({ id: investigation.id, search: {} }))),
+							h.Class("min-w-0 truncate font-medium text-sm text-foreground hover:underline"),
+							h.Title(headline),
+						],
+						[headline],
+					),
+					...(scope
+						? [
+								truncatedText(h, {
+									text: scope,
+									className: "max-w-[40%] shrink font-normal text-xs text-muted-foreground",
+								}),
+							]
+						: []),
+				],
+			),
+			meta: rowFinding(h, investigation),
+			trailing: h.span(
+				[h.Class("flex items-center gap-3.5")],
+				[
+					h.span(
+						[h.Class("w-20 shrink-0 max-md:hidden")],
+						[confidenceMeter(h, investigation.confidence)],
+					),
+					h.span(
+						[h.Class("w-18 shrink-0 max-sm:hidden")],
+						[severityBadge(h, investigationSeverity(investigation))],
+					),
+					h.span([h.Class("w-24 shrink-0 max-lg:hidden")], [statusBadge(h, investigation.status)]),
+					relativeTime(h, {
+						value: investigation.updated_at,
+						nowMs,
+						timeZone,
+						tooltip: "title",
+						className: "w-13 shrink-0 text-right text-xs text-muted-foreground",
+					}),
+				],
+			),
+		},
+		[h.Key(investigation.id), h.Attribute(ROW_ATTRIBUTE, investigation.id)],
+	)
 }
 
 /** `InvestigationTableSkeleton`: ghosts the row rhythm. */
@@ -252,10 +291,16 @@ const tableSkeleton = (h: H): Html =>
 		label: "Loading investigations",
 		renderRow: (index) =>
 			h.div(
-				[h.Key(String(index)), h.Class("flex items-center gap-3.5 border-b px-4 py-3.5 last:border-b-0")],
+				[
+					h.Key(String(index)),
+					h.Class("flex items-center gap-3.5 border-b px-4 py-3.5 last:border-b-0"),
+				],
 				[
 					skeleton(h, "size-3.5 shrink-0 rounded-full"),
-					h.div([h.Class("flex min-w-0 flex-1 flex-col gap-2")], [skeleton(h, "h-3.5 w-[45%]"), skeleton(h, "h-3 w-[70%]")]),
+					h.div(
+						[h.Class("flex min-w-0 flex-1 flex-col gap-2")],
+						[skeleton(h, "h-3.5 w-[45%]"), skeleton(h, "h-3 w-[70%]")],
+					),
 					skeleton(h, "h-3 w-20 shrink-0 max-md:hidden"),
 					skeleton(h, "h-4 w-14 shrink-0 max-sm:hidden"),
 					skeleton(h, "h-4 w-20 shrink-0 max-lg:hidden"),
@@ -273,7 +318,9 @@ const hubEmpty = (h: H, view: HubView, isFiltered: boolean): Html => {
 		})
 	return empty(h, [
 		emptyHeader(h, [
-			emptyTitle(h, [view === "active" ? "Nothing under investigation" : "No finished investigations yet"]),
+			emptyTitle(h, [
+				view === "active" ? "Nothing under investigation" : "No finished investigations yet",
+			]),
 			emptyDescription(h, [
 				view === "active"
 					? "Start one above, or open an issue and choose Start investigation. When an alert rule fires, Maple opens one on its own."
@@ -305,7 +352,16 @@ const hubHero = (h: H, model: Model): Html => {
 						[
 							h.div(
 								[h.Class("flex flex-wrap items-baseline gap-3")],
-								[h.h1([h.Class("font-display text-2xl font-semibold leading-[1.1] tracking-tight text-foreground")], ["Ask, and Maple goes and finds out."])],
+								[
+									h.h1(
+										[
+											h.Class(
+												"font-display text-2xl font-semibold leading-[1.1] tracking-tight text-foreground",
+											),
+										],
+										["Ask, and Maple goes and finds out."],
+									),
+								],
 							),
 							h.p(
 								[h.Class("max-w-2xl text-sm text-muted-foreground")],
@@ -320,13 +376,22 @@ const hubHero = (h: H, model: Model): Html => {
 			...(presence.status === "absent"
 				? [
 						h.div(
-							[h.Class("flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground")],
+							[
+								h.Class(
+									"flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground",
+								),
+							],
 							[
 								h.span([], ["Investigations read your telemetry. Send traces first."]),
-								linkButton(h, { size: "sm", className: "gap-2", href: hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } })) }, [
-									icon(h, "ConnectionIcon"),
-									"Set up tracing",
-								]),
+								linkButton(
+									h,
+									{
+										size: "sm",
+										className: "gap-2",
+										href: hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } })),
+									},
+									[icon(h, "ConnectionIcon"), "Set up tracing"],
+								),
 								docsLink(h, "instrumentation", "Setup guide"),
 							],
 						),
@@ -348,7 +413,13 @@ const hubHero = (h: H, model: Model): Html => {
 										"flex w-full items-center gap-3 rounded-md border bg-card px-3.5 py-2.5 text-left text-sm text-foreground transition-colors hover:border-ring hover:bg-accent/40 disabled:opacity-60",
 									),
 								],
-								[h.span([h.AriaHidden(true), h.Class("shrink-0 text-muted-foreground")], ["›"]), suggestion],
+								[
+									h.span(
+										[h.AriaHidden(true), h.Class("shrink-0 text-muted-foreground")],
+										["›"],
+									),
+									suggestion,
+								],
 							),
 						],
 					),
@@ -365,7 +436,10 @@ const hubHero = (h: H, model: Model): Html => {
 						],
 					),
 					h.a(
-						[h.Href(hrefOf(AppRoute.AlertsCreate({ search: {} }))), h.Class("text-foreground underline-offset-4 hover:underline")],
+						[
+							h.Href(hrefOf(AppRoute.AlertsCreate({ search: {} }))),
+							h.Class("text-foreground underline-offset-4 hover:underline"),
+						],
 						["Create an alert rule"],
 					),
 					docsLink(h, "incidents"),
@@ -389,7 +463,15 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 			: "Today's model budget is spent"
 	const canEditSettings = model.isOrgAdmin
 	return alert(h, { variant: "warn", className: "mb-4" }, [
-		alertTitle(h, [budget.priorityPaused ? "Automatic triage paused" : "Automatic triage paused for routine incidents"], "text-foreground"),
+		alertTitle(
+			h,
+			[
+				budget.priorityPaused
+					? "Automatic triage paused"
+					: "Automatic triage paused for routine incidents",
+			],
+			"text-foreground",
+		),
 		alertDescription(h, [
 			h.span(
 				[],
@@ -397,14 +479,24 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 					spent,
 					resets,
 					" ",
-					budget.priorityPaused ? "Nothing new will start until then." : "High and critical incidents still start.",
+					budget.priorityPaused
+						? "Nothing new will start until then."
+						: "High and critical incidents still start.",
 				],
 			),
 		]),
 		...(canEditSettings
 			? [
 					alertAction(h, [
-						linkButton(h, { size: "sm", variant: "ghost", href: hrefOf(AppRoute.Settings({ search: { tab: "ai" } })) }, ["Raise the limit"]),
+						linkButton(
+							h,
+							{
+								size: "sm",
+								variant: "ghost",
+								href: hrefOf(AppRoute.Settings({ search: { tab: "ai" } })),
+							},
+							["Raise the limit"],
+						),
 					]),
 				]
 			: []),
@@ -424,8 +516,18 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const body = AsyncData.match(model.firstPage.data, {
 		onIdle: () => tableSkeleton(h),
 		onLoading: () => tableSkeleton(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Investigations could not be loaded", onRetry: Message.ClickedRetry() }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Investigations could not be loaded", onRetry: Message.ClickedRetry() }),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load investigations",
+				onRetry: Message.ClickedRetry(),
+			}),
+		onStale: ({ error }) =>
+			errorState(h, {
+				failure: error,
+				title: "Couldn't load investigations",
+				onRetry: Message.ClickedRetry(),
+			}),
 		onSuccess: () => loaded(),
 		onRefreshing: () => loaded(),
 	})
@@ -434,7 +536,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		return h.div(
 			[h.Class("contents")],
 			[
-				h.ul([h.Class("flex flex-col"), h.OnMount(MountInvestigationRows())], visible.map((investigation) => row(h, investigation, model.nowMs, timeZone))),
+				h.ul(
+					[h.Class("flex flex-col"), h.OnMount(MountInvestigationRows())],
+					visible.map((investigation) => row(h, investigation, model.nowMs, timeZone)),
+				),
 				...(hasMore
 					? [
 							h.div(
@@ -442,7 +547,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								[
 									button(
 										h,
-										{ variant: "outline", size: "sm", isLoading: isLoadingMore, attributes: [h.OnClick(Message.ClickedLoadMore())] },
+										{
+											variant: "outline",
+											size: "sm",
+											isLoading: isLoadingMore,
+											attributes: [h.OnClick(Message.ClickedLoadMore())],
+										},
 										["Load more"],
 									),
 								],
@@ -454,7 +564,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	}
 	return dashboardPage(
 		h,
-		{ sticky: h.div([h.Class("contents")], [...(notice === null ? [] : [notice]), bar(h, model)]) },
+		{
+			title: "Investigations",
+			sticky: h.div([h.Class("contents")], [...(notice === null ? [] : [notice]), bar(h, model)]),
+		},
 		[panel(h, { className: "shrink-0" }, [toolbar(h, model, all, visible, hasMore), body])],
 	)
 })

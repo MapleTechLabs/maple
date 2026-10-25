@@ -401,7 +401,12 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 			),
 			h.a(
 				[
-					h.Class(cn("text-xs font-medium text-primary", ROW_STRETCHED_LINK_CLASS)),
+					h.Class(
+						cn(
+							"text-xs font-medium text-foreground underline-offset-4 hover:underline",
+							ROW_STRETCHED_LINK_CLASS,
+						),
+					),
 					h.Href(ruleHref(spot.rule.id)),
 				],
 				[meta.action],

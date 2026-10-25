@@ -81,7 +81,7 @@ const COLUMNS: ReadonlyArray<Column> = [
 	},
 	{
 		id: "totalTokens",
-		header: "Tokens",
+		header: "Tokens in → out",
 		width: 130,
 		skeleton: "w-20",
 		responsive: "hidden @min-[940px]/page:table-cell",
@@ -321,7 +321,7 @@ const workCount = (h: H, iconName: IconName, tone: string, count: number): Html 
 
 const BUCKET_COVERAGE_MIN = 0.9
 
-/** In over out, each in its side's colour; a session that reported only a total shows the total. */
+/** In then out on one line, each in its side's colour; a session that reported only a total shows the total. */
 const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	const inputs = [row.inputTokens, row.cacheReadTokens, row.cacheWriteTokens].filter((value) => value > 0)
 	const outputs = [row.outputTokens, row.reasoningTokens].filter((value) => value > 0)
@@ -332,36 +332,33 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	if (!hasBuckets) {
 		return hint(h, "font-mono text-xs tabular-nums text-muted-foreground", [formatCount(total)])
 	}
-	const sides = [
-		{ label: "in", tone: "text-chart-tok-input", count: inputs.reduce((sum, value) => sum + value, 0) },
-		{
-			label: "out",
-			tone: "text-chart-tok-reasoning",
-			count: outputs.reduce((sum, value) => sum + value, 0),
-		},
-	]
-	return hint(
-		h,
-		"flex flex-col gap-0.5 font-mono text-xs tabular-nums",
-		sides.map((side) =>
-			h.span(
-				[h.Class("flex items-baseline gap-1.5")],
-				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									"min-w-12 text-right",
-									side.count > 0 ? side.tone : "text-muted-foreground/50",
-								),
-							),
-						],
-						[side.count > 0 ? formatCount(side.count) : EMPTY_VALUE],
-					),
-					h.span([h.Class("text-muted-foreground")], [side.label]),
-				],
+	const input = {
+		label: "in",
+		tone: "text-chart-tok-input",
+		count: inputs.reduce((sum, value) => sum + value, 0),
+	}
+	const output = {
+		label: "out",
+		tone: "text-chart-tok-reasoning",
+		count: outputs.reduce((sum, value) => sum + value, 0),
+	}
+	// One line, in then out; the exact counts ride on the title.
+	const side = (part: typeof input) =>
+		h.span(
+			[h.Class(part.count > 0 ? part.tone : "text-muted-foreground/50")],
+			[part.count > 0 ? formatCount(part.count) : EMPTY_VALUE],
+		)
+	return h.span(
+		[
+			h.Class("inline-flex items-baseline gap-1 whitespace-nowrap font-mono text-xs tabular-nums"),
+			h.Title(
+				[input, output]
+					.map((part) => `${part.count.toLocaleString("en-US")} ${part.label}`)
+					.join(", "),
 			),
-		),
+			...triggerAttributes(h),
+		],
+		[side(input), h.span([h.Class("text-muted-foreground")], ["→"]), side(output)],
 	)
 }
 
@@ -568,7 +565,7 @@ export const sessionsTable = (
 						[
 							"Showing the ",
 							formatNumber(options.rows.length),
-							" most recent sessions — filter the list to see older ones",
+							" most recent sessions. Filter the list to see older ones",
 						],
 					),
 				]

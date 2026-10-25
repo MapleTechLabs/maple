@@ -144,7 +144,7 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 const SYNC_UNAVAILABLE = makeClientErrorBody({
 	_tag: "@maple/web/errors/SyncUnavailable",
 	code: "sync_unavailable",
-	title: "Failed to load keys",
+	title: "Couldn't load keys",
 	message: "Live sync is unavailable, so keys couldn’t be loaded. Try again.",
 	retryable: false,
 	recovery: "retry",
@@ -180,7 +180,6 @@ const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
 				"Each phone with Maple Home Screen widgets holds a read-only key for them. Revoke one when a phone is lost or no longer yours.",
 			],
 			framed: false,
-			width: "wide",
 		},
 		[
 			panel(h, {}, [
@@ -194,6 +193,13 @@ const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
 	)
 }
 
+export const description = "Keys for the Maple API and MCP clients. Ingest keys live in Ingestion."
+
+/** The tab's primary action, drawn in the settings page header beside the `<h1>`. */
+export const headerActions = Submodel.defineView<Model, Message, Readonly<{}>>((model, _inputs, h) =>
+	createKeyButton(h, model),
+)
+
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const rows = buildKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
 	const counts = filterKeyRows(rows, {
@@ -203,16 +209,14 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	})
 	const isLoading = model.apiKeys === null && !model.isLoadFailed
 	const isFailed = model.apiKeys === null && model.isLoadFailed
-	return settingsSections(h, "wide", [
+	return settingsSections(h, [
 		settingsSection(
 			h,
 			{
 				id: "keys-heading",
 				title: "Keys",
-				description: ["Keys for the Maple API and MCP clients. Ingest keys live in Ingestion."],
+				isLead: true,
 				framed: false,
-				width: "wide",
-				actions: createKeyButton(h, model),
 			},
 			[
 				toolbar(h, model, counts),
@@ -220,7 +224,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 					isFailed
 						? errorState(h, {
 								failure: SYNC_UNAVAILABLE,
-								title: "Failed to load keys",
+								title: "Couldn't load keys",
 								onRetry: Message.ClickedRetryLoad(),
 								className: "py-12",
 							})

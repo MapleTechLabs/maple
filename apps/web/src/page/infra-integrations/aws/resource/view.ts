@@ -311,7 +311,7 @@ const body = (
 						AsyncData.matchData(model.traced.data, {
 							onEmpty: () => chartLoading(h, { variant: "line", height: 64 }),
 							onFailure: () =>
-								chartError(h, { height: 64 }, ["Failed to load the traced service"]),
+								chartError(h, { height: 64 }, ["Couldn't load the traced service"]),
 							onData: (traced) =>
 								tracedPanel(
 									h,
@@ -331,7 +331,7 @@ const resourceView = (h: H, model: Model, kind: AwsInfraKindId, timeZone: string
 		onIdle: () => h.div([h.Class("space-y-4")], [statRailLoading(h, 4, 4), metricChartsLoading(h, 2)]),
 		onLoading: () => h.div([h.Class("space-y-4")], [statRailLoading(h, 4, 4), metricChartsLoading(h, 2)]),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load the metrics", onRetry: Message.ClickedRetry() }),
+			errorState(h, { failure, title: "Couldn't load the metrics", onRetry: Message.ClickedRetry() }),
 		onStale: ({ data }) => body(h, model, kind, data, timeZone, true),
 		onSuccess: (data) => body(h, model, kind, data, timeZone, false),
 		onRefreshing: (data) => body(h, model, kind, data, timeZone, true),

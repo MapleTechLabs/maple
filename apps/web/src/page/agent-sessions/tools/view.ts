@@ -276,7 +276,7 @@ export const toolsBody = (h: H, model: Model, options: BodyOptions): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load agent tool analytics",
+				title: "Couldn't load agent tool analytics",
 				onRetry: Message.ClickedReload(),
 			}),
 		onData: () =>

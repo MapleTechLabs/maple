@@ -208,7 +208,7 @@ export const seriesChart = <M>(
 				className: cn("px-3 pt-2.5", "px-0 pt-0"),
 			}),
 			inputs.failure !== undefined
-				? errorState(h, { failure: inputs.failure, title: `Failed to load ${title}` })
+				? errorState(h, { failure: inputs.failure, title: `Couldn't load ${title}` })
 				: inputs.isLoading && rows.length === 0
 					? chartLoading(h, { variant: "line", height: PLOT_HEIGHT })
 					: rows.length === 0

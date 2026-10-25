@@ -8,6 +8,8 @@ import { BAR_CHART_TOKENS } from "../../../charts/bar-chart"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { button } from "../../../ui/button"
+import { errorState } from "../../../ui/error-state"
+import type { LoadFailure } from "../../../data/load-failure"
 import { eyebrow } from "../../../ui/eyebrow"
 import { skeleton } from "../../../ui/skeleton"
 import { approvalCard } from "../kit/view-cards"
@@ -153,25 +155,25 @@ export const emptyNotice = <M>(h: HtmlBuilder<M>, title: string, body: string): 
 	)
 
 /** The history read failed: the thread is unknown, so it offers a retry instead of the empty state. */
-const historyFailure = <M>(h: HtmlBuilder<M>, error: string, options: ConversationViewOptions<M>): Html =>
-	h.div(
-		[h.Class("flex flex-col items-center justify-center gap-3 text-center")],
-		[
-			emptyNotice(h, "Couldn't load this conversation", error),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "outline",
-					attributes: [h.OnClick(options.toMessage(Message.ClickedRetryHistory()))],
-				},
-				["Try again"],
-			),
-		],
-	)
+const HISTORY_FAILURE: LoadFailure = {
+	_tag: "@maple/web/chat/HistoryLoadFailed",
+	type: "api_error",
+	code: "chat_history_unavailable",
+	title: "Couldn't load this conversation",
+	message: "The conversation is saved. Try again to load it.",
+	retryable: false,
+	recovery: "retry",
+}
+
+const historyFailure = <M>(h: HtmlBuilder<M>, options: ConversationViewOptions<M>): Html =>
+	errorState(h, {
+		failure: HISTORY_FAILURE,
+		onRetry: options.toMessage(Message.ClickedRetryHistory()),
+		className: "h-auto w-full max-w-md",
+	})
 
 const emptyStateOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): Html => {
-	if (model.historyError !== null) return historyFailure(h, model.historyError, options)
+	if (model.historyError !== null) return historyFailure(h, options)
 	if (!model.historyReady) return loadingSkeleton(h)
 	switch (model.readOnly) {
 		case "shared":
@@ -190,7 +192,7 @@ const emptyStateOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationV
 			return emptyNotice(
 				h,
 				"Nothing recorded yet",
-				"The agents' reasoning log appears here as the pass runs — every tool call and what it returned.",
+				"The agents' reasoning log appears here as the pass runs: every tool call and what it returned.",
 			)
 		case null:
 			return options.emptyState()

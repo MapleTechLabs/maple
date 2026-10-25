@@ -97,7 +97,9 @@ const pageFailures = (model: Model): ReadonlyArray<PageFailure> => {
 	if (facets !== undefined && setup !== undefined && isSameFailure(facets, setup))
 		return [{ failure: facets, title: facets.title, onRetry: stripRetry }]
 	return [
-		...(facets === undefined ? [] : [{ failure: facets, title: "Couldn't load environments", onRetry: stripRetry }]),
+		...(facets === undefined
+			? []
+			: [{ failure: facets, title: "Couldn't load environments", onRetry: stripRetry }]),
 		...(setup === undefined
 			? []
 			: [
@@ -120,6 +122,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const nowMs = model.nowMs ?? 0
 	const environments = environmentFilter(model)
 	const failures = pageFailures(model)
+	const pageFailureKeys = failures.map(({ failure }) => failureKey(failure)).join(FAILURE_KEY_SEPARATOR)
+	const isExplained = (failure: LoadFailure) =>
+		failures.some((page) => isSameFailure(page.failure, failure))
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
@@ -138,14 +143,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					errorState(h, { failure, title, variant: "row", onRetry, className: "mb-4" }),
 				),
 				healthOverview(h, { model, slice, nowMs }),
-				usageCards(h, model),
+				usageCards(h, model, isExplained),
 				metricsGrid(h, model, {
 					colors: model.themeColors ?? EMPTY_COLORS,
 					isChartReady: model.themeColors !== null && isChartRuntimeReady(model.chartRuntime),
 					timeZone: inputs.context.timeZone,
 					nowMs,
 					useRefinement: environments === undefined,
-					pageFailureKeys: failures.map(({ failure }) => failureKey(failure)).join(FAILURE_KEY_SEPARATOR),
+					pageFailureKeys,
 				}),
 				healthList(h, {
 					model,

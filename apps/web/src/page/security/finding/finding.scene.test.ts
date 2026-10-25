@@ -138,7 +138,7 @@ describe("security finding", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
-			expectView(text("Failed to load the finding's target")).toExist(),
+			expectView(text("Couldn't load the finding's target")).toExist(),
 			expectView(role("button", { name: "Try again" })).toExist(),
 			expectView(text("Removed target")).not.toExist(),
 		)
@@ -168,7 +168,7 @@ describe("security finding", () => {
 			given(missing),
 			expectView(text("Finding not found")).toExist(),
 			expectView(role("link", { name: "Back to findings" })).toHaveAttr("href", "/security/findings"),
-			expectView(text(/^Failed to load/)).not.toExist(),
+			expectView(text(/^Couldn't load/)).not.toExist(),
 		)
 	})
 

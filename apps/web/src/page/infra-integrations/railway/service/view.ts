@@ -126,7 +126,7 @@ const chartsView = (h: H, model: Model, timeZone: string): Html => {
 	const failed = (failure: Parameters<typeof errorState>[1]["failure"]) =>
 		errorState(h, {
 			failure,
-			title: "Failed to load service metrics",
+			title: "Couldn't load service metrics",
 			onRetry: Message.ClickedRetryTimeseries(),
 		})
 	return AsyncData.match(model.timeseries.data, {

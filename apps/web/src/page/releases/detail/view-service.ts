@@ -280,9 +280,9 @@ const issuesPanel = (
 		onIdle: loading,
 		onLoading: loading,
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Issues could not be loaded", variant: "row" }),
+			errorState(h, { failure, title: "Couldn't load issues", variant: "row" }),
 		onStale: ({ error }) =>
-			errorState(h, { failure: error, title: "Issues could not be loaded", variant: "row" }),
+			errorState(h, { failure: error, title: "Couldn't load issues", variant: "row" }),
 		onSuccess: loaded,
 		onRefreshing: loaded,
 	})
@@ -385,11 +385,11 @@ const detailState = (h: H, model: Model, serviceName: string, clock: Clock): Htm
 		onIdle: () => bodySkeleton(h),
 		onLoading: () => bodySkeleton(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load release", onRetry: Message.ClickedRetry() }),
+			errorState(h, { failure, title: "Couldn't load release", onRetry: Message.ClickedRetry() }),
 		onStale: ({ error }) =>
 			errorState(h, {
 				failure: error,
-				title: "Failed to load release",
+				title: "Couldn't load release",
 				onRetry: Message.ClickedRetry(),
 			}),
 		onSuccess: loaded,

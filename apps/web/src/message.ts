@@ -33,6 +33,8 @@ export const Message = defineMessageUnion({
 	CompletedWaitForAuthSettle: {},
 	SucceededLoadCustomer: { orgId: Schema.String, customer: BillingCustomer },
 	FailedLoadCustomer: { orgId: Schema.String },
+	/** The plan gate's splash waited out its grace: a slow customer read no longer holds the app. */
+	ElapsedCustomerGrace: { orgId: Schema.String },
 	CompletedSaveSelectedPlanKnown: {},
 	CompletedReconnectOrgCollections: {},
 	CompletedRestoreDashboardWidgets: {},

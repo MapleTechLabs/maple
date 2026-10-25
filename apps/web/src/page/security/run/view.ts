@@ -133,7 +133,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							})
 						: errorState(h, {
 								failure,
-								title: "Failed to load the run",
+								title: "Couldn't load the run",
 								onRetry: Message.ClickedRetry(),
 							}),
 			])

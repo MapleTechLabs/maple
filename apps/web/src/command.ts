@@ -19,6 +19,8 @@ import { SessionIdentity } from "./platform/session-identity"
 
 /** How long a signed-out Clerk answer may still turn into a session on a hard refresh. */
 const AUTH_SETTLE_TIMEOUT = Duration.seconds(2)
+/** How long a first visit holds the boot splash on the customer read before failing open. */
+const CUSTOMER_SPLASH_GRACE = Duration.seconds(4)
 
 /** `retryOrgCollections`: a fresh collection set; every live query moves onto it. */
 export const ReconnectOrgCollections = Command.define("ReconnectOrgCollections", {
@@ -35,8 +37,12 @@ export const RestoreDashboardWidgets = Command.define("RestoreDashboardWidgets",
 	messages: [Message.CompletedRestoreDashboardWidgets],
 	execute: ({ orgId, dashboardId, widgets }) =>
 		mutateDashboard(orgId, dashboardId, (document, nowIso) => {
-			const missing = widgets.filter((widget) => !document.widgets.some((existing) => existing.id === widget.id))
-			return missing.length === 0 ? document : { ...document, widgets: [...document.widgets, ...missing], updatedAt: nowIso }
+			const missing = widgets.filter(
+				(widget) => !document.widgets.some((existing) => existing.id === widget.id),
+			)
+			return missing.length === 0
+				? document
+				: { ...document, widgets: [...document.widgets, ...missing], updatedAt: nowIso }
 		}).pipe(Effect.ignore, Effect.as(Message.CompletedRestoreDashboardWidgets())),
 })
 
@@ -121,6 +127,14 @@ export const LoadCustomer = Command.define("LoadCustomer", {
 			const customer = yield* (yield* BillingCustomerCache).get({ refresh })
 			return Message.SucceededLoadCustomer({ orgId, customer })
 		}).pipe(Effect.orElseSucceed(() => Message.FailedLoadCustomer({ orgId }))),
+})
+
+/** Ends the plan gate's splash for a customer read that is still out (`CUSTOMER_SPLASH_GRACE`). */
+export const WaitCustomerGrace = Command.define("WaitCustomerGrace", {
+	args: { orgId: Schema.String },
+	messages: [Message.ElapsedCustomerGrace],
+	execute: ({ orgId }) =>
+		Effect.sleep(CUSTOMER_SPLASH_GRACE).pipe(Effect.as(Message.ElapsedCustomerGrace({ orgId }))),
 })
 
 /** The plan settled: remember whether this org may render the app (`selectedPlanKnownAtomFor`). */

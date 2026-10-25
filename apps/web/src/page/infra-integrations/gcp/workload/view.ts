@@ -243,7 +243,7 @@ const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: C
 	if (failure._tag === "Some" && data.points.length === 0) {
 		return errorState(h, {
 			failure: failure.value,
-			title: "Failed to load workload metrics",
+			title: "Couldn't load workload metrics",
 			onRetry: Message.ClickedRetryTimeseries(),
 		})
 	}

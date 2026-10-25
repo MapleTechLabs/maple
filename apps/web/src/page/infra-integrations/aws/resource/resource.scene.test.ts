@@ -135,7 +135,7 @@ describe("aws resource", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			themeResolved(),
-			expectView(text("Failed to load the traced service")).toExist(),
+			expectView(text("Couldn't load the traced service")).toExist(),
 		)
 	})
 

@@ -5,6 +5,8 @@ import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "../../../ui/alert"
 import { button } from "../../../ui/button"
+import { errorState } from "../../../ui/error-state"
+import type { LoadFailure } from "../../../data/load-failure"
 import { icon } from "../../../ui/icon"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -13,7 +15,6 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { isDegraded, isLoadFailed, isReadOnly, listedOf } from "./update"
 import { listBody, listSkeleton } from "./view-list"
-import { empty, emptyContent, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 
 // The dashboards list page: `PageShell` around the list.
 
@@ -78,31 +79,28 @@ const persistenceBanner = (h: H, error: string | null): Html | undefined =>
 				),
 			])
 
-/** The sync-unavailable state as `ListLoadError`. */
+/** The sync stream and the HTTP fallback both failed (`ListLoadError`). */
+const LIST_LOAD_FAILURE: LoadFailure = {
+	_tag: "@maple/web/dashboards/ListLoadFailed",
+	type: "api_error",
+	code: "dashboards_list_unavailable",
+	title: "Couldn’t load dashboards",
+	message: "Your dashboards are safe. Try again to reload the list.",
+	retryable: false,
+	recovery: "retry",
+}
+
 const listLoadError = (h: H): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { size: 18 })]),
-				emptyTitle(h, ["Couldn’t load dashboards"]),
-				emptyDescription(h, [
-					"The sync stream dropped and the list couldn’t be read over HTTP either. Your dashboards are safe; this is a read problem.",
-				]),
-			]),
-			emptyContent(h, [
-				button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetrySync())] }, [
-					"Try again",
-				]),
-			]),
-		],
-		"py-12",
-	)
+	errorState(h, { failure: LIST_LOAD_FAILURE, onRetry: Message.ClickedRetrySync(), className: "min-h-64" })
 
 /** `SyncDegradedBanner`: the rows are a frozen HTTP snapshot and writes are off. */
 const degradedBanner = (h: H): Html =>
 	h.div(
-		[h.Class("mb-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground")],
+		[
+			h.Class(
+				"mb-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground",
+			),
+		],
 		[
 			icon(h, "CircleWarningIcon", { size: 14, className: "mt-0.5 shrink-0" }),
 			h.span(

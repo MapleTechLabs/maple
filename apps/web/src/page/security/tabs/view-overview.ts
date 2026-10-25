@@ -10,6 +10,7 @@ import { button } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
 import { meter } from "../../../ui/meter"
+import { skeletonSlowNote } from "../../../ui/skeleton"
 import { panel, panelHeader } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
@@ -115,7 +116,7 @@ const spendTile = (h: H, model: Model): Html => {
 				],
 				["Retry"],
 			),
-			subline: "The spend limit could not be loaded",
+			subline: "Couldn't load the spend limit",
 		})
 	if (settings === null) {
 		const spend = spendThisMonth(model)
@@ -179,12 +180,18 @@ const kpis = (h: H, model: Model): Html => {
 			compact: true,
 			subline:
 				unknown === null
-					? (["critical", "high", "medium", "low"] as const)
-							.map(
-								(severity) =>
-									`${counts[severity]} ${SECURITY_SEVERITY_LABEL[severity].toLowerCase()}`,
-							)
-							.join(" · ")
+					? // Wraps rather than truncates: the low count is the last thing a narrow tile would cut.
+						h.span(
+							[h.Class("whitespace-normal")],
+							[
+								(["critical", "high", "medium", "low"] as const)
+									.map(
+										(severity) =>
+											`${counts[severity]} ${SECURITY_SEVERITY_LABEL[severity].toLowerCase()}`,
+									)
+									.join(" · "),
+							],
+						)
 					: undefined,
 		}),
 		statRailItem(h, {
@@ -211,7 +218,7 @@ const kpis = (h: H, model: Model): Html => {
 const severityCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html => {
 	const counts = countBySeverity(openConfirmed(findings))
 	return h.span(
-		[h.Class("flex items-center gap-3 font-mono text-xs tabular-nums")],
+		[h.Class("flex items-center gap-2.5 font-mono text-xs tabular-nums")],
 		(["critical", "high", "medium", "low"] as const).map((severity) =>
 			h.span(
 				[
@@ -241,7 +248,7 @@ const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Htm
 		[h.Class("flex min-w-0 flex-col items-start gap-1")],
 		[
 			runStatusBadge(h, run),
-			h.span([h.Class("max-w-64 truncate text-xs text-muted-foreground"), h.Title(detail)], [detail]),
+			h.span([h.Class("max-w-56 truncate text-xs text-muted-foreground"), h.Title(detail)], [detail]),
 		],
 	)
 }
@@ -249,7 +256,10 @@ const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Htm
 const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Html => {
 	const detail = run === undefined ? null : latestDetailOf(model, run.id)
 	if (run === undefined || detail === null || detail.unitTotal === 0)
-		return h.span([h.Class("text-xs text-muted-foreground")], [run === undefined ? "" : "not mapped"])
+		return h.span(
+			[h.Class("whitespace-nowrap text-xs text-muted-foreground")],
+			[run === undefined ? "" : "not mapped"],
+		)
 	const { closed, total } = coverageOf(detail)
 	return h.div(
 		[h.Class("flex items-center justify-end gap-2")],
@@ -258,11 +268,11 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
 				value: closed,
 				max: total,
 				tone: runToneOf(run),
-				className: "w-14",
+				className: "w-10",
 				label: `${closed} of ${total} units closed`,
 			}),
 			h.span(
-				[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
+				[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
 				[`${closed} / ${total}`],
 			),
 		],
@@ -293,7 +303,7 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 							[
 								repositoryName(h, target.repository, "text-sm font-medium"),
 								h.span(
-									[h.Class("truncate text-xs text-muted-foreground")],
+									[h.Class("max-w-64 truncate text-xs text-muted-foreground")],
 									[
 										[targetLine(target), targetModelOf(model, target)]
 											.filter((part) => part !== null)
@@ -310,7 +320,7 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 				isFindingsKnown
 					? run === undefined || run.status === "failed"
 						? findings.length === 0
-							? h.span([h.Class("text-xs text-muted-foreground")], ["No completed run yet"])
+							? h.span([h.Class("text-xs text-muted-foreground")], ["No completed run"])
 							: severityCounts(h, findings)
 						: severityCounts(h, findings)
 					: h.span(
@@ -452,7 +462,7 @@ const topFindingsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAud
 			: state._tag === "Failed"
 				? errorState(h, {
 						failure: state.failure,
-						title: "Failed to load findings",
+						title: "Couldn't load findings",
 						variant: "inline",
 						onRetry: Message.ClickedRetry(),
 					})
@@ -533,8 +543,14 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 
 const overviewLoading = (h: H): ReadonlyArray<Html> => [
 	h.div(
-		[h.Class("grid grid-cols-2 gap-px md:grid-cols-4")],
-		Array.from({ length: 4 }, () => placeholder(h, "h-24")),
+		[h.Class("relative")],
+		[
+			h.div(
+				[h.Class("grid grid-cols-2 gap-px md:grid-cols-4")],
+				Array.from({ length: 4 }, () => placeholder(h, "h-24")),
+			),
+			skeletonSlowNote(h, "absolute inset-x-0 top-full mt-1"),
+		],
 	),
 	placeholder(h, "h-64 w-full"),
 ]
@@ -545,7 +561,7 @@ export const overviewBody = (h: H, model: Model): ReadonlyArray<Html> =>
 		onFailure: (failure) => [
 			errorState(h, {
 				failure,
-				title: "Failed to load audit targets",
+				title: "Couldn't load audit targets",
 				onRetry: Message.ClickedRetry(),
 			}),
 		],

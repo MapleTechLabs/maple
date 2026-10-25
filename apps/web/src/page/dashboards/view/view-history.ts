@@ -182,7 +182,7 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 						onIdle: () => loading(h),
 						onLoading: () => loading(h),
 						onFailure: (failure) =>
-							errorState(h, { failure, variant: "inline", title: "Failed to load history", className: "px-4" }),
+							errorState(h, { failure, variant: "inline", title: "Couldn't load history", className: "px-4" }),
 						onSuccess: (rows) => list(h, model, rows, clock),
 						onRefreshing: (rows) => list(h, model, rows, clock),
 						onStale: ({ data }) => list(h, model, data, clock),

@@ -133,7 +133,7 @@ const summaryArea = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load container metrics",
+				title: "Couldn't load container metrics",
 				onRetry: Message.ClickedRetrySummary(),
 			}),
 		onData: (summary) => (summary === null ? noData(h, model) : stats(h, summary)),

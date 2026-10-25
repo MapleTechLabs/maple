@@ -69,7 +69,7 @@ describe("alerts hub", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
-			expectView(text("Failed to load alerts")).toExist(),
+			expectView(text("Couldn't load alerts")).toExist(),
 			click(role("button", { name: "Try again" })),
 			expectOutMessage(PageOutMessage.RequestedReconnectOrgCollections()),
 		)

@@ -32,7 +32,7 @@ const LoadSessions = Command.define("LoadClerkSessions", {
 	messages: [Message.CompletedLoad],
 	execute: Effect.gen(function* () {
 		const currentSessionId = yield* currentClerkSessionId
-		const result = yield* withUser("Failed to load your sessions", (user) => user.getSessions()).pipe(
+		const result = yield* withUser("Couldn't load your sessions", (user) => user.getSessions()).pipe(
 			Effect.map((sessions) => sessions.map(toRow)),
 			Effect.mapError((error) => error.message),
 			Effect.result,

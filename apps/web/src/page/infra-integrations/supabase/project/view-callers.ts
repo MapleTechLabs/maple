@@ -125,7 +125,7 @@ export const callersPanel = (h: H, model: Model, spark: SparkWindow | null): Htm
 		[
 			keyedBody(h, model.callers, {
 				rows: 3,
-				failureTitle: "Failed to load the calling services",
+				failureTitle: "Couldn't load the calling services",
 				onRetry: Message.ClickedRetry({ section: "callers" }),
 				render: (response) =>
 					response.callers.length === 0

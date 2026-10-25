@@ -99,7 +99,7 @@ const stats = (h: H, summary: Summary): Html =>
 const podsOnNode = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.pods.data, {
 		onEmpty: () => skeletonList(h, { rows: 4, rowClassName: "h-9", label: "Loading pods" }),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load pods on this node" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load pods on this node" }),
 		onData: (page) =>
 			page.data.length === 0
 				? emptyMessage(h, { dashed: true, className: "py-12" }, [

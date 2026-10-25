@@ -246,7 +246,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					})
 					return {
 						...next,
-						outMessage: toast("error", "Failed to load older events", failure.message),
+						outMessage: toast("error", "Couldn't load older events", failure.message),
 					}
 				},
 			}),

@@ -230,7 +230,7 @@ const pageBody = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs)
 		})
 	return AsyncData.matchData(model.hierarchy.data, {
 		onEmpty: () => detailLoading(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load trace details" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load trace details" }),
 		onData: () =>
 			Option.match(loadedTrace(model), {
 				onNone: () =>

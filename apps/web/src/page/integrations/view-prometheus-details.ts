@@ -80,9 +80,9 @@ const checksTable = (
 		onIdle: () => skeletonList(h, { rows: 3, gap: "2" }),
 		onLoading: () => skeletonList(h, { rows: 3, gap: "2" }),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load scheduled checks", variant: "row" }),
+			errorState(h, { failure, title: "Couldn't load scheduled checks", variant: "row" }),
 		onStale: ({ error }) =>
-			errorState(h, { failure: error, title: "Failed to load scheduled checks", variant: "row" }),
+			errorState(h, { failure: error, title: "Couldn't load scheduled checks", variant: "row" }),
 		onRefreshing: () => checksRows(h, checks, timeZone),
 		onSuccess: () => checksRows(h, checks, timeZone),
 	})

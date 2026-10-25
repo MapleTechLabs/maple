@@ -29,7 +29,7 @@ const header = (h: H, model: Model, inputs: PageViewInputs): HostHeaderParts =>
 			body: errorState(h, {
 				variant: "inline",
 				failure,
-				title: "Failed to load host summary",
+				title: "Couldn't load host summary",
 				onRetry: Message.ClickedRetrySummary(),
 			}),
 		}),

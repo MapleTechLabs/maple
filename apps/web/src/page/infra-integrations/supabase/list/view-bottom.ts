@@ -79,7 +79,7 @@ export const issuesPanel = (
 		[
 			keyedBody(h, model.issues, {
 				rows: 4,
-				failureTitle: "Failed to load errors and warnings",
+				failureTitle: "Couldn't load errors and warnings",
 				onRetry: Message.ClickedRetryIssues(),
 				render: (response) =>
 					response.issues.length > 0
@@ -182,7 +182,7 @@ export const advisorsPanel = (
 		[
 			keyedBody(h, model.insights, {
 				rows: 4,
-				failureTitle: "Failed to load advisor findings",
+				failureTitle: "Couldn't load advisor findings",
 				onRetry: Message.ClickedRetryInsights(),
 				render: (fleet) => findingsBody(h, fleet, options.names, options.total),
 			}),

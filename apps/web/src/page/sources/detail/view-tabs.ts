@@ -258,5 +258,8 @@ export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
 					? [defaultRulesSection(h)]
 					: [ingestionSection(h, model, source), deleteSection(h, source)]),
 			]
-	return h.form([h.OnSubmit(Message.SubmittedSettings())], [settingsSections(h, "standard", sections)])
+	return h.form(
+		[h.Class("max-w-4xl"), h.OnSubmit(Message.SubmittedSettings())],
+		[settingsSections(h, sections)],
+	)
 }

@@ -101,7 +101,7 @@ const content = (h: H, model: Model, summary: CatalogSummary, timeZone: string):
 const body = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.catalog.data, {
 		onEmpty: () => loading(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load metric" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load metric" }),
 		onData: () => {
 			const summary = summaryOf(model)
 			return summary === null ? noData(h, model.metricName) : content(h, model, summary, timeZone)

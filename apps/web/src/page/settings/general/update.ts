@@ -55,7 +55,7 @@ export const FetchAdmins = Command.define("FetchClerkOrganizationAdmins", {
 	messages: [Message.CompletedFetchAdmins],
 	execute: currentClerkOrganization.pipe(
 		Effect.flatMap((organization) =>
-			clerkTry("Failed to load admins", () => organization.getMemberships({ role: ["org:admin"], pageSize: 1 })),
+			clerkTry("Couldn't load admins", () => organization.getMemberships({ role: ["org:admin"], pageSize: 1 })),
 		),
 		Effect.map(
 			(page): AdminsInfo => ({

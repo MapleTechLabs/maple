@@ -47,7 +47,7 @@ export type LinkTab = Readonly<{
 	href: string
 	label: string
 	icon: IconName
-	/** The tab the page shows: underlined, its icon in the primary colour. */
+	/** The tab the page shows: underlined, its label and icon in the foreground colour. */
 	isCurrent: boolean
 	/** The link matches the URL (path and search): `aria-current` and the router's `active`. */
 	isRouteActive: boolean
@@ -74,7 +74,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 							cn(
 								underlineTabClass(tab.isCurrent),
 								"h-9 gap-[7px] px-3 first:pl-0.5",
-								tab.isCurrent ? "[&_svg]:text-primary" : "[&_svg]:text-muted-foreground",
+								tab.isCurrent ? "[&_svg]:text-foreground" : "[&_svg]:text-muted-foreground",
 							),
 							tab.isRouteActive && "active",
 						),

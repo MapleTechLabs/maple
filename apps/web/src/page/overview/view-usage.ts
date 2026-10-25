@@ -1,6 +1,7 @@
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type { LoadFailure } from "../../data/load-failure"
 import { delta } from "../../ui/delta"
 import { skeleton } from "../../ui/skeleton"
 import type { Model, UsageTotals } from "./model"
@@ -17,11 +18,16 @@ const CARDS: ReadonlyArray<{ title: string; key: keyof UsageTotals; format: (val
 	{ title: "Total Metrics", key: "metrics", format: formatNumber },
 ]
 
-/** Loading tiles; on failure a quiet "Couldn't load" rail (the charts carry the full message). */
-export const usageCards = <M>(h: HtmlBuilder<M>, model: Model): Html =>
+/** Loading tiles; on failure a quiet "Couldn't load" rail, or bare tiles when the page strip
+ * (`isExplained`) already names that failure. */
+export const usageCards = <M>(
+	h: HtmlBuilder<M>,
+	model: Model,
+	isExplained: (failure: LoadFailure) => boolean,
+): Html =>
 	AsyncData.matchData(model.usage.data, {
 		onEmpty: () => statRailLoading(h, CARDS.length, 3, OVERVIEW_RAIL_CLASS),
-		onFailure: () =>
+		onFailure: (failure) =>
 			statRail(
 				h,
 				{ columns: 3, className: OVERVIEW_RAIL_CLASS },
@@ -29,7 +35,9 @@ export const usageCards = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 					statRailItem(h, {
 						eyebrow: card.title,
 						value: EMPTY_VALUE,
-						subline: h.span([h.Class("font-prose")], ["Couldn't load"]),
+						subline: isExplained(failure)
+							? h.span([h.Class("sr-only")], ["Couldn't load"])
+							: h.span([h.Class("font-prose")], ["Couldn't load"]),
 						compact: true,
 					}),
 				),

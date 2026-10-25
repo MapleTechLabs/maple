@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import {
 	pageBodyStyles,
 	pageContentStyles,
+	pageDescriptionStyles,
 	pageFillStyles,
 	pageFilterSidebarStyles,
 	pageFilterSidebarWidthStyles,
@@ -29,6 +30,8 @@ export type DashboardPageOptions = Readonly<{
 	titleContent?: Html | undefined
 	/** A plain page title, drawn as the page `<h1>` when there is no `titleContent`. */
 	title?: string
+	/** One line under the `title`, in the header so it sits tight to the `<h1>`. */
+	description?: string
 	/** The header's right side: `headerActions` and the time controls, already composed. */
 	actions?: Html
 	/** `DashboardLayout.Tabs`'s children: page tabs pinned under the header. */
@@ -55,12 +58,21 @@ export type DashboardPageOptions = Readonly<{
 export const pageBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class(pageBodyStyles), h.DataAttribute("slot", "page-body")], children)
 
-/** `PageLayout.FilterSidebar` as the inline rail (lg and up). */
+/**
+ * `PageLayout.FilterSidebar` as the inline rail (lg and up). A rail with no facets to offer
+ * (`filterSidebarFrame`'s `isIdle`) is hidden, so the content takes its width.
+ */
 export const filterRail = <M>(h: HtmlBuilder<M>, child: Html, width?: string): Html =>
 	h.aside(
 		[
 			h.DataAttribute("slot", "page-filter-sidebar"),
-			h.Class(cn(pageFilterSidebarStyles, width ?? pageFilterSidebarWidthStyles)),
+			h.Class(
+				cn(
+					pageFilterSidebarStyles,
+					width ?? pageFilterSidebarWidthStyles,
+					"has-[[data-rail-idle]]:hidden",
+				),
+			),
 		],
 		[child],
 	)
@@ -73,9 +85,14 @@ export const pageContent = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>)
 	)
 
 /** `PageLayout.Header` + `HeaderActions`. */
-export const pageHeader = <M>(h: HtmlBuilder<M>, titleContent: Html | undefined, actions: Html | undefined): Html =>
+export const pageHeader = <M>(
+	h: HtmlBuilder<M>,
+	titleContent: Html | undefined,
+	actions: Html | undefined,
+	className?: string,
+): Html =>
 	h.div(
-		[h.DataAttribute("slot", "page-header"), h.Class(pageHeaderStyles)],
+		[h.DataAttribute("slot", "page-header"), h.Class(cn(pageHeaderStyles, className))],
 		[
 			h.div([h.Class(pageHeaderTextStyles)], titleContent === undefined ? [] : [titleContent]),
 			...(actions === undefined
@@ -106,7 +123,13 @@ const stickyArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, isScrol
 const fillArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.DataAttribute("slot", "page-fill"), h.Class(pageFillStyles)], children)
 
-const PAGE_WIDTH = { full: null, reading: "mx-auto max-w-4xl", narrow: "mx-auto max-w-3xl" } as const
+// `settings` caps the header and the column at the same left-aligned width (settings, integrations, account).
+const PAGE_WIDTH = {
+	full: null,
+	reading: "mx-auto max-w-4xl",
+	narrow: "mx-auto max-w-3xl",
+	settings: "max-w-4xl",
+} as const
 const PAGE_GAP = { none: null, sm: "gap-3", md: "gap-4", lg: "gap-6" } as const
 export type PageWidth = keyof typeof PAGE_WIDTH
 export type PageGap = keyof typeof PAGE_GAP
@@ -146,11 +169,22 @@ export const dashboardPage = <M>(
 	options: DashboardPageOptions,
 	children: ReadonlyArray<Html>,
 ): Html => {
+	const heading =
+		options.title === undefined
+			? undefined
+			: h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], [options.title])
 	const titleContent =
 		options.titleContent ??
-		(options.title === undefined ? undefined : h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], [options.title]))
+		(heading === undefined || options.description === undefined
+			? heading
+			: h.div(
+					[h.Class("flex flex-col gap-1")],
+					[heading, h.p([h.Class(cn(pageDescriptionStyles, "text-sm"))], [options.description])],
+				))
 	const hasHeader = titleContent !== undefined || options.actions !== undefined
-	const header = options.header ?? (hasHeader ? pageHeader(h, titleContent, options.actions) : undefined)
+	const headerWidth = options.width === "settings" ? PAGE_WIDTH.settings : undefined
+	const header =
+		options.header ?? (hasHeader ? pageHeader(h, titleContent, options.actions, headerWidth) : undefined)
 	const sticky = [
 		...(header === undefined ? [] : [header]),
 		...(options.tabs === undefined
@@ -162,7 +196,9 @@ export const dashboardPage = <M>(
 		...(options.filters === undefined ? [] : [filterRail(h, options.filters, options.filtersWidth)]),
 		pageContent(h, [
 			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled)] : []),
-			options.fill === true ? fillArea(h, children) : scrollArea(h, children, options.scrollClassName, options.width, options.gap),
+			options.fill === true
+				? fillArea(h, children)
+				: scrollArea(h, children, options.scrollClassName, options.width, options.gap),
 		]),
 		...(options.rightPanel === undefined
 			? []

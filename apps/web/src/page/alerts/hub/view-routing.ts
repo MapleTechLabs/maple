@@ -333,7 +333,7 @@ const deliveryLog = (h: H, model: Model, inputs: RoutingInputs): Html =>
 	AsyncData.match(model.routingDeliveries.data, {
 		onIdle: () => logSkeleton(h),
 		onLoading: () => logSkeleton(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load delivery history" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load delivery history" }),
 		onRefreshing: (events) => logTable(h, model, inputs, events),
 		onStale: ({ data }) => logTable(h, model, inputs, data),
 		onSuccess: (events) => logTable(h, model, inputs, events),

@@ -97,7 +97,8 @@ const detailView = (h: H, model: Model, integration: IntegrationId, timeZone: st
 				actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
 				statusLine: integration === "gcp" ? gcpHeaderStatus(h, model) : undefined,
 			}),
-			scrollClassName: "gap-4",
+			width: "settings",
+			gap: "md",
 		},
 		cardView(h, model, integration, timeZone),
 	)
@@ -117,6 +118,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					title: "Integrations",
 					filters: settingsNav(h, model),
 					actions: integrationsSummary(h, model) ?? h.empty,
+					width: "settings",
 				},
 				[integrationCatalog(h, model, selectIntegration)],
 			)

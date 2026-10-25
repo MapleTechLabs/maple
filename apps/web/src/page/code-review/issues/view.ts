@@ -105,7 +105,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load issues",
+				title: "Couldn't load issues",
 				onRetry: Message.ClickedRetry(),
 			}),
 		onData: (response) => {

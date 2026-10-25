@@ -181,7 +181,7 @@ const trafficBody = (
 				? [
 						keyedBody(h, model.topPaths, {
 							rows: 4,
-							failureTitle: "Failed to load the top paths",
+							failureTitle: "Couldn't load the top paths",
 							onRetry: Message.ClickedRetry({ section: "topPaths" }),
 							render: (paths) => topPathsList(h, paths),
 						}),
@@ -208,7 +208,7 @@ export const trafficPanel = (
 		[
 			keyedBody(h, model.traffic, {
 				rows: 6,
-				failureTitle: "Failed to load API requests",
+				failureTitle: "Couldn't load API requests",
 				onRetry: Message.ClickedRetry({ section: "traffic" }),
 				render: (traffic) => trafficBody(h, model, traffic, theme, timeZone, isLogsEnabled),
 			}),

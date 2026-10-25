@@ -53,7 +53,7 @@ const connectionRow = (h: H, connection: V2McpConnection, inputs: Inputs): Html 
 const content = (h: H, model: Model, inputs: Inputs): Html =>
 	AsyncData.matchData(model.connections, {
 		onEmpty: () => h.div([h.Class("p-4")], [skeletonList(h, { rows: 2 })]),
-		onFailure: () => sectionNote(h, "Connected clients could not be loaded."),
+		onFailure: () => sectionNote(h, "Couldn't load connected clients."),
 		onData: (rows) =>
 			rows.length === 0
 				? sectionNote(h, "No clients connected yet. Connect one above.")

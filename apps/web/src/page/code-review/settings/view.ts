@@ -149,7 +149,7 @@ const repositoriesSection = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load repositories",
+				title: "Couldn't load repositories",
 				onRetry: Message.ClickedRetryStatus(),
 			}),
 		onData: (status) => {
@@ -186,7 +186,7 @@ const repoConfigBody = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			h.p(
 				[h.Class("text-xs text-severity-error"), h.Role("alert")],
-				[isUnexpectedError(failure) ? "Failed to load the repository's rules." : failure.message],
+				[isUnexpectedError(failure) ? "Couldn't load the repository's rules." : failure.message],
 			),
 		onData: () =>
 			model.repoForm === null
@@ -234,7 +234,7 @@ const content = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load review settings",
+				title: "Couldn't load review settings",
 				onRetry: Message.ClickedRetrySettings(),
 			}),
 		onData: () =>

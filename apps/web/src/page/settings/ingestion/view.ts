@@ -31,7 +31,10 @@ const connectionOf = (model: Model) => {
 		isConnected: real.length > 0,
 		serviceCount: real.length,
 		spansPerMinute: real.reduce((sum, row) => sum + row.spanCount, 0) / 60,
-		privateKey: AsyncData.getOrElse(AsyncData.map(model.ingest, (keys) => keys.private_key), () => ""),
+		privateKey: AsyncData.getOrElse(
+			AsyncData.map(model.ingest, (keys) => keys.private_key),
+			() => "",
+		),
 	}
 }
 
@@ -42,12 +45,18 @@ const statusBanner = (h: H, model: Model): Html => {
 		connection.isConnected
 			? statusDot(h, { tone: "ok", size: "lg" })
 			: icon(h, "PulseIcon", { size: 12, className: "text-primary shrink-0" }),
-		h.span([h.Class("text-sm font-medium whitespace-nowrap")], [connection.isConnected ? "Receiving telemetry" : "Waiting for telemetry"]),
+		h.span(
+			[h.Class("text-sm font-medium whitespace-nowrap")],
+			[connection.isConnected ? "Receiving telemetry" : "Waiting for telemetry"],
+		),
 		h.span(
 			[h.Class("text-muted-foreground truncate font-mono text-xs")],
 			[
 				connection.isConnected
-					? [countLabel(connection.serviceCount, "service"), spansPerMinute > 0 ? `${formatNumber(spansPerMinute)} spans/min` : null]
+					? [
+							countLabel(connection.serviceCount, "service"),
+							spansPerMinute > 0 ? `${formatNumber(spansPerMinute)} spans/min` : null,
+						]
 							.filter((part) => part !== null)
 							.join(" · ")
 					: "watching for your first trace",
@@ -55,14 +64,24 @@ const statusBanner = (h: H, model: Model): Html => {
 		),
 		h.div([h.Class("grow")], []),
 		...(connection.isConnected
-			? [h.a(
-					[
-						h.Href("/traces"),
-						h.Class(cn(buttonVariants({ variant: "ghost", size: "sm", className: "text-muted-foreground hover:text-foreground gap-1.5" }))),
-						h.DataAttribute("slot", "button"),
-					],
-					["Explore traces", icon(h, "ArrowRightIcon")],
-				)]
+			? [
+					h.a(
+						[
+							h.Href("/traces"),
+							h.Class(
+								cn(
+									buttonVariants({
+										variant: "ghost",
+										size: "sm",
+										className: "text-muted-foreground hover:text-foreground gap-1.5",
+									}),
+								),
+							),
+							h.DataAttribute("slot", "button"),
+						],
+						["Explore traces", icon(h, "ArrowRightIcon")],
+					),
+				]
 			: []),
 	])
 }
@@ -81,7 +100,9 @@ const endpointAndKeysSection = (h: H, model: Model): Html =>
 					h.Href(docsUrl("instrumentation")),
 					h.Target("_blank"),
 					h.Rel("noopener noreferrer"),
-					h.Class("text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors"),
+					h.Class(
+						"text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors",
+					),
 				],
 				["Docs ↗"],
 			),
@@ -96,7 +117,10 @@ const endpointAndKeysSection = (h: H, model: Model): Html =>
 						badgeClass: "text-muted-foreground",
 						value: ingestUrl,
 						copy: model.endpointCopy,
-						onCopy: (text) => Message.GotEndpointCopyMessage({ message: CopyButton.Message.ClickedCopy({ text }) }),
+						onCopy: (text) =>
+							Message.GotEndpointCopyMessage({
+								message: CopyButton.Message.ClickedCopy({ text }),
+							}),
 					}),
 					...(model.isAdmin ? ingestKeyRows(h, model) : []),
 					manageSourcesRow(h),
@@ -115,7 +139,9 @@ const manageSourcesRow = (h: H): Html =>
 			h.a(
 				[
 					h.Href("/sources"),
-					h.Class("text-foreground inline-flex items-center gap-1 hover:underline underline-offset-2"),
+					h.Class(
+						"text-foreground inline-flex items-center gap-1 hover:underline underline-offset-2",
+					),
 				],
 				["Manage sources", icon(h, "ChevronRightIcon", { size: 12 })],
 			),
@@ -162,11 +188,24 @@ const addServiceSection = (h: H, model: Model): Html => {
 						[h.Class("flex items-center gap-3 px-4 py-3")],
 						[
 							frameworkIconStrip(h),
-							h.span([h.Class("text-muted-foreground min-w-0 grow truncate text-xs")], ["Next.js, Node.js, Python, Go, Effect and more"]),
-							button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedShowSetup())] }, [
-								"Show setup",
-								icon(h, "ChevronRightIcon", { attributes: [h.DataAttribute("icon", "inline-end")] }),
-							]),
+							h.span(
+								[h.Class("text-muted-foreground min-w-0 grow truncate text-xs")],
+								["Next.js, Node.js, Python, Go, Effect and more"],
+							),
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedShowSetup())],
+								},
+								[
+									"Show setup",
+									icon(h, "ChevronRightIcon", {
+										attributes: [h.DataAttribute("icon", "inline-end")],
+									}),
+								],
+							),
 						],
 					),
 		],
@@ -177,7 +216,7 @@ const addServiceSection = (h: H, model: Model): Html => {
 type NoInputs = Readonly<{ readonly none?: never }>
 
 export const view = Submodel.defineView<Model, Message, NoInputs>((model, _inputs, h) =>
-	settingsSections(h, "standard", [
+	settingsSections(h, [
 		// `AdminOnlyNotice subject="ingestion settings"` renders nothing for admins.
 		statusBanner(h, model),
 		endpointAndKeysSection(h, model),

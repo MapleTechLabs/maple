@@ -138,5 +138,5 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 const failed = (h: H, failure: Parameters<typeof errorState<Message>>[1]["failure"]): Html =>
 	h.div(
 		[h.Class("p-4")],
-		[errorState(h, { failure, title: "Failed to load anomalies", onRetry: Message.ClickedRetry() })],
+		[errorState(h, { failure, title: "Couldn't load anomalies", onRetry: Message.ClickedRetry() })],
 	)

@@ -62,7 +62,7 @@ export const attentionPanel = (h: H, model: Model, strip: HealthStrip | null, ti
 					panelError(
 						h,
 						insightsFailure,
-						"Failed to load advisors",
+						"Couldn't load advisors",
 						Message.ClickedRetry({ section: "insights" }),
 					),
 				]),
@@ -72,7 +72,7 @@ export const attentionPanel = (h: H, model: Model, strip: HealthStrip | null, ti
 					panelError(
 						h,
 						issuesFailure,
-						"Failed to load log issues",
+						"Couldn't load log issues",
 						Message.ClickedRetry({ section: "issues" }),
 					),
 				]),

@@ -253,7 +253,7 @@ describe("service detail view", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			themeResolved(),
-			expectView(text("Failed to load service overview")).toExist(),
+			expectView(text("Couldn't load service overview")).toExist(),
 		)
 		const retried = pageUpdate(failed, Message.ClickedRetry({ target: "Overview" }))
 		expect(names(retried.commands)).toEqual([FetchOverview.name])

@@ -1,7 +1,17 @@
 import { OrgId } from "@maple/domain"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { Result, Schema } from "effect"
-import { all, expect as expectView, expectAll, given, nth, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	all,
+	expect as expectView,
+	expectAll,
+	given,
+	nth,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { type LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import type { PageContext } from "../../contract"
@@ -194,5 +204,21 @@ describe("infra overview", () => {
 			expectAll(all.role("alert")).toHaveCount(1),
 			expectView(text(failure.title)).toExist(),
 		)
+	})
+
+	test("trying the shared failure again reads every source and keeps the reason up until they answer", () => {
+		// `retryable: false` skips the auto-retry Mount; the button only needs `recovery: "retry"`.
+		const failure: LoadFailure = { ...toLoadFailure("boom"), recovery: "retry", retryable: false }
+		const known = probed(entered().model, ["hosts"]).model
+		const allFailed = complete(
+			complete(known, "hosts", Result.fail(failure)),
+			"cloudflare",
+			Result.fail(failure),
+		)
+		const retried = pageUpdate(allFailed, Message.ClickedRetry())
+		expect(sourceReads(retried.commands)).toHaveLength(2)
+		const render = { update: pageUpdate, view: withViewInputs(view, { context })() }
+		scene(render, given(allFailed), expectView(role("button", { name: "Try again" })).toExist())
+		scene(render, given(retried.model), expectView(text(failure.title)).toExist())
 	})
 })

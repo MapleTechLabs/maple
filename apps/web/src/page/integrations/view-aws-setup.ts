@@ -158,7 +158,7 @@ export const setupBody = (
 		onFailure: (failure) => [
 			errorState(h, {
 				failure,
-				title: "Failed to load the setup",
+				title: "Couldn't load the setup",
 				onRetry: Message.ClickedAwsSetup({ id: connection.id }),
 			}),
 		],

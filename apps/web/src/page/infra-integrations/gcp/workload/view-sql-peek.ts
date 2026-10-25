@@ -273,7 +273,7 @@ const slowestCalls = (h: H, inputs: QueryPeekInputs): Html => {
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the calls",
+				title: "Couldn't load the calls",
 				variant: "inline",
 				onRetry: Message.ClickedRetryStatementSpans(),
 			}),
@@ -339,7 +339,7 @@ const untraced = (h: H, inputs: QueryPeekInputs): Html =>
 	AsyncData.matchData(inputs.traceSide, {
 		onEmpty: () => skeleton(h, "h-40 w-full rounded-md"),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load what the traces saw", variant: "inline" }),
+			errorState(h, { failure, title: "Couldn't load what the traces saw", variant: "inline" }),
 		onData: () => notTraced(h),
 	})
 

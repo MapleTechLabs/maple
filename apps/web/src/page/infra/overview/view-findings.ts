@@ -38,7 +38,10 @@ const sourceLabel = <M>(h: HtmlBuilder<M>, id: SourceId): Html =>
 /** The name truncates; the metric after it ("at 97% CPU") always stays visible. */
 const findingTitle = <M>(h: HtmlBuilder<M>, { subject, title }: Finding): Html =>
 	subject === undefined || subject === "" || !title.startsWith(subject)
-		? h.span([h.Class("truncate text-sm text-foreground group-hover:text-primary"), h.Title(title)], [title])
+		? h.span(
+				[h.Class("truncate text-sm text-foreground group-hover:text-primary"), h.Title(title)],
+				[title],
+			)
 		: h.span(
 				[h.Class("flex min-w-0 text-sm text-foreground group-hover:text-primary"), h.Title(title)],
 				[
@@ -57,7 +60,10 @@ export const findingRow = <M>(h: HtmlBuilder<M>, finding: Finding, time: TimeSea
 			sourceLabel(h, finding.source),
 			h.span(
 				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
-				[findingTitle(h, finding), h.span([h.Class("truncate text-xs text-muted-foreground")], [finding.detail])],
+				[
+					findingTitle(h, finding),
+					h.span([h.Class("truncate text-xs text-muted-foreground")], [finding.detail]),
+				],
 			),
 			icon(h, "ChevronRightIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 		],
@@ -83,7 +89,10 @@ const findingRowError = <M>(h: HtmlBuilder<M>, id: SourceId): Html =>
 		[
 			statusDot(h, { tone: "neutral", size: "lg" }),
 			sourceLabel(h, id),
-			h.span([h.Class("text-sm text-muted-foreground")], ["Couldn't check this source. Its page shows the error."]),
+			h.span(
+				[h.Class("text-sm text-muted-foreground")],
+				["Couldn't check this source. Its page shows the error."],
+			),
 		],
 	)
 
@@ -105,7 +114,7 @@ const entriesOf = <M>(
 			: []
 
 /** Every source failed for one reason: that reason once, instead of a row per source. */
-const sharedFailure = (
+export const sharedFailure = (
 	sources: ReadonlyArray<Readonly<{ id: SourceId; state: SourceState }>>,
 ): LoadFailure | undefined => {
 	const failures = sources.flatMap(({ state }) =>
@@ -138,6 +147,7 @@ export const needsAttention = <M>(
 	h: HtmlBuilder<M>,
 	sources: ReadonlyArray<Readonly<{ id: SourceId; state: SourceState }>> | null,
 	time: TimeSearch,
+	onRetry: M,
 ): Html => {
 	const isSettled = sources !== null && sources.every(({ state }) => state.status !== "loading")
 	const rows = isSettled
@@ -154,17 +164,17 @@ export const needsAttention = <M>(
 			!isSettled
 				? needsAttentionLoading(h)
 				: shared !== undefined
-					? errorState(h, { failure: shared, variant: "row" })
+					? errorState(h, { failure: shared, variant: "row", onRetry })
 					: rows.length > 0
-					? findingsList(h, rows)
-					: h.p(
-							[
-								h.Class(
-									"rounded-md border px-4 py-6 text-center text-sm text-muted-foreground",
-								),
-							],
-							["Nothing is over its thresholds in this window."],
-						),
+						? findingsList(h, rows)
+						: h.p(
+								[
+									h.Class(
+										"rounded-md border px-4 py-6 text-center text-sm text-muted-foreground",
+									),
+								],
+								["Nothing is over its thresholds in this window."],
+							),
 		],
 	)
 }

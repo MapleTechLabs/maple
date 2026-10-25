@@ -101,7 +101,7 @@ const podsSection = (h: H, model: Model, inputs: PageViewInputs, pods: ReadonlyA
 			}),
 			AsyncData.matchData(model.pods.data, {
 				onEmpty: () => podTableLoading(h),
-				onFailure: (failure) => errorState(h, { failure, title: "Failed to load pods", onRetry: Message.ClickedRetryPods() }),
+				onFailure: (failure) => errorState(h, { failure, title: "Couldn't load pods", onRetry: Message.ClickedRetryPods() }),
 				onData: (page) =>
 					page.data.length === 0
 						? emptyMessage(h, { dashed: true, className: "py-12" }, [
@@ -127,7 +127,7 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 			onEmpty: () => null,
 			onData: () => null,
 			onFailure: (failure) =>
-				errorState(h, { failure, title: "Failed to load this service", onRetry: Message.ClickedRetryOverview() }),
+				errorState(h, { failure, title: "Couldn't load this service", onRetry: Message.ClickedRetryOverview() }),
 		})
 	const workload = linkedWorkload(model)
 	const points = AsyncData.getOrElse(model.overview.data, () => [])

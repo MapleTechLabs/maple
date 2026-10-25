@@ -198,7 +198,7 @@ const listArea = (h: H, model: Model, page: PodsPage, inputs: PageViewInputs): H
 const podsArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.pods.data, {
 		onEmpty: () => podTableLoading(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load pods", onRetry: Message.ClickedRetryPods() }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load pods", onRetry: Message.ClickedRetryPods() }),
 		onData: (page) => listArea(h, model, page, inputs),
 	})
 

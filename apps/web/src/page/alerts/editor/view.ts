@@ -59,7 +59,7 @@ const loadError = (h: H): Html =>
 		[
 			errorState(h, {
 				failure: toLoadFailure(SYNC_UNAVAILABLE),
-				title: "Failed to load alert rules",
+				title: "Couldn't load alert rules",
 				onRetry: Message.ClickedReloadPage(),
 				className: "py-12",
 			}),

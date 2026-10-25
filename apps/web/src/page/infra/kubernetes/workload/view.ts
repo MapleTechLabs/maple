@@ -93,7 +93,7 @@ const summaryArea = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load workload metrics",
+				title: "Couldn't load workload metrics",
 				onRetry: Message.ClickedRetrySummary(),
 			}),
 		onData: (summary) => (summary === null ? noMetricsMessage(h, "workload") : stats(h, summary)),
@@ -105,7 +105,7 @@ const podsArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load workload pods",
+				title: "Couldn't load workload pods",
 				onRetry: Message.ClickedRetryPods(),
 			}),
 		onData: (page) =>

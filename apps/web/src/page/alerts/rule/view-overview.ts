@@ -339,7 +339,7 @@ export const overviewTab = (h: H, model: Model, rule: AlertRuleDocument, timeZon
 						[h.Class("space-y-4")],
 						[
 							sectionHeading(h, { title: "Checks" }),
-							errorState(h, { failure, title: "Failed to load checks", onRetry: Message.ClickedReload() }),
+							errorState(h, { failure, title: "Couldn't load checks", onRetry: Message.ClickedReload() }),
 						],
 					),
 				onNone: () => checksPanel(h, model, { rule, page, isLoading: isChecksLoading, timeZone }),

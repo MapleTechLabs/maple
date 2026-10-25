@@ -109,7 +109,7 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 			chartLoading(h, { variant: "area", height: 224 }),
 		],
 		onFailure: (failure) => [
-			errorState(h, { failure, title: "Failed to load analytics summary", onRetry: Message.ClickedRetrySummary() }),
+			errorState(h, { failure, title: "Couldn't load analytics summary", onRetry: Message.ClickedRetrySummary() }),
 		],
 		onData: (summary) => {
 			const source: AnalyticsMetricSource = {
@@ -211,7 +211,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 					nounPlural: "countries",
 					formatValue: countryLabel,
 					emptyMessage: () => [
-						"No geo data. Country is resolved at the ingest gateway from the Cloudflare edge header, and only for traffic received after that was enabled — it is never backfilled.",
+						"No geo data. Country is resolved at the ingest gateway from the Cloudflare edge header, and only for traffic received after that was enabled. It is never backfilled.",
 					],
 				},
 				{ tab: "Languages", rows: breakdowns.languages, filterKey: "language", noun: "language", nounPlural: "languages", formatValue: languageLabel },
@@ -253,7 +253,7 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 		onFailure: (failure) =>
 			panel(h, {}, [
 				header,
-				errorState(h, { failure, title: "Could not load traces for this event", variant: "inline", className: "px-3 py-2" }),
+				errorState(h, { failure, title: "Couldn't load traces for this event", variant: "inline", className: "px-3 py-2" }),
 			]),
 		onData: (samples) =>
 			samples.length === 0
@@ -299,7 +299,7 @@ const breakdownSection = (h: H, model: Model, timeZone: string): Html =>
 		onEmpty: () =>
 			h.div([h.Class("grid gap-4 @min-[880px]/page:grid-cols-2")], [skeleton(h, "h-72 w-full"), skeleton(h, "h-72 w-full")]),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load breakdowns", onRetry: Message.ClickedRetryBreakdowns() }),
+			errorState(h, { failure, title: "Couldn't load breakdowns", onRetry: Message.ClickedRetryBreakdowns() }),
 		onData: () => {
 			const filters = filtersOf(model.search)
 			const isWaiting = AsyncData.isRefreshing(model.breakdowns.data)

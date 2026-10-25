@@ -99,7 +99,7 @@ export const anomalyHero = (h: H, incident: AnomalyIncidentDocument, nowMs: numb
 									" ",
 									"against a ",
 									h.span([h.Class("font-mono text-foreground")], [fmt(incident.baselineMedian)]),
-									" 7-day baseline —",
+									" 7-day baseline:",
 									" ",
 									h.span([h.Class(accent)], [dev.label]),
 									dev.kind === "sigma" ? " above median" : dev.kind === "percent" ? " vs baseline" : "",
@@ -139,8 +139,8 @@ export const signalChart = (h: H, model: Model, incident: AnomalyIncidentDocumen
 	return AsyncData.match(model.timeseries.data, {
 		onIdle: () => chartLoading(h, { variant: "line", height: 256 }),
 		onLoading: () => chartLoading(h, { variant: "line", height: 256 }),
-		onFailure: () => chartError(h, { height: 256 }, ["Failed to load signal data."]),
-		onStale: () => chartError(h, { height: 256 }, ["Failed to load signal data."]),
+		onFailure: () => chartError(h, { height: 256 }, ["Couldn't load signal data."]),
+		onStale: () => chartError(h, { height: 256 }, ["Couldn't load signal data."]),
 		onSuccess: (wire) => loaded(wire),
 		onRefreshing: (wire) => loaded(wire),
 	})
@@ -249,7 +249,7 @@ export const linkedIssueCard = (h: H, model: Model, incident: AnomalyIncidentDoc
 									[h.Class("text-xs text-muted-foreground")],
 									[
 										incident.signalType === "error_spike"
-											? "This frequency increase is fingerprint-scoped — an issue with this fingerprint may already exist for the service."
+											? "This frequency increase is fingerprint-scoped, so an issue with this fingerprint may already exist for the service."
 											: "Escalate this anomaly by linking it to an existing error issue.",
 									],
 								),
@@ -286,7 +286,7 @@ export const linkedIssueCard = (h: H, model: Model, incident: AnomalyIncidentDoc
 			[
 				h.p(
 					[h.Class("text-muted-foreground")],
-					["Linked to issue", " ", h.code([h.Class("font-mono text-xs")], [shortIssueId(id)]), " — failed to load its details."],
+					["Linked to issue", " ", h.code([h.Class("font-mono text-xs")], [shortIssueId(id)]), ". Couldn't load its details."],
 				),
 				cardActions(h, id, isBusy),
 			],

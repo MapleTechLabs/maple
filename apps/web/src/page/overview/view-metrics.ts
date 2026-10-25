@@ -303,15 +303,9 @@ const cardContent = (
 			return chartSkeleton(h, item.skeleton)
 		case "Failed": {
 			const { failure: cardFailure, retry } = item.body
+			// The page strip already names this failure and retries it: the card keeps its frame, quietly.
 			if (pageFailureKeys.split(FAILURE_KEY_SEPARATOR).includes(failureKey(cardFailure)))
-				return errorState(h, {
-					failure: cardFailure,
-					variant: "quiet",
-					title: "Couldn't load",
-					onRetry: Message.ClickedRetry({ target: retry }),
-					hidesRetryButton: true,
-					className: "h-full flex-col justify-center gap-1",
-				})
+				return h.div([h.Class("h-full")], [h.span([h.Class("sr-only")], ["Couldn't load"])])
 			return errorState(h, {
 				failure: cardFailure,
 				variant: "panel",

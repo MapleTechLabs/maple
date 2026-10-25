@@ -6,9 +6,15 @@ import { Message } from "./message"
 import { type Model, Session } from "./model"
 import { onboardingInputsOf, pageContextOf, planGateOf, shellClerkOf } from "./update"
 import * as OnboardingView from "./page/onboarding/view"
-import { breadcrumbsOf, placeholderContent, rendersShell } from "./page/chrome"
+import { breadcrumbsOf, notFoundContent, placeholderContent, rendersShell } from "./page/chrome"
 import type { PageContext, ShellInfraSurfaces } from "./page/contract"
-import { isBarePageRoute, type PageMessage, pageBreadcrumbs, viewPage, viewPageTopbarActions } from "./page/registry"
+import {
+	isBarePageRoute,
+	type PageMessage,
+	pageBreadcrumbs,
+	viewPage,
+	viewPageTopbarActions,
+} from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
@@ -111,15 +117,27 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 		),
 	)
 
-/** The routed page, or the placeholder while the route has no ported page. */
+/** The routed page, the not-found body for an unknown path, or a skeleton while the page loads. */
 const pageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition): Html =>
-	Option.getOrElse(lazyPageView(model, h, position), () => placeholderContent(h))
+	Option.getOrElse(lazyPageView(model, h, position), () =>
+		model.route._tag === "NotFound" ? notFoundContent(h) : placeholderContent(h),
+	)
 
 /** The routed page's own top-bar actions, if it has any. */
 const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const maybeContext = pageContextOf(model)
 	return model.page !== null && Option.isSome(maybeContext)
-		? viewPageTopbarActions(h, model.page, { context: maybeContext.value, isMobile: model.shell.isMobile, isBelowSm: model.shell.isBelowSm, isBelowLg: model.shell.isFilterCollapsed }, toPageMessage)
+		? viewPageTopbarActions(
+				h,
+				model.page,
+				{
+					context: maybeContext.value,
+					isMobile: model.shell.isMobile,
+					isBelowSm: model.shell.isBelowSm,
+					isBelowLg: model.shell.isFilterCollapsed,
+				},
+				toPageMessage,
+			)
 		: h.empty
 }
 
@@ -229,7 +247,10 @@ const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =
 		{
 			SignIn: () =>
 				isClerkAuthEnabled
-					? Option.match(onboardingView(model, h), { onNone: () => [], onSome: (screen) => [screen] })
+					? Option.match(onboardingView(model, h), {
+							onNone: () => [],
+							onSome: (screen) => [screen],
+						})
 					: [signInView(model, h)],
 			Chat: () => bareShellRoute(model, h),
 		},
@@ -256,7 +277,10 @@ const content = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 			Option.exists(planGateOf(model), (gate) => gate.isSplash)
 				? [bootSplash(h)]
 				: Option.exists(planGateOf(model), (gate) => gate.wrongRegion !== null)
-					? Option.match(onboardingView(model, h), { onNone: () => [], onSome: (screen) => [screen] })
+					? Option.match(onboardingView(model, h), {
+							onNone: () => [],
+							onSome: (screen) => [screen],
+						})
 					: routeView(model, h),
 	})
 
