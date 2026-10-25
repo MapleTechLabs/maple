@@ -45,6 +45,7 @@ import { IncidentsData, type Model, RulesData } from "./model"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { storageKeyOf } from "../onboarding/quick-start-state"
 import type * as SetupChecklist from "./setup-checklist"
+import { Message as SetupMessage } from "./setup-checklist"
 import * as Setup from "./setup-checklist-update"
 
 export type Return = PageReturn<Model, Message>
@@ -455,7 +456,12 @@ const retryPage = (model: Model, context: PageContext): Return => {
 		"Load",
 	)
 	const facets = retry(synced.model, context, "Facets")
-	return { model: facets.model, commands: [...(synced.commands ?? []), ...(facets.commands ?? [])] }
+	const retried: Return = { model: facets.model, commands: [...(synced.commands ?? []), ...(facets.commands ?? [])] }
+	// One strip can stand for a setup failure too; its own poll is the setup card's retry.
+	const setup = facets.model.setup
+	return setup !== null && AsyncData.isFailure(setup.services)
+		? withSetup(retried, (current) => Setup.update(current, SetupMessage.TickedPoll(), context))
+		: retried
 }
 
 const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
