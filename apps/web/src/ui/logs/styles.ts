@@ -20,8 +20,9 @@ export const CHIP_TONE_CLASSES = {
 export const CHIP_KEY_TONE_CLASSES = {
 	crit: "opacity-70",
 	warn: "opacity-70",
-	emphasis: "text-muted-foreground/70",
-	muted: "text-muted-foreground/60",
+	// Full muted tone keeps the key at AA against the chip; the bright value carries the hierarchy.
+	emphasis: "text-muted-foreground",
+	muted: "opacity-70",
 } satisfies Record<ChipTone, string>
 export const CHIP_CLASS =
 	"inline-flex items-center gap-1 h-[18px] min-w-0 px-1.5 rounded border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
