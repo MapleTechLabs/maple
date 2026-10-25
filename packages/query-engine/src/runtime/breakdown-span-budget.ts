@@ -27,12 +27,12 @@ const SECONDS_PER_HOUR = 3600
 
 /**
  * Whether a per-service span count can size this breakdown. A positive span or resource
- * attribute match may be pruned by the attribute bloom index, which the count cannot see.
+ * attribute match (outside an `or` group) may be pruned by the attribute bloom index.
  */
 export function spanBudgetApplies(filter: SpanBudgetFilter, rangeSeconds: number): boolean {
 	if (rangeSeconds <= MIN_SPAN_ESTIMATE_RANGE_SECONDS) return false
 	return ![...(filter.attributeFilters ?? []), ...(filter.resourceAttributeFilters ?? [])].some(
-		(f) => !f.negated && (f.mode === "equals" || f.mode === "in"),
+		(f) => !f.or?.length && !f.negated && (f.mode === "equals" || f.mode === "in"),
 	)
 }
 
