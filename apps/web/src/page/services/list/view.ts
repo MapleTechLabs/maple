@@ -52,7 +52,7 @@ const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs
 	])
 	return FoldkitAsyncData.matchData(blocking, {
 		onEmpty: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure }),
+		onFailure: (failure) => errorState(h, { failure, onRetry: Message.ClickedReload() }),
 		// The table paints once its sparklines can: they need the chart runtime and theme colours.
 		onData: ([overview]) =>
 			!isPaintReady(model, overview)

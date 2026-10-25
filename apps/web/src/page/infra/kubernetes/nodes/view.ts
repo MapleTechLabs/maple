@@ -4,6 +4,7 @@ import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
+import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { errorState } from "../../../../ui/error-state"
@@ -199,6 +200,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 const filtersRail = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 3),
-		onFailure: (failure) => filterSidebarError(h, failure),
+		onFailure: (failure) =>
+			filterSidebarError(h, failure, undefined, Option.getOrUndefined(AsyncData.getError(model.nodes.data))),
 		onData: (facets) => loadedRail(h, model, facets),
 	})

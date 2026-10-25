@@ -20,7 +20,7 @@ import { icon, type IconName } from "../../ui/icon"
 import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 import { type FilterKey, Message } from "./message"
 import type { Breakdowns, Model } from "./model"
-import { filtersOf } from "./requests"
+import { filtersOf, tabOf } from "./requests"
 import { favicon, isHostLike } from "./view-icons"
 
 // `AnalyticsFilterSidebar`: the page's filter rail.
@@ -136,9 +136,11 @@ const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 	])
 }
 
+// Overview's breakdown cards show this same read's failure in full; the AI tab does not.
 export const filtersRail = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.breakdowns.data, {
 		onEmpty: () => filterSidebarLoading(h, 6),
-		onFailure: (failure) => filterSidebarError(h, failure),
+		onFailure: (failure) =>
+			filterSidebarError(h, failure, undefined, tabOf(model.search) === "overview" ? failure : undefined),
 		onData: (breakdowns) => loadedRail(h, model, breakdowns),
 	})

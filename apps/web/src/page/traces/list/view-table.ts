@@ -274,7 +274,7 @@ export const tracesTable = (
 			presenceOf(model.presence, "traces").status === "absent" && !isFiltered(model.search)
 				? emptyTable(h, model)
 				: loadingState(h),
-		onFailure: (failure) => errorState(h, { failure }),
+		onFailure: (failure) => errorState(h, { failure, onRetry: Message.ClickedReload() }),
 		onData: () =>
 			allRows(model).length === 0
 				? emptyTable(h, model)
