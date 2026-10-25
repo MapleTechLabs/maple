@@ -56,7 +56,7 @@ goes in the PR comment; rotate it in Infisical if it leaks.
 
 `scripts/preview-seed-smoke.ts` calls the preview sign-in endpoint (which provisions the
 reviewer and its org), seeds demo telemetry into the reviewer's org through the preview's API,
-and fails the job if a Postgres- or warehouse-backed route returns a 5xx. Without
+and fails the job if a Postgres- or warehouse-backed route returns anything but a 2xx. Without
 `PREVIEW_SIGNIN_KEY` it seeds the dev test user instead. The PR comment reports the outcome.
 
 ## Limits and cost
