@@ -56,6 +56,8 @@ export const Message = defineMessageUnion({
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedRetry: { target: RetryTarget },
+	/** The page strip's Try again: every failed read on the page, not just one card's. */
+	ClickedRetryPage: {},
 	ClickedResetTimeRange: {},
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
