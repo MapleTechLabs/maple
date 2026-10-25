@@ -62,6 +62,10 @@ It is the only layer whose interior tier is filled by a **scheduled job**
 materialized view. The downstream service name is only recoverable by joining a Client/Producer span to its child
 Server/Consumer span, which an MV cannot express.
 
+`service_map_spans` and `service_map_children` lead their sort key with the 5-minute trace
+bucket, so the rollup's hour join and the live branch read only the buckets in their window
+(see "The service-map span tables" in [warehouse-rollups.md](warehouse-rollups.md)).
+
 Two consequences, both open:
 
 - The read path has **no fallback for a complete-but-unsealed hour**. Between the hour

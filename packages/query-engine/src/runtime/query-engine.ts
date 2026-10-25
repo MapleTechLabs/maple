@@ -249,7 +249,6 @@ export const msToTinybirdDateTime = (ms: number): string => {
 }
 
 const CACHE_SNAP_S = 15
-const TRACE_SERVICE_PARTITION_BUFFER_MS = 24 * 60 * 60 * 1000
 
 // Re-exported so `@maple/query-engine/runtime` consumers keep one import site;
 // the definition is in the driver-free `../group-key` because the query-set merge
@@ -257,12 +256,10 @@ const TRACE_SERVICE_PARTITION_BUFFER_MS = 24 * 60 * 60 * 1000
 export { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
 
 /**
- * Bound the service-enrichment lookup to the daily partitions surrounding the
- * rows already selected for this page. A one-day cushion covers traces that
- * cross the requested range boundary without probing the full 30-day
- * retention window of `service_map_spans`.
+ * The time span of the rows already selected for this page. The services lookup
+ * pads it ±1h itself, as for every trace-id read.
  */
-function traceServicePartitionWindow(
+function pageTimeWindow(
 	rows: ReadonlyArray<{ readonly timestamp: DateTime.Utc }>,
 	fallback: { readonly startTime: string; readonly endTime: string },
 ): { readonly startTime: string; readonly endTime: string } {
@@ -271,8 +268,8 @@ function traceServicePartitionWindow(
 	if (pageTimes.length === 0) return fallback
 
 	return {
-		startTime: formatWarehouseDateTime(Math.min(...pageTimes) - TRACE_SERVICE_PARTITION_BUFFER_MS),
-		endTime: formatWarehouseDateTime(Math.max(...pageTimes) + TRACE_SERVICE_PARTITION_BUFFER_MS),
+		startTime: formatWarehouseDateTime(Math.min(...pageTimes)),
+		endTime: formatWarehouseDateTime(Math.max(...pageTimes)),
 	}
 }
 
@@ -1964,7 +1961,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							CH.traceServicesByTraceIdsQuery({ traceIds }),
 							{
 								orgId: tenant.orgId,
-								...traceServicePartitionWindow(rows, {
+								...pageTimeWindow(rows, {
 									startTime: request.startTime,
 									endTime: request.endTime,
 								}),
