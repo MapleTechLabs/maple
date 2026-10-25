@@ -123,6 +123,11 @@ export const cloudflaredAccessToken = (
 		Effect.timeoutOrElse({ duration: CLOUDFLARED_TIMEOUT, orElse: () => Effect.succeedNone }),
 		Effect.tapCause((cause) => Effect.logDebug("cloudflared access token failed", cause)),
 		Effect.orElseSucceed(() => Option.none<string>()),
+		// Records whether a token came back, never the token or the host.
+		Effect.tap((token) =>
+			Effect.annotateCurrentSpan("maple.cli.cloudflared.token_found", Option.isSome(token)),
+		),
+		Effect.withSpan("LocalAccess.cloudflaredToken", { kind: "client" }),
 	)
 
 export interface LocalAccessSettings {
