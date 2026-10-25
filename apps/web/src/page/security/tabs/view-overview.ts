@@ -89,7 +89,7 @@ const spendNote = (spend: Spend): string =>
 		`${formatNumber(spend.tokens)} tokens`,
 		...(spend.unpriced === 0
 			? []
-			: [`excludes ${spend.unpriced} unpriced ${spend.unpriced === 1 ? "run" : "runs"}`]),
+			: [`models not yet priced for ${spend.unpriced} ${spend.unpriced === 1 ? "run" : "runs"}`]),
 		...(spend.isPartial ? [`newest ${RUN_LIST_CAP} runs per target only`] : []),
 	].join(" · ")
 
