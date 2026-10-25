@@ -136,9 +136,10 @@ export interface LocalAccessSettings {
 /**
  * The CLI's HttpClient for a local server, wherever it runs: signed in through
  * the access token, carrying the configured headers and, for an https server on
- * another host, the Cloudflare Access token. Redirects from such a server are
- * not followed, so a proxy's sign-in page fails as a redirect instead of as
- * HTML where JSON was expected.
+ * another host, the Cloudflare Access token. Redirects from the server are not
+ * followed while it gets any of those, so they cannot leak to another origin,
+ * and a proxy's sign-in page fails as a redirect instead of as HTML where JSON
+ * was expected.
  */
 export const localAccessClient =
 	(settings: LocalAccessSettings) =>
@@ -148,7 +149,12 @@ export const localAccessClient =
 			const cloudflared = wantsCloudflaredToken(localUrl, headers)
 				? yield* Effect.cached(settings.cloudflaredToken)
 				: Effect.succeedNone
-			const remoteHttps = isRemoteHttps(localUrl)
+			// A followed redirect would carry the credentials added here to wherever
+			// it points, so the target's redirects are never followed while any are.
+			const noRedirects =
+				isRemoteHttps(localUrl) ||
+				Object.keys(headers).length > 0 ||
+				settings.accessToken !== undefined
 			return client.pipe(
 				HttpClient.mapRequest(withLocalAccessToken(settings.accessToken, localUrl)),
 				HttpClient.mapRequest(withLocalHeaders(headers, localUrl)),
@@ -159,13 +165,15 @@ export const localAccessClient =
 								Option.match({
 									onNone: () => request,
 									onSome: (token) =>
-										HttpClientRequest.setHeader(request, "cf-access-token", token),
+										request.headers["cf-access-token"] === undefined
+											? HttpClientRequest.setHeader(request, "cf-access-token", token)
+											: request,
 								}),
 							)
 						: Effect.succeed(request),
 				),
 				HttpClient.transform((response, request) =>
-					remoteHttps && isTargetRequest(request, localUrl)
+					noRedirects && isTargetRequest(request, localUrl)
 						? Effect.provideService(response, FetchHttpClient.RequestInit, { redirect: "manual" })
 						: response,
 				),

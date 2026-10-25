@@ -101,6 +101,24 @@ describe("localAccessClient", () => {
 		}),
 	)
 
+	it.effect("does not follow a redirect that would carry configured headers to another origin", () =>
+		Effect.gen(function* () {
+			const { sent, layer } = recordingFetch()
+			const { asked, settings: s } = yield* settings("http://maple.lan:4318", {
+				"cf-access-client-secret": "secret",
+			})
+			const client = yield* Effect.flatMap(HttpClient.HttpClient, localAccessClient(s)).pipe(
+				Effect.provide(layer),
+			)
+
+			yield* client.execute(HttpClientRequest.get("http://maple.lan:4318/local/status"))
+
+			strictEqual(yield* Ref.get(asked), 0)
+			strictEqual(sent[0]?.headers.get("cf-access-client-secret"), "secret")
+			strictEqual(sent[0]?.redirect, "manual")
+		}),
+	)
+
 	it.effect("leaves a server on this machine alone: no cloudflared, redirects followed", () =>
 		Effect.gen(function* () {
 			const { sent, layer } = recordingFetch()
