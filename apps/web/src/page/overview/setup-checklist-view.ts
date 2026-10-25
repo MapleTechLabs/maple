@@ -2,11 +2,11 @@ import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { getOnboardingSetupHint } from "../../lib/onboarding-intent"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type { LoadFailure } from "../../data/load-failure"
 import { AppRoute, hrefOf } from "../../route"
 import { button } from "../../ui/button"
 import { card, cardPanel } from "../../ui/card"
 import { copyableField } from "../../ui/copyable-field"
-import { errorState } from "../../ui/error-state"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import { iconButton } from "../../ui/icon-button"
@@ -251,21 +251,17 @@ const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string,
 		"mb-4 shrink-0 border-primary/30 bg-primary/[0.02] overflow-hidden",
 	)
 
+/** The first read's failure while the card is mounted; the page's error strip shows it. */
+export const setupFailure = (model: Model): LoadFailure | undefined =>
+	isMounted(model) && AsyncData.isFailure(model.services) ? model.services.error : undefined
+
 /**
- * `SetupChecklist`: nothing once dismissed or until the first read says whether data arrived,
- * the read's failure if it never answered, the celebration once connected, else the card.
+ * `SetupChecklist`: nothing once dismissed, until the first read says whether data arrived, or
+ * when it failed (the page's strip says so), the celebration once connected, else the card.
  */
 const setupChecklist = (h: H, model: Model): Html => {
 	const state = model.state
 	if (state === null || !isMounted(model)) return h.empty
-	if (AsyncData.isFailure(model.services))
-		return errorState(h, {
-			failure: model.services.error,
-			variant: "inline",
-			title: "Couldn't check whether your app is sending data",
-			onRetry: Message.TickedPoll(),
-			className: "mb-4",
-		})
 	if (!AsyncData.hasData(model.services)) return h.empty
 	const first = realServices(model)[0]
 	if (first !== undefined) return celebration(h, first.serviceName)

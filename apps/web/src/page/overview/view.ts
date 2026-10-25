@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { Option } from "effect"
 import { isChartRuntimeReady } from "../../charts/chart-runtime"
 import { ResolveThemeColors } from "../../charts/theme-colors"
+import { FAILURE_KEY_SEPARATOR, failureKey, isSameFailure, type LoadFailure } from "../../data/load-failure"
 import { errorState } from "../../ui/error-state"
 import * as Select from "../../ui/select"
 import * as SelectView from "../../ui/select-view"
@@ -25,6 +26,7 @@ import { healthList, healthOverview, type SliceSearch } from "./view-health"
 import { metricsGrid, THEME_TOKENS } from "./view-metrics"
 import { usageCards } from "./view-usage"
 
+import { Message as SetupMessage } from "./setup-checklist"
 import * as SetupChecklistView from "./setup-checklist-view"
 
 const EMPTY_COLORS = {}
@@ -84,20 +86,28 @@ const servicesEmptyState = (h: H, model: Model): Html =>
 		className: "py-8",
 	})
 
-/** The facets failure: the charts still load, so the dropdown says why it is empty. */
-const facetsError = (h: H, model: Model): ReadonlyArray<Html> =>
-	AsyncData.isFailure(model.facets.data)
-		? Option.toArray(
-				Option.map(AsyncData.getError(model.facets.data), (failure) =>
-					errorState(h, {
-						failure,
-						variant: "inline",
-						title: "Failed to load environments",
-						onRetry: Message.ClickedRetry({ target: "Facets" }),
-					}),
-				),
-			)
-		: []
+type PageFailure = Readonly<{ failure: LoadFailure; title: string; onRetry: Message }>
+
+/** The page-level reads that failed; one strip when both failed the same way. */
+const pageFailures = (model: Model): ReadonlyArray<PageFailure> => {
+	const facets = Option.getOrUndefined(AsyncData.getError(model.facets.data))
+	const setup = model.setup === null ? undefined : SetupChecklistView.setupFailure(model.setup)
+	const facetsRetry = Message.ClickedRetry({ target: "Facets" })
+	if (facets !== undefined && setup !== undefined && isSameFailure(facets, setup))
+		return [{ failure: facets, title: facets.title, onRetry: facetsRetry }]
+	return [
+		...(facets === undefined ? [] : [{ failure: facets, title: "Couldn't load environments", onRetry: facetsRetry }]),
+		...(setup === undefined
+			? []
+			: [
+					{
+						failure: setup,
+						title: "Couldn't check whether your app is sending data",
+						onRetry: Message.GotSetupMessage({ message: SetupMessage.TickedPoll() }),
+					},
+				]),
+	]
+}
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const slice: SliceSearch = {
@@ -108,10 +118,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	}
 	const nowMs = model.nowMs ?? 0
 	const environments = environmentFilter(model)
+	const failures = pageFailures(model)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
-			dashboardPage(h, { actions: headerActions(h, model) }, [
+			dashboardPage(h, { title: "Overview", actions: headerActions(h, model) }, [
 				...(model.setup === null
 					? []
 					: [
@@ -122,7 +133,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								toParentMessage: (message) => Message.GotSetupMessage({ message }),
 							}),
 						]),
-				...facetsError(h, model),
+				...failures.map(({ failure, title, onRetry }) =>
+					errorState(h, { failure, title, variant: "row", onRetry, className: "mb-4" }),
+				),
 				healthOverview(h, { model, slice, nowMs }),
 				usageCards(h, model),
 				metricsGrid(h, model, {
@@ -131,6 +144,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					timeZone: inputs.context.timeZone,
 					nowMs,
 					useRefinement: environments === undefined,
+					pageFailureKeys: failures.map(({ failure }) => failureKey(failure)).join(FAILURE_KEY_SEPARATOR),
 				}),
 				healthList(h, {
 					model,

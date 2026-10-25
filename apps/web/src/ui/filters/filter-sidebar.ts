@@ -146,10 +146,10 @@ export const filterSidebarEmpty = <M>(h: HtmlBuilder<M>): Html =>
 		),
 	])
 
-/** The filter sidebar's failure state. */
+/** The filter sidebar's failure state: one quiet line, since the main panel carries the full error. */
 export const filterSidebarError = <M>(h: HtmlBuilder<M>, failure: LoadFailure, onRetry?: M): Html =>
 	filterSidebarFrame(h, {}, [
 		filterSidebarHeader(h),
 		separator(h, "horizontal", "my-2"),
-		errorState(h, { failure, onRetry, variant: "inline" }),
+		errorState(h, { failure, onRetry, variant: "quiet", title: "Filters unavailable", className: "py-2 pr-4" }),
 	])

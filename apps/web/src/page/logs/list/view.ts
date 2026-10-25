@@ -2,9 +2,11 @@ import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/s
 import { shortId } from "@maple/ui/lib/ids"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
+import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
+import { isSameFailure } from "../../../data/load-failure"
 import { errorState } from "../../../ui/error-state"
 import { activeFilterChips } from "../../../ui/filters/active-filter-chips"
 import type * as LogsStream from "../../../ui/logs/logs-stream"
@@ -152,6 +154,12 @@ const headerActions = (h: HtmlBuilder<Message>, model: Model): Html => {
 	})
 }
 
+const isSharedFailure = (model: Model): boolean => {
+	const list = AsyncData.getError(model.firstPage.data)
+	const volume = AsyncData.getError(model.volume.data)
+	return Option.isSome(list) && Option.isSome(volume) && isSameFailure(list.value, volume.value)
+}
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: VOLUME_THEME_TOKENS }))],
@@ -159,9 +167,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
+					title: "Logs",
 					filters: filtersRail(h, model, inputs.context.pinnedNamespace),
 					actions: headerActions(h, model),
-					sticky: volumeChart(h, model, inputs.context.timeZone),
+					// The list's error panel already explains a shared failure; the chart drops its banner.
+					sticky: isSharedFailure(model) ? undefined : volumeChart(h, model, inputs.context.timeZone),
 					fill: true,
 					isScrolled: model.isScrolledAway,
 				},

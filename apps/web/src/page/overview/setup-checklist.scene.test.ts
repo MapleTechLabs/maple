@@ -181,7 +181,7 @@ describe("overview setup checklist", () => {
 			{ update: pageUpdate, view },
 			given(failOverview(entered(true).read.model)),
 			...pageMounts,
-			expectView(text("Couldn't check whether your app is sending data")).toExist(),
+			expectView(text(toLoadFailure("boom").message, { exact: false })).toExist(),
 			expectView(text("Watching for your first trace…")).not.toExist(),
 		)
 	})
@@ -195,7 +195,7 @@ describe("overview setup checklist", () => {
 			{ update: pageUpdate, view },
 			given(retrying),
 			...pageMounts,
-			expectView(text("Couldn't check whether your app is sending data")).toExist(),
+			expectView(text(toLoadFailure("boom").message, { exact: false })).toExist(),
 		)
 	})
 

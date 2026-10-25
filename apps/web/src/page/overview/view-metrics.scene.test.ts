@@ -68,6 +68,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 		timeZone: "UTC",
 		nowMs: 0,
 		useRefinement: false,
+		pageFailureKeys: "",
 	})
 // Exercise the view's invalidation independently of the request Commands covered by overview.scene.
 const pageUpdate = (model: Model, message: Message) => ({ model: update(model, message, context).model })
@@ -153,6 +154,7 @@ describe("overview metric card caches", () => {
 				timeZone,
 				nowMs: 0,
 				useRefinement: false,
+				pageFailureKeys: "",
 			})
 		const expectSpec = (colors: string, zone: string) =>
 			tap<Model, Message>(({ html }) => {

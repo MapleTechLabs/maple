@@ -21,7 +21,8 @@ export type ErrorStateOptions<M> = Readonly<{
 	failure: LoadFailure
 	title?: string
 	onRetry?: M
-	variant?: "panel" | "row" | "inline"
+	/** `quiet`: one muted line (the title) under a page-level error that already explains it. */
+	variant?: "panel" | "row" | "inline" | "quiet"
 	className?: string
 }>
 
@@ -212,6 +213,24 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 				]
 	const variant = options.variant ?? "panel"
 
+	if (variant === "quiet") {
+		return h.div(
+			[
+				h.Class(cn("flex items-center gap-2", options.className)),
+				h.Role("status"),
+				h.Title(message),
+				...autoRetry,
+			],
+			[
+				h.p(
+					[h.Class("font-prose text-xs text-muted-foreground")],
+					[heading, h.span([h.Class("sr-only")], [`. ${message}`])],
+				),
+				...retry("ghost", "h-6 px-2 font-prose text-xs text-muted-foreground hover:text-foreground sm:text-xs"),
+			],
+		)
+	}
+
 	if (variant === "inline") {
 		return h.div(
 			[h.Class(cn("flex flex-col gap-1.5 py-4", options.className)), ...alertRegion(h), ...autoRetry],
@@ -228,10 +247,10 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 							],
 							[signalBreakTick(h)],
 						),
-						h.p([h.Class("text-xs font-medium text-foreground")], [heading]),
+						h.p([h.Class("font-prose text-xs font-medium text-foreground")], [heading]),
 					],
 				),
-				h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
+				h.p([h.Class("font-prose text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
 				...retry("ghost", "-ml-2 h-6 w-fit px-2 text-xs text-muted-foreground hover:text-foreground"),
 			],
 		)
@@ -254,8 +273,8 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 				h.div(
 					[h.Class("min-w-0 flex-1 basis-56 space-y-0.5")],
 					[
-						h.p([h.Class("text-sm font-medium text-foreground")], [heading]),
-						h.p([h.Class("line-clamp-2 text-xs text-muted-foreground")], [message]),
+						h.p([h.Class("font-prose text-sm font-medium text-foreground")], [heading]),
+						h.p([h.Class("font-prose line-clamp-2 text-xs text-muted-foreground")], [message]),
 					],
 				),
 				...retry("outline", "shrink-0"),
@@ -279,8 +298,8 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 			h.div(
 				[h.Class("max-w-xs space-y-1")],
 				[
-					h.p([h.Class("text-sm font-medium text-foreground")], [heading]),
-					h.p([h.Class("text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
+					h.p([h.Class("font-prose text-sm font-medium text-foreground")], [heading]),
+					h.p([h.Class("font-prose text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
 				],
 			),
 			...retry("outline"),
