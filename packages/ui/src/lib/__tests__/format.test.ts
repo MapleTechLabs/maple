@@ -134,14 +134,14 @@ describe("percent formatters stay separate", () => {
 			"0%",
 			"100%",
 		])
-		expect([0.255, 0.0016, 0].map((value) => formatErrorRate(value))).toEqual(["25.5%", "0.2%", "0%"])
+		expect([0.255, 0.0016, 0].map((value) => formatErrorRate(value))).toEqual(["25.5%", "0.16%", "0%"])
 	})
 
 	it("formatErrorRate surfaces a rare failure instead of showing 0%", () => {
 		expect(formatErrorRate(0)).toBe("0%")
 		expect(formatErrorRate(0.00005)).toBe("<0.01%")
 		expect(formatErrorRate(0.0008)).toBe("0.08%")
-		expect(formatErrorRate(0.0016)).toBe("0.2%")
+		expect(formatErrorRate(0.0016)).toBe("0.16%")
 		expect(formatErrorRate(0.087)).toBe("8.7%")
 	})
 })

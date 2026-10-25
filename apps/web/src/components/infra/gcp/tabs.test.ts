@@ -244,7 +244,7 @@ describe("formatGcpValue", () => {
 	it("formats by unit and marks an absent value", () => {
 		expect(formatGcpValue("count", 12_345)).toBe("12.3K")
 		expect(formatGcpValue("percent", 0.42)).toBe("42%")
-		expect(formatGcpValue("errorRate", 0.001)).toBe("0.1%")
+		expect(formatGcpValue("errorRate", 0.001)).toBe("0.10%")
 		expect(formatGcpValue("seconds", 1.5)).toBe("1.50s")
 		expect(formatGcpValue("seconds", 90)).toBe("1.5min")
 		expect(formatGcpValue("bytes", 1536)).toBe("1.5 KB")

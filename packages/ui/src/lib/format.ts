@@ -91,13 +91,13 @@ export function formatBytesPerSecond(bytes: number): string {
 
 /**
  * A percentage on the table rule: exact zero is "0%", a non-zero share under 0.01% is
- * "<0.01%", two decimals under 0.1%, one decimal under 100, whole numbers from 100 up. One
- * decimal for nearly every value keeps a column scannable ("88.0%" above "1.0%").
+ * "<0.01%", two decimals under 1% (a low error rate's second digit matters), one decimal under
+ * 100, whole numbers from 100 up, so a column stays scannable ("88.0%" above "1.0%").
  */
 const tablePercentText = (pct: number): string => {
 	if (pct === 0) return "0%"
 	if (pct < 0.01) return "<0.01%"
-	if (Number(pct.toFixed(2)) < 0.1) return `${pct.toFixed(2)}%`
+	if (Number(pct.toFixed(2)) < 1) return `${pct.toFixed(2)}%`
 	if (Number(pct.toFixed(1)) < 100) return `${pct.toFixed(1)}%`
 	return `${pct.toFixed(0)}%`
 }
