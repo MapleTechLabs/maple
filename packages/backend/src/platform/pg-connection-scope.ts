@@ -123,6 +123,8 @@ export interface PgConnectionScopeSeams {
 	readonly openClient?: (
 		options: MaplePgClientOptions,
 	) => Effect.Effect<MaplePgClient, SqlError, Scope.Scope | Reactivity.Reactivity>
+	/** Open the database itself, bypassing `openClient`: tests back the scope with PGlite. */
+	readonly openDb?: Effect.Effect<MapleDb, SqlError, Scope.Scope>
 }
 
 /**
@@ -170,6 +172,7 @@ export const makePgConnectionScope = (
 	// The client is scoped: it registers its own close on the scope below, and a
 	// teardown error there never shadows the real DB error from the call.
 	const acquireClient = Effect.suspend(() => openClient(options))
+	const openDb = seams?.openDb ?? makeMapleEffectDb(acquireClient)
 
 	// Lazy: an invocation that never touches the database never creates one.
 	const open: Effect.Effect<MapleDb, DatabaseError> = gate.withPermits(1)(
@@ -181,7 +184,7 @@ export const makePgConnectionScope = (
 			return Effect.uninterruptible(
 				Effect.gen(function* () {
 					const scope = yield* Scope.make()
-					const db = yield* makeMapleEffectDb(acquireClient).pipe(
+					const db = yield* openDb.pipe(
 						Scope.provide(scope),
 						Effect.mapError(toDatabaseError),
 						Effect.onError(() => Scope.close(scope, Exit.void)),

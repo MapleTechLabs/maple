@@ -391,19 +391,19 @@
 				]
 			}
 		},
-		// Code views highlight through the size-capped, memoized wrapper; raw sugar-high froze the
-		// log sheet on megabyte JSON bodies. Chat's `sugar-high/core` highlighter is unaffected.
+		// Code views highlight through lib/highlight, whose output falls back to plain text past the
+		// display cap; a span per token of a megabyte log body froze the log sheet.
 		{
 			"files": ["apps/web/src/**/*.ts", "apps/local-ui/src/**/*.ts"],
-			"excludeFiles": ["apps/web/src/lib/sugar-high.ts"],
+			"excludeFiles": ["apps/web/src/lib/highlight.ts"],
 			"rules": {
 				"no-restricted-imports": [
 					"error",
 					{
 						"paths": [
 							{
-								"name": "sugar-high",
-								"message": "Use highlightCode (lib/sugar-high) or cappedCode (ui/logs/log-message): they cap size and memoize."
+								"name": "@pierre/highlights",
+								"message": "Use highlightCode from lib/highlight (or cappedCode from ui/logs/log-message): they bound what a view renders."
 							}
 						]
 					}

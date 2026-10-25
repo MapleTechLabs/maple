@@ -12,7 +12,7 @@ import type { PanelState as Model } from "./model"
 
 // `AttributesSection` / `AttributesTable` / `AttributeRow` (packages/ui/src/components/attributes)
 // with filter actions and a value renderer that links commit SHAs.
-// TODO(json-highlight): an expanded JSON value renders plain; it should highlight with sugar-high.
+// TODO(json-highlight): an expanded JSON value renders plain; it should highlight like `CollapsibleJsonValue`.
 
 type H = HtmlBuilder<Message>
 type Entries = ReadonlyArray<readonly [string, string]>

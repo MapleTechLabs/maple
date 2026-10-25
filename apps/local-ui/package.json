@@ -21,8 +21,7 @@
 		"@tanstack/charts": "catalog:charts",
 		"@tanstack/charts-scales": "catalog:charts",
 		"effect": "catalog:effect",
-		"foldkit": "0.169.0",
-		"sugar-high": "^2.5.1"
+		"foldkit": "0.169.0"
 	},
 	"devDependencies": {
 		"@effect/language-service": "catalog:effect",

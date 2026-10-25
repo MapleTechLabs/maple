@@ -22,6 +22,7 @@ const healthyConfig: ConfigAuditInputs = {
 			enabled: true,
 			destinationIds: ["dest-1"],
 			windowMinutes: 5,
+			evaluationIntervalMinutes: 1,
 			lastScheduledAt: NOW - 60_000,
 			createdAt: NOW - 10 * 24 * HOUR,
 		},
@@ -413,6 +414,7 @@ describe("CFG-ALERT-02 — alert rules exist", () => {
 						enabled: false,
 						destinationIds: [],
 						windowMinutes: 5,
+						evaluationIntervalMinutes: 1,
 						lastScheduledAt: null,
 						createdAt: NOW - 10 * 24 * HOUR,
 					},
@@ -469,6 +471,7 @@ describe("CFG-ALERT-03 — rules route somewhere", () => {
 			enabled: true,
 			destinationIds: [],
 			windowMinutes: 5,
+			evaluationIntervalMinutes: 1,
 			lastScheduledAt: NOW - 60_000,
 			createdAt: NOW - 10 * 24 * HOUR,
 		}))
@@ -571,6 +574,38 @@ describe("CFG-ALERT-05 — rules are evaluating", () => {
 			inputs({ alertRules: [{ ...healthyConfig.alertRules[0]!, lastScheduledAt: NOW - 10 * 60_000 }] }),
 		)
 		expect(check(report, "CFG-ALERT-05").status).toBe("pass")
+	})
+
+	const hourlyRule = (lastScheduledAt: number) => ({
+		...healthyConfig.alertRules[0]!,
+		windowMinutes: 60,
+		evaluationIntervalMinutes: 60,
+		lastScheduledAt,
+	})
+
+	it("passes an hourly rule claimed 47 minutes ago", () => {
+		const report = runSetupAudit(inputs({ alertRules: [hourlyRule(NOW - 47 * 60_000)] }))
+		expect(check(report, "CFG-ALERT-05").status).toBe("pass")
+	})
+
+	it("flags an hourly rule that missed two intervals", () => {
+		const report = runSetupAudit(inputs({ alertRules: [hourlyRule(NOW - 3 * HOUR)] }))
+		expect(check(report, "CFG-ALERT-05").affected[0]?.note).toBe("last evaluated 3 hours ago")
+	})
+
+	it("flags a 5-minute rule claimed 45 minutes ago", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertRules: [
+					{
+						...healthyConfig.alertRules[0]!,
+						evaluationIntervalMinutes: 5,
+						lastScheduledAt: NOW - 45 * 60_000,
+					},
+				],
+			}),
+		)
+		expect(check(report, "CFG-ALERT-05").affected[0]?.note).toBe("last evaluated 45 minutes ago")
 	})
 })
 

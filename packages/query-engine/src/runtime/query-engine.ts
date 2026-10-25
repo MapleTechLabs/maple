@@ -98,6 +98,7 @@ export {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 	maxRangeSecondsForKind,
+	timeWindowViolation,
 	validateRelativeRange,
 } from "../limits"
 export { relativeRangeSeconds, resolveRelativeRange, resolveRelativeRangeToWarehouse } from "../datetime"

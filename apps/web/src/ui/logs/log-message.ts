@@ -9,7 +9,7 @@ import {
 	PREVIEW_MAX_CHARS,
 	prettyJson,
 } from "../../lib/display-text"
-import { highlightCode } from "../../lib/sugar-high"
+import { highlightCode } from "../../lib/highlight"
 
 // The log detail hero's message, shared by the dashboard and Maple Local. Collapsed it builds only
 // the preview lines; expanded it scrolls inside a capped box, so a huge body never takes the sheet.
@@ -62,7 +62,7 @@ export const cappedCode = <Message>(
 	// The note leads: below the code it would sit 200k characters down a scroll.
 	return [
 		...(omitted === 0 ? [] : [truncationNote(h, shown.length, code.length)]),
-		h.pre([h.Class(className)], [h.code([h.InnerHTML(highlightCode(shown))], [])]),
+		h.pre([h.Class(className)], [h.code([h.InnerHTML(highlightCode(shown, "json"))], [])]),
 	]
 }
 
@@ -88,7 +88,7 @@ export const logMessageView = <Message>(
 						),
 					),
 				],
-				[h.code([h.InnerHTML(highlightCode(shown))], [])],
+				[h.code([h.InnerHTML(highlightCode(shown, "json"))], [])],
 			)
 		: h.p(
 				[

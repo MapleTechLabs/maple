@@ -3,7 +3,7 @@
    `@import "tailwindcss"` (required: the @theme block references Tailwind
    palette vars like --color-red-400). Apps must not re-declare any token
    defined here — `bun run check:tokens` enforces that. App-local tokens
-   (web's Sugar High --sh-*, landing's --bg-elevated family) stay in the apps.
+   (web's syntax highlighting --sh-*, landing's --bg-elevated family) stay in the apps.
    Landing is dark-only: it pins class="dark" on <html> (Layout.astro). */
 
 @custom-variant dark (&:is(.dark *));

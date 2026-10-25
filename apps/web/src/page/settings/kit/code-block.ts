@@ -1,21 +1,21 @@
-import { highlightCode } from "../../../lib/sugar-high"
+import { highlightCode, type Lang, resolveLang } from "../../../lib/highlight"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../../ui/copy-button"
 import { eyebrow } from "../../../ui/eyebrow"
 
-// `CodeBlock`: language eyebrow, copy button, Sugar High markup. The parent owns the copy status.
+// `CodeBlock`: language eyebrow, copy button, highlighted markup. The parent owns the copy status.
 
 export type CodeBlockOptions<M> = Readonly<{
 	code: string
 	language?: string
+	/** The language to highlight as, when the eyebrow is a label (`Helm`, `docker run`). */
+	lang?: Lang
 	className?: string
 	/** The scrolling body's classes: a height cap for a long file keeps the copy button in view. */
 	bodyClassName?: string
 	copy: CopyButton.Model
 	toCopyMessage: (message: CopyButton.Message) => M
-	/** Pre-highlighted HTML for a caller that refines the tokens. */
-	highlighted?: string
 	/** Prose, not code (a prompt for a coding agent): shown as typed, without highlighting. */
 	isPlain?: boolean
 }>
@@ -54,7 +54,10 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 									h.InnerHTML(
 										options.isPlain === true
 											? escapeHtml(options.code)
-											: (options.highlighted ?? highlightCode(options.code)),
+											: highlightCode(
+													options.code,
+													options.lang ?? resolveLang(options.language ?? ""),
+												),
 									),
 								],
 								[],

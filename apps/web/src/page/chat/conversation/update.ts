@@ -173,7 +173,7 @@ const foldEvent = (model: Model, event: ChatEvent, nowMs: number): Model => {
 		: { ...next, status: "ready", stream: null }
 }
 
-/** Each fence not coloured yet, coloured by sugar-high. */
+/** Each fence not coloured yet, coloured. */
 const withHighlights = (
 	model: Model,
 	fences: ReadonlyArray<{ readonly language: string; readonly code: string }>,

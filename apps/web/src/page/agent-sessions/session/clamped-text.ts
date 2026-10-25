@@ -1,5 +1,5 @@
 import type { MarkdownDocument } from "@foldkit/markdown"
-import { highlightCode } from "../../../lib/sugar-high"
+import { highlightCode } from "../../../lib/highlight"
 import { cn } from "@maple/ui/lib/utils"
 import { Effect, Queue, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
@@ -128,7 +128,7 @@ export const clampedText = <M>(h: HtmlBuilder<M>, options: ClampedTextOptions<M>
 							!isExpanded && CLAMP_CLASSES[clampLines],
 						),
 					),
-					...(effective === "json" ? [h.InnerHTML(highlightCode(shown))] : []),
+					...(effective === "json" ? [h.InnerHTML(highlightCode(shown, "json"))] : []),
 					...(isExpanded || isKnownClamped
 						? []
 						: [

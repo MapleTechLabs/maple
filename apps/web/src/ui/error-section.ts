@@ -1,7 +1,6 @@
 import { JSON_TOKEN_COLOR, parseErrorBody, splitErrorText, tokenizeJson } from "@maple/ui/lib/error-body"
 import { cn } from "@maple/ui/lib/utils"
 import { capForDisplay, headLines, memoizeByText, PREVIEW_MAX_CHARS } from "../lib/display-text"
-import { HIGHLIGHT_MAX_CHARS } from "../lib/sugar-high"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { copyButton, type CopyStatus } from "./copy-button"
 import { eyebrow } from "./eyebrow"
@@ -13,6 +12,8 @@ import { truncationNote } from "./logs/log-message"
 
 const COLLAPSED_LINES = 3
 const LINE_HEIGHT = 1.625
+/** Past this the body is one text node: tokenizing builds a VNode per token. */
+const TOKENIZE_MAX_CHARS = 50_000
 
 const parsedErrorBody = memoizeByText(parseErrorBody)
 
@@ -137,7 +138,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 								? [h.Style({ "max-height": `${COLLAPSED_LINES * LINE_HEIGHT}em` })]
 								: []),
 						],
-						shown.length > HIGHLIGHT_MAX_CHARS
+						shown.length > TOKENIZE_MAX_CHARS
 							? [shown]
 							: body.format === "json"
 								? tokenizeJson(shown).map((token) =>
