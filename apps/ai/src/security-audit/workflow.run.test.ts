@@ -325,7 +325,9 @@ describe("auditWithAgents", () => {
 					checks.left -= 1
 					return checks.left >= 0
 						? Effect.void
-						: Effect.fail(new SecurityAuditNoCredits({ message: "no credits left" }))
+						: Effect.fail(
+								new SecurityAuditNoCredits({ message: "no credits left", resetsAt: null }),
+							)
 				}),
 		})
 		return Effect.gen(function* () {

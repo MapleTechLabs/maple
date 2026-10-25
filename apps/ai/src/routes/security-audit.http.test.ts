@@ -99,8 +99,8 @@ const makeHarness = (
 		readonly enabled?: boolean
 		readonly startFails?: boolean
 		readonly cancelFails?: boolean
-		/** The org's plan has no AI credits to pay for an audit. */
-		readonly noCredits?: boolean
+		/** The org cannot pay for an audit: a plan without AI credits (null), or spent until then. */
+		readonly noCredits?: { readonly resetsAt: number | null }
 		/** Repository sizes GitHub reports, by `owner/name`; read on every call. */
 		readonly repositoryBytes?: Record<string, number>
 	} = {},
@@ -143,9 +143,15 @@ const makeHarness = (
 				storeLayer,
 				starter,
 				Layer.succeed(AuditLogService, auditLog),
-				options.noCredits === true
+				options.noCredits !== undefined
 					? Layer.succeed(SecurityAuditCredits, {
-							ensure: () => Effect.fail(new SecurityAuditNoCredits({ message: NO_CREDITS })),
+							ensure: () =>
+								Effect.fail(
+									new SecurityAuditNoCredits({
+										message: NO_CREDITS,
+										resetsAt: options.noCredits?.resetsAt ?? null,
+									}),
+								),
 						})
 					: SecurityAuditCredits.unmetered,
 				// The route reads this clock, so spend windows in the tests follow it.
@@ -547,20 +553,31 @@ describe("/api/security-audit runs", () => {
 		}
 	})
 
-	it("refuses a run when the org's plan has no AI credits to pay for it, and starts none", async () => {
-		const harness = makeHarness({ noCredits: true })
+	it("refuses a run the org's AI credits cannot pay for, saying when spent ones reset", async () => {
+		const noPlan = makeHarness({ noCredits: { resetsAt: null } })
+		const spent = makeHarness({ noCredits: { resetsAt: Date.UTC(2026, 10, 7, 9) } })
 		try {
-			const target = await harness.call("POST", "/targets", { body: TARGET })
-			const refused = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const start = async (harness: typeof noPlan) => {
+				const target = await harness.call("POST", "/targets", { body: TARGET })
+				return harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			}
+			const refused = await start(noPlan)
+			const usedUp = await start(spent)
 
-			expect([refused.status, refused.body._tag, refused.body.message]).toEqual([
+			expect([refused.status, refused.body._tag]).toEqual([402, tag("SecurityAuditNotInPlanError")])
+			expect([usedUp.status, usedUp.body._tag, usedUp.body.resetsAt]).toEqual([
 				402,
-				tag("SecurityAuditNotInPlanError"),
-				NO_CREDITS,
+				tag("SecurityAuditCreditsUsedUpError"),
+				"2026-11-07T09:00:00.000Z",
 			])
-			expect([harness.started, await harness.count("security_audit_runs")]).toEqual([[], 0])
+			expect([noPlan.started, spent.started, await spent.count("security_audit_runs")]).toEqual([
+				[],
+				[],
+				0,
+			])
 		} finally {
-			await harness.dispose()
+			await noPlan.dispose()
+			await spent.dispose()
 		}
 	})
 

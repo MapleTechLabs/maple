@@ -1,4 +1,5 @@
 import {
+	SecurityAuditCreditsUsedUpError,
 	SecurityAuditNotInPlanError,
 	SecurityAuditRunInProgressError,
 	SecurityAuditSpendLimitReachedError,
@@ -10,15 +11,26 @@ import { describe, expect, it } from "vitest"
 import { toStartFailure } from "./api"
 
 describe("toStartFailure", () => {
-	it("points an org without AI credits at its billing settings", () => {
+	it("points a plan without AI credits at its billing settings", () => {
 		const failure = toStartFailure(
-			new SecurityAuditNotInPlanError({
-				message: "This organization has used all of its AI credits for this billing period.",
-			}),
+			new SecurityAuditNotInPlanError({ message: "This plan has no AI credits." }),
 		)
 		expect([failure.code, failure.message]).toEqual([
 			"security_audit_not_in_plan",
-			"This organization has used all of its AI credits for this billing period. Add AI credits or change the plan under Settings, Billing.",
+			"This plan has no AI credits. Change the plan under Settings, Billing.",
+		])
+	})
+
+	it("says when used-up AI credits reset, and that more can be added", () => {
+		const failure = toStartFailure(
+			new SecurityAuditCreditsUsedUpError({
+				message: "This organization has used all of its AI credits for this billing period.",
+				resetsAt: Schema.decodeSync(IsoDateTimeString)("2026-11-07T09:00:00.000Z"),
+			}),
+		)
+		expect([failure.code, failure.message]).toEqual([
+			"security_audit_credits_used_up",
+			"This organization has used all of its AI credits for this billing period. They reset on November 7, 2026, or add credits under Settings, Billing.",
 		])
 	})
 

@@ -6,7 +6,7 @@ import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { BillingCustomer } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import { EdgeCacheService } from "@maple/cache"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { decodeUpstream, ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -17,24 +17,49 @@ export class SecurityAuditCreditsUnavailable extends Schema.TaggedError<Security
 	{ message: Schema.String },
 ) {}
 
-/** The org's plan includes no AI credits, or it has spent them and may not go over. */
+/**
+ * The org's plan includes no AI credits (`resetsAt` null), or it has spent them and may not go
+ * over until they reset at `resetsAt` (epoch ms).
+ */
 export class SecurityAuditNoCredits extends Schema.TaggedError<SecurityAuditNoCredits>()(
 	"@maple/backend/security-audit/NoCredits",
-	{ message: Schema.String },
+	{ message: Schema.String, resetsAt: Schema.NullOr(Schema.Number) },
 ) {}
 
+/** When spent credits come back: the balance's own reset, else the plan's cycle, else the UTC month. */
+const creditsResetAt = (customer: BillingCustomer, nextResetAt: number | null | undefined, nowMs: number) => {
+	if (nextResetAt != null) return nextResetAt
+	const cycleEnd = customer.subscriptions.find(
+		(sub) => sub.addOn !== true && sub.currentPeriodEnd != null && sub.currentPeriodEnd > nowMs,
+	)?.currentPeriodEnd
+	if (cycleEnd != null) return cycleEnd
+	const now = new Date(nowMs)
+	return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)
+}
+
 /** Why `customer` cannot pay for an audit, or None when it can. */
-export const missingCredits = (customer: BillingCustomer): Option.Option<string> => {
+export const missingCredits = (
+	customer: BillingCustomer,
+	nowMs: number,
+): Option.Option<SecurityAuditNoCredits> => {
 	const balance = customer.balances?.[AI_CREDITS_FEATURE_ID]
 	if (balance === undefined) {
 		return Option.some(
-			"Security audits are paid in AI credits, and this organization's plan doesn't include them.",
+			new SecurityAuditNoCredits({
+				message:
+					"Security audits are paid in AI credits, and this organization's plan doesn't include them.",
+				resetsAt: null,
+			}),
 		)
 	}
 	if (balance.unlimited === true || balance.overageAllowed === true) return Option.none()
-	return (balance.remaining ?? 0) > 0
-		? Option.none()
-		: Option.some("This organization has used all of its AI credits for this billing period.")
+	if ((balance.remaining ?? 0) > 0) return Option.none()
+	return Option.some(
+		new SecurityAuditNoCredits({
+			message: "This organization has used all of its AI credits for this billing period.",
+			resetsAt: creditsResetAt(customer, balance.nextResetAt, nowMs),
+		}),
+	)
 }
 
 export interface SecurityAuditCreditsApi {
@@ -57,6 +82,7 @@ export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, 
 					// Maple's own org is never metered, as with AI usage, nor is a deployment without
 					// billing (self-hosted, local dev). Unmetered is decided here, never from an error.
 					if (orgId === env.MAPLE_DEFAULT_ORG_ID || Option.isNone(env.AUTUMN_SECRET_KEY)) return
+					const nowMs = yield* Clock.currentTimeMillis
 					const missing = yield* readCustomerCached(
 						edgeCache,
 						orgId,
@@ -64,7 +90,7 @@ export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, 
 					).pipe(
 						Effect.flatMap(({ result }) => ensureOk(result)),
 						Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
-						Effect.map(missingCredits),
+						Effect.map((customer) => missingCredits(customer, nowMs)),
 						Effect.catchTags({
 							// With a key configured, a refused credential is an outage, not a free plan.
 							"@maple/http/errors/BillingNotConfiguredError": (error) =>
@@ -77,9 +103,7 @@ export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, 
 						"maple.security_audit.has_credits",
 						Option.isNone(missing),
 					)
-					if (Option.isSome(missing)) {
-						return yield* new SecurityAuditNoCredits({ message: missing.value })
-					}
+					if (Option.isSome(missing)) return yield* missing.value
 				},
 			)
 

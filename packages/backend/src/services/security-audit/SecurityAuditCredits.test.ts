@@ -20,22 +20,32 @@ const withoutBalances = Schema.decodeUnknownSync(BillingCustomer)({
 })
 
 describe("missingCredits", () => {
-	it("lets an org with AI credits left start", () => {
-		assert.isTrue(Option.isNone(missingCredits(customer({ ai_credits: { granted: 10, remaining: 4 } }))))
+	const NOW = Date.UTC(2026, 9, 24, 12)
+	const resetOf = (c: BillingCustomer) => Option.map(missingCredits(c, NOW), (refusal) => refusal.resetsAt)
+
+	it("lets an org with AI credits left start, or one whose plan bills overage", () => {
+		const starts = [
+			customer({ ai_credits: { granted: 10, remaining: 4 } }),
+			customer({ ai_credits: { granted: 10, remaining: -3, overageAllowed: true } }),
+		].map((c) => Option.isNone(missingCredits(c, NOW)))
+		assert.deepStrictEqual(starts, [true, true])
 	})
 
-	it("lets an org that has spent its credits start while its plan bills overage", () => {
-		const overage = customer({ ai_credits: { granted: 10, remaining: -3, overageAllowed: true } })
-		assert.isTrue(Option.isNone(missingCredits(overage)))
+	it("refuses a plan without AI credits for good", () => {
+		assert.deepStrictEqual(
+			[resetOf(withoutBalances), resetOf(customer({ logs: { granted: 100 } }))],
+			[Option.some(null), Option.some(null)],
+		)
 	})
 
-	it("refuses a plan without AI credits, and one whose credits are spent with no overage", () => {
-		const refusals = [
-			withoutBalances,
-			customer({ logs: { granted: 100 } }),
-			customer({ ai_credits: { granted: 10, remaining: 0, overageAllowed: false } }),
-		].map((c) => Option.isSome(missingCredits(c)))
-		assert.deepStrictEqual(refusals, [true, true, true])
+	it("refuses spent credits until their own reset, else the end of the UTC month", () => {
+		const reset = Date.UTC(2026, 10, 7, 9)
+		const spent = (nextResetAt: number | null) =>
+			customer({ ai_credits: { granted: 10, remaining: 0, overageAllowed: false, nextResetAt } })
+		assert.deepStrictEqual(
+			[resetOf(spent(reset)), resetOf(spent(null))],
+			[Option.some(reset), Option.some(Date.UTC(2026, 10, 1))],
+		)
 	})
 })
 

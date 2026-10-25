@@ -2,6 +2,7 @@ import {
 	ApiRequestValidationError,
 	type SecurityAuditCreateTargetRequest,
 	type SecurityAuditFindingTriageStatus,
+	SecurityAuditCreditsUsedUpError,
 	SecurityAuditNotInPlanError,
 	SecurityAuditSpendLimitReachedError,
 	type SecurityAuditStartRunRequest,
@@ -104,6 +105,7 @@ export const updateSettings = (payload: SecurityAuditUpdateSettingsRequest) =>
 
 const isSpendLimitReached = Schema.is(SecurityAuditSpendLimitReachedError)
 const isNotInPlan = Schema.is(SecurityAuditNotInPlanError)
+const isCreditsUsedUp = Schema.is(SecurityAuditCreditsUsedUpError)
 
 const resetDay = (resetsAt: string) =>
 	new Date(resetsAt).toLocaleDateString("en-US", {
@@ -122,9 +124,11 @@ export const toStartFailure = (error: unknown): LoadFailure => {
 			message: `${error.message} It resets on ${resetDay(error.resetsAt)}, or an admin can raise it under Spend & models.`,
 		}
 	if (isNotInPlan(error))
+		return { ...failure, message: `${error.message} Change the plan under Settings, Billing.` }
+	if (isCreditsUsedUp(error))
 		return {
 			...failure,
-			message: `${error.message} Add AI credits or change the plan under Settings, Billing.`,
+			message: `${error.message} They reset on ${resetDay(error.resetsAt)}, or add credits under Settings, Billing.`,
 		}
 	return failure
 }

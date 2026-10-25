@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import {
 	CurrentTenant,
 	MapleAiApi,
+	SecurityAuditCreditsUsedUpError,
 	SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT,
 	SecurityAuditRepositoryTooLargeError,
 	SecurityAuditDisabledError,
@@ -389,7 +390,14 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					yield* credits.ensure(tenant.orgId).pipe(
 						Effect.catchTags({
 							"@maple/backend/security-audit/NoCredits": (error) =>
-								Effect.fail(new SecurityAuditNotInPlanError({ message: error.message })),
+								Effect.fail(
+									error.resetsAt === null
+										? new SecurityAuditNotInPlanError({ message: error.message })
+										: new SecurityAuditCreditsUsedUpError({
+												message: error.message,
+												resetsAt: decodeIso(new Date(error.resetsAt).toISOString()),
+											}),
+								),
 							"@maple/backend/security-audit/CreditsUnavailable": (error) =>
 								Effect.fail(
 									new SecurityAuditPersistenceError({

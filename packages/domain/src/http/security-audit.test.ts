@@ -1,6 +1,12 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { SecurityAuditCreateTargetRequest } from "./security-audit"
+import { IsoDateTimeString } from "../primitives"
+import { publicHttpErrorBody } from "./error-policy"
+import {
+	SecurityAuditCreateTargetRequest,
+	SecurityAuditCreditsUsedUpError,
+	SecurityAuditNotInPlanError,
+} from "./security-audit"
 
 const failureOf = (input: unknown) => {
 	const result = Schema.decodeUnknownExit(SecurityAuditCreateTargetRequest)(input)
@@ -26,5 +32,24 @@ describe("SecurityAuditCreateTargetRequest", () => {
 		expect(failureOf({ repository: "acme/api", branch: "main.lock" })).toContain(
 			"Expected a branch name that does not end in '/' or '.lock'",
 		)
+	})
+})
+
+describe("security audit credit refusals", () => {
+	it("tells a client to retry used-up credits at their reset, and a plan without them never", () => {
+		const usedUp = publicHttpErrorBody(
+			new SecurityAuditCreditsUsedUpError({
+				message: "Used up.",
+				resetsAt: Schema.decodeSync(IsoDateTimeString)("2026-11-07T09:00:00.000Z"),
+			}),
+		)
+		const notInPlan = publicHttpErrorBody(new SecurityAuditNotInPlanError({ message: "No credits." }))
+		expect([
+			[usedUp.retryable, usedUp.recovery, usedUp.retry_at],
+			[notInPlan.retryable, notInPlan.recovery],
+		]).toEqual([
+			[true, "retry", "2026-11-07T09:00:00.000Z"],
+			[false, "none"],
+		])
 	})
 })

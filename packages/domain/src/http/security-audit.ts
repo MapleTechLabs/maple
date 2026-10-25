@@ -435,7 +435,7 @@ export class SecurityAuditRepositoryTooLargeError extends HttpTaggedError<Securi
 	},
 ) {}
 
-/** Audits are paid in AI credits, and the org's plan includes none, or has none left. */
+/** Audits are paid in AI credits, and the org's plan includes none. */
 export class SecurityAuditNotInPlanError extends HttpTaggedError<SecurityAuditNotInPlanError>()(
 	"@maple/http/security-audit/SecurityAuditNotInPlanError",
 	{ message: Schema.String },
@@ -445,6 +445,25 @@ export class SecurityAuditNotInPlanError extends HttpTaggedError<SecurityAuditNo
 		title: "Security audits need AI credits",
 		retry: "never",
 		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
+/** The org has spent its AI credits for this billing period and its plan allows no overage. */
+export class SecurityAuditCreditsUsedUpError extends HttpTaggedError<SecurityAuditCreditsUsedUpError>()(
+	"@maple/http/security-audit/SecurityAuditCreditsUsedUpError",
+	{
+		message: Schema.String,
+		/** When the org's AI credits reset to their grant. */
+		resetsAt: IsoDateTimeString,
+	},
+	{
+		status: 402,
+		code: "security_audit_credits_used_up",
+		title: "AI credits used up",
+		retry: "after",
+		retryAt: (error) => error.resetsAt,
+		recovery: "retry",
 		exposure: "public_message",
 	},
 ) {}
@@ -549,6 +568,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				SecurityAuditTargetDisabledError,
 				SecurityAuditRunInProgressError,
 				SecurityAuditNotInPlanError,
+				SecurityAuditCreditsUsedUpError,
 				SecurityAuditSpendLimitReachedError,
 				SecurityAuditRepositoryTooLargeError,
 				SecurityAuditStartError,
