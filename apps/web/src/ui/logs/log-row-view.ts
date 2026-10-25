@@ -6,8 +6,9 @@ import { pickImportantAttributes } from "@maple/ui/lib/log-attributes"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { encodeLogKey } from "../../lib/log-key"
+import { capForDisplay, ROW_LINE_CHARS, tryParseJson } from "../../lib/display-text"
 import { SpanId, TraceId } from "@maple/domain"
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 
 /** `LogRow` (`@maple/query-engine` route-rows): one log as the list renders it. */
 export const LogRecord = Schema.Struct({
@@ -73,6 +74,8 @@ export type LogRowView = typeof LogRowView.Type
 /** Chips shown beside the message; the rest are one expand away. */
 const MAX_INLINE_CHIPS = 3
 const MAX_VALUE_CHARS = 24
+/** Wrapped rows show a few screens at most; the detail sheet has the rest. */
+const ROW_WRAPPED_CHARS = 10_000
 const SEVERITY_NUMBER_LABELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"] as const
 
 // packages/ui/src/components/logs/severity-badge.tsx `severityLabel` (a React module).
@@ -83,11 +86,12 @@ export const severityLabel = (severityText: string, severityNumber?: number): st
 	return "UNSET"
 }
 
-// packages/ui/src/components/attributes/attributes-table.tsx `tryParseJson`, as a predicate.
-const isJsonValue = (value: string): boolean => {
-	const trimmed = value.trimStart()
-	if (trimmed[0] !== "{" && trimmed[0] !== "[") return false
-	return Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))(value)._tag === "Some"
+const isJsonValue = (value: string): boolean => Option.isSome(tryParseJson(value))
+
+/** The wrapped row's text, cut with an ellipsis past `ROW_WRAPPED_CHARS`. */
+const wrappedBody = (body: string): string => {
+	const { shown, omitted } = capForDisplay(body, ROW_WRAPPED_CHARS)
+	return omitted === 0 ? shown : `${shown}…`
 }
 
 // packages/ui/src/components/logs/log-attribute-chip.tsx `shortKey` / `truncateValue`.
@@ -170,8 +174,8 @@ export const toLogRowView = (
 		severityColor: getSeverityColor(severity),
 		serviceName: log.serviceName,
 		serviceColor: getServiceColor(log.serviceName),
-		body,
-		firstLine: lines[0] ?? "",
+		body: wrappedBody(body),
+		firstLine: (lines[0] ?? "").slice(0, ROW_LINE_CHARS),
 		hiddenLinesLabel: lines.length > 1 ? countLabel(lines.length - 1, "line") : "",
 		rawBody: log.body,
 		traceId: log.traceId ?? "",

@@ -2,8 +2,10 @@ import { splitGenAiAttributes, type GenAiGroup } from "@maple/ui/lib/gen-ai"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { attributeFilterAction, tryParseJson } from "../../../../ui/attributes/attribute-row"
+import { capForDisplay, prettyJson } from "../../../../lib/display-text"
+import { attributeFilterAction } from "../../../../ui/attributes/attribute-row"
 import { icon } from "../../../../ui/icon"
+import { truncationNote } from "../../../../ui/logs/log-message"
 import { copyableValue, copyButton, selectableValue } from "./copy"
 import { type AttributeScope, Message } from "./message"
 import type { PanelState as Model } from "./model"
@@ -40,7 +42,8 @@ const commitShaValue = (h: H, id: string, value: string): Html => {
 		: h.button([h.Class(className), h.Type("button"), onClick], [value])
 }
 
-const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknown): Html => {
+const jsonValue = (h: H, model: Model, id: string, value: string, formatted: string): Html => {
+	const { shown, omitted } = capForDisplay(formatted)
 	const isOpen = model.openIds.includes(id)
 	return h.div(
 		[h.Class("min-w-0")],
@@ -76,10 +79,8 @@ const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknow
 								h.div(
 									[h.Class("max-h-64 overflow-auto p-2")],
 									[
-										h.pre(
-											[h.Class("text-xs leading-relaxed")],
-											[h.code([], [JSON.stringify(parsed, null, 2)])],
-										),
+										h.pre([h.Class("text-xs leading-relaxed")], [h.code([], [shown])]),
+										...(omitted === 0 ? [] : [truncationNote(h, shown.length, formatted.length)]),
 									],
 								),
 								copyButton(h, model, {
@@ -117,7 +118,7 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 	const parsed =
 		row.displayValue !== undefined && row.displayValue !== row.value
 			? Option.none()
-			: tryParseJson(row.value)
+			: prettyJson(row.value)
 	const valueNode = Option.match(parsed, {
 		onSome: (json) => jsonValue(h, model, `json:${id}`, row.value, json),
 		onNone: () =>

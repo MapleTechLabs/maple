@@ -391,6 +391,25 @@
 				]
 			}
 		},
+		// Code views highlight through the size-capped, memoized wrapper; raw sugar-high froze the
+		// log sheet on megabyte JSON bodies. Chat's `sugar-high/core` highlighter is unaffected.
+		{
+			"files": ["apps/web/src/**/*.ts", "apps/local-ui/src/**/*.ts"],
+			"excludeFiles": ["apps/web/src/lib/sugar-high.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "sugar-high",
+								"message": "Use highlightCode (lib/sugar-high) or cappedCode (ui/logs/log-message): they cap size and memoize."
+							}
+						]
+					}
+				]
+			}
+		},
 		// browser-session: the always-loaded tier never reaches the lazy replay tier.
 		{
 			"files": ["packages/browser-session/src/**/*.ts"],

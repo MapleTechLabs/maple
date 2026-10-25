@@ -56,12 +56,17 @@
 			// `src/worker-entry.ts` is named by string in `src/worker.ts`.
 			"entry": ["src/worker-entry.ts", "e2e/e2e.config.ts", "e2e/tests/**/*.e2e.ts"]
 		},
-		// local-ui renders apps/web's source modules (ui, charts), so their runtime packages
-		// must resolve from this app too.
+		// local-ui renders apps/web's source modules (ui, charts, lib/sugar-high), so their runtime
+		// packages must resolve from this app too.
 		// `src/worker-entry.ts` is named by string in `src/worker.ts`.
 		"apps/local-ui": {
 			"entry": ["src/worker.ts", "src/worker-entry.ts"],
-			"ignoreDependencies": ["@floating-ui/dom", "@tanstack/charts", "@tanstack/charts-scales"]
+			"ignoreDependencies": [
+				"@floating-ui/dom",
+				"@tanstack/charts",
+				"@tanstack/charts-scales",
+				"sugar-high"
+			]
 		},
 		"apps/cli": {
 			"entry": [

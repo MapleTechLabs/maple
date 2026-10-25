@@ -1,15 +1,20 @@
 import { JSON_TOKEN_COLOR, parseErrorBody, splitErrorText, tokenizeJson } from "@maple/ui/lib/error-body"
 import { cn } from "@maple/ui/lib/utils"
+import { capForDisplay, headLines, memoizeByText, PREVIEW_MAX_CHARS } from "../lib/display-text"
+import { HIGHLIGHT_MAX_CHARS } from "../lib/sugar-high"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { copyButton, type CopyStatus } from "./copy-button"
 import { eyebrow } from "./eyebrow"
 import { icon } from "./icon"
+import { truncationNote } from "./logs/log-message"
 
 // Port of `ErrorSection` (packages/ui/src/components/error-section.tsx): the error banner, its
 // highlighted body that copies itself, the "Copy as prompt" control and the Show more toggle.
 
 const COLLAPSED_LINES = 3
 const LINE_HEIGHT = 1.625
+
+const parsedErrorBody = memoizeByText(parseErrorBody)
 
 export type ErrorSectionOptions<M> = Readonly<{
 	message: string
@@ -32,9 +37,13 @@ export type ErrorSectionOptions<M> = Readonly<{
 
 export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOptions<M>): Html => {
 	const { message } = options
-	const body = parseErrorBody(message)
-	const isLong = body.full.split("\n").length > COLLAPSED_LINES || message.length > 160
+	const body = parsedErrorBody(message)
+	const isLong = body.full.split("\n", COLLAPSED_LINES + 1).length > COLLAPSED_LINES || message.length > 160
 	const isClamped = isLong && !options.isExpanded
+	// Clamped, only the lines that show are built; expanded, a capped head scrolls in its own box.
+	const { shown, omitted } = isClamped
+		? capForDisplay(headLines(body.full, COLLAPSED_LINES + 1), PREVIEW_MAX_CHARS)
+		: capForDisplay(body.full)
 	const { prompt } = options
 	return h.div(
 		[h.Class("mx-3 my-2 rounded-lg border border-severity-error/25 bg-severity-error/4 px-3 py-2.5")],
@@ -119,6 +128,7 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 							h.Class(
 								cn(
 									"whitespace-pre-wrap break-words",
+									isLong && options.isExpanded && "max-h-[45vh] overflow-auto",
 									isClamped &&
 										"overflow-hidden [mask-image:linear-gradient(to_bottom,black_calc(100%-1.25em),transparent)]",
 								),
@@ -127,19 +137,25 @@ export const errorSectionView = <M>(h: HtmlBuilder<M>, options: ErrorSectionOpti
 								? [h.Style({ "max-height": `${COLLAPSED_LINES * LINE_HEIGHT}em` })]
 								: []),
 						],
-						body.format === "json"
-							? tokenizeJson(body.full).map((token) =>
-									h.span([h.Style({ color: JSON_TOKEN_COLOR[token.type] })], [token.text]),
-								)
-							: splitErrorText(body.full).map((line) =>
-									h.span(
-										[h.Class(cn("block", line.frame && "text-severity-error/55"))],
-										[line.text === "" ? " " : line.text],
+						shown.length > HIGHLIGHT_MAX_CHARS
+							? [shown]
+							: body.format === "json"
+								? tokenizeJson(shown).map((token) =>
+										h.span(
+											[h.Style({ color: JSON_TOKEN_COLOR[token.type] })],
+											[token.text],
+										),
+									)
+								: splitErrorText(shown).map((line) =>
+										h.span(
+											[h.Class(cn("block", line.frame && "text-severity-error/55"))],
+											[line.text === "" ? " " : line.text],
+										),
 									),
-								),
 					),
 				],
 			),
+			...(omitted === 0 || isClamped ? [] : [truncationNote(h, shown.length, body.full.length)]),
 			...(isLong
 				? [
 						h.button(

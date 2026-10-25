@@ -1,4 +1,3 @@
-import { highlightCode } from "../../../lib/sugar-high"
 import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"
@@ -8,6 +7,7 @@ import { copyButton } from "../../../ui/copy-button"
 import { titleId } from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import { icon, type IconName } from "../../../ui/icon"
+import { cappedCode } from "../../../ui/logs/log-message"
 import type { LogRecord } from "../../../ui/logs/log-row-view"
 import { panel, panelBody, panelHeader } from "../../../ui/panel"
 import { scrollArea } from "../../../ui/scroll-area"
@@ -54,13 +54,10 @@ const rawPanel = (h: H, model: Model, log: LogRecord): Html => {
 					}),
 				],
 			),
-			h.pre(
-				[
-					h.Class(
-						"rounded-md border bg-muted/30 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap break-all",
-					),
-				],
-				[h.code([h.InnerHTML(highlightCode(payload))], [])],
+			...cappedCode(
+				h,
+				payload,
+				"rounded-md border bg-muted/30 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap break-all",
 			),
 		],
 	)
@@ -106,7 +103,12 @@ const panelOf = (h: H, model: Model, log: LogRecord, timeZone: string) => (value
 					slotId: `${model.id}-infra-panel`,
 					model: model.infra,
 					view: InfraCorrelation.view,
-					viewInputs: { resourceAttributes: log.resourceAttributes, anchor: log.timestamp, spanDurationMs: 0, timeZone },
+					viewInputs: {
+						resourceAttributes: log.resourceAttributes,
+						anchor: log.timestamp,
+						spanDurationMs: 0,
+						timeZone,
+					},
 					toParentMessage: (message) => Message.GotInfraMessage({ message }),
 				}),
 			)
