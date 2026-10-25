@@ -34,7 +34,6 @@ import { button } from "../../../../ui/button"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
 import type * as Menu from "../../../../ui/menu"
-import { segmentedSelect } from "../../../../ui/segmented-select"
 import { skeleton } from "../../../../ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
@@ -43,6 +42,7 @@ import { integrationConnectCta } from "../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
 import { GCP_ACCENT } from "../../../integrations/catalog"
 import { heroChip } from "../../../infra/kit/hero-chip"
+import { linkTabStrip } from "../../../infra/kit/view-tabs"
 import { pageHero, pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import {
@@ -56,7 +56,7 @@ import {
 	statusOf,
 } from "./derive"
 import { Message, type Model } from "./model"
-import { DEFAULT_PRESET } from "./update"
+import { DEFAULT_PRESET, viewHref } from "./update"
 import {
 	GCP_DATABASE_BAND,
 	GCP_SERVICE_BAND,
@@ -348,6 +348,7 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 		isWaiting: AsyncData.isRefreshing(fleetData),
 		projectMenu: model.projectMenu,
 		locale: model.locale,
+		viewTab: (view) => ({ href: viewHref(model.search, view) }),
 	})
 }
 
@@ -379,6 +380,8 @@ export type ListPageInput = Readonly<{
 	projectMenu: Menu.Model
 	/** `toLocaleString`'s locale for the counts. */
 	locale: string
+	/** A view tab's link; the lab adds an in-place click, the route links to its URL. */
+	viewTab: (view: GcpView) => Readonly<{ href: string; onClick?: Message }>
 }>
 
 /** `GcpListPage` for the lab, which has no title row: the header drawn above the body. */
@@ -392,6 +395,10 @@ export const gcpListPage = (h: H, input: ListPageInput): Html => {
 		],
 	)
 }
+
+/** The view tabs above the rest of the body, as close to it as AWS has them. */
+const withViewTabs = (h: H, tabs: Html | null, body: ReadonlyArray<Html>): ReadonlyArray<Html> =>
+	tabs === null ? body : [h.div([h.Class("space-y-4")], [tabs, h.div([h.Class("space-y-6")], body)])]
 
 /** The header, then the projects strip and the current view's band, search and table. */
 const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
@@ -484,6 +491,23 @@ const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 		}
 	}
 	const health = input.projectHealth
+	const tabs =
+		views.length > 1
+			? linkTabStrip(
+					h,
+					"Google Cloud views",
+					views.map((option) => ({
+						id: option,
+						title:
+							option === GCP_RESOURCES_TAB || counts === null
+								? VIEW_LABEL[option]
+								: `${VIEW_LABEL[option]} ${counts[option]}`,
+						...input.viewTab(option),
+					})),
+					view,
+					false,
+				)
+			: null
 	return {
 		header: {
 			trailing: multiProject
@@ -497,32 +521,15 @@ const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 				: projects.length === 1
 					? heroChip(h, `project ${projects[0] ?? ""}`)
 					: undefined,
-			actions:
-				views.length > 1
-					? [
-							segmentedSelect(h, {
-								size: "xs",
-								ariaLabel: "Google Cloud view",
-								options: views.map((option) => ({
-									value: option,
-									label:
-										option === GCP_RESOURCES_TAB || counts === null
-											? VIEW_LABEL[option]
-											: `${VIEW_LABEL[option]} ${counts[option]}`,
-								})),
-								value: view,
-								onChange: (next) => Message.ClickedView({ view: next }),
-							}),
-						]
-					: [],
+			actions: [],
 		},
-		body: [
+		body: withViewTabs(h, tabs, [
 			...input.notice,
 			...(multiProject && project === undefined && view !== GCP_RESOURCES_TAB
 				? [projectsStrip(h, projects, gcpProjectShares(inRegion, view), projectCounts, health)]
 				: []),
 			body(),
-		],
+		]),
 	}
 }
 
@@ -630,8 +637,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						description: page.header.description,
 						trailing: page.header.trailing,
 					}).title,
-					actions:
-						headerActions(h, page.header.actions, timeControls),
+					actions: headerActions(h, page.header.actions, timeControls),
 				},
 				page.body,
 			),

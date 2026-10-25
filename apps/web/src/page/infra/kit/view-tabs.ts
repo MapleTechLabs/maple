@@ -7,13 +7,19 @@ import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 // The link strip on `UnderlineTabStrip navigation` and the two section strips built on it:
 // `HostsViewTabs` and `KubernetesViewTabs`.
 
-export type TabLink = Readonly<{ id: string; title: string; href: string }>
+/** `onClick` handles a plain click in place of the router; the href still serves new tabs. */
+export type TabLink<M = never> = Readonly<{
+	id: string
+	title: string
+	href: string
+	onClick?: M | undefined
+}>
 
 /** A `<Link>` strip: TanStack marks the current one `active` with `data-status`. */
 export const linkTabStrip = <M>(
 	h: HtmlBuilder<M>,
 	label: string,
-	tabs: ReadonlyArray<TabLink>,
+	tabs: ReadonlyArray<TabLink<M>>,
 	activeId: string,
 	/** Off when the strip sits in page flow rather than a header's `tabs` slot. */
 	bleed = true,
@@ -27,6 +33,9 @@ export const linkTabStrip = <M>(
 				[
 					h.Key(tab.id),
 					h.Href(tab.href),
+					...(tab.onClick === undefined
+						? []
+						: [h.OnClick(tab.onClick, { defaultAction: "Prevent" })]),
 					...(isActive
 						? [
 								h.AriaCurrent("page"),

@@ -45,6 +45,10 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 
 const hrefOfSearch = (search: Search) => hrefOf(AppRoute.InfraCloudflare({ search }))
 
+/** The view tab's link: where `ClickedView` writes, unscoped and unsearched. */
+export const viewHref = (search: Search, view: Search["view"]): string =>
+	hrefOfSearch({ ...search, view, scope: undefined, q: undefined })
+
 /** `patchSearch`: list state is written in place (a replace, not a new entry). */
 const patch = (model: Model, next: Partial<Search>): Return => ({
 	model,
@@ -149,7 +153,10 @@ export const routeChanged = (
 	if (hrefOfSearch(model.search) === hrefOfSearch(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] }),
+		resolve: (): Return => ({
+			model: next,
+			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+		}),
 		requestAll: (): Return => ({ model: next }),
 	})
 }

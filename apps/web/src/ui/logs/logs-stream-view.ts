@@ -198,7 +198,7 @@ export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 						cn(
 							"flex flex-wrap items-center gap-3 px-4 py-3 text-xs text-muted-foreground tabular-nums",
 							"justify-between",
-							"mt-1.5 shrink-0 p-0",
+							"mt-1.5 shrink-0 py-0",
 						),
 					),
 					h.DataAttribute("slot", "list-footer"),
