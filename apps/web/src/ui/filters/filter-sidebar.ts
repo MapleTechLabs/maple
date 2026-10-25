@@ -1,7 +1,7 @@
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { LoadFailure } from "../../data/load-failure"
+import { isSameFailure, type LoadFailure } from "../../data/load-failure"
 import { button } from "../button"
 import { separator } from "../display"
 import { errorState } from "../error-state"
@@ -146,10 +146,20 @@ export const filterSidebarEmpty = <M>(h: HtmlBuilder<M>): Html =>
 		),
 	])
 
-/** The filter sidebar's failure state: one quiet line, since the main panel carries the full error. */
-export const filterSidebarError = <M>(h: HtmlBuilder<M>, failure: LoadFailure, onRetry?: M): Html =>
+/**
+ * The filter sidebar's failure state. One quiet line when the main panel shows the same failure
+ * (`mainFailure`); otherwise the rail is the only place it shows, so it keeps the full message.
+ */
+export const filterSidebarError = <M>(
+	h: HtmlBuilder<M>,
+	failure: LoadFailure,
+	onRetry?: M,
+	mainFailure?: LoadFailure,
+): Html =>
 	filterSidebarFrame(h, {}, [
 		filterSidebarHeader(h),
 		separator(h, "horizontal", "my-2"),
-		errorState(h, { failure, onRetry, variant: "quiet", title: "Filters unavailable", className: "py-2 pr-4" }),
+		mainFailure !== undefined && isSameFailure(mainFailure, failure)
+			? errorState(h, { failure, onRetry, variant: "quiet", title: "Filters unavailable", className: "py-2 pr-4" })
+			: errorState(h, { failure, onRetry, variant: "inline" }),
 	])
