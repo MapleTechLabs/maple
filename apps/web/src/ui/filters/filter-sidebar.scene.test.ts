@@ -14,7 +14,8 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	filterSidebarError(h, model.facets, Message.ClickedRetry(), model.main)
 const update = (model: Model) => ({ model, commands: [] })
 
-const facets = toLoadFailure("facets read failed")
+// Retryable, so a retry button would show unless the quiet rail hides it (no auto-retry Mount).
+const facets: LoadFailure = { ...toLoadFailure("facets read failed"), recovery: "retry", retryable: false }
 
 describe("filter sidebar error", () => {
 	test("the main panel showing the same failure leaves the rail one quiet status line", () => {
@@ -23,6 +24,7 @@ describe("filter sidebar error", () => {
 			given<Model>({ facets, main: facets }),
 			expectView(role("status")).toExist(),
 			expectView(role("alert")).not.toExist(),
+			expectView(role("button")).not.toExist(),
 		)
 	})
 

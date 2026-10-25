@@ -129,6 +129,39 @@ describe("overview", () => {
 		expect(names(retried.commands)).toEqual(["FetchOverviewTimeSeries"])
 	})
 
+	test("the page strip's retry asks a failed card's read again, not just the facets", () => {
+		const model = withFacets(entered().model, []).model
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchOverviewSeries({
+				key: model.overviewSeries.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+		)
+		const retried = pageUpdate(failed.model, Message.ClickedRetryPage())
+		expect(names(retried.commands)).toContain("FetchOverviewTimeSeries")
+	})
+
+	test("the page strip's retry asks failed anomaly counts again", () => {
+		const model = withFacets(entered().model, []).model
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchAnomalies({ key: model.anomalies.key ?? "", result: Result.fail(toLoadFailure("boom")) }),
+		)
+		const retried = pageUpdate(failed.model, Message.ClickedRetryPage())
+		expect(names(retried.commands)).toContain("FetchOverviewAnomalyCounts")
+	})
+
+	test("the page strip's retry asks a failed health snapshot again", () => {
+		const model = withFacets(entered().model, []).model
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchSnapshot({ key: model.snapshot.key ?? "", result: Result.fail(toLoadFailure("boom")) }),
+		)
+		const retried = pageUpdate(failed.model, Message.ClickedRetryPage())
+		expect(names(retried.commands)).toContain("FetchServiceHealthSnapshot")
+	})
+
 	test("a second card's retry while the first is in flight requests nothing", () => {
 		const model = withFacets(entered().model, []).model
 		const failed = pageUpdate(

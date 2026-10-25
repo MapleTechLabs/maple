@@ -261,8 +261,20 @@ export const logRow = <Message>(
 								events.clickedCopyLink(index),
 								icon(h, "LinkIcon", { size: 13 }),
 							),
+							// Without a trace the slot stays reserved, so every row's chips end at one edge.
 							...(row.traceId === ""
-								? []
+								? [
+										h.span([
+											h.AriaHidden(true),
+											rowClass(
+												h,
+												cn(
+													ROW_ACTION_CLASS,
+													"hidden @3xl/log:inline-flex @3xl/log:invisible",
+												),
+											),
+										]),
+									]
 								: [
 										h.a(
 											[
@@ -348,7 +360,7 @@ const messageLane = <Message>(
 							[
 								rowClass(
 									h,
-									"ml-auto hidden h-[18px] max-w-[40%] shrink-0 flex-wrap justify-end gap-1 overflow-hidden pl-2 @3xl/log:flex",
+									"ml-auto hidden h-[18px] min-w-0 max-w-[40%] flex-wrap justify-end gap-1 overflow-hidden pl-2 @3xl/log:flex",
 								),
 							],
 							row.chips.map((chip) => chipButton(h, events, index, chip)),

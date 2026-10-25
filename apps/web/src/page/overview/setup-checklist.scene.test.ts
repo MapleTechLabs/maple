@@ -181,6 +181,12 @@ describe("overview setup checklist", () => {
 		)
 	})
 
+	test("the page strip's Try again also polls a failed setup check", () => {
+		const failed = failOverview(entered(true).read.model)
+		const retried = pageUpdate(failed, Message.ClickedRetryPage())
+		expect(names(retried.commands)).toContain("ResolveSetupChecklistPollWindow")
+	})
+
 	test("the failure stays on screen while the next poll retries", () => {
 		const failed = failOverview(entered(true).read.model)
 		const polled = pageUpdate(failed, setup(SetupMessage.TickedPoll())).model

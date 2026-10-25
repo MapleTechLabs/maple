@@ -5,6 +5,7 @@ import {
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
 } from "../../../components/replays/session-tags"
+import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -230,6 +231,12 @@ const loadedRail = (h: HtmlBuilder<Message>, model: Model, facets: ReplaysFacets
 export const filtersRail = (h: HtmlBuilder<Message>, model: Model): Html =>
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 5),
-		onFailure: (failure) => filterSidebarError(h, failure),
+		onFailure: (failure) =>
+			filterSidebarError(
+				h,
+				failure,
+				Message.ClickedRetryList(),
+				Option.getOrUndefined(AsyncData.getError(model.firstPage.data)),
+			),
 		onData: (facets) => loadedRail(h, model, facets),
 	})

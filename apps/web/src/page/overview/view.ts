@@ -92,8 +92,8 @@ type PageFailure = Readonly<{ failure: LoadFailure; title: string; onRetry: Mess
 const pageFailures = (model: Model): ReadonlyArray<PageFailure> => {
 	const facets = Option.getOrUndefined(AsyncData.getError(model.facets.data))
 	const setup = model.setup === null ? undefined : SetupChecklistView.setupFailure(model.setup)
-	// The strip stands for every card under it, so its Try again reloads the whole page.
-	const stripRetry = Message.ClickedReload()
+	// The strip stands for every quiet card under it, so its Try again retries all failed reads.
+	const stripRetry = Message.ClickedRetryPage()
 	if (facets !== undefined && setup !== undefined && isSameFailure(facets, setup))
 		return [{ failure: facets, title: facets.title, onRetry: stripRetry }]
 	return [

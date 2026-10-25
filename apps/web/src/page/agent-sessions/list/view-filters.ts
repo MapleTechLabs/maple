@@ -257,7 +257,8 @@ export const filtersRail = (h: H, model: Model): Html =>
 		[
 			AsyncData.matchData(model.facets.data, {
 				onEmpty: () => filterSidebarLoading(h, 4),
-				onFailure: (failure) => filterSidebarError(h, failure),
+				onFailure: (failure) =>
+					filterSidebarError(h, failure, undefined, Option.getOrUndefined(AsyncData.getError(model.firstPage.data))),
 				onData: (facets) => loadedRail(h, model, facets),
 			}),
 		],
