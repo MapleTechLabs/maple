@@ -47,7 +47,7 @@ const hostCpuPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
 	)
 
 // Read-only and virtual mounts (snap squashfs, container overlays) always report ~100%.
-const PSEUDO_FS_TYPES = ["squashfs", "overlay", "tmpfs", "devtmpfs", "iso9660", "ramfs"] as const
+export const PSEUDO_FS_TYPES = ["squashfs", "overlay", "tmpfs", "devtmpfs", "iso9660", "ramfs"] as const
 
 // The hostmetrics receiver emits utilization with no `state` (Map get returns ''); other
 // shippers split it into used/free/reserved rows. Both shapes keep only the used share.
@@ -175,6 +175,8 @@ export interface HostGaugeTimeseriesOpts {
 	// Keeps points whose attribute is one of `values` ('' matches a missing key), e.g.
 	// filesystem utilization's used state, which otherwise averages used/free/reserved.
 	attributeIn?: { readonly key: string; readonly values: readonly string[] }
+	// Drops points whose attribute is one of `values`, e.g. pseudo filesystem types.
+	attributeNotIn?: { readonly key: string; readonly values: readonly string[] }
 }
 
 export interface HostGaugeTimeseriesOutput {
@@ -200,6 +202,9 @@ export function hostGaugeTimeseriesQuery(opts: HostGaugeTimeseriesOpts) {
 			$.MetricName.eq(opts.metricName),
 			opts.attributeIn
 				? CH.inList($.Attributes.get(opts.attributeIn.key), opts.attributeIn.values)
+				: undefined,
+			opts.attributeNotIn
+				? CH.notInList($.Attributes.get(opts.attributeNotIn.key), opts.attributeNotIn.values)
 				: undefined,
 		])
 
@@ -273,6 +278,7 @@ export function hostFilesystemsQuery(opts: HostFilesystemsOpts) {
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq("system.filesystem.utilization"),
 			filesystemUsedState($),
+			CH.notInList($.Attributes.get("type"), PSEUDO_FS_TYPES),
 		])
 		.groupBy("mountpoint")
 		.orderBy(["usedMax", "desc"])

@@ -144,6 +144,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 				metricName: "system.cpu.utilization",
 				groupByAttributeKey: "state",
 				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -152,6 +153,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 				metricName: "system.memory.utilization",
 				groupByAttributeKey: "state",
 				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -161,6 +163,8 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 				groupByAttributeKey: "mountpoint",
 				// The used share per mount, whether or not the collector splits rows by state.
 				attributeIn: { key: "state", values: CH.FILESYSTEM_USED_STATES },
+				// Read-only and virtual mounts always read ~100%; the headline disk % drops them too.
+				attributeNotIn: { key: "type", values: CH.PSEUDO_FS_TYPES },
 				unit: "percent" as const,
 				isNetwork: false,
 			}
@@ -169,6 +173,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 				metricName: "system.cpu.load_average.15m",
 				groupByAttributeKey: undefined,
 				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "load" as const,
 				isNetwork: false,
 			}
@@ -177,6 +182,7 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 				metricName: "system.network.io",
 				groupByAttributeKey: "direction",
 				attributeIn: undefined,
+				attributeNotIn: undefined,
 				unit: "bytes_per_second" as const,
 				isNetwork: true,
 			}

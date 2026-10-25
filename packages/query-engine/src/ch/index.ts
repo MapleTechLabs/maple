@@ -689,6 +689,7 @@ export {
 	type WorkloadKind,
 	infraPresenceQuery,
 	FILESYSTEM_USED_STATES,
+	PSEUDO_FS_TYPES,
 	type InfraSurface,
 	type InfraPresenceOutput,
 } from "./queries/infra"

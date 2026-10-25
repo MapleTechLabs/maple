@@ -1657,7 +1657,7 @@ SELECT
         GROUP BY hostName
         FORMAT JSON
 
--- builder:infra:hostFilesystemsQuery:default  [b527e5f9]
+-- builder:infra:hostFilesystemsQuery:default  [069b2fb8]
 SELECT
           metrics_gauge.Attributes['mountpoint'] AS mountpoint,
           any(metrics_gauge.Attributes['device']) AS device,
@@ -1670,6 +1670,7 @@ SELECT
           AND metrics_gauge.ResourceAttributes['host.name'] = 'ip-10-0-1-42'
           AND metrics_gauge.MetricName = 'system.filesystem.utilization'
           AND metrics_gauge.Attributes['state'] IN ('used', '')
+          AND metrics_gauge.Attributes['type'] NOT IN ('squashfs', 'overlay', 'tmpfs', 'devtmpfs', 'iso9660', 'ramfs')
         GROUP BY mountpoint
         ORDER BY usedMax DESC
         LIMIT 20

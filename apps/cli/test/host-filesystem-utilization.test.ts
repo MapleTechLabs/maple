@@ -68,8 +68,8 @@ describeWithChdb("host filesystem utilization", () => {
 		const rows = decodeMounts(
 			await run(CH.compile(CH.hostFilesystemsQuery({ hostName: "receiver-host" }), params)),
 		)
-		const rootMount = rows.find((row) => row.mountpoint === "/")
-		expect(Number(rootMount?.usedMax)).toBeCloseTo(0.42)
+		// The squashfs mount reads 100% and is dropped, as in the headline disk %.
+		expect(rows.map((row) => [row.mountpoint, Number(row.usedMax)])).toEqual([["/", 0.42]])
 		const split = decodeMounts(
 			await run(CH.compile(CH.hostFilesystemsQuery({ hostName: "split-host" }), params)),
 		)
@@ -84,11 +84,12 @@ describeWithChdb("host filesystem utilization", () => {
 					metricName: "system.filesystem.utilization",
 					groupByAttributeKey: "mountpoint",
 					attributeIn: { key: "state", values: CH.FILESYSTEM_USED_STATES },
+					attributeNotIn: { key: "type", values: CH.PSEUDO_FS_TYPES },
 				}),
 				{ ...params, bucketSeconds: 3600 },
 			)
 		const receiver = decodeSeries(await run(series("receiver-host")))
-		expect(Number(receiver.find((row) => row.attributeValue === "/")?.avgValue)).toBeCloseTo(0.42)
+		expect(receiver.map((row) => [row.attributeValue, Number(row.avgValue)])).toEqual([["/", 0.42]])
 		const split = decodeSeries(await run(series("split-host")))
 		expect(split.map((row) => Number(row.avgValue))).toEqual([0.6])
 	})

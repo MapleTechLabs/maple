@@ -12,6 +12,7 @@ const hostGaugeSql = (metric: "cpu" | "memory" | "filesystem") => {
 			metricName: spec.metricName,
 			groupByAttributeKey: spec.groupByAttributeKey,
 			attributeIn: spec.attributeIn,
+			attributeNotIn: spec.attributeNotIn,
 		}),
 		{
 			orgId: OrgId.make("org_1"),
