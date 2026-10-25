@@ -100,20 +100,15 @@ const actions = (h: H, reason: string | null): Html =>
 	)
 
 /** Pinned with the header: it explains the disabled buttons above it. When the list failed too,
- * its error state already says the dashboards are safe, so the banner does not repeat it. */
-/** The stored write error, or "Couldn't reach Maple" when the write never left the browser. */
+ * its error state already explains the outage, so the banner is dropped. */
 const persistenceBanner = (h: H, error: string | null, isListFailed: boolean): Html | undefined => {
-	if (error === null) return undefined
+	if (error === null || isListFailed) return undefined
 	const cause = UNREACHABLE.test(error)
 		? "Couldn't reach Maple, so editing, import and delete are off until it reconnects."
 		: `${writeFailureCause(error)}. Editing, import and delete are off until it recovers.`
 	return alert(h, { variant: "crit", size: "sm", className: "mb-3" }, [
 		icon(h, "CircleWarningIcon", { size: 14 }),
-		alertDescription(
-			h,
-			[isListFailed ? cause : `${cause} Your dashboards are safe and still readable.`],
-			TONE_TEXT.crit,
-		),
+		alertDescription(h, [`${cause} Your dashboards are safe and still readable.`], TONE_TEXT.crit),
 	])
 }
 

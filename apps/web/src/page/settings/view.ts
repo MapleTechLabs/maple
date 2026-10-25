@@ -1,5 +1,6 @@
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { AppRoute, hrefOf } from "../../route"
 import { alert, alertDescription } from "../../ui/alert"
 import { emptyMessage } from "../../ui/empty"
 import { icon } from "../../ui/icon"
@@ -8,6 +9,7 @@ import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import type { BreadcrumbEntry } from "../../shell"
 import { navShell } from "./kit/nav-shell"
+import { INLINE_LINK_CLASS } from "./kit/section"
 import * as IngestionView from "./ingestion/view"
 import * as KeysView from "./keys/view"
 import * as McpView from "./mcp/view"
@@ -219,12 +221,29 @@ const pageNote = (h: H, model: Model): ReadonlyArray<Html> => {
 		: model.deniedTab === null || model.deniedTab === activeTabOf(model)
 			? null
 			: gatedTabReason(model, model.deniedTab)
+	// The add-on gate is the one a viewer can lift themselves, so it links to the plans.
+	const linksToPlans =
+		!isRoleUnknown(model) && model.deniedTab === "data-platform" && visibilityOf(model).isAdmin
 	return reason === null
 		? []
 		: [
 				alert(h, { size: "sm", role: "status", className: "mb-6" }, [
 					icon(h, "LockIcon"),
-					alertDescription(h, [reason]),
+					alertDescription(h, [
+						reason,
+						...(linksToPlans
+							? [
+									" ",
+									h.a(
+										[
+											h.Href(hrefOf(AppRoute.Settings({ search: { tab: "billing" } }))),
+											h.Class(INLINE_LINK_CLASS),
+										],
+										["See plans"],
+									),
+								]
+							: []),
+					]),
 				]),
 			]
 }

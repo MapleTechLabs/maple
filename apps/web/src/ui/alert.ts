@@ -43,6 +43,6 @@ const part =
 	<M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 		h.div([h.Class(cn(styles, className)), h.DataAttribute("slot", slot)], children)
 
-export const alertTitle = part(alertTitleStyles, "alert-title")
+export const alertTitle = part(cn(alertTitleStyles, "font-prose"), "alert-title")
 export const alertDescription = part(cn(alertDescriptionStyles, "font-prose"), "alert-description")
 export const alertAction = part(alertActionStyles, "alert-action")

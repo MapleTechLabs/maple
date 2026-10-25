@@ -21,7 +21,7 @@ import {
 import { ChartSpec, type FixedMetricRow } from "../../charts/chart-spec"
 import { resolveColor, type ThemeColors } from "../../charts/theme-colors"
 import { FAILURE_KEY_SEPARATOR, failureKey, type LoadFailure } from "../../data/load-failure"
-import { errorState } from "../../ui/error-state"
+import { errorState, type FailureKind, failureKind } from "../../ui/error-state"
 import { presenceOf } from "../kit/signal-presence"
 import { stableSlice } from "../kit/stable-slice"
 import { Message, type RetryTarget } from "./message"
@@ -292,6 +292,13 @@ const gridItem = (
 	}
 }
 
+/** A card under the page strip: what its blank chart means, by the strip's failure class. */
+const STRIPPED_CAPTION = {
+	outage: "No data while Maple reconnects",
+	fixable: "No data for this request",
+	access: "No access to this data",
+} satisfies Record<FailureKind, string>
+
 const cardContent = (
 	h: HtmlBuilder<Message>,
 	chart: Chart.Model,
@@ -303,14 +310,17 @@ const cardContent = (
 			return chartSkeleton(h, item.skeleton)
 		case "Failed": {
 			const { failure: cardFailure, retry } = item.body
-			// The page strip already names this failure and retries it: the card keeps its frame and
-			// a flat baseline, so it reads as no data rather than a broken render.
+			// The page strip already names this failure and retries it: the card keeps its frame, a flat
+			// baseline and a one-line caption in the strip's failure class.
 			if (pageFailureKeys.split(FAILURE_KEY_SEPARATOR).includes(failureKey(cardFailure)))
 				return h.div(
-					[h.Class("flex h-full items-center px-6")],
+					[h.Class("flex h-full flex-col items-center justify-center gap-3 px-6")],
 					[
+						h.span(
+							[h.Class("text-xs text-muted-foreground/70")],
+							[STRIPPED_CAPTION[failureKind(cardFailure)]],
+						),
 						h.div([h.Class("h-px w-full bg-border"), h.AriaHidden(true)], []),
-						h.span([h.Class("sr-only")], ["Couldn't load"]),
 					],
 				)
 			return errorState(h, {

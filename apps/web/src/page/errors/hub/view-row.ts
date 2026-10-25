@@ -204,11 +204,16 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 						),
 						...(rowDetail
 							? [
-									truncatedText(h, {
-										text: rowDetail,
-										className:
-											"hidden min-w-0 flex-1 text-muted-foreground @4xl/page:block",
-									}),
+									// A line clamp, not `truncate`: the ellipsis follows the last glyph, never a space.
+									h.span(
+										[
+											h.Class(
+												"hidden min-w-0 flex-1 break-all text-muted-foreground @4xl/page:line-clamp-1",
+											),
+											h.Title(rowDetail),
+										],
+										[rowDetail],
+									),
 								]
 							: []),
 						...(activity === null ? [] : [activity]),

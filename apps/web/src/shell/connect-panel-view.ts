@@ -63,7 +63,11 @@ const fieldSkeleton = (h: H, label: string): Html =>
 /** `IngestKeysUnavailableNote`: members cannot read the org's ingest keys. */
 const keysUnavailable = (h: H): Html =>
 	h.p(
-		[h.Class("rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground")],
+		[
+			h.Class(
+				"rounded-md border border-dashed bg-muted/40 px-3 py-2 font-prose text-xs text-muted-foreground",
+			),
+		],
 		[
 			"Ask an org admin for your ingest keys, or open ",
 			h.a(
@@ -152,11 +156,11 @@ const mcpCard = (h: H, model: Model): Html =>
 					[h.Class("min-w-0 flex-1 space-y-0.5")],
 					[
 						h.span(
-							[h.Class("flex items-center text-xs font-medium text-foreground")],
+							[h.Class("flex items-center font-prose text-xs font-medium text-foreground")],
 							["Connect your own agent"],
 						),
 						h.span(
-							[h.Class("block text-xs text-muted-foreground")],
+							[h.Class("block font-prose text-xs text-muted-foreground")],
 							["Claude Code, Cursor, or any MCP client can query your telemetry."],
 						),
 					],
@@ -185,8 +189,7 @@ const mcpCard = (h: H, model: Model): Html =>
 					toParentMessage: toCopy("mcp"),
 					value: MCP_ENDPOINT,
 					label: "MCP endpoint",
-					iconSize: 13,
-					className: "size-6 shrink-0",
+					className: "shrink-0",
 				}),
 			],
 		),
@@ -215,8 +218,7 @@ const commandBlock = (h: H, model: Model): Html =>
 				toParentMessage: toCopy("skill"),
 				value: ONBOARD_SKILL_COMMAND,
 				label: "Command",
-				iconSize: 13,
-				className: "size-6 shrink-0",
+				className: "shrink-0",
 			}),
 		],
 	)
@@ -252,7 +254,7 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 					eyebrow(h, { variant: "label" }, ["Fastest path · Claude Code"]),
 					commandBlock(h, model),
 					h.p(
-						[h.Class("text-xs text-muted-foreground")],
+						[h.Class("font-prose text-xs text-muted-foreground")],
 						[
 							"The ",
 							inlineCode(h, {}, ["maple-onboard"]),

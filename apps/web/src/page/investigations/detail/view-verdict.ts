@@ -8,6 +8,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
+import { inlineCode } from "../../../ui/inline-code"
 import { statFigure } from "../../../ui/stat-figure"
 import { statusDot } from "../../../ui/status-dot"
 import { confidenceMeter } from "../kit"
@@ -113,6 +114,15 @@ const mechanism = <M>(h: HtmlBuilder<M>, heading: string | null, text: string): 
 				],
 			)
 
+// Backticked spans and SCREAMING_SNAKE names are identifiers; the rest of an action is prose.
+const IDENTIFIER = /(`[^`]+`|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b)/
+
+const actionText = <M>(h: HtmlBuilder<M>, action: string): Children =>
+	action
+		.split(IDENTIFIER)
+		.filter((part) => part.length > 0)
+		.map((part) => (IDENTIFIER.test(part) ? inlineCode(h, {}, [part.replace(/^`|`$/g, "")]) : part))
+
 const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html | null =>
 	actions.length === 0
 		? null
@@ -125,7 +135,7 @@ const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html
 						actions.map((action, index) =>
 							h.keyed("li")(
 								String(index),
-								[h.Class("flex gap-3 text-sm leading-6 text-foreground")],
+								[h.Class("flex gap-3 font-prose text-sm leading-6 text-foreground")],
 								[
 									h.span(
 										[
@@ -135,7 +145,10 @@ const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html
 										],
 										[String(index + 1)],
 									),
-									h.span([h.Class("min-w-0 [overflow-wrap:anywhere]")], [action]),
+									h.span(
+										[h.Class("min-w-0 [overflow-wrap:anywhere]")],
+										actionText(h, action),
+									),
 								],
 							),
 						),

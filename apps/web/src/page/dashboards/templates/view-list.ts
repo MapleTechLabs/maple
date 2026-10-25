@@ -238,7 +238,7 @@ export const templateList = (h: H, model: Model, readiness: ReadonlyMap<string, 
 					toolbarSearch(h, {
 						id: "templates-search",
 						draft: model.searchDraft,
-						placeholder: "Search templates",
+						placeholder: "Search",
 						className: "min-w-0 grow",
 						onInput: (value) => Message.ChangedSearchDraft({ value }),
 					}),
