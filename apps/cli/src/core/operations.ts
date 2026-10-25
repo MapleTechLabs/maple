@@ -125,7 +125,7 @@ const accessDenied = (baseUrl: string, denial: LocalAccessDenial): LocalServerAc
 		status: denial.status,
 		message:
 			denial.status < 400
-				? `${origin} redirected the request to a sign-in page before it reached Maple`
+				? `${origin} redirected the request (HTTP ${denial.status}) before it reached Maple`
 				: `${origin} refused the request before it reached Maple (HTTP ${denial.status})`,
 		hint: `if Cloudflare Access protects it, run \`cloudflared access login ${origin}\`; otherwise set MAPLE_LOCAL_HEADERS to the credentials its proxy expects`,
 	})

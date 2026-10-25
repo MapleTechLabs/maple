@@ -185,15 +185,14 @@ export const localAccessClient =
 				HttpClient.mapRequest(withLocalAccessToken(settings.accessToken, localUrl)),
 				HttpClient.mapRequest(withLocalHeaders(headers, localUrl)),
 				HttpClient.mapRequestEffect((request) =>
-					isTargetRequest(request, localUrl)
+					// A request that already carries a token never waits on cloudflared.
+					isTargetRequest(request, localUrl) && request.headers["cf-access-token"] === undefined
 						? Effect.map(
 								cloudflared,
 								Option.match({
 									onNone: () => request,
 									onSome: (token) =>
-										request.headers["cf-access-token"] === undefined
-											? HttpClientRequest.setHeader(request, "cf-access-token", token)
-											: request,
+										HttpClientRequest.setHeader(request, "cf-access-token", token),
 								}),
 							)
 						: Effect.succeed(request),

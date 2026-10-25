@@ -178,6 +178,25 @@ describe("localAccessClient", () => {
 		}),
 	)
 
+	it.effect("keeps a token already on the request and never waits on cloudflared for it", () =>
+		Effect.gen(function* () {
+			const { sent, layer } = recordingFetch()
+			const { asked, settings: s } = yield* settings("https://maple.example.com")
+			const client = yield* Effect.flatMap(HttpClient.HttpClient, localAccessClient(s)).pipe(
+				Effect.provide(layer),
+			)
+
+			yield* client.execute(
+				HttpClientRequest.get("https://maple.example.com/local/status").pipe(
+					HttpClientRequest.setHeader("cf-access-token", "own-jwt"),
+				),
+			)
+
+			strictEqual(yield* Ref.get(asked), 0)
+			strictEqual(sent[0]?.headers.get("cf-access-token"), "own-jwt")
+		}),
+	)
+
 	it.effect("does not follow a redirect that would carry configured headers to another origin", () =>
 		Effect.gen(function* () {
 			const { sent, layer } = recordingFetch()
