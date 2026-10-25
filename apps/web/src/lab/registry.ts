@@ -219,6 +219,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/aws",
+		title: "AWS infrastructure",
+		description:
+			"The AWS list over one account: four ECS services (two idle), two EC2 instances and two load balancers, none traced. Pick a tab with ?tab=ec2 or ?tab=loadBalancers.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/security",
 		title: "Security Center",
 		description:

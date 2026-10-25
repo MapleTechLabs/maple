@@ -1,4 +1,4 @@
-import type { AwsInfraKindId } from "@maple/domain/aws-infra"
+import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import {
 	EMPTY_VALUE,
 	formatBytes,
@@ -6,6 +6,7 @@ import {
 	formatPercent,
 	formatRate,
 	formatUptime,
+	pluralize,
 } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -48,6 +49,8 @@ type Column = Readonly<{
 	width: string
 	align?: "right"
 	hidden?: string
+	/** The "Traced as" column, dropped when no row in view is traced. */
+	traced?: true
 	cell: (h: H, view: ResourceView, context: TableContext) => Html
 }>
 
@@ -153,7 +156,7 @@ const COLUMNS = {
 			hidden: "hidden md:flex",
 			cell: (h, view, context) => sparkCell(h, view, context),
 		},
-		{ label: "Traced as", width: "w-36", hidden: "hidden lg:flex", cell: tracedCell },
+		{ label: "Traced as", width: "w-36", hidden: "hidden lg:flex", traced: true, cell: tracedCell },
 	],
 	ec2: [
 		{ label: "CPU", width: "w-28", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
@@ -297,7 +300,7 @@ const COLUMNS = {
 				return numberCell(h, ms === null ? null : formatLatency(ms))
 			},
 		},
-		{ label: "Traced as", width: "w-36", hidden: "hidden lg:flex", cell: tracedCell },
+		{ label: "Traced as", width: "w-36", hidden: "hidden lg:flex", traced: true, cell: tracedCell },
 	],
 	sqs: [
 		{
@@ -331,13 +334,18 @@ const COLUMNS = {
 	],
 } satisfies Record<AwsInfraKindId, ReadonlyArray<Column>>
 
-const columnsOf = (kind: AwsInfraKindId): ReadonlyArray<Column> => COLUMNS[kind]
+const columnsOf = (kind: AwsInfraKindId, showTraced = true): ReadonlyArray<Column> =>
+	showTraced ? COLUMNS[kind] : COLUMNS[kind].filter((column: Column) => column.traced !== true)
+
+/** False once the traced services loaded and none of the rows matches one. */
+const anyTraced = (views: ReadonlyArray<ResourceView>, traced: TableContext["traced"]): boolean =>
+	traced === null || views.some((view) => tracedAs(traced, view) !== null)
 
 const NAME_COLUMN = { label: "", width: "w-0 flex-1 min-w-48" }
 
-const heads = (h: H, kind: AwsInfraKindId, nameLabel: string): ReadonlyArray<Html> => [
+const heads = (h: H, kind: AwsInfraKindId, nameLabel: string, showTraced = true): ReadonlyArray<Html> => [
 	columnHead(h, { label: nameLabel, width: NAME_COLUMN.width }),
-	...columnsOf(kind).map((column) =>
+	...columnsOf(kind, showTraced).map((column) =>
 		columnHead(h, {
 			label: column.label,
 			width: column.width,
@@ -365,7 +373,7 @@ export const awsTableLoading = (h: H, kind: AwsInfraKindId, nameLabel: string): 
 const subline = (view: ResourceView): Html | string =>
 	[view.cluster, view.region].filter((part) => part !== "").join(" · ")
 
-const row = (h: H, view: ResourceView, context: TableContext): Html =>
+const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolean): Html =>
 	h.a(
 		[
 			h.Key(JSON.stringify(view.keys)),
@@ -404,7 +412,7 @@ const row = (h: H, view: ResourceView, context: TableContext): Html =>
 											"truncate font-mono text-2xs",
 											view.health === "crit"
 												? "text-severity-error"
-												: view.health === "warn" || view.health === "idle"
+												: view.health === "warn"
 													? "text-severity-warn"
 													: "text-muted-foreground",
 										),
@@ -422,7 +430,7 @@ const row = (h: H, view: ResourceView, context: TableContext): Html =>
 					),
 				],
 			),
-			...columnsOf(view.kind).map((column) =>
+			...columnsOf(view.kind, showTraced).map((column) =>
 				h.div(
 					[
 						h.Class(
@@ -446,13 +454,30 @@ export const awsTable = (
 		kind: AwsInfraKindId
 		nameLabel: string
 		views: ReadonlyArray<ResourceView>
+		/** Every row before the search filter: a search must not hide the column. */
+		allViews: ReadonlyArray<ResourceView>
 		context: TableContext
 		isWaiting: boolean
 	}>,
-): Html =>
-	dataTable(
+): Html => {
+	const showTraced = anyTraced(options.allViews, options.context.traced)
+	const table = dataTable(
 		h,
 		{ ariaLabel: `AWS ${options.nameLabel}`, isWaiting: options.isWaiting },
-		heads(h, options.kind, options.nameLabel),
-		options.views.map((view) => row(h, view, options.context)),
+		heads(h, options.kind, options.nameLabel, showTraced),
+		options.views.map((view) => row(h, view, options.context, showTraced)),
 	)
+	const hasTracedColumn = COLUMNS[options.kind].some((column: Column) => column.traced === true)
+	return showTraced || !hasTracedColumn
+		? table
+		: h.div(
+				[h.Class("flex flex-col")],
+				[
+					table,
+					h.p(
+						[h.Class("px-4 pt-2 font-prose text-xs text-muted-foreground")],
+						[`None of these ${pluralize(2, AWS_INFRA_KINDS[options.kind].noun)} are traced yet.`],
+					),
+				],
+			)
+}

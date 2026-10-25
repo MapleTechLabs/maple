@@ -169,6 +169,7 @@ const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html
 						kind: read.kind,
 						nameLabel: nameLabel(read.kind),
 						views: shown,
+						allViews: views,
 						context: tableContext(model),
 						isWaiting,
 					}),

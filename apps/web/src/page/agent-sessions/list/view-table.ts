@@ -308,20 +308,28 @@ const modelCell = (h: H, row: DisplayRow, context: RowContext): Html | null => {
 			])
 }
 
-/** A count with the kind's glyph, in its hue. */
-const workCount = (h: H, iconName: IconName, tone: string, count: number): Html =>
+/** A count with the kind's muted glyph; colour in this table is reserved for status. */
+const workCount = (h: H, iconName: IconName, count: number): Html =>
 	hint(
 		h,
-		cn("inline-flex items-center gap-1 text-xs tabular-nums", count > 0 ? tone : "text-muted-foreground"),
+		cn(
+			"inline-flex items-center gap-1 text-xs tabular-nums",
+			count > 0 ? "text-foreground" : "text-muted-foreground",
+		),
 		[
-			icon(h, iconName, { size: 12, className: "shrink-0", attributes: [h.AriaHidden(true)] }),
+			icon(h, iconName, {
+				size: 12,
+				className: "shrink-0 text-muted-foreground",
+				attributes: [h.AriaHidden(true)],
+			}),
 			formatCount(count),
 		],
 	)
 
 const BUCKET_COVERAGE_MIN = 0.9
+const FULL_COUNT = new Intl.NumberFormat("en-US")
 
-/** In over out, each in its side's colour; a session that reported only a total shows the total. */
+/** `in → out` on one line, the exact split in its title; a session that reported only a total shows the total. */
 const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	const inputs = [row.inputTokens, row.cacheReadTokens, row.cacheWriteTokens].filter((value) => value > 0)
 	const outputs = [row.outputTokens, row.reasoningTokens].filter((value) => value > 0)
@@ -330,38 +338,34 @@ const tokenBar = (h: H, row: DisplayRow): Html | null => {
 	const total = hasBuckets ? drawnTotal : row.totalTokens
 	if (total === 0) return null
 	if (!hasBuckets) {
-		return hint(h, "font-mono text-xs tabular-nums text-muted-foreground", [formatCount(total)])
+		return h.span(
+			[
+				h.Class("font-mono text-xs tabular-nums text-foreground"),
+				h.Title(`${FULL_COUNT.format(total)} tokens`),
+				...triggerAttributes(h),
+			],
+			[formatCount(total)],
+		)
 	}
-	const sides = [
-		{ label: "in", tone: "text-chart-tok-input", count: inputs.reduce((sum, value) => sum + value, 0) },
-		{
-			label: "out",
-			tone: "text-chart-tok-reasoning",
-			count: outputs.reduce((sum, value) => sum + value, 0),
-		},
-	]
-	return hint(
-		h,
-		"flex flex-col gap-0.5 font-mono text-xs tabular-nums",
-		sides.map((side) =>
+	const input = inputs.reduce((sum, value) => sum + value, 0)
+	const output = outputs.reduce((sum, value) => sum + value, 0)
+	return h.span(
+		[
+			h.Class("inline-flex items-baseline gap-1 font-mono text-xs whitespace-nowrap tabular-nums"),
+			h.Title(`${FULL_COUNT.format(input)} input · ${FULL_COUNT.format(output)} output tokens`),
+			...triggerAttributes(h),
+		],
+		[
 			h.span(
-				[h.Class("flex items-baseline gap-1.5")],
-				[
-					h.span(
-						[
-							h.Class(
-								cn(
-									"min-w-12 text-right",
-									side.count > 0 ? side.tone : "text-muted-foreground/50",
-								),
-							),
-						],
-						[side.count > 0 ? formatCount(side.count) : EMPTY_VALUE],
-					),
-					h.span([h.Class("text-muted-foreground")], [side.label]),
-				],
+				[h.Class(input > 0 ? "text-foreground" : "text-muted-foreground")],
+				[input > 0 ? formatCount(input) : EMPTY_VALUE, h.span([h.Class("sr-only")], [" input"])],
 			),
-		),
+			h.span([h.Class("text-muted-foreground/60"), h.AriaHidden(true)], ["→"]),
+			h.span(
+				[h.Class("text-muted-foreground")],
+				[output > 0 ? formatCount(output) : EMPTY_VALUE, h.span([h.Class("sr-only")], [" output"])],
+			),
+		],
 	)
 }
 
@@ -435,8 +439,8 @@ const cellsOf = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<Html
 	row.serviceNames.length === 0 ? null : servicePills(h, row.serviceNames),
 	modelCell(h, row, context),
 	hint(h, "font-mono text-xs tabular-nums", [formatSessionDuration(row.durationMs)]),
-	workCount(h, "PixelSparkleIcon", "text-chart-ai-inference", row.llmCalls),
-	workCount(h, "GearIcon", "text-chart-ai-tool", row.toolCalls),
+	workCount(h, "PixelSparkleIcon", row.llmCalls),
+	workCount(h, "GearIcon", row.toolCalls),
 	tokenBar(h, row),
 	row.cost > 0 ? hint(h, "font-mono text-xs tabular-nums", [formatCost(row.cost)]) : null,
 	errorChips(h, row),
