@@ -48,7 +48,7 @@ export const LANE = {
 	service: "hidden w-[92px] shrink-0 @xl/page:block",
 	state: "hidden w-[104px] shrink-0 @3xl/page:block",
 	actor: "w-5 shrink-0",
-	lastSeen: "w-[64px] shrink-0",
+	lastSeen: "w-[76px] shrink-0 whitespace-nowrap",
 } as const
 
 export const ROW_SHELL = "flex items-center gap-3 px-3"

@@ -175,6 +175,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			title: isLoading || empty ? undefined : settingsTabLabels[activeTabOf(model)],
 			filters:
 				isLoading || empty
 					? undefined

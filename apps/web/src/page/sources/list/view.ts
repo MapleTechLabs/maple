@@ -27,11 +27,29 @@ type H = HtmlBuilder<Message>
 // The whole row opens on click; the name is the real link for keyboards and screen readers.
 const NAME_LINK_CLASS = "truncate text-sm font-medium outline-none hover:underline focus-visible:underline"
 
-const connectButton = (h: H): Html =>
-	linkButton(h, { size: "sm", href: "/sources/new" }, [
-		icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+/** `outline` keeps one filled CTA on the page when the empty state shows its own. */
+const connectButton = (h: H, variant?: "outline"): Html =>
+	linkButton(h, { size: "sm", href: "/sources/new", variant }, [
+		icon(h, "PlusIcon", {
+			attributes: [h.DataAttribute("icon", "inline-start")],
+			className: variant === "outline" ? "text-primary" : undefined,
+		}),
 		"Connect source",
 	])
+
+const hasNoAddedSources = (rows: ReadonlyArray<V2Source>): boolean => rows.every((source) => source.is_default)
+
+/** Mirrors `body`: the empty state renders once the list loaded with no added sources. */
+const showsEmptyState = (model: Model): boolean =>
+	model.nowMs !== null &&
+	AsyncData.match(model.list.data, {
+		onIdle: () => false,
+		onLoading: () => false,
+		onFailure: () => false,
+		onStale: () => false,
+		onSuccess: hasNoAddedSources,
+		onRefreshing: hasNoAddedSources,
+	})
 
 /** Volume by source id: `null` while the summary loads, empty when it failed. */
 type UsageBySource = ReadonlyMap<SourceId, VolumeTotals> | null
@@ -328,5 +346,9 @@ const body = (h: H, model: Model): Html => {
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
-	dashboardPage(h, { title: "Sources", actions: connectButton(h) }, [body(h, model)]),
+	dashboardPage(
+		h,
+		{ title: "Sources", actions: connectButton(h, showsEmptyState(model) ? "outline" : undefined) },
+		[body(h, model)],
+	),
 )

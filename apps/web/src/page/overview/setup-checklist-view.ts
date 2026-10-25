@@ -21,7 +21,7 @@ type H = HtmlBuilder<Message>
 /** `IngestKeysUnavailableNote`: members cannot read the org's ingest keys. */
 const keysUnavailable = (h: H): Html =>
 	h.p(
-		[h.Class("rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground")],
+		[h.Class("rounded-md border border-dashed bg-muted/40 px-3 py-2 font-prose text-xs text-muted-foreground")],
 		[
 			"Ask an org admin for your ingest keys, or open ",
 			h.a(
@@ -110,13 +110,13 @@ const sendTestEventStrip = (h: H, model: Model): Html =>
 				[h.Class("flex items-center gap-2.5")],
 				[
 					icon(h, "PulseIcon", { size: 14, className: "text-primary" }),
-					h.span([h.Class("text-xs text-muted-foreground")], ["Watching for your first trace…"]),
+					h.span([h.Class("font-prose text-xs text-muted-foreground")], ["Watching for your first trace…"]),
 				],
 			),
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
-					h.span([h.Class("hidden text-2xs text-muted-foreground sm:inline")], ["Not ready to instrument?"]),
+					h.span([h.Class("hidden font-prose text-2xs text-muted-foreground sm:inline")], ["Not ready to instrument?"]),
 					button(
 						h,
 						{
@@ -151,7 +151,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 						[
 							h.p([h.Class("text-sm font-semibold tracking-tight")], ["First trace received — you're live"]),
 							h.p(
-								[h.Class("text-xs text-muted-foreground mt-0.5")],
+								[h.Class("mt-0.5 font-prose text-xs text-muted-foreground")],
 								[
 									serviceName === undefined
 										? "We're seeing your telemetry. Jump in to explore."
@@ -202,7 +202,7 @@ const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string,
 							[icon(h, "CodeIcon", { size: 16 })],
 						),
 						title: "Connect your app to see real data",
-						meta: getOnboardingSetupHint(intents),
+						meta: h.span([h.Class("font-prose")], [getOnboardingSetupHint(intents)]),
 					}),
 					h.div(
 						[h.Class("flex items-center gap-1 shrink-0")],

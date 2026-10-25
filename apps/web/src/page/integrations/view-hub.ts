@@ -149,7 +149,7 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 							...(entry.isNew === true ? [newBadge(h)] : []),
 						],
 					),
-					h.span([h.Class("line-clamp-2 text-xs text-muted-foreground")], [entry.description]),
+					h.span([h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")], [entry.description]),
 				],
 			),
 			h.span(
