@@ -1,9 +1,8 @@
 import type { AccountTone, CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
 import { formatPercent } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../../ui/icon"
+import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
 import type * as Menu from "../../../../ui/menu"
 import * as MenuView from "../../../../ui/menu-view"
 import { Message } from "./model"
@@ -68,28 +67,15 @@ export const accountMenu = (
 						h.button(
 							[
 								h.Type("button"),
-								h.Class(
-									cn(
-										badgeVariants({
-											variant: "meta",
-											size: "xs",
-											mono: true,
-											className:
-												"cursor-pointer gap-1 font-normal text-muted-foreground transition-colors hover:text-foreground",
-										}),
-									),
-								),
+								h.Class(heroFieldChipClass(true)),
 								h.DataAttribute("slot", "badge"),
 								...trigger,
 							],
-							[
-								selected === undefined ? "accounts" : "account",
-								h.span(
-									[h.Class("text-foreground")],
-									[selected === undefined ? `All ${accounts.length}` : selected.name],
-								),
-								icon(h, "ChevronDownIcon", { className: "size-3 opacity-60" }),
-							],
+							heroFieldChipParts(h, {
+								label: selected === undefined ? "accounts" : "account",
+								value: selected === undefined ? `All ${accounts.length}` : selected.name,
+								isPicker: true,
+							}),
 						),
 					),
 				),

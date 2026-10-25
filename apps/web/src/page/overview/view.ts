@@ -138,7 +138,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					errorState(h, { failure, title, variant: "row", onRetry, className: "mb-4" }),
 				),
 				healthOverview(h, { model, slice, nowMs }),
-				usageCards(h, model, failures.length > 0),
+				usageCards(h, model),
 				metricsGrid(h, model, {
 					colors: model.themeColors ?? EMPTY_COLORS,
 					isChartReady: model.themeColors !== null && isChartRuntimeReady(model.chartRuntime),

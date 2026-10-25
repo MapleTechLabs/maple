@@ -230,7 +230,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 			[
 				h.p(
 					[h.Class("font-prose text-xs text-muted-foreground")],
-					[heading, h.span([h.Class("sr-only")], [heading === "" ? message : `. ${message}`])],
+					[heading, h.span([h.Class("sr-only")], [`. ${message}`])],
 				),
 				...retry("ghost", "h-6 px-2 font-prose text-xs text-muted-foreground hover:text-foreground sm:text-xs"),
 			],

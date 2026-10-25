@@ -1,9 +1,8 @@
 import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-model"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
-import { icon } from "../../../../ui/icon"
+import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
 import type * as Menu from "../../../../ui/menu"
 import * as MenuView from "../../../../ui/menu-view"
 import { Message } from "./model"
@@ -103,30 +102,12 @@ export const projectMenu = (
 					[h.Class("contents")],
 					withTrigger(
 						h.button(
-							[
-								h.Type("button"),
-								h.Tabindex(0),
-								h.Class(
-									cn(
-										badgeVariants({
-											className:
-												"cursor-pointer gap-1 font-normal text-muted-foreground transition-colors hover:text-foreground",
-											mono: true,
-											size: "xs",
-											variant: "meta",
-										}),
-									),
-								),
-								...trigger,
-							],
-							[
-								value === undefined ? "projects" : "project",
-								h.span(
-									[h.Class("text-foreground")],
-									[value ?? `All ${options.projects.length}`],
-								),
-								icon(h, "ChevronDownIcon", { className: "size-3 opacity-60" }),
-							],
+							[h.Type("button"), h.Tabindex(0), h.Class(heroFieldChipClass(true)), ...trigger],
+							heroFieldChipParts(h, {
+								label: value === undefined ? "projects" : "project",
+								value: value ?? `All ${options.projects.length}`,
+								isPicker: true,
+							}),
 						),
 					),
 				),

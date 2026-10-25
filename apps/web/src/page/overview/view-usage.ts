@@ -8,6 +8,9 @@ import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 
 // The service usage cards.
 
+/** Overview rails share the chart cards' corner radius. */
+export const OVERVIEW_RAIL_CLASS = "rounded-2xl"
+
 const CARDS: ReadonlyArray<{ title: string; key: keyof UsageTotals; format: (value: number) => string }> = [
 	{ title: "Total Logs", key: "logs", format: formatNumber },
 	{ title: "Total Traces", key: "traces", format: formatNumber },
@@ -15,19 +18,18 @@ const CARDS: ReadonlyArray<{ title: string; key: keyof UsageTotals; format: (val
 ]
 
 /** Loading tiles; on failure a quiet "Couldn't load" rail (the charts carry the full message). */
-export const usageCards = <M>(h: HtmlBuilder<M>, model: Model, hasPageFailure: boolean): Html =>
+export const usageCards = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 	AsyncData.matchData(model.usage.data, {
-		onEmpty: () => statRailLoading(h, CARDS.length, 3),
+		onEmpty: () => statRailLoading(h, CARDS.length, 3, OVERVIEW_RAIL_CLASS),
 		onFailure: () =>
 			statRail(
 				h,
-				{ columns: 3 },
+				{ columns: 3, className: OVERVIEW_RAIL_CLASS },
 				CARDS.map((card) =>
 					statRailItem(h, {
 						eyebrow: card.title,
 						value: EMPTY_VALUE,
-						// Under the page strip the tile shows only its empty value; the strip says why.
-						subline: hasPageFailure ? undefined : h.span([h.Class("font-prose")], ["Couldn't load"]),
+						subline: h.span([h.Class("font-prose")], ["Couldn't load"]),
 						compact: true,
 					}),
 				),
@@ -35,7 +37,7 @@ export const usageCards = <M>(h: HtmlBuilder<M>, model: Model, hasPageFailure: b
 		onData: ({ totals, previous }) =>
 			statRail(
 				h,
-				{ columns: 3 },
+				{ columns: 3, className: OVERVIEW_RAIL_CLASS },
 				CARDS.map((card) =>
 					statRailItem(h, {
 						eyebrow: card.title,
