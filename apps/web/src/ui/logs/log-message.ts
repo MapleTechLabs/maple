@@ -3,7 +3,13 @@ import { formatBytes } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { capForDisplay, headLines, memoizeByText, PREVIEW_MAX_CHARS, prettyJson } from "../../lib/display-text"
+import {
+	capForDisplay,
+	headLines,
+	memoizeByText,
+	PREVIEW_MAX_CHARS,
+	prettyJson,
+} from "../../lib/display-text"
 import { highlightCode } from "../../lib/sugar-high"
 
 // The log detail hero's message, shared by the dashboard and Maple Local. Collapsed it builds only
@@ -39,7 +45,7 @@ export const logMessageOf: (rawBody: string) => LogMessage = memoizeByText((rawB
 /** Says how much of a capped value a view left out. */
 export const truncationNote = <Message>(h: HtmlBuilder<Message>, shown: number, total: number): Html =>
 	h.p(
-		[h.Class("mt-2 text-3xs text-muted-foreground")],
+		[h.Class("my-2 text-3xs text-muted-foreground")],
 		[`Showing the first ${formatBytes(shown)} of ${formatBytes(total)}. Copy it to get all of it.`],
 	)
 
@@ -50,9 +56,10 @@ export const cappedCode = <Message>(
 	className: string,
 ): ReadonlyArray<Html> => {
 	const { shown, omitted } = capForDisplay(code)
+	// The note leads: below the code it would sit 200k characters down a scroll.
 	return [
-		h.pre([h.Class(className)], [h.code([h.InnerHTML(highlightCode(shown))], [])]),
 		...(omitted === 0 ? [] : [truncationNote(h, shown.length, code.length)]),
+		h.pre([h.Class(className)], [h.code([h.InnerHTML(highlightCode(shown))], [])]),
 	]
 }
 
@@ -92,17 +99,15 @@ export const logMessageView = <Message>(
 				[shown],
 			)
 	return h.div(
+		[h.Class("min-w-0 flex-1")],
 		[
-			h.Class(
-				cn(
-					"min-w-0 flex-1 select-text",
-					isExpanded && message.isLong && "max-h-[45vh] overflow-auto",
-				),
+			h.div(
+				[
+					h.Class(cn("select-text", isExpanded && message.isLong && "max-h-[45vh] overflow-auto")),
+					h.DataAttribute("slot", "log-message"),
+				],
+				[text],
 			),
-			h.DataAttribute("slot", "log-message"),
-		],
-		[
-			text,
 			...(isClamped || omitted === 0
 				? []
 				: [truncationNote(h, shown.length, message.formatted.length)]),

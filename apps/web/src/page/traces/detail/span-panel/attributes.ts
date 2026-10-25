@@ -79,8 +79,10 @@ const jsonValue = (h: H, model: Model, id: string, value: string, formatted: str
 								h.div(
 									[h.Class("max-h-64 overflow-auto p-2")],
 									[
+										...(omitted === 0
+											? []
+											: [truncationNote(h, shown.length, formatted.length)]),
 										h.pre([h.Class("text-xs leading-relaxed")], [h.code([], [shown])]),
-										...(omitted === 0 ? [] : [truncationNote(h, shown.length, formatted.length)]),
 									],
 								),
 								copyButton(h, model, {

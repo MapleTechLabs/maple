@@ -17,6 +17,11 @@ describe("prettyJson", () => {
 			Option.none(),
 		])
 	})
+
+	test("a body too deeply nested to re-indent is shown as text instead of throwing", () => {
+		const deep = `${"[".repeat(20_000)}${"]".repeat(20_000)}`
+		expect(Option.isNone(prettyJson(deep))).toBe(true)
+	})
 })
 
 describe("memoizeByText", () => {
