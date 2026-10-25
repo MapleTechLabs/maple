@@ -1,9 +1,10 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import {
-	type AlertDestinationId,
+	AlertDestinationId,
 	ErrorNotificationPolicyDocument,
 	type ErrorNotificationPolicyUpsertRequest,
 	ErrorForbiddenError,
+	ErrorNotificationUnknownDestinationError,
 	ErrorPersistenceError,
 	ErrorValidationError,
 	EscalationDestinationOutcome,
@@ -21,6 +22,7 @@ import {
 	type UserId,
 	UserId as UserIdSchema,
 } from "@maple/domain/http"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDestinations,
@@ -37,9 +39,7 @@ import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { evaluateEscalationPolicy as evaluateRoutingPolicy } from "@maple/backend/services/alerts/escalation-policy"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 
-const decodeAlertDestinationIds = Schema.decodeUnknownOption(
-	ErrorNotificationPolicyDocument.fields.destinationIds,
-)
+const decodeAlertDestinationId = Schema.decodeUnknownOption(AlertDestinationId)
 const decodeStoredJsonArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown))
 const decodeEscalationRules = Schema.decodeUnknownOption(Schema.Array(IssueEscalationPolicyRule))
 const decodeEscalationDeliveries = Schema.decodeUnknownOption(Schema.Array(EscalationDestinationOutcome))
@@ -68,7 +68,7 @@ export interface ErrorPolicyPublicApi {
 		request: ErrorNotificationPolicyUpsertRequest,
 	) => Effect.Effect<
 		ErrorNotificationPolicyDocument,
-		ErrorForbiddenError | ErrorPersistenceError | ErrorValidationError
+		ErrorForbiddenError | ErrorPersistenceError | ErrorNotificationUnknownDestinationError
 	>
 	readonly getEscalationPolicy: (
 		orgId: OrgId,
@@ -101,6 +101,28 @@ export interface ErrorPolicyServiceApi extends ErrorPolicyPublicApi {
 	) => Effect.Effect<ErrorNotificationPolicyRow | null, ErrorPersistenceError>
 }
 
+/** The stored policy with the request's fields applied; an omitted field keeps its value. */
+const mergeNotificationPolicy = (
+	base: ErrorNotificationPolicyRow,
+	request: ErrorNotificationPolicyUpsertRequest,
+	userId: UserId,
+	timestamp: number,
+): ErrorNotificationPolicyRow => ({
+	orgId: base.orgId,
+	enabled: request.enabled ?? base.enabled,
+	destinationIdsJson: request.destinationIds ?? base.destinationIdsJson,
+	notifyOnFirstSeen: request.notifyOnFirstSeen ?? base.notifyOnFirstSeen,
+	notifyOnRegression: request.notifyOnRegression ?? base.notifyOnRegression,
+	notifyOnResolve: request.notifyOnResolve ?? base.notifyOnResolve,
+	notifyOnTransitionInReview: request.notifyOnTransitionInReview ?? base.notifyOnTransitionInReview,
+	notifyOnTransitionDone: request.notifyOnTransitionDone ?? base.notifyOnTransitionDone,
+	notifyOnClaim: request.notifyOnClaim ?? base.notifyOnClaim,
+	minOccurrenceCount: request.minOccurrenceCount ?? base.minOccurrenceCount,
+	severity: request.severity ?? base.severity,
+	updatedAt: timestamp,
+	updatedBy: userId,
+})
+
 const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(function* () {
 	const database = yield* Database
 	const dbExecute = makeErrorDatabaseExecute(database, "ErrorPolicyService")
@@ -132,12 +154,11 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 	})
 
 	const parseNotificationDestinationIds: ErrorPolicyServiceApi["parseNotificationDestinationIds"] = (raw) =>
-		Option.getOrElse(
-			Option.flatMap(decodeStoredJsonArray(raw), (parsed) =>
-				decodeAlertDestinationIds(parsed.filter((value) => typeof value === "string")),
-			),
-			() => [],
-		)
+		// Per entry: one unreadable id must not hide the valid destinations next to it.
+		Option.match(decodeStoredJsonArray(raw), {
+			onNone: () => [],
+			onSome: (parsed) => Arr.getSomes(parsed.map((value) => decodeAlertDestinationId(value))),
+		})
 
 	const notificationRowToDocument = (row: ErrorNotificationPolicyRow) =>
 		new ErrorNotificationPolicyDocument({
@@ -189,58 +210,47 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 					message: "Only org admins can manage error notification policy",
 				}),
 		)
-		const existing = yield* loadNotificationPolicyRow(orgId)
 		const timestamp = yield* Clock.currentTimeMillis
-		const base = existing ?? defaultNotificationPolicy(orgId, timestamp)
+		const requested = Arr.dedupe(request.destinationIds ?? [])
 
-		const nextDestinations =
-			request.destinationIds !== undefined ? request.destinationIds : base.destinationIdsJson
-		const toFlag = (value: boolean | undefined, fallback: boolean): boolean =>
-			value === undefined ? fallback : value
-
-		const merged: ErrorNotificationPolicyRow = {
-			orgId,
-			enabled: toFlag(request.enabled, base.enabled),
-			destinationIdsJson: nextDestinations,
-			notifyOnFirstSeen: toFlag(request.notifyOnFirstSeen, base.notifyOnFirstSeen),
-			notifyOnRegression: toFlag(request.notifyOnRegression, base.notifyOnRegression),
-			notifyOnResolve: toFlag(request.notifyOnResolve, base.notifyOnResolve),
-			notifyOnTransitionInReview: toFlag(
-				request.notifyOnTransitionInReview,
-				base.notifyOnTransitionInReview,
-			),
-			notifyOnTransitionDone: toFlag(request.notifyOnTransitionDone, base.notifyOnTransitionDone),
-			notifyOnClaim: toFlag(request.notifyOnClaim, base.notifyOnClaim),
-			minOccurrenceCount:
-				request.minOccurrenceCount !== undefined
-					? request.minOccurrenceCount
-					: base.minOccurrenceCount,
-			severity: request.severity !== undefined ? request.severity : base.severity,
-			updatedAt: timestamp,
-			updatedBy: userId,
-		}
-
-		yield* dbExecute((db) =>
-			db.run(
-				PG.insertInto(ErrorNotificationPolicies)
-					.values(merged)
-					.onConflictDoUpdate({
-						target: ["orgId"],
-						set: {
-							enabled: merged.enabled,
-							destinationIdsJson: merged.destinationIdsJson,
-							notifyOnFirstSeen: merged.notifyOnFirstSeen,
-							notifyOnRegression: merged.notifyOnRegression,
-							notifyOnResolve: merged.notifyOnResolve,
-							notifyOnTransitionInReview: merged.notifyOnTransitionInReview,
-							notifyOnTransitionDone: merged.notifyOnTransitionDone,
-							notifyOnClaim: merged.notifyOnClaim,
-							minOccurrenceCount: merged.minOccurrenceCount,
-							severity: merged.severity,
-							updatedAt: merged.updatedAt,
-							updatedBy: merged.updatedBy,
-						},
-					}),
+		// One transaction under the per-org lock destination deletes also take: a concurrent
+		// write cannot drop this one's fields, and a validated destination cannot vanish mid-write.
+		const merged = yield* dbExecute((db) =>
+			db.transaction(
+				Effect.gen(function* () {
+					yield* db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+					const [first, ...rest] = requested
+					if (first !== undefined) {
+						const owned = yield* db.run(
+							PG.from(AlertDestinations)
+								.select("id")
+								.where(($) => [$.orgId.eq(orgId), $.id.in_(first, ...rest)]),
+						)
+						const ownedIds = HashSet.fromIterable(Arr.map(owned, (row) => row.id))
+						const unknown = Arr.filter(requested, (id) => !HashSet.has(ownedIds, id))
+						if (unknown.length > 0) {
+							return yield* new ErrorNotificationUnknownDestinationError({
+								message: `Unknown alert destination${unknown.length === 1 ? "" : "s"} for this org: ${unknown.join(", ")}`,
+								destinationIds: unknown,
+							})
+						}
+					}
+					const rows = yield* db.run(
+						PG.from(ErrorNotificationPolicies)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					)
+					const base = rows[0] ?? defaultNotificationPolicy(orgId, timestamp)
+					const next = mergeNotificationPolicy(base, request, userId, timestamp)
+					const { orgId: _orgId, ...set } = next
+					yield* db.run(
+						PG.insertInto(ErrorNotificationPolicies)
+							.values(next)
+							.onConflictDoUpdate({ target: ["orgId"], set }),
+					)
+					return next
+				}),
 			),
 		)
 

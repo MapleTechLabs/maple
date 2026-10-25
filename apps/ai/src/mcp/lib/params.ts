@@ -7,6 +7,8 @@
  * default the decoder does not apply.
  */
 import { Clock, Effect, Option, Schema, SchemaGetter, SchemaTransformation } from "effect"
+import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
+import { AlertDestinationId, AlertRuleId, DashboardId, ErrorIssueId } from "@maple/domain/primitives"
 import { WarehouseTimeInput, type WarehouseDateTime } from "@maple/query-engine"
 import { McpInvalidInputError } from "../tools/types"
 import { resolveWindow } from "./time"
@@ -109,25 +111,122 @@ export const optionalOneOfList = <const L extends ReadonlyArray<string>>(values:
  * A list. Published as an array; a comma-separated string is still accepted because every
  * `*_names` parameter used to be one.
  */
-const CommaList = Schema.String.pipe(
-	Schema.decodeTo(
-		Schema.Array(Schema.String),
-		SchemaTransformation.transform<ReadonlyArray<string>, string>({
-			decode: (value) =>
-				value
-					.split(",")
-					.map((part) => part.trim())
-					.filter((part) => part !== ""),
-			encode: (values) => values.join(","),
-		}),
-	),
-)
+const COMMA_SPLIT = SchemaTransformation.transform<ReadonlyArray<string>, string>({
+	decode: (value) =>
+		value
+			.split(",")
+			.map((part) => part.trim())
+			.filter((part) => part !== ""),
+	encode: (values) => values.join(","),
+})
+
+const CommaList = Schema.String.pipe(Schema.decodeTo(Schema.Array(Schema.String), COMMA_SPLIT))
 
 export const list = (description: string) =>
 	Schema.Union([Schema.Array(Schema.String), CommaList]).annotate({ description })
 
 export const optionalList = (description: string) =>
 	Schema.optional(Schema.Union([Schema.Array(Schema.String), CommaList])).annotate({ description })
+
+/** The resources a tool takes ids for, with their REST public-id prefix and internal id schema. */
+const RESOURCE_IDS = {
+	alertRule: { prefix: PublicIdPrefixes.alertRule, schema: AlertRuleId, noun: "alert rule" },
+	alertDestination: {
+		prefix: PublicIdPrefixes.alertDestination,
+		schema: AlertDestinationId,
+		noun: "alert destination",
+	},
+	dashboard: { prefix: PublicIdPrefixes.dashboard, schema: DashboardId, noun: "dashboard" },
+	errorIssue: { prefix: PublicIdPrefixes.errorIssue, schema: ErrorIssueId, noun: "error issue" },
+} as const
+
+export type ResourceIdKind = keyof typeof RESOURCE_IDS
+
+const KNOWN_PREFIXES: ReadonlySet<string> = new Set(Object.values(PublicIdPrefixes))
+
+/**
+ * The internal id behind `raw`: its REST public id (`dest_…`) decodes, anything else passes
+ * through for the lookup to judge. None when it is malformed or another resource's public id.
+ */
+export const internalIdOf = (kind: ResourceIdKind, raw: string): Option.Option<string> => {
+	const { prefix } = RESOURCE_IDS[kind]
+	const value = raw.trim()
+	if (value.startsWith(`${prefix}_`)) return Option.fromNullOr(decodePublicId(prefix, value))
+	const other = /^([a-z]+)_/.exec(value)?.[1]
+	return other !== undefined && KNOWN_PREFIXES.has(other) ? Option.none() : Option.some(value)
+}
+
+/**
+ * Trimmed, with a REST id swapped for the internal id. Anything else stays as sent, so the tool's
+ * own lookup reports it as invalid input on the parameter.
+ */
+const normalizedId = (kind: ResourceIdKind) =>
+	Schema.String.pipe(
+		Schema.decodeTo(
+			Schema.String,
+			SchemaTransformation.transform({
+				decode: (raw: string) => Option.getOrElse(internalIdOf(kind, raw), () => raw.trim()),
+				encode: (id: string) => id,
+			}),
+		),
+	)
+
+const idHint = (kind: ResourceIdKind) => `its UUID or its REST id (${RESOURCE_IDS[kind].prefix}_…)`
+
+/** One resource id: the internal UUID or the REST public id, decoded to the internal id. */
+export const resourceId = (kind: ResourceIdKind, description: string) =>
+	Schema.String.annotate({ description: `${description}: ${idHint(kind)}` }).pipe(
+		Schema.decodeTo(normalizedId(kind)),
+	)
+
+export const optionalResourceId = (kind: ResourceIdKind, description: string) =>
+	Schema.optional(resourceId(kind, description))
+
+/** A resource id as its branded type, or invalid input on `parameter` naming the accepted forms. */
+export const decodeResourceId =
+	<K extends ResourceIdKind>(kind: K, parameter: string) =>
+	(raw: string): Effect.Effect<(typeof RESOURCE_IDS)[K]["schema"]["Type"], McpInvalidInputError> => {
+		const schema: (typeof RESOURCE_IDS)[K]["schema"] = RESOURCE_IDS[kind].schema
+		return Option.match(internalIdOf(kind, raw), {
+			onNone: () => Effect.fail(invalidId(kind, raw, parameter)),
+			onSome: (id) =>
+				Schema.decodeUnknownEffect(schema)(id).pipe(
+					Effect.mapError(() => invalidId(kind, raw, parameter)),
+				),
+		})
+	}
+
+const invalidId = (kind: ResourceIdKind, raw: string, parameter: string) =>
+	new McpInvalidInputError({
+		message: `Invalid ${RESOURCE_IDS[kind].noun} id "${raw}": pass ${idHint(kind)}.`,
+		parameter,
+	})
+
+/** A comma-separated string with no ids in it is a model's "nothing", not a request to clear a list. */
+const NonBlankCommaList = Schema.String.check(
+	Schema.makeFilter((value: string) => value.split(",").some((part) => part.trim() !== ""), {
+		title: "nonBlankList",
+		expected: "at least one id; pass [] to clear the list",
+	}),
+).pipe(Schema.decodeTo(Schema.Array(Schema.String), COMMA_SPLIT))
+
+/**
+ * Several resource ids, each its UUID or REST id. `[]` is a real empty list; a blank string is
+ * rejected unless `blankIsEmpty`, for a list where empty cannot clear anything (a new rule).
+ */
+export const resourceIdList = (
+	kind: ResourceIdKind,
+	description: string,
+	options: { readonly blankIsEmpty?: boolean } = {},
+) =>
+	Schema.Union([Schema.Array(Schema.String), options.blankIsEmpty === true ? CommaList : NonBlankCommaList])
+		.annotate({
+			description: `${description}. Each is ${idHint(kind)}`,
+		})
+		.pipe(Schema.decodeTo(Schema.Array(normalizedId(kind))))
+
+export const optionalResourceIdList = (kind: ResourceIdKind, description: string) =>
+	Schema.optional(resourceIdList(kind, description))
 
 /**
  * A structured value a tool takes as JSON. Accepts the object itself or its JSON text, and

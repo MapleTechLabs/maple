@@ -39,6 +39,8 @@ export const ListAlertRulesOutput = Schema.Struct({
 
 export const AlertDestinationRow = Schema.Struct({
 	id: Schema.String,
+	/** The same destination's id in the REST API (`dest_…`). */
+	publicId: Schema.String,
 	name: Schema.String,
 	type: Schema.String,
 	enabled: Schema.Boolean,

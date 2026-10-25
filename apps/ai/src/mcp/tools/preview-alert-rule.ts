@@ -33,7 +33,8 @@ const decodeIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 const toIso = (value: string) => decodeIsoDateTimeString(`${value.replace(" ", "T")}Z`)
 
 const Parameters = Schema.Struct({
-	rule_id: P.optionalText(
+	rule_id: P.optionalResourceId(
+		"alertRule",
 		"Existing rule to preview (list_alert_rules). Definition params you also pass override its saved config, so a change can be tried before update_alert_rule. `template` is ignored with rule_id.",
 	),
 	// The rule definition, exactly as create_alert_rule takes it; naming and delivery do not affect evaluation.
@@ -243,7 +244,9 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					start: span.start,
 					end: span.end,
 				})),
-				...(preview.seriesFailure === undefined ? undefined : { seriesFailure: preview.seriesFailure }),
+				...(preview.seriesFailure === undefined
+					? undefined
+					: { seriesFailure: preview.seriesFailure }),
 				...(preview.queryTiming === undefined
 					? undefined
 					: {

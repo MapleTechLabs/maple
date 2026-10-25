@@ -48,6 +48,8 @@ Requests are scoped to the organization the key belongs to, or the one chosen at
 
 The server exposes the tools below. Read-only tools are marked **read**; the rest change data in your organization. `tools/list` returns the current set with full parameter schemas.
 
+Tools that take an alert rule, alert destination, dashboard or error issue ID accept either its UUID or its [REST API](/docs/reference/api) ID (`alrt_…`, `dest_…`, `dash_…`, `iss_…`). `list_alert_destinations`, `list_dashboards`, `get_dashboard` and `create_dashboard` return both. The REST API also accepts the UUID in place of its prefixed ID.
+
 ### Services and discovery
 
 | Tool                         | Access | What it does                                                                                         |
@@ -91,6 +93,7 @@ The server exposes the tools below. Read-only tools are marked **read**; the res
 | `propose_fix`                      | write  | Record a proposed fix and move the issue to `in_review`                                             |
 | `link_pull_request`                | write  | Attach a GitHub pull request to an issue; Maple verifies the fix after it merges                    |
 | `register_agent`                   | write  | Register an LLM agent so it can claim and transition issues. Needs a signed-in user, not an API key |
+| `get_error_notification_policy`    | read   | The error notification policy: destinations, toggles, and when the first notification goes out      |
 | `update_error_notification_policy` | write  | Choose whether error incidents notify alert destinations, and which ones. Org admins only           |
 
 ### Alerting

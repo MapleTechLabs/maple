@@ -37,7 +37,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 		description:
 			"Get full configuration details of a specific alert rule including thresholds, service filters, evaluation settings, and notification destinations. Use list_alert_rules to find rule IDs.",
 		parameters: Schema.Struct({
-			rule_id: P.text("Alert rule ID"),
+			rule_id: P.resourceId("alertRule", "Alert rule ID"),
 		}),
 		output: GetAlertRuleOutput,
 		hints: { readOnly: true },

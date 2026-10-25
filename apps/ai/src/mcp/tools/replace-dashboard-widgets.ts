@@ -57,7 +57,7 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 			"Replace every widget on a dashboard in one validated write. Every widget's query is checked first; if any has a clause the engine cannot honor, nothing is saved and the offending clauses are returned. " +
 			"Use it for a rewrite of the whole board; use add/update_dashboard_widget for one widget, and update_dashboard's dashboard_json only to restore a saved document. Dashboard metadata is untouched. The result carries a validation verdict per widget.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID (ids from list_dashboards)"),
 			widgets_json: jsonText(
 				Schema.Array(WidgetInput),
 				"The complete new widget list as JSON text, each the shape of a get_dashboard widgets[] entry: [{ id?, visualization, dataSource, display, layout?, timeRange? }, ...]. " +

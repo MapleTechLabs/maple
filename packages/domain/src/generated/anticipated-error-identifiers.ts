@@ -56,6 +56,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/ErrorIssuePullRequestInvalidError",
 	"@maple/http/errors/ErrorIssuePullRequestNotFoundError",
 	"@maple/http/errors/ErrorIssueTransitionError",
+	"@maple/http/errors/ErrorNotificationUnknownDestinationError",
 	"@maple/http/errors/ErrorValidationError",
 	"@maple/http/errors/GcpMetricsUnavailableError",
 	"@maple/http/errors/GcpScopeAlreadyConnectedError",
