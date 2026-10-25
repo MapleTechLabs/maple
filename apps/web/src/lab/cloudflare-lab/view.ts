@@ -26,7 +26,10 @@ const listView = Submodel.defineView<List.Model, List.Message, Readonly<{ multiA
 			[
 				dashboardPage(
 					h,
-					{ scrollClassName: "gap-6", ...titleRow(h, model, frame.singleAccountName, scope) },
+					{
+						scrollClassName: "gap-6",
+						...titleRow(h, model, frame.singleAccountName, scope, frame.inPlaceViews === true),
+					},
 					[
 						listBody(
 							h,

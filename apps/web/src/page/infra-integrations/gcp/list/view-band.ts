@@ -28,7 +28,7 @@ export interface GcpBandSpec<S extends string> {
 
 export const GCP_SERVICE_BAND: GcpBandSpec<GcpServiceScope> = {
 	noun: "service",
-	caption: "each service by its worst signal: 5xx, then p95 latency",
+	caption: "worst signal per service",
 	cells: {
 		serving5xx: {
 			label: "Serving 5xx",
@@ -48,7 +48,7 @@ export const GCP_SERVICE_BAND: GcpBandSpec<GcpServiceScope> = {
 
 export const GCP_SUBSCRIPTION_BAND: GcpBandSpec<GcpSubscriptionScope> = {
 	noun: "subscription",
-	caption: "each subscription by its worst signal: backlog, dead letters, age",
+	caption: "worst signal per subscription",
 	cells: {
 		backlogGrowing: {
 			label: "Backlog growing",
@@ -68,7 +68,7 @@ export const GCP_SUBSCRIPTION_BAND: GcpBandSpec<GcpSubscriptionScope> = {
 
 export const GCP_DATABASE_BAND: GcpBandSpec<GcpDatabaseScope> = {
 	noun: "instance",
-	caption: "each instance by its worst signal: a limit, wraparound, then query p95",
+	caption: "worst signal per instance",
 	cells: {
 		atLimit: {
 			label: "At a limit",

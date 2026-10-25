@@ -81,7 +81,7 @@ const zoneBand = (h: H, zones: ReadonlyArray<ZoneRow>, activeScope: ZoneScope | 
 	return fleetBand<ZoneScope, Message>(h, {
 		total: zones.length,
 		noun: "zone",
-		caption: "each zone by its worst signal over the window",
+		caption: "worst signal per zone",
 		segments: [
 			{
 				key: "healthy",
@@ -287,10 +287,10 @@ const header = (
 	return { trailing: account, actions: [] }
 }
 
-/** The view tabs, each with its count; views with nothing in them stay hidden. */
-const viewTabs = (h: H, model: Model, scope: ListScope, inPlace: boolean): Html | null => {
+/** The view tabs for the header's `tabs` slot, each with its count; empty views stay hidden. */
+const viewTabs = (h: H, model: Model, scope: ListScope, inPlace: boolean): Html | undefined => {
 	const views = CLOUDFLARE_VIEWS.filter((v) => v === scope.view || scope.counts[v] !== 0)
-	if (views.length < 2) return null
+	if (views.length < 2) return undefined
 	return linkTabStrip(
 		h,
 		"Cloudflare views",
@@ -301,7 +301,6 @@ const viewTabs = (h: H, model: Model, scope: ListScope, inPlace: boolean): Html 
 			onClick: inPlace ? Message.ClickedView({ view: v }) : undefined,
 		})),
 		scope.view,
-		false,
 	)
 }
 
@@ -356,7 +355,6 @@ export const listBody = (
 						sort: model.queueSort,
 						isWaiting: isWaiting(model.platform.data),
 					})
-	const tabs = viewTabs(h, model, scope, frame.inPlaceViews === true)
 	const content = [
 		...(banner === null ? [] : [banner]),
 		...(scope.showAccountColumn
@@ -379,9 +377,7 @@ export const listBody = (
 			...(withHeader
 				? [pageHero(h, { title: TITLE, ...header(h, model, frame.singleAccountName, scope) })]
 				: []),
-			...(tabs === null
-				? content
-				: [h.div([h.Class("space-y-4")], [tabs, h.div([h.Class("space-y-6")], content)])]),
+			...content,
 		],
 	)
 }
@@ -458,13 +454,14 @@ const statusView = (h: H, model: Model, spark: SparkContext): Html =>
 		onRefreshing: (status) => connectedView(h, model, status, spark),
 	})
 
-/** The title row the route and the lab share: title, account chip and description, then time controls. */
+/** The title row the route and the lab share: title, account chip and description, time controls, view tabs. */
 export const titleRow = (
 	h: H,
 	model: Model,
 	singleAccountName: string | null,
 	scope: ListScope | null,
-): Readonly<{ titleContent: Html; actions: Html }> => {
+	inPlaceViews = false,
+): Readonly<{ titleContent: Html; actions: Html; tabs: Html | undefined }> => {
 	const hero = header(h, model, singleAccountName, scope)
 	const timeControls = pageTime(h, {
 		search: model.search,
@@ -483,6 +480,7 @@ export const titleRow = (
 			description: DESCRIPTION,
 		}).title,
 		actions: headerActions(h, hero.actions, timeControls),
+		tabs: scope === null ? undefined : viewTabs(h, model, scope, inPlaceViews),
 	}
 }
 

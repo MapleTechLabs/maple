@@ -69,7 +69,6 @@ const tabs = (h: H, model: Model, reads: ReadonlyArray<FleetRead>, active: AwsIn
 			href: searchHref({ ...model.search, tab: read.kind, scope: undefined }),
 		})),
 		active,
-		false,
 	)
 
 const band = (h: H, model: Model, kind: AwsInfraKindId, views: ReadonlyArray<ResourceView>): Html => {
@@ -252,7 +251,15 @@ const fleetView = (
 	const active = activeKind(model)
 	const read = reads.find((entry) => entry.kind === active)
 	if (read === undefined || active === undefined) return noMetrics(h, status)
-	return h.div([h.Class("space-y-4")], [tabs(h, model, reads, active), kindView(h, model, read, isWaiting)])
+	return kindView(h, model, read, isWaiting)
+}
+
+/** The kind tabs for the header's `tabs` slot, once the status and the fleet have both read. */
+const headerTabs = (h: H, model: Model): Html | undefined => {
+	const active = activeKind(model)
+	const reads = AsyncData.getOrElse(model.fleet.data, () => [])
+	if (!AsyncData.hasData(model.status.data) || active === undefined) return undefined
+	return reads.some((entry) => entry.kind === active) ? tabs(h, model, reads, active) : undefined
 }
 
 const fleet = (h: H, model: Model, status: AwsStatus): Html =>
@@ -324,6 +331,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			scrollClassName: "gap-6",
 			titleContent: hero.title,
+			tabs: headerTabs(h, model),
 			actions: h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],
 				[

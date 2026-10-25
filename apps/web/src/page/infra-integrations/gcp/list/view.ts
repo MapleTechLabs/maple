@@ -43,7 +43,8 @@ import { AppRoute, hrefOf } from "../../../../route"
 import { GCP_ACCENT } from "../../../integrations/catalog"
 import { heroFieldChip } from "../../../infra/kit/hero-chip"
 import { linkTabStrip } from "../../../infra/kit/view-tabs"
-import { pageHero, pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
+import { pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
+import type * as TimeRangePicker from "../../../kit/time-range-picker"
 import { pageTime } from "../../kit/page-time"
 import {
 	cloudSqlInstancesOf,
@@ -78,7 +79,7 @@ import {
 	subscriptionsTable,
 } from "./view-tables"
 
-// `GcpPage`, `GcpInfra` and `GcpListPage`. `gcpListPage` is the presentational page the lab reuses.
+// `GcpPage`, `GcpInfra` and `GcpListPage`. `gcpListPageParts` and `titleRow` are what the lab reuses.
 
 const VIEW_LABEL = {
 	services: "Services",
@@ -118,7 +119,8 @@ const intro: HeaderParts = {
 	actions: [],
 }
 
-type PageParts = Readonly<{ header: HeaderParts; body: ReadonlyArray<Html> }>
+/** `tabs` goes to the header's `tabs` slot, pinned under the title row. */
+export type PageParts = Readonly<{ header: HeaderParts; tabs?: Html; body: ReadonlyArray<Html> }>
 
 /** `ListBody`: one view's band, search and table; the band counts every row, the table what is left. */
 const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends string>(
@@ -384,24 +386,44 @@ export type ListPageInput = Readonly<{
 	viewTab: (view: GcpView) => Readonly<{ href: string; onClick?: Message }>
 }>
 
-/** `GcpListPage` for the lab, which has no title row: the header drawn above the body. */
-export const gcpListPage = (h: H, input: ListPageInput): Html => {
-	const parts = gcpListPageParts(h, input)
-	return h.div(
-		[h.Class("space-y-6")],
-		[
-			pageHero(h, { title: TITLE, trailing: parts.header.trailing, actions: parts.header.actions }),
-			...parts.body,
-		],
-	)
-}
+/** The title row's time controls: the route's search and picker, or the lab's. */
+export type TitleRowTime = Readonly<{
+	search: TimeSearch
+	window: Readonly<{ startTime: string; endTime: string }> | null
+	timePicker: TimeRangePicker.Model
+	isReloading: boolean
+}>
 
-/** The view tabs above the rest of the body, as close to it as AWS has them. */
-const withViewTabs = (h: H, tabs: Html | null, body: ReadonlyArray<Html>): ReadonlyArray<Html> =>
-	tabs === null ? body : [h.div([h.Class("space-y-4")], [tabs, h.div([h.Class("space-y-6")], body)])]
+/** The title row the route and the lab share: title, project badge and description, then time controls. */
+export const titleRow = (
+	h: H,
+	header: HeaderParts,
+	time: TitleRowTime,
+): Readonly<{ titleContent: Html; actions: Html }> => ({
+	titleContent: pageHeroParts(h, {
+		title: TITLE,
+		description: header.description,
+		trailing: header.trailing,
+	}).title,
+	actions: headerActions(
+		h,
+		header.actions,
+		pageTime(h, {
+			search: time.search,
+			defaultPreset: DEFAULT_PRESET,
+			window: time.window,
+			picker: time.timePicker,
+			toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+			onReset: Message.ClickedResetTimeRange(),
+			onReload: Message.ClickedReload(),
+			isReloading: time.isReloading,
+		}),
+	),
+})
 
 /** The header, then the projects strip and the current view's band, search and table. */
-const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
+/** `GcpListPage`: the header, view tabs, then the projects strip and the current view. */
+export const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 	const { fleet, state, isWaiting } = input
 	const allRows =
 		fleet === null ? null : gcpListRows(fleet, input.sparks, input.windowSeconds, input.cloudSqlInstances)
@@ -505,9 +527,8 @@ const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 						...input.viewTab(option),
 					})),
 					view,
-					false,
 				)
-			: null
+			: undefined
 	return {
 		header: {
 			trailing: multiProject
@@ -523,13 +544,28 @@ const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 					: undefined,
 			actions: [],
 		},
-		body: withViewTabs(h, tabs, [
-			...input.notice,
-			...(multiProject && project === undefined && view !== GCP_RESOURCES_TAB
-				? [projectsStrip(h, projects, gcpProjectShares(inRegion, view), projectCounts, health)]
-				: []),
-			body(),
-		]),
+		tabs,
+		// One block: a bare `overflow-hidden` strip would shrink to nothing in the flex scroll area.
+		body: [
+			h.div(
+				[h.Class("space-y-6")],
+				[
+					...input.notice,
+					...(multiProject && project === undefined && view !== GCP_RESOURCES_TAB
+						? [
+								projectsStrip(
+									h,
+									projects,
+									gcpProjectShares(inRegion, view),
+									projectCounts,
+									health,
+								),
+							]
+						: []),
+					body(),
+				],
+			),
+		],
 	}
 }
 
@@ -615,16 +651,6 @@ const connected = (h: H, model: Model): PageParts => {
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const page = content(h, model)
-	const timeControls = pageTime(h, {
-		search: model.search,
-		defaultPreset: DEFAULT_PRESET,
-		window: model.window,
-		picker: model.timePicker,
-		toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-		onReset: Message.ClickedResetTimeRange(),
-		onReload: Message.ClickedReload(),
-		isReloading: model.isReloading,
-	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
@@ -632,12 +658,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					scrollClassName: "gap-6",
-					titleContent: pageHeroParts(h, {
-						title: TITLE,
-						description: page.header.description,
-						trailing: page.header.trailing,
-					}).title,
-					actions: headerActions(h, page.header.actions, timeControls),
+					...titleRow(h, page.header, model),
+					tabs: page.tabs,
 				},
 				page.body,
 			),
