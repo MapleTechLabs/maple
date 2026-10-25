@@ -1,7 +1,9 @@
 import { networkInterfaces } from "node:os"
-import { Effect, Layer, Result } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
-import { defaultLocalUrl, isLoopbackHostname } from "../lib/local-address"
+import { Duration, Effect, Layer, Option, Result, Stream } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { defaultLocalUrl, isLoopbackHostname, isRemoteHttps } from "../lib/local-address"
 import { ACCESS_TOKEN_ENV } from "../server/remote-auth"
 
 const bare = (hostname: string): string => hostname.replace(/^\[(.*)\]$/, "$1").toLowerCase()
@@ -42,16 +44,149 @@ export const withLocalAccessToken =
 			: request
 	}
 
-/** The CLI's HttpClient, signed in to a self-hosted server through `MAPLE_LOCAL_ACCESS_TOKEN`. */
+export const LOCAL_HEADERS_ENV = "MAPLE_LOCAL_HEADERS"
+
+/**
+ * `MAPLE_LOCAL_HEADERS`: comma-separated `name=value` pairs, values
+ * percent-decoded, the same format as `OTEL_EXPORTER_OTLP_HEADERS`.
+ */
+export const parseLocalHeaders = (raw: string | undefined): Readonly<Record<string, string>> =>
+	Object.fromEntries(
+		(raw ?? "").split(",").flatMap((entry) => {
+			const separator = entry.indexOf("=")
+			const name = entry.slice(0, separator).trim().toLowerCase()
+			if (separator < 0 || name === "") return []
+			const value = entry.slice(separator + 1).trim()
+			const decoded = Result.try(() => decodeURIComponent(value))
+			return [[name, Result.isSuccess(decoded) ? decoded.success : value]]
+		}),
+	)
+
+const originOf = (value: string): string | undefined => {
+	const url = Result.try(() => new URL(value))
+	return Result.isSuccess(url) ? url.success.origin : undefined
+}
+
+const isTargetRequest = (request: HttpClientRequest.HttpClientRequest, localUrl: string): boolean => {
+	const target = originOf(localUrl)
+	return target !== undefined && originOf(request.url) === target
+}
+
+/**
+ * Adds `headers` to every request on the `MAPLE_LOCAL_URL` origin, on any path
+ * (a proxy guards `/health` too). Headers the request already carries win, so
+ * the content type and the access token cannot be replaced.
+ */
+export const withLocalHeaders =
+	(headers: Readonly<Record<string, string>>, localUrl: string) =>
+	(request: HttpClientRequest.HttpClientRequest): HttpClientRequest.HttpClientRequest => {
+		if (!isTargetRequest(request, localUrl)) return request
+		const missing = Object.entries(headers).filter(([name]) => request.headers[name] === undefined)
+		return missing.length === 0
+			? request
+			: HttpClientRequest.setHeaders(request, Object.fromEntries(missing))
+	}
+
+/** True when the CLI should ask `cloudflared` for a Cloudflare Access token: no Access credential is set. */
+export const wantsCloudflaredToken = (localUrl: string, headers: Readonly<Record<string, string>>): boolean =>
+	isRemoteHttps(localUrl) &&
+	headers["cf-access-token"] === undefined &&
+	headers["cf-access-client-id"] === undefined
+
+/** `cloudflared` answers from its token cache; anything slower is a prompt nobody will see. */
+export const CLOUDFLARED_TIMEOUT = Duration.seconds(5)
+
+/**
+ * The Cloudflare Access token `cloudflared access login <origin>` cached, or
+ * none when `cloudflared` is missing, has no token, fails or stalls.
+ */
+export const cloudflaredAccessToken = (
+	origin: string,
+): Effect.Effect<Option.Option<string>, never, ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const spawner = yield* ChildProcessSpawner
+		const handle = yield* spawner.spawn(
+			ChildProcess.make("cloudflared", ["access", "token", `-app=${origin}`], {
+				stdin: "ignore",
+				stdout: "pipe",
+				stderr: "ignore",
+			}),
+		)
+		const [exitCode, stdout] = yield* Effect.all(
+			[handle.exitCode, Stream.mkString(Stream.decodeText(handle.stdout))],
+			{ concurrency: "unbounded" },
+		)
+		const token = stdout.trim()
+		return exitCode === 0 && token !== "" ? Option.some(token) : Option.none<string>()
+	}).pipe(
+		Effect.scoped,
+		Effect.timeoutOrElse({ duration: CLOUDFLARED_TIMEOUT, orElse: () => Effect.succeedNone }),
+		Effect.tapCause((cause) => Effect.logDebug("cloudflared access token failed", cause)),
+		Effect.orElseSucceed(() => Option.none<string>()),
+	)
+
+export interface LocalAccessSettings {
+	readonly localUrl: string
+	readonly accessToken: string | undefined
+	readonly headers: Readonly<Record<string, string>>
+	/** Resolved at most once, on the first request to `localUrl`. */
+	readonly cloudflaredToken: Effect.Effect<Option.Option<string>>
+}
+
+/**
+ * The CLI's HttpClient for a local server, wherever it runs: signed in through
+ * the access token, carrying the configured headers and, for an https server on
+ * another host, the Cloudflare Access token. Redirects from such a server are
+ * not followed, so a proxy's sign-in page fails as a redirect instead of as
+ * HTML where JSON was expected.
+ */
+export const localAccessClient =
+	(settings: LocalAccessSettings) =>
+	(client: HttpClient.HttpClient): Effect.Effect<HttpClient.HttpClient> =>
+		Effect.gen(function* () {
+			const { localUrl, headers } = settings
+			const cloudflared = wantsCloudflaredToken(localUrl, headers)
+				? yield* Effect.cached(settings.cloudflaredToken)
+				: Effect.succeedNone
+			const remoteHttps = isRemoteHttps(localUrl)
+			return client.pipe(
+				HttpClient.mapRequest(withLocalAccessToken(settings.accessToken, localUrl)),
+				HttpClient.mapRequest(withLocalHeaders(headers, localUrl)),
+				HttpClient.mapRequestEffect((request) =>
+					isTargetRequest(request, localUrl)
+						? Effect.map(
+								cloudflared,
+								Option.match({
+									onNone: () => request,
+									onSome: (token) =>
+										HttpClientRequest.setHeader(request, "cf-access-token", token),
+								}),
+							)
+						: Effect.succeed(request),
+				),
+				HttpClient.transform((response, request) =>
+					remoteHttps && isTargetRequest(request, localUrl)
+						? Effect.provideService(response, FetchHttpClient.RequestInit, { redirect: "manual" })
+						: response,
+				),
+			)
+		})
+
+/** The CLI's HttpClient, configured from `MAPLE_LOCAL_URL`, `MAPLE_LOCAL_ACCESS_TOKEN` and `MAPLE_LOCAL_HEADERS`. */
 export const LocalAccessHttpClient = Layer.effect(
 	HttpClient.HttpClient,
-	Effect.map(HttpClient.HttpClient, (client) =>
-		HttpClient.mapRequest(
-			client,
-			withLocalAccessToken(
-				process.env[ACCESS_TOKEN_ENV]?.trim() || undefined,
-				process.env.MAPLE_LOCAL_URL ?? defaultLocalUrl(process.env.MAPLE_LOCAL_BIND_HOST),
+	Effect.gen(function* () {
+		const client = yield* HttpClient.HttpClient
+		const spawner = yield* ChildProcessSpawner
+		const localUrl = process.env.MAPLE_LOCAL_URL ?? defaultLocalUrl(process.env.MAPLE_LOCAL_BIND_HOST)
+		return yield* localAccessClient({
+			localUrl,
+			accessToken: process.env[ACCESS_TOKEN_ENV]?.trim() || undefined,
+			headers: parseLocalHeaders(process.env[LOCAL_HEADERS_ENV]),
+			// Only asked for when `localUrl` parses (`wantsCloudflaredToken`).
+			cloudflaredToken: cloudflaredAccessToken(originOf(localUrl) ?? localUrl).pipe(
+				Effect.provideService(ChildProcessSpawner, spawner),
 			),
-		),
-	),
+		})(client)
+	}),
 )

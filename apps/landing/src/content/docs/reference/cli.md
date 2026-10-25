@@ -419,6 +419,25 @@ Pin the default backend so commands stop auto-detecting, or `auto` to clear the 
 - The access token signs browsers in through `/login` (a 30-day, HttpOnly session cookie; rotating the token signs everyone out) and is accepted as `Authorization: Bearer <token>` by scripts. CLI commands send it when `MAPLE_LOCAL_ACCESS_TOKEN` is set in their environment. Ten failed sign-ins within a minute lock the sign-in form for everyone until the minute passes; Bearer requests and existing sessions are unaffected.
 - With an access token set, the dashboard works on whatever hostname reaches it (a platform URL, a reverse proxy), without `--advertise-host`.
 
+### Behind an authenticating proxy
+
+A server exposed through a proxy that checks its own credentials (Cloudflare Access, an auth gateway) also needs those credentials on every CLI request. Set `MAPLE_LOCAL_HEADERS` to comma-separated `name=value` pairs, the same format as `OTEL_EXPORTER_OTLP_HEADERS` (values may be percent-encoded). The CLI sends them only to the `MAPLE_LOCAL_URL` origin, and never in place of a header it already sets:
+
+```bash
+MAPLE_LOCAL_URL=https://maple.example.com \
+MAPLE_LOCAL_HEADERS='CF-Access-Client-Id=<id>,CF-Access-Client-Secret=<secret>' \
+maple services
+```
+
+For Cloudflare Access with your own identity instead of a service token, sign in once with `cloudflared`:
+
+```bash
+cloudflared access login https://maple.example.com
+MAPLE_LOCAL_URL=https://maple.example.com maple services
+```
+
+When `MAPLE_LOCAL_URL` is https on another host and `MAPLE_LOCAL_HEADERS` carries no Access credential, the CLI asks `cloudflared access token` for the cached token once per command and sends it as `cf-access-token`. Without `cloudflared` or a cached token it sends nothing extra. If the proxy still refuses or redirects to a sign-in page, the command says so and names both fixes.
+
 The maintenance token is sent in `x-maple-maintenance-token` and the event consumer token in `x-maple-event-consumer-token`. `maple start` creates them on first run as `<data-dir>.maintenance-token` and `<data-dir>.event-consumer-token` (mode `0600`). Anyone who can read those files can call the token routes, including `/local/retention/retire`, which deletes data. The event routes are described in the [local event consumers design doc](https://github.com/MapleTechLabs/maple/blob/main/docs/local-event-consumers.md).
 
 OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The `/local/query` handler owns the output format: it strips any trailing `FORMAT <ident>`, appends `FORMAT JSONEachRow`, and wraps the rows into a JSON array, so clients POST their compiled SQL verbatim.
@@ -434,6 +453,7 @@ OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The 
 | `MAPLE_LOCAL_URL`            | bind host + `4318`        | Explicit base URL for CLI queries and mode detection                                                                                                           |
 | `MAPLE_LOCAL_INGEST_KEY`     |                           | Required on OTLP ingest (`/v1/*`) when set. At least 16 characters                                                                                             |
 | `MAPLE_LOCAL_ACCESS_TOKEN`   |                           | Required on the dashboard and query API when set, and sent by CLI commands. At least 16 characters                                                             |
+| `MAPLE_LOCAL_HEADERS`        |                           | Comma-separated `name=value` headers the CLI sends to the `MAPLE_LOCAL_URL` origin, for a proxy in front of the server                                         |
 | `MAPLE_LOCAL_UI_URL`         | `https://local.maple.dev` | The hosted UI origin `maple start` links to and allows through CORS                                                                                            |
 | `MAPLE_LIBCHDB`              | _(auto)_                  | Explicit path to `libchdb`. Otherwise resolved beside the binary, then `~/.maple/bin/libchdb.{so,dylib}`                                                       |
 | `MAPLE_API_URL`              | `https://api.maple.dev`   | Remote API base URL                                                                                                                                            |
