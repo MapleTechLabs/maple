@@ -19,6 +19,7 @@ import {
 	emittedNames,
 	isCommentLine,
 	isLogCall,
+	isMockData,
 	isRuntimeSource,
 	literalsOf,
 	parsePatch,
@@ -101,6 +102,17 @@ export const frameMatchesPath = (frame: string, path: string): boolean => {
 	)
 }
 
+/**
+ * Resource keys every OTel SDK sets on its own, whatever the code does. One file dropping a literal
+ * can never stop them arriving; keys a service may set by hand are not here.
+ */
+const UNIVERSAL_RESOURCE_KEYS: ReadonlySet<string> = new Set([
+	"service.name",
+	"telemetry.sdk.name",
+	"telemetry.sdk.language",
+	"telemetry.sdk.version",
+])
+
 const perDay = (count: number, windowDays: number) => Math.round(count / Math.max(1, windowDays))
 
 /** The operations a literal names: a span name exactly, or a route (`/checkout`) inside `POST /checkout`. */
@@ -142,7 +154,7 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 				: catalog.metricNames.get(value)
 
 	const files = input.files
-		.filter((file) => isRuntimeSource(file.path) && file.patch !== null)
+		.filter((file) => isRuntimeSource(file.path) && !isMockData(file.path) && file.patch !== null)
 		.map((file) => ({ path: file.path, lines: parsePatch(file.patch) }))
 
 	// A name added anywhere in the pull request is moved, not removed. A comment or a log message
@@ -173,6 +185,7 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 			for (const emitted of emittedNames(line.text, oldNearbyText(file.lines, index))) {
 				const name = emitted.value
 				if (emitted.templated || addedValues.has(name) || seenRemoved.has(name)) continue
+				if (emitted.kind === "attribute" && UNIVERSAL_RESOURCE_KEYS.has(name)) continue
 				const count = countAs(emitted.kind, name)
 				if (count === undefined) continue
 				seenRemoved.add(name)

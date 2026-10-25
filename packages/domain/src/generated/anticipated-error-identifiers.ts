@@ -150,6 +150,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/v2/LogNotFoundError",
 	"@maple/http/v2/LogQueryInvalidError",
 	"@maple/http/v2/MetricQueryInvalidError",
+	"@maple/http/v2/NoActiveOrganizationError",
 	"@maple/http/v2/OrganizationAccessDeniedError",
 	"@maple/http/v2/ParameterInvalidError",
 	"@maple/http/v2/ParameterMissingError",

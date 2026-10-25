@@ -563,6 +563,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			// From `AuthorizationV2` itself, so every v2 operation carries it: a request
 			// can always name an organization (`x-maple-org-id`) the caller is not in.
 			"@maple/http/v2/OrganizationAccessDeniedError",
+			// Also `AuthorizationV2`: a session token with no active organization.
+			"@maple/http/v2/NoActiveOrganizationError",
 		])
 		expect(responseErrorTags("get", "/v2/ingest_keys", "403")).toEqual([
 			"@maple/http/v2/InsufficientPermissionsError",
@@ -570,6 +572,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			// From `AuthorizationV2` itself, so every v2 operation carries it: a request
 			// can always name an organization (`x-maple-org-id`) the caller is not in.
 			"@maple/http/v2/OrganizationAccessDeniedError",
+			// Also `AuthorizationV2`: a session token with no active organization.
+			"@maple/http/v2/NoActiveOrganizationError",
 		])
 	})
 

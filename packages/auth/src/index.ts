@@ -137,6 +137,10 @@ const unauthorized = (message: string) =>
 		message,
 	})
 
+/** A signed-in user with no organization to act in; v2 exposes this one case to clients. */
+const noActiveOrganization = () =>
+	new UnauthorizedError({ message: "Active organization is required", reason: "no_active_organization" })
+
 // NOTE: the decode helpers below deliberately discard the parse error and the
 // JWT helpers in `verifyHs256Jwt` do the same. Auth failures must NOT leak
 // validation hints (e.g. which schema field rejected the input) to unauthorized
@@ -671,7 +675,9 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 		return yield* unauthorized("Missing user in Clerk session token")
 	}
 
-	return { ...auth, userId: auth.userId }
+	// Pending by Clerk's own rule: authenticated only because pending sessions were let through.
+	const pending = acceptPendingSession && requestState.toAuth()?.isAuthenticated !== true
+	return { ...auth, userId: auth.userId, pending }
 })
 
 /**
@@ -727,7 +733,18 @@ export const makeResolveTenant = (
 				return yield* unauthorized("CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk")
 			}
 
-			const auth = yield* authenticateClerkUser(headers, env, authenticateClerkRequest, acceptsToken)
+			const auth = yield* authenticateClerkUser(
+				headers,
+				env,
+				authenticateClerkRequest,
+				acceptsToken,
+				true,
+			)
+			// A pending session (a user who has not chosen an organization yet) is only
+			// classified so clients can show an org picker, never served.
+			if (auth.pending) {
+				return yield* auth.orgId ? unauthorized("Invalid Clerk token") : noActiveOrganization()
+			}
 
 			const orgIdOverride = getOptionalString(env.MAPLE_ORG_ID_OVERRIDE)
 			const userId = yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
@@ -771,7 +788,7 @@ export const makeResolveTenant = (
 				// foreground has active.
 				const selected = yield* selectRequestedOrg(userId, headers, selectable)
 				if (Option.isNone(selected)) {
-					return yield* unauthorized("Active organization is required")
+					return yield* noActiveOrganization()
 				}
 				return {
 					orgId: selected.value.orgId,
