@@ -142,13 +142,14 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 }
 
 /** Below `md` the Status cell is hidden, so the idle billing note rides on the sub-line there. */
-const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => [
-	SERVICE_KIND[row.service],
-	...placeItems(row, showProject),
-	GCP_SERVICE_RULES.inScope(row, "idle")
-		? h.span([h.Class(cn("md:hidden", TONE_TEXT.warn))], ["idle, still billed"])
-		: undefined,
-]
+/** The idle note rides inside the last item, separator included, so hiding it at `md` leaves no stray dot. */
+const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => {
+	const items: ReadonlyArray<MetaItem> = [SERVICE_KIND[row.service], ...placeItems(row, showProject)]
+	if (!GCP_SERVICE_RULES.inScope(row, "idle")) return items
+	const note = h.span([h.Class(cn("md:hidden", TONE_TEXT.warn))], [" · idle, still billed"])
+	const last = items[items.length - 1]
+	return [...items.slice(0, -1), h.span([], [last === undefined || last === null || last === false ? "" : last, note])]
+}
 
 export const servicesTable = (
 	h: H,
