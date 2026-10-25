@@ -111,7 +111,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 				),
 				eyebrow(
 					h,
-					{ className: cn("min-w-0 flex-1 truncate", isCurrent ? "tracking-[0.06em] text-primary" : "text-muted-foreground") },
+					{ className: cn("min-w-0 flex-1 truncate", isCurrent ? "tracking-wider text-primary" : "text-muted-foreground") },
 					[data.eyebrow],
 				),
 			],
@@ -132,7 +132,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 					h.p(
 						[h.Class("flex items-baseline gap-1 text-4xs leading-3")],
 						[
-							h.span([h.Class(cn("shrink-0 font-medium tracking-[0.06em]", TONE_TEXT[data.statusTone ?? "crit"]))], [data.status]),
+							h.span([h.Class(cn("shrink-0 font-medium tracking-wider", TONE_TEXT[data.statusTone ?? "crit"]))], [data.status]),
 							...(data.detail ? [h.span([h.Class("min-w-0 flex-1 truncate text-muted-foreground")], [data.detail])] : []),
 						],
 					),
@@ -266,14 +266,14 @@ const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html>
 											h.a(
 												[
 													h.Href(data.target.href),
-													h.Class("shrink-0 text-4xs font-medium tracking-[0.06em] text-primary hover:underline"),
+													h.Class("shrink-0 text-4xs font-medium tracking-wider text-primary hover:underline"),
 													nodeLink(h),
 												],
 												[data.target.label, " →"],
 											),
 										]),
 								h.span(
-									[h.Class("min-w-0 flex-1 truncate text-right text-4xs tracking-[0.06em] text-muted-foreground/60")],
+									[h.Class("min-w-0 flex-1 truncate text-right text-4xs tracking-wider text-muted-foreground/60")],
 									[data.promise],
 								),
 							],
@@ -297,7 +297,7 @@ export const nodeChildren = (h: H, node: ProvenanceNode, clock: Clock): Readonly
 			return actionNode(h, node.id, node.data)
 		case "heading":
 			return [
-				eyebrow(h, { className: "pointer-events-none block whitespace-nowrap text-4xs leading-3 tracking-[0.1em] text-muted-foreground" }, [
+				eyebrow(h, { className: "pointer-events-none block whitespace-nowrap text-4xs leading-3 tracking-widest text-muted-foreground" }, [
 					node.data.text,
 				]),
 			]

@@ -98,13 +98,13 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 						],
 					),
 					h.div(
-						[h.Class("flex items-start gap-4 p-4")],
+						[h.Class("flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:gap-4")],
 						[
 							h.div(
-								[h.Class("flex w-48 shrink-0 flex-col gap-1 pt-1.5")],
+								[h.Class("flex shrink-0 flex-col gap-1 sm:w-60 sm:pt-1.5")],
 								[
 									label(h, { className: "text-sm font-medium", attributes: [h.For("org-name")] }, ["Name"]),
-									h.p([h.Class("text-xs text-muted-foreground")], ["Shown in the organization switcher."]),
+									h.p([h.Class("font-prose text-xs text-muted-foreground")], ["Shown in the organization switcher."]),
 								],
 							),
 							model.isAdmin
@@ -119,7 +119,7 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 											h.Placeholder("Organization name"),
 										],
 									})
-								: h.p([h.Id("org-name"), h.Class("flex-1 pt-1.5 text-sm text-foreground")], [org.name]),
+								: h.p([h.Id("org-name"), h.Class("flex-1 text-sm text-foreground sm:pt-1.5")], [org.name]),
 						],
 					),
 				],
@@ -152,7 +152,7 @@ const dataRegionSection = (h: H, org: OrgInfo): Html => {
 						],
 					),
 					h.p(
-						[h.Class("text-xs text-muted-foreground")],
+						[h.Class("font-prose text-xs text-muted-foreground")],
 						["Set when the organization was created. It cannot be changed."],
 					),
 				],
@@ -173,7 +173,7 @@ const dangerZone = (h: H, model: Model, org: OrgInfo): Html => {
 						[
 							h.p([h.Class("text-sm font-medium text-foreground")], ["Leave organization"]),
 							h.p(
-								[h.Class("text-xs text-muted-foreground")],
+								[h.Class("font-prose text-xs text-muted-foreground")],
 								[
 									leave === "last-admin"
 										? "You are the only admin. Make another member an admin before you leave."
@@ -204,7 +204,7 @@ const dangerZone = (h: H, model: Model, org: OrgInfo): Html => {
 									[
 										h.p([h.Class("text-sm font-medium text-foreground")], ["Delete organization"]),
 										h.p(
-											[h.Class("text-xs text-muted-foreground")],
+											[h.Class("font-prose text-xs text-muted-foreground")],
 											['Permanently deletes "', org.name, `" and removes every member's access. This cannot be undone.`],
 										),
 										deletionFacts(h),

@@ -66,7 +66,7 @@ const facts = (h: H, items: ReadonlyArray<Html | string>): ReadonlyArray<Html> =
 		),
 	)
 
-const MUTED_HEADING = "font-mono text-lg leading-[26px] font-semibold tracking-[-0.01em] text-muted-foreground"
+const MUTED_HEADING = "font-mono text-lg leading-[26px] font-semibold tracking-tight text-muted-foreground"
 
 const headingOf = (h: H, group: Prepared, text: string): Html => {
 	if (group.fingerprint === UNGROUPED_FINGERPRINT)

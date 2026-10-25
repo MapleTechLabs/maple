@@ -100,7 +100,7 @@ const meterRow = (h: H, label: string, fraction: number): Html => {
 			h.span(
 				[
 					h.Class(
-						cn("w-8", "shrink-0 font-mono text-3xs tracking-[0.06em] text-muted-foreground/70"),
+						cn("w-8", "shrink-0 font-mono text-3xs tracking-wider text-muted-foreground/70"),
 					),
 				],
 				[label],

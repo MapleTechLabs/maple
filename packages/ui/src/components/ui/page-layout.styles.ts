@@ -2,7 +2,7 @@ export const pageLayoutStyles = "flex min-h-0 flex-1 flex-col"
 
 export const pageTitleStyles = "font-display text-2xl font-semibold tracking-tight truncate leading-[1.1]"
 
-export const pageDescriptionStyles = "text-muted-foreground"
+export const pageDescriptionStyles = "font-prose text-muted-foreground"
 
 export const pageHeaderStyles =
 	"flex flex-col gap-2 @2xl/page:flex-row @2xl/page:items-start @2xl/page:justify-between @2xl/page:gap-4"

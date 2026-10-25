@@ -984,7 +984,7 @@ export const serviceMapLoading = <Message>(h: HtmlBuilder<Message>): Html =>
 			h.div(
 				[
 					h.Class(
-						"font-medium uppercase font-mono text-3xs tracking-[0.12em] text-muted-foreground/70 flex items-center gap-2",
+						"font-medium uppercase font-mono text-3xs tracking-widest text-muted-foreground/70 flex items-center gap-2",
 					),
 					h.Attribute("data-slot", "eyebrow"),
 				],

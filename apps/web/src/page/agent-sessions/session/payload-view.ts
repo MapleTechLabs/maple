@@ -26,7 +26,7 @@ export const messageBody = (text: string): Readonly<{ rendered: "md" | "json"; f
 export const disclosed = (openRows: ReadonlyArray<string>, key: string, byDefault: boolean): boolean =>
 	openRows.includes(key) ? !byDefault : byDefault
 
-const SEGMENT_CLASS = "font-mono text-3xs uppercase tracking-[0.08em] sm:text-3xs"
+const SEGMENT_CLASS = "font-mono text-3xs uppercase tracking-wider sm:text-3xs"
 
 /** `ViewSwitch`: the rendered and raw segments; clicking the pressed one keeps the view. */
 export const viewSwitch = (

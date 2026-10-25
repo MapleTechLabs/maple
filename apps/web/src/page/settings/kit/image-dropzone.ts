@@ -75,7 +75,7 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 					]),
 		],
 	)
-	const hintLine = hint === null ? [] : [h.p([h.Class("text-xs text-muted-foreground")], [hint])]
+	const hintLine = hint === null ? [] : [h.p([h.Class("font-prose text-xs text-muted-foreground")], [hint])]
 	return h.div(
 		[h.Class("flex items-center gap-4")],
 		[

@@ -17,7 +17,7 @@ import { elapsedBetween } from "./derive"
 
 type Children = ReadonlyArray<Html | string>
 
-const HEADING = "font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]"
+const HEADING = "font-display text-xl font-semibold leading-7 tracking-tight text-foreground [overflow-wrap:anywhere]"
 
 const SEVERITY_LABEL = { critical: "Critical", high: "High", medium: "Medium", low: "Low" } as const
 const SEVERITY_TEXT_TONE = {

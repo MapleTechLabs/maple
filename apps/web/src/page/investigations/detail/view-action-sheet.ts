@@ -83,7 +83,7 @@ export const actionSheetContent = (
 									]),
 								]),
 						h.span(
-							[h.Class("rounded border border-dashed px-2 py-1 text-3xs tracking-[0.06em] text-muted-foreground/70")],
+							[h.Class("rounded border border-dashed px-2 py-1 text-3xs tracking-wider text-muted-foreground/70")],
 							[action.promise],
 						),
 					],
