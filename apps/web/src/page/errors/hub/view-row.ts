@@ -195,8 +195,9 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 							h,
 							{
 								text: swap ? signal.detail : rowTitle,
-								// The title keeps its width; the detail below gives way first, down to zero.
-								className: "shrink font-medium text-foreground",
+								// The exception type never truncates on wide rows; only the detail gives way.
+								className:
+									"font-medium text-foreground @4xl/page:max-w-[75%] @4xl/page:shrink-0",
 							},
 							[rowTitle],
 						),
@@ -204,8 +205,7 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 							? [
 									truncatedText(h, {
 										text: rowDetail,
-										className:
-											"hidden flex-auto shrink-[999] text-muted-foreground @4xl/page:block",
+										className: "hidden min-w-0 flex-1 text-muted-foreground @4xl/page:block",
 									}),
 								]
 							: []),

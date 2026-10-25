@@ -160,6 +160,14 @@ export const filterSidebarError = <M>(
 		filterSidebarHeader(h),
 		separator(h, "horizontal", "my-2"),
 		mainFailure !== undefined && isSameFailure(mainFailure, failure)
-			? errorState(h, { failure, onRetry, variant: "quiet", title: "Filters unavailable", className: "py-2 pr-4" })
+			? errorState(h, {
+					failure,
+					onRetry,
+					variant: "quiet",
+					title: "Filters unavailable",
+					// The main panel shows the same failure with its own Try again.
+					hidesRetryButton: true,
+					className: "py-2 pr-4",
+				})
 			: errorState(h, { failure, onRetry, variant: "inline" }),
 	])
