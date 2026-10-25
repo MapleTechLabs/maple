@@ -221,6 +221,15 @@ describe("onboarding connect drawer", () => {
 			toFlow(FlowMessage.CompletedCreate({ result: Result.succeed(created) })),
 		).model
 		expect(late.connect.connected["kubernetes"]).toBe(true)
+		// The row reads Connected, and Show token reopens the dismissed sheet on it.
+		scene(
+			{ update, view },
+			given(late),
+			tabsMeasured(),
+			// Still mounted while it animates out.
+			dialogMounted(),
+			expectView(role("button", { name: "Show the Kubernetes token" })).toExist(),
+		)
 		const reopened = update(late, Message.ClickedSetUp({ platform: "kubernetes" }))
 		expect(reopened.model.drawer?.dialog.isOpen).toBe(true)
 		expect(reopened.model.drawer?.flow.created?.secret).toBe(created.secret)

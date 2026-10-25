@@ -78,6 +78,10 @@ const withDialog = (
 		: { drawer: next, commands: all }
 }
 
+/** A push source dismissed mid-way for this platform: Set up (or Show token) reopens it as it was. */
+export const isResumable = (drawer: ConnectDrawer | null, platform: StackPlatform): boolean =>
+	drawer !== null && drawer.platform === platform && !drawer.isExited && drawer.flow.integration === null
+
 /**
  * Opens the sheet on the platform. A push source dismissed mid-way resumes (its create, its one-time
  * token); anything else starts a new flow, which re-reads the integration. The dialog is reused.
@@ -90,12 +94,7 @@ export const openDrawer = (
 	const dialog = previous?.dialog ?? Dialog.init(DRAWER_ID, "sheet")
 	const opened = Dialog.open(dialog)
 	const dialogCommands = Command.mapMessages(opened.commands ?? [], toDialog)
-	if (
-		previous !== null &&
-		previous.platform === platform &&
-		!previous.isExited &&
-		previous.flow.integration === null
-	)
+	if (previous !== null && isResumable(previous, platform))
 		return { drawer: { ...previous, dialog: opened.model }, commands: dialogCommands }
 	const flow = SourcesFlow.initFlow(TARGETS[platform], context)
 	const instance = (previous?.instance ?? 0) + 1

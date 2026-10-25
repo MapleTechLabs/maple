@@ -23,6 +23,7 @@ import { presenceOf, type TelemetrySignalKind } from "../kit/signal-presence"
 import { ConnectMessage, STATUS_PROVIDERS } from "./quick-start-connect"
 import type { LiveFindings } from "./quick-start-live"
 import { regionStep } from "./quick-start-region-view"
+import { isResumable } from "./quick-start-drawer"
 import { drawerView } from "./quick-start-drawer-view"
 import * as QuickStartTeamView from "./quick-start-team-view"
 import { STEP_BODY_CLASS, STEP_FOOTER_CLASS } from "./step-layout"
@@ -497,9 +498,31 @@ const providerRow = (h: H, model: Model, platform: StackPlatform): Html => {
 				],
 			),
 			isConnected
-				? h.span(
-						[h.Class("flex items-center gap-1.5 text-sm text-success")],
-						[icon(h, "CircleCheckIcon", { size: 14 }), "Connected"],
+				? h.div(
+						[h.Class("flex items-center gap-3")],
+						[
+							h.span(
+								[h.Class("flex items-center gap-1.5 text-sm text-success")],
+								[icon(h, "CircleCheckIcon", { size: 14 }), "Connected"],
+							),
+							// A push source made after its sheet was dismissed: its one-time token is still there.
+							...(isResumable(model.drawer, platform) && model.drawer?.flow.created !== null
+								? [
+										button(
+											h,
+											{
+												variant: "ghost",
+												size: "sm",
+												attributes: [
+													h.AriaLabel(`Show the ${item.label} token`),
+													h.OnClick(Message.ClickedSetUp({ platform })),
+												],
+											},
+											["Show token"],
+										),
+									]
+								: []),
+						],
 					)
 				: button(
 						h,
@@ -980,6 +1003,9 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 															h.button(
 																[
 																	h.Type("button"),
+																	h.AriaLabel(
+																		`Set up ${STACK_PLATFORMS[platform].label}`,
+																	),
 																	h.OnClick(
 																		Message.ClickedSetUp({ platform }),
 																	),
