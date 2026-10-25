@@ -45,7 +45,7 @@ export const parsePatch = (patch: string | null): ReadonlyArray<DiffLine> => {
 
 /** Files whose strings say nothing about what production emits. */
 const NOT_RUNTIME =
-	/(^|\/)(__tests__|__mocks__|__fixtures__|test|tests|fixtures|e2e|docs?|examples?)\/|\.(test|spec|stories|e2e)\.[a-z]+$|\.(md|mdx|txt|snap|lock|json|ya?ml)$/i
+	/(^|\/)(__tests__|__mocks__|__fixtures__|test|tests|testdata|fixtures?|mocks?|seeds?|labs?|e2e|docs?|examples?)\/|\.(test|spec|stories|e2e|mocks?|fixtures?|seed)\.[a-z]+$|\.(md|mdx|txt|snap|lock|json|ya?ml)$/i
 
 export const isRuntimeSource = (path: string): boolean => !NOT_RUNTIME.test(path)
 
@@ -89,6 +89,8 @@ export interface EmittedName {
 }
 
 const ATTRIBUTE_KEY = /^[a-z_][a-z0-9_]*(?:\.[a-z0-9_]+)+$/i
+/** A literal that is the `key` of an OTLP `{ key, value: { stringValue } }` pair: payload data, not an API call. */
+const OTLP_KEY_VALUE = /["']?\bkey["']?\s*:\s*$/
 
 /**
  * Names a line hands to the telemetry API. `nearby` is the few lines above it, so an attribute
@@ -106,6 +108,7 @@ export const emittedNames = (text: string, nearby: string): ReadonlyArray<Emitte
 		} else if (
 			!literal.templated &&
 			ATTRIBUTE_KEY.test(literal.value) &&
+			!OTLP_KEY_VALUE.test(before) &&
 			(ATTRIBUTE_CALL.test(before) || (/^\s*[:,]/.test(after) && ATTRIBUTE_CALL.test(nearby)))
 		) {
 			out.push({ kind: "attribute", value: literal.value, templated: false })

@@ -101,6 +101,30 @@ export const frameMatchesPath = (frame: string, path: string): boolean => {
 	)
 }
 
+/**
+ * Resource keys every service's SDK sets. One file dropping a literal can never stop them
+ * arriving, so their removal is never a contract break.
+ */
+const UNIVERSAL_RESOURCE_KEYS: ReadonlySet<string> = new Set([
+	"service.name",
+	"service.namespace",
+	"service.version",
+	"service.instance.id",
+	"deployment.environment",
+	"deployment.environment.name",
+	"telemetry.sdk.name",
+	"telemetry.sdk.language",
+	"telemetry.sdk.version",
+	"host.name",
+	"host.arch",
+	"os.type",
+	"process.pid",
+	"process.runtime.name",
+	"process.runtime.version",
+	"cloud.provider",
+	"cloud.region",
+])
+
 const perDay = (count: number, windowDays: number) => Math.round(count / Math.max(1, windowDays))
 
 /** The operations a literal names: a span name exactly, or a route (`/checkout`) inside `POST /checkout`. */
@@ -173,6 +197,7 @@ export const analyzeTelemetry = (input: AnalyzeTelemetryInput): PrReviewTelemetr
 			for (const emitted of emittedNames(line.text, oldNearbyText(file.lines, index))) {
 				const name = emitted.value
 				if (emitted.templated || addedValues.has(name) || seenRemoved.has(name)) continue
+				if (emitted.kind === "attribute" && UNIVERSAL_RESOURCE_KEYS.has(name)) continue
 				const count = countAs(emitted.kind, name)
 				if (count === undefined) continue
 				seenRemoved.add(name)

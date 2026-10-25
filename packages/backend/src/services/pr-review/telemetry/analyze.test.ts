@@ -171,6 +171,93 @@ describe("analyzeTelemetry", () => {
 		assert.lengthOf(telemetry.contractBreaks, 0)
 	})
 
+	// #1817: deleting a hard-coded OTLP test payload was held as removing `service.name`.
+	const otlpCatalog: TelemetryCatalog = {
+		...catalog,
+		attributeKeys: new Map([
+			["service.name", 98_700_000],
+			["http.response.status_code", 18_900_000],
+		]),
+	}
+	const statusAlert: ReferenceSource = {
+		kind: "alert",
+		id: "rule-3",
+		name: "High error rate",
+		texts: ["service.name = 'api' AND http.response.status_code >= 500"],
+	}
+	const otlpPayloadPatch = [
+		"@@ -123,24 +121,0 @@ export const SaveFramework = Command.define(",
+		"-const testEventPayload = (now: number, traceId: string, spanId: string) => ({",
+		"-\tresourceSpans: [",
+		"-\t\t{",
+		"-\t\t\tresource: {",
+		"-\t\t\t\tattributes: [",
+		'-\t\t\t\t\t{ key: "service.name", value: { stringValue: "maple-onboarding-test" } },',
+		'-\t\t\t\t\t{ key: "deployment.environment", value: { stringValue: "development" } },',
+		"-\t\t\t\t],",
+		"-\t\t\t},",
+		"-\t\t\tscopeSpans: [",
+		"-\t\t\t\t{",
+		"-\t\t\t\t\tspans: [",
+		"-\t\t\t\t\t\t{",
+		"-\t\t\t\t\t\t\tattributes: [",
+		'-\t\t\t\t\t\t\t\t{ key: "http.route", value: { stringValue: "/maple/test-event" } },',
+		'-\t\t\t\t\t\t\t\t{ key: "http.response.status_code", value: { intValue: 200 } },',
+		"-\t\t\t\t\t\t\t],",
+		"-\t\t\t\t\t\t},",
+		"-\t\t\t\t\t],",
+		"-\t\t\t\t},",
+		"-\t\t\t],",
+		"-\t\t},",
+		"-\t],",
+		"-})",
+	].join("\n")
+
+	it("ignores attribute keys inside a removed OTLP payload literal", () => {
+		const telemetry = analyzeTelemetry({
+			files: [file("apps/web/src/page/settings/ingestion/command.ts", otlpPayloadPatch)],
+			catalog: otlpCatalog,
+			sources: [statusAlert],
+			issues: [],
+		})
+		assert.lengthOf(telemetry.removed, 0)
+		assert.lengthOf(telemetry.contractBreaks, 0)
+	})
+
+	it("reports a removed attribute call, but never a universal resource key", () => {
+		const telemetry = analyzeTelemetry({
+			files: [
+				file(
+					"src/http/middleware.ts",
+					`@@ -1,2 +1,0 @@\n-span.setAttribute("service.name", name)\n-span.setAttribute("http.response.status_code", status)`,
+				),
+			],
+			catalog: otlpCatalog,
+			sources: [statusAlert],
+			issues: [],
+		})
+		assert.deepStrictEqual(
+			telemetry.contractBreaks.map((item) => [item.name, item.kind]),
+			[["http.response.status_code", "attribute"]],
+		)
+	})
+
+	it("ignores mock and lab data", () => {
+		const telemetry = analyzeTelemetry({
+			files: [
+				file(
+					"apps/web/src/lab/spans.ts",
+					`@@ -1,1 +1,0 @@\n-span.setAttribute("payment.provider", p)`,
+				),
+				file("src/payments.mock.ts", `@@ -1,1 +1,0 @@\n-span.setAttribute("payment.provider", p)`),
+			],
+			catalog,
+			sources: [alert],
+			issues: [],
+		})
+		assert.lengthOf(telemetry.contractBreaks, 0)
+	})
+
 	it("reports a removed span name, under the kind production knows it by", () => {
 		const telemetry = analyzeTelemetry({
 			files: [file("src/payments/charge.ts", `@@ -1,1 +1,0 @@\n-Effect.withSpan("Payments.charge")`)],
