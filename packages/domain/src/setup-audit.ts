@@ -548,7 +548,7 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 								]
 							: []
 					}
-					// The scheduler claims a rule once per its interval (1 to 60 minutes, longer when
+					// The scheduler claims a rule once per its effective interval (1 to 60 minutes, picked or
 					// slowed), so a claim older than two intervals means it fell out of the rotation.
 					const age = now - rule.lastScheduledAt
 					return age > ruleScheduleStaleMs(rule.evaluationIntervalMinutes)
