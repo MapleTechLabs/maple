@@ -270,6 +270,14 @@ const screenView = (h: HtmlBuilder<Message>, model: Model, inputs: Inputs): Html
 			return ClerkSignInView.view(h, screen, toClerkSignIn)
 		case "SignUp":
 			return accountLayout(h, [clerkCard(h, "SignUp", screen.target)])
+		case "SessionTask":
+			return accountLayout(h, [
+				clerkCard(
+					h,
+					screen.task === "reset-password" ? "TaskResetPassword" : "TaskSetupMFA",
+					screen.target,
+				),
+			])
 		case "OrgRequired":
 			return h.submodel({
 				slotId,

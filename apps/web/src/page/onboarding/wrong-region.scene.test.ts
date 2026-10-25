@@ -26,6 +26,7 @@ const inputs: Inputs = {
 	maybeUser: Option.none(),
 	customer: initCustomer(),
 	timeZone: "UTC",
+	maybePendingTask: Option.none(),
 }
 
 describe("wrong-region screen", () => {

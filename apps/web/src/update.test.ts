@@ -105,6 +105,7 @@ describe("telemetry identity", () => {
 			maybeUser: Option.some({ fullName: "Ada Lovelace", email: "ada@acme.test", imageUrl: "" }),
 			maybeOrganization: Option.none(),
 			memberships: [],
+			maybePendingTask: Option.none(),
 		}
 		const loaded = update(base(AppRoute.Services({ search: {} })), Message.CompletedLoadClerk({ snapshot }))
 		expect(commandsOf(loaded)).toContainEqual({
@@ -131,6 +132,7 @@ describe("re-render on change only", () => {
 			flags: { aiAutoTriage: false, releases: false, securityAudit: false },
 		}),
 		memberships: [],
+		maybePendingTask: Option.none(),
 	})
 	const loadedHome = () =>
 		update(base(AppRoute.Home({ search: {} })), Message.CompletedLoadClerk({ snapshot: snapshotOf("Acme") })).model
