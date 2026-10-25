@@ -20,6 +20,7 @@ import * as CreateOrg from "./create-org"
 import type { Inputs } from "./inputs"
 import * as McpAuthorize from "./mcp-authorize"
 import * as QuickStart from "./quick-start"
+import type { Connect, ConnectMessage } from "./quick-start-connect"
 import { DrawerMessage, isDrawerListening } from "./quick-start-drawer"
 import { storageKeyOf } from "./quick-start-state"
 import * as SelectPlan from "./select-plan"
@@ -239,6 +240,13 @@ export const connectFlowOf = (
 		? Option.some({ model: screen.drawer.flow, context })
 		: Option.none()
 }
+
+/** The connect step's state, as its poll reads it: only on the quick start screen. */
+export const connectPollOf = (model: Model): Option.Option<Connect> =>
+	model.screen._tag === "QuickStart" ? Option.some(model.screen.connect) : Option.none()
+
+export const fromConnectPoll = (message: ConnectMessage): Message =>
+	toQuickStart(QuickStart.Message.GotConnectMessage({ message }))
 
 export const fromConnectFlow = (message: SourcesFlow.Message): Message =>
 	toQuickStart(
