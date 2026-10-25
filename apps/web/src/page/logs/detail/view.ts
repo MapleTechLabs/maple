@@ -1,4 +1,4 @@
-import { highlightCode } from "../../../lib/sugar-high"
+import { highlightCode } from "../../../lib/highlight"
 import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import { cn } from "@maple/ui/lib/utils"
 import { Submodel } from "foldkit"
@@ -60,7 +60,7 @@ const rawPanel = (h: H, model: Model, log: LogRecord): Html => {
 						"rounded-md border bg-muted/30 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap break-all",
 					),
 				],
-				[h.code([h.InnerHTML(highlightCode(payload))], [])],
+				[h.code([h.InnerHTML(highlightCode(payload, "json"))], [])],
 			),
 		],
 	)

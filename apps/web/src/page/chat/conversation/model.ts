@@ -56,7 +56,7 @@ export const Model = Schema.Struct({
 	chartRuntime: Schema.NullOr(ChartRuntime),
 	themeColors: Schema.NullOr(ThemeColors),
 	minimap: MinimapState,
-	/** sugar-high tokens by fence (`highlightKey`). */
+	/** Highlighted tokens by fence (`highlightKey`). */
 	highlights: Schema.Record(Schema.String, HighlightedCode),
 	/** Each sub-agent row's sheet, by its tool call. */
 	taskSheets: Schema.Record(Schema.String, Dialog.Model),

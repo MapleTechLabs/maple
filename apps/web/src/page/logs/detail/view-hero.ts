@@ -1,7 +1,7 @@
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { getSeverityColor, SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
-import { highlightCode } from "../../../lib/sugar-high"
+import { highlightCode } from "../../../lib/highlight"
 import { Option } from "effect"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { tryParseJson } from "../../../ui/attributes/attribute-row"
@@ -126,7 +126,7 @@ const message = (
 						),
 					),
 				],
-				[h.code([h.InnerHTML(highlightCode(formatted))], [])],
+				[h.code([h.InnerHTML(highlightCode(formatted, "json"))], [])],
 			)
 		: h.p(
 				[
