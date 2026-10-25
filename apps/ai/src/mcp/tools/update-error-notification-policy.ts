@@ -31,7 +31,7 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 				"Notify when an incident is auto-resolved after the silence window",
 			),
 			min_occurrence_count: P.optionalNumber(
-				"Only notify when an incident opens with at least this many occurrences. New errors already need 3 to become an issue, so values of 3 or less only affect regressions",
+				"Only notify when an incident opens with at least this many occurrences, checked once when it opens. New errors already need 3 to become an issue, so values of 3 or less only affect regressions",
 			),
 			severity: P.optionalOneOf(AlertSeverity.literals, "Severity label carried on the notifications"),
 		}),

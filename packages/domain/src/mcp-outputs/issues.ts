@@ -225,12 +225,14 @@ export const ErrorNotificationPolicyDestination = Schema.Struct({
 export const ErrorNotificationPolicyOutput = Schema.Struct({
 	enabled: Schema.Boolean,
 	destinationIds: Schema.Array(Schema.String),
+	/** Set when the destination names could not be read; ids are still exact. */
+	destinationNamesUnavailable: Schema.optionalKey(Schema.Boolean),
 	destinations: Schema.Array(ErrorNotificationPolicyDestination),
 	notifyOnFirstSeen: Schema.Boolean,
 	notifyOnRegression: Schema.Boolean,
 	notifyOnResolve: Schema.Boolean,
 	minOccurrenceCount: Schema.Number,
-	/** Occurrences before a new error's first notification: issues open at 3 regardless of the policy. */
+	/** Occurrences a first-seen incident must open with to notify: at least 3, since issues open at 3. */
 	firstNotificationThreshold: Schema.Number,
 	severity: Schema.String,
 	updatedAt: Schema.String,
