@@ -82,4 +82,33 @@ describe("durableStep", () => {
 			}
 		}),
 	)
+
+	it.effect("ends the run as an interrupt when the step's Durable Object is reset, so it replays", () =>
+		Effect.gen(function* () {
+			const lost = new Error(
+				"Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.",
+			)
+			const exit = yield* durableStep("agent:a1", Effect.void).pipe(
+				Effect.provideService(Cloudflare.WorkflowStep, {
+					...recordingStep([]),
+					do: () => Effect.die(lost),
+				}),
+				Effect.exit,
+			)
+			assert.isTrue(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))
+		}),
+	)
+
+	it.effect("keeps any other step defect a defect", () =>
+		Effect.gen(function* () {
+			const exit = yield* durableStep("agent:a1", Effect.void).pipe(
+				Effect.provideService(Cloudflare.WorkflowStep, {
+					...recordingStep([]),
+					do: () => Effect.die(new Error("step timed out after 30 seconds")),
+				}),
+				Effect.exit,
+			)
+			assert.isTrue(Exit.isFailure(exit) && Cause.hasDies(exit.cause))
+		}),
+	)
 })

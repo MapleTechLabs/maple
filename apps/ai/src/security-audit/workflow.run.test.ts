@@ -523,6 +523,36 @@ describe("auditWithAgents", () => {
 		}).pipe(Effect.provide(testLayer())),
 	)
 
+	it.effect("leaves the run open for the replay when its Durable Object is reset mid-agent", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const replaying = replayingStep(new Map())
+			const step: Cloudflare.WorkflowStep["Service"] = {
+				...replaying,
+				do: (options) =>
+					options.name.startsWith("agent:")
+						? Effect.die(
+								new Error(
+									"Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.",
+								),
+							)
+						: replaying.do(options),
+			}
+			const exit = yield* Effect.exit(
+				auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents([]))).pipe(
+					Effect.provideService(RepoSandboxService, sandbox([])),
+					Effect.provideService(Cloudflare.WorkflowStep, step),
+				),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				[Exit.hasInterrupts(exit), Option.map(row, (r) => [r.status, r.finishedAt])],
+				[true, Option.some(["in_progress", null])],
+			)
+		}).pipe(Effect.provide(testLayer())),
+	)
+
 	it.effect("marks the run failed when the sandbox cannot pin the commit", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
