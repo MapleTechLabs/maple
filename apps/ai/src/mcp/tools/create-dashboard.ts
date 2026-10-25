@@ -543,6 +543,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 				blocks: [
 					doc.fields([
 						["ID", output.dashboard.id],
+						["REST id", output.dashboard.publicId],
 						["Name", output.dashboard.name],
 						["Description", output.dashboard.description],
 						["Widgets", output.dashboard.widgetCount],

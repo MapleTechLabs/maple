@@ -23,7 +23,10 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 		description:
 			"Incidents for one alert rule (or all rules) with first and last trigger, last notification and resolution timestamps: the per-incident detail behind list_alert_incidents. Pass rule_id to follow one rule over time.",
 		parameters: Schema.Struct({
-			rule_id: P.optionalText("Only incidents of this rule (ids from list_alert_rules)"),
+			rule_id: P.optionalResourceId(
+				"alertRule",
+				"Only incidents of this rule (ids from list_alert_rules)",
+			),
 			status: P.optionalOneOf(ALERT_INCIDENT_STATUSES, "Only incidents in this status"),
 			severity: P.optionalOneOf(ALERT_SEVERITIES, "Only incidents with this severity"),
 			group_key: P.optionalText("Only incidents with this exact group key"),

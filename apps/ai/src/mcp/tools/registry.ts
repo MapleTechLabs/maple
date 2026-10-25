@@ -55,6 +55,7 @@ import { registerSetIssueSeverityTool } from "./set-issue-severity"
 import { registerTransitionErrorIssueTool } from "./transition-error-issue"
 import { registerTransitionErrorIssuesTool } from "./transition-error-issues"
 import { registerUpdateErrorNotificationPolicyTool } from "./update-error-notification-policy"
+import { registerGetErrorNotificationPolicyTool } from "./get-error-notification-policy"
 import { registerListDashboardsTool } from "./list-dashboards"
 import { registerListMetricsTool } from "./list-metrics"
 import { registerListServicesTool } from "./list-services"
@@ -444,6 +445,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerRegisterAgentTool(registrar)
 	registerSendMapleFeedbackTool(registrar)
 	registerListErrorIncidentsTool(registrar)
+	registerGetErrorNotificationPolicyTool(registrar)
 	registerUpdateErrorNotificationPolicyTool(registrar)
 
 	return definitions

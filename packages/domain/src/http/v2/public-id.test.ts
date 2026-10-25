@@ -56,6 +56,10 @@ describe("PublicId schema codec", () => {
 		expect(encode(internal)).toBe(encodePublicId("key", UUID))
 	})
 
+	it("decodes a raw UUID to the same internal ID as its public ID", () => {
+		expect(decode(UUID.toUpperCase())).toBe(decode(encodePublicId("key", UUID)))
+	})
+
 	it("fails decode on a malformed wire ID", () => {
 		expect(() => decode("key_not!base58")).toThrow()
 		expect(() => decode("dash_abc")).toThrow()

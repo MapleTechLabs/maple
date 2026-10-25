@@ -574,7 +574,7 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		title: "New errors notify someone",
 		severity: "warn",
 		fixHint:
-			"Error notifications have no settings screen yet. Ask the Maple MCP to run `update_error_notification_policy` with `enabled: true` and at least one enabled destination from Alerts → Routing.",
+			"Error notifications have no settings screen yet. Ask the Maple MCP to read the policy with `get_error_notification_policy`, then run `update_error_notification_policy` with `enabled: true` and at least one enabled destination from Alerts → Routing.",
 		evaluate: ({ config }) => {
 			// A missing row means Maple's defaults apply: enabled, but with an empty destination list —
 			// which still routes nowhere, so the second arm below catches it.

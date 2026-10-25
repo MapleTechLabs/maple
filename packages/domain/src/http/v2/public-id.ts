@@ -189,12 +189,15 @@ export const PublicId = <S extends Schema.Codec<any, string>>(prefix: PublicIdPr
 			.pipe(
 				Schema.decodeTo(Schema.String, {
 					decode: SchemaGetter.transformEffect((publicId: string) => {
-						const internalId = decodePublicId(prefix, publicId)
+						// A raw UUID is the internal id itself, which MCP tools and older clients hold.
+						const internalId =
+							decodePublicId(prefix, publicId) ??
+							(UUID_RE.test(publicId) ? publicId.toLowerCase() : null)
 						return internalId === null
 							? Effect.fail(
 									new SchemaIssue.InvalidValue(
 										{
-											message: `Invalid ID: expected an ID with prefix "${prefix}_"`,
+											message: `Invalid ID: expected an ID with prefix "${prefix}_" or a UUID`,
 										},
 										publicId,
 									),

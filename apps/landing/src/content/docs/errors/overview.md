@@ -111,9 +111,9 @@ The error notification policy decides when Maple sends an issue to your [notific
 | Regression                | On      |
 | Incident resolved         | Off     |
 
-A minimum occurrence count (default 1) applies to first-seen and regression notifications. No destinations are selected by default, so nothing is sent until you add one.
+The minimum occurrence count (`min_occurrence_count`, default 1) is compared with the number of occurrences an incident opens with. It does not change when an issue opens: a new error becomes an issue after 3 occurrences whatever the policy says, so its first-seen notification waits for 3 occurrences, or for the minimum count when that is higher. For a regression the minimum count applies as set. No destinations are selected by default, so nothing is sent until you add one.
 
-The Errors page has no screen for this policy. Organization admins change it with the `update_error_notification_policy` MCP tool, which sets the destinations, the first-seen, regression, and resolve toggles, and the minimum count.
+The Errors page has no screen for this policy. The `get_error_notification_policy` MCP tool reads it, including each destination's name and ID. Organization admins change it with `update_error_notification_policy`, which sets the destinations, the first-seen, regression, and resolve toggles, and the minimum count. Fields you leave out keep their value. `destination_ids` replaces the list: pass `[]` to clear it. An empty string is rejected rather than read as "no destinations".
 
 An incident opens when an issue fires with no open incident. It resolves after 30 minutes without new occurrences, or when the issue is marked **Done**.
 
@@ -179,6 +179,7 @@ The [MCP server](/docs/reference/mcp) covers the whole workflow:
 | `comment_on_error_issue`                   | Add a comment.                                                         |
 | `propose_fix`                              | Claim the issue, move it to In review, and optionally attach a PR URL. |
 | `link_pull_request`                        | Attach a GitHub pull request. Its merge starts fix verification.       |
+| `get_error_notification_policy`            | Read the notification policy and its destinations.                     |
 | `update_error_notification_policy`         | Change the notification policy (admins only).                          |
 
 ## Troubleshooting
@@ -187,7 +188,7 @@ The [MCP server](/docs/reference/mcp) covers the whole workflow:
 - **Many issues titled "Unknown Error".** Your spans set status `Error` without an exception. Record the exception on the span.
 - **One bug is split across many issues.** The message differs in a way the normalizer does not catch, or the stack differs in its top 3 frames. Put variable data in attributes instead of the exception message.
 - **A fixed issue keeps regressing.** Old instances are still running. Set `service.version` on your services so occurrences from pre-fix builds do not count as regressions.
-- **No notifications arrive.** The policy has no destinations by default. Add one with `update_error_notification_policy`.
+- **No notifications arrive.** The policy has no destinations by default. Check it with `get_error_notification_policy` and add one with `update_error_notification_policy`.
 
 ## Next steps
 

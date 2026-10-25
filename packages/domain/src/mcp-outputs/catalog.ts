@@ -51,6 +51,7 @@ import {
 	SetIssueSeverityOutput,
 	TransitionErrorIssueOutput,
 	TransitionErrorIssuesOutput,
+	GetErrorNotificationPolicyOutput,
 	UpdateErrorNotificationPolicyOutput,
 } from "./issues"
 import {
@@ -197,6 +198,7 @@ export const McpToolOutputs = {
 	update_dashboard: UpdateDashboardOutput,
 	update_dashboard_widget: UpdateDashboardWidgetOutput,
 	update_scrape_target: ScrapeTargetMutationOutput,
+	get_error_notification_policy: GetErrorNotificationPolicyOutput,
 	update_error_notification_policy: UpdateErrorNotificationPolicyOutput,
 } as const
 

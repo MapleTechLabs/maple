@@ -47,7 +47,7 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 		description:
 			"List a rule's recent checks (one row per evaluation) with observed value, threshold, sample count and incident transition. Use it to tune thresholds, diagnose flapping, or see the near-misses before a breach.",
 		parameters: Schema.Struct({
-			rule_id: P.text("Alert rule ID"),
+			rule_id: P.resourceId("alertRule", "Alert rule ID"),
 			group_key: P.optionalText("Only checks for this exact group key"),
 			status: P.optionalOneOf(ALERT_CHECK_STATUSES, "Only checks with this status"),
 			...WINDOW.fields,

@@ -63,6 +63,7 @@ const TOOL_LABELS = new Map<string, string>([
 	["list_alert_checks", "List Alert Checks"],
 	["preview_alert_rule", "Preview Alert Rule"],
 	["get_incident_timeline", "Incident Timeline"],
+	["get_error_notification_policy", "Notification Policy"],
 	["update_error_notification_policy", "Notification Policy"],
 	// sessions
 	["search_sessions", "Search Sessions"],
@@ -131,6 +132,7 @@ const TOOL_ICONS = new Map<string, IconName>([
 	["list_alert_checks", "CircleCheckIcon"],
 	["preview_alert_rule", "HistoryIcon"],
 	["get_incident_timeline", "HistoryIcon"],
+	["get_error_notification_policy", "BellIcon"],
 	["update_error_notification_policy", "BellIcon"],
 	["run_sql", "DatabaseIcon"],
 	["search_sessions", "HistoryIcon"],
@@ -151,7 +153,8 @@ export const toolLabel = (toolName: string): string => {
 	return TOOL_LABELS.get(name) ?? humanize(name)
 }
 
-export const toolIcon = (toolName: string): IconName => TOOL_ICONS.get(normalizeToolName(toolName)) ?? "CodeIcon"
+export const toolIcon = (toolName: string): IconName =>
+	TOOL_ICONS.get(normalizeToolName(toolName)) ?? "CodeIcon"
 
 /** Verbs that survive being turned into a present participle. */
 const LABEL_VERBS = new Set([
