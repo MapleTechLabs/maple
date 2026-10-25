@@ -12,6 +12,7 @@ import { pageSubscriptions } from "./page/registry"
 import * as TimeRangePicker from "./page/kit/time-range-picker"
 import { onboardingInputsOf, pageContextOf } from "./update"
 import * as Onboarding from "./page/onboarding"
+import { connectSubscriptions } from "./page/onboarding/quick-start-connect"
 import * as SourcesFlow from "./page/sources/new/embed"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
@@ -303,4 +304,16 @@ const onboardingConnectFlow = Subscription.lift(SourcesFlow.subscriptions)<Model
 	toParentMessage: (message) => Message.GotOnboardingMessage({ message: Onboarding.fromConnectFlow(message) }),
 })
 
-export const subscriptions = Subscription.aggregate(root, pages, chatSheet, onboardingConnectFlow)
+/** Onboarding's connect step: what is arriving, re-read while it shows. */
+const onboardingConnectPoll = Subscription.lift(connectSubscriptions)<Model, Message>({
+	read: (model) => Option.flatMap(Option.fromNullishOr(model.onboarding), Onboarding.connectPollOf),
+	toParentMessage: (message) => Message.GotOnboardingMessage({ message: Onboarding.fromConnectPoll(message) }),
+})
+
+export const subscriptions = Subscription.aggregate(
+	root,
+	pages,
+	chatSheet,
+	onboardingConnectFlow,
+	onboardingConnectPoll,
+)

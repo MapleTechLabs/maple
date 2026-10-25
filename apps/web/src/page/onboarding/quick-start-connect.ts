@@ -1,8 +1,9 @@
-import { Duration, Effect, Option, Schema } from "effect"
-import { AsyncData, Command } from "foldkit"
+import { Effect, Option, Schema, Stream } from "effect"
+import { AsyncData, Command, Subscription } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { baseKey } from "../../data/keyed"
 import { LoadFailure } from "../../data/load-failure"
+import { backoffPollTicks, type Presence } from "../../data/poll"
 import { IntegrationStatuses } from "../../data/integration-statuses"
 import { STACK_PLATFORM_IDS, type StackPlatform } from "../../lib/onboarding-stack"
 import { MapleApiV2Client } from "../../platform/api-clients"
@@ -54,7 +55,9 @@ export const ConnectMessage = defineMessageUnion({
 })
 export type ConnectMessage = typeof ConnectMessage.Type
 
-const POLL = Duration.seconds(5)
+/** 5 s polls for ten minutes of setup, then 30 s ones, stopping after an hour of visible time. */
+const FAST_POLLS = 120
+const SLOW_POLLS = 100
 
 export const initConnect = (): Connect => ({
 	keys: { _tag: "Pending" },
@@ -133,11 +136,6 @@ const LoadConnected = Command.define("LoadOnboardingConnectedProviders", {
 		}),
 })
 
-const WaitConnectPoll = Command.define("WaitOnboardingConnectPoll", {
-	messages: [ConnectMessage.ElapsedPoll],
-	execute: Effect.as(Effect.sleep(POLL), ConnectMessage.ElapsedPoll()),
-})
-
 type Step = Readonly<{
 	connect: Connect
 	commands: ReadonlyArray<Command.Command<ConnectMessage, never, Resources>>
@@ -178,7 +176,7 @@ export const updateConnect = (
 		FailedLoadKeys: () => ({ connect: { ...connect, keys: { _tag: "Failed" } }, commands: [] }),
 		LoadedPresence: ({ result }) => ({
 			connect: { ...connect, presence: AsyncData.settle(connect.presence, result) },
-			commands: connect.isActive ? [WaitConnectPoll()] : [],
+			commands: [],
 		}),
 		// Connected stays connected for the visit: a list read before a fresh create cannot untick it.
 		LoadedConnected: ({ connected }) => ({
@@ -222,3 +220,21 @@ export const updateConnect = (
 			}
 		},
 	})
+
+/**
+ * The poll's ticks while the step shows. A hidden or offline tab skips them and reads at once on
+ * return; the step reopening (connect to live) keeps this one poll rather than starting another.
+ */
+export const connectPollTicks = (presence?: Presence): Stream.Stream<void> =>
+	Stream.take(backoffPollTicks("5 seconds", FAST_POLLS, "30 seconds", presence), FAST_POLLS + SLOW_POLLS)
+
+export const connectSubscriptions = Subscription.make<Connect, ConnectMessage>()((entry) => ({
+	onboardingConnectPoll: entry(
+		{ isActive: Schema.Boolean },
+		{
+			modelToDependencies: (connect) => ({ isActive: connect.isActive }),
+			dependenciesToStream: ({ isActive }) =>
+				isActive ? Stream.map(connectPollTicks(), () => ConnectMessage.ElapsedPoll()) : Stream.empty,
+		},
+	),
+}))
