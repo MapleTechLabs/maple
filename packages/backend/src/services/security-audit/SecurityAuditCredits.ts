@@ -1,0 +1,94 @@
+/**
+ * Whether an org can pay for a security audit. Audits are paid in AI credits (model cost marked up,
+ * plus a sandbox fee per agent), so a start needs a plan that includes them and credits to spend.
+ */
+import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
+import { BillingCustomer } from "@maple/domain/http"
+import type { OrgId } from "@maple/domain/primitives"
+import { EdgeCacheService } from "@maple/cache"
+import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Env } from "@maple/backend/platform/Env"
+import { decodeUpstream, ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
+import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+
+/** Billing could not say what the org's plan includes; a start refuses rather than guess. */
+export class SecurityAuditCreditsUnavailable extends Schema.TaggedError<SecurityAuditCreditsUnavailable>()(
+	"@maple/backend/security-audit/CreditsUnavailable",
+	{ message: Schema.String },
+) {}
+
+/** The org's plan includes no AI credits, or it has spent them and may not go over. */
+export class SecurityAuditNoCredits extends Schema.TaggedError<SecurityAuditNoCredits>()(
+	"@maple/backend/security-audit/NoCredits",
+	{ message: Schema.String },
+) {}
+
+/** Why `customer` cannot pay for an audit, or None when it can. */
+export const missingCredits = (customer: BillingCustomer): Option.Option<string> => {
+	const balance = customer.balances?.[AI_CREDITS_FEATURE_ID]
+	if (balance === undefined) {
+		return Option.some(
+			"Security audits are paid in AI credits, and this organization's plan doesn't include them.",
+		)
+	}
+	if (balance.unlimited === true || balance.overageAllowed === true) return Option.none()
+	return (balance.remaining ?? 0) > 0
+		? Option.none()
+		: Option.some("This organization has used all of its AI credits for this billing period.")
+}
+
+export interface SecurityAuditCreditsApi {
+	/** Succeeds when the org may start an audit; Maple's own org and unbilled deployments always may. */
+	readonly ensure: (
+		orgId: OrgId,
+	) => Effect.Effect<void, SecurityAuditNoCredits | SecurityAuditCreditsUnavailable>
+}
+
+export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, SecurityAuditCreditsApi>()(
+	"@maple/backend/services/security-audit/SecurityAuditCredits",
+	{
+		make: Effect.gen(function* () {
+			const env = yield* Env
+			const edgeCache = yield* EdgeCacheService
+			const autumn = yield* AutumnClient
+
+			const ensure: SecurityAuditCreditsApi["ensure"] = Effect.fn("SecurityAuditCredits.ensure")(
+				function* (orgId) {
+					// Maple's own org is never metered, as with AI usage, nor is a deployment without
+					// billing (self-hosted, local dev). Unmetered is decided here, never from an error.
+					if (orgId === env.MAPLE_DEFAULT_ORG_ID || Option.isNone(env.AUTUMN_SECRET_KEY)) return
+					const missing = yield* readCustomerCached(
+						edgeCache,
+						orgId,
+						autumn.getOrCreateCustomer(orgId, { expand: ["subscriptions.plan"] }),
+					).pipe(
+						Effect.flatMap(({ result }) => ensureOk(result)),
+						Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
+						Effect.map(missingCredits),
+						Effect.catchTags({
+							// With a key configured, a refused credential is an outage, not a free plan.
+							"@maple/http/errors/BillingNotConfiguredError": (error) =>
+								Effect.fail(new SecurityAuditCreditsUnavailable({ message: error.message })),
+							"@maple/http/errors/BillingUpstreamError": (error) =>
+								Effect.fail(new SecurityAuditCreditsUnavailable({ message: error.message })),
+						}),
+					)
+					yield* Effect.annotateCurrentSpan(
+						"maple.security_audit.has_credits",
+						Option.isNone(missing),
+					)
+					if (Option.isSome(missing)) {
+						return yield* new SecurityAuditNoCredits({ message: missing.value })
+					}
+				},
+			)
+
+			return { ensure } satisfies SecurityAuditCreditsApi
+		}),
+	},
+) {
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(AutumnClient.layer))
+
+	/** Every org may start, for tests and harnesses. */
+	static readonly unmetered = Layer.succeed(this, { ensure: () => Effect.void })
+}

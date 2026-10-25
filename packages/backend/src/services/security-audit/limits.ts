@@ -5,8 +5,6 @@
 import { Config, Effect, Option } from "effect"
 
 export interface SecurityAuditLimits {
-	/** Monthly invocations for an org billing does not meter (self-hosted, local, Maple's own org). */
-	readonly unmeteredMonthlyInvocations: number
 	/** Bytes GitHub reports for the repository (its packed history), checked before any clone. */
 	readonly maxRepositoryBytes: number
 	/** Bytes of tracked files at the pinned commit. */
@@ -19,20 +17,29 @@ export interface SecurityAuditLimits {
 	readonly maxLfsFiles: number
 	/** An org's monthly spend limit in whole US dollars until an admin sets its own. */
 	readonly defaultMonthlySpendLimitUsd: number
+	/**
+	 * US dollars of AI credits each agent invocation pays for its sandbox, on top of its model cost.
+	 * An agent keeps a standard-2 container busy for minutes (about $0.13 an hour), shared with the
+	 * run's other agents, plus the idle tail before it sleeps.
+	 */
+	readonly sandboxFeeUsd: number
 }
 
 export const SECURITY_AUDIT_LIMIT_DEFAULTS: SecurityAuditLimits = {
-	unmeteredMonthlyInvocations: 20_000,
 	maxRepositoryBytes: 2 * 1024 * 1024 * 1024,
 	maxCheckoutBytes: 1024 * 1024 * 1024,
 	maxFiles: 100_000,
 	maxHistoryCommits: 1_000_000,
 	maxLfsFiles: 0,
 	defaultMonthlySpendLimitUsd: 100,
+	sandboxFeeUsd: 0.02,
 }
 
-/** Postgres `int4`: the reservation compares the monthly limit against it in SQL. */
+/** Postgres `int4`, the spend limit column. */
 export const MAX_LIMIT = 2_147_483_647
+
+/** A sandbox fee above a dollar per agent is a typo, not a price. */
+const MAX_SANDBOX_FEE_USD = 1
 
 const limit = (name: string, fallback: number, max = Number.MAX_SAFE_INTEGER) =>
 	Config.option(Config.Int(name)).pipe(
@@ -48,12 +55,17 @@ const limit = (name: string, fallback: number, max = Number.MAX_SAFE_INTEGER) =>
 		),
 	)
 
-const limitsConfig = Config.all({
-	unmeteredMonthlyInvocations: limit(
-		"SECURITY_AUDIT_UNMETERED_MONTHLY_INVOCATIONS",
-		SECURITY_AUDIT_LIMIT_DEFAULTS.unmeteredMonthlyInvocations,
-		MAX_LIMIT,
+const sandboxFee = Config.option(Config.Number("SECURITY_AUDIT_SANDBOX_FEE_USD")).pipe(
+	Config.orElse(() => Config.succeed(Option.none<number>())),
+	Config.map((value) =>
+		Option.getOrElse(
+			Option.filter(value, (n) => Number.isFinite(n) && n >= 0 && n <= MAX_SANDBOX_FEE_USD),
+			() => SECURITY_AUDIT_LIMIT_DEFAULTS.sandboxFeeUsd,
+		),
 	),
+)
+
+const limitsConfig = Config.all({
 	maxRepositoryBytes: limit(
 		"SECURITY_AUDIT_MAX_REPOSITORY_BYTES",
 		SECURITY_AUDIT_LIMIT_DEFAULTS.maxRepositoryBytes,
@@ -73,6 +85,7 @@ const limitsConfig = Config.all({
 		SECURITY_AUDIT_LIMIT_DEFAULTS.defaultMonthlySpendLimitUsd,
 		MAX_LIMIT,
 	),
+	sandboxFeeUsd: sandboxFee,
 })
 
 /** The limits from the current config provider (the Worker's env), defaults where unset. */

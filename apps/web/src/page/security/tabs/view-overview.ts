@@ -18,6 +18,7 @@ import { SEVERITY_FILL } from "../../errors/kit/severity"
 import {
 	formatElapsed,
 	formatUsd,
+	runTotalUsd,
 	type Gate,
 	gateOf,
 	incompleteReasonLabel,
@@ -325,7 +326,7 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 			tableCell(h, [coverageCell(h, model, run)], "text-right"),
 			tableCell(
 				h,
-				[run === undefined ? "" : formatUsd(run.costUsd)],
+				[run === undefined ? "" : formatUsd(runTotalUsd(run))],
 				"text-right font-mono tabular-nums",
 			),
 			tableCell(
@@ -520,7 +521,7 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 								h.span([h.Class(cn("text-xs", TONE_TEXT[tone]))], [runLabelOf(run)]),
 								h.span(
 									[h.Class("w-20 text-right font-mono text-sm tabular-nums")],
-									[formatUsd(run.costUsd)],
+									[formatUsd(runTotalUsd(run))],
 								),
 							],
 							run.id,

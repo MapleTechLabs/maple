@@ -177,7 +177,7 @@ export const settingsOf = (model: Model): SecurityAuditSettings | null =>
 export type Spend = Readonly<{
 	costUsd: number
 	tokens: number
-	/** Runs this month with no cost recorded: their spend is not in `costUsd`. */
+	/** Runs this month with no model cost recorded: only their sandbox fees are in `costUsd`. */
 	unpriced: number
 	/** A target's list hit the cap, so older runs of this month may be missing. */
 	isPartial: boolean
@@ -191,7 +191,7 @@ export const spendThisMonth = (model: Model): Spend => {
 		.filter((run) => isSameMonth(run.startedAt, model.nowMs))
 		.reduce<Spend>(
 			(sum, run) => ({
-				costUsd: sum.costUsd + (run.costUsd ?? 0),
+				costUsd: sum.costUsd + (run.costUsd ?? 0) + run.sandboxUsd,
 				tokens: sum.tokens + run.inputTokens + run.outputTokens,
 				unpriced: sum.unpriced + (run.costUsd === null ? 1 : 0),
 				isPartial: sum.isPartial,

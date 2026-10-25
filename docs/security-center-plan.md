@@ -313,7 +313,7 @@ The method is language-neutral; the platform around it is not. Before a customer
 - **Hostile-code isolation.** Customer code is untrusted in a way Maple's is not. Sandbox v2 gets
   an external review and cross-tenant escape tests (one org's scan cannot reach another org's
   checkout, scratch or artifacts) before any customer code executes.
-- **Metering.** Per-org invocation budgets, Autumn billing source `security_audit`, cycle cadence
+- **Metering.** Paid in AI credits, Autumn billing source `security_audit`, cycle cadence
   and slice size sized to the plan, hard stop between steps. Large monorepos get slower rotations,
   never silent truncation.
 - **Size limits.** Checkout size and history depth checks at prepare (LFS, very large repos); a
@@ -321,19 +321,16 @@ The method is language-neutral; the platform around it is not. Before a customer
 
 **Phase 2.5 status, 2026-10-24.** Landed (platform parts, branch `feat/security-audit-readiness`):
 
-- **Metering.** An org's monthly invocation budget is its plan's `security_audit_invocations`
-  allotment (Autumn; unmetered orgs get `SECURITY_AUDIT_UNMETERED_MONTHLY_INVOCATIONS`).
-  `startRun` refuses with a 402 when the org cannot fund the profile's minimum and caps the run's
-  budget at what the org has left. Before every agent step the Workflow reserves one invocation
-  in `security_audit_org_usage` (conditional upsert, open runs only) and tracks it to Autumn with
-  source `security_audit`; a refusal ends the run `incomplete` with `org_budget_exhausted`.
-  Reports name every unit a run did not audit. The budget period is the subscription's own
-  billing cycle (the UTC month only when billing gives none), and a start is also capped by
-  Autumn's own remaining balance. Known gap: the Autumn track is fire-and-forget, so charges are
-  lost while Autumn is down; reconcile them later from `security_audit_org_reservations`. A run
-  that crosses a billing-cycle boundary keeps reserving against the period it started in, so it
-  can spend past the new cycle's start; that overspend is bounded by the run's own budget. Slice
-  size and cadence per plan wait on phase 3.
+- **Metering.** Audits are paid in AI credits (`ai_credits`), like chat (changed 2026-10-25;
+  it was a hidden per-invocation allowance no plan included). Each granted agent bills its sandbox
+  fee (`SECURITY_AUDIT_SANDBOX_FEE_USD`, default $0.02) when it is reserved, and OpenRouter's cost
+  with the AI credit markup (20%) once it answers: two plain Autumn tracks, source
+  `security_audit`, keyed by run, agent and kind. `startRun` refuses with a 402
+  (`SecurityAuditNotInPlanError`) when the plan has no AI credits, or none left without overage.
+  The org's monthly spend limit counts the same billed dollars and stops a run between agents.
+  Known gap: the Autumn track is fire-and-forget, so charges are lost while Autumn is down;
+  reconcile them later from `security_audit_org_reservations`. The fee is a flat estimate of
+  sandbox time (a standard-2 container is about $0.13 an hour at full use), not a measurement.
 - **Size limits.** Target creation and run start refuse a repository GitHub reports as over
   `SECURITY_AUDIT_MAX_REPOSITORY_BYTES`, before any clone. After the clone, prepare measures
   commits, tracked files and bytes, and Git LFS files; a repository over a limit

@@ -42,15 +42,19 @@ export function isActivePlanSubscription(sub: PlanGatingSubscription | null | un
 export const OPENROUTER_BYOK_ADDON_ID = "openrouter_byok"
 export const OPENROUTER_BYOK_FEATURE_ID = "openrouter_byok"
 
-/**
- * Security-audit agent invocations: a metered feature whose plan allotment is the org's monthly
- * audit budget, tracked one unit per invocation a run reserves.
- */
-export const SECURITY_AUDIT_INVOCATIONS_FEATURE_ID = "security_audit_invocations"
+/** AI usage in dollars: one credit is one dollar. Chat, triage, reviews and security audits draw on it. */
+export const AI_CREDITS_FEATURE_ID = "ai_credits"
+
+/** Percent Autumn adds to a model's token price on `ai_credits`; audits apply it to their own cost. */
+export const AI_CREDITS_MARKUP_PERCENT = 20
+
+/** What a provider charged, as the AI credits an org pays for it. */
+export const aiCreditsUsd = (providerUsd: number): number =>
+	providerUsd * (1 + AI_CREDITS_MARKUP_PERCENT / 100)
 
 /**
  * The plan features a pricing card lists, in display order. An allowlist on purpose: a feature
- * added to a plan for metering or gating (security audits, raw AI tokens) stays off every card
+ * added to a plan for metering or gating (raw AI tokens) stays off every card
  * until it is added here.
  */
 export const PRICING_CARD_FEATURE_IDS = [

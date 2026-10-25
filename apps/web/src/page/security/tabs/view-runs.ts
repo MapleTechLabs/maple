@@ -14,6 +14,7 @@ import { relativeTime } from "../../kit/relative-time"
 import {
 	formatElapsed,
 	formatUsd,
+	runTotalUsd,
 	isLive,
 	modelLabel,
 	PROFILE_LABEL,
@@ -84,7 +85,7 @@ const runRow = (
 				[formatNumber(run.inputTokens + run.outputTokens)],
 				"text-right font-mono tabular-nums",
 			),
-			tableCell(h, [formatUsd(run.costUsd)], "text-right font-mono tabular-nums"),
+			tableCell(h, [formatUsd(runTotalUsd(run))], "text-right font-mono tabular-nums"),
 			tableCell(
 				h,
 				[

@@ -1,8 +1,9 @@
 import { feature, plan, reward } from "atmn"
 import {
+	AI_CREDITS_FEATURE_ID,
+	AI_CREDITS_MARKUP_PERCENT,
 	OPENROUTER_BYOK_ADDON_ID,
 	OPENROUTER_BYOK_FEATURE_ID,
-	SECURITY_AUDIT_INVOCATIONS_FEATURE_ID,
 } from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
 
@@ -48,11 +49,13 @@ export const productEvents = feature({
 // AI usage in dollars: Autumn prices each model's tokens from models.dev and adds the markup.
 // Metered per model by `trackAiCredits` (packages/backend/src/services/billing/autumn-tracker.ts).
 // Every model Maple runs on is priced there, so no `modelMarkups` cost overrides are needed.
+// Security audits charge it too, in plain dollars: OpenRouter's cost with the same markup, plus a
+// sandbox fee per agent (`trackSecurityAuditCharge`).
 export const aiCredits = feature({
-	id: "ai_credits",
+	id: AI_CREDITS_FEATURE_ID,
 	name: "AI Credits",
 	type: "ai_credit_system",
-	defaultMarkup: 20,
+	defaultMarkup: AI_CREDITS_MARKUP_PERCENT,
 })
 
 // Legacy raw token counts, metered beside `ai_credits` for comparison. Delete once it is trusted.
@@ -66,16 +69,6 @@ export const aiInputTokens = feature({
 export const aiOutputTokens = feature({
 	id: "ai_output_tokens",
 	name: "AI Output Tokens",
-	type: "metered",
-	consumable: true,
-})
-
-// Security-audit agent invocations. A plan's included amount is the org's monthly audit budget
-// (`SecurityAuditPlanBudget`); each invocation a run reserves is tracked by `trackSecurityAuditInvocations`.
-// No plan includes it yet, so customer orgs cannot start an audit until one does.
-export const securityAuditInvocations = feature({
-	id: SECURITY_AUDIT_INVOCATIONS_FEATURE_ID,
-	name: "Security Audit Invocations",
 	type: "metered",
 	consumable: true,
 })

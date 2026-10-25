@@ -147,7 +147,10 @@ const runFields = {
 	invocationsSpent: Schema.Number,
 	inputTokens: Schema.Number,
 	outputTokens: Schema.Number,
+	/** What the run's models cost, in AI credits (US dollars); null until the run settles. */
 	costUsd: Schema.NullOr(Schema.Number),
+	/** The sandbox fee its agents were charged, in AI credits (US dollars), as they launched. */
+	sandboxUsd: Schema.Number,
 	/** The OpenRouter model ids the run used; null for runs from before they were recorded. */
 	discoveryModel: Schema.NullOr(Schema.String),
 	validationModel: Schema.NullOr(Schema.String),
@@ -163,7 +166,7 @@ export const SecurityAuditRun = Schema.Struct(runFields)
 export const SecurityAuditSettings = Schema.Struct({
 	/** Whole US dollars per UTC month. */
 	monthlySpendLimitUsd: Schema.Number,
-	/** What the org's agents cost since `since`. */
+	/** What the org's agents cost since `since`, models and sandbox, in AI credits (US dollars). */
 	spentUsd: Schema.Number,
 	/** Epoch ms: the start of the UTC month. */
 	since: Schema.Number,
@@ -432,25 +435,16 @@ export class SecurityAuditRepositoryTooLargeError extends HttpTaggedError<Securi
 	},
 ) {}
 
-/** The org's monthly audit invocations, from its plan, cannot fund a run of this profile. */
-export class SecurityAuditBudgetExhaustedError extends HttpTaggedError<SecurityAuditBudgetExhaustedError>()(
-	"@maple/http/security-audit/SecurityAuditBudgetExhaustedError",
-	{
-		message: Schema.String,
-		/** Invocations the org has left this month. */
-		remaining: Schema.Number,
-		/** The fewest invocations a run of the target's profile needs to start. */
-		required: Schema.Number,
-		/** When the org's budget resets: the end of its billing cycle. */
-		resetsAt: IsoDateTimeString,
-	},
+/** Audits are paid in AI credits, and the org's plan includes none, or has none left. */
+export class SecurityAuditNotInPlanError extends HttpTaggedError<SecurityAuditNotInPlanError>()(
+	"@maple/http/security-audit/SecurityAuditNotInPlanError",
+	{ message: Schema.String },
 	{
 		status: 402,
-		code: "security_audit_budget_exhausted",
-		title: "Security audit budget used up",
-		retry: "after",
-		retryAt: (error) => error.resetsAt,
-		recovery: "retry",
+		code: "security_audit_not_in_plan",
+		title: "Security audits need AI credits",
+		retry: "never",
+		recovery: "none",
 		exposure: "public_message",
 	},
 ) {}
@@ -554,7 +548,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 				SecurityAuditTargetNotFoundError,
 				SecurityAuditTargetDisabledError,
 				SecurityAuditRunInProgressError,
-				SecurityAuditBudgetExhaustedError,
+				SecurityAuditNotInPlanError,
 				SecurityAuditSpendLimitReachedError,
 				SecurityAuditRepositoryTooLargeError,
 				SecurityAuditStartError,

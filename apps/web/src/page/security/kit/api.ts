@@ -1,8 +1,8 @@
 import {
 	ApiRequestValidationError,
-	SecurityAuditBudgetExhaustedError,
 	type SecurityAuditCreateTargetRequest,
 	type SecurityAuditFindingTriageStatus,
+	SecurityAuditNotInPlanError,
 	SecurityAuditSpendLimitReachedError,
 	type SecurityAuditStartRunRequest,
 	type SecurityAuditUpdateSettingsRequest,
@@ -102,8 +102,8 @@ export const updateSettings = (payload: SecurityAuditUpdateSettingsRequest) =>
 		return yield* api.securityAudit.updateSettings({ payload })
 	}).pipe(Effect.mapError(toCreateFailure), Effect.result)
 
-const isBudgetExhausted = Schema.is(SecurityAuditBudgetExhaustedError)
 const isSpendLimitReached = Schema.is(SecurityAuditSpendLimitReachedError)
+const isNotInPlan = Schema.is(SecurityAuditNotInPlanError)
 
 const resetDay = (resetsAt: string) =>
 	new Date(resetsAt).toLocaleDateString("en-US", {
@@ -113,7 +113,7 @@ const resetDay = (resetsAt: string) =>
 		timeZone: "UTC",
 	})
 
-/** A refused start, saying when the limit resets (UTC) and how to go on before then. */
+/** A refused start, saying when a limit resets (UTC) and how to go on before then. */
 export const toStartFailure = (error: unknown): LoadFailure => {
 	const failure = toLoadFailure(error)
 	if (isSpendLimitReached(error))
@@ -121,8 +121,11 @@ export const toStartFailure = (error: unknown): LoadFailure => {
 			...failure,
 			message: `${error.message} It resets on ${resetDay(error.resetsAt)}, or an admin can raise it under Spend & models.`,
 		}
-	if (isBudgetExhausted(error))
-		return { ...failure, message: `${error.message} It resets on ${resetDay(error.resetsAt)}.` }
+	if (isNotInPlan(error))
+		return {
+			...failure,
+			message: `${error.message} Add AI credits or change the plan under Settings, Billing.`,
+		}
 	return failure
 }
 

@@ -1,5 +1,5 @@
 import {
-	SecurityAuditBudgetExhaustedError,
+	SecurityAuditNotInPlanError,
 	SecurityAuditRunInProgressError,
 	SecurityAuditSpendLimitReachedError,
 } from "@maple/domain/http"
@@ -10,18 +10,15 @@ import { describe, expect, it } from "vitest"
 import { toStartFailure } from "./api"
 
 describe("toStartFailure", () => {
-	it("says when the plan's allowance resets", () => {
+	it("points an org without AI credits at its billing settings", () => {
 		const failure = toStartFailure(
-			new SecurityAuditBudgetExhaustedError({
-				message: "This organization's plan allowance for security audits is used up.",
-				remaining: 3,
-				required: 8,
-				resetsAt: Schema.decodeSync(IsoDateTimeString)("2026-11-07T09:00:00.000Z"),
+			new SecurityAuditNotInPlanError({
+				message: "This organization has used all of its AI credits for this billing period.",
 			}),
 		)
 		expect([failure.code, failure.message]).toEqual([
-			"security_audit_budget_exhausted",
-			"This organization's plan allowance for security audits is used up. It resets on November 7, 2026.",
+			"security_audit_not_in_plan",
+			"This organization has used all of its AI credits for this billing period. Add AI credits or change the plan under Settings, Billing.",
 		])
 	})
 

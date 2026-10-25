@@ -86,7 +86,10 @@ export const SecurityAuditRuns = PG.table("security_audit_runs", {
 		invocationsSpent: PG.column(PG.int4, { name: "invocations_spent", default: 0 }),
 		inputTokens: PG.column(PG.int8, { name: "input_tokens", default: 0 }),
 		outputTokens: PG.column(PG.int8, { name: "output_tokens", default: 0 }),
+		/** What OpenRouter charged for the run's agents; null until it settles. */
 		costUsd: PG.column(PG.nullable(PG.float8), { name: "cost_usd" }),
+		/** Sandbox fees of the run's granted agents in US dollars, added as each is granted. */
+		sandboxUsd: PG.column(PG.float8, { name: "sandbox_usd", default: 0 }),
 		/** The OpenRouter model ids the run used; null for runs from before they were recorded. */
 		discoveryModel: PG.column(PG.nullable(PG.text), { name: "discovery_model" }),
 		validationModel: PG.column(PG.nullable(PG.text), { name: "validation_model" }),
@@ -206,41 +209,23 @@ export const SecurityAuditEvents = PG.table("security_audit_events", {
 })
 
 /**
- * An org's security-audit agent invocations per UTC month. The Workflow reserves one row unit
- * before every agent step, conditionally on the org's plan limit, so concurrent runs never overspend.
- */
-export const SecurityAuditOrgUsage = PG.table("security_audit_org_usage", {
-	columns: {
-		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		/** UTC month, `YYYY-MM`. */
-		period: PG.text,
-		invocationsSpent: PG.column(PG.int4, { name: "invocations_spent", default: 0 }),
-		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
-	},
-	primaryKey: ["orgId", "period"],
-	tenantColumn: "orgId",
-})
-
-/**
  * One granted invocation per (run, agent): a retried or replayed reservation finds its grant here
- * instead of counting it again in `security_audit_org_usage`. Once the agent answers, its cost is
- * set here too, and the org's monthly spend is their sum.
+ * instead of charging it again. It carries the agent's sandbox fee from the start, and its model
+ * cost once it answers; the org's monthly spend is what they bill as AI credits.
  */
 export const SecurityAuditOrgReservations = PG.table("security_audit_org_reservations", {
 	columns: {
 		runId: PG.column(PG.brand(PG.text, SecurityAuditRunId), { name: "run_id" }),
 		agentId: PG.column(PG.text, { name: "agent_id" }),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		period: PG.text,
 		/** What OpenRouter charged for the agent; null until it answers, and for an agent that failed. */
 		costUsd: PG.column(PG.nullable(PG.float8), { name: "cost_usd" }),
+		/** The sandbox fee in US dollars, fixed when the agent is granted. */
+		sandboxFeeUsd: PG.column(PG.float8, { name: "sandbox_fee_usd", default: 0 }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 	},
 	primaryKey: ["runId", "agentId"],
-	indexes: [
-		PG.index("security_audit_org_reservations_org_idx", ["orgId", "period"]),
-		PG.index("security_audit_org_reservations_org_created_idx", ["orgId", "createdAt"]),
-	],
+	indexes: [PG.index("security_audit_org_reservations_org_created_idx", ["orgId", "createdAt"])],
 	tenantColumn: "orgId",
 })
 
@@ -265,5 +250,4 @@ export type SecurityAuditUnitRow = PG.SelectRowOf<typeof SecurityAuditUnits>
 export type SecurityAuditRunFindingRow = PG.SelectRowOf<typeof SecurityAuditRunFindings>
 export type SecurityAuditFindingRow = PG.SelectRowOf<typeof SecurityAuditFindings>
 export type SecurityAuditEventRow = PG.SelectRowOf<typeof SecurityAuditEvents>
-export type SecurityAuditOrgUsageRow = PG.SelectRowOf<typeof SecurityAuditOrgUsage>
 export type SecurityAuditOrgSettingsRow = PG.SelectRowOf<typeof SecurityAuditOrgSettings>

@@ -14,6 +14,7 @@ import { detailTitle } from "../../kit/detail-header"
 import {
 	formatElapsed,
 	formatUsd,
+	runTotalUsd,
 	incompleteReasonLabel,
 	isCancelled,
 	isLive,
@@ -305,14 +306,14 @@ export const runStats = (h: H, run: SecurityAuditRunDetail, verdicts: Verdicts |
 		}),
 		statRailItem(h, {
 			eyebrow: live ? "Cost so far" : "Cost",
-			value: formatUsd(run.costUsd),
+			value: formatUsd(runTotalUsd(run)),
 			compact: true,
 			subline:
 				run.costUsd === null
 					? live
-						? "priced when the run settles"
+						? `models priced when the run settles · ${formatUsd(run.sandboxUsd)} sandbox`
 						: "not reported by the provider"
-					: "at the model provider's price",
+					: `${formatUsd(run.costUsd)} models · ${formatUsd(run.sandboxUsd)} sandbox, in AI credits`,
 		}),
 		live || verdicts === null
 			? statRailItem(h, {

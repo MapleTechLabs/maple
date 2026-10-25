@@ -10,9 +10,10 @@ import {
 	DISABLED_ORGANIZATION_FEATURE_FLAGS,
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
 } from "@maple/domain/organization-feature-flags"
+import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId, RoleName, UserId } from "@maple/domain/primitives"
-import { securityAuditBudgetPeriod, type SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
-import { type Finding, minimumInvocations } from "@maple/security-audit"
+import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
+import type { Finding } from "@maple/security-audit"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import {
 	SecurityAuditWorkflowStarter,
@@ -31,9 +32,9 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
-	type OrgAuditBudget,
-	SecurityAuditPlanBudget,
-} from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
+	SecurityAuditCredits,
+	SecurityAuditNoCredits,
+} from "@maple/backend/services/security-audit/SecurityAuditCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { Clock, Context, Duration, Effect, Layer, Schema } from "effect"
@@ -48,7 +49,7 @@ class SecurityAuditOnlyApi extends HttpApi.make("MapleAiApi")
 
 /** The route's clock in every test: mid-October 2026, UTC. */
 const NOW = Date.UTC(2026, 9, 15, 12)
-const PERIOD = securityAuditBudgetPeriod(NOW)
+const NO_CREDITS = "This organization has used all of its AI credits for this billing period."
 
 /** A clock fixed at `nowMs`; sleeps still wait in real time. */
 const fixedClock = (nowMs: number): Clock.Clock => ({
@@ -98,10 +99,8 @@ const makeHarness = (
 		readonly enabled?: boolean
 		readonly startFails?: boolean
 		readonly cancelFails?: boolean
-		/** The org's monthly invocation limit from its plan, over the UTC month. */
-		readonly orgLimit?: number
-		/** The org's whole budget, for a billing cycle or Autumn's own remaining balance. */
-		readonly budget?: Partial<OrgAuditBudget> & { readonly limit: number }
+		/** The org's plan has no AI credits to pay for an audit. */
+		readonly noCredits?: boolean
 		/** Repository sizes GitHub reports, by `owner/name`; read on every call. */
 		readonly repositoryBytes?: Record<string, number>
 	} = {},
@@ -144,8 +143,12 @@ const makeHarness = (
 				storeLayer,
 				starter,
 				Layer.succeed(AuditLogService, auditLog),
-				SecurityAuditPlanBudget.fixed(options.budget ?? { limit: options.orgLimit ?? 20_000 }),
-				// The route reads this clock, so the tests derive the budget period from it too.
+				options.noCredits === true
+					? Layer.succeed(SecurityAuditCredits, {
+							ensure: () => Effect.fail(new SecurityAuditNoCredits({ message: NO_CREDITS })),
+						})
+					: SecurityAuditCredits.unmetered,
+				// The route reads this clock, so spend windows in the tests follow it.
 				Layer.succeed(Clock.Clock, fixedClock(NOW)),
 				SecurityAuditRepositorySize.fixed(options.repositoryBytes ?? {}),
 				OrganizationFeatureFlagsService.fixed(
@@ -544,80 +547,18 @@ describe("/api/security-audit runs", () => {
 		}
 	})
 
-	it("refuses a run the org's monthly invocations cannot fund, and starts none", async () => {
-		const deepMin = minimumInvocations("deep")
-		const noPlan = makeHarness({ orgLimit: 0 })
-		const spent = makeHarness({ orgLimit: 20 })
+	it("refuses a run when the org's plan has no AI credits to pay for it, and starts none", async () => {
+		const harness = makeHarness({ noCredits: true })
 		try {
-			const refusedTarget = await noPlan.call("POST", "/targets", { body: TARGET })
-			const refused = await noPlan.call("POST", `/targets/${refusedTarget.body.id}/runs`, { body: {} })
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const refused = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
 
-			const target = await spent.call("POST", "/targets", { body: TARGET })
-			// Other runs this month reserved 14 of 20: too few left to fund a deep run's recon and reserves.
-			await spent.sql(
-				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 14, now())`,
-				[ORG_A, PERIOD],
-			)
-			const short = await spent.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
-
-			expect([
-				refused.status,
-				refused.body._tag,
-				refused.body.remaining,
-				refused.body.required,
-				refused.body.resetsAt,
-			]).toEqual([
+			expect([refused.status, refused.body._tag, refused.body.message]).toEqual([
 				402,
-				tag("SecurityAuditBudgetExhaustedError"),
-				0,
-				deepMin,
-				"2026-11-01T00:00:00.000Z",
+				tag("SecurityAuditNotInPlanError"),
+				NO_CREDITS,
 			])
-			expect([short.status, short.body.remaining, short.body.required]).toEqual([402, 6, deepMin])
-			expect([noPlan.started, spent.started]).toEqual([[], []])
-			expect([
-				await noPlan.count("security_audit_runs"),
-				await spent.count("security_audit_runs"),
-			]).toEqual([0, 0])
-		} finally {
-			await noPlan.dispose()
-			await spent.dispose()
-		}
-	})
-
-	it("passes the plan's limit on, leaving the run itself unbudgeted", async () => {
-		const harness = makeHarness({ orgLimit: 50 })
-		try {
-			const target = await harness.call("POST", "/targets", { body: TARGET })
-			await harness.sql(
-				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 20, now())`,
-				[ORG_A, PERIOD],
-			)
-			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
-
-			expect([run.status, run.body.budget]).toEqual([200, null])
-			expect(harness.started.map((p) => [p.budget, p.orgBudget])).toEqual([
-				[null, { period: PERIOD, limit: 50 }],
-			])
-		} finally {
-			await harness.dispose()
-		}
-	})
-
-	it("counts against the subscription's own cycle, and never past what Autumn says is left", async () => {
-		const cycle = "cycle:2026-10-07T09:00:00.000Z"
-		const harness = makeHarness({ budget: { limit: 50, period: cycle, autumnRemaining: 12 } })
-		try {
-			const target = await harness.call("POST", "/targets", { body: TARGET })
-			// Spend under the calendar month is another cycle's: counted, 45 of 50 could not fund a run.
-			await harness.sql(
-				`INSERT INTO security_audit_org_usage (org_id, period, invocations_spent, updated_at) VALUES ($1, $2, 45, now())`,
-				[ORG_A, PERIOD],
-			)
-			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
-
-			expect(run.status).toBe(200)
-			expect(harness.started.map((p) => p.orgBudget)).toEqual([{ period: cycle, limit: 50 }])
+			expect([harness.started, await harness.count("security_audit_runs")]).toEqual([[], 0])
 		} finally {
 			await harness.dispose()
 		}
@@ -639,11 +580,11 @@ describe("/api/security-audit runs", () => {
 			await limitOf(10)
 			const reservation = (agentId: string, costUsd: number, at: number) =>
 				harness.sql(
-					`INSERT INTO security_audit_org_reservations (run_id, agent_id, org_id, period, cost_usd, created_at)
-					 VALUES ('earlier-run', $1, $2, $3, $4, to_timestamp($5 / 1000.0))`,
-					[agentId, ORG_A, PERIOD, costUsd, at],
+					`INSERT INTO security_audit_org_reservations (run_id, agent_id, org_id, cost_usd, created_at)
+					 VALUES ('earlier-run', $1, $2, $3, to_timestamp($4 / 1000.0))`,
+					[agentId, ORG_A, costUsd, at],
 				)
-			// Spend from last month is not this month's.
+			// Spend from last month is not this month's; this month's $10 bills as $12 of AI credits.
 			await reservation("hunter-1", 40, Date.UTC(2026, 8, 30))
 			await reservation("hunter-2", 6.5, Date.UTC(2026, 9, 2))
 			await reservation("hunter-3", 3.5, Date.UTC(2026, 9, 10))
@@ -657,7 +598,13 @@ describe("/api/security-audit runs", () => {
 				refused.body.limitUsd,
 				refused.body.spentUsd,
 				refused.body.resetsAt,
-			]).toEqual([402, tag("SecurityAuditSpendLimitReachedError"), 10, 10, "2026-11-01T00:00:00.000Z"])
+			]).toEqual([
+				402,
+				tag("SecurityAuditSpendLimitReachedError"),
+				10,
+				aiCreditsUsd(10),
+				"2026-11-01T00:00:00.000Z",
+			])
 			expect([raised.status, harness.started.map((p) => p.runId)]).toEqual([200, [raised.body.id]])
 		} finally {
 			await harness.dispose()
@@ -991,7 +938,11 @@ describe("/api/security-audit cancellation of an unsettled run", () => {
 			await harness.withStore((store) =>
 				store
 					.forOrg(ORG_A)
-					.reserveOrgInvocation(run.body.id, "hunter-1", PERIOD, 100, { since: 0, limitUsd: 1_000 })
+					.reserveOrgInvocation(run.body.id, "hunter-1", {
+						since: 0,
+						limitUsd: 1_000,
+						sandboxFeeUsd: 0,
+					})
 					.pipe(
 						Effect.andThen(
 							store.forOrg(ORG_A).recordEvent(run.body.id, {
@@ -1022,7 +973,7 @@ describe("/api/security-audit cancellation of an unsettled run", () => {
 				cancel.body.inputTokens,
 				cancel.body.outputTokens,
 				cancel.body.costUsd,
-			]).toEqual([200, "cancelled", 1, 120, 12, 0.4])
+			]).toEqual([200, "cancelled", 1, 120, 12, aiCreditsUsd(0.4)])
 		} finally {
 			await harness.dispose()
 		}
