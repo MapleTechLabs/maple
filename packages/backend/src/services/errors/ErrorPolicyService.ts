@@ -4,7 +4,7 @@ import {
 	ErrorNotificationPolicyDocument,
 	type ErrorNotificationPolicyUpsertRequest,
 	ErrorForbiddenError,
-	ErrorNotificationDestinationNotFoundError,
+	ErrorNotificationUnknownDestinationError,
 	ErrorPersistenceError,
 	ErrorValidationError,
 	EscalationDestinationOutcome,
@@ -68,7 +68,7 @@ export interface ErrorPolicyPublicApi {
 		request: ErrorNotificationPolicyUpsertRequest,
 	) => Effect.Effect<
 		ErrorNotificationPolicyDocument,
-		ErrorForbiddenError | ErrorPersistenceError | ErrorNotificationDestinationNotFoundError
+		ErrorForbiddenError | ErrorPersistenceError | ErrorNotificationUnknownDestinationError
 	>
 	readonly getEscalationPolicy: (
 		orgId: OrgId,
@@ -229,7 +229,7 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 						const ownedIds = HashSet.fromIterable(Arr.map(owned, (row) => row.id))
 						const unknown = Arr.filter(requested, (id) => !HashSet.has(ownedIds, id))
 						if (unknown.length > 0) {
-							return yield* new ErrorNotificationDestinationNotFoundError({
+							return yield* new ErrorNotificationUnknownDestinationError({
 								message: `Unknown alert destination${unknown.length === 1 ? "" : "s"} for this org: ${unknown.join(", ")}`,
 								destinationIds: unknown,
 							})

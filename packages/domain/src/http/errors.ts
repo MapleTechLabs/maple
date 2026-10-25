@@ -745,8 +745,8 @@ export class ErrorValidationError extends Schema.TaggedError<ErrorValidationErro
 ) {}
 
 /** The notification policy names destinations this org does not have. */
-export class ErrorNotificationDestinationNotFoundError extends Schema.TaggedError<ErrorNotificationDestinationNotFoundError>()(
-	"@maple/http/errors/ErrorNotificationDestinationNotFoundError",
+export class ErrorNotificationUnknownDestinationError extends Schema.TaggedError<ErrorNotificationUnknownDestinationError>()(
+	"@maple/http/errors/ErrorNotificationUnknownDestinationError",
 	{
 		message: Schema.String,
 		destinationIds: Schema.Array(AlertDestinationId),

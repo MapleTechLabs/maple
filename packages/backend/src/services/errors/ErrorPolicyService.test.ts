@@ -146,7 +146,7 @@ describe("ErrorPolicyService", () => {
 			)
 
 			expect(failure).toMatchObject({
-				_tag: "@maple/http/errors/ErrorNotificationDestinationNotFoundError",
+				_tag: "@maple/http/errors/ErrorNotificationUnknownDestinationError",
 				destinationIds: [foreignId],
 			})
 			assert.deepStrictEqual((yield* policies.getNotificationPolicy(ORG)).destinationIds, [ownedId])

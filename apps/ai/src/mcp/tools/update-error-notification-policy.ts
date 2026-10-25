@@ -88,7 +88,7 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 						"@maple/http/errors/ErrorPersistenceError": persistenceFailed(
 							"update_error_notification_policy",
 						),
-						"@maple/http/errors/ErrorNotificationDestinationNotFoundError": (error) =>
+						"@maple/http/errors/ErrorNotificationUnknownDestinationError": (error) =>
 							Effect.fail(
 								new McpInvalidInputError({
 									message: `No alert destination ${error.destinationIds
