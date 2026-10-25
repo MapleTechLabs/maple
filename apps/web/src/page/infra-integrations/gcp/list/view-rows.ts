@@ -136,6 +136,21 @@ export const spark = (
 /** "880K" over "880.0K": a trailing ".0" carries nothing, so the column drops it. */
 const formatVolume = (value: number): string => formatNumber(value).replace(/\.0(?=[KMBT]$)/, "")
 
+const VOLUME_CELL = "flex w-[180px] items-center gap-3"
+const VOLUME_NUMBER_SLOT = "w-[56px] shrink-0"
+
+/** The head over a `volumeCell` column: its label ends where the right-aligned counts end. */
+export const volumeHead = (h: H, label: string, hidden?: string): Html =>
+	h.div(
+		[h.Class(cn(VOLUME_CELL, "text-2xs font-medium", hidden))],
+		[
+			h.span(
+				[h.Class(cn(VOLUME_NUMBER_SLOT, "flex justify-end whitespace-nowrap text-muted-foreground"))],
+				[label],
+			),
+		],
+	)
+
 export const volumeCell = (
 	h: H,
 	ctx: RowsContext,
@@ -145,10 +160,17 @@ export const volumeCell = (
 	color = "--chart-2",
 ): Html =>
 	h.div(
-		[h.Class("flex w-[180px] items-center gap-3")],
+		[h.Class(VOLUME_CELL)],
 		[
 			h.span(
-				[h.Class("w-[56px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground/80")],
+				[
+					h.Class(
+						cn(
+							VOLUME_NUMBER_SLOT,
+							"text-right font-mono text-xs tabular-nums text-foreground/80",
+						),
+					),
+				],
 				[formatVolume(value)],
 			),
 			spark(h, ctx, slotId, values, color),

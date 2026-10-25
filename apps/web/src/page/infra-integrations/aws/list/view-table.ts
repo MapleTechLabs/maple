@@ -152,13 +152,16 @@ const rateCell = (h: H, rate: number | null): Html =>
 		rate !== null && rate >= 0.01 ? "crit" : undefined,
 	)
 
+// Takes the row's slack once the name column hits its cap.
+const TREND_WIDTH = "min-w-32 flex-1"
+
 const COLUMNS = {
 	ecs: [
 		{ label: "CPU", width: "w-36", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
 		{ label: "Memory", width: "w-36", cell: (h, view) => usageCell(h, "Memory", memoryShare(view)) },
 		{
 			label: "CPU trend",
-			width: "w-32",
+			width: TREND_WIDTH,
 			hidden: "hidden md:flex",
 			cell: (h, view, context) => sparkCell(h, view, context),
 		},
@@ -168,7 +171,7 @@ const COLUMNS = {
 		{ label: "CPU", width: "w-36", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
 		{
 			label: "CPU trend",
-			width: "w-32",
+			width: TREND_WIDTH,
 			hidden: "hidden md:flex",
 			cell: (h, view, context) => sparkCell(h, view, context),
 		},
@@ -347,8 +350,8 @@ const columnsOf = (kind: AwsInfraKindId, showTraced = true): ReadonlyArray<Colum
 const anyTraced = (views: ReadonlyArray<ResourceView>, traced: TableContext["traced"]): boolean =>
 	traced === null || views.some((view) => tracedAs(traced, view) !== null)
 
-// Capped so the metrics sit near the names on wide screens; the slack goes to the right end.
-const NAME_COLUMN = { label: "", width: "w-0 min-w-48 max-w-[480px] flex-1" }
+// Grows far ahead of a CPU trend column, so it reaches its cap before the trend widens.
+const NAME_COLUMN = { label: "", width: "w-0 min-w-48 max-w-[480px] flex-[999_1_0%]" }
 
 const heads = (h: H, kind: AwsInfraKindId, nameLabel: string, showTraced = true): ReadonlyArray<Html> => [
 	columnHead(h, { label: nameLabel, width: NAME_COLUMN.width }),
