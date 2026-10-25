@@ -982,7 +982,7 @@ const enforceRawBreakdownSpanBudget = Effect.fn("QueryEngineService.enforceRawBr
 			)
 		if (rows === undefined) return
 
-		const verdict = rawBreakdownSpanVerdict(rows, filter, range.rangeSeconds)
+		const verdict = rawBreakdownSpanVerdict(rows, filter, range)
 		yield* Effect.annotateCurrentSpan({
 			"maple.query_engine.estimated_spans": verdict.estimatedSpans,
 			"maple.query_engine.span_budget_exceeded": verdict.exceeded !== undefined,

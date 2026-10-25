@@ -1215,8 +1215,18 @@ describe("raw breakdown span budget", () => {
 			// sums may arrive as JSON strings.
 			const { execute, ran } = stubWithVolume(
 				Effect.succeed([
-					{ serviceName: "checkout", spanCount: "300000000" },
-					{ serviceName: "ingest", spanCount: "5000000000" },
+					{
+						serviceName: "checkout",
+						spanCount: "300000000",
+						firstHourSpanCount: "0",
+						lastHourSpanCount: "0",
+					},
+					{
+						serviceName: "ingest",
+						spanCount: "5000000000",
+						firstHourSpanCount: "0",
+						lastHourSpanCount: "0",
+					},
 				]),
 			)
 
@@ -1232,8 +1242,18 @@ describe("raw breakdown span budget", () => {
 		Effect.gen(function* () {
 			const { execute, ran } = stubWithVolume(
 				Effect.succeed([
-					{ serviceName: "checkout", spanCount: "50000000" },
-					{ serviceName: "ingest", spanCount: "5000000000" },
+					{
+						serviceName: "checkout",
+						spanCount: "50000000",
+						firstHourSpanCount: "0",
+						lastHourSpanCount: "0",
+					},
+					{
+						serviceName: "ingest",
+						spanCount: "5000000000",
+						firstHourSpanCount: "0",
+						lastHourSpanCount: "0",
+					},
 				]),
 			)
 

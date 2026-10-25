@@ -50,17 +50,46 @@ const serviceMatcher = (filter: SpanBudgetFilter): ((name: string) => boolean) =
 	return (name) => !excluded.has(name) && included(name)
 }
 
+export interface SpanVolumeRow {
+	readonly serviceName: string
+	readonly spanCount: number
+	readonly firstHourSpanCount: number
+	readonly lastHourSpanCount: number
+}
+
+export interface SpanBudgetWindow {
+	readonly startMs: number
+	readonly endMs: number
+}
+
+const HOUR_MS = SECONDS_PER_HOUR * 1000
+
+/**
+ * Hourly counts minus the parts of the two boundary hours outside the window. An
+ * in-progress last hour holds less than a full hour, so this errs toward running.
+ */
+const spansInWindow = (row: SpanVolumeRow, window: SpanBudgetWindow): number => {
+	const startHourMs = Math.floor(window.startMs / HOUR_MS) * HOUR_MS
+	const endHourMs = Math.floor(window.endMs / HOUR_MS) * HOUR_MS
+	const before = (window.startMs - startHourMs) / HOUR_MS
+	const after = (endHourMs + HOUR_MS - window.endMs) / HOUR_MS
+	return Math.max(0, row.spanCount - row.firstHourSpanCount * before - row.lastHourSpanCount * after)
+}
+
 export function rawBreakdownSpanVerdict(
-	rows: ReadonlyArray<{ readonly serviceName: string; readonly spanCount: number }>,
+	rows: ReadonlyArray<SpanVolumeRow>,
 	filter: SpanBudgetFilter,
-	rangeSeconds: number,
+	window: SpanBudgetWindow,
 	budget: number = MAX_RAW_BREAKDOWN_SPANS,
 ): SpanBudgetVerdict {
 	const matches = serviceMatcher(filter)
-	const estimatedSpans = rows.reduce(
-		(total, row) => (matches(row.serviceName) ? total + row.spanCount : total),
-		0,
+	const estimatedSpans = Math.round(
+		rows.reduce(
+			(total, row) => (matches(row.serviceName) ? total + spansInWindow(row, window) : total),
+			0,
+		),
 	)
+	const rangeSeconds = (window.endMs - window.startMs) / 1000
 	if (estimatedSpans <= budget) return { estimatedSpans }
 
 	// Multiply first: `budget / (spans / hours)` lands on 59.999… for an exact 60.
