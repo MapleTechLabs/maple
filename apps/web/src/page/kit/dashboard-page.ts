@@ -13,6 +13,7 @@ import {
 	pageScrollAreaStyles,
 	pageStickyAreaScrolledStyles,
 	pageStickyAreaStyles,
+	pageTitleStyles,
 } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
@@ -26,6 +27,8 @@ export type DashboardPageOptions = Readonly<{
 	filtersWidth?: string
 	/** `DashboardLayout.Header`'s `titleContent`. */
 	titleContent?: Html | undefined
+	/** A plain page title, drawn as the page `<h1>` when there is no `titleContent`. */
+	title?: string
 	/** The header's right side: `headerActions` and the time controls, already composed. */
 	actions?: Html
 	/** `DashboardLayout.Tabs`'s children: page tabs pinned under the header. */
@@ -143,9 +146,11 @@ export const dashboardPage = <M>(
 	options: DashboardPageOptions,
 	children: ReadonlyArray<Html>,
 ): Html => {
-	const hasHeader = options.titleContent !== undefined || options.actions !== undefined
-	const header =
-		options.header ?? (hasHeader ? pageHeader(h, options.titleContent, options.actions) : undefined)
+	const titleContent =
+		options.titleContent ??
+		(options.title === undefined ? undefined : h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], [options.title]))
+	const hasHeader = titleContent !== undefined || options.actions !== undefined
+	const header = options.header ?? (hasHeader ? pageHeader(h, titleContent, options.actions) : undefined)
 	const sticky = [
 		...(header === undefined ? [] : [header]),
 		...(options.tabs === undefined

@@ -27,7 +27,7 @@ import {
 	type NavSubItem,
 	type NavSurface,
 	navGroups,
-	navPreview,
+	navSourceCount,
 	partitionSubItems,
 } from "./nav"
 import { ACTIVE_RAIL, GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } from "./view-sidebar"
@@ -138,14 +138,13 @@ const navRow = (
 ): Html => {
 	const isActive = isNavItemActive(currentPath, item)
 	const isCollapsed = !model.isSidebarOpen && !model.isMobile
+	const present = surfacesOf(model)
 	const subItems =
-		item.subItems === undefined
-			? undefined
-			: partitionSubItems(item.subItems, surfacesOf(model), currentPath).shown
+		item.subItems === undefined ? undefined : partitionSubItems(item.subItems, present, currentPath).shown
 	if (isCollapsed && subItems !== undefined && subItems.length > 0)
 		return collapsedSectionRow(h, model, item, isActive)
 	const isOpen = subItems !== undefined && subItems.length > 0 && isActive
-	const preview = isOpen || subItems === undefined ? undefined : navPreview(item, subItems)
+	const sourceCount = isOpen || subItems === undefined ? undefined : navSourceCount(item, present, subItems)
 	return sidebarMenuItem(h, undefined, [
 		sidebarMenuButton(
 			h,
@@ -159,30 +158,17 @@ const navRow = (
 			[
 				icon(h, item.icon, { size: 18 }),
 				h.span([h.Class("flex-1 truncate")], [item.title]),
-				...(preview === undefined
+				...(sourceCount === undefined
 					? []
 					: [
 							h.span(
 								[
 									h.Class(
-										"flex shrink-0 items-center gap-0.5 text-muted-foreground group-data-[collapsible=icon]:hidden",
+										"shrink-0 text-2xs tabular-nums text-muted-foreground group-data-[collapsible=icon]:hidden",
 									),
+									h.Title(`${sourceCount} connected`),
 								],
-								[
-									...preview.glyphs.flatMap((sub) =>
-										sub.icon === undefined
-											? []
-											: [
-													icon(h, sub.icon, {
-														className: "size-3",
-														...iconColor(sub.iconColor),
-													}),
-												],
-									),
-									...(preview.overflow > 0
-										? [h.span([h.Class("ms-0.5 text-2xs tabular-nums")], [`+${preview.overflow}`])]
-										: []),
-								],
+								[String(sourceCount)],
 							),
 						]),
 			],

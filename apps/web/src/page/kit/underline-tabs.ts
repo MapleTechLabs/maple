@@ -1,6 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon, type IconName } from "../../ui/icon"
 
 // `UnderlineTabStrip` and `underlineTabClass`: a row of tabs with an underlined active tab.
 
@@ -46,8 +45,7 @@ export type LinkTab = Readonly<{
 	key: string
 	href: string
 	label: string
-	icon: IconName
-	/** The tab the page shows: underlined, its icon in the primary colour. */
+	/** The tab the page shows: underlined. */
 	isCurrent: boolean
 	/** The link matches the URL (path and search): `aria-current` and the router's `active`. */
 	isRouteActive: boolean
@@ -73,8 +71,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 						cn(
 							cn(
 								underlineTabClass(tab.isCurrent),
-								"h-9 gap-[7px] px-3 first:pl-0.5",
-								tab.isCurrent ? "[&_svg]:text-primary" : "[&_svg]:text-muted-foreground",
+								"h-9 px-3 first:pl-0.5",
 							),
 							tab.isRouteActive && "active",
 						),
@@ -82,7 +79,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 					...(tab.isRouteActive ? [h.DataAttribute("status", "active")] : []),
 					h.Href(tab.href),
 				],
-				[icon(h, tab.icon, { size: 14 }), tab.label],
+				[tab.label],
 			),
 		),
 	)

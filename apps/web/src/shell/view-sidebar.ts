@@ -297,14 +297,14 @@ export const shellSidebarFooter = (
 ): Html =>
 	sidebarFooter(h, [
 		sidebarMenu(h, undefined, [
+			footerNavRow(h, currentPath, { href: "/sources", title: "Sources", icon: "ConnectionIcon" }, tip),
+			// `/integrations` renders inside the settings rail, so Settings owns it.
 			footerNavRow(
 				h,
 				currentPath,
-				// Sources stands for Integrations too: they open from its picker.
-				{ href: "/sources", title: "Sources", icon: "ConnectionIcon", alsoActive: "/integrations" },
+				{ href: "/settings", title: "Settings", icon: "GearIcon", alsoActive: "/integrations" },
 				tip,
 			),
-			footerNavRow(h, currentPath, { href: "/settings", title: "Settings", icon: "GearIcon" }, tip),
 		]),
 		h.div([h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")], [footerCluster(h, model, userAvatar(h, initialsOf(clerk), undefined, { url: userImageOf(clerk), label: userNameOf(clerk) }), userNameOf(clerk))]),
 	])
@@ -312,7 +312,7 @@ export const shellSidebarFooter = (
 /** `Code Review`'s "Beta" tag. */
 export const navBadge = (h: HtmlBuilder<Message>, label: string): Html =>
 	sidebarMenuBadge(h, [
-		badge(h, { className: "gap-0.5 bg-primary font-semibold text-primary-foreground", variant: "tag" }, [
-			h.span([h.Class("badge-shiny")], [label]),
+		badge(h, { className: "border border-border bg-transparent font-medium text-muted-foreground", variant: "tag" }, [
+			label,
 		]),
 	])

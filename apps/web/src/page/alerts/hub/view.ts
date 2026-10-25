@@ -170,7 +170,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		[
 			dashboardPage(
 				h,
-				{ actions: headerActions(h, model), tabs: tabBar(h, model, overview, tab) },
+				{ title: "Alerts", actions: headerActions(h, model), tabs: tabBar(h, model, overview, tab) },
 				[
 					tab === "routing"
 						? routingTab(h, model, {

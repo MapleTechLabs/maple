@@ -1,7 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
-import type { IconName } from "../../../ui/icon"
 import { pageDescription } from "../../../ui/page-layout"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailTitle } from "../../kit/detail-header"
@@ -11,18 +10,16 @@ import { iconTile } from "./parts"
 
 // The frame of the three Security tabs: title block, Overview / Findings / Runs, content.
 
-const TABS: ReadonlyArray<{ tab: Tab; label: string; icon: IconName; href: string }> = [
-	{ tab: "overview", label: "Overview", icon: "ShieldCheckIcon", href: hrefOf(AppRoute.Security()) },
+const TABS: ReadonlyArray<{ tab: Tab; label: string; href: string }> = [
+	{ tab: "overview", label: "Overview", href: hrefOf(AppRoute.Security()) },
 	{
 		tab: "findings",
 		label: "Findings",
-		icon: "CircleWarningIcon",
 		href: hrefOf(AppRoute.SecurityFindings({ search: {} })),
 	},
 	{
 		tab: "runs",
 		label: "Runs",
-		icon: "PlayRotateClockwiseIcon",
 		href: hrefOf(AppRoute.SecurityRuns({ search: {} })),
 	},
 ]
@@ -42,7 +39,6 @@ const tabs = <M>(h: HtmlBuilder<M>, active: Tab): Html =>
 			key: entry.tab,
 			href: entry.href,
 			label: entry.label,
-			icon: entry.icon,
 			isCurrent: entry.tab === active,
 			isRouteActive: entry.tab === active,
 		})),

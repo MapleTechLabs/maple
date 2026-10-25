@@ -164,6 +164,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		dashboardPage(
 			h,
 			{
+				title: "Web Analytics",
 				scrollClassName: "gap-6",
 				filters: filtersRail(h, model),
 				actions: h.div([h.Class("flex flex-wrap items-center gap-2")], [

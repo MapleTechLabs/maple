@@ -1,7 +1,6 @@
 import { formatToolCount } from "@maple/web-data/lib/tool-analytics"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "../../../ui/icon"
 import { AppRoute, hrefOf } from "../../../route"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
 
@@ -24,7 +23,6 @@ const tabLink = <M>(
 		href: string
 		isActive: boolean
 		isLinkActive: boolean
-		iconName: "LayersIcon" | "GearIcon"
 		label: string
 		count: number | undefined
 	}>,
@@ -35,8 +33,7 @@ const tabLink = <M>(
 			h.Class(
 				cn(
 					underlineTabClass(options.isActive),
-					"px-3 font-mono text-xs first:pl-0.5",
-					options.isActive ? "[&_svg]:text-primary" : "[&_svg]:text-muted-foreground",
+					"h-9 px-3 first:pl-0.5",
 					options.isLinkActive && "active",
 				),
 			),
@@ -44,7 +41,6 @@ const tabLink = <M>(
 			h.Href(options.href),
 		],
 		[
-			icon(h, options.iconName, { size: 13, attributes: [h.AriaHidden(true)] }),
 			options.label,
 			...(options.count === undefined
 				? []
@@ -54,7 +50,7 @@ const tabLink = <M>(
 								h.Class(
 									cn(
 										"text-2xs tabular-nums",
-										options.isActive ? "text-primary" : "text-muted-foreground/60",
+										options.isActive ? "text-muted-foreground" : "text-muted-foreground/60",
 									),
 								),
 							],
@@ -89,7 +85,6 @@ export const agentSessionsTabs = <M>(
 				href: hrefOf(AppRoute.AgentSessions({ search: {} })),
 				isActive: options.active === "sessions",
 				isLinkActive: options.isOnRoute ?? true,
-				iconName: "LayersIcon",
 				label: "Sessions",
 				count: options.counts?.sessions,
 			}),
@@ -97,7 +92,6 @@ export const agentSessionsTabs = <M>(
 				href: hrefOf(AppRoute.AgentSessionTools({ search: pickWindow(options.search) })),
 				isActive: options.active === "tools",
 				isLinkActive: (options.isOnRoute ?? true) && options.active === "tools",
-				iconName: "GearIcon",
 				label: "Tools",
 				count: options.counts?.tools,
 			}),

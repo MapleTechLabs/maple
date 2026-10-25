@@ -118,6 +118,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			title: "Anomalies",
 			filters: filtersRail(h, model, all, AsyncData.isLoading(data) || AsyncData.isIdle(data)),
 			actions: liveChip(h, isLiveOf(model.search)),
 		},
