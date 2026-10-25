@@ -119,8 +119,11 @@ export const sidebarDesktop = <Message>(
 	)
 // SIDEBAR PARTS
 
-export const sidebarHeader = <Message>(h: HtmlBuilder<Message>, children: Children, className?: string): Html =>
-	h.div([h.Class(cn(sidebarHeaderStyles, className)), ...slot(h, "header")], children)
+export const sidebarHeader = <Message>(
+	h: HtmlBuilder<Message>,
+	children: Children,
+	className?: string,
+): Html => h.div([h.Class(cn(sidebarHeaderStyles, className)), ...slot(h, "header")], children)
 
 export const sidebarFooter = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
 	h.div([h.Class(cn(sidebarFooterStyles)), ...slot(h, "footer")], children)
@@ -175,13 +178,13 @@ export const sidebarGroupContent = <Message>(h: HtmlBuilder<Message>, children: 
 /** `<SidebarGroupAction aria-label>`: the icon button in a group label's corner. */
 export const sidebarGroupAction = <Message>(
 	h: HtmlBuilder<Message>,
-	options: Readonly<{ ariaLabel: string; attributes?: Attributes<Message> }>,
+	options: Readonly<{ ariaLabel: string; className?: string; attributes?: Attributes<Message> }>,
 	children: Children,
 ): Html =>
 	h.button(
 		[
 			h.AriaLabel(options.ariaLabel),
-			h.Class(cn(...sidebarGroupActionStyles)),
+			h.Class(cn(...sidebarGroupActionStyles, options.className)),
 			h.DataAttribute("sidebar", "group-action"),
 			h.DataAttribute("slot", "sidebar-group-action"),
 			h.Type("button"),

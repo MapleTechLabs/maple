@@ -123,7 +123,11 @@ export const clampedText = <M>(h: HtmlBuilder<M>, options: ClampedTextOptions<M>
 							"break-words",
 							options.isMono === true
 								? "font-mono text-muted-foreground text-xs leading-relaxed"
-								: "max-w-[70rem] text-foreground text-sm leading-relaxed",
+								: cn(
+										"max-w-[70rem] text-foreground text-sm leading-relaxed",
+										// Message prose reads in the sans face; JSON stays mono like other code.
+										effective === "json" ? "font-mono" : "font-prose",
+									),
 							options.toneClass,
 							!isExpanded && CLAMP_CLASSES[clampLines],
 						),

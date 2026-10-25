@@ -74,12 +74,13 @@ const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
 					id: `nav:${item.title}:${sub.title}:${view.title}`,
 					title: view.paletteTitle ?? `${sub.title} ${view.title}`,
 					href: view.href,
-					icon: sub.icon ?? item.icon,
+					icon: view.paletteIcon ?? sub.icon ?? item.icon,
 				})),
 			]),
 		]),
 	)
-	const unique = Arr.dedupeWith(rows, (a, b) => a.title === b.title && a.href === b.href)
+	// One row per page: "Infrastructure" and its "Overview" child both open /infra.
+	const unique = Arr.dedupeWith(rows, (a, b) => a.href === b.href)
 	return unique.map((row) => ({
 		id: row.id,
 		title: row.title,

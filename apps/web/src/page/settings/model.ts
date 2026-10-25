@@ -3,7 +3,7 @@ import { V2ApiKey } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { LoadFailure } from "../../data/load-failure"
-import { SettingsSearch } from "../../route/search"
+import { SettingsSearch, settingsTabValues } from "../../route/search"
 import * as Ai from "./ai/model"
 import * as Billing from "./billing/model"
 import * as Members from "./members/model"
@@ -57,6 +57,8 @@ export const Model = Schema.Struct({
 	apiKeys: Schema.NullOr(Schema.Array(V2ApiKey)),
 	/** The `api_keys` shape failed before its first answer (`useCollectionLoadFailed`). */
 	isApiKeysLoadFailed: Schema.Boolean,
+	/** A `?tab=` deep link the viewer could not open; its note outlives the URL rewrite. */
+	deniedTab: Schema.NullOr(Schema.Literals(settingsTabValues)),
 	/** `null` until the active tab is known (the session gates it in Clerk mode). */
 	tab: Schema.NullOr(TabModel),
 	/** Tabs left during this visit, one per tab: they still take their answers, and revalidate on return. */

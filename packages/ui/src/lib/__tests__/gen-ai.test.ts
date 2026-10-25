@@ -96,7 +96,7 @@ describe("splitGenAiAttributes", () => {
 		)
 
 		expect(fields["Input"]).toBe((1284391).toLocaleString())
-		expect(fields["Time to first token"]).toBe("482.0ms")
+		expect(fields["Time to first token"]).toBe("482ms")
 	})
 
 	it("returns no groups for a span with no AI signal", () => {

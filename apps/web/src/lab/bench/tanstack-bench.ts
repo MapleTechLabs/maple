@@ -5,6 +5,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "../../charts/chart"
 import { bucketTooltipBody } from "../../charts/bucket-tooltip"
 import { ChartSpec } from "../../charts/chart-spec"
+import { fixedMetricLegend, latencySeries } from "../../charts/fixed-metric-legend"
+import type { FixedMetricSeries } from "../../charts/fixed-metric-series"
 import { plotFrame } from "../../charts/plot-frame"
 import { resolveColor, ResolveThemeColors, type ThemeColors } from "../../charts/theme-colors"
 import { chartSkeleton } from "../../ui/chart-skeleton"
@@ -95,6 +97,39 @@ const chart = (h: HtmlBuilder<Message>, model: Model, entry: (typeof CHARTS)[num
 				toParentMessage: toChart(entry.id),
 			})
 
+/** The swatch strip in a multi-series chart's header row; single-series charts need none. */
+const legendSeries = (kind: Kind, theme: ThemeColors): ReadonlyArray<FixedMetricSeries> =>
+	kind === "Latency"
+		? latencySeries(theme)
+		: kind === "Throughput"
+			? [
+					{
+						key: "throughput",
+						label: "Throughput (/s)",
+						color: resolveColor(theme, "--chart-throughput"),
+					},
+					{
+						key: "errors",
+						label: "Errors (/s)",
+						color: resolveColor(theme, "--chart-error"),
+						dashed: true,
+					},
+				]
+			: []
+
+const chartWithLegend = (h: HtmlBuilder<Message>, model: Model, entry: (typeof CHARTS)[number]): Html => {
+	const series = model.themeColors === null ? [] : legendSeries(entry.kind, model.themeColors)
+	return h.div(
+		[h.Key(entry.id)],
+		[
+			...(series.length === 0
+				? []
+				: [h.div([h.Class("flex justify-end pb-1")], [fixedMetricLegend(h, series)])]),
+			chart(h, model, entry),
+		],
+	)
+}
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[
@@ -105,8 +140,8 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 		],
 		[
 			h.div(
-				[h.Class("grid grid-cols-1 gap-4")],
-				CHARTS.map((entry) => chart(h, model, entry)),
+				[h.Class("grid grid-cols-1 gap-8")],
+				CHARTS.map((entry) => chartWithLegend(h, model, entry)),
 			),
 		],
 	)

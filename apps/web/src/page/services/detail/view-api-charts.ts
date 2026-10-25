@@ -32,6 +32,8 @@ export const SPARK_TOKENS = {
 	server: "--severity-error",
 	latency: "--chart-p95",
 	bytes: "--chart-5",
+	// A failure-class spark with nothing in it draws neutral; red is for real failures.
+	quiet: "--muted-foreground",
 } as const
 
 /** Every token the API tab paints on canvas; resolved once by the page's theme Mount. */

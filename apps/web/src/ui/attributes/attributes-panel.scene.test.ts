@@ -32,7 +32,7 @@ describe("attributes panel", () => {
 			given(init("panel")),
 			expectView(text("route")).toExist(),
 			expectView(text("pod.name")).toExist(),
-			type(placeholder("Search attributes..."), "region"),
+			type(placeholder("Search attributes…"), "region"),
 			expectView(text("region")).toExist(),
 			expectView(text("pod.name")).not.toExist(),
 			expectView(text('No log attributes match "region"', { exact: false })).toExist(),

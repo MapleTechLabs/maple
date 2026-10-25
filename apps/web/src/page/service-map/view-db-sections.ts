@@ -3,6 +3,7 @@ import type { PlanetScaleNodeMetrics } from "@maple/ui/components/service-map/se
 import {
 	countLabel,
 	EMPTY_VALUE,
+	formatDuration,
 	formatLatency,
 	formatNumber,
 	formatPercent,
@@ -51,8 +52,7 @@ const lagClass = (seconds: number): string | undefined =>
 			: seconds > 1
 				? TONE_TEXT.warn
 				: undefined
-const formatLag = (seconds: number) =>
-	seconds >= 1 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds * 1000)}ms`
+const formatLag = (seconds: number) => formatDuration(seconds * 1000)
 const formatStoragePercent = (percent: number) =>
 	`${percent >= 99.5 || percent < 10 ? percent.toFixed(1) : percent.toFixed(0)}%`
 

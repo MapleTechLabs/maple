@@ -64,14 +64,14 @@ const repeatsHeading = (heading: string | null, text: string): boolean =>
 	text.trim().length === 0 || text.trim() === heading?.trim()
 
 const body = <M>(h: HtmlBuilder<M>, heading: string | null, text: string): Html | null =>
-	repeatsHeading(heading, text) ? null : h.p([h.Class("text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]")], [text])
+	repeatsHeading(heading, text) ? null : h.p([h.Class("font-prose text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]")], [text])
 
 const mechanism = <M>(h: HtmlBuilder<M>, heading: string | null, text: string): Html | null =>
 	repeatsHeading(heading, text)
 		? null
 		: h.div(
 				[h.Class("mt-1 border-l-2 pl-4")],
-				[h.p([h.Class("whitespace-pre-line text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]")], [text])],
+				[h.p([h.Class("whitespace-pre-line font-prose text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]")], [text])],
 			)
 
 const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html | null =>

@@ -112,7 +112,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/widgets",
 		title: "Widgets",
 		description:
-			"Every dashboard widget renderer over its bundled sample data — the fastest way to eyeball a chart change without a backend.",
+			"Every dashboard widget renderer over its bundled sample data: the fastest way to eyeball a chart change without a backend.",
 		kind: "lab",
 		session: "none",
 	},
@@ -127,7 +127,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/timeline",
 		title: "Trace timeline",
 		description:
-			"The trace view tabs over a synthetic trace with a wide dynamic range — a 2s root down to sub-millisecond spans that only resolve at deep zoom, with span event markers and the events panel.",
+			"The trace view tabs over a synthetic trace with a wide dynamic range: a 2s root down to sub-millisecond spans that only resolve at deep zoom, with span event markers and the events panel.",
 		kind: "lab",
 		session: "none",
 	},
@@ -167,7 +167,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/agent-sessions",
 		title: "Agent sessions list",
 		description:
-			"The `/agent-sessions` list over rows that break its lanes — a nameless session, an unidentified vendor, ms next to hours, a total with no buckets, no usage at all, both kinds of failure.",
+			"The `/agent-sessions` list over rows that break its lanes: a nameless session, an unidentified vendor, ms next to hours, a total with no buckets, no usage at all, both kinds of failure.",
 		kind: "lab",
 		session: "none",
 	},
@@ -238,7 +238,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/errors",
 		title: "Errors list",
 		description:
-			"The `/errors` list over a fixture holding every row state at once — surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
+			"The `/errors` list over a fixture holding every row state at once: surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
 		kind: "lab",
 		session: "none",
 	},
@@ -348,14 +348,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/bench/agent-transcript",
 		title: "Agent transcript",
 		description:
-			"The session Transcript view over a synthetic session of `?turns=` turns (default 40) whose tool results run to hundreds of kilobytes — row mount cost and scroll perf, via window.__transcriptBench.",
+			"The session Transcript view over a synthetic session of `?turns=` turns (default 40) whose tool results run to hundreds of kilobytes: row mount cost and scroll perf, via window.__transcriptBench.",
 		kind: "bench",
 		session: "none",
 	},
 	{
 		path: "/lab/bench/logs",
 		title: "Logs table",
-		description: "The real LogsTableView over 2,000 synthetic rows × 12 chips — hover and scroll perf.",
+		description: "The real LogsTableView over 2,000 synthetic rows × 12 chips: hover and scroll perf.",
 		kind: "bench",
 		session: "none",
 	},
@@ -363,7 +363,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/bench/overview",
 		title: "Overview charts",
 		description:
-			"Service-detail chart bench pinned to cursor sync — the cross-browser gate's overview scenario.",
+			"Service-detail chart bench pinned to cursor sync: the cross-browser gate's overview scenario.",
 		kind: "bench",
 		session: "none",
 	},

@@ -422,6 +422,10 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 							),
 						])
 	return [
+		h.p(
+			[h.Class("-mb-3 font-prose text-xs text-muted-foreground")],
+			["Each finding is tracked by its fingerprint from run to run."],
+		),
 		h.section(
 			[h.AriaLabel("Findings"), h.Class("overflow-hidden rounded-md border bg-card")],
 			[

@@ -87,7 +87,7 @@ export const culpritPanel = (h: H, model: Model, issue: ErrorIssueDocument): Htm
 							)
 						: h.p(
 								[h.Class("text-sm text-muted-foreground")],
-								["This error carries no message — only its type and where it was raised."],
+								["This error carries no message, only its type and where it was raised."],
 							),
 					// TODO(top-frame-copy): a top frame should copy through its own button status.
 					issueField(h, "Culprit", [

@@ -23,12 +23,19 @@ type H = HtmlBuilder<Message>
 
 const MCP_ENDPOINT = `${mcpUrl}/mcp`
 
-const toCopy = (field: CopyField) => (message: CopyButton.Message) => Message.GotCopyMessage({ field, message })
+const toCopy = (field: CopyField) => (message: CopyButton.Message) =>
+	Message.GotCopyMessage({ field, message })
 
-/** `ConnectionStatusPill`: amber pulse while waiting, green dot once telemetry is observed. */
+/** `ConnectionStatusPill`: amber while waiting, green once telemetry is observed, grey when the read failed. */
 const statusPill = (h: H, model: Model): Html => {
 	const services = realServices(model)
 	const isConnected = services.length > 0
+	if (!isConnected && model.isOverviewFailed) {
+		return badge(h, { pill: true, variant: "meta", className: "gap-1.5 text-2xs sm:text-2xs" }, [
+			statusDot(h, { tone: "neutral" }),
+			"Status unknown",
+		])
+	}
 	return badge(
 		h,
 		{
@@ -42,7 +49,7 @@ const statusPill = (h: H, model: Model): Html => {
 		},
 		isConnected
 			? [statusDot(h, { tone: "ok" }), `Connected · ${countLabel(services.length, "service")}`]
-			: [icon(h, "PulseIcon", { size: 11, className: "size-[11px]" }), "Waiting for telemetry"],
+			: [icon(h, "ClockIcon", { size: 11, className: "size-[11px]" }), "Waiting for telemetry"],
 	)
 }
 
@@ -62,9 +69,16 @@ const keysUnavailable = (h: H): Html =>
 			h.a(
 				[
 					h.Href(hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))),
-					h.Class("font-medium text-foreground underline underline-offset-2 hover:no-underline"),
+					h.AriaLabel("Ingestion settings"),
+					h.Class(
+						"inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-2 hover:no-underline",
+					),
 				],
-				["Settings → Ingestion"],
+				[
+					"Settings",
+					icon(h, "ArrowRightIcon", { size: 12, attributes: [h.AriaHidden(true)] }),
+					"Ingestion",
+				],
 			),
 			".",
 		],
@@ -92,7 +106,10 @@ const credentials = (h: H, model: Model): Html =>
 								value: model.keys.publicKey,
 								copy: model.copies.publicKey,
 								toCopyMessage: toCopy("publicKey"),
-								masked: { isVisible: model.isPublicKeyVisible, onToggle: Message.ClickedRevealPublicKey() },
+								masked: {
+									isVisible: model.isPublicKeyVisible,
+									onToggle: Message.ClickedRevealPublicKey(),
+								},
 							}),
 							copyableField(h, {
 								id: "connect-private-key",
@@ -100,7 +117,10 @@ const credentials = (h: H, model: Model): Html =>
 								value: model.keys.privateKey,
 								copy: model.copies.privateKey,
 								toCopyMessage: toCopy("privateKey"),
-								masked: { isVisible: model.isPrivateKeyVisible, onToggle: Message.ClickedRevealPrivateKey() },
+								masked: {
+									isVisible: model.isPrivateKeyVisible,
+									onToggle: Message.ClickedRevealPrivateKey(),
+								},
 							}),
 						]
 					: [fieldSkeleton(h, "Public key"), fieldSkeleton(h, "Private key")]),
@@ -115,17 +135,26 @@ const mcpCard = (h: H, model: Model): Html =>
 		h.a(
 			[
 				h.Href(settingsHref("mcp")),
-				h.Class("flex items-center gap-3 p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"),
+				h.Class(
+					"flex items-center gap-3 p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring",
+				),
 			],
 			[
 				h.span(
-					[h.Class("flex size-8 shrink-0 items-center justify-center rounded-md border bg-background text-foreground")],
+					[
+						h.Class(
+							"flex size-8 shrink-0 items-center justify-center rounded-md border bg-background text-foreground",
+						),
+					],
 					[icon(h, "ChatBubbleSparkleIcon", { size: 15 })],
 				),
 				h.span(
 					[h.Class("min-w-0 flex-1 space-y-0.5")],
 					[
-						h.span([h.Class("flex items-center text-xs font-medium text-foreground")], ["Connect your own Agent"]),
+						h.span(
+							[h.Class("flex items-center text-xs font-medium text-foreground")],
+							["Connect your own agent"],
+						),
 						h.span(
 							[h.Class("block text-xs text-muted-foreground")],
 							["Claude Code, Cursor, or any MCP client can query your telemetry."],
@@ -143,7 +172,14 @@ const mcpCard = (h: H, model: Model): Html =>
 			[h.Class("flex items-center gap-2 border-t bg-background/60 py-1.5 pl-3 pr-1.5")],
 			[
 				eyebrow(h, {}, ["MCP"]),
-				h.code([h.Class("min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground")], [MCP_ENDPOINT]),
+				h.code(
+					[
+						h.Class(
+							"min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-muted-foreground scroll-fade-x [scrollbar-width:none]",
+						),
+					],
+					[MCP_ENDPOINT],
+				),
 				CopyButton.view(h, {
 					model: model.copies.mcp,
 					toParentMessage: toCopy("mcp"),
@@ -156,6 +192,35 @@ const mcpCard = (h: H, model: Model): Html =>
 		),
 	])
 
+/** The onboarding command on one line: it scrolls sideways rather than breaking inside a token. */
+const commandBlock = (h: H, model: Model): Html =>
+	h.div(
+		[
+			h.Class(
+				"flex items-center gap-2 rounded-lg border border-input bg-background py-1.5 pl-3 pr-1.5 dark:bg-input/32",
+			),
+		],
+		[
+			h.code(
+				[
+					h.Id("connect-skill-command"),
+					h.Class(
+						"min-w-0 flex-1 select-all overflow-x-auto whitespace-nowrap py-0.5 font-mono text-xs leading-5 scroll-fade-x [scrollbar-width:none]",
+					),
+				],
+				[ONBOARD_SKILL_COMMAND],
+			),
+			CopyButton.view(h, {
+				model: model.copies.skill,
+				toParentMessage: toCopy("skill"),
+				value: ONBOARD_SKILL_COMMAND,
+				label: "Command",
+				iconSize: 13,
+				className: "size-6 shrink-0",
+			}),
+		],
+	)
+
 /** `ConnectPanel`. */
 const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 	h.div(
@@ -166,7 +231,10 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 				[
 					h.div(
 						[h.Class("flex items-start justify-between gap-2")],
-						[PopoverView.popoverTitle(h, POPOVER_ID, "Connect your app", "text-base"), statusPill(h, model)],
+						[
+							PopoverView.popoverTitle(h, POPOVER_ID, "Connect your app", "text-base"),
+							statusPill(h, model),
+						],
 					),
 					PopoverView.popoverDescription(
 						h,
@@ -182,13 +250,7 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 				[h.Class("space-y-2")],
 				[
 					eyebrow(h, { variant: "label" }, ["Fastest path · Claude Code"]),
-					copyableField(h, {
-						id: "connect-skill-command",
-						value: ONBOARD_SKILL_COMMAND,
-						copyLabel: "Command",
-						copy: model.copies.skill,
-						toCopyMessage: toCopy("skill"),
-					}),
+					commandBlock(h, model),
 					h.p(
 						[h.Class("text-xs text-muted-foreground")],
 						[
@@ -206,7 +268,9 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 					h.a(
 						[
 							h.Href(settingsHref("ingestion")),
-							h.Class("inline-flex items-center gap-1 font-medium text-foreground hover:underline"),
+							h.Class(
+								"inline-flex items-center gap-1 font-medium text-foreground hover:underline",
+							),
 						],
 						["Open setup guide", icon(h, "ArrowRightIcon", { size: 12 })],
 					),
@@ -241,7 +305,13 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 						button(
 							h,
 							// Outline: each page's own primary action keeps the orange; empty states carry the on-ramp.
-							{ size: "sm", variant: "outline", className: "gap-2", slot: "popover-trigger", attributes: trigger },
+							{
+								size: "sm",
+								variant: "outline",
+								className: "gap-2",
+								slot: "popover-trigger",
+								attributes: trigger,
+							},
 							[icon(h, "ConnectionIcon", { className: "text-primary" }), "Connect"],
 						),
 					),

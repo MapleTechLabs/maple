@@ -13,15 +13,27 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { headerSummary } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { isDegraded, isLoadFailed, isReadOnly, listedOf } from "./update"
+import { isDegraded, isLoadFailed, listedOf } from "./update"
 import { listBody, listSkeleton } from "./view-list"
 
 // The dashboards list page: `PageShell` around the list.
 
 type H = HtmlBuilder<Message>
 
+/** A disabled write control says why on hover: a disabled button gets no pointer events itself. */
+const withReason = (h: H, reason: string | null, child: Html): Html =>
+	reason === null ? child : h.span([h.Class("inline-flex cursor-not-allowed"), h.Title(reason)], [child])
+
+/** Why writes are off, or `null` while they are on. */
+const readOnlyReason = (model: Model): string | null =>
+	model.persistenceError !== null
+		? "Couldn't reach Maple. Editing is off until it reconnects."
+		: isDegraded(model)
+			? "Live sync is unavailable. Editing is off until it reconnects."
+			: null
+
 /** Browse templates, Import (the hidden file input) and Create dashboard. */
-const actions = (h: H, isReadOnly: boolean): Html =>
+const actions = (h: H, reason: string | null): Html =>
 	h.div(
 		[h.Class("flex flex-wrap items-center gap-1")],
 		[
@@ -33,23 +45,38 @@ const actions = (h: H, isReadOnly: boolean): Html =>
 					"Browse templates",
 				],
 			),
-			button(
+			withReason(
 				h,
-				{
-					variant: "outline",
-					size: "sm",
-					isDisabled: isReadOnly,
-					attributes: [h.OnClick(Message.ClickedImport())],
-				},
-				[icon(h, "UploadIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Import"],
+				reason,
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						isDisabled: reason !== null,
+						attributes: [h.OnClick(Message.ClickedImport())],
+					},
+					[
+						icon(h, "UploadIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+						"Import",
+					],
+				),
 			),
-			button(
+			withReason(
 				h,
-				{ size: "sm", isDisabled: isReadOnly, attributes: [h.OnClick(Message.ClickedCreate())] },
-				[
-					icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-					"Create dashboard",
-				],
+				reason,
+				button(
+					h,
+					{
+						size: "sm",
+						isDisabled: reason !== null,
+						attributes: [h.OnClick(Message.ClickedCreate())],
+					},
+					[
+						icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+						"Create dashboard",
+					],
+				),
 			),
 			h.input([
 				h.Accept(".json"),
@@ -63,8 +90,9 @@ const actions = (h: H, isReadOnly: boolean): Html =>
 		],
 	)
 
-/** Pinned with the header: it explains the disabled buttons above it. */
-const persistenceBanner = (h: H, error: string | null): Html | undefined =>
+/** Pinned with the header: it explains the disabled buttons above it. When the list failed too,
+ * its error state already says the dashboards are safe, so the banner does not repeat it. */
+const persistenceBanner = (h: H, error: string | null, isListFailed: boolean): Html | undefined =>
 	error === null
 		? undefined
 		: alert(h, { variant: "crit", size: "sm", className: "mb-3" }, [
@@ -72,8 +100,9 @@ const persistenceBanner = (h: H, error: string | null): Html | undefined =>
 				alertDescription(
 					h,
 					[
-						error,
-						". Editing, import and delete are disabled until it recovers; reading is unaffected.",
+						isListFailed
+							? "Couldn't reach Maple, so editing, import and delete are off until it reconnects."
+							: "Couldn't reach Maple, so editing, import and delete are off until it reconnects. Your dashboards are safe and still readable.",
 					],
 					TONE_TEXT.crit,
 				),
@@ -139,8 +168,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			titleContent: title,
-			actions: actions(h, isReadOnly(model)),
-			sticky: persistenceBanner(h, model.persistenceError),
+			actions: actions(h, readOnlyReason(model)),
+			sticky: persistenceBanner(h, model.persistenceError, isLoadFailed(model)),
 		},
 		isLoadFailed(model)
 			? [listLoadError(h)]

@@ -95,6 +95,7 @@ const toolbar = (
 	all: ReadonlyArray<V2Investigation>,
 	visible: ReadonlyArray<V2Investigation>,
 	hasMore: boolean,
+	isKnown: boolean,
 ): Html => {
 	const activeCount = all.filter(isActive).length
 	const counts = new Map([
@@ -117,34 +118,50 @@ const toolbar = (
 							labels: ["Active", "History"],
 							ariaLabel: "Filter investigations",
 							tabClassName: "group/tab h-7 grow-0 px-2.5 text-xs sm:h-7 sm:text-xs",
+							// Unknown counts (loading or failed) are left out, never a false 0.
 							tabContent: (value, label) => [
 								label,
-								h.span(
-									[
-										h.Class(
-											"text-muted-foreground/70 tabular-nums group-data-active/tab:text-muted-foreground",
-										),
-									],
-									[String(counts.get(value) ?? 0)],
-								),
+								...(isKnown
+									? [
+											h.span(
+												[
+													h.Class(
+														"text-muted-foreground/70 tabular-nums group-data-active/tab:text-muted-foreground",
+													),
+												],
+												[String(counts.get(value) ?? 0)],
+											),
+										]
+									: []),
 							],
 							panel: () => undefined,
 						},
 						toParentMessage: (message) => Message.GotTabsMessage({ message }),
 					}),
-					h.div(
-						[h.Class("ml-auto hidden items-center gap-4 sm:flex")],
-						[
-							stat(h, stats.running, "investigating", stats.running > 0 ? "info" : undefined),
-							stat(
-								h,
-								stats.review,
-								stats.critical > 0 ? `to review (${stats.critical} critical)` : "to review",
-								stats.review > 0 ? "warn" : undefined,
-							),
-							stat(h, stats.resolved, "resolved in 24h"),
-						],
-					),
+					...(isKnown
+						? [
+								h.div(
+									[h.Class("ml-auto hidden items-center gap-4 sm:flex")],
+									[
+										stat(
+											h,
+											stats.running,
+											"investigating",
+											stats.running > 0 ? "info" : undefined,
+										),
+										stat(
+											h,
+											stats.review,
+											stats.critical > 0
+												? `to review (${stats.critical} critical)`
+												: "to review",
+											stats.review > 0 ? "warn" : undefined,
+										),
+										stat(h, stats.resolved, "resolved in 24h"),
+									],
+								),
+							]
+						: []),
 				],
 			),
 			h.div(
@@ -185,13 +202,15 @@ const toolbar = (
 					}),
 					h.span(
 						[h.Class("ml-auto text-xs text-muted-foreground tabular-nums")],
-						hasMore
-							? [`Showing ${visible.length} of the ${all.length} most recent`]
-							: [
-									String(visible.length),
-									" ",
-									visible.length === 1 ? "investigation" : "investigations",
-								],
+						!isKnown
+							? []
+							: hasMore
+								? [`Showing ${visible.length} of the ${all.length} most recent`]
+								: [
+										String(visible.length),
+										" ",
+										visible.length === 1 ? "investigation" : "investigations",
+									],
 					),
 				],
 			),
@@ -568,6 +587,18 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			title: "Investigations",
 			sticky: h.div([h.Class("contents")], [...(notice === null ? [] : [notice]), bar(h, model)]),
 		},
-		[panel(h, { className: "shrink-0" }, [toolbar(h, model, all, visible, hasMore), body])],
+		[
+			panel(h, { className: "shrink-0" }, [
+				toolbar(
+					h,
+					model,
+					all,
+					visible,
+					hasMore,
+					AsyncData.hasData(model.firstPage.data) && !AsyncData.hasError(model.firstPage.data),
+				),
+				body,
+			]),
+		],
 	)
 })

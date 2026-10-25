@@ -23,7 +23,7 @@ import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axi
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
-import { formatBytes } from "@maple/ui/lib/format"
+import { axisTickFormatter, axisTickValues, formatBytes } from "@maple/ui/lib/format"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
@@ -80,17 +80,39 @@ export const infraPoints = (spec: Pick<InfraMetricSpec, "rows" | "gaps" | "xDoma
 export const labelFor = (seriesLabel: string | null) => (name: string) =>
 	name === UNNAMED_SERIES_KEY ? (seriesLabel ?? name) : name
 
-const tickFormatter =
+/** Ticks on a short card: few enough that the axis never thins them. */
+const Y_TICK_COUNT = 3
+
+/** Latency and percent axes share one unit and precision across ticks; the rest format per value. */
+const tickFormatter = (unit: InfraMetricSpec["unit"], domain: readonly [number, number]) =>
+	unit === "milliseconds"
+		? axisTickFormatter("duration_ms", domain, Y_TICK_COUNT, { max: Y_TICK_COUNT })
+		: unit === "percent"
+			? axisTickFormatter("percent", domain, Y_TICK_COUNT, { max: Y_TICK_COUNT })
+			: valueTickFormatter(unit)
+
+/** Explicit ticks where the precision comes from the step, so a 1s step reads "1s", not "1.0s". */
+const tickValues = (unit: InfraMetricSpec["unit"], domain: readonly [number, number]) =>
+	unit === "milliseconds" || unit === "percent"
+		? axisTickValues(domain, Y_TICK_COUNT, { max: Y_TICK_COUNT })
+		: undefined
+
+/** Cores and load axes read "0.5, 1, 2"; the zero tick reads "0" on every unit. */
+const valueTickFormatter =
 	(unit: InfraMetricSpec["unit"]) =>
 	(value: number): string =>
-		unit === "cores"
-			? value.toLocaleString(
-					undefined,
-					Math.abs(value) < 0.1 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 2 },
-				)
-			: unit === "bytes_per_second"
-				? formatBytes(value)
-				: formatValueWithUnit(value, unit)
+		value === 0
+			? "0"
+			: unit === "cores" || unit === "load"
+				? value.toLocaleString(
+						undefined,
+						Math.abs(value) < 0.1
+							? { maximumSignificantDigits: 2 }
+							: { maximumFractionDigits: 2 },
+					)
+				: unit === "bytes_per_second"
+					? formatBytes(value)
+					: formatValueWithUnit(value, unit)
 
 export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, ChartValue, number> => {
 	const { data, series } = infraPoints(spec)
@@ -199,7 +221,15 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 			y: {
 				grid: DASHED_Y_GRID,
 				scale: scaleLinear().domain(yDomain),
-				axis: { line: false, ticks: { size: 0, padding: 8, format: tickFormatter(spec.unit) } },
+				axis: {
+					line: false,
+					ticks: {
+						size: 0,
+						padding: 8,
+						values: tickValues(spec.unit, yDomain),
+						format: tickFormatter(spec.unit, yDomain),
+					},
+				},
 			},
 		},
 		margin: { top: 12, right: 12, left: 56 },

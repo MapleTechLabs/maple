@@ -58,6 +58,17 @@ describe("routes", () => {
 		)
 	})
 
+	test("index paths with no page of their own redirect; their detail pages still render", () => {
+		expect(routeRedirect(parse("/alerts/incidents"))).toEqual(
+			Option.some({ url: "/alerts", isReplace: true }),
+		)
+		expect(routeRedirect(parse("/recommendations"))).toEqual(
+			Option.some({ url: "/settings?tab=ingestion", isReplace: true }),
+		)
+		expect(parse("/alerts/incidents/inc_1")._tag).toBe("AlertIncident")
+		expect(parse("/recommendations/rec_1")._tag).toBe("Recommendation")
+	})
+
 	test("a data integration's old page opens its step under Sources; chat connectors stay", () => {
 		expect(routeRedirect(parse("/integrations?integration=cloudflare"))).toEqual(
 			Option.some({ url: "/sources/new?integration=cloudflare", isReplace: true }),

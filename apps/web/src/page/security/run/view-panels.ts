@@ -422,7 +422,7 @@ export const eventsPanel = (
 									),
 									h.OnClick(Message.ClickedLoadOlder()),
 								],
-								[model.isLoadingOlder ? "Loading older events..." : "Load older events"],
+								[model.isLoadingOlder ? "Loading older events…" : "Load older events"],
 							),
 						],
 					),
