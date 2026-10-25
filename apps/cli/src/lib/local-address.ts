@@ -45,6 +45,12 @@ export const isLoopbackHostname = (hostname: string): boolean => {
 	)
 }
 
+/** An https server on another machine: the only kind an auth proxy can sit in front of. */
+export const isRemoteHttps = (localUrl: string): boolean =>
+	URL.canParse(localUrl) &&
+	new URL(localUrl).protocol === "https:" &&
+	!isLoopbackHostname(new URL(localUrl).hostname)
+
 export const resolveAdvertiseHost = (
 	flagValue: string | undefined,
 	environmentValue: string | undefined,

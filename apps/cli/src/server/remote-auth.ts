@@ -15,6 +15,8 @@ export const SESSION_COOKIE = "maple_local_session"
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 export const LOGIN_PATH = "/login"
 export const LOGIN_ACTION_PATH = "/local/auth/login"
+/** The 401 body for an API call without the access token; the CLI reads it to name the fix. */
+export const SIGN_IN_REQUIRED = "sign in required"
 
 export class RemoteAuthConfigError extends Schema.TaggedError<RemoteAuthConfigError>()(
 	"@maple/cli/RemoteAuthConfigError",
@@ -167,7 +169,7 @@ export const accessDenied = (
 	// A page load goes to the sign-in page; API calls get a 401 their client can act on.
 	if (req.method === "GET" && !url.pathname.startsWith("/local/"))
 		return new Response(null, { status: 303, headers: { location: LOGIN_PATH } })
-	return unauthorized("sign in required")
+	return unauthorized(SIGN_IN_REQUIRED)
 }
 
 /**
