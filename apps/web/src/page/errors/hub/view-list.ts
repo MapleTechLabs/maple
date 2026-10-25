@@ -1,6 +1,6 @@
 import type { ErrorSignal } from "../../../lib/models/error-signal"
 import { Option } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import { toLoadFailure } from "../../../data/load-failure"
 import { errorState } from "../../../ui/error-state"
@@ -78,6 +78,48 @@ export type ListInputs = Readonly<{
 	isNarrowed: boolean
 }>
 
+const rowView = (
+	h: H,
+	signal: ErrorSignal,
+	isSelected: RowState["isSelected"],
+	isSelecting: RowState["isSelecting"],
+	isFocused: RowState["isFocused"],
+	timeZone: RowState["timeZone"],
+	nowMs: RowState["nowMs"],
+	sparkWindow: RowState["sparkWindow"],
+	picker: RowState["picker"],
+	rowMenu: RowState["rowMenu"],
+): Html =>
+	signalRow(h, signal, {
+		isSelected,
+		isSelecting,
+		isFocused,
+		timeZone,
+		nowMs,
+		sparkWindow,
+		picker,
+		rowMenu,
+	})
+
+// One slot per list position, `index % 256` so the cache stays bounded: hovering a row (which moves
+// `focusedId`) rebuilds the two rows whose state changed, not the whole list.
+const lazyRow = createKeyedLazy()
+const ROW_SLOTS = 256
+
+const memoRow = (h: H, signal: ErrorSignal, index: number, state: RowState): Html =>
+	lazyRow(index % ROW_SLOTS, rowView, [
+		h,
+		signal,
+		state.isSelected,
+		state.isSelecting,
+		state.isFocused,
+		state.timeZone,
+		state.nowMs,
+		state.sparkWindow,
+		state.picker,
+		state.rowMenu,
+	])
+
 /** The rows, or the empty state, under the column header. */
 const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> => {
 	const { signals } = inputs
@@ -101,10 +143,10 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 				signalHeader(h, selection),
 				h.div(
 					[h.Role("list"), h.Class("divide-y divide-border/40"), h.OnMount(MountRowSelect())],
-					signals.map((signal) =>
+					signals.map((signal, index) =>
 						h.div(
 							[h.Key(signal.id), h.Role("listitem")],
-							[signalRow(h, signal, inputs.rowState(signal))],
+							[memoRow(h, signal, index, inputs.rowState(signal))],
 						),
 					),
 				),

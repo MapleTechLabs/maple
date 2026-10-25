@@ -147,6 +147,8 @@ const ARG_PREFIX = "maple.foldkit.arg."
 
 const DEFAULT_SLOW = { Update: 16, View: 50, Patch: 50 } satisfies SlowThresholds
 
+const isTabHidden = (): boolean => typeof document !== "undefined" && document.visibilityState === "hidden"
+
 /** A Command's result Message remembers the navigation that caused it, so its follow-ups join it. */
 const makeNavigationMarks = () => {
 	const marks = new WeakMap<object, number>()
@@ -287,6 +289,8 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 
 	const recordSlow = (context: FoldkitSlowContext): void => {
 		if (context._tag === "SubscriptionDependencies") return
+		// A hidden tab is throttled or frozen by the browser, so its wall-clock phases measure that, not the app.
+		if (isTabHidden()) return
 		const endTime = nowNanos()
 		const startTime = endTime - BigInt(Math.round(context.durationMs * 1_000_000))
 		const message =
