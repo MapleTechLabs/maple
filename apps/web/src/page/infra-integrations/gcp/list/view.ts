@@ -43,7 +43,7 @@ import { integrationConnectCta } from "../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
 import { GCP_ACCENT } from "../../../integrations/catalog"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero, searchToolbar } from "../../../infra/kit/page-parts"
+import { pageHero, pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import {
 	cloudSqlInstancesOf,
@@ -107,12 +107,18 @@ const GENERIC_BAND = {
 
 export const THEME_TOKENS = ["--chart-2", "--severity-error", "--muted-foreground"]
 
-const hero = (h: H): Html =>
-	pageHero(h, {
-		title: "Google Cloud",
-		description:
-			"Workloads and resources of your connected Google Cloud projects, from Cloud Monitoring metrics and Cloud Asset Inventory.",
-	})
+const TITLE = "Google Cloud"
+
+/** What the page's title row carries: the badge beside the title, the controls before the time picker. */
+type HeaderParts = Readonly<{ description?: string; trailing?: Html; actions: ReadonlyArray<Html> }>
+
+const intro: HeaderParts = {
+	description:
+		"Workloads and resources of your connected Google Cloud projects, from Cloud Monitoring metrics and Cloud Asset Inventory.",
+	actions: [],
+}
+
+type PageParts = Readonly<{ header: HeaderParts; body: ReadonlyArray<Html> }>
 
 /** `ListBody`: one view's band, search and table; the band counts every row, the table what is left. */
 const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends string>(
@@ -288,65 +294,61 @@ const projectsStrip = (
 			}),
 	)
 
-const infraView = (
-	h: H,
-	model: Model,
-	connectors: ReturnType<typeof metricsConnectors>,
-): ReadonlyArray<Html> => {
+const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConnectors>): PageParts => {
 	const fleetData = model.fleet.data
 	const fleet = AsyncData.isSuccess(fleetData) || AsyncData.isRefreshing(fleetData) ? fleetData.data : null
 	const collecting = connectors.length > 0
 	if (connectors.length === 0 && fleet !== null && fleet.length === 0) {
-		return [
-			hero(h),
-			integrationNotConnected(h, {
-				icon: icon(h, "GoogleCloudIcon", { size: 16 }),
-				title: "Turn on metrics for Google Cloud",
-				description:
-					"Your Google Cloud connections forward logs only. Turn on Metrics and resources under Configure in the Google Cloud integration, then run the setup script.",
-				integration: "gcp",
-				actionLabel: "Open the integration",
-				docsPage: "gcp",
-			}),
-		]
+		return {
+			header: intro,
+			body: [
+				integrationNotConnected(h, {
+					icon: icon(h, "GoogleCloudIcon", { size: 16 }),
+					title: "Turn on metrics for Google Cloud",
+					description:
+						"Your Google Cloud connections forward logs only. Turn on Metrics and resources under Configure in the Google Cloud integration, then run the setup script.",
+					integration: "gcp",
+					actionLabel: "Open the integration",
+					docsPage: "gcp",
+				}),
+			],
+		}
 	}
 	const failures = Option.toArray(AsyncData.getError(fleetData))
 	if (failures.length > 0) {
-		return [
-			hero(h),
-			...failures.map((failure) =>
+		return {
+			header: intro,
+			body: failures.map((failure) =>
 				errorState(h, {
 					failure,
 					title: "Failed to load Google Cloud workloads",
 					onRetry: Message.ClickedRetryFleet(),
 				}),
 			),
-		]
+		}
 	}
 	const notice = noticeOf(model, connectors)
-	return [
-		gcpListPage(h, {
-			fleet,
-			sparks: sparksOf(model),
-			windowSeconds: windowSecondsOf(model),
-			cloudSqlInstances: cloudSqlInstancesOf(model, collecting),
-			projectHealth: gcpProjectHealth(connectors, model.nowMs),
-			collecting,
-			notice: notice === null ? [] : [gcpNotice(h, notice)],
-			resources: (timeSearch) => resourcesView(h, model, timeSearch, gcpResourcesError(connectors)),
-			state: { ...model.search, view: requestedViewOf(model) },
-			timeSearch: {
-				startTime: model.search.startTime,
-				endTime: model.search.endTime,
-				timePreset: model.search.timePreset,
-			},
-			theme: model.themeColors,
-			isChartReady: model.chartRuntime._tag !== "Loading",
-			isWaiting: AsyncData.isRefreshing(fleetData),
-			projectMenu: model.projectMenu,
-			locale: model.locale,
-		}),
-	]
+	return gcpListPageParts(h, {
+		fleet,
+		sparks: sparksOf(model),
+		windowSeconds: windowSecondsOf(model),
+		cloudSqlInstances: cloudSqlInstancesOf(model, collecting),
+		projectHealth: gcpProjectHealth(connectors, model.nowMs),
+		collecting,
+		notice: notice === null ? [] : [gcpNotice(h, notice)],
+		resources: (timeSearch) => resourcesView(h, model, timeSearch, gcpResourcesError(connectors)),
+		state: { ...model.search, view: requestedViewOf(model) },
+		timeSearch: {
+			startTime: model.search.startTime,
+			endTime: model.search.endTime,
+			timePreset: model.search.timePreset,
+		},
+		theme: model.themeColors,
+		isChartReady: model.chartRuntime._tag !== "Loading",
+		isWaiting: AsyncData.isRefreshing(fleetData),
+		projectMenu: model.projectMenu,
+		locale: model.locale,
+	})
 }
 
 /** `GcpListState`: the route's search, or the lab's state. */
@@ -379,8 +381,20 @@ export type ListPageInput = Readonly<{
 	locale: string
 }>
 
-/** `GcpListPage`: header, projects strip, and the current view's band, search and table. */
+/** `GcpListPage` for the lab, which has no title row: the header drawn above the body. */
 export const gcpListPage = (h: H, input: ListPageInput): Html => {
+	const parts = gcpListPageParts(h, input)
+	return h.div(
+		[h.Class("space-y-6")],
+		[
+			pageHero(h, { title: TITLE, trailing: parts.header.trailing, actions: parts.header.actions }),
+			...parts.body,
+		],
+	)
+}
+
+/** The header, then the projects strip and the current view's band, search and table. */
+const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 	const { fleet, state, isWaiting } = input
 	const allRows =
 		fleet === null ? null : gcpListRows(fleet, input.sparks, input.windowSeconds, input.cloudSqlInstances)
@@ -470,70 +484,72 @@ export const gcpListPage = (h: H, input: ListPageInput): Html => {
 		}
 	}
 	const health = input.projectHealth
-	return h.div(
-		[h.Class("space-y-6")],
-		[
-			pageHero(h, {
-				title: "Google Cloud",
-				trailing: multiProject
-					? projectMenu(h, {
-							model: input.projectMenu,
-							projects,
-							counts: projectCounts,
-							health,
-							value: project,
-						})
-					: projects.length === 1
-						? heroChip(h, `project ${projects[0] ?? ""}`)
-						: undefined,
-				actions:
-					views.length > 1
-						? [
-								segmentedSelect(h, {
-									size: "xs",
-									ariaLabel: "Google Cloud view",
-									options: views.map((option) => ({
-										value: option,
-										label:
-											option === GCP_RESOURCES_TAB || counts === null
-												? VIEW_LABEL[option]
-												: `${VIEW_LABEL[option]} ${counts[option]}`,
-									})),
-									value: view,
-									onChange: (next) => Message.ClickedView({ view: next }),
-								}),
-							]
-						: undefined,
-			}),
+	return {
+		header: {
+			trailing: multiProject
+				? projectMenu(h, {
+						model: input.projectMenu,
+						projects,
+						counts: projectCounts,
+						health,
+						value: project,
+					})
+				: projects.length === 1
+					? heroChip(h, `project ${projects[0] ?? ""}`)
+					: undefined,
+			actions:
+				views.length > 1
+					? [
+							segmentedSelect(h, {
+								size: "xs",
+								ariaLabel: "Google Cloud view",
+								options: views.map((option) => ({
+									value: option,
+									label:
+										option === GCP_RESOURCES_TAB || counts === null
+											? VIEW_LABEL[option]
+											: `${VIEW_LABEL[option]} ${counts[option]}`,
+								})),
+								value: view,
+								onChange: (next) => Message.ClickedView({ view: next }),
+							}),
+						]
+					: [],
+		},
+		body: [
 			...input.notice,
 			...(multiProject && project === undefined && view !== GCP_RESOURCES_TAB
 				? [projectsStrip(h, projects, gcpProjectShares(inRegion, view), projectCounts, health)]
 				: []),
 			body(),
 		],
-	)
+	}
 }
 
-const content = (h: H, model: Model): ReadonlyArray<Html> =>
+const content = (h: H, model: Model): PageParts =>
 	AsyncData.match(model.status.data, {
-		onIdle: () => [hero(h), skeleton(h, "h-64 w-full")],
-		onLoading: () => [hero(h), skeleton(h, "h-64 w-full")],
-		onFailure: (failure) => [
-			hero(h),
-			errorState(h, {
-				failure,
-				title: "Failed to load the Google Cloud integration",
-				onRetry: Message.ClickedRetryStatus(),
-			}),
-		],
-		onStale: ({ error }) => [
-			hero(h),
-			errorState(h, {
-				failure: error,
-				title: "Failed to load the Google Cloud integration",
-				onRetry: Message.ClickedRetryStatus(),
-			}),
-		],
+		onIdle: () => ({ header: intro, body: [skeleton(h, "h-64 w-full")] }),
+		onLoading: () => ({ header: intro, body: [skeleton(h, "h-64 w-full")] }),
+		onFailure: (failure) => ({
+			header: intro,
+			body: [
+				errorState(h, {
+					failure,
+					title: "Failed to load the Google Cloud integration",
+					onRetry: Message.ClickedRetryStatus(),
+				}),
+			],
+		}),
+		onStale: ({ error }) => ({
+			header: intro,
+			body: [
+				errorState(h, {
+					failure: error,
+					title: "Failed to load the Google Cloud integration",
+					onRetry: Message.ClickedRetryStatus(),
+				}),
+			],
+		}),
 		onRefreshing: () => connected(h, model),
 		onSuccess: () => connected(h, model),
 	})
@@ -564,51 +580,61 @@ const gcpConnectCta = (h: H): Html =>
 		href: hrefOf(AppRoute.SourcesNew({ search: { integration: "gcp" } })),
 	})
 
-const connected = (h: H, model: Model): ReadonlyArray<Html> => {
+const connected = (h: H, model: Model): PageParts => {
 	const status = statusOf(model)
-	if (status === null) return []
+	if (status === null) return { header: intro, body: [] }
 	const state = pageStateOf(status, model.nowMs)
 	switch (state._tag) {
 		case "NotConnected":
-			return [hero(h), gcpConnectCta(h)]
+			return { header: intro, body: [gcpConnectCta(h)] }
 		case "SetupPending":
-			return [
-				hero(h),
-				integrationNotConnected(h, {
-					icon: icon(h, "GoogleCloudIcon", { size: 16 }),
-					title: "Finish setting up Google Cloud",
-					description: "Metrics and resources are on, but the setup script hasn't run yet.",
-					integration: "gcp",
-					actionLabel: "Open the integration",
-					docsPage: "gcp",
-				}),
-			]
+			return {
+				header: intro,
+				body: [
+					integrationNotConnected(h, {
+						icon: icon(h, "GoogleCloudIcon", { size: 16 }),
+						title: "Finish setting up Google Cloud",
+						description: "Metrics and resources are on, but the setup script hasn't run yet.",
+						integration: "gcp",
+						actionLabel: "Open the integration",
+						docsPage: "gcp",
+					}),
+				],
+			}
 		case "Infra":
 			return infraView(h, model, state.connectors)
 	}
 }
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
-	h.div(
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
+	const page = content(h, model)
+	const timeControls = pageTime(h, {
+		search: model.search,
+		defaultPreset: DEFAULT_PRESET,
+		window: model.window,
+		picker: model.timePicker,
+		toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+		onReset: Message.ClickedResetTimeRange(),
+		onReload: Message.ClickedReload(),
+		isReloading: model.isReloading,
+	})
+	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
 			dashboardPage(
 				h,
 				{
 					scrollClassName: "gap-6",
-					actions: pageTime(h, {
-						search: model.search,
-						defaultPreset: DEFAULT_PRESET,
-						window: model.window,
-						picker: model.timePicker,
-						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-						onReset: Message.ClickedResetTimeRange(),
-						onReload: Message.ClickedReload(),
-						isReloading: model.isReloading,
-					}),
+					titleContent: pageHeroParts(h, {
+						title: TITLE,
+						description: page.header.description,
+						trailing: page.header.trailing,
+					}).title,
+					actions:
+						headerActions(h, page.header.actions, timeControls),
 				},
-				content(h, model),
+				page.body,
 			),
 		],
-	),
-)
+	)
+})

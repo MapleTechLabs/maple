@@ -16,7 +16,7 @@ import { icon } from "../../../../ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { pageTime } from "../../kit/page-time"
 import { supabaseConnectCta } from "../connect"
@@ -180,26 +180,24 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			scrollClassName: "gap-6",
-			actions: pageTime(h, {
-				search: model.search,
-				defaultPreset: DEFAULT_PRESET,
-				window: model.window,
-				picker: model.timePicker,
-				toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-				onReset: Message.ClickedResetTimeRange(),
-				onReload: Message.ClickedReload(),
-				isReloading: model.isReloading,
-			}),
-		},
-		[
-			pageHero(h, {
-				title: "Supabase",
-				description: description(model),
-				actions: [
+			titleContent: pageHeroParts(h, { title: "Supabase", description: description(model) }).title,
+			actions: h.div(
+				[h.Class("flex flex-wrap items-center gap-2")],
+				[
 					linkButton(h, { size: "sm", variant: "outline", href: MANAGE_HREF }, ["Manage projects"]),
+					pageTime(h, {
+						search: model.search,
+						defaultPreset: DEFAULT_PRESET,
+						window: model.window,
+						picker: model.timePicker,
+						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+						onReset: Message.ClickedResetTimeRange(),
+						onReload: Message.ClickedReload(),
+						isReloading: model.isReloading,
+					}),
 				],
-			}),
-			statusView(h, model),
-		],
+			),
+		},
+		[statusView(h, model)],
 	),
 )

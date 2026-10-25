@@ -15,7 +15,7 @@ import { icon } from "../../../../ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink, emptyActions } from "../../../kit/signal-empty-state"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import type { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
@@ -210,10 +210,16 @@ const connected = (h: H, model: Model, status: PlanetscaleStatus, clock: Clock):
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
+	const hero = pageHeroParts(h, {
+		title: "PlanetScale",
+		description:
+			"Database health from your PlanetScale organization: connections, CPU, memory, storage, and replication lag for every branch.",
+	})
 	return dashboardPage(
 		h,
 		{
 			scrollClassName: "gap-6",
+			titleContent: hero.title,
 			actions: pageTime(h, {
 				search: model.search,
 				defaultPreset: DEFAULT_PRESET,
@@ -226,11 +232,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			}),
 		},
 		[
-			pageHero(h, {
-				title: "PlanetScale",
-				description:
-					"Database health from your PlanetScale organization: connections, CPU, memory, storage, and replication lag for every branch.",
-			}),
+			hero.body,
 			AsyncData.match(model.status.data, {
 				onIdle: () => loading(h),
 				onLoading: () => loading(h),

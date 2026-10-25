@@ -11,7 +11,7 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { relativeTime } from "../../../kit/relative-time"
 import { skeleton } from "../../../../ui/skeleton"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts, headerActions } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { pageTime } from "../../kit/page-time"
 import { type SparkWindow } from "../../kit/window-sparkline"
@@ -165,6 +165,27 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const theme = model.themeColors
 	const isLogsEnabled = project?.logsEnabled === true
 	const isStatusLoaded = AsyncData.isSuccess(model.status.data) || AsyncData.isRefreshing(model.status.data)
+	const hero = pageHeroParts(h, {
+		title: titleOf(model),
+		trailing: isStatusLoaded
+			? healthPill(
+					h,
+					projectHealth(project?.status ?? null, summary, isReadPending(model.projects.data)),
+				)
+			: undefined,
+		meta: heroMeta(h, project, summary, clock),
+	})
+	const actions = heroActions(h, model, project)
+	const timeControls = pageTime(h, {
+		search: model.search,
+		defaultPreset: DEFAULT_PRESET,
+		window: model.window,
+		picker: model.timePicker,
+		toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+		onReset: Message.ClickedResetTimeRange(),
+		onReload: Message.ClickedReload(),
+		isReloading: model.isReloading,
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
@@ -172,34 +193,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					scrollClassName: "gap-4",
-					actions: pageTime(h, {
-						search: model.search,
-						defaultPreset: DEFAULT_PRESET,
-						window: model.window,
-						picker: model.timePicker,
-						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-						onReset: Message.ClickedResetTimeRange(),
-						onReload: Message.ClickedReload(),
-						isReloading: model.isReloading,
-					}),
+					titleContent: hero.title,
+					actions:
+						headerActions(h, actions, timeControls),
 				},
 				[
-					pageHero(h, {
-						title: titleOf(model),
-						trailing: isStatusLoaded
-							? healthPill(
-									h,
-									projectHealth(
-										project?.status ?? null,
-										summary,
-										isReadPending(model.projects.data),
-									),
-								)
-							: undefined,
-						meta: heroMeta(h, project, summary, clock),
-						actions: heroActions(h, model, project),
-						className: "mb-2",
-					}),
+					hero.body,
 					stripView(h, model, timeZone),
 					h.div(
 						[h.Class("grid grid-cols-1 gap-4 lg:grid-cols-3")],

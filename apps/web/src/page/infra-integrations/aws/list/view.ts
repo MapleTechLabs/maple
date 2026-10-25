@@ -14,7 +14,7 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { dataTableEmpty } from "../../../infra/kit/data-table"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
-import { pageHero, searchToolbar } from "../../../infra/kit/page-parts"
+import { pageHeroParts, searchToolbar } from "../../../infra/kit/page-parts"
 import { linkTabStrip } from "../../../infra/kit/view-tabs"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { integrationConnectCta } from "../../kit/integration-empty"
@@ -302,32 +302,36 @@ const description = (status: AwsStatus | null): string => {
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const status = AsyncData.isSuccess(model.status.data) ? model.status.data.data : null
 	const accounts = status?.connections.length ?? 0
+	const heroActions: ReadonlyArray<Html> = [
+		linkButton(h, { size: "sm", variant: "outline", href: MANAGE_HREF }, ["Manage accounts"]),
+	]
+	const hero = pageHeroParts(h, {
+		title: "AWS",
+		description: description(status),
+		trailing: accounts === 0 ? [] : [badge(h, { variant: "muted" }, [countLabel(accounts, "account")])],
+	})
 	return dashboardPage(
 		h,
 		{
 			scrollClassName: "gap-6",
-			actions: pageTime(h, {
-				search: model.search,
-				defaultPreset: DEFAULT_PRESET,
-				window: model.window,
-				picker: model.timePicker,
-				toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-				onReset: Message.ClickedResetTimeRange(),
-				onReload: Message.ClickedReload(),
-				isReloading: model.isReloading,
-			}),
-		},
-		[
-			pageHero(h, {
-				title: "AWS",
-				description: description(status),
-				trailing:
-					accounts === 0 ? [] : [badge(h, { variant: "muted" }, [countLabel(accounts, "account")])],
-				actions: [
-					linkButton(h, { size: "sm", variant: "outline", href: MANAGE_HREF }, ["Manage accounts"]),
+			titleContent: hero.title,
+			actions: h.div(
+				[h.Class("flex flex-wrap items-center gap-2")],
+				[
+					...heroActions,
+					pageTime(h, {
+						search: model.search,
+						defaultPreset: DEFAULT_PRESET,
+						window: model.window,
+						picker: model.timePicker,
+						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+						onReset: Message.ClickedResetTimeRange(),
+						onReload: Message.ClickedReload(),
+						isReloading: model.isReloading,
+					}),
 				],
-			}),
-			h.div([h.Class(cn("flex flex-col gap-4"))], [statusView(h, model)]),
-		],
+			),
+		},
+		[hero.body, h.div([h.Class(cn("flex flex-col gap-4"))], [statusView(h, model)])],
 	)
 })

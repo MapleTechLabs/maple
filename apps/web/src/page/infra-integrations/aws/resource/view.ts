@@ -24,7 +24,7 @@ import { panel, panelHeader } from "../../../../ui/panel"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { metricChartCards, metricChartsLoading } from "../../kit/metric-charts"
 import { pageTime } from "../../kit/page-time"
@@ -348,6 +348,42 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			? bucketRows(kind, model.timeseries.data.data)
 			: []
 	const judgement = kind === null || rows.length === 0 ? null : judgementOf(kind, rows)
+	const heroActions: ReadonlyArray<Html> =
+		kind === null || !AWS_REGION.test(region)
+			? []
+			: [
+					linkButton(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							href: consoleHref(
+								kind,
+								model.name,
+								region,
+								cluster,
+								AWS_ACCOUNT.test(model.search.account ?? "")
+									? model.search.account
+									: undefined,
+							),
+							attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+						},
+						["Open in AWS console", icon(h, "ExternalLinkIcon", { size: 12 })],
+					),
+				]
+	const hero = pageHeroParts(h, {
+		title: titleOf(model),
+		trailing:
+			judgement === null
+				? []
+				: [badge(h, { variant: BADGE[judgement.health] }, [judgement.reason ?? "Healthy"])],
+		description: [
+			kind === null ? "Unknown resource" : AWS_INFRA_KINDS[kind].label,
+			...(cluster === "" ? [] : [`${cluster} cluster`]),
+			...(region === "" ? [] : [region]),
+			...(model.search.account === undefined ? [] : [model.search.account]),
+		].join(" · "),
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
@@ -355,64 +391,26 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					scrollClassName: "gap-4",
-					actions: pageTime(h, {
-						search: model.search,
-						defaultPreset: DEFAULT_PRESET,
-						window: model.window,
-						picker: model.timePicker,
-						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-						onReset: Message.ClickedResetTimeRange(),
-						onReload: Message.ClickedReload(),
-						isReloading: model.isReloading,
-					}),
+					titleContent: hero.title,
+					actions: h.div(
+						[h.Class("flex flex-wrap items-center gap-2")],
+						[
+							...heroActions,
+							pageTime(h, {
+								search: model.search,
+								defaultPreset: DEFAULT_PRESET,
+								window: model.window,
+								picker: model.timePicker,
+								toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+								onReset: Message.ClickedResetTimeRange(),
+								onReload: Message.ClickedReload(),
+								isReloading: model.isReloading,
+							}),
+						],
+					),
 				},
 				[
-					pageHero(h, {
-						title: titleOf(model),
-						trailing:
-							judgement === null
-								? []
-								: [
-										badge(h, { variant: BADGE[judgement.health] }, [
-											judgement.reason ?? "Healthy",
-										]),
-									],
-						description: [
-							kind === null ? "Unknown resource" : AWS_INFRA_KINDS[kind].label,
-							...(cluster === "" ? [] : [`${cluster} cluster`]),
-							...(region === "" ? [] : [region]),
-							...(model.search.account === undefined ? [] : [model.search.account]),
-						].join(" · "),
-						actions:
-							kind === null || !AWS_REGION.test(region)
-								? []
-								: [
-										linkButton(
-											h,
-											{
-												size: "sm",
-												variant: "outline",
-												href: consoleHref(
-													kind,
-													model.name,
-													region,
-													cluster,
-													AWS_ACCOUNT.test(model.search.account ?? "")
-														? model.search.account
-														: undefined,
-												),
-												attributes: [
-													h.Target("_blank"),
-													h.Rel("noopener noreferrer"),
-												],
-											},
-											[
-												"Open in AWS console",
-												icon(h, "ExternalLinkIcon", { size: 12 }),
-											],
-										),
-									],
-					}),
+					hero.body,
 					kind === null
 						? integrationNotConnected(h, {
 								icon: icon(h, "AwsIcon", { size: 16 }),

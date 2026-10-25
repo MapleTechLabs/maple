@@ -17,7 +17,7 @@ import { integrationConnectCta, RAILWAY_ACCENT } from "../../kit/integration-emp
 import { AppRoute, hrefOf } from "../../../../route"
 import { filteredEmpty } from "../../../kit/signal-empty-state"
 import { avgPeakContent } from "../../../infra/kit/avg-peak"
-import { pageHero, countLabel, searchToolbar } from "../../../infra/kit/page-parts"
+import { pageHeroParts, countLabel, searchToolbar } from "../../../infra/kit/page-parts"
 import { formatAbsolute } from "../../../kit/relative-time"
 import type { RailwayServiceRow, RailwayStatus } from "../model"
 import { filterServices, formatVcpu, hasConfiguredLimits, unsyncedEnvironments } from "./derive"
@@ -202,10 +202,16 @@ const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePicker
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
+	const hero = pageHeroParts(h, {
+		title: "Railway",
+		description:
+			"CPU, memory, network and disk for every Railway service, polled from Railway's metrics API.",
+	})
 	return dashboardPage(
 		h,
 		{
 			scrollClassName: "gap-6",
+			titleContent: hero.title,
 			actions: timeControls(h, {
 				search: model.search,
 				defaultPreset: DEFAULT_PRESET,
@@ -229,13 +235,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					}),
 			}),
 		},
-		[
-			pageHero(h, {
-				title: "Railway",
-				description:
-					"CPU, memory, network and disk for every Railway service, polled from Railway's metrics API.",
-			}),
-			statusView(h, model, clock),
-		],
+		[hero.body, statusView(h, model, clock)],
 	)
 })
