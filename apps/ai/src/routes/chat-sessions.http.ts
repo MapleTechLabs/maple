@@ -34,7 +34,7 @@ import {
 } from "@maple/domain/chat-session"
 import type { ChatSessionCallError, ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatSessions } from "@maple/backend/platform/bindings"
-import { Effect, Layer, Option, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Option, Schema, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -280,5 +280,13 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 	// router was built from into them. The tenant resolver and the Durable Object lookup read
 	// these per request, so hand them over from the build — reading them inside a handler
 	// answered every chat request with a 500 ("Service not found") until 2026-09-08.
-	HttpRouter.provideRequest(Layer.effectContext(Effect.context<AuthService | Env | ChatSessions>())),
+	// Only these three: the whole build context would also hand every request the isolate's Scope.
+	HttpRouter.provideRequest(
+		Layer.effectContext(
+			Effect.map(
+				Effect.context<AuthService | Env | ChatSessions>(),
+				Context.pick(AuthService, Env, ChatSessions),
+			),
+		),
+	),
 )
