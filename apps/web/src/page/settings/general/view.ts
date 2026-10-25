@@ -46,7 +46,7 @@ const deletionFacts = (h: H): Html =>
 						[h.Class(fact.isDestructive ? "w-16 shrink-0 text-destructive" : "w-16 shrink-0 text-muted-foreground")],
 						[fact.key],
 					),
-					h.dd([h.Class("text-foreground")], [fact.value]),
+					h.dd([h.Class("font-prose text-foreground")], [fact.value]),
 				],
 			),
 		),

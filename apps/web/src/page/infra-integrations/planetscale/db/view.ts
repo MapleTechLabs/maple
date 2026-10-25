@@ -22,7 +22,7 @@ import * as Tooltip from "../../../../ui/tooltip"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { formatAbsolute } from "../../../kit/relative-time"
 import { pageTime } from "../../kit/page-time"
 import { activeFilterChips, applyBranchFilters } from "../filters"
@@ -362,6 +362,34 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						: []),
 					dataSections(h, model, clock, trigger, model.themeColors),
 				]
+	const heroActions: ReadonlyArray<Html> =
+		database === null
+			? []
+			: [
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							attributes: [h.AriaHasPopup("menu"), h.AriaExpanded(false)],
+						},
+						[icon(h, "BellIcon", { size: 14 }), "Alert on this"],
+					),
+				]
+	const hero = pageHeroParts(h, {
+		title: model.dbName,
+		description: "Branch-level health, live from PlanetScale.",
+		meta:
+			database === null
+				? undefined
+				: [
+						heroChip(h, database.kind === "postgresql" ? "Postgres" : "MySQL / Vitess"),
+						...(database.region ? [heroChip(h, database.region)] : []),
+						...(database.plan ? [heroChip(h, database.plan)] : []),
+						heroChip(h, countLabel(database.branches.length, "branch", "branches")),
+						...filterChipRail(h, model),
+					],
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: CHART_TOKENS }))],
 		[
@@ -391,58 +419,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 									filtersOf(model),
 									AsyncData.isLoading(model.databases.data),
 								),
-								actions: branchSelect(h, model, timeControls),
+								titleContent: hero.title,
+								actions:
+									heroActions.length === 0
+										? branchSelect(h, model, timeControls)
+										: h.div(
+												[h.Class("flex flex-wrap items-center gap-2")],
+												[...heroActions, branchSelect(h, model, timeControls)],
+											),
 								// TODO(alert-menu): see the note at the top of this file.
 							},
-							[
-								pageHero(h, {
-									title: model.dbName,
-									description: "Branch-level health, live from PlanetScale.",
-									actions:
-										database === null
-											? undefined
-											: [
-													button(
-														h,
-														{
-															variant: "outline",
-															size: "sm",
-															attributes: [
-																h.AriaHasPopup("menu"),
-																h.AriaExpanded(false),
-															],
-														},
-														[icon(h, "BellIcon", { size: 14 }), "Alert on this"],
-													),
-												],
-									meta:
-										database === null
-											? undefined
-											: [
-													heroChip(
-														h,
-														database.kind === "postgresql"
-															? "Postgres"
-															: "MySQL / Vitess",
-													),
-													...(database.region
-														? [heroChip(h, database.region)]
-														: []),
-													...(database.plan ? [heroChip(h, database.plan)] : []),
-													heroChip(
-														h,
-														countLabel(
-															database.branches.length,
-															"branch",
-															"branches",
-														),
-													),
-													...filterChipRail(h, model),
-												],
-								}),
-								...body(trigger),
-								...(portal === null ? [] : [portal]),
-							],
+							[hero.body, ...body(trigger), ...(portal === null ? [] : [portal])],
 						),
 				},
 			}),

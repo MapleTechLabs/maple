@@ -1,3 +1,5 @@
+import { cn } from "@maple/ui/lib/utils"
+import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -127,15 +129,18 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const isReady = listed !== null && model.nowMs !== null && model.isPrefsLoaded
 	const summary =
 		isReady && listed !== null && model.nowMs !== null
-			? h.div(
-					[h.Class("text-muted-foreground mt-1 font-mono text-2xs")],
-					[headerSummary(listed, model.nowMs, inputs.context.timeZone, model.locale)],
-				)
-			: undefined
+			? [
+					h.div(
+						[h.Class("text-muted-foreground mt-1 font-mono text-2xs")],
+						[headerSummary(listed, model.nowMs, inputs.context.timeZone, model.locale)],
+					),
+				]
+			: []
+	const title = h.div([], [h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], ["Dashboards"]), ...summary])
 	return dashboardPage(
 		h,
 		{
-			titleContent: summary,
+			titleContent: title,
 			actions: actions(h, isReadOnly(model)),
 			sticky: persistenceBanner(h, model.persistenceError),
 		},

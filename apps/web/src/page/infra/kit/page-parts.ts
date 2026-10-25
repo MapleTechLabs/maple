@@ -1,3 +1,4 @@
+import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import type { DocsPage } from "../../../lib/docs"
 import { countLabel as nounCount } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -50,7 +51,12 @@ export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =
 					),
 					...(options.description === undefined || options.description === ""
 						? []
-						: [h.p([h.Class("max-w-2xl font-prose text-sm text-muted-foreground")], [options.description])]),
+						: [
+								h.p(
+									[h.Class("max-w-2xl font-prose text-sm text-muted-foreground")],
+									[options.description],
+								),
+							]),
 					...(options.meta === undefined
 						? []
 						: [h.div([h.Class("mt-2 flex flex-wrap items-center gap-2")], options.meta)]),
@@ -61,6 +67,44 @@ export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html =
 				: [h.div([h.Class("flex shrink-0 items-center gap-2")], options.actions)]),
 		],
 	)
+
+/**
+ * `pageHero` split for `dashboardPage`: the title, its trailing badge and the description go in the
+ * header beside the time controls (one title row on every page); meta opens the body.
+ */
+export const pageHeroParts = <M>(
+	h: HtmlBuilder<M>,
+	options: Omit<PageHeroOptions, "actions" | "className">,
+): Readonly<{ title: Html; body: Html }> => ({
+	title: h.div(
+		[h.Class("min-w-0 space-y-0.5")],
+		[
+			h.div(
+				[h.Class("flex min-w-0 flex-wrap items-baseline gap-3")],
+				[
+					h.h1([h.Class(cn(pageTitleStyles, "leading-8 text-foreground"))], [options.title]),
+					...trailingOf(options.trailing),
+				],
+			),
+			...(options.description === undefined || options.description === ""
+				? []
+				: [
+						h.p(
+							[h.Class("max-w-2xl font-prose text-sm text-muted-foreground")],
+							[options.description],
+						),
+					]),
+		],
+	),
+	body:
+		options.meta === undefined || options.meta.length === 0
+			? null
+			: h.div([h.Class("flex flex-wrap items-center gap-2")], options.meta),
+})
+
+/** The header's right side: a page's own actions before its time controls. */
+export const headerActions = <M>(h: HtmlBuilder<M>, extra: ReadonlyArray<Html>, controls: Html): Html =>
+	extra.length === 0 ? controls : h.div([h.Class("flex flex-wrap items-center gap-2")], [...extra, controls])
 
 export type SearchToolbarOptions<M> = Readonly<{
 	id: string
@@ -138,7 +182,9 @@ export const setupEmpty = <M>(
 
 /** `NoMetricsMessage`. */
 export const noMetricsMessage = <M>(h: HtmlBuilder<M>, noun: string): Html =>
-	emptyMessage(h, { dashed: true, className: "py-12" }, [`No metrics arrived for this ${noun} in the selected window.`])
+	emptyMessage(h, { dashed: true, className: "py-12" }, [
+		`No metrics arrived for this ${noun} in the selected window.`,
+	])
 
 /** `countLabel`: "Top 50 of 541 pods" for a slice, "541 pods" for the whole list. */
 export const countLabel = (shown: number, total: number, noun: string): string => {

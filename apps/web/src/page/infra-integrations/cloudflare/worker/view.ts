@@ -34,7 +34,7 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
 import type { WorkerDetail } from "../data"
@@ -57,10 +57,10 @@ const HEALTH_DOT = {
 } as const satisfies Record<WorkerHealth, string>
 
 /** `CloudflareWorkerHeader`. */
-const header = (h: H, model: Model, data: PageData): Html => {
+const header = (h: H, model: Model, data: PageData) => {
 	const { row, accountName, traced, currentVersion } = data
 	const tracedService = traced?.service ?? null
-	return pageHero(h, {
+	return pageHeroParts(h, {
 		title: h.span(
 			[h.Class("flex items-center gap-3")],
 			[
@@ -484,6 +484,7 @@ export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true)
 	const data = pageOf(model)
 	const theme = model.themeColors
 	const ctx = theme === null || model.chartRuntime._tag === "Loading" ? null : { theme, timeZone }
+	const hero = header(h, model, data)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
@@ -491,6 +492,7 @@ export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true)
 				h,
 				{
 					scrollClassName: "gap-6",
+					titleContent: hero.title,
 					actions: !isTimed
 						? undefined
 						: pageTime(h, {
@@ -505,7 +507,7 @@ export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true)
 							}),
 					rightPanel: rail(h, data, timeZone),
 				},
-				[header(h, model, data), body(h, model, data, ctx)],
+				[hero.body, body(h, model, data, ctx)],
 			),
 		],
 	)

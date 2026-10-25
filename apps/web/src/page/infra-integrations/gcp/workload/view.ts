@@ -26,7 +26,7 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { CHART_HEIGHT } from "../../kit/chart-card"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import { sectionHeading } from "../../../kit/section-heading"
 import { gcpServiceIcon } from "../service-icon"
@@ -64,7 +64,7 @@ const BARE_IDENTITY = ["Region", "Zone", "Location"]
 const RAIL_IDENTITY = ["Project"]
 
 /** `GcpWorkloadHeader`, with `GcpCloudSqlChips` as a Cloud SQL instance's meta. */
-const header = (h: H, model: Model, data: PageData): Html => {
+const header = (h: H, model: Model, data: PageData) => {
 	const service = model.service
 	const keys = data.keys
 	const engine = gcpSqlEngine(data.databaseVersion ?? null)
@@ -95,7 +95,7 @@ const header = (h: H, model: Model, data: PageData): Html => {
 					]
 				}),
 			]
-	return pageHero(h, {
+	return pageHeroParts(h, {
 		title: h.span(
 			[h.Class("flex items-center gap-3")],
 			[
@@ -396,6 +396,7 @@ export const workloadPageView = (
 			? null
 			: resolveQueryPeek(data.statements, data.sql.traced, databases, model.search.peek)
 	const instanceName = gcpWorkloadName(service, data.keys)
+	const hero = header(h, model, data)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
@@ -420,7 +421,7 @@ export const workloadPageView = (
 				h,
 				{
 					scrollClassName: "gap-6",
-					titleContent: header(h, model, data),
+					titleContent: hero.title,
 					actions: pageTime(h, {
 						search: model.search,
 						defaultPreset: options.defaultPreset,
@@ -450,8 +451,9 @@ export const workloadPageView = (
 					}),
 				},
 				!isReady || ctx === null
-					? [loadingGrid(h, service)]
+					? [hero.body, loadingGrid(h, service)]
 					: [
+							hero.body,
 							body(h, model, data, timeSearch, ctx),
 							...nodesSection(h, model, data, timeSearch, ctx),
 						],

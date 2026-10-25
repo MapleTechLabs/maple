@@ -25,14 +25,13 @@ import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "..
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
 import { segmentedSelect } from "../../../../ui/segmented-select"
-import { skeleton } from "../../../../ui/skeleton"
 import { switchControl } from "../../../../ui/switch"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero, searchToolbar } from "../../../infra/kit/page-parts"
+import { pageHero, pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import type { Status, ZoneRow } from "../data"
 import { ingestBanner, ingestEmpty, needsPermissions } from "../ingest"
@@ -50,6 +49,7 @@ import {
 	type ListScope,
 	listScopeOf,
 	phaseOf,
+	statusOf,
 } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
@@ -266,7 +266,18 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 	])
 }
 
-const header = (h: H, model: Model, singleAccountName: string | null, scope: ListScope): Html => {
+const TITLE = "Cloudflare"
+
+/** The title row's badge and controls; the account and view switch appear once there is data to scope. */
+type HeaderParts = Readonly<{ trailing?: Html; actions: ReadonlyArray<Html> }>
+
+const header = (
+	h: H,
+	model: Model,
+	singleAccountName: string | null,
+	scope: ListScope | null,
+): HeaderParts => {
+	if (scope === null) return { actions: [] }
 	const options = CLOUDFLARE_VIEWS.filter((v) => v === scope.view || scope.counts[v] !== 0).map((v) => ({
 		value: v,
 		label: scope.counts[v] === null ? VIEW_LABEL[v] : `${VIEW_LABEL[v]} ${scope.counts[v]}`,
@@ -276,8 +287,7 @@ const header = (h: H, model: Model, singleAccountName: string | null, scope: Lis
 		: singleAccountName
 			? heroChip(h, ["account ", singleAccountName])
 			: undefined
-	return pageHero(h, {
-		title: "Cloudflare",
+	return {
 		trailing: account,
 		actions:
 			options.length > 1
@@ -291,7 +301,7 @@ const header = (h: H, model: Model, singleAccountName: string | null, scope: Lis
 						}),
 					]
 				: [],
-	})
+	}
 }
 
 /** `CloudflareListPage`'s props: what the route reads, or the lab's fixtures. */
@@ -314,11 +324,18 @@ const listPage = (h: H, model: Model, status: Status, data: ListData, spark: Spa
 			banner: phase === null ? null : ingestBanner(h, phase),
 		},
 		spark,
+		false,
 	)
 }
 
-/** `CloudflareListPage`: header, banner, accounts strip and the current view. */
-export const listBody = (h: H, model: Model, frame: ListFrame, spark: SparkContext): Html => {
+/** `CloudflareListPage`: header, banner, accounts strip and the current view. The route draws the header in its title row. */
+export const listBody = (
+	h: H,
+	model: Model,
+	frame: ListFrame,
+	spark: SparkContext,
+	withHeader = true,
+): Html => {
 	const { data, banner } = frame
 	const scope = listScopeOf(model, data, frame.accounts)
 	const healthLine = scope.scopedAccount === undefined ? null : accountHealthLine(h, scope.scopedAccount)
@@ -339,7 +356,9 @@ export const listBody = (h: H, model: Model, frame: ListFrame, spark: SparkConte
 	return h.div(
 		[h.Class("space-y-6")],
 		[
-			header(h, model, frame.singleAccountName, scope),
+			...(withHeader
+				? [pageHero(h, { title: TITLE, ...header(h, model, frame.singleAccountName, scope) })]
+				: []),
 			...(banner === null ? [] : [banner]),
 			...(scope.showAccountColumn
 				? [
@@ -422,8 +441,8 @@ const connectedView = (h: H, model: Model, status: Status, spark: SparkContext):
 
 const statusView = (h: H, model: Model, spark: SparkContext): Html =>
 	AsyncData.match(model.status.data, {
-		onIdle: () => h.div([h.Class("space-y-4")], [skeleton(h, "h-8 w-48"), bandLoading(h)]),
-		onLoading: () => h.div([h.Class("space-y-4")], [skeleton(h, "h-8 w-48"), bandLoading(h)]),
+		onIdle: () => bandLoading(h),
+		onLoading: () => bandLoading(h),
 		onFailure: (failure) => errorState(h, { failure }),
 		onStale: ({ error }) => errorState(h, { failure: error }),
 		onSuccess: (status) => connectedView(h, model, status, spark),
@@ -432,6 +451,20 @@ const statusView = (h: H, model: Model, spark: SparkContext): Html =>
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const spark = { theme: model.themeColors, isChartReady: model.chartRuntime._tag === "Ready" }
+	const status = statusOf(model)
+	const data = listDataOf(model)
+	const hasData = status !== null && status.connected && status.analyticsCapable && !isNoTraffic(data)
+	const hero = header(h, model, status?.accountName ?? null, hasData ? listScopeOf(model, data) : null)
+	const timeControls = pageTime(h, {
+		search: model.search,
+		defaultPreset: DEFAULT_PRESET,
+		window: model.window,
+		picker: model.timePicker,
+		toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+		onReset: Message.ClickedResetTimeRange(),
+		onReload: Message.ClickedReload(),
+		isReloading: model.isReloading,
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
@@ -439,16 +472,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					scrollClassName: "gap-6",
-					actions: pageTime(h, {
-						search: model.search,
-						defaultPreset: DEFAULT_PRESET,
-						window: model.window,
-						picker: model.timePicker,
-						toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-						onReset: Message.ClickedResetTimeRange(),
-						onReload: Message.ClickedReload(),
-						isReloading: model.isReloading,
-					}),
+					titleContent: pageHeroParts(h, { title: TITLE, trailing: hero.trailing }).title,
+					actions:
+						headerActions(h, hero.actions, timeControls),
 				},
 				[statusView(h, model, spark)],
 			),

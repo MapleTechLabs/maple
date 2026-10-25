@@ -12,7 +12,7 @@ import { timeControls } from "../../../kit/time-controls"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { type MetricChart, metricChartCards, metricChartsLoading } from "../../kit/metric-charts"
 import { heroChip } from "../../../infra/kit/hero-chip"
-import { pageHero } from "../../../infra/kit/page-parts"
+import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
 import type { RailwayServiceRow, RailwayServiceTimeseriesRow } from "../model"
 import { Message } from "./message"
@@ -143,6 +143,14 @@ const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePicker
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const service = serviceOf(model)
+	const hero = pageHeroParts(h, {
+		title: titleOf(model),
+		description: "Resource usage for this Railway service, summed across its replicas.",
+		meta:
+			service === null
+				? undefined
+				: [heroChip(h, service.projectName), heroChip(h, service.environmentName)],
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
@@ -150,6 +158,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					scrollClassName: "gap-6",
+					titleContent: hero.title,
 					actions: timeControls(h, {
 						search: model.search,
 						defaultPreset: DEFAULT_PRESET,
@@ -174,14 +183,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					}),
 				},
 				[
-					pageHero(h, {
-						title: titleOf(model),
-						description: "Resource usage for this Railway service, summed across its replicas.",
-						meta:
-							service === null
-								? undefined
-								: [heroChip(h, service.projectName), heroChip(h, service.environmentName)],
-					}),
+					hero.body,
 					...(service === null ? [] : [stats(h, service)]),
 					chartsView(h, model, inputs.context.timeZone),
 				],

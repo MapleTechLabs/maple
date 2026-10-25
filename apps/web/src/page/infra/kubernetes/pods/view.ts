@@ -211,6 +211,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
+					title: "Kubernetes",
 					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
 					tabs: kubernetesViewTabs(h, "pods", model.search),
 					filters: filtersRail(h, model),

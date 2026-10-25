@@ -172,7 +172,7 @@ const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
 				[
 					eyebrow(h, { variant: "label", as: "h2" }, ["Services"]),
 					h.p(
-						[h.Class("mt-0.5 text-2xs text-muted-foreground/70")],
+						[h.Class("mt-0.5 font-prose text-2xs text-muted-foreground/70")],
 						["Status reflects active alerts and baseline anomalies."],
 					),
 				],

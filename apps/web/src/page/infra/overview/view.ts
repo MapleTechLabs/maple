@@ -10,7 +10,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import * as Frame from "../kit/frame"
 import * as InstallModal from "../kit/install-modal"
 import * as InstallModalView from "../kit/install-modal-view"
-import { pageHero } from "../kit/page-parts"
+import { pageHeroParts } from "../kit/page-parts"
 import { pickTimeSearch } from "../kit/view-tabs"
 import { Message } from "./message"
 import { type Model, SOURCE_IDS, type SourceId } from "./model"
@@ -76,27 +76,30 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const missing = sources === null ? [] : SOURCE_IDS.filter((id) => !sources.includes(id))
 	const states = sources === null ? null : sources.map((id) => ({ id, state: sourceState(model, id) }))
 	const time = pickTimeSearch(model.search)
+	// "connected", not "reporting": presence says a source exists, not that its read just succeeded.
+	const hero = pageHeroParts(h, {
+		title: "Infrastructure",
+		description:
+			sources === null
+				? "Checking which sources report. What needs a look comes first."
+				: sources.length > 0
+					? `${countLabel(sources.length, "source")} connected. What needs a look comes first.`
+					: "Nothing is reporting yet. Install a collector or connect a provider to get started.",
+	})
 	return h.div(
 		[h.Class("contents")],
 		[
 			dashboardPage(
 				h,
 				{
+					titleContent: hero.title,
 					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
 				},
 				[
 					h.div(
 						[h.Class("space-y-10")],
 						[
-							pageHero(h, {
-								title: "Infrastructure",
-								description:
-									sources === null
-										? "Checking which sources report. What needs a look comes first."
-										: sources.length > 0
-											? `${countLabel(sources.length, "source")} reporting. What needs a look comes first.`
-											: "Nothing is reporting yet. Install a collector or connect a provider to get started.",
-							}),
+							hero.body,
 							...(sources === null || sources.length > 0
 								? [needsAttention(h, states, time), sourcesTable(h, states, time)]
 								: []),

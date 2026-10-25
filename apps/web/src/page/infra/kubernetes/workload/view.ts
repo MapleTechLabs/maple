@@ -13,8 +13,12 @@ import * as Frame from "../../kit/frame"
 import { heroChip } from "../../kit/hero-chip"
 import { k8sChart } from "../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
-import { noMetricsMessage, pageHero } from "../../kit/page-parts"
-import { metaRow, resourceAttributesCard, resourceAttributesCardSkeleton } from "../../kit/resource-attributes"
+import { noMetricsMessage, pageHeroParts } from "../../kit/page-parts"
+import {
+	metaRow,
+	resourceAttributesCard,
+	resourceAttributesCardSkeleton,
+} from "../../kit/resource-attributes"
 import { sectionHeading } from "../../../kit/section-heading"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { kubernetesViewTabs, pickTimeSearch } from "../../kit/view-tabs"
@@ -87,7 +91,11 @@ const summaryArea = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => statRailLoading(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load workload metrics", onRetry: Message.ClickedRetrySummary() }),
+			errorState(h, {
+				failure,
+				title: "Failed to load workload metrics",
+				onRetry: Message.ClickedRetrySummary(),
+			}),
 		onData: (summary) => (summary === null ? noMetricsMessage(h, "workload") : stats(h, summary)),
 	})
 
@@ -95,7 +103,11 @@ const podsArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.pods.data, {
 		onEmpty: () => podTableLoading(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load workload pods", onRetry: Message.ClickedRetryPods() }),
+			errorState(h, {
+				failure,
+				title: "Failed to load workload pods",
+				onRetry: Message.ClickedRetryPods(),
+			}),
 		onData: (page) =>
 			page.data.length === 0
 				? emptyMessage(h, { dashed: true, className: "py-12" }, [
@@ -163,13 +175,28 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	const namespace = model.search.namespace
 	const kindLabel = KIND_LABEL.get(model.kind) ?? model.kind
+	const hero = pageHeroParts(h, {
+		title: h.span([h.Class("font-mono")], [model.workloadName]),
+		description: `${kindLabel}${namespace ? ` in namespace ${namespace}` : ""}, aggregated from pod metrics.`,
+		meta: [
+			...(namespace ? [heroChip(h, ["ns ", namespace])] : []),
+			heroChip(h, ["kind ", model.kind]),
+			...(summary === null ? [] : [heroChip(h, [countLabel(summary.podCount, "pod")])]),
+		],
+	})
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
 		[
 			dashboardPage(
 				h,
 				{
-					actions: Frame.controls(h, model.frame, { search: model.search, defaultPreset: DEFAULT_PRESET }, toFrame),
+					titleContent: hero.title,
+					actions: Frame.controls(
+						h,
+						model.frame,
+						{ search: model.search, defaultPreset: DEFAULT_PRESET },
+						toFrame,
+					),
 					tabs: kubernetesViewTabs(h, "workloads", model.search),
 					rightPanel: rightPanel(h, model),
 				},
@@ -177,18 +204,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					h.div(
 						[h.Class("space-y-6")],
 						[
-							pageHero(h, {
-								title: h.span([h.Class("font-mono")], [model.workloadName]),
-								description: `${kindLabel}${namespace ? ` in namespace ${namespace}` : ""}, aggregated from pod metrics.`,
-								meta: [
-									...(namespace ? [heroChip(h, ["ns ", namespace])] : []),
-									heroChip(h, ["kind ", model.kind]),
-									...(summary === null ? [] : [heroChip(h, [countLabel(summary.podCount, "pod")])]),
-								],
-							}),
+							hero.body,
 							summaryArea(h, model),
 							chartArea(h, model, inputs),
-							h.div([h.Class("space-y-3")], [sectionHeading(h, { as: "h3", title: "Pods" }), podsArea(h, model, inputs)]),
+							h.div(
+								[h.Class("space-y-3")],
+								[sectionHeading(h, { as: "h3", title: "Pods" }), podsArea(h, model, inputs)],
+							),
 						],
 					),
 				],

@@ -21,7 +21,7 @@ type H = HtmlBuilder<Message>
 /** `IngestKeysUnavailableNote`: members cannot read the org's ingest keys. */
 const keysUnavailable = (h: H): Html =>
 	h.p(
-		[h.Class("rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground")],
+		[h.Class("rounded-md border border-dashed bg-muted/40 px-3 py-2 font-prose text-xs text-muted-foreground")],
 		[
 			"Ask an org admin for your ingest keys, or open ",
 			h.a(
@@ -103,7 +103,7 @@ const watchingStrip = (h: H): Html =>
 		[h.Class("flex items-center gap-2.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-4 py-3")],
 		[
 			icon(h, "PulseIcon", { size: 14, className: "text-primary" }),
-			h.span([h.Class("text-xs text-muted-foreground")], ["Watching for your first trace…"]),
+			h.span([h.Class("font-prose text-xs text-muted-foreground")], ["Watching for your first trace…"]),
 		],
 	)
 
@@ -124,7 +124,7 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 						[
 							h.p([h.Class("text-sm font-semibold tracking-tight")], ["First trace received — you're live"]),
 							h.p(
-								[h.Class("text-xs text-muted-foreground mt-0.5")],
+								[h.Class("mt-0.5 font-prose text-xs text-muted-foreground")],
 								[
 									serviceName === undefined
 										? "We're seeing your telemetry. Jump in to explore."
@@ -175,7 +175,7 @@ const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string,
 							[icon(h, "CodeIcon", { size: 16 })],
 						),
 						title: "Connect your app to see real data",
-						meta: getOnboardingSetupHint(intents),
+						meta: h.span([h.Class("font-prose")], [getOnboardingSetupHint(intents)]),
 					}),
 					h.div(
 						[h.Class("flex items-center gap-1 shrink-0")],

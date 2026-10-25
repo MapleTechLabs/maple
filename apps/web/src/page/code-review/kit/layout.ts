@@ -54,16 +54,6 @@ const hrefFor = (tab: CodeReviewTab, search: Readonly<Record<string, string | un
 	}
 }
 
-/** TanStack's default `activeOptions`: the path or a parent of it, and the link's search a subset. */
-const isLinkActive = (
-	path: string,
-	linkSearch: Readonly<Record<string, string>>,
-	currentPath: string,
-	currentSearch: Readonly<Record<string, unknown>>,
-): boolean =>
-	(currentPath === path || currentPath.startsWith(`${path}/`)) &&
-	Object.entries(linkSearch).every(([key, value]) => currentSearch[key] === value)
-
 export type LayoutOptions<M> = Readonly<{
 	active: CodeReviewTab
 	search: CarriedSearch & Readonly<Record<string, unknown>>
@@ -82,7 +72,6 @@ const tabs = <M>(options: LayoutOptions<M>): Html => {
 		repo: search.repo,
 		author: search.author,
 	}
-	const currentPath = TABS.find((entry) => entry.tab === active)?.path ?? "/code-review"
 	return linkTabStrip(
 		h,
 		"Code review views",
@@ -94,7 +83,7 @@ const tabs = <M>(options: LayoutOptions<M>): Html => {
 				label: entry.label,
 				icon: entry.icon,
 				isCurrent: entry.tab === active,
-				isRouteActive: isLinkActive(entry.path, linkSearch, currentPath, search),
+				isRouteActive: entry.tab === active,
 			}
 		}),
 	)

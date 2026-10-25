@@ -33,7 +33,7 @@ export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> =>
 		: [{ label: "Settings", href: "/settings" }, { label: settingsTabLabels[activeTabOf(model)] }]
 
 const loadingSkeleton = (h: H): Html =>
-	h.div([h.Class("space-y-3")], [skeleton(h, "h-8 w-56"), skeleton(h, "h-40 w-full")])
+	h.div([h.Class("space-y-3")], [skeleton(h, "h-40 w-full")])
 
 const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<Html> => {
 	const tab = model.tab
@@ -175,6 +175,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			title: isLoading || empty ? undefined : settingsTabLabels[activeTabOf(model)],
+			// Holds the header row while the session resolves, so the content does not jump down.
+			titleContent: isLoading ? skeleton(h, "h-8 w-40") : undefined,
 			filters:
 				isLoading || empty
 					? undefined
