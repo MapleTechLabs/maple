@@ -79,13 +79,15 @@ const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
 			]),
 		]),
 	)
-	// One row per page: "Infrastructure" and its "Overview" child both open /infra.
-	const unique = Arr.dedupeWith(rows, (a, b) => a.href === b.href)
+	// One row per page, titled by its most specific row ("Traces", not its "Explore" parent);
+	// every title that opens the same page stays searchable as a keyword.
+	const unique = Arr.reverse(Arr.dedupeWith(Arr.reverse(rows), (a, b) => a.href === b.href))
+	const titlesByHref = (target: string) => rows.filter((row) => row.href === target).map((row) => row.title)
 	return unique.map((row) => ({
 		id: row.id,
 		title: row.title,
 		group: "Navigation",
-		keywords: `go to ${row.title}`,
+		keywords: `go to ${titlesByHref(row.href).join(" ")}`,
 		glyph: icon(row.icon),
 		target: href(row.href),
 		isFlagged: FLAGGED_HREFS.has(row.href),

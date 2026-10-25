@@ -110,6 +110,8 @@ const isNotConfigured = Schema.is(BillingNotConfiguredError)
 const FetchProfile = Command.define("FetchBillingProfile", {
 	messages: [Message.CompletedFetchProfile],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getBillingProfile()).pipe(
+		// Like `loaded`: a defect must still settle the read, or the details shimmer forever.
+		Effect.catchDefect((defect) => Effect.fail(defect)),
 		Effect.mapError((error) => ({
 			isNotConfigured: isNotConfigured(error),
 			failure: toLoadFailure(error),

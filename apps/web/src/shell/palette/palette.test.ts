@@ -48,6 +48,15 @@ describe("command palette", () => {
 		expect(infra).toHaveLength(1)
 	})
 
+	test("a shared page keeps its specific title and stays findable by its parent's", () => {
+		const tracesFor = (query: string) =>
+			shownEntries(typed(loadedWith([]), query).model, context, ALL_FLAGGED).entries.filter(
+				(entry) => entry.target._tag === "Href" && entry.target.href === "/traces",
+			)
+		expect(tracesFor("traces").map((entry) => entry.title)).toEqual(["Traces"])
+		expect(tracesFor("explore")).toHaveLength(1)
+	})
+
 	test("opening reads the services; typing sends nothing", () => {
 		expect(commandNames(open())).toEqual(["LoadPaletteServices"])
 		expect(commandNames(typed(open().model, "logs"))).toEqual([])

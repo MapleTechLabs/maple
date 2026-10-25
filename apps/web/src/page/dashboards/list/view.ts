@@ -92,21 +92,24 @@ const actions = (h: H, reason: string | null): Html =>
 
 /** Pinned with the header: it explains the disabled buttons above it. When the list failed too,
  * its error state already says the dashboards are safe, so the banner does not repeat it. */
-const persistenceBanner = (h: H, error: string | null, isListFailed: boolean): Html | undefined =>
-	error === null
-		? undefined
-		: alert(h, { variant: "crit", size: "sm", className: "mb-3" }, [
-				icon(h, "CircleWarningIcon", { size: 14 }),
-				alertDescription(
-					h,
-					[
-						isListFailed
-							? "Couldn't reach Maple, so editing, import and delete are off until it reconnects."
-							: "Couldn't reach Maple, so editing, import and delete are off until it reconnects. Your dashboards are safe and still readable.",
-					],
-					TONE_TEXT.crit,
-				),
-			])
+// Browsers word a dropped connection differently; any of these means the write never reached Maple.
+const UNREACHABLE = /failed to fetch|networkerror|load failed|network request failed/i
+
+/** The stored write error, or "Couldn't reach Maple" when the write never left the browser. */
+const persistenceBanner = (h: H, error: string | null, isListFailed: boolean): Html | undefined => {
+	if (error === null) return undefined
+	const cause = UNREACHABLE.test(error)
+		? "Couldn't reach Maple, so editing, import and delete are off until it reconnects."
+		: `${error.replace(/[.\s]+$/, "")}. Editing, import and delete are off until it recovers.`
+	return alert(h, { variant: "crit", size: "sm", className: "mb-3" }, [
+		icon(h, "CircleWarningIcon", { size: 14 }),
+		alertDescription(
+			h,
+			[isListFailed ? cause : `${cause} Your dashboards are safe and still readable.`],
+			TONE_TEXT.crit,
+		),
+	])
+}
 
 /** The sync stream and the HTTP fallback both failed (`ListLoadError`). */
 const LIST_LOAD_FAILURE: LoadFailure = {
