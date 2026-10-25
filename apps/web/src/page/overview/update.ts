@@ -445,6 +445,7 @@ const retryPage = (model: Model, context: PageContext): Return => {
 	const synced = sync(
 		{
 			...model,
+			snapshot: Keyed.forgetFailure(model.snapshot),
 			usage: Keyed.forgetFailure(model.usage),
 			overviewSeries: Keyed.forgetFailure(model.overviewSeries),
 			logSeries: Keyed.forgetFailure(model.logSeries),
