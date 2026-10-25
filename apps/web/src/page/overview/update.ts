@@ -447,6 +447,7 @@ const retryPage = (model: Model, context: PageContext): Return => {
 		{
 			...model,
 			snapshot: Keyed.forgetFailure(model.snapshot),
+			anomalies: Keyed.forgetFailure(model.anomalies),
 			usage: Keyed.forgetFailure(model.usage),
 			overviewSeries: Keyed.forgetFailure(model.overviewSeries),
 			logSeries: Keyed.forgetFailure(model.logSeries),
