@@ -10,7 +10,11 @@ import {
 	RecommendationIssuesListResponse,
 	RecommendationIssueStatus,
 } from "@maple/domain/http"
-import { detectAttributeRecommendations, planReconcileIssues } from "@maple/domain/recommendations"
+import {
+	canonicalKeysToProbe,
+	detectAttributeRecommendations,
+	planReconcileIssues,
+} from "@maple/domain/recommendations"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	OrgIngestAttributeMappings,
@@ -98,18 +102,25 @@ export class RecommendationIssueService extends Context.Service<
 				Effect.map((rows) => new RecommendationIssuesListResponse({ issues: rows.map(rowToIssue) })),
 			)
 
-		// Reads the org's live span attribute keys (last 24h) from the warehouse.
-		const fetchSpanKeys = Effect.fn("RecommendationIssueService.fetchSpanKeys")(function* (
+		// Reads span attribute keys (last 24h): the top keys, or exactly `keys` when given.
+		const querySpanKeys = Effect.fn("RecommendationIssueService.querySpanKeys")(function* (
 			tenant: TenantContext,
+			keys: ReadonlyArray<string> | undefined,
 		) {
 			const now = yield* Clock.currentTimeMillis
-			const compiled = CH.compile(CH.attributeKeysQuery({ scope: "span" }), {
+			const query = keys
+				? CH.attributeKeysQuery({ scope: "span", keys, limit: keys.length })
+				: CH.attributeKeysQuery({ scope: "span" })
+			const compiled = CH.compile(query, {
 				orgId: tenant.orgId,
 				startTime: formatWarehouseDateTime(now - 24 * 60 * 60 * 1000),
 				endTime: formatWarehouseDateTime(now),
 			})
 			const rows = yield* warehouse
-				.compiledQuery(tenant, compiled, { profile: "discovery", context: "recommendationIssues" })
+				.compiledQuery(tenant, compiled, {
+					profile: "discovery",
+					context: keys ? "recommendationCanonicalKeys" : "recommendationIssues",
+				})
 				.pipe(
 					Effect.tapCause((cause) =>
 						Effect.logError("Recommendation span-key query failed").pipe(
@@ -129,6 +140,18 @@ export class RecommendationIssueService extends Context.Service<
 			}))
 		})
 
+		// The top keys miss a rare canonical key, so rename targets are checked by exact key.
+		const fetchSpanKeys = Effect.fn("RecommendationIssueService.fetchSpanKeys")(function* (
+			tenant: TenantContext,
+			mappingSourceKeys: ReadonlyArray<string>,
+		) {
+			const topKeys = yield* querySpanKeys(tenant, undefined)
+			const probe = canonicalKeysToProbe(topKeys, mappingSourceKeys)
+			if (probe.length === 0) return topKeys
+			const canonicalKeys = yield* querySpanKeys(tenant, probe)
+			return [...topKeys, ...canonicalKeys]
+		})
+
 		const listReconciled = Effect.fn("RecommendationIssueService.listReconciled")(function* (
 			tenant: TenantContext,
 		) {
@@ -137,15 +160,6 @@ export class RecommendationIssueService extends Context.Service<
 
 			// Reconcile needs live span keys. If the warehouse is unavailable, degrade gracefully:
 			// return the stored issues unchanged rather than failing the whole settings page.
-			const spanKeysOpt = yield* fetchSpanKeys(tenant).pipe(Effect.option)
-			if (Option.isNone(spanKeysOpt)) {
-				yield* Effect.logWarning(
-					"Recommendation reconcile skipped — warehouse unavailable; returning stored issues",
-				)
-				return yield* listResponse(orgId)
-			}
-			const spanKeys = spanKeysOpt.value
-
 			const mappingRows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(OrgIngestAttributeMappings)
@@ -154,6 +168,15 @@ export class RecommendationIssueService extends Context.Service<
 				),
 			)
 			const mappingSourceKeys = mappingRows.map((row) => row.sourceKey)
+
+			const spanKeysOpt = yield* fetchSpanKeys(tenant, mappingSourceKeys).pipe(Effect.option)
+			if (Option.isNone(spanKeysOpt)) {
+				yield* Effect.logWarning(
+					"Recommendation reconcile skipped: warehouse unavailable, returning stored issues",
+				)
+				return yield* listResponse(orgId)
+			}
+			const spanKeys = spanKeysOpt.value
 
 			const detected = detectAttributeRecommendations(spanKeys, mappingSourceKeys)
 			const existing = yield* selectAll(orgId)
