@@ -69,6 +69,7 @@ export const PrReviewFailureReason = Schema.Literals([
 	"agent_error",
 	"no_report",
 	"ended_early",
+	"answered_in_prose",
 	"interrupted",
 ]).annotate({ identifier: "@maple/PrReviewFailureReason", title: "Pull Request Review Failure Reason" })
 export type PrReviewFailureReason = Schema.Schema.Type<typeof PrReviewFailureReason>
@@ -92,6 +93,8 @@ export const PR_REVIEW_FAILURE_COPY = {
 	agent_error: "The review run failed with an error.",
 	no_report: "It ended without filing a report.",
 	ended_early: "It stopped before it finished, so its partial findings are not posted here.",
+	answered_in_prose:
+		"The model kept replying in prose instead of filing its report, so its partial findings are not posted here.",
 	interrupted: "Maple was restarted while it ran, more than once. Ask again with @maple review.",
 } as const satisfies Record<PrReviewFailureReason, string>
 
@@ -943,6 +946,8 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	outputTokens: Schema.optionalKey(Schema.Number),
 	/** Filed by the close-out turn after the pass ended without a report; posted as a partial. */
 	partial: Schema.optionalKey(Schema.Boolean),
+	/** Why the pass that preceded a partial stopped; the pull request is told this, not `ended_early`. */
+	partialReason: Schema.optionalKey(PrReviewFailureReason),
 	/** Handles of earlier findings this head fixes. */
 	resolved: Schema.optionalKey(Schema.Array(Schema.String)),
 	/** Where the reviewer says each removed telemetry name is still emitted; verified before use. */

@@ -2710,7 +2710,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* postReviewStatus(orgId, reviewId, repo, review.number, {
 						kind: "failed",
 						headSha: review.headSha,
-						reason: "ended_early",
+						reason: request.partialReason ?? "ended_early",
 					})
 				} else {
 					const publication = buildPublication({
