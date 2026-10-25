@@ -8,6 +8,7 @@ import {
 	V2InsufficientScope,
 	V2InvalidCredentials,
 	V2InvalidDpopProof,
+	V2NoActiveOrganization,
 	V2OrganizationAccessDenied,
 	V2RateLimited,
 } from "@maple/domain/http/v2"
@@ -338,9 +339,17 @@ export const ApiAuthorizationV2Live = Layer.effect(
 					}
 
 					const tenant = yield* resolveTenant(request.headers).pipe(
-						Effect.catchTag("@maple/http/errors/OrganizationAccessDeniedError", (error) =>
-							Effect.fail(V2OrganizationAccessDenied.make(error.message)),
-						),
+						Effect.catchTags({
+							"@maple/http/errors/OrganizationAccessDeniedError": (error) =>
+								Effect.fail(V2OrganizationAccessDenied.make(error.message)),
+							// Every other 401 stays redacted; only this case gets a public tag.
+							"@maple/http/errors/UnauthorizedError": (error) =>
+								Effect.fail(
+									error.reason === "no_active_organization"
+										? V2NoActiveOrganization.make()
+										: error,
+								),
+						}),
 					)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					if (Option.isSome(regions)) {

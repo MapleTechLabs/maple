@@ -181,6 +181,21 @@ export const V2OrganizationAccessDenied = defineV2Error({
 	identifier: "OrganizationAccessDeniedError",
 })
 
+/**
+ * A valid session token with no active organization and no `x-maple-org-id` selection.
+ * 403 like `V2OrganizationAccessDenied`: the credential is fine, so clients pick an org, not re-sign-in.
+ */
+export const V2NoActiveOrganization = defineV2Error({
+	tag: "@maple/http/v2/NoActiveOrganizationError",
+	status: 403,
+	code: "no_active_organization",
+	title: "Choose an organization",
+	message: "This session has no active organization. Select an organization and retry.",
+	retry: "never",
+	recovery: "none",
+	identifier: "NoActiveOrganizationError",
+})
+
 export const V2InsufficientPermissions = defineV2Error({
 	tag: "@maple/http/v2/InsufficientPermissionsError",
 	status: 403,
