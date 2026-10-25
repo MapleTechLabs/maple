@@ -287,7 +287,10 @@ describe("traceServicesByTraceIdsQuery", () => {
 		expect(sql).toMatch(
 			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('trace-a', 'trace-b'\)\s+AND trace_index\.Bucket >= toStartOfFiveMinutes\(toDateTime64\(subtractHours\(/,
 		)
-		expect(sql).toContain("service_map_spans.Timestamp <= addHours(")
+		expect(sql).toContain(
+			"service_map_spans.Timestamp >= subtractHours(toDateTime('2024-01-01 00:00:00'), 1)",
+		)
+		expect(sql).toContain("service_map_spans.Timestamp <= addHours(toDateTime('2024-01-02 00:00:00'), 1)")
 		expect(sql).toContain(
 			"argMin(service_map_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp))",
 		)
