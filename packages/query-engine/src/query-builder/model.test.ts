@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest"
+import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
+import { OrgId } from "@maple/domain"
+import { tracesBreakdownQuery } from "../ch/queries/traces"
 import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 import {
@@ -801,5 +804,30 @@ describe("buildTimeseriesQuerySpec where-clause OR groups", () => {
 		expect(attrFilters(formatted).attributeFilters).toEqual([
 			{ key: "a", mode: "equals", value: "1", or: [{ key: "b", mode: "exists", negated: true }] },
 		])
+	})
+})
+
+describe("traces group by attr.<key>", () => {
+	it("compiles a breakdown grouped by the span attribute", () => {
+		const { query } = buildBreakdownQuerySpec(
+			tracesDraft({
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["attr.code.namespace"],
+			}),
+		)
+		const keys =
+			query?.kind === "breakdown" && query.source === "traces"
+				? query.filters?.groupByAttributeKeys
+				: undefined
+		expect(query).toMatchObject({ kind: "breakdown", groupBy: "attribute" })
+		const { sql } = compileUnsafe(
+			tracesBreakdownQuery({ metric: "count", groupBy: "attribute", groupByAttributeKey: keys?.[0] }),
+			{
+				orgId: OrgId.make("org_123"),
+				startTime: "2024-01-01 00:00:00",
+				endTime: "2024-01-02 00:00:00",
+			},
+		)
+		expect(sql).toContain("SpanAttributes['code.namespace']")
 	})
 })
