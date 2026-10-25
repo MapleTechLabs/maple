@@ -272,15 +272,18 @@ export const serviceDependenciesForService = defineQuery({
 		),
 })
 
-export const serviceDbEdgesForService = defineQuery({
-	id: "serviceDbEdgesForService",
-	profile: "aggregation",
+// The minute-tier/raw pairs share ids and cache keys: both return the exact window.
+// `Raw` reads the partial hours from `traces`, for a cluster without migration 0049.
+const serviceDbEdgesForServiceDef = (minuteTier: boolean) => ({
+	id: "serviceDbEdgesForService" as const,
+	profile: "aggregation" as const,
 	cache: timeRangeCache,
 	compile: (payload: ServiceDbEdgesForServiceRequest, orgId: OrgId) =>
 		CH.compile(
 			CH.serviceDbEdgesForServiceQuery({
 				serviceName: payload.serviceName,
 				deploymentEnv: payload.deploymentEnv,
+				minuteTier,
 			}),
 			{
 				orgId,
@@ -289,6 +292,9 @@ export const serviceDbEdgesForService = defineQuery({
 			},
 		),
 })
+
+export const serviceDbEdgesForService = defineQuery(serviceDbEdgesForServiceDef(true))
+export const serviceDbEdgesForServiceRaw = defineQuery(serviceDbEdgesForServiceDef(false))
 
 /** Capability-aware so dashboard search uses the same bloom/tokenbf plan as the CLI. */
 export const listLogs = defineQuery({
@@ -722,16 +728,19 @@ export const serviceDependencies = defineQuery({
 		),
 })
 
-export const serviceDbEdges = defineQuery({
-	id: "serviceDbEdges",
-	profile: "aggregation",
+const serviceDbEdgesDef = (minuteTier: boolean) => ({
+	id: "serviceDbEdges" as const,
+	profile: "aggregation" as const,
 	cache: timeRangeCache,
 	compile: (payload: ServiceDbEdgesRequest, orgId: OrgId) =>
 		CH.serviceDbEdgesSQL(
-			{ deploymentEnv: payload.deploymentEnv },
+			{ deploymentEnv: payload.deploymentEnv, minuteTier },
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 		),
 })
+
+export const serviceDbEdges = defineQuery(serviceDbEdgesDef(true))
+export const serviceDbEdgesRaw = defineQuery(serviceDbEdgesDef(false))
 
 export const serviceWorkloads = defineQuery({
 	id: "serviceWorkloads",

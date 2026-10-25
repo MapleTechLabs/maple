@@ -1438,6 +1438,8 @@ export class ServiceMapBundleResponse extends Schema.Class<ServiceMapBundleRespo
 )({
 	dependencies: Schema.Array(WireRow),
 	dbEdges: Schema.Array(WireRow),
+	/** The database edges ran past their budget; `dbEdges` is empty, not "no databases". */
+	dbEdgesTimedOut: Schema.optionalKey(Schema.Boolean),
 	overview: Schema.Array(WireRow),
 	platforms: Schema.Array(ServicePlatformRow),
 	workloads: Schema.Array(ServiceWorkloadRow),

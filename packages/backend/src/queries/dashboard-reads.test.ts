@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Option, Schema } from "effect"
+import { DateTime, Effect, Fiber, Option, Ref, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { ServiceOperationsRequest, WarehouseConfigError } from "@maple/domain/http"
 import { OrgId, UserId } from "@maple/domain/primitives"
@@ -8,7 +8,7 @@ import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recordin
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { QueryEngineServiceApi } from "@maple/backend/services/warehouse/QueryEngineService"
-import { makeDashboardReads } from "./dashboard-reads"
+import { makeDashboardReads, withinBudget } from "./dashboard-reads"
 
 const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
 
@@ -243,6 +243,40 @@ describe("makeDashboardReads.serviceOperations", () => {
 			expect(rows.map((row) => row.spanName)).toEqual(["GET /checkout"])
 			expect(spansNamed(spans, "request")[0]?.attributes.get("query.rollup.fallback")).toBe(true)
 			expect(spansNamed(spans, "cache")[0]?.attributes.has("query.rollup.fallback")).toBe(false)
+		}),
+	)
+})
+
+describe("withinBudget", () => {
+	const context = { orgId: "org_dashboard_reads", layer: "serviceDbEdges" }
+
+	it.effect("passes a read that finishes inside its budget through", () =>
+		Effect.gen(function* () {
+			const result = yield* withinBudget(Effect.succeed(["edge"]), "12 seconds", [], context)
+			expect(result).toEqual({ value: ["edge"], timedOut: false })
+		}),
+	)
+
+	it.effect("interrupts a read past its budget and flags the empty stand-in", () =>
+		Effect.gen(function* () {
+			const interrupted = yield* Ref.make(false)
+			const slow = Effect.sleep("30 seconds").pipe(
+				Effect.as(["edge"]),
+				Effect.onInterrupt(() => Ref.set(interrupted, true)),
+			)
+			const fiber = yield* Effect.forkChild(withinBudget(slow, "12 seconds", [], context))
+			yield* TestClock.adjust("12 seconds")
+			const result = yield* Fiber.join(fiber)
+			expect(result).toEqual({ value: [], timedOut: true })
+			expect(yield* Ref.get(interrupted)).toBe(true)
+		}),
+	)
+
+	it.effect("still fails on a read that errors inside its budget", () =>
+		Effect.gen(function* () {
+			const failure = new WarehouseConfigError({ message: "bad route", pipeName: "serviceDbEdges" })
+			const exit = yield* Effect.exit(withinBudget(Effect.fail(failure), "12 seconds", [], context))
+			expect(exit._tag).toBe("Failure")
 		}),
 	)
 })

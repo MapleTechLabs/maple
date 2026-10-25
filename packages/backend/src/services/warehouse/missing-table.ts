@@ -44,6 +44,18 @@ export const isMissingCiTables = isMissingTable(/ci_(?:runs|jobs)/i)
 
 export const isMissingServiceOperationsRollup = isMissingTable(/service_operations_(?:minutely|hourly)/i)
 
+/**
+ * `service_map_db_edges_minutely` ships in migration 0049; the map's DB edges then read raw traces.
+ * The message must name it: the raw retry reads every other table, so any other missing one fails again.
+ */
+export const isMissingServiceMapDbEdgesMinutely = (error: unknown): boolean =>
+	isMissingTable(/service_map_db_edges_minutely/i)(error) &&
+	typeof error === "object" &&
+	error !== null &&
+	"message" in error &&
+	typeof error.message === "string" &&
+	/service_map_db_edges_minutely/i.test(error.message)
+
 /** `service_endpoint_details_hourly` ships in migration 0048; the endpoint detail reads degrade to empty. */
 export const isMissingServiceEndpointDetails = isMissingTable(/service_endpoint_details_hourly/i)
 

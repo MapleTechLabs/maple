@@ -56,6 +56,7 @@ const BUNDLE: Bundle = {
 		},
 	],
 	dbEdges: [],
+	dbEdgesTimedOut: false,
 	overview: [overview("checkout"), overview("payments")],
 	platforms: [],
 	workloads: [],

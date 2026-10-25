@@ -89,7 +89,7 @@ SELECT version, applied_at, description FROM _maple_schema_migrations ORDER BY v
 
 ## What gets created
 
-On a clean install, migration 0001 creates **43 tables** (datasources) and **50 materialized views**.
+On a clean install, migration 0001 creates **47 tables** (datasources) and **54 materialized views**.
 Migration 0001 re-exports the _generated_ snapshot (`packages/domain/src/generated/clickhouse-schema.ts`), so these counts track
 `datasources.ts` / `materializations.ts`. Regenerate with `bun run clickhouse:schema`
 and `bun run tinybird:manifest` after editing either, or CI's drift gate fails.
@@ -98,18 +98,18 @@ and `bun run tinybird:manifest` after editing either, or CI's drift gate fails.
   `metrics_exponential_histogram`, `metrics_gauge`, `metrics_histogram`, `metrics_sum`,
   `service_address_resolutions_hourly`, `service_map_edges_hourly_ingest` (a `Null`-engine
   bridge), `session_events`, `session_replay_events`, `session_replays`, `traces`
-- **MV-populated tables** (33): `ai_crawler_requests`, `ai_trace_index`, `attribute_keys_hourly`,
+- **MV-populated tables** (34): `ai_crawler_requests`, `ai_trace_index`, `attribute_keys_hourly`,
   `attribute_values_hourly`, `ci_jobs`, `ci_runs`, `error_events`, `error_events_by_time`,
   `error_fingerprints_minutely`, `identity_links`, `logs_aggregates_hourly`, `metric_catalog`,
   `product_events` (also written directly by `POST /v1/events`),
   `service_endpoint_details_hourly`, `service_external_edges_hourly`, `service_map_children`, `service_map_db_edges_hourly`,
-  `service_map_db_query_shapes_hourly`, `service_map_edges_hourly`, `service_map_spans`,
+  `service_map_db_edges_minutely`, `service_map_db_query_shapes_hourly`, `service_map_edges_hourly`, `service_map_spans`,
   `service_operations_hourly`, `service_operations_minutely`, `service_overview_hourly`,
   `service_overview_minutely`, `service_overview_spans`, `service_platforms_hourly`,
   `service_usage`, `source_usage_hourly`, `span_metrics_calls_hourly`,
   `trace_facets_hourly`, `trace_index`, `trace_list_mv`,
   `traces_aggregates_hourly`
-- **Materialized views** (53): fan out from the source tables to populate the
+- **Materialized views** (54): fan out from the source tables to populate the
   MV-populated tables. Several targets are fed by more than one MV: `service_usage` and
   `source_usage_hourly` by six each, `attribute_values_hourly` / `attribute_keys_hourly` / `metric_catalog` by four each,
   and `product_events` by two.
@@ -117,14 +117,14 @@ and `bun run tinybird:manifest` after editing either, or CI's drift gate fails.
 See [`warehouse-rollups.md`](warehouse-rollups.md) for when a materialized view is the
 right answer and which tier a query should read.
 
-Every stored table carries a TTL, tiered by how raw the data is. All but `identity_links`, `service_usage` and `source_usage_hourly` are partitioned by date (most by day, `service_overview_hourly`, `service_operations_hourly`, `error_fingerprints_minutely`, `ci_runs`, `ci_jobs`, `service_endpoint_details_hourly` and `audit_log` by month), and migrations 0045, 0047 (`ci_*`) and 0048 (`service_endpoint_details_hourly`) set `ttl_only_drop_parts = 1` on those, so eviction drops whole parts instead of rewriting them:
+Every stored table carries a TTL, tiered by how raw the data is. All but `identity_links`, `service_usage` and `source_usage_hourly` are partitioned by date (most by day, `service_overview_hourly`, `service_operations_hourly`, `error_fingerprints_minutely`, `ci_runs`, `ci_jobs`, `service_endpoint_details_hourly` and `audit_log` by month), and migrations 0045, 0047 (`ci_*`), 0048 (`service_endpoint_details_hourly`) and 0049 (`service_map_db_edges_minutely`) set `ttl_only_drop_parts = 1` on those, so eviction drops whole parts instead of rewriting them:
 
-| Retention     | Tables                                                                                                                                                                                                                                  |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **30 days**   | `traces`, `trace_index`, `logs`, `service_map_spans`, `service_map_children`, `service_overview_spans`, `trace_list_mv`, `ai_trace_index`, `session_events`, `session_replay_events`, `session_replays`                                 |
-| **90 days**   | `error_events`, `error_events_by_time`, `error_fingerprints_minutely`, `metrics_*`, `attribute_*_hourly`, `metric_catalog`, `*_minutely` rollups, `span_metrics_calls_hourly`, `source_usage_hourly`, `service_endpoint_details_hourly` |
-| **365 days**  | the other hourly rollups (`*_hourly`), `service_usage`, `alert_checks`, `product_events`, `identity_links`, `ci_*`                                                                                                                      |
-| **2190 days** | `audit_log`                                                                                                                                                                                                                             |
+| Retention     | Tables                                                                                                                                                                                                                                   |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **30 days**   | `traces`, `trace_index`, `logs`, `service_map_spans`, `service_map_children`, `service_map_db_edges_minutely`, `service_overview_spans`, `trace_list_mv`, `ai_trace_index`, `session_events`, `session_replay_events`, `session_replays` |
+| **90 days**   | `error_events`, `error_events_by_time`, `error_fingerprints_minutely`, `metrics_*`, `attribute_*_hourly`, `metric_catalog`, `*_minutely` rollups, `span_metrics_calls_hourly`, `source_usage_hourly`, `service_endpoint_details_hourly`  |
+| **365 days**  | the other hourly rollups (`*_hourly`), `service_usage`, `alert_checks`, `product_events`, `identity_links`, `ci_*`                                                                                                                       |
+| **2190 days** | `audit_log`                                                                                                                                                                                                                              |
 
 Adjust by writing a follow-up migration if your retention requirements differ.
 

@@ -405,7 +405,7 @@ jobs:
               run: bun run --cwd lib/effect-clickhouse-http test
 
             # Migration replay and search indexes, raw-vs-rollup parity for web
-            # analytics (a divergence renders as a plausible wrong number), and the
+            # analytics and the service map (a divergence renders as a plausible wrong number), and the
             # cascaded trace facets rollup (one that never fires reads as "no data").
             - name: Replay migrations and verify rollups
               run: >-
@@ -416,6 +416,7 @@ jobs:
                   src/services/warehouse/trace-facets-hourly-materialization.clickhouse.e2e.test.ts
                   src/services/warehouse/ci-runs.clickhouse.e2e.test.ts
                   src/services/warehouse/service-api-materialization.clickhouse.e2e.test.ts
+                  src/services/warehouse/service-map-parity.clickhouse.e2e.test.ts
 
             # Every SQL shape the product emits, against the real analyzer: unit tests
             # only compare SQL text, which is how a NO_COMMON_TYPE reached production.
