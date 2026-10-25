@@ -5314,7 +5314,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:service-map:serviceDbEdgesForServiceQuery:default  [78428e9c]
+-- builder:service-map:serviceDbEdgesForServiceQuery:default  [01d25f62]
 SELECT
           edges.sourceService AS sourceService,
           edges.dbSystem AS dbSystem,
@@ -5345,6 +5345,29 @@ SELECT
         GROUP BY sourceService, dbSystem, dbNamespace
 UNION ALL
 SELECT
+          service_map_db_edges_minutely.ServiceName AS sourceService,
+          service_map_db_edges_minutely.DbSystem AS dbSystem,
+          service_map_db_edges_minutely.DbNamespace AS dbNamespace,
+          sum(service_map_db_edges_minutely.CallCount) AS bucketCallCount,
+          sum(service_map_db_edges_minutely.ErrorCount) AS bucketErrorCount,
+          sum(service_map_db_edges_minutely.DurationSumMs) AS bucketDurationSumMs,
+          max(service_map_db_edges_minutely.MaxDurationMs) AS bucketMaxDurationMs,
+          sum(service_map_db_edges_minutely.SampleRateSum) AS bucketEstimatedSpanCount,
+          quantilesTDigestWeightedMergeState(0.5, 0.95)(DurationQuantiles) AS bucketDurationQuantiles
+        FROM service_map_db_edges_minutely
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'
+          AND service_map_db_edges_minutely.ServiceName = 'web'
+          AND service_map_db_edges_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_map_db_edges_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_db_edges_minutely.Minute >= (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
+          service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
+        FROM service_map_db_edges_minutely
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'))
+          AND service_map_db_edges_minutely.DbSystem != ''
+        GROUP BY sourceService, dbSystem, dbNamespace
+UNION ALL
+SELECT
           traces.ServiceName AS sourceService,
           coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) AS dbSystem,
           if(match(coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']), '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name'])) AS dbNamespace,
@@ -5360,6 +5383,10 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND ((Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00'))) OR traces.Timestamp < (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
+          service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
+        FROM service_map_db_edges_minutely
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog')))
           AND traces.SpanKind IN ('Client', 'Producer')
           AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) != ''
         GROUP BY sourceService, dbSystem, dbNamespace
@@ -5369,7 +5396,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDbEdgesSQL:default  [d1f75e8e]
+-- builder:service-map:serviceDbEdgesSQL:default  [463d79ab]
 SELECT
           edges.sourceService AS sourceService,
           edges.dbSystem AS dbSystem,
@@ -5399,6 +5426,28 @@ SELECT
         GROUP BY sourceService, dbSystem, dbNamespace
 UNION ALL
 SELECT
+          service_map_db_edges_minutely.ServiceName AS sourceService,
+          service_map_db_edges_minutely.DbSystem AS dbSystem,
+          service_map_db_edges_minutely.DbNamespace AS dbNamespace,
+          sum(service_map_db_edges_minutely.CallCount) AS bucketCallCount,
+          sum(service_map_db_edges_minutely.ErrorCount) AS bucketErrorCount,
+          sum(service_map_db_edges_minutely.DurationSumMs) AS bucketDurationSumMs,
+          max(service_map_db_edges_minutely.MaxDurationMs) AS bucketMaxDurationMs,
+          sum(service_map_db_edges_minutely.SampleRateSum) AS bucketEstimatedSpanCount,
+          quantilesTDigestWeightedMergeState(0.5, 0.95)(DurationQuantiles) AS bucketDurationQuantiles
+        FROM service_map_db_edges_minutely
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'
+          AND service_map_db_edges_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_map_db_edges_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_db_edges_minutely.Minute >= (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
+          service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
+        FROM service_map_db_edges_minutely
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'))
+          AND service_map_db_edges_minutely.DbSystem != ''
+        GROUP BY sourceService, dbSystem, dbNamespace
+UNION ALL
+SELECT
           traces.ServiceName AS sourceService,
           coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) AS dbSystem,
           if(match(coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']), '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name'])) AS dbNamespace,
@@ -5414,6 +5463,10 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND ((Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00'))) OR traces.Timestamp < (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
+          service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
+        FROM service_map_db_edges_minutely
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog')))
           AND traces.SpanKind IN ('Client', 'Producer')
           AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) != ''
         GROUP BY sourceService, dbSystem, dbNamespace
@@ -5423,7 +5476,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDbEdgesSQL:env-scoped  [3b887cda]
+-- builder:service-map:serviceDbEdgesSQL:env-scoped  [118acc6c]
 SELECT
           edges.sourceService AS sourceService,
           edges.dbSystem AS dbSystem,
@@ -5454,6 +5507,29 @@ SELECT
         GROUP BY sourceService, dbSystem, dbNamespace
 UNION ALL
 SELECT
+          service_map_db_edges_minutely.ServiceName AS sourceService,
+          service_map_db_edges_minutely.DbSystem AS dbSystem,
+          service_map_db_edges_minutely.DbNamespace AS dbNamespace,
+          sum(service_map_db_edges_minutely.CallCount) AS bucketCallCount,
+          sum(service_map_db_edges_minutely.ErrorCount) AS bucketErrorCount,
+          sum(service_map_db_edges_minutely.DurationSumMs) AS bucketDurationSumMs,
+          max(service_map_db_edges_minutely.MaxDurationMs) AS bucketMaxDurationMs,
+          sum(service_map_db_edges_minutely.SampleRateSum) AS bucketEstimatedSpanCount,
+          quantilesTDigestWeightedMergeState(0.5, 0.95)(DurationQuantiles) AS bucketDurationQuantiles
+        FROM service_map_db_edges_minutely
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'
+          AND service_map_db_edges_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
+          AND service_map_db_edges_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
+          AND (Minute < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Minute >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_db_edges_minutely.Minute >= (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
+          service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
+        FROM service_map_db_edges_minutely
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog'))
+          AND service_map_db_edges_minutely.DbSystem != ''
+          AND service_map_db_edges_minutely.DeploymentEnv = 'production'
+        GROUP BY sourceService, dbSystem, dbNamespace
+UNION ALL
+SELECT
           traces.ServiceName AS sourceService,
           coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) AS dbSystem,
           if(match(coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']), '^([0-9a-fA-F]{32}|.*[.]hyperdrive[.]local)$'), 'hyperdrive', coalesce(nullIf(traces.SpanAttributes['db.namespace'], ''), nullIf(traces.SpanAttributes['db.name'], ''), nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name'])) AS dbNamespace,
@@ -5469,6 +5545,10 @@ SELECT
           AND traces.Timestamp >= '2026-01-01 10:30:00'
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND ((Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE) OR Timestamp >= toStartOfMinute(toDateTime('2026-01-03 14:15:00'))) OR traces.Timestamp < (SELECT if(count() = 0, toDateTime('2026-01-03 14:15:00'), toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (SELECT
+          service_map_db_edges_minutely.FirstInsertedAt AS insertedAt
+        FROM service_map_db_edges_minutely
+        WHERE service_map_db_edges_minutely.OrgId = 'org_sql_catalog')))
           AND traces.SpanKind IN ('Client', 'Producer')
           AND coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) != ''
           AND coalesce(nullIf(traces.ResourceAttributes['deployment.environment.name'], ''), traces.ResourceAttributes['deployment.environment']) = 'production'

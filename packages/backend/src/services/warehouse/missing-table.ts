@@ -44,6 +44,9 @@ export const isMissingCiTables = isMissingTable(/ci_(?:runs|jobs)/i)
 
 export const isMissingServiceOperationsRollup = isMissingTable(/service_operations_(?:minutely|hourly)/i)
 
+/** `service_map_db_edges_minutely` ships in migration 0049; the map's DB edges then read raw traces. */
+export const isMissingServiceMapDbEdgesMinutely = isMissingTable(/service_map_db_edges_minutely/i)
+
 /** `service_endpoint_details_hourly` ships in migration 0048; the endpoint detail reads degrade to empty. */
 export const isMissingServiceEndpointDetails = isMissingTable(/service_endpoint_details_hourly/i)
 

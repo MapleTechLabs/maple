@@ -240,6 +240,7 @@ export const ServiceExternalEdgesHourly = Datasources.serviceExternalEdgesHourly
 export const ServiceAddressResolutionsHourly = Datasources.serviceAddressResolutionsHourly
 
 export const ServiceMapDbEdgesHourly = Datasources.serviceMapDbEdgesHourly
+export const ServiceMapDbEdgesMinutely = Datasources.serviceMapDbEdgesMinutely
 
 export const ServiceMapDbQuerySignaturesHourly = Datasources.serviceMapDbQuerySignaturesHourly
 
