@@ -84,6 +84,32 @@ BYO ClickHouse clusters created before migration 0043 keep the old sort key: a k
 altered in place, and results are identical either way, only slower. Local stores re-sort at
 local schema v34.
 
+### The service-map span tables
+
+`service_map_spans` and `service_map_children` (the two sides of the service-to-service
+join) are sorted `(OrgId, toStartOfFiveMinutes(Timestamp), TraceId, SpanId|ParentSpanId)`,
+the same bucket as `traces`. They used to lead with `TraceId`, so a time filter pruned
+only whole days: the rollup's one-hour join read the org's entire day, and the live
+branch of `serviceDependencies` read 9.4 GB for about an hour of spans on the heaviest
+org (a 504 on the map, 2026-10-25). The trace list's services lookup, which needed the
+TraceId-first key, now seeks through `trace_index` (`inServiceMapSpans`).
+
+Measured 2026-10-25 on a 1/8 TraceId sample of 42 hours of prod (73M spans, every org)
+on ClickHouse 25.8, heaviest org, same rows on both keys:
+
+| query                                | read before |   after |
+| :----------------------------------- | ----------: | ------: |
+| rollup, one hour of a closed day     |    2905 MiB | 152 MiB |
+| `serviceDependencies`, 12h           |    1985 MiB | 149 MiB |
+| `serviceDependencies`, 24h over days |    4426 MiB | 160 MiB |
+| setup-audit orphan join, 1h          |    1920 MiB | 292 MiB |
+| trace-list services, 50 traces       |      38 MiB |  12 MiB |
+
+Storage is unchanged (31.6 vs 31.5 B/row); an hour bucket read more on every query.
+The Tinybird re-key copies only the last 2 days, so older windows lack these rows
+until they age out. Existing BYO clusters keep the old key, as with `traces`; local
+stores re-sort at v40. Suite: `apps/api/scripts/bench-suites/service-map-spans-key.ts`.
+
 ---
 
 ## Rules
@@ -199,9 +225,9 @@ Recorded so the next sweep does not re-derive them.
 - **`alertRawQuery`: 173,000 s/week**, the single largest consumer of warehouse time. It is
   user-authored SQL against raw tables, so no MV can see it and no routing guard applies.
   Needs its own design: a rollup users can target, or per-rule result caching.
-- **`service_map_spans` + `service_map_children`**: 18.6 GB of intermediate producing a
-  223 MB hourly rollup. Suspicious amplification, but the recent-window branch reads them
-  directly.
+- **`service_map_spans` + `service_map_children`**: 58 GiB of intermediate producing a
+  small hourly rollup. Needed while the live branch joins raw spans; a per-org rollup
+  watermark (`service-map-architecture.md`) would shrink that branch to the unsealed tail.
 - **`metrics_exponential_histogram` is empty.** Not dead: ingest writes it
   (`apps/ingest/src/clickhouse_insert_mappings.rs`, table names in `telemetry.rs`). It is empty only because no SDK currently exports
   exponential histograms. Leave it and its two MVs alone.

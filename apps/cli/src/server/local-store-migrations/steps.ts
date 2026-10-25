@@ -8,6 +8,7 @@ import {
 	PRODUCT_EVENTS_TRACE_BACKFILL,
 	PRODUCT_EVENTS_TRACE_FILTER,
 	errorRollupBackfill,
+	serviceMapSpansTraceKeyRekey,
 	tracesTraceKeyRekey,
 } from "./backfills"
 import {
@@ -1562,6 +1563,40 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				preservationInterval: "source retention horizon",
 				sourceRetentionDays: 30,
 				targetRetentionDays: 90,
+			},
+		],
+	},
+	{
+		// Like v34: the bootstrap keeps the v39 tables (IF NOT EXISTS); the custom step swaps in
+		// re-keyed copies. Their view writes TO them by name, so it follows the swap.
+		id: "local-0039-to-0040-service-map-spans-trace-key",
+		from: 39,
+		to: 40,
+		description: "Re-sort service_map_spans and service_map_children by 5-minute bucket and trace id",
+		clonedBefore: "any DDL runs",
+		custom: serviceMapSpansTraceKeyRekey,
+		plan: [
+			[
+				"resort-service-map-spans",
+				"Copy service_map_spans and service_map_children into view-free tables keyed by 5-minute bucket and trace id, then exchange them in",
+			],
+		],
+		verifies:
+			"Verify the v40 physical schema, the retained raw telemetry counts, and that no staging table is left",
+		dispositions: [
+			{
+				name: "service_map_spans",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Every row inside its TTL is copied as written into the re-sorted table, keeping the store's TTL. No view fires on the copy.",
+			},
+			{
+				name: "service_map_children",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Every row inside its TTL is copied as written into the re-sorted table, keeping the store's TTL. No view fires on the copy.",
 			},
 		],
 	},

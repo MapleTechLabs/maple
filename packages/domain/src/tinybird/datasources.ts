@@ -15,9 +15,10 @@ export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) 
 	t.dateTime64(precision).brand(CH.dateTime64.schema)
 
 /**
- * The time bucket in `traces`' sort key, and `trace_index.Bucket`. A trace-id
- * read matches `(ServiceName, <this>, TraceId)` against the index, so the
- * expression must stay byte-identical in both places.
+ * The time bucket in the sort keys of `traces` and the service-map span tables,
+ * and `trace_index.Bucket`. A trace-id read matches `(ServiceName, <this>, TraceId)`
+ * (or `(<this>, TraceId)`) against the index, so the expression must stay
+ * byte-identical in all of them.
  */
 export const TRACE_BUCKET_FN = "toStartOfFiveMinutes"
 export const TRACE_BUCKET_EXPR = `${TRACE_BUCKET_FN}(Timestamp)`
@@ -372,9 +373,27 @@ export const sourceUsageHourly = defineDatasource("source_usage_hourly", {
 export type SourceUsageHourlyRow = InferRow<typeof sourceUsageHourly>
 
 /**
+ * One-shot forward query for re-keying the service-map span tables: Tinybird
+ * re-sorts only their last 2 days instead of all 30. A forward query cannot
+ * take a WHERE (Tinybird appends the FROM), so `arrayJoin` over an empty array
+ * drops the older rows. Remove right after that deploy is live: any later
+ * rebuild would drop everything older than 2 days again.
+ */
+const lastTwoDaysForwardQuery = (columns: ReadonlyArray<string>) =>
+	`SELECT ${columns
+		.map((column) =>
+			column === "TraceId"
+				? "arrayJoin(if(Timestamp >= now() - INTERVAL 2 DAY, [TraceId], [])) AS TraceId"
+				: column,
+		)
+		.join(", ")}`
+
+/**
  * Lightweight projection of traces for service map JOIN queries.
  * Pre-extracts deployment.environment from Map columns.
- * Sorted by (OrgId, TraceId, SpanId) to align with the JOIN key.
+ * Sorted by the trace bucket first, so the join's time filters (one rollup
+ * hour, the live branch's partial hours) read only those buckets; trace-id
+ * reads seek through `trace_index` with `inServiceMapSpans`.
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceMapSpans = defineDatasource("service_map_spans", {
@@ -395,9 +414,22 @@ export const serviceMapSpans = defineDatasource("service_map_spans", {
 		TraceState: t.string(),
 		DeploymentEnv: t.string().lowCardinality(),
 	},
+	forwardQuery: lastTwoDaysForwardQuery([
+		"OrgId",
+		"Timestamp",
+		"TraceId",
+		"SpanId",
+		"ParentSpanId",
+		"ServiceName",
+		"SpanKind",
+		"Duration",
+		"StatusCode",
+		"TraceState",
+		"DeploymentEnv",
+	]),
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
-		sortingKey: ["OrgId", "TraceId", "SpanId", "Timestamp"],
+		sortingKey: ["OrgId", TRACE_BUCKET_EXPR, "TraceId", "SpanId"],
 		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
@@ -407,7 +439,7 @@ export type ServiceMapSpansRow = InferRow<typeof serviceMapSpans>
 /**
  * Server/Consumer spans with ParentSpanId for efficient service map child-side JOIN lookups.
  * Pre-filters to only Server/Consumer spans with a parent at write time,
- * sorted by (OrgId, TraceId, ParentSpanId) to align with the JOIN key.
+ * sorted like `service_map_spans` so the join's time filters prune both sides.
  * Populated by materialized view, not direct ingestion.
  */
 export const serviceMapChildren = defineDatasource("service_map_children", {
@@ -427,9 +459,21 @@ export const serviceMapChildren = defineDatasource("service_map_children", {
 		TraceState: t.string(),
 		DeploymentEnv: t.string().lowCardinality(),
 	},
+	forwardQuery: lastTwoDaysForwardQuery([
+		"OrgId",
+		"Timestamp",
+		"TraceId",
+		"ParentSpanId",
+		"ServiceName",
+		"SpanKind",
+		"Duration",
+		"StatusCode",
+		"TraceState",
+		"DeploymentEnv",
+	]),
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
-		sortingKey: ["OrgId", "TraceId", "ParentSpanId", "Timestamp"],
+		sortingKey: ["OrgId", TRACE_BUCKET_EXPR, "TraceId", "ParentSpanId"],
 		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })

@@ -57,6 +57,10 @@ whether the inequalities are complements or not.
 
 ### Service→service is the fragile one
 
+Both raw tables lead their sort key with the 5-minute trace bucket, so the rollup's hour
+join and the live branch read only the buckets in their window (see "The service-map span
+tables" in [warehouse-rollups.md](warehouse-rollups.md)).
+
 It is the only layer whose interior tier is filled by a **scheduled job**
 (`ServiceMapRollupService`, hourly at `0 * * * *` in `apps/alerting`) instead of a
 materialized view. The downstream service name is only recoverable by joining a Client/Producer span to its child
