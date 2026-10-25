@@ -151,7 +151,9 @@ const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyAr
 	if (!GCP_SERVICE_RULES.inScope(row, "idle")) return items
 	const note = h.span([h.Class(cn("md:hidden", TONE_TEXT.warn))], [" · idle, still billed"])
 	const last = items[items.length - 1]
-	return last === undefined ? [note] : [...items.slice(0, -1), h.span([], [last, note])]
+	// A string keeps metaLine's 28ch cap, which it applies only to plain strings.
+	const capped = typeof last === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [last]) : last
+	return last === undefined ? [note] : [...items.slice(0, -1), h.span([h.Class("flex min-w-0")], [capped, note])]
 }
 
 export const servicesTable = (
