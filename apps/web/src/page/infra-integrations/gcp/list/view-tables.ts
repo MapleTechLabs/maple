@@ -142,13 +142,23 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 }
 
 /** Below `md` the Status cell is hidden, so the idle billing note rides on the sub-line there. */
-const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => [
-	SERVICE_KIND[row.service],
-	...placeItems(row, showProject),
-	GCP_SERVICE_RULES.inScope(row, "idle")
-		? h.span([h.Class(cn("md:hidden", TONE_TEXT.warn))], ["idle, still billed"])
-		: undefined,
-]
+/** The idle note rides inside the last item, separator included, so hiding it at `md` leaves no stray dot. */
+const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => {
+	// Only items metaLine will draw: the note joins the last shown one, never an empty slot.
+	const items = [SERVICE_KIND[row.service], ...placeItems(row, showProject)].filter(
+		(item): item is Html | string => item !== null && item !== undefined && item !== false && item !== "",
+	)
+	if (!GCP_SERVICE_RULES.inScope(row, "idle")) return items
+	// Flex drops a leading space, so the note carries its own separator and gap, like metaLine's.
+	const note = h.span(
+		[h.Class(cn("flex items-center gap-x-2 md:hidden", TONE_TEXT.warn))],
+		[h.span([h.Class("text-foreground/20")], ["·"]), "idle, still billed"],
+	)
+	const last = items[items.length - 1]
+	// A string keeps metaLine's 28ch cap, which it applies only to plain strings.
+	const capped = typeof last === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [last]) : last
+	return last === undefined ? [note] : [...items.slice(0, -1), h.span([h.Class("flex min-w-0 items-center gap-x-2")], [capped, note])]
+}
 
 export const servicesTable = (
 	h: H,
