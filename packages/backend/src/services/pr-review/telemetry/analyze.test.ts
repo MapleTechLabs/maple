@@ -224,6 +224,21 @@ describe("analyzeTelemetry", () => {
 		assert.lengthOf(telemetry.contractBreaks, 0)
 	})
 
+	it("ignores an OTLP payload key written on the line after `key:`", () => {
+		const telemetry = analyzeTelemetry({
+			files: [
+				file(
+					"src/payload.ts",
+					'@@ -1,5 +1,0 @@\n-attributes: [\n-\t{\n-\t\tkey:\n-\t\t\t"http.response.status_code",\n-\t\tvalue: { intValue: 200 } },',
+				),
+			],
+			catalog: otlpCatalog,
+			sources: [statusAlert],
+			issues: [],
+		})
+		assert.lengthOf(telemetry.removed, 0)
+	})
+
 	it("reports a removed attribute call, but never a universal resource key", () => {
 		const telemetry = analyzeTelemetry({
 			files: [

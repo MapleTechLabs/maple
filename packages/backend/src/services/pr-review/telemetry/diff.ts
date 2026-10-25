@@ -114,6 +114,7 @@ export const emittedNames = (text: string, nearby: string): ReadonlyArray<Emitte
 			!literal.templated &&
 			ATTRIBUTE_KEY.test(literal.value) &&
 			!OTLP_KEY_VALUE.test(before) &&
+			!(before.trim() === "" && OTLP_KEY_VALUE.test(nearby)) &&
 			(ATTRIBUTE_CALL.test(before) || (/^\s*[:,]/.test(after) && ATTRIBUTE_CALL.test(nearby)))
 		) {
 			out.push({ kind: "attribute", value: literal.value, templated: false })
