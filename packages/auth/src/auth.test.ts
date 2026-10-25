@@ -177,11 +177,14 @@ describe("makeResolveTenant", () => {
 					authorization: "Bearer test-token",
 				}),
 			)
-			const failure = getFailure(exit) as { _tag?: string; message?: string } | undefined
+			const failure = getFailure(exit)
 
 			assert.isTrue(Exit.isFailure(exit))
-			assert.strictEqual(failure?._tag, "@maple/http/errors/UnauthorizedError")
-			assert.strictEqual(failure?.message, "Active organization is required")
+			assert.deepInclude(failure, {
+				_tag: "@maple/http/errors/UnauthorizedError",
+				message: "Active organization is required",
+				reason: "no_active_organization",
+			})
 		}),
 	)
 
@@ -275,12 +278,22 @@ describe("pending Clerk sessions (no organization chosen yet)", () => {
 		}),
 	)
 
-	it.effect("is still refused on organization-scoped routes", () =>
+	it.effect("is refused on organization-scoped routes as having no active organization", () =>
 		Effect.gen(function* () {
-			const exit = yield* Effect.exit(
-				makeResolveTenant(clerkEnv, pendingSession)({ authorization: "Bearer test-token" }),
+			// Membership would be granted, yet a pending session never adopts a selection.
+			const resolveTenant = makeResolveTenant(
+				clerkEnv,
+				pendingSession,
+				"session_token",
+				(_userId, orgId) => Effect.succeed(Option.some({ orgId, role: asRoleName("org:admin") })),
 			)
-			assertRejected(exit, "Invalid Clerk token")
+			const exit = yield* Effect.exit(
+				resolveTenant({ authorization: "Bearer test-token", [ORG_SELECTION_HEADER]: "org_123" }),
+			)
+			assert.deepInclude(getFailure(exit), {
+				_tag: "@maple/http/errors/UnauthorizedError",
+				reason: "no_active_organization",
+			})
 		}),
 	)
 })

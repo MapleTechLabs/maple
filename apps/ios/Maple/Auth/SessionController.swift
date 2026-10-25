@@ -10,7 +10,7 @@ import Observation
 /// The organization matters more here than in a typical Clerk app: the Maple v2
 /// API has **no org header**. It reads the organization from the session
 /// token's active-organization claim and rejects a token without one
-/// (`"Active organization is required"`, `packages/auth/src/index.ts`). So the
+/// (`@maple/http/v2/NoActiveOrganizationError`, see `requiresOrganization`). So the
 /// app cannot make a single useful request until an organization is active.
 @MainActor
 @Observable
