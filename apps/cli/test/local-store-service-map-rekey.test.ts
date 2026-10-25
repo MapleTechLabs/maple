@@ -3,15 +3,14 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Schema } from "effect"
-import { Chdb, configureRawTelemetryRetentionDays } from "../src/server/chdb"
+import { Chdb } from "../src/server/chdb"
 import { decodeJsonEachRow } from "../src/server/chdb-rows"
-import type { MigrationDbOptions, MigrationModuleContext } from "../src/server/local-store-migration-module"
-import { localStoreMigrations } from "../src/server/local-store-migrations"
+import type { MigrationModuleContext } from "../src/server/local-store-migration-module"
 import { localSchemaSnapshot } from "../src/server/schema-identity"
 import { describeWithChdb } from "./libchdb-test-support"
+import { migrationStep, openStore } from "./local-store-step-test-support"
 
 const DAY_MS = 86_400_000
-const RETENTION_DAYS = 120
 const iso = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "")
 const SPAN_COLUMNS =
 	"OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanKind, ServiceName, Duration, StatusCode"
@@ -51,27 +50,9 @@ const spanTables = (db: Chdb) =>
 const ttlOf = (table: { readonly definition: string }) =>
 	table.definition.match(/\bTTL\s+(.+?)(?=\bSETTINGS\b|$)/s)?.[1]
 
-const open = async <A>(
-	dataDir: string,
-	fn: (db: Chdb) => A | Promise<A>,
-	options: MigrationDbOptions = {},
-) => {
-	const db = Chdb.open({
-		dataDir,
-		schemaSql: options.schemaSql ?? "",
-		bootstrapSchema: options.bootstrapSchema ?? false,
-	})
-	try {
-		return await fn(db)
-	} finally {
-		db.close()
-	}
-}
-
 describeWithChdb("v39 -> v40 service-map span tables re-sort", () => {
-	const [migration] = localStoreMigrations.filter(
-		(candidate) => candidate.id === "local-0039-to-0040-service-map-spans-trace-key",
-	)
+	const STEP_ID = "local-0039-to-0040-service-map-spans-trace-key"
+	let migration: ReturnType<typeof migrationStep>["migration"]
 	let root = ""
 	let sourceDataDir = ""
 	let targetDataDir = ""
@@ -82,38 +63,17 @@ describeWithChdb("v39 -> v40 service-map span tables re-sort", () => {
 		root = await mkdtemp(join(tmpdir(), "maple-service-map-rekey-"))
 		sourceDataDir = join(root, "source", "data")
 		targetDataDir = join(root, "target", "data")
-		await configureRawTelemetryRetentionDays(sourceDataDir, RETENTION_DAYS)
 		// Spans land through `traces` and its views, as ingest writes them.
 		const ages = [0, 0.1, 1, 2, 5]
 		const db = Chdb.open({
 			dataDir: sourceDataDir,
 			schemaSql: localSchemaSnapshot(39).sql,
-			rawTelemetryRetentionDays: RETENTION_DAYS,
 		})
 		db.exec(
 			`INSERT INTO traces (${SPAN_COLUMNS}) VALUES ${ages.map((age, n) => callPair(nowMs - age * DAY_MS, n)).join(", ")}`,
 		)
 		db.close()
-		context = {
-			dataDir: sourceDataDir,
-			sourceDataDir,
-			targetDataDir,
-			source: migration!.from,
-			target: migration!.to,
-			cutoffAt: new Date(nowMs).toISOString(),
-			step: {
-				id: migration!.id,
-				moduleVersion: 1,
-				from: migration!.from,
-				to: migration!.to,
-				status: "running",
-			},
-			openSource: (fn, options) => open(sourceDataDir, fn, options),
-			openTarget: (fn, options) => open(targetDataDir, fn, options),
-			closeStores: async () => undefined,
-			ensureCapacity: async () => undefined,
-			saveStep: async () => undefined,
-		}
+		;({ migration, context } = migrationStep(STEP_ID, sourceDataDir, targetDataDir, nowMs))
 	})
 
 	afterAll(async () => {
@@ -121,21 +81,24 @@ describeWithChdb("v39 -> v40 service-map span tables re-sort", () => {
 	})
 
 	test("re-sorts both tables without losing a row or an edge, and a re-run converges", async () => {
-		const before = await open(sourceDataDir, snapshot)
-		const ttlsBefore = await open(sourceDataDir, (db) => spanTables(db).map(ttlOf))
+		const before = await openStore(sourceDataDir, snapshot)
+		const ttlsBefore = await openStore(sourceDataDir, (db) => spanTables(db).map(ttlOf))
 		expect(ttlsBefore.every((ttl) => ttl !== undefined)).toBe(true)
 		expect(before).toEqual({ spans: "10", children: "5", durationSum: "4510", edges: "5" })
 
-		const state = await migration!.preflight(context)
-		await migration!.prepareTarget(context, state)
-		const progress = await migration!.apply(context, state, undefined)
-		await migration!.verify(context, state, progress)
+		const state = await migration.preflight(context)
+		await migration.prepareTarget(context, state)
+		const progress = await migration.apply(context, state, undefined)
+		await migration.verify(context, state, progress)
 		// A crash after the swap re-runs apply on the already re-sorted target.
-		const resumed = await migration!.apply(context, state, progress)
-		await migration!.verify(context, state, resumed)
+		const resumed = await migration.apply(context, state, progress)
+		await migration.verify(context, state, resumed)
 		expect(resumed).toEqual({ rekeyedServiceMapSpans: "10", rekeyedServiceMapChildren: "5" })
 
-		const after = await open(targetDataDir, (db) => ({ snapshot: snapshot(db), tables: spanTables(db) }))
+		const after = await openStore(targetDataDir, (db) => ({
+			snapshot: snapshot(db),
+			tables: spanTables(db),
+		}))
 		expect(after.snapshot).toEqual(before)
 		expect(after.tables.map((table) => [table.name, table.sortingKey])).toEqual([
 			["service_map_children", "OrgId, toStartOfFiveMinutes(Timestamp), TraceId, ParentSpanId"],
@@ -145,7 +108,7 @@ describeWithChdb("v39 -> v40 service-map span tables re-sort", () => {
 	})
 
 	test("the views still fill both tables for spans ingested after the swap", async () => {
-		const [before, after] = await open(
+		const [before, after] = await openStore(
 			targetDataDir,
 			(db) => {
 				const prior = snapshot(db)

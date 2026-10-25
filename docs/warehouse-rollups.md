@@ -105,10 +105,15 @@ on ClickHouse 25.8, heaviest org, same rows on both keys:
 | setup-audit orphan join, 1h          |    1920 MiB | 292 MiB |
 | trace-list services, 50 traces       |      38 MiB |  12 MiB |
 
-Storage is unchanged (31.6 vs 31.5 B/row); an hour bucket read more on every query.
-The Tinybird re-key copies only the last 2 days, so older windows lack these rows
-until they age out. Existing BYO clusters keep the old key, as with `traces`; local
-stores re-sort at v40. Suite: `apps/api/scripts/bench-suites/service-map-spans-key.ts`.
+Storage is unchanged (31.6 vs 31.5 B/row). A 1-hour bucket instead of 5 minutes read more
+on every query. The services lookup now covers the page ±1h (it was ±1 day), the same
+padding as every other trace-id read.
+
+The Tinybird re-key copies only the last 2 days. For 28 days after that deploy,
+trace-list rows older than that show only their own service, and a window starting
+earlier misses its leading partial hour of live-joined edges. Existing BYO clusters keep
+the old key, as with `traces`; local stores re-sort at v40. Suite:
+`apps/api/scripts/bench-suites/service-map-spans-key.ts`.
 
 ---
 
@@ -212,6 +217,9 @@ like a real alert rule as well as a dashboard query.
    one. It writes every mechanical edit, including the pinned literals in the bun test and the
    native probe, and leaves the edge's `apply` for you. Write the DDL there, including explicit
    drops, because `assertPhysicalSchema` fails on leftover objects too.
+8. A one-shot `forwardQuery` (a re-key copy, a defaulted new column) is removed in the
+   PR right after its deploy goes live. Left in, the next rebuild of that table runs it
+   again.
 
 Steps 5 and 6 are expensive, so **batch removals into one migration** instead of shipping
 them one at a time. Migration `0019_mv_sweep` is the worked example.

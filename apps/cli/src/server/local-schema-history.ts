@@ -500,8 +500,9 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// TODO(v40): what changed, whether any part is rewritten or any row
-		// moves, and what this edge does NOT backfill.
+		// v40 re-sorts service_map_spans and service_map_children by 5-minute bucket
+		// and trace id. The edge copies every row unchanged through view-free staging
+		// tables, so nothing is backfilled.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity

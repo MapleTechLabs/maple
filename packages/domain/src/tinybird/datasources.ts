@@ -373,20 +373,32 @@ export const sourceUsageHourly = defineDatasource("source_usage_hourly", {
 export type SourceUsageHourlyRow = InferRow<typeof sourceUsageHourly>
 
 /**
- * One-shot forward query for re-keying the service-map span tables: Tinybird
- * re-sorts only their last 2 days instead of all 30. A forward query cannot
- * take a WHERE (Tinybird appends the FROM), so `arrayJoin` over an empty array
- * drops the older rows. Remove right after that deploy is live: any later
- * rebuild would drop everything older than 2 days again.
+ * One-shot re-key copy of the last 2 days only; Tinybird appends the FROM, so
+ * `arrayJoin` over an empty array stands in for a WHERE. REMOVE once deployed:
+ * any later rebuild would drop everything older than 2 days again.
  */
-const lastTwoDaysForwardQuery = (columns: ReadonlyArray<string>) =>
-	`SELECT ${columns
+const lastTwoDaysForwardQuery = (schema: Readonly<Record<string, unknown>>) =>
+	`SELECT ${Object.keys(schema)
 		.map((column) =>
 			column === "TraceId"
 				? "arrayJoin(if(Timestamp >= now() - INTERVAL 2 DAY, [TraceId], [])) AS TraceId"
 				: column,
 		)
 		.join(", ")}`
+
+const serviceMapSpansSchema = {
+	OrgId: t.string().lowCardinality().brand(OrgId),
+	Timestamp: utcDateTime(),
+	TraceId: t.string(),
+	SpanId: t.string(),
+	ParentSpanId: t.string(),
+	ServiceName: t.string().lowCardinality(),
+	SpanKind: t.string().lowCardinality(),
+	Duration: t.uint64(),
+	StatusCode: t.string().lowCardinality(),
+	TraceState: t.string(),
+	DeploymentEnv: t.string().lowCardinality(),
+}
 
 /**
  * Lightweight projection of traces for service map JOIN queries.
@@ -401,32 +413,8 @@ export const serviceMapSpans = defineDatasource("service_map_spans", {
 	description:
 		"Lightweight projection of traces for service map JOIN queries. Pre-extracts deployment.environment from Map columns. Populated by materialized view.",
 	jsonPaths: false,
-	schema: {
-		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: utcDateTime(),
-		TraceId: t.string(),
-		SpanId: t.string(),
-		ParentSpanId: t.string(),
-		ServiceName: t.string().lowCardinality(),
-		SpanKind: t.string().lowCardinality(),
-		Duration: t.uint64(),
-		StatusCode: t.string().lowCardinality(),
-		TraceState: t.string(),
-		DeploymentEnv: t.string().lowCardinality(),
-	},
-	forwardQuery: lastTwoDaysForwardQuery([
-		"OrgId",
-		"Timestamp",
-		"TraceId",
-		"SpanId",
-		"ParentSpanId",
-		"ServiceName",
-		"SpanKind",
-		"Duration",
-		"StatusCode",
-		"TraceState",
-		"DeploymentEnv",
-	]),
+	schema: serviceMapSpansSchema,
+	forwardQuery: lastTwoDaysForwardQuery(serviceMapSpansSchema),
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", TRACE_BUCKET_EXPR, "TraceId", "SpanId"],
@@ -435,6 +423,19 @@ export const serviceMapSpans = defineDatasource("service_map_spans", {
 })
 
 export type ServiceMapSpansRow = InferRow<typeof serviceMapSpans>
+
+const serviceMapChildrenSchema = {
+	OrgId: t.string().lowCardinality().brand(OrgId),
+	Timestamp: utcDateTime(),
+	TraceId: t.string(),
+	ParentSpanId: t.string(),
+	ServiceName: t.string().lowCardinality(),
+	SpanKind: t.string().lowCardinality(),
+	Duration: t.uint64(),
+	StatusCode: t.string().lowCardinality(),
+	TraceState: t.string(),
+	DeploymentEnv: t.string().lowCardinality(),
+}
 
 /**
  * Server/Consumer spans with ParentSpanId for efficient service map child-side JOIN lookups.
@@ -447,30 +448,8 @@ export const serviceMapChildren = defineDatasource("service_map_children", {
 	description:
 		"Server/Consumer spans with ParentSpanId for efficient service map child-side JOIN lookups. Populated by materialized view.",
 	jsonPaths: false,
-	schema: {
-		OrgId: t.string().lowCardinality().brand(OrgId),
-		Timestamp: utcDateTime(),
-		TraceId: t.string(),
-		ParentSpanId: t.string(),
-		ServiceName: t.string().lowCardinality(),
-		SpanKind: t.string().lowCardinality(),
-		Duration: t.uint64(),
-		StatusCode: t.string().lowCardinality(),
-		TraceState: t.string(),
-		DeploymentEnv: t.string().lowCardinality(),
-	},
-	forwardQuery: lastTwoDaysForwardQuery([
-		"OrgId",
-		"Timestamp",
-		"TraceId",
-		"ParentSpanId",
-		"ServiceName",
-		"SpanKind",
-		"Duration",
-		"StatusCode",
-		"TraceState",
-		"DeploymentEnv",
-	]),
+	schema: serviceMapChildrenSchema,
+	forwardQuery: lastTwoDaysForwardQuery(serviceMapChildrenSchema),
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", TRACE_BUCKET_EXPR, "TraceId", "ParentSpanId"],
