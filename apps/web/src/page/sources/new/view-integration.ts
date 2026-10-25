@@ -8,7 +8,7 @@ import { type DataIntegration, flowEmbed } from "../../integrations/embed"
 import { canContinue, type FlowSpec } from "../../integrations/flow"
 import { sourceHref } from "../kit/shared"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { FlowHost, Model } from "./model"
 import { flowSpecOf } from "./update"
 import { flowFooter } from "./view-footer"
 
@@ -33,13 +33,19 @@ const openSource = (h: H, model: Model, integration: DataIntegration): Html => {
 		: linkButton(h, { variant: "outline", href: sourceHref(only, "connection") }, ["Open source"])
 }
 
-const footer = (h: H, model: Model, integration: DataIntegration, spec: FlowSpec): Html =>
+/** The drawer stays in onboarding: Done closes it where the page opens the source. */
+const doneButton = (h: H): Html => button(h, { attributes: [h.OnClick(Message.ClickedDone())] }, ["Done"])
+
+const footer = (h: H, model: Model, integration: DataIntegration, spec: FlowSpec, host: FlowHost): Html =>
 	flowFooter(h, {
 		back: Message.ClickedStepBack(),
 		hint: spec.hint[model.stage],
+		host,
 		actions: [
 			model.stage === "live"
-				? openSource(h, model, integration)
+				? host === "drawer"
+					? doneButton(h)
+					: openSource(h, model, integration)
 				: button(
 						h,
 						{
@@ -51,7 +57,13 @@ const footer = (h: H, model: Model, integration: DataIntegration, spec: FlowSpec
 		],
 	})
 
-export const integrationStep = (h: H, model: Model, integration: DataIntegration, timeZone: string): Html => {
+export const integrationStep = (
+	h: H,
+	model: Model,
+	integration: DataIntegration,
+	timeZone: string,
+	host: FlowHost,
+): Html => {
 	const spec = flowSpecOf(model)
 	return h.div(
 		[h.Class("flex flex-1 flex-col gap-4")],
@@ -63,7 +75,7 @@ export const integrationStep = (h: H, model: Model, integration: DataIntegration
 				viewInputs: { integration, stage: model.stage, timeZone },
 				toParentMessage: (message) => Message.GotIntegrationsMessage({ message }),
 			}),
-			...(spec === null ? [] : [footer(h, model, integration, spec)]),
+			...(spec === null ? [] : [footer(h, model, integration, spec, host)]),
 		],
 	)
 }

@@ -7,7 +7,7 @@ import { type CheckRow, flowColumns, liveChecklist, savedBanner, stepCard } from
 import * as Setup from "../kit/setup"
 import { sourceHref } from "../kit/shared"
 import { Message } from "./message"
-import type { Created, Model } from "./model"
+import type { Created, FlowHost, Model } from "./model"
 import { isReceiving } from "./update"
 import { flowFooter } from "./view-footer"
 import { showsUpRail } from "./view-push-rail"
@@ -38,26 +38,52 @@ const firstDataRows = (created: Created, receiving: boolean): ReadonlyArray<Chec
 			]
 }
 
-const footer = (h: H, created: Created, receiving: boolean): Html =>
+/** The drawer stays in onboarding: Done closes it, and the source keeps listening without it. */
+const drawerFooter = (h: H, receiving: boolean): Html =>
 	flowFooter(h, {
 		back: null,
-		hint: receiving
-			? "Data is arriving. The source page shows what came in."
-			: "Saved. Open source unlocks with the first data.",
-		actions: receiving
-			? [
-					linkButton(h, { href: sourceHref(created.source) }, [
-						"Open source",
-						icon(h, "ArrowRightIcon", { size: 14 }),
-					]),
-				]
-			: [
-					linkButton(h, { variant: "outline", href: sourceHref(created.source) }, ["Skip for now"]),
-					button(h, { isDisabled: true }, ["Open source", icon(h, "ArrowRightIcon", { size: 14 })]),
-				],
+		hint: receiving ? "Data is arriving." : "Saved. Safe to close; the source keeps listening.",
+		host: "drawer",
+		actions: [
+			button(
+				h,
+				{
+					variant: receiving ? "default" : "outline",
+					attributes: [h.OnClick(Message.ClickedDone())],
+				},
+				["Done"],
+			),
+		],
 	})
 
-export const tokenStep = (h: H, model: Model, created: Created): Html => {
+const footer = (h: H, created: Created, receiving: boolean, host: FlowHost): Html =>
+	host === "drawer"
+		? drawerFooter(h, receiving)
+		: flowFooter(h, {
+				host: "page",
+				back: null,
+				hint: receiving
+					? "Data is arriving. The source page shows what came in."
+					: "Saved. Open source unlocks with the first data.",
+				actions: receiving
+					? [
+							linkButton(h, { href: sourceHref(created.source) }, [
+								"Open source",
+								icon(h, "ArrowRightIcon", { size: 14 }),
+							]),
+						]
+					: [
+							linkButton(h, { variant: "outline", href: sourceHref(created.source) }, [
+								"Skip for now",
+							]),
+							button(h, { isDisabled: true }, [
+								"Open source",
+								icon(h, "ArrowRightIcon", { size: 14 }),
+							]),
+						],
+			})
+
+export const tokenStep = (h: H, model: Model, created: Created, host: FlowHost): Html => {
 	const receiving = isReceiving(model)
 	const platform = created.source.platform
 	return h.div(
@@ -100,7 +126,7 @@ export const tokenStep = (h: H, model: Model, created: Created): Html => {
 				],
 				isPushSourcePlatform(platform) ? showsUpRail(h, platform) : null,
 			),
-			footer(h, created, receiving),
+			footer(h, created, receiving, host),
 		],
 	)
 }

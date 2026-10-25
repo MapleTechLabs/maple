@@ -21,6 +21,13 @@ import { canContinue, type FlowSpec, flowOf, nextStage, previousStage } from "..
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
+
+/** The flow is done with, from its first step's Back or the drawer's Done: its host decides where to. */
+type FlowExit = Readonly<{ _tag: "ExitedConnectFlow" }>
+const exited: FlowExit = { _tag: "ExitedConnectFlow" }
+
+/** A step of the flow on its own: a page fact for the root, or the exit for its host. */
+export type FlowReturn = Omit<Return, "outMessage"> & Readonly<{ outMessage?: PageOutMessage | FlowExit }>
 type Cmd = Command.Command<Message, never, Resources>
 type NewRoute = Extract<AppRoute, { readonly _tag: "SourcesNew" }>
 
@@ -218,8 +225,22 @@ const pollUnlessReceiving = (step: Return): Return =>
 				commands: [...(step.commands ?? []), WaitFirstDataPoll({ key: step.model.firstData.key })],
 			}
 
-export const update = (model: Model, message: Message, context: PageContext): Return =>
-	Message.match<Return>(message, {
+/** The page's step: leaving the flow goes back to the picker. */
+export const update = (model: Model, message: Message, context: PageContext): Return => {
+	const { outMessage, ...step } = updateFlow(model, message, context)
+	return outMessage === undefined
+		? step
+		: {
+				...step,
+				outMessage:
+					outMessage._tag === "ExitedConnectFlow"
+						? navigate(hrefOf(Routes.SourcesNew({ search: {} })))
+						: outMessage,
+			}
+}
+
+export const updateFlow = (model: Model, message: Message, context: PageContext): FlowReturn =>
+	Message.match<FlowReturn>(message, {
 		ClickedPushPlatform: ({ platform }) => ({
 			model,
 			outMessage: navigate(hrefOf(Routes.SourcesNew({ search: { platform } }))),
@@ -249,7 +270,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(rules) => ({ ...model, rules }),
 				(child) => Message.GotRulesMessage({ message: child }),
 			),
-		ClickedBack: () => ({ model, outMessage: navigate(hrefOf(Routes.SourcesNew({ search: {} }))) }),
+		ClickedBack: () => ({ model, outMessage: exited }),
+		ClickedDone: () => ({ model, outMessage: exited }),
 		ClickedContinue: () => {
 			const spec = flowSpecOf(model)
 			const next = spec === null ? null : nextStage(spec, model.stage)
@@ -261,7 +283,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const spec = flowSpecOf(model)
 			const previous = spec === null ? null : previousStage(spec, model.stage)
 			return previous === null
-				? { model, outMessage: navigate(hrefOf(Routes.SourcesNew({ search: {} }))) }
+				? { model, outMessage: exited }
 				: scrolledToTop({ model: { ...model, stage: previous } })
 		},
 		SubmittedForm: () => submit(model),

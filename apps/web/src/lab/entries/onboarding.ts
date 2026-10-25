@@ -179,6 +179,7 @@ const complete = (h: HtmlBuilder<Message>): Html =>
 const stepView = Submodel.defineView<Model, QuickStart.Message>(
 	(model, h) =>
 		QuickStartView.view(h, model.quickStart, {
+			timeZone: "UTC",
 			accountCluster: (label) =>
 				QuickStartView.accountClusterOf(h, [
 					label,

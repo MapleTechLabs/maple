@@ -20,6 +20,8 @@ export const Message = defineMessageUnion({
 	/** The footer: the integration's next step, or the one before it. */
 	ClickedContinue: {},
 	ClickedStepBack: {},
+	/** The drawer's way out on the last step, where the page links to the source instead. */
+	ClickedDone: {},
 	SubmittedForm: {},
 	CompletedScrollToTop: {},
 	CompletedCreate: { result: Schema.Result(V2SourceWithSecret, LoadFailure) },

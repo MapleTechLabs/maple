@@ -1,8 +1,13 @@
-import { STACK_LANGUAGE_IDS, STACK_PLATFORM_IDS, toggled } from "../../lib/onboarding-stack"
+import {
+	STACK_LANGUAGE_IDS,
+	STACK_PLATFORM_IDS,
+	type StackPlatform,
+	toggled,
+} from "../../lib/onboarding-stack"
 import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
 import { MapleRegion } from "@maple/domain/organization-regions"
 import { currentRegion, regionAppUrl } from "../../lib/region"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { AsyncData, Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
@@ -13,12 +18,23 @@ import { clerkTry, currentClerkOrganization } from "../../platform/clerk"
 import { startDitherField } from "../../ui/dither-field"
 import type { Resources } from "../../platform/resources"
 import * as PricingCards from "./pricing-cards"
+import { type PageContext, PageOutMessage } from "../contract"
+import {
+	ConnectDrawer,
+	type DrawerStep,
+	DrawerMessage,
+	isDrawerDone,
+	openDrawer,
+	pendingOAuthPlatform,
+	updateDrawer,
+} from "./quick-start-drawer"
 import {
 	closeConnect,
 	Connect,
 	ConnectMessage,
 	initConnect,
 	openConnect,
+	refreshConnected,
 	updateConnect,
 } from "./quick-start-connect"
 import { LiveData, LiveMessage, LoadLiveFindings, updateLive } from "./quick-start-live"
@@ -67,6 +83,8 @@ export const Model = Schema.TaggedStruct("QuickStart", {
 	orgId: Schema.String,
 	connect: Connect,
 	live: LiveData.schema,
+	/** A picked platform's connect flow, open over the step (kept while it animates out). */
+	drawer: Schema.NullOr(ConnectDrawer),
 	/** Whether an update has run with the plan known: the save can load before the customer read. */
 	isPlanKnown: Schema.Boolean,
 })
@@ -77,6 +95,11 @@ export const Message = defineMessageUnion({
 	GotConnectMessage: { message: ConnectMessage },
 	GotLiveMessage: { message: LiveMessage },
 	GotPricingMessage: { message: PricingCards.Message },
+	ClickedSetUp: { platform: Schema.Literals(STACK_PLATFORM_IDS) },
+	GotDrawerMessage: { message: DrawerMessage },
+	/** An OAuth return is waiting in this tab: the drawer opens on its provider to finish it. */
+	FoundOAuthReturn: { platform: Schema.Literals(STACK_PLATFORM_IDS) },
+	CompletedPeekOAuthReturn: {},
 	LoadedQuickStartState: { state: QuickStartState },
 	ToggledLanguage: { language: Schema.Literals(STACK_LANGUAGE_IDS) },
 	ToggledPlatform: { platform: Schema.Literals(STACK_PLATFORM_IDS) },
@@ -138,6 +161,17 @@ export const ChooseRegion = Command.define("ChooseOrganizationRegion", {
 		),
 })
 
+/** A provider's return that landed on `/quick-start` (its popup, or a redirect back). */
+export const PeekOAuthReturn = Command.define("PeekOnboardingOAuthReturn", {
+	messages: [Message.FoundOAuthReturn, Message.CompletedPeekOAuthReturn],
+	execute: Effect.map(pendingOAuthPlatform, (maybePlatform) =>
+		Option.match(maybePlatform, {
+			onNone: () => Message.CompletedPeekOAuthReturn(),
+			onSome: (platform) => Message.FoundOAuthReturn({ platform }),
+		}),
+	),
+})
+
 /** Onboarding is done: on to where they were going, replacing the wizard so Back does not return to it. */
 export const Finish = Command.define("FinishQuickStart", {
 	args: { url: Schema.String },
@@ -181,7 +215,11 @@ export const FollowChosenRegion = Command.define("FollowChosenRegion", {
 		}),
 })
 
-type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PricingCards.OutMessage, Resources>
+/** A connect flow's page fact (a toast, a link it followed), for the root to act on. */
+const ConnectFlowOut = Schema.TaggedStruct("RequestedConnectFlowOut", { out: PageOutMessage })
+export type OutMessage = PricingCards.OutMessage | typeof ConnectFlowOut.Type
+
+type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
 /** `needsRegion`: the org has no region yet, so the region step comes first. */
 export const init = (
@@ -205,15 +243,45 @@ export const init = (
 		orgId,
 		connect: initConnect(),
 		live: AsyncData.Idle(),
+		drawer: null,
 		isPlanKnown: false,
 	},
-	commands: [LoadQuickStartState({ key: storageKey })],
+	commands: [LoadQuickStartState({ key: storageKey }), PeekOAuthReturn()],
 })
 
 const toTeam = (message: TeamMessage) => Message.GotTeamMessage({ message })
 const toConnect = (message: ConnectMessage) => Message.GotConnectMessage({ message })
 const toLive = (message: LiveMessage) => Message.GotLiveMessage({ message })
 const toPricing = (message: PricingCards.Message) => Message.GotPricingMessage({ message })
+const toDrawer = (message: DrawerMessage) => Message.GotDrawerMessage({ message })
+
+/** The drawer's step lifted: a made source reads Connected, a closed drawer re-reads the providers. */
+const withDrawer = (model: Model, step: DrawerStep): UpdateReturn => {
+	const connected = isDrawerDone(step.drawer)
+		? { ...model.connect.connected, [step.drawer.platform]: true }
+		: model.connect.connected
+	const next: Model = { ...model, drawer: step.drawer, connect: { ...model.connect, connected } }
+	const commands = Command.mapMessages(step.commands, toDrawer)
+	const out = step.outMessage
+	if (out === undefined) return { model: next, commands }
+	if (out._tag !== "ClosedDrawer")
+		return { model: next, commands, outMessage: ConnectFlowOut.make({ out }) }
+	return {
+		model: next,
+		commands: [
+			...commands,
+			...Command.mapMessages(
+				refreshConnected(model.orgId, model.state?.stack.platforms ?? []),
+				toConnect,
+			),
+		],
+	}
+}
+
+const openedDrawer = (model: Model, platform: StackPlatform, context: PageContext | null): UpdateReturn =>
+	context === null || model.drawer?.dialog.isOpen === true
+		? { model }
+		: withDrawer(model, openDrawer(model.drawer, platform, context))
 
 /**
  * A step's data is read when it mounts: the Clerk team (its name and pending invitations) on the
@@ -296,19 +364,25 @@ const arrived = (model: Model, state: QuickStartState, hasPlan: boolean): Update
  * `hasPlan` is the root's (`planOf`), so the steps resolve as the view shows them; `null` while the
  * customer read is out (the view shows the boot splash), when a loaded save waits for it.
  */
-export const update = (model: Model, message: Message, hasPlan: boolean | null): UpdateReturn => {
+export const update = (
+	model: Model,
+	message: Message,
+	hasPlan: boolean | null,
+	/** The active org's, for the connect drawer's flow; without it the drawer stays shut. */
+	context: PageContext | null = null,
+): UpdateReturn => {
 	if (hasPlan === null)
 		return message._tag === "LoadedQuickStartState"
 			? { model: { ...model, state: message.state } }
-			: step(model, message, false)
+			: step(model, message, false, context)
 	const known = model.isPlanKnown ? model : { ...model, isPlanKnown: true }
 	// The root's word that the plan is known: settle a save that loaded before it, and enter its step.
 	if (message._tag === "SettledPlan" && !model.isPlanKnown && model.state !== null)
 		return entered({ ...known, state: null }, arrived(known, model.state, hasPlan), hasPlan)
-	return entered(model, step(known, message, hasPlan), hasPlan)
+	return entered(model, step(known, message, hasPlan, context), hasPlan)
 }
 
-const step = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
+const step = (model: Model, message: Message, hasPlan: boolean, context: PageContext | null): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		GotTeamMessage: ({ message: child }) => {
 			const next = updateTeam(model.team, child)
@@ -344,6 +418,13 @@ const step = (model: Model, message: Message, hasPlan: boolean): UpdateReturn =>
 				outMessage: next.outMessage,
 			}
 		},
+		ClickedSetUp: ({ platform }) => openedDrawer(model, platform, context),
+		FoundOAuthReturn: ({ platform }) => openedDrawer(model, platform, context),
+		CompletedPeekOAuthReturn: () => ({ model }),
+		GotDrawerMessage: ({ message: child }) =>
+			model.drawer === null || context === null
+				? { model }
+				: withDrawer(model, updateDrawer(model.drawer, child, context)),
 		// Someone who already finished is sent straight on; without a plan the gate would send them
 		// back, so they land on the plan step instead.
 		LoadedQuickStartState: ({ state }) => arrived(model, state, hasPlan),

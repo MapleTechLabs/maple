@@ -9,11 +9,16 @@ import { loadSource, loadSources } from "../kit/data"
 import { ExpiryChoice, expiresAtOf } from "../kit/rules"
 import { Message } from "./message"
 
-/** A new step or source starts at the top; the page's scroll area otherwise keeps the old offset. */
+/** A new step or source starts at the top; the scroll area otherwise keeps the old offset. */
 export const ScrollToTop = Command.define("ScrollSourcesNewToTop", {
 	messages: [Message.CompletedScrollToTop],
 	execute: Effect.sync(() => {
 		document.querySelector('[data-slot="page-scroll-area"]')?.scrollTo({ top: 0 })
+		// Onboarding's drawer: the sheet panel's viewport around the flow.
+		document
+			.querySelector("[data-connect-flow-scroll]")
+			?.closest('[data-slot="scroll-area-viewport"]')
+			?.scrollTo({ top: 0 })
 		return Message.CompletedScrollToTop()
 	}),
 })

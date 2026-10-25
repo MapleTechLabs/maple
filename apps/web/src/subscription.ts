@@ -10,7 +10,9 @@ import { rendersShell } from "./page/chrome"
 import * as Preload from "./page/preload"
 import { pageSubscriptions } from "./page/registry"
 import * as TimeRangePicker from "./page/kit/time-range-picker"
-import { pageContextOf } from "./update"
+import { onboardingInputsOf, pageContextOf } from "./update"
+import * as Onboarding from "./page/onboarding"
+import * as SourcesFlow from "./page/sources/new/embed"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
 import * as ChatSheet from "./page/chat/sheet"
@@ -292,4 +294,13 @@ const chatSheet = Subscription.lift(ChatSheet.subscriptions)<Model, Message>({
 	toParentMessage: (message) => Message.GotChatSheetMessage({ message }),
 })
 
-export const subscriptions = Subscription.aggregate(root, pages, chatSheet)
+/** Onboarding's connect drawer: its flow's OAuth popup and polls, only while it is open. */
+const onboardingConnectFlow = Subscription.lift(SourcesFlow.subscriptions)<Model, Message>({
+	read: (model) =>
+		Option.flatMap(Option.fromNullishOr(model.onboarding), (onboarding) =>
+			Option.flatMap(onboardingInputsOf(model), (inputs) => Onboarding.connectFlowOf(onboarding, inputs)),
+		),
+	toParentMessage: (message) => Message.GotOnboardingMessage({ message: Onboarding.fromConnectFlow(message) }),
+})
+
+export const subscriptions = Subscription.aggregate(root, pages, chatSheet, onboardingConnectFlow)

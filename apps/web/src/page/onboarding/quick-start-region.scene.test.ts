@@ -25,6 +25,7 @@ const viewWith =
 	(needsRegion: boolean) =>
 	(model: Model, h: HtmlBuilder<Message>): Html =>
 		QuickStartView.view(h, model, {
+			timeZone: "UTC",
 			accountCluster: (label) => label,
 			teamStep: () => h.empty,
 			planStep: h.empty,
