@@ -273,18 +273,22 @@ describe("tracesListQuery", () => {
 // traceServicesByTraceIdsQuery
 
 describe("traceServicesByTraceIdsQuery", () => {
-	it("aggregates one page of trace services through keyed and partition-pruned filters", () => {
+	it("aggregates one page of trace services, seeked through trace_index", () => {
 		const { sql } = compileUnsafe(
 			traceServicesByTraceIdsQuery({ traceIds: ["trace-a", "trace-b"] }),
 			baseParams,
 		)
 
 		expect(sql).toContain("FROM service_map_spans")
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("TraceId IN ('trace-a', 'trace-b')")
-		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
-		expect(sql).toContain("Timestamp <= '2024-01-02 00:00:00'")
-		expect(sql).toContain("groupUniqArray(service_map_spans.ServiceName)")
+		expect(sql).toContain("service_map_spans.OrgId = 'org_1'")
+		expect(sql).toContain(
+			"(toStartOfFiveMinutes(service_map_spans.Timestamp), service_map_spans.TraceId) IN (SELECT",
+		)
+		expect(sql).toMatch(
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \('trace-a', 'trace-b'\)\s+AND trace_index\.Bucket >= toStartOfFiveMinutes\(toDateTime64\(subtractHours\(/,
+		)
+		expect(sql).toContain("subtractHours(")
+		expect(sql).toContain("addHours(")
 		expect(sql).toContain(
 			"argMin(service_map_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp))",
 		)

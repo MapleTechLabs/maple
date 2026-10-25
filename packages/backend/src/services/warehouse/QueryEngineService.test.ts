@@ -1031,8 +1031,9 @@ describe("makeQueryEngineExecute", () => {
 			const serviceSql = receivedSql[1] ?? ""
 			assert.include(serviceSql, "FROM service_map_spans")
 			assert.include(serviceSql, "TraceId IN ('trace-1', 'trace-2')")
-			assert.include(serviceSql, "Timestamp >= '2025-12-31 00:01:00'")
-			assert.include(serviceSql, "Timestamp <= '2026-01-02 00:03:00'")
+			// The page's own span, padded ±1h by the query.
+			assert.include(serviceSql, "subtractHours(toDateTime('2026-01-01 00:01:00'), 1)")
+			assert.include(serviceSql, "addHours(toDateTime('2026-01-01 00:03:00'), 1)")
 		}),
 	)
 

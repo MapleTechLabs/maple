@@ -21,6 +21,7 @@ import {
 	ServiceOverviewMinutely,
 	TraceListMv,
 	Traces,
+	inServiceMapSpans,
 	inTraces,
 	paramTraceWindow,
 	TracesAggregatesHourly,
@@ -1898,16 +1899,13 @@ export interface TraceServicesByTraceIdsOutput {
 /**
  * Batch-load the services touched by one already-paged set of traces.
  *
- * `service_map_spans` is the light projection sorted by
- * `(OrgId, TraceId, SpanId, Timestamp)`, so the tenant + page TraceIds form an
- * ORDER BY prefix instead of rescanning and aggregating every trace in the
- * list window. The caller supplies buffered page-derived time bounds as a
- * partition hint; without them, every retained daily partition is probed.
+ * `service_map_spans` is the light projection of the dependency-bearing kinds
+ * (Client/Producer/Server/Consumer), sorted by the same 5-minute bucket as
+ * `traces`, so the page's ids are seeked through `trace_index`. The caller
+ * passes the page's own time span; it is padded ±1h as in `traceListQuery`.
  *
- * The projection intentionally contains the OTel dependency-bearing kinds
- * (Client/Producer/Server/Consumer). The list mapper always preserves its row
- * service as a fallback, covering Internal/unset single-service roots and MV
- * propagation lag.
+ * The list mapper always preserves its row service as a fallback, covering
+ * Internal/unset single-service roots and MV propagation lag.
  */
 export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) {
 	return from(ServiceMapSpans)
@@ -1923,9 +1921,9 @@ export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) 
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TraceId.in_(...opts.traceIds),
-			$.Timestamp.gte(utcSecondsParam("startTime")),
-			$.Timestamp.lte(utcSecondsParam("endTime")),
+			inServiceMapSpans((id) => id.in_(...opts.traceIds), paddedTraceWindow),
+			$.Timestamp.gte(paddedTraceWindow.start),
+			$.Timestamp.lte(paddedTraceWindow.end),
 		])
 		.groupBy("traceId")
 		.limit(opts.traceIds.length)
