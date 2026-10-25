@@ -357,5 +357,8 @@ Finish with submit_reply exactly once. Prose instead of it is discarded.
 /** The close-out for a reply pass that stopped without answering. */
 export const PR_REPLY_CLOSE_OUT_PROMPT = `Your answer was not posted. Do not read more. Call \`submit_reply\` now with the answer you can support from what you already read, or a short note that you could not finish and what is missing. This is your only remaining action; prose is discarded.`
 
+/** A review pass that answered in prose with time left: carry on reading, then file. */
+export const PR_REVIEW_CONTINUE_PROMPT = `Your review pass ended with a message instead of a report, and prose is discarded. The pull request to review is the one named in the kickoff above. Carry on with your tools: read what you have not read yet, then call \`submit_review\`. Do not answer in prose, and do not write tool calls as text.`
+
 /** The close-out for a review pass that stopped without filing: one call, from what it has. */
 export const PR_REVIEW_CLOSE_OUT_PROMPT = `Your review pass has ended without a submitted review. Do not read more. Call \`submit_review\` now with what you established: the verdict you can support, tests and risk as far as you read, a confidenceReason naming what you did not reach if any reviewed file's diff went unread, a summary of the change itself (the early end is shown for you, so do not repeat it) and keyChanges from what you read, the coverage rows you completed, and only the findings you anchored to a line that you have not already saved with record_finding (saved ones are included for you). If you read nothing, submit verdict not_applicable with a summary saying the review could not be completed. This is your only remaining action; prose is discarded.`

@@ -20,20 +20,25 @@
  */
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
-import type { PrReviewFailureReason } from "@maple/domain/http"
+import { type PrReviewFailureReason, SubmitPrReviewRequest } from "@maple/domain/http"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { CodeLoader } from "@maple/backend/platform/bindings"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
+import { Cause, Clock, Duration, Effect, Exit, Layer, ManagedRuntime, Match, Option, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
-import { CLOSE_OUT_PROMPT, PR_REPLY_CLOSE_OUT_PROMPT, PR_REVIEW_CLOSE_OUT_PROMPT } from "./prompts"
+import {
+	CLOSE_OUT_PROMPT,
+	PR_REPLY_CLOSE_OUT_PROMPT,
+	PR_REVIEW_CLOSE_OUT_PROMPT,
+	PR_REVIEW_CONTINUE_PROMPT,
+} from "./prompts"
 import { INVESTIGATION_PROGRESS_HEARTBEAT, makeProgressFeed, parseToolInput, stepLabel } from "./progress"
 import { makeReviewCoverage } from "./review-coverage"
 import { reviewFailureError, reviewFailureReason } from "./review-failure"
@@ -51,7 +56,7 @@ import {
 } from "./tools"
 
 import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
-import { agentForSession } from "./agents"
+import { type AgentDefinition, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -130,6 +135,8 @@ const NO_DIAGNOSIS_ERROR = "no_diagnosis: the agent ended its pass without submi
 const NO_REVIEW_MESSAGE = "Maple ended this review without a report."
 const NO_REPLY_MESSAGE = "Maple ended this answer without posting it."
 const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an answer"
+/** A review pass that answered in prose gets another pass only with at least this much of its clock left. */
+const MIN_CONTINUE_MS = 2 * 60 * 1000
 
 /**
  * Meter what this turn spent into the org's AI usage.
@@ -509,10 +516,14 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// in prose or died on a model error gets one close-out turn first, so its terminal is held
 			// back until the outcome is known.
 			let held: Extract<ChatTurnEvent, { readonly type: "turn-end" }> | undefined
+			// Read through a function: `held` is set by the run's callback, which narrowing cannot see.
+			const ranOutOfSteps = () => held?.reason === "max-steps"
 			const run = (turn: {
 				readonly text: string
 				readonly history: ReadonlyArray<ChatMessage>
 				readonly closeOut?: boolean
+				/** A continuation's agent: the session's, with only what is left of the pass's clock. */
+				readonly agent?: AgentDefinition
 			}) =>
 				runChatTurn({
 					sessionId: input.sessionId,
@@ -523,11 +534,21 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					model,
 					submitDiagnosis: (orgId, id, request) =>
 						beforeReport(investigations.submitDiagnosis(orgId, id, request)),
+					// A partial carries why the pass before it stopped, so the pull request is told that.
 					submitReview: (orgId, reviewId, request) =>
-						beforeReport(reviews.submitReview(orgId, reviewId, request)),
+						beforeReport(
+							reviews.submitReview(
+								orgId,
+								reviewId,
+								request.partial === true && failure !== undefined
+									? new SubmitPrReviewRequest({ ...request, partialReason: failure })
+									: request,
+							),
+						),
 					submitReply: conversations.submitReply,
 					stageEdit: conversations.stageEdit,
 					...(turn.closeOut === true ? { closeOut: true } : undefined),
+					...(turn.agent === undefined ? undefined : { agent: turn.agent }),
 					...(review === undefined ? undefined : { review }),
 					...(codeExecutor === undefined ? undefined : { codeExecutor }),
 					text: turn.text,
@@ -593,11 +614,37 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				return
 			}
 
+			const passDeadline =
+				(yield* Clock.currentTimeMillis) +
+				Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration))
 			const first = yield* recoverAutonomousFailure(run({ text, history: prior }))
 			observability.compactions = first.compactions
 			let submitted = first.submitted
 			// Exhausted rather than failed: the engine's final answer ended in prose, not a report.
 			if (!submitted && held?.reason === "max-steps") failure ??= "step_limit"
+			// A review that answered in prose with no limit hit was not stopped, it stopped itself. With
+			// time left it gets one more pass that may still read, inside the same wall clock.
+			if (!submitted && failure === undefined && prReviewId !== undefined && holdsTurn()) {
+				const remaining = passDeadline - (yield* Clock.currentTimeMillis)
+				if (remaining >= MIN_CONTINUE_MS) {
+					held = undefined
+					const continued = yield* recoverAutonomousFailure(
+						run({
+							text: PR_REVIEW_CONTINUE_PROMPT,
+							history: withToolTranscript(input.session.history()),
+							agent: {
+								...agent,
+								budget: { ...agent.budget, maxDuration: Duration.millis(remaining) },
+							},
+						}),
+					)
+					observability.compactions = (observability.compactions ?? 0) + continued.compactions
+					submitted = continued.submitted
+					yield* Effect.annotateCurrentSpan("maple.pr_review.continued", submitted)
+					if (!submitted && ranOutOfSteps()) failure ??= "step_limit"
+				}
+				if (!submitted) failure ??= "answered_in_prose"
+			}
 			if (!submitted && holdsTurn()) {
 				held = undefined
 				const closeOut = yield* recoverAutonomousFailure(
@@ -659,6 +706,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 								unreviewed: review.coverage.unread(),
 								modelName: model.name,
 								usage,
+								...(failure === undefined ? undefined : { reason: failure }),
 							}),
 						)
 						.pipe(

@@ -32,6 +32,7 @@ import {
 	PrReviewReplySubmission,
 	PrReviewReport,
 	PrReviewSubmission,
+	type PrReviewFailureReason,
 	type PrReviewVerdict,
 	SubmitDiagnosisRequest,
 	SubmitPrReviewRequest,
@@ -386,6 +387,8 @@ export const savedFindingsRequest = (input: {
 	readonly unreviewed: ReadonlyArray<string>
 	readonly modelName: string
 	readonly usage: RunUsage
+	/** Why the pass stopped, told to the pull request in place of a generic early end. */
+	readonly reason?: PrReviewFailureReason
 }): SubmitPrReviewRequest =>
 	new SubmitPrReviewRequest({
 		report: new PrReviewReport({
@@ -399,6 +402,7 @@ export const savedFindingsRequest = (input: {
 		inputTokens: input.usage.input,
 		outputTokens: input.usage.output,
 		partial: true,
+		...(input.reason === undefined ? undefined : { partialReason: input.reason }),
 	})
 
 /**

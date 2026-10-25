@@ -896,6 +896,29 @@ describe("PrReviewService.submitReview", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { published, comments })))
 	})
 
+	it.effect("tells the pull request why the pass before a partial stopped", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([]),
+					partial: true,
+					partialReason: "answered_in_prose",
+				}),
+			)
+			assert.equal(published.length, 0)
+			assert.include(comments.at(-1)!, PR_REVIEW_FAILURE_COPY.answered_in_prose)
+			assert.notInclude(comments.at(-1)!, PR_REVIEW_FAILURE_COPY.ended_early)
+		}).pipe(Effect.provide(layerFor(testDb, { published, comments })))
+	})
+
 	it.effect("follows findings across pushes: resolves fixed ones, never reposts open ones", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []
