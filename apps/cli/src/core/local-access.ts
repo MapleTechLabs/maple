@@ -1,5 +1,5 @@
 import { networkInterfaces } from "node:os"
-import { Duration, Effect, Layer, Option, Result, Stream } from "effect"
+import { Cause, Duration, Effect, Layer, Option, Result, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
@@ -96,17 +96,21 @@ export const wantsCloudflaredToken = (localUrl: string, headers: Readonly<Record
 /** `cloudflared` answers from its token cache; anything slower is a prompt nobody will see. */
 export const CLOUDFLARED_TIMEOUT = Duration.seconds(5)
 
+const OUTCOME = "maple.cli.cloudflared.outcome"
+
 /**
  * The Cloudflare Access token `cloudflared access login <origin>` cached, or
- * none when `cloudflared` is missing, has no token, fails or stalls.
+ * none when `cloudflared` is missing, has no token, fails or stalls. The span's
+ * outcome (`found`, `no_token`, `timeout`, `unavailable`) says which.
  */
 export const cloudflaredAccessToken = (
 	origin: string,
+	options: { readonly binary?: string; readonly timeout?: Duration.Input } = {},
 ): Effect.Effect<Option.Option<string>, never, ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const spawner = yield* ChildProcessSpawner
 		const handle = yield* spawner.spawn(
-			ChildProcess.make("cloudflared", ["access", "token", `-app=${origin}`], {
+			ChildProcess.make(options.binary ?? "cloudflared", ["access", "token", `-app=${origin}`], {
 				stdin: "ignore",
 				stdout: "pipe",
 				stderr: "ignore",
@@ -117,16 +121,33 @@ export const cloudflaredAccessToken = (
 			{ concurrency: "unbounded" },
 		)
 		const token = stdout.trim()
-		return exitCode === 0 && token !== "" ? Option.some(token) : Option.none<string>()
+		if (exitCode === 0 && token !== "") {
+			yield* Effect.annotateCurrentSpan(OUTCOME, "found")
+			return Option.some(token)
+		}
+		yield* Effect.annotateCurrentSpan({
+			[OUTCOME]: "no_token",
+			"maple.cli.cloudflared.exit_code": exitCode,
+		})
+		return Option.none<string>()
 	}).pipe(
 		Effect.scoped,
-		Effect.timeoutOrElse({ duration: CLOUDFLARED_TIMEOUT, orElse: () => Effect.succeedNone }),
-		Effect.tapCause((cause) => Effect.logDebug("cloudflared access token failed", cause)),
-		Effect.orElseSucceed(() => Option.none<string>()),
-		// Records whether a token came back, never the token or the host.
-		Effect.tap((token) =>
-			Effect.annotateCurrentSpan("maple.cli.cloudflared.token_found", Option.isSome(token)),
+		Effect.timeoutOrElse({
+			duration: options.timeout ?? CLOUDFLARED_TIMEOUT,
+			orElse: () => Effect.as(Effect.annotateCurrentSpan(OUTCOME, "timeout"), Option.none<string>()),
+		}),
+		Effect.catchCause((cause) =>
+			Effect.logDebug("cloudflared access token failed", cause).pipe(
+				Effect.andThen(
+					Effect.annotateCurrentSpan({
+						[OUTCOME]: "unavailable",
+						"maple.cli.cloudflared.error": Cause.pretty(cause).split("\n")[0] ?? "",
+					}),
+				),
+				Effect.as(Option.none<string>()),
+			),
 		),
+		// Never the token or the host.
 		Effect.withSpan("LocalAccess.cloudflaredToken", { kind: "client" }),
 	)
 

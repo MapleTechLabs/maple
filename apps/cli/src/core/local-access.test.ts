@@ -1,8 +1,13 @@
 import { describe, it } from "@effect/vitest"
+import { test } from "bun:test"
 import { deepStrictEqual, strictEqual } from "node:assert"
-import { Effect, Layer, Option, Ref } from "effect"
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import * as BunServices from "@effect/platform-bun/BunServices"
+import { Effect, Layer, Option, Ref, Tracer } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { localAccessClient, parseLocalHeaders } from "./local-access"
+import { cloudflaredAccessToken, localAccessClient, parseLocalHeaders } from "./local-access"
 import { Mode } from "./mode"
 import { rawQuery } from "./operations"
 
@@ -50,6 +55,78 @@ describe("parseLocalHeaders", () => {
 		)
 		deepStrictEqual(parseLocalHeaders(undefined), {})
 	})
+})
+
+/** A stand-in `cloudflared`: a shell script with the given body. */
+const stubBinary = (body: string): string => {
+	const path = join(mkdtempSync(join(tmpdir(), "maple-cloudflared-")), "cloudflared")
+	writeFileSync(path, `#!/bin/sh\n${body}\n`)
+	chmodSync(path, 0o755)
+	return path
+}
+
+/** Runs the lookup and returns the token with the outcome its span recorded. */
+const lookup = (binary: string, timeout: number = 5_000) =>
+	Effect.gen(function* () {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const token = yield* cloudflaredAccessToken("https://maple.example.com", { binary, timeout }).pipe(
+			Effect.provide(BunServices.layer),
+			Effect.withTracer(tracer),
+		)
+		const span = spans.find((candidate) => candidate.name === "LocalAccess.cloudflaredToken")
+		return { token, outcome: span?.attributes.get("maple.cli.cloudflared.outcome") }
+	})
+
+// Plain bun tests: under `bun test`, `it.effect`/`it.live` hang on a body that spawns a real process.
+describe("cloudflaredAccessToken", () => {
+	test("returns the cached token for the origin, trimmed", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const result = yield* lookup(
+					stubBinary(`[ "$3" = "-app=https://maple.example.com" ] && echo "  jwt  "`),
+				)
+				deepStrictEqual(result, { token: Option.some("jwt"), outcome: "found" })
+			}),
+		))
+
+	test("returns no token on a failed exit or empty output", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				deepStrictEqual(yield* lookup(stubBinary("echo jwt; exit 1")), {
+					token: Option.none(),
+					outcome: "no_token",
+				})
+				deepStrictEqual(yield* lookup(stubBinary("echo")), {
+					token: Option.none(),
+					outcome: "no_token",
+				})
+			}),
+		))
+
+	test("gives up on a cloudflared that stalls", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				deepStrictEqual(yield* lookup(stubBinary("sleep 30"), 200), {
+					token: Option.none(),
+					outcome: "timeout",
+				})
+			}),
+		))
+
+	test("returns no token when cloudflared is not installed", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const result = yield* lookup(join(tmpdir(), "maple-no-such-cloudflared"))
+				deepStrictEqual(result, { token: Option.none(), outcome: "unavailable" })
+			}),
+		))
 })
 
 describe("localAccessClient", () => {
