@@ -23,6 +23,8 @@ type Formatted =
 	| { readonly kind: "blob"; readonly chars: number }
 
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/
+/** Zone-less tool arguments are UTC instants; `new Date` would read them as browser-local. */
+export const asUtcInstant = (iso: string): string => (/(Z|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`)
 
 /** An argument key for display: `RuleId`, `rule_id` and `ruleId` all read "Rule id". */
 const argumentLabel = (key: string): string => {
@@ -40,7 +42,13 @@ const formatValue = (value: unknown, timeZone: string): Formatted => {
 	if (typeof value === "boolean") return { kind: "scalar", text: value ? "true" : "false" }
 	if (typeof value === "number") return { kind: "scalar", text: String(value) }
 	if (typeof value === "string" && ISO_TIMESTAMP.test(value))
-		return { kind: "scalar", text: formatTimestampInTimezone(value, { timeZone, withYear: true }) }
+		return {
+			kind: "scalar",
+			text: formatTimestampInTimezone(asUtcInstant(value), {
+				timeZone,
+				withYear: true,
+			}),
+		}
 	const text = typeof value === "string" ? value : JSON.stringify(value)
 	return text.length > 200 ? { kind: "blob", chars: text.length } : { kind: "scalar", text }
 }

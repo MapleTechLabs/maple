@@ -82,8 +82,23 @@ const connectedRow = (
 					),
 				],
 				[
-					statusDot(h, { tone: HEALTH_TONE[connected?.health ?? "unavailable"] }),
-					h.span([h.Class("truncate text-xs")], [connected?.stateLabel ?? "Couldn't check status"]),
+					statusDot(h, {
+						tone:
+							connected !== null
+								? HEALTH_TONE[connected.health]
+								: overview.kind === "unavailable" && overview.reason === "not-configured"
+									? "neutral"
+									: HEALTH_TONE.unavailable,
+					}),
+					h.span(
+						[h.Class("truncate text-xs")],
+						[
+							connected?.stateLabel ??
+								(overview.kind === "unavailable" && overview.reason === "not-configured"
+									? "Not configured"
+									: "Couldn't check status"),
+						],
+					),
 				],
 			),
 			...(connected?.stat
@@ -238,7 +253,11 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 									[h.Class("flex min-h-7 items-center justify-between gap-3")],
 									[
 										eyebrow(h, { variant: "label" }, ["Connected"]),
-										...(connected.some(({ overview }) => overview.kind === "unavailable")
+										...(connected.some(
+											({ overview }) =>
+												overview.kind === "unavailable" &&
+												overview.reason === "failed",
+										)
 											? [
 													button(
 														h,

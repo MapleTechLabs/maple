@@ -129,12 +129,15 @@ export interface AvailableOverview {
 }
 export interface UnavailableOverview {
 	readonly kind: "unavailable"
+	/** `failed`: the status read failed. `not-configured`: this deployment has no setup for it. */
+	readonly reason: "failed" | "not-configured"
 }
 export type IntegrationOverview = ConnectedOverview | AvailableOverview | UnavailableOverview | null
 
 const CONNECT: AvailableOverview = { kind: "available", cta: "Connect" }
 const SET_UP: AvailableOverview = { kind: "available", cta: "Set up" }
-const UNAVAILABLE: UnavailableOverview = { kind: "unavailable" }
+const UNAVAILABLE: UnavailableOverview = { kind: "unavailable", reason: "failed" }
+const UNCONFIGURED: UnavailableOverview = { kind: "unavailable", reason: "not-configured" }
 
 export const HEALTH_TONE = {
 	healthy: "ok",
@@ -408,7 +411,7 @@ const supabaseOverview = (statuses: Statuses, nowMs: number) =>
 	fold(
 		statuses.supabase,
 		(status): IntegrationOverview => {
-			if (!status.configured) return UNAVAILABLE
+			if (!status.configured) return UNCONFIGURED
 			if (!status.connected) return CONNECT
 			const issue = status.revoked
 				? "Reconnect to resume"
