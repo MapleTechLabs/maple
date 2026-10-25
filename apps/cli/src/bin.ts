@@ -34,7 +34,9 @@ const MainLayer = WarehouseExecutorFromMode.pipe(
 	Layer.provideMerge(Mode.layer),
 	Layer.provideMerge(MapleConfig.layer),
 	Layer.provideMerge(BunServices.layer),
-	Layer.provideMerge(LocalAccessHttpClient.pipe(Layer.provide(FetchHttpClient.layer))),
+	Layer.provideMerge(
+		LocalAccessHttpClient.pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(BunServices.layer)),
+	),
 )
 
 // Throttled, non-blocking "update available" notice before dispatching the

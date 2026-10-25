@@ -23,6 +23,8 @@ const DETERMINISTIC_START_TAGS: ReadonlySet<string> = new Set([
 	"@maple/cli/LocalStoreFromNewerMapleError",
 	"@maple/cli/LocalStoreMigrationError",
 	"@maple/cli/ServerStateError",
+	// A module that fails to load or register fails identically until it is replaced.
+	"@maple/cli/ProjectorModuleError",
 ])
 
 /** Deduped and backed off like the rest, but a supervisor should keep retrying:

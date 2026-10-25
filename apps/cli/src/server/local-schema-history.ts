@@ -500,17 +500,31 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// v40 adds service_map_db_edges_minutely with its view. Additive, nothing
+		// v40 re-sorts service_map_spans and service_map_children by 5-minute bucket
+		// and trace id. The edge copies every row unchanged through view-free staging
+		// tables, so nothing is backfilled.
+		//
+		// projectRevision is carried forward deliberately: it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 40,
+		fingerprint: "438c01e111c00fb0",
+		digest: "438c01e111c00fb008c9646dcdcfd894bc3eeac4faa8f366338a5482bc2fdf8d",
+		manifestDigest: "c2ac5bcca067310071aca22ec22436ccdcdbd86e0d6a3e8639d2bd82186ee7e7",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v41 adds service_map_db_edges_minutely with its view. Additive, nothing
 		// rewritten, and not backfilled: the service map reads raw traces for any
 		// minute before the view's first write.
 		//
 		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
-		version: 40,
-		fingerprint: "a09df6b69e60daef",
-		digest: "a09df6b69e60daef532829eed2de61ae3197bc8e8ae5dbc9373493a26b838b98",
-		manifestDigest: "5f6894598b3217a72bdd73da19b3e43e1198feff4bec5d8b7cfee8e2b5d1a8ec",
+		version: 41,
+		fingerprint: "318b1ee496b66c39",
+		digest: "318b1ee496b66c392c209250a016eb805b5047ddf1be0927140e40f08ca04f97",
+		manifestDigest: "2b984bb508f9efb6ca633c54000312086f480614210a14c63ffccd574eac0441",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)

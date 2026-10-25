@@ -108,6 +108,15 @@ const utcDateTime64Literal = (value: DateTime.Utc): CH.Expr<DateTime.Utc> =>
 		T.dateTime64.schema,
 	)
 
+// A span's bucket floors its start, so the lower bound floors too.
+const traceIndexBucketBounds = (bucket: CH.Expr<DateTime.Utc>, window: TraceWindow | undefined) => [
+	window &&
+		bucket.gte(
+			CH.compileTypedFnCall(Datasources.TRACE_BUCKET_FN, T.dateTime.schema, asDateTime64(window.start)),
+		),
+	window && bucket.lte(asDateTime64(window.end)),
+]
+
 /**
  * Selects the spans of the traces `match` picks from `trace_index`, for a query
  * reading `traces`. The index names every `(ServiceName, bucket, TraceId)` sort-key
@@ -127,19 +136,30 @@ export const inTraces = <Q>(
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
 				match($.TraceId),
-				// A span's bucket floors its start, so the lower bound floors too.
-				window &&
-					$.Bucket.gte(
-						CH.compileTypedFnCall(
-							Datasources.TRACE_BUCKET_FN,
-							T.dateTime.schema,
-							asDateTime64(window.start),
-						),
-					),
-				window && $.Bucket.lte(asDateTime64(window.end)),
+				...traceIndexBucketBounds($.Bucket, window),
 			]),
 		(sql) =>
 			`(traces.ServiceName, ${Datasources.TRACE_BUCKET_FN}(traces.Timestamp), traces.TraceId) IN (${sql})`,
+	)
+
+/**
+ * {@link inTraces} for `service_map_spans`, sorted `(OrgId, <trace bucket>, TraceId, SpanId)`:
+ * the index's `(bucket, TraceId)` pairs seek the matched traces' granules.
+ */
+export const inServiceMapSpans = <Q>(
+	match: (traceId: T.ColumnRef<"TraceId", T.CHString>) => CH.Condition<Q>,
+	window: TraceWindow,
+) =>
+	T.subqueryCond(
+		T.from(TraceIndex)
+			.select(($) => ({ Bucket: $.Bucket, TraceId: $.TraceId }))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				match($.TraceId),
+				...traceIndexBucketBounds($.Bucket, window),
+			]),
+		(sql) =>
+			`(${Datasources.TRACE_BUCKET_FN}(service_map_spans.Timestamp), service_map_spans.TraceId) IN (${sql})`,
 	)
 
 /**

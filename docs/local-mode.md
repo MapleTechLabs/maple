@@ -482,6 +482,11 @@ version-matched reader, a prior Maple binary/export path, or an explicit
 unsupported boundary; the current binary never guesses by opening an
 incompatible source.
 
+## External event projectors
+
+Supply projector implementations with the repeatable `--projector-module` startup flag.
+See [external projector modules](local-projector-modules.md) for the module contract and restart requirements.
+
 ## The `/local/query` contract
 
 Clients POST `{ "sql": "..." }` and get back a bare JSON array of rows.

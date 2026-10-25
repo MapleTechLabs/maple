@@ -3,6 +3,7 @@
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
 
+import { ProjectorRegistry } from "@maple/eventing-core"
 import { Clock, Context, Effect, Exit, Layer, Metric, Result, Schema, type Scope } from "effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { resolve } from "node:path"
@@ -30,7 +31,11 @@ import {
 	writeControlSnapshot,
 } from "./eventing/control-store"
 import { ensureEventConsumerToken, eventConsumerTokenMatches } from "./eventing/consumer-auth"
-import { LocalEventingRuntime, type LocalEventingRuntimeApi } from "./eventing/runtime"
+import {
+	LocalEventingProjectors,
+	LocalEventingRuntime,
+	type LocalEventingRuntimeApi,
+} from "./eventing/runtime"
 import { encodeLogs, encodeMetrics, encodeTraces, type EncodedBatch, OtlpFieldError } from "./otlp/encode"
 import {
 	decodeLogsRequest,
@@ -96,6 +101,8 @@ export interface ServerOptions {
 	readonly dataDir: string
 	readonly configFile?: string
 	readonly minimumRawTelemetryRetentionDays?: number
+	/** Loaded from `--projector-module` under the PID claim, before any store preparation. */
+	readonly projectors?: ProjectorRegistry
 	/** Serves the bundled SPA; omit to disable the UI (API-only). */
 	readonly assets?: AssetResolver
 	/** Ingest key and access token; omit for an open loopback server. */
@@ -1675,7 +1682,12 @@ export const startServer = (
 		const eventingLayer = Layer.mergeAll(
 			LocalEventingRuntime.layer,
 			LocalEventingControlStore.layer,
-		).pipe(Layer.provide(Layer.succeed(LocalEventingControlConfig, { dataDir: options.dataDir })))
+		).pipe(
+			Layer.provide(Layer.succeed(LocalEventingControlConfig, { dataDir: options.dataDir })),
+			Layer.provide(
+				Layer.succeed(LocalEventingProjectors, options.projectors ?? new ProjectorRegistry()),
+			),
+		)
 		const runtime = yield* Effect.acquireRelease(
 			Effect.sync(() => ManagedRuntime.make(Layer.mergeAll(TelemetryLayer, eventingLayer))),
 			(rt) => Effect.promise(() => rt.dispose()),

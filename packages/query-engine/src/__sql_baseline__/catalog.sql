@@ -8541,15 +8541,22 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- builder:traces:traceServicesByTraceIdsQuery:page-enrichment  [465d5a7d]
+-- builder:traces:traceServicesByTraceIdsQuery:page-enrichment  [f148fef7]
 SELECT
           service_map_spans.TraceId AS traceId,
           arrayDistinct(arrayPushFront(arraySort(groupUniqArray(service_map_spans.ServiceName)), argMin(service_map_spans.ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services
         FROM service_map_spans
         WHERE service_map_spans.OrgId = 'org_sql_catalog'
-          AND service_map_spans.TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736')
-          AND service_map_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND service_map_spans.Timestamp <= '2026-01-03 14:15:00'
+          AND (toStartOfFiveMinutes(service_map_spans.Timestamp), service_map_spans.TraceId) IN (SELECT
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64(subtractHours(toDateTime('2026-01-01 10:30:00'), 1), 9))
+          AND trace_index.Bucket <= toDateTime64(addHours(toDateTime('2026-01-03 14:15:00'), 1), 9))
+          AND service_map_spans.Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND service_map_spans.Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
         GROUP BY traceId
         LIMIT 2
         FORMAT JSON

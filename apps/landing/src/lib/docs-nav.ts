@@ -52,7 +52,7 @@ export const SECTIONS = [
 		icon: "Self-hosting",
 		label: "Self-hosting",
 		blurb: "Maple on your own server, as one container.",
-		groups: ["Self-hosting"],
+		groups: ["Self-hosting", "Platforms"],
 	},
 	{
 		id: "reference",
