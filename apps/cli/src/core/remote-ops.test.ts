@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test"
 import { Arbitrary, Cause, Effect, Exit, Option, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { V2LogSearchParams, V2TelemetryWindowQuery } from "@maple/domain/http/v2"
+import { encodePublicId, V2LogSearchParams, V2TelemetryWindowQuery } from "@maple/domain/http/v2"
 import { MAX_LIST_RANGE_SECONDS, timeWindowViolation } from "@maple/query-engine"
 import { CliNotFoundError } from "../lib/errors"
 import * as Remote from "./remote-ops"
@@ -174,7 +174,8 @@ describe("remote-ops request shapes", () => {
 		// the trace itself — a wrong window here silently drops its logs.
 		expect(requests[1]!.body).toMatchObject({
 			start_time: "2026-08-15T12:30:00.000Z",
-			end_time: "2026-08-15T12:30:02.000Z",
+			// 1 ms past the trace's end: its bounds are truncated to the millisecond.
+			end_time: "2026-08-15T12:30:02.001Z",
 			filters: { trace_id: traceId },
 		})
 	})
@@ -203,6 +204,45 @@ describe("remote-ops request shapes", () => {
 			start_time: "2026-10-24T22:04:19.898Z",
 			end_time: "2026-10-24T22:04:19.899Z",
 		})
+	})
+
+	it("inspectTrace returns a log on a shared window boundary once", async () => {
+		const traceId = "7f3a4b5c6d7e8f901234567890abcdef"
+		const boundaryLog = {
+			id: encodePublicId("log", "boundary-log"),
+			object: "log",
+			timestamp: "2026-08-22T12:00:00.000Z",
+			severity_text: "INFO",
+			severity_number: 9,
+			service_name: "worker",
+			body: "tick",
+			trace_id: traceId,
+			span_id: null,
+			log_attributes: {},
+			resource_attributes: {},
+		}
+		const requests = stubV2((url) =>
+			url.includes("/logs/search")
+				? listEnvelope([boundaryLog])
+				: {
+						id: traceId,
+						object: "trace",
+						start_time: "2026-08-15T12:00:00.000Z",
+						end_time: "2026-08-25T12:00:00.000Z",
+						duration_ms: 10 * 86_400_000,
+						span_count: 0,
+						service_count: 0,
+						truncated: false,
+						spans: [],
+					},
+		)
+		const output = await Effect.runPromise(
+			Effect.flatMap(v2Client, (v2) => Remote.inspectTrace(v2, { traceId })),
+		)
+
+		// A 10-day trace takes two 7-day-capped searches, and both return the log.
+		expect(requests.filter((r) => r.url.includes("/logs/search"))).toHaveLength(2)
+		expect(output.logs).toHaveLength(1)
 	})
 
 	it("listMetrics returns local mode's column names, not the v2 wire names", async () => {
@@ -449,8 +489,8 @@ describe("remote-ops window properties", () => {
 							}))
 							.sort((a, b) => a.startMs - b.startMs)
 						// Every window is one the logs search serves (it reads the raw logs
-						// table, so it carries the list cap), and together they tile the
-						// trace with no gap or overlap at millisecond precision.
+						// table, so it carries the list cap). Logs keep nanoseconds, so the
+						// windows share boundaries and reach past the millisecond-truncated end.
 						return (
 							windows.length > 0 &&
 							windows.every(
@@ -459,8 +499,8 @@ describe("remote-ops window properties", () => {
 									undefined,
 							) &&
 							windows[0]!.startMs === startMs &&
-							windows.every((w, i) => i === 0 || w.startMs === windows[i - 1]!.endMs + 1) &&
-							windows[windows.length - 1]!.endMs >= startMs + durationMs
+							windows.every((w, i) => i === 0 || w.startMs === windows[i - 1]!.endMs) &&
+							windows[windows.length - 1]!.endMs > startMs + durationMs
 						)
 					}),
 				{ runs: 200 },
