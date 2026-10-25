@@ -111,7 +111,8 @@ export interface CardStatus {
 
 const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
 const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline" }
-const STATUS_UNAVAILABLE: CardStatus = { label: "Status unavailable", variant: "outline" }
+/** The status read failed: a warning, not the neutral look of a quiet connection. */
+const STATUS_UNAVAILABLE: CardStatus = { label: "Couldn't check status", variant: "warn" }
 
 export interface ConnectedOverview {
 	readonly kind: "connected"
@@ -139,7 +140,7 @@ export const HEALTH_TONE = {
 	healthy: "ok",
 	attention: "warn",
 	pending: "neutral",
-	unavailable: "neutral",
+	unavailable: "warn",
 } as const
 
 const syncedLabel = (ms: number | null, nowMs: number, verb = "synced"): string | null =>

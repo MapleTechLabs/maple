@@ -29,7 +29,7 @@ describe("query builder lab view", () => {
 			{ update, view },
 			given(model),
 			measured(),
-			expectView(text("Run query to fetch Tinybird data.")).toExist(),
+			expectView(text("Run the query to see results.")).toExist(),
 			expectView(role("textbox", { name: "Where clause for query A" })).toExist(),
 			expectView(role("textbox", { name: "Where clause for query B" })).toExist(),
 			expectView(text("Formula F1 (executed after query runs)")).toExist(),

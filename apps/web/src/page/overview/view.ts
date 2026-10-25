@@ -95,7 +95,7 @@ const pageFailures = (model: Model): ReadonlyArray<PageFailure> => {
 	// The strip stands for every quiet card under it, so its Try again retries all failed reads.
 	const stripRetry = Message.ClickedRetryPage()
 	if (facets !== undefined && setup !== undefined && isSameFailure(facets, setup))
-		return [{ failure: facets, title: facets.title, onRetry: stripRetry }]
+		return [{ failure: facets, title: "Couldn't load the overview", onRetry: stripRetry }]
 	return [
 		...(facets === undefined
 			? []

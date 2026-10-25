@@ -18,7 +18,7 @@ import { type HeaderSelection, type RowState, signalHeader, signalRow, signalRow
 type H = HtmlBuilder<Message>
 
 /** The fallback when a failed list carries no error of its own. */
-const LIST_FAILURE = toLoadFailure("The errors list couldn’t be loaded.")
+const LIST_FAILURE = toLoadFailure("The errors list couldn't be loaded.")
 
 const SKELETON_ROWS = 8
 const LOAD_MORE_SKELETON_ROWS = 3
@@ -32,13 +32,13 @@ const loadingBody = (h: H): ReadonlyArray<Html> => [
 	}),
 ]
 
-/** One dashed panel filling the list area, as on Services and Traces. */
+/** One compact dashed panel at the top of the list area, as on Services and Traces. */
 const failedBody = (h: H, model: Model): ReadonlyArray<Html> => [
 	errorState(h, {
 		failure: Option.getOrElse(listFailureOf(model), () => LIST_FAILURE),
-		title: "Couldn’t load errors",
+		title: "Couldn't load errors",
 		onRetry: Message.ClickedRetry(),
-		className: "mt-4 min-h-[calc(100dvh-16rem)]",
+		className: "mt-4",
 	}),
 ]
 
@@ -59,12 +59,7 @@ const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => {
 			[h.Class("flex items-center justify-center gap-3 border-t border-border/40 p-4")],
 			[
 				...(paging === "failed"
-					? [
-							h.span(
-								[h.Class("text-xs text-muted-foreground")],
-								["Couldn't load more errors."],
-							),
-						]
+					? [h.span([h.Class("text-xs text-muted-foreground")], ["Couldn't load more errors."])]
 					: []),
 				loadMoreButton(h, paging === "failed" ? "Retry" : "Load more"),
 			],

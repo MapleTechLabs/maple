@@ -14,6 +14,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { chartLoading } from "../../ui/chart-state"
+import { isSameFailure } from "../../data/load-failure"
 import { errorState } from "../../ui/error-state"
 import { icon } from "../../ui/icon"
 import { delta } from "../../ui/delta"
@@ -52,16 +53,29 @@ const botNotice = (h: H, mix: Summary, traffic: string | undefined): Html | null
 			: traffic === "all"
 				? "counted in every number below"
 				: "excluded from every number below"
-	return panel(h, { className: "flex-row flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm text-muted-foreground" }, [
-		icon(h, "FaceRobotIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
-		h.span([h.Class("text-foreground")], [formatPercent(mix.botShare), " of recorded sessions are bots"]),
-		h.span([], [
-			formatNumber(mix.botSessions),
-			" of ",
-			formatNumber(mix.sessions),
-			` sessions came from crawlers or automated browsers, and are ${excluded}. Change that under Traffic in the sidebar.`,
-		]),
-	])
+	return panel(
+		h,
+		{
+			className:
+				"flex-row flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm text-muted-foreground",
+		},
+		[
+			icon(h, "FaceRobotIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
+			h.span(
+				[h.Class("text-foreground")],
+				[formatPercent(mix.botShare), " of recorded sessions are bots"],
+			),
+			h.span(
+				[],
+				[
+					formatNumber(mix.botSessions),
+					" of ",
+					formatNumber(mix.sessions),
+					` sessions came from crawlers or automated browsers, and are ${excluded}. Change that under Traffic in the sidebar.`,
+				],
+			),
+		],
+	)
 }
 
 const metricStrip = (
@@ -109,7 +123,11 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 			chartLoading(h, { variant: "area", height: 224 }),
 		],
 		onFailure: (failure) => [
-			errorState(h, { failure, title: "Couldn't load analytics summary", onRetry: Message.ClickedRetrySummary() }),
+			errorState(h, {
+				failure,
+				title: "Couldn't load analytics summary",
+				onRetry: Message.ClickedRetrySummary(),
+			}),
 		],
 		onData: (summary) => {
 			const source: AnalyticsMetricSource = {
@@ -121,12 +139,20 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 			const previous: AnalyticsMetricSource | undefined =
 				previousSummary === undefined
 					? undefined
-					: { summary: previousSummary, timeseries: [], pageviews: dataOf(model.previousPageviews) ?? [] }
-			const picked = model.pickedMetric === null ? undefined : ANALYTICS_METRICS.find((m) => m.key === model.pickedMetric)
+					: {
+							summary: previousSummary,
+							timeseries: [],
+							pageviews: dataOf(model.previousPageviews) ?? [],
+						}
+			const picked =
+				model.pickedMetric === null
+					? undefined
+					: ANALYTICS_METRICS.find((m) => m.key === model.pickedMetric)
 			const metric =
 				picked !== undefined && isMetricAvailable(picked, source)
 					? picked
-					: (ANALYTICS_METRICS.find((candidate) => isMetricAvailable(candidate, source)) ?? findMetric("visitors"))
+					: (ANALYTICS_METRICS.find((candidate) => isMetricAvailable(candidate, source)) ??
+						findMetric("visitors"))
 			const mix = dataOf(model.mix) ?? (model.mix.key === model.summary.key ? summary : undefined)
 			const notice = mix === undefined ? null : botNotice(h, mix, filtersOf(model.search).traffic)
 			return [
@@ -165,10 +191,38 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 		{
 			id: "acquisition",
 			dimensions: [
-				{ tab: "Referrers", rows: breakdowns.referrerHosts, filterKey: "referrerHost", noun: "referrer", nounPlural: "referrers", formatValue: referrerLabel },
-				{ tab: "UTM source", rows: breakdowns.utmSources, filterKey: "utmSource", noun: "source", nounPlural: "sources", formatValue: utmLabel },
-				{ tab: "Medium", rows: breakdowns.utmMediums, filterKey: "utmMedium", noun: "medium", nounPlural: "mediums", formatValue: utmLabel },
-				{ tab: "Campaign", rows: breakdowns.utmCampaigns, filterKey: "utmCampaign", noun: "campaign", nounPlural: "campaigns", formatValue: utmLabel },
+				{
+					tab: "Referrers",
+					rows: breakdowns.referrerHosts,
+					filterKey: "referrerHost",
+					noun: "referrer",
+					nounPlural: "referrers",
+					formatValue: referrerLabel,
+				},
+				{
+					tab: "UTM source",
+					rows: breakdowns.utmSources,
+					filterKey: "utmSource",
+					noun: "source",
+					nounPlural: "sources",
+					formatValue: utmLabel,
+				},
+				{
+					tab: "Medium",
+					rows: breakdowns.utmMediums,
+					filterKey: "utmMedium",
+					noun: "medium",
+					nounPlural: "mediums",
+					formatValue: utmLabel,
+				},
+				{
+					tab: "Campaign",
+					rows: breakdowns.utmCampaigns,
+					filterKey: "utmCampaign",
+					noun: "campaign",
+					nounPlural: "campaigns",
+					formatValue: utmLabel,
+				},
 			],
 		},
 		{
@@ -176,28 +230,64 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 			dimensions: [
 				{
 					tab: "Pages",
-					rows: pages.map((page) => ({ name: page.pagePath, count: page.sessions, views: page.pageViews, secondary: page.host })),
+					rows: pages.map((page) => ({
+						name: page.pagePath,
+						count: page.sessions,
+						views: page.pageViews,
+						secondary: page.host,
+					})),
 					filterKey: "pagePath",
 					noun: "page",
 					nounPlural: "pages",
 					renderIcon: isMultiSite
-						? (h: H, row: { readonly secondary?: string }) => favicon(h, model, row.secondary ?? "")
+						? (h: H, row: { readonly secondary?: string }) =>
+								favicon(h, model, row.secondary ?? "")
 						: undefined,
 					emptyMessage: (h: H) => [
 						"No page views in the selected window.",
 						h.span([h.Class("mt-2 flex justify-center")], [docsLink(h, "webAnalytics")]),
 					],
 				},
-				{ tab: "Entries", rows: breakdowns.entryPaths, filterKey: "pagePath", noun: "entry page", nounPlural: "entry pages" },
-				{ tab: "Exits", rows: breakdowns.exitPaths, filterKey: "pagePath", noun: "exit page", nounPlural: "exit pages" },
+				{
+					tab: "Entries",
+					rows: breakdowns.entryPaths,
+					filterKey: "pagePath",
+					noun: "entry page",
+					nounPlural: "entry pages",
+				},
+				{
+					tab: "Exits",
+					rows: breakdowns.exitPaths,
+					filterKey: "pagePath",
+					noun: "exit page",
+					nounPlural: "exit pages",
+				},
 			],
 		},
 		{
 			id: "technology",
 			dimensions: [
-				{ tab: "Devices", rows: breakdowns.deviceTypes, filterKey: "deviceType", noun: "device", nounPlural: "devices" },
-				{ tab: "Browsers", rows: breakdowns.browsers, filterKey: "browserName", noun: "browser", nounPlural: "browsers" },
-				{ tab: "OS", rows: breakdowns.operatingSystems, filterKey: "osName", noun: "OS", nounPlural: "operating systems" },
+				{
+					tab: "Devices",
+					rows: breakdowns.deviceTypes,
+					filterKey: "deviceType",
+					noun: "device",
+					nounPlural: "devices",
+				},
+				{
+					tab: "Browsers",
+					rows: breakdowns.browsers,
+					filterKey: "browserName",
+					noun: "browser",
+					nounPlural: "browsers",
+				},
+				{
+					tab: "OS",
+					rows: breakdowns.operatingSystems,
+					filterKey: "osName",
+					noun: "OS",
+					nounPlural: "operating systems",
+				},
 			],
 		},
 		{
@@ -214,8 +304,21 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 						"No geo data. Country is resolved at the ingest gateway from the Cloudflare edge header, and only for traffic received after that was enabled. It is never backfilled.",
 					],
 				},
-				{ tab: "Languages", rows: breakdowns.languages, filterKey: "language", noun: "language", nounPlural: "languages", formatValue: languageLabel },
-				{ tab: "Sites", rows: breakdowns.hosts, filterKey: "host", noun: "site", nounPlural: "sites" },
+				{
+					tab: "Languages",
+					rows: breakdowns.languages,
+					filterKey: "language",
+					noun: "language",
+					nounPlural: "languages",
+					formatValue: languageLabel,
+				},
+				{
+					tab: "Sites",
+					rows: breakdowns.hosts,
+					filterKey: "host",
+					noun: "site",
+					nounPlural: "sites",
+				},
 			],
 		},
 		{
@@ -224,7 +327,11 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 			dimensions: [
 				{
 					tab: "Events",
-					rows: events.map((event) => ({ name: event.name, count: event.sessions, views: event.events })),
+					rows: events.map((event) => ({
+						name: event.name,
+						count: event.sessions,
+						views: event.events,
+					})),
 					filterKey: "eventName",
 					noun: "event",
 					nounPlural: "events",
@@ -253,7 +360,12 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 		onFailure: (failure) =>
 			panel(h, {}, [
 				header,
-				errorState(h, { failure, title: "Couldn't load traces for this event", variant: "inline", className: "px-3 py-2" }),
+				errorState(h, {
+					failure,
+					title: "Couldn't load traces for this event",
+					variant: "inline",
+					className: "px-3 py-2",
+				}),
 			]),
 		onData: (samples) =>
 			samples.length === 0
@@ -263,31 +375,44 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 						h.ul(
 							[h.Class("divide-y")],
 							samples.map((sample, index) =>
-								h.li([h.Key(`${index}:${sample.traceId}:${sample.spanId}`)], [
-									listRow(h, {
-										density: "compact",
-										className: "gap-2 py-2",
-										href: hrefOf(
-											AppRoute.Trace({ traceId: sample.traceId, search: { spanId: sample.spanId, t: sample.timestamp } }),
-										),
-										leading: truncatedId(h, { value: sample.traceId, kind: "trace" }),
-										title: h.span([h.Class("font-normal")], [
-											sample.serviceName,
-											...(sample.userId || sample.visitorId
-												? [
-														h.span([h.Class("text-muted-foreground")], [
-															sample.serviceName === "" ? "" : " ",
-															"· ",
-															sample.userId || sample.visitorId,
-														]),
-													]
-												: []),
-										]),
-										trailing: h.span([h.Class("text-muted-foreground")], [
-											formatTimestampInTimezone(sample.timestamp, { timeZone }),
-										]),
-									}),
-								]),
+								h.li(
+									[h.Key(`${index}:${sample.traceId}:${sample.spanId}`)],
+									[
+										listRow(h, {
+											density: "compact",
+											className: "gap-2 py-2",
+											href: hrefOf(
+												AppRoute.Trace({
+													traceId: sample.traceId,
+													search: { spanId: sample.spanId, t: sample.timestamp },
+												}),
+											),
+											leading: truncatedId(h, { value: sample.traceId, kind: "trace" }),
+											title: h.span(
+												[h.Class("font-normal")],
+												[
+													sample.serviceName,
+													...(sample.userId || sample.visitorId
+														? [
+																h.span(
+																	[h.Class("text-muted-foreground")],
+																	[
+																		sample.serviceName === "" ? "" : " ",
+																		"· ",
+																		sample.userId || sample.visitorId,
+																	],
+																),
+															]
+														: []),
+												],
+											),
+											trailing: h.span(
+												[h.Class("text-muted-foreground")],
+												[formatTimestampInTimezone(sample.timestamp, { timeZone })],
+											),
+										}),
+									],
+								),
 							),
 						),
 					]),
@@ -297,24 +422,68 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 const breakdownSection = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.breakdowns.data, {
 		onEmpty: () =>
-			h.div([h.Class("grid gap-4 @min-[880px]/page:grid-cols-2")], [skeleton(h, "h-72 w-full"), skeleton(h, "h-72 w-full")]),
+			h.div(
+				[h.Class("grid gap-4 @min-[880px]/page:grid-cols-2")],
+				[skeleton(h, "h-72 w-full"), skeleton(h, "h-72 w-full")],
+			),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Couldn't load breakdowns", onRetry: Message.ClickedRetryBreakdowns() }),
+			errorState(h, {
+				failure,
+				title: "Couldn't load breakdowns",
+				onRetry: Message.ClickedRetryBreakdowns(),
+			}),
 		onData: () => {
 			const filters = filtersOf(model.search)
 			const isWaiting = AsyncData.isRefreshing(model.breakdowns.data)
-			const samples = filters.eventName === undefined ? null : traceSamples(h, model, filters.eventName, timeZone)
-			return h.div([h.Class("grid items-start gap-4 @min-[880px]/page:grid-cols-2")], [
-				...overviewCards(model).map((card) =>
-					h.div([h.Key(card.id), ...(card.isWide === true ? [h.Class("@min-[880px]/page:col-span-2")] : [])], [
-						breakdownPanel(h, model, card, { selectedOf: (key) => filters[key], isWaiting }) ?? h.div([], []),
-					]),
-				),
-				...(samples === null ? [] : [h.div([h.Class("@min-[880px]/page:col-span-2")], [samples])]),
-			])
+			const samples =
+				filters.eventName === undefined ? null : traceSamples(h, model, filters.eventName, timeZone)
+			return h.div(
+				[h.Class("grid items-start gap-4 @min-[880px]/page:grid-cols-2")],
+				[
+					...overviewCards(model).map((card) =>
+						h.div(
+							[
+								h.Key(card.id),
+								...(card.isWide === true ? [h.Class("@min-[880px]/page:col-span-2")] : []),
+							],
+							[
+								breakdownPanel(h, model, card, {
+									selectedOf: (key) => filters[key],
+									isWaiting,
+								}) ?? h.div([], []),
+							],
+						),
+					),
+					...(samples === null
+						? []
+						: [h.div([h.Class("@min-[880px]/page:col-span-2")], [samples])]),
+				],
+			)
 		},
 	})
 
+/** Summary and breakdowns failing the same way read as one page failure, with one Try again. */
+const sharedPageFailure = (model: Model) => {
+	const summary = Option.getOrUndefined(AsyncData.getError(model.summary.data))
+	const breakdowns = Option.getOrUndefined(AsyncData.getError(model.breakdowns.data))
+	return summary !== undefined && breakdowns !== undefined && isSameFailure(summary, breakdowns)
+		? summary
+		: undefined
+}
+
 /** `AnalyticsContent`. */
-export const overviewContent = (h: H, model: Model, timeZone: string, isNarrow = false): Html =>
-	h.div([h.Class("space-y-6")], [...summarySection(h, model, timeZone, isNarrow), breakdownSection(h, model, timeZone)])
+export const overviewContent = (h: H, model: Model, timeZone: string, isNarrow = false): Html => {
+	const shared = sharedPageFailure(model)
+	return h.div(
+		[h.Class("space-y-6")],
+		shared === undefined
+			? [...summarySection(h, model, timeZone, isNarrow), breakdownSection(h, model, timeZone)]
+			: [
+					errorState(h, {
+						failure: shared,
+						title: "Couldn't load analytics",
+						onRetry: Message.ClickedRetrySummaryAndBreakdowns(),
+					}),
+				],
+	)
+}

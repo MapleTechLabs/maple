@@ -208,12 +208,10 @@ export const view = (model: Model, h: H): Html =>
 					[
 						cardTitle(
 							h,
-							[icon(h, "PulseIcon", { size: 16 }), "Query Builder MVP"],
+							[icon(h, "PulseIcon", { size: 16 }), "Query builder"],
 							"flex items-center gap-2 text-sm",
 						),
-						cardDescription(h, [
-							"Executes enabled queries against Maple Query Engine and returns real Tinybird-backed timeseries data.",
-						]),
+						cardDescription(h, ["Runs enabled queries against Maple and returns timeseries."]),
 					],
 					"border-b py-3",
 				),

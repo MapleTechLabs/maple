@@ -33,6 +33,8 @@ const ROW_HEIGHT = 53
 interface Column {
 	readonly id: string
 	readonly header: string
+	/** A muted qualifier after the header, smaller so the column keeps its width. */
+	readonly subLabel?: string
 	readonly skeleton: string
 	readonly width?: number
 	readonly responsive?: string
@@ -81,7 +83,8 @@ const COLUMNS: ReadonlyArray<Column> = [
 	},
 	{
 		id: "totalTokens",
-		header: "Tokens in → out",
+		header: "Tokens",
+		subLabel: "in→out",
 		width: 130,
 		skeleton: "w-20",
 		responsive: "hidden @min-[940px]/page:table-cell",
@@ -158,6 +161,9 @@ const sortableHeader = (h: H, column: Column, sort: Sort): Html => {
 		],
 		[
 			column.header,
+			...(column.subLabel === undefined
+				? []
+				: [h.span([h.Class("text-[10px] font-normal text-muted-foreground/70")], [column.subLabel])]),
 			icon(h, "ArrowUpDownIcon", {
 				size: 10,
 				className: cn(

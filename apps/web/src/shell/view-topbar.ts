@@ -71,6 +71,9 @@ const checklistPill = (h: HtmlBuilder<Message>, model: Model): Html =>
 		toParentMessage: (message) => Message.GotChecklistMessage({ message }),
 	})
 
+/** The Sources list and /sources/new draw their own "Connect source", so the top bar's would repeat it. */
+export const hidesTopbarConnect = (currentPath: string): boolean => /^\/sources(\/new)?\/?$/.test(currentPath)
+
 /** A lone crumb that repeats the page's `<h1>`, so it is kept for screen readers only. */
 const isTitleOnly = (breadcrumbs: ReadonlyArray<BreadcrumbEntry>): boolean =>
 	breadcrumbs.length === 1 && breadcrumbs[0]?.isPageHeading === true
@@ -82,6 +85,7 @@ export const topbar = (
 	pageActions: Html,
 	/** `FilterSidebarTrigger` / `RightSidebarTrigger`: below `lg`, one per rail the page renders. */
 	railTriggers: ReadonlyArray<Html> = [],
+	showsConnect = true,
 ): Html =>
 	h.header(
 		[
@@ -110,7 +114,7 @@ export const topbar = (
 				[
 					askMapleButton(h),
 					...(isClerkAuthEnabled ? [checklistPill(h, model)] : []),
-					connectButton(h, model),
+					...(showsConnect ? [connectButton(h, model)] : []),
 					...railTriggers,
 					pageActions,
 				],

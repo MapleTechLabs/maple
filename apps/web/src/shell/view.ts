@@ -24,7 +24,7 @@ import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
 import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader } from "./view-sidebar"
-import { type BreadcrumbEntry, topbar } from "./view-topbar"
+import { type BreadcrumbEntry, hidesTopbarConnect, topbar } from "./view-topbar"
 import { splitPageRails } from "./page-rails"
 import { filterSheet, filterSheetTrigger, rightSheet, rightSheetTrigger } from "./view-page-sheets"
 import { FLAGGED_HREFS } from "./palette/entries"
@@ -155,7 +155,14 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 				h.div(
 					[h.Class(pageLayoutStyles), h.DataAttribute("slot", "page-layout")],
 					[
-						topbar(h, model, inputs.breadcrumbs, inputs.topbarActions(), railTriggers),
+						topbar(
+							h,
+							model,
+							inputs.breadcrumbs,
+							inputs.topbarActions(),
+							railTriggers,
+							!hidesTopbarConnect(inputs.currentPath),
+						),
 						...(model.isAppOutdated ? [appUpdateBanner(h)] : []),
 						...(inputs.clerk === undefined || inputs.clerk === null
 							? []

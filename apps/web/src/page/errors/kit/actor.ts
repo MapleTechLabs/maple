@@ -51,10 +51,8 @@ export const resolveActorIdentity = (actor: ActorDocument): ActorIdentity => {
 		internal: false,
 		name: shortId(raw),
 		detail: null,
-		initials: raw
-			.replace(/^user_/, "")
-			.slice(0, 2)
-			.toUpperCase(),
+		// No directory name yet: the raw id's leading characters ("00", "2A") are not initials.
+		initials: "",
 		seed: raw,
 	}
 }
@@ -86,6 +84,8 @@ export const identityAvatar = <M>(
 		)
 	}
 	const gradient = cn("bg-gradient-to-br text-white", gradientFor(identity.seed))
+	const mark =
+		identity.initials === "" ? icon(h, "UserIcon", { className: "size-[60%]" }) : identity.initials
 	// The initials show until the photo loads; photos are not loaded here yet.
 	if (identity.imageUrl !== undefined && identity.imageUrl !== null && identity.imageUrl !== "")
 		return h.span(
@@ -100,11 +100,11 @@ export const identityAvatar = <M>(
 						h.Class(cn(avatarFallbackStyles, gradient, SIZE_CLASS[size])),
 						h.DataAttribute("slot", "avatar-fallback"),
 					],
-					[identity.initials],
+					[mark],
 				),
 			],
 		)
-	return h.span([h.AriaHidden(true), h.Class(cn(base, gradient))], [identity.initials])
+	return h.span([h.AriaHidden(true), h.Class(cn(base, gradient))], [mark])
 }
 
 export const actorAvatar = <M>(

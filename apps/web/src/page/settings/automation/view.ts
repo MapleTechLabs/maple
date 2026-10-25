@@ -14,7 +14,7 @@ import { panel } from "../../../ui/panel"
 import { multiSegmentedSelect } from "../../../ui/segmented-select"
 import * as SelectView from "../../../ui/select-view"
 import { settingRow } from "../../../ui/setting-row"
-import { skeleton, skeletonList } from "../../../ui/skeleton"
+import { skeleton, skeletonList, skeletonSlowNote } from "../../../ui/skeleton"
 import { switchControl } from "../../../ui/switch"
 import { providerLogo, providerOf } from "../../alerts/shared/providers"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityBadge, severityDot } from "../../errors/kit/severity"
@@ -116,9 +116,13 @@ const severityRule = (
 	)
 }
 
+const policySkeleton = (h: H): Html =>
+	h.div([h.Class("space-y-2")], [skeleton(h, "h-40 w-full rounded-md"), skeletonSlowNote(h)])
+
 const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 	const destinations = model.destinations
-	if (destinations === null) return skeleton(h, "h-24 w-full")
+	if (destinations === null)
+		return h.div([h.Class("space-y-2")], [skeleton(h, "h-24 w-full"), skeletonSlowNote(h)])
 	if (destinations.length === 0)
 		return h.div(
 			[h.Class("space-y-3")],
@@ -219,12 +223,12 @@ const policySection = (h: H, model: Model): Html =>
 						[],
 						[
 							AsyncData.matchData(model.policy, {
-								onEmpty: () => skeleton(h, "h-40 w-full rounded-md"),
-								onData: () => skeleton(h, "h-40 w-full rounded-md"),
+								onEmpty: () => policySkeleton(h),
+								onData: () => policySkeleton(h),
 								onFailure: (failure) =>
 									errorState(h, {
 										failure,
-										title: "Couldn’t load the escalation policy",
+										title: "Couldn't load the escalation policy",
 										variant: "row",
 										onRetry: Message.ClickedRetryPolicy(),
 									}),
@@ -386,18 +390,21 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 		{ id: "automation-recent-heading", title: "Recent escalation deliveries", padded: false },
 		[
 			AsyncData.matchData(model.attempts, {
-				onEmpty: () => skeletonList(h, { rows: 3, rowClassName: "h-10", gap: "2", className: "p-4" }),
+				onEmpty: () =>
+					h.div(
+						[],
+						[
+							skeletonList(h, { rows: 3, rowClassName: "h-10", gap: "2", className: "p-4" }),
+							skeletonSlowNote(h, "px-4 pb-3"),
+						],
+					),
 				onFailure: (failure) =>
 					errorState(h, {
 						failure,
-						title: "Couldn’t load recent deliveries",
-						// The deliveries read shares the error issues store, whose outage copy names that subject.
-						message:
-							failure.code === "error_issues_unavailable"
-								? "Escalation deliveries are temporarily unavailable."
-								: undefined,
-						variant: "inline",
-						className: "px-4",
+						title: "Couldn't load recent deliveries",
+						// The policy's row layout; the panel already draws the frame.
+						variant: "row",
+						className: "rounded-none border-0",
 						onRetry: Message.ClickedRetryAttempts(),
 					}),
 				onData: (response) =>

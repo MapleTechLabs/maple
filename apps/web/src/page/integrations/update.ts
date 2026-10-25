@@ -494,6 +494,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Connect.receivedCallback(model, context, provider, status, text),
 		CompletedOAuthReturn: ({ outcome }) => completedOAuthReturn(model, context, outcome),
 		ClickedRetryStatus: ({ name }) => requestStatus(model, context, name, "Supersede"),
+		ClickedRetryFailedStatuses: () =>
+			chain(
+				model,
+				STATUS_NAMES.filter((name) => {
+					const tag = model.statuses[name].data._tag
+					return tag === "Failure" || tag === "Stale"
+				}).map((name) => (next: Model) => requestStatus(next, context, name, "Supersede")),
+			),
 		ClickedDisconnect: () => withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
 		GotDisconnectDialogMessage: ({ message: child }) =>
 			model.disconnect.isPending ||

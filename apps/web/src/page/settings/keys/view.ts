@@ -14,7 +14,7 @@ import { panel } from "../../../ui/panel"
 import { searchInput } from "../../../ui/search-input"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import * as SelectView from "../../../ui/select-view"
-import { skeletonList } from "../../../ui/skeleton"
+import { skeletonList, skeletonSlowNote } from "../../../ui/skeleton"
 import { errorState } from "../../../ui/error-state"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { sectionNote, settingsSection, settingsSections } from "../kit/section"
@@ -145,7 +145,7 @@ const SYNC_UNAVAILABLE = makeClientErrorBody({
 	_tag: "@maple/web/errors/SyncUnavailable",
 	code: "sync_unavailable",
 	title: "Couldn't load keys",
-	message: "Live sync is unavailable, so keys couldn’t be loaded. Try again.",
+	message: "Live sync is unavailable.",
 	retryable: false,
 	recovery: "retry",
 })
@@ -184,7 +184,18 @@ const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
 		[
 			panel(h, {}, [
 				model.apiKeys === null
-					? skeletonList(h, { rows: 1, rowClassName: "h-[44px]", gap: "2", className: "p-4" })
+					? h.div(
+							[],
+							[
+								skeletonList(h, {
+									rows: 1,
+									rowClassName: "h-[44px]",
+									gap: "2",
+									className: "p-4",
+								}),
+								skeletonSlowNote(h, "px-4 pb-3"),
+							],
+						)
 					: rows.length === 0
 						? sectionNote(h, "No phones have Home Screen widgets for this organization.")
 						: devicesTable(h, model, rows, inputs),
@@ -229,12 +240,18 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								className: "py-12",
 							})
 						: isLoading
-							? skeletonList(h, {
-									rows: 3,
-									rowClassName: "h-[52px]",
-									gap: "2",
-									className: "p-4",
-								})
+							? h.div(
+									[],
+									[
+										skeletonList(h, {
+											rows: 3,
+											rowClassName: "h-[52px]",
+											gap: "2",
+											className: "p-4",
+										}),
+										skeletonSlowNote(h, "px-4 pb-3"),
+									],
+								)
 							: counts.visible.length === 0
 								? keysEmpty(h, model)
 								: keysTable(h, model, counts.visible, inputs),

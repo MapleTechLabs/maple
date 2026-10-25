@@ -202,7 +202,7 @@ describe("infra overview", () => {
 			{ update: pageUpdate, view: withViewInputs(view, { context })() },
 			given(allFailed),
 			expectAll(all.role("alert")).toHaveCount(1),
-			expectView(text(failure.title)).toExist(),
+			expectView(text("Couldn't check your sources")).toExist(),
 		)
 	})
 
@@ -219,6 +219,6 @@ describe("infra overview", () => {
 		expect(sourceReads(retried.commands)).toHaveLength(2)
 		const render = { update: pageUpdate, view: withViewInputs(view, { context })() }
 		scene(render, given(allFailed), expectView(role("button", { name: "Try again" })).toExist())
-		scene(render, given(retried.model), expectView(text(failure.title)).toExist())
+		scene(render, given(retried.model), expectView(text("Couldn't check your sources")).toExist())
 	})
 })

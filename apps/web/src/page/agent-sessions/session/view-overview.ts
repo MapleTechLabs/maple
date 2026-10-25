@@ -273,7 +273,7 @@ const ledgerRow = (
 								),
 							),
 						],
-						[tool.failed > 0 ? String(tool.failed) : "."],
+						[tool.failed > 0 ? String(tool.failed) : "–"],
 					),
 					h.span(
 						[h.Class(cn(LEDGER_TIME, "font-mono text-xs tabular-nums"))],

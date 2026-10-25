@@ -92,6 +92,7 @@ const cardsOf = <M>(
 				: approvalCard(h, {
 						toolName: part.toolName,
 						input: part.input,
+						timeZone: options.timeZone,
 						resolved: model.resolvedApprovals[part.toolCallId],
 						isRawOpen: model.openPanels.includes(`raw:${part.toolCallId}`),
 						isDeciding: model.decidingApprovals.includes(part.toolCallId),
