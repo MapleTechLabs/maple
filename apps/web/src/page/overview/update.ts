@@ -440,6 +440,23 @@ const retry = (model: Model, context: PageContext, target: RetryTarget): Return 
 		: sync({ ...model, [RETRY_SLOT[target]]: Keyed.idle() }, context, "Load")
 }
 
+/** Forget every failed card read so the next sync requests them, then retry the facets read. */
+const retryPage = (model: Model, context: PageContext): Return => {
+	const synced = sync(
+		{
+			...model,
+			usage: Keyed.forgetFailure(model.usage),
+			overviewSeries: Keyed.forgetFailure(model.overviewSeries),
+			logSeries: Keyed.forgetFailure(model.logSeries),
+			refinement: Keyed.forgetFailure(model.refinement),
+		},
+		context,
+		"Load",
+	)
+	const facets = retry(synced.model, context, "Facets")
+	return { model: facets.model, commands: [...(synced.commands ?? []), ...(facets.commands ?? [])] }
+}
+
 const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
 	const next = TimeRangePicker.update(model.timePicker, message)
 	const lifted = {
@@ -562,6 +579,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		ClickedRetry: ({ target }) => retry(model, context, target),
+		ClickedRetryPage: () => retryPage(model, context),
 		ClickedResetTimeRange: () =>
 			navigate(model, {
 				...model.search,
