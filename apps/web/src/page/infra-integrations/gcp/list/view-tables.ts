@@ -91,7 +91,14 @@ const rowsOrEmpty = (h: H, rows: ReadonlyArray<Html>, emptyMessage: string) =>
 const SERVICE_KIND = { cloudRun: "Cloud Run", cloudFunctions: "Function 1st gen" } as const
 
 const statusMix = (h: H, row: GcpServiceRow): Html => {
-	if (row.requests === 0) return h.div([h.Class(cn("hidden w-[170px] md:block", SUB))], ["no traffic"])
+	// An idle service still bills instance time; say so here, not in the sub-line, so the place fits.
+	if (row.requests === 0)
+		return GCP_SERVICE_RULES.inScope(row, "idle")
+			? h.div(
+					[h.Class(cn("hidden w-[170px] md:block", SUB, TONE_TEXT.warn)), h.Title("No requests, instance time billed")],
+					["idle, still billed"],
+				)
+			: h.div([h.Class(cn("hidden w-[170px] md:block", SUB))], ["no traffic"])
 	const failedShare = row.failed / row.requests
 	const clientShare = row.clientErrors / row.requests
 	const rated = GCP_SERVICE_RULES.inScope(row, "serving5xx")
@@ -134,12 +141,9 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 	)
 }
 
-const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => [
+const serviceMeta = (row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => [
 	SERVICE_KIND[row.service],
 	...placeItems(row, showProject),
-	GCP_SERVICE_RULES.inScope(row, "idle")
-		? h.span([h.Class(TONE_TEXT.warn)], ["no requests · instance time billed"])
-		: undefined,
 ]
 
 export const servicesTable = (
@@ -172,7 +176,7 @@ export const servicesTable = (
 						row,
 						rules: GCP_SERVICE_RULES,
 						spec: GCP_SERVICE_BAND,
-						meta: serviceMeta(h, row, ctx.showProject),
+						meta: serviceMeta(row, ctx.showProject),
 						timeSearch: ctx.timeSearch,
 					},
 					[
