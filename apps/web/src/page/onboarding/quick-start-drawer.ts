@@ -17,6 +17,8 @@ export const ConnectDrawer = Schema.Struct({
 	platform: Schema.Literals(STACK_PLATFORM_IDS),
 	/** Bumped for each new flow: a result from a replaced one is dropped, like a page instance's. */
 	instance: Schema.Number,
+	/** Left by Done or Back: the flow is over, and a closed sheet that was only dismissed keeps listening. */
+	isExited: Schema.Boolean,
 	flow: SourcesFlow.Model,
 	dialog: Dialog.Model,
 })
@@ -61,7 +63,7 @@ const withFlow = (drawer: ConnectDrawer, step: SourcesFlow.FlowReturn): DrawerSt
 	const out = step.outMessage
 	if (out === undefined) return { drawer: next, commands }
 	if (out._tag !== "ExitedConnectFlow") return { drawer: next, commands, outMessage: out }
-	return withDialog(next, Dialog.close(next.dialog), commands)
+	return withDialog({ ...next, isExited: true }, Dialog.close(next.dialog), commands)
 }
 
 const withDialog = (
@@ -77,8 +79,8 @@ const withDialog = (
 }
 
 /**
- * Opens the sheet on the platform. The same platform resumes its flow (a token not yet copied, a
- * create still answering); another starts a new one. The dialog is reused, mid-exit or not.
+ * Opens the sheet on the platform. A push source dismissed mid-way resumes (its create, its one-time
+ * token); anything else starts a new flow, which re-reads the integration. The dialog is reused.
  */
 export const openDrawer = (
 	previous: ConnectDrawer | null,
@@ -88,13 +90,25 @@ export const openDrawer = (
 	const dialog = previous?.dialog ?? Dialog.init(DRAWER_ID, "sheet")
 	const opened = Dialog.open(dialog)
 	const dialogCommands = Command.mapMessages(opened.commands ?? [], toDialog)
-	if (previous !== null && previous.platform === platform)
+	if (
+		previous !== null &&
+		previous.platform === platform &&
+		!previous.isExited &&
+		previous.flow.integration === null
+	)
 		return { drawer: { ...previous, dialog: opened.model }, commands: dialogCommands }
 	const flow = SourcesFlow.initFlow(TARGETS[platform], context)
 	const instance = (previous?.instance ?? 0) + 1
-	const step = withFlow({ platform, instance, flow: flow.model, dialog: opened.model }, flow)
+	const step = withFlow(
+		{ platform, instance, isExited: false, flow: flow.model, dialog: opened.model },
+		flow,
+	)
 	return { ...step, commands: [...step.commands, ...dialogCommands] }
 }
+
+/** The flow's Subscriptions (an OAuth popup, polls) run until it is left or replaced, open or not. */
+export const isDrawerListening = (drawer: ConnectDrawer | null): drawer is ConnectDrawer =>
+	drawer !== null && !drawer.isExited
 
 export const updateDrawer = (
 	drawer: ConnectDrawer,

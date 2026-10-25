@@ -20,7 +20,7 @@ import * as CreateOrg from "./create-org"
 import type { Inputs } from "./inputs"
 import * as McpAuthorize from "./mcp-authorize"
 import * as QuickStart from "./quick-start"
-import { DrawerMessage } from "./quick-start-drawer"
+import { DrawerMessage, isDrawerListening } from "./quick-start-drawer"
 import { storageKeyOf } from "./quick-start-state"
 import * as SelectPlan from "./select-plan"
 import * as Unsubscribe from "./unsubscribe"
@@ -228,17 +228,14 @@ const contextOf = (inputs: Inputs): PageContext | null =>
 		onSome: (orgId) => ({ orgId, pinnedNamespace: null, timeZone: inputs.timeZone }),
 	})
 
-/** The open connect drawer's flow, as its Subscriptions (the OAuth popup, the polls) read it. */
+/** The connect drawer's live flow, as its Subscriptions (the OAuth popup, the polls) read it. */
 export const connectFlowOf = (
 	model: Model,
 	inputs: Inputs,
 ): Option.Option<PageSubscriptionInput<SourcesFlow.Model>> => {
 	const { screen } = model
 	const context = contextOf(inputs)
-	return screen._tag === "QuickStart" &&
-		screen.drawer !== null &&
-		screen.drawer.dialog.isOpen &&
-		context !== null
+	return screen._tag === "QuickStart" && isDrawerListening(screen.drawer) && context !== null
 		? Option.some({ model: screen.drawer.flow, context })
 		: Option.none()
 }

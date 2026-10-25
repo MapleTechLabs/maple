@@ -11,7 +11,7 @@ import * as Tabs from "../../ui/tabs"
 import type { PageContext } from "../contract"
 import { Message as FlowMessage } from "../sources/new/message"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
-import { DrawerMessage } from "./quick-start-drawer"
+import { DrawerMessage, isDrawerListening } from "./quick-start-drawer"
 import { drawerView } from "./quick-start-drawer-view"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
 import { connectStep } from "./quick-start-view"
@@ -245,6 +245,33 @@ describe("onboarding connect drawer", () => {
 		// The open sheet's own Subscriptions and Commands still reach it.
 		const own = update(docker, toFlow(FlowMessage.ChangedName({ value: "Edge hosts" }), null))
 		expect(own.model.drawer?.flow.name).toBe("Edge hosts")
+	})
+
+	test("Done ends a push source's flow: the next Set up starts another source", () => {
+		const opened = update(
+			atConnect(["kubernetes"]),
+			Message.ClickedSetUp({ platform: "kubernetes" }),
+		).model
+		const saving = update(opened, toFlow(FlowMessage.SubmittedForm())).model
+		const made = update(
+			saving,
+			toFlow(FlowMessage.CompletedCreate({ result: Result.succeed(created) })),
+		).model
+		const done = update(made, toFlow(FlowMessage.ClickedDone())).model
+		expect(isDrawerListening(done.drawer)).toBe(false)
+		const again = update(done, Message.ClickedSetUp({ platform: "kubernetes" })).model
+		expect(again.drawer?.flow.created).toBeNull()
+		expect(again.drawer?.instance).toBe(2)
+	})
+
+	test("a dismissed integration keeps listening for its popup, and reopening reads it afresh", () => {
+		const opened = update(atConnect(["railway"]), Message.ClickedSetUp({ platform: "railway" })).model
+		const dismissed = closedByUser(opened)
+		expect(dismissed.drawer?.dialog.isOpen).toBe(false)
+		expect(isDrawerListening(dismissed.drawer)).toBe(true)
+		const reopened = update(dismissed, Message.ClickedSetUp({ platform: "railway" }))
+		expect(reopened.model.drawer?.instance).toBe(2)
+		expect(names(reopened.commands)).toEqual(expect.arrayContaining(["LoadIntegrationsRailwayStatus"]))
 	})
 
 	test("without the org's context the drawer stays shut", () => {
