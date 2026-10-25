@@ -1466,6 +1466,51 @@
 	@apply w-full h-auto aspect-[1280/660] object-cover bg-bg-deep border border-border rounded-xl my-8;
 }
 
+.docs-content .deploy-button {
+	@apply mt-2 mb-6 inline-flex h-10 items-center gap-2.5 rounded-lg border border-border bg-bg-elevated px-4 text-sm font-medium text-fg no-underline transition-colors hover:border-fg-muted/40 hover:text-fg;
+}
+
+.docs-content .deploy-button svg {
+	@apply h-4 w-4 shrink-0;
+}
+
+.docs-content .deploy-button .deploy-button__arrow {
+	@apply h-3.5 w-3.5 text-fg-muted transition-transform;
+}
+
+.docs-content .deploy-button:hover .deploy-button__arrow {
+	@apply translate-x-0.5 -translate-y-0.5 text-fg;
+}
+
+.docs-content .spec-list {
+	@apply mt-4 mb-8 rounded-lg border border-border divide-y divide-border;
+}
+
+.docs-content .spec-list > div {
+	@apply grid grid-cols-[7.5rem_1fr] items-baseline gap-4 px-4 py-2.5;
+}
+
+/* Labels share the sidebar group headings' mono caps, so values carry the weight. */
+.docs-content .spec-list dt {
+	@apply font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted;
+}
+
+.docs-content .spec-list dd {
+	@apply m-0 flex flex-wrap items-baseline gap-x-2 text-sm text-fg;
+}
+
+.docs-content .spec-list dd code {
+	@apply py-0;
+}
+
+.docs-content .spec-list dd span {
+	@apply text-[13px] text-fg-muted;
+}
+
+.docs-content .spec-list dd span::before {
+	content: "· ";
+}
+
 .docs-content .docs-byline img {
 	@apply w-5 h-5 aspect-square my-0 border-0 rounded-full;
 }
