@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Clock, Context, Effect, Layer, Schema } from "effect"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations } from "@maple/db/tables"
-import { AlertDestinationId, OrgId, RoleName, UserId } from "@maple/domain/http"
+import { AlertDestinationId, AlertPersistenceError, OrgId, RoleName, UserId } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { GetErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -48,7 +48,7 @@ const insertDestination = (id: AlertDestinationId, orgId: OrgId) =>
 		)
 	})
 
-const makeLayer = () => {
+const makeLayer = (namesFail = false) => {
 	const database = createTestDb(createdDbs).layer
 	return Layer.mergeAll(
 		ErrorPolicyService.layer.pipe(Layer.provide(database)),
@@ -61,9 +61,11 @@ const makeLayer = () => {
 		} as never),
 		Layer.succeed(AlertsService, {
 			listDestinations: () =>
-				Effect.succeed({
-					destinations: [{ id: DEST, name: "On-call", type: "webhook", enabled: true }],
-				}),
+				namesFail
+					? Effect.fail(new AlertPersistenceError({ message: "bad destination row" }))
+					: Effect.succeed({
+							destinations: [{ id: DEST, name: "On-call", type: "webhook", enabled: true }],
+						}),
 		} as never),
 	)
 }
@@ -147,5 +149,18 @@ describe("error notification policy tools", () => {
 			expect(yield* failureOf({ destination_ids: " , " })).toBeDefined()
 			expect((yield* readPolicy).output.destinationIds).toEqual([DEST])
 		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("still reports a saved write when the destination names cannot be read", () =>
+		Effect.gen(function* () {
+			yield* setup
+			const result = yield* call("update_error_notification_policy", { destination_ids: [DEST] })
+			if (result._tag !== "Success") return yield* Effect.die(result.failure)
+			const output = Schema.decodeUnknownSync(GetErrorNotificationPolicyOutput)(
+				result.success.structuredContent,
+			)
+			expect(output.destinationNamesUnavailable).toBe(true)
+			expect(output.destinations.map((d) => [d.id, d.name])).toEqual([[DEST, null]])
+		}).pipe(Effect.provide(makeLayer(true))),
 	)
 })
