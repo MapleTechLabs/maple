@@ -24,7 +24,7 @@ import { DEFAULT_PRESET } from "./update"
 import { aiTab } from "./view-ai"
 import { TRAFFIC_TOKENS } from "./view-chart"
 import { expandDialog } from "./view-expand"
-import { filtersRail } from "./view-filters"
+import { filtersRail, showsBreakdownCards } from "./view-filters"
 import { overviewContent } from "./view-overview"
 
 // The web analytics page.
@@ -145,7 +145,7 @@ const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
 const body = (h: H, model: Model, timeZone: string, isNarrow: boolean): Html => {
 	if (tabOf(model.search) === "ai") return aiTab(h, model, timeZone)
 	const presence = presenceOf(model.presence, "sessions")
-	if (presence.status === "absent" && activeFilterChips(filtersOf(model.search)).length === 0)
+	if (!showsBreakdownCards(model))
 		return signalEmptyState(h, {
 			signal: "sessions",
 			presence,
