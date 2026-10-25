@@ -65,6 +65,7 @@ export const listFrame = (multiAccount: boolean): ListFrame => ({
 	accounts: multiAccount ? cloudflareAccounts(DEMO_ACCOUNT_STATUSES, DEMO_NOW) : [],
 	singleAccountName: ACCOUNT_NAME,
 	banner: null,
+	inPlaceViews: true,
 })
 
 /** One account holding maple.dev: the zone page's plain "account" chip and rail name. */

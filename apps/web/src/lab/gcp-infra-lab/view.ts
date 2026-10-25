@@ -14,7 +14,8 @@ import { gcpRequestedView, gcpSparks, gcpWindowSeconds } from "../../components/
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "../../charts/theme-colors"
-import type * as GcpList from "../../page/infra-integrations/gcp/list/model"
+import * as GcpList from "../../page/infra-integrations/gcp/list/model"
+import { viewHref } from "../../page/infra-integrations/gcp/list/update"
 import { gcpListPage, THEME_TOKENS } from "../../page/infra-integrations/gcp/list/view"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { segmentedSelect } from "../../ui/segmented-select"
@@ -44,6 +45,11 @@ const listView = Submodel.defineView<Model, GcpList.Message>((model, h) =>
 					isWaiting: false,
 					projectMenu: model.projectMenu,
 					locale: INITIAL_LOCALE,
+					// The lab holds its state in the model, so a plain click switches in place.
+					viewTab: (view) => ({
+						href: viewHref({}, view),
+						onClick: GcpList.Message.ClickedView({ view }),
+					}),
 				}),
 			]),
 		],

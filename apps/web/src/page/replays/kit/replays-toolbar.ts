@@ -14,7 +14,8 @@ export type ReplaysToolbarOptions<M> = Readonly<{
 	query: string
 	onInput: (value: string) => M
 	onClear: M
-	errorSessions: number
+	/** `undefined` until the facets answer, so a failed read never claims zero. */
+	errorSessions: number | undefined
 	isErrorsOnly: boolean
 	onToggleErrorsOnly: M
 	engagedSessions: number | undefined
@@ -50,8 +51,9 @@ export const replaysToolbar = <M>(h: HtmlBuilder<M>, options: ReplaysToolbarOpti
 			],
 			[
 				triageChip(h, options.isErrorsOnly, options.onToggleErrorsOnly, "crit", [
-					h.span([h.Class("tabular-nums")], [formatNumber(options.errorSessions)]),
-					" with errors",
+					...(options.errorSessions === undefined
+						? ["with errors"]
+						: [h.span([h.Class("tabular-nums")], [formatNumber(options.errorSessions)]), " with errors"]),
 				]),
 				triageChip(h, options.isEngagedOnly, options.onToggleEngagedOnly, "ok", [
 					...(options.engagedSessions === undefined

@@ -24,13 +24,13 @@ import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
-import { segmentedSelect } from "../../../../ui/segmented-select"
 import { switchControl } from "../../../../ui/switch"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 import { heroChip } from "../../../infra/kit/hero-chip"
+import { linkTabStrip } from "../../../infra/kit/view-tabs"
 import { pageHero, pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
 import type { Status, ZoneRow } from "../data"
@@ -52,7 +52,7 @@ import {
 	statusOf,
 } from "./derive"
 import { Message, type Model } from "./model"
-import { DEFAULT_PRESET } from "./update"
+import { DEFAULT_PRESET, viewHref } from "./update"
 import { accountHealthLine, accountMenu, accountsStrip } from "./view-accounts"
 import { type SparkContext, queueTable, workerTable, zoneTable, zoneTableLoading } from "./view-tables"
 
@@ -268,7 +268,7 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 
 const TITLE = "Cloudflare"
 
-/** The title row's badge and controls; the account and view switch appear once there is data to scope. */
+/** The title row's badge; the account switch appears once there is data to scope. */
 type HeaderParts = Readonly<{ trailing?: Html; actions: ReadonlyArray<Html> }>
 
 const header = (
@@ -278,30 +278,30 @@ const header = (
 	scope: ListScope | null,
 ): HeaderParts => {
 	if (scope === null) return { actions: [] }
-	const options = CLOUDFLARE_VIEWS.filter((v) => v === scope.view || scope.counts[v] !== 0).map((v) => ({
-		value: v,
-		label: scope.counts[v] === null ? VIEW_LABEL[v] : `${VIEW_LABEL[v]} ${scope.counts[v]}`,
-	}))
 	const account = scope.multiAccount
 		? accountMenu(h, model.accountMenu, scope.accounts, scope.accountId)
 		: singleAccountName
 			? heroChip(h, ["account ", singleAccountName])
 			: undefined
-	return {
-		trailing: account,
-		actions:
-			options.length > 1
-				? [
-						segmentedSelect(h, {
-							size: "xs",
-							ariaLabel: "Cloudflare view",
-							options,
-							value: scope.view,
-							onChange: (view) => Message.ClickedView({ view }),
-						}),
-					]
-				: [],
-	}
+	return { trailing: account, actions: [] }
+}
+
+/** The view tabs, each with its count; views with nothing in them stay hidden. */
+const viewTabs = (h: H, model: Model, scope: ListScope, inPlace: boolean): Html | null => {
+	const views = CLOUDFLARE_VIEWS.filter((v) => v === scope.view || scope.counts[v] !== 0)
+	if (views.length < 2) return null
+	return linkTabStrip(
+		h,
+		"Cloudflare views",
+		views.map((v) => ({
+			id: v,
+			title: scope.counts[v] === null ? VIEW_LABEL[v] : `${VIEW_LABEL[v]} ${scope.counts[v]}`,
+			href: viewHref(model.search, v),
+			onClick: inPlace ? Message.ClickedView({ view: v }) : undefined,
+		})),
+		scope.view,
+		false,
+	)
 }
 
 /** `CloudflareListPage`'s props: what the route reads, or the lab's fixtures. */
@@ -310,6 +310,8 @@ export type ListFrame = Readonly<{
 	accounts: ReadonlyArray<CloudflareAccount>
 	singleAccountName: string | null
 	banner: Html | null
+	/** The lab has no router: its view tabs switch on a plain click instead of following the link. */
+	inPlaceViews?: boolean
 }>
 
 const listPage = (h: H, model: Model, status: Status, data: ListData, spark: SparkContext): Html => {
@@ -353,26 +355,32 @@ export const listBody = (
 						sort: model.queueSort,
 						isWaiting: isWaiting(model.platform.data),
 					})
+	const tabs = viewTabs(h, model, scope, frame.inPlaceViews === true)
+	const content = [
+		...(banner === null ? [] : [banner]),
+		...(scope.showAccountColumn
+			? [
+					accountsStrip(
+						h,
+						scope.accounts,
+						accountShares(scope.view, data, scope.zoneAccount),
+						accountCounts(scope.accounts, data, scope.zoneAccount),
+					),
+				]
+			: healthLine === null
+				? []
+				: [healthLine]),
+		body,
+	]
 	return h.div(
 		[h.Class("space-y-6")],
 		[
 			...(withHeader
 				? [pageHero(h, { title: TITLE, ...header(h, model, frame.singleAccountName, scope) })]
 				: []),
-			...(banner === null ? [] : [banner]),
-			...(scope.showAccountColumn
-				? [
-						accountsStrip(
-							h,
-							scope.accounts,
-							accountShares(scope.view, data, scope.zoneAccount),
-							accountCounts(scope.accounts, data, scope.zoneAccount),
-						),
-					]
-				: healthLine === null
-					? []
-					: [healthLine]),
-			body,
+			...(tabs === null
+				? content
+				: [h.div([h.Class("space-y-4")], [tabs, h.div([h.Class("space-y-6")], content)])]),
 		],
 	)
 }
@@ -477,8 +485,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						trailing: hero.trailing,
 						description: "Traffic, errors and cache for your zones and Workers.",
 					}).title,
-					actions:
-						headerActions(h, hero.actions, timeControls),
+					actions: headerActions(h, hero.actions, timeControls),
 				},
 				[statusView(h, model, spark)],
 			),
