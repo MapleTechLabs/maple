@@ -1,5 +1,5 @@
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-import { FILTER_SECTION_LABEL, hasActiveFilters, trafficIncludes } from "../../components/analytics/filters"
+import { activeFilterChips, FILTER_SECTION_LABEL, hasActiveFilters, trafficIncludes } from "../../components/analytics/filters"
 import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
@@ -21,6 +21,7 @@ import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 import { type FilterKey, Message } from "./message"
 import type { Breakdowns, Model } from "./model"
 import { filtersOf, tabOf } from "./requests"
+import { presenceOf } from "../kit/signal-presence"
 import { favicon, isHostLike } from "./view-icons"
 
 // `AnalyticsFilterSidebar`: the page's filter rail.
@@ -136,11 +137,19 @@ const loadedRail = (h: H, model: Model, breakdowns: Breakdowns): Html => {
 	])
 }
 
-// Overview's breakdown cards show this same read's failure in full; the AI tab does not.
+/** The overview's breakdown cards render (not the AI tab, not the no-sessions setup state). */
+export const showsBreakdownCards = (model: Model): boolean =>
+	tabOf(model.search) === "overview" &&
+	!(
+		presenceOf(model.presence, "sessions").status === "absent" &&
+		activeFilterChips(filtersOf(model.search)).length === 0
+	)
+
+// The breakdown cards show this same read's failure in full; when they are not drawn, the rail explains it.
 export const filtersRail = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.breakdowns.data, {
 		onEmpty: () => filterSidebarLoading(h, 6),
 		onFailure: (failure) =>
-			filterSidebarError(h, failure, undefined, tabOf(model.search) === "overview" ? failure : undefined),
+			filterSidebarError(h, failure, undefined, showsBreakdownCards(model) ? failure : undefined),
 		onData: (breakdowns) => loadedRail(h, model, breakdowns),
 	})
