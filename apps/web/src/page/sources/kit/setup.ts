@@ -1,4 +1,5 @@
 import type { SourcePlatform } from "@maple/domain/primitives"
+import { resolveLang } from "../../../lib/highlight"
 import { ingestUrl } from "../../../lib/services/common/ingest-url"
 import { Schema } from "effect"
 import { Command, type Update } from "foldkit"
@@ -151,6 +152,7 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 								codeBlock(h, {
 									code: snippet.code,
 									language: snippets.length > 1 ? snippet.language : snippet.label,
+									lang: resolveLang(snippet.language),
 									copy: model.codeCopy,
 									toCopyMessage: (message) => toParentMessage(Message.GotCodeCopyMessage({ message })),
 								}),

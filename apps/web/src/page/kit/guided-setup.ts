@@ -6,6 +6,7 @@ import {
 } from "../../components/ingest/onboard-skill"
 import { type FrameworkId, sdkSnippets } from "../../components/quick-start/sdk-snippets"
 import { type DocsPage, docsUrl } from "../../lib/docs"
+import { type Lang, resolveLang } from "../../lib/highlight"
 import { ingestUrl } from "../../lib/services/common/ingest-url"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -225,10 +226,12 @@ const block = <M>(
 	language: string,
 	className?: string,
 	isPlain = false,
+	lang: Lang = resolveLang(language),
 ): Html =>
 	codeBlock(h, {
 		code,
 		language,
+		lang,
 		className,
 		isPlain,
 		copy: parts.snippetCopies[key] ?? CopyButton.init(),
@@ -326,6 +329,8 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 							interpolate(snippet.instrument),
 							snippet.label.toLowerCase(),
 							REPLAY_BLOCK_CLASS,
+							false,
+							snippet.lang,
 						),
 						h.a(
 							[

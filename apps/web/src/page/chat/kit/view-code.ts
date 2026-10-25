@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { COPY_PATH, DOWNLOAD_PATH, LINE_CLASS } from "../../kit/message-response"
 import { type HighlightedCode, highlightKey } from "./code-highlight"
 
-// Streamdown's full code block, its lines coloured by sugar-high (`code-highlight.ts`).
+// Streamdown's full code block, its lines coloured by `code-highlight.ts`.
 
 export type CodeHost<M> = Readonly<{
 	highlights: Readonly<Record<string, HighlightedCode>>
@@ -83,12 +83,12 @@ const codeLines = <M>(
 					line.length === 0
 						? ["\n"]
 						: line.map((token) =>
-								h.span([h.Style({ color: `var(--sh-${token.type})` })], [token.content]),
+								h.span([h.Style({ color: `var(--sh-${token.slot})` })], [token.content]),
 							),
 				),
 			)
 
-/** A fenced block: the language header, Download and Copy, numbered lines coloured by sugar-high. */
+/** A fenced block: the language header, Download and Copy, numbered lines coloured. */
 export const codeBlock = <M>(h: HtmlBuilder<M>, host: CodeHost<M>, value: string, language: string): Html => {
 	const code = value.replace(/\n+$/, "")
 	const highlighted = host.highlights[highlightKey(language, value)] ?? null

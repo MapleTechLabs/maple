@@ -1,8 +1,12 @@
+import type { Lang } from "../../lib/highlight"
+
 export type FrameworkId = "nextjs" | "nodejs" | "python" | "go" | "effect" | "otel"
 
 export interface SdkSnippet {
 	language: FrameworkId
 	label: string
+	/** The language `instrument` is written in. */
+	lang: Lang
 	description: string
 	iconKey: FrameworkId
 	install: string | { packages: string[] }
@@ -13,6 +17,7 @@ export interface SdkSnippet {
 export const sdkSnippets: SdkSnippet[] = [
 	{
 		language: "nextjs",
+		lang: "ts",
 		label: "Next.js",
 		description: "React framework",
 		iconKey: "nextjs",
@@ -43,6 +48,7 @@ export function register() {
 	},
 	{
 		language: "nodejs",
+		lang: "ts",
 		label: "Node.js",
 		description: "JavaScript runtime",
 		iconKey: "nodejs",
@@ -83,6 +89,7 @@ sdk.start();`,
 	},
 	{
 		language: "python",
+		lang: "python",
 		label: "Python",
 		description: "General purpose",
 		iconKey: "python",
@@ -112,6 +119,7 @@ with tracer.start_as_current_span("hello-maple"):
 	},
 	{
 		language: "go",
+		lang: "go",
 		label: "Go",
 		description: "Systems language",
 		iconKey: "go",
@@ -161,6 +169,7 @@ func main() {
 	},
 	{
 		language: "effect",
+		lang: "ts",
 		label: "Effect",
 		description: "TypeScript toolkit (Effect 3: use @effect-v3 tag)",
 		iconKey: "effect",
@@ -186,6 +195,7 @@ Effect.runPromise(
 	},
 	{
 		language: "otel",
+		lang: "bash",
 		label: "Custom / OpenTelemetry",
 		description: "Any language or runtime — just point your OTLP exporter at Maple",
 		iconKey: "otel",

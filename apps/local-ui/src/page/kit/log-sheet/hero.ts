@@ -1,4 +1,4 @@
-import { highlightJson } from "../../../lib/highlight"
+import { highlightCode } from "@maple/web/lib/highlight"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import { button } from "@maple/web/ui/button"
@@ -28,7 +28,7 @@ const message = (h: HtmlBuilder<Message>, hero: ReturnType<typeof heroBody>, isC
 	hero.isJson
 		? h.pre(
 				[h.Class(cn("font-mono text-ui leading-relaxed whitespace-pre-wrap break-words", isClamped && "line-clamp-6"))],
-				[h.code([h.InnerHTML(highlightJson(hero.formatted))], [])],
+				[h.code([h.InnerHTML(highlightCode(hero.formatted, "json"))], [])],
 			)
 		: h.p(
 				[h.Class(cn("font-mono text-sm leading-relaxed whitespace-pre-wrap break-words", isClamped && "line-clamp-4"))],

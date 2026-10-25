@@ -30,6 +30,7 @@
 		"@maple/ui": "workspace:*",
 		"@maple/web-data": "workspace:*",
 		"@maple/widgets": "workspace:*",
+		"@pierre/highlights": "0.2.0",
 		"@rrweb/replay": "^2.1.7",
 		"@rrweb/types": "^2.1.7",
 		"@takumi-rs/helpers": "2.14.0",
@@ -45,7 +46,6 @@
 		"effect": "catalog:effect",
 		"foldkit": "0.169.0",
 		"fuse.js": "7.5.0",
-		"sugar-high": "^2.5.1",
 		"three": "^0.186.1",
 		"uqr": "^0.1.3"
 	},

@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { highlightCode } from "../../lib/sugar-high"
+import { highlightCode } from "../../lib/highlight"
 import { Option, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"
@@ -116,7 +116,10 @@ const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknow
 												h.code(
 													[
 														h.InnerHTML(
-															highlightCode(JSON.stringify(parsed, null, 2)),
+															highlightCode(
+																JSON.stringify(parsed, null, 2),
+																"json",
+															),
 														),
 													],
 													[],

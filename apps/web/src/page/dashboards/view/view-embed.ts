@@ -1,6 +1,5 @@
 import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
 import { REFRESH_INTERVAL_OPTIONS } from "../../../lib/dashboard-controls/search-params"
-import { highlightCode } from "../../../lib/sugar-high"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -31,18 +30,6 @@ const wrap = (message: ShareMessage) => Message.GotShareMessage({ message })
 /** `YYYY-MM-DD HH:MM:SS` in UTC, the only shape the share API accepts. */
 const warehouseDateTime = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ")
 
-/** Sugar High tokenizes `400` and `border` flatly; recolour those two for this snippet only. */
-const refineJsxTokens = (html: string) =>
-	html
-		.replace(
-			/<span class="sh__token--identifier" style="color:var\(--sh-identifier\)">(\d+)<\/span>/g,
-			'<span class="sh__token--keyword" style="color:var(--sh-keyword)">$1</span>',
-		)
-		.replace(
-			/<span class="sh__token--identifier" style="color:var\(--sh-identifier\)">(\w+)<\/span>(?=<span class="sh__token--sign" style="color:var\(--sh-sign\)">:<\/span>)/g,
-			'<span class="sh__token--property" style="color:var(--sh-property)">$1</span>',
-		)
-
 const iframeSnippet = (h: H, model: Model, url: string): Html => {
 	const html = ["<iframe", `  src="${url}"`, '  width="100%"', '  height="400"', '  style="border: 0"', '  loading="lazy"', "></iframe>"].join("\n")
 	const jsx = ["<iframe", `  src="${url}"`, '  width="100%"', "  height={400}", "  style={{ border: 0 }}", '  loading="lazy"', "/>"].join("\n")
@@ -65,7 +52,7 @@ const iframeSnippet = (h: H, model: Model, url: string): Html => {
 			panel: (value) =>
 				value === "html"
 					? [codeBlock(h, { code: html, language: "html", ...copy })]
-					: [codeBlock(h, { code: jsx, language: "jsx", highlighted: refineJsxTokens(highlightCode(jsx)), ...copy })],
+					: [codeBlock(h, { code: jsx, language: "jsx", ...copy })],
 		},
 	})
 }

@@ -1,4 +1,4 @@
-import { highlightJson } from "../../../lib/highlight"
+import { highlightCode } from "@maple/web/lib/highlight"
 import * as AttributesView from "@maple/web/ui/attributes/attributes-view"
 import { linkButton } from "@maple/web/ui/button"
 import * as CopyButton from "@maple/web/ui/copy-button"
@@ -63,7 +63,7 @@ const rawPanel = (h: HtmlBuilder<Message>, model: Model, log: LocalLog): Html =>
 		]),
 		h.pre(
 			[h.Class("whitespace-pre-wrap break-all rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed")],
-			[h.code([h.InnerHTML(highlightJson(payload))], [])],
+			[h.code([h.InnerHTML(highlightCode(payload, "json"))], [])],
 		),
 	])
 }

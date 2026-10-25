@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { hoverCardContentStyles } from "@maple/ui/styles/ui/hover-card"
 import { place } from "@maple/web/ui/logs/chip-card"
-import { highlightJson } from "../../lib/highlight"
+import { highlightCode } from "@maple/web/lib/highlight"
 import { tryParseJson } from "@maple/web/ui/attributes/attribute-row"
 import * as CopyButton from "@maple/web/ui/copy-button"
 import { copyButton } from "@maple/web/ui/copy-button"
@@ -115,7 +115,7 @@ const jsonValue = (h: H, model: Model, value: string, parsed: unknown): Html => 
 					jsonCopy(h, model, value, [
 						h.div([h.Class("max-h-64 overflow-auto p-2")], [
 							h.pre([h.Class("text-xs leading-relaxed")], [
-								h.code([h.InnerHTML(highlightJson(JSON.stringify(parsed, null, 2)))], []),
+								h.code([h.InnerHTML(highlightCode(JSON.stringify(parsed, null, 2), "json"))], []),
 							]),
 						]),
 					]),
