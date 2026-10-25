@@ -54,6 +54,7 @@ The server listens on `$PORT` when the platform sets one, and on `4318` otherwis
 Guides for a specific platform, with the service already configured:
 
 - [Render](/docs/self-hosting/platforms/render): one-click deploy from a blueprint.
+- [Railway](/docs/self-hosting/platforms/railway): one-click deploy from a template.
 
 ## Behind a reverse proxy
 
