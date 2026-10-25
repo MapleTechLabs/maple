@@ -574,7 +574,11 @@ const pendingTaskRedirect = (route: AppRoute): Option.Option<Redirect> => {
 	const target = AppRoute.matchOrElse(
 		route,
 		{
-			SignUp: ({ search }) => validateInternalRedirect(search.redirect_url),
+			// As `clerkReverseRedirect`: a fresh sign-up belongs in onboarding.
+			SignUp: ({ search }) => {
+				const signUpTarget = validateInternalRedirect(search.redirect_url)
+				return signUpTarget === null || signUpTarget === "/" ? "/quick-start" : signUpTarget
+			},
 			OrgRequired: ({ search }) => validateInternalRedirect(search.redirect_url),
 		},
 		() => hrefOf(route),

@@ -91,6 +91,14 @@ describe("pending session task", () => {
 		expect(done.model.session).toEqual(Session.SignedIn({ maybeOrgId: Option.some(orgId) }))
 	})
 
+	test("a pending session on /sign-up keeps the sign-up's onboarding destination", () => {
+		const loaded = update(
+			base(AppRoute.SignUp({ search: {} })),
+			Message.CompletedLoadClerk({ snapshot: snapshotOf("setup-mfa") }),
+		)
+		expect(urlsOf(loaded)).toEqual([{ url: "/sign-in?redirect_url=%2Fquick-start" }])
+	})
+
 	test("an org-less session without a task still goes to /org-required", () => {
 		const snapshot = { ...snapshotOf(null), maybeOrgId: Option.none() }
 		const loaded = update(
