@@ -5,6 +5,7 @@ import { isMounted } from "../../../ui/overlay/transition"
 import { refreshButton } from "../../../ui/refresh-button"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { stableSlice } from "../../kit/stable-slice"
 import { errorFilterChips, listStatusOf, pagingOf, signalsOf, sparkWindowOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -25,11 +26,15 @@ const countReadout = (model: Model, shown: number): ReadonlyArray<string> | null
 	return [String(shown), " ", shown === 1 ? "issue" : "issues"]
 }
 
+/** Kept by reference across renders, so the memoized rows that read it stay cached. */
+const stableSparkWindow = stableSlice((window: Model["window"]) =>
+	window === null ? { startMs: 0, endMs: 0, bucketMs: 0 } : sparkWindowOf(window),
+)
+
 const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	const signals = signalsOf(model)
 	const status = listStatusOf(model)
-	const sparkWindow =
-		model.window === null ? { startMs: 0, endMs: 0, bucketMs: 0 } : sparkWindowOf(model.window)
+	const sparkWindow = stableSparkWindow(model.window)
 	const isSelecting = model.selectedIds.length > 0
 	const strip = statStrip(h, model)
 	return h.div(
@@ -52,7 +57,8 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 					// Only a showing menu swaps the row for its trigger: a press alone must keep the row's
 					// DOM (and the focused checkbox in it).
 					rowMenu:
-						model.rowMenuTarget === signal.id && isMounted(model.rowMenu.isOpen, model.rowMenu.animation)
+						model.rowMenuTarget === signal.id &&
+						isMounted(model.rowMenu.isOpen, model.rowMenu.animation)
 							? model.rowMenu
 							: null,
 				}),

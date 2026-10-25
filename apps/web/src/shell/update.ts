@@ -1,5 +1,5 @@
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
-import { Array, Equal, Option, Record } from "effect"
+import { Array, Equal, Option, Record, Struct } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { modifyFields } from "foldkit/struct"
 import * as Dialog from "../ui/dialog"
@@ -334,7 +334,7 @@ const clerkOrgMenu = (model: Model, message: ClerkOrgSwitcher.Message): UpdateRe
 
 // UPDATE
 
-export const update = (model: Model, message: Message): UpdateReturn =>
+const foldMessage = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		ClickedSidebarTrigger: () => toggleSidebar(model),
 		PressedSidebarShortcut: () => toggleSidebar(model),
@@ -523,3 +523,15 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		MeasuredShortcutsPanel: () => ({ model }),
 		ClickedKeyboardShortcuts: () => openShortcuts(closeMenu(model)),
 	})
+
+/**
+ * `modifyFields` always builds a new object, so a message that changed no field (a version check
+ * that found the same commit) would re-render the whole app. Hand back the old Model instead.
+ */
+export const update = (model: Model, message: Message): UpdateReturn => {
+	const result = foldMessage(model, message)
+	const next = result.model
+	return next !== model && Struct.keys(model).every((key) => model[key] === next[key])
+		? { ...result, model }
+		: result
+}

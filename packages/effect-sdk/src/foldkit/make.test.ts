@@ -242,4 +242,31 @@ describe("MapleFoldkit.make", () => {
 		expect(JSON.stringify(attribute("maple.foldkit.recent_messages"))).toContain("ChangedFilter")
 		await maple.dispose()
 	})
+
+	it("reports slow phases from a visible tab and drops them from a hidden one", async () => {
+		const { target, maple, spans } = setup()
+		const visibility = { state: "visible" }
+		vi.stubGlobal("document", {
+			get visibilityState() {
+				return visibility.state
+			},
+		})
+		const app = maple.instrument({ resources: Layer.empty, slow: { onSlow: (_context: unknown) => {} } })
+		// Phases wait for the runtime's first traced Command to learn the tracer.
+		await Effect.runPromise(
+			Effect.void.pipe(Effect.withSpan("FocusSearch"), Effect.provide(app.resources)),
+		)
+		const onSlow = app.slow.onSlow
+		onSlow({ _tag: "Update", durationMs: 40, thresholdMs: 16, message: { _tag: "ClickedSave" } })
+		visibility.state = "hidden"
+		onSlow({ _tag: "Update", durationMs: 8000, thresholdMs: 16, message: { _tag: "ElapsedPoll" } })
+		target.dispatchEvent(new Event("pagehide"))
+		await settle()
+		const messages = spans()
+			.filter((span) => span.name === "foldkit.update")
+			.flatMap((span) => span.attributes.filter((a) => a.key === "maple.foldkit.message"))
+			.map((a) => a.value)
+		expect(messages).toEqual([{ stringValue: "ClickedSave" }])
+		await maple.dispose()
+	})
 })
