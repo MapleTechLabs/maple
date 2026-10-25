@@ -22,6 +22,7 @@ import {
 	workloadGaugeTimeseriesQuery,
 	workloadFacetsQuery,
 	infraPresenceQuery,
+	FILESYSTEM_USED_STATES,
 } from "./infra"
 import { OrgId } from "@maple/domain"
 
@@ -66,24 +67,24 @@ describe("hostDetailSummaryQuery", () => {
 })
 
 describe("hostGaugeTimeseriesQuery", () => {
-	it("pins the attribute named by attributeEquals", () => {
+	it("keeps the attribute values named by attributeIn", () => {
 		const { sql } = compileUnsafe(
 			hostGaugeTimeseriesQuery({
 				hostName: "h",
 				metricName: "system.filesystem.utilization",
 				groupByAttributeKey: "mountpoint",
-				attributeEquals: { key: "state", value: "used" },
+				attributeIn: { key: "state", values: FILESYSTEM_USED_STATES },
 			}),
 			baseParams,
 		)
 		expect(sql).toContain("MetricName = 'system.filesystem.utilization'")
-		expect(sql).toContain("Attributes['state'] = 'used'")
+		expect(sql).toContain("Attributes['state'] IN ('used', '')")
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the per-disk grain
 		expect(sql).toContain("Attributes['mountpoint'] AS attributeValue")
 		expect(sql).toContain("GROUP BY bucket, attributeValue")
 	})
 
-	it("leaves states unfiltered without attributeEquals", () => {
+	it("leaves states unfiltered without attributeIn", () => {
 		const { sql } = compileUnsafe(
 			hostGaugeTimeseriesQuery({
 				hostName: "h",

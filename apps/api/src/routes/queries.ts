@@ -777,7 +777,7 @@ const hostInfraGaugeTimeseries = defineQuery({
 				hostName: payload.hostName,
 				metricName: spec.metricName,
 				groupByAttributeKey: spec.groupByAttributeKey,
-				attributeEquals: spec.attributeEquals,
+				attributeIn: spec.attributeIn,
 			}),
 			{
 				orgId,
