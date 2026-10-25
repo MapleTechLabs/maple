@@ -1,5 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import type { IconName } from "../../../ui/icon"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import type { WindowSearch } from "./frame"
@@ -10,16 +11,17 @@ export type CodeReviewTab = "analytics" | "pull-requests" | "ci" | "issues" | "s
 
 export type CarriedSearch = WindowSearch & Readonly<{ repo?: string; author?: string }>
 
-const TABS: ReadonlyArray<{ tab: CodeReviewTab; path: string; label: string }> = [
-	{ tab: "analytics", path: "/code-review", label: "Analytics" },
+const TABS: ReadonlyArray<{ tab: CodeReviewTab; path: string; label: string; icon: IconName }> = [
+	{ tab: "analytics", path: "/code-review", label: "Analytics", icon: "ChartBarIcon" },
 	{
 		tab: "pull-requests",
 		path: "/code-review/pull-requests",
 		label: "Pull requests",
+		icon: "PullRequestIcon",
 	},
-	{ tab: "ci", path: "/code-review/ci", label: "CI" },
-	{ tab: "issues", path: "/code-review/issues", label: "Issues" },
-	{ tab: "settings", path: "/code-review/settings", label: "Settings" },
+	{ tab: "ci", path: "/code-review/ci", label: "CI", icon: "PlayRotateClockwiseIcon" },
+	{ tab: "issues", path: "/code-review/issues", label: "Issues", icon: "CircleWarningIcon" },
+	{ tab: "settings", path: "/code-review/settings", label: "Settings", icon: "GearIcon" },
 ]
 
 export const tabLabel = (tab: CodeReviewTab): string => TABS.find((entry) => entry.tab === tab)?.label ?? ""
@@ -90,6 +92,7 @@ const tabs = <M>(options: LayoutOptions<M>): Html => {
 				key: entry.tab,
 				href: hrefFor(entry.tab, linkSearch),
 				label: entry.label,
+				icon: entry.icon,
 				isCurrent: entry.tab === active,
 				isRouteActive: isLinkActive(entry.path, linkSearch, currentPath, search),
 			}

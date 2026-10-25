@@ -51,6 +51,8 @@ export interface NavGroup {
 /** `PLANETSCALE_COLOR` (packages/ui/src/components/service-map/service-map-db.tsx). */
 const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
 
+export const NAV_PREVIEW_MAX_GLYPHS = 7
+
 const infrastructureItem: NavItem = {
 	title: "Infrastructure",
 	href: "/infra",
@@ -163,19 +165,29 @@ export const isNavItemActive = (currentPath: string, item: NavItem): boolean =>
 	isPathActive(currentPath, item.href) ||
 	(item.subItems?.some((sub) => matchSubItem(currentPath, sub) !== undefined) ?? false)
 
+export interface NavPreview {
+	readonly glyphs: ReadonlyArray<NavSubItem>
+	/** Marks past the cap, drawn as `+N`. */
+	readonly overflow: number
+}
+
 /**
- * Sources a closed brand section reports (its own page left out). `undefined` when none report, when
- * presence is unknown (`null`: the probe failed or self-hosted), or when it is not a brand section.
+ * Brand marks of a closed section: what the org reports (every mark when nothing does), deduplicated,
+ * the section's own page left out, capped at `NAV_PREVIEW_MAX_GLYPHS` with the rest as a count.
  */
-export const navSourceCount = (
-	item: NavItem,
-	present: ReadonlySet<NavSurface> | null,
-	shown: ReadonlyArray<NavSubItem>,
-): number | undefined => {
-	if (present === null) return undefined
-	if (item.subItems === undefined || !item.subItems.some((sub) => sub.iconColor !== undefined)) return undefined
-	const count = shown.filter((sub) => sub.href !== item.href && sub.icon !== undefined).length
-	return count === 0 ? undefined : count
+export const navPreview = (item: NavItem, shown: ReadonlyArray<NavSubItem>): NavPreview | undefined => {
+	const subItems = item.subItems
+	if (subItems === undefined || !subItems.some((sub) => sub.iconColor !== undefined)) return undefined
+	const marked = (list: ReadonlyArray<NavSubItem>) =>
+		list.filter((sub) => sub.href !== item.href && sub.icon !== undefined)
+	const reporting = marked(shown)
+	const candidates = reporting.length > 0 ? reporting : marked(subItems)
+	const unique = candidates.filter(
+		(sub, index) => candidates.findIndex((other) => other.icon === sub.icon) === index,
+	)
+	if (unique.length <= NAV_PREVIEW_MAX_GLYPHS) return { glyphs: unique, overflow: 0 }
+	const glyphs = unique.slice(0, NAV_PREVIEW_MAX_GLYPHS - 1)
+	return { glyphs, overflow: unique.length - glyphs.length }
 }
 
 /** What the org reports shows; the rest only in the collapsed rail's menu. `null`: everything shows. */
