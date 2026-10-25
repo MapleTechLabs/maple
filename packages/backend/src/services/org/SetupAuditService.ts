@@ -190,6 +190,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 										"sourceContext",
 										"sourceKey",
 										"targetKey",
+										"operation",
+										"updatedAt",
 									)
 									.where(($) => [$.orgId.eq(orgId)]),
 							),
@@ -311,6 +313,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					sourceContext: mapping.sourceContext,
 					sourceKey: mapping.sourceKey,
 					targetKey: mapping.targetKey,
+					operation: mapping.operation,
+					updatedAt: mapping.updatedAt,
 				})),
 				clickhouse: clickhouseRow
 					? {

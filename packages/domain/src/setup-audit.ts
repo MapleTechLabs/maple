@@ -161,6 +161,10 @@ export interface AuditAttributeMapping {
 	readonly sourceContext: string
 	readonly sourceKey: string
 	readonly targetKey: string
+	/** `copy` keeps the source key on the span; `move` deletes it once the target is written. */
+	readonly operation: string
+	/** Epoch ms of the last change; spans stored before it predate the current rule. */
+	readonly updatedAt: number
 }
 
 export interface ConfigAuditInputs {
@@ -680,7 +684,9 @@ const ingestionChecks: ReadonlyArray<AuditCheck> = [
 					(mapping) =>
 						mapping.enabled &&
 						mapping.sourceContext === "span" &&
-						!present.has(mapping.sourceKey),
+						!present.has(mapping.sourceKey) &&
+						// A working move deletes its source, so the target arriving means it runs.
+						!(mapping.operation === "move" && present.has(mapping.targetKey)),
 				)
 				.map((mapping) => ({
 					kind: "attribute_mapping" as const,
@@ -704,13 +710,24 @@ const ingestionChecks: ReadonlyArray<AuditCheck> = [
 		needsWarehouse: true,
 		fixHint:
 			"Stop emitting the source key at the SDK — the mapping cannot merge two keys, so it will never run.",
-		evaluate: ({ config, warehouse }) => {
+		evaluate: ({ config, warehouse, now }) => {
 			if (!warehouse) return PASS
 			const present = spanKeySet(warehouse)
-			// The ingest gateway never overwrites an existing target key (apps/ingest/src/telemetry.rs
-			// `apply_attribute_mappings`), so a mapping whose target already arrives can never fire.
+			const lookbackMs = warehouse.lookbackHours * 60 * 60 * 1000
+			// Stored spans are post-mapping, so a working mapping's target is always present. Only a
+			// span move is decidable: it deletes its source, so a surviving source means it was skipped
+			// because the target already arrived (`apply_attribute_mappings` never overwrites).
 			const noop = config.attributeMappings
-				.filter((mapping) => mapping.enabled && present.has(mapping.targetKey))
+				.filter(
+					(mapping) =>
+						mapping.enabled &&
+						mapping.sourceContext === "span" &&
+						mapping.operation === "move" &&
+						// Spans from before the mapping changed still carry the source key.
+						now - mapping.updatedAt > lookbackMs &&
+						present.has(mapping.sourceKey) &&
+						present.has(mapping.targetKey),
+				)
 				.map((mapping) => ({
 					kind: "attribute_mapping" as const,
 					id: mapping.id,
