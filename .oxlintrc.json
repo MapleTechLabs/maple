@@ -391,6 +391,25 @@
 				]
 			}
 		},
+		// Code views highlight through lib/highlight, whose output falls back to plain text past the
+		// display cap; a span per token of a megabyte log body froze the log sheet.
+		{
+			"files": ["apps/web/src/**/*.ts", "apps/local-ui/src/**/*.ts"],
+			"excludeFiles": ["apps/web/src/lib/highlight.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "@pierre/highlights",
+								"message": "Use highlightCode from lib/highlight (or cappedCode from ui/logs/log-message): they bound what a view renders."
+							}
+						]
+					}
+				]
+			}
+		},
 		// browser-session: the always-loaded tier never reaches the lazy replay tier.
 		{
 			"files": ["packages/browser-session/src/**/*.ts"],

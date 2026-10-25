@@ -1,10 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { highlightCode } from "../../lib/highlight"
-import { Option, Schema } from "effect"
+import { prettyJson, tryParseJson } from "../../lib/display-text"
+import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"
 import { icon } from "../icon"
+import { cappedCode } from "../logs/log-message"
 import { type AttributeSource, copyStatusOf, isOpen, Message, type Model } from "./attributes-panel"
 
 // Port of `CopyableValue`, `SelectableValue`, `AttributeRow` (packages/ui/src/components/attributes/
@@ -13,14 +14,6 @@ import { type AttributeSource, copyStatusOf, isOpen, Message, type Model } from 
 type H = HtmlBuilder<Message>
 
 const stop = { propagation: "Stop" } as const
-
-const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
-
-/** `tryParseJson`: an object or array body, else `None`. */
-export const tryParseJson = (value: string): Option.Option<unknown> => {
-	const trimmed = value.trimStart()
-	return trimmed[0] !== "{" && trimmed[0] !== "[" ? Option.none() : decodeJson(value)
-}
 
 /** `CopyableValue`: inline text that copies itself, tinted by the copy's outcome. */
 export const copyableValue = (
@@ -75,7 +68,7 @@ const selectableValue = (
 	)
 
 /** `CollapsibleJsonValue`: an 80-char preview that expands into highlighted, copyable JSON. */
-const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknown): Html => {
+const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 	const isExpanded = isOpen(model, `json:${id}`, false)
 	const preview = value.length > 80 ? value.slice(0, 80) + "…" : value
 	return h.div(
@@ -110,21 +103,11 @@ const jsonValue = (h: H, model: Model, id: string, value: string, parsed: unknow
 								h.div(
 									[h.Class("max-h-64 overflow-auto p-2")],
 									[
-										h.pre(
-											[h.Class("text-xs leading-relaxed")],
-											[
-												h.code(
-													[
-														h.InnerHTML(
-															highlightCode(
-																JSON.stringify(parsed, null, 2),
-																"json",
-															),
-														),
-													],
-													[],
-												),
-											],
+										// Re-indented only once expanded: a collapsed row shows an 80-character preview.
+										...cappedCode(
+											h,
+											Option.getOrElse(prettyJson(value), () => value),
+											"text-xs leading-relaxed",
 										),
 									],
 								),
@@ -220,7 +203,7 @@ export const attributeRow = (
 	const parsed = tryParseJson(value)
 	const isFilterable = context.canFilter && Option.isNone(parsed)
 	const valueView = Option.match(parsed, {
-		onSome: (json) => jsonValue(h, model, id, value, json),
+		onSome: () => jsonValue(h, model, id, value),
 		onNone: () =>
 			COMMIT_SHA_KEYS.has(attrKey) && context.hasCommitShaValues !== false
 				? commitShaValue(h, id, value)

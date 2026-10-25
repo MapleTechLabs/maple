@@ -1,4 +1,5 @@
 import { codeToHtml, codeToTokens, isSupportedLanguage, type Lang, type Theme } from "@pierre/highlights"
+import { DISPLAY_MAX_CHARS } from "./display-text"
 
 export type { Lang }
 
@@ -47,8 +48,15 @@ export const resolveLang = (label: string): Lang => {
 	return name.includes(".") && isSupportedLanguage(extension) ? extension : "text"
 }
 
-/** Highlighted HTML for `code` (token spans only, for the caller's own `<code>`). */
+const escapeHtml = (text: string): string =>
+	text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+
+/**
+ * Highlighted HTML for `code` (token spans only, for the caller's own `<code>`). Past the display
+ * cap it is escaped plain text: a span per token of a megabyte log body froze the log sheet.
+ */
 export const highlightCode = (code: string, lang: Lang): string => {
+	if (code.length > DISPLAY_MAX_CHARS) return escapeHtml(code)
 	const html = decoder.decode(codeToHtml(code, { lang, theme }))
 	return html.slice(html.indexOf("<code>") + "<code>".length, html.lastIndexOf("</code>"))
 }

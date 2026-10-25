@@ -8,6 +8,7 @@ import { formatCompactTimeInTimezone } from "@maple/web-data/lib/timezone-format
 import { Effect } from "effect"
 import { AsyncData, Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { ROW_LINE_CHARS } from "../../../lib/display-text"
 import { emptyMessage } from "../../../ui/empty"
 import { errorSectionView } from "../../../ui/error-section"
 import { errorState } from "../../../ui/error-state"
@@ -154,7 +155,7 @@ const contextList = (
 							),
 						),
 					],
-					[row.body.split("\n", 1)[0] ?? ""],
+					[(row.body.split("\n", 1)[0] ?? "").slice(0, ROW_LINE_CHARS)],
 				),
 			]
 			return h.li(

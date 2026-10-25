@@ -1,12 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
 import { hoverCardContentStyles } from "@maple/ui/styles/ui/hover-card"
 import { place } from "@maple/web/ui/logs/chip-card"
-import { highlightCode } from "@maple/web/lib/highlight"
-import { tryParseJson } from "@maple/web/ui/attributes/attribute-row"
+import { prettyJson } from "@maple/web/lib/display-text"
 import * as CopyButton from "@maple/web/ui/copy-button"
 import { copyButton } from "@maple/web/ui/copy-button"
 import { eyebrow } from "@maple/web/ui/eyebrow"
 import { icon } from "@maple/web/ui/icon"
+import { cappedCode } from "@maple/web/ui/logs/log-message"
 import * as Tooltip from "@maple/web/ui/tooltip"
 import { Array, Effect, Option, Schema } from "effect"
 import { Mount } from "foldkit"
@@ -92,7 +92,7 @@ const jsonCopy = (h: H, model: Model, value: string, block: ReadonlyArray<Html>)
 }
 
 /** `CollapsibleJsonValue`: an 80-char preview that expands into highlighted JSON. */
-const jsonValue = (h: H, model: Model, value: string, parsed: unknown): Html => {
+const jsonValue = (h: H, model: Model, value: string, formatted: string): Html => {
 	const isExpanded = model.chipCard.isJsonExpanded
 	const preview = value.length > 80 ? value.slice(0, 80) + "…" : value
 	return h.div([h.Class("min-w-0")], [
@@ -114,9 +114,7 @@ const jsonValue = (h: H, model: Model, value: string, parsed: unknown): Html => 
 			? [
 					jsonCopy(h, model, value, [
 						h.div([h.Class("max-h-64 overflow-auto p-2")], [
-							h.pre([h.Class("text-xs leading-relaxed")], [
-								h.code([h.InnerHTML(highlightCode(JSON.stringify(parsed, null, 2), "json"))], []),
-							]),
+							...cappedCode(h, formatted, "text-xs leading-relaxed"),
 						]),
 					]),
 				]
@@ -163,8 +161,8 @@ const cardView = (h: H, model: Model, ref: ChipRef, log: LocalLog, chip: RowChip
 							h.div([h.Class("px-3 py-2")], [
 								cardEyebrow(h, "Value"),
 								h.div([h.Class("font-mono text-xs break-all")], [
-									Option.match(tryParseJson(chip.value), {
-										onSome: (parsed) => jsonValue(h, model, chip.value, parsed),
+									Option.match(prettyJson(chip.value), {
+										onSome: (formatted) => jsonValue(h, model, chip.value, formatted),
 										onNone: () => selectableValue(h, chip),
 									}),
 								]),

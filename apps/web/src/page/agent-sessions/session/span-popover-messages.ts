@@ -3,7 +3,7 @@ import { callMetaLine, type SpanMessage, type SpanMessagePart } from "@maple/age
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { tryParseJson } from "../../../ui/attributes/attribute-row"
+import { tryParseJson } from "../../../lib/display-text"
 import { emptyMessage } from "../../../ui/empty"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"

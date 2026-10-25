@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { DISPLAY_MAX_CHARS } from "./display-text"
 import { highlightCode, highlightTokens, resolveLang } from "./highlight"
 
 describe("resolveLang", () => {
@@ -12,6 +13,11 @@ describe("resolveLang", () => {
 })
 
 describe("highlightCode", () => {
+	it("comes back as escaped plain text past the display cap instead of a span per token", () => {
+		const html = highlightCode(`{"a": "<b>&"}${" ".repeat(DISPLAY_MAX_CHARS)}`, "json")
+		expect([html.includes("<span"), html.startsWith('{"a": "&lt;b&gt;&amp;"}')]).toEqual([false, true])
+	})
+
 	it("colours tokens with the palette variables and escapes the source", () => {
 		const html = highlightCode('{"a": "<b>&", "n": 1, "ok": true}', "json")
 		expect(html).toContain('<span style="color:var(--sh-property)">"a"</span>')

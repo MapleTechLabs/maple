@@ -3,7 +3,7 @@ import { Option } from "effect"
 import * as Dialog from "@maple/web/ui/dialog"
 import * as Tabs from "@maple/web/ui/tabs"
 import * as Tooltip from "@maple/web/ui/tooltip"
-import { Command, expect as expectView, given, hover, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, hover, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { Message } from "./message"
 import type { LocalLog } from "./model"
@@ -76,5 +76,20 @@ describe("log detail sheet", () => {
 		const hovering = { ...opened, tooltip: { ...opened.tooltip, isOpen: true } }
 		const closed = update(hovering, Message.ClosedSheet()).model
 		expect(openLog(Option.some(closed), log("INFO")).model.tooltip.isOpen).toBe(false)
+	})
+
+	test("a megabyte JSON body previews its head and, expanded, shows a capped part with a note", () => {
+		const body = JSON.stringify(Object.fromEntries(Array.from({ length: 20_000 }, (_, i) => [`key${i}`, { status: 500 }])))
+		scene(
+			{ update, view },
+			given(openLog(Option.none(), { ...log("INFO"), body }).model),
+			...mounted,
+			expectView(text(/"key0"/)).toExist(),
+			expectView(text(/"key19999"/)).not.toExist(),
+			click(role("button", { name: /Show full message/ })),
+			expectView(text(/Showing the first .* Copy it to get all of it\./)).toExist(),
+			expectView(text(/"key19999"/)).not.toExist(),
+			expectView(role("button", { name: "Copy message" })).toExist(),
+		)
 	})
 })

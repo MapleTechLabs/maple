@@ -76,4 +76,39 @@ describe("attributes panel", () => {
 		const stale = update(copied.model, Message.ElapsedCopyStatus({ generation: 0 }))
 		expect(stale.model.copy.status).toBe("copied")
 	})
+
+	test("a JSON attribute previews raw, has no Filter action, and expands on click", () => {
+		const jsonProgram = {
+			update: program.update,
+			view: (model: Model, h: HtmlBuilder<Message>) =>
+				view(model, { ...INPUTS, logAttributes: { payload: '{"a":1,"b":[2]}' } }, h),
+		}
+		scene(
+			jsonProgram,
+			given(init("panel")),
+			expectView(text('{"a":1,"b":[2]}')).toExist(),
+			expectView(role("button", { name: /^Filter by payload/ })).not.toExist(),
+			click(text('{"a":1,"b":[2]}')),
+			expectView(text("JSON")).toExist(),
+			expectView(text('{"a":1,"b":[2]}')).not.toExist(),
+		)
+	})
+
+	test("a huge JSON attribute expands to a capped part with a note", () => {
+		const huge = JSON.stringify(
+			Object.fromEntries(Array.from({ length: 20_000 }, (_, i) => [`key${i}`, i])),
+		)
+		const hugeProgram = {
+			update: program.update,
+			view: (model: Model, h: HtmlBuilder<Message>) =>
+				view(model, { ...INPUTS, logAttributes: { payload: huge } }, h),
+		}
+		scene(
+			hugeProgram,
+			given(init("panel")),
+			click(text(/^\{"key0":0/)),
+			expectView(text(/Showing the first .* characters\. Copy it to get all of it\./)).toExist(),
+			expectView(text(/"key19999"/)).not.toExist(),
+		)
+	})
 })
