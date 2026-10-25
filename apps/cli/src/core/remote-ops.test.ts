@@ -411,7 +411,7 @@ describe("remote-ops window properties", () => {
 	const decodeLogSearch = Schema.decodeUnknownOption(V2LogSearchParams)
 	const decodeWindowQuery = Schema.decodeUnknownOption(V2TelemetryWindowQuery)
 
-	it("inspectTrace asks for logs in a window the logs search accepts, for any trace bounds", async () => {
+	it("inspectTrace covers any trace's bounds with log windows the logs search accepts", async () => {
 		const traces = Arbitrary.all({ startMs: epochMs, durationMs: traceDurationMs })
 		const result = await Effect.runPromise(
 			Arbitrary.checkEffect(
@@ -437,17 +437,30 @@ describe("remote-ops window properties", () => {
 						const before = sent.length
 						const v2 = yield* v2Client
 						yield* Remote.inspectTrace(v2, { traceId: "671403778c461093dbe435b41b677d18" })
-						const body = sent.slice(before).find((r) => r.url.includes("/logs/search"))?.body
-						// The logs search reads the raw logs table, so it carries the list cap.
-						return Option.exists(
-							decodeLogSearch(body),
-							(search) =>
-								search.start_time === start &&
-								timeWindowViolation(
-									Date.parse(search.start_time),
-									Date.parse(search.end_time),
-									MAX_LIST_RANGE_SECONDS,
-								) === undefined,
+						const searches = sent
+							.slice(before)
+							.filter((r) => r.url.includes("/logs/search"))
+							.map((r) => decodeLogSearch(r.body))
+						if (!searches.every(Option.isSome)) return false
+						const windows = searches
+							.map((search) => ({
+								startMs: Date.parse(search.value.start_time),
+								endMs: Date.parse(search.value.end_time),
+							}))
+							.sort((a, b) => a.startMs - b.startMs)
+						// Every window is one the logs search serves (it reads the raw logs
+						// table, so it carries the list cap), and together they tile the
+						// trace with no gap or overlap at millisecond precision.
+						return (
+							windows.length > 0 &&
+							windows.every(
+								(w) =>
+									timeWindowViolation(w.startMs, w.endMs, MAX_LIST_RANGE_SECONDS) ===
+									undefined,
+							) &&
+							windows[0]!.startMs === startMs &&
+							windows.every((w, i) => i === 0 || w.startMs === windows[i - 1]!.endMs + 1) &&
+							windows[windows.length - 1]!.endMs >= startMs + durationMs
 						)
 					}),
 				{ runs: 200 },

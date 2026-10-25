@@ -224,16 +224,29 @@ const buildSpanTree = (
 
 const TRACE_NOT_FOUND_TAG = "@maple/http/v2/TraceNotFoundError"
 
+const SEARCH_CAP_MS = MAX_LIST_RANGE_SECONDS * 1000
+
 /**
- * The log search window for a trace's own bounds. A trace whose spans share one
- * instant (workerd only advances the clock across I/O) has an empty window, and
- * a long-running one can outlast the search cap; the logs search rejects both.
- * Both bounds are inclusive, so 1 ms is enough to cover the instant.
+ * The log search windows covering a trace's own bounds, oldest first. A trace
+ * whose spans share one instant (workerd only advances the clock across I/O)
+ * has an empty window, and a long-running one outlasts the search cap; the logs
+ * search rejects both. Bounds are inclusive at millisecond precision, so an
+ * instant needs 1 ms and each window starts 1 ms after the previous one ends.
  */
-export const traceLogWindow = (start: string, end: string) => {
-	const startMs = Date.parse(start)
-	const endMs = Math.min(Math.max(Date.parse(end), startMs + 1), startMs + MAX_LIST_RANGE_SECONDS * 1000)
-	return { start_time: start, end_time: new Date(endMs).toISOString() }
+export const traceLogWindows = (
+	start: string,
+	end: string,
+): ReadonlyArray<{ readonly start_time: string; readonly end_time: string }> => {
+	const endMs = Date.parse(end)
+	const from = (startMs: number): ReadonlyArray<{ start_time: string; end_time: string }> => {
+		const windowEndMs = Math.max(Math.min(startMs + SEARCH_CAP_MS, endMs), startMs + 1)
+		const window = {
+			start_time: new Date(startMs).toISOString(),
+			end_time: new Date(windowEndMs).toISOString(),
+		}
+		return windowEndMs >= endMs ? [window] : [window, ...from(windowEndMs + 1)]
+	}
+	return from(Date.parse(start))
 }
 
 export const inspectTrace = (
@@ -254,14 +267,16 @@ export const inspectTrace = (
 		)
 		// v2 retrieves a trace by id alone, so `--since/--start/--end` do not
 		// apply here. The trace reports its own bounds, which are exactly the
-		// window its logs fall in.
-		const logs = yield* client.logs.search({
-			payload: {
-				...traceLogWindow(trace.start_time, trace.end_time),
-				limit: V2_LIST_MAX,
-				filters: { trace_id: id },
-			},
-		})
+		// window its logs fall in. Logs come back newest first, so searching the
+		// windows newest first and keeping the first V2_LIST_MAX matches what one
+		// uncapped search would return.
+		const pages = yield* Effect.forEach(
+			[...traceLogWindows(trace.start_time, trace.end_time)].reverse(),
+			(window) =>
+				client.logs.search({ payload: { ...window, limit: V2_LIST_MAX, filters: { trace_id: id } } }),
+			{ concurrency: 4 },
+		)
+		const logs = { data: pages.flatMap((page) => page.data).slice(0, V2_LIST_MAX) }
 		return {
 			traceId: trace.id,
 			serviceCount: trace.service_count,
