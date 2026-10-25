@@ -267,6 +267,7 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 }
 
 const TITLE = "Cloudflare"
+const DESCRIPTION = "Traffic, errors and cache for your zones and Workers."
 
 /** The title row's badge; the account switch appears once there is data to scope. */
 type HeaderParts = Readonly<{ trailing?: Html; actions: ReadonlyArray<Html> }>
@@ -457,12 +458,14 @@ const statusView = (h: H, model: Model, spark: SparkContext): Html =>
 		onRefreshing: (status) => connectedView(h, model, status, spark),
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
-	const spark = { theme: model.themeColors, isChartReady: model.chartRuntime._tag === "Ready" }
-	const status = statusOf(model)
-	const data = listDataOf(model)
-	const hasData = status !== null && status.connected && status.analyticsCapable && !isNoTraffic(data)
-	const hero = header(h, model, status?.accountName ?? null, hasData ? listScopeOf(model, data) : null)
+/** The title row the route and the lab share: title, account chip and description, then time controls. */
+export const titleRow = (
+	h: H,
+	model: Model,
+	singleAccountName: string | null,
+	scope: ListScope | null,
+): Readonly<{ titleContent: Html; actions: Html }> => {
+	const hero = header(h, model, singleAccountName, scope)
 	const timeControls = pageTime(h, {
 		search: model.search,
 		defaultPreset: DEFAULT_PRESET,
@@ -473,22 +476,24 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		onReload: Message.ClickedReload(),
 		isReloading: model.isReloading,
 	})
+	return {
+		titleContent: pageHeroParts(h, {
+			title: TITLE,
+			trailing: hero.trailing,
+			description: DESCRIPTION,
+		}).title,
+		actions: headerActions(h, hero.actions, timeControls),
+	}
+}
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
+	const spark = { theme: model.themeColors, isChartReady: model.chartRuntime._tag === "Ready" }
+	const status = statusOf(model)
+	const data = listDataOf(model)
+	const hasData = status !== null && status.connected && status.analyticsCapable && !isNoTraffic(data)
+	const row = titleRow(h, model, status?.accountName ?? null, hasData ? listScopeOf(model, data) : null)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
-		[
-			dashboardPage(
-				h,
-				{
-					scrollClassName: "gap-6",
-					titleContent: pageHeroParts(h, {
-						title: TITLE,
-						trailing: hero.trailing,
-						description: "Traffic, errors and cache for your zones and Workers.",
-					}).title,
-					actions: headerActions(h, hero.actions, timeControls),
-				},
-				[statusView(h, model, spark)],
-			),
-		],
+		[dashboardPage(h, { scrollClassName: "gap-6", ...row }, [statusView(h, model, spark)])],
 	)
 })

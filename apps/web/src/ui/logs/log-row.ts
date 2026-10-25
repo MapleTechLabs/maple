@@ -64,10 +64,8 @@ const EXPAND_BUTTON_CLASS =
 	"-mr-1.5 shrink-0 flex h-4 items-center justify-center w-4 text-muted-foreground/40 group-hover/row:text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus-visible:outline-none focus-visible:text-foreground"
 const ROW_ACTION_CLASS =
 	"inline-flex size-5 items-center justify-center rounded text-3xs text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-const ACTIONS_CLASS = cn(
-	"absolute right-2 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-md border border-border bg-background p-0.5 group-hover/row:flex group-data-[focused]/row:flex",
-	"@3xl/log:static @3xl/log:flex @3xl/log:shrink-0 @3xl/log:translate-y-0 @3xl/log:-my-1 @3xl/log:invisible @3xl/log:group-hover/row:visible @3xl/log:group-data-[focused]/row:visible",
-)
+const ACTIONS_CLASS =
+	"absolute right-0 hidden items-center gap-0.5 rounded-md border border-border bg-background p-0.5 group-hover/row:flex group-data-[focused]/row:flex group-focus-within/row:flex"
 const ICON_BUTTON_CLASS = cn(
 	buttonVariants({
 		className: "text-muted-foreground hover:text-foreground",
@@ -246,54 +244,6 @@ export const logRow = <Message>(
 					),
 					...row.pinned.map((cell) => pinnedCell(h, cell)),
 					messageLane(h, events, row, index, state),
-					h.span(
-						[rowClass(h, ACTIONS_CLASS)],
-						[
-							iconButton(
-								h,
-								"Copy message",
-								events.clickedCopyMessage(index),
-								icon(h, "CopyIcon", { size: 13 }),
-							),
-							iconButton(
-								h,
-								"Copy link to log",
-								events.clickedCopyLink(index),
-								icon(h, "LinkIcon", { size: 13 }),
-							),
-							// Without a trace the slot stays reserved, so every row's chips end at one edge.
-							...(row.traceId === ""
-								? [
-										h.span([
-											h.AriaHidden(true),
-											rowClass(
-												h,
-												cn(
-													ROW_ACTION_CLASS,
-													"hidden @3xl/log:inline-flex @3xl/log:invisible",
-												),
-											),
-										]),
-									]
-								: [
-										h.a(
-											[
-												h.Href(`/traces/${row.traceId}`),
-												h.AriaLabel("Open trace"),
-												h.Title("Open trace"),
-												rowClass(h, ROW_ACTION_CLASS),
-											],
-											[icon(h, "PulseIcon", { size: 13 })],
-										),
-									]),
-							iconButton(
-								h,
-								"Open details",
-								events.clickedRow(index),
-								icon(h, "ExternalLinkIcon", { size: 12 }),
-							),
-						],
-					),
 				],
 			),
 			...(state.isExpanded && state.panel !== undefined
@@ -316,6 +266,51 @@ export const logRow = <Message>(
 		],
 	)
 
+/** The hover actions, overlaid on the message's tail so they take no width and never cover a chip. */
+const rowActions = <Message>(
+	h: HtmlBuilder<Message>,
+	events: RowEvents<Message>,
+	row: LogRowView,
+	index: number,
+	state: RowState,
+): Html =>
+	h.span(
+		[rowClass(h, cn(ACTIONS_CLASS, state.wrap ? "-top-1" : "top-1/2 -translate-y-1/2"))],
+		[
+			iconButton(
+				h,
+				"Copy message",
+				events.clickedCopyMessage(index),
+				icon(h, "CopyIcon", { size: 13 }),
+			),
+			iconButton(
+				h,
+				"Copy link to log",
+				events.clickedCopyLink(index),
+				icon(h, "LinkIcon", { size: 13 }),
+			),
+			...(row.traceId === ""
+				? []
+				: [
+						h.a(
+							[
+								h.Href(`/traces/${row.traceId}`),
+								h.AriaLabel("Open trace"),
+								h.Title("Open trace"),
+								rowClass(h, ROW_ACTION_CLASS),
+							],
+							[icon(h, "PulseIcon", { size: 13 })],
+						),
+					]),
+			iconButton(
+				h,
+				"Open details",
+				events.clickedRow(index),
+				icon(h, "ExternalLinkIcon", { size: 12 }),
+			),
+		],
+	)
+
 const messageLane = <Message>(
 	h: HtmlBuilder<Message>,
 	events: RowEvents<Message>,
@@ -324,7 +319,16 @@ const messageLane = <Message>(
 	state: RowState,
 ): Html =>
 	h.span(
-		[rowClass(h, cn("min-w-0 flex-1 flex gap-2", state.wrap ? "items-start" : "items-center"))],
+		[
+			rowClass(
+				h,
+				cn(
+					// 22px is the actions' footprint when they sat in the flow; it keeps the row height.
+					"min-h-[22px] min-w-0 flex-1 flex gap-2",
+					state.wrap ? "items-start" : "items-center",
+				),
+			),
+		],
 		[
 			h.span(
 				[
@@ -332,28 +336,44 @@ const messageLane = <Message>(
 						h,
 						cn(
 							// The message keeps most of the row; chips past the lane's 40% wrap out of view.
-							"min-w-[55%] flex-1",
-							QUIET_SEVERITIES.has(row.severity) ? "text-muted-foreground" : "text-foreground",
-							state.wrap ? "whitespace-pre-wrap break-words" : "truncate",
+							"relative flex min-w-[55%] flex-1 gap-2",
+							state.wrap ? "items-start" : "items-center",
 						),
 					),
 				],
-				highlightedText(
-					h,
-					state.wrap
-						? textWindow(row.body, state.highlight, ROW_WRAPPED_CHARS)
-						: textWindow(row.firstLine, state.highlight, ROW_LINE_CHARS),
-					state.highlight,
-				),
-			),
-			...(!state.wrap && row.hiddenLinesLabel !== ""
-				? [
-						h.span(
-							[rowClass(h, META_BADGE_CLASS), h.DataAttribute("slot", "badge")],
-							["+", row.hiddenLinesLabel],
+				[
+					h.span(
+						[
+							rowClass(
+								h,
+								cn(
+									"min-w-0 flex-1",
+									QUIET_SEVERITIES.has(row.severity)
+										? "text-muted-foreground"
+										: "text-foreground",
+									state.wrap ? "whitespace-pre-wrap break-words" : "truncate",
+								),
+							),
+						],
+						highlightedText(
+							h,
+							state.wrap
+								? textWindow(row.body, state.highlight, ROW_WRAPPED_CHARS)
+								: textWindow(row.firstLine, state.highlight, ROW_LINE_CHARS),
+							state.highlight,
 						),
-					]
-				: []),
+					),
+					...(!state.wrap && row.hiddenLinesLabel !== ""
+						? [
+								h.span(
+									[rowClass(h, META_BADGE_CLASS), h.DataAttribute("slot", "badge")],
+									["+", row.hiddenLinesLabel],
+								),
+							]
+						: []),
+					rowActions(h, events, row, index, state),
+				],
+			),
 			...(row.chips.length > 0
 				? [
 						h.span(
