@@ -79,6 +79,16 @@ describe("spanBudgetApplies", () => {
 			),
 		).toBe(true)
 		expect(spanBudgetApplies({ attributeFilters: [{ key: "user.id", mode: "exists" }] }, DAY)).toBe(true)
+		// `in` and an empty `equals` emit no index prefilter.
+		expect(
+			spanBudgetApplies(
+				{ attributeFilters: [{ key: "user.id", values: ["u1", "u2"], mode: "in" }] },
+				DAY,
+			),
+		).toBe(true)
+		expect(
+			spanBudgetApplies({ attributeFilters: [{ key: "user.id", value: "", mode: "equals" }] }, DAY),
+		).toBe(true)
 		// An `or` group skips the index prefilters, so it cannot prune.
 		expect(
 			spanBudgetApplies(
