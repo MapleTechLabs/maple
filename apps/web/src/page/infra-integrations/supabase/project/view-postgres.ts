@@ -70,7 +70,7 @@ const metricCard = (
 				[
 					keyedBody(h, model.timeseries, {
 						rows: 4,
-						failureTitle: "Failed to load project metrics",
+						failureTitle: "Couldn't load project metrics",
 						onRetry: Message.ClickedRetry({ section: "timeseries" }),
 						render: (rows) =>
 							rows.length === 0
@@ -212,7 +212,7 @@ export const postgresRow = (
 			sectionPanel(h, { title: "Slowest queries", description: "By total time · pg_stat_statements" }, [
 				keyedBody(h, model.insights, {
 					rows: 4,
-					failureTitle: "Failed to load the slowest queries",
+					failureTitle: "Couldn't load the slowest queries",
 					onRetry: Message.ClickedRetry({ section: "insights" }),
 					render: (insights) => queriesBody(h, insights, clock),
 				}),

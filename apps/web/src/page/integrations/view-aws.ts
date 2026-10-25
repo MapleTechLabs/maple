@@ -724,7 +724,7 @@ export const awsCard = (h: H, model: Model, timeZone: string, focusId: string | 
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the AWS integration",
+				title: "Couldn't load the AWS integration",
 				onRetry: Message.ClickedRetryStatus({ name: "aws" }),
 			}),
 		onStale: ({ data }) => byStatus(h, model, data, timeZone, focusId),

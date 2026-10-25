@@ -121,7 +121,7 @@ export const ciRunsSection = (h: H, sheet: ReviewSheet): Html =>
 	AsyncData.matchData(sheet.ciRuns.data, {
 		onEmpty: () => ciSection(h, [skeleton(h, "h-16 w-full")]),
 		onFailure: () =>
-			ciSection(h, [h.p([h.Class("text-sm text-muted-foreground")], ["CI runs could not be loaded"])]),
+			ciSection(h, [h.p([h.Class("text-sm text-muted-foreground")], ["Couldn't load cI runs"])]),
 		onData: (response) =>
 			response.runs.length === 0
 				? ciSection(h, [

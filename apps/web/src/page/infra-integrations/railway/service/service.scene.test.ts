@@ -118,7 +118,7 @@ describe("railway service", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			themeResolved(),
-			expectView(text("Failed to load service metrics")).toExist(),
+			expectView(text("Couldn't load service metrics")).toExist(),
 		)
 		expect(names(pageUpdate(failed, Message.ClickedRetryTimeseries()).commands)).toContain(
 			"FetchRailwayServiceTimeseries",

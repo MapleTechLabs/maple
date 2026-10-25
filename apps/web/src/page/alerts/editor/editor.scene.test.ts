@@ -412,7 +412,7 @@ describe("alert rule editor", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			themeResolved(),
-			expectView(text("Failed to load alert rules")).toExist(),
+			expectView(text("Couldn't load alert rules")).toExist(),
 			click(role("button", { name: "Try again" })),
 			Command.expectHas(ReloadPage()),
 			Command.resolve(ReloadPage, Message.ReloadedPage()),
@@ -438,7 +438,7 @@ describe("alert rule editor", () => {
 			Message.FailedLoadDashboards({ orgId: ORG }),
 		).model
 		expect(failed.notices).toEqual([
-			{ severity: "warning", message: "Dashboards could not be loaded. Starting from a blank alert." },
+			{ severity: "warning", message: "Couldn't load dashboards. Starting from a blank alert." },
 		])
 	})
 

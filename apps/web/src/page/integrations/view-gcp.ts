@@ -159,7 +159,7 @@ export const gcpCard = (h: H, model: Model, timeZone: string, focusId: string | 
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the Google Cloud integration",
+				title: "Couldn't load the Google Cloud integration",
 				onRetry: Message.ClickedRetryStatus({ name: "gcp" }),
 			}),
 		onStale: ({ data }) => byStatus(h, model, data, timeZone, focusId),

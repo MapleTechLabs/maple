@@ -129,6 +129,7 @@ export interface ClerkPublicUserData {
 	readonly lastName: string | null
 	readonly identifier: string
 	readonly imageUrl: string
+	readonly hasImage: boolean
 }
 export interface ClerkMembershipResource {
 	readonly id: string
@@ -179,7 +180,10 @@ interface ClerkGlobal extends ClerkResources {
 	readonly unmountSignIn: (element: HTMLDivElement) => void
 	readonly mountSignUp: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
 	readonly unmountSignUp: (element: HTMLDivElement) => void
-	readonly mountTaskResetPassword: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
+	readonly mountTaskResetPassword: (
+		element: HTMLDivElement,
+		props: Readonly<Record<string, unknown>>,
+	) => void
 	readonly unmountTaskResetPassword: (element: HTMLDivElement) => void
 	readonly mountTaskSetupMFA: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
 	readonly unmountTaskSetupMFA: (element: HTMLDivElement) => void
@@ -197,13 +201,10 @@ declare global {
 	}
 }
 
-export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()(
-	"@maple/web/ClerkLoadError",
-	{
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
+export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()("@maple/web/ClerkLoadError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
 
 /**
  * An organization as the app reads it (`useOrganization`, `useOrganizationList`): its public
@@ -217,7 +218,11 @@ export const ClerkOrganization = Schema.Struct({
 	isServedHere: Schema.Boolean,
 	/** `organizationRegionOpen` at the time of the emit: onboarding may still ask for the region. */
 	isRegionOpen: Schema.Boolean,
-	flags: Schema.Struct({ aiAutoTriage: Schema.Boolean, releases: Schema.Boolean, securityAudit: Schema.Boolean }),
+	flags: Schema.Struct({
+		aiAutoTriage: Schema.Boolean,
+		releases: Schema.Boolean,
+		securityAudit: Schema.Boolean,
+	}),
 })
 export type ClerkOrganization = typeof ClerkOrganization.Type
 
@@ -252,7 +257,8 @@ export type ClerkSnapshot = typeof ClerkSnapshot.Type
 const toOrganization = (organization: ClerkOrganizationResource, nowMs: number): ClerkOrganization => ({
 	id: OrgId.make(organization.id),
 	name: organization.name,
-	imageUrl: organization.imageUrl ?? "",
+	// Clerk's generated default image is not the org's; the warm initials tile stands in.
+	imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
 	homeRegion: organizationHomeRegion(organization.publicMetadata),
 	isServedHere: organizationServedIn(organization.publicMetadata, currentRegion),
 	isRegionOpen: organizationRegionOpen(
@@ -270,7 +276,7 @@ const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 		maybeUser: Option.map(Option.fromNullishOr(resources.user), (user) => ({
 			fullName: user.fullName ?? null,
 			email: user.primaryEmailAddress?.emailAddress ?? null,
-			imageUrl: user.imageUrl ?? "",
+			imageUrl: user.hasImage ? (user.imageUrl ?? "") : "",
 		})),
 		maybeOrganization: Option.map(Option.fromNullishOr(resources.organization), (organization) =>
 			toOrganization(organization, nowMs),
@@ -279,7 +285,9 @@ const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 			toOrganization(membership.organization, nowMs),
 		),
 		maybePendingTask: Option.filter(
-			Option.fromNullishOr(resources.session?.status === "pending" ? resources.session.currentTask?.key : null),
+			Option.fromNullishOr(
+				resources.session?.status === "pending" ? resources.session.currentTask?.key : null,
+			),
 			Schema.is(PendingSessionTask),
 		),
 	}))
@@ -298,7 +306,7 @@ const injectClerkJs = Effect.callback<void, ClerkLoadError>((resume) => {
 	script.setAttribute("data-clerk-publishable-key", publishableKey)
 	script.addEventListener("load", () => resume(Effect.void))
 	script.addEventListener("error", (cause) =>
-		resume(Effect.fail(new ClerkLoadError({ message: "Failed to load Clerk", cause }))),
+		resume(Effect.fail(new ClerkLoadError({ message: "Couldn't load Clerk", cause }))),
 	)
 	document.head.appendChild(script)
 	// Interrupted (the load deadline): a later attempt injects its own tag.
@@ -431,13 +439,10 @@ export const freshClerkSessionToken = sessionToken(true)
 // clerk-js resources for the Clerk-only settings tabs and `/account`: ported markup over the
 // vanilla resource API.
 
-export class ClerkActionError extends Schema.TaggedError<ClerkActionError>()(
-	"@maple/web/ClerkActionError",
-	{
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
+export class ClerkActionError extends Schema.TaggedError<ClerkActionError>()("@maple/web/ClerkActionError", {
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
 
 const stringField = (value: unknown, key: string): string | undefined =>
 	Predicate.hasProperty(value, key) && typeof value[key] === "string" ? value[key] : undefined
@@ -530,17 +535,20 @@ export const UserInvitation = Schema.Struct({
 })
 export type UserInvitation = typeof UserInvitation.Type
 
-const userInvitationPage = (user: ClerkUserResource): Effect.Effect<ReadonlyArray<ClerkUserInvitationResource>, ClerkActionError> => {
-	return clerkTry("Could not load your invitations", () =>
+const userInvitationPage = (
+	user: ClerkUserResource,
+): Effect.Effect<ReadonlyArray<ClerkUserInvitationResource>, ClerkActionError> => {
+	return clerkTry("Couldn't load your invitations", () =>
 		// One generous page: nobody holds a hundred open invitations.
 		user.getOrganizationInvitations.call(user, { status: "pending", pageSize: 100 }),
-	).pipe(
-		Effect.map((page) => page.data),
-	)
+	).pipe(Effect.map((page) => page.data))
 }
 
 /** `useOrganizationList({ userInvitations })`: the orgs that invited this user and are still waiting. */
-export const pendingUserInvitations: Effect.Effect<ReadonlyArray<UserInvitation>, ClerkActionError> = currentClerkUser.pipe(
+export const pendingUserInvitations: Effect.Effect<
+	ReadonlyArray<UserInvitation>,
+	ClerkActionError
+> = currentClerkUser.pipe(
 	Effect.flatMap(userInvitationPage),
 	Effect.map((invitations) =>
 		invitations.map((invitation) => ({
@@ -559,7 +567,10 @@ export const acceptUserInvitation = (invitationId: string): Effect.Effect<string
 		const invitations = yield* userInvitationPage(user)
 		const invitation = invitations.find((candidate) => candidate.id === invitationId)
 		if (invitation === undefined)
-			return yield* new ClerkActionError({ message: "This invitation is no longer pending", cause: undefined })
+			return yield* new ClerkActionError({
+				message: "This invitation is no longer pending",
+				cause: undefined,
+			})
 		yield* clerkTry("Could not accept the invitation", () => invitation.accept.call(invitation))
 		return invitation.publicOrganizationData.id
 	})

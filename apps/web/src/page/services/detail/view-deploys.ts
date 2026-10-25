@@ -81,13 +81,13 @@ const issuesFrame = (h: H, isLimited: boolean, children: ReadonlyArray<Html>): H
 		children,
 	)
 
-/** `ServiceErrorsPanel`: skeleton, the "could not be loaded" line, or up to five issue rows. */
+/** `ServiceErrorsPanel`: skeleton, the "Couldn't load" line, or up to five issue rows. */
 export const issuesPanel = (h: H, model: Model, clock: Clock, isLimited: boolean): Html =>
 	AsyncData.match(model.issues.data, {
 		onIdle: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
 		onLoading: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
-		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Issues could not be loaded."])]),
-		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Issues could not be loaded."])]),
+		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues."])]),
+		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues."])]),
 		onRefreshing: (issues) => issuesReady(h, issues, clock, isLimited),
 		onSuccess: (issues) => issuesReady(h, issues, clock, isLimited),
 	})

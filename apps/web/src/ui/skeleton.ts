@@ -22,6 +22,17 @@ export const skeleton = <M>(
 		...(style === undefined ? [] : [h.Style(style)]),
 	])
 
+/** A muted line that appears once a skeleton has been up for 8s (`.skeleton-slow-note`), so a
+ * stalled read stops reading as a normal load. It restarts whenever the skeleton remounts. */
+export const skeletonSlowNote = <M>(h: HtmlBuilder<M>, className?: string): Html =>
+	h.p(
+		[
+			h.Class(cn("skeleton-slow-note text-muted-foreground text-xs", className)),
+			h.DataAttribute("slot", "skeleton-slow-note"),
+		],
+		["Still loading. This is taking longer than usual."],
+	)
+
 export interface SkeletonListOptions {
 	readonly rows?: number
 	readonly rowClassName?: string

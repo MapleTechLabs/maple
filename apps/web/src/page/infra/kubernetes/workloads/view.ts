@@ -251,7 +251,7 @@ const workloadsArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.workloads.data, {
 		onEmpty: () => workloadTableLoading(h),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load workloads", onRetry: Message.ClickedRetryWorkloads() }),
+			errorState(h, { failure, title: "Couldn't load workloads", onRetry: Message.ClickedRetryWorkloads() }),
 		onData: (workloads) => workloadList(h, model, workloads, inputs),
 	})
 

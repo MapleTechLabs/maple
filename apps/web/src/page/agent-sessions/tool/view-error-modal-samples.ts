@@ -52,7 +52,7 @@ const footer = (h: H, model: Model, shown: number, total: number): Html => {
 										h.Type("button"),
 										h.OnClick(Message.ClickedLoadMore()),
 									],
-									["Couldn't load more — retry"],
+									["Couldn't load more. Retry"],
 								),
 							]
 						: []),
@@ -74,7 +74,7 @@ export const samplesPane = (
 	const isLoading = first === undefined || (!AsyncData.hasData(first) && failure === undefined)
 	const body: ReadonlyArray<Html> =
 		failure !== undefined
-			? [errorState(h, { failure, title: "Failed to load samples" })]
+			? [errorState(h, { failure, title: "Couldn't load samples" })]
 			: isLoading && rows.length === 0
 				? [
 						h.div(

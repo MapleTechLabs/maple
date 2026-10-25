@@ -172,7 +172,8 @@ const emptyState = (h: H, model: Model): Html =>
 const gridArea = (h: H, model: Model, orgId: string): Html =>
 	AsyncData.matchData(model.catalog.data, {
 		onEmpty: () => loadingGrid(h),
-		onFailure: (failure) => errorState(h, { failure }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load metrics", onRetry: Message.ClickedReload() }),
 		onData: (rows) =>
 			toEntries(rows).length === 0
 				? emptyState(h, model)
@@ -184,7 +185,8 @@ const gridArea = (h: H, model: Model, orgId: string): Html =>
 const tableArea = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.table.data, {
 		onEmpty: () => loadingTable(h),
-		onFailure: (failure) => errorState(h, { failure }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load metrics", onRetry: Message.ClickedReload() }),
 		onData: (rows) =>
 			rows.length === 0
 				? emptyState(h, model)
@@ -195,7 +197,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
-			dashboardPage(h, { titleContent: filters(h, model), actions: actions(h, model) }, [
+			dashboardPage(h, { title: "Metrics", actions: actions(h, model), sticky: filters(h, model) }, [
 				(model.search.view ?? "grid") === "grid"
 					? gridArea(h, model, inputs.context.orgId)
 					: tableArea(h, model, inputs.context.timeZone),

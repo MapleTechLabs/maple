@@ -65,8 +65,12 @@ const formatIncludedUsage = (item: CatalogPlanItem): string => {
 	return ""
 }
 
+// A one-decimal dollar amount reads as cents: "$0.3" becomes "$0.30"; "$5" and "$0.002" stay.
+const padCents = (text: string): string =>
+	text.replace(/\$(\d+)\.(\d)(?!\d)/g, (_, dollars: string, tenths: string) => `$${dollars}.${tenths}0`)
+
 const normalizeDetailText = (text: string): string =>
-	text.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")
+	padCents(text.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB"))
 
 /** Autumn words the rate per billing block; events are quoted per million, in its style. */
 const formatDetail = (item: CatalogPlanItem): string | undefined => {
@@ -76,7 +80,7 @@ const formatDetail = (item: CatalogPlanItem): string | undefined => {
 	const quote = quoteUnits(item.featureId, billingUnits)
 	if (amount != null && unit !== undefined && quote !== billingUnits && billingUnits > 0) {
 		const perQuote = (amount / billingUnits) * quote
-		return `then $${Number(perQuote.toPrecision(6))} per ${formatQuoteUnits(quote)} ${unit}`
+		return padCents(`then $${Number(perQuote.toPrecision(6))} per ${formatQuoteUnits(quote)} ${unit}`)
 	}
 	return item.display?.secondaryText ? normalizeDetailText(item.display.secondaryText) : undefined
 }

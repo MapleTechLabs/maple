@@ -669,7 +669,7 @@ const notes = (h: H, count: number, seconds: number): ReadonlyArray<Html> =>
 	[
 		...(isTruncated(count)
 			? [
-					`Showing the ${ENDPOINTS_LIMIT} busiest endpoints — this service has more. Narrow the time range or environment to see the rest.`,
+					`Showing the ${ENDPOINTS_LIMIT} busiest endpoints. This service has more. Narrow the time range or environment to see the rest.`,
 				]
 			: []),
 		...(seconds > TRACE_DETAIL_LIMIT_SECONDS
@@ -705,7 +705,7 @@ const loaded = (
 		[
 			...notes(h, endpoints.length, seconds),
 			overviewFailure !== null
-				? errorState(h, { failure: overviewFailure, title: "Failed to load API overview" })
+				? errorState(h, { failure: overviewFailure, title: "Couldn't load API overview" })
 				: Option.match(overview, {
 						onNone: () => kpiSkeleton(h),
 						onSome: (data) => kpiStrip(h, data, summaries, seconds, inputs, theme),
@@ -719,7 +719,7 @@ const loaded = (
 								[
 									errorState(h, {
 										failure: overviewFailure,
-										title: "Failed to load responses",
+										title: "Couldn't load responses",
 									}),
 								],
 							)
@@ -733,7 +733,7 @@ const loaded = (
 								[
 									errorState(h, {
 										failure: breakdownFailure,
-										title: "Failed to load status codes",
+										title: "Couldn't load status codes",
 									}),
 								],
 							)
@@ -750,8 +750,8 @@ export const apiTab = (h: H, model: Model, inputs: ApiTabInputs, theme: ThemeCol
 	AsyncData.match(model.endpoints.data, {
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure }),
-		onStale: ({ error }) => errorState(h, { failure: error }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load endpoints" }),
+		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load endpoints" }),
 		onRefreshing: (endpoints) => loaded(h, model, endpoints, true, inputs, theme),
 		onSuccess: (endpoints) => loaded(h, model, endpoints, false, inputs, theme),
 	})

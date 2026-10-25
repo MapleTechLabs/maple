@@ -173,7 +173,7 @@ export const githubCard = (h: H, model: Model, timeZone: string): ReadonlyArray<
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the GitHub integration",
+				title: "Couldn't load the GitHub integration",
 				onRetry: Message.ClickedGithubRefresh(),
 			}),
 		onStale: ({ data }) => byState(h, model, data, timeZone),

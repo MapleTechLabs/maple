@@ -212,7 +212,7 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 
 const body = (h: H, inputs: ToolsTableInputs): ReadonlyArray<Html> => {
 	if (inputs.failure !== undefined)
-		return [errorState(h, { failure: inputs.failure, title: "Failed to load tools" })]
+		return [errorState(h, { failure: inputs.failure, title: "Couldn't load tools" })]
 	if (inputs.isLoading)
 		return [skeletonList(h, { rows: 3, rowClassName: "h-[38px]", className: "gap-1.5 px-2.5 py-3" })]
 	if (inputs.rows.length === 0)

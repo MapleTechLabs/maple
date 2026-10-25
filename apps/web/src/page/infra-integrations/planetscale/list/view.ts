@@ -129,7 +129,7 @@ const content = (
 			...statsFailure.map((error) =>
 				errorState(h, {
 					failure: error,
-					title: "Failed to load database stats",
+					title: "Couldn't load database stats",
 					onRetry: Message.ClickedRetryStats(),
 					variant: "row",
 				}),

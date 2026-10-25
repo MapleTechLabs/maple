@@ -24,7 +24,7 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 	if (AsyncData.isFailure(overview)) {
 		return errorState(h, {
 			failure: overview.error,
-			title: "Failed to load service overview",
+			title: "Couldn't load service overview",
 			onRetry: Message.ClickedRetry({ target: "Overview" }),
 		})
 	}

@@ -167,7 +167,7 @@ const listBody = (h: H, model: Model, timeZone: string): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load session replays",
+				title: "Couldn't load session replays",
 				onRetry: Message.ClickedRetryList(),
 			}),
 		onData: () => {

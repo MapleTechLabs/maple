@@ -189,13 +189,13 @@ const dataSections = (
 						onFailure: (failure) =>
 							errorState(h, {
 								failure,
-								title: "Failed to load branch stats",
+								title: "Couldn't load branch stats",
 								onRetry: Message.ClickedRetryBranchStats(),
 							}),
 						onStale: ({ error }) =>
 							errorState(h, {
 								failure: error,
-								title: "Failed to load branch stats",
+								title: "Couldn't load branch stats",
 								onRetry: Message.ClickedRetryBranchStats(),
 							}),
 						onRefreshing: () =>

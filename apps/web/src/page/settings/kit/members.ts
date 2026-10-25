@@ -1,4 +1,3 @@
-import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription } from "../../../ui/alert"
 import { icon } from "../../../ui/icon"
@@ -31,7 +30,7 @@ export const adminOnlyNotice = <M>(
 	options.isAdmin
 		? []
 		: [
-				alert(h, { size: "sm", className: cn("max-w-3xl", options.className) }, [
+				alert(h, { size: "sm", className: options.className }, [
 					icon(h, "ShieldIcon"),
 					alertDescription(h, [adminOnlyNoticeText(options.subject, options.adminName)]),
 				]),

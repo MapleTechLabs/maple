@@ -175,8 +175,8 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.releases.data, {
 		onIdle: () => loadingSkeleton(h),
 		onLoading: () => loadingSkeleton(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load releases", onRetry: Message.ClickedRetry() }),
-		onStale: ({ error }) => errorState(h, { failure: error, title: "Failed to load releases", onRetry: Message.ClickedRetry() }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load releases", onRetry: Message.ClickedRetry() }),
+		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load releases", onRetry: Message.ClickedRetry() }),
 		onSuccess: (data) => loaded(h, model, data, false, timeZone),
 		onRefreshing: (data) => loaded(h, model, data, true, timeZone),
 	})

@@ -209,7 +209,7 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load runs",
+				title: "Couldn't load runs",
 				variant: "inline",
 				onRetry: Message.ClickedRetry(),
 			}),

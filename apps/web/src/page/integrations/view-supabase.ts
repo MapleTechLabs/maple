@@ -351,7 +351,7 @@ const byStatus = (h: H, model: Model, status: SupabaseIntegrationStatus, timeZon
 export const supabaseCard = (h: H, model: Model, timeZone: string): Html =>
 	integrationStatusCard(h, model.statuses.supabase, {
 		name: "supabase",
-		failureTitle: "Failed to load the Supabase integration",
+		failureTitle: "Couldn't load the Supabase integration",
 		render: (status) => byStatus(h, model, status, timeZone),
 	})
 

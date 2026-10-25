@@ -38,9 +38,9 @@ export const loadHistory = (sessionId: string) =>
 		const client = yield* MapleSyncHttpClient
 		const response = yield* client.get(sessionUrl(sessionId, "/history"))
 		if (response.status < 200 || response.status >= 300)
-			return yield* new ChatRequestError({ message: `Failed to load chat history: ${response.status}` })
+			return yield* new ChatRequestError({ message: `Couldn't load chat history: ${response.status}` })
 		return yield* HttpClientResponse.schemaBodyJson(ChatHistoryResponse)(response)
-	}).pipe(failWith("Failed to load chat history."))
+	}).pipe(failWith("Couldn't load chat history."))
 
 /** `POST .../messages` with the (preamble-wrapped) text; `409` is a turn already in flight. */
 export const postMessage = (sessionId: string, text: string) =>

@@ -306,7 +306,7 @@ describe("security tabs", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
-			expectView(text("Failed to load findings")).toExist(),
+			expectView(text("Couldn't load findings")).toExist(),
 			expectView(role("button", { name: "Try again" })).toExist(),
 		)
 		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toContain("SecurityApiListTargets")
@@ -656,7 +656,7 @@ describe("spend and models", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failedFresh),
-			expectView(text("The spend limit could not be loaded")).toExist(),
+			expectView(text("Couldn't load the spend limit")).toExist(),
 		)
 		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toContain("SecurityApiGetSettings")
 	})
@@ -896,5 +896,29 @@ describe("add target", () => {
 		const withDraft = AddTarget.update(full, typed("GotScopeMessage", "src/module-100"), []).model
 		expect(AddTarget.errorsOf(withDraft).scope).toBe("At most 100 scope paths.")
 		expect(AddTarget.requestOf(withDraft)).toBeNull()
+	})
+})
+
+describe("retrying failed targets", () => {
+	test("keeps the error up while the retry is out, then shows what it answers", () => {
+		const entered = init(overview, context).model
+		const failed = pageUpdate(
+			entered,
+			Message.CompletedFetchTargets({
+				key: entered.targets.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("unreachable"))),
+			}),
+		).model
+		const retried = pageUpdate(failed, Message.ClickedRetry())
+		expect(names(retried.commands)).toContain("SecurityApiListTargets")
+		expect(retried.model.targets.data._tag).toBe("Failure")
+		const answered = pageUpdate(
+			retried.model,
+			Message.CompletedFetchTargets({
+				key: retried.model.targets.key ?? "",
+				result: Result.succeed(targetsOf(NOW)),
+			}),
+		).model
+		expect(answered.targets.data._tag).toBe("Success")
 	})
 })

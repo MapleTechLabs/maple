@@ -66,7 +66,7 @@ describe("alert incident", () => {
 			{ update: pageUpdate, view },
 			given(updated.model),
 			themeResolved(),
-			expectView(text("Delivery history could not be loaded, so notifications are missing.")).toExist(),
+			expectView(text("Couldn't load delivery history, so notifications are missing.")).toExist(),
 		)
 	})
 

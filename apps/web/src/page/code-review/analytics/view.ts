@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "../../../charts/chart-runtime"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
 import { errorState } from "../../../ui/error-state"
-import { skeleton } from "../../../ui/skeleton"
+import { skeleton, skeletonSlowNote } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { seriesTokens } from "../kit/analytics-panel"
@@ -28,7 +28,14 @@ export const loadingSkeleton = (h: H): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-6")],
 		[
-			skeleton(h, "h-[118px] w-full rounded-md"),
+			// The note sits in the gap under the first block, so it takes no space before it shows.
+			h.div(
+				[h.Class("relative")],
+				[
+					skeleton(h, "h-[118px] w-full rounded-md"),
+					skeletonSlowNote(h, "absolute inset-x-0 top-full mt-1"),
+				],
+			),
 			h.div(
 				[h.Class("grid gap-6 lg:grid-cols-2")],
 				[skeleton(h, "h-[440px] w-full rounded-md"), skeleton(h, "h-[440px] w-full rounded-md")],
@@ -44,7 +51,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load review analytics",
+				title: "Couldn't load review analytics",
 				onRetry: Message.ClickedRetry(),
 			}),
 		onData: (analytics) => {

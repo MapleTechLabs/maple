@@ -146,7 +146,12 @@ const dbEdgesTimedOutNotice = (h: H, model: Model): ReadonlyArray<Html> =>
 const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.bundle.data, {
 		onEmpty: () => serviceMapLoading(h),
-		onFailure: (failure) => errorState(h, { failure }),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load the service map",
+				onRetry: Message.ClickedReload(),
+			}),
 		onData: () => {
 			const rows = scopedRows(model, inputs.context.pinnedNamespace)
 			if (rows === null || model.window === null || Option.isNone(model.map))
@@ -172,12 +177,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: DB_CHART_TOKENS }))],
 		[
-			dashboardPage(h, { actions: headerActions(h, model) }, [
+			dashboardPage(h, { title: "Service Map", actions: headerActions(h, model) }, [
 				Option.match(AsyncData.getError(model.facets.data), {
 					onSome: (failure) =>
 						errorState(h, {
 							failure,
-							title: "Failed to load service environments",
+							title: "Couldn't load the service map",
 							onRetry: Message.ClickedRetryFacets(),
 						}),
 					onNone: () =>

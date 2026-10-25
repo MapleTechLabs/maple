@@ -268,7 +268,7 @@ export const railView = (
 			),
 		],
 		failure !== undefined
-			? [errorState(h, { failure, title: "Failed to load this error's details" })]
+			? [errorState(h, { failure, title: "Couldn't load this error's details" })]
 			: [
 					...(detail.variants.length > 1
 						? [variantsSection(h, detail, inputs.group.variants, differences, inputs.variant)]

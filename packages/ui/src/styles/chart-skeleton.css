@@ -55,3 +55,16 @@
 		transform: scaleY(0.85);
 	}
 }
+
+/* `skeletonSlowNote`: hidden until a skeleton has been up for 8s, then shown at once.
+   A visibility step, not motion, so it holds under reduced motion too. */
+@keyframes skeleton-slow-reveal {
+	to {
+		visibility: visible;
+	}
+}
+
+.skeleton-slow-note {
+	visibility: hidden;
+	animation: skeleton-slow-reveal 1ms linear 8s forwards;
+}

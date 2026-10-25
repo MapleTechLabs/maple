@@ -35,7 +35,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load reviews",
+				title: "Couldn't load reviews",
 				onRetry: Message.ClickedRetry(),
 			}),
 		onData: (response) => {

@@ -171,7 +171,7 @@ const connectedView = (h: H, model: Model, status: RailwayIntegrationStatus, tim
 export const railwayCard = (h: H, model: Model, timeZone: string): Html =>
 	integrationStatusCard(h, model.statuses.railway, {
 		name: "railway",
-		failureTitle: "Failed to load the Railway integration",
+		failureTitle: "Couldn't load the Railway integration",
 		render: (status) => byStatus(h, model, status, timeZone),
 	})
 

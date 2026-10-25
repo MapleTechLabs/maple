@@ -128,7 +128,7 @@ const overview = (
 const projectsError = (h: H, failure: LoadFailure): Html =>
 	errorState(h, {
 		failure,
-		title: "Failed to load Supabase metrics",
+		title: "Couldn't load Supabase metrics",
 		onRetry: Message.ClickedRetryProjects(),
 	})
 
@@ -154,7 +154,7 @@ const statusView = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the Supabase integration",
+				title: "Couldn't load the Supabase integration",
 				onRetry: Message.ClickedRetryStatus(),
 			}),
 		onStale: ({ data }) => byStatus(h, model, data),

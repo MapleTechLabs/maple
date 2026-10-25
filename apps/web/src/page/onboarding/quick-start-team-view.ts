@@ -283,11 +283,11 @@ export const planStep = (h: H, isCustomerLoading: boolean, pricing: Html): Html 
 						[
 							eyebrow(h, { variant: "label", className: "text-primary" }, ["Pick a plan"]),
 							h.h2(
-								[h.Class("text-3xl font-semibold tracking-tight mt-2")],
+								[h.Class("font-display text-3xl font-semibold tracking-tight mt-2")],
 								["Pick a plan to keep going"],
 							),
 							h.p(
-								[h.Class("text-muted-foreground text-sm mt-3 max-w-lg mx-auto")],
+								[h.Class("font-display text-muted-foreground text-sm mt-3 max-w-lg mx-auto")],
 								[
 									"Start a ",
 									String(TRIAL_DURATION_DAYS),

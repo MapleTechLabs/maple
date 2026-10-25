@@ -192,8 +192,8 @@ export const operationsTab = (h: H, model: Model, theme: ThemeColors | null): Ht
 	AsyncData.match(model.operations.data, {
 		onIdle: () => loadingState(h),
 		onLoading: () => loadingState(h),
-		onFailure: (failure) => errorState(h, { failure }),
-		onStale: ({ error }) => errorState(h, { failure: error }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load operations" }),
+		onStale: ({ error }) => errorState(h, { failure: error, title: "Couldn't load operations" }),
 		onRefreshing: (operations) => operationsBody(h, model, operations, theme, true),
 		onSuccess: (operations) => operationsBody(h, model, operations, theme, false),
 	})

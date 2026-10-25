@@ -38,7 +38,7 @@ describe("investigations list", () => {
 			entered,
 			Message.CompletedFetchFirstPage({ key: entered.firstPage.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
 		).model
-		scene({ update: pageUpdate, view }, given(failed), measured(), expectView(text("Investigations could not be loaded")).toExist())
+		scene({ update: pageUpdate, view }, given(failed), measured(), expectView(text("Couldn't load investigations")).toExist())
 	})
 
 	test("an empty workspace is the first-run hero; absent traces add the setup prompt", () => {

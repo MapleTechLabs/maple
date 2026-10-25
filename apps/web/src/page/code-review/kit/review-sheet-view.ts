@@ -118,7 +118,7 @@ const body = (h: H, sheet: ReviewSheet, timeZone: string): ReadonlyArray<Html> =
 			panel(h, id, undefined, [
 				errorState(h, {
 					failure,
-					title: "Failed to load the review",
+					title: "Couldn't load the review",
 					onRetry: SheetMessage.ClickedRetry(),
 				}),
 			]),

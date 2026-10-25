@@ -276,7 +276,7 @@ const inconclusive = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Htm
 	const headline = reportHeadline(report) ?? "No cause was established, and this run recorded no partial."
 	const lists = [
 		partialList(h, "Ruled out", ruledOut, "CircleXmarkIcon", "text-foreground"),
-		partialList(h, "Could not check", unchecked, "CircleQuestionIcon", "text-muted-foreground"),
+		partialList(h, "Couldn't check", unchecked, "CircleQuestionIcon", "text-muted-foreground"),
 	].filter((list): list is Html => list !== null)
 	return shell(
 		h,

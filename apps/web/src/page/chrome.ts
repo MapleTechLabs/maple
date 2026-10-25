@@ -4,20 +4,15 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, isPublicRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
 import { skeleton, skeletonList } from "../ui/skeleton"
-import { pageBody } from "./kit/dashboard-page"
+import { dashboardPage, pageBody } from "./kit/dashboard-page"
+import { resourceNotFound } from "./kit/resource-not-found"
 import { resolveLegacySettingsTab } from "./settings/nav"
 
 /**
  * Signed-in routes rendered without `DashboardLayout`: onboarding and auth handoffs with
- * their own layouts and the not-found screen. `/chat` keeps the shell, without its top bar (`view.ts`).
+ * their own layouts. `/chat` keeps the shell, without its top bar (`view.ts`).
  */
-const isBareRoute = AppRoute.isAnyOf([
-	"CliLogin",
-	"McpAuthorize",
-	"QuickStart",
-	"SelectPlan",
-	"NotFound",
-])
+const isBareRoute = AppRoute.isAnyOf(["CliLogin", "McpAuthorize", "QuickStart", "SelectPlan"])
 
 export const rendersShell = (route: AppRoute): boolean => !isPublicRoute(route) && !isBareRoute(route)
 
@@ -32,7 +27,7 @@ export const isRedirectOnlyRoute = (route: AppRoute): boolean =>
 export const breadcrumbsOf = (route: AppRoute): ReadonlyArray<BreadcrumbEntry> =>
 	AppRoute.matchOrElse<ReadonlyArray<BreadcrumbEntry>>(
 		route,
-		{ Home: () => [{ label: "Overview" }] },
+		{ Home: () => [{ label: "Overview" }], NotFound: () => [{ label: "Page not found" }] },
 		() => [{ label: route._tag }],
 	)
 
@@ -57,4 +52,14 @@ export const placeholderContent = <Message>(h: HtmlBuilder<Message>): Html =>
 				),
 			],
 		),
+	])
+
+/** An unknown path inside the shell: the not-found body with a way back to Overview. */
+export const notFoundContent = <Message>(h: HtmlBuilder<Message>): Html =>
+	dashboardPage(h, {}, [
+		resourceNotFound(h, {
+			title: "Page not found",
+			description: "This page doesn't exist or was moved.",
+			back: { href: "/", label: "Back to Overview" },
+		}),
 	])

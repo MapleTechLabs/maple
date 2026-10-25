@@ -149,7 +149,7 @@ const content = (h: H, model: Model, timeZone: string): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load CI analytics",
+				title: "Couldn't load CI analytics",
 				onRetry: Message.ClickedRetry(),
 			}),
 		onData: (analytics) => {

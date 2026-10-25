@@ -39,13 +39,13 @@ export const cloudflareCard = (h: H, model: Model, timeZone: string): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load the Cloudflare integration",
+				title: "Couldn't load the Cloudflare integration",
 				onRetry: Message.ClickedRetryStatus({ name: "cloudflare" }),
 			}),
 		onStale: ({ error }) =>
 			errorState(h, {
 				failure: error,
-				title: "Failed to load the Cloudflare integration",
+				title: "Couldn't load the Cloudflare integration",
 				onRetry: Message.ClickedRetryStatus({ name: "cloudflare" }),
 			}),
 		onRefreshing: (status) => byStatus(h, model, status, timeZone),

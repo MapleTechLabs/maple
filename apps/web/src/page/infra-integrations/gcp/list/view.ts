@@ -236,10 +236,9 @@ const regionChip = (h: H, region: string): Html => {
 	)
 }
 
+// The dot beside the name carries a warning; only a critical note keeps its colour in the text.
 const healthText = (health: GcpProjectHealth | undefined) =>
-	health === undefined || health.tone === "ok" || health.tone === "neutral"
-		? "text-muted-foreground"
-		: TONE_TEXT[health.tone]
+	health?.tone === "crit" ? TONE_TEXT.crit : "text-muted-foreground"
 
 const healthDotOf = (h: H, health: GcpProjectHealth | undefined): ReadonlyArray<Html> =>
 	health === undefined
@@ -337,7 +336,7 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 			body: failures.map((failure) =>
 				errorState(h, {
 					failure,
-					title: "Failed to load Google Cloud workloads",
+					title: "Couldn't load Google Cloud workloads",
 					onRetry: Message.ClickedRetryFleet(),
 				}),
 			),
@@ -593,7 +592,7 @@ const content = (h: H, model: Model): PageParts =>
 			body: [
 				errorState(h, {
 					failure,
-					title: "Failed to load the Google Cloud integration",
+					title: "Couldn't load the Google Cloud integration",
 					onRetry: Message.ClickedRetryStatus(),
 				}),
 			],
@@ -603,7 +602,7 @@ const content = (h: H, model: Model): PageParts =>
 			body: [
 				errorState(h, {
 					failure: error,
-					title: "Failed to load the Google Cloud integration",
+					title: "Couldn't load the Google Cloud integration",
 					onRetry: Message.ClickedRetryStatus(),
 				}),
 			],

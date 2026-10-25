@@ -42,7 +42,7 @@ const toBreakdownKey = (message: Combobox.Message) => Message.GotBreakdownCombob
 const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, timeZone: string): Html =>
 	AsyncData.matchData(model.timeseries.data, {
 		onEmpty: () => chartSkeleton(h, "area"),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load metric data" }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load metric data" }),
 		onData: (rows) =>
 			rows.length === 0
 				? emptyMessage(h, { className: "flex h-full items-center justify-center" }, [
@@ -110,7 +110,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 	AsyncData.matchData(model.breakdown.data, {
 		onEmpty: () => skeletonList(h, { rows: 5, rowClassName: "h-6", gap: "2" }),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load breakdown", variant: "inline" }),
+			errorState(h, { failure, title: "Couldn't load breakdown", variant: "inline" }),
 		onData: (rows) => {
 			if (rows.length === 0)
 				return emptyMessage(h, {}, ["No values for this attribute in the selected range."])
@@ -187,7 +187,7 @@ const attributesList = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load attribute keys",
+				title: "Couldn't load attribute keys",
 				variant: "inline",
 				className: "py-1",
 			}),

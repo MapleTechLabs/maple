@@ -1,13 +1,12 @@
+import { cn } from "@maple/ui/lib/utils"
+import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import type { BreadcrumbEntry } from "../../../shell"
 import type { IconName } from "../../../ui/icon"
-import { pageDescription } from "../../../ui/page-layout"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { detailTitle } from "../../kit/detail-header"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import type { Tab } from "../tabs/model"
-import { iconTile } from "./parts"
 
 // The frame of the three Security tabs: title block, Overview / Findings / Runs, content.
 
@@ -30,7 +29,7 @@ const TABS: ReadonlyArray<{ tab: Tab; label: string; icon: IconName; href: strin
 export const breadcrumbsOf = (tab: Tab): ReadonlyArray<BreadcrumbEntry> => {
 	const label = TABS.find((entry) => entry.tab === tab)?.label ?? ""
 	return tab === "overview"
-		? [{ label: "Security" }]
+		? [{ label: "Security", isPageHeading: true }]
 		: [{ label: "Security", href: hrefOf(AppRoute.Security()) }, { label }]
 }
 
@@ -51,22 +50,13 @@ const tabs = <M>(h: HtmlBuilder<M>, active: Tab): Html =>
 const DESCRIPTION =
 	"Deep code audits of your connected repositories. Findings are visible to org admins only."
 
-/** The title block: Triage overline, the shield tile, the page's one line of context. */
+/** The title block: the page `<h1>` and its one line of context, like every other page header. */
 const securityTitle = <M>(h: HtmlBuilder<M>, description: string = DESCRIPTION): Html =>
 	h.div(
-		[h.Class("min-w-0 space-y-1.5")],
+		[h.Class("min-w-0 space-y-0.5")],
 		[
-			detailTitle(h, {
-				kind: ["Triage"],
-				title: [
-					h.span(
-						[h.Class("flex items-center gap-2.5")],
-						[iconTile(h, "ShieldCheckIcon"), "Security Center"],
-					),
-				],
-				titleText: "Security Center",
-			}),
-			pageDescription(h, [description]),
+			h.h1([h.Class(cn(pageTitleStyles, "leading-8 text-foreground"))], ["Security"]),
+			h.p([h.Class("max-w-2xl font-prose text-sm text-muted-foreground")], [description]),
 		],
 	)
 

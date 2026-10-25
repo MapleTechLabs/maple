@@ -25,4 +25,22 @@ describe("getFeatureRows", () => {
 
 		expect(getFeatureRows(plan).map((row) => row.featureId)).toEqual(["logs", "ai_credits"])
 	})
+
+	it("quotes an overage rate in whole cents and leaves sub-cent rates alone", () => {
+		const metered = (featureId: string, secondaryText: string) =>
+			new CatalogPlanItem({ featureId, included: 100, display: { secondaryText } })
+		const plan = new CatalogPlan({
+			id: "startup",
+			name: "Startup",
+			items: [
+				metered("logs", "then $0.3 per 1 logs"),
+				metered("browser_sessions", "then $0.002 per browser session"),
+			],
+		})
+
+		expect(getFeatureRows(plan).map((row) => row.detail)).toEqual([
+			"then $0.30 per GB",
+			"then $0.002 per browser session",
+		])
+	})
 })

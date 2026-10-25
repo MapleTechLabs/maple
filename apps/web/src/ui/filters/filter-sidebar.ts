@@ -11,10 +11,13 @@ import { skeleton } from "../skeleton"
 
 // Port of packages/ui/src/components/filters/filter-sidebar.tsx, plus its error state.
 
-/** `FilterSidebarFrame`: dims while a refetch runs over the facets it shows. */
+/**
+ * `FilterSidebarFrame`: dims while a refetch runs over the facets it shows. `isIdle` marks a rail
+ * with nothing to offer, so the inline rail (`filterRail`) gives its width back to the content.
+ */
 export const filterSidebarFrame = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ isWaiting?: boolean; className?: string }>,
+	options: Readonly<{ isWaiting?: boolean; isIdle?: boolean; className?: string }>,
 	children: ReadonlyArray<Html>,
 ): Html => {
 	const isWaiting = options.isWaiting ?? false
@@ -22,6 +25,7 @@ export const filterSidebarFrame = <M>(
 		[
 			h.Class(cn("flex h-full w-full flex-col", refreshingClass(isWaiting), options.className)),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
+			...(options.isIdle === true ? [h.DataAttribute("rail-idle", "")] : []),
 		],
 		children,
 	)
@@ -131,7 +135,7 @@ export const filterSidebarLoading = <M>(h: HtmlBuilder<M>, sectionCount = 3): Ht
 
 /** `FilterSidebarEmpty`: nothing to filter and no filter set. */
 export const filterSidebarEmpty = <M>(h: HtmlBuilder<M>): Html =>
-	filterSidebarFrame(h, {}, [
+	filterSidebarFrame(h, { isIdle: true }, [
 		filterSidebarHeader(h),
 		separator(h, "horizontal", "my-2"),
 		h.div(
@@ -155,11 +159,13 @@ export const filterSidebarError = <M>(
 	failure: LoadFailure,
 	onRetry?: M,
 	mainFailure?: LoadFailure,
-): Html =>
-	filterSidebarFrame(h, {}, [
+): Html => {
+	// The main panel shows the same failure, so the inline rail steps aside.
+	const isEchoed = mainFailure !== undefined && isSameFailure(mainFailure, failure)
+	return filterSidebarFrame(h, { isIdle: isEchoed }, [
 		filterSidebarHeader(h),
 		separator(h, "horizontal", "my-2"),
-		mainFailure !== undefined && isSameFailure(mainFailure, failure)
+		isEchoed
 			? errorState(h, {
 					failure,
 					onRetry,
@@ -171,3 +177,4 @@ export const filterSidebarError = <M>(
 				})
 			: errorState(h, { failure, onRetry, variant: "inline" }),
 	])
+}

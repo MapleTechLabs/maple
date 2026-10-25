@@ -81,7 +81,7 @@ const stripView = (h: H, model: Model, timeZone: string): Html => {
 	const failed = (failure: Parameters<typeof errorState>[1]["failure"]) =>
 		errorState(h, {
 			failure,
-			title: "Failed to load project metrics",
+			title: "Couldn't load project metrics",
 			onRetry: Message.ClickedRetry({ section: "timeseries" }),
 		})
 	const strip = (rows: ReadonlyArray<unknown>) => {

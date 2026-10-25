@@ -32,8 +32,7 @@ export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> =>
 		? [{ label: "Settings" }]
 		: [{ label: "Settings", href: "/settings" }, { label: settingsTabLabels[activeTabOf(model)] }]
 
-const loadingSkeleton = (h: H): Html =>
-	h.div([h.Class("space-y-3")], [skeleton(h, "h-40 w-full")])
+const loadingSkeleton = (h: H): Html => h.div([h.Class("space-y-3")], [skeleton(h, "h-40 w-full")])
 
 const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<Html> => {
 	const tab = model.tab
@@ -169,6 +168,48 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 	}
 }
 
+/** The lead tabs' description, shown under the page `<h1>`. */
+const tabDescription = (model: Model): string | undefined => {
+	switch (model.tab?._tag) {
+		case "Keys":
+			return KeysView.description
+		case "Members":
+			return MembersView.description
+		case "AuditLog":
+			return AuditLogView.description
+		case "SetupHealth":
+			return SetupHealthView.description
+		default:
+			return undefined
+	}
+}
+
+/** The lead tabs' primary action, in the header row beside the `<h1>`. */
+const tabActions = (h: H, model: Model): Html | undefined => {
+	const tab = model.tab
+	if (tab === null) return undefined
+	switch (tab._tag) {
+		case "Keys":
+			return h.submodel({
+				slotId: "settings-keys-actions",
+				model: tab.model,
+				view: KeysView.headerActions,
+				toParentMessage: (message) => Message.GotKeysMessage({ message }),
+				viewInputs: {},
+			})
+		case "Members":
+			return h.submodel({
+				slotId: "settings-members-actions",
+				model: tab.model,
+				view: MembersView.headerActions,
+				toParentMessage: (message) => Message.GotMembersMessage({ message }),
+				viewInputs: {},
+			})
+		default:
+			return undefined
+	}
+}
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const isLoading = isSettingsLoading(model)
 	const empty = isEmpty(model)
@@ -176,6 +217,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			title: isLoading || empty ? undefined : settingsTabLabels[activeTabOf(model)],
+			description: isLoading || empty ? undefined : tabDescription(model),
+			actions: isLoading || empty ? undefined : tabActions(h, model),
+			width: "settings",
 			// Holds the header row while the session resolves, so the content does not jump down.
 			titleContent: isLoading ? skeleton(h, "h-8 w-40") : undefined,
 			filters:

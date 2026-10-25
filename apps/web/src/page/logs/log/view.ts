@@ -58,7 +58,7 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 	return AsyncData.matchData(model.log.data, {
 		onEmpty: () => loading(h),
 		onFailure: (failure) => [
-			errorState(h, { failure, title: "Failed to load log", onRetry: Message.ClickedRetry() }),
+			errorState(h, { failure, title: "Couldn't load log", onRetry: Message.ClickedRetry() }),
 		],
 		onData: (log) =>
 			log === null

@@ -73,7 +73,7 @@ const servicesView = (h: H, model: Model, status: RailwayStatus, clock: Clock): 
 const servicesError = (h: H, failure: LoadFailure): Html =>
 	errorState(h, {
 		failure,
-		title: "Failed to load Railway services",
+		title: "Couldn't load Railway services",
 		onRetry: Message.ClickedRetryServices(),
 	})
 

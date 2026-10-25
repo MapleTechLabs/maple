@@ -40,7 +40,7 @@ export const incidentTimeline = <M>(
 				? [
 						h.p(
 							[h.Class("text-muted-foreground text-xs")],
-							["Delivery history could not be loaded, so notifications are missing."],
+							["Couldn't load delivery history, so notifications are missing."],
 						),
 					]
 				: []),

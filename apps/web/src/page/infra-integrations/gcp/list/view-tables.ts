@@ -97,7 +97,7 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 		return GCP_SERVICE_RULES.inScope(row, "idle")
 			? h.div(
 					[
-						h.Class(cn("hidden w-[170px] md:block", SUB, TONE_TEXT.warn)),
+						h.Class(cn("hidden w-[170px] md:block", SUB)),
 						h.Title("No requests, instance time billed"),
 					],
 					["idle, still billed"],
@@ -155,7 +155,7 @@ const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyAr
 	if (!GCP_SERVICE_RULES.inScope(row, "idle")) return items
 	// Flex drops a leading space, so the note carries its own separator and gap, like metaLine's.
 	const note = h.span(
-		[h.Class(cn("flex items-center gap-x-2 md:hidden", TONE_TEXT.warn))],
+		[h.Class("flex items-center gap-x-2 md:hidden")],
 		[h.span([h.Class("text-foreground/20")], ["·"]), "idle, still billed"],
 	)
 	const last = items[items.length - 1]

@@ -240,14 +240,14 @@ export const resourcesView = (h: H, model: Model, timeSearch: TimeSearch, syncEr
 				onFailure: (failure) => [
 					errorState(h, {
 						failure,
-						title: "Failed to load resources",
+						title: "Couldn't load resources",
 						onRetry: Message.ClickedRetryResources(),
 					}),
 				],
 				onStale: ({ error }) => [
 					errorState(h, {
 						failure: error,
-						title: "Failed to load resources",
+						title: "Couldn't load resources",
 						onRetry: Message.ClickedRetryResources(),
 					}),
 				],

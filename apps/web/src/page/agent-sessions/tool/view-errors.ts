@@ -468,7 +468,7 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 								? [
 										errorState(h, {
 											failure: inputs.failure,
-											title: `Failed to load ${inputs.tool} errors`,
+											title: `Couldn't load ${inputs.tool} errors`,
 										}),
 									]
 								: inputs.isLoading

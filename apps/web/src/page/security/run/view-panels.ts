@@ -107,7 +107,7 @@ const unitsBody = (
 			return gate === null
 				? errorState(h, {
 						failure,
-						title: "Failed to load the coverage ledger",
+						title: "Couldn't load the coverage ledger",
 						variant: "inline",
 						onRetry: Message.ClickedRetry(),
 					})
@@ -250,7 +250,7 @@ export const resultsPanel = (
 				return gate === null
 					? errorState(h, {
 							failure,
-							title: "Failed to load findings",
+							title: "Couldn't load findings",
 							variant: "inline",
 							onRetry: Message.ClickedRetry(),
 						})
@@ -394,7 +394,7 @@ export const eventsPanel = (
 				return gate === null
 					? errorState(h, {
 							failure,
-							title: "Failed to load events",
+							title: "Couldn't load events",
 							variant: "inline",
 							onRetry: Message.ClickedRetry(),
 						})

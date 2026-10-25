@@ -52,7 +52,9 @@ const healthBar = <M>(h: HtmlBuilder<M>, segments: ReadonlyArray<HealthSegment>)
 			}),
 			h.span(
 				[h.Class("flex gap-3 text-2xs text-muted-foreground tabular-nums")],
-				drawn.map((segment) => h.span([], [formatNumber(segment.count), " ", SEGMENT_LABEL[segment.key]])),
+				drawn.map((segment) =>
+					h.span([], [formatNumber(segment.count), " ", SEGMENT_LABEL[segment.key]]),
+				),
 			),
 		],
 	)
@@ -65,9 +67,17 @@ const healthBarLoading = <M>(h: HtmlBuilder<M>): Html =>
 		[skeleton(h, "h-1.5 w-full rounded-full"), h.span([h.Class("text-2xs")], ["\u00a0"])],
 	)
 
-export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState, time: TimeSearch): Html =>
-	h.a(
-		[h.Class(cn(ROW_CLASS, "py-3.5")), h.Href(sourceHref(id, time))],
+/** `isFailureExplained`: the page already shows the one failure every source shares. */
+export const sourceRow = <M>(
+	h: HtmlBuilder<M>,
+	id: SourceId,
+	state: SourceState,
+	time: TimeSearch,
+	isFailureExplained = false,
+): Html => {
+	const isQuietFailure = isFailureExplained && state.status === "error"
+	return h.a(
+		[h.Class(cn(ROW_CLASS, "py-3.5", isQuietFailure && "opacity-70")), h.Href(sourceHref(id, time))],
 		[
 			h.span(
 				[h.Class("flex w-52 shrink-0 items-center gap-3")],
@@ -80,16 +90,20 @@ export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState
 								[h.Class("text-sm text-foreground group-hover:text-primary")],
 								[SOURCE_TITLE[id]],
 							),
-							state.status === "loading"
-								? skeleton(h, "my-0.5 h-3 w-16")
-								: h.span(
-										[h.Class("text-xs text-muted-foreground")],
-										[
-											state.status === "ready"
-												? state.summary.resources
-												: "Couldn't load",
-										],
-									),
+							...(isQuietFailure
+								? []
+								: [
+										state.status === "loading"
+											? skeleton(h, "my-0.5 h-3 w-16")
+											: h.span(
+													[h.Class("text-xs text-muted-foreground")],
+													[
+														state.status === "ready"
+															? state.summary.resources
+															: "Couldn't load",
+													],
+												),
+									]),
 						],
 					),
 				],
@@ -118,12 +132,13 @@ export const sourceRow = <M>(h: HtmlBuilder<M>, id: SourceId, state: SourceState
 								),
 							),
 						],
-						// A failed row already says "Couldn't load"; the chevron says the page has the details.
+						// A failed row already says "Couldn't load" (or the page banner does); the chevron leads to the details.
 						[state.status === "ready" ? state.summary.headline : ""],
 					),
 			icon(h, "ChevronRightIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 		],
 	)
+}
 
 /** A source row before the org's sources are known: same height, no name yet. */
 const sourceRowPending = <M>(h: HtmlBuilder<M>): Html =>
@@ -155,6 +170,7 @@ export const sourcesTable = <M>(
 	h: HtmlBuilder<M>,
 	sources: ReadonlyArray<Readonly<{ id: SourceId; state: SourceState }>> | null,
 	time: TimeSearch,
+	isFailureExplained = false,
 ): Html =>
 	h.section(
 		[h.Class("space-y-3")],
@@ -165,7 +181,7 @@ export const sourcesTable = <M>(
 				{ tone: "background", className: "divide-y" },
 				sources === null
 					? Array.from({ length: PENDING_ROWS }, () => sourceRowPending(h))
-					: sources.map(({ id, state }) => sourceRow(h, id, state, time)),
+					: sources.map(({ id, state }) => sourceRow(h, id, state, time, isFailureExplained)),
 			),
 		],
 	)

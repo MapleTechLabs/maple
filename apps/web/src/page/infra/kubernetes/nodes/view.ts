@@ -173,7 +173,7 @@ const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: Pag
 const nodesArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.nodes.data, {
 		onEmpty: () => nodeTableLoading(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Failed to load nodes", onRetry: Message.ClickedRetryNodes() }),
+		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load nodes", onRetry: Message.ClickedRetryNodes() }),
 		onData: (nodes) => nodeList(h, model, nodes, inputs),
 	})
 

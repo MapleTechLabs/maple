@@ -181,7 +181,7 @@ export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string): Ht
 				),
 			),
 		onFailure: (failure) =>
-			errorState(h, { failure, title: "Failed to load logs", variant: "inline", className: "px-4" }),
+			errorState(h, { failure, title: "Couldn't load logs", variant: "inline", className: "px-4" }),
 		onData: (logs) =>
 			logs.length === 0
 				? emptyMessage(h, { className: "flex flex-col items-center gap-2" }, [

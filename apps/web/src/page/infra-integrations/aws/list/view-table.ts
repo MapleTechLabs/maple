@@ -419,7 +419,7 @@ const row = (h: H, view: ResourceView, context: TableContext, showTraced: boolea
 								[
 									h.Class(
 										cn(
-											"truncate font-mono text-2xs",
+											"truncate font-mono text-xs",
 											view.health === "crit"
 												? "text-severity-error"
 												: view.health === "warn"

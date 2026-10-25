@@ -175,7 +175,7 @@ const charts = (h: H, model: Model, inputs: ViewInputs): ReadonlyArray<Html> => 
 		return [
 			errorState(h, {
 				failure: inputs.series.error,
-				title: "Failed to load this endpoint's requests and latency",
+				title: "Couldn't load this endpoint's requests and latency",
 				onRetry: Message.ClickedRetryDetail(),
 			}),
 		]
@@ -518,7 +518,7 @@ const detailSections = (h: H, model: Model, peek: Peek, inputs: ViewInputs): Rea
 		onFailure: (failure) => [
 			errorState(h, {
 				failure,
-				title: "Failed to load endpoint details",
+				title: "Couldn't load endpoint details",
 				onRetry: Message.ClickedRetryDetail(),
 			}),
 		],

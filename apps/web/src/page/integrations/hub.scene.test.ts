@@ -259,7 +259,7 @@ describe("hazel card", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(failed),
-			expectView(text("Failed to load the Hazel integration")).toExist(),
+			expectView(text("Couldn't load the Hazel integration")).toExist(),
 			expectView(role("button", { name: /Retry|Try again/ })).toExist(),
 		)
 	})

@@ -16,6 +16,6 @@ export const page = definePage(
 		contextChanged,
 		infraSurfacesSettled,
 		view,
-		breadcrumbs: () => [{ label: "Infrastructure" }],
+		breadcrumbs: () => [{ label: "Infrastructure", isPageHeading: true }],
 	},
 )

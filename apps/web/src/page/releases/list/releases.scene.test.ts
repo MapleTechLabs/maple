@@ -74,7 +74,7 @@ describe("releases list", () => {
 			resolved,
 			Message.CompletedFetchReleases({ key: resolved.releases.key ?? "", result: Result.fail(toLoadFailure(new Error("down"))) }),
 		).model
-		scene({ update: pageUpdate, view }, given(failed), expectView(text("Failed to load releases")).toExist())
+		scene({ update: pageUpdate, view }, given(failed), expectView(text("Couldn't load releases")).toExist())
 	})
 
 	test("after a Reload an environment filter reads under the kept window; only a new preset re-resolves", () => {

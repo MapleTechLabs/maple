@@ -92,7 +92,7 @@ const summaryArea = (h: H, model: Model): Html =>
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load pod metrics",
+				title: "Couldn't load pod metrics",
 				onRetry: Message.ClickedRetrySummary(),
 			}),
 		onData: (summary) => (summary === null ? noMetricsMessage(h, "pod") : stats(h, model, summary)),

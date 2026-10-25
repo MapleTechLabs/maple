@@ -33,7 +33,7 @@ const listArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
-				title: "Failed to load agent sessions",
+				title: "Couldn't load agent sessions",
 				onRetry: Message.ClickedReload(),
 			}),
 		onData: () => {

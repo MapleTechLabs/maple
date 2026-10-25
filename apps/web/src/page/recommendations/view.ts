@@ -44,13 +44,13 @@ const MODE = {
 		label: "Auto-apply",
 		icon: "BoltIcon",
 		className: "border-primary/30 text-primary",
-		title: "Maple can apply this for you — Apply creates the ingest mapping.",
+		title: "Maple can apply this for you. Apply creates the ingest mapping.",
 	},
 	manual: {
 		label: "Manual fix",
 		icon: "CodeIcon",
 		className: "text-muted-foreground",
-		title: "Fix this in your SDK — an ingest mapping can't resolve it.",
+		title: "Fix this in your SDK. An ingest mapping can't resolve it.",
 	},
 } as const
 
@@ -61,7 +61,7 @@ const recSentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string
 				h.span([h.Class("text-foreground font-medium")], ["Standardize on"]),
 				" ",
 				code(h, issue.canonical_key),
-				h.span([h.Class("text-muted-foreground")], [" — spans also emit "]),
+				h.span([h.Class("text-muted-foreground")], [". Spans also emit "]),
 				code(h, issue.source_key),
 			]
 		: issue.kind === "naming"
@@ -136,7 +136,7 @@ const actionGroup = (h: H, model: Model, issue: V2Recommendation): Html => {
 					)
 				: h.p(
 						[h.Class("text-xs leading-relaxed text-muted-foreground")],
-						["This one is a manual fix — rename the attribute at your SDK. Maple can't apply it for you."],
+						["This one is a manual fix: rename the attribute at your SDK. Maple can't apply it for you."],
 					),
 			button(
 				h,
@@ -199,11 +199,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		onLoading: () => dashboardPage(h, column, loadingBody(h)),
 		onFailure: (failure) =>
 			dashboardPage(h, column, [
-				errorState(h, { failure, title: "Failed to load recommendation", onRetry: Message.ClickedRetry() }),
+				errorState(h, { failure, title: "Couldn't load recommendation", onRetry: Message.ClickedRetry() }),
 			]),
 		onStale: ({ error }) =>
 			dashboardPage(h, column, [
-				errorState(h, { failure: error, title: "Failed to load recommendation", onRetry: Message.ClickedRetry() }),
+				errorState(h, { failure: error, title: "Couldn't load recommendation", onRetry: Message.ClickedRetry() }),
 			]),
 		onSuccess: () => loaded(h, model, inputs.context.timeZone),
 		onRefreshing: () => loaded(h, model, inputs.context.timeZone),

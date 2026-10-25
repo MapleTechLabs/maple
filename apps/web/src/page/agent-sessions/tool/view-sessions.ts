@@ -178,7 +178,7 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 					? [
 							errorState(h, {
 								failure: inputs.failure,
-								title: `Failed to load sessions running ${inputs.tool}`,
+								title: `Couldn't load sessions running ${inputs.tool}`,
 							}),
 						]
 					: inputs.isLoading
@@ -202,7 +202,7 @@ export const sessionsPanel = (h: H, inputs: SessionsPanelInputs): Html =>
 							[
 								"Showing the ",
 								formatNumber(inputs.rows.length),
-								" most recent sessions — narrow the time range to see older ones",
+								" most recent sessions. Narrow the time range to see older ones",
 							],
 						),
 					]

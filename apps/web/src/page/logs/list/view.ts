@@ -90,7 +90,8 @@ const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs
 	AsyncData.matchData(model.firstPage.data, {
 		// A workspace that never sent logs gets its setup state without waiting on the stream.
 		onEmpty: () => (isNeverReceived(model) ? emptyState(h, model) : loadingState(h)),
-		onFailure: (failure) => errorState(h, { failure, onRetry: Message.ClickedReload() }),
+		onFailure: (failure) =>
+			errorState(h, { failure, title: "Couldn't load logs", onRetry: Message.ClickedReload() }),
 		onData: (page) =>
 			page.logs.length === 0
 				? emptyState(h, model)
@@ -171,7 +172,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					filters: filtersRail(h, model, inputs.context.pinnedNamespace),
 					actions: headerActions(h, model),
 					// The list's error panel already explains a shared failure; the chart drops its banner.
-					sticky: isSharedFailure(model) ? undefined : volumeChart(h, model, inputs.context.timeZone),
+					sticky: isSharedFailure(model)
+						? undefined
+						: volumeChart(h, model, inputs.context.timeZone),
 					fill: true,
 					isScrolled: model.isScrolledAway,
 				},
