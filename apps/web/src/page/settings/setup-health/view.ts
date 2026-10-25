@@ -471,12 +471,12 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 			),
 		],
 		onFailure: (failure) => [
-			errorState(h, { failure, title: "Couldn’t check setup health", onRetry: Message.ClickedRetry() }),
+			errorState(h, { failure, title: "Couldn't check setup health", onRetry: Message.ClickedRetry() }),
 		],
 		onStale: ({ error }) => [
 			errorState(h, {
 				failure: error,
-				title: "Couldn’t check setup health",
+				title: "Couldn't check setup health",
 				onRetry: Message.ClickedRetry(),
 			}),
 		],

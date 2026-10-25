@@ -109,6 +109,8 @@ export const Message = defineMessageUnion({
 	EndedConnectGrace: { attempt: Schema.Number },
 	/** The callback page's `postMessage` (`maple:integration:<provider>`). */
 	ClickedRetryStatus: { name: StatusName },
+	/** The hub's one Try again: re-reads every status that failed. */
+	ClickedRetryFailedStatuses: {},
 	ClickedDisconnect: {},
 	GotDisconnectDialogMessage: { message: Dialog.Message },
 	ConfirmedDisconnect: {},

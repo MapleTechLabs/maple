@@ -65,7 +65,7 @@ export const trailOf = (model: Model): ReadonlyArray<TrailItem> => {
 const ITEM_CLASS = {
 	done: "text-muted-foreground",
 	current: "text-foreground border-primary border-b pb-0.5 font-medium",
-	next: "text-muted-foreground/60",
+	next: "text-muted-foreground",
 	blocked: "text-warning border-warning border-b pb-0.5 font-medium",
 } satisfies Record<TrailItem["state"], string>
 
@@ -91,6 +91,13 @@ export const trail = (h: H, model: Model): Html =>
 		trailOf(model).flatMap((entry, index) =>
 			index === 0
 				? [item(h, entry)]
-				: [h.li([h.AriaHidden(true), h.Class("text-muted-foreground/50")], ["/"]), item(h, entry)],
+				: [
+						// An arrow, not a slash: the steps are a flow, not a path back up.
+						h.li(
+							[h.AriaHidden(true), h.Class("inline-flex text-muted-foreground/60")],
+							[icon(h, "ArrowRightIcon", { size: 12 })],
+						),
+						item(h, entry),
+					],
 		),
 	)

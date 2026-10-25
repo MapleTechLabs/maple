@@ -303,9 +303,16 @@ const cardContent = (
 			return chartSkeleton(h, item.skeleton)
 		case "Failed": {
 			const { failure: cardFailure, retry } = item.body
-			// The page strip already names this failure and retries it: the card keeps its frame, quietly.
+			// The page strip already names this failure and retries it: the card keeps its frame and
+			// a flat baseline, so it reads as no data rather than a broken render.
 			if (pageFailureKeys.split(FAILURE_KEY_SEPARATOR).includes(failureKey(cardFailure)))
-				return h.div([h.Class("h-full")], [h.span([h.Class("sr-only")], ["Couldn't load"])])
+				return h.div(
+					[h.Class("flex h-full items-center px-6")],
+					[
+						h.div([h.Class("h-px w-full bg-border"), h.AriaHidden(true)], []),
+						h.span([h.Class("sr-only")], ["Couldn't load"]),
+					],
+				)
 			return errorState(h, {
 				failure: cardFailure,
 				variant: "panel",

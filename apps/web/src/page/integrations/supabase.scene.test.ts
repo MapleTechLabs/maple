@@ -137,7 +137,10 @@ describe("supabase card", () => {
 			expectView(text("Supabase isn't configured on this deployment.")).toExist(),
 			expectView(role("link", { name: "Reconnect" })).toBeAbsent(),
 		)
-		expect(overviewOf(model.statuses, model.nowMs, "supabase")).toEqual({ kind: "unavailable" })
+		expect(overviewOf(model.statuses, model.nowMs, "supabase")).toEqual({
+			kind: "unavailable",
+			reason: "not-configured",
+		})
 	})
 
 	test("a connected organization lists its projects with a metrics switch and a paused pill", () => {

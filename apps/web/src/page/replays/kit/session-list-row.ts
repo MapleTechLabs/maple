@@ -16,14 +16,25 @@ import { icon } from "../../../ui/icon"
 import { truncatedText } from "../../../ui/truncated-text"
 import { relativeTime } from "../../kit/relative-time"
 import type { SessionRow } from "./session-row"
-import { browserIconFor, COLUMNS, deviceIconFor, errorCountPill, livePill, type SessionsListOptions } from "./sessions-parts"
+import {
+	browserIconFor,
+	COLUMNS,
+	deviceIconFor,
+	errorCountPill,
+	livePill,
+	type SessionsListOptions,
+} from "./sessions-parts"
 
 // A session list row: its org button, tags and badges.
 
 const identityLabel = (session: SessionRow): string =>
 	session.userName || session.userEmail || session.userId || "Anonymous"
 
-const orgButton = <M>(h: HtmlBuilder<M>, name: string, onFilter: ((group: string) => M) | undefined): Html => {
+const orgButton = <M>(
+	h: HtmlBuilder<M>,
+	name: string,
+	onFilter: ((group: string) => M) | undefined,
+): Html => {
 	const className = "min-w-0 truncate text-xs font-medium text-foreground"
 	if (onFilter === undefined) return h.span([h.Class(className)], [name])
 	return h.button(
@@ -66,9 +77,11 @@ const sessionBadges = <M>(h: HtmlBuilder<M>, session: SessionRow): ReadonlyArray
 		: []),
 	...(session.recorded === "false"
 		? [
-				badge(h, { variant: "meta", pill: true, size: "xs", className: "border-dashed border-border" }, [
-					"Transcript only",
-				]),
+				badge(
+					h,
+					{ variant: "meta", pill: true, size: "xs", className: "border-dashed border-border" },
+					["Transcript only"],
+				),
 			]
 		: []),
 ]
@@ -81,13 +94,20 @@ const longBadge = <M>(h: HtmlBuilder<M>, p95: number): Html =>
 			pill: true,
 			size: "xs",
 			className: "self-center bg-accent text-accent-foreground",
-			attributes: [h.Title(`Longer than 95% of sessions in this view (p95: ${formatSessionDuration(p95)})`)],
+			attributes: [
+				h.Title(`Longer than 95% of sessions in this view (p95: ${formatSessionDuration(p95)})`),
+			],
 		},
 		["long"],
 	)
 
 /** The user column: name, then email or entry page; below @2xl the other columns stack under it. */
-const userColumn = <M>(h: HtmlBuilder<M>, options: SessionsListOptions<M>, session: SessionRow, muted: boolean): Html => {
+const userColumn = <M>(
+	h: HtmlBuilder<M>,
+	options: SessionsListOptions<M>,
+	session: SessionRow,
+	muted: boolean,
+): Html => {
 	const label = identityLabel(session)
 	const entry = hostFromUrl(session.urlInitial)
 	const secondary = session.userEmail && session.userEmail !== label ? session.userEmail : entry
@@ -98,11 +118,21 @@ const userColumn = <M>(h: HtmlBuilder<M>, options: SessionsListOptions<M>, sessi
 				[h.Class("flex items-center gap-2")],
 				[
 					h.span(
-						[h.Class(cn("min-w-0 truncate text-sm font-medium", muted && "text-muted-foreground")), h.Title(label)],
+						[
+							h.Class(
+								cn("min-w-0 truncate text-sm font-medium", muted && "text-muted-foreground"),
+							),
+							h.Title(label),
+						],
 						[label],
 					),
 					...(isSessionLive(session, options.nowMs) ? [livePill(h, true)] : []),
-					startedAt(h, options, session, "ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"),
+					startedAt(
+						h,
+						options,
+						session,
+						"ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden",
+					),
 				],
 			),
 			truncatedText(
@@ -113,7 +143,10 @@ const userColumn = <M>(h: HtmlBuilder<M>, options: SessionsListOptions<M>, sessi
 			h.div(
 				[
 					h.Class(
-						cn("mt-1.5 flex flex-wrap items-center gap-1.5", session.groupName ? "@3xl:hidden" : "@2xl:hidden"),
+						cn(
+							"mt-1.5 flex flex-wrap items-center gap-1.5",
+							session.groupName ? "@3xl:hidden" : "@2xl:hidden",
+						),
 					),
 				],
 				[
@@ -161,7 +194,15 @@ export const sessionListRow = <M>(
 				[],
 			),
 			...(session.errorCount > 0
-				? [h.span([h.AriaHidden(true), h.Class("absolute inset-y-0 left-0 w-[3px] bg-severity-error")], [])]
+				? [
+						h.span(
+							[
+								h.AriaHidden(true),
+								h.Class("absolute inset-y-0 left-0 w-[3px] bg-severity-error"),
+							],
+							[],
+						),
+					]
 				: []),
 			userColumn(h, options, session, lowSignal || session.recorded === "false"),
 			h.div(
@@ -177,28 +218,46 @@ export const sessionListRow = <M>(
 				sessionTags(h, session.tags, options.onFilterTag),
 			),
 			h.div(
-				[h.Class(cn(COLUMNS.activity, "relative items-baseline gap-2 overflow-hidden whitespace-nowrap"))],
+				// A long session's counts drop to a second line instead of losing the clicks to an ellipsis.
+				[
+					h.Class(
+						cn(
+							COLUMNS.activity,
+							"relative flex-wrap content-center items-baseline gap-x-2 gap-y-0.5",
+						),
+					),
+				],
 				[
 					h.span(
 						[
 							h.Class(
 								cn(
-									"font-mono text-sm font-semibold tabular-nums",
+									"whitespace-nowrap font-mono text-sm font-semibold tabular-nums",
 									lowSignal && "font-normal text-muted-foreground",
 								),
 							),
 						],
 						[formatSessionDuration(durationMs)],
 					),
-					...(p95 !== undefined && p95 > 0 && durationMs !== null && durationMs > p95 ? [longBadge(h, p95)] : []),
+					...(p95 !== undefined && p95 > 0 && durationMs !== null && durationMs > p95
+						? [longBadge(h, p95)]
+						: []),
 					h.span(
-						[h.Class("truncate text-xs text-muted-foreground")],
-						[countLabel(session.pageViews || 1, "page"), " · ", countLabel(session.clickCount, "click")],
+						[h.Class("whitespace-nowrap text-xs text-muted-foreground")],
+						[
+							countLabel(session.pageViews || 1, "page"),
+							" · ",
+							countLabel(session.clickCount, "click"),
+						],
 					),
 				],
 			),
 			deviceColumn(h, session),
-			h.div([h.Class(cn(COLUMNS.signals, "relative items-center gap-1.5 overflow-hidden"))], sessionBadges(h, session)),
+			h.div(
+				// Wraps rather than clips: a cut pill loses its rounded end and its count.
+				[h.Class(cn(COLUMNS.signals, "relative flex-wrap content-center items-center gap-1.5"))],
+				sessionBadges(h, session),
+			),
 			h.div(
 				[h.Class(cn(COLUMNS.time, "relative items-center"))],
 				[startedAt(h, options, session, "whitespace-nowrap text-xs text-muted-foreground")],
@@ -214,7 +273,9 @@ const deviceColumn = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 			h.span(
 				[
 					h.Class("shrink-0"),
-					h.Title(`${session.browserName || "Unknown"}${session.osName ? ` · ${session.osName}` : ""}`),
+					h.Title(
+						`${session.browserName || "Unknown"}${session.osName ? ` · ${session.osName}` : ""}`,
+					),
 				],
 				[icon(h, browserIconFor(session.browserName), { className: "size-4" })],
 			),
@@ -222,11 +283,18 @@ const deviceColumn = <M>(h: HtmlBuilder<M>, session: SessionRow): Html =>
 				[h.Class("shrink-0 text-muted-foreground"), h.Title(session.deviceType || "desktop")],
 				[icon(h, deviceIconFor(session.deviceType), { className: "size-4 opacity-70" })],
 			),
-			...(session.country ? [h.span([h.Class("truncate text-xs text-muted-foreground")], [session.country])] : []),
+			...(session.country
+				? [h.span([h.Class("truncate text-xs text-muted-foreground")], [session.country])]
+				: []),
 		],
 	)
 
-const startedAt = <M>(h: HtmlBuilder<M>, options: SessionsListOptions<M>, session: SessionRow, className: string) =>
+const startedAt = <M>(
+	h: HtmlBuilder<M>,
+	options: SessionsListOptions<M>,
+	session: SessionRow,
+	className: string,
+) =>
 	relativeTime(h, {
 		value: session.startTime,
 		nowMs: options.nowMs,

@@ -3,7 +3,7 @@ import { Clock, Effect, Queue, Random, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import type { LoadFailure } from "../data/load-failure"
+import { failureMessage, type LoadFailure } from "../data/load-failure"
 import {
 	isExhausted,
 	postponed,
@@ -375,7 +375,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					),
 				]
 			: []
-	const ownMessage = options.message ?? failure.message
+	const ownMessage = options.message ?? failureMessage(failure)
 	const message = autoRetry.length > 0 ? autoRetryMessage(ownMessage) : ownMessage
 	const retry = (variant: "ghost" | "outline", className?: string) =>
 		options.onRetry === undefined || !canRetry || options.hidesRetryButton === true
@@ -445,7 +445,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					],
 				),
 				h.p([h.Class("font-prose text-xs whitespace-pre-wrap text-muted-foreground")], [message]),
-				...retry("ghost", "-ml-2 h-6 w-fit px-2 text-xs text-muted-foreground hover:text-foreground"),
+				...retry("outline", "mt-1 w-fit"),
 			],
 		)
 	}
@@ -477,11 +477,12 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 		)
 	}
 
+	// Fills a short card, but caps at a compact block at the top of a viewport-tall list area.
 	return h.div(
 		[
 			h.Class(
 				cn(
-					"flex h-full flex-col items-center justify-center gap-4 rounded-md border border-dashed px-6 py-8 text-center",
+					"flex h-full max-h-70 flex-col items-center justify-center gap-4 rounded-md border border-dashed px-6 py-8 text-center",
 					options.className,
 				),
 			),

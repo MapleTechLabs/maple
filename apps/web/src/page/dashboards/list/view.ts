@@ -84,7 +84,7 @@ const LIST_LOAD_FAILURE: LoadFailure = {
 	_tag: "@maple/web/dashboards/ListLoadFailed",
 	type: "api_error",
 	code: "dashboards_list_unavailable",
-	title: "Couldn’t load dashboards",
+	title: "Couldn't load dashboards",
 	message: "Your dashboards are safe. Try again to reload the list.",
 	retryable: false,
 	recovery: "retry",

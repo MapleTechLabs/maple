@@ -110,6 +110,18 @@ describe("settings page", () => {
 		)
 	})
 
+	test("a tab this org cannot open replaces the URL with the default tab", () => {
+		// Self-hosted has no General tab, so a deep link to it lands on Ingestion with a clean URL.
+		const step = entered({ tab: "general", outcome: "denied" })
+		expect(step.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/settings?outcome=denied", isReplace: true }),
+		)
+		expect(
+			routeChanged(step.model, { _tag: "Settings", search: { outcome: "denied" } }, context).model.tab
+				?._tag,
+		).toBe("Ingestion")
+	})
+
 	test("self-hosted lands on Ingestion and a nav click carries the audit filters", () => {
 		const model = entered({ outcome: "denied" }).model
 		expect(model.tab?._tag).toBe("Ingestion")
@@ -280,7 +292,7 @@ describe("settings page", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			expectView(text("Couldn't load keys")).toExist(),
-			expectView(text("Live sync is unavailable, so keys couldn’t be loaded. Try again.")).toExist(),
+			expectView(text("Live sync is unavailable.")).toExist(),
 		)
 		const answered = pageUpdate(failed, Message.UpdatedApiKeys({ orgId: context.orgId, rows: [] })).model
 		scene(

@@ -64,7 +64,9 @@ const tabBar = (h: H, model: Model, overview: Option.Option<AlertsOverviewReady>
 										h.Class(
 											cn(
 												"font-mono text-xs tabular-nums",
-												tab.value === "inbox" ? "text-severity-error" : "text-muted-foreground",
+												tab.value === "inbox"
+													? "text-severity-error"
+													: "text-muted-foreground",
 											),
 										),
 									],
@@ -85,7 +87,11 @@ const headerActions = (h: H, model: Model): Html =>
 				? [
 						button(
 							h,
-							{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedNewDestination())] },
+							{
+								size: "sm",
+								variant: "outline",
+								attributes: [h.OnClick(Message.ClickedNewDestination())],
+							},
 							[icon(h, "PlusIcon"), "New destination"],
 						),
 					]
@@ -102,7 +108,7 @@ const SYNC_UNAVAILABLE = makeClientErrorBody({
 	_tag: "@maple/web/errors/SyncUnavailable",
 	code: "sync_unavailable",
 	title: "Couldn't load alerts",
-	message: "Live sync is unavailable, so alerts couldn’t be loaded. Try again.",
+	message: "Live sync is unavailable.",
 	retryable: false,
 	recovery: "retry",
 })
@@ -157,7 +163,8 @@ const deleteDialog = (h: H, model: Model): Html => {
 		title: `Delete ${target?.name ?? "destination"}?`,
 		description: "Alert rules will stop notifying this destination. This cannot be undone.",
 		confirmLabel: "Delete destination",
-		isPending: model.confirmDeleteId !== null && model.deletingDestinationIds.includes(model.confirmDeleteId),
+		isPending:
+			model.confirmDeleteId !== null && model.deletingDestinationIds.includes(model.confirmDeleteId),
 		onConfirm: Message.ClickedConfirmDeleteDestination(),
 	})
 }

@@ -166,9 +166,9 @@ describe("errors hub", () => {
 			given(failed.model),
 			measured,
 			railMounted,
-			expectView(text("Couldn’t load errors")).toExist(),
+			expectView(text("Couldn't load errors")).toExist(),
 			expectView(text(RANKING_FAILURE.message)).toExist(),
-			expectView(text(toLoadFailure("The errors list couldn’t be loaded.").message)).not.toExist(),
+			expectView(text(toLoadFailure("The errors list couldn't be loaded.").message)).not.toExist(),
 		)
 		const retried = pageUpdate(failed.model, Message.ClickedRetry())
 		expect(names(retried.commands)).toEqual(["FetchErrorsRanking"])

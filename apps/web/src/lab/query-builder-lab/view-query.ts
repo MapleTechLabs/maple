@@ -87,7 +87,7 @@ const header = (h: H, model: Model, query: QueryDraft): Html => {
 											className: "text-2xs text-muted-foreground",
 											attributes: [h.For(inputId), h.Id(Checkbox.labelId(inputId))],
 										},
-										["enabled"],
+										["Enabled"],
 									),
 								],
 							),
@@ -98,7 +98,7 @@ const header = (h: H, model: Model, query: QueryDraft): Html => {
 									size: "xs",
 									attributes: [h.OnClick(Message.ClickedCloneQuery({ queryId: query.id }))],
 								},
-								["Clone"],
+								[icon(h, "CopyIcon"), "Clone"],
 							),
 							button(
 								h,
@@ -169,7 +169,7 @@ const whereSection = (h: H, query: QueryDraft): Html => {
 	return h.div(
 		[h.Class("space-y-1")],
 		[
-			fieldEyebrow(h, "Where Clause (MVP supports key = value joined by AND)"),
+			fieldEyebrow(h, "Where (key = value, joined by AND)"),
 			h.div(
 				[h.Class("relative")],
 				[

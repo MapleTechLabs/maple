@@ -9,10 +9,22 @@ import { displayError } from "@maple/web-data/lib/error-messages"
 export const LoadFailure = PublicHttpErrorBodySchema
 export type LoadFailure = typeof LoadFailure.Type
 
-export const toLoadFailure = (error: unknown): LoadFailure => displayError(error)
+/** Server outages read as one sentence; the title already names the subject. */
+export const failureMessage = (failure: LoadFailure): string =>
+	failure.type === "api_error" &&
+	failure.retryable &&
+	failure.recovery === "retry" &&
+	!failure._tag.startsWith("@maple/web/errors/")
+		? "Maple's backend is unavailable."
+		: failure.message
+
+export const toLoadFailure = (error: unknown): LoadFailure => {
+	const failure = displayError(error)
+	return { ...failure, message: failureMessage(failure) }
+}
 
 /** What a reader sees of a failure: two failures with one key read as the same message. */
-export const failureKey = (failure: LoadFailure): string => `${failure.title}\n${failure.message}`
+export const failureKey = (failure: LoadFailure): string => `${failure.title}\n${failureMessage(failure)}`
 
 export const isSameFailure = (a: LoadFailure, b: LoadFailure): boolean => failureKey(a) === failureKey(b)
 

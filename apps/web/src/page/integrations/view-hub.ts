@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../../ui/button"
 import { badge } from "../../ui/display"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
@@ -16,7 +17,7 @@ import {
 	summaryOf,
 	type UnavailableOverview,
 } from "./derive"
-import type { Message } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 import { entryPlate } from "./view-entry"
 
@@ -73,11 +74,31 @@ const connectedRow = (
 						: []),
 				],
 			),
+			// With no stat beside it the status takes the free width, so long labels read in full.
 			h.span(
-				[h.Class("flex w-36 shrink-0 items-center gap-2")],
 				[
-					statusDot(h, { tone: HEALTH_TONE[connected?.health ?? "unavailable"] }),
-					h.span([h.Class("truncate text-xs")], [connected?.stateLabel ?? "Status unavailable"]),
+					h.Class(
+						cn("flex items-center gap-2", connected?.stat ? "w-36 shrink-0" : "min-w-36 flex-1"),
+					),
+				],
+				[
+					statusDot(h, {
+						tone:
+							connected !== null
+								? HEALTH_TONE[connected.health]
+								: overview.kind === "unavailable" && overview.reason === "not-configured"
+									? "neutral"
+									: HEALTH_TONE.unavailable,
+					}),
+					h.span(
+						[h.Class("truncate text-xs")],
+						[
+							connected?.stateLabel ??
+								(overview.kind === "unavailable" && overview.reason === "not-configured"
+									? "Not configured"
+									: "Couldn't check status"),
+						],
+					),
 				],
 			),
 			...(connected?.stat
@@ -149,7 +170,10 @@ const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"],
 							...(entry.isNew === true ? [newBadge(h)] : []),
 						],
 					),
-					h.span([h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")], [entry.description]),
+					h.span(
+						[h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")],
+						[entry.description],
+					),
 				],
 			),
 			h.span(
@@ -225,7 +249,33 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 						h.section(
 							[h.Class("flex flex-col gap-2")],
 							[
-								eyebrow(h, { variant: "label" }, ["Connected"]),
+								h.div(
+									[h.Class("flex min-h-7 items-center justify-between gap-3")],
+									[
+										eyebrow(h, { variant: "label" }, ["Connected"]),
+										...(connected.some(
+											({ overview }) =>
+												overview.kind === "unavailable" &&
+												overview.reason === "failed",
+										)
+											? [
+													button(
+														h,
+														{
+															size: "xs",
+															variant: "outline",
+															attributes: [
+																h.OnClick(
+																	Message.ClickedRetryFailedStatuses(),
+																),
+															],
+														},
+														["Try again"],
+													),
+												]
+											: []),
+									],
+								),
 								panel(h, { className: "divide-y divide-border/60 border-border/60" }, [
 									...connected.map(({ entry, overview }) =>
 										connectedRow(h, entry, overview, onSelect),

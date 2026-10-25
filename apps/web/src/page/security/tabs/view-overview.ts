@@ -1,7 +1,5 @@
 import { NARROW_TWO_COLUMNS } from "../kit/layout"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
-import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -28,9 +26,7 @@ import {
 	modelLabel,
 	PROFILE_LABEL,
 	RUN_KIND_LABEL,
-	runLabelOf,
 	runToneOf,
-	SECURITY_SEVERITY_LABEL,
 	refLabel,
 	targetLine,
 } from "../kit/format"
@@ -164,6 +160,8 @@ const spendTile = (h: H, model: Model): Html => {
 	})
 }
 
+const SEVERITY_SHORT = { critical: "crit", high: "high", medium: "med", low: "low" } as const
+
 const kpis = (h: H, model: Model): Html => {
 	const state = findingsStateOf(model)
 	const findings = state._tag === "Ready" ? state.findings : []
@@ -180,15 +178,12 @@ const kpis = (h: H, model: Model): Html => {
 			compact: true,
 			subline:
 				unknown === null
-					? // Wraps rather than truncates: the low count is the last thing a narrow tile would cut.
+					? // Short words keep it on one line; a narrow tile still wraps rather than cuts the low count.
 						h.span(
 							[h.Class("whitespace-normal")],
 							[
 								(["critical", "high", "medium", "low"] as const)
-									.map(
-										(severity) =>
-											`${counts[severity]} ${SECURITY_SEVERITY_LABEL[severity].toLowerCase()}`,
-									)
+									.map((severity) => `${counts[severity]} ${SEVERITY_SHORT[severity]}`)
 									.join(" · "),
 							],
 						)
@@ -198,7 +193,7 @@ const kpis = (h: H, model: Model): Html => {
 			eyebrow: "Needs validation",
 			value: unknown ?? String(openNeedsValidation(findings).length),
 			compact: true,
-			subline: unknown === null ? "need code execution to prove or reject" : undefined,
+			subline: unknown === null ? "need code execution to confirm" : undefined,
 		}),
 		statRailItem(h, {
 			eyebrow: "Targets",
@@ -290,6 +285,10 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 	const findings = findingsOfTarget(model, target.id)
 	const href = run === undefined ? targetRunsHref(target) : runHref(run)
 	const isFindingsKnown = typeof findings === "object" && findings !== null
+	// Model first so a long scope path is what truncates.
+	const meta = [targetModelOf(model, target), targetLine(target)]
+		.filter((part) => part !== null)
+		.join(" · ")
 	return tableRow(
 		h,
 		[
@@ -303,12 +302,11 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 							[
 								repositoryName(h, target.repository, "text-sm font-medium"),
 								h.span(
-									[h.Class("max-w-64 truncate text-xs text-muted-foreground")],
 									[
-										[targetLine(target), targetModelOf(model, target)]
-											.filter((part) => part !== null)
-											.join(" · "),
+										h.Class("max-w-64 truncate text-xs text-muted-foreground"),
+										h.Title(meta),
 									],
+									[meta],
 								),
 							],
 						),
@@ -502,7 +500,6 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 						const repository =
 							targets.find((target) => target.id === run.targetId)?.repository ??
 							"Removed target"
-						const tone = runToneOf(run)
 						const note = isLive(run)
 							? `${formatNumber(run.inputTokens + run.outputTokens)} tokens so far`
 							: run.status === "failed"
@@ -528,7 +525,7 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 										),
 									],
 								),
-								h.span([h.Class(cn("text-xs", TONE_TEXT[tone]))], [runLabelOf(run)]),
+								h.span([h.Class("shrink-0")], [runStatusBadge(h, run)]),
 								h.span(
 									[h.Class("w-20 text-right font-mono text-sm tabular-nums")],
 									[formatUsd(runTotalUsd(run))],

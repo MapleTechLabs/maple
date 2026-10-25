@@ -164,7 +164,12 @@ export const needsAttention = <M>(
 			!isSettled
 				? needsAttentionLoading(h)
 				: shared !== undefined
-					? errorState(h, { failure: shared, variant: "row", onRetry })
+					? errorState(h, {
+							failure: shared,
+							title: "Couldn't check your sources",
+							variant: "row",
+							onRetry,
+						})
 					: rows.length > 0
 						? findingsList(h, rows)
 						: h.p(

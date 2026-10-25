@@ -111,7 +111,8 @@ export interface CardStatus {
 
 const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
 const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline" }
-const STATUS_UNAVAILABLE: CardStatus = { label: "Status unavailable", variant: "outline" }
+/** The status read failed: a warning, not the neutral look of a quiet connection. */
+const STATUS_UNAVAILABLE: CardStatus = { label: "Couldn't check status", variant: "warn" }
 
 export interface ConnectedOverview {
 	readonly kind: "connected"
@@ -128,18 +129,21 @@ export interface AvailableOverview {
 }
 export interface UnavailableOverview {
 	readonly kind: "unavailable"
+	/** `failed`: the status read failed. `not-configured`: this deployment has no setup for it. */
+	readonly reason: "failed" | "not-configured"
 }
 export type IntegrationOverview = ConnectedOverview | AvailableOverview | UnavailableOverview | null
 
 const CONNECT: AvailableOverview = { kind: "available", cta: "Connect" }
 const SET_UP: AvailableOverview = { kind: "available", cta: "Set up" }
-const UNAVAILABLE: UnavailableOverview = { kind: "unavailable" }
+const UNAVAILABLE: UnavailableOverview = { kind: "unavailable", reason: "failed" }
+const UNCONFIGURED: UnavailableOverview = { kind: "unavailable", reason: "not-configured" }
 
 export const HEALTH_TONE = {
 	healthy: "ok",
 	attention: "warn",
 	pending: "neutral",
-	unavailable: "neutral",
+	unavailable: "warn",
 } as const
 
 const syncedLabel = (ms: number | null, nowMs: number, verb = "synced"): string | null =>
@@ -407,7 +411,7 @@ const supabaseOverview = (statuses: Statuses, nowMs: number) =>
 	fold(
 		statuses.supabase,
 		(status): IntegrationOverview => {
-			if (!status.configured) return UNAVAILABLE
+			if (!status.configured) return UNCONFIGURED
 			if (!status.connected) return CONNECT
 			const issue = status.revoked
 				? "Reconnect to resume"
