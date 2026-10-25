@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
+import { ROW_LINE_CHARS, ROW_WRAPPED_CHARS, textWindow } from "../../lib/display-text"
 import { icon } from "../icon"
 import type { LogChip, LogRowView, PinnedCell } from "./log-row-view"
 import { highlightedText } from "./highlight"
@@ -324,7 +325,13 @@ const messageLane = <Message>(
 						),
 					),
 				],
-				highlightedText(h, state.wrap ? row.body : row.firstLine, state.highlight),
+				highlightedText(
+					h,
+					state.wrap
+						? textWindow(row.body, state.highlight, ROW_WRAPPED_CHARS)
+						: textWindow(row.firstLine, state.highlight, ROW_LINE_CHARS),
+					state.highlight,
+				),
 			),
 			...(!state.wrap && row.hiddenLinesLabel !== ""
 				? [

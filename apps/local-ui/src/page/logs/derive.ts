@@ -1,6 +1,6 @@
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
 import { type ChipTone, pickImportantAttributes } from "@maple/ui/lib/log-attributes"
-import { ROW_LINE_CHARS, tryParseJson } from "@maple/web/lib/display-text"
+import { ROW_LINE_CHARS, textWindow, tryParseJson } from "@maple/web/lib/display-text"
 import { Option } from "effect"
 import type { LocalLog } from "./model"
 
@@ -48,8 +48,5 @@ export const firstLineOf = (body: string, search: string | undefined): Readonly<
 	const lines = stripAnsi(body).split("\n")
 	const needle = search?.toLowerCase()
 	const match = needle ? lines.find((line) => line.toLowerCase().includes(needle)) : undefined
-	const line = match ?? lines[0] ?? ""
-	// A long line opens a little before the match so the highlighted term stays in view.
-	const at = needle && line.length > ROW_LINE_CHARS ? Math.max(0, line.toLowerCase().indexOf(needle) - 200) : 0
-	return { text: line.slice(at, at + ROW_LINE_CHARS), hidden: lines.length - 1 }
+	return { text: textWindow(match ?? lines[0] ?? "", search, ROW_LINE_CHARS), hidden: lines.length - 1 }
 }

@@ -1,6 +1,13 @@
 import { Option } from "effect"
 import { describe, expect, test } from "vitest"
-import { capForDisplay, DISPLAY_MAX_CHARS, headLines, memoizeByText, prettyJson } from "./display-text"
+import {
+	capForDisplay,
+	DISPLAY_MAX_CHARS,
+	headLines,
+	memoizeByText,
+	prettyJson,
+	textWindow,
+} from "./display-text"
 
 describe("prettyJson", () => {
 	test("re-indents an object and ignores anything that is not an object or array", () => {
@@ -39,6 +46,26 @@ describe("headLines", () => {
 			"a\nb",
 			"a\nb",
 			"one line",
+		])
+	})
+})
+
+describe("textWindow", () => {
+	const line = `${"a".repeat(5_000)}NEEDLE${"b".repeat(5_000)}`
+
+	test("a short text comes back whole, a long one cut at the limit with an ellipsis", () => {
+		expect([textWindow("short", "x", 100), textWindow(line, undefined, 100)]).toEqual([
+			"short",
+			`${"a".repeat(100)}…`,
+		])
+	})
+
+	test("a long text opens just before a case-insensitive match far past the limit", () => {
+		const shown = textWindow(line, "needle", 1_000)
+		expect([shown.startsWith("…"), shown.includes("NEEDLE"), shown.endsWith("…")]).toEqual([
+			true,
+			true,
+			true,
 		])
 	})
 })

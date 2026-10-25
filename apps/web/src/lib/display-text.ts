@@ -12,6 +12,12 @@ export const PREVIEW_MAX_CHARS = 2_000
 /** A list row shows one truncated line; laying out a megabyte line to show 100 characters froze it. */
 export const ROW_LINE_CHARS = 1_000
 
+/** A wrapped list row shows a few screens at most; the detail sheet has the rest. */
+export const ROW_WRAPPED_CHARS = 10_000
+
+/** How much context a cut window keeps before the search match it opens on. */
+const MATCH_LEAD_CHARS = 200
+
 /** Only values this long are worth caching; shorter ones recompute faster than a lookup costs. */
 const MEMO_MIN_CHARS = 10_000
 const MEMO_CAPACITY = 4
@@ -43,6 +49,15 @@ export const capForDisplay = (
 	text.length <= limit
 		? { shown: text, omitted: 0 }
 		: { shown: text.slice(0, limit), omitted: text.length - limit }
+
+/** At most `limit` characters of `text`, opening just before the first `query` match so it stays visible. */
+export const textWindow = (text: string, query: string | undefined, limit: number): string => {
+	if (text.length <= limit) return text
+	const needle = query?.trim().toLowerCase() ?? ""
+	const hit = needle === "" ? -1 : text.toLowerCase().indexOf(needle)
+	const at = hit === -1 ? 0 : Math.max(0, hit - MATCH_LEAD_CHARS)
+	return `${at > 0 ? "…" : ""}${text.slice(at, at + limit)}${at + limit < text.length ? "…" : ""}`
+}
 
 /** The first `count` lines of `text`. */
 export const headLines = (text: string, count: number): string => text.split("\n", count).join("\n")
