@@ -911,11 +911,16 @@ export interface TracesBreakdownOutput {
 	readonly apdexScore: number
 }
 
+/** Whether `tracesBreakdownQuery` scans raw `traces` rather than the entry-span rollup. */
+export function tracesBreakdownReadsRaw(opts: TracesBreakdownOpts): boolean {
+	return !canUseServiceOverviewMv(opts, [opts.groupBy])
+}
+
 export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 	const apdexThresholdMs = opts.apdexThresholdMs ?? 500
 	const limit = opts.limit ?? 10
 
-	if (canUseServiceOverviewMv(opts, [opts.groupBy])) {
+	if (!tracesBreakdownReadsRaw(opts)) {
 		const mv = from(ServiceOverviewSpans)
 			.select(($) => {
 				const { estimatedSpanCount: _estimatedSpanCount, ...metrics } = metricSelectExprs(

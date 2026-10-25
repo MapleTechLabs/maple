@@ -32,6 +32,15 @@ export const MAX_BREAKDOWN_RANGE_SECONDS = 60 * 60 * 24 * 30
  */
 export const MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS = 60 * 60 * 24
 
+/**
+ * Most stored spans a breakdown may read from raw `traces`: ~15s at the ~12M spans/s
+ * measured on prod (2026-10-25), against the aggregation profile's 30s limit.
+ */
+export const MAX_RAW_BREAKDOWN_SPANS = 200_000_000
+
+/** At or under this, even the heaviest org (~31M spans/hour) fits the span budget. */
+export const MIN_SPAN_ESTIMATE_RANGE_SECONDS = 60 * 60 * 3
+
 /** Point budget for a single timeseries response. */
 export const MAX_TIMESERIES_POINTS = 1_500
 

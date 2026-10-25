@@ -861,6 +861,40 @@ export function serviceUsageQuery(opts: ServiceUsageOpts) {
 		.format("JSON")
 }
 
+export interface TraceSpanVolumeOutput {
+	readonly serviceName: string
+	/** Stored spans (not sample-weighted): what a raw `traces` scan reads. */
+	readonly spanCount: number
+	/** The share of `spanCount` in the window's first and last hour, which it only partly covers. */
+	readonly firstHourSpanCount: number
+	readonly lastHourSpanCount: number
+}
+
+export const traceSpanVolumeRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	spanCount: CHNumber,
+	firstHourSpanCount: CHNumber,
+	lastHourSpanCount: CHNumber,
+}) satisfies CompiledQueryRowSchema<TraceSpanVolumeOutput>
+
+/** Stored spans per service over every hour overlapping the window: sizes a raw `traces` scan before it runs. */
+export function traceSpanVolumeByServiceQuery() {
+	return from(ServiceUsage)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			spanCount: CH.sum($.TraceCount),
+			firstHourSpanCount: CH.sumIf($.TraceCount, $.Hour.eq(utcHourFloor("startTime"))),
+			lastHourSpanCount: CH.sumIf($.TraceCount, $.Hour.eq(utcHourFloor("endTime"))),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+		])
+		.groupBy("serviceName")
+		.format("JSON")
+}
+
 export interface ServiceUsageWithPreviousOutput extends ServiceUsageOutput {
 	readonly previousLogCount: number
 	readonly previousTraceCount: number
