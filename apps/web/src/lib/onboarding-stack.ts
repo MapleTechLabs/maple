@@ -5,7 +5,23 @@ import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "./onboarding-inten
 
 // The onboarding stack step: what the user runs, and which of Maple's surfaces each pick fills.
 
-export const STACK_LANGUAGE_IDS = ["nodejs", "browser", "python", "go", "java", "rust"] as const
+export const STACK_LANGUAGE_IDS = [
+	"nodejs",
+	"browser",
+	"python",
+	"go",
+	"java",
+	"nextjs",
+	"dotnet",
+	"php",
+	"ruby",
+	"rust",
+	"kotlin",
+	"effect",
+	"bun",
+	"deno",
+	"otel",
+] as const
 export type StackLanguage = (typeof STACK_LANGUAGE_IDS)[number]
 
 export const STACK_PLATFORM_IDS = [
@@ -48,7 +64,64 @@ export const STACK_LANGUAGES = {
 	go: { label: "Go", description: "Services, CLIs", icon: "FrameworkGoIcon", fills: CODE_FILLS },
 	java: { label: "Java", description: "Spring, JVM", icon: "OpenjdkIcon", fills: CODE_FILLS },
 	rust: { label: "Rust", description: "Axum, Tokio", icon: "RustIcon", fills: CODE_FILLS },
+	nextjs: {
+		label: "Next.js",
+		description: "App Router",
+		icon: "FrameworkNextjsIcon",
+		fills: CODE_FILLS,
+	},
+	dotnet: { label: ".NET", description: "ASP.NET Core", icon: "CsharpIcon", fills: CODE_FILLS },
+	php: { label: "PHP", description: "Laravel", icon: "LaravelIcon", fills: CODE_FILLS },
+	ruby: { label: "Ruby", description: "Rails, Sinatra", icon: "RubyIcon", fills: CODE_FILLS },
+	kotlin: { label: "Kotlin", description: "Ktor, Spring", icon: "KotlinIcon", fills: CODE_FILLS },
+	bun: { label: "Bun", description: "Elysia, Hono", icon: "BunIcon", fills: CODE_FILLS },
+	deno: { label: "Deno", description: "Built-in OTel", icon: "DenoIcon", fills: CODE_FILLS },
+	effect: {
+		label: "Effect",
+		description: "Maple's own SDK",
+		icon: "FrameworkEffectIcon",
+		fills: CODE_FILLS,
+	},
+	otel: {
+		label: "Other",
+		description: "Any OTel SDK",
+		icon: "FrameworkOpenTelemetryIcon",
+		fills: CODE_FILLS,
+	},
 } as const satisfies Record<StackLanguage, StackItem>
+
+/** Other names people search for: languages, frameworks and runtimes each card covers. */
+const STACK_LANGUAGE_ALIASES = {
+	nodejs: "javascript typescript express fastify hono nestjs",
+	browser: "javascript typescript react vue svelte angular frontend web vitals replay",
+	python: "flask celery",
+	go: "golang grpc gin echo",
+	java: "spring boot quarkus micronaut",
+	nextjs: "react vercel",
+	dotnet: "c# csharp asp.net",
+	php: "laravel symfony wordpress",
+	ruby: "rails sinatra sidekiq",
+	rust: "axum tokio actix",
+	kotlin: "ktor android jvm",
+	effect: "typescript",
+	bun: "javascript typescript elysia",
+	deno: "javascript typescript fresh",
+	otel: "opentelemetry otlp collector elixir erlang swift c++ cpp scala",
+} as const satisfies Record<StackLanguage, string>
+
+/** The languages a search matches by name, description or alias, in the grid's order. */
+export const searchLanguages = (query: string): ReadonlyArray<StackLanguage> => {
+	const words = query
+		.toLowerCase()
+		.trim()
+		.split(/\s+/)
+		.filter((word) => word !== "")
+	return STACK_LANGUAGE_IDS.filter((id) => {
+		const item = STACK_LANGUAGES[id]
+		const haystack = `${item.label} ${item.description} ${STACK_LANGUAGE_ALIASES[id]}`.toLowerCase()
+		return words.every((word) => haystack.includes(word))
+	})
+}
 
 /** The instrumentation guide the connect step links to for each language. */
 export const STACK_LANGUAGE_DOCS = {
@@ -58,6 +131,15 @@ export const STACK_LANGUAGE_DOCS = {
 	go: { label: "Go", page: "goGuide" },
 	java: { label: "Java", page: "javaGuide" },
 	rust: { label: "Rust", page: "rustGuide" },
+	nextjs: { label: "Next.js", page: "nextjsGuide" },
+	dotnet: { label: ".NET", page: "dotnetGuide" },
+	php: { label: "Laravel", page: "laravelGuide" },
+	ruby: { label: "OpenTelemetry", page: "instrumentation" },
+	kotlin: { label: "Kotlin", page: "kotlinGuide" },
+	bun: { label: "OpenTelemetry", page: "instrumentation" },
+	deno: { label: "OpenTelemetry", page: "instrumentation" },
+	effect: { label: "Effect", page: "effectSdk" },
+	otel: { label: "OpenTelemetry", page: "instrumentation" },
 } as const satisfies Record<StackLanguage, Readonly<{ label: string; page: DocsPage }>>
 
 /** The guide for the first language picked, matching the snippet `frameworkOf` opens on. */
@@ -152,6 +234,15 @@ const FRAMEWORK_OF = {
 	go: "go",
 	java: "otel",
 	rust: "otel",
+	nextjs: "nextjs",
+	kotlin: "otel",
+	bun: "otel",
+	deno: "otel",
+	dotnet: "otel",
+	php: "otel",
+	ruby: "otel",
+	effect: "effect",
+	otel: "otel",
 } as const satisfies Record<StackLanguage, FrameworkId>
 
 /** The setup snippet the checklist opens on: the first language picked, else OpenTelemetry for a platform-only stack. */

@@ -87,6 +87,8 @@ export const Model = Schema.TaggedStruct("QuickStart", {
 	drawer: Schema.NullOr(ConnectDrawer),
 	/** Whether an update has run with the plan known: the save can load before the customer read. */
 	isPlanKnown: Schema.Boolean,
+	/** The stack step's language search; not saved, it starts empty each visit. */
+	languageQuery: Schema.String,
 })
 export type Model = typeof Model.Type
 
@@ -103,6 +105,7 @@ export const Message = defineMessageUnion({
 	LoadedQuickStartState: { state: QuickStartState },
 	ToggledLanguage: { language: Schema.Literals(STACK_LANGUAGE_IDS) },
 	ToggledPlatform: { platform: Schema.Literals(STACK_PLATFORM_IDS) },
+	ChangedLanguageQuery: { query: Schema.String },
 	ClickedContinue: { step: Step },
 	ClickedBack: { to: Step },
 	CompletedSaveQuickStartState: {},
@@ -245,6 +248,7 @@ export const init = (
 		live: AsyncData.Idle(),
 		drawer: null,
 		isPlanKnown: false,
+		languageQuery: "",
 	},
 	commands: [LoadQuickStartState({ key: storageKey }), PeekOAuthReturn()],
 })
@@ -432,6 +436,7 @@ const step = (model: Model, message: Message, hasPlan: boolean, context: PageCon
 			saved(model, (state) =>
 				withStack(state, { ...state.stack, languages: toggled(state.stack.languages, language) }),
 			),
+		ChangedLanguageQuery: ({ query }) => ({ model: { ...model, languageQuery: query } }),
 		ToggledPlatform: ({ platform }) =>
 			saved(model, (state) =>
 				withStack(state, { ...state.stack, platforms: toggled(state.stack.platforms, platform) }),
