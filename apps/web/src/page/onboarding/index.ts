@@ -44,6 +44,7 @@ export const Screen = Schema.Union([
 	ClerkSignIn.Model,
 	CreateOrg.Model,
 	ClerkScreens.SignUp,
+	ClerkScreens.SessionTask,
 	ClerkScreens.WrongRegion,
 	QuickStart.Model,
 	SelectPlan.Model,
@@ -136,7 +137,12 @@ export const keyOf = (route: AppRoute, inputs: Inputs): Option.Option<string> =>
 			QuickStart: () => withOrg("QuickStart"),
 			SelectPlan: () => (isClerkAuthEnabled ? withOrg("SelectPlan") : Option.none()),
 			Unsubscribe: ({ search }) => Option.some(Unsubscribe.keyOf(search.token)),
-			SignIn: () => (isClerkAuthEnabled && isSignedOut ? Option.some("ClerkSignIn") : Option.none()),
+			SignIn: () =>
+				!isClerkAuthEnabled
+					? Option.none()
+					: isSignedOut
+						? Option.some("ClerkSignIn")
+						: Option.map(inputs.maybePendingTask, (task) => `SessionTask:${task}`),
 			SignUp: () => (isClerkAuthEnabled && isSignedOut ? Option.some("SignUp") : Option.none()),
 			OrgRequired: () =>
 				isClerkAuthEnabled && !isSignedOut && Option.isNone(inputs.maybeOrgId)
@@ -197,11 +203,26 @@ export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Optio
 					Unsubscribe: ({ search }) =>
 						fresh(key, { model: Unsubscribe.init(search.token) }, toUnsubscribe),
 					SignIn: ({ search }) =>
-						fresh(
-							key,
-							ClerkSignIn.init(validateInternalRedirect(search.redirect_url ?? null)),
-							toClerkSignIn,
-						),
+						Option.match(inputs.maybePendingTask, {
+							onNone: () =>
+								fresh(
+									key,
+									ClerkSignIn.init(validateInternalRedirect(search.redirect_url ?? null)),
+									toClerkSignIn,
+								),
+							onSome: (task) =>
+								fresh(
+									key,
+									{
+										model: ClerkScreens.SessionTask.make({
+											task,
+											target:
+												validateInternalRedirect(search.redirect_url ?? null) ?? "/",
+										}),
+									},
+									toClerkSignIn,
+								),
+						}),
 					// Without a redirect Clerk would send a fresh sign-up to "/"; new users belong in onboarding.
 					SignUp: ({ search }) =>
 						fresh(

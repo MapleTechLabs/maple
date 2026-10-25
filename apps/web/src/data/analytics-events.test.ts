@@ -111,6 +111,7 @@ const snapshot = (fullName: string | null): ClerkSnapshot => ({
 	maybeUser: Option.some({ fullName, email: "ada@acme.test", imageUrl: "" }),
 	maybeOrganization: Option.none(),
 	memberships: [],
+	maybePendingTask: Option.none(),
 })
 
 describe("session identity", () => {

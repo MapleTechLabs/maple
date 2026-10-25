@@ -17,6 +17,9 @@ interface ClerkResources {
 	readonly user?: ClerkUserResource | null
 	readonly session?: {
 		readonly id: string
+		readonly status?: string
+		/** Set while the session is `pending`: the task Clerk wants finished first. */
+		readonly currentTask?: { readonly key: string }
 		readonly getToken: (options?: { readonly skipCache?: boolean }) => Promise<string | null>
 	} | null
 	readonly organization?: ClerkOrganizationResource | null
@@ -176,6 +179,10 @@ interface ClerkGlobal extends ClerkResources {
 	readonly unmountSignIn: (element: HTMLDivElement) => void
 	readonly mountSignUp: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
 	readonly unmountSignUp: (element: HTMLDivElement) => void
+	readonly mountTaskResetPassword: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
+	readonly unmountTaskResetPassword: (element: HTMLDivElement) => void
+	readonly mountTaskSetupMFA: (element: HTMLDivElement, props: Readonly<Record<string, unknown>>) => void
+	readonly unmountTaskSetupMFA: (element: HTMLDivElement) => void
 	readonly setActive: (params: { readonly organization: string | null }) => Promise<void>
 	readonly signOut: () => Promise<void>
 	/** Clerk's re-verification modal, what `useReverification` opens (absent on a stub). */
@@ -222,6 +229,13 @@ export const ClerkUser = Schema.Struct({
 })
 export type ClerkUser = typeof ClerkUser.Type
 
+/**
+ * A pending session's task that only Clerk's own card resolves. `choose-organization` is left
+ * out: `/org-required` handles the org-less session.
+ */
+export const PendingSessionTask = Schema.Literals(["reset-password", "setup-mfa"])
+export type PendingSessionTask = typeof PendingSessionTask.Type
+
 /** What the app reads from a Clerk session (`useAuth()`, `useUser()`, `useOrganization()`). */
 export const ClerkSnapshot = Schema.Struct({
 	maybeUserId: Schema.Option(UserId),
@@ -230,6 +244,8 @@ export const ClerkSnapshot = Schema.Struct({
 	maybeOrganization: Schema.Option(ClerkOrganization),
 	/** `useOrganizationList({ userMemberships })`, the first page. */
 	memberships: Schema.Array(ClerkOrganization),
+	/** The API treats a pending session as signed out, so the app shows the task instead. */
+	maybePendingTask: Schema.Option(PendingSessionTask),
 })
 export type ClerkSnapshot = typeof ClerkSnapshot.Type
 
@@ -261,6 +277,10 @@ const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 		),
 		memberships: (resources.user?.organizationMemberships ?? []).map((membership) =>
 			toOrganization(membership.organization, nowMs),
+		),
+		maybePendingTask: Option.filter(
+			Option.fromNullishOr(resources.session?.status === "pending" ? resources.session.currentTask?.key : null),
+			Schema.is(PendingSessionTask),
 		),
 	}))
 

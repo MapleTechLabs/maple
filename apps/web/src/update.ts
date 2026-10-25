@@ -414,6 +414,7 @@ export const onboardingInputsOf = (model: Model): Option.Option<Onboarding.Input
 		maybeUser: Option.flatMap(snapshot, (clerkSnapshot) => clerkSnapshot.maybeUser),
 		customer: model.customer,
 		timeZone: model.timeZone,
+		maybePendingTask: Option.flatMap(snapshot, (clerkSnapshot) => clerkSnapshot.maybePendingTask),
 	}
 	return Session.match(model.session, {
 		Resolving: (): Option.Option<Onboarding.Inputs> => Option.none(),
@@ -567,6 +568,30 @@ const toHome: Redirect = { url: "/", isReplace: true }
 const selfHostedRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	route._tag === "SignUp" || route._tag === "OrgRequired" ? Option.some(toHome) : Option.none()
 
+/** A pending session's task screen is `/sign-in`, returning to where the user was headed. */
+const pendingTaskRedirect = (route: AppRoute): Option.Option<Redirect> => {
+	if (route._tag === "SignIn" || (isPublicRoute(route) && !isClerkAuthPage(route))) return Option.none()
+	const target = AppRoute.matchOrElse(
+		route,
+		{
+			// As `clerkReverseRedirect`: a fresh sign-up belongs in onboarding.
+			SignUp: ({ search }) => {
+				const signUpTarget = validateInternalRedirect(search.redirect_url)
+				return signUpTarget === null || signUpTarget === "/" ? "/quick-start" : signUpTarget
+			},
+			OrgRequired: ({ search }) => validateInternalRedirect(search.redirect_url),
+		},
+		() => hrefOf(route),
+	)
+	return Option.some({
+		url: hrefOf(AppRoute.SignIn({ search: { redirect_url: target ?? "/" } })),
+		isReplace: true,
+	})
+}
+
+const pendingTaskOf = (model: Model) =>
+	Option.flatMap(Option.fromNullishOr(model.clerkSnapshot), (snapshot) => snapshot.maybePendingTask)
+
 /** The root `beforeLoad` gate: sign-in when signed out, `/org-required` without an org. */
 const sessionRedirect = (model: Model): Option.Option<Redirect> =>
 	Session.match(model.session, {
@@ -579,6 +604,7 @@ const sessionRedirect = (model: Model): Option.Option<Redirect> =>
 						isReplace: true,
 					}),
 		SignedIn: ({ maybeOrgId }) => {
+			if (isClerkAuthEnabled && Option.isSome(pendingTaskOf(model))) return pendingTaskRedirect(model.route)
 			if (isPublicRoute(model.route)) {
 				return isClerkAuthEnabled ? clerkReverseRedirect(model.route, maybeOrgId) : selfHostedRedirect(model.route)
 			}
@@ -798,7 +824,8 @@ const appliedClerkSnapshot =
 		const known = previous.clerkSnapshot === null ? undefined : identityOf(previous.clerkSnapshot)
 		const identify = known !== undefined && isSameIdentity(known, identity) ? [] : [IdentifySession({ identity })]
 		if (Option.isSome(snapshot.maybeUserId)) {
-			const step = signedIn(snapshot.maybeOrgId)(model)
+			// The API rejects a pending session: nothing org-scoped (shell, customer) loads until the task is done.
+			const step = signedIn(Option.isSome(snapshot.maybePendingTask) ? Option.none() : snapshot.maybeOrgId)(model)
 			return { ...step, commands: [...identify, ...(step.commands ?? [])] }
 		}
 		if (identify.length > 0 && model.session._tag !== "Resolving") {
