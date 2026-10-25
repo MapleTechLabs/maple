@@ -103,11 +103,18 @@ export const projectMenu = (
 					withTrigger(
 						h.button(
 							[h.Type("button"), h.Tabindex(0), h.Class(heroFieldChipClass(true)), ...trigger],
-							heroFieldChipParts(h, {
-								label: value === undefined ? "projects" : "project",
-								value: value ?? `All ${options.projects.length}`,
-								isPicker: true,
-							}),
+							// "All 3 projects", or just the picked project's name.
+							heroFieldChipParts(
+								h,
+								value === undefined
+									? {
+											label: "projects",
+											value: `All ${options.projects.length}`,
+											isValueFirst: true,
+											isPicker: true,
+										}
+									: { label: "", value, isPicker: true },
+							),
 						),
 					),
 				),

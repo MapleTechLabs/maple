@@ -133,6 +133,9 @@ export const spark = (
 			)
 
 /** `VolumeCell`: a count and its sparkline. */
+/** "880K" over "880.0K": a trailing ".0" carries nothing, so the column drops it. */
+const formatVolume = (value: number): string => formatNumber(value).replace(/\.0(?=[KMBT]$)/, "")
+
 export const volumeCell = (
 	h: H,
 	ctx: RowsContext,
@@ -145,8 +148,8 @@ export const volumeCell = (
 		[h.Class("flex w-[180px] items-center gap-3")],
 		[
 			h.span(
-				[h.Class("w-[56px] shrink-0 font-mono text-xs tabular-nums text-foreground/80")],
-				[formatNumber(value)],
+				[h.Class("w-[56px] shrink-0 text-right font-mono text-xs tabular-nums text-foreground/80")],
+				[formatVolume(value)],
 			),
 			spark(h, ctx, slotId, values, color),
 		],
