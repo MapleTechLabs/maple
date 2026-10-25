@@ -50,29 +50,16 @@ export const SecurityAuditWorkflowPayload = Schema.Struct({
 	ref: Schema.String,
 	profile: SecurityAuditProfile,
 	scopePaths: Schema.Array(Schema.String),
-	/**
-	 * Max agent invocations; null leaves the run unbounded, so the org's monthly spend limit and its
-	 * plan are what stop it.
-	 */
+	/** Max agent invocations; null leaves the run unbounded, so the org's monthly spend limit stops it. */
 	budget: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
 	/** OpenRouter model ids, resolved at start so a replay runs on the same models. */
 	models: Schema.Struct({ discovery: Schema.String, validation: Schema.String }),
 	priorRunId: Schema.NullOr(Schema.String),
-	/** The org's monthly invocation limit, resolved from its plan at start; checked before every agent. */
-	orgBudget: Schema.Struct({
-		/** The billing cycle the run's invocations count against; fixed at start so replays agree. */
-		period: Schema.String,
-		limit: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-	}),
 })
 export type SecurityAuditWorkflowPayload = typeof SecurityAuditWorkflowPayload.Type
 
-/** The UTC month an org's audit invocations count against, `YYYY-MM`. */
-export const securityAuditBudgetPeriod = (epochMs: number): string =>
-	new Date(epochMs).toISOString().slice(0, 7)
-
-/** Why a run ends incomplete when the org's monthly invocations run out mid-run. */
-export const ORG_BUDGET_EXHAUSTED = "org_budget_exhausted"
+/** Why a run ends incomplete when the org's AI credits run out mid-run. */
+export const ORG_NO_AI_CREDITS = "org_no_ai_credits"
 
 /** Why a run ends incomplete when the org reaches its monthly spend limit mid-run. */
 export const ORG_SPEND_LIMIT_REACHED = "org_spend_limit_reached"

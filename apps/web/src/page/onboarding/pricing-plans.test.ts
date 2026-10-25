@@ -17,7 +17,6 @@ describe("getFeatureRows", () => {
 			price: { amount: 39, interval: "month" },
 			items: [
 				item("logs", 100),
-				item("security_audit_invocations", 20),
 				item("ai_input_tokens", 0),
 				item("some_future_feature", 5),
 				item("ai_credits", 10),

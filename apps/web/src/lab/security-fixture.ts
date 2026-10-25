@@ -101,6 +101,8 @@ const run = (seed: RunSeed) => ({
 	inputTokens: seed.input,
 	outputTokens: seed.output,
 	costUsd: seed.cost,
+	// The default $0.02 sandbox fee per agent invocation.
+	sandboxUsd: Math.round(seed.spent * 2) / 100,
 	discoveryModel:
 		seed.profile === "quick" ? "openai/gpt-6-luna" : "deepseek/deepseek-v4.1-flash-1017:nitro",
 	validationModel: "anthropic/claude-sonnet-5.5",

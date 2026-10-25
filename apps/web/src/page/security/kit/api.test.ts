@@ -1,5 +1,6 @@
 import {
-	SecurityAuditBudgetExhaustedError,
+	SecurityAuditCreditsUsedUpError,
+	SecurityAuditNotInPlanError,
 	SecurityAuditRunInProgressError,
 	SecurityAuditSpendLimitReachedError,
 } from "@maple/domain/http"
@@ -10,18 +11,26 @@ import { describe, expect, it } from "vitest"
 import { toStartFailure } from "./api"
 
 describe("toStartFailure", () => {
-	it("says when the plan's allowance resets", () => {
+	it("points a plan without AI credits at its billing settings", () => {
 		const failure = toStartFailure(
-			new SecurityAuditBudgetExhaustedError({
-				message: "This organization's plan allowance for security audits is used up.",
-				remaining: 3,
-				required: 8,
+			new SecurityAuditNotInPlanError({ message: "This plan has no AI credits." }),
+		)
+		expect([failure.code, failure.message]).toEqual([
+			"security_audit_not_in_plan",
+			"This plan has no AI credits. Change the plan under Settings, Billing.",
+		])
+	})
+
+	it("says when used-up AI credits reset, and that more can be added", () => {
+		const failure = toStartFailure(
+			new SecurityAuditCreditsUsedUpError({
+				message: "This organization has used all of its AI credits for this billing period.",
 				resetsAt: Schema.decodeSync(IsoDateTimeString)("2026-11-07T09:00:00.000Z"),
 			}),
 		)
 		expect([failure.code, failure.message]).toEqual([
-			"security_audit_budget_exhausted",
-			"This organization's plan allowance for security audits is used up. It resets on November 7, 2026.",
+			"security_audit_credits_used_up",
+			"This organization has used all of its AI credits for this billing period. They reset on November 7, 2026, or add credits under Settings, Billing.",
 		])
 	})
 

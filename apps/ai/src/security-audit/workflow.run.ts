@@ -6,18 +6,23 @@
  *
  * Clocks are read inside steps or the store only: the body replays.
  */
+import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId } from "@maple/domain/http"
 import type { SandboxError } from "@maple/backend/sandbox/contract"
 import {
-	ORG_BUDGET_EXHAUSTED,
+	ORG_NO_AI_CREDITS,
 	ORG_SPEND_LIMIT_REACHED,
 	securityAuditSpendWindow,
 	type SecurityAuditWorkflowPayload,
 } from "@maple/domain/security-audit"
 import { durableStep } from "@maple/backend/platform/durable-step"
-import { trackSecurityAuditInvocations } from "@maple/backend/services/billing/autumn-tracker"
+import { trackSecurityAuditCharge } from "@maple/backend/services/billing/autumn-tracker"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
+import {
+	SecurityAuditCredits,
+	type SecurityAuditCreditsUnavailable,
+} from "@maple/backend/services/security-audit/SecurityAuditCredits"
 import {
 	type OrgReservation,
 	SecurityAuditStore,
@@ -129,22 +134,25 @@ const messageOf = (error: unknown): string =>
 		? error.message
 		: String(error)
 
+/** Whether an agent may launch: the store's reservation, or the org's AI credits ran out. */
+type Admission = OrgReservation | "no_credits"
+
 /**
  * Each invocation a durable step: a replay returns its recorded answer instead of running it again.
- * Before it, `admit` checks the org's monthly spend and reserves the invocation from its plan in its
- * own durable step, so a replay neither reserves nor bills it twice. After it, `charge` records what
- * the agent cost, which is what the next `admit` counts. The run's step context is captured once.
+ * Before it, `admit` checks the org's monthly spend, reserves the invocation and bills its sandbox fee
+ * in its own durable step, so a replay neither reserves nor bills it twice. After it, `charge` records
+ * and bills what its models cost, which the next `admit` counts. The run's step context is captured once.
  */
 const durableAgents = (
 	agents: AuditAgentsApi,
 	step: Context.Context<Cloudflare.WorkflowStep>,
-	admit: (agentId: string) => Effect.Effect<OrgReservation, AuditStoreError>,
+	admit: (agentId: string) => Effect.Effect<Admission, AuditStoreError | SecurityAuditCreditsUnavailable>,
 	charge: (agentId: string, costUsd: number) => Effect.Effect<void, AuditStoreError>,
 ): AuditAgentsApi => ({
 	run: (invocation) => {
 		const refused = (message: string, reason: string) =>
 			new AuditBudgetExhaustedError({ message, agentId: invocation.agentId, reason })
-		const admitted: Effect.Effect<OrgReservation, AuditBudgetExhaustedError> = durableStep(
+		const admitted: Effect.Effect<Admission, AuditBudgetExhaustedError> = durableStep(
 			`org-budget:${invocation.agentId}`,
 			admit(invocation.agentId),
 			STEP_RETRY,
@@ -153,7 +161,7 @@ const durableAgents = (
 			// A budget that cannot be read is not a budget with room: the run stops rather than overspend.
 			Effect.mapError((error) =>
 				refused(
-					`the organization's invocation budget could not be read: ${messageOf(error)}`,
+					`the organization's audit spend could not be read: ${messageOf(error)}`,
 					"org_budget_unavailable",
 				),
 			),
@@ -162,7 +170,7 @@ const durableAgents = (
 			Effect.catchDefect((defect) =>
 				Effect.fail(
 					refused(
-						`the organization's invocation budget step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
+						`the organization's audit spend step died: ${Cause.pretty(Cause.die(defect)).slice(0, 600)}`,
 						"org_budget_unavailable",
 					),
 				),
@@ -200,12 +208,16 @@ const durableAgents = (
 								ORG_SPEND_LIMIT_REACHED,
 							),
 						)
-					case "invocations_spent":
+					case "no_credits":
 						return Effect.fail(
-							refused(
-								"the organization's monthly invocation budget is spent",
-								ORG_BUDGET_EXHAUSTED,
-							),
+							refused("the organization has no AI credits left", ORG_NO_AI_CREDITS),
+						)
+					case "run_finished":
+						return Effect.fail(refused("the run has already finished", "run_finished"))
+					default:
+						// A step recorded by an older deploy replays a value this one does not know.
+						return Effect.fail(
+							refused(`unknown admission ${String(reservation)}`, "org_budget_unavailable"),
 						)
 				}
 			},
@@ -366,45 +378,49 @@ export const auditWithAgents = <E, R>(
 		const changedSincePrior = changedMatcher(changed)
 
 		const agents = yield* agentsFor(sandboxSource(sandbox, orgId, pinned))
-		const limits = yield* securityAuditLimits
+		const credits = yield* SecurityAuditCredits
 		const httpClient = yield* HttpClient.HttpClient
+		const bill = (agentId: string, kind: "sandbox" | "model", usd: number) =>
+			trackSecurityAuditCharge({ orgId, runId: payload.runId, agentId, kind, usd }).pipe(
+				Effect.provideService(HttpClient.HttpClient, httpClient),
+			)
 		/**
-		 * One invocation from the org's cycle, billed once it is granted. Known gap: the Autumn track
-		 * is fire-and-forget, so a charge is lost while Autumn is down; reconcile it later from
-		 * `security_audit_org_reservations`, which stays the ledger of record. A run that crosses a
-		 * billing-cycle boundary keeps reserving against its payload's period; the run budget bounds that.
+		 * One invocation, while the org has AI credits, its sandbox fee billed once it is granted. Known
+		 * gap: the Autumn track is fire-and-forget, so a charge is lost while Autumn is down; reconcile
+		 * it later from `security_audit_org_reservations`, which stays the ledger of record.
 		 */
 		const admit = (agentId: string) =>
 			Effect.gen(function* () {
+				const hasCredits = yield* credits.ensure(orgId).pipe(
+					Effect.as(true),
+					Effect.catchTag("@maple/backend/security-audit/NoCredits", () => Effect.succeed(false)),
+				)
+				if (!hasCredits) return "no_credits" as const
 				// Read live, so a limit an admin raises or lowers applies to the agents still to come.
+				const limits = yield* securityAuditLimits
 				const settings = yield* store.getSettings()
 				const limitUsd = Option.match(settings, {
 					onNone: () => limits.defaultMonthlySpendLimitUsd,
 					onSome: (row) => row.monthlySpendLimitUsd,
 				})
 				const { since } = securityAuditSpendWindow(yield* Clock.currentTimeMillis)
-				return yield* store.reserveOrgInvocation(
-					payload.runId,
-					agentId,
-					payload.orgBudget.period,
-					payload.orgBudget.limit,
-					{ since, limitUsd },
-				)
-			}).pipe(
-				Effect.tap((reservation) =>
-					reservation === "granted"
-						? trackSecurityAuditInvocations({
-								orgId,
-								runId: payload.runId,
-								agentId,
-								invocations: 1,
-							}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
-						: Effect.void,
-				),
-			)
+				const reservation = yield* store.reserveOrgInvocation(payload.runId, agentId, {
+					since,
+					limitUsd,
+					sandboxFeeUsd: limits.sandboxFeeUsd,
+				})
+				if (reservation === "granted") yield* bill(agentId, "sandbox", limits.sandboxFeeUsd)
+				return reservation
+			})
 
+		/**
+		 * What OpenRouter charged for the agent, billed with the AI credit markup, then recorded as is.
+		 * Billed first: a lost write is later priced from the agent's event, which bills nothing.
+		 */
 		const charge = (agentId: string, costUsd: number) =>
-			store.recordAgentCost(payload.runId, agentId, costUsd)
+			bill(agentId, "model", aiCreditsUsd(costUsd)).pipe(
+				Effect.andThen(store.recordAgentCost(payload.runId, agentId, costUsd)),
+			)
 
 		const result = yield* runAudit({
 			runId: payload.runId,

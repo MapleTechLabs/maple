@@ -47,7 +47,7 @@ import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimi
 import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { SecurityAuditPlanBudget } from "@maple/backend/services/security-audit/SecurityAuditPlanBudget"
+import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
@@ -100,7 +100,7 @@ const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 				Layer.mergeAll(
 					SecurityAuditStore.layer,
 					OrganizationFeatureFlagsService.layer,
-					SecurityAuditPlanBudget.layer,
+					SecurityAuditCredits.layer,
 					SecurityAuditRepositorySize.layer,
 				),
 			),

@@ -12,7 +12,7 @@
  */
 import { Config, Duration, Effect, Option, Redacted } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { SECURITY_AUDIT_INVOCATIONS_FEATURE_ID } from "@maple/domain/billing"
+import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import {
 	AUTUMN_API_VERSION,
 	AUTUMN_TRACK_PATH,
@@ -20,9 +20,6 @@ import {
 } from "@maple/backend/services/billing/autumn-api"
 
 const DEFAULT_AUTUMN_API_URL = "https://api.useautumn.com"
-
-/** The AI credit system feature in `apps/api/autumn.config.ts`. */
-export const AI_CREDITS_FEATURE_ID = "ai_credits"
 
 /**
  * Ceiling on one track call.
@@ -36,7 +33,7 @@ const TRACK_TIMEOUT = Duration.seconds(5)
 
 export type AiUsageSource = "triage" | "review" | "chat" | "bot"
 
-/** Every billing usage source: the AI surfaces, and the security audit's agent invocations. */
+/** Every billing usage source: the AI surfaces, and the security audit's agents. */
 export type BillingUsageSource = AiUsageSource | "security_audit"
 
 export interface TrackTokenUsageOptions {
@@ -236,33 +233,45 @@ export const trackAiCredits = Effect.fn("AutumnTracker.trackAiCredits")(function
 	)
 })
 
-export interface TrackSecurityAuditInvocationsOptions {
+/** What a security-audit charge pays for: an agent's sandbox, or its model calls. */
+export type SecurityAuditChargeKind = "sandbox" | "model"
+
+export interface TrackSecurityAuditChargeOptions {
 	readonly orgId: string
 	readonly runId: string
-	/** The invocation's agent id: one charge per agent, however often its step is retried. */
+	/** The invocation's agent id: one charge per agent and kind, however often its step is retried. */
 	readonly agentId: string
-	readonly invocations: number
+	readonly kind: SecurityAuditChargeKind
+	/** US dollars, already marked up: one AI credit is one dollar. */
+	readonly usd: number
 }
 
-/** Charge the agent invocations a security-audit run reserved to the org's plan allotment. */
-export const trackSecurityAuditInvocations = Effect.fn("AutumnTracker.trackSecurityAuditInvocations")(
-	function* ({ orgId, runId, agentId, invocations }: TrackSecurityAuditInvocationsOptions) {
-		if (invocations <= 0) return
-		const source: BillingUsageSource = "security_audit"
-		const idempotencyKey = `${runId}:${agentId}:${source}`
-		yield* postAll(orgId, [
-			{
-				path: AUTUMN_TRACK_PATH,
-				label: SECURITY_AUDIT_INVOCATIONS_FEATURE_ID,
-				idempotencyKey,
-				body: {
-					customer_id: orgId,
-					feature_id: SECURITY_AUDIT_INVOCATIONS_FEATURE_ID,
-					value: invocations,
-					idempotency_key: idempotencyKey,
-					properties: { source, run_id: runId },
-				},
+/**
+ * Charge one security-audit agent's sandbox fee or model cost to the org's AI credits. A plain
+ * track, not `track_tokens`: the model cost is OpenRouter's own bill, marked up by the caller.
+ */
+export const trackSecurityAuditCharge = Effect.fn("AutumnTracker.trackSecurityAuditCharge")(function* ({
+	orgId,
+	runId,
+	agentId,
+	kind,
+	usd,
+}: TrackSecurityAuditChargeOptions) {
+	if (!(usd > 0)) return
+	const source: BillingUsageSource = "security_audit"
+	const idempotencyKey = `${runId}:${agentId}:${source}:${kind}`
+	yield* postAll(orgId, [
+		{
+			path: AUTUMN_TRACK_PATH,
+			label: AI_CREDITS_FEATURE_ID,
+			idempotencyKey,
+			body: {
+				customer_id: orgId,
+				feature_id: AI_CREDITS_FEATURE_ID,
+				value: usd,
+				idempotency_key: idempotencyKey,
+				properties: { source, kind, run_id: runId, agent_id: agentId },
 			},
-		])
-	},
-)
+		},
+	])
+})

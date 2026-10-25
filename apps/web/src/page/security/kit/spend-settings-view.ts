@@ -78,7 +78,7 @@ const limitField = (h: H, model: Model, error?: string): Html => {
 		Field.fieldDescription(
 			h,
 			{ ids, state },
-			"Charged at the model provider's price. When the org reaches the limit, running audits stop and list what they did not cover. Raise it to run again.",
+			"Paid in AI credits: each agent's model cost plus a small sandbox fee. When the org reaches the limit, running audits stop and list what they did not cover. Raise it to run again.",
 		),
 		...(error === undefined
 			? []

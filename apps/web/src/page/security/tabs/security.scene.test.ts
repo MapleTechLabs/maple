@@ -348,7 +348,7 @@ describe("security tabs", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withTargetRuns),
-			expectView(text(/excludes 1 unpriced run · newest 50 runs per target only$/)).toExist(),
+			expectView(text(/models not yet priced for 1 run · newest 50 runs per target only$/)).toExist(),
 		)
 	})
 

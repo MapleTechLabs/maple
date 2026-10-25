@@ -1,4 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
+import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { VcsRepositoryId } from "@maple/domain/http/vcs"
 import type { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
@@ -15,7 +16,7 @@ const orgA = Schema.decodeUnknownSync(OrgId)("org_a")
 const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
 const user = Schema.decodeUnknownSync(UserId)("user_a")
 /** A spend check no test reaches, for tests about the plan's invocations. */
-const NO_SPEND_LIMIT = { since: 0, limitUsd: Number.MAX_SAFE_INTEGER }
+const NO_SPEND_LIMIT = { since: 0, limitUsd: Number.MAX_SAFE_INTEGER, sandboxFeeUsd: 0 }
 
 const withStore = <A, E>(body: (store: SecurityAuditStoreApi) => Effect.Effect<A, E>) =>
 	Effect.gen(function* () {
@@ -1075,7 +1076,7 @@ describe("SecurityAuditStore writes after a run finished", () => {
 				const tokens = { inputTokens: 100, outputTokens: 10 }
 				// hunter-4 reserved its invocation but was cancelled before it reported.
 				yield* Effect.forEach(["hunter-1", "hunter-2", "hunter-3", "hunter-4"], (id) =>
-					scoped.reserveOrgInvocation(runId, id, "2026-10", 100, NO_SPEND_LIMIT),
+					scoped.reserveOrgInvocation(runId, id, NO_SPEND_LIMIT),
 				)
 				yield* scoped.recordEvent(runId, agent("hunter-1", { ...tokens, costUsd: 0.25 }))
 				yield* scoped.recordEvent(runId, agent("hunter-2", { ...tokens, costUsd: 0.5 }))
@@ -1130,77 +1131,22 @@ describe("SecurityAuditStore writes after a run finished", () => {
 	)
 })
 
-describe("SecurityAuditStore org invocation budget", () => {
-	it.effect("reserves concurrent invocations up to the limit and never past it, per org and month", () =>
-		withStore((store) =>
-			Effect.gen(function* () {
-				const a = store.forOrg(orgA)
-				const runA = (yield* seedRun(store, orgA, "abc")).runId
-				const runB = (yield* seedRun(store, orgB, "abc")).runId
-				const grants = yield* Effect.forEach(
-					Array.from({ length: 10 }, (_, i) => i),
-					(i) => a.reserveOrgInvocation(runA, `hunter-${i}`, "2026-10", 3, NO_SPEND_LIMIT),
-					{ concurrency: "unbounded" },
-				)
-				const otherMonth = yield* a.reserveOrgInvocation(
-					runA,
-					"recon-1",
-					"2026-11",
-					3,
-					NO_SPEND_LIMIT,
-				)
-				const otherOrg = yield* store
-					.forOrg(orgB)
-					.reserveOrgInvocation(runB, "recon-1", "2026-10", 3, NO_SPEND_LIMIT)
-				const noPlan = yield* store
-					.forOrg(orgB)
-					.reserveOrgInvocation(runB, "recon-2", "2026-12", 0, NO_SPEND_LIMIT)
-				assert.deepStrictEqual(
-					{
-						granted: grants.filter((grant) => grant === "granted").length,
-						spent: yield* a.orgInvocationsSpent("2026-10"),
-						otherMonth,
-						otherOrg,
-						noPlan,
-						noPlanSpent: yield* store.forOrg(orgB).orgInvocationsSpent("2026-12"),
-					},
-					{
-						granted: 3,
-						spent: 3,
-						otherMonth: "granted",
-						otherOrg: "granted",
-						noPlan: "invocations_spent",
-						noPlanSpent: 0,
-					},
-				)
-			}),
-		),
-	)
-
-	it.effect("grants a retried reservation of the same agent once, even at the limit", () =>
+describe("SecurityAuditStore sandbox fee", () => {
+	it.effect("adds each granted agent's fee to its run once, even when the grant is retried", () =>
 		withStore((store) =>
 			Effect.gen(function* () {
 				const a = store.forOrg(orgA)
 				const { runId } = yield* seedRun(store, orgA, "abc")
-				// The first try committed but its step was never recorded; the retry must not count again.
-				const first = yield* a.reserveOrgInvocation(
-					runId,
-					"hunter-w1-1",
-					"2026-10",
-					1,
-					NO_SPEND_LIMIT,
+				const fee = { ...NO_SPEND_LIMIT, sandboxFeeUsd: 0.25 }
+				const grants = yield* Effect.forEach(
+					["hunter-1", "hunter-2", "hunter-3", "hunter-1"],
+					(agentId) => a.reserveOrgInvocation(runId, agentId, fee),
+					{ concurrency: "unbounded" },
 				)
-				const retry = yield* a.reserveOrgInvocation(
-					runId,
-					"hunter-w1-1",
-					"2026-10",
-					1,
-					NO_SPEND_LIMIT,
-				)
-				const next = yield* a.reserveOrgInvocation(runId, "hunter-w1-2", "2026-10", 1, NO_SPEND_LIMIT)
+				const run = yield* a.getRun(runId)
 				assert.deepStrictEqual(
-					[first, retry, next, yield* a.orgInvocationsSpent("2026-10")],
-					["granted", "granted", "invocations_spent", 1],
+					[grants, Option.map(run, (r) => r.sandboxUsd), yield* a.orgSpendUsd(0)],
+					[["granted", "granted", "granted", "granted"], Option.some(0.75), 0.75],
 				)
 			}),
 		),
@@ -1212,19 +1158,14 @@ describe("SecurityAuditStore org invocation budget", () => {
 				const a = store.forOrg(orgA)
 				const { runId } = yield* seedRun(store, orgA, "abc")
 				yield* a.cancelRun(runId, user)
-				const afterCancel = yield* a.reserveOrgInvocation(
-					runId,
-					"recon-1",
-					"2026-10",
-					100,
-					NO_SPEND_LIMIT,
-				)
+				const fee = { ...NO_SPEND_LIMIT, sandboxFeeUsd: 0.25 }
+				const afterCancel = yield* a.reserveOrgInvocation(runId, "recon-1", fee)
 				const crossOrg = yield* Effect.exit(
-					store.forOrg(orgB).reserveOrgInvocation(runId, "recon-1", "2026-10", 100, NO_SPEND_LIMIT),
+					store.forOrg(orgB).reserveOrgInvocation(runId, "recon-1", fee),
 				)
 				assert.deepStrictEqual(
-					[afterCancel, crossOrg._tag, yield* a.orgInvocationsSpent("2026-10")],
-					["invocations_spent", "Failure", 0],
+					[afterCancel, crossOrg._tag, yield* a.orgSpendUsd(0)],
+					["run_finished", "Failure", 0],
 				)
 			}),
 		),
@@ -1241,17 +1182,18 @@ describe("SecurityAuditStore org spend limit", () => {
 					const b = store.forOrg(orgB)
 					const runA = (yield* seedRun(store, orgA, "abc")).runId
 					const runB = (yield* seedRun(store, orgB, "abc")).runId
-					const limit = { since: 0, limitUsd: 5 }
-					yield* a.reserveOrgInvocation(runA, "recon-1", "2026-10", 100, limit)
+					const limit = { since: 0, limitUsd: 5, sandboxFeeUsd: 0 }
+					yield* a.reserveOrgInvocation(runA, "recon-1", limit)
 					yield* a.recordAgentCost(runA, "recon-1", 3.5)
-					const underLimit = yield* a.reserveOrgInvocation(runA, "hunter-1", "2026-10", 100, limit)
-					// A replayed cost write sets the same value, it does not add it again.
+					const underLimit = yield* a.reserveOrgInvocation(runA, "hunter-1", limit)
+					// 3.5 bills as 4.2 in AI credits, under the limit. A replayed cost write sets the same
+					// value, it does not add it again.
 					yield* a.recordAgentCost(runA, "hunter-1", 1.5)
 					yield* a.recordAgentCost(runA, "hunter-1", 1.5)
-					const atLimit = yield* a.reserveOrgInvocation(runA, "hunter-2", "2026-10", 100, limit)
+					const atLimit = yield* a.reserveOrgInvocation(runA, "hunter-2", limit)
 					// A grant from before the limit was reached is still honoured on retry.
-					const retried = yield* a.reserveOrgInvocation(runA, "hunter-1", "2026-10", 100, limit)
-					const otherOrg = yield* b.reserveOrgInvocation(runB, "recon-1", "2026-10", 100, limit)
+					const retried = yield* a.reserveOrgInvocation(runA, "hunter-1", limit)
+					const otherOrg = yield* b.reserveOrgInvocation(runB, "recon-1", limit)
 					const laterMonth = yield* a.orgSpendUsd(1)
 					assert.deepStrictEqual(
 						{
@@ -1268,7 +1210,7 @@ describe("SecurityAuditStore org spend limit", () => {
 							atLimit: "spend_limit_reached",
 							retried: "granted",
 							otherOrg: "granted",
-							spentA: 5,
+							spentA: aiCreditsUsd(5),
 							spentB: 0,
 							laterMonth: 0,
 						},
@@ -1282,8 +1224,8 @@ describe("SecurityAuditStore org spend limit", () => {
 			Effect.gen(function* () {
 				const a = store.forOrg(orgA)
 				const { runId } = yield* seedRun(store, orgA, "abc")
-				const limit = { since: 0, limitUsd: 5 }
-				yield* a.reserveOrgInvocation(runId, "recon-1", "2026-10", 100, limit)
+				const limit = { since: 0, limitUsd: 5, sandboxFeeUsd: 0 }
+				yield* a.reserveOrgInvocation(runId, "recon-1", limit)
 				// The agent answered and its event holds its cost, but recordAgentCost never landed.
 				yield* a.recordEvent(runId, {
 					_tag: "Agent",
@@ -1292,8 +1234,11 @@ describe("SecurityAuditStore org spend limit", () => {
 					outcome: "ok",
 					usage: { inputTokens: 100, outputTokens: 10, costUsd: 6 },
 				})
-				const next = yield* a.reserveOrgInvocation(runId, "hunter-1", "2026-10", 100, limit)
-				assert.deepStrictEqual([next, yield* a.orgSpendUsd(0)], ["spend_limit_reached", 6])
+				const next = yield* a.reserveOrgInvocation(runId, "hunter-1", limit)
+				assert.deepStrictEqual(
+					[next, yield* a.orgSpendUsd(0)],
+					["spend_limit_reached", aiCreditsUsd(6)],
+				)
 			}),
 		),
 	)
@@ -1303,7 +1248,7 @@ describe("SecurityAuditStore org spend limit", () => {
 			Effect.gen(function* () {
 				const a = store.forOrg(orgA)
 				const { runId } = yield* seedRun(store, orgA, "abc")
-				yield* a.reserveOrgInvocation(runId, "report-1", "2026-10", 100, NO_SPEND_LIMIT)
+				yield* a.reserveOrgInvocation(runId, "report-1", NO_SPEND_LIMIT)
 				yield* a.recordEvent(runId, {
 					_tag: "Agent",
 					role: "recon",
@@ -1312,7 +1257,7 @@ describe("SecurityAuditStore org spend limit", () => {
 					usage: { inputTokens: 100, outputTokens: 10, costUsd: 2.5 },
 				})
 				yield* a.finishRun(runId, { status: "complete" })
-				assert.strictEqual(yield* a.orgSpendUsd(0), 2.5)
+				assert.strictEqual(yield* a.orgSpendUsd(0), aiCreditsUsd(2.5))
 			}),
 		),
 	)

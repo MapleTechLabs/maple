@@ -11,6 +11,7 @@ import {
 	SecurityAuditStore,
 	type SecurityAuditOrgStore,
 } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId as OrgIdSchema } from "@maple/domain/http"
 import { UserId } from "@maple/domain/primitives"
 import type { SecurityAuditTargetId, SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
@@ -23,7 +24,11 @@ import {
 } from "@maple/security-audit"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
-import { HttpClient } from "effect/http"
+import { HttpClient, HttpClientResponse } from "effect/http"
+import {
+	SecurityAuditCredits,
+	SecurityAuditNoCredits,
+} from "@maple/backend/services/security-audit/SecurityAuditCredits"
 import { auditWithAgents, toSandboxStepError } from "./workflow.run"
 
 const trackedDbs: TestDb[] = []
@@ -154,6 +159,7 @@ const replayingStep = (recorded: Map<string, unknown>): Cloudflare.WorkflowStep[
 const testLayer = () =>
 	Layer.mergeAll(
 		SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+		SecurityAuditCredits.unmetered,
 		Layer.succeed(
 			HttpClient.HttpClient,
 			HttpClient.make(() => Effect.die("no network in tests")),
@@ -183,8 +189,14 @@ const payloadFor = (runId: string, priorRunId: string | null = null): SecurityAu
 		validation: "anthropic/claude-sonnet-5.5",
 	},
 	priorRunId,
-	orgBudget: { period: "2026-10", limit: 20_000 },
 })
+
+/** An Autumn track body, as the billing test reads it. */
+const Charge = Schema.Struct({
+	value: Schema.Number,
+	properties: Schema.Struct({ kind: Schema.String }),
+})
+const decodeCharge = Schema.decodeUnknownSync(Schema.fromJsonString(Charge))
 
 describe("auditWithAgents", () => {
 	it.effect("pins the commit, records it on the run, runs the engine and finishes the run", () =>
@@ -214,41 +226,60 @@ describe("auditWithAgents", () => {
 		}).pipe(Effect.provide(testLayer())),
 	)
 
-	it.effect("stops launching agents once the org's month is spent, ending incomplete within it", () =>
-		Effect.gen(function* () {
+	it.effect("bills each agent's sandbox fee and marked-up model cost to AI credits, once", () => {
+		const charges: Array<{ readonly key: string | undefined; readonly body: typeof Charge.Type }> = []
+		const recording = HttpClient.make((request) =>
+			Effect.sync(() => {
+				const text =
+					request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "{}"
+				charges.push({ key: request.headers["idempotency-key"], body: decodeCharge(text) })
+				return HttpClientResponse.fromWeb(request, new Response(null, { status: 200 }))
+			}),
+		)
+		return Effect.gen(function* () {
 			const { store, target } = yield* setup
 			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
-			// Other runs of the org spent 3 of its 9 after this one started with a budget of 400.
-			yield* Effect.forEach([1, 2, 3], (i) =>
-				store.reserveOrgInvocation(run.id, `other-${i}`, "2026-10", 9, {
-					since: 0,
-					limitUsd: Number.MAX_SAFE_INTEGER,
-				}),
-			)
 			const calls: Array<string> = []
-			const result = yield* auditWithAgents(
-				{ ...payloadFor(run.id), orgBudget: { period: "2026-10", limit: 9 } },
-				() => Effect.succeed(scriptedAgents(calls)),
+			yield* auditWithAgents(payloadFor(run.id), () =>
+				Effect.succeed(scriptedAgents(calls, 0.25)),
 			).pipe(
 				Effect.provideService(RepoSandboxService, sandbox([])),
 				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
 			)
 			const row = yield* store.getRun(run.id)
+			const valuesOf = (kind: string) =>
+				charges.flatMap(({ body }) => (body.properties.kind === kind ? [body.value] : []))
+			assert.isTrue(calls.length >= 8)
 			assert.deepStrictEqual(
 				{
-					status: result.status,
-					agents: calls.length,
-					orgSpent: yield* store.orgInvocationsSpent("2026-10"),
-					row: Option.map(row, (r) => [
-						r.status,
-						r.invocationsSpent,
-						r.incompleteReason?.split("; ").includes("org_budget_exhausted"),
-					]),
+					sandbox: valuesOf("sandbox"),
+					model: valuesOf("model"),
+					keys: new Set(charges.map((c) => c.key)).size,
+					runSandboxUsd: Option.map(row, (r) => r.sandboxUsd),
 				},
-				{ status: "incomplete", agents: 6, orgSpent: 9, row: Option.some(["incomplete", 6, true]) },
+				{
+					sandbox: calls.map(() => 0.05),
+					model: calls.map(() => aiCreditsUsd(0.25)),
+					keys: calls.length * 2,
+					runSandboxUsd: Option.some(calls.reduce((sum) => sum + 0.05, 0)),
+				},
 			)
-		}).pipe(Effect.provide(testLayer())),
-	)
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+					SecurityAuditCredits.unmetered,
+					Layer.succeed(HttpClient.HttpClient, recording),
+					ConfigProvider.layer(
+						ConfigProvider.fromUnknown({
+							AUTUMN_SECRET_KEY: "am_sk_test",
+							SECURITY_AUDIT_SANDBOX_FEE_USD: "0.05",
+						}),
+					),
+				),
+			),
+		)
+	})
 
 	it.effect(
 		"stops launching agents once the org's spend reaches its monthly limit, ending incomplete",
@@ -273,17 +304,66 @@ describe("auditWithAgents", () => {
 				assert.deepStrictEqual(
 					{
 						status: result.status,
-						// Four agents at $0.25 reach the $1 limit; the fifth is refused.
+						// Each agent bills $0.30 of models and $0.02 of sandbox: four reach the $1
+						// limit, and the fifth is refused.
 						agents: calls.length,
-						spent: yield* store.orgSpendUsd(0),
+						spent: Math.round((yield* store.orgSpendUsd(0)) * 100) / 100,
 						reason: Option.map(row, (r) =>
 							r.incompleteReason?.split("; ").includes("org_spend_limit_reached"),
 						),
 					},
-					{ status: "incomplete", agents: 4, spent: 1, reason: Option.some(true) },
+					{ status: "incomplete", agents: 4, spent: 1.28, reason: Option.some(true) },
 				)
 			}).pipe(Effect.provide(testLayer())),
 	)
+
+	it.effect("stops launching agents once the org's AI credits run out, ending incomplete", () => {
+		const checks = { left: 3 }
+		const runningOut = Layer.succeed(SecurityAuditCredits, {
+			ensure: () =>
+				Effect.suspend(() => {
+					checks.left -= 1
+					return checks.left >= 0
+						? Effect.void
+						: Effect.fail(
+								new SecurityAuditNoCredits({ message: "no credits left", resetsAt: null }),
+							)
+				}),
+		})
+		return Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const calls: Array<string> = []
+			const result = yield* auditWithAgents(payloadFor(run.id), () =>
+				Effect.succeed(scriptedAgents(calls)),
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				{
+					status: result.status,
+					agents: calls.length,
+					reason: Option.map(row, (r) =>
+						r.incompleteReason?.split("; ").includes("org_no_ai_credits"),
+					),
+				},
+				{ status: "incomplete", agents: 3, reason: Option.some(true) },
+			)
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+					runningOut,
+					Layer.succeed(
+						HttpClient.HttpClient,
+						HttpClient.make(() => Effect.die("no network in tests")),
+					),
+				),
+			),
+		)
+	})
 
 	it.effect(
 		"refuses a repository over a size limit before any agent, marking the run failed with why",
@@ -304,7 +384,7 @@ describe("auditWithAgents", () => {
 					{
 						exit: exit._tag,
 						agents: calls.length,
-						orgSpent: yield* store.orgInvocationsSpent("2026-10"),
+						orgSpent: yield* store.orgSpendUsd(0),
 						row: Option.map(row, (r) => [r.status, r.error, r.invocationsSpent]),
 					},
 					{
@@ -492,7 +572,7 @@ describe("auditWithAgents", () => {
 					Effect.provideService(Cloudflare.WorkflowStep, step),
 				)
 			const evicted = yield* Effect.exit(once(first))
-			const spentBefore = yield* store.orgInvocationsSpent("2026-10")
+			const spentBefore = yield* store.orgSpendUsd(0)
 			const replay = yield* once(second)
 			assert.isTrue(Exit.hasInterrupts(evicted))
 			assert.isTrue(first.length >= 8)
@@ -501,10 +581,10 @@ describe("auditWithAgents", () => {
 					second,
 					replay.status,
 					[...recorded.keys()].filter((k) => k.startsWith("agent:")).length,
-					spentBefore,
-					yield* store.orgInvocationsSpent("2026-10"),
+					yield* store.orgSpendUsd(0),
 				],
-				[[], "complete", first.length, first.length, first.length],
+				// The replay bills no agent's sandbox fee a second time.
+				[[], "complete", first.length, spentBefore],
 			)
 		}).pipe(Effect.provide(testLayer())),
 	)

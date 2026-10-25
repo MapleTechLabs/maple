@@ -1,7 +1,7 @@
 import { formatCost } from "@maple/agent-sessions"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import {
-	ORG_BUDGET_EXHAUSTED,
+	ORG_NO_AI_CREDITS,
 	ORG_SPEND_LIMIT_REACHED,
 	securityAuditModelOption,
 	type SecurityAuditFindingStatus,
@@ -122,6 +122,10 @@ export const issueSeverityOf = (severity: SecurityAuditSeverity | null) =>
 
 export const formatUsd = (usd: number | null): string => (usd === null ? "not reported" : formatCost(usd))
 
+/** What a run charged in AI credits so far, models and sandbox; null while it has charged nothing. */
+export const runTotalUsd = (run: Pick<SecurityAuditRun, "costUsd" | "sandboxUsd">): number | null =>
+	run.costUsd === null && run.sandboxUsd === 0 ? null : (run.costUsd ?? 0) + run.sandboxUsd
+
 /** The engine's run id is long; the first block is what people say out loud. */
 export const shortId = (id: string): string => id.replace(/^run[_-]/u, "").slice(0, 8)
 
@@ -145,7 +149,7 @@ export const modelLabel = (id: string): string => securityAuditModelOption(id)?.
 /** Why the host or engine stopped a run, as a person reads it; unknown reasons stay as written. */
 const INCOMPLETE_REASON_LABEL = new Map<string, string>([
 	[ORG_SPEND_LIMIT_REACHED, "reached the monthly spend limit"],
-	[ORG_BUDGET_EXHAUSTED, "the plan's audit allowance ran out"],
+	[ORG_NO_AI_CREDITS, "the organization ran out of AI credits"],
 	["org_budget_unavailable", "spend could not be checked"],
 	["cancelled", "cancelled"],
 ])
