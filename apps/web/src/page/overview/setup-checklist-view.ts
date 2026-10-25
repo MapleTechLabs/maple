@@ -97,40 +97,13 @@ const guidedSetup = (h: H, model: Model, framework: string): Html =>
 		],
 	)
 
-/** `SendTestEventStrip`: "Watching for your first trace…" and the test-event fallback. */
-const sendTestEventStrip = (h: H, model: Model): Html =>
+/** "Watching for your first trace…" while the card waits for data. */
+const watchingStrip = (h: H): Html =>
 	h.div(
+		[h.Class("flex items-center gap-2.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-4 py-3")],
 		[
-			h.Class(
-				"flex flex-col gap-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
-			),
-		],
-		[
-			h.div(
-				[h.Class("flex items-center gap-2.5")],
-				[
-					icon(h, "PulseIcon", { size: 14, className: "text-primary" }),
-					h.span([h.Class("font-prose text-xs text-muted-foreground")], ["Watching for your first trace…"]),
-				],
-			),
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					h.span([h.Class("hidden font-prose text-2xs text-muted-foreground sm:inline")], ["Not ready to instrument?"]),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							isLoading: model.isSendingTest,
-							isDisabled: model.keys._tag !== "Ready" || model.keys.publicKey === "",
-							className: "gap-2 shrink-0",
-							attributes: [h.OnClick(Message.ClickedSendTestEvent())],
-						},
-						[icon(h, "PaperPlaneIcon", {}), "Send a test event"],
-					),
-				],
-			),
+			icon(h, "PulseIcon", { size: 14, className: "text-primary" }),
+			h.span([h.Class("font-prose text-xs text-muted-foreground")], ["Watching for your first trace…"]),
 		],
 	)
 
@@ -240,7 +213,7 @@ const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string,
 						[
 							cardPanel(
 								h,
-								[guidedSetup(h, model, framework), sendTestEventStrip(h, model)],
+								[guidedSetup(h, model, framework), watchingStrip(h)],
 								"border-t border-primary/20 p-5 space-y-5",
 							),
 						],

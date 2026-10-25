@@ -31,7 +31,6 @@ export const Model = Schema.Struct({
 	isAdmin: Schema.Boolean,
 	overview: OverviewData.schema,
 	ingest: IngestData.schema,
-	isSendingTest: Schema.Boolean,
 	endpointCopy: CopyButton.Model,
 	/** Admin-only rows: which keys are revealed, each key's copy state, and the regenerate flow. */
 	revealedKeys: Schema.Array(IngestKeyKind),

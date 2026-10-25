@@ -24,8 +24,6 @@ export const Message = defineMessageUnion({
 	CompletedFetchMappings: result(Schema.Array(V2AttributeMapping)),
 	ReadFramework: { framework: Schema.NullOr(Schema.String) },
 	TickedPoll: {},
-	ClickedSendTestEvent: {},
-	CompletedSendTestEvent: { isSent: Schema.Boolean },
 	GotEndpointCopyMessage: { message: CopyButton.Message },
 	ToggledKeyReveal: { kind: IngestKeyKind },
 	GotKeyCopyMessage: { kind: IngestKeyKind, message: CopyButton.Message },
