@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { afterEach } from "vitest"
 import { AnomalyIncidentId, OrgId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
-import { EdgeCacheService } from "@maple/cache"
+import { CacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { Timestamp } from "@maple/domain/http/v2"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -184,5 +184,77 @@ describe("AnomalyDetectionService.countIncidentsByService", () => {
 			expect(resolved).toHaveLength(1)
 			expect(resolved[0]?.signalType).toBe("latency_p95")
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+})
+
+describe("AnomalyDetectionService.runTick baseline cache", () => {
+	// A cached baseline whose read queues behind the tick's other calls: slow,
+	// but well before the hang floor. Every other bucket misses as usual.
+	const slowBaselineBackend = Layer.succeed(
+		CacheBackend,
+		CacheBackend.of({
+			...makeMemoryBackend(),
+			get: (bucket) =>
+				bucket.startsWith("anomaly-") && bucket.endsWith("base")
+					? Effect.as(Effect.sleep("100 millis"), [])
+					: Effect.succeed(undefined),
+			put: () => Effect.void,
+		}),
+	)
+
+	it.live("serves a cached baseline that takes 100ms to read instead of recomputing it", () => {
+		const testDb = createTestDb(createdDbs)
+		const contexts: Array<string> = []
+		const warehouse = makeWarehouseServiceStub({
+			crossOrgQuery: () => Effect.succeed([{ orgId: ORG }]),
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context ?? "")
+				// One live fingerprint, so the error-spike path reaches its baseline.
+				const rows =
+					options?.context === "anomalyErrorSpikeCurrent"
+						? [
+								{
+									fingerprintHash: "42",
+									serviceName: "payments",
+									errorLabel: "Boom",
+									deploymentEnv: "production",
+									count: 3,
+								},
+							]
+						: []
+				return compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)
+			},
+		})
+		const configLive = makeConfig()
+		const layer = Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					testDb.layer,
+					Layer.succeed(WarehouseQueryService, warehouse),
+					EdgeCacheService.layer.pipe(Layer.provide(slowBaselineBackend)),
+					Env.layer.pipe(Layer.provide(configLive)),
+				),
+			),
+			Layer.provide(configLive),
+		)
+
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO anomaly_detector_settings (org_id, enabled, sensitivity, muted_signals_json, created_at, updated_at)
+					 VALUES ($1, true, 'normal', '[]'::jsonb, now(), now())`,
+					[ORG],
+				),
+			)
+			const service = yield* AnomalyDetectionService
+			yield* service.runTick()
+
+			// The tick evaluated the org: it fetched the current windows fresh...
+			expect(contexts).toContain("anomalyTraceSignalsCurrent")
+			expect(contexts).toContain("anomalyErrorSpikeCurrent")
+			// ...and took all three 7-day baselines from the cache.
+			expect(contexts.filter((c) => c.endsWith("Baseline"))).toEqual([])
+		}).pipe(Effect.provide(layer))
 	})
 })
