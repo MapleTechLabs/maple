@@ -49,8 +49,9 @@ const listView = Submodel.defineView<Model, GcpList.Message>((model, h) => {
 			onClick: GcpList.Message.ClickedView({ view }),
 		}),
 	})
+	// The header shows the fixture's 12h span as a preset, as the route's default does.
 	const time = {
-		search: TIME_SEARCH,
+		search: { timePreset: "12h" },
 		window: TIME_SEARCH,
 		timePicker: model.timePicker,
 		isReloading: model.isReloading,
