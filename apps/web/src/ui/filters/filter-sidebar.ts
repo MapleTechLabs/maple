@@ -137,9 +137,9 @@ export const filterSidebarEmpty = <M>(h: HtmlBuilder<M>): Html =>
 		h.div(
 			[h.Class("space-y-1 py-2 pr-4")],
 			[
-				h.p([h.Class("text-xs font-medium text-foreground")], ["Nothing to filter yet"]),
+				h.p([h.Class("font-prose text-xs font-medium text-foreground")], ["Nothing to filter yet"]),
 				h.p(
-					[h.Class("text-xs leading-relaxed text-muted-foreground")],
+					[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
 					["Filters fill in from the values in your data once it arrives."],
 				),
 			],

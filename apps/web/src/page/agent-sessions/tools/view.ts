@@ -292,6 +292,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
+					title: "Agent Sessions",
 					tabs: agentSessionsTabs(h, {
 						active: "tools",
 						search: model.search,
