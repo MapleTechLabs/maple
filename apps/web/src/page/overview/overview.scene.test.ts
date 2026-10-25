@@ -142,6 +142,16 @@ describe("overview", () => {
 		expect(names(retried.commands)).toContain("FetchOverviewTimeSeries")
 	})
 
+	test("the page strip's retry asks a failed health snapshot again", () => {
+		const model = withFacets(entered().model, []).model
+		const failed = pageUpdate(
+			model,
+			Message.CompletedFetchSnapshot({ key: model.snapshot.key ?? "", result: Result.fail(toLoadFailure("boom")) }),
+		)
+		const retried = pageUpdate(failed.model, Message.ClickedRetryPage())
+		expect(names(retried.commands)).toContain("FetchServiceHealthSnapshot")
+	})
+
 	test("a second card's retry while the first is in flight requests nothing", () => {
 		const model = withFacets(entered().model, []).model
 		const failed = pageUpdate(
