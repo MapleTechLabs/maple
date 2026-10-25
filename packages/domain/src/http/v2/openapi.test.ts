@@ -646,11 +646,14 @@ describe("MapleApiV2 OpenAPI", () => {
 				"@maple/http/errors/WarehouseQuotaExceededError",
 			)
 			expect(responseErrorTags(method, path, "503")).toContain(
-				"@maple/http/errors/OrgClickHouseSettingsPersistenceError",
+				"@maple/http/errors/WarehouseUpstreamError",
 			)
 			const declaredTags = ["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"]
 				.filter((status) => operation(method, path).responses[status] !== undefined)
 				.flatMap((status) => responseErrorTags(method, path, status))
+			expect(declaredTags, path).not.toContain(
+				"@maple/http/errors/OrgClickHouseSettingsPersistenceError",
+			)
 			expect(declaredTags, path).not.toContain("@maple/http/errors/TinybirdOrgTokenConfigError")
 			expect(declaredTags, path).not.toContain("@maple/http/errors/TinybirdOrgTokenMintError")
 			expect(declaredTags, path).not.toContain("@maple/http/errors/WarehouseValidationError")

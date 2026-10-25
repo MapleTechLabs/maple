@@ -41,6 +41,7 @@ import {
 	UserId,
 	OrgClickHouseSettingsEncryptionError,
 	OrgClickHouseSettingsPersistenceError,
+	WarehouseUpstreamError,
 } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
 import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
@@ -368,7 +369,11 @@ const ORG = Schema.decodeUnknownSync(OrgId)("org_phase1_e2e")
 const USER = Schema.decodeUnknownSync(UserId)("user_phase1_e2e")
 
 type InvestigationStartMode = "success" | "unavailable" | "restart_not_found"
-type IssueReadFailure = "none" | "persistence" | "warehouse_config_lookup" | "warehouse_config_decryption"
+type IssueReadFailure =
+	| "none"
+	| "persistence"
+	| "warehouse_settings_unavailable"
+	| "warehouse_config_decryption"
 
 const makeHarness = (
 	warehouseService: WarehouseQueryServiceApi = warehouseStub,
@@ -390,10 +395,15 @@ const makeHarness = (
 	} | null = null
 	const issueReadFailureEffect = () => {
 		switch (issueReadFailure) {
-			case "warehouse_config_lookup":
+			// What WarehouseQueryService reports when the org's saved settings can't be read.
+			case "warehouse_settings_unavailable":
 				return Effect.fail(
-					new OrgClickHouseSettingsPersistenceError({
+					new WarehouseUpstreamError({
 						message: "SECRET_CONFIG_LOOKUP_FAILURE",
+						pipeName: "errorIssues",
+						cause: new OrgClickHouseSettingsPersistenceError({
+							message: "SECRET_CONFIG_LOOKUP_FAILURE",
+						}),
 					}),
 				)
 			case "warehouse_config_decryption":
@@ -881,15 +891,15 @@ describe("v2 error_issues over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("preserves exact warehouse failures instead of relabeling them as persistence", async () => {
-		const harness = makeHarness(warehouseStub, "warehouse_config_lookup")
+	it("answers an unreadable warehouse settings row as a retryable warehouse outage", async () => {
+		const harness = makeHarness(warehouseStub, "warehouse_settings_unavailable")
 		const key = await harness.bootstrapKey(["error_issues:read"])
 		const response = await harness.request("GET", "/v2/error_issues", { token: key.secret })
 
 		expect(response.status).toBe(503)
 		expect(response.body.error).toMatchObject({
-			_tag: "@maple/http/errors/OrgClickHouseSettingsPersistenceError",
-			code: "clickhouse_settings_unavailable",
+			_tag: "@maple/http/errors/WarehouseUpstreamError",
+			code: "warehouse_unavailable",
 			retryable: true,
 			recovery: "retry",
 		})
