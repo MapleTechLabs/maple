@@ -1,4 +1,5 @@
 import { OrgId, UserId } from "@maple/domain"
+import { BillingCustomer } from "@maple/domain/http"
 import { Option, Schema } from "effect"
 import { describe, expect, test, vi } from "vitest"
 
@@ -87,5 +88,16 @@ describe("plan gate splash on a slow customer read", () => {
 		const loaded = update(base({ [orgId]: true }), Message.CompletedLoadClerk({ snapshot }))
 		expect(isSplash(loaded.model)).toBe(false)
 		expect(namesOf(loaded)).not.toContain("WaitCustomerGrace")
+	})
+
+	test("an org with no plan still goes to quick start once its slow read settles after the grace", () => {
+		const loaded = update(base({}), Message.CompletedLoadClerk({ snapshot }))
+		const elapsed = update(loaded.model, Message.ElapsedCustomerGrace({ orgId }))
+		expect(Option.isNone(Option.flatMap(planGateOf(elapsed.model), (gate) => gate.redirect))).toBe(true)
+
+		const customer = new BillingCustomer({ id: orgId, subscriptions: [] })
+		const settled = update(elapsed.model, Message.SucceededLoadCustomer({ orgId, customer }))
+		const redirect = Option.flatMap(planGateOf(settled.model), (gate) => gate.redirect)
+		expect(Option.map(redirect, ({ url }) => url.startsWith("/quick-start"))).toEqual(Option.some(true))
 	})
 })
