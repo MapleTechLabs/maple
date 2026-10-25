@@ -2,7 +2,7 @@ import { splitGenAiAttributes, type GenAiGroup } from "@maple/ui/lib/gen-ai"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { capForDisplay, prettyJson } from "../../../../lib/display-text"
+import { capForDisplay, prettyJson, tryParseJson } from "../../../../lib/display-text"
 import { attributeFilterAction } from "../../../../ui/attributes/attribute-row"
 import { icon } from "../../../../ui/icon"
 import { truncationNote } from "../../../../ui/logs/log-message"
@@ -42,9 +42,11 @@ const commitShaValue = (h: H, id: string, value: string): Html => {
 		: h.button([h.Class(className), h.Type("button"), onClick], [value])
 }
 
-const jsonValue = (h: H, model: Model, id: string, value: string, formatted: string): Html => {
-	const { shown, omitted } = capForDisplay(formatted)
+const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 	const isOpen = model.openIds.includes(id)
+	// Re-indented only once opened: a collapsed row shows an 80-character preview.
+	const formatted = isOpen ? Option.getOrElse(prettyJson(value), () => value) : ""
+	const { shown, omitted } = capForDisplay(formatted)
 	return h.div(
 		[h.Class("min-w-0")],
 		[
@@ -120,9 +122,9 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 	const parsed =
 		row.displayValue !== undefined && row.displayValue !== row.value
 			? Option.none()
-			: prettyJson(row.value)
+			: tryParseJson(row.value)
 	const valueNode = Option.match(parsed, {
-		onSome: (json) => jsonValue(h, model, `json:${id}`, row.value, json),
+		onSome: () => jsonValue(h, model, `json:${id}`, row.value),
 		onNone: () =>
 			row.attrKey === "vcs.ref.head.revision"
 				? commitShaValue(h, `sha:${id}`, row.value)

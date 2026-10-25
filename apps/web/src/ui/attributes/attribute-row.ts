@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { prettyJson } from "../../lib/display-text"
+import { prettyJson, tryParseJson } from "../../lib/display-text"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"
@@ -68,7 +68,7 @@ const selectableValue = (
 	)
 
 /** `CollapsibleJsonValue`: an 80-char preview that expands into highlighted, copyable JSON. */
-const jsonValue = (h: H, model: Model, id: string, value: string, formatted: string): Html => {
+const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
 	const isExpanded = isOpen(model, `json:${id}`, false)
 	const preview = value.length > 80 ? value.slice(0, 80) + "…" : value
 	return h.div(
@@ -102,7 +102,14 @@ const jsonValue = (h: H, model: Model, id: string, value: string, formatted: str
 							[
 								h.div(
 									[h.Class("max-h-64 overflow-auto p-2")],
-									[...cappedCode(h, formatted, "text-xs leading-relaxed")],
+									[
+										// Re-indented only once expanded: a collapsed row shows an 80-character preview.
+										...cappedCode(
+											h,
+											Option.getOrElse(prettyJson(value), () => value),
+											"text-xs leading-relaxed",
+										),
+									],
 								),
 								// TODO(copy-tooltip): wrap this CopyButton in its tooltip.
 								copyButton(h, {
@@ -193,10 +200,10 @@ export const attributeRow = (
 ): Html => {
 	const { model, source } = context
 	const id = `${context.idPrefix}:${attrKey}`
-	const pretty = prettyJson(value)
-	const isFilterable = context.canFilter && Option.isNone(pretty)
-	const valueView = Option.match(pretty, {
-		onSome: (formatted) => jsonValue(h, model, id, value, formatted),
+	const parsed = tryParseJson(value)
+	const isFilterable = context.canFilter && Option.isNone(parsed)
+	const valueView = Option.match(parsed, {
+		onSome: () => jsonValue(h, model, id, value),
 		onNone: () =>
 			COMMIT_SHA_KEYS.has(attrKey) && context.hasCommitShaValues !== false
 				? commitShaValue(h, id, value)

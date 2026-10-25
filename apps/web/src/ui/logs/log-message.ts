@@ -1,5 +1,4 @@
 import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
-import { formatBytes } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -42,11 +41,15 @@ export const logMessageOf: (rawBody: string) => LogMessage = memoizeByText((rawB
 	}
 })
 
+const CHARS = new Intl.NumberFormat("en-US")
+
 /** Says how much of a capped value a view left out. */
 export const truncationNote = <Message>(h: HtmlBuilder<Message>, shown: number, total: number): Html =>
 	h.p(
 		[h.Class("my-2 text-3xs text-muted-foreground")],
-		[`Showing the first ${formatBytes(shown)} of ${formatBytes(total)}. Copy it to get all of it.`],
+		[
+			`Showing the first ${CHARS.format(shown)} of ${CHARS.format(total)} characters. Copy it to get all of it.`,
+		],
 	)
 
 /** Highlighted code in a `pre`, capped at `DISPLAY_MAX_CHARS` with a note saying what was left out. */
