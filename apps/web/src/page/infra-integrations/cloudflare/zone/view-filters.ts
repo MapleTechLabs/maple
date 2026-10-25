@@ -113,7 +113,11 @@ const sidebar = (h: H, model: Model, filters: CloudflareFilters): Html => {
 			),
 		])
 	}
-	const mainFailure = Option.getOrUndefined(AsyncData.getError(model.detail.data))
+	// Only the traffic tab draws the detail read's error panel; elsewhere the rail must explain it.
+	const mainFailure =
+		(model.search.tab ?? "traffic") === "traffic"
+			? Option.getOrUndefined(AsyncData.getError(model.detail.data))
+			: undefined
 	return AsyncData.match(model.facets.data, {
 		onIdle: () => filterSidebarLoading(h, 6),
 		onLoading: () => filterSidebarLoading(h, 6),
