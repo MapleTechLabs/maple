@@ -153,13 +153,17 @@ const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyAr
 		(item): item is Html | string => item !== null && item !== undefined && item !== false && item !== "",
 	)
 	if (!GCP_SERVICE_RULES.inScope(row, "idle")) return items
-	const note = h.span([h.Class(cn("md:hidden", TONE_TEXT.warn))], [" · idle, still billed"])
+	// Flex drops a leading space, so the note carries its own separator and gap, like metaLine's.
+	const note = h.span(
+		[h.Class(cn("flex items-center gap-x-2 md:hidden", TONE_TEXT.warn))],
+		[h.span([h.Class("text-foreground/20")], ["·"]), "idle, still billed"],
+	)
 	const last = items[items.length - 1]
 	// A string keeps metaLine's 28ch cap, which it applies only to plain strings.
 	const capped = typeof last === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [last]) : last
 	return last === undefined
 		? [note]
-		: [...items.slice(0, -1), h.span([h.Class("flex min-w-0")], [capped, note])]
+		: [...items.slice(0, -1), h.span([h.Class("flex min-w-0 items-center gap-x-2")], [capped, note])]
 }
 
 export const servicesTable = (
