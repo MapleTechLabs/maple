@@ -89,7 +89,7 @@ const usageCell = (h: H, label: string, fraction: number | null): Html => {
 			meter(h, {
 				value: Math.min(fraction ?? 0, 1),
 				tone,
-				className: "h-1 w-14 shrink-0",
+				className: "h-1 w-20 shrink-0",
 				label: fraction === null ? undefined : `${label} ${formatPercent(fraction)}`,
 			}),
 			numberCell(
@@ -148,21 +148,21 @@ const rateCell = (h: H, rate: number | null): Html =>
 
 const COLUMNS = {
 	ecs: [
-		{ label: "CPU", width: "w-28", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
-		{ label: "Memory", width: "w-28", cell: (h, view) => usageCell(h, "Memory", memoryShare(view)) },
+		{ label: "CPU", width: "w-36", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
+		{ label: "Memory", width: "w-36", cell: (h, view) => usageCell(h, "Memory", memoryShare(view)) },
 		{
 			label: "CPU trend",
-			width: "w-28",
+			width: "w-32",
 			hidden: "hidden md:flex",
 			cell: (h, view, context) => sparkCell(h, view, context),
 		},
 		{ label: "Traced as", width: "w-36", hidden: "hidden lg:flex", traced: true, cell: tracedCell },
 	],
 	ec2: [
-		{ label: "CPU", width: "w-28", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
+		{ label: "CPU", width: "w-36", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
 		{
 			label: "CPU trend",
-			width: "w-28",
+			width: "w-32",
 			hidden: "hidden md:flex",
 			cell: (h, view, context) => sparkCell(h, view, context),
 		},
@@ -227,7 +227,7 @@ const COLUMNS = {
 		},
 	],
 	rds: [
-		{ label: "CPU", width: "w-28", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
+		{ label: "CPU", width: "w-36", cell: (h, view) => usageCell(h, "CPU", cpuShare(view)) },
 		{
 			label: "Connections",
 			width: "w-24",

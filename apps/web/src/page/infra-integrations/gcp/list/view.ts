@@ -22,7 +22,7 @@ import {
 	gcpResourcesError,
 	type GcpView,
 } from "../../../../components/infra/gcp/tabs"
-import { formatPercent } from "@maple/ui/lib/format"
+import { formatPercent, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -117,6 +117,20 @@ const intro: HeaderParts = {
 	description:
 		"Workloads and resources of your connected Google Cloud projects, from Cloud Monitoring metrics and Cloud Asset Inventory.",
 	actions: [],
+}
+
+/** "3 projects · Services, Pub/Sub · metrics every 5 minutes", once projects load. */
+const loadedDescription = (
+	projects: ReadonlyArray<string>,
+	views: ReadonlyArray<GcpView>,
+): string | undefined => {
+	if (projects.length === 0) return intro.description
+	const kinds = views.filter((option) => option !== GCP_RESOURCES_TAB).map((option) => VIEW_LABEL[option])
+	return [
+		`${projects.length} ${pluralize(projects.length, "project")}`,
+		...(kinds.length === 0 ? [] : [kinds.join(", ")]),
+		"metrics every 5 minutes",
+	].join(" · ")
 }
 
 /** `tabs` goes to the header's `tabs` slot, pinned under the title row. */
@@ -531,6 +545,7 @@ export const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 			: undefined
 	return {
 		header: {
+			description: loadedDescription(projects, views),
 			trailing: multiProject
 				? projectMenu(h, {
 						model: input.projectMenu,
