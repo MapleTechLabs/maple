@@ -830,4 +830,14 @@ describe("traces group by attr.<key>", () => {
 		)
 		expect(sql).toContain("SpanAttributes['code.namespace']")
 	})
+	it("keeps the case of the attribute key", () => {
+		const { query } = buildTimeseriesQuerySpec(
+			tracesDraft({
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["attr.userId"],
+			}),
+		)
+		expect(query).toMatchObject({ filters: { groupByAttributeKeys: ["userId"] } })
+		expect(resolveGroupBy("metrics", ["ATTR.tenantId"]).attributeKeys).toEqual(["tenantId"])
+	})
 })
