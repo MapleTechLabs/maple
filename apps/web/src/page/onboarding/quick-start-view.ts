@@ -2,7 +2,7 @@ import { ONBOARDING_INTENTS } from "../../lib/onboarding-intent"
 import {
 	filledSurfaces,
 	languageDocsOf,
-	STACK_LANGUAGE_IDS,
+	searchLanguages,
 	STACK_LANGUAGES,
 	STACK_PLATFORM_IDS,
 	STACK_PLATFORMS,
@@ -16,6 +16,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
+import { searchInput } from "../../ui/search-input"
 import { type PixelGlyphName, pixelGlyph } from "./option-card"
 import * as CopyButton from "../../ui/copy-button"
 import * as GuidedSetup from "../kit/guided-setup"
@@ -292,19 +293,107 @@ const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message)
 		],
 	)
 
+const STACK_LEGEND_CLASS = "text-2xs uppercase tracking-widest text-muted-foreground"
+const STACK_GRID_CLASS = "grid gap-2 sm:grid-cols-2 xl:grid-cols-3"
+
 const stackGroup = (h: H, legend: string, cards: ReadonlyArray<Html>): Html =>
 	h.fieldset(
 		[h.Class("flex min-w-0 flex-col gap-3")],
 		[
-			h.legend([h.Class("mb-3 text-2xs uppercase tracking-widest text-muted-foreground")], [legend]),
-			h.div([h.Class("grid gap-2 sm:grid-cols-2 xl:grid-cols-3")], cards),
+			h.legend([h.Class(cn("mb-3", STACK_LEGEND_CLASS))], [legend]),
+			h.div([h.Class(STACK_GRID_CLASS)], cards),
 		],
 	)
 
-const stepFooter = (h: H, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class(STEP_FOOTER_CLASS)], children)
+const edgeBlur = (h: H, edge: "top" | "bottom"): Html =>
+	h.div(
+		[h.AriaHidden(true), h.Class(`edge-scroll__edge edge-scroll__edge--${edge}`)],
+		[h.span([], []), h.span([], []), h.span([], [])],
+	)
 
-const stackStep = (h: H, state: QuickStartState): Html => {
+/** Three rows of cards show; the rest scroll, and the search narrows them. */
+const languageGroup = (h: H, state: QuickStartState, query: string): Html => {
+	const { languages } = state.stack
+	const matches = searchLanguages(query)
+	const card = (language: (typeof matches)[number]) =>
+		stackCard(
+			h,
+			STACK_LANGUAGES[language],
+			languages.includes(language),
+			Message.ToggledLanguage({ language }),
+		)
+	return h.fieldset(
+		[h.Class("flex min-w-0 flex-col gap-3")],
+		[
+			h.legend([h.Class("sr-only")], ["Your code"]),
+			h.div(
+				[h.Class("flex items-center justify-between gap-4")],
+				[
+					h.span([h.AriaHidden(true), h.Class(STACK_LEGEND_CLASS)], ["Your code"]),
+					searchInput(h, {
+						id: "stack-language-search",
+						value: query,
+						placeholder: "Search languages",
+						ariaLabel: "Search languages",
+						onInput: (value) => Message.ChangedLanguageQuery({ query: value }),
+						onClear: Message.ChangedLanguageQuery({ query: "" }),
+						className: "w-56",
+					}),
+				],
+			),
+			matches.length === 0
+				? h.div(
+						// Same height as the grid, so the section below stays put while typing.
+						[h.Class("flex h-[14rem] flex-col gap-3")],
+						[
+							h.p(
+								[h.Class("text-sm text-muted-foreground")],
+								[
+									`Nothing called "${query.trim()}" yet. Any OpenTelemetry SDK works with Maple:`,
+								],
+							),
+							h.div([h.Class(STACK_GRID_CLASS)], [card("otel")]),
+						],
+					)
+				: h.div(
+						[h.Class("edge-scroll -m-1")],
+						[
+							...(matches.length > 9 ? [edgeBlur(h, "top")] : []),
+							h.div(
+								[
+									// The fourth row peeks out to show it scrolls; padded so a focused card's ring is not clipped.
+									h.Class(
+										cn(
+											STACK_GRID_CLASS,
+											"edge-scroll__box h-[14rem] content-start overflow-y-auto overscroll-contain p-1",
+										),
+									),
+								],
+								matches.map(card),
+							),
+							...(matches.length > 9 ? [edgeBlur(h, "bottom")] : []),
+						],
+					),
+		],
+	)
+}
+
+const backButton = (h: H, to: StepId): Html =>
+	button(h, { variant: "ghost", attributes: [h.OnClick(Message.ClickedBack({ to }))] }, [
+		icon(h, "ArrowLeftIcon"),
+		"Back",
+	])
+
+/** The step's actions on the right, with a Back button on the left when there is a step before it. */
+const stepFooter = (h: H, children: ReadonlyArray<Html>, back: StepId | null = null): Html =>
+	back === null
+		? h.div([h.Class(STEP_FOOTER_CLASS)], children)
+		: h.div(
+				[h.Class(cn(STEP_FOOTER_CLASS, "justify-between"))],
+				[backButton(h, back), h.div([h.Class("flex items-center gap-4")], children)],
+			)
+
+const stackStep = (h: H, state: QuickStartState, query: string, hasPlan: boolean): Html => {
 	const { languages, platforms } = state.stack
 	const picked = languages.length + platforms.length
 	return h.div(
@@ -323,18 +412,7 @@ const stackStep = (h: H, state: QuickStartState): Html => {
 					),
 				],
 			),
-			stackGroup(
-				h,
-				"Your code",
-				STACK_LANGUAGE_IDS.map((language) =>
-					stackCard(
-						h,
-						STACK_LANGUAGES[language],
-						languages.includes(language),
-						Message.ToggledLanguage({ language }),
-					),
-				),
-			),
+			languageGroup(h, state, query),
 			stackGroup(
 				h,
 				"Where it runs",
@@ -347,25 +425,29 @@ const stackStep = (h: H, state: QuickStartState): Html => {
 					),
 				),
 			),
-			stepFooter(h, [
-				...(picked === 0
-					? [
-							h.span(
-								[h.Class("text-sm text-muted-foreground")],
-								["Not sure yet? You can skip this."],
-							),
-						]
-					: []),
-				button(
-					h,
-					{
-						size: "lg",
-						variant: picked === 0 ? "outline" : "default",
-						attributes: [h.OnClick(Message.ClickedContinue({ step: "stack" }))],
-					},
-					[picked === 0 ? "Skip for now" : "Continue", icon(h, "ArrowRightIcon", { size: 16 })],
-				),
-			]),
+			stepFooter(
+				h,
+				[
+					...(picked === 0
+						? [
+								h.span(
+									[h.Class("text-sm text-muted-foreground")],
+									["Not sure yet? You can skip this."],
+								),
+							]
+						: []),
+					button(
+						h,
+						{
+							size: "lg",
+							variant: picked === 0 ? "outline" : "default",
+							attributes: [h.OnClick(Message.ClickedContinue({ step: "stack" }))],
+						},
+						[picked === 0 ? "Skip for now" : "Continue", icon(h, "ArrowRightIcon", { size: 16 })],
+					),
+				],
+				hasPlan ? null : "plan",
+			),
 		],
 	)
 }
@@ -657,14 +739,21 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 						: []),
 				],
 			),
-			stepFooter(h, [
-				h.span([h.Class("text-sm text-muted-foreground")], ["We keep listening while you move on."]),
-				button(
-					h,
-					{ size: "lg", attributes: [h.OnClick(Message.ClickedContinue({ step: "connect" }))] },
-					["Continue", icon(h, "ArrowRightIcon", { size: 16 })],
-				),
-			]),
+			stepFooter(
+				h,
+				[
+					h.span(
+						[h.Class("text-sm text-muted-foreground")],
+						["We keep listening while you move on."],
+					),
+					button(
+						h,
+						{ size: "lg", attributes: [h.OnClick(Message.ClickedContinue({ step: "connect" }))] },
+						["Continue", icon(h, "ArrowRightIcon", { size: 16 })],
+					),
+				],
+				"stack",
+			),
 		],
 	)
 }
@@ -1068,6 +1157,7 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 								],
 								["Or set up your first alert"],
 							),
+							backButton(h, "team"),
 						],
 					),
 				],
@@ -1145,7 +1235,7 @@ export const view = (h: H, model: Model, parts: QuickStartParts): Html | null =>
 			return shell(h, options(null), [motionStep(h, "plan", parts.planStep), drawer])
 		case "stack":
 			return shell(h, options(stackPreview(h, parts.orgName, state)), [
-				motionStep(h, "stack", stackStep(h, state)),
+				motionStep(h, "stack", stackStep(h, state, model.languageQuery, parts.hasPlan)),
 				drawer,
 			])
 		case "connect":

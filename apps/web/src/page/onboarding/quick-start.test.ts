@@ -65,6 +65,18 @@ describe("quick start", () => {
 		])
 	})
 
+	test("Back returns to the previous step with its answers kept", () => {
+		const start = {
+			...init("maple-onboarding-v6-org_1", false, false, "/traces").model,
+			state: DEFAULT_QUICK_START_STATE,
+		}
+		const picked = update(start, Message.ToggledLanguage({ language: "ruby" })).model
+		const onConnect = update(picked, Message.ClickedContinue({ step: "stack" })).model
+		const back = update(onConnect, Message.ClickedBack({ to: "stack" })).model
+		expect(resolveQuickStartStep(stateOf(back), true)).toBe("stack")
+		expect(stateOf(back).stack.languages).toEqual(["ruby"])
+	})
+
 	test("someone who already finished is sent straight on when the page loads", () => {
 		const finished = {
 			...DEFAULT_QUICK_START_STATE,

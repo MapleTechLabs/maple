@@ -785,6 +785,127 @@ width = its duration */
 	}
 }
 
+/* A scroll box whose clipped edges fade and blur out instead of cutting cards off (the onboarding
+   language grid). The box's own mask fades the content; over it, three blur layers ramp up in
+   overlapping bands so the blur has no seam. Both follow the scroll: the top edge appears once
+   scrolled, the bottom one clears at the end. Without scroll-driven animations only the bottom shows. */
+@property --edge-scroll-top {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+@property --edge-scroll-bottom {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 3rem;
+}
+.edge-scroll {
+	position: relative;
+	timeline-scope: --edge-scroll;
+}
+.edge-scroll__box {
+	scroll-timeline: --edge-scroll y;
+	mask-image: linear-gradient(
+		to bottom,
+		transparent,
+		black var(--edge-scroll-top),
+		black calc(100% - var(--edge-scroll-bottom)),
+		transparent
+	);
+}
+.edge-scroll__edge {
+	position: absolute;
+	inset-inline: 0;
+	z-index: 1;
+	height: 3rem;
+	pointer-events: none;
+}
+.edge-scroll__edge > span {
+	position: absolute;
+	inset: 0;
+}
+.edge-scroll__edge > span:nth-child(1) {
+	backdrop-filter: blur(1px);
+	mask-image: linear-gradient(
+		var(--edge-scroll-dir),
+		transparent 0%,
+		black 25%,
+		black 50%,
+		transparent 75%
+	);
+}
+.edge-scroll__edge > span:nth-child(2) {
+	backdrop-filter: blur(2px);
+	mask-image: linear-gradient(
+		var(--edge-scroll-dir),
+		transparent 25%,
+		black 50%,
+		black 75%,
+		transparent 100%
+	);
+}
+.edge-scroll__edge > span:nth-child(3) {
+	backdrop-filter: blur(4px);
+	mask-image: linear-gradient(var(--edge-scroll-dir), transparent 50%, black 75%);
+}
+.edge-scroll__edge--top {
+	--edge-scroll-dir: to top;
+	top: 0;
+	opacity: 0;
+}
+.edge-scroll__edge--bottom {
+	--edge-scroll-dir: to bottom;
+	bottom: 0;
+}
+@keyframes edge-scroll-mask {
+	from {
+		--edge-scroll-top: 0px;
+		--edge-scroll-bottom: 3rem;
+	}
+	40% {
+		--edge-scroll-top: 3rem;
+	}
+	60% {
+		--edge-scroll-bottom: 3rem;
+	}
+	to {
+		--edge-scroll-top: 3rem;
+		--edge-scroll-bottom: 0px;
+	}
+}
+@keyframes edge-scroll-top {
+	from {
+		opacity: 0;
+	}
+	40%,
+	to {
+		opacity: 1;
+	}
+}
+@keyframes edge-scroll-bottom {
+	from,
+	60% {
+		opacity: 1;
+	}
+	to {
+		opacity: 0;
+	}
+}
+@supports (animation-timeline: scroll()) {
+	.edge-scroll__box {
+		animation: edge-scroll-mask linear both;
+		animation-timeline: --edge-scroll;
+	}
+	.edge-scroll__edge--top {
+		animation: edge-scroll-top linear both;
+		animation-timeline: --edge-scroll;
+	}
+	.edge-scroll__edge--bottom {
+		animation: edge-scroll-bottom linear both;
+		animation-timeline: --edge-scroll;
+	}
+}
+
 /* "Build with your agent" (`page/kit/guided-setup.ts`), as on maple.dev: the label's letters blur
    in one after another, the agent marks hop once when the prompt lands, and the press gives. */
 .agent-prompt {

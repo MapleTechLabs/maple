@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest"
-import { filledSurfaces, frameworkOf, intentsOf, toggled } from "./onboarding-stack"
+import {
+	filledSurfaces,
+	frameworkOf,
+	intentsOf,
+	languageDocsOf,
+	searchLanguages,
+	toggled,
+} from "./onboarding-stack"
 
 describe("onboarding stack", () => {
 	test("nothing picked fills nothing", () => {
@@ -28,6 +35,21 @@ describe("onboarding stack", () => {
 	test("the checklist opens on the first language, or OpenTelemetry for a platform-only stack", () => {
 		expect(frameworkOf({ languages: ["python", "nodejs"], platforms: [] })).toBe("python")
 		expect(frameworkOf({ languages: [], platforms: ["docker"] })).toBe("otel")
+	})
+
+	test("a language without its own snippet opens on OpenTelemetry and links the overview guide", () => {
+		const ruby = { languages: ["ruby"], platforms: [] } as const
+		expect(frameworkOf(ruby)).toBe("otel")
+		expect(languageDocsOf(ruby)?.page).toBe("instrumentation")
+		expect(frameworkOf({ languages: ["effect"], platforms: [] })).toBe("effect")
+	})
+
+	test("language search matches names, frameworks and aliases", () => {
+		expect(searchLanguages("c#")).toEqual(["dotnet"])
+		expect(searchLanguages("Rails")).toEqual(["ruby"])
+		expect(searchLanguages("elixir")).toEqual(["otel"])
+		expect(searchLanguages("cobol")).toEqual([])
+		expect(searchLanguages("  ")).toHaveLength(15)
 	})
 
 	test("toggling adds a pick once and removes it again", () => {
