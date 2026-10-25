@@ -528,6 +528,13 @@ in their env (`MAPLE_DB_BRANCH`, via `mapleDbEnv`) to upload after it. The inges
 and Electric's Postgres credentials are `Planetscale.PostgresRole`s on the same branch. See
 `docs/persistence.md` for both.
 
+Runtime roles (ingest gateway, the EU Hyperdrive roles) inherit `DB_ACCESS_ROLES.readWrite`
+(`@maple/db/roles`: `pg_read_all_data` + `pg_write_all_data`): DML on every table, current and
+future, and no DDL, TRUNCATE or ownership. Only migrations, which alchemy runs on a temporary
+`postgres` role, change the schema. Electric stays on `postgres` because PlanetScale grants
+REPLICATION only with it. The US prd Hyperdrive configs are dashboard-managed, so their
+credentials are outside the deploy.
+
 ## Hyperdrive: why api and alerting have separate configs
 
 `alerting` issues the large majority of Postgres queries, and sharing one config meant
