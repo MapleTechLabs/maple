@@ -416,9 +416,6 @@
 .pair-cell > :not([aria-hidden="true"]) {
 	position: relative;
 }
-.pair-cell canvas {
-	display: block;
-}
 
 /* ──────────────────────────────────────────────────────────────
    Live artifact frame.
@@ -695,7 +692,7 @@
    dot + label + req/s · err% · avg metrics, smoothstep edges rendered
    as multi-layer SVG (glow / tube / core / flowing dashes), dot-grid
    background. The flow keyframe is the same 1.5s linear cadence as
-   the product (apps/web/src/styles.css).
+   the product (apps/web/src/theme.css).
    ────────────────────────────────────────────────────────────── */
 @keyframes service-map-flow {
 	to {
@@ -776,7 +773,6 @@
 	margin-left: 2px;
 	animation: mcp-caret-blink 1.05s steps(1) infinite;
 }
-
 
 /* ──────────────────────────────────────────────────────────────
    Roadmap board.
@@ -1468,6 +1464,10 @@
  */
 .docs-content img {
 	@apply w-full h-auto aspect-[1280/660] object-cover bg-bg-deep border border-border rounded-xl my-8;
+}
+
+.docs-content .docs-byline img {
+	@apply w-5 h-5 aspect-square my-0 border-0 rounded-full;
 }
 
 /* ──────────────────────────────────────────────────────────────

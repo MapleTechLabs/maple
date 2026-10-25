@@ -161,6 +161,7 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		groupKey: row.groupKey,
 		signalType: decodeAlertSignalTypeSync(row.signalType),
 		severity: decodeAlertSeveritySync(row.severity),
+		peakSeverity: row.peakSeverity === null ? null : decodeAlertSeveritySync(row.peakSeverity),
 		status: decodeAlertIncidentStatusSync(row.status),
 		comparator: decodeAlertComparatorSync(row.comparator),
 		threshold: row.threshold,
@@ -189,7 +190,7 @@ const isoOf = (value: DateTime.Utc) => decodeIsoDateTimeStringSync(DateTime.form
 export class AlertReadModelsService extends Context.Service<
 	AlertReadModelsService,
 	AlertReadModelsServiceApi
->()("@maple/api/services/alerts/AlertReadModelsService", {
+>()("@maple/backend/services/alerts/AlertReadModelsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
@@ -354,6 +355,7 @@ export class AlertReadModelsService extends Context.Service<
 									? null
 									: decodeAlertIncidentIdSync(r.incidentId),
 							incidentTransition: decodeAlertIncidentTransitionSync(rawTransition),
+							level: r.level === "" ? null : decodeAlertSeveritySync(r.level),
 							evaluationDurationMs: r.evaluationDurationMs,
 							errorMessage:
 								r.errorMessage == null || r.errorMessage === "" ? null : r.errorMessage,

@@ -14,7 +14,7 @@ import { Duration, Effect, Option, Result } from "effect"
 import { constTrue } from "effect/Function"
 import { HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
-import { describeHttpClientError, guard } from "@maple/safe-fetch"
+import { describeHttpClientError, guard, readTextPrefix, readTextWithin } from "@maple/safe-fetch"
 import type {
 	EffectTransport,
 	EffectTransportDeps,
@@ -31,14 +31,20 @@ export interface TransportRuntime {
 export const makeDeliveryError = (message: string, destinationType?: AlertDestinationType, cause?: unknown) =>
 	new AlertDeliveryError({ message, destinationType, ...(!(cause === undefined) ? { cause } : undefined) })
 
+/** A failure body is read only this far: the message keeps 500 chars of it. */
+const MAX_ERROR_BODY_BYTES = 16 * 1024
+
+/** Largest ack body a transport may `interpret` (Telegram's `{ ok }` is tiny). */
+const MAX_ACK_BODY_BYTES = 1024 * 1024
+
 /**
  * Best-effort read of a failure body for the error message. Truncated and
  * whitespace-collapsed: this ends up in a delivery row and a log line, and some
  * providers answer with an HTML error page.
  */
 const readErrorBody = (response: HttpClientResponse.HttpClientResponse) =>
-	response.text.pipe(
-		Effect.map((text) => {
+	readTextPrefix(response, MAX_ERROR_BODY_BYTES).pipe(
+		Effect.map(({ text }) => {
 			const detail = text.replace(/\s+/g, " ").trim().slice(0, 500)
 			if (detail.length > 0) return detail
 			// An empty body used to render as `"<Provider> delivery failed with 400"`
@@ -159,6 +165,35 @@ const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
 	return response
 })
 
+/** Fail the delivery on a non-2xx, in the transport's own words when it has them. */
+const failOnStatus = <Config>(
+	response: HttpClientResponse.HttpClientResponse,
+	transport: HttpTransport<Config>,
+	input: RenderInput<Config>,
+): Effect.Effect<void, AlertDeliveryFailure> =>
+	Effect.gen(function* () {
+		if (response.status >= 200 && response.status < 300) return
+		const detail = yield* readErrorBody(response)
+		// A transport may supply a better sentence for a status it knows well;
+		// it does not get to change whether the failure is retryable.
+		const described = transport.describeStatus?.(response.status) ?? null
+		const failure = failureForStatus(response.status, {
+			message: described ?? statusFailureMessage(transport.providerLabel, response.status, detail),
+			destinationType: transport.type,
+			providerStatus: response.status,
+		})
+		yield* Effect.annotateCurrentSpan({
+			"maple.delivery.failure_tag": failure._tag,
+			"maple.delivery.retryable": failure.error.retryable,
+			// Which destination, not just which provider: a flat rate of
+			// identical `retry: "never"` failures is one broken row, and the
+			// error issue is only triageable if the span names it.
+			"maple.delivery.destination_id": input.context.destination.id,
+			"maple.delivery.destination_type": transport.type,
+		})
+		return yield* Effect.fail(failure)
+	})
+
 export const runHttpTransport = <Config>(
 	transport: HttpTransport<Config>,
 	input: RenderInput<Config>,
@@ -167,33 +202,20 @@ export const runHttpTransport = <Config>(
 	Effect.gen(function* () {
 		const spec = transport.render(input)
 		const response = yield* sendHttp(spec, transport, runtime)
-
-		if (response.status < 200 || response.status >= 300) {
-			const detail = yield* readErrorBody(response)
-			// A transport may supply a better sentence for a status it knows well;
-			// it does not get to change whether the failure is retryable.
-			const described = transport.describeStatus?.(response.status) ?? null
-			const failure = failureForStatus(response.status, {
-				message: described ?? statusFailureMessage(transport.providerLabel, response.status, detail),
-				destinationType: transport.type,
-				providerStatus: response.status,
-			})
-			yield* Effect.annotateCurrentSpan({
-				"maple.delivery.failure_tag": failure._tag,
-				"maple.delivery.retryable": failure.error.retryable,
-				// Which destination, not just which provider: a flat rate of
-				// identical `retry: "never"` failures is one broken row, and the
-				// error issue is only triageable if the span names it.
-				"maple.delivery.destination_id": input.context.destination.id,
-				"maple.delivery.destination_type": transport.type,
-			})
-			return yield* Effect.fail(failure)
-		}
+		yield* failOnStatus(response, transport, input)
+		yield* Effect.forEach(
+			transport.followUps?.(input) ?? [],
+			(followUp) =>
+				sendHttp(followUp, transport, runtime).pipe(
+					Effect.flatMap((followUpResponse) => failOnStatus(followUpResponse, transport, input)),
+				),
+			{ discard: true },
+		)
 
 		// A 2xx is not proof of delivery for every provider — Telegram answers 200
 		// with `{ ok: false }` — so a transport may claim the body.
 		if (transport.interpret) {
-			const rawBody = yield* response.text.pipe(
+			const rawBody = yield* readTextWithin(response, MAX_ACK_BODY_BYTES).pipe(
 				Effect.mapError((error) =>
 					makeDeliveryError(
 						`${transport.providerLabel} returned an unreadable response`,

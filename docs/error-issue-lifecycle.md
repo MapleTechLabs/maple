@@ -77,6 +77,11 @@ fixed once.
 └───────────┘  next person doesn't fix the same bug a second time
 ```
 
+The notification policy's `minOccurrenceCount` is compared with the count an incident opens
+with. A promoted issue opens with at least `PROMOTION_MIN_OCCURRENCES` (3), so values of 3 or less
+only matter for regressions. Policy writes run in one transaction under the per-org advisory lock
+that destination deletes take, and reject destinations the org does not own.
+
 `cancelled` and `wontfix` are the exits off to the side. `wontfix` takes an optional `snoozeUntil`
 and wakes back into `triage` when it expires.
 
@@ -215,3 +220,18 @@ loop in verification without a human ever seeing it.
 | PR links and verification windows       | `packages/backend/src/services/errors/IssueFixVerificationService.ts`                                        |
 | The verification tick                   | `packages/backend/src/services/errors/FixVerificationTickService.ts`                                         |
 | What agents are told                    | `apps/ai/src/mcp/resources/instructions.ts`                                                                  |
+
+## Testing it locally
+
+- **Seed exceptions:** `bun run seed:demo:env`, then `MAPLE_DEV_ENV_FILE=.env.screenshots bun dev api web ingest alerting`
+  and `bun run seed:demo -- --reset --follow`. The alerting Worker skips its crons off production unless
+  `MAPLE_ALERTING_ALLOW_NONPROD=1` is set (the screenshot env sets it).
+- **Run the tick now:** `bun run errors:tick` fires the alerting minute cron once instead of waiting
+  for it. That cron runs the alert and escalation lanes too, not only the errors tick and fix
+  verification, so alert rules evaluate (and may notify) on the same fire. `--url` targets a branch stack's `<branch>.alerting.localhost`.
+- **Measure a fingerprint change before shipping it:** `bun run errors:replay -- --file <sample>` groups
+  a sample of real error events with today's fingerprint and with the proposal in
+  `scripts/errors-replay/candidate.ts`, checks the TS mirror is in parity with production's hashes, and
+  lists the largest merges to read for false positives. The script header has the export query; samples
+  hold customer data and stay out of the repo.
+- **The list without a backend:** `/lab/errors` renders the real list view over fixtures.

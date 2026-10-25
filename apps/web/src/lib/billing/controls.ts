@@ -4,7 +4,7 @@ import {
 	UpdateBillingSpendLimit as UpdateBillingSpendLimitClass,
 } from "@maple/domain/http"
 
-import type { SpendFeatureId, SpendModel } from "./spend"
+import type { FeatureSpend, SpendFeatureId, SpendModel } from "./spend"
 
 export const spendLimitFor = (
 	customer: BillingCustomer | undefined,
@@ -34,18 +34,42 @@ export const updateFeatureControls = ({
 		],
 	})
 
+/** Can a cap bound this feature's bill? Not when it is unlimited, hard-capped or has no known rate. */
+export const capApplies = (feature: FeatureSpend): boolean =>
+	!feature.unlimited && feature.ratePerUnit !== null && feature.overageAllowed !== false
+
+/** Features that bill overage with no cap; any one of them leaves the maximum invoice unbounded. */
+export const uncappedFeatures = (
+	model: SpendModel,
+	customer: BillingCustomer | undefined,
+): ReadonlyArray<FeatureSpend> =>
+	model.features.filter(
+		(feature) =>
+			capApplies(feature) && spendLimitFor(customer, feature.featureId)?.overageLimit === undefined,
+	)
+
 /** Maximum invoice when every paid feature has a cap; null means unbounded. */
 export const maximumInvoiceCents = (
 	model: SpendModel | null,
 	customer: BillingCustomer | undefined,
 ): number | null => {
 	if (model === null || model.partial) return null
-	let maximum = model.baseCents
-	for (const feature of model.features) {
-		if (feature.unlimited || feature.ratePerUnit === null || feature.overageAllowed === false) continue
+	if (uncappedFeatures(model, customer).length > 0) return null
+	return model.features.reduce((maximum, feature) => {
 		const limit = spendLimitFor(customer, feature.featureId)?.overageLimit
-		if (limit === undefined) return null
-		maximum += Math.round(limit * feature.ratePerUnit * 100)
-	}
-	return maximum
+		if (!capApplies(feature) || limit === undefined || feature.ratePerUnit === null) return maximum
+		return maximum + Math.round(limit * feature.ratePerUnit * 100)
+	}, model.baseCents)
+}
+
+export type CapInput = { readonly valid: true; readonly cap: number | null } | { readonly valid: false }
+
+/** Plain decimals only: `Number()` alone would accept "1e3", "0x10" and "Infinity". */
+const DECIMAL = /^(\d+(\.\d*)?|\.\d+)$/
+
+/** A typed cap: empty removes the cap, zero or more sets it, anything else is invalid. */
+export const parseCapInput = (raw: string): CapInput => {
+	const trimmed = raw.trim()
+	if (trimmed === "") return { valid: true, cap: null }
+	return DECIMAL.test(trimmed) ? { valid: true, cap: Number(trimmed) } : { valid: false }
 }

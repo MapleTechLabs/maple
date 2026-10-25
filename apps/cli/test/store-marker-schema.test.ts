@@ -65,7 +65,9 @@ describe("store marker", () => {
 	it("falls back to the recorded maple version when no creator was stamped", () => {
 		const { createdByMaple: _dropped, ...withoutCreator } = goldenV2
 		const state = readAs(withoutCreator)
-		expect(state.kind === "valid" && state.marker.createdByMaple).toBe(goldenV2.maple)
+		expect(
+			state.kind === "valid" && state.marker.formatVersion === 2 && state.marker.createdByMaple,
+		).toBe(goldenV2.maple)
 	})
 
 	it("reports a malformed identity instead of guessing at it", () => {

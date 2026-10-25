@@ -32,6 +32,7 @@ import {
 	type MineLogPatternsOutput,
 	type SearchLogsOutput,
 	type SearchTracesOutput,
+	type ServiceEdge,
 } from "@maple/query-engine/observability"
 import { MetricType } from "@maple/domain"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
@@ -49,7 +50,7 @@ import { HttpClient } from "effect/http"
 import { verboseLogging } from "../lib/debug"
 import { CliUsageError, LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
 import { isLocalUnreachable, isNotMapleServer, readOnlyRejection } from "../lib/failure"
-import type { ErrorRow, MetricSeriesOutput, TopOperationRow } from "../lib/views"
+import type { ErrorRow, MetricSeriesOutput, ServiceMapResult, TopOperationRow } from "../lib/views"
 import { LOCAL_ORG_ID, localDriverError } from "./executor"
 import { Mode, type ModeError } from "./mode"
 import * as Remote from "./remote-ops"
@@ -359,10 +360,55 @@ export const findSlowTraces = (p: { range: Range; service?: string; environment?
 		"slow_traces",
 	)
 
+const localServiceMap = (p: { range: Range; service?: string; environment?: string }) =>
+	Effect.gen(function* () {
+		const executor = yield* WarehouseExecutor
+		const params = { orgId: LOCAL_ORG_ID, startTime: p.range.startTime, endTime: p.range.endTime }
+		// With -s, filter inside the query: the org-wide one keeps its top 200 edges first.
+		const edges =
+			p.service === undefined
+				? yield* obsServiceMap({ timeRange: p.range, environment: p.environment })
+				: (yield* executor.compiledQuery(
+						CH.compile(
+							CH.serviceDependenciesInvolvingServiceQuery({
+								serviceName: p.service,
+								deploymentEnv: p.environment,
+							}),
+							params,
+						),
+						{ profile: "aggregation", context: "cli.serviceMapEdges" },
+					)).map((e): ServiceEdge => ({
+						sourceService: e.sourceService,
+						targetService: e.targetService,
+						callCount: e.callCount,
+						errorCount: e.errorCount,
+						avgDurationMs: e.avgDurationMs,
+						maxDurationMs: e.maxDurationMs,
+					}))
+		const databases = yield* executor.compiledQuery(
+			p.service === undefined
+				? CH.serviceDbEdgesSQL({ deploymentEnv: p.environment }, params)
+				: CH.compile(
+						CH.serviceDbEdgesForServiceQuery({
+							serviceName: p.service,
+							deploymentEnv: p.environment,
+						}),
+						params,
+					),
+			{ profile: "aggregation", context: "cli.serviceMapDatabases" },
+		)
+		if (p.service === undefined) return { edges, databases } satisfies ServiceMapResult
+		const external = yield* executor.compiledQuery(
+			CH.serviceExternalEdgesSQL({ serviceName: p.service, deploymentEnv: p.environment }, params),
+			{ profile: "aggregation", context: "cli.serviceMapExternal" },
+		)
+		return { edges, databases, external } satisfies ServiceMapResult
+	})
+
 export const serviceMap = (p: { range: Range; service?: string; environment?: string }) =>
 	dispatch(
-		obsServiceMap({ timeRange: p.range, service: p.service, environment: p.environment }),
-		({ v2 }) => Remote.serviceMap(v2, p),
+		localServiceMap(p),
+		({ v2 }) => Effect.map(Remote.serviceMap(v2, p), (edges): ServiceMapResult => ({ edges })),
 		"service_dependencies",
 	)
 
@@ -668,6 +714,33 @@ const localCompareServiceOverview = (p: { current: Range; previous: Range; envir
 		})
 		return result.data
 	})
+
+const localServiceHasTelemetry = (service: string, range: Range) =>
+	Effect.gen(function* () {
+		const executor = yield* WarehouseExecutor
+		const rows = yield* executor.compiledQuery(
+			CH.compile(
+				CH.servicePresenceQuery({ serviceName: service }),
+				{ orgId: LOCAL_ORG_ID, startTime: range.startTime, endTime: range.endTime },
+				{ rowSchema: CH.servicePresenceRowSchema },
+			),
+			{ profile: "list", context: "cli.servicePresence" },
+		)
+		return rows.some((r) => r.spanCount > 0)
+	})
+
+/**
+ * Whether one service has trace telemetry in the window. Scoped to that service,
+ * so unlike `knownServices` it is not limited to the busiest page of services.
+ */
+export const serviceHasTelemetry = (service: string, range: Range) =>
+	service.trim() === ""
+		? Effect.succeed(false)
+		: dispatch(
+				localServiceHasTelemetry(service, range),
+				({ v2 }) => Remote.serviceHasTelemetry(v2, { service, range }),
+				"service_presence",
+			)
 
 /** Service names with trace telemetry in the window, busiest first. */
 export const knownServices = (range: Range) =>

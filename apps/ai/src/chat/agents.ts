@@ -67,6 +67,8 @@ export interface AgentDefinition {
 	 * (`resolveReviewModel`), `triage` the deployment's chat and investigation model.
 	 */
 	readonly model: AgentModel
+	/** Offer `run_code` over the turn's read-only tools, where the runtime has a code executor. */
+	readonly codeMode?: boolean
 }
 
 export type AgentModel = "triage" | "review"
@@ -109,6 +111,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		permission: DEFAULT_RULESET,
 		budget: INVESTIGATION_BUDGET,
 		model: "triage",
+		codeMode: true,
 	},
 	"pr-review": {
 		name: "pr-review",
@@ -120,6 +123,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		autonomousPermission: PR_REVIEW_RULESET,
 		budget: PR_REVIEW_BUDGET,
 		model: "review",
+		codeMode: true,
 	},
 	"pr-reply": {
 		name: "pr-reply",
@@ -152,7 +156,12 @@ export const buildSystemPrompt = (agent: AgentDefinition): string => agent.promp
  * 2026-09-20, put the limit an order of magnitude above any prompt the agent sends, so compaction
  * never ran. `liveContextLimit` explains both bounds.
  */
-export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): AgentPolicy => {
+export const agentPolicyFor = (
+	agent: AgentDefinition,
+	contextTokens?: number,
+	/** Only an unattended pass gets the run-status line; an attended follow-up must answer, not file. */
+	autonomous = false,
+): AgentPolicy => {
 	const budget = agent.budget
 	return AgentPolicy.make({
 		maxTurns: budget.maxToolCalls,
@@ -167,7 +176,7 @@ export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): 
 		// more without tools, to answer from what it found rather than stopping on a wall of tool
 		// rows. This is also what makes `tokenBudget` a deadline rather than a way to lose a run.
 		onExhaustion: "final-answer",
-		...(budget.runStatus === true ? { runStatus: "appended" as const } : undefined),
+		...(budget.runStatus === true && autonomous ? { runStatus: "appended" as const } : undefined),
 		...(contextTokens === undefined ? undefined : { contextTokenLimit: liveContextLimit(contextTokens) }),
 	})
 }
@@ -175,17 +184,17 @@ export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): 
 /**
  * A chat agent: prose in, prose out.
  *
- * `Output.text` rather than a JSON output schema because the answer *is* the assistant message. An
- * investigation session declares `submit_diagnosis` as its completion tool as well: a call to it
- * settles the run, and the turn runner closes out a pass that never made one.
+ * `Output.text` rather than a JSON output schema because the answer *is* the assistant message.
+ * `submit_diagnosis` and the other submit tools are ordinary tools here: the engine would require a
+ * declared completion tool on every model call, so `run.ts` settles the run when one lands.
  */
 export const chatAgent = (
 	agent: AgentDefinition,
 	toolkit: Toolkit.Any,
 	model: ResolvedModel,
 	options: {
-		/** Set when a call to this tool settles the run. Never engine-required; see `tools.ts`. */
-		readonly completion?: { readonly tool: string; readonly required: boolean }
+		/** The turn is a machine-started pass; see {@link agentPolicyFor}. */
+		readonly autonomous?: boolean
 	} = {},
 ) =>
 	// `withModel` rather than providing the model Layer around the run: the engine builds the model
@@ -201,17 +210,7 @@ export const chatAgent = (
 			instructions: buildSystemPrompt(agent),
 			description: agent.description,
 			toolkit,
-			policy: agentPolicyFor(agent, model.limits.context),
-			...(options.completion === undefined
-				? undefined
-				: {
-						completion: {
-							tool: options.completion.tool,
-							required: options.completion.required,
-							project: ({ parameters }: { readonly parameters: unknown }) =>
-								JSON.stringify(parameters),
-						},
-					}),
+			policy: agentPolicyFor(agent, model.limits.context, options.autonomous === true),
 		}),
 		model.layer,
 	)

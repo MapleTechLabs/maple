@@ -6,48 +6,45 @@ with 439s in its test step. Backend alone took 330.55s across 148 files;
 UI took 94.87s across 73 files. Fixed API/web sharding missed the backend
 when services moved out of API, leaving the longest suite unsharded.
 
-`.github/scripts/plan-tests.py` now discovers workspace test scripts from the
-root workspace patterns and tracked manifests. It sizes Vitest shards against
-a 140s estimated test budget and packs small suites into lanes with the same
-budget. Per-file rates for the large suites are measured from CI run
-35725366619 (backend 1.6s, api 2.3s, web 0.55s, …); unknown suites get a
-conservative 1s/file, plus a per-suite startup cost. File counts deliberately
-include all tracked test/spec files: this can overestimate a suite, but never
-filters the tests actually executed. Each lane invokes the original package
-scripts through Turbo; Vitest owns discovery and shard assignment.
+`scripts/ci/plan-tests.ts` discovers workspace test scripts from the root
+workspace patterns and tracked manifests. It sizes Vitest shards against a 140s
+estimated test budget and packs small suites into lanes with the same budget.
+Per-file rates for the large suites are measured from CI run 35725366619
+(backend 1.6s, api 2.3s, web 0.55s, …); unknown suites get 0.6s/file, fitted to
+the slowest cold small-suite lanes, plus a per-suite startup cost. File counts
+include all tracked test/spec files, so a suite can be overestimated but its
+tests are never filtered. Each lane runs the original package scripts through
+Turbo; Vitest owns discovery and shard assignment.
 
-The current inventory produces 9 test lanes, including two backend shards.
-It used to produce 21 at a 100s budget: each job pays ~30s of setup and the
-org runs ~16 jobs at once, so the short lanes queued the run in waves (the last
-test lane of run 35725366619 started 234s in). Fewer, fuller lanes cut both the
-wall clock and the runner minutes.
-A synthetic fivefold increase in files produces 82 lanes with the same Vitest
-work budget. The planner tests run in change detection and verify complete,
-nonduplicated workspace ownership, contiguous shard coverage, bounded estimates,
-automatic inclusion of new workspaces, and the matrix limit. Run locally with:
+**Only affected suites get a lane.** The planner reads the changed files from
+the `changes` job and keeps the workspaces that own them, the workspaces whose
+`<pkg>#test` task lists a `$TURBO_ROOT$/` input that matched, and every
+transitive dependent. A changed file outside every workspace (other than `docs/`
+and root markdown), or any `base` path (lockfile, CI config, root tsconfig), plans
+every suite. Before this, six of ten lanes on a typical PR were 100% Turbo
+cache hits (1-4s of work, run 38901779054) that still paid setup and a queue slot.
+
+A full plan produces 10 lanes, including three backend shards; a synthetic
+fivefold increase in files stays under GitHub's 256-job limit. The planner
+tests run in change detection and cover workspace ownership, contiguous shard
+coverage, bounded estimates, new workspaces, the matrix limit and the
+affected-set rules. Run locally with:
 
 ```sh
-python3 -m unittest discover -s .github/scripts -p 'test_plan_tests.py'
-python3 .github/scripts/plan-tests.py
+bun test scripts/ci/plan-tests.test.ts
+CHANGED_FILES='["packages/ui/src/index.ts"]' bun scripts/ci/plan-tests.ts
 ```
 
-Each runner executes one Turbo task at a time and at most two Vitest workers.
-This avoids nested CPU oversubscription and bounds simultaneous PGlite instances.
-Isolation and existing test assertions remain enabled. Each lane retains its own
-Turbo cache; shard arguments participate in task hashes. Knip has its own lane.
-The required `CI passed` check includes the dynamic test matrix.
+Each runner executes one Turbo task at a time and at most two Vitest workers,
+which bounds CPU oversubscription and simultaneous PGlite instances. Bun-native
+suites pack into the same lanes, listed in `bun-filters`, and run in a second
+Turbo invocation without the Vitest flags `bun test` rejects.
 
-`run-tests.py` writes elapsed time to the job summary and fails above 240s,
-including cold dependency builds. The step also has a five-minute hard timeout.
-This catches slower tests added inside existing files, which file-count sizing
-cannot predict. Investigate a budget failure using the Vitest file timings:
-fix unnecessary real waits/repeated setup, split an oversized file, or update
-the measured per-file estimate. Do not simply increase the runtime budget.
-
-Bun-native CLI and otel-helper tests share unsharded lanes with each other, never
-with Vitest flags, and keep their original arguments; Rust retains its dedicated workflow.
-The runtime budget still applies to the Bun lanes. If those suites grow beyond it,
-they need runner-specific splitting rather than Vitest flags.
+The lane step writes its elapsed time to the job summary and fails above 240s,
+cold dependency builds included, with a five-minute hard timeout. That catches
+slower tests inside existing files, which file-count sizing cannot predict. Fix
+a budget failure from the Vitest file timings (real waits, repeated setup, an
+oversized file) or update the per-file estimate; do not raise the budget.
 
 The file-count projection is a capacity model. The measured fivefold suite run
 below validates the test setup separately. More shards
@@ -56,7 +53,7 @@ consume more runner setup time and require available organization concurrency;
 No change to a matrix can guarantee constant end-to-end latency with fixed runner
 capacity. Compare the first cold and warm runs after merging against the linked
 baseline, recording queue delay, longest test lane, total runner minutes, and
-cache hits. The first run creates new lane caches. If queueing dominates, adjust
+cache hits. If queueing dominates, adjust
 runner capacity or reduce repeated setup before adding further shards.
 
 ## Measured Vitest and fixture improvements
@@ -107,22 +104,10 @@ configuration: it did not improve the separate Linux full-suite experiment.
 Reported peak child RSS remained about 2 GiB for backend; this is not aggregate
 container RSS, and no memory reduction is claimed.
 
-Reproduce repeated runs using the checked-in runner:
+The repeat-run harness behind these numbers (`scripts/ci/benchmark-vitest.py`)
+was removed in October 2026; it is in git history.
 
-```sh
-python3 scripts/ci/benchmark-vitest.py --suite backend --workers 2 --runs 3 --output /tmp/backend-bench
-python3 scripts/ci/benchmark-vitest.py --suite backend --copies 5 --workers 2 --runs 3 --output /tmp/backend-5x-bench
-python3 scripts/ci/benchmark-vitest.py --suite ui --workers 2 --runs 3 --output /tmp/ui-bench
-```
-
-Run baseline and candidate sequentially on the same otherwise idle machine,
-with the same Node/Bun versions, built dependencies, environment, and cache
-settings. The runner writes logs, Vitest JSON, and a timing summary; it repeats
-real tests via isolated projects and removes the temporary config afterwards.
-A failed suite stops the benchmark and returns failure. It was smoke-tested with
-two copies of UI: all 1,348 tests passed.
-
-Workflow lint, planner/runner tests, source lint, and formatting pass. The backend
+Workflow lint, planner tests, source lint, and formatting passed. The backend
 `typecheck:test` command has 218 existing diagnostics; the diagnostic set was
 unchanged and none are in the modified fixture files. These suite measurements
 do not claim a post-merge GitHub end-to-end time: compare that against the linked
@@ -198,8 +183,15 @@ Sequential measurements on the same macOS machine, Vitest 5.0.1 and two workers:
 
 Each median uses three successful runs. All original tests passed; UI adds one
 native-rendering test. Five copies of the entire mixed Node/browser UI suite
-passed 3,375 tests in 34.88s, still with two workers. The benchmark runner now
-replicates both projects, with unique browser instance names.
+passed 3,375 tests in 34.88s, still with two workers. The (since removed) benchmark
+runner replicated both projects, with unique browser instance names.
 [Measurements and validation](benchmarks/browser-mode-2026-09-22.json) record
 individual timings, report hashes, counts and versions. Install/build/download
 time is excluded; these numbers do not claim GitHub end-to-end latency.
+
+## Type-aware lint memory
+
+`bun run lint` runs three oxlint passes in a row (`lint:core`, then `lint:foldkit` for
+apps/web and apps/local-ui). One pass over everything peaked at about 16 GB
+locally, and on the 16 GB runner the effect-lint job was killed with SIGTERM after about three
+minutes. Split, the largest pass (apps/web) peaks at about 13.5 GB.

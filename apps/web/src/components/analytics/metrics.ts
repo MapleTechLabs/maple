@@ -12,7 +12,7 @@ import type {
 	WebAnalyticsPageviewsPoint,
 	WebAnalyticsSummary,
 	WebAnalyticsTimeseriesPoint,
-} from "@/api/warehouse/web-analytics"
+} from "@maple/web-data/warehouse/web-analytics"
 
 export type AnalyticsMetricKey =
 	| "visitors"

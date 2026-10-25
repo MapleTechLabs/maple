@@ -53,6 +53,18 @@ describe("handleRequest API proxy", () => {
 		expect(await request?.text()).toBe("hello")
 	})
 
+	it("sends the API's host, not the app's, so OAuth callbacks stay on the API", async () => {
+		const { env, forwarded } = recordingEnv()
+		await handleRequest(
+			new Request("https://app.maple.test/_api/v2/integrations/chat_connectors/slack/install", {
+				method: "POST",
+				headers: { host: "app.maple.test" },
+			}),
+			env,
+		)
+		expect(forwarded[0]?.headers.get("host")).toBe("api.maple.test")
+	})
+
 	it("never leaves the API's host for a protocol-relative path", async () => {
 		const { env, forwarded } = recordingEnv()
 		await handleRequest(new Request("https://app.maple.test/_api//evil.test/steal"), env)
@@ -98,5 +110,35 @@ describe("handleRequest API proxy", () => {
 		expect(server?.attributes.get("http.response.status_code")).toBe(201)
 		expect(client?.attributes.get("peer.service")).toBe("maple-api")
 		expect(forwarded[0]?.headers.get("traceparent")).toBe(`00-${browserTraceId}-${client?.spanId}-01`)
+	})
+})
+
+describe("document security headers", () => {
+	const headersFor = async (path: string) => {
+		const response = await handleRequest(new Request(`https://app.maple.test${path}`), { ASSETS: assets })
+		return {
+			csp: response.headers.get("content-security-policy"),
+			frame: response.headers.get("x-frame-options"),
+			referrer: response.headers.get("referrer-policy"),
+			sniff: response.headers.get("x-content-type-options"),
+		}
+	}
+
+	it("app documents refuse framing, plugins and base retargeting, and send only the origin cross-site", async () => {
+		expect(await headersFor("/traces")).toEqual({
+			csp: "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+			frame: "DENY",
+			referrer: "strict-origin-when-cross-origin",
+			sniff: "nosniff",
+		})
+	})
+
+	it("share documents stay frameable and keep no-referrer", async () => {
+		expect(await headersFor("/share/tok")).toEqual({
+			csp: "object-src 'none'; base-uri 'self'",
+			frame: null,
+			referrer: "no-referrer",
+			sniff: "nosniff",
+		})
 	})
 })

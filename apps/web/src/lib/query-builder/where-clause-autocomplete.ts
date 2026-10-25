@@ -5,7 +5,7 @@ import {
 } from "@maple/query-engine/query-builder"
 import { type Operator, normalizeKey as sharedNormalizeKey } from "@maple/domain/where-clause"
 import { FUNNEL_POPULATION_FILTER_FIELDS, type FunnelPopulationFilterField } from "@maple/query-model"
-import { productEventsFilterField, productEventsFilterKey } from "@/lib/query-builder/funnel-filters"
+import { productEventsFilterField, productEventsFilterKey } from "./funnel-filters"
 
 type WhereClauseAutocompleteContext = "key" | "operator" | "value" | "conjunction"
 

@@ -39,4 +39,27 @@ export const isMissingProductEvents = isMissingTable(/product_events/i)
 /** `ai_crawler_requests` ships in a later migration; only its absence may drop the crawler stats. */
 export const isMissingAiCrawlerRequests = isMissingTable(/ai_crawler_requests/i)
 
+/** `ci_runs` / `ci_jobs` ship in migration 0047; the CI reads have no raw fallback. */
+export const isMissingCiTables = isMissingTable(/ci_(?:runs|jobs)/i)
+
 export const isMissingServiceOperationsRollup = isMissingTable(/service_operations_(?:minutely|hourly)/i)
+
+/** `service_endpoint_details_hourly` ships in migration 0048; the endpoint detail reads degrade to empty. */
+export const isMissingServiceEndpointDetails = isMissingTable(/service_endpoint_details_hourly/i)
+
+const MIGRATION_0048_COLUMNS =
+	/\b(?:HttpClassifiedSpanCount|HttpStatusCount|Http4xxCount|Http5xxCount|RequestBodyBytes|RequestBodyCount)\b/
+
+/**
+ * The operations rollups exist but predate migration 0048's HTTP columns: a Maple-authored
+ * query naming one of them is classified as schema drift. The service API reads fall back to
+ * raw traces then, exactly as for a missing rollup.
+ */
+export const isMissingServiceApiColumns = (error: unknown): boolean =>
+	typeof error === "object" &&
+	error !== null &&
+	"_tag" in error &&
+	error._tag === "@maple/http/errors/WarehouseSchemaDriftError" &&
+	"message" in error &&
+	typeof error.message === "string" &&
+	MIGRATION_0048_COLUMNS.test(error.message)

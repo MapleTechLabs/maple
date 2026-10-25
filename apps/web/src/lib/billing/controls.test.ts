@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import type { BillingCustomer } from "@maple/domain/http"
 import { UpdateBillingControlsRequest } from "@maple/domain/http"
 
-import { maximumInvoiceCents, updateFeatureControls } from "./controls"
+import { maximumInvoiceCents, parseCapInput, uncappedFeatures, updateFeatureControls } from "./controls"
 import type { SpendModel } from "./spend"
 
 const customer = {
@@ -85,5 +85,34 @@ describe("maximumInvoiceCents", () => {
 
 	it("is unbounded when any billable feature is uncapped", () => {
 		expect(maximumInvoiceCents(model, customer)).toBeNull()
+	})
+
+	it("counts only billable features without a cap as uncapped", () => {
+		// Metrics is unlimited and sessions are hard-capped: no cap can bound either.
+		expect(uncappedFeatures(model, customer).map((feature) => feature.featureId)).toEqual(["logs"])
+	})
+})
+
+describe("parseCapInput", () => {
+	it("reads an empty field as removing the cap", () => {
+		expect(parseCapInput("  ")).toEqual({ valid: true, cap: null })
+	})
+
+	it("accepts zero and decimals", () => {
+		expect(parseCapInput("0")).toEqual({ valid: true, cap: 0 })
+		expect(parseCapInput("12.5")).toEqual({ valid: true, cap: 12.5 })
+	})
+
+	it("rejects negative and non-numeric input", () => {
+		expect(parseCapInput("-1")).toEqual({ valid: false })
+		expect(parseCapInput("abc")).toEqual({ valid: false })
+	})
+
+	it("rejects half-typed and non-decimal numbers instead of reading them as no cap", () => {
+		expect(parseCapInput("1e")).toEqual({ valid: false })
+		expect(parseCapInput("1e3")).toEqual({ valid: false })
+		expect(parseCapInput("0x10")).toEqual({ valid: false })
+		expect(parseCapInput("Infinity")).toEqual({ valid: false })
+		expect(parseCapInput(" 7. ")).toEqual({ valid: true, cap: 7 })
 	})
 })

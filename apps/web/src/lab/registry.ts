@@ -3,30 +3,22 @@
  *
  * Two families live here: **labs** are visual galleries that render a component
  * family over fixture data (widgets, provenance nodes, trace views), **benches**
- * are the synthetic perf harnesses the Playwright gates in `perf/` drive. All of
- * them are 404 in production builds — the `/lab` layout route throws `notFound()`
- * outside `import.meta.env.DEV` — and everything under `src/lab/` is forbidden
- * from the startup bundle by `perf/check-bundle-budget.ts`.
+ * are synthetic perf harnesses. Each has a lazy module in `entries/`, so none of
+ * them reaches the startup bundle.
  *
- * `registry.test.ts` asserts this list and the route tree agree, so adding a
- * file under `src/routes/lab/` without an entry here fails the test rather than
- * silently missing from the `/lab` index page.
- *
- * Deliberately dependency-free at runtime: `src/lib/public-routes.ts` imports it
- * and `main.tsx` needs that before the router exists. The route-tree import is
- * type-only so a typo in `path` is a typecheck error, not a dead link.
+ * `registry.test.ts` asserts this list and `entries/` agree, so adding an entry
+ * module without a line here fails the test rather than silently missing from
+ * the `/lab` index page.
  */
-import type { FileRoutesByTo } from "@/routeTree.gen"
-
 export const LAB_ROOT = "/lab"
 
-export type LabPath = Extract<keyof FileRoutesByTo, `${typeof LAB_ROOT}/${string}`>
+export type LabPath = `${typeof LAB_ROOT}/${string}`
 
 export interface LabEntry {
 	path: LabPath
 	title: string
 	description: string
-	/** Gallery of a component family (`lab`) or a Playwright perf harness (`bench`). */
+	/** Gallery of a component family (`lab`) or a perf harness (`bench`). */
 	kind: "lab" | "bench"
 	/**
 	 * `none`: renders from fixtures with no API and no session, so the auth gate
@@ -45,6 +37,54 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/cloudflare",
+		title: "Cloudflare",
+		description:
+			"The Cloudflare zone and Worker lists and the zone page, whole, over a copy of production data.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp",
+		title: "Google Cloud log filter",
+		description:
+			"The Google Cloud configuration's Log filter for a new connection and an existing sink, with what each choice asks the setup script for.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-connect",
+		title: "Google Cloud connect",
+		description:
+			"Every step and run state of the Google Cloud connect dialog over fixture connectors, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-connections",
+		title: "Google Cloud connections",
+		description:
+			"A Google Cloud connection in each state, healthy to failing, over fixture connectors, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-infra",
+		title: "Google Cloud infrastructure",
+		description:
+			"The Google Cloud list (services, Pub/Sub, Cloud SQL) over fixtures that reproduce the Paper artboards: three projects, problems first.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-workload",
+		title: "Google Cloud workload",
+		description:
+			"The Google Cloud workload page, whole, over fixture series: a Cloud Run 5xx burst at peak instances and a Cloud SQL instance.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/onboarding",
 		title: "Onboarding",
 		description:
@@ -57,6 +97,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Chat loaders",
 		description:
 			"Every dot-matrix loader in the chat's pool, inline at both sizes it is used at, against real text.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/gcp-dashboard",
+		title: "Google Cloud dashboard",
+		description:
+			"The Google Cloud template as a board: tabs, Project / Region / Workload filters over fixture series, and the variables dialog.",
 		kind: "lab",
 		session: "none",
 	},
@@ -79,7 +127,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/timeline",
 		title: "Trace timeline",
 		description:
-			"The trace view tabs over a synthetic trace with a wide dynamic range — a 2s root down to sub-millisecond spans that only resolve at deep zoom.",
+			"The trace view tabs over a synthetic trace with a wide dynamic range — a 2s root down to sub-millisecond spans that only resolve at deep zoom, with span event markers and the events panel.",
 		kind: "lab",
 		session: "none",
 	},
@@ -163,10 +211,42 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/service-api",
+		title: "Service API tab",
+		description:
+			"The service page's API tab over 12 hours of the ingest service: KPI strip, responses by status, the non-2xx breakdown, the endpoint table and its drawer (?endpoint=POST%20/v1/traces).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/aws",
+		title: "AWS infrastructure",
+		description:
+			"The AWS list over one account: four ECS services (two idle), two EC2 instances and two load balancers, none traced. Pick a tab with ?tab=ec2 or ?tab=loadBalancers.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/security",
+		title: "Security Center",
+		description:
+			"Every Security Center page over fixtures: overview, empty, not enabled, Add target and its errors, findings, runs, a live, incomplete, failed and cancelled run, a finding and its triage, and the admins-only states. Pick one with ?state=.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/errors",
 		title: "Errors list",
 		description:
 			"The `/errors` list over a fixture holding every row state at once — surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/alerts",
+		title: "Alerts",
+		description:
+			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation.",
 		kind: "lab",
 		session: "none",
 	},
@@ -183,6 +263,54 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Time range picker",
 		description:
 			"The header time range picker over local state, with the timezone selector and a strip of timestamps that re-render in the chosen zone.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/buttons",
+		title: "Kit: buttons",
+		description:
+			"Every @maple/ui button variant and size, icon buttons, toggles, toggle groups, copy and refresh buttons, filter chips, badges, status dots, kbd and inline code.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/forms",
+		title: "Kit: forms",
+		description:
+			"Inputs in every size and state, textarea, input group, field with description and error, checkbox, radio, switch, native select, closed pickers and the OTP field.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/overlays",
+		title: "Kit: overlays",
+		description:
+			"One @maple/ui overlay rendered open per ?item= (dialog, sheet, menus, popovers, pickers, command palette, each toast type).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/display",
+		title: "Kit: display",
+		description:
+			"Cards, panels, alerts, empty states, items, list rows, key values, meters, stat figures, skeletons, tables, tabs and separators.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/content",
+		title: "Kit: content",
+		description:
+			"Page header, eyebrow, breadcrumb, avatar, spinner, marker, message, bubble, trace, truncation, setting rows, scroll area and calendar.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/kit/navigation",
+		title: "Kit: navigation",
+		description:
+			"The sidebar expanded and collapsed with groups, badges and sub menus, resizable panels and the navigation menu.",
 		kind: "lab",
 		session: "none",
 	},

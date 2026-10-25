@@ -335,7 +335,8 @@ What each kind of Worker keeps beside the module:
   generates its entry (`makeEffectVirtualEntry`) and exports only the bridge classes it
   created. A plain module is used verbatim, so the exports in `apps/sandbox/src/worker.ts`
   are what bind, and the declaration lives in `apps/sandbox/alchemy.run.ts`. The container
-  uses the `default` scheduling policy, the only one alchemy can declare; the image is built
+  uses the `default` (fleet) scheduling policy: `durable_object` drops `maxInstances` and the
+  per-stage `instanceType`, and switching needs a new application and DO namespace. The image is built
   from `apps/sandbox/image/Dockerfile`, which copies `sandbox-shim` from the
   `cloudflare/sandbox` tag matching the package version. It has no route and no
   hostname. maple-ai, whose agents run the sandbox tools, reaches it over a `SANDBOX`
@@ -393,8 +394,8 @@ What each kind of Worker keeps beside the module:
   (`packages/backend/src/platform/bindings.ts`), never the env.
 
 **web** is a `Cloudflare.Website.Vite` Worker (`apps/web/src/worker.ts`). Alchemy owns its
-vite build and its dev server, and the deployed entry is `src/worker-entry.ts`. Its props
-bind the api Worker as `API`, handed over as `ApiWorker`. It carries no `WorkerTelemetry`.
+vite build and its dev server, and the deployed entry is `src/worker-entry.ts`. Its props bind
+the api Worker as `API`, handed over as `ApiWorker`. It carries no `WorkerTelemetry`.
 
 Alchemy evaluates a Worker module in three places (the deploy process, `alchemy dev`, and
 the deployed isolate). Two rules keep it honest about which one it is in:
@@ -487,15 +488,22 @@ list of yields. What it composes lives beside it:
 ## AWS: ingest, collector and Electric
 
 The Rust OTLP gateway (`apps/ingest`) runs on an ECS EC2 fleet of Graviton c7gd instances,
-one task per host in host networking, with the WAL on the local NVMe instance store. That is
+one task per host in host networking, with the WAL on the local NVMe instance store. PR
+previews run one t4g.small instead, with a 4 GiB WAL on the root volume (`WAL_STORAGE`). That is
 the only ingest path. The OTel collector and Electric (`apps/electric`) run as ECS Fargate
-services.
+services. The Prometheus scraper (`apps/scraper`, US prd only) is a Fargate singleton in the
+same VPC with no inbound traffic; its image is the single-file bundle `alchemy:build-deps`
+writes to `apps/scraper/dist`, and ECS replaces the task when its `/health` stops answering.
 
 - `AWS.providers()` is registered unconditionally: the `Alchemy.Stack` options are evaluated
   before `Alchemy.Stage` is readable, so it cannot be stage-derived.
 - `profile.deploys.ingest` alone decides which stages get a fleet: prd **and PR previews**. Dev
   stages run the gateway through `cargo run` under `bun dev`. Do not reintroduce a global
   on/off env flag; say it in `profile.deploys.ingest`, where it is typed and unit-tested.
+- **The account security baseline** (`@maple/infra/security-baseline`) is prd-only because every
+  stage shares the account: `profile.deploys.awsSecurityBaseline` gives US prd the one
+  multi-region CloudTrail trail (S3 + CloudWatch Logs) plus Config and GuardDuty in us-east-1,
+  and EU prd Config and GuardDuty in eu-central-1. Its buckets and log group are retained.
 - **Every workflow that deploys the stack must set `AWS_ACCOUNT_ID`.** Without it alchemy's
   `CI=true` credential path self-deadlocks on an STS lookup with no log line (#378).
 - **The binary is compiled outside the image build** (`build-ingest-binary.yml`, native
@@ -563,6 +571,11 @@ architecture.
   one c7gd.medium (autoscaling 1-3) and the collector at the non-prd size; Electric keeps
   the prd size. Managed scaling adds a host to roll a deploy. To scale it, raise the EU
   values there, or point `prd-eu` at `US_PRD`.
+- **Ingest stamps its own revision.** Every ingest rollout launches fresh hosts, so its
+  `COMMIT_SHA` is `INGEST_COMMIT_SHA` (the last commit touching `apps/ingest`, resolved in
+  `deploy-prd-instance.yml`), not the deployed commit. A merge that leaves `apps/ingest` alone
+  keeps the task definition and the fleet. That is also why ingest is not in
+  `PRD_LOCKSTEP_REVISION_SERVICES`.
 - **Graviton (ARM64).** The gateway, collector and Electric run `cpuArchitecture: "ARM64"`
   (`runtimePlatform`), cheaper than x86_64. `build-ingest-binary.yml` compiles natively on
   an arm64 runner.

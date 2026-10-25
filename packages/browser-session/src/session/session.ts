@@ -1,5 +1,6 @@
 import { claimNewVisitor } from "../identity/visitor"
 import { isStringRecord, parseJsonObject } from "../platform/json"
+import { mayUseStorage } from "../platform/persistence"
 import { scrubUrl } from "../platform/url-privacy"
 import { IDLE_TIMEOUT_MS } from "./idle"
 
@@ -231,7 +232,7 @@ function freshRecord(now: number): SessionRecord {
 }
 
 function readRecord(): SessionRecord | undefined {
-	if (writesFailed && ephemeral) return ephemeral
+	if (!mayUseStorage() || (writesFailed && ephemeral)) return ephemeral
 	try {
 		const raw = window.sessionStorage.getItem(STORAGE_KEY)
 		if (!raw) return undefined
@@ -245,6 +246,7 @@ function readRecord(): SessionRecord | undefined {
 
 function writeRecord(record: SessionRecord): void {
 	ephemeral = record
+	if (!mayUseStorage()) return
 	try {
 		window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(record))
 		// Cleared, not latched: once another tab frees quota the durable copy leads again.
@@ -296,6 +298,8 @@ function tabNonce(): string {
 }
 
 function leaseStorage(): Storage | undefined {
+	// Memory-only: one in-memory session per document, so there is no copied record to detect.
+	if (!mayUseStorage()) return undefined
 	try {
 		return typeof window !== "undefined" ? window.localStorage : undefined
 	} catch {

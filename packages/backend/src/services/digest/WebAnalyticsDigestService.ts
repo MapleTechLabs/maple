@@ -43,6 +43,7 @@ import {
 	isOrgWarehouseQuarantined,
 	quarantineOnConfigClassCause,
 } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
+import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks } from "./unsubscribe-token"
 
@@ -97,7 +98,7 @@ function pageLabels<T extends { host: string; path: string }>(rows: ReadonlyArra
 }
 
 export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDigestService>()(
-	"@maple/api/services/WebAnalyticsDigestService",
+	"@maple/backend/services/WebAnalyticsDigestService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -412,7 +413,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					baseUrl: env.MAPLE_APP_BASE_URL,
 					analyticsUrl,
 					aiUrl: `${analyticsUrl}&tab=ai`,
-					unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
+					unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/account?tab=email-preferences`,
 				}
 
 				yield* Effect.annotateCurrentSpan({
@@ -448,16 +449,14 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 
 			/**
 			 * Runs on the ops digest's 15-minute tick, after it, so the Clerk member
-			 * sweep has already seeded any new subscriber rows. Same weekday and
-			 * once-a-day claim as the ops digest, on this email's own columns.
+			 * sweep has already seeded any new subscriber rows. Same schedule and
+			 * once-a-window claim as the ops digest, on this email's own columns.
 			 */
 			const runTick = Effect.fn("WebAnalyticsDigestService.runTick")(function* () {
 				if (!email.isConfigured) return { sentCount: 0, errorCount: 0, skipped: true }
 
 				const now = yield* Clock.currentTimeMillis
-				const sevenDaysAgo = now - 7 * DAY_MS
-				const todayStartMs = now - (now % DAY_MS)
-				const currentDayOfWeek = new Date(now).getUTCDay()
+				const resendCutoffMs = digestResendCutoffMs(now)
 
 				const subs = yield* dbExecute((db) =>
 					db.run(
@@ -467,10 +466,12 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					),
 				)
 
-				const due = subs.filter(
-					(s) =>
-						s.dayOfWeek === currentDayOfWeek &&
-						(s.webAnalyticsLastSentAt == null || s.webAnalyticsLastSentAt < sevenDaysAgo),
+				const due = subs.filter((s) =>
+					isDigestDue(
+						s,
+						lastDigestActivity(s.webAnalyticsLastSentAt, s.webAnalyticsLastAttemptedAt),
+						now,
+					),
 				)
 				if (due.length === 0) return { sentCount: 0, errorCount: 0, skipped: false }
 
@@ -494,7 +495,7 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 											),
 											PG.or(
 												$.webAnalyticsLastAttemptedAt.isNull(),
-												$.webAnalyticsLastAttemptedAt.lt(todayStartMs),
+												$.webAnalyticsLastAttemptedAt.lte(resendCutoffMs),
 											),
 										])
 										.returning("id"),

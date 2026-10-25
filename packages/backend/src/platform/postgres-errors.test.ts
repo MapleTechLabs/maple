@@ -196,6 +196,40 @@ describe("postgresErrorType", () => {
 		assert.isTrue(isRetryablePostgresContention(deadlock))
 	})
 
+	it("treats serialization_failure (40001) on the cause as retryable contention", () => {
+		const error = new DatabaseError({
+			message: "query failed",
+			cause: pgError("40001", "could not serialize"),
+		})
+		assert.isTrue(isRetryablePostgresContention(error))
+	})
+
+	it("matches contention SQLSTATEs in either the error or the cause message", () => {
+		assert.isTrue(
+			isRetryablePostgresContention(
+				new DatabaseError({ message: "SQLSTATE 40001: could not serialize access", cause: null }),
+			),
+		)
+		assert.isTrue(
+			isRetryablePostgresContention(
+				new DatabaseError({ message: "wrapper", cause: "SQLSTATE 40P01: deadlock" }),
+			),
+		)
+	})
+
+	it("rejects unrelated statement failures", () => {
+		assert.isFalse(
+			isRetryablePostgresContention(
+				new DatabaseError({ message: "UNIQUE constraint failed", cause: null }),
+			),
+		)
+		const unique = new DatabaseError({
+			message: "query failed",
+			cause: pgError("23505", "duplicate key value"),
+		})
+		assert.isFalse(isRetryablePostgresContention(unique))
+	})
+
 	it("does not treat a connection failure as retryable contention", () => {
 		const error = new DatabaseError({
 			message: "connect ECONNREFUSED",

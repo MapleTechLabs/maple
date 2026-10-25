@@ -29,6 +29,7 @@ const ExportedAttribute = Schema.Struct({
 })
 const ExportedSpan = Schema.Struct({
 	name: Schema.String,
+	kind: Schema.optionalKey(Schema.Finite),
 	status: Schema.Struct({ code: Schema.optionalKey(Schema.Finite) }),
 	attributes: Schema.Array(ExportedAttribute),
 	events: Schema.optionalKey(
@@ -36,6 +37,8 @@ const ExportedSpan = Schema.Struct({
 	),
 })
 type ExportedSpan = typeof ExportedSpan.Type
+/** OTLP `SPAN_KIND_SERVER`. Effect names server spans by method alone, so kind is what marks one. */
+const SERVER_KIND = 2
 const ExportedTraces = Schema.Struct({
 	resourceSpans: Schema.optionalKey(
 		Schema.Array(
@@ -79,7 +82,7 @@ const serverSpans = (recorded: ReadonlyArray<RecordedRequest>): Array<ExportedSp
 		.filter((request) => request.url.endsWith("/v1/traces"))
 		.flatMap((request) => decodeExportedTraces(JSON.parse(request.body ?? "{}")).resourceSpans ?? [])
 		.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
-		.filter((span) => span.name.startsWith("http.server "))
+		.filter((span) => span.kind === SERVER_KIND)
 
 const logBodies = (recorded: ReadonlyArray<RecordedRequest>): Array<string> =>
 	recorded

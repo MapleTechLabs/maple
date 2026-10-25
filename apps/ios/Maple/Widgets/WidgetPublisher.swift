@@ -86,6 +86,14 @@ final class WidgetPublisher {
 	/// path that has no telemetry of its own. Read on the way past; written by
 	/// the widget.
 	private let fetchStates = WidgetFetchStateStore()
+	/// The widgets' signing keys, in the keychain group shared with the extension.
+	private let keys = KeychainDeviceKeyStore()
+	private var registrar: DeviceCredentialRegistrar {
+		DeviceCredentialRegistrar(credentials: credentials, keys: keys)
+	}
+	/// Organizations whose API answered 404 to device credentials this launch,
+	/// so an older server is asked once per launch, not once per round.
+	private var legacyOnly: Set<String> = []
 	private var lastRefreshedAt: Date?
 	/// Something other than a snapshot's contents changed what the widgets
 	/// would render — a corrected name, or a newly known organization. Set
@@ -284,6 +292,7 @@ final class WidgetPublisher {
 				environments: knownBefore.first { $0.id == organizationId }
 			)
 			credentials.clear(organizationId: organizationId)
+			keys.delete(organizationId: organizationId)
 			fetchStates.clear(organizationId: organizationId)
 			// Server-side too, and not only locally: deleting the file stops this
 			// phone using the credential, but the credential itself would stay live
@@ -291,10 +300,17 @@ final class WidgetPublisher {
 			// user has just left, so a failure here is a token that outlives its
 			// usefulness by up to a month, not one that outlives the membership.
 			if let api {
-				Task { try? await api.scoped(to: organizationId).revokeWidgetCredential(installationId: installationId) }
+				Task { await Self.revokeAll(api: api.scoped(to: organizationId), installationId: installationId) }
 			}
 		}
 		WidgetCenter.shared.reloadAllTimelines()
+	}
+
+	/// Both credential kinds, server-side. Best effort: each is also bounded by
+	/// its own expiry, and the local copies are already gone.
+	private static func revokeAll(api: any MapleAPI, installationId: String) async {
+		try? await api.revokeDeviceCredential(installationId: installationId)
+		try? await api.revokeWidgetCredential(installationId: installationId)
 	}
 
 	/// Wipe every snapshot one organization has, across every environment.
@@ -421,7 +437,7 @@ final class WidgetPublisher {
 			outcome.issuesChanged = outcome.issuesChanged || resolutionMoved
 			outcome.throughputChanged = outcome.throughputChanged || resolutionMoved
 
-			await self.ensureCredentials(for: organizations, context: context)
+			await self.ensureCredentials(for: organizations, context: context, trigger: trigger)
 			self.drainFetchState(for: context.active.id, onto: span)
 
 			var reloads = 0
@@ -514,6 +530,8 @@ final class WidgetPublisher {
 		span?.setAttribute(Telemetry.Key.widgetFetchOutcome, outcome.rawValue)
 		span?.setAttribute(Telemetry.Key.widgetFetchFailures, state.consecutiveFailures)
 		span?.setAttribute(Telemetry.Key.widgetFetchCredentialRejected, state.isCredentialRejected)
+		if let scheme = state.lastAuthScheme { span?.setAttribute(Telemetry.Key.widgetFetchAuthScheme, scheme) }
+		span?.setAttribute(Telemetry.Key.widgetCredentialInstallationInUse, state.installationInUseAt != nil)
 		// Absent rather than zero when the extension has never succeeded: "it has
 		// not managed one yet" and "the last one was just now" must not read the
 		// same.
@@ -535,51 +553,136 @@ final class WidgetPublisher {
 	///
 	/// Renewal is the app's job and only the app's: a widget credential does not
 	/// carry the scope to mint, so it cannot extend its own life. That is why the
-	/// renewal window is a week — a phone opened at weekends must not be one bad
-	/// Monday from a Home Screen that has gone quiet with no way back.
-	private func ensureCredentials(for organizations: [WidgetOrganization], context: Context) async {
+	/// renewal window (`WidgetCredential.renewalLead`, four days of fourteen)
+	/// leaves room for a phone opened only every few days.
+	private func ensureCredentials(for organizations: [WidgetOrganization], context: Context, trigger: Trigger) async {
 		let now = Date()
 		let installationId = AppInstallation.identifier
 		for organization in organizations {
-			let stored = credentials.load(organizationId: organization.id)
-			guard stored == nil || stored?.needsRenewal(at: now) == true else { continue }
-			await Telemetry.span(
-				Telemetry.Name.widgetCredential,
-				attributes: [Telemetry.Key.organizationId: .string(organization.id)]
-			) { span in
-				do {
-					let credential = try await context.api
-						.scoped(to: organization.id)
-						.mintWidgetCredential(installationId: installationId)
-					// The server binds a credential to the organization it was minted
-					// in and cannot be asked for another. A disagreement here would
-					// file one organization's key under another's name, which stays
-					// invisible until a widget renders the wrong numbers.
-					guard credential.organizationId == organization.id else {
-						span?.setStatus(.error("credential organization mismatch"))
-						return
-					}
-					guard self.credentials.save(credential) else {
-						span?.setStatus(.error("credential not stored"))
-						return
-					}
-					// A widget that met a 401 stopped fetching on purpose — a
-					// rolled credential answers 401 forever, and retrying would
-					// spend the whole refresh budget on failures. This is the only
-					// thing that can lift that, so it has to happen here and be
-					// followed by a reload: otherwise the widget sits on its
-					// backoff for hours with a perfectly good credential beside it.
-					self.fetchStates.clearCredentialRejection(organizationId: organization.id)
-					span?.setAttribute(Telemetry.Key.widgetChanged, true)
-					WidgetCenter.shared.reloadAllTimelines()
-				} catch is CancellationError {
-				} catch {
-					// Silent, like everything else here. A failed mint leaves the
-					// previous credential in place until it expires, and the widgets
-					// keep rendering what the app published — which is what they did
-					// before they could fetch at all.
-					span?.setStatus(.error("credential not minted"))
+			// A widget that met a refusal stopped fetching on purpose; only a
+			// registration here can lift that, so a rejection always re-registers.
+			let state = fetchStates.load(organizationId: organization.id)
+			let rejected = state.isCredentialRejected
+			let api = context.api.scoped(to: organization.id)
+			// Another member's credential holds this installation: only a user in
+			// the app (a foreground or a switch) retries, not every background wake.
+			if state.installationInUseAt != nil, trigger == .background || trigger == .push { continue }
+			if !legacyOnly.contains(organization.id) {
+				if !rejected, registrar.isCurrent(organizationId: organization.id, now: now) { continue }
+				if await registerDevice(organization.id, api: api, installationId: installationId, rejected: rejected, now: now) {
+					continue
 				}
+			}
+			await mintLegacy(organization.id, api: api, installationId: installationId, rejected: rejected, now: now)
+		}
+	}
+
+	/// Register, refresh or rotate the device-bound key. False when the API
+	/// predates it and the legacy key has to carry the widget instead.
+	private func registerDevice(
+		_ organizationId: String,
+		api: any MapleAPI,
+		installationId: String,
+		rejected: Bool,
+		now: Date
+	) async -> Bool {
+		await Telemetry.span(
+			Telemetry.Name.widgetCredential,
+			attributes: [
+				Telemetry.Key.organizationId: .string(organizationId),
+				Telemetry.Key.widgetCredentialKind: .string("device"),
+			]
+		) { span in
+			do {
+				let outcome = try await self.registrar.ensure(
+					organizationId: organizationId,
+					api: api,
+					installationId: installationId,
+					now: now
+				)
+				switch outcome {
+				case .installationInUse:
+					// Needs attention, not a new key: the widget keeps its last
+					// snapshot and the next foreground round tries again.
+					self.fetchStates.recordInstallationInUse(now, organizationId: organizationId)
+					span?.setAttribute(Telemetry.Key.widgetCredentialInstallationInUse, true)
+					span?.setAttribute(Telemetry.Key.widgetCredentialErrorCode, "device_installation_in_use")
+					span?.setStatus(.error("installation held by another member"))
+					return true
+				case .unsupportedServer:
+					self.legacyOnly.insert(organizationId)
+					span?.setAttribute(Telemetry.Key.widgetCredentialKind, "legacy_fallback")
+					return false
+				case .registered(let record, let action, let key):
+					span?.setAttribute(Telemetry.Key.widgetCredentialAction, action.rawValue)
+					span?.setAttribute(Telemetry.Key.widgetCredentialAttested, record.attested)
+					span?.setAttribute(Telemetry.Key.widgetCredentialHardwareBacked, key.isHardwareBacked)
+					// The `maple_ak_` key is redundant once a device key works:
+					// gone locally at once, revoked server-side on the way past.
+					if self.credentials.load(organizationId: organizationId) != nil {
+						self.credentials.clearLegacy(organizationId: organizationId)
+						Task { try? await api.revokeWidgetCredential(installationId: installationId) }
+					}
+					self.fetchStates.clearCredentialRejection(organizationId: organizationId)
+					self.fetchStates.recordInstallationInUse(nil, organizationId: organizationId)
+					// A refresh changes nothing the widget can see; a new key or a
+					// lifted rejection does, and is worth a reload.
+					let changed = action != .refresh || rejected
+					span?.setAttribute(Telemetry.Key.widgetChanged, changed)
+					if changed { WidgetCenter.shared.reloadAllTimelines() }
+					return true
+				}
+			} catch is CancellationError {
+				return true
+			} catch {
+				// Silent, like everything else here. The previous registration stays
+				// until it expires, and the widgets keep their last snapshot.
+				if let code = (error as? MapleAPIError)?.code {
+					span?.setAttribute(Telemetry.Key.widgetCredentialErrorCode, code)
+				}
+				span?.setStatus(.error("device credential not registered"))
+				return true
+			}
+		}
+	}
+
+	/// The `maple_ak_` path, for an API without device credentials.
+	private func mintLegacy(
+		_ organizationId: String,
+		api: any MapleAPI,
+		installationId: String,
+		rejected: Bool,
+		now: Date
+	) async {
+		let stored = credentials.load(organizationId: organizationId)
+		guard rejected || stored == nil || stored?.needsRenewal(at: now) == true else { return }
+		await Telemetry.span(
+			Telemetry.Name.widgetCredential,
+			attributes: [
+				Telemetry.Key.organizationId: .string(organizationId),
+				Telemetry.Key.widgetCredentialKind: .string("legacy"),
+			]
+		) { span in
+			do {
+				let credential = try await api.mintWidgetCredential(installationId: installationId)
+				// The server binds a credential to the organization it was minted
+				// in. A disagreement would file one organization's key under
+				// another's name.
+				guard credential.organizationId == organizationId else {
+					span?.setStatus(.error("credential organization mismatch"))
+					return
+				}
+				guard self.credentials.save(credential) else {
+					span?.setStatus(.error("credential not stored"))
+					return
+				}
+				// Lifts the widget's stop-on-401, then reloads so it notices.
+				self.fetchStates.clearCredentialRejection(organizationId: organizationId)
+				span?.setAttribute(Telemetry.Key.widgetChanged, true)
+				WidgetCenter.shared.reloadAllTimelines()
+			} catch is CancellationError {
+			} catch {
+				span?.setStatus(.error("credential not minted"))
 			}
 		}
 	}
@@ -701,6 +804,8 @@ final class WidgetPublisher {
 		// The local copies go first and unconditionally. Whatever the network
 		// does, this phone must stop being able to fetch as the previous account.
 		credentials.clearAll()
+		keys.deleteAll()
+		legacyOnly = []
 		// Every organization, not just the active one: anything left behind
 		// stays readable on the Home Screen of a phone that has been signed out.
 		// Read before clearing, for the environments each entry carries — every
@@ -709,7 +814,7 @@ final class WidgetPublisher {
 		for organizationId in index.clear() {
 			fetchStates.clear(organizationId: organizationId)
 			if let api {
-				Task { try? await api.scoped(to: organizationId).revokeWidgetCredential(installationId: installationId) }
+				Task { await Self.revokeAll(api: api.scoped(to: organizationId), installationId: installationId) }
 			}
 			Self.clearSnapshots(
 				organizationId: organizationId,

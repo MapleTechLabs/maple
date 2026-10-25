@@ -1,15 +1,19 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Array as Arr, Effect, Schema } from "effect"
 import { UpdateAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { recoveryValueFits } from "@maple/backend/services/alerts/alert-thresholds"
 import {
+	ALERT_EVALUATION_INTERVALS,
 	AlertRuleUpsertRequest,
 	isRangeComparator,
 	QueryBuilderQueryDraftSchema,
+	type AlertComparator,
 	type AlertRuleDocument,
+	type AlertThreshold,
 } from "@maple/domain/http"
 import {
 	ALERT_COMPARATORS,
@@ -30,24 +34,36 @@ import * as P from "../lib/params"
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
 
 export const UpdateAlertRuleParameters = Schema.Struct({
-	rule_id: P.optionalText("Alert rule ID to update (use list_alert_rules to find IDs)"),
-	rule_ids: P.optionalList(
-		'Apply the same change to several rules in one call instead of rule_id; ["*"] means every rule. name cannot be set in bulk.',
+	rule_id: P.optionalResourceId("alertRule", "Alert rule ID to update (use list_alert_rules to find IDs)"),
+	rule_ids: P.optionalResourceIdList(
+		"alertRule",
+		'Apply the same change to several rules in one call instead of rule_id; ["*"] means every rule. name cannot be set in bulk',
 	),
 	name: P.optionalText("New rule name"),
 	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity"),
 	threshold: P.optionalNumber("Threshold value. E.g. 0.05 for 5% error rate, 1000 for 1s latency"),
 	window_minutes: P.optionalNumber("Evaluation window in minutes"),
+	evaluation_interval_minutes: P.optionalNullableNumberOneOf(
+		ALERT_EVALUATION_INTERVALS,
+		'Minutes between checks, at most window_minutes. A raw_query rule checked less often gets a longer query time limit: 5s under 5 min, 15s at 5, 25s at 10 or more. Omit to keep the current one; pass "auto" to derive it from the window (a fifth, 1 to 5). Any edit also clears a slowdown the scheduler applied.',
+	),
 	services: P.optionalList("Service scope (replaces the current one; an empty list means all services)"),
 	environments: P.optionalList(
 		"Deployment environments to scope the alert to (replaces the current scope; pass an empty list for all environments). Ignored for builder_query / raw_query.",
 	),
 	enabled: P.optionalFlag("Whether the rule is enabled"),
-	destination_ids: P.optionalList(
+	destination_ids: P.optionalResourceIdList(
+		"alertDestination",
 		"Destination IDs to notify (replaces the current destinations; use list_alert_destinations to find IDs)",
 	),
-	add_destination_ids: P.optionalList("Destination IDs to add, keeping the current ones"),
-	remove_destination_ids: P.optionalList("Destination IDs to remove, keeping the rest"),
+	add_destination_ids: P.optionalResourceIdList(
+		"alertDestination",
+		"Destination IDs to add, keeping the current ones",
+	),
+	remove_destination_ids: P.optionalResourceIdList(
+		"alertDestination",
+		"Destination IDs to remove, keeping the rest",
+	),
 	signal_type: P.optionalOneOf(
 		ALERT_SIGNAL_TYPES,
 		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql.",
@@ -92,7 +108,7 @@ export const UpdateAlertRuleParameters = Schema.Struct({
  * signal type or comparator does not use is dropped rather than carried over, as v2 PATCH does,
  * because `normalizeRule` rejects it.
  */
-export function buildUpdatedRequest(
+export const buildUpdatedRequest = Effect.fnUntraced(function* (
 	current: AlertRuleDocument,
 	params: typeof UpdateAlertRuleParameters.Type,
 ) {
@@ -111,13 +127,13 @@ export function buildUpdatedRequest(
 	const signalType = params.signal_type ?? current.signalType
 	const comparator = params.comparator ?? current.comparator
 	const keepsRawQuery = signalType === "raw_query"
+	const thresholds = yield* mergeThresholds(current, params, comparator)
 
 	return {
 		name: params.name ?? current.name,
 		notes: current.notes,
 		notificationTemplate,
 		enabled: params.enabled ?? current.enabled,
-		severity: params.severity ?? current.severity,
 		serviceNames: [...(params.services ?? current.serviceNames)],
 		excludeServiceNames: [...current.excludeServiceNames],
 		environments: [...(params.environments ?? current.environments)],
@@ -132,9 +148,17 @@ export function buildUpdatedRequest(
 					: null,
 		signalType,
 		comparator,
-		threshold: params.threshold ?? current.threshold,
-		thresholdUpper: isRangeComparator(comparator) ? current.thresholdUpper : null,
+		thresholds,
+		breachesOutOf: current.breachesOutOf,
 		windowMinutes: params.window_minutes ?? current.windowMinutes,
+		// Omitted keeps the picked interval, unless the window shrinks below it: then the window's own.
+		evaluationIntervalMinutes:
+			params.evaluation_interval_minutes !== undefined
+				? params.evaluation_interval_minutes
+				: current.evaluationIntervalMinutes !== null &&
+					  current.evaluationIntervalMinutes > (params.window_minutes ?? current.windowMinutes)
+					? null
+					: current.evaluationIntervalMinutes,
 		minimumSampleCount: params.minimum_sample_count ?? current.minimumSampleCount,
 		consecutiveBreachesRequired: params.consecutive_breaches ?? current.consecutiveBreachesRequired,
 		consecutiveHealthyRequired: params.consecutive_healthy ?? current.consecutiveHealthyRequired,
@@ -145,8 +169,58 @@ export function buildUpdatedRequest(
 		rawQuerySql: keepsRawQuery ? (params.raw_query_sql ?? current.rawQuerySql) : null,
 		rawQueryReducer: keepsRawQuery ? (params.raw_query_reducer ?? current.rawQueryReducer) : null,
 		alertOnNoData: params.alert_on_no_data ?? current.noDataBehavior === "alert",
-		destinationIds: mergeDestinations(current.destinationIds, params),
 	}
+})
+
+/**
+ * Single-threshold params edit a one-tier rule's tier in place. On a two-tier rule they would
+ * collapse it, so they are rejected; added destinations join the warning tier, which every incident reaches.
+ */
+const mergeThresholds = (
+	current: AlertRuleDocument,
+	params: typeof UpdateAlertRuleParameters.Type,
+	comparator: AlertComparator,
+) => {
+	const fitBound = (tier: AlertThreshold) =>
+		isRangeComparator(comparator) ? tier : { ...tier, upper: null }
+	const [only, ...rest] = current.thresholds
+	if (rest.length === 0) {
+		const value = params.threshold ?? only.value
+		// MCP cannot set a recovery value yet, so one the edit invalidates is dropped, not a dead end.
+		const recoveryValue = recoveryValueFits(comparator, { value, recoveryValue: only.recoveryValue })
+			? only.recoveryValue
+			: null
+		return Effect.succeed(
+			Arr.of({
+				...fitBound(only),
+				severity: params.severity ?? only.severity,
+				value,
+				recoveryValue,
+				destinationIds: mergeDestinations(only.destinationIds, params),
+			}),
+		)
+	}
+	const collapsing = (["severity", "threshold", "destination_ids"] as const).find(
+		(key) => params[key] !== undefined,
+	)
+	if (collapsing !== undefined) {
+		return Effect.fail(
+			new McpInvalidInputError({
+				message: `"${current.name}" has warning and critical thresholds; ${collapsing} would merge them into one.`,
+				parameter: collapsing,
+			}),
+		)
+	}
+	return Effect.succeed(
+		Arr.map(current.thresholds, (tier, index) => ({
+			...fitBound(tier),
+			recoveryValue: recoveryValueFits(comparator, tier) ? tier.recoveryValue : null,
+			destinationIds: mergeDestinations(
+				tier.destinationIds,
+				index === 0 ? params : { remove_destination_ids: params.remove_destination_ids },
+			),
+		})),
+	)
 }
 
 /** `destination_ids` replaces; add/remove edit the current (or replaced) list in place. */
@@ -213,14 +287,18 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 
 			// Decode every merged request before writing any, so a bad overlay saves nothing.
 			const requests = yield* Effect.forEach(targets, (current) =>
-				decodeAlertRuleRequest(buildUpdatedRequest(current, params)).pipe(
-					Effect.map((request) => ({ current, request })),
-					Effect.mapError(
-						(error) =>
-							new McpInvalidInputError({
-								message: `Invalid alert rule${targets.length > 1 ? ` "${current.name}"` : ""}: ${String(error)}`,
-							}),
+				buildUpdatedRequest(current, params).pipe(
+					Effect.flatMap((merged) =>
+						decodeAlertRuleRequest(merged).pipe(
+							Effect.mapError(
+								(error) =>
+									new McpInvalidInputError({
+										message: `Invalid alert rule${targets.length > 1 ? ` "${current.name}"` : ""}: ${String(error)}`,
+									}),
+							),
+						),
 					),
+					Effect.map((request) => ({ current, request })),
 				),
 			)
 

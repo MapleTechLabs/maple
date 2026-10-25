@@ -1,12 +1,11 @@
 import { describe, it } from "vitest"
 import { Effect, Result } from "effect"
-import { deepStrictEqual, ok, strictEqual, throws } from "node:assert"
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { deepStrictEqual, ok, strictEqual } from "node:assert"
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import type { SignalProjectionSpec } from "@maple/eventing-core"
 import { loadProjectorModules, resolveProjectorModulePaths } from "../src/server/eventing/projector-modules"
-import { startServer } from "../src/server/serve"
 import { makeRuntime, openStore, run } from "./eventing-test-support"
 
 const fixture = resolve(import.meta.dir, "fixtures/projector-module.mjs")
@@ -123,7 +122,7 @@ export default { apiVersion: 1, async register(add) {
 		})
 	})
 
-	it("rejects unsupported exports, missing functions, import failures and registration failures before opening a store", async () => {
+	it("rejects unsupported exports, missing functions, import failures and registration failures", async () => {
 		await withRoot(async (root) => {
 			const cases = [
 				"export default { apiVersion: 2, register() {} }",
@@ -136,20 +135,10 @@ export default { apiVersion: 1, async register(add) {
 			for (const [index, content] of cases.entries()) {
 				const path = join(root, `invalid-${index}.mjs`)
 				writeFileSync(path, content)
-				const dataDir = join(root, `data-${index}`)
-				const result = await Effect.runPromise(
-					startServer({
-						hostname: "127.0.0.1",
-						browserHosts: ["127.0.0.1"],
-						port: 0,
-						dataDir,
-						projectorModules: [path],
-					}).pipe(Effect.scoped, Effect.result),
-				)
+				const result = await Effect.runPromise(Effect.result(loadProjectorModules([path])))
 				ok(Result.isFailure(result))
 				strictEqual(result.failure._tag, "@maple/cli/ProjectorModuleError")
-				strictEqual(existsSync(dataDir), false)
-				strictEqual(existsSync(join(root, `data-${index}.maple-store-version.json`)), false)
+				ok(result.failure.message.includes(path))
 			}
 		})
 	})

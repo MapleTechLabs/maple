@@ -45,7 +45,7 @@ export const GET: APIRoute = ({ site }) => {
 
 		"## Pricing",
 		"",
-		"One plan: $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB per signal; 5,000 browser sessions included, then $0.002 per session; product events free during beta.",
+		"One plan: $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB per signal; 5,000 browser sessions included, then $0.002 per session; 1M product events included, then $5 per million (page views not counted).",
 		"",
 		...both("Pricing", "/pricing"),
 		"",
@@ -105,9 +105,11 @@ export const GET: APIRoute = ({ site }) => {
 		`- [What is APM, and why is it important?](${url("/guides/what-is-apm")})`,
 		`- [What is Apdex, and how do you use the score?](${url("/guides/what-is-apdex")})`,
 		`- [Uptime monitoring with traces and HTTP checks](${url("/guides/uptime-monitoring")})`,
+		`- [Prometheus metrics, explained](${url("/guides/prometheus-metrics")})`,
 		`- [What is observability?](${url("/observability")})`,
 		`- [What is OpenTelemetry?](${url("/opentelemetry")})`,
 		`- [Best open-source observability tools](${url("/best-open-source-observability-tools")})`,
+		`- [Dynatrace pricing, explained](${url("/guides/dynatrace-pricing")})`,
 		"",
 
 		"## Maple API",

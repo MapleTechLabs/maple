@@ -10,6 +10,8 @@
 
 import { Effect } from "effect"
 import { compileUnionUnsafe, compileUnsafe, type CompiledQuery } from "@maple/query-engine/ch"
+import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
+import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS, GCP_INFRA_SOURCES } from "@maple/domain/gcp-infra"
 import { MAPLE_AI_TRACE_SESSION_PREFIX } from "@maple/domain/gen-ai"
 import * as CH from "../index"
 import { BenchmarkError, type CatalogEntry } from "@maple/query-engine/benchmark"
@@ -56,6 +58,10 @@ const railwayServiceBucketed = {
 	serviceId: "svc_1",
 	bucketSeconds: 300,
 }
+
+/** One Supabase project, as /infra/supabase/$ref scopes it. */
+const supabaseProject = { ...window, projectRef: "abcdefghijklmnopqrst" }
+const supabaseProjectBucketed = { ...supabaseProject, bucketSeconds: 300 }
 
 /** The zone-slice filters the /infra/cloudflare page sends, as one bag. */
 const CF_FILTERS = { hosts: ["example.com"], statusClasses: ["5xx"], methods: ["GET"] }
@@ -675,6 +681,30 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		compile: () => compileUnsafe(CH.cloudflareWorkerLatencySQL(), cfZone),
 	},
 	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerOutcomeTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerOutcomeTimeseriesSQL(), { ...cfZoneBucketed, accountId: "" }),
+	},
+	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerLatencyTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerLatencyTimeseriesSQL(), { ...cfZoneBucketed, accountId: "" }),
+	},
+	{
+		module: "cloudflare-infra",
+		name: "cloudflareWorkerDurableObjectTimeseriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(CH.cloudflareWorkerDurableObjectTimeseriesSQL(), {
+				...cfZoneBucketed,
+				accountId: "",
+			}),
+	},
+	{
 		module: "cloudflare-infra-extended",
 		name: "cloudflareZoneFirewallTimeseriesSQL",
 		label: "default",
@@ -758,6 +788,170 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		label: "default",
 		compile: () => compileUnsafe(CH.railwayServiceTimeseriesSQL(), railwayServiceBucketed),
 	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectGaugesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectGaugesSQL(), window),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectCpuSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectCpuSQL(), window),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectGaugeSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectGaugeSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "supabase-infra",
+		name: "supabaseProjectRateSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectRateSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseApiTrafficSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseApiTrafficSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseApiTrafficTotalsSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseApiTrafficTotalsSQL(), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseApiTopPathsSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseApiTopPathsSQL(), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseLogIssuesSQL",
+		label: "project",
+		compile: () => compileUnsafe(CH.supabaseLogIssuesSQL({ byProject: true }), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseLogIssuesSQL",
+		label: "org",
+		compile: () => compileUnsafe(CH.supabaseLogIssuesSQL({ byProject: false }), window),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseLogsProjectsSummarySQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseLogsProjectsSummarySQL(), window),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseProjectCallersSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectCallersSQL(), supabaseProject),
+	},
+	{
+		module: "supabase-insights",
+		name: "supabaseProjectCallerSeriesSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.supabaseProjectCallerSeriesSQL(), supabaseProjectBucketed),
+	},
+	{
+		module: "gcp-infra",
+		name: "gcpInfraPresenceSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.gcpInfraPresenceSQL(), window),
+	},
+	...GCP_INFRA_SERVICE_IDS.map((service): IntegrationFixture => ({
+		module: "gcp-infra",
+		name: "gcpInfraMetricsSQL",
+		label: service,
+		compile: () => compileUnsafe(CH.gcpInfraMetricsSQL(service), window),
+	})),
+	...GCP_INFRA_SOURCE_IDS.map((source): IntegrationFixture => ({
+		module: "gcp-infra",
+		name: "gcpInfraTimeseriesSQL",
+		label: source,
+		compile: () =>
+			compileUnsafe(
+				CH.gcpInfraTimeseriesSQL(
+					source,
+					GCP_INFRA_SOURCES[source].identity.map(([label]) => label.toLowerCase()),
+				),
+				bucketed,
+			),
+	})),
+	...GCP_INFRA_SERVICE_IDS.filter((service) => CH.GCP_INFRA_SPARKLINE_METRICS[service] !== undefined).map(
+		(service): IntegrationFixture => ({
+			module: "gcp-infra",
+			name: "gcpInfraSparklinesSQL",
+			label: service,
+			compile: () => compileUnsafe(CH.gcpInfraSparklinesSQL(service), bucketed),
+		}),
+	),
+	{
+		module: "gcp-infra",
+		name: "gcpCloudSqlTopQueriesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.gcpCloudSqlTopQueriesSQL(["acme-prod:orders-db", "acme-prod", "us-central1"]),
+				window,
+			),
+	},
+	{
+		module: "gcp-infra",
+		name: "gcpCloudSqlDatabasesSQL",
+		label: "default",
+		compile: () =>
+			compileUnsafe(
+				CH.gcpCloudSqlDatabasesSQL(["acme-prod:orders-db", "acme-prod", "us-central1"]),
+				window,
+			),
+	},
+	{
+		module: "aws-infra",
+		name: "awsInfraPresenceSQL",
+		label: "default",
+		compile: () => compileUnsafe(CH.awsInfraPresenceSQL(), window),
+	},
+	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraMetricsSQL",
+		label: kind,
+		compile: () => compileUnsafe(CH.awsInfraMetricsSQL(kind), window),
+	})),
+	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraSparklinesSQL",
+		label: kind,
+		compile: () =>
+			compileUnsafe(
+				CH.awsInfraSparklinesSQL(
+					kind,
+					CH.awsInfraBucketCount(START_TIME, END_TIME, bucketed.bucketSeconds),
+				),
+				bucketed,
+			),
+	})),
+	...AWS_INFRA_KIND_IDS.map((kind): IntegrationFixture => ({
+		module: "aws-infra",
+		name: "awsInfraTimeseriesSQL",
+		label: kind,
+		compile: () =>
+			compileUnsafe(
+				CH.awsInfraTimeseriesSQL(kind, [
+					...AWS_INFRA_KINDS[kind].identity.map(([, dimension]) => `acme-${dimension}`),
+					"us-east-1",
+					"123456789012",
+				]),
+				bucketed,
+			),
+	})),
 	{
 		module: "planetscale-map",
 		name: "planetscaleBranchGaugesSQL",
@@ -870,7 +1064,10 @@ export const integrationFixtures: ReadonlyArray<IntegrationFixture> = [
 		module: "setup-audit",
 		name: "auditRootlessTracesSQL",
 		label: "default",
-		compile: () => Effect.runSync(CH.auditRootlessTracesSQL(traceWindow)),
+		compile: () =>
+			Effect.runSync(
+				CH.auditRootlessTracesSQL(traceWindow, { keepErrorSpans: true, slowSpanNs: 2_000_000_000 }),
+			),
 	},
 ]
 

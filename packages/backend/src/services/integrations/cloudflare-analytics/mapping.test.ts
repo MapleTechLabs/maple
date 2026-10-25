@@ -12,6 +12,7 @@ import {
 	METRIC_WORKER_DURATION,
 	METRIC_WORKER_ERRORS,
 	METRIC_WORKER_REQUESTS,
+	METRIC_WORKER_SUBREQUESTS,
 	SCOPE_NAME,
 	statusClass,
 } from "./mapping"
@@ -388,6 +389,14 @@ describe("mapWorkersGroups", () => {
 		assert.strictEqual(requests!.resource_attributes["cloudflare.account.id"], "acct-1")
 		const errors = sumRows.find((row) => row.metric_name === METRIC_WORKER_ERRORS)
 		assert.strictEqual(errors!.value, 2)
+	})
+
+	it("emits subrequests as a sum with the same worker.status attributes", () => {
+		const { sumRows } = mapWorkersGroups(input)
+		const subrequests = sumRows.find((row) => row.metric_name === METRIC_WORKER_SUBREQUESTS)
+		assert.strictEqual(subrequests!.value, 5)
+		assert.strictEqual(subrequests!.service_name, "cloudflare-worker/my-worker")
+		assert.deepStrictEqual(subrequests!.metric_attributes, { "worker.status": "success" })
 	})
 
 	it("drops groups for scripts missing from the live-script set", () => {

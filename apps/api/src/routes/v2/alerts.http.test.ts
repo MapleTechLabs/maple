@@ -12,6 +12,7 @@ import {
 	IntegrationsRevokedError,
 	OrgId,
 	UserId,
+	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
@@ -100,6 +101,7 @@ const makeHarness = (
 		deliveryTimeoutMs: () => 15_000,
 		schedulerTickBudgetMs: () => 25_000,
 		schedulerEvalTimeoutMs: () => 15_000,
+		schedulerSpreadMs: () => 0,
 	})
 	const hazelOAuthLive =
 		hazelOAuthService === undefined
@@ -489,6 +491,12 @@ describe("v2 alerts over HTTP", () => {
 		expect(patched.status, JSON.stringify(patched.body)).toBe(200)
 		expect(patched.body.comparator).toBe("gt")
 		expect(patched.body.threshold_upper).toBeNull()
+
+		// A bound sent explicitly is validated, not silently dropped.
+		const explicit = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			threshold_upper: 5,
+		})
+		expect(explicit.status, JSON.stringify(explicit.body)).toBe(400)
 		await harness.dispose()
 	})
 
@@ -545,6 +553,171 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("keeps a rule's check interval through PATCH until it is set or cleared", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const destination = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Ops hook",
+			url: "https://example.com/hooks/maple",
+		})
+		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Hourly error rate",
+			signal_type: "error_rate",
+			severity: "warning",
+			comparator: "gt",
+			threshold: 0.05,
+			window_minutes: 60,
+			evaluation_interval_minutes: 30,
+			destination_ids: [destination.body.id],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body.evaluation_interval_minutes).toBe(30)
+
+		const renamed = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			name: "Renamed",
+		})
+		expect(renamed.body.evaluation_interval_minutes).toBe(30)
+
+		const tooShort = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			window_minutes: 15,
+		})
+		expect(tooShort.status).toBe(400)
+		expect(JSON.stringify(tooShort.body)).toContain("evaluationIntervalMinutes")
+
+		const cleared = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			window_minutes: 15,
+			evaluation_interval_minutes: null,
+		})
+		expect(cleared.status, JSON.stringify(cleared.body)).toBe(200)
+		expect(cleared.body.evaluation_interval_minutes).toBeNull()
+
+		await harness.dispose()
+	})
+
+	it("keeps a rule's severity tiers through PATCH and rejects single-threshold edits on them", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const destination = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Ops hook",
+			url: "https://example.com/hooks/maple",
+		})
+		const pager = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Pager hook",
+			url: "https://example.com/hooks/pager",
+		})
+		const tiers = [
+			{
+				severity: "warning",
+				value: 0.02,
+				upper: null,
+				recovery_value: 0.015,
+				destination_ids: [destination.body.id],
+			},
+			{
+				severity: "critical",
+				value: 0.05,
+				upper: null,
+				recovery_value: null,
+				destination_ids: [pager.body.id],
+			},
+		]
+		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Checkout error rate tiers",
+			signal_type: "error_rate",
+			comparator: "gt",
+			window_minutes: 5,
+			thresholds: tiers,
+			consecutive_breaches_required: 3,
+			breaches_out_of: 5,
+		})
+		expect(created.status).toBe(200)
+		expect(created.body.thresholds).toEqual(tiers)
+		expect(created.body.severity).toBe("critical")
+		expect(created.body.threshold).toBe(0.02)
+		expect(created.body.breaches_out_of).toBe(5)
+
+		const toggled = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			enabled: false,
+		})
+		expect(toggled.status).toBe(200)
+		expect(toggled.body.thresholds).toEqual(tiers)
+		expect(toggled.body.breaches_out_of).toBe(5)
+
+		const ambiguous = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			threshold: 0.1,
+		})
+		expect(ambiguous.status).toBe(400)
+		expect(JSON.stringify(ambiguous.body)).toContain("thresholds")
+
+		// Echoing the derived single-threshold fields back unchanged is not an edit.
+		const echoed = await harness.request("PATCH", `/v2/alerts/rules/${created.body.id}`, key.secret, {
+			name: "Echoed",
+			severity: created.body.severity,
+			threshold: created.body.threshold,
+			threshold_upper: created.body.threshold_upper,
+			destination_ids: [...created.body.destination_ids].reverse(),
+		})
+		expect(echoed.status, JSON.stringify(echoed.body)).toBe(200)
+		expect(echoed.body.name).toBe("Echoed")
+		expect(echoed.body.thresholds).toEqual(tiers)
+		expect(echoed.body).toMatchObject({
+			severity: "critical",
+			threshold: 0.02,
+			threshold_upper: null,
+			breaches_out_of: 5,
+		})
+		expect([...echoed.body.destination_ids].sort()).toEqual([destination.body.id, pager.body.id].sort())
+		expect(echoed.body.severity).toBe(created.body.severity)
+		expect(echoed.body.threshold).toBe(created.body.threshold)
+		expect(echoed.body.threshold_upper).toBe(created.body.threshold_upper)
+		expect(echoed.body.breaches_out_of).toBe(5)
+		expect(echoed.body.destination_ids).toEqual(created.body.destination_ids)
+
+		await harness.dispose()
+	})
+
+	it("reads omitted tier bounds as null and names what an invalid rule got wrong", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const destination = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
+			type: "webhook",
+			name: "Ops hook",
+			url: "https://example.com/hooks/maple",
+		})
+		const created = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Bare tier",
+			signal_type: "error_rate",
+			comparator: "gt",
+			window_minutes: 5,
+			thresholds: [{ severity: "warning", value: 0.02, destination_ids: [destination.body.id] }],
+		})
+		expect(created.status, JSON.stringify(created.body)).toBe(200)
+		expect(created.body.thresholds).toEqual([
+			{
+				severity: "warning",
+				value: 0.02,
+				upper: null,
+				recovery_value: null,
+				destination_ids: [destination.body.id],
+			},
+		])
+
+		const missingUpper = await harness.request("POST", "/v2/alerts/rules", key.secret, {
+			name: "Open range",
+			signal_type: "error_rate",
+			comparator: "between",
+			window_minutes: 5,
+			thresholds: [{ severity: "warning", value: 0.02, destination_ids: [destination.body.id] }],
+		})
+		expect(missingUpper.status).toBe(400)
+		expect(missingUpper.body.error.message).toContain("is required for between / not_between comparators")
+
+		await harness.dispose()
+	})
+
 	it("reports malformed stored rules as a redacted storage failure", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])
@@ -552,7 +725,7 @@ describe("v2 alerts over HTTP", () => {
 		expect(created.rule.status).toBe(200)
 		await executeSql(
 			harness.testDb,
-			"update alert_rules set severity = 'not-a-severity' where org_id = $1",
+			`update alert_rules set thresholds_json = '[{"severity":"not-a-severity","value":1,"upper":null,"recoveryValue":null,"destinationIds":[]}]'::jsonb where org_id = $1`,
 			["org_alerts_e2e"],
 		)
 
@@ -686,6 +859,51 @@ describe("v2 alerts over HTTP", () => {
 		expect(response.status).toBe(200)
 		expect(response.body.object).toBe("alert_rule.preview")
 		expect(response.body.series.length).toBeGreaterThan(0)
+		// A 5-minute window is checked every minute, whose limit is 5s.
+		expect(response.body.query_timing).toMatchObject({
+			failure: null,
+			interval_minutes: 1,
+			limit_ms: 5000,
+			probe_limit_ms: 25000,
+		})
+		expect(response.body.query_timing.fits_interval_minutes).toContain(1)
+		await harness.dispose()
+	})
+
+	it("previews a raw SQL alert too heavy to chart with its one-check timing and series_failure", async () => {
+		// The chart reads the requested 2026 range; the timing probe reads the latest window.
+		const harness = makeHarness({
+			...warehouseStub,
+			rawSqlQuery: (_tenant, sql) =>
+				sql.includes("2026-01-01")
+					? Effect.fail(
+							new WarehouseQuotaExceededError({
+								message: "Memory limit exceeded",
+								pipeName: "rawSqlQuery",
+								setting: "max_memory_usage",
+							}),
+						)
+					: Effect.succeed([{ value: 1, samples: 1 }]),
+		})
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const response = await harness.request("POST", "/v2/alerts/rules/preview", key.secret, {
+			rule: {
+				name: "Heavy raw preview",
+				severity: "warning",
+				signal_type: "raw_query",
+				raw_query_sql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				comparator: "gt",
+				threshold: 10,
+				window_minutes: 5,
+				destination_ids: [],
+			},
+			start_time: "2026-01-01T00:00:00.000Z",
+			end_time: "2026-01-01T00:30:00.000Z",
+		})
+		expect(response.status, JSON.stringify(response.body)).toBe(200)
+		expect(response.body.series_failure).toBe("query_too_much_memory")
+		expect(response.body.series).toEqual([])
+		expect(response.body.query_timing).toMatchObject({ failure: null })
 		await harness.dispose()
 	})
 
@@ -712,6 +930,7 @@ describe("v2 alerts over HTTP", () => {
 				errorMessage: null,
 				errorCategory: "",
 				skipReason: "",
+				level: "",
 			}
 		})
 		const pagedWarehouse: WarehouseQueryServiceApi = {

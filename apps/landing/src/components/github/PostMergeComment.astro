@@ -1,0 +1,131 @@
+---
+/**
+ * Maple's post-merge comment on MapleTechLabs/maple#1524, an hour after the
+ * deploy. Literal like PrReviewComment. The posted table repeats POST /mcp and
+ * GET /mcp per span name; one row of each is kept.
+ */
+import BrandMarkIcon from "../BrandMarkIcon.astro";
+
+interface Props {
+	variant?: "full" | "compact";
+	class?: string;
+}
+
+const { variant = "full", class: className = "" } = Astro.props;
+const full = variant === "full";
+
+const PR_URL = "https://github.com/MapleTechLabs/maple/pull/1524";
+
+const deployFacts = [
+	{ key: "service", value: "maple-api" },
+	{ key: "env", value: "production" },
+	{ key: "sha", value: "d6a5ade" },
+	{ key: "at", value: "Oct 17, 00:23 UTC" },
+	{ key: "window", value: "60 min before vs after" },
+];
+
+const rows = [
+	{ operation: "POST /mcp", calls: "207 → 218", errors: "0.0% → 0.0%", p95: "648 → 547 ms" },
+	{ operation: "GET /mcp", calls: "5 → 11", errors: "0.0% → 0.0%", p95: "112 → 85 ms" },
+];
+const columns = full ? "grid-cols-[1fr_7rem_7rem_8rem]" : "grid-cols-[1fr_5rem_6.5rem]";
+---
+
+<article
+	class={`flex flex-col overflow-hidden rounded-xl border border-border bg-bg-deep ${className}`}
+	aria-label="Maple post-merge comment on pull request 1524"
+>
+	<a
+		href={PR_URL}
+		target="_blank"
+		rel="noopener noreferrer"
+		class="flex min-w-0 items-center gap-2.5 border-b border-border bg-bg-elevated px-4 py-2.5 transition-colors hover:text-fg"
+	>
+		<BrandMarkIcon id="github" class="h-3.5 w-3.5 shrink-0 text-fg-muted" />
+		{full && <span class="font-mono text-[11px] text-fg-muted">MapleTechLabs/maple</span>}
+		<span class="font-mono text-[11px] text-fg">#1524</span>
+		<span class="rounded-full border border-border px-1.5 font-mono text-[10px] text-chart-5">merged</span>
+		{
+			full ? (
+				<span class="min-w-0 truncate text-[12px] text-fg-muted">Address audit findings across settings and billing</span>
+			) : (
+				<span class="ml-auto font-mono text-[10.5px] text-fg-muted">deploy d6a5ade · +1 h</span>
+			)
+		}
+	</a>
+
+	{
+		full && (
+			<div class="flex items-center gap-2.5 px-5 pt-[18px]">
+				<img src="/favicon.svg" alt="" width="24" height="24" class="h-6 w-6 shrink-0 rounded-full border border-border" />
+				<span class="text-[13px] font-medium text-fg">maple-review-bot</span>
+				<span class="rounded-full border border-border px-1.5 font-mono text-[10px] text-fg-muted">bot</span>
+				<span class="font-mono text-[11px] text-fg-muted">an hour after the deploy</span>
+			</div>
+		)
+	}
+
+	<div class:list={["flex flex-col", full ? "gap-4 px-5 pb-5 pt-4" : "gap-3 p-3.5"]}>
+		{full && <h3 class="font-display text-lg font-semibold tracking-[-0.01em] text-fg">After this shipped</h3>}
+
+		<div class="flex items-start gap-2.5 rounded-lg border border-border bg-bg px-3.5 py-3">
+			<svg viewBox="0 0 16 16" class="mt-0.5 h-4 w-4 shrink-0 text-success-foreground" fill="none" aria-hidden="true">
+				<circle cx="8" cy="8" r="6.75" stroke="currentColor" stroke-width="1.5" />
+				<path d="M5 8.25 7 10.25 11 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" />
+			</svg>
+			<div class="flex flex-col gap-1">
+				<span class:list={["font-medium text-fg", full ? "text-sm" : "text-[13px]"]}>Shipped clean</span>
+				<span class:list={["leading-[1.55] text-fg-muted", full ? "text-[12.5px]" : "text-[12px]"]}>
+					Nothing this change touches got worse in the hour after it deployed.
+				</span>
+			</div>
+		</div>
+
+		{
+			full && (
+				<div class="flex flex-wrap items-center gap-2">
+					{deployFacts.map((fact) => (
+						<span class="flex items-center gap-1.5 rounded bg-bg-elevated px-2 py-[3px]">
+							<span class="op-key">{fact.key}</span>
+							<span class="font-mono text-[11px] text-fg">{fact.value}</span>
+						</span>
+					))}
+				</div>
+			)
+		}
+
+		<div class:list={[full && "rounded-lg border border-border bg-bg"]}>
+			<div class:list={["grid gap-3 border-b border-border", columns, full ? "px-3.5 py-2" : "pb-1.5"]}>
+				<span class="op-key">operation</span>
+				<span class="op-key text-right">calls/h</span>
+				{full && <span class="op-key text-right">errors</span>}
+				<span class="op-key text-right">p95</span>
+			</div>
+			{
+				rows.map((row, index) => (
+					<div
+						class:list={[
+							"grid gap-3 font-mono tabular-nums",
+							columns,
+							full ? "px-3.5 py-2.5 text-[12px]" : "py-[7px] text-[11px]",
+							index < rows.length - 1 && "border-b border-border",
+						]}
+					>
+						<span class="text-fg">{row.operation}</span>
+						<span class="text-right text-fg-muted">{row.calls}</span>
+						{full && <span class="text-right text-fg-muted">{row.errors}</span>}
+						<span class="text-right text-success-foreground">{row.p95}</span>
+					</div>
+				))
+			}
+		</div>
+	</div>
+
+	{
+		full && (
+			<p class="border-t border-border px-5 py-3 text-[11.5px] text-fg-muted">
+				Maple looks once, an hour after the first deploy that carries the merge.
+			</p>
+		)
+	}
+</article>

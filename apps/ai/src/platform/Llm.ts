@@ -15,28 +15,28 @@ import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
 import { EU_DEFAULT_OPENROUTER_MODEL } from "@maple/domain/organization-regions"
+import { securityAuditModelOption } from "@maple/domain/security-audit"
 import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
-import { Config, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Config, Duration, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import type * as DecisionModel from "effect/ai/DecisionModel"
 import * as LanguageModel from "effect/ai/LanguageModel"
 import * as AiModel from "effect/ai/Model"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
-import { type ModelCallTelemetry, instrumentLanguageModel } from "./genai-spans"
+import { type ModelCallAttempts, type ModelCallTelemetry, instrumentLanguageModel } from "./genai-spans"
 import * as WorkersAiDecisionModel from "./WorkersAiDecisionModel"
 import { layerWorkersAi, type WorkersAiBinding } from "./WorkersAiHttpClient"
 
 /** Default triage/chat model on OpenRouter — the provider agents run on by default. */
-export const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3-flash:nitro"
+export const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4.1-flash-1017:nitro"
 
 /**
- * Default model for pull request reviews and replies, which run on their own model rather than the
- * triage default: glm-5.3-flash leaked 1.2% of its tool calls as text, which ended 8 of 14 early
- * reviews by 2026-09-24. Changing chat's model would have retuned investigations with it.
+ * Default model for pull request reviews and replies. Kept separate from the triage default so the
+ * two can move independently; both run on deepseek-v4.1-flash-1017 since 2026-10-19.
  *
  * `:nitro` routes to the fastest provider. Default routing picks the cheapest, which served a
  * 12-call review at ~50 tok/s and took 13 minutes; `:nitro` measured ~190 tok/s at twice the price.
  */
-export const DEFAULT_REVIEW_MODEL = "deepseek/deepseek-v4.1-flash:nitro"
+export const DEFAULT_REVIEW_MODEL = "deepseek/deepseek-v4.1-flash-1017:nitro"
 
 /**
  * Default decision model: Cloudflare's Clef, on Workers AI.
@@ -153,12 +153,18 @@ export interface LlmSettings {
 	readonly MAPLE_TRIAGE_MODEL_WORKERS_AI?: string | undefined
 	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
 	readonly MAPLE_REVIEW_MODEL_OPENROUTER?: string | undefined
+	/** OpenRouter model for security-audit discovery (reconnaissance, hunters, critics). */
+	readonly MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER?: string | undefined
+	/** OpenRouter model for security-audit validation; a different model from discovery by design. */
+	readonly MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER?: string | undefined
 	/** Context window in tokens, overriding {@link MODEL_LIMITS} for the configured model. */
 	readonly MAPLE_TRIAGE_MODEL_CONTEXT?: string | undefined
 	/** Max completion tokens, overriding {@link MODEL_LIMITS} for the configured model. */
 	readonly MAPLE_TRIAGE_MODEL_OUTPUT?: string | undefined
 	/** `low` | `medium` | `high` | `off`. See {@link ReasoningEffort}. */
 	readonly MAPLE_TRIAGE_REASONING_EFFORT?: string | undefined
+	/** Seconds an unattended model call streams before it is cut and retried; see {@link MODEL_ATTEMPT_CAP}. */
+	readonly MAPLE_MODEL_ATTEMPT_CAP_SECONDS?: string | undefined
 	readonly OPENROUTER_API_KEY?: Redacted.Redacted<string> | undefined
 	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
 	readonly MAPLE_DECISION_MODEL?: string | undefined
@@ -192,9 +198,12 @@ export const llmSettingsConfig: Config.Config<LlmSettings> = Config.all({
 	MAPLE_TRIAGE_MODEL_OPENROUTER: optionalTrimmed("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 	MAPLE_TRIAGE_MODEL_WORKERS_AI: optionalTrimmed("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
 	MAPLE_REVIEW_MODEL_OPENROUTER: optionalTrimmed("MAPLE_REVIEW_MODEL_OPENROUTER"),
+	MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER"),
+	MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER"),
 	MAPLE_TRIAGE_MODEL_CONTEXT: optionalTrimmed("MAPLE_TRIAGE_MODEL_CONTEXT"),
 	MAPLE_TRIAGE_MODEL_OUTPUT: optionalTrimmed("MAPLE_TRIAGE_MODEL_OUTPUT"),
 	MAPLE_TRIAGE_REASONING_EFFORT: optionalTrimmed("MAPLE_TRIAGE_REASONING_EFFORT"),
+	MAPLE_MODEL_ATTEMPT_CAP_SECONDS: optionalTrimmed("MAPLE_MODEL_ATTEMPT_CAP_SECONDS"),
 	OPENROUTER_API_KEY: optionalSecret("OPENROUTER_API_KEY"),
 	MAPLE_DECISION_MODEL: optionalTrimmed("MAPLE_DECISION_MODEL"),
 	MAPLE_EMBEDDING_MODEL: optionalTrimmed("MAPLE_EMBEDDING_MODEL"),
@@ -240,6 +249,8 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
 	"deepseek/deepseek-v4.1-flash": { context: 1_000_000, output: 128_000 },
 	"deepseek/deepseek-v4.1-flash:nitro": { context: 1_000_000, output: 128_000 },
+	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 393_216.
+	"deepseek/deepseek-v4.1-flash-1017:nitro": { context: 1_000_000, output: 128_000 },
 	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
 	"xiaomi/mimo-v2.6-pro": { context: 1_000_000, output: 128_000 },
 	// The EU default. OpenRouter's EU catalogue: context_length 1_050_000, max_completion_tokens 128_000.
@@ -250,6 +261,8 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	"anthropic/claude-sonnet-5.5": { context: 950_000, output: 128_000 },
 	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.
 	"anthropic/claude-haiku-5.5": { context: 950_000, output: 128_000 },
+	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.
+	"anthropic/claude-opus-5.5": { context: 950_000, output: 128_000 },
 	// Moonshot's own kimi-k2.6 is 262_144, but Cloudflare does not publish the window its Workers AI
 	// deployment actually serves. Held at the conservative default until someone measures it.
 	"@cf/moonshotai/kimi-k2.6": { context: 128_000, output: 8_000 },
@@ -403,13 +416,48 @@ const instrumentedModel = <R>(
 	name: string,
 	make: Effect.Effect<LanguageModel.LanguageModel, never, R>,
 	telemetry: ModelCallTelemetry,
-	options: { readonly coalesceDeltas?: boolean } = {},
+	options: Parameters<typeof instrumentLanguageModel>[2] = {},
 ): Layer.Layer<ModelServices, never, R> =>
 	AiModel.make(
 		"openrouter",
 		name,
 		Layer.effect(LanguageModel.LanguageModel, instrumentLanguageModel(make, telemetry, options)),
 	)
+
+/**
+ * Output tokens one agent model call may produce, reasoning included. Far below the models' 128k so
+ * a runaway generation ends in minutes; room for a large `submit_review` after high-effort reasoning.
+ */
+export const MODEL_CALL_OUTPUT_TOKENS = 32_000
+
+/**
+ * How long an unattended model call streams before it is cut and asked again at low reasoning
+ * effort, inside the same `MODEL_CALL_TIMEOUT`. The p95 call is far below it; the 190-231s calls
+ * that ran investigations and review workers out of time (2026-10-15) were reasoning, not stalls.
+ */
+export const MODEL_ATTEMPT_CAP = Duration.seconds(90)
+
+/** The retry of a call cut at its cap: the same request, reasoning less unless reasoning is off. */
+const openRouterAttempts = (
+	settings: LlmSettings,
+	effort: ReasoningEffort | undefined,
+): ModelCallAttempts => {
+	const seconds = readPositiveInt(settings, "MAPLE_MODEL_ATTEMPT_CAP_SECONDS")
+	const cap = seconds === undefined ? MODEL_ATTEMPT_CAP : Duration.seconds(seconds)
+	return effort === "off"
+		? { cap, retry: (stream) => stream }
+		: {
+				cap,
+				// A request field a model does not support is dropped by OpenRouter, not refused.
+				retry: (stream) =>
+					stream.pipe(
+						Stream.provideService(OpenRouterLanguageModel.Config, {
+							reasoning: { effort: "low" },
+						}),
+					),
+				retryReasoningLevel: "low",
+			}
+}
 
 const openRouterModel = (
 	settings: LlmSettings,
@@ -422,20 +470,27 @@ const openRouterModel = (
 	unattended = false,
 ): ResolvedModel => {
 	const effort = readReasoningEffort(settings, effortKey) ?? fallbackEffort
+	const limits = limitsFor(settings, name, overridableLimits)
+	const maxTokens = Math.min(limits.output, MODEL_CALL_OUTPUT_TOKENS)
 	return {
 		provider: "openrouter",
 		name,
 		layer: instrumentedModel(
 			name,
-			OpenRouterLanguageModel.make({ model: name, config: openRouterConfig(effort, tags) }),
+			OpenRouterLanguageModel.make({
+				model: name,
+				config: { ...openRouterConfig(effort, tags), max_tokens: maxTokens },
+			}),
 			{
 				providerName: genAiProviderName("openrouter"),
 				...(effort === undefined || effort === "off" ? undefined : { reasoningLevel: effort }),
 				sessionAttributes: agentSessionSpanAttributes(tags),
 			},
-			{ coalesceDeltas: unattended },
+			unattended
+				? { coalesceDeltas: true, attempts: openRouterAttempts(settings, effort) }
+				: { coalesceDeltas: false },
 		),
-		limits: limitsFor(settings, name, overridableLimits),
+		limits,
 		tags,
 	}
 }
@@ -463,7 +518,12 @@ const workersAiModel = (
  * branch sends none of them — they are OpenRouter's fields and mean nothing to Cloudflare — but both
  * branches stamp the session onto their model-call spans.
  */
-export const resolveTriageModel = (settings: LlmSettings, tags?: LlmCallTags): ResolvedModel =>
+export const resolveTriageModel = (
+	settings: LlmSettings,
+	tags?: LlmCallTags,
+	/** An autonomous pass: nobody watches its stream, so its calls are joined and capped. */
+	unattended = false,
+): ResolvedModel =>
 	resolveLlmProvider(settings) === "workers-ai"
 		? workersAiModel(
 				settings,
@@ -481,6 +541,8 @@ export const resolveTriageModel = (settings: LlmSettings, tags?: LlmCallTags): R
 				// picked here would retune three stages with different shapes at once.
 				undefined,
 				tags,
+				true,
+				unattended,
 			)
 
 /** The organization's pick, when this region serves it: the EU endpoint 404s a model it lacks. */
@@ -518,6 +580,88 @@ export const resolveReviewModel = (
 				),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				undefined,
+				tags,
+				false,
+				true,
+			)
+
+/**
+ * Security-audit defaults per region. Discovery hunts on a cheap model so whole-repository audits
+ * stay affordable; validation runs on a different model, so a verifier does not share the hunter's
+ * blind spots. The EU instance has no DeepSeek provider, so it hunts on Claude Haiku there.
+ */
+export const DEFAULT_AUDIT_MODELS = {
+	us: { discovery: "deepseek/deepseek-v4.1-flash-1017:nitro", validation: "anthropic/claude-sonnet-5.5" },
+	eu: { discovery: "anthropic/claude-haiku-5.5", validation: "anthropic/claude-sonnet-5.5" },
+} as const satisfies Record<OpenRouterRegion, Record<"discovery" | "validation", string>>
+
+export type SecurityAuditStage = "discovery" | "validation"
+
+/**
+ * The OpenRouter id a security-audit stage runs on: the org's or target's pick when the catalogue
+ * lists it, this region serves it and (for validation) it verifies; then the deployment's override;
+ * then the region default.
+ */
+export const securityAuditModelId = (
+	settings: LlmSettings,
+	stage: SecurityAuditStage,
+	chosen: string | null = null,
+): string => {
+	const region = openRouterRegion(settings)
+	const option = chosen === null ? undefined : securityAuditModelOption(chosen)
+	if (
+		option !== undefined &&
+		(region !== "eu" || option.eu) &&
+		(stage === "discovery" || option.verifies)
+	) {
+		return option.id
+	}
+	return (
+		readString(
+			settings,
+			stage === "discovery"
+				? "MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER"
+				: "MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER",
+		) ?? DEFAULT_AUDIT_MODELS[region][stage]
+	)
+}
+
+/**
+ * Both stages' models for a run. A region fallback can land both picks on one model (an EU org that
+ * hunts on DeepSeek and verifies on Claude Haiku hunts on Haiku there); then the hunter falls back
+ * to the region's other default, so verification never shares the hunter's blind spots.
+ */
+export const securityAuditModelIds = (
+	settings: LlmSettings,
+	chosen: Readonly<{ discovery: string | null; validation: string | null }>,
+): Readonly<{ discovery: string; validation: string }> => {
+	const validation = securityAuditModelId(settings, "validation", chosen.validation)
+	const discovery = securityAuditModelId(settings, "discovery", chosen.discovery)
+	if (discovery !== validation) return { discovery, validation }
+	const region = DEFAULT_AUDIT_MODELS[openRouterRegion(settings)]
+	return {
+		discovery: region.discovery !== validation ? region.discovery : region.validation,
+		validation,
+	}
+}
+
+/**
+ * A security-audit stage's model. Unattended like a review: deltas coalesce and long calls retry.
+ * On the Workers AI provider both stages fall back to the triage model.
+ */
+export const resolveSecurityAuditModel = (
+	settings: LlmSettings,
+	stage: SecurityAuditStage,
+	tags?: LlmCallTags,
+	chosen: string | null = null,
+): ResolvedModel =>
+	resolveLlmProvider(settings) === "workers-ai"
+		? resolveTriageModel(settings, tags)
+		: openRouterModel(
+				settings,
+				securityAuditModelId(settings, stage, chosen),
+				"MAPLE_TRIAGE_REASONING_EFFORT",
+				"high",
 				tags,
 				false,
 				true,

@@ -1,0 +1,2428 @@
+{
+	"name": "Google Cloud",
+	"description": "Cloud Run, Cloud Functions, GKE, Compute Engine, Cloud SQL, Pub/Sub and load balancer metrics from Cloud Monitoring.",
+	"tags": ["gcp"],
+	"timeRange": {
+		"type": "relative",
+		"value": "24h"
+	},
+	"widgets": [
+		{
+			"id": "run-requests",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "run-requests",
+						"name": "Requests by Service",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_run.requests",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Requests by Service",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 0,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-run"
+		},
+		{
+			"id": "run-errors",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "run-errors",
+						"name": "5xx Responses by Service",
+						"enabled": true,
+						"whereClause": "attr.gcp.metric.labels.response_code_class = \"5xx\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_run.requests",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "5xx Responses by Service",
+				"chartId": "query-builder-bar",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "linear",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 6,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-run"
+		},
+		{
+			"id": "run-latency",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "run-latency",
+						"name": "Request Latency p95 by Service",
+						"enabled": true,
+						"whereClause": "attr.quantile = \"0.95\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_run.request.duration",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Request Latency p95 by Service",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "duration_s"
+			},
+			"layout": {
+				"x": 0,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-run"
+		},
+		{
+			"id": "run-instances",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "run-instances",
+						"name": "Active Instances by Service",
+						"enabled": true,
+						"whereClause": "attr.gcp.metric.labels.state = \"active\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_run.container.instance.count",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Active Instances by Service",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 6,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-run"
+		},
+		{
+			"id": "run-cpu",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "run-cpu",
+						"name": "CPU Utilization p95 by Service",
+						"enabled": true,
+						"whereClause": "attr.quantile = \"0.95\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_run.container.cpu.utilization",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "CPU Utilization p95 by Service",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "percent"
+			},
+			"layout": {
+				"x": 0,
+				"y": 12,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-run"
+		},
+		{
+			"id": "run-memory",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "run-memory",
+						"name": "Memory Utilization p95 by Service",
+						"enabled": true,
+						"whereClause": "attr.quantile = \"0.95\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_run.container.memory.utilization",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Memory Utilization p95 by Service",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "percent"
+			},
+			"layout": {
+				"x": 6,
+				"y": 12,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-run"
+		},
+		{
+			"id": "functions-executions",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "functions-executions",
+						"name": "Executions by Function",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_functions.executions",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Executions by Function",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 0,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-functions"
+		},
+		{
+			"id": "functions-execution-time",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "functions-execution-time",
+						"name": "Execution Time p95 by Function",
+						"enabled": true,
+						"whereClause": "attr.quantile = \"0.95\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_functions.execution.duration",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Execution Time p95 by Function",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "duration_s"
+			},
+			"layout": {
+				"x": 6,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-functions"
+		},
+		{
+			"id": "functions-instances",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "functions-instances",
+						"name": "Active Instances by Function",
+						"enabled": true,
+						"whereClause": "attr.gcp.metric.labels.state = \"active\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_functions.instance.count",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Active Instances by Function",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 0,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-functions"
+		},
+		{
+			"id": "functions-memory",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "functions-memory",
+						"name": "Peak Memory per Execution p95 by Function",
+						"enabled": true,
+						"whereClause": "attr.quantile = \"0.95\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_functions.memory.usage",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Peak Memory per Execution p95 by Function",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "bytes"
+			},
+			"layout": {
+				"x": 6,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-functions"
+		},
+		{
+			"id": "gke-cpu",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "gke-cpu",
+						"name": "CPU Limit Utilization by Container",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gke.container.cpu.limit.utilization",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "CPU Limit Utilization by Container",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "percent"
+			},
+			"layout": {
+				"x": 0,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "gke"
+		},
+		{
+			"id": "gke-memory",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "gke-memory",
+						"name": "Memory Limit Utilization by Container",
+						"enabled": true,
+						"whereClause": "attr.gcp.metric.labels.memory_type = \"non-evictable\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gke.container.memory.limit.utilization",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Memory Limit Utilization by Container",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "percent"
+			},
+			"layout": {
+				"x": 6,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "gke"
+		},
+		{
+			"id": "gke-restarts",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "gke-restarts",
+						"name": "Container Restarts",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gke.container.restarts",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Container Restarts",
+				"chartId": "query-builder-bar",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "linear",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 0,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "gke"
+		},
+		{
+			"id": "gke-memory-used",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "gke-memory-used",
+						"name": "Memory in Use by Container",
+						"enabled": true,
+						"whereClause": "attr.gcp.metric.labels.memory_type = \"non-evictable\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gke.container.memory.usage",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Memory in Use by Container",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "bytes"
+			},
+			"layout": {
+				"x": 6,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "gke"
+		},
+		{
+			"id": "gke-node-cpu",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "gke-node-cpu",
+						"name": "Node CPU Utilization by Cluster",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.k8s.cluster.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gke.node.cpu.allocatable.utilization",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Node CPU Utilization by Cluster",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "percent"
+			},
+			"layout": {
+				"x": 0,
+				"y": 12,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "gke"
+		},
+		{
+			"id": "gke-node-memory",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "gke-node-memory",
+						"name": "Node Memory Utilization by Cluster",
+						"enabled": true,
+						"whereClause": "attr.gcp.metric.labels.memory_type = \"non-evictable\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.k8s.cluster.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gke.node.memory.allocatable.utilization",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Node Memory Utilization by Cluster",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "percent"
+			},
+			"layout": {
+				"x": 6,
+				"y": 12,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "gke"
+		},
+		{
+			"id": "compute-cpu",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "compute-cpu",
+						"name": "CPU Utilization by Instance",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gce.cpu.utilization",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "CPU Utilization by Instance",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "percent"
+			},
+			"layout": {
+				"x": 0,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "compute-engine"
+		},
+		{
+			"id": "compute-memory",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "compute-memory",
+						"name": "Memory in Use by Instance (E2)",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gce.memory.usage",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Memory in Use by Instance (E2)",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "bytes"
+			},
+			"layout": {
+				"x": 6,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "compute-engine"
+		},
+		{
+			"id": "compute-network-received",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "compute-network-received",
+						"name": "Network Bytes Received by Instance",
+						"enabled": true,
+						"whereClause": "attr.network.io.direction = \"receive\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gce.network.io",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Network Bytes Received by Instance",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "bytes"
+			},
+			"layout": {
+				"x": 0,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "compute-engine"
+		},
+		{
+			"id": "compute-network-sent",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "compute-network-sent",
+						"name": "Network Bytes Sent by Instance",
+						"enabled": true,
+						"whereClause": "attr.network.io.direction = \"transmit\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gce.network.io",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Network Bytes Sent by Instance",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "bytes"
+			},
+			"layout": {
+				"x": 6,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "compute-engine"
+		},
+		{
+			"id": "compute-disk-read",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "compute-disk-read",
+						"name": "Disk Bytes Read by Instance",
+						"enabled": true,
+						"whereClause": "attr.disk.io.direction = \"read\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gce.disk.io",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Disk Bytes Read by Instance",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "bytes"
+			},
+			"layout": {
+				"x": 0,
+				"y": 12,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "compute-engine"
+		},
+		{
+			"id": "compute-disk-write",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "compute-disk-write",
+						"name": "Disk Bytes Written by Instance",
+						"enabled": true,
+						"whereClause": "attr.disk.io.direction = \"write\" AND resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\" AND service.name = \"$workload\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["service.name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.gce.disk.io",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Disk Bytes Written by Instance",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "bytes"
+			},
+			"layout": {
+				"x": 6,
+				"y": 12,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "compute-engine"
+		},
+		{
+			"id": "sql-cpu",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "sql-cpu",
+						"name": "CPU Utilization by Instance",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.database_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_sql.cpu.utilization",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "CPU Utilization by Instance",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "percent"
+			},
+			"layout": {
+				"x": 0,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-sql"
+		},
+		{
+			"id": "sql-memory",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "sql-memory",
+						"name": "Memory Utilization by Instance",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.database_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_sql.memory.utilization",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Memory Utilization by Instance",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "percent"
+			},
+			"layout": {
+				"x": 6,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-sql"
+		},
+		{
+			"id": "sql-connections",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "sql-connections",
+						"name": "Connections by Instance",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.database_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_sql.connection.count",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Connections by Instance",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 0,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-sql"
+		},
+		{
+			"id": "sql-disk-operations",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "sql-disk-operations",
+						"name": "Disk Operations by Instance",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.database_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_sql.disk.operations",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Disk Operations by Instance",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 6,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-sql"
+		},
+		{
+			"id": "sql-disk",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "sql-disk",
+						"name": "Disk Utilization by Instance",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.database_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_sql.disk.utilization",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Disk Utilization by Instance",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "percent"
+			},
+			"layout": {
+				"x": 0,
+				"y": 12,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-sql"
+		},
+		{
+			"id": "sql-replica-lag",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "sql-replica-lag",
+						"name": "Replica Lag by Instance",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\" AND resource.cloud.region = \"$region\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.database_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.cloud_sql.replication.lag",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Replica Lag by Instance",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "duration_s"
+			},
+			"layout": {
+				"x": 6,
+				"y": 12,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "cloud-sql"
+		},
+		{
+			"id": "pubsub-backlog",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "pubsub-backlog",
+						"name": "Unacknowledged Messages by Subscription",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.subscription_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.pubsub.subscription.undelivered_messages",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Unacknowledged Messages by Subscription",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 0,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "pubsub"
+		},
+		{
+			"id": "pubsub-oldest-unacked",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "pubsub-oldest-unacked",
+						"name": "Oldest Unacknowledged Message Age",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.subscription_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.pubsub.subscription.oldest_unacked_message.age",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Oldest Unacknowledged Message Age",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "duration_s"
+			},
+			"layout": {
+				"x": 6,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "pubsub"
+		},
+		{
+			"id": "pubsub-sent",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "pubsub-sent",
+						"name": "Messages Sent by Subscription",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.subscription_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.pubsub.subscription.sent_messages",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Messages Sent by Subscription",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 0,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "pubsub"
+		},
+		{
+			"id": "pubsub-acked",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "pubsub-acked",
+						"name": "Messages Acknowledged by Subscription",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.subscription_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.pubsub.subscription.acked_messages",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Messages Acknowledged by Subscription",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 6,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "pubsub"
+		},
+		{
+			"id": "pubsub-dead-lettered",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "pubsub-dead-lettered",
+						"name": "Dead-Lettered Messages by Subscription",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.subscription_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.pubsub.subscription.dead_lettered_messages",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Dead-Lettered Messages by Subscription",
+				"chartId": "query-builder-bar",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "linear",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 0,
+				"y": 12,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "pubsub"
+		},
+		{
+			"id": "pubsub-publish-requests",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "pubsub-publish-requests",
+						"name": "Publish Requests by Topic",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.topic_id"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.pubsub.topic.publish_requests",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Publish Requests by Topic",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 6,
+				"y": 12,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "pubsub"
+		},
+		{
+			"id": "lb-requests",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "lb-requests",
+						"name": "Requests by URL Map",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.url_map_name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.load_balancing.requests",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Requests by URL Map",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 0,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "load-balancing"
+		},
+		{
+			"id": "lb-response-classes",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "lb-response-classes",
+						"name": "Requests by Response Class",
+						"enabled": true,
+						"whereClause": "resource.cloud.account.id = \"$project\"",
+						"aggregation": "sum",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["attr.gcp.metric.labels.response_code_class"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.load_balancing.requests",
+						"metricType": "sum",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Requests by Response Class",
+				"chartId": "query-builder-area",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": false,
+					"showPoints": false
+				},
+				"stacked": true,
+				"curveType": "monotone",
+				"unit": "number"
+			},
+			"layout": {
+				"x": 6,
+				"y": 0,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "load-balancing"
+		},
+		{
+			"id": "lb-total-latency",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "lb-total-latency",
+						"name": "Total Latency p95 by URL Map",
+						"enabled": true,
+						"whereClause": "attr.quantile = \"0.95\" AND resource.cloud.account.id = \"$project\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.url_map_name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.load_balancing.request.duration",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Total Latency p95 by URL Map",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "duration_s"
+			},
+			"layout": {
+				"x": 0,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "load-balancing"
+		},
+		{
+			"id": "lb-backend-latency",
+			"visualization": "chart",
+			"dataSource": {
+				"kind": "query",
+				"resultShape": "timeseries",
+				"queries": [
+					{
+						"id": "lb-backend-latency",
+						"name": "Backend Latency p95 by URL Map",
+						"enabled": true,
+						"whereClause": "attr.quantile = \"0.95\" AND resource.cloud.account.id = \"$project\"",
+						"aggregation": "avg",
+						"stepInterval": "",
+						"orderByDirection": "desc",
+						"addOns": {
+							"groupBy": true,
+							"having": false,
+							"orderBy": false,
+							"limit": false,
+							"legend": false
+						},
+						"groupBy": ["resource.gcp.resource.labels.url_map_name"],
+						"having": "",
+						"orderBy": "",
+						"limit": "",
+						"legend": "",
+						"dataSource": "metrics",
+						"signalSource": "default",
+						"metricName": "gcp.load_balancing.backend.request.duration",
+						"metricType": "gauge",
+						"isMonotonic": false
+					}
+				],
+				"formulas": [],
+				"comparison": {
+					"mode": "none",
+					"includePercentChange": true
+				}
+			},
+			"display": {
+				"title": "Backend Latency p95 by URL Map",
+				"chartId": "query-builder-line",
+				"chartPresentation": {
+					"legend": "visible",
+					"seriesStats": true,
+					"showPoints": false
+				},
+				"stacked": false,
+				"curveType": "monotone",
+				"unit": "duration_s"
+			},
+			"layout": {
+				"x": 6,
+				"y": 6,
+				"w": 6,
+				"h": 6
+			},
+			"sectionId": "gcp-services",
+			"tabId": "load-balancing"
+		}
+	],
+	"sections": [
+		{
+			"id": "gcp-services",
+			"title": "Services",
+			"collapsible": false,
+			"tabs": [
+				{
+					"id": "cloud-run",
+					"title": "Cloud Run"
+				},
+				{
+					"id": "cloud-functions",
+					"title": "Cloud Functions (1st gen)"
+				},
+				{
+					"id": "gke",
+					"title": "GKE"
+				},
+				{
+					"id": "compute-engine",
+					"title": "Compute Engine"
+				},
+				{
+					"id": "cloud-sql",
+					"title": "Cloud SQL"
+				},
+				{
+					"id": "pubsub",
+					"title": "Pub/Sub"
+				},
+				{
+					"id": "load-balancing",
+					"title": "Load Balancing"
+				}
+			]
+		}
+	],
+	"variables": [
+		{
+			"name": "project",
+			"label": "Project",
+			"includeAll": true,
+			"type": "query",
+			"source": {
+				"kind": "metric",
+				"metricType": "gauge",
+				"metricNames": [
+					"gcp.cloud_run.request.duration",
+					"gcp.cloud_functions.execution.duration",
+					"gcp.gke.container.cpu.limit.utilization",
+					"gcp.gke.node.cpu.allocatable.utilization",
+					"gcp.gce.cpu.utilization",
+					"gcp.cloud_sql.cpu.utilization",
+					"gcp.pubsub.subscription.undelivered_messages",
+					"gcp.load_balancing.request.duration"
+				],
+				"scope": "resource",
+				"attributeKey": "cloud.account.id"
+			}
+		},
+		{
+			"name": "region",
+			"label": "Region",
+			"includeAll": true,
+			"type": "query",
+			"source": {
+				"kind": "metric",
+				"metricType": "gauge",
+				"metricNames": [
+					"gcp.cloud_run.request.duration",
+					"gcp.cloud_functions.execution.duration",
+					"gcp.gke.container.cpu.limit.utilization",
+					"gcp.gke.node.cpu.allocatable.utilization",
+					"gcp.gce.cpu.utilization",
+					"gcp.cloud_sql.cpu.utilization"
+				],
+				"scope": "resource",
+				"attributeKey": "cloud.region"
+			}
+		},
+		{
+			"name": "workload",
+			"label": "Workload",
+			"includeAll": true,
+			"type": "query",
+			"source": {
+				"kind": "metric",
+				"metricType": "gauge",
+				"metricNames": [
+					"gcp.cloud_run.request.duration",
+					"gcp.cloud_functions.execution.duration",
+					"gcp.gke.container.cpu.limit.utilization",
+					"gcp.gce.cpu.utilization"
+				],
+				"scope": "resource",
+				"attributeKey": "service.name"
+			}
+		}
+	]
+}

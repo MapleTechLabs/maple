@@ -1,4 +1,4 @@
-import type { Effect, Option } from "effect"
+import type { Effect, Option, Stream } from "effect"
 import type {
 	BranchUpsertInput,
 	CommitUpsertInput,
@@ -23,6 +23,7 @@ import type {
 	VcsSyncJob,
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
+	WorkflowJobAnnotation,
 } from "@maple/domain/http"
 
 // The single typed seam between the vendor-agnostic core and a VCS provider.
@@ -161,11 +162,12 @@ export interface VcsProviderClient {
 	 * The repository's most recently updated pull requests, newest first,
 	 * normalized. Bounded to `limit` and deliberately NOT paginated: this feeds a
 	 * picker, and the PR that fixes a live issue is recent by construction.
+	 * With `head` (`owner:branch`), only the open pull requests from that branch.
 	 */
 	readonly fetchPullRequests: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
-		opts: { readonly limit: number },
+		opts: { readonly limit: number; readonly head?: string },
 	) => Effect.Effect<
 		ReadonlyArray<PullRequestSummary>,
 		| VcsProviderError
@@ -442,6 +444,15 @@ export interface VcsProviderClient {
 		| VcsRateLimitedError
 	>
 
+	/** The repository's size in bytes as the provider reports it, read without cloning. */
+	readonly repositorySizeBytes: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+	) => Effect.Effect<
+		number,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
 	/** The commit a ref (branch, tag or SHA) names right now. `Option.none` is an unknown ref. */
 	readonly resolveRef: (
 		installation: VcsInstallation,
@@ -473,6 +484,40 @@ export interface VcsProviderClient {
 		ref: string,
 	) => Effect.Effect<
 		Option.Option<VcsSourceFile>,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
+	/**
+	 * The annotations a finished CI job recorded: why it failed, in its own words. Bounded by the
+	 * provider, which reads until it has a failure.
+	 */
+	readonly fetchWorkflowJobAnnotations: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		jobId: string,
+	) => Effect.Effect<
+		ReadonlyArray<WorkflowJobAnnotation>,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
+	/**
+	 * A finished CI job's log, one line per element, as the provider wrote it. Lazy: nothing is
+	 * fetched until it is run, and taking a prefix stops the download.
+	 */
+	readonly streamWorkflowJobLog: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		jobId: string,
+	) => Stream.Stream<
+		string,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+	>
+
+	/** Whether the installation has granted the provider access to CI job logs. */
+	readonly canReadWorkflowLogs: (
+		installation: VcsInstallation,
+	) => Effect.Effect<
+		boolean,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
 }

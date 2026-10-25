@@ -91,6 +91,8 @@ export const ListSourceRepositoriesOutput = Schema.Struct({
 			htmlUrl: Schema.String,
 			isPrivate: Schema.Boolean,
 			isArchived: Schema.Boolean,
+			/** The last sync failed: reads of it may fail too, and its commits are stale. */
+			syncError: Schema.optionalKey(Schema.String),
 		}),
 	),
 })

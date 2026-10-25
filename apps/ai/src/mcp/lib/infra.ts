@@ -6,10 +6,11 @@ import { Array as Arr, DateTime, Effect } from "effect"
 import type { OrgId } from "@maple/domain"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
-import type { InfraEntityRow, InfraKind, InfraKindSection, InfraSeriesStats } from "@maple/domain/mcp-outputs"
+import type { InfraEntityRow, InfraKindSection, InfraSeriesStats } from "@maple/domain/mcp-outputs"
+import type { CollectorKind } from "./infra-params"
 
-export type WorkloadKind = "deployment" | "statefulset" | "daemonset"
-export const WORKLOAD_KINDS: ReadonlyArray<WorkloadKind> = ["deployment", "statefulset", "daemonset"]
+export type WorkloadKind = "deployment" | "statefulset" | "daemonset" | "job"
+export const WORKLOAD_KINDS: ReadonlyArray<WorkloadKind> = ["deployment", "statefulset", "daemonset", "job"]
 
 export interface InfraWindow {
 	readonly startTime: string
@@ -56,7 +57,7 @@ export const infraPresence = (window: InfraWindow) =>
 			{ profile: "discovery", context: "infraPresence" },
 		)
 		const surfaces = new Set(rows.map((row) => row.surface))
-		const kinds: Array<InfraKind> = []
+		const kinds: Array<CollectorKind> = []
 		if (surfaces.has("hosts")) kinds.push("hosts")
 		if (surfaces.has("k8sPods")) kinds.push("pods")
 		if (surfaces.has("k8sNodes")) kinds.push("nodes")
@@ -77,7 +78,7 @@ export const sortRows = (rows: ReadonlyArray<InfraEntityRow>, sort: InfraSort): 
 		case "name":
 			return copy.sort((a, b) => a.name.localeCompare(b.name))
 		case "last_seen":
-			return copy.sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
+			return copy.sort((a, b) => (b.lastSeen ?? "").localeCompare(a.lastSeen ?? ""))
 		case "cpu":
 			return copy.sort(byNumberDesc((r) => r.cpuPeak ?? r.cpu ?? r.cpuCores))
 		case "memory":
@@ -113,7 +114,7 @@ export const pressure = (row: InfraEntityRow): { readonly resource: string; read
 	)
 }
 
-const keep =
+export const matchesStatus =
 	(status: InfraStatusFilter | undefined) =>
 	(row: InfraEntityRow): boolean => {
 		switch (status) {
@@ -225,11 +226,11 @@ const workloadRow = (kind: WorkloadKind, row: CH.ListWorkloadsOutput): InfraEnti
 	workloadKind: kind,
 	...placement(row),
 	podCount: row.podCount,
-	cpuCores: row.avgCpuUsage,
-	cpu: row.avgCpuLimitPct,
-	memory: row.avgMemoryLimitPct,
-	saturation: Math.max(row.avgCpuLimitPct, row.avgMemoryLimitPct),
-	...(row.avgCpuLimitPct === 0 && row.avgMemoryLimitPct === 0 ? { unbounded: true } : undefined),
+	cpuCores: row.cpuUsage,
+	cpu: row.peakCpuLimitPct,
+	memory: row.peakMemoryLimitPct,
+	saturation: row.saturation,
+	...(row.peakCpuLimitPct === 0 && row.peakMemoryLimitPct === 0 ? { unbounded: true } : undefined),
 })
 
 const containerRow = (row: CH.ListContainersOutput): InfraEntityRow => ({
@@ -276,13 +277,13 @@ export interface ListKindOptions {
  * One page of a kind, ready to render. A status page over-fetches and filters, since those
  * thresholds are not scopes every warehouse query takes.
  */
-export const listInfraKind = (kind: InfraKind, options: ListKindOptions) =>
+export const listInfraKind = (kind: CollectorKind, options: ListKindOptions) =>
 	Effect.gen(function* () {
 		const { filters, limit } = options
 		const filtering = filters.status !== undefined
 		const fetchLimit = filtering ? 500 : limit + 1
 		const { rows, summary } = yield* fetchKind(kind, { ...options, limit: fetchLimit })
-		const filtered = rows.filter(keep(filters.status))
+		const filtered = rows.filter(matchesStatus(filters.status))
 		const sorted = kind === "pods" || kind === "containers" ? filtered : sortRows(filtered, options.sort)
 		return {
 			kind,
@@ -292,7 +293,7 @@ export const listInfraKind = (kind: InfraKind, options: ListKindOptions) =>
 		} satisfies InfraKindSection
 	})
 
-const fetchKind = (kind: InfraKind, options: ListKindOptions) =>
+const fetchKind = (kind: CollectorKind, options: ListKindOptions) =>
 	Effect.gen(function* () {
 		const executor = yield* WarehouseExecutor
 		const params = compileParams(executor.orgId, options.window)
@@ -460,7 +461,7 @@ interface SeriesRow {
 	readonly avgValue: number | null
 }
 
-interface SeriesSpec {
+export interface SeriesSpec {
 	readonly label: string
 	readonly unit: InfraSeriesStats["unit"]
 }

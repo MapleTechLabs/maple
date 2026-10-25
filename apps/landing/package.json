@@ -31,6 +31,8 @@
 		"@shikijs/themes": "^4.5.0",
 		"@shikijs/transformers": "^4.5.0",
 		"@tailwindcss/vite": "catalog:tailwind",
+		"@takumi-rs/helpers": "2.14.0",
+		"@takumi-rs/wasm": "2.14.0",
 		"@tanstack/charts": "catalog:charts",
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
@@ -39,8 +41,6 @@
 		"d3-scale": "^4.0.2",
 		"effect": "catalog:effect",
 		"fuse.js": "^7.5.0",
-		"motion": "^14.0.0",
-		"ogl": "^1.0.11",
 		"react": "catalog:react",
 		"react-dom": "catalog:react",
 		"tailwindcss": "catalog:tailwind",
@@ -52,6 +52,7 @@
 		"@types/d3-scale": "^4.0.9",
 		"playwright": "catalog:",
 		"typescript": "catalog:tooling",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"woff2-encoder": "^2.0.0"
 	}
 }

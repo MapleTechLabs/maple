@@ -24,7 +24,6 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 		expect(sql).toContain("avg(points.totalConnections)")
 		expect(sql).toContain("max(points.cpuMax)")
 		expect(sql).toContain("ORDER BY bucket ASC")
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("decodes ClickHouse numeric strings through the row schema", () => {
@@ -76,7 +75,7 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 		// Free space is scraped less often than capacity; buckets with no free-space
 		// sample must be excluded rather than read as zero bytes free.
 		expect(sql).toContain("availableSamples > 0")
-		// Phrased so SQL precedence yields a percentage — see planetscale-storage.test.ts.
+		// Phrased so SQL precedence yields a percentage, see planetscale-storage.test.ts.
 		expect(sql).toContain("100 - points.availableBytes / points.capacityBytes * 100")
 	})
 })

@@ -17,7 +17,7 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 		name: "list_services",
 		title: "List Services",
 		description:
-			"List all active services, busiest first, with request count and rate, error rate and P95 latency. Use as an entry point to discover services before drilling down with diagnose_service or get_service_top_operations.",
+			"List all active services, busiest first, with request count and rate, error rate and P95 latency. Use as an entry point to discover services before drilling down with diagnose_service or get_service_top_operations. Services are what your code reports in traces; Cloudflare zones and Workers, Railway services and PlanetScale databases from connected integrations are in list_infra.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			environment: P.environment(),
@@ -73,7 +73,10 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 					? {
 							empty: {
 								message: "No active services found in this time range.",
-								hints: ["Widen start_time/end_time, or drop the environment filter."],
+								hints: [
+									"Widen start_time/end_time, or drop the environment filter.",
+									"Services are what your code reports in traces. Railway services, Cloudflare zones and Workers, and PlanetScale databases from connected integrations are in list_infra.",
+								],
 							},
 						}
 					: undefined),

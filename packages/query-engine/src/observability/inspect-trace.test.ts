@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer } from "effect"
 import { TestClock } from "effect/testing"
-import { inspectTrace } from "./inspect-trace"
+import { inspectTrace, traceProbeWindows } from "./inspect-trace"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { WarehouseExecutorApi } from "./WarehouseExecutor"
 import { compiledQueryOf } from "../execution/compiled-input"
@@ -37,9 +37,11 @@ const spanRow = {
 	relationship: "related",
 }
 
+const probeBound = (sql: string, op: ">=" | "<") => new RegExp(`Timestamp ${op} '([^']+)'`).exec(sql)?.[1]
+
 /**
  * `span_hierarchy` answers only inside `window` (the trace's real location);
- * the probe answers with `probeTimestamp` when set.
+ * the probe answers with `probeTimestamp` when set and inside its bounds.
  */
 const makeExecutor = (
 	captured: Captured,
@@ -50,8 +52,24 @@ const makeExecutor = (
 	compiledQueryFirst: (compiled) => {
 		const query = compiledQueryOf(compiled)
 		captured.probes.push(query.sql)
+		const lower = probeBound(query.sql, ">=")
+		const upper = probeBound(query.sql, "<")
+		const hit =
+			opts.probeTimestamp !== undefined &&
+			(lower === undefined || opts.probeTimestamp >= lower) &&
+			(upper === undefined || opts.probeTimestamp < upper)
 		return query
-			.decodeFirstRow(opts.probeTimestamp ? [{ timestamp: opts.probeTimestamp }] : [])
+			.decodeFirstRow(
+				hit
+					? [
+							{
+								traceId: "probe",
+								timestamp: opts.probeTimestamp,
+								endTimestamp: opts.probeTimestamp,
+							},
+						]
+					: [],
+			)
 			.pipe(Effect.orDie)
 	},
 	query: (pipe: string, params: Record<string, unknown>) => {
@@ -91,7 +109,23 @@ describe("inspectTrace", () => {
 		}),
 	)
 
-	it.effect("finds a trace older than the default lookback by probing further back once", () =>
+	it.effect("finds a trace from the last week with one probe that skips the day already read", () =>
+		Effect.gen(function* () {
+			const captured: Captured = { pipeCalls: [], probes: [] }
+			const result = yield* run(
+				makeExecutor(captured, {
+					window: { start: "2026-04-07 08:00:00", end: "2026-04-07 08:00:00" },
+					probeTimestamp: "2026-04-07 08:00:00.250000000",
+				}),
+			)
+			assert.strictEqual(result.spanCount, 1)
+			assert.lengthOf(captured.probes, 1)
+			assert.include(captured.probes[0], "Timestamp >= '2026-04-03 00:00:00'")
+			assert.include(captured.probes[0], "Timestamp < '2026-04-09 00:00:00'")
+		}),
+	)
+
+	it.effect("finds a trace older than a week in the widest tier", () =>
 		Effect.gen(function* () {
 			const captured: Captured = { pipeCalls: [], probes: [] }
 			const result = yield* run(
@@ -101,21 +135,22 @@ describe("inspectTrace", () => {
 				}),
 			)
 			assert.strictEqual(result.spanCount, 1)
-			assert.lengthOf(captured.probes, 1)
-			// 30 days before NOW bounds the probe's partition seek.
-			assert.include(captured.probes[0], "Timestamp >= '2026-03-11 00:00:00'")
+			assert.lengthOf(captured.probes, 2)
+			// 30 days before NOW bounds the widest tier, which stops where the week tier began.
+			assert.include(captured.probes[1], "Timestamp >= '2026-03-11 00:00:00'")
+			assert.include(captured.probes[1], "Timestamp < '2026-04-03 00:00:00'")
 			const second = hierarchyCalls(captured)[1]
 			assert.strictEqual(second?.params.start_time, "2026-03-20 07:00:00")
 			assert.strictEqual(second?.params.end_time, "2026-03-20 09:00:00")
 		}),
 	)
 
-	it.effect("returns empty after one probe when the trace is nowhere", () =>
+	it.effect("returns empty after every tier misses when the trace is nowhere", () =>
 		Effect.gen(function* () {
 			const captured: Captured = { pipeCalls: [], probes: [] }
 			const result = yield* run(makeExecutor(captured, {}))
 			assert.strictEqual(result.spanCount, 0)
-			assert.lengthOf(captured.probes, 1)
+			assert.lengthOf(captured.probes, 2)
 			assert.lengthOf(hierarchyCalls(captured), 1)
 			assert.deepStrictEqual(result.scanned, {
 				startTime: "2026-03-11 00:00:00",
@@ -136,7 +171,9 @@ describe("inspectTrace", () => {
 				{ timestampHint: new Date("2026-04-05T12:00:00Z") },
 			)
 			assert.strictEqual(result.spanCount, 1)
-			assert.lengthOf(captured.probes, 1)
+			// A hint read nothing near now, so the tiers start open-ended at the last day.
+			assert.lengthOf(captured.probes, 3)
+			assert.notInclude(captured.probes[0], "Timestamp <")
 			assert.strictEqual(hierarchyCalls(captured)[0]?.params.start_time, "2026-04-05 11:00:00")
 			assert.deepStrictEqual(result.scanned, {
 				startTime: "2026-03-20 07:00:00",
@@ -186,4 +223,21 @@ describe("inspectTrace", () => {
 			})
 		}),
 	)
+
+	it("splits the probe into non-overlapping tiers that end at the oldest bound", () => {
+		const day = 24 * 60 * 60 * 1000
+		assert.deepStrictEqual(traceProbeWindows({ nowMs: NOW, oldestMs: NOW - 30 * day }), [
+			{ startMs: NOW - day, endMs: undefined },
+			{ startMs: NOW - 7 * day, endMs: NOW - day },
+			{ startMs: NOW - 30 * day, endMs: NOW - 7 * day },
+		])
+		assert.deepStrictEqual(
+			traceProbeWindows({ nowMs: NOW, oldestMs: NOW - 3 * day, coveredSinceMs: NOW - day }),
+			[{ startMs: NOW - 3 * day, endMs: NOW - day }],
+		)
+		assert.deepStrictEqual(
+			traceProbeWindows({ nowMs: NOW, oldestMs: NOW - 30 * day, coveredSinceMs: NOW - 40 * day }),
+			[],
+		)
+	})
 })

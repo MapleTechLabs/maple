@@ -92,6 +92,12 @@ describe("request admission on shutdown", () => {
 	})
 })
 
+// Bun types `port` as optional (unix sockets); these listeners are always TCP.
+const portOf = (server: { readonly port: number | undefined }): number => {
+	ok(server.port !== undefined, "listener has no TCP port")
+	return server.port
+}
+
 describe("local listener addresses", () => {
 	it("reaches an IPv4 wildcard listener through the loopback probe URL", async () => {
 		const server = Bun.serve({
@@ -100,7 +106,7 @@ describe("local listener addresses", () => {
 			fetch: () => new Response("OK"),
 		})
 		try {
-			const response = await fetch(serverProbeUrl("0.0.0.0", server.port))
+			const response = await fetch(serverProbeUrl("0.0.0.0", portOf(server)))
 			strictEqual(response.status, 200)
 		} finally {
 			await server.stop(true)
@@ -114,7 +120,7 @@ describe("local listener addresses", () => {
 			fetch: () => new Response("OK"),
 		})
 		try {
-			strictEqual((await fetch(serverProbeUrl("::1", server.port))).status, 200)
+			strictEqual((await fetch(serverProbeUrl("::1", portOf(server)))).status, 200)
 			await rejects(fetch(`http://127.0.0.1:${server.port}`))
 		} finally {
 			await server.stop(true)
@@ -128,7 +134,7 @@ describe("local listener addresses", () => {
 			fetch: () => new Response("OK"),
 		})
 		try {
-			strictEqual((await fetch(serverProbeUrl("::", server.port))).status, 200)
+			strictEqual((await fetch(serverProbeUrl("::", portOf(server)))).status, 200)
 		} finally {
 			await server.stop(true)
 		}
@@ -226,7 +232,7 @@ describe("browser origin policy", () => {
 		deepStrictEqual(corsHeadersForAllowedOrigin(hostedOrigin), {
 			"access-control-allow-origin": hostedOrigin,
 			"access-control-allow-methods": "GET, POST, OPTIONS",
-			"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk",
+			"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key",
 			"access-control-allow-private-network": "true",
 			vary: "Origin",
 		})

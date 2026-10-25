@@ -279,11 +279,41 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("preserves exact runtime-config dependency failures", () => {
+	it.effect("reports a failed settings read as a retryable warehouse outage", () => {
+		const source = new OrgClickHouseSettingsPersistenceError({ message: "database unavailable" })
+		const configLive = makeConfig({}, false)
+		const envLive = Env.layer.pipe(Layer.provide(configLive))
+		const tokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive))
+		const orgSettingsLive = Layer.succeed(OrgClickHouseSettingsService, {
+			resolveRuntimeConfig: () => Effect.fail(source),
+			invalidateRuntimeConfig: () => Effect.succeed(false),
+		} as OrgClickHouseSettingsServiceApi)
+		const layer = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
+			Layer.provide(FetchHttpClient.layer),
+			Layer.provide(Layer.mergeAll(envLive, tokenLive, orgSettingsLive)),
+		)
+		const tenant = makeTenant()
+
+		return Effect.gen(function* () {
+			const raw = getError(
+				yield* WarehouseQueryService.use((service) =>
+					service.rawSqlQuery(tenant, "SELECT 1 WHERE OrgId = 'org_test'"),
+				).pipe(Effect.exit),
+			)
+			const compiled = getError(
+				yield* WarehouseQueryService.use((service) =>
+					service.compiledQuery(tenant, scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'")),
+				).pipe(Effect.exit),
+			)
+			assert.instanceOf(raw, WarehouseUpstreamError)
+			assert.strictEqual(raw.cause, source)
+			assert.instanceOf(compiled, WarehouseUpstreamError)
+			assert.strictEqual(compiled.cause, source)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("preserves actionable runtime-config failures", () => {
 		const cases = [
-			{
-				source: new OrgClickHouseSettingsPersistenceError({ message: "database unavailable" }),
-			},
 			{
 				source: new OrgClickHouseSettingsEncryptionError({ message: "decrypt failed" }),
 			},
@@ -728,7 +758,10 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 
 		const layer = buildLayer(createTestDb(trackedDbs))
 		const tenant = makeTenant()
-		const rows = [{ trace_id: "a" }, { trace_id: "b" }]
+		const rows = [
+			{ OrgId: "org_test", trace_id: "a" },
+			{ OrgId: "org_test", trace_id: "b" },
+		]
 
 		return Effect.gen(function* () {
 			yield* WarehouseQueryService.use((service) => service.ingest(tenant, "traces", rows))
@@ -785,7 +818,9 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 
 		return Effect.gen(function* () {
 			const exit = yield* Effect.exit(
-				WarehouseQueryService.use((service) => service.ingest(tenant, "traces", [{ trace_id: "a" }])),
+				WarehouseQueryService.use((service) =>
+					service.ingest(tenant, "traces", [{ OrgId: "org_test", trace_id: "a" }]),
+				),
 			)
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -818,7 +853,7 @@ describe("createClickHouseSqlClient.insert is disabled (ClickHouse is read-only)
 		let thrown: unknown
 		try {
 			const client = makeClickHouseTestClient(chConfig)
-			await Effect.runPromise(client.insert("traces", [{ trace_id: "a" }]))
+			await Effect.runPromise(client.insert("traces", [{ OrgId: "org_test", trace_id: "a" }]))
 		} catch (error) {
 			thrown = error
 		} finally {
@@ -997,7 +1032,7 @@ describe("ingest routes writes to the managed pipeline, not a per-org read overr
 
 		return Effect.gen(function* () {
 			yield* executor.compiledQuery(tenant, scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'"))
-			yield* executor.ingest(tenant, "traces", [{ trace_id: "a" }])
+			yield* executor.ingest(tenant, "traces", [{ OrgId: "org_test", trace_id: "a" }])
 
 			assert.deepStrictEqual(purposes, ["read", "ingest"])
 			assert.deepStrictEqual(used, [
@@ -1048,7 +1083,7 @@ describe("ingest pins writes to Tinybird even when CLICKHOUSE_URL makes managed 
 				service.compiledQuery(tenant, scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'")),
 			)
 			yield* WarehouseQueryService.use((service) =>
-				service.ingest(tenant, "traces", [{ trace_id: "a" }]),
+				service.ingest(tenant, "traces", [{ OrgId: "org_test", trace_id: "a" }]),
 			)
 
 			// CLICKHOUSE_PROVIDER defaults to "tinybird", so a bare CLICKHOUSE_URL is
@@ -1388,6 +1423,9 @@ describe("warehouse spans follow the database conventions", () => {
 		return { spans, tracer }
 	}
 	const okFetch: typeof fetch = async () => new Response('{"data":[]}')
+	// By kind and method, not name: Effect names it by method alone, and the database span is a client too.
+	const isHttpClientSpan = (span: Tracer.NativeSpan) =>
+		span.kind === "client" && span.attributes.has("http.request.method")
 
 	it.effect("emits one database span per query and no http.client span beneath it", () => {
 		const layer = buildLayer(createTestDb(trackedDbs))
@@ -1398,9 +1436,11 @@ describe("warehouse spans follow the database conventions", () => {
 					context: "spanShape",
 				}),
 			).pipe(Effect.withTracer(tracer))
-			const names = spans.map((span) => span.name)
-			assert.include(names, "WarehouseQueryService.executeSql")
-			assert.isFalse(names.some((name) => name.startsWith("http.client")))
+			assert.include(
+				spans.map((span) => span.name),
+				"WarehouseQueryService.executeSql",
+			)
+			assert.isFalse(spans.some(isHttpClientSpan))
 		}).pipe(Effect.provide(layer), Effect.provideService(FetchHttpClient.Fetch, okFetch))
 	})
 
@@ -1414,7 +1454,7 @@ describe("warehouse spans follow the database conventions", () => {
 				okFetch,
 			)
 			yield* client.sql(parseStatement("SELECT 1 FORMAT JSON")).pipe(Effect.withTracer(tracer))
-			assert.isTrue(spans.some((span) => span.name === "http.client POST"))
+			assert.isTrue(spans.some(isHttpClientSpan))
 		}),
 	)
 })

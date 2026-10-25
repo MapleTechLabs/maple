@@ -28,6 +28,16 @@ import schemaV26Sql from "./schema/local-schema-v26.sql" with { type: "text" }
 import schemaV27Sql from "./schema/local-schema-v27.sql" with { type: "text" }
 import schemaV28Sql from "./schema/local-schema-v28.sql" with { type: "text" }
 import schemaV29Sql from "./schema/local-schema-v29.sql" with { type: "text" }
+import schemaV30Sql from "./schema/local-schema-v30.sql" with { type: "text" }
+import schemaV31Sql from "./schema/local-schema-v31.sql" with { type: "text" }
+import schemaV32Sql from "./schema/local-schema-v32.sql" with { type: "text" }
+import schemaV33Sql from "./schema/local-schema-v33.sql" with { type: "text" }
+import schemaV34Sql from "./schema/local-schema-v34.sql" with { type: "text" }
+import schemaV35Sql from "./schema/local-schema-v35.sql" with { type: "text" }
+import schemaV36Sql from "./schema/local-schema-v36.sql" with { type: "text" }
+import schemaV37Sql from "./schema/local-schema-v37.sql" with { type: "text" }
+import schemaV38Sql from "./schema/local-schema-v38.sql" with { type: "text" }
+import schemaV39Sql from "./schema/local-schema-v39.sql" with { type: "text" }
 import { schemaDigest as digestSchema, schemaFingerprint as fingerprintSchema } from "./store-version"
 import { buildLocalSchemaManifest, type LocalSchemaManifest } from "./schema-manifest"
 import { LOCAL_SCHEMA_VERSION } from "./local-schema-version"
@@ -101,6 +111,16 @@ const SNAPSHOT_SQL: ReadonlyArray<string> = [
 	schemaV27Sql,
 	schemaV28Sql,
 	schemaV29Sql,
+	schemaV30Sql,
+	schemaV31Sql,
+	schemaV32Sql,
+	schemaV33Sql,
+	schemaV34Sql,
+	schemaV35Sql,
+	schemaV36Sql,
+	schemaV37Sql,
+	schemaV38Sql,
+	schemaV39Sql,
 ]
 
 export interface LocalSchemaSnapshot {
@@ -187,6 +207,15 @@ export const LOCAL_SCHEMA_V26 = localSchemaIdentity(26)
 export const LOCAL_SCHEMA_V27 = localSchemaIdentity(27)
 export const LOCAL_SCHEMA_V28 = localSchemaIdentity(28)
 export const LOCAL_SCHEMA_V29 = localSchemaIdentity(29)
+export const LOCAL_SCHEMA_V30 = localSchemaIdentity(30)
+export const LOCAL_SCHEMA_V31 = localSchemaIdentity(31)
+export const LOCAL_SCHEMA_V32 = localSchemaIdentity(32)
+export const LOCAL_SCHEMA_V33 = localSchemaIdentity(33)
+export const LOCAL_SCHEMA_V34 = localSchemaIdentity(34)
+export const LOCAL_SCHEMA_V36 = localSchemaIdentity(36)
+export const LOCAL_SCHEMA_V37 = localSchemaIdentity(37)
+export const LOCAL_SCHEMA_V38 = localSchemaIdentity(38)
+export const LOCAL_SCHEMA_V39 = localSchemaIdentity(39)
 
 export const CURRENT_LOCAL_SCHEMA: LocalSchemaIdentity = Object.freeze({
 	version: LOCAL_SCHEMA_VERSION,

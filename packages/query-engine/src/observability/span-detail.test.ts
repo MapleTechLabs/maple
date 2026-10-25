@@ -13,6 +13,7 @@ const detailRow = {
 	spanId: SPAN_ID,
 	parentSpanId: "",
 	spanName: "GET /orders",
+	rawSpanName: "GET",
 	serviceName: "api",
 	spanKind: "Server",
 	durationMs: 12,

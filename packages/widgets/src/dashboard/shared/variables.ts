@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 
 // Dashboard variables
 
@@ -38,6 +39,16 @@ export const DashboardQueryVariableSourceSchema = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("attribute"),
 		scope: Schema.Literals(["span", "resource"]),
+		attributeKey: Schema.String,
+	}),
+	// Values of an attribute on the named metrics, for boards built on metrics
+	// alone (cloud integrations, collectors), whose resources never appear in
+	// traces. Every metric is of `metricType`, which picks the table read.
+	Schema.Struct({
+		kind: Schema.Literal("metric"),
+		metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES),
+		metricNames: Schema.Array(Schema.String).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+		scope: Schema.Literals(["metric", "resource"]),
 		attributeKey: Schema.String,
 	}),
 ])

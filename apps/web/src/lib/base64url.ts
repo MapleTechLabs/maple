@@ -16,17 +16,3 @@ export const fromBase64Url = (input: string): string => {
 	}
 	return Buffer.from(full, "base64").toString("utf8")
 }
-
-export const toBase64Url = (input: string): string => {
-	let raw: string
-	if (typeof btoa !== "undefined") {
-		try {
-			raw = btoa(unescape(encodeURIComponent(input)))
-		} catch {
-			raw = btoa(input)
-		}
-	} else {
-		raw = Buffer.from(input, "utf8").toString("base64")
-	}
-	return raw.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-}

@@ -1,0 +1,206 @@
+---
+/**
+ * Maple's review comment on MapleTechLabs/maple#1531, redrawn in the site's
+ * own type and tokens. The content is the bot's real output, so it stays
+ * literal and never goes through Paraglide, the way code snippets don't.
+ */
+import BrandMarkIcon from "../BrandMarkIcon.astro";
+
+interface Props {
+	/** `compact` is the homepage card: verdict, one finding, one step. */
+	variant?: "full" | "compact";
+	class?: string;
+}
+
+const { variant = "full", class: className = "" } = Astro.props;
+const full = variant === "full";
+
+const PR_URL = "https://github.com/MapleTechLabs/maple/pull/1531";
+const CONFIDENCE = 6;
+const meter = Array.from({ length: 10 }, (_, index) => index < CONFIDENCE);
+
+const keyChanges = [
+	"Digest subscribers gain send_hour plus day/hour/timezone scheduling",
+	"isDigestDue claims a row only inside the subscriber’s local send window",
+	"AI provider and auto-triage merge into one AI settings tab",
+];
+---
+
+<!-- Not `.live-frame`: that rule is unlayered and pins the mono face on the whole card. -->
+<article class={`flex flex-col overflow-hidden rounded-xl border border-border bg-bg-deep ${className}`} aria-label="Maple review comment on pull request 1531">
+	<a
+		href={PR_URL}
+		target="_blank"
+		rel="noopener noreferrer"
+		class="flex min-w-0 items-center gap-2.5 border-b border-border bg-bg-elevated px-4 py-2.5 transition-colors hover:text-fg"
+	>
+		<BrandMarkIcon id="github" class="h-3.5 w-3.5 shrink-0 text-fg-muted" />
+		{full && <span class="font-mono text-[11px] text-fg-muted">MapleTechLabs/maple</span>}
+		<span class="font-mono text-[11px] text-fg">#1531</span>
+		<span class="min-w-0 truncate text-[12px] text-fg-muted">AI tab and email preferences with a local send schedule</span>
+	</a>
+
+	{
+		full && (
+			<div class="flex items-center gap-2.5 px-5 pt-[18px]">
+				<img src="/favicon.svg" alt="" width="24" height="24" class="h-6 w-6 shrink-0 rounded-full border border-border" />
+				<span class="text-[13px] font-medium text-fg">maple-review-bot</span>
+				<span class="rounded-full border border-border px-1.5 font-mono text-[10px] text-fg-muted">bot</span>
+				<span class="font-mono text-[11px] text-fg-muted">updated on push a05c12f</span>
+			</div>
+		)
+	}
+
+	<div class:list={["flex flex-col", full ? "gap-[18px] px-5 pb-5 pt-4" : "gap-3 p-3.5"]}>
+		<div class:list={["flex flex-col gap-2.5", full && "rounded-lg border border-border bg-bg p-4"]}>
+			<div class="flex items-center gap-3">
+				<div class="flex items-end gap-[3px]" aria-hidden="true">
+					{meter.map((on) => <span class:list={["w-1 rounded-[1px]", full ? "h-[18px]" : "h-3.5", on ? "bg-severity-warn" : "bg-input"]} />)}
+				</div>
+				<span class:list={["font-display font-semibold tracking-[-0.01em] text-fg", full ? "text-xl" : "text-[15px]"]}>
+					{CONFIDENCE}/10
+				</span>
+				<span class="rounded-full border border-border bg-bg-elevated px-2 py-px font-mono text-[11px] text-warning-foreground">
+					needs attention
+				</span>
+			</div>
+			<p class:list={["leading-[1.55]", full ? "text-[13.5px] text-fg" : "text-[12.5px] text-fg-muted"]}>
+				{
+					full
+						? "Digest scheduling is pure, read end to end and well tested; the AI key panel now loses its only Remove path for a lapsed add-on."
+						: "The AI key panel now loses its only Remove path for a lapsed add-on."
+				}
+			</p>
+			{
+				full && (
+					<div class="flex flex-wrap gap-1.5">
+						{["tests partial", "risk medium", "2/2 new units observable"].map((chip) => (
+							<span class="rounded bg-bg-elevated px-[7px] py-0.5 font-mono text-[10.5px] text-fg-muted">{chip}</span>
+						))}
+					</div>
+				)
+			}
+		</div>
+
+		{
+			full && (
+				<ul class="flex flex-col gap-1.5">
+					{keyChanges.map((change) => (
+						<li class="flex items-start gap-2.5 text-[13px] leading-[1.55] text-fg-muted">
+							<span class="mt-2 h-1 w-1 shrink-0 rounded-full bg-fg-muted" aria-hidden="true" />
+							{change}
+						</li>
+					))}
+				</ul>
+			)
+		}
+
+		{
+			full ? (
+				<>
+					<div class="flex flex-col gap-2">
+						<p class="op-key">Before merge</p>
+						<div class="flex items-start gap-2.5 rounded-lg border border-border px-3 py-2.5">
+							<span class="mt-0.5 h-3.5 w-3.5 shrink-0 rounded-[3px] border border-input" aria-hidden="true" />
+							<div class="flex min-w-0 flex-col gap-1">
+								<span class="text-[13px] text-fg">
+									Migration · Check it is safe on production data and with the code still deployed
+								</span>
+								<span class="truncate font-mono text-[11px] text-info-foreground">
+									packages/db/drizzle/20261017080931_digest_send_hour/migration.sql
+								</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="flex flex-col gap-2">
+						<p class="op-key">Findings</p>
+						<div class="flex flex-col gap-2 rounded-lg border border-border bg-bg p-3">
+							<div class="flex items-center gap-2">
+								<span class="text-[10px] text-fg-muted" aria-hidden="true">▾</span>
+								<span class="rounded-full border border-border bg-bg-elevated px-[7px] font-mono text-[10.5px] font-medium text-warning-foreground">
+									Warning
+								</span>
+								<span class="font-mono text-[11px] text-fg-muted">F2</span>
+								<span class="ml-auto font-mono text-[11px] text-fg-muted">correctness</span>
+							</div>
+							<span class="text-[13.5px] font-medium leading-[1.45] text-fg">
+								Lapsed add-on leaves the saved OpenRouter key with no way to remove it
+							</span>
+							<span class="truncate font-mono text-[11px] text-info-foreground">
+								apps/web/src/components/settings/ai-provider-section.tsx:179-181
+							</span>
+							<p class="text-[12.5px] leading-[1.6] text-fg-muted">
+								OpenRouterKeyPanel returns AddOnUpsell before the saved-key branch whenever the add-on lapses, so
+								the only Remove call site is unreachable. Pass onRemove down and keep the saved-key row next to the
+								add-on button.
+							</p>
+						</div>
+						<div class="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5">
+							<span class="text-[10px] text-fg-muted" aria-hidden="true">▸</span>
+							<span class="rounded-full border border-border bg-bg-elevated px-[7px] font-mono text-[10.5px] font-medium text-info-foreground">
+								Note
+							</span>
+							<span class="font-mono text-[11px] text-fg-muted">F1</span>
+							<span class="min-w-0 truncate text-[13px] text-fg">Save is a silent no-op for a user with no primary email</span>
+							<span class="ml-auto shrink-0 font-mono text-[10.5px] text-fg-muted">still open</span>
+						</div>
+					</div>
+
+					<div class="flex flex-col gap-2">
+						<p class="op-key">Production impact · last 7 days</p>
+						<div class="rounded-lg border border-border bg-bg">
+							<div class="grid grid-cols-[1fr_6rem] gap-3 border-b border-border px-3 py-2">
+								<span class="op-key">changed file</span>
+								<span class="op-key text-right">calls/day</span>
+							</div>
+							<div class="grid grid-cols-[1fr_6rem] gap-3 px-3 py-2.5 font-mono text-[11.5px] text-fg">
+								<span class="truncate">services/digest/WebAnalyticsDigestService.ts</span>
+								<span class="text-right tabular-nums">235</span>
+							</div>
+						</div>
+						<p class="flex items-center gap-2 px-0.5 font-mono text-[11px] text-fg-muted">
+							<span class="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+							Observability coverage: 2 of 2 changes observable
+						</p>
+					</div>
+				</>
+			) : (
+				<>
+					<div class="flex flex-col gap-1 rounded-lg border border-border bg-bg px-2.5 py-2">
+						<div class="flex items-center gap-1.5">
+							<span class="rounded-full border border-border bg-bg-elevated px-1.5 font-mono text-[10px] font-medium text-warning-foreground">
+								Warning
+							</span>
+							<span class="font-mono text-[10.5px] text-fg-muted">correctness</span>
+						</div>
+						<span class="text-[12.5px] leading-[1.45] text-fg">
+							Lapsed add-on leaves the saved OpenRouter key with no way to remove it
+						</span>
+						<span class="truncate font-mono text-[10.5px] text-info-foreground">ai-provider-section.tsx:179-181</span>
+					</div>
+					<div class="flex items-center gap-2 rounded-lg border border-border px-2.5 py-2">
+						<span class="h-3 w-3 shrink-0 rounded-[3px] border border-input" aria-hidden="true" />
+						<span class="op-key">migration</span>
+						<span class="min-w-0 truncate text-[12px] text-fg">Safe on production data</span>
+					</div>
+					<div class="flex items-center justify-between gap-3 border-t border-border pt-2.5 font-mono text-[10.5px]">
+						<span class="truncate text-fg">WebAnalyticsDigestService.ts</span>
+						<span class="shrink-0 text-fg-muted">235 calls/day</span>
+					</div>
+				</>
+			)
+		}
+	</div>
+
+	{
+		full && (
+			<div class="flex items-center gap-2 border-t border-border px-5 py-3">
+				<span class="rounded bg-bg-elevated px-1.5 font-mono text-[10.5px] text-fg">a05c12f</span>
+				<span class="text-[11.5px] text-fg-muted">
+					Reply “won’t fix” to dismiss a finding, or mention @maple-review-bot to ask about one.
+				</span>
+			</div>
+		)
+	}
+</article>

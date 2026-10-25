@@ -6,6 +6,8 @@ import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { SourceId } from "@maple/domain/primitives"
 import { nextWindow, RailwayMetricsService } from "./RailwayMetricsService"
 
 const now = Date.UTC(2026, 9, 3, 12, 30, 30)
@@ -116,6 +118,21 @@ const decodeRequestBody = Schema.decodeUnknownSync(
 	),
 )
 
+const IngestPayload = Schema.Struct({
+	resourceMetrics: Schema.Array(
+		Schema.Struct({
+			resource: Schema.Struct({
+				attributes: Schema.Array(
+					Schema.Struct({
+						key: Schema.String,
+						value: Schema.Struct({ stringValue: Schema.String }),
+					}),
+				),
+			}),
+		}),
+	),
+})
+
 const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
@@ -123,9 +140,10 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 	const stub = (async (input: string | URL | Request, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 		const headers = new Headers(init?.headers)
-		const body = decodeRequestBody(await new Response(init?.body ?? null).text())
+		const text = await new Response(init?.body ?? null).text()
+		const body = decodeRequestBody(text)
 		if (new URL(url).host === "ingest.test") {
-			calls.ingest.push({ body, authorization: headers.get("authorization") })
+			calls.ingest.push({ body: text, authorization: headers.get("authorization") })
 			return json({}, options.ingestStatus ?? 200)
 		}
 		const query = body.query ?? ""
@@ -235,6 +253,72 @@ describe("RailwayMetricsService", () => {
 		)
 	})
 
+	it.effect("a reconnect keeps the connection's source and disconnect removes it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const sourceIds = () =>
+			Effect.promise(() =>
+				testDb.pglite.query<{ id: string }>(
+					"SELECT s.id FROM sources s JOIN railway_connections c ON c.source_id = s.id",
+				),
+			).pipe(Effect.map((result) => result.rows.map((row) => row.id)))
+		return run(
+			testDb,
+			stubFetch(calls),
+			Effect.gen(function* () {
+				const railway = yield* RailwayMetricsService
+				yield* railway.connect(orgId, userId, "rw_token_123")
+				const first = yield* sourceIds()
+				assert.lengthOf(first, 1)
+				yield* railway.connect(orgId, userId, "rw_token_456")
+				assert.deepStrictEqual(yield* sourceIds(), first)
+
+				yield* railway.disconnect(orgId)
+				const left = yield* Effect.promise(() => testDb.pglite.query("SELECT id FROM sources WHERE kind = 'integration'"))
+				assert.deepStrictEqual(left.rows, [])
+			}),
+		)
+	})
+
+	it.effect("a paused source reads nothing and resumes from now", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		return run(
+			testDb,
+			stubFetch(calls),
+			Effect.gen(function* () {
+				const railway = yield* RailwayMetricsService
+				yield* railway.connect(orgId, userId, "rw_token_123")
+				yield* resetWatermarks(testDb)
+				yield* Effect.promise(() =>
+					queryFirstRow(
+						testDb,
+						"UPDATE sources SET paused_at = now() WHERE kind = 'integration' RETURNING id",
+					),
+				)
+				const before = { railway: calls.railway.length, ingest: calls.ingest.length }
+
+				const summary = yield* railway.pollOrg(orgId)
+				assert.strictEqual(summary.skipped, "source paused")
+				assert.deepStrictEqual(
+					{ railway: calls.railway.length, ingest: calls.ingest.length },
+					before,
+				)
+				const environment = yield* Effect.promise(() =>
+					queryFirstRow<{ watermark_at: Date }>(
+						testDb,
+						"SELECT watermark_at FROM railway_environments WHERE environment_id = 'env_prod'",
+					),
+				)
+				// Nothing of the paused window is read after a resume.
+				assert.strictEqual(
+					new Date(environment!.watermark_at).getTime(),
+					Date.UTC(2026, 9, 3, 12, 28, 0),
+				)
+			}),
+		)
+	})
+
 	it.effect("connect rejects a token Railway does not accept", () => {
 		const testDb = createTestDb(trackedDbs)
 		const stub = stubFetch({ railway: [], ingest: [] }, { railway: "unauthorized" })
@@ -263,6 +347,27 @@ describe("RailwayMetricsService", () => {
 				yield* railway.connect(orgId, userId, "rw_token_123")
 				assert.strictEqual(calls.ingest.length, 1)
 				assert.match(calls.ingest[0]!.authorization ?? "", /^Bearer maple_pk_/)
+				const source = yield* Effect.promise(() =>
+					queryFirstRow<{ id: string; name: string }>(
+						testDb,
+						"SELECT id, name FROM sources WHERE platform = 'railway'",
+					),
+				)
+				assert.isDefined(source)
+				const payload = Schema.decodeUnknownSync(Schema.fromJsonString(IngestPayload))(
+					calls.ingest[0]!.body,
+				)
+				const stamped = payload.resourceMetrics.map(
+					(resource) =>
+						resource.resource.attributes.find((attr) => attr.key === "maple_source_id")?.value
+							.stringValue,
+				)
+				assert.isAbove(stamped.length, 0)
+				const expected = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
+				assert.deepStrictEqual(
+					stamped,
+					stamped.map(() => expected),
+				)
 
 				const environment = yield* Effect.promise(() =>
 					queryFirstRow<{ watermark_at: Date }>(
@@ -351,6 +456,45 @@ describe("RailwayMetricsService", () => {
 		})
 	})
 
+	for (const ingestStatus of [401, 403]) {
+		it.effect(`an ingest ${ingestStatus} holds the lease instead of re-posting every tick`, () => {
+			const testDb = createTestDb(trackedDbs)
+			const calls: StubCalls = { railway: [], ingest: [] }
+			return Effect.gen(function* () {
+				const okStub = stubFetch(calls)
+				yield* run(
+					testDb,
+					okStub,
+					RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123")),
+				)
+				yield* resetWatermarks(testDb)
+				const refusedStub = stubFetch(calls, { ingestStatus })
+				const summary = yield* run(
+					testDb,
+					refusedStub,
+					RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+				)
+				assert.strictEqual(summary.failures, 1)
+				assert.strictEqual(calls.ingest.length, 2)
+				const connection = yield* Effect.promise(() =>
+					queryFirstRow<{ lease_until: Date | null }>(
+						testDb,
+						"SELECT lease_until FROM railway_connections WHERE org_id = $1",
+						[orgId],
+					),
+				)
+				assert.isAbove(new Date(connection!.lease_until!).getTime(), now + 30 * minute)
+				const held = yield* run(
+					testDb,
+					refusedStub,
+					RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+				)
+				assert.strictEqual(held.skipped, "lease held")
+				assert.strictEqual(calls.ingest.length, 2)
+			})
+		})
+	}
+
 	it.effect("a token rejected while polling pauses the connection", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: StubCalls = { railway: [], ingest: [] }
@@ -381,6 +525,56 @@ describe("RailwayMetricsService", () => {
 				RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
 			)
 			assert.strictEqual(all.orgs, 0)
+		})
+	})
+
+	it.effect("each tick reports onto the source and a reconnect clears a rejected token", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const readSource = () =>
+			Effect.promise(() =>
+				queryFirstRow<{
+					last_poll_ok_at: Date | null
+					last_poll_error: string | null
+					disconnected_at: Date | null
+				}>(
+					testDb,
+					"SELECT s.last_poll_ok_at, s.last_poll_error, s.disconnected_at FROM sources s JOIN railway_connections c ON c.source_id = s.id",
+				),
+			)
+		const behindAndUnleased = Effect.promise(() =>
+			queryFirstRow(testDb, "UPDATE railway_connections SET lease_until = NULL RETURNING id"),
+		).pipe(Effect.andThen(resetWatermarks(testDb)))
+		return Effect.gen(function* () {
+			const okStub = stubFetch(calls)
+			const connect = RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123"))
+			yield* run(testDb, okStub, connect)
+			const healthy = yield* readSource()
+			assert.isNotNull(healthy!.last_poll_ok_at)
+			assert.isNull(healthy!.last_poll_error)
+
+			yield* behindAndUnleased
+			const refusedStub = stubFetch(calls, { ingestStatus: 403 })
+			yield* run(testDb, refusedStub, RailwayMetricsService.use((railway) => railway.pollOrg(orgId)))
+			const failed = yield* readSource()
+			const connection = yield* Effect.promise(() =>
+				queryFirstRow<{ last_error: string | null }>(testDb, "SELECT last_error FROM railway_connections"),
+			)
+			assert.isNotNull(failed!.last_poll_error)
+			assert.strictEqual(failed!.last_poll_error, connection!.last_error)
+			assert.isNull(failed!.disconnected_at)
+
+			yield* behindAndUnleased
+			const revokedStub = stubFetch(calls, { railway: "unauthorized" })
+			yield* run(testDb, revokedStub, RailwayMetricsService.use((railway) => railway.pollOrg(orgId)))
+			const rejected = yield* readSource()
+			assert.isNotNull(rejected!.disconnected_at)
+			assert.match(rejected!.last_poll_error ?? "", /Reconnect Railway/)
+
+			yield* run(testDb, stubFetch(calls), connect)
+			const reconnected = yield* readSource()
+			assert.isNull(reconnected!.disconnected_at)
+			assert.isNull(reconnected!.last_poll_error)
 		})
 	})
 

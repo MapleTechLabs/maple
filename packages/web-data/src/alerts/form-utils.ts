@@ -1,0 +1,1160 @@
+import { startOfDayInTimeZone } from "@maple/query-engine/datetime"
+import { isValidRawSql } from "@maple/domain/raw-sql"
+import {
+	AlertCheckDocument,
+	AlertDeliveryEventDocument,
+	AlertDestinationDocument,
+	AlertIncidentDocument,
+	AlertRuleDocument,
+	AlertRulePreviewFiringSpan,
+	AlertRulePreviewPoint,
+	AlertQueryTiming,
+	AlertRulePreviewResponse,
+	AlertRulePreviewSeries,
+	HazelChannelId,
+	HazelOrganizationId,
+	IsoDateTimeString,
+	UserId,
+	type AlertComparator,
+	type AlertDeliveryStatus,
+	type AlertDestinationId,
+	type AlertDestinationType,
+	type AlertEventType,
+	type AlertSeverity,
+	type AlertSignalType,
+	type ChatWorkspaceId,
+	type QueryBuilderQueryDraftPayload,
+	MAX_ALERT_BREACH_WINDOW,
+	AlertEvaluationIntervalMinutes,
+} from "@maple/domain/http"
+import type {
+	V2AlertCheck,
+	V2AlertDelivery,
+	V2AlertDestinationCreateParams,
+	V2AlertDestinationUpdateParams,
+	V2AlertRuleCreateParams,
+	V2AlertRulePreviewResult,
+	V2AlertRuleTestParams,
+	V2AlertThreshold,
+} from "@maple/domain/http/v2"
+import { fromV2Threshold } from "@maple/domain/http/v2"
+import type { QueryEngineAlertReducer } from "@maple/query-engine"
+import { Array as Arr, Option, Schema } from "effect"
+import {
+	buildTimeseriesQuerySpec,
+	createQueryDraft,
+	type QueryBuilderQueryDraft,
+} from "@maple/query-engine/query-builder"
+import { EMPTY_VALUE, formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
+import { getBrowserTimeZone } from "../lib/timezone"
+import { formatDateInTimezone, formatTimeInTimezone, formatTimestampInTimezone } from "../lib/timezone-format"
+import type { Tone } from "@maple/ui/lib/tone"
+
+const asHazelOrganizationId = Schema.decodeUnknownSync(HazelOrganizationId)
+const asHazelChannelId = Schema.decodeUnknownSync(HazelChannelId)
+const asUserId = Schema.decodeUnknownSync(UserId)
+
+// v2 timestamps arrive as plain ISO strings; the v1 domain documents brand them.
+const asIso = (value: string) => IsoDateTimeString.make(value)
+const asIsoOrNull = (value: string | null) => (value === null ? null : asIso(value))
+
+export type RuleFormState = {
+	name: string
+	/** Optional free-text note — runbook links, ownership, why the rule exists. */
+	notes: string
+	enabled: boolean
+	severity: AlertSeverity
+	serviceNames: string[]
+	excludeServiceNames: string[]
+	/**
+	 * Deployment environments the rule is scoped to. Empty means every
+	 * environment. Not submitted for `builder_query` / `raw_query`, whose queries
+	 * carry their own filters.
+	 */
+	environments: string[]
+	/** Free-form tags used to group and filter rules in the alerts list. */
+	tags: string[]
+	/**
+	 * Group-by dimensions to evaluate the rule per-group. Stored as the
+	 * dashboard-style tokens (e.g. `service.name`, `span.name`,
+	 * `attr.http.route`). Empty array means ungrouped.
+	 */
+	groupBy: string[]
+	signalType: AlertSignalType
+	comparator: AlertComparator
+	threshold: string
+	thresholdUpper: string
+	/** Where the signal must get back to before the incident clears; "" clears once it stops breaching. */
+	recoveryValue: string
+	/** The critical tier over a warning one; null on a one-tier rule. */
+	escalation: EscalationTierForm | null
+	windowMinutes: string
+	/** Minutes between checks; "" checks every fifth of the window. */
+	evaluationIntervalMinutes: string
+	minimumSampleCount: string
+	/** Count an empty window as a breach instead of skipping it. */
+	alertOnNoData: boolean
+	consecutiveBreachesRequired: string
+	/** Fire on N breaches out of the last M checks; "" counts N in a row. */
+	breachesOutOf: string
+	consecutiveHealthyRequired: string
+	renotifyIntervalMinutes: string
+	apdexThresholdMs: string
+	/**
+	 * The normalized query-builder draft. It is the sole editable query state and
+	 * is submitted verbatim after the wire payload is normalized on read.
+	 */
+	queryBuilderDraft: QueryBuilderQueryDraft
+	/** Editing fields for the `raw_query` signal. */
+	rawQuerySql: string
+	rawQueryReducer: QueryEngineAlertReducer
+	destinationIds: AlertDestinationId[]
+	/**
+	 * Custom notification message. Empty strings mean "use the built-in format".
+	 * `title` + Markdown `body` support `{{ variable }}` substitution; channels
+	 * render them per their dialect (chat blocks, Discord embed, …).
+	 */
+	notificationTitle: string
+	notificationBody: string
+}
+
+/** The critical tier of a two-tier rule. Range and equality comparators have one tier only. */
+export interface EscalationTierForm {
+	threshold: string
+	recoveryValue: string
+	destinationIds: AlertDestinationId[]
+}
+
+export const signalLabels: Record<AlertSignalType, string> = {
+	error_rate: "Error rate",
+	p95_latency: "P95 latency",
+	p99_latency: "P99 latency",
+	apdex: "Apdex",
+	throughput: "Throughput",
+	builder_query: "Query builder",
+	raw_query: "Raw SQL",
+} satisfies Record<AlertSignalType, string>
+
+export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> = {
+	identity: "Last bucket",
+	sum: "Sum",
+	avg: "Average",
+	min: "Minimum",
+	max: "Maximum",
+} satisfies Record<QueryEngineAlertReducer, string>
+
+/** Default ClickHouse SQL shown when a fresh raw_query alert is created. */
+const DEFAULT_RAW_QUERY_SQL = `SELECT
+  toStartOfInterval(Timestamp, INTERVAL $__interval_s SECOND) AS bucket,
+  count() AS value
+FROM traces
+WHERE $__orgFilter AND $__timeFilter(Timestamp)
+GROUP BY bucket
+ORDER BY bucket`
+
+export const comparatorLabels: Record<AlertComparator, string> = {
+	gt: ">",
+	gte: ">=",
+	lt: "<",
+	lte: "<=",
+	eq: "=",
+	neq: "!=",
+	between: "between",
+	not_between: "not between",
+} satisfies Record<AlertComparator, string>
+
+/** Returns true for comparators that need a second (upper) threshold. */
+export const isRangeComparator = (c: AlertComparator): c is "between" | "not_between" =>
+	c === "between" || c === "not_between"
+
+export function formatSignalValue(signalType: AlertSignalType, value: number | null): string {
+	if (value == null || Number.isNaN(value)) return "n/a"
+
+	switch (signalType) {
+		case "error_rate": {
+			// formatErrorRate floors to "<0.01%", which makes a tiny value and its tiny threshold read the same.
+			const pct = value * 100
+			return pct > 0 && pct < 0.01 ? `${pct.toPrecision(2)}%` : formatErrorRate(value)
+		}
+		case "p95_latency":
+		case "p99_latency":
+			return formatLatency(value)
+		case "apdex":
+			return value.toFixed(3)
+		case "throughput":
+		case "builder_query":
+		case "raw_query":
+			return formatNumber(value)
+	}
+}
+
+/** What decides a threshold's unit: the signal, and for builder rules the aggregation. */
+export type ThresholdSubject = {
+	readonly signalType: AlertSignalType
+	readonly queryBuilderDraft?: { readonly dataSource: string; readonly aggregation: string }
+}
+
+const isPercentSignal = (subject: ThresholdSubject): boolean =>
+	subject.signalType === "error_rate" ||
+	(subject.signalType === "builder_query" &&
+		subject.queryBuilderDraft?.dataSource === "traces" &&
+		subject.queryBuilderDraft.aggregation === "error_rate")
+
+const BUILDER_LATENCY_AGGREGATIONS = new Set(["avg_duration", "p50_duration", "p95_duration", "p99_duration"])
+
+/**
+ * The signal a rule's values read as, for formatting. A builder query over
+ * `error_rate` or a duration percentile reads like the matching built-in, so
+ * the chart, the threshold and the input all speak one unit.
+ */
+export function displaySignalType(subject: ThresholdSubject): AlertSignalType {
+	if (subject.signalType !== "builder_query" || subject.queryBuilderDraft?.dataSource !== "traces") {
+		return subject.signalType
+	}
+	if (isPercentSignal(subject)) return "error_rate"
+	if (BUILDER_LATENCY_AGGREGATIONS.has(subject.queryBuilderDraft.aggregation)) return "p95_latency"
+	return "builder_query"
+}
+
+/** The suffix the threshold input shows: `%` for error rates, `ms` for latencies. */
+export function thresholdUnitLabel(subject: ThresholdSubject): string | null {
+	const display = displaySignalType(subject)
+	if (display === "error_rate") return "%"
+	if (display === "p95_latency" || display === "p99_latency") return "ms"
+	return null
+}
+
+/**
+ * Threshold unit conversion at the form↔domain boundary, the one place it
+ * happens. The domain stores error rates as a 0–1 ratio (built-in and builder
+ * `error_rate` alike); the form takes a percent, so `5` means 5% in every mode.
+ */
+export function formThresholdToDomain(subject: ThresholdSubject, value: string): number {
+	const n = Number(value)
+	// Same rounding as `domainThresholdToForm`: 0.7 / 100 is 0.006999999999999999, which
+	// the API reads as an edit of the stored 0.007 and rejects on a tiered rule.
+	return isPercentSignal(subject) ? Number((n / 100).toPrecision(12)) : n
+}
+
+export function domainThresholdToForm(subject: ThresholdSubject, value: number): string {
+	// toPrecision(12) drops float noise: 0.07 * 100 is 7.000000000000001.
+	return isPercentSignal(subject) ? String(Number((value * 100).toPrecision(12))) : String(value)
+}
+
+const decodeEvaluationInterval = Schema.decodeUnknownOption(AlertEvaluationIntervalMinutes)
+
+/** The interval the form picked, or null for the window's own. */
+export const formEvaluationInterval = (form: RuleFormState): AlertEvaluationIntervalMinutes | null =>
+	form.evaluationIntervalMinutes.trim().length === 0
+		? null
+		: Option.getOrNull(decodeEvaluationInterval(Number(form.evaluationIntervalMinutes)))
+
+function parsePositiveNumber(value: string, fallback: number): number {
+	const parsed = Number(value)
+	if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+	return parsed
+}
+
+function parseNonNegativeNumber(value: string, fallback: number): number {
+	const parsed = Number(value)
+	if (!Number.isFinite(parsed) || parsed < 0) return fallback
+	return parsed
+}
+
+export function normalizeRuleQueryDraft(draft: QueryBuilderQueryDraftPayload | null): QueryBuilderQueryDraft {
+	const base = createQueryDraft(0)
+	if (draft == null) return base
+
+	const shared = {
+		...base,
+		...draft,
+		enabled: draft.enabled ?? base.enabled,
+		hidden: draft.hidden ?? base.hidden,
+		whereClause: draft.whereClause ?? base.whereClause,
+		stepInterval: draft.stepInterval ?? base.stepInterval,
+		orderByDirection: draft.orderByDirection ?? base.orderByDirection,
+		addOns: { ...base.addOns, ...draft.addOns },
+		groupBy: [...(draft.groupBy ?? base.groupBy)],
+		having: draft.having ?? base.having,
+		orderBy: draft.orderBy ?? base.orderBy,
+		limit: draft.limit ?? base.limit,
+		legend: draft.legend ?? base.legend,
+	}
+
+	if (draft.dataSource === "metrics") {
+		return {
+			...shared,
+			dataSource: "metrics",
+			signalSource: draft.signalSource ?? "default",
+			metricName: draft.metricName ?? "",
+			metricType: draft.metricType ?? "gauge",
+			isMonotonic: draft.isMonotonic ?? draft.metricType === "sum",
+		}
+	}
+	if (draft.dataSource === "logs") return { ...shared, dataSource: "logs" }
+	if (draft.dataSource === "product_events") return { ...shared, dataSource: "product_events" }
+	return { ...shared, dataSource: "traces" }
+}
+
+export function defaultRuleForm(serviceName?: string): RuleFormState {
+	const queryBuilderDraft = createQueryDraft(0)
+	return {
+		name: "",
+		notes: "",
+		enabled: true,
+		severity: "warning",
+		serviceNames: serviceName ? [serviceName] : [],
+		excludeServiceNames: [],
+		environments: [],
+		tags: [],
+		groupBy: [],
+		signalType: "error_rate",
+		comparator: "gt",
+		threshold: "5",
+		thresholdUpper: "",
+		recoveryValue: "",
+		escalation: null,
+		windowMinutes: "5",
+		evaluationIntervalMinutes: "",
+		minimumSampleCount: "50",
+		alertOnNoData: false,
+		consecutiveBreachesRequired: "2",
+		breachesOutOf: "",
+		consecutiveHealthyRequired: "2",
+		renotifyIntervalMinutes: "30",
+		apdexThresholdMs: "500",
+		queryBuilderDraft,
+		rawQuerySql: DEFAULT_RAW_QUERY_SQL,
+		rawQueryReducer: "identity",
+		destinationIds: [],
+		notificationTitle: "",
+		notificationBody: "",
+	}
+}
+
+/** Grouped rules cannot alert on no data: a group that stops reporting is held by its incident. */
+export function ruleFormIsGrouped(form: RuleFormState): boolean {
+	if (form.signalType === "raw_query") return false
+	if (form.signalType === "builder_query") {
+		return form.queryBuilderDraft.groupBy.some((token) => token !== "none" && token.length > 0)
+	}
+	return form.groupBy.length > 0
+}
+
+export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
+	const queryBuilderDraft = normalizeRuleQueryDraft(rule.queryBuilderDraft)
+	const unitSubject = { signalType: rule.signalType, queryBuilderDraft }
+	const toForm = (value: number | null) => (value === null ? "" : domainThresholdToForm(unitSubject, value))
+	// Tiers arrive lowest severity first: the first is the form's main row, a second is the escalation.
+	const [primary, escalation] = rule.thresholds
+	return {
+		name: rule.name,
+		notes: rule.notes ?? "",
+		enabled: rule.enabled,
+		severity: primary.severity,
+		serviceNames: rule.serviceNames?.length > 0 ? [...rule.serviceNames] : [],
+		excludeServiceNames: rule.excludeServiceNames?.length > 0 ? [...rule.excludeServiceNames] : [],
+		environments: rule.environments?.length > 0 ? [...rule.environments] : [],
+		tags: rule.tags?.length > 0 ? [...rule.tags] : [],
+		groupBy: rule.groupBy ? [...rule.groupBy] : [],
+		signalType: rule.signalType,
+		comparator: rule.comparator,
+		threshold: toForm(primary.value),
+		thresholdUpper: toForm(primary.upper),
+		recoveryValue: toForm(primary.recoveryValue),
+		escalation:
+			escalation === undefined
+				? null
+				: {
+						threshold: toForm(escalation.value),
+						recoveryValue: toForm(escalation.recoveryValue),
+						destinationIds: [...escalation.destinationIds],
+					},
+		windowMinutes: String(rule.windowMinutes),
+		evaluationIntervalMinutes:
+			rule.evaluationIntervalMinutes === null ? "" : String(rule.evaluationIntervalMinutes),
+		minimumSampleCount: String(rule.minimumSampleCount),
+		alertOnNoData: rule.noDataBehavior === "alert",
+		consecutiveBreachesRequired: String(rule.consecutiveBreachesRequired),
+		breachesOutOf: rule.breachesOutOf === null ? "" : String(rule.breachesOutOf),
+		consecutiveHealthyRequired: String(rule.consecutiveHealthyRequired),
+		renotifyIntervalMinutes: String(rule.renotifyIntervalMinutes),
+		apdexThresholdMs: rule.apdexThresholdMs == null ? "500" : String(rule.apdexThresholdMs),
+		queryBuilderDraft,
+		rawQuerySql: rule.rawQuerySql ?? DEFAULT_RAW_QUERY_SQL,
+		rawQueryReducer: rule.rawQueryReducer ?? "identity",
+		destinationIds: [...primary.destinationIds],
+		notificationTitle: rule.notificationTemplate?.title ?? "",
+		notificationBody: rule.notificationTemplate?.body ?? "",
+	}
+}
+
+export function rawSqlHasValueColumn(sql: string): boolean {
+	const trimmed = sql.trim()
+	if (trimmed.length === 0) return false
+
+	if (/\bas\s+["`]?value["`]?\b/i.test(trimmed)) return true
+
+	const firstFrom = trimmed.search(/\bfrom\b/i)
+	const selectHead = firstFrom >= 0 ? trimmed.slice(0, firstFrom) : trimmed.slice(0, 500)
+	return /(?:\bselect\b|,)\s*["`]?value["`]?\s*(?:,|$)/i.test(selectHead)
+}
+
+export function deriveRuleQueryIssues(form: RuleFormState): string[] {
+	const issues: string[] = []
+	if (form.signalType === "builder_query") {
+		const built = buildTimeseriesQuerySpec(form.queryBuilderDraft)
+		if (built.error != null || built.query == null) {
+			issues.push(`Query: ${built.error ?? "failed to build query"}`)
+		}
+	}
+	if (form.signalType === "raw_query") {
+		const sql = form.rawQuerySql.trim()
+		if (sql.length > 0 && !rawSqlHasValueColumn(sql)) {
+			issues.push("SQL value column")
+		}
+	}
+	return issues
+}
+
+/** Whether the comparator takes a critical tier and recovery values: range and equality ones do not. */
+export function comparatorSupportsTiers(comparator: AlertComparator): boolean {
+	return !isRangeComparator(comparator) && comparator !== "eq" && comparator !== "neq"
+}
+
+/** A form value that may be left empty, in domain units; null when empty or not a number. */
+export function optionalFormThreshold(subject: ThresholdSubject, value: string): number | null {
+	return value.trim().length > 0 && Number.isFinite(Number(value))
+		? formThresholdToDomain(subject, value)
+		: null
+}
+
+/** Whether `value` breaches `threshold`, for the one-sided comparators that carry tiers. */
+function breachesOneSided(value: number, comparator: AlertComparator, threshold: number): boolean {
+	return comparator === "gt"
+		? value > threshold
+		: comparator === "gte"
+			? value >= threshold
+			: comparator === "lt"
+				? value < threshold
+				: value <= threshold
+}
+
+/** `Number("")` is 0, so an empty field would otherwise pass as a value of zero. */
+export const isFilledNumber = (value: string): boolean =>
+	value.trim().length > 0 && Number.isFinite(Number(value))
+
+/**
+ * The tier and breach-window problems the server would reject, named for the form. Mirrors
+ * `validateThresholds` / `validateBreachWindow` in the backend.
+ */
+export function deriveTierIssues(form: RuleFormState): string[] {
+	const issues: string[] = []
+	const tiered = comparatorSupportsTiers(form.comparator)
+	// Tier ordering is strict even for inclusive comparators: equal tiers would always fire together.
+	const strict = form.comparator === "gte" ? "gt" : form.comparator === "lte" ? "lt" : form.comparator
+	const recoveryIssue = (label: string, threshold: string, recovery: string) => {
+		if (recovery.trim().length === 0 || !isFilledNumber(threshold)) return
+		if (
+			!isFilledNumber(recovery) ||
+			breachesOneSided(Number(recovery), form.comparator, Number(threshold))
+		) {
+			issues.push(label)
+		}
+	}
+	if (tiered) recoveryIssue("Recovery value", form.threshold, form.recoveryValue)
+	const escalation = tiered ? form.escalation : null
+	if (escalation !== null) {
+		if (!isFilledNumber(escalation.threshold)) {
+			issues.push("Critical threshold")
+		} else if (
+			isFilledNumber(form.threshold) &&
+			!breachesOneSided(Number(escalation.threshold), strict, Number(form.threshold))
+		) {
+			issues.push("Critical threshold past warning")
+		} else if (
+			isFilledNumber(escalation.recoveryValue) &&
+			breachesOneSided(Number(form.threshold), strict, Number(escalation.recoveryValue))
+		) {
+			issues.push("Critical recovery past warning")
+		}
+		recoveryIssue("Critical recovery value", escalation.threshold, escalation.recoveryValue)
+		if (escalation.destinationIds.length === 0) issues.push("Critical destinations")
+	}
+	if (form.breachesOutOf.trim().length > 0) {
+		const outOf = Number(form.breachesOutOf)
+		const required = Number(form.consecutiveBreachesRequired)
+		if (!Number.isInteger(outOf) || outOf < required || outOf > MAX_ALERT_BREACH_WINDOW) {
+			issues.push("Breach window")
+		}
+	}
+	return issues
+}
+
+/** The tiers the form saves, lowest severity first, in domain units. */
+export function formThresholds(form: RuleFormState): Arr.NonEmptyReadonlyArray<V2AlertThreshold> {
+	const tiered = comparatorSupportsTiers(form.comparator)
+	const escalation = tiered ? form.escalation : null
+	const primary: V2AlertThreshold = {
+		severity: escalation === null ? form.severity : "warning",
+		value: formThresholdToDomain(form, form.threshold),
+		upper: isRangeComparator(form.comparator) ? optionalFormThreshold(form, form.thresholdUpper) : null,
+		recovery_value: tiered ? optionalFormThreshold(form, form.recoveryValue) : null,
+		destination_ids: [...new Set(form.destinationIds)],
+	}
+	if (escalation === null) return [primary]
+	return [
+		primary,
+		{
+			severity: "critical",
+			value: formThresholdToDomain(form, escalation.threshold),
+			upper: null,
+			recovery_value: optionalFormThreshold(form, escalation.recoveryValue),
+			destination_ids: [...new Set(escalation.destinationIds)],
+		},
+	]
+}
+
+/**
+ * Assemble the v2 `POST /v2/alerts/rules` body from the form. Field names are
+ * the v2 snake_case wire spelling; IDs stay the internal branded values — the
+ * derived client's `PublicId` codecs encode them to `alrt_…`/`dest_…` on the
+ * wire. `query_builder_draft` is passed verbatim (opaque passthrough, validated
+ * server-side against the full draft schema).
+ */
+export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateParams {
+	const signalType = form.signalType
+	const queryOwnsScope = signalType === "builder_query" || signalType === "raw_query"
+	const notificationTitle = form.notificationTitle.trim()
+	const notificationBody = form.notificationBody.trim()
+	const notificationTemplate =
+		notificationTitle.length > 0 || notificationBody.length > 0
+			? {
+					...(notificationTitle.length > 0 ? { title: notificationTitle } : undefined),
+					...(notificationBody.length > 0 ? { body: notificationBody } : undefined),
+				}
+			: null
+	// `thresholds` is what the server stores; the single-threshold fields mirror it the way the
+	// server reports them, for the change list and preview identity that compare payloads.
+	const thresholds = formThresholds(form)
+	const primary = Arr.headNonEmpty(thresholds)
+	return {
+		name: form.name.trim(),
+		notes: form.notes.trim() || null,
+		enabled: form.enabled,
+		thresholds,
+		severity: Arr.lastNonEmpty(thresholds).severity,
+		tags: form.tags,
+		service_names: queryOwnsScope ? [] : form.serviceNames.filter((s) => s.trim().length > 0),
+		exclude_service_names: queryOwnsScope
+			? []
+			: form.excludeServiceNames.filter((s) => s.trim().length > 0),
+		environments: queryOwnsScope ? [] : form.environments.filter((s) => s.trim().length > 0),
+		group_by: queryOwnsScope ? null : form.groupBy.length > 0 ? form.groupBy : null,
+		signal_type: signalType,
+		comparator: form.comparator,
+		threshold: primary.value,
+		threshold_upper: primary.upper,
+		window_minutes: parsePositiveNumber(form.windowMinutes, 5),
+		evaluation_interval_minutes: formEvaluationInterval(form),
+		minimum_sample_count: parseNonNegativeNumber(form.minimumSampleCount, 0),
+		alert_on_no_data: form.alertOnNoData && !ruleFormIsGrouped(form),
+		consecutive_breaches_required: parsePositiveNumber(form.consecutiveBreachesRequired, 2),
+		breaches_out_of: form.breachesOutOf.trim().length === 0 ? null : Number(form.breachesOutOf),
+		consecutive_healthy_required: parsePositiveNumber(form.consecutiveHealthyRequired, 2),
+		renotify_interval_minutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),
+		apdex_threshold_ms: signalType === "apdex" ? parsePositiveNumber(form.apdexThresholdMs, 500) : null,
+		query_builder_draft:
+			signalType === "builder_query"
+				? Object.fromEntries(Object.entries(form.queryBuilderDraft))
+				: null,
+		raw_query_sql: signalType === "raw_query" ? form.rawQuerySql.trim() || null : null,
+		raw_query_reducer: signalType === "raw_query" ? form.rawQueryReducer : null,
+		destination_ids: Arr.dedupe(thresholds.flatMap((tier) => tier.destination_ids)),
+		notification_template: notificationTemplate,
+	}
+}
+
+export function buildRuleTestParamsV2(form: RuleFormState, sendNotification: boolean): V2AlertRuleTestParams {
+	return {
+		rule: buildRuleCreateParamsV2(form),
+		send_notification: sendNotification,
+	}
+}
+
+export function isRulePreviewReady(form: RuleFormState): boolean {
+	if (form.name.trim().length === 0) return false
+	if (!isFilledNumber(form.threshold)) return false
+	if (isRangeComparator(form.comparator) && !isFilledNumber(form.thresholdUpper)) return false
+	if (deriveTierIssues(form).some((issue) => issue !== "Critical destinations")) return false
+	if (form.signalType === "builder_query") return deriveRuleQueryIssues(form).length === 0
+	if (form.signalType === "raw_query") {
+		// The alert workload additionally requires $__timeFilter, and the shared
+		// validator covers the deny list, statement shape and terminal clauses that
+		// this used to leave for the server to discover.
+		return isValidRawSql(form.rawQuerySql.trim(), "alert") && deriveRuleQueryIssues(form).length === 0
+	}
+	return deriveRuleQueryIssues(form).length === 0
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Destination Form Helpers                                                  */
+/* -------------------------------------------------------------------------- */
+
+export type DestinationFormState = {
+	type: AlertDestinationType
+	name: string
+	enabled: boolean
+	/** Discord incoming-webhook URL. */
+	webhookUrl: string
+	integrationKey: string
+	url: string
+	signingSecret: string
+	/** Telegram bot token from @BotFather, and the chat it posts to. */
+	telegramBotToken: string
+	telegramChatId: string
+	hazelOrganizationId: string
+	hazelOrganizationName: string
+	hazelOrganizationLogoUrl: string | null
+	hazelChannelId: string
+	hazelChannelName: string
+	/** Selected workspace-member recipients (email type only). */
+	memberUserIds: string[]
+	/**
+	 * Chat connector destination: the linked workspace (fixed once created), the
+	 * connector that owns it (for its mark), and the channel picked from it.
+	 */
+	/** Branded as it arrives — from the connector list or the stored destination — so never decoded here. */
+	chatWorkspaceId: ChatWorkspaceId | null
+	chatConnector: string
+	chatChannelId: string
+	chatChannelName: string
+}
+
+export const MAX_EMAIL_MEMBER_RECIPIENTS = 10
+
+/** Defaults to `discord` — the tile the dialog lists first. */
+export function defaultDestinationForm(type: AlertDestinationType = "discord"): DestinationFormState {
+	return {
+		type,
+		name: "",
+		enabled: true,
+		webhookUrl: "",
+		integrationKey: "",
+		url: "",
+		signingSecret: "",
+		telegramBotToken: "",
+		telegramChatId: "",
+		hazelOrganizationId: "",
+		hazelOrganizationName: "",
+		hazelOrganizationLogoUrl: null,
+		hazelChannelId: "",
+		hazelChannelName: "",
+		memberUserIds: [],
+		chatWorkspaceId: null,
+		chatConnector: "",
+		chatChannelId: "",
+		chatChannelName: "",
+	}
+}
+
+/** The enabled destination most rules already notify, or the only enabled one. */
+export function pickDefaultDestination(
+	destinations: ReadonlyArray<Pick<AlertDestinationDocument, "id" | "enabled" | "disabledAt">>,
+	rules: ReadonlyArray<Pick<AlertRuleDocument, "destinationIds">>,
+): AlertDestinationDocument["id"] | null {
+	const usable = destinations.filter((d) => d.enabled && !d.disabledAt)
+	if (usable.length === 1) return usable[0]!.id
+	const uses = new Map<string, number>()
+	for (const id of rules.flatMap((rule) => rule.destinationIds)) uses.set(id, (uses.get(id) ?? 0) + 1)
+	const ranked = usable
+		.filter((d) => (uses.get(d.id) ?? 0) > 0)
+		.sort((a, b) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0))
+	return ranked[0]?.id ?? null
+}
+
+/** A new `chat` destination posting through one linked workspace; the channel is still to pick. */
+export function chatDestinationForm(
+	connector: string,
+	workspaceId: DestinationFormState["chatWorkspaceId"],
+): DestinationFormState {
+	return { ...defaultDestinationForm("chat"), chatWorkspaceId: workspaceId, chatConnector: connector }
+}
+
+/** The name a destination gets when the user leaves Name blank: where it delivers, not what it is. */
+export function suggestedDestinationName(form: DestinationFormState): string {
+	switch (form.type) {
+		case "chat":
+			return form.chatChannelName.length > 0 ? `#${form.chatChannelName}` : ""
+		case "hazel-oauth":
+			return form.hazelChannelName.length > 0 ? `Hazel #${form.hazelChannelName}` : "Hazel"
+		case "webhook":
+			return URL.canParse(form.url.trim()) ? new URL(form.url.trim()).host : "Webhook"
+		case "pagerduty":
+			return "PagerDuty"
+		case "discord":
+			return "Discord"
+		case "telegram":
+			return "Telegram"
+		case "email":
+			return "Email"
+	}
+}
+
+export function destinationToFormState(destination: AlertDestinationDocument): DestinationFormState {
+	return {
+		type: destination.type,
+		name: destination.name,
+		enabled: destination.enabled,
+		webhookUrl: "",
+		integrationKey: "",
+		url: "",
+		signingSecret: "",
+		// The bot token is a secret and never returned; the chat id is not, and
+		// comes back as `channelLabel` so an edit doesn't demand retyping it.
+		telegramBotToken: "",
+		telegramChatId: destination.type === "telegram" ? (destination.channelLabel ?? "") : "",
+		hazelOrganizationId: "",
+		hazelOrganizationName: "",
+		hazelOrganizationLogoUrl: null,
+		hazelChannelId: "",
+		hazelChannelName: "",
+		memberUserIds: destination.memberUserIds != null ? [...destination.memberUserIds] : [],
+		// The stored channel's id isn't returned, its `#name` is — kept so the current
+		// channel stays visible on edit (an empty id keeps the stored one).
+		chatWorkspaceId: destination.chatWorkspaceId ?? null,
+		chatConnector: destination.chatConnector ?? "",
+		chatChannelId: "",
+		chatChannelName:
+			destination.type === "chat" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
+	}
+}
+
+export function buildDestinationCreateParamsV2(form: DestinationFormState): V2AlertDestinationCreateParams {
+	switch (form.type) {
+		case "pagerduty":
+			return {
+				type: "pagerduty",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				integration_key: form.integrationKey.trim(),
+			}
+		case "webhook": {
+			const signingSecret = form.signingSecret.trim()
+			return {
+				type: "webhook",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				url: form.url.trim(),
+				...(signingSecret ? { signing_secret: signingSecret } : undefined),
+			}
+		}
+		case "hazel-oauth": {
+			const logoUrl = form.hazelOrganizationLogoUrl
+			return {
+				type: "hazel-oauth",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				hazel_organization_id: asHazelOrganizationId(form.hazelOrganizationId.trim()),
+				hazel_organization_name: form.hazelOrganizationName.trim(),
+				...(logoUrl !== null && logoUrl.trim().length > 0
+					? { hazel_organization_logo_url: logoUrl.trim() }
+					: undefined),
+				hazel_channel_id: asHazelChannelId(form.hazelChannelId.trim()),
+				hazel_channel_name: form.hazelChannelName.trim(),
+			}
+		}
+		case "discord":
+			return {
+				type: "discord",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				webhook_url: form.webhookUrl.trim(),
+			}
+		case "telegram":
+			return {
+				type: "telegram",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				bot_token: form.telegramBotToken.trim(),
+				chat_id: form.telegramChatId.trim(),
+			}
+		case "email":
+			return {
+				type: "email",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				member_user_ids: form.memberUserIds.map((userId) => asUserId(userId)),
+			}
+		case "chat":
+			// Unreachable from the dialog: its save stays disabled until a workspace is picked.
+			if (form.chatWorkspaceId === null) throw new Error("A chat destination needs a linked workspace")
+			// No channel name: the server reads it from the workspace's own listing.
+			return {
+				type: "chat",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				workspace_id: form.chatWorkspaceId,
+				channel_id: form.chatChannelId.trim(),
+			}
+	}
+}
+
+/**
+ * v2 PATCH semantics: omitted keys are left unchanged, so blank form fields
+ * (secrets the user didn't re-enter) are dropped from the payload entirely.
+ */
+export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2AlertDestinationUpdateParams {
+	const name = form.name.trim()
+	switch (form.type) {
+		case "pagerduty": {
+			const integrationKey = form.integrationKey.trim()
+			return {
+				type: "pagerduty",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(integrationKey ? { integration_key: integrationKey } : undefined),
+			}
+		}
+		case "webhook": {
+			const url = form.url.trim()
+			const signingSecret = form.signingSecret.trim()
+			return {
+				type: "webhook",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(url ? { url } : undefined),
+				...(signingSecret ? { signing_secret: signingSecret } : undefined),
+			}
+		}
+		case "hazel-oauth": {
+			const organizationId = form.hazelOrganizationId.trim()
+			const organizationName = form.hazelOrganizationName.trim()
+			const channelId = form.hazelChannelId.trim()
+			const channelName = form.hazelChannelName.trim()
+			return {
+				type: "hazel-oauth",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(organizationId
+					? { hazel_organization_id: asHazelOrganizationId(organizationId) }
+					: undefined),
+				...(organizationName ? { hazel_organization_name: organizationName } : undefined),
+				...(form.hazelOrganizationLogoUrl === null
+					? { hazel_organization_logo_url: null }
+					: form.hazelOrganizationLogoUrl.trim()
+						? { hazel_organization_logo_url: form.hazelOrganizationLogoUrl.trim() }
+						: {}),
+				...(channelId ? { hazel_channel_id: asHazelChannelId(channelId) } : undefined),
+				...(channelName ? { hazel_channel_name: channelName } : undefined),
+			}
+		}
+		case "discord": {
+			const webhookUrl = form.webhookUrl.trim()
+			return {
+				type: "discord",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(webhookUrl ? { webhook_url: webhookUrl } : undefined),
+			}
+		}
+		case "telegram": {
+			const botToken = form.telegramBotToken.trim()
+			const chatId = form.telegramChatId.trim()
+			return {
+				type: "telegram",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(botToken ? { bot_token: botToken } : undefined),
+				...(chatId ? { chat_id: chatId } : undefined),
+			}
+		}
+		case "email":
+			return {
+				type: "email",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(form.memberUserIds.length > 0
+					? {
+							member_user_ids: form.memberUserIds.map((userId) => asUserId(userId)),
+						}
+					: undefined),
+			}
+		case "chat": {
+			// Editing keeps the stored channel until a new one is picked.
+			const channelId = form.chatChannelId.trim()
+			return {
+				type: "chat",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(channelId ? { channel_id: channelId } : undefined),
+			}
+		}
+	}
+}
+
+/* -------------------------------------------------------------------------- */
+/*  v2 Response Mappers                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * v2 wire types keep snake_case property names after decode, while everything
+ * downstream of the preview/checks fetches (charts, diagnosis, breach stats)
+ * consumes the camelCase domain documents. These two mappers are the inverse of
+ * the server's `toV2Rule`/`toV2Check` and confine the spelling difference to
+ * the fetch boundary.
+ */
+export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRulePreviewResponse {
+	return new AlertRulePreviewResponse({
+		bucketSeconds: result.bucket_seconds,
+		windowMinutes: result.window_minutes,
+		threshold: result.threshold,
+		thresholdUpper: result.threshold_upper,
+		thresholds: Arr.map(result.thresholds, fromV2Threshold),
+		comparator: result.comparator,
+		truncatedToStart: asIsoOrNull(result.truncated_to_start),
+		series: result.series.map(
+			(series) =>
+				new AlertRulePreviewSeries({
+					groupKey: series.group_key,
+					points: series.points.map(
+						(point) =>
+							new AlertRulePreviewPoint({
+								bucket: asIso(point.bucket),
+								value: point.value,
+								sampleCount: point.sample_count,
+								status: point.status,
+								...(point.skip_reason !== undefined
+									? { skipReason: point.skip_reason }
+									: undefined),
+								...(point.provisional !== undefined
+									? { provisional: point.provisional }
+									: undefined),
+								...(point.level !== undefined ? { level: point.level } : undefined),
+							}),
+					),
+				}),
+		),
+		wouldFire: result.would_fire.map(
+			(span) =>
+				new AlertRulePreviewFiringSpan({
+					groupKey: span.group_key,
+					start: asIso(span.start),
+					end: asIso(span.end),
+					severity: span.severity,
+				}),
+		),
+		...(result.series_failure === undefined ? undefined : { seriesFailure: result.series_failure }),
+		...(result.query_timing === undefined
+			? undefined
+			: {
+					queryTiming: new AlertQueryTiming({
+						elapsedMs: result.query_timing.elapsed_ms,
+						failure: result.query_timing.failure,
+						probeLimitMs: result.query_timing.probe_limit_ms,
+						intervalMinutes: result.query_timing.interval_minutes,
+						limitMs: result.query_timing.limit_ms,
+						fitsIntervalMinutes: result.query_timing.fits_interval_minutes,
+					}),
+				}),
+	})
+}
+
+export function v2CheckToDocument(check: V2AlertCheck): AlertCheckDocument {
+	return new AlertCheckDocument({
+		timestamp: asIso(check.timestamp),
+		groupKey: check.group_key,
+		status: check.status,
+		skipReason: check.skip_reason,
+		signalType: check.signal_type,
+		comparator: check.comparator,
+		threshold: check.threshold,
+		thresholdUpper: check.threshold_upper,
+		observedValue: check.observed_value,
+		sampleCount: check.sample_count,
+		windowMinutes: check.window_minutes,
+		windowStart: asIso(check.window_start),
+		windowEnd: asIso(check.window_end),
+		consecutiveBreaches: check.consecutive_breaches,
+		consecutiveHealthy: check.consecutive_healthy,
+		incidentId: check.incident_id,
+		incidentTransition: check.incident_transition,
+		level: check.level,
+		evaluationDurationMs: check.evaluation_duration_ms,
+		errorMessage: check.error_message,
+		errorCategory: check.error_category,
+	})
+}
+
+export function v2DeliveryToDocument(delivery: V2AlertDelivery): AlertDeliveryEventDocument {
+	return new AlertDeliveryEventDocument({
+		id: delivery.id,
+		incidentId: delivery.incident_id,
+		ruleId: delivery.rule_id,
+		destinationId: delivery.destination_id,
+		destinationName: delivery.destination_name,
+		destinationType: delivery.destination_type,
+		deliveryKey: delivery.delivery_key,
+		eventType: delivery.event_type,
+		attemptNumber: delivery.attempt_number,
+		status: delivery.status,
+		scheduledAt: asIso(delivery.scheduled_at),
+		attemptedAt: asIsoOrNull(delivery.attempted_at),
+		providerMessage: delivery.provider_message,
+		providerReference: delivery.provider_reference,
+		responseCode: delivery.response_code,
+		errorMessage: delivery.error_message,
+	})
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Incident Stats                                                            */
+/* -------------------------------------------------------------------------- */
+
+export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
+	const totalTriggered = incidents.length
+	const resolvedIncidents = incidents.filter((i) => i.resolvedAt && i.firstTriggeredAt)
+	const avgResolutionMs =
+		resolvedIncidents.length > 0
+			? resolvedIncidents.reduce((sum, i) => {
+					const start = new Date(i.firstTriggeredAt).getTime()
+					const end = new Date(i.resolvedAt!).getTime()
+					return sum + (end - start)
+				}, 0) / resolvedIncidents.length
+			: 0
+
+	const avgResolution = avgResolutionMs > 0 ? formatResolutionDuration(avgResolutionMs) : EMPTY_VALUE
+
+	const groupCounts: Record<string, number> = {}
+	for (const i of incidents) {
+		const groupKey = i.groupKey ?? "all"
+		groupCounts[groupKey] = (groupCounts[groupKey] ?? 0) + 1
+	}
+	const topContributors = Object.entries(groupCounts)
+		.sort(([, a], [, b]) => b - a)
+		.slice(0, 5)
+
+	return { totalTriggered, avgResolution, topContributors }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Shared Formatters                                                         */
+/* -------------------------------------------------------------------------- */
+
+export function formatAlertDateTime(value: string | null, timeZone: string): string {
+	if (!value) return "Never"
+	return `${formatDateInTimezone(value, { timeZone })}, ${formatTimeInTimezone(value, { timeZone })}`
+}
+
+export function formatAlertDateTimeFull(value: string | null, timeZone: string): string {
+	if (!value) return EMPTY_VALUE
+	return formatTimestampInTimezone(value, { timeZone })
+}
+
+/** Time of day only (`03:10 PM`), used where a day header already carries the date. */
+export function formatAlertTime(value: string | null, timeZone: string): string {
+	if (!value) return EMPTY_VALUE
+	return formatTimeInTimezone(value, { timeZone })
+}
+
+/** Midnight of the day holding `ms`, in `timeZone` or the browser's zone. */
+const startOfDay = (ms: number, timeZone: string | undefined): number => {
+	if (timeZone !== undefined) return startOfDayInTimeZone(ms, timeZone)
+	const d = new Date(ms)
+	return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
+
+/** Day-bucket heading: `Today` / `Yesterday` / `Jun 4, 2026`. */
+function formatAlertDayHeading(value: string, timeZone: string | undefined, nowMs: number): string {
+	const date = new Date(value)
+	const today = startOfDay(nowMs, timeZone)
+	const target = startOfDay(date.getTime(), timeZone)
+	if (target === today) return "Today"
+	// Any instant inside the previous day, so a 23- or 25-hour day still counts.
+	if (target === startOfDay(today - 1, timeZone)) return "Yesterday"
+	return formatDateInTimezone(date, { timeZone: timeZone ?? getBrowserTimeZone() })
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Delivery-event presentation                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One token-based vocabulary for alert event types, shared by the delivery log,
+ * the recent-activity table, and the chat attachment card. Color is always
+ * paired with the label — never the only signal.
+ */
+export const eventTypeMeta: Record<AlertEventType, { label: string; tone: Tone }> = {
+	trigger: { label: "Triggered", tone: "crit" },
+	resolve: { label: "Resolved", tone: "ok" },
+	renotify: { label: "Re-notified", tone: "warn" },
+	test: { label: "Test", tone: "info" },
+} satisfies Record<AlertEventType, { label: string; tone: Tone }>
+
+export type DeliveryStatusVariant = Exclude<Tone, "neutral"> | "outline"
+
+/** Delivery status → Badge variant + human label. */
+export const deliveryStatusMeta: Record<
+	AlertDeliveryStatus,
+	{ label: string; variant: DeliveryStatusVariant }
+> = {
+	success: { label: "Delivered", variant: "ok" },
+	failed: { label: "Failed", variant: "crit" },
+	processing: { label: "Sending", variant: "warn" },
+	queued: { label: "Queued", variant: "outline" },
+} satisfies Record<AlertDeliveryStatus, { label: string; variant: DeliveryStatusVariant }>
+
+export interface DeliveryEventDayGroup {
+	key: string
+	label: string
+	events: AlertDeliveryEventDocument[]
+}
+
+/**
+ * Group delivery events by calendar day. Assumes the input is sorted
+ * newest-first (as the API returns it), so same-day events are contiguous.
+ */
+export function groupDeliveryEventsByDay(
+	events: ReadonlyArray<AlertDeliveryEventDocument>,
+	timeZone?: string,
+	/** "Today" is relative to this; callers with a pure view pass their clock. */
+	nowMs: number = Date.now(),
+): DeliveryEventDayGroup[] {
+	const groups: DeliveryEventDayGroup[] = []
+	for (const event of events) {
+		const key = String(startOfDay(Date.parse(event.scheduledAt), timeZone))
+		const last = groups[groups.length - 1]
+		if (last && last.key === key) {
+			last.events.push(event)
+		} else {
+			groups.push({
+				key,
+				label: formatAlertDayHeading(event.scheduledAt, timeZone, nowMs),
+				events: [event],
+			})
+		}
+	}
+	return groups
+}
+
+export function formatAlertDuration(startStr: string | null, endStr: string | null): string {
+	if (!startStr) return EMPTY_VALUE
+	const start = new Date(startStr).getTime()
+	const end = endStr ? new Date(endStr).getTime() : Date.now()
+	const diffMs = end - start
+	if (diffMs < 0) return EMPTY_VALUE
+	const mins = Math.floor(diffMs / 60_000)
+	if (mins < 60) return `${mins}m`
+	const hours = Math.floor(mins / 60)
+	const remainMins = mins % 60
+	if (hours < 24) return remainMins > 0 ? `${hours}h ${remainMins}m` : `${hours}h`
+	const days = Math.floor(hours / 24)
+	return `${days}d ${hours % 24}h`
+}
+
+/** Mean time to resolve: whole seconds under a minute, one decimal of minutes or hours above. */
+export function formatResolutionDuration(ms: number): string {
+	if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+	if (ms < 3_600_000) return `${(ms / 60_000).toFixed(1)}m`
+	return `${(ms / 3_600_000).toFixed(1)}h`
+}

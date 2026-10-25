@@ -14,6 +14,7 @@ const toV2Incident = (doc: AlertIncidentDocument): V2AlertIncident => ({
 	group_key: doc.groupKey,
 	signal_type: doc.signalType,
 	severity: doc.severity,
+	peak_severity: doc.peakSeverity,
 	status: doc.status,
 	comparator: doc.comparator,
 	threshold: doc.threshold,

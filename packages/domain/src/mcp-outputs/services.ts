@@ -1,7 +1,7 @@
 /** Output schemas for the services, metrics and query MCP tools. */
 import { Schema } from "effect"
 import { OutputPagination, OutputTimeRange } from "./shared"
-import { InfraEntityRow } from "./infra"
+import { InfraEntityRow, InfraKindSection } from "./infra"
 
 // list_services
 
@@ -81,6 +81,12 @@ export const DiagnoseServiceOutput = Schema.Struct({
 	),
 	/** Set when the infrastructure lookup failed; the rest of the diagnosis still stands. */
 	infrastructureError: Schema.optionalKey(Schema.String),
+	/**
+	 * Connected-platform entities behind the service: its Railway service or Cloudflare Worker (same
+	 * name) and the PlanetScale databases it calls. Absent when none match.
+	 */
+	platform: Schema.optionalKey(Schema.Array(InfraKindSection)),
+	platformError: Schema.optionalKey(Schema.String),
 })
 
 // get_service_top_operations

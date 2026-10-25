@@ -94,8 +94,8 @@ export class LocalStoreMigrationError extends Schema.TaggedError<LocalStoreMigra
 	{ dataDir: Schema.String, phase: MigrationPhase, message: Schema.String },
 ) {}
 
-/** Why no checkpoint could be selected: none was ever taken, or the registry is unusable. */
-export const CheckpointUnavailableReason = Schema.Literals(["none", "unusable"])
+/** Why no checkpoint could be selected: none was ever taken, another build took it, or the registry is unusable. */
+export const CheckpointUnavailableReason = Schema.Literals(["none", "other_build", "unusable"])
 
 /**
  * `maple restore` with nothing to restore from. Its own tag because it is the

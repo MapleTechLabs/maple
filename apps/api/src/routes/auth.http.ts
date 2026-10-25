@@ -13,6 +13,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
+import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
 
 const bearerToken = (header: string | undefined) => {
 	if (!header) return undefined
@@ -24,6 +25,7 @@ export const HttpAuthPublicLive = HttpApiBuilder.group(MapleApi, "authPublic", (
 	Effect.gen(function* () {
 		const authService = yield* AuthService
 		const cliAuth = yield* CliDeviceAuthService
+		const previewSignIn = yield* PreviewSignInService
 		return handlers
 			.handle("login", ({ payload }) => authService.loginSelfHosted(payload.password))
 			.handle("cliDeviceStart", ({ payload }) =>
@@ -35,15 +37,15 @@ export const HttpAuthPublicLive = HttpApiBuilder.group(MapleApi, "authPublic", (
 				}),
 			)
 			.handle("cliDevicePoll", ({ payload }) => cliAuth.poll(payload.deviceCode))
+			.handle("previewSignInStatus", () => previewSignIn.status())
+			.handle("previewSignIn", ({ payload }) => previewSignIn.signIn(payload.key))
 	}),
 )
 
 export const HttpAuthLive = HttpApiBuilder.group(MapleApi, "auth", (handlers) =>
 	Effect.gen(function* () {
-		const cliAuth = yield* CliDeviceAuthService
 		const auth = yield* AuthService
 		const apiKeys = yield* ApiKeysService
-		const mcpOAuth = yield* McpOAuthService
 		return handlers
 			.handle("session", () => CurrentTenant.Context)
 			.handle("sessionRefresh", () =>
@@ -61,20 +63,6 @@ export const HttpAuthLive = HttpApiBuilder.group(MapleApi, "auth", (handlers) =>
 					return yield* auth.refreshSelfHostedSession(token)
 				}),
 			)
-			.handle("cliDeviceInspect", ({ params }) => cliAuth.inspect(params.userCode))
-			.handle("cliDeviceApprove", ({ params }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const userEmail = yield* auth.getUserEmail(tenant.userId)
-					return yield* cliAuth.approve(params.userCode, {
-						orgId: tenant.orgId,
-						userId: tenant.userId,
-						roles: tenant.roles,
-						userEmail,
-					})
-				}),
-			)
-			.handle("cliDeviceDeny", ({ params }) => cliAuth.deny(params.userCode))
 			.handle("cliSessionRevoke", () =>
 				Effect.gen(function* () {
 					const request = yield* HttpServerRequest.HttpServerRequest
@@ -100,6 +88,29 @@ export const HttpAuthLive = HttpApiBuilder.group(MapleApi, "auth", (handlers) =>
 					return new CliDeviceActionResponse({ status: "revoked" })
 				}),
 			)
+	}),
+)
+
+export const HttpAuthSessionLive = HttpApiBuilder.group(MapleApi, "authSession", (handlers) =>
+	Effect.gen(function* () {
+		const cliAuth = yield* CliDeviceAuthService
+		const auth = yield* AuthService
+		const mcpOAuth = yield* McpOAuthService
+		return handlers
+			.handle("cliDeviceInspect", ({ params }) => cliAuth.inspect(params.userCode))
+			.handle("cliDeviceApprove", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const userEmail = yield* auth.getUserEmail(tenant.userId)
+					return yield* cliAuth.approve(params.userCode, {
+						orgId: tenant.orgId,
+						userId: tenant.userId,
+						roles: tenant.roles,
+						userEmail,
+					})
+				}),
+			)
+			.handle("cliDeviceDeny", ({ params }) => cliAuth.deny(params.userCode))
 			.handle("mcpOAuthAuthorizationInspect", ({ params }) => mcpOAuth.inspect(params.requestId))
 			.handle("mcpOAuthAuthorizationApprove", ({ params }) =>
 				Effect.gen(function* () {

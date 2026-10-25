@@ -5,7 +5,7 @@
  * graph this file drags in is imported on the first fire, not at startup and
  * not in the deploy process, where the Worker's init also runs.
  */
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertsService, type AlertSchedulerLane } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
@@ -15,12 +15,18 @@ import { Env } from "@maple/backend/platform/Env"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
 import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
+import { GcpMetricsService } from "@maple/backend/services/integrations/GcpMetricsService"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
+import { PlanetScaleMetricsService } from "@maple/backend/services/integrations/PlanetScaleMetricsService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
+import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
+import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
+import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -30,6 +36,7 @@ import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/back
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Cause, Effect, Layer, Match, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { isLaneOf, scheduleFor, type TickLane } from "./schedule.ts"
 import type { AlertingWorkerEnv } from "./worker.ts"
 
 /**
@@ -48,8 +55,14 @@ export const layerTick = (
 		AlertsService.layer,
 		AnomalyDetectionService.layer,
 		CloudflareAnalyticsService.layer,
+		GcpMetricsService.layer,
 		PlanetScaleService.layer,
+		PlanetScaleMetricsService.layer,
 		RailwayMetricsService.layer,
+		AwsConnectionService.layer,
+		SupabaseConnectionService.layer,
+		SupabaseLogsService.layer,
+		SupabaseInsightsService.layer,
 		DigestService.layer,
 		WebAnalyticsDigestService.layer,
 		ErrorsService.layer,
@@ -124,16 +137,22 @@ const makeTick = <A, E, R>(
 		catchTickFailure(spanKey),
 	)
 
-const alertTick = makeTick(
-	AlertsService.use((alerts) => alerts.runSchedulerTick()),
-	"scheduler",
-	(result) => ({
-		evaluatedCount: result.evaluatedCount,
-		processedCount: result.processedCount,
-		evaluationFailureCount: result.evaluationFailureCount,
-		deliveryFailureCount: result.deliveryFailureCount,
-	}),
-)
+const schedulerTick = (lane: AlertSchedulerLane, spanKey: string) =>
+	makeTick(
+		AlertsService.use((alerts) => alerts.runSchedulerTick(lane)),
+		spanKey,
+		(result) => ({
+			evaluatedCount: result.evaluatedCount,
+			processedCount: result.processedCount,
+			evaluationFailureCount: result.evaluationFailureCount,
+			warehouseUnavailableSkipCount: result.warehouseUnavailableSkipCount,
+			deferredCount: result.deferredCount,
+			deliveryFailureCount: result.deliveryFailureCount,
+		}),
+	)
+
+const alertTick = schedulerTick("standard", "scheduler")
+const alertLongQueryTick = schedulerTick("long_query", "scheduler_long_query")
 
 const errorTick = makeTick(
 	ErrorsService.use((errors) => errors.runTick()),
@@ -249,6 +268,22 @@ const cloudflareAnalyticsTick = makeTick(
 	}),
 )
 
+const gcpMetricsTick = makeTick(
+	GcpMetricsService.use((gcp) => gcp.pollAll()),
+	"gcp_metrics",
+	(result) =>
+		result.polled + result.deferred > 0
+			? {
+					polled: result.polled,
+					deferred: result.deferred,
+					rowsIngested: result.rowsIngested,
+					failures: result.failures,
+					incompleteMetrics: result.incompleteMetrics,
+					calls: result.calls,
+				}
+			: undefined,
+)
+
 const planetScaleTick = makeTick(
 	PlanetScaleService.use((planetscale) => planetscale.pollAllOrgs()),
 	"planetscale",
@@ -264,6 +299,34 @@ const planetScaleTick = makeTick(
 			: undefined,
 )
 
+const planetScaleMetricsTick = makeTick(
+	PlanetScaleMetricsService.use((metrics) => metrics.pollAll()),
+	"planetscale_metrics",
+	(result) =>
+		result.polled > 0
+			? {
+					orgs: result.orgs,
+					polled: result.polled,
+					branches: result.branches,
+					rowsIngested: result.rowsIngested,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
+const awsConnectionsTick = makeTick(
+	AwsConnectionService.use((aws) => aws.checkDue()),
+	"aws_connections",
+	(result) =>
+		result.due > 0
+			? {
+					due: result.due,
+					checked: result.checked,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
 const railwayMetricsTick = makeTick(
 	RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
 	"railway_metrics",
@@ -272,6 +335,49 @@ const railwayMetricsTick = makeTick(
 			? {
 					orgs: result.orgs,
 					rowsIngested: result.rowsIngested,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
+const supabaseDiscoveryTick = makeTick(
+	SupabaseConnectionService.use((supabase) => supabase.discoverAllOrgs()),
+	"supabase_discovery",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					discovered: result.discovered,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
+const supabaseLogsTick = makeTick(
+	SupabaseLogsService.use((supabase) => supabase.pollAllOrgs()),
+	"supabase_logs",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					rows: result.rows,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
+const supabaseInsightsTick = makeTick(
+	SupabaseInsightsService.use((supabase) => supabase.pollAllOrgs()),
+	"supabase_insights",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					advisorsRead: result.advisorsRead,
+					queriesRead: result.queriesRead,
 					skipped: result.skipped,
 					failures: result.failures,
 				}
@@ -295,107 +401,141 @@ const prReviewPostMergeTick = makeTick(
 
 export interface ScheduledTickPrograms<R = never> {
 	readonly alert: Effect.Effect<void, never, R>
+	readonly alertLongQuery: Effect.Effect<void, never, R>
 	readonly anomaly: Effect.Effect<void, never, R>
+	readonly awsConnections: Effect.Effect<void, never, R>
 	readonly cloudflareAnalytics: Effect.Effect<void, never, R>
 	readonly digest: Effect.Effect<void, never, R>
 	readonly error: Effect.Effect<void, never, R>
 	readonly escalation: Effect.Effect<void, never, R>
 	readonly fixVerification: Effect.Effect<void, never, R>
+	readonly gcpMetrics: Effect.Effect<void, never, R>
 	readonly planetScale: Effect.Effect<void, never, R>
+	readonly planetScaleMetrics: Effect.Effect<void, never, R>
 	readonly prReviewPostMerge: Effect.Effect<void, never, R>
 	readonly railwayMetrics: Effect.Effect<void, never, R>
 	readonly serviceMapRollup: Effect.Effect<void, never, R>
+	readonly supabaseDiscovery: Effect.Effect<void, never, R>
+	readonly supabaseLogs: Effect.Effect<void, never, R>
+	readonly supabaseInsights: Effect.Effect<void, never, R>
 }
 
-/**
- * Keep cron routing separate from the Worker shell so the schedule and its
- * concurrency groups can be characterized without acquiring production
- * drivers. The concrete tick Effects remain module-scoped and unchanged.
- */
-export const selectScheduledProgram = <R>(
-	cron: string,
-	ticks: ScheduledTickPrograms<R>,
-): Effect.Effect<void, never, R> =>
-	Match.value(cron).pipe(
-		Match.when("*/5 * * * *", () =>
-			Effect.all(
-				[
-					ticks.anomaly,
-					ticks.cloudflareAnalytics,
-					ticks.planetScale,
-					ticks.railwayMetrics,
-					ticks.prReviewPostMerge,
-				],
-				{ concurrency: 4, discard: true },
-			),
-		),
-		Match.when("*/15 * * * *", () => ticks.digest),
-		Match.when("0 * * * *", () => ticks.serviceMapRollup),
-		Match.when("* * * * *", () =>
-			// `fixVerification` is chained onto `error` rather than listed beside it:
-			// a window this minute's error tick just refuted must already be settled
-			// when the verification tick looks at it, and array order under bounded
-			// concurrency does not promise that — alert and escalation finishing
-			// first would have started fixVerification while error still ran.
-			Effect.all([ticks.alert, Effect.andThen(ticks.error, ticks.fixVerification), ticks.escalation], {
-				concurrency: 2,
-				discard: true,
-			}),
-		),
-		// Fail closed: a newly configured cron must not silently inherit the
-		// every-minute alert/error/escalation fan-out.
-		Match.orElse((unknownCron) =>
-			Effect.logWarning("Skipping unknown alerting cron schedule").pipe(
-				Effect.annotateLogs({ cron: unknownCron }),
-			),
-		),
+/** The program each lane runs; every tick belongs to exactly one lane. */
+const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect.Effect<void, never, R> =>
+	Match.value(lane).pipe(
+		Match.when("alert", () => ticks.alert),
+		Match.when("alert_long_query", () => ticks.alertLongQuery),
+		// `fixVerification` is chained onto `error` rather than given its own lane:
+		// a window this minute's error tick just refuted must already be settled
+		// when the verification tick looks at it.
+		Match.when("error", () => Effect.andThen(ticks.error, ticks.fixVerification)),
+		Match.when("escalation", () => ticks.escalation),
+		Match.when("anomaly", () => ticks.anomaly),
+		Match.when("cloudflare_analytics", () => ticks.cloudflareAnalytics),
+		Match.when("gcp_metrics", () => ticks.gcpMetrics),
+		// Metrics ride the inventory's lane: the 5-minute cron is at its six-connection cap, and
+		// they read the branch list the inventory just refreshed.
+		Match.when("planetscale", () => Effect.andThen(ticks.planetScale, ticks.planetScaleMetrics)),
+		Match.when("railway_metrics", () => ticks.railwayMetrics),
+		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
+		Match.when("digest", () => ticks.digest),
+		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
+		Match.when("aws_connections", () => ticks.awsConnections),
+		Match.when("supabase_discovery", () => ticks.supabaseDiscovery),
+		Match.when("supabase_logs", () => ticks.supabaseLogs),
+		Match.when("supabase_insights", () => ticks.supabaseInsights),
+		Match.exhaustive,
 	)
+
+/**
+ * One lane of `cron`, bounded by the cron's deadline. Kept apart from the
+ * Worker shell so routing and the deadline can be characterized without
+ * production drivers.
+ */
+export const selectLaneProgram = <R>(
+	cron: string,
+	lane: string,
+	ticks: ScheduledTickPrograms<R>,
+): Effect.Effect<void, never, R> => {
+	const schedule = scheduleFor(cron)
+	// Fail closed: an unknown cron or lane must not run anything.
+	if (schedule === undefined || !isLaneOf(cron, lane)) {
+		return Effect.logWarning("Skipping unknown alerting cron lane").pipe(
+			Effect.annotateLogs({ cron, lane }),
+		)
+	}
+	return laneProgram(lane, ticks).pipe(
+		Effect.timeoutOrElse({
+			duration: schedule.deadline,
+			orElse: () =>
+				Effect.logError("Alerting lane exceeded its deadline and was interrupted").pipe(
+					Effect.annotateLogs({
+						"maple.alerting.cron": cron,
+						"maple.alerting.lane": lane,
+						"maple.alerting.deadline": schedule.deadline,
+					}),
+				),
+		}),
+	)
+}
 
 type ScheduledServices =
 	| AlertsService
 	| AnomalyDetectionService
+	| AwsConnectionService
 	| CloudflareAnalyticsService
 	| DigestService
 	| WebAnalyticsDigestService
 	| ErrorsService
 	| EscalationService
 	| FixVerificationTickService
+	| GcpMetricsService
 	| PlanetScaleService
+	| PlanetScaleMetricsService
 	| PrReviewPostMergeService
 	| RailwayMetricsService
 	| ServiceMapRollupService
+	| SupabaseConnectionService
+	| SupabaseLogsService
+	| SupabaseInsightsService
 
 export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
 	alert: alertTick,
+	alertLongQuery: alertLongQueryTick,
 	anomaly: anomalyTick,
+	awsConnections: awsConnectionsTick,
 	cloudflareAnalytics: cloudflareAnalyticsTick,
 	digest: digestTick,
 	error: errorTick,
 	escalation: escalationTick,
 	fixVerification: fixVerificationTick,
+	gcpMetrics: gcpMetricsTick,
 	planetScale: planetScaleTick,
+	planetScaleMetrics: planetScaleMetricsTick,
 	prReviewPostMerge: prReviewPostMergeTick,
 	railwayMetrics: railwayMetricsTick,
 	serviceMapRollup: serviceMapRollupTick,
+	supabaseDiscovery: supabaseDiscoveryTick,
+	supabaseLogs: supabaseLogsTick,
+	supabaseInsights: supabaseInsightsTick,
 }
 
 /**
- * One cron fire: the tick group for `cron`, over the layer graph built from
- * this invocation's env and released when the fire completes — the same
- * build-per-fire the async entry did through `ManagedRuntime`. One Postgres
- * socket for the whole tick: alerting is ~97% of the workers' Postgres
- * traffic and a single anomaly tick was measured at 628 dials, each spending
- * one of the Worker's six outbound connection slots on a handshake; the
- * tick's statements now pipeline over one.
+ * One lane of a cron fire, over the layer graph built from this invocation's
+ * env and released when the lane completes. Each lane has its own Postgres
+ * pool: lanes used to share one per fire, so one stalled statement held every
+ * tick in it (alert, error and escalation together) for as long as it hung.
+ * The deadline sits inside the scope, so an interrupted lane's pool is closed.
  */
 export const runScheduled = (
 	cron: string,
+	lane: string,
 	env: AlertingWorkerEnv,
 	email: Option.Option<EmailSenderClient>,
 	chatSessions: ChatSessionNamespace,
 ): Effect.Effect<void, unknown> =>
-	withPgConnectionScope(selectScheduledProgram(cron, scheduledTicks)).pipe(
-		// One fire is one application run: the layer is built here and released
+	withPgConnectionScope(selectLaneProgram(cron, lane, scheduledTicks)).pipe(
+		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(layerTick(env, email, chatSessions)),

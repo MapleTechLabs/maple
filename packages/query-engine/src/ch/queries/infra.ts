@@ -5,7 +5,8 @@
 //
 //   - system.cpu.utilization           gauge, 0..1, attributes: cpu, state
 //   - system.memory.utilization        gauge, 0..1, attributes: state
-//   - system.filesystem.utilization    gauge, 0..1, attributes: device, mountpoint, state
+//   - system.filesystem.utilization    gauge, 0..1, attributes: device, mode, mountpoint, type
+//                                      (the hostmetrics receiver sets no state; some shippers add state=used)
 //   - system.cpu.load_average.1m|5m|15m  gauge, absolute, no attributes
 //   - system.network.io                sum,   bytes, attributes: device, direction
 //
@@ -46,13 +47,19 @@ const hostCpuPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
 	)
 
 // Read-only and virtual mounts (snap squashfs, container overlays) always report ~100%.
-const PSEUDO_FS_TYPES = ["squashfs", "overlay", "tmpfs", "devtmpfs", "iso9660", "ramfs"] as const
+export const PSEUDO_FS_TYPES = ["squashfs", "overlay", "tmpfs", "devtmpfs", "iso9660", "ramfs"] as const
+
+// The hostmetrics receiver emits utilization with no `state` (Map get returns ''); other
+// shippers split it into used/free/reserved rows. Both shapes keep only the used share.
+export const FILESYSTEM_USED_STATES = ["used", ""] as const
+const filesystemUsedState = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
+	CH.inList($.Attributes.get("state"), FILESYSTEM_USED_STATES)
 
 const hostDiskPctExpr = ($: ColumnAccessor<typeof MetricsGauge.columns>) =>
 	maxIfOrZero(
 		$.Value,
 		$.MetricName.eq("system.filesystem.utilization")
-			.and($.Attributes.get("state").eq("used"))
+			.and(filesystemUsedState($))
 			.and(CH.notInList($.Attributes.get("type"), PSEUDO_FS_TYPES)),
 	)
 
@@ -165,9 +172,11 @@ export interface HostGaugeTimeseriesOpts {
 	hostName: string
 	metricName: string
 	groupByAttributeKey?: string
-	// Pins one data-point attribute, e.g. `state = 'used'` for filesystem
-	// utilization, which otherwise averages used/free/reserved together.
-	attributeEquals?: { readonly key: string; readonly value: string }
+	// Keeps points whose attribute is one of `values` ('' matches a missing key), e.g.
+	// filesystem utilization's used state, which otherwise averages used/free/reserved.
+	attributeIn?: { readonly key: string; readonly values: readonly string[] }
+	// Drops points whose attribute is one of `values`, e.g. pseudo filesystem types.
+	attributeNotIn?: { readonly key: string; readonly values: readonly string[] }
 }
 
 export interface HostGaugeTimeseriesOutput {
@@ -191,8 +200,11 @@ export function hostGaugeTimeseriesQuery(opts: HostGaugeTimeseriesOpts) {
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq(opts.metricName),
-			opts.attributeEquals
-				? $.Attributes.get(opts.attributeEquals.key).eq(opts.attributeEquals.value)
+			opts.attributeIn
+				? CH.inList($.Attributes.get(opts.attributeIn.key), opts.attributeIn.values)
+				: undefined,
+			opts.attributeNotIn
+				? CH.notInList($.Attributes.get(opts.attributeNotIn.key), opts.attributeNotIn.values)
 				: undefined,
 		])
 
@@ -236,8 +248,8 @@ export function hostNetworkTimeseriesQuery(opts: HostNetworkTimeseriesOpts) {
 		.format("JSON")
 }
 
-// Host filesystems: used fraction per mountpoint. `state` must be pinned to `used`;
-// averaging across used/free/reserved reads every disk as about a third full.
+// Host filesystems: used fraction per mountpoint. Rows split by state must keep only
+// `used`; averaging used/free/reserved reads every disk as about a third full.
 
 export interface HostFilesystemsOpts {
 	hostName: string
@@ -256,8 +268,8 @@ export function hostFilesystemsQuery(opts: HostFilesystemsOpts) {
 		.select(($) => ({
 			mountpoint: $.Attributes.get("mountpoint"),
 			device: CH.any_($.Attributes.get("device")),
-			usedAvg: avgIfOrZero($.Value, $.Attributes.get("state").eq("used")),
-			usedMax: maxIfOrZero($.Value, $.Attributes.get("state").eq("used")),
+			usedAvg: finiteOrZero(CH.avg($.Value)),
+			usedMax: CH.ifNotFinite(CH.max_($.Value), 0),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -265,7 +277,8 @@ export function hostFilesystemsQuery(opts: HostFilesystemsOpts) {
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get("host.name").eq(opts.hostName),
 			$.MetricName.eq("system.filesystem.utilization"),
-			$.Attributes.get("state").eq("used"),
+			filesystemUsedState($),
+			CH.notInList($.Attributes.get("type"), PSEUDO_FS_TYPES),
 		])
 		.groupBy("mountpoint")
 		.orderBy(["usedMax", "desc"])
@@ -342,7 +355,7 @@ export interface ListPodsOpts {
 	excludedComputeTypes?: ReadonlyArray<string>
 	// Single-value filters retained for backward compat with the workload detail
 	// page, which still narrows by a single workload owner.
-	workloadKind?: "deployment" | "statefulset" | "daemonset"
+	workloadKind?: WorkloadKind
 	workloadName?: string
 	/** Defaults to `saturation` — see PodSortKey. */
 	sortBy?: PodSortKey
@@ -409,12 +422,14 @@ export interface ListPodsOutput {
 	readonly saturation: number
 }
 
-const workloadAttrKey = (kind: "deployment" | "statefulset" | "daemonset") =>
-	kind === "deployment"
-		? "k8s.deployment.name"
-		: kind === "statefulset"
-			? "k8s.statefulset.name"
-			: "k8s.daemonset.name"
+const WORKLOAD_ATTR_KEY = {
+	deployment: "k8s.deployment.name",
+	statefulset: "k8s.statefulset.name",
+	daemonset: "k8s.daemonset.name",
+	job: "k8s.job.name",
+} as const satisfies Record<WorkloadKind, string>
+
+const workloadAttrKey = (kind: WorkloadKind) => WORKLOAD_ATTR_KEY[kind]
 
 const podBaseConditions = (
 	$: ColumnAccessor<typeof MetricsGauge.columns>,
@@ -742,7 +757,7 @@ export function podDetailSummaryQuery(opts: PodDetailSummaryOpts) {
 export interface PodRestartsOpts {
 	podNames?: ReadonlyArray<string>
 	namespace?: string
-	workloadKind?: "deployment" | "statefulset" | "daemonset"
+	workloadKind?: WorkloadKind
 	workloadName?: string
 	limit?: number
 }
@@ -1033,10 +1048,10 @@ export function nodeGaugeTimeseriesQuery(opts: NodeGaugeTimeseriesOpts) {
 		.format("JSON")
 }
 
-// Kubernetes — workload aggregations (Deployment / StatefulSet / DaemonSet).
+// Kubernetes — workload aggregations (Deployment / StatefulSet / DaemonSet / Job).
 // Walks over k8s.pod.* metrics and groups by workload-name + namespace.
 
-export type WorkloadKind = "deployment" | "statefulset" | "daemonset"
+export type WorkloadKind = "deployment" | "statefulset" | "daemonset" | "job"
 
 export interface ListWorkloadsOpts {
 	kind: WorkloadKind
@@ -1057,10 +1072,40 @@ export interface ListWorkloadsOutput {
 	readonly environment: string
 	readonly podCount: number
 	readonly lastSeen: DateTime.Utc
-	readonly avgCpuLimitPct: number
-	readonly avgMemoryLimitPct: number
-	readonly avgCpuUsage: number
+	/**
+	 * The latest desired / ready gauges from the k8s_cluster receiver. Jobs report
+	 * completions: desired successful pods and pods that succeeded. Both read 0 when
+	 * `replicaSamples` is 0, i.e. the cluster collector isn't running.
+	 */
+	readonly desiredReplicas: number
+	readonly readyReplicas: number
+	readonly replicaSamples: number
+	/** Desired minus ready, never negative; always 0 for jobs, whose shortfall is just "still running". */
+	readonly shortfall: number
+	/** Jobs only: pods that failed. */
+	readonly failedPods: number
+	/** Container restarts in the window, summed over every pod. */
+	readonly restarts: number
+	/** The reason a restarting container last terminated (OOMKilled, Error, ...); empty with no restarts. */
+	readonly lastTerminatedReason: string
+	/** The worst pod's peak, not the average: the average hides the one pod at its limit. */
+	readonly peakCpuLimitPct: number
+	readonly peakMemoryLimitPct: number
+	readonly saturation: number
+	/** Cores in use now, summed over the pods still reporting at the window's end. */
+	readonly cpuUsage: number
 }
+
+/** The k8s_cluster receiver's gauges for each kind; job readiness counts completions. */
+const WORKLOAD_REPLICA_METRICS = {
+	deployment: { desired: "k8s.deployment.desired", ready: "k8s.deployment.available" },
+	statefulset: { desired: "k8s.statefulset.desired_pods", ready: "k8s.statefulset.ready_pods" },
+	daemonset: { desired: "k8s.daemonset.desired_scheduled_nodes", ready: "k8s.daemonset.ready_nodes" },
+	job: { desired: "k8s.job.desired_successful_pods", ready: "k8s.job.successful_pods" },
+} as const satisfies Record<WorkloadKind, { desired: string; ready: string }>
+
+const JOB_FAILED_METRIC = "k8s.job.failed_pods" as const
+const CONTAINER_RESTARTS_METRIC = "k8s.container.restarts" as const
 
 const workloadFilterConditions = (
 	$: ColumnAccessor<typeof MetricsGauge.columns>,
@@ -1080,36 +1125,140 @@ const workloadFilterConditions = (
 	opts.environments?.length
 		? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
 		: undefined,
+	// Pod and restart series carry the compute-type label (k8sattributes copies it from the node);
+	// the replica gauges don't, so they stay in the scan and listWorkloadsQuery drops workloads
+	// with no matching pod series.
 	opts.computeTypes?.length
-		? CH.inList($.ResourceAttributes.get("eks.amazonaws.com/compute-type"), opts.computeTypes)
+		? CH.notInList($.MetricName, [...POD_METRIC_NAMES, CONTAINER_RESTARTS_METRIC]).or(
+				CH.inList($.ResourceAttributes.get("eks.amazonaws.com/compute-type"), opts.computeTypes),
+			)
 		: undefined,
 ]
 
+/**
+ * One row per workload: replica health from the k8s_cluster gauges, restarts from
+ * `k8s.container.restarts`, and the worst pod's saturation from kubeletstats.
+ *
+ * The inner pass reduces each series (one pod, one container, one metric) to its
+ * first, last and peak value, because restarts are a running total per container
+ * and only the series' delta is meaningful. The outer pass rolls the series up per
+ * workload. Sorted worst first: missing replicas, failed job pods, restarts, saturation.
+ */
 export function listWorkloadsQuery(opts: ListWorkloadsOpts) {
 	const attrKey = workloadAttrKey(opts.kind)
-	return from(MetricsGauge)
+	const replica = WORKLOAD_REPLICA_METRICS[opts.kind]
+	const metricNames = [
+		...POD_METRIC_NAMES,
+		CONTAINER_RESTARTS_METRIC,
+		replica.desired,
+		replica.ready,
+		...(opts.kind === "job" ? [JOB_FAILED_METRIC] : []),
+	]
+
+	const perSeries = from(MetricsGauge)
 		.select(($) => ({
 			workloadName: $.ResourceAttributes.get(attrKey),
 			// Same-named workloads in different namespaces/clusters are distinct rows.
 			namespace: $.ResourceAttributes.get("k8s.namespace.name"),
 			clusterName: $.ResourceAttributes.get("k8s.cluster.name"),
+			podUid: $.ResourceAttributes.get("k8s.pod.uid"),
+			containerName: $.ResourceAttributes.get("k8s.container.name"),
+			metric: $.MetricName,
 			environment: CH.any_(deploymentEnvExpr($.ResourceAttributes)),
-			podCount: CH.uniq($.ResourceAttributes.get("k8s.pod.uid")),
+			earliest: CH.argMin($.Value, $.TimeUnix),
+			latest: CH.argMax($.Value, $.TimeUnix),
+			peak: CH.max_($.Value),
 			lastSeen: CH.max_($.TimeUnix),
-			avgCpuLimitPct: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.cpu_limit_utilization")),
-			avgMemoryLimitPct: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.memory_limit_utilization")),
-			avgCpuUsage: avgIfOrZero($.Value, $.MetricName.eq("k8s.pod.cpu.usage")),
+			lastReason: CH.argMax(
+				$.ResourceAttributes.get("k8s.container.status.last_terminated_reason"),
+				$.TimeUnix,
+			),
+			// When a restart counter first reached its high-water mark, i.e. its last restart.
+			// The key ranks by value, then by earliest time; both fit exactly in a Float64.
+			restartedAt: CH.toUnixTimestamp(
+				CH.argMax($.TimeUnix, $.Value.mul(4294967296).sub(CH.toUnixTimestamp($.TimeUnix))),
+			),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
 			$.ResourceAttributes.get(attrKey).neq(""),
-			$.MetricName.in_(...POD_METRIC_NAMES),
+			$.MetricName.in_(...metricNames),
 			...workloadFilterConditions($, opts, attrKey),
 		])
+		.groupBy("workloadName", "namespace", "clusterName", "podUid", "containerName", "metric")
+
+	const perWorkload = fromQuery(perSeries, "series")
+		.select(($) => {
+			const isRestarts = $.metric.eq(CONTAINER_RESTARTS_METRIC)
+			const restartDelta = CH.greatest_($.latest.sub($.earliest), CH.lit(0))
+			const restartedWithReason = isRestarts.and($.latest.gt($.earliest)).and($.lastReason.neq(""))
+			const desiredReplicas = maxIfOrZero($.latest, $.metric.eq(replica.desired))
+			const readyReplicas = maxIfOrZero($.latest, $.metric.eq(replica.ready))
+			const peakCpuLimitPct = maxIfOrZero($.peak, $.metric.eq("k8s.pod.cpu_limit_utilization"))
+			const peakMemoryLimitPct = maxIfOrZero($.peak, $.metric.eq("k8s.pod.memory_limit_utilization"))
+			return {
+				workloadName: $.workloadName,
+				namespace: $.namespace,
+				clusterName: $.clusterName,
+				environment: CH.any_($.environment),
+				podCount: CH.uniqIf($.podUid, CH.inList($.metric, POD_METRIC_NAMES)),
+				lastSeen: CH.max_($.lastSeen),
+				desiredReplicas,
+				readyReplicas,
+				replicaSamples: CH.countIf($.metric.eq(replica.desired)),
+				shortfall:
+					opts.kind === "job"
+						? CH.lit(0)
+						: CH.greatest_(desiredReplicas.sub(readyReplicas), CH.lit(0)),
+				failedPods: maxIfOrZero($.latest, $.metric.eq(JOB_FAILED_METRIC)),
+				restarts: finiteOrZero(CH.sumIf(restartDelta, isRestarts)),
+				// The reason of whichever container restarted most recently.
+				lastTerminatedReason: CH.argMax(
+					CH.if_(restartedWithReason, $.lastReason, CH.lit("")),
+					CH.if_(restartedWithReason, $.restartedAt, CH.lit(0)),
+				),
+				peakCpuLimitPct,
+				peakMemoryLimitPct,
+				saturation: CH.greatest_(peakCpuLimitPct, peakMemoryLimitPct),
+				cpuUsage: finiteOrZero(
+					CH.sumIf($.latest, $.metric.eq("k8s.pod.cpu.usage").and($.lastSeen.gte(endedCutoff()))),
+				),
+			}
+		})
 		.groupBy("workloadName", "namespace", "clusterName")
-		.orderBy(["lastSeen", "desc"])
+
+	// The builder has no HAVING, so the compute-type gate filters outside the grouping:
+	// a workload qualifies only if at least one of its pod series matched the filter.
+	return fromQuery(perWorkload, "workloads")
+		.select(($) => ({
+			workloadName: $.workloadName,
+			namespace: $.namespace,
+			clusterName: $.clusterName,
+			environment: $.environment,
+			podCount: $.podCount,
+			lastSeen: $.lastSeen,
+			desiredReplicas: $.desiredReplicas,
+			readyReplicas: $.readyReplicas,
+			replicaSamples: $.replicaSamples,
+			shortfall: $.shortfall,
+			failedPods: $.failedPods,
+			restarts: $.restarts,
+			lastTerminatedReason: $.lastTerminatedReason,
+			peakCpuLimitPct: $.peakCpuLimitPct,
+			peakMemoryLimitPct: $.peakMemoryLimitPct,
+			saturation: $.saturation,
+			cpuUsage: $.cpuUsage,
+		}))
+		.where(($) => [opts.computeTypes?.length ? $.podCount.gt(0) : undefined])
+		.orderBy(
+			["shortfall", "desc"],
+			["failedPods", "desc"],
+			["restarts", "desc"],
+			["saturation", "desc"],
+			["workloadName", "asc"],
+		)
 		.limit(opts.limit ?? 200)
 		.offset(opts.offset ?? 0)
 		.format("JSON")

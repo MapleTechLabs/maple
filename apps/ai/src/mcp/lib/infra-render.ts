@@ -1,6 +1,6 @@
 /** Markdown for infrastructure rows: one table layout per kind, shared by list_infra and inspect_infra. */
 import type { InfraEntityRow, InfraKind, InfraKindSection } from "@maple/domain/mcp-outputs"
-import { formatNumber, formatPercent, tableCell } from "./format"
+import { formatDurationFromMs, formatNumber, formatPercent, tableCell } from "./format"
 import { doc, type DocBlock } from "./tool-doc"
 import { HOT_THRESHOLD, LIMIT_THRESHOLD, pressure } from "./infra"
 import { parseWarehouseDateTime } from "@maple/query-engine"
@@ -25,6 +25,10 @@ export const KIND_NOUN = {
 	nodes: "nodes",
 	workloads: "workloads",
 	containers: "containers",
+	cloudflare_zones: "Cloudflare zones",
+	cloudflare_workers: "Cloudflare Workers",
+	railway_services: "Railway services",
+	planetscale_databases: "PlanetScale databases",
 } as const satisfies Record<InfraKind, string>
 
 /** The `inspect_infra` kind for a `list_infra` kind. */
@@ -34,7 +38,30 @@ export const ENTITY_KIND = {
 	nodes: "node",
 	workloads: "workload",
 	containers: "container",
+	cloudflare_zones: "cloudflare_zone",
+	cloudflare_workers: "cloudflare_worker",
+	railway_services: "railway_service",
+	planetscale_databases: "planetscale_database",
 } as const satisfies Record<InfraKind, string>
+
+/** Bytes as KiB..TiB, for bandwidth and memory. */
+export const formatBytes = (bytes: number | undefined): string => {
+	if (bytes === undefined) return ""
+	const units = ["B", "KiB", "MiB", "GiB", "TiB"] as const
+	const exponent = Math.min(
+		units.length - 1,
+		Math.max(0, Math.floor(Math.log(Math.max(bytes, 1)) / Math.log(1024))),
+	)
+	return `${(bytes / 1024 ** exponent).toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`
+}
+
+const ms = (value: number | undefined): string => (value === undefined ? "" : formatDurationFromMs(value))
+const count = (value: number | undefined): string =>
+	value === undefined ? "" : formatNumber(Math.round(value))
+
+/** Error rates the web app tones amber and red at, for kinds measured by traffic not limits. */
+const ERROR_RATE_HOT = 0.01
+const ERROR_RATE_HIGH = 0.05
 
 const pct = (value: number | undefined): string => (value === undefined ? "" : formatPercent(value))
 
@@ -63,6 +90,8 @@ export const formatUptime = (seconds: number | undefined): string => {
 const pressureText = (kind: InfraKind, resource: string, level: number): string => {
 	if (kind === "hosts")
 		return resource === "disk" ? `disk ${pct(level)} full` : `${resource} ${pct(level)} avg`
+	if (kind === "planetscale_databases")
+		return resource === "disk" ? `storage ${pct(level)} full` : `${resource} peaked at ${pct(level)}`
 	const ofLimit = kind === "containers" ? "" : " of limit"
 	return kind === "workloads"
 		? `${resource} ${pct(level)}${ofLimit} avg`
@@ -71,6 +100,15 @@ const pressureText = (kind: InfraKind, resource: string, level: number): string 
 
 /** Every resource at 60% or more, worst first, under the label of the worst. */
 export const statusOf = (row: InfraEntityRow, kind: InfraKind): string => {
+	if (kind === "cloudflare_zones" || kind === "cloudflare_workers") {
+		const rate = row.errorRate ?? 0
+		const what = kind === "cloudflare_zones" ? "5xx" : "errors"
+		return rate >= ERROR_RATE_HIGH
+			? `HIGH ${what}: ${pct(rate)}`
+			: rate >= ERROR_RATE_HOT
+				? `${what}: ${pct(rate)}`
+				: ""
+	}
 	if (row.unbounded) return "no limits set"
 	const resources: ReadonlyArray<readonly [string, number | undefined]> = [
 		["memory", row.memoryPeak ?? row.memory],
@@ -118,7 +156,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					r.load15 === undefined ? "" : r.load15.toFixed(2),
 					r.os ?? "",
 					status(r),
-					r.lastSeen,
+					r.lastSeen ?? "",
 				]),
 			)
 		case "pods":
@@ -152,7 +190,7 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					r.cluster ?? "",
 					cores(r.cpuCores),
 					formatUptime(r.uptimeSeconds),
-					r.lastSeen,
+					r.lastSeen ?? "",
 				]),
 			)
 		case "workloads":
@@ -191,6 +229,100 @@ export const kindTable = (section: InfraKindSection): DocBlock => {
 					status(r),
 				]),
 			)
+		case "cloudflare_zones":
+			return doc.table(
+				[
+					"Zone",
+					"Requests",
+					"5xx rate",
+					"4xx",
+					"Cache hit",
+					"Bandwidth",
+					"Edge TTFB p95",
+					"Origin p95",
+					"Status",
+				],
+				rows.map((r) => [
+					tableCell(r.name),
+					count(r.requests),
+					pct(r.errorRate),
+					count(r.errors4xx),
+					pct(r.cacheHitRate),
+					formatBytes(r.bytes),
+					ms(r.latencyP95Ms),
+					ms(r.originP95Ms),
+					status(r),
+				]),
+			)
+		case "cloudflare_workers":
+			return doc.table(
+				[
+					"Worker",
+					"Account",
+					"Invocations",
+					"Error rate",
+					"Subrequests",
+					"Duration p50 → p99",
+					"CPU p99",
+					"Status",
+				],
+				rows.map((r) => [
+					tableCell(r.name),
+					tableCell(r.project ?? "", 14),
+					count(r.requests),
+					pct(r.errorRate),
+					count(r.subrequests),
+					r.latencyP50Ms === undefined ? "" : `${ms(r.latencyP50Ms)} → ${ms(r.latencyP99Ms)}`,
+					ms(r.cpuTimeP99Ms),
+					status(r),
+				]),
+			)
+		case "railway_services":
+			return doc.table(
+				[
+					"Service",
+					"Project / environment",
+					"Replicas",
+					"CPU of limit avg → peak",
+					"Memory of limit avg → peak",
+					"Memory (avg)",
+					"Status",
+					"Last seen",
+				],
+				rows.map((r) => [
+					tableCell(r.name),
+					`${r.project ?? ""} / ${r.environment ?? ""}`,
+					count(r.replicas),
+					limitPct(r, avgPeak(r.cpu, r.cpuPeak)),
+					limitPct(r, avgPeak(r.memory, r.memoryPeak)),
+					formatBytes(r.memoryBytes),
+					status(r),
+					r.lastSeen ?? "",
+				]),
+			)
+		case "planetscale_databases":
+			return doc.table(
+				[
+					"Database",
+					"CPU (busiest pod, peak)",
+					"Memory (busiest pod, peak)",
+					"Storage used",
+					"Connections avg → peak",
+					"Replica lag (worst)",
+					"Status",
+				],
+				rows.map((r) => [
+					tableCell(r.name),
+					pct(r.cpuPeak),
+					pct(r.memoryPeak),
+					r.disk === undefined ? "unknown" : pct(r.disk),
+					r.connections === undefined
+						? ""
+						: `${r.connections.toFixed(1)} → ${count(r.connectionsPeak)}`,
+					r.replicaLagSeconds === undefined ? "" : `${r.replicaLagSeconds.toFixed(1)}s`,
+					status(r),
+				]),
+			)
 	}
 }
 
@@ -203,6 +335,14 @@ export const KIND_METRICS = {
 		"Metrics: the pod metrics (k8s.pod.*) of the workload's pods. Chart per workload with group_by resource.k8s.deployment.name (or statefulset/daemonset).",
 	containers:
 		"Metrics: container.cpu.utilization and container.memory.percent (0-100), container.restarts. Chart per container with group_by resource.container.name.",
+	cloudflare_zones:
+		"Metrics: cloudflare.http.requests (by http.status_class, cache.status), cloudflare.http.bytes, cloudflare.http.edge.ttfb and cloudflare.http.origin.duration (by quantile), written every 5 minutes by the Cloudflare integration under service.name=cloudflare/<zone>.",
+	cloudflare_workers:
+		"Metrics: cloudflare.worker.requests (by worker.status), cloudflare.worker.errors, cloudflare.worker.duration and cloudflare.worker.cpu_time (by quantile), under service.name=cloudflare-worker/<script>.",
+	railway_services:
+		"Metrics: railway.cpu.usage/limit (vCPU), railway.memory.usage/limit (bytes), railway.network.io, railway.disk.usage, polled from Railway per replica. Chart per service with group_by service.name.",
+	planetscale_databases:
+		"Metrics: planetscale_pods_cpu_util_percentages, planetscale_pods_mem_util_percentages, planetscale_volume_*_bytes, connection and replica-lag gauges, scraped from PlanetScale's Prometheus endpoint per database and branch.",
 } as const satisfies Record<InfraKind, string>
 
 /** What the CPU and memory percentages of a kind are measured against. */
@@ -213,6 +353,14 @@ export const KIND_BASIS = {
 	workloads: "CPU and memory are averaged across the workload's pods, against their limits.",
 	containers:
 		"CPU is a share of the host's CPUs; memory is a share of the container's memory limit (the host's memory when none is set); status uses the window peak.",
+	cloudflare_zones:
+		"Totals over the window from Cloudflare's GraphQL analytics (sampled, ABR-adjusted); worst 5xx count first. Status flags a 5xx rate of 1% or more.",
+	cloudflare_workers:
+		"Totals over the window from Cloudflare's Workers analytics; most errors first. Status flags an error rate of 1% or more.",
+	railway_services:
+		"CPU and memory are summed across replicas, against the service's limits; status uses the window peak.",
+	planetscale_databases:
+		"CPU and memory are the busiest pod's peak; storage is the fullest branch. Branches include short-lived pr-* ones, so a spike may be one of those.",
 } as const satisfies Record<InfraKind, string>
 
 export const summaryLine = (section: InfraKindSection, status?: string): string => {

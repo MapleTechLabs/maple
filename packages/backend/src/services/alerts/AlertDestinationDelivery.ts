@@ -170,7 +170,11 @@ export const makeAlertDestinationDelivery = (options: {
 					threshold: context.threshold,
 					thresholdUpper: context.thresholdUpper,
 					windowMinutes: context.windowMinutes,
+					...(context.ruleSeverities === undefined
+						? undefined
+						: { severities: context.ruleSeverities }),
 				},
+				peakSeverity: context.incidentPeakSeverity ?? null,
 				observed: {
 					value: context.value,
 					sampleCount: context.sampleCount,
@@ -195,6 +199,7 @@ export const makeAlertDestinationDelivery = (options: {
 				readonly incidentStatus: AlertDeliveryPayloadContext["incidentStatus"]
 				readonly dedupeKey: string
 				readonly rule: Record<string, unknown>
+				readonly peakSeverity: AlertDeliveryPayloadContext["incidentPeakSeverity"] | null
 				readonly observed: Record<string, unknown>
 				readonly template: AlertNotificationTemplate | null
 				readonly chart: {

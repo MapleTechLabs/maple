@@ -1,0 +1,145 @@
+.pb-stage {
+	cursor: pointer;
+	outline: none;
+}
+.pb-flow[data-busy] {
+	stroke-dasharray: 2 2.5;
+}
+.pb-lamp .iso-top,
+.pb-lamp .iso-shade {
+	transition: fill 0.62s var(--anatomy-ease);
+}
+.pb-lamp[data-state="ok"] .iso-top {
+	fill: var(--anatomy-green);
+}
+.pb-lamp[data-state="ok"] .iso-shade {
+	fill: color-mix(in oklab, var(--anatomy-green) 55%, var(--anatomy-paper));
+}
+.pb-lamp[data-state="fail"] .iso-top {
+	fill: var(--anatomy-red);
+}
+.pb-lamp[data-state="fail"] .iso-shade {
+	fill: color-mix(in oklab, var(--anatomy-red) 55%, var(--anatomy-paper));
+}
+.pb-root {
+	--pb-paper: color-mix(in oklab, var(--bg-elevated) 30%, var(--background));
+	--anatomy-card: var(--pb-paper);
+	--anatomy-paper: var(--pb-paper);
+	--anatomy-face: color-mix(in oklab, white 4%, var(--pb-paper));
+	--anatomy-top: color-mix(in oklab, white 5%, var(--pb-paper));
+	--anatomy-shade-0: color-mix(in oklab, black 24%, var(--pb-paper));
+	--anatomy-shade-1: color-mix(in oklab, black 14%, var(--pb-paper));
+	--anatomy-shade-2: color-mix(in oklab, black 6%, var(--pb-paper));
+	--anatomy-shade-3: color-mix(in oklab, white 2%, var(--pb-paper));
+	--anatomy-lit-top: color-mix(in oklab, white 12%, var(--pb-paper));
+	--anatomy-lit-shade: color-mix(in oklab, white 6%, var(--pb-paper));
+	--anatomy-hi: color-mix(in oklab, var(--foreground) 82%, var(--pb-paper));
+	--anatomy-mid: color-mix(in oklab, var(--foreground) 40%, var(--pb-paper));
+	--anatomy-lo: color-mix(in oklab, var(--foreground) 22%, var(--pb-paper));
+	--anatomy-faint: color-mix(in oklab, var(--foreground) 12%, var(--pb-paper));
+	--anatomy-lit: var(--primary);
+	--anatomy-dot: var(--foreground);
+	--anatomy-text: var(--muted-foreground);
+	--anatomy-muted: var(--muted-foreground);
+	--anatomy-green: var(--chart-3);
+	--anatomy-red: var(--severity-error);
+	--anatomy-halo: black;
+	margin: 40px 0;
+}
+.pb-root .iso-figure {
+	margin: 0;
+}
+.pb-root .iso-plate {
+	border-radius: 10px;
+	box-shadow: 0 0 0 1px var(--border);
+	padding: 44px 16px;
+}
+.pb-cone {
+	opacity: 0;
+	stroke-width: 0.5;
+	transition: opacity 0.44s var(--anatomy-ease);
+}
+.pb-cone[data-on] {
+	opacity: 0.55;
+}
+@media (max-width: 560px) {
+	.pb-root .iso-plate-corner[data-corner="hint"] {
+		display: none;
+	}
+	.pb-root .iso-plate-corner[data-corner="readout"] {
+		left: 0;
+		white-space: normal;
+		text-align: right;
+	}
+}
+.pb-roll {
+	--pb-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+	display: inline-grid;
+	vertical-align: bottom;
+	line-height: 1.3;
+}
+.pb-roll__line {
+	grid-area: 1/1;
+	justify-self: end;
+}
+.pb-word {
+	display: inline-block;
+	transition:
+		transform 375ms var(--pb-ease-out),
+		opacity 375ms var(--pb-ease-out),
+		filter 375ms var(--pb-ease-out);
+	transition-delay: min(calc(var(--i) * 38ms), 340ms);
+}
+.pb-roll__line[data-enter] .pb-word,
+.pb-word[data-enter] {
+	opacity: 0;
+	transform: translateY(0.55em);
+	filter: blur(5px);
+	transition: none;
+}
+.pb-roll__line[data-enter] .pb-verdict,
+.pb-verdict[data-enter] {
+	transform: translateY(0.55em) scale(0.94);
+	filter: blur(8px);
+}
+.pb-sep {
+	transition-delay: 0s;
+}
+.pb-verdict {
+	transition-delay: 50ms;
+}
+.pb-word.pb-pending {
+	opacity: 0;
+	transform: translateY(0.55em) scale(0.94);
+	filter: blur(8px);
+	transition-delay: 0s;
+}
+.pb-roll__line[data-leave] .pb-word {
+	opacity: 0;
+	transform: translateY(-0.35em);
+	filter: blur(4px);
+	transition-duration: 200ms;
+	transition-delay: 0s;
+}
+.pb-ok {
+	color: var(--anatomy-green);
+}
+.pb-fail {
+	color: var(--anatomy-red);
+}
+.pb-spec {
+	will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+	.pb-word {
+		transition: opacity 200ms ease-out;
+		transition-delay: 0s;
+	}
+	.pb-roll__line[data-enter] .pb-word,
+	.pb-word[data-enter],
+	.pb-word.pb-pending,
+	.pb-roll__line[data-leave] .pb-word {
+		transform: none;
+		filter: none;
+	}
+}

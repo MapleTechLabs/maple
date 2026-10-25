@@ -17,11 +17,14 @@ import { makeFetch } from "./http"
  */
 const ExportedSpan = Schema.Struct({
 	name: Schema.String,
+	kind: Schema.optionalKey(Schema.Finite),
 	attributes: Schema.Array(
 		Schema.Struct({ key: Schema.String, value: Schema.Record(Schema.String, Schema.Unknown) }),
 	),
 })
 type ExportedSpan = typeof ExportedSpan.Type
+/** OTLP `SPAN_KIND_SERVER`. Effect names server spans by method alone, so kind is what marks one. */
+const SERVER_KIND = 2
 const decodeExportedTraces = Schema.decodeUnknownSync(
 	Schema.Struct({
 		resourceSpans: Schema.optionalKey(
@@ -59,7 +62,7 @@ const capturedServerSpans = Effect.acquireRelease(
 						decodeExportedTraces(JSON.parse(String(init?.body ?? "{}"))).resourceSpans ?? [],
 				)
 				.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
-				.filter((span) => span.name.startsWith("http.server ")),
+				.filter((span) => span.kind === SERVER_KIND),
 	),
 )
 
@@ -126,21 +129,21 @@ describe("the maple-ai Worker through alchemy's bridge", () => {
 
 			assert.deepStrictEqual(health, {
 				status: 200,
-				span: "http.server GET",
+				span: "GET",
 				ordinal: undefined,
 				ageMs: undefined,
 				headers: { ordinal: undefined, ageMs: undefined },
 			})
 			assert.deepStrictEqual(first, {
 				status: 200,
-				span: "http.server POST",
+				span: "POST",
 				ordinal: "1",
 				ageMs: "0",
 				headers: { ordinal: "1", ageMs: "0" },
 			})
 			assert.deepStrictEqual(failed, {
 				status: 503,
-				span: "http.server POST",
+				span: "POST",
 				ordinal: "2",
 				ageMs: "250",
 				headers: { ordinal: "2", ageMs: "250" },

@@ -48,6 +48,7 @@ export type StepOperation =
 	| { readonly op: "drop-columns"; readonly table: string; readonly columns: ReadonlyArray<string> }
 	| { readonly op: "drop"; readonly kind: "TABLE" | "VIEW"; readonly names: ReadonlyArray<string> }
 	| { readonly op: "backfill"; readonly statements: ReadonlyArray<string> }
+	| { readonly op: "modify-ttl"; readonly table: string; readonly ttl: string }
 
 export const addColumns = (
 	table: string,
@@ -81,6 +82,9 @@ export const backfill = (...statements: ReadonlyArray<string>): StepOperation =>
 	statements,
 })
 
+/** `ttl` is the full TTL expression; MODIFY TTL replaces the table's previous one. */
+export const modifyTtl = (table: string, ttl: string): StepOperation => ({ op: "modify-ttl", table, ttl })
+
 const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 	switch (operation.op) {
 		case "add-columns":
@@ -97,6 +101,8 @@ const operationSql = (operation: StepOperation): ReadonlyArray<string> => {
 			return operation.names.map((name) => `DROP ${operation.kind} IF EXISTS ${name}`)
 		case "backfill":
 			return operation.statements
+		case "modify-ttl":
+			return [`ALTER TABLE ${operation.table} MODIFY TTL ${operation.ttl}`]
 	}
 }
 
@@ -145,14 +151,14 @@ export type StepProgress = { readonly [field: string]: string | number | boolean
 export interface StepCustom {
 	/** Strictly decodes the journaled progress; `apply` returns the same shape. */
 	readonly progress: Schema.Codec<StepProgress, unknown>
-	readonly apply: (db: Chdb, state: StepState) => StepProgress
-	readonly verify: (db: Chdb, state: StepState, progress: StepProgress) => void
+	readonly apply: (db: Pick<Chdb, "query" | "exec">, state: StepState) => StepProgress
+	readonly verify: (db: Pick<Chdb, "query" | "exec">, state: StepState, progress: StepProgress) => void
 }
 
 export const customStep = <Progress extends StepProgress>(custom: {
 	readonly progress: Schema.Codec<Progress, unknown>
-	readonly apply: (db: Chdb, state: StepState) => Progress
-	readonly verify: (db: Chdb, state: StepState, progress: Progress) => void
+	readonly apply: (db: Pick<Chdb, "query" | "exec">, state: StepState) => Progress
+	readonly verify: (db: Pick<Chdb, "query" | "exec">, state: StepState, progress: Progress) => void
 }): StepCustom => {
 	const decodeProgress = strictDecoder(custom.progress)
 	return {
@@ -285,16 +291,19 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 		return INSTALLED
 	}
 
-	const scalarCount = (db: Chdb, sql: string): string => {
+	const scalarCount = (db: Pick<Chdb, "query" | "exec">, sql: string): string => {
 		const count = decodeJsonObjectRows(db.query(sql))[0]?.count
 		return isCount(count) ? count : fail(`${label} count query returned no row: ${sql}`)
 	}
 
-	const run = (db: Chdb, operations: ReadonlyArray<StepOperation> | undefined): void => {
+	const run = (
+		db: Pick<Chdb, "query" | "exec">,
+		operations: ReadonlyArray<StepOperation> | undefined,
+	): void => {
 		for (const statement of stepStatements(operations ?? [])) db.exec(statement)
 	}
 
-	const verifyCounts = (db: Chdb, counts: StepCounts, state: StepState): void => {
+	const verifyCounts = (db: Pick<Chdb, "query" | "exec">, counts: StepCounts, state: StepState): void => {
 		const expected = decodeCountGroup(counts.group, state[counts.group])
 		const found = counts.checks.map((check) => ({
 			check,

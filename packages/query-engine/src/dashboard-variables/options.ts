@@ -87,6 +87,16 @@ export function dashboardVariableOptionsQuery(
 ): DashboardVariableOptionsQuery | null {
 	if (variable.type !== "query") return null
 	const source = variable.source
+	if (source.kind === "metric") {
+		return {
+			kind: "attributeValues",
+			source: "metrics",
+			scope: source.scope,
+			attributeKey: source.attributeKey,
+			metricNames: source.metricNames,
+			metricType: source.metricType,
+		}
+	}
 	if (source.kind === "attribute") {
 		return {
 			kind: "attributeValues",

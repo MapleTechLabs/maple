@@ -152,6 +152,14 @@ pub(super) fn stamp(span: &Span, vendor: &str, facts: &Facts, out: &mut Vec<KeyV
         if call { "1" } else { "0" }.to_owned(),
     ));
     if !call {
+        // eve reports a Vercel AI Gateway call's cost on the `agent.step`
+        // that wraps it, never on the `chat` span; the read side charges a
+        // leaf reporter's cost once, so the session total keeps it.
+        if vendor == "eve" && span.name == "agent.step" {
+            if let Some(cost) = facts.number(facts::COST) {
+                out.push(owned_string_attribute(COST_ATTR, cost.to_string()));
+            }
+        }
         return false;
     }
     let usage = Usage::read(
@@ -1280,6 +1288,55 @@ mod tests {
         );
         assert_eq!(app[0].vendor, "unknown:genai");
         assert!(app[0].buckets.is_none() && app[0].cost.is_none());
+    }
+
+    /// The Vercel deployment of `frameworks/eve`: AI Gateway's cost lands on
+    /// the step, the tokens on its `chat` call.
+    #[test]
+    fn eve_step_keeps_the_gateway_cost_its_chat_call_lacks() {
+        let session = ("gen_ai.conversation.id", "wrun_1");
+        let stamped = stamp_spans(
+            "docs-verify-eve-vercel",
+            "eve.agent",
+            &[
+                (
+                    "agent.step",
+                    &[
+                        ("gen_ai.operation.name", "workflow"),
+                        ("gen_ai.usage.cost", "0.0004263"),
+                        ("agent.usage.input_tokens", "2700"),
+                        session,
+                    ],
+                ),
+                (
+                    "chat openai/gpt-4o-mini",
+                    &[
+                        ("gen_ai.operation.name", "chat"),
+                        ("gen_ai.usage.input_tokens", "2700"),
+                        ("gen_ai.usage.output_tokens", "50"),
+                        session,
+                    ],
+                ),
+                (
+                    "invoke_agent support-agent",
+                    &[
+                        ("gen_ai.operation.name", "invoke_agent"),
+                        ("gen_ai.usage.input_tokens", "2700"),
+                        ("gen_ai.usage.output_tokens", "50"),
+                        session,
+                    ],
+                ),
+            ],
+        );
+        assert!(stamped.iter().all(|span| span.vendor == "eve"));
+        let step = &stamped[0];
+        assert_eq!(step.llm_call.as_deref(), Some("0"));
+        assert!(step.buckets.is_none());
+        assert_eq!(step.cost.as_deref(), Some("0.0004263"));
+        assert_eq!(stamped[1].llm_call.as_deref(), Some("1"));
+        assert_eq!(stamped[1].buckets, Some([2700, 0, 0, 50, 0]));
+        assert!(stamped[1].cost.is_none());
+        assert!(stamped[2].buckets.is_none() && stamped[2].cost.is_none());
     }
 
     /// `captures/claude_agent_sdk_agents`: the Messages API's own usage, with

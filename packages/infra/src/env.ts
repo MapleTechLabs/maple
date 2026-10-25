@@ -164,7 +164,8 @@ export const selfObservabilityEnv = (
 	)
 
 /**
- * prd services deployed together that must report the same revision. The "Prod revision skew"
+ * prd services deployed together that must report the same revision. Not ingest: it reports
+ * the last commit that touched `apps/ingest` (`INGEST_COMMIT_SHA`). The "Prod revision skew"
  * alert rule (id `2a6e9529-5f73-4478-9fa0-432904ff15c8`) lives in the Maple database, not this
  * repo: if you change this list, you MUST edit that rule's SQL to match.
  */
@@ -172,7 +173,6 @@ export const PRD_LOCKSTEP_REVISION_SERVICES = [
 	"alerting",
 	"maple-ai",
 	"electric-sync",
-	"ingest",
 	"maple-api",
 	"maple-web",
 ] as const
@@ -198,8 +198,15 @@ export const planetScaleOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("MAPLE_PLANETSCALE_API_BASE_URL"),
 )
 
+/** Supabase integration (Management API OAuth app: confidential client with PKCE). */
+export const supabaseOAuthEnv: Config.Config<WorkerEnv> = merge(
+	optionalPlain("SUPABASE_OAUTH_CLIENT_ID"),
+	optionalSecret("SUPABASE_OAUTH_CLIENT_SECRET"),
+	optionalPlain("MAPLE_SUPABASE_API_BASE_URL"),
+)
+
 /**
- * The GitHub App as a repository reader, for api and maple-ai. The install flow's client
+ * The GitHub App as a repository reader, for api, maple-ai and alerting. The install flow's client
  * id/secret and the webhook secret stay api-only.
  */
 export const githubAppSourceEnv: Config.Config<WorkerEnv> = merge(
@@ -214,4 +221,7 @@ export const apnsEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("APNS_TEAM_ID"),
 	optionalPlain("APNS_KEY_ID"),
 	optionalSecret("APNS_PRIVATE_KEY"),
+	// App Attest for device credentials: App ID = <APNS_TEAM_ID>.<MAPLE_IOS_BUNDLE_ID>.
+	optionalPlain("MAPLE_IOS_BUNDLE_ID"),
+	optionalPlain("MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT"),
 )

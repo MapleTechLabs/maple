@@ -5,6 +5,7 @@
  * knows the container.
  */
 import type { OrgId } from "@maple/domain/http"
+import { SANDBOX_COMMAND_ENV_NAMES } from "@maple/domain/sandbox"
 import {
 	Sandbox,
 	SandboxEnvironment,
@@ -13,7 +14,7 @@ import {
 	SandboxUnsupportedRequestError,
 	type SandboxError,
 	type SandboxEvent,
-} from "@yielded/agent/sandbox"
+} from "@maple/backend/sandbox/contract"
 import { Context, Duration, Effect, Layer, Stream } from "effect"
 import {
 	NETWORK_DISABLED,
@@ -143,7 +144,7 @@ const limits = (timeoutSeconds: number) =>
 		maxWallTime: Duration.seconds(timeoutSeconds),
 	})
 
-const environment = new SandboxEnvironment({ allow: ["PATH", "HOME", "LANG"] })
+const environment = new SandboxEnvironment({ allow: SANDBOX_COMMAND_ENV_NAMES })
 
 /** A workspace-relative path as the contract's absolute cwd/argument. */
 const inWorkspace = (relative: string | undefined): string =>
@@ -189,7 +190,7 @@ const drain = (
 	)
 
 export class RepoSandboxService extends Context.Service<RepoSandboxService, RepoSandboxServiceApi>()(
-	"@maple/api/services/sandbox/RepoSandboxService",
+	"@maple/backend/services/sandbox/RepoSandboxService",
 	{
 		make: Effect.gen(function* () {
 			const sandbox = yield* Sandbox

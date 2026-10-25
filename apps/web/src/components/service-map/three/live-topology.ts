@@ -1,4 +1,4 @@
-import type { Edge, Node } from "@xyflow/react"
+import type { EdgeBase, NodeBase } from "@xyflow/system"
 import type { ServiceEdgeData, ServiceNodeData } from "@maple/ui/components/service-map/service-map-utils"
 import type { Node3DKind, Topology3D } from "./types"
 
@@ -6,8 +6,8 @@ const QUEUE_SYSTEMS = new Set(["kafka", "rabbitmq", "sqs", "aws_sqs", "nats", "p
 
 /** Consume the same resolved, filtered graph as 2D; preserve sample-weighted rates and metric meanings. */
 export function liveTopology(
-	nodes: ReadonlyArray<Node<ServiceNodeData>>,
-	edges: ReadonlyArray<Edge<ServiceEdgeData>>,
+	nodes: ReadonlyArray<NodeBase<ServiceNodeData>>,
+	edges: ReadonlyArray<EdgeBase<ServiceEdgeData>>,
 	dimmedNodes: ReadonlySet<string>,
 	dimmedEdges: ReadonlySet<string>,
 ): Topology3D {

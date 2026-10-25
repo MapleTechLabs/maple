@@ -1,0 +1,95 @@
+---
+/**
+ * BigStats: a row of oversized numbers, each in its own tone, for the
+ * headline figures of a post. Props keep the copy in the MDX.
+ */
+type Tone = "primary" | "blue" | "green" | "violet" | "red" | "amber"
+
+interface Props {
+	title?: string
+	items: ReadonlyArray<{ value: string; unit?: string; label: string; tone: Tone }>
+}
+
+const { title, items } = Astro.props
+---
+
+<figure class="bst">
+	{title && <figcaption class="bst__title">{title}</figcaption>}
+	<div class="bst__grid" style={`--bst-cols: ${Math.min(items.length, 4)}`}>
+		{
+			items.map((item) => (
+				<div class={`bst__cell bst__cell--${item.tone}`}>
+					<span class="bst__value">
+						{item.value}
+						{item.unit && <span class="bst__unit">{item.unit}</span>}
+					</span>
+					<span class="bst__label">{item.label}</span>
+				</div>
+			))
+		}
+	</div>
+</figure>
+
+<style>
+	.bst {
+		margin: 40px 0;
+	}
+	.bst__title {
+		margin-bottom: 10px;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.bst__grid {
+		display: grid;
+		grid-template-columns: repeat(var(--bst-cols), minmax(0, 1fr));
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		overflow: hidden;
+		background: color-mix(in oklab, var(--bg-elevated) 30%, transparent);
+	}
+	@media (max-width: 640px) {
+		.bst__grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+	.bst__cell {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 20px 18px 18px;
+		border-right: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+		margin: 0 -1px -1px 0;
+	}
+	.bst__cell--primary { --bst-tone: var(--primary); }
+	.bst__cell--blue { --bst-tone: var(--chart-2); }
+	.bst__cell--green { --bst-tone: var(--chart-3); }
+	.bst__cell--violet { --bst-tone: var(--chart-5); }
+	.bst__cell--red { --bst-tone: var(--severity-error); }
+	.bst__cell--amber { --bst-tone: var(--severity-warn); }
+	.bst__value {
+		white-space: nowrap;
+		font-family: var(--font-display, inherit);
+		font-size: clamp(30px, 4.2vw, 40px);
+		font-weight: 600;
+		line-height: 1;
+		letter-spacing: -0.03em;
+		font-variant-numeric: tabular-nums;
+		color: var(--bst-tone);
+	}
+	.bst__unit {
+		margin-left: 3px;
+		font-size: 0.36em;
+		font-weight: 500;
+		letter-spacing: 0;
+		color: color-mix(in oklab, var(--bst-tone) 70%, var(--muted-foreground));
+	}
+	.bst__label {
+		font-size: 12.5px;
+		line-height: 1.4;
+		color: var(--muted-foreground);
+	}
+</style>

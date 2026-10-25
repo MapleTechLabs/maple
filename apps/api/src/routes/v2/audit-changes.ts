@@ -1,4 +1,5 @@
 import type { AuditChanges } from "@maple/domain/http"
+import { redactUrlSecrets } from "@maple/domain/url-redaction"
 
 /**
  * Structural equality, insensitive to object key order (a server-rebuilt
@@ -80,15 +81,8 @@ export const compactAuditChanges = (
 	return { fields: changes.fields, before, after }
 }
 
-/**
- * Strip userinfo, query string, and fragment from a URL destined for an audit
- * row — scrape URLs routinely embed tokens there. Keeps scheme/host/path.
- */
-export const redactAuditUrl = (raw: string): string => {
-	if (!URL.canParse(raw)) return "<invalid-url>"
-	const url = new URL(raw)
-	return `${url.protocol}//${url.host}${url.pathname}`
-}
+/** Strip userinfo, query and fragment from a URL destined for an audit row; scrape URLs embed tokens there. */
+export const redactAuditUrl = redactUrlSecrets
 
 /**
  * Build the `changes` diff for one resource's update handler.

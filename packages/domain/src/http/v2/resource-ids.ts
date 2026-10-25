@@ -6,9 +6,11 @@ import {
 	AlertIncidentId,
 	AlertRuleId,
 	AnomalyIncidentId,
+	DeviceCredentialId,
 	ErrorIncidentId,
 	ErrorIssueId,
 	InvestigationId,
+	McpConnectionId,
 	MobileDeviceId,
 } from "../../primitives"
 import { PublicId, PublicIdPrefixes } from "./public-id"
@@ -25,3 +27,5 @@ export const ErrorIssuePublicId = PublicId(PublicIdPrefixes.errorIssue, ErrorIss
 export const InvestigationPublicId = PublicId(PublicIdPrefixes.investigation, InvestigationId)
 export const MobileDevicePublicId = PublicId(PublicIdPrefixes.mobileDevice, MobileDeviceId)
 export const AgentFeedbackPublicId = PublicId(PublicIdPrefixes.agentFeedback, AgentFeedbackId)
+export const McpConnectionPublicId = PublicId(PublicIdPrefixes.mcpConnection, McpConnectionId)
+export const DeviceCredentialPublicId = PublicId(PublicIdPrefixes.deviceCredential, DeviceCredentialId)

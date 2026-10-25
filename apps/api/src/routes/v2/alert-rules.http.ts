@@ -1,5 +1,11 @@
 import { HttpApiBuilder } from "effect/http-api"
-import type { AlertCheckDocument, AlertRuleDocument, AlertRulePreviewResponse } from "@maple/domain/http"
+import type {
+	AlertCheckDocument,
+	AlertRuleDocument,
+	AlertRulePreviewResponse,
+	AlertThreshold,
+	AlertThresholds,
+} from "@maple/domain/http"
 import {
 	AlertRulePreviewRequest,
 	AlertRuleUpsertRequest,
@@ -17,9 +23,17 @@ import type {
 	V2AlertRulePreviewResult,
 	V2AlertRuleUpdateParams,
 } from "@maple/domain/http/v2"
-import { MapleApiV2, paginateArray, scopeAllows, timestamp, V2ParameterInvalid } from "@maple/domain/http/v2"
+import {
+	fromV2Threshold,
+	MapleApiV2,
+	paginateArray,
+	scopeAllows,
+	timestamp,
+	toV2Threshold,
+	V2ParameterInvalid,
+} from "@maple/domain/http/v2"
 import { AlertForbiddenError } from "@maple/domain/http"
-import { DateTime, Effect, Option, Result, Schema } from "effect"
+import { Array as Arr, DateTime, Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -65,6 +79,7 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	notification_template: doc.notificationTemplate,
 	enabled: doc.enabled,
 	severity: doc.severity,
+	thresholds: Arr.map(doc.thresholds, toV2Threshold),
 	service_names: doc.serviceNames,
 	exclude_service_names: doc.excludeServiceNames,
 	environments: doc.environments,
@@ -75,8 +90,12 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	threshold: doc.threshold,
 	threshold_upper: doc.thresholdUpper,
 	window_minutes: doc.windowMinutes,
+	evaluation_interval_minutes: doc.evaluationIntervalMinutes,
+	slowed_interval_minutes: doc.slowedIntervalMinutes,
+	slowed_at: doc.slowedAt,
 	minimum_sample_count: doc.minimumSampleCount,
 	consecutive_breaches_required: doc.consecutiveBreachesRequired,
+	breaches_out_of: doc.breachesOutOf,
 	consecutive_healthy_required: doc.consecutiveHealthyRequired,
 	renotify_interval_minutes: doc.renotifyIntervalMinutes,
 	apdex_threshold_ms: doc.apdexThresholdMs,
@@ -87,6 +106,7 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	no_data_behavior: doc.noDataBehavior,
 	alert_on_no_data: doc.noDataBehavior === "alert",
 	last_evaluation_error: doc.lastEvaluationError,
+	last_evaluation_error_kind: doc.lastEvaluationErrorKind,
 	last_evaluated_at: doc.lastEvaluatedAt,
 	last_scheduled_at: doc.lastScheduledAt,
 	created_at: doc.createdAt,
@@ -102,6 +122,7 @@ const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRul
 		"notes",
 		"notification_template",
 		"enabled",
+		"thresholds",
 		"severity",
 		"service_names",
 		"exclude_service_names",
@@ -113,8 +134,10 @@ const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRul
 		"threshold",
 		"threshold_upper",
 		"window_minutes",
+		"evaluation_interval_minutes",
 		"minimum_sample_count",
 		"consecutive_breaches_required",
+		"breaches_out_of",
 		"consecutive_healthy_required",
 		"renotify_interval_minutes",
 		"apdex_threshold_ms",
@@ -152,6 +175,7 @@ const toV2Check = (check: AlertCheckDocument): V2AlertCheck => ({
 	consecutive_healthy: check.consecutiveHealthy,
 	incident_id: check.incidentId,
 	incident_transition: check.incidentTransition,
+	level: check.level,
 	evaluation_duration_ms: check.evaluationDurationMs,
 	error_message: check.errorMessage,
 	error_category: check.errorCategory,
@@ -182,12 +206,21 @@ const toUpsertRequest = (
 					: { queryBuilderDraft: yield* decodeDraft(params.query_builder_draft) }
 		return new AlertRuleUpsertRequest({
 			name: params.name,
-			severity: params.severity,
 			signalType: params.signal_type,
 			comparator: params.comparator,
-			threshold: params.threshold,
 			windowMinutes: params.window_minutes,
-			destinationIds: params.destination_ids,
+			...(params.thresholds !== undefined
+				? { thresholds: Arr.map(params.thresholds, fromV2Threshold) }
+				: undefined),
+			...(params.severity !== undefined ? { severity: params.severity } : undefined),
+			...(params.threshold !== undefined ? { threshold: params.threshold } : undefined),
+			...(params.destination_ids !== undefined
+				? { destinationIds: params.destination_ids }
+				: undefined),
+			...(params.breaches_out_of !== undefined ? { breachesOutOf: params.breaches_out_of } : undefined),
+			...(params.evaluation_interval_minutes !== undefined
+				? { evaluationIntervalMinutes: params.evaluation_interval_minutes }
+				: undefined),
 			...(params.notes !== undefined ? { notes: params.notes } : undefined),
 			...(params.notification_template !== undefined
 				? {
@@ -242,6 +275,54 @@ const toUpsertRequest = (
 	})
 
 /**
+ * `thresholds` replaces the tiers; single-threshold fields edit a one-tier rule in place and
+ * are rejected on two tiers. A stored range bound is dropped when the comparator stops being a range.
+ */
+const mergeThresholds = (
+	doc: AlertRuleDocument,
+	patch: V2AlertRuleUpdateParams,
+	comparator: AlertRuleDocument["comparator"],
+): Effect.Effect<AlertThresholds, ReturnType<typeof V2ParameterInvalid.make>> => {
+	const fitBound = (tier: AlertThreshold): AlertThreshold =>
+		isRangeComparator(comparator) ? tier : { ...tier, upper: null }
+	if (patch.thresholds !== undefined) {
+		return Effect.succeed(Arr.map(patch.thresholds, fromV2Threshold))
+	}
+	// Legacy fields echoed back as read (a client PATCHing the document it fetched) are not edits.
+	const echoed = {
+		severity: patch.severity === doc.severity,
+		threshold: patch.threshold === doc.threshold,
+		threshold_upper: patch.threshold_upper === doc.thresholdUpper,
+		destination_ids:
+			patch.destination_ids !== undefined &&
+			patch.destination_ids.length === doc.destinationIds.length &&
+			patch.destination_ids.every((id) => doc.destinationIds.includes(id)),
+	}
+	const legacyKeys = (["severity", "threshold", "threshold_upper", "destination_ids"] as const).filter(
+		(key) => patch[key] !== undefined && !echoed[key],
+	)
+	if (legacyKeys.length === 0) return Effect.succeed(Arr.map(doc.thresholds, fitBound))
+	const [only, ...rest] = doc.thresholds
+	if (rest.length > 0) {
+		return Effect.fail(
+			V2ParameterInvalid.make(
+				`This rule has severity tiers; update \`thresholds\` instead of \`${legacyKeys[0]}\`.`,
+				{ param: legacyKeys[0] },
+			),
+		)
+	}
+	return Effect.succeed(
+		Arr.of({
+			...fitBound(only),
+			severity: patch.severity ?? only.severity,
+			value: patch.threshold ?? only.value,
+			...(patch.threshold_upper !== undefined ? { upper: patch.threshold_upper } : undefined),
+			destinationIds: patch.destination_ids ?? only.destinationIds,
+		}),
+	)
+}
+
+/**
  * PATCH semantics over the domain full-upsert `updateRule`: overlay the fields
  * present in the patch onto the rule's current state. Read-merge-write — no
  * version check, mirroring the dashboard's behavior.
@@ -253,6 +334,7 @@ const mergeUpsertRequest = (
 	Effect.gen(function* () {
 		const signalType = patch.signal_type ?? doc.signalType
 		const comparator = patch.comparator ?? doc.comparator
+		const thresholds = yield* mergeThresholds(doc, patch, comparator)
 		const queryBuilderDraft =
 			signalType !== "builder_query"
 				? null
@@ -287,7 +369,7 @@ const mergeUpsertRequest = (
 					? patch.notification_template
 					: doc.notificationTemplate,
 			enabled: patch.enabled ?? doc.enabled,
-			severity: patch.severity ?? doc.severity,
+			thresholds,
 			serviceNames: patch.service_names ?? doc.serviceNames,
 			excludeServiceNames: patch.exclude_service_names ?? doc.excludeServiceNames,
 			environments: patch.environments ?? doc.environments,
@@ -295,18 +377,15 @@ const mergeUpsertRequest = (
 			groupBy: patch.group_by !== undefined ? patch.group_by : doc.groupBy,
 			signalType,
 			comparator,
-			threshold: patch.threshold ?? doc.threshold,
-			// Dropped, not carried over, when the comparator stops being a range.
-			thresholdUpper:
-				patch.threshold_upper !== undefined
-					? patch.threshold_upper
-					: isRangeComparator(comparator)
-						? doc.thresholdUpper
-						: null,
 			windowMinutes: patch.window_minutes ?? doc.windowMinutes,
+			evaluationIntervalMinutes:
+				patch.evaluation_interval_minutes !== undefined
+					? patch.evaluation_interval_minutes
+					: doc.evaluationIntervalMinutes,
 			minimumSampleCount: patch.minimum_sample_count ?? doc.minimumSampleCount,
 			consecutiveBreachesRequired:
 				patch.consecutive_breaches_required ?? doc.consecutiveBreachesRequired,
+			breachesOutOf: patch.breaches_out_of !== undefined ? patch.breaches_out_of : doc.breachesOutOf,
 			consecutiveHealthyRequired: patch.consecutive_healthy_required ?? doc.consecutiveHealthyRequired,
 			renotifyIntervalMinutes: patch.renotify_interval_minutes ?? doc.renotifyIntervalMinutes,
 			apdexThresholdMs:
@@ -315,7 +394,6 @@ const mergeUpsertRequest = (
 			rawQuerySql,
 			rawQueryReducer,
 			alertOnNoData: patch.alert_on_no_data ?? doc.noDataBehavior === "alert",
-			destinationIds: patch.destination_ids ?? doc.destinationIds,
 		})
 	})
 
@@ -325,6 +403,7 @@ const toV2PreviewResult = (preview: AlertRulePreviewResponse): V2AlertRulePrevie
 	window_minutes: preview.windowMinutes,
 	threshold: preview.threshold,
 	threshold_upper: preview.thresholdUpper,
+	thresholds: Arr.map(preview.thresholds, toV2Threshold),
 	comparator: preview.comparator,
 	truncated_to_start: preview.truncatedToStart,
 	series: preview.series.map((series) => ({
@@ -336,13 +415,28 @@ const toV2PreviewResult = (preview: AlertRulePreviewResponse): V2AlertRulePrevie
 			status: point.status,
 			...(point.skipReason !== undefined ? { skip_reason: point.skipReason } : undefined),
 			...(point.provisional !== undefined ? { provisional: point.provisional } : undefined),
+			...(point.level !== undefined ? { level: point.level } : undefined),
 		})),
 	})),
 	would_fire: preview.wouldFire.map((span) => ({
 		group_key: span.groupKey,
 		start: span.start,
 		end: span.end,
+		severity: span.severity,
 	})),
+	...(preview.seriesFailure === undefined ? undefined : { series_failure: preview.seriesFailure }),
+	...(preview.queryTiming === undefined
+		? undefined
+		: {
+				query_timing: {
+					elapsed_ms: preview.queryTiming.elapsedMs,
+					failure: preview.queryTiming.failure,
+					probe_limit_ms: preview.queryTiming.probeLimitMs,
+					interval_minutes: preview.queryTiming.intervalMinutes,
+					limit_ms: preview.queryTiming.limitMs,
+					fits_interval_minutes: preview.queryTiming.fitsIntervalMinutes,
+				},
+			}),
 })
 
 export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules", (handlers) =>

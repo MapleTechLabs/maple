@@ -155,7 +155,7 @@ Built on the `worktree-eu-region` branch; `docs/infra.md` § Regions is the refe
 - Still to do before flipping `MAPLE_DEPLOY_EU`: the `production-eu` GitHub environment, the
   `prod-eu` Infisical environment, and the empty `maple-eu` database.
 - Tinybird schema deploys target `maple_us` and `maple_eu` (and GCP Frankfurt while it lives).
-  `tinybird-cd.yml` is disabled, so this joins the manual checklist.
+  There is no Tinybird CD workflow, so this joins the manual checklist.
 - The EU ingest fleet and Electric come out of the existing factories unchanged.
 
 ## Phase 3. Sign-up and the wrong door

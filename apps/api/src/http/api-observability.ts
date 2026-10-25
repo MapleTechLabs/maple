@@ -1,5 +1,6 @@
 import { Layer } from "effect"
 import { Headers, HttpMiddleware } from "effect/http"
+import { VCS_SYNC_BATCH_PATH } from "../worker/vcs-sync-dispatch"
 
 // OAuth callbacks whose query string carries a provider-issued authorization
 // `code` (exchangeable for an access token) plus the single-use connect `state`.
@@ -8,7 +9,7 @@ import { Headers, HttpMiddleware } from "effect/http"
 // covers headers, not query parameters — so tracing these requests would retain
 // a live bearer credential in telemetry. There is no per-attribute lever, so the
 // auto server span is suppressed for them; each callback handler carries its own
-// span with safe attributes instead (see `integrations.*OAuthCallback` and
+// span with safe attributes instead (see `IntegrationsCallbackRouter.*` and
 // `ChatOAuth.callback`). The second alternative must stay in sync with the chat
 // connector callback paths in `routes/chat-integration.http.ts`.
 // `/oauth/authorize` is deliberately NOT here: its query carries no bearer
@@ -30,15 +31,19 @@ export const ApiObservabilityLive = Layer.mergeAll(
 		HttpMiddleware.TracerDisabledWhen,
 		(request: { url: string; method: string }) =>
 			request.url === "/health" ||
+			// A VCS sync batch: its spans are `maple-vcs-sync`'s, and a minute-long server span here
+			// would skew this service's latency.
+			request.url === VCS_SYNC_BATCH_PATH ||
 			request.method === "OPTIONS" ||
 			OAUTH_CALLBACK_PATH.test(request.url) ||
 			EMAIL_UNSUBSCRIBE_PATH.test(request.url) ||
 			/\.(png|ico|jpg|jpeg|gif|css|js|svg|webp|woff2?)(\?.*)?$/i.test(request.url),
 	),
-	// Every request header lands on the server span as `http.request.header.<name>`.
-	// Effect's defaults cover the usual credential headers; the provider webhook
-	// signatures are ours to add (a GitHub webhook HMAC is replayable alongside its
-	// body, and there is no reason to retain it).
+	// Spans record only the allowlisted headers (`MapleHttpTracingLive`), none of
+	// these; the list still redacts them wherever a `Headers` value is rendered or
+	// logged. Effect's defaults cover the usual credential headers; the provider
+	// webhook signatures are ours to add (a GitHub webhook HMAC is replayable
+	// alongside its body, and there is no reason to retain it).
 	Layer.succeed(Headers.CurrentRedactedNames, [
 		"authorization",
 		"cookie",
@@ -48,5 +53,7 @@ export const ApiObservabilityLive = Layer.mergeAll(
 		"x-hub-signature-256",
 		// Svix (Clerk / Autumn webhooks): replayable alongside its body within the tolerance window.
 		"svix-signature",
+		// RFC 9449 proofs: short-lived, but a captured one replays within its window.
+		"dpop",
 	]),
 )

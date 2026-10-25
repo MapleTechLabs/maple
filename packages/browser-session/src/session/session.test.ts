@@ -17,6 +17,7 @@ import {
 	resolveBillable,
 } from "./session"
 import { resetVisitorCacheForTests } from "../identity/visitor"
+import { configurePersistence, resetPersistenceForTests } from "../platform/persistence"
 
 // Minimal in-memory sessionStorage standing in for the browser's, so the
 // rotation logic can be exercised under Node with a controllable clock.
@@ -66,6 +67,30 @@ beforeEach(() => {
 afterEach(() => {
 	vi.useRealTimers()
 	vi.unstubAllGlobals()
+	resetPersistenceForTests()
+})
+
+describe("memory-only persistence", () => {
+	it("keeps the session in memory and ignores a record from an earlier page", () => {
+		const local = new FakeStorage()
+		vi.stubGlobal("window", { sessionStorage: storage, localStorage: local })
+		const earlier = getSession()
+		// A new page load: the record from the earlier one is still in sessionStorage.
+		resetSessionStorageStateForTests()
+		resetTabLeaseForTests()
+		local.clear()
+
+		configurePersistence("memory")
+		const current = getSession()
+		vi.advanceTimersByTime(10 * MINUTE)
+		markActivity()
+
+		expect(current.id).not.toBe(earlier.id)
+		expect(getSession().id).toBe(current.id)
+		// Nothing new written: the earlier record is untouched and no tab lease exists.
+		expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify(earlier))
+		expect(local.length).toBe(0)
+	})
 })
 
 describe("getSession", () => {

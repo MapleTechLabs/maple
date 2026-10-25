@@ -43,6 +43,7 @@ permissions:
 
 jobs:
     build:
+        if: ${{ vars.MAPLE_RELEASE_ENABLED == 'true' }}
         name: Build ${{ matrix.target }}
         runs-on: ${{ matrix.runner }}
         timeout-minutes: 60
@@ -78,17 +79,18 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-
-            - name: Install JS dependencies
-              run: bun install --frozen-lockfile
+            - uses: ./.github/actions/setup
+              with:
+                  turbo-cache: "false"
 
             - name: Resolve version
               id: version
+              env:
+                  INPUT_TAG: ${{ github.event.inputs.tag }}
               run: |
                   set -euo pipefail
-                  ref="${{ github.ref }}"
-                  input_tag="${{ github.event.inputs.tag }}"
+                  ref="$GITHUB_REF"
+                  input_tag="${INPUT_TAG:-}"
                   if [ -n "$input_tag" ]; then
                     version="$input_tag"
                   elif [[ "$ref" == refs/tags/* ]]; then
@@ -192,10 +194,11 @@ jobs:
               env:
                   GH_TOKEN: ${{ github.token }}
                   REPO: ${{ github.repository }}
+                  INPUT_TAG: ${{ github.event.inputs.tag }}
               run: |
                   set -euo pipefail
-                  ref="${{ github.ref }}"
-                  input_tag="${{ github.event.inputs.tag }}"
+                  ref="$GITHUB_REF"
+                  input_tag="${INPUT_TAG:-}"
                   if [ -n "$input_tag" ]; then
                     TAG="$input_tag"
                   else
@@ -233,3 +236,95 @@ jobs:
                   fi
                   gh release upload "$TAG" "${verify_assets[@]}" --repo "$REPO" --clobber
                   gh release upload "$TAG" "$tarball" --repo "$REPO" --clobber
+
+    # The self-hosted image (apps/cli/docker) around the two Linux bundles above.
+    # Only a fully published release gets an image. A run without a tag builds and
+    # smokes the image, no push.
+    image:
+        name: Container image
+        needs: build
+        if: ${{ vars.MAPLE_RELEASE_ENABLED == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        permissions:
+            contents: read
+            packages: write # push to ghcr.io
+            id-token: write # OIDC identity for the provenance attestation
+            attestations: write
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - name: Resolve tags
+              id: tags
+              env:
+                  INPUT_TAG: ${{ github.event.inputs.tag }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  set -euo pipefail
+                  ref="$GITHUB_REF"
+                  tag="${INPUT_TAG:-}"
+                  if [ -z "$tag" ] && [[ "$ref" == refs/tags/* ]]; then tag="${ref#refs/tags/}"; fi
+                  image="ghcr.io/${REPO,,}"
+                  echo "image=$image" >> "$GITHUB_OUTPUT"
+                  if [ -z "$tag" ]; then
+                    echo "publish=false" >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
+                  tags="$image:$tag"
+                  # `latest` follows the newest stable release only: never a pre-release
+                  # (v1.2.3-rc.1), never a re-run of an older tag.
+                  newest="$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' | { grep -ve '-' || true; } | sort -V | tail -1)"
+                  if [[ "$ref" == refs/tags/* && "$tag" == "$newest" ]]; then tags="$tags,$image:latest"; fi
+                  echo "publish=true" >> "$GITHUB_OUTPUT"
+                  echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+            - name: Download Linux bundles
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+              with:
+                  pattern: maple-*-linux-gnu
+                  path: ${{ runner.temp }}/artifacts
+                  merge-multiple: true
+
+            - name: Unpack bundles
+              run: |
+                  set -euo pipefail
+                  bundles="$RUNNER_TEMP/bundles"
+                  for pair in x86_64:amd64 aarch64:arm64; do
+                    tarball="$(ls "$RUNNER_TEMP"/artifacts/maple-*-"${pair%%:*}"-unknown-linux-gnu.tar.gz)"
+                    mkdir -p "$bundles/linux-${pair##*:}"
+                    tar -xzf "$tarball" -C "$bundles/linux-${pair##*:}" --strip-components=1
+                  done
+                  echo "BUNDLES=$bundles" >> "$GITHUB_ENV"
+
+            - name: Smoke the amd64 image
+              timeout-minutes: 5
+              env:
+                  MAPLE_TELEMETRY: off
+              run: |
+                  apps/cli/docker/build-image.sh maple-local:release linux/amd64
+                  apps/cli/docker/image-smoke.sh maple-local:release
+
+            - name: Build and push both platforms
+              id: push
+              if: ${{ steps.tags.outputs.publish == 'true' }}
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  ACTOR: ${{ github.actor }}
+                  TAGS: ${{ steps.tags.outputs.tags }}
+              run: |
+                  set -euo pipefail
+                  echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+                  docker buildx create --use --name maple-release >/dev/null
+                  tag_args=""
+                  for tag in ${TAGS//,/ }; do tag_args="$tag_args --tag $tag"; done
+                  EXTRA_ARGS="--push --metadata-file $RUNNER_TEMP/image-metadata.json$tag_args" \
+                    apps/cli/docker/build-image.sh "${TAGS%%,*}" linux/amd64,linux/arm64
+                  echo "digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image-metadata.json")" >> "$GITHUB_OUTPUT"
+
+            - name: Attest image provenance
+              if: ${{ steps.tags.outputs.publish == 'true' }}
+              uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+              with:
+                  subject-name: ${{ steps.tags.outputs.image }}
+                  subject-digest: ${{ steps.push.outputs.digest }}
+                  push-to-registry: true

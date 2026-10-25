@@ -111,6 +111,41 @@ static CLOUDFLARE_RECORDS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+static GCP_ENTRIES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_gcp_entries_total")
+        .with_description("Cloud Logging entries accepted from GCP Pub/Sub pushes")
+        .build()
+});
+
+static GCP_AUTH_FAILURES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_gcp_auth_failures_total")
+        .with_description("GCP Pub/Sub pushes rejected for bad auth")
+        .build()
+});
+
+static GCP_PARSE_FAILURES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_gcp_parse_failures_total")
+        .with_description("GCP Pub/Sub pushes acked and dropped: body was not a LogEntry")
+        .build()
+});
+
+static GCP_DISABLED_DROPS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_gcp_disabled_drops_total")
+        .with_description("GCP Pub/Sub pushes acked and dropped: log forwarding is off")
+        .build()
+});
+
+static SOURCE_PAUSED_DROPS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_source_paused_drops_total")
+        .with_description("Requests from a paused source, answered with success and dropped")
+        .build()
+});
+
 static SENTINEL_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_sentinel_total")
@@ -548,6 +583,17 @@ pub fn org_requests_in_flight(org_id: &str, value: u64) {
     ORG_REQUESTS_IN_FLIGHT.record(value, &[KeyValue::new("org_id", org_id.to_owned())]);
 }
 
+/// A paused source's request was accepted and its data dropped.
+pub fn source_paused_drop(org_id: &str, signal: &str) {
+    SOURCE_PAUSED_DROPS_TOTAL.add(
+        1,
+        &[
+            KeyValue::new("org_id", org_id.to_owned()),
+            KeyValue::new("signal", signal.to_owned()),
+        ],
+    );
+}
+
 /// A request used the sentinel test token.
 pub fn sentinel(signal: &str) {
     SENTINEL_TOTAL.add(1, &[KeyValue::new("signal", signal.to_owned())]);
@@ -595,6 +641,27 @@ pub fn cloudflare_parse_failure(dataset: &str) {
 /// Log records parsed from a Cloudflare Logpush batch.
 pub fn cloudflare_records(dataset: &str, count: u64) {
     CLOUDFLARE_RECORDS_TOTAL.add(count, &[KeyValue::new("dataset", dataset.to_owned())]);
+}
+
+/// A Cloud Logging entry pushed by GCP Pub/Sub was accepted.
+pub fn gcp_entry() {
+    GCP_ENTRIES_TOTAL.add(1, &[]);
+}
+
+/// A GCP Pub/Sub push failed authentication.
+pub fn gcp_auth_failure() {
+    GCP_AUTH_FAILURES_TOTAL.add(1, &[]);
+}
+
+/// A GCP Pub/Sub push was acked and dropped because its body was not a LogEntry.
+pub fn gcp_parse_failure() {
+    GCP_PARSE_FAILURES_TOTAL.add(1, &[]);
+}
+
+/// A GCP Pub/Sub push was acked and dropped because the connector has log
+/// forwarding turned off.
+pub fn gcp_disabled_drop() {
+    GCP_DISABLED_DROPS_TOTAL.add(1, &[]);
 }
 
 /// A WAL append was rejected because the lane file is full. `shard` is the real

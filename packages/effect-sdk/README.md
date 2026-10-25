@@ -78,13 +78,13 @@ When `MAPLE_INGEST_KEY` is unset, the SDK runs in no-op mode: buffers are draine
 
 ### Cloudflare-specific options
 
-| Option                        | Description                                                                                                                                                                                                                                                                           |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `anticipatedErrorIdentifiers` | Stable `_tag` / `Error.name` identifiers for expected 4xx failures; exported as `Ok` without an exception. A failure wrapped in an `{ error: … }` envelope is matched on the body's `_tag`, so an error decoded from an HTTP response classifies the same as the class that raised it |
-| `dropSpanNames`               | Span names whose prefix matches an entry are dropped before OTLP export (e.g. `"McpServer/Notifications."`)                                                                                                                                                                           |
-| `excludeLogSpans`             | Skip Effect log spans in OTLP log attributes. Default `false`                                                                                                                                                                                                                         |
-| `tracesPath`                  | OTLP traces path appended to `endpoint`. Default `/v1/traces`                                                                                                                                                                                                                         |
-| `logsPath`                    | OTLP logs path appended to `endpoint`. Default `/v1/logs`                                                                                                                                                                                                                             |
+The [span options](#span-options) apply here too.
+
+| Option            | Description                                                   |
+| ----------------- | ------------------------------------------------------------- |
+| `excludeLogSpans` | Skip Effect log spans in OTLP log attributes. Default `false` |
+| `tracesPath`      | OTLP traces path appended to `endpoint`. Default `/v1/traces` |
+| `logsPath`        | OTLP logs path appended to `endpoint`. Default `/v1/logs`     |
 
 The same `MAPLE_ENDPOINT` / `MAPLE_REGION` / `MAPLE_INGEST_KEY` / `MAPLE_ENVIRONMENT` env vars apply, read from the Workers `env` binding.
 
@@ -188,6 +188,7 @@ const TracerLive = Maple.layer({
 		sampleRate: 0.1, // record 10% of sessions (default 1)
 		maskAllInputs: true, // default
 		maskAllText: false, // default
+		canvasFps: 1, // record <canvas> (e.g. charts) at 1 fps; off by default, never with maskAllText
 	},
 })
 ```
@@ -271,6 +272,61 @@ const TracerLive = Maple.layer({
 `replay.enabled` and `emitSessionMeta` are the only switches for replay and session rows. Keyless
 against Maple's hosted ingest cannot work (it answers 401), so that one combination logs a warning.
 
+## Foldkit
+
+`@maple-dev/effect-sdk/foldkit` instruments a [Foldkit](https://github.com/foldkit/foldkit) app. It builds on `MapleFlush.make` (flush on unload, sessions, replay, global error capture) and wraps the config you pass to `Runtime.makeApplication`:
+
+```typescript
+import { MapleFoldkit } from "@maple-dev/effect-sdk/foldkit"
+import { Runtime } from "foldkit"
+import type { UrlRequest } from "foldkit/navigation"
+import type { Url } from "foldkit/url"
+
+const maple = MapleFoldkit.make({
+	serviceName: "acme-web",
+	ingestKey: "maple_pk_...",
+	routeName: (pathname) => routeOfPath(pathname)._tag,
+})
+
+Runtime.run(
+	Runtime.makeApplication(
+		maple.instrument({
+			Model,
+			init,
+			update,
+			view,
+			resources: ResourcesLive,
+			container,
+			routing: {
+				onUrlRequest: (request: UrlRequest) => Message.ClickedLink({ request }),
+				onUrlChange: (url: Url) => Message.ChangedUrl({ url }),
+			},
+		}),
+	),
+)
+```
+
+Annotate the `routing` callback parameters: TypeScript cannot infer them through `instrument`.
+
+What it records:
+
+- **Commands.** Foldkit runs every Command in a span named after it. Those spans are grouped under a `pageload <route>` or `navigate <route>` span, together with the Commands their result Messages start, and `HttpClient`/RPC spans nest inside with `traceparent` sent to your backend. Each Command carries `maple.foldkit.message`, the Message that started it.
+- **Only Commands that did work.** A Command that finished without starting a child span (focus, scroll, a hover delay) is dropped. Failed Commands always export; `keepCommands` exports named ones regardless.
+- **Scrubbed args.** Command args become span attributes in Foldkit. By default only args whose key ends in `Id`/`Ids`, booleans and nulls export; every other value is `[redacted]`. `commandArgs: { allow: ["provider"] }` exports more keys by name, `"all"` and `"none"` switch it wholesale.
+- **Crashes.** A runtime crash is reported as an exception with the Message that crashed it and the last 20 Message tags, then flushed.
+- **Slow phases.** `update` over 16ms and `view` or DOM patch over 50ms become `foldkit.update`, `foldkit.view` and `foldkit.patch` spans. Set `slowPhases` to change the budgets (`0` records every run) or `false` to turn it off.
+
+| Option                 | Default                               |                                                                               |
+| ---------------------- | ------------------------------------- | ----------------------------------------------------------------------------- |
+| `commandArgs`          | `"ids"`                               | Which Command args export                                                     |
+| `keepCommands`         | `[]`                                  | Commands exported even without a child span                                   |
+| `sampleCommands`       | `{}`                                  | Per-Command sample rates outside a navigation, e.g. `{ SendHeartbeat: 0.01 }` |
+| `navigationSampleRate` | `1`                                   | Share of navigations traced; their Commands follow the decision               |
+| `routeName`            | the path                              | Navigation span name from the URL path, e.g. a route template                 |
+| `slowPhases`           | `{ Update: 16, View: 50, Patch: 50 }` | Slow-phase budgets in ms, or `false`                                          |
+
+Every `MapleFlush.make` option is accepted too.
+
 ## Manual flush
 
 `Maple.layer` (server + client) batches in the background and only exports on a timer, on batch overflow, or when its scope closes — there's no way to force an export. That's a problem in two places: a browser tab dropping the last few seconds of spans on unload, and a short-lived process exiting before the timer fires.
@@ -336,15 +392,52 @@ Both server and client layers accept these options:
 | `metricsExportInterval` | No                            | Metrics export interval                                                                   |
 | `shutdownTimeout`       | No                            | Graceful shutdown timeout                                                                 |
 
-The flushable presets (`MapleFlush.make`, and the Cloudflare `make`) replace the
-four interval options with `autoFlushInterval`, and add `excludeLogSpans`,
-`dropSpanNames`, `anticipatedErrorIdentifiers`, `tracesPath`, `logsPath`, and
-`metricsPath`.
+`excludeLogSpans` (skip Effect log spans in OTLP log attributes) and the
+[span options](#span-options) below are accepted by every preset. `MapleFlush.make`
+replaces the four interval options with `autoFlushInterval`; it and the
+Cloudflare `make` add `tracesPath`, `logsPath`, and `metricsPath`.
 
-> **`anticipatedErrorIdentifiers` is flushable/Cloudflare-only.** `Maple.layer`
-> builds on Effect's stock `Otlp.layerJson`, which has no hook for it — so with
-> the plain server layer, expected 4xx failures still export as `Error` spans.
-> Use `MapleFlush.make` if you need that suppression.
+### Span options
+
+Every preset (`Maple.layer`, `MapleFlush.make`, the Cloudflare `make`) takes
+the same options for dropping spans and classifying expected failures:
+
+| Option                        | Description                                                                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dropSpanNames`               | Span name prefixes to drop before export. Only the matching span is dropped; its children still export                                                                                |
+| `dropSpanSubtrees`            | Span name prefixes whose span and every descendant are dropped, whatever the descendants are called (DB queries, HTTP calls, ...)                                                     |
+| `dropSpan`                    | `(span) => boolean` on each finished span (`name`, `kind`, `attributes`, `exit`); `true` drops it                                                                                     |
+| `anticipatedErrorIdentifiers` | Stable `_tag` / `Error.name` identifiers of expected failures; exported as `Ok` without an exception. A failure wrapped in an `{ error: … }` envelope is matched on the body's `_tag` |
+| `isAnticipatedError`          | `(error) => boolean`, for expected failures a tag can't single out (e.g. a driver error that is only expected for a duplicate key)                                                    |
+
+A server span that answered 5xx stays `Error` even when its failure is
+anticipated. A span is dropped when every failure in it carries Effect's
+`ErrorReporter.ignore` flag (unmatched-route 404s), it has no defect, and no
+failure matches your anticipated errors (those export as `Ok` instead).
+
+```typescript
+const TracerLive = Maple.layer({
+	serviceName: "worker",
+	// The idle poll loop and everything under it: no spans at all.
+	dropSpanSubtrees: ["JobQueue.poll"],
+	// An expected outcome, not an error.
+	anticipatedErrorIdentifiers: ["DuplicateDocument"],
+})
+```
+
+Two things to know before using `dropSpanSubtrees`:
+
+- The span starts unsampled, so outgoing HTTP calls under it send `traceparent`
+  with the sampled flag off. Downstream services that honour it drop their part
+  of the trace too.
+- Errors inside the subtree never reach error tracking. Keep real work (e.g.
+  processing a job a poll found) outside the dropped span, or use `dropSpan` to
+  drop only the polls that found nothing.
+
+Effect's span levels do the same without any Maple option:
+`Effect.withSpan("JobQueue.poll", { level: "Debug" })` plus
+`Tracer.MinimumTraceLevel` set to `"Info"` leaves that span and its subtree
+unsampled.
 
 Client-only options:
 

@@ -78,7 +78,7 @@ export const mapleMcpServerManifest = ({
 					{
 						name: "Authorization",
 						description:
-							"`Bearer <Maple API key>` (`maple_ak_…`, created under Settings → API keys). Omit it to use OAuth instead: the server advertises its authorization server at `/.well-known/oauth-protected-resource/mcp`.",
+							"`Bearer <Maple API key>` (`maple_ak_…`, created under Settings → Keys). Omit it to use OAuth instead: the server advertises its authorization server at `/.well-known/oauth-protected-resource/mcp`.",
 						isRequired: false,
 						isSecret: true,
 					},

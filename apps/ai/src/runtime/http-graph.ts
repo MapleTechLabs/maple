@@ -11,6 +11,10 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  *   - `/internal/chat/apply` — a typed `HttpApi` group, because deciding an
  *     approval-gated proposal is an ordinary request/response with a schema
  *     worth pinning.
+ *   - `/internal/mcp/tools`: the public tool catalog for Settings > MCP, typed and
+ *     served here because the registry lives in this Worker.
+ *   - `/api/security-audit/*`: scheduled security audits, typed and served here because the
+ *     Workflow that runs them is hosted in this Worker.
  *   - `/internal/triage/classify` — the decision model behind the investigation
  *     gate, typed for the same reason. Reached only over a service binding: api
  *     does not forward it, and the callers are the Workers that open incidents.
@@ -27,6 +31,8 @@ import { HttpApiBuilder } from "effect/http-api"
 import { McpLive } from "../mcp/app"
 import { HttpChatLive } from "../routes/internal/chat.http"
 import { HttpTriageLive } from "../routes/internal/triage.http"
+import { HttpMcpToolsLive } from "../routes/internal/mcp-tools.http"
+import { HttpSecurityAuditLive } from "../routes/security-audit.http"
 import { layerDecisionModelFromConfig } from "../platform/Llm"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { ChatSessionsRouter } from "../routes/chat-sessions.http"
@@ -34,11 +40,16 @@ import { HealthRouter } from "../routes/health"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
+import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
+import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import type { AiPortsLayer } from "../worker/bindings"
 
@@ -82,6 +93,19 @@ const DecisionModelLive = Layer.unwrap(Effect.map(WorkersAiGateway, layerDecisio
 
 const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(HttpChatLive),
+	Layer.provide(HttpMcpToolsLive),
+	Layer.provide(
+		HttpSecurityAuditLive.pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					SecurityAuditStore.layer,
+					OrganizationFeatureFlagsService.layer,
+					SecurityAuditCredits.layer,
+					SecurityAuditRepositorySize.layer,
+				),
+			),
+		),
+	),
 	Layer.provide(HttpTriageLive.pipe(Layer.provide(DecisionModelLive))),
 	Layer.provide(ApiErrorBoundaryLive),
 )
@@ -107,6 +131,8 @@ export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLive).pipe(
 	Layer.provideMerge(AuthService.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
+	// `/mcp` checks a requested agent identity against the org's actors.
+	Layer.provideMerge(ErrorActorsService.layer),
 	Layer.provideMerge(OrganizationRegionService.layer),
 	// Denied attempts and audited reads are recorded from inside the auth layers.
 	Layer.provideMerge(AuditLogService.layer.pipe(Layer.provide(Env.layer))),

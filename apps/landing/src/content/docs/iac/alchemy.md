@@ -81,7 +81,7 @@ That is the whole integration. Each request becomes a server span, Effect logs a
 
 ### 4. Deploy
 
-Create an API key in **Settings → API Keys**. An org admin's key with full access is simplest; see [Authentication](#authentication) for the minimum scopes. Then deploy:
+Create an API key in **Settings → Keys**. An org admin's key with full access is simplest; see [Authentication](#authentication) for the minimum scopes. Then deploy:
 
 ```bash
 MAPLE_API_KEY=maple_ak_… alchemy deploy

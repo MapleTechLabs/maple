@@ -492,12 +492,14 @@ export type StoreCompatibility =
 	| { readonly compatible: true }
 	| { readonly compatible: false; readonly found: string; readonly current: string }
 
+export const UNVERSIONED_STORE = "an unversioned legacy store"
+
 /** Decide whether the current libchdb may open the store at `dataDir`. */
 export const checkStoreCompatible = (dataDir: string): StoreCompatibility => {
 	if (!storeHasData(dataDir)) return { compatible: true }
 	const state = readMarkerState(dataDir)
 	if (state.kind === "missing") {
-		return { compatible: false, found: "an unversioned legacy store", current: CHDB_VERSION }
+		return { compatible: false, found: UNVERSIONED_STORE, current: CHDB_VERSION }
 	}
 	if (state.kind === "malformed") {
 		return { compatible: false, found: "a malformed store marker", current: CHDB_VERSION }

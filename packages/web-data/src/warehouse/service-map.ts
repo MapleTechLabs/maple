@@ -1,0 +1,478 @@
+import { Clock, Effect, Schema } from "effect"
+import {
+	DeploymentEnvironment,
+	ServiceCloudflareStatsRequest,
+	ServiceDbQuerySummaryRequest,
+	ServiceDependenciesBundleRequest,
+	ServiceMapBundleRequest,
+	ServiceName,
+	ServicePlanetScaleStatsRequest,
+} from "@maple/domain/http"
+import { MapleInternalHttp } from "./warehouse-services"
+import { summarizeSampling } from "@maple/query-engine"
+import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
+import { transformExternalEdge } from "./service-external-edges"
+import { coerceOverviewRows } from "./services"
+
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+export interface ServiceEdge {
+	sourceService: string
+	targetService: string
+	callCount: number
+	estimatedCallCount: number
+	errorCount: number
+	errorRate: number
+	avgDurationMs: number
+	/** Slowest call in the window, not a percentile — see `maxDurationMs` in ch/queries/service-map.ts. */
+	maxDurationMs: number
+	hasSampling: boolean
+	samplingWeight: number
+}
+
+export interface ServiceDbEdge {
+	sourceService: string
+	dbSystem: string
+	/** Database identity (db.namespace → db.name → server.address → net.peer.name); "" = unknown. */
+	dbNamespace: string
+	callCount: number
+	estimatedCallCount: number
+	errorCount: number
+	errorRate: number
+	avgDurationMs: number
+	/** Slowest call in the window, not a percentile — see `maxDurationMs` in ch/queries/service-map.ts. */
+	maxDurationMs: number
+	/**
+	 * Sample-weighted p95 in ms, merged from the edge rollup's t-digest. `0` when
+	 * the window predates migration 0022 and has no digest to merge — callers fall
+	 * back to `maxDurationMs` and must relabel it as a max.
+	 */
+	p95DurationMs: number
+	hasSampling: boolean
+	samplingWeight: number
+}
+
+interface ServiceDbQuerySummary {
+	queryCount: number
+	estimatedQueryCount: number
+	errorCount: number
+	estimatedErrorCount: number
+	errorRate: number
+	avgDurationMs: number
+	p50DurationMs: number
+	p95DurationMs: number
+	activeServiceCount: number
+}
+
+interface ServiceDbQueryTimeseriesPoint {
+	bucket: string
+	queryCount: number
+	estimatedQueryCount: number
+	errorCount: number
+	errorRate: number
+	avgDurationMs: number
+	p50DurationMs: number
+	p95DurationMs: number
+}
+
+interface ServiceDbTopQuery {
+	queryKey: string
+	queryLabel: string
+	sampleStatement: string
+	sampleService: string
+	serviceCount: number
+	queryCount: number
+	estimatedQueryCount: number
+	errorCount: number
+	errorRate: number
+	avgDurationMs: number
+	p50DurationMs: number
+	p95DurationMs: number
+	lastSeen: string
+}
+
+export interface ServiceDbQuerySummaryResponse {
+	summary: ServiceDbQuerySummary | null
+	timeseries: ReadonlyArray<ServiceDbQueryTimeseriesPoint>
+	topQueries: ReadonlyArray<ServiceDbTopQuery>
+}
+
+export type ServicePlatform = "kubernetes" | "cloudflare" | "gcp" | "lambda" | "web" | "unknown"
+
+const GetServiceMapInputSchema = Schema.Struct({
+	startTime: Schema.optional(WarehouseDateTimeString),
+	endTime: Schema.optional(WarehouseDateTimeString),
+	deploymentEnv: Schema.optional(DeploymentEnvironment),
+})
+
+export type GetServiceMapInput = (typeof GetServiceMapInputSchema)["Encoded"]
+
+const GetServiceMapForServiceInputSchema = Schema.Struct({
+	serviceName: ServiceName,
+	startTime: Schema.optional(WarehouseDateTimeString),
+	endTime: Schema.optional(WarehouseDateTimeString),
+	deploymentEnv: Schema.optional(DeploymentEnvironment),
+})
+
+export type GetServiceMapForServiceInput = (typeof GetServiceMapForServiceInputSchema)["Encoded"]
+
+const GetServiceDbQuerySummaryInputSchema = Schema.Struct({
+	dbSystem: Schema.String,
+	dbNamespace: Schema.optional(Schema.String),
+	startTime: Schema.optional(WarehouseDateTimeString),
+	endTime: Schema.optional(WarehouseDateTimeString),
+	sourceService: Schema.optional(ServiceName),
+	deploymentEnv: Schema.optional(DeploymentEnvironment),
+	bucketSeconds: Schema.optional(Schema.Number),
+	topN: Schema.optional(Schema.Number),
+})
+
+export type GetServiceDbQuerySummaryInput = (typeof GetServiceDbQuerySummaryInputSchema)["Encoded"]
+
+function transformEdge(row: Record<string, unknown>, durationSeconds: number): ServiceEdge {
+	const callCount = Number(row.callCount ?? 0)
+	const errorCount = Number(row.errorCount ?? 0)
+	const estimatedSpanCount = Number(row.estimatedSpanCount ?? 0)
+	const sampling = summarizeSampling(estimatedSpanCount, callCount, durationSeconds)
+	const estimatedCallCount = sampling.hasSampling ? Math.round(estimatedSpanCount) : callCount
+	return {
+		sourceService: String(row.sourceService ?? ""),
+		targetService: String(row.targetService ?? ""),
+		callCount,
+		estimatedCallCount,
+		errorCount,
+		errorRate: callCount > 0 ? errorCount / callCount : 0,
+		avgDurationMs: Number(row.avgDurationMs ?? 0),
+		maxDurationMs: Number(row.maxDurationMs ?? 0),
+		hasSampling: sampling.hasSampling,
+		samplingWeight: sampling.weight,
+	}
+}
+
+const defaultTimeRange = (nowMillis: number) => {
+	return {
+		startTime: formatWarehouseDateTime(nowMillis - 24 * 60 * 60 * 1000),
+		endTime: formatWarehouseDateTime(nowMillis),
+	}
+}
+
+// Service-detail Dependencies tab in one request: the service-map edges, the
+// DB edges, and the external edges run server-side under a single tenant/config
+// resolution (see the `serviceDependenciesBundle` handler), replacing three
+// independent browser→Worker round-trips with one shared fetch.
+export const getServiceDependenciesBundle = Effect.fn("QueryEngine.getServiceDependenciesBundle")(function* ({
+	data,
+}: {
+	data: GetServiceMapForServiceInput
+}) {
+	const input = yield* decodeInput(GetServiceMapForServiceInputSchema, data, "getServiceDependenciesBundle")
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const startTime = input.startTime ?? fallback.startTime
+	const endTime = input.endTime ?? fallback.endTime
+
+	const result = yield* runWarehouseQuery("serviceDependenciesBundle", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.serviceDependenciesBundle({
+				payload: new ServiceDependenciesBundleRequest({
+					serviceName: input.serviceName,
+					startTime,
+					endTime,
+					deploymentEnv: input.deploymentEnv,
+				}),
+			})
+		}),
+	)
+
+	const startMs = parseWarehouseDateTime(startTime)
+	const endMs = parseWarehouseDateTime(endTime)
+	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
+
+	return {
+		serviceEdges: result.dependencies.map((row) => transformEdge(row, durationSeconds)),
+		dbEdges: result.dbEdges.map((row) => transformDbEdge(row, durationSeconds)),
+		externalEdges: result.externalEdges.map((row) => transformExternalEdge(row, durationSeconds)),
+	}
+})
+
+function transformDbEdge(row: Record<string, unknown>, durationSeconds: number): ServiceDbEdge {
+	const callCount = Number(row.callCount ?? 0)
+	const errorCount = Number(row.errorCount ?? 0)
+	const estimatedSpanCount = Number(row.estimatedSpanCount ?? 0)
+	const sampling = summarizeSampling(estimatedSpanCount, callCount, durationSeconds)
+	const estimatedCallCount = sampling.hasSampling ? Math.round(estimatedSpanCount) : callCount
+	return {
+		sourceService: String(row.sourceService ?? ""),
+		dbSystem: String(row.dbSystem ?? ""),
+		dbNamespace: String(row.dbNamespace ?? ""),
+		callCount,
+		estimatedCallCount,
+		errorCount,
+		errorRate: callCount > 0 ? errorCount / callCount : 0,
+		avgDurationMs: Number(row.avgDurationMs ?? 0),
+		maxDurationMs: Number(row.maxDurationMs ?? 0),
+		p95DurationMs: Number(row.p95DurationMs ?? 0),
+		hasSampling: sampling.hasSampling,
+		samplingWeight: sampling.weight,
+	}
+}
+
+// The analytics poller writes Worker metrics under the synthetic service name
+// `cloudflare-worker/{script}` with no spans. The map overlays these onto the
+// matching instrumented service node (by service name or faas.name); scripts
+// with no matching real service are dropped — CF data never creates nodes.
+
+const WORKER_SERVICE_PREFIX = "cloudflare-worker/"
+
+export interface CloudflareService {
+	serviceName: string
+	kind: "worker"
+	displayName: string
+	requests: number
+	throughput: number
+	errorRate: number
+	/** Wall-time duration p99. */
+	latencyP99Ms: number
+	/** CPU time p99. */
+	cpuP99Ms?: number
+}
+
+function transformCloudflareService(
+	row: Record<string, unknown>,
+	durationSeconds: number,
+): CloudflareService {
+	const serviceName = String(row.serviceName ?? "")
+	const displayName = serviceName.startsWith(WORKER_SERVICE_PREFIX)
+		? serviceName.slice(WORKER_SERVICE_PREFIX.length)
+		: serviceName
+	const requests = Number(row.requests ?? 0)
+	const errorCount = Number(row.errorCount ?? 0)
+	const safeDuration = Math.max(durationSeconds, 1)
+	return {
+		serviceName,
+		kind: "worker",
+		displayName,
+		requests,
+		throughput: requests / safeDuration,
+		errorRate: requests > 0 ? errorCount / requests : 0,
+		latencyP99Ms: Number(row.latencyP99Ms ?? 0),
+		cpuP99Ms: Number(row.cpuP99Ms ?? 0),
+	}
+}
+
+export const getServiceMapCloudflare = Effect.fn("QueryEngine.getServiceMapCloudflare")(function* ({
+	data,
+}: {
+	data: GetServiceMapInput
+}) {
+	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMapCloudflare")
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+
+	const result = yield* runWarehouseQuery("serviceCloudflareStats", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.serviceCloudflareStats({
+				payload: new ServiceCloudflareStatsRequest({
+					startTime: input.startTime ?? fallback.startTime,
+					endTime: input.endTime ?? fallback.endTime,
+				}),
+			})
+		}),
+	)
+
+	const startMs = input.startTime ? parseWarehouseDateTime(input.startTime) : 0
+	const endMs = input.endTime ? parseWarehouseDateTime(input.endTime) : 0
+	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
+
+	return {
+		services: result.data.map((row) => transformCloudflareService(row, durationSeconds)),
+	}
+})
+
+// The scraper collects PlanetScale's Prometheus metrics per branch; the map
+// overlays the per-database rollup onto the matching trace-derived DB node
+// (matched by database name against the org's polled inventory). PlanetScale
+// data never creates nodes of its own.
+
+export interface PlanetScaleDatabaseStat {
+	database: string
+	connectionsAvg: number
+	connectionsMax: number
+	cpuMaxPercent: number
+	memMaxPercent: number
+	replicaLagMaxSeconds: number
+	/**
+	 * Worst branch's disk usage (0–100), or null when the volume gauges reported
+	 * nothing in the window. Null rather than 0 on purpose: an unmonitored volume
+	 * and an empty one are different facts, and only one of them is reassuring.
+	 */
+	storageUsedPercent: number | null
+}
+
+export interface PlanetScaleBranchStat extends PlanetScaleDatabaseStat {
+	branch: string
+}
+
+function transformPlanetScaleStat(row: Record<string, unknown>): PlanetScaleDatabaseStat {
+	// The server pairs the percentage with its sample count so a missing series
+	// can't masquerade as a healthy 0% — see planetscaleStorageSQL.
+	const storageSamples = Number(row.storageSamples ?? 0)
+	return {
+		database: String(row.database ?? ""),
+		connectionsAvg: Number(row.connectionsAvg ?? 0),
+		connectionsMax: Number(row.connectionsMax ?? 0),
+		cpuMaxPercent: Number(row.cpuMaxPercent ?? 0),
+		memMaxPercent: Number(row.memMaxPercent ?? 0),
+		replicaLagMaxSeconds: Number(row.replicaLagMaxSeconds ?? 0),
+		storageUsedPercent: storageSamples > 0 ? Number(row.storageUsedPercent ?? 0) : null,
+	}
+}
+
+export const getServiceMapPlanetScale = Effect.fn("QueryEngine.getServiceMapPlanetScale")(function* ({
+	data,
+}: {
+	data: GetServiceMapInput
+}) {
+	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMapPlanetScale")
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+
+	const result = yield* runWarehouseQuery("servicePlanetScaleStats", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.servicePlanetScaleStats({
+				payload: new ServicePlanetScaleStatsRequest({
+					startTime: input.startTime ?? fallback.startTime,
+					endTime: input.endTime ?? fallback.endTime,
+				}),
+			})
+		}),
+	)
+
+	return {
+		databases: result.data.map(transformPlanetScaleStat),
+	}
+})
+
+const GetPlanetScaleBranchStatsInputSchema = Schema.Struct({
+	database: Schema.String,
+	startTime: Schema.optional(WarehouseDateTimeString),
+	endTime: Schema.optional(WarehouseDateTimeString),
+})
+
+export type GetPlanetScaleBranchStatsInput = (typeof GetPlanetScaleBranchStatsInputSchema)["Encoded"]
+
+export const getPlanetScaleBranchStats = Effect.fn("QueryEngine.getPlanetScaleBranchStats")(function* ({
+	data,
+}: {
+	data: GetPlanetScaleBranchStatsInput
+}) {
+	const input = yield* decodeInput(GetPlanetScaleBranchStatsInputSchema, data, "getPlanetScaleBranchStats")
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+
+	const result = yield* runWarehouseQuery("planetscaleBranchStats", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.servicePlanetScaleStats({
+				payload: new ServicePlanetScaleStatsRequest({
+					startTime: input.startTime ?? fallback.startTime,
+					endTime: input.endTime ?? fallback.endTime,
+					database: input.database,
+				}),
+			})
+		}),
+	)
+
+	return {
+		branches: result.data.map((row): PlanetScaleBranchStat => ({
+			...transformPlanetScaleStat(row),
+			branch: String(row.branch ?? ""),
+		})),
+	}
+})
+
+export const getServiceDbQuerySummary = Effect.fn("QueryEngine.getServiceDbQuerySummary")(function* ({
+	data,
+}: {
+	data: GetServiceDbQuerySummaryInput
+}) {
+	const input = yield* decodeInput(GetServiceDbQuerySummaryInputSchema, data, "getServiceDbQuerySummary")
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+
+	const result = yield* runWarehouseQuery("serviceDbQuerySummary", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.serviceDbQuerySummary({
+				payload: new ServiceDbQuerySummaryRequest({
+					dbSystem: input.dbSystem,
+					dbNamespace: input.dbNamespace,
+					startTime: input.startTime ?? fallback.startTime,
+					endTime: input.endTime ?? fallback.endTime,
+					sourceService: input.sourceService,
+					deploymentEnv: input.deploymentEnv,
+					bucketSeconds: input.bucketSeconds,
+					topN: input.topN,
+				}),
+			})
+		}),
+	)
+
+	return {
+		summary: result.summary,
+		timeseries: result.timeseries,
+		topQueries: result.topQueries,
+	} satisfies ServiceDbQuerySummaryResponse
+})
+
+export const getServiceMapBundle = Effect.fn("QueryEngine.getServiceMapBundle")(function* ({
+	data,
+}: {
+	data: GetServiceMapInput
+}) {
+	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMapBundle")
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const startTime = input.startTime ?? fallback.startTime
+	const endTime = input.endTime ?? fallback.endTime
+
+	const result = yield* runWarehouseQuery("serviceMapBundle", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.serviceMapBundle({
+				payload: new ServiceMapBundleRequest({
+					startTime,
+					endTime,
+					deploymentEnv: input.deploymentEnv,
+					environments: input.deploymentEnv ? [input.deploymentEnv] : undefined,
+				}),
+			})
+		}),
+	)
+
+	const startMs = parseWarehouseDateTime(startTime)
+	const endMs = parseWarehouseDateTime(endTime)
+	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
+
+	return {
+		edges: result.dependencies.map((row) => transformEdge(row, durationSeconds)),
+		dbEdges: result.dbEdges.map((row) => transformDbEdge(row, durationSeconds)),
+		overview: coerceOverviewRows(result.overview, durationSeconds),
+		platforms: result.platforms.map((row) => ({
+			serviceName: row.serviceName,
+			platform: row.platform,
+			k8sCluster: row.k8sCluster,
+			cloudPlatform: row.cloudPlatform,
+			cloudProvider: row.cloudProvider,
+			faasName: row.faasName,
+			mapleSdkType: row.mapleSdkType,
+			runtime: row.processRuntimeName,
+		})),
+		workloads: result.workloads.map((row) => ({
+			serviceName: row.serviceName,
+			workloadKind: row.workloadKind,
+			workloadName: row.workloadName,
+			namespace: row.namespace,
+			clusterName: row.clusterName,
+			podCount: row.podCount,
+			avgCpuLimitUtilization: row.avgCpuLimitUtilization,
+			avgMemoryLimitUtilization: row.avgMemoryLimitUtilization,
+		})),
+	}
+})

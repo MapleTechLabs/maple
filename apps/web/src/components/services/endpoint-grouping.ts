@@ -21,16 +21,31 @@
 // A service whose routes share no stem (`/healthz`, `/graphql`, `/metrics`)
 // therefore produces no headers at all and degrades into a plain sorted list.
 
-import type { ServiceEndpoint } from "@/api/warehouse/service-endpoints"
-import type { SortDir } from "@/hooks/use-table-sort"
+import type { ServiceEndpoint } from "@maple/web-data/warehouse/service-endpoints"
+
+// The table sort direction.
+type SortDir = "asc" | "desc"
 
 export type EndpointGroupKind = "stem" | "ungrouped" | "unrouted" | "probes"
 
-export interface EndpointGroup {
+/** The fields grouping reads; callers keep their own row type through the generic. */
+export type GroupableEndpoint = Pick<
+	ServiceEndpoint,
+	| "method"
+	| "route"
+	| "estimatedSpanCount"
+	| "estimatedErrorCount"
+	| "errorRate"
+	| "p50DurationMs"
+	| "p95DurationMs"
+	| "p99DurationMs"
+>
+
+export interface EndpointGroup<E extends GroupableEndpoint = ServiceEndpoint> {
 	kind: EndpointGroupKind
 	/** Shared path prefix, printed once as the header. Empty for non-stem groups. */
 	stem: string
-	endpoints: ServiceEndpoint[]
+	endpoints: E[]
 	totals: {
 		estimatedSpanCount: number
 		errorRate: number
@@ -132,29 +147,29 @@ export function looksLikeProbe(route: string): boolean {
 	return PROBE_FRAGMENTS.some((fragment) => lower.includes(fragment))
 }
 
-interface TrieNode {
+interface TrieNode<E> {
 	segment: string
-	children: Map<string, TrieNode>
+	children: Map<string, TrieNode<E>>
 	/** Endpoints whose route ends exactly here. */
-	terminal: ServiceEndpoint[]
+	terminal: E[]
 	/** Endpoints at or below this node. */
 	count: number
 }
 
-const emptyNode = (segment: string): TrieNode => ({
+const emptyNode = <E>(segment: string): TrieNode<E> => ({
 	segment,
 	children: new Map(),
 	terminal: [],
 	count: 0,
 })
 
-function buildTrie(endpoints: readonly ServiceEndpoint[]): TrieNode {
-	const root = emptyNode("")
+function buildTrie<E extends GroupableEndpoint>(endpoints: readonly E[]): TrieNode<E> {
+	const root = emptyNode<E>("")
 	for (const endpoint of endpoints) {
 		let node = root
 		node.count += 1
 		for (const segment of segments(endpoint.route)) {
-			const next = node.children.get(segment) ?? emptyNode(segment)
+			const next = node.children.get(segment) ?? emptyNode<E>(segment)
 			node.children.set(segment, next)
 			next.count += 1
 			node = next
@@ -164,13 +179,13 @@ function buildTrie(endpoints: readonly ServiceEndpoint[]): TrieNode {
 	return root
 }
 
-function subtreeEndpoints(node: TrieNode): ServiceEndpoint[] {
+function subtreeEndpoints<E>(node: TrieNode<E>): E[] {
 	const out = [...node.terminal]
 	for (const child of node.children.values()) out.push(...subtreeEndpoints(child))
 	return out
 }
 
-function totalsFor(endpoints: readonly ServiceEndpoint[]): EndpointGroup["totals"] {
+function totalsFor(endpoints: readonly GroupableEndpoint[]): EndpointGroup["totals"] {
 	const estimatedSpanCount = endpoints.reduce((sum, e) => sum + e.estimatedSpanCount, 0)
 	const estimatedErrorCount = endpoints.reduce((sum, e) => sum + e.estimatedErrorCount, 0)
 	return {
@@ -182,7 +197,12 @@ function totalsFor(endpoints: readonly ServiceEndpoint[]): EndpointGroup["totals
 	}
 }
 
-function collect(node: TrieNode, path: string[], groups: EndpointGroup[], loose: ServiceEndpoint[]) {
+function collect<E extends GroupableEndpoint>(
+	node: TrieNode<E>,
+	path: string[],
+	groups: EndpointGroup<E>[],
+	loose: E[],
+) {
 	const emit = () => {
 		const endpoints = subtreeEndpoints(node)
 		groups.push({
@@ -229,7 +249,7 @@ function collect(node: TrieNode, path: string[], groups: EndpointGroup[], loose:
 	emit()
 }
 
-const leafMetric = (endpoint: ServiceEndpoint, sort: Exclude<EndpointSort, "path">): number => {
+const leafMetric = (endpoint: GroupableEndpoint, sort: Exclude<EndpointSort, "path">): number => {
 	switch (sort) {
 		case "traffic":
 			return endpoint.estimatedSpanCount
@@ -244,7 +264,7 @@ const leafMetric = (endpoint: ServiceEndpoint, sort: Exclude<EndpointSort, "path
 	}
 }
 
-const byPath = (a: ServiceEndpoint, b: ServiceEndpoint) =>
+const byPath = (a: GroupableEndpoint, b: GroupableEndpoint) =>
 	a.route.localeCompare(b.route) || a.method.localeCompare(b.method)
 
 /**
@@ -260,14 +280,14 @@ const byPath = (a: ServiceEndpoint, b: ServiceEndpoint) =>
  * The collapsed buckets stay pinned to the end whatever the sort; they are not
  * endpoints competing for the top of the list.
  */
-export function groupEndpoints(
-	endpoints: readonly ServiceEndpoint[],
+export function groupEndpoints<E extends GroupableEndpoint>(
+	endpoints: readonly E[],
 	sort: EndpointSort = "traffic",
 	dir: SortDir = sort === "path" ? "asc" : "desc",
-): EndpointGroup[] {
-	const probes: ServiceEndpoint[] = []
-	const unrouted: ServiceEndpoint[] = []
-	const routed: ServiceEndpoint[] = []
+): EndpointGroup<E>[] {
+	const probes: E[] = []
+	const unrouted: E[] = []
+	const routed: E[] = []
 	for (const endpoint of endpoints) {
 		// Probe first: `/wp-login.php` carries no identifier-shaped segment, so
 		// the unrouted check waves it through as a normal endpoint.
@@ -276,8 +296,8 @@ export function groupEndpoints(
 		else routed.push(endpoint)
 	}
 
-	const groups: EndpointGroup[] = []
-	const loose: ServiceEndpoint[] = []
+	const groups: EndpointGroup<E>[] = []
+	const loose: E[] = []
 	const root = buildTrie(routed)
 	for (const child of root.children.values()) {
 		collect(child, [child.segment], groups, loose)
@@ -296,12 +316,12 @@ export function groupEndpoints(
 	const sign = dir === "asc" ? 1 : -1
 	const leafSort =
 		sort === "path"
-			? (a: ServiceEndpoint, b: ServiceEndpoint) => sign * byPath(a, b)
-			: (a: ServiceEndpoint, b: ServiceEndpoint) => sign * (leafMetric(a, sort) - leafMetric(b, sort))
+			? (a: E, b: E) => sign * byPath(a, b)
+			: (a: E, b: E) => sign * (leafMetric(a, sort) - leafMetric(b, sort))
 	for (const group of groups) group.endpoints.sort(leafSort)
 
-	const groupPath = (group: EndpointGroup) => group.stem || (group.endpoints[0]?.route ?? "")
-	const leading = (group: EndpointGroup) => {
+	const groupPath = (group: EndpointGroup<E>) => group.stem || (group.endpoints[0]?.route ?? "")
+	const leading = (group: EndpointGroup<E>) => {
 		const [first] = group.endpoints
 		return first === undefined || sort === "path" ? 0 : leafMetric(first, sort)
 	}

@@ -31,8 +31,7 @@ export type PrReviewStatus = Schema.Schema.Type<typeof PrReviewStatus>
 
 /**
  * Why a delivery produced no review. Reported on the trigger's span and outcome; only `superseded`
- * is stored, since the other skips happen before a row exists. `not_rolled_out` is an organization
- * without the `prreview` rollout flag.
+ * is stored, since the other skips happen before a row exists.
  */
 export const PrReviewSkipReason = Schema.Literals([
 	"disabled",
@@ -44,9 +43,10 @@ export const PrReviewSkipReason = Schema.Literals([
 	"duplicate",
 	"superseded",
 	"agent_unavailable",
-	"not_rolled_out",
 	/** A push to a pull request that already had its repository's `automaticReviewLimit` reviews. */
 	"automatic_limit",
+	/** An automatic review of a pull request whose author is not an owner, member or collaborator. */
+	"external_author",
 ]).annotate({ identifier: "@maple/PrReviewSkipReason", title: "Pull Request Review Skip Reason" })
 export type PrReviewSkipReason = Schema.Schema.Type<typeof PrReviewSkipReason>
 
@@ -62,9 +62,14 @@ export const PrReviewFailureReason = Schema.Literals([
 	"context_limit",
 	"stuck",
 	"model_error",
+	"provider_unavailable",
+	"service_misconfigured",
+	"org_key_rejected",
+	"org_key_no_credits",
 	"agent_error",
 	"no_report",
 	"ended_early",
+	"answered_in_prose",
 	"interrupted",
 ]).annotate({ identifier: "@maple/PrReviewFailureReason", title: "Pull Request Review Failure Reason" })
 export type PrReviewFailureReason = Schema.Schema.Type<typeof PrReviewFailureReason>
@@ -78,11 +83,28 @@ export const PR_REVIEW_FAILURE_COPY = {
 	context_limit: "The change did not fit in the model's context.",
 	stuck: "Its tool calls kept failing, so it was stopped.",
 	model_error: "The model provider returned an error.",
+	provider_unavailable: "The model provider was unavailable or rate limited.",
+	service_misconfigured:
+		"Maple could not use its model provider because of a problem on Maple's side, not with this pull request.",
+	org_key_rejected:
+		"OpenRouter rejected this organization's OpenRouter key. An admin can replace it in Maple's organization settings.",
+	org_key_no_credits:
+		"This organization's OpenRouter key has run out of credits. An admin can add credits on OpenRouter.",
 	agent_error: "The review run failed with an error.",
 	no_report: "It ended without filing a report.",
 	ended_early: "It stopped before it finished, so its partial findings are not posted here.",
+	answered_in_prose:
+		"The model kept replying in prose instead of filing its report, so its partial findings are not posted here.",
 	interrupted: "Maple was restarted while it ran, more than once. Ask again with @maple review.",
 } as const satisfies Record<PrReviewFailureReason, string>
+
+/** Reasons a retry cannot clear until someone fixes a key or Maple's config, so "try again" would mislead. */
+export const PR_REVIEW_FAILURE_NEEDS_FIX: ReadonlySet<PrReviewFailureReason> = new Set([
+	"agent_unavailable",
+	"service_misconfigured",
+	"org_key_rejected",
+	"org_key_no_credits",
+])
 
 const isFailureReason = Schema.is(PrReviewFailureReason)
 
@@ -193,7 +215,7 @@ export type PrReviewFeedbackScope = Schema.Schema.Type<typeof PrReviewFeedbackSc
  * a model the EU instance serves; there, a pick without it reviews on the region's default.
  */
 export const PR_REVIEW_MODELS = [
-	{ id: "deepseek/deepseek-v4.1-flash:nitro", label: "DeepSeek V4.1 Flash", eu: false },
+	{ id: "deepseek/deepseek-v4.1-flash-1017:nitro", label: "DeepSeek V4.1 Flash", eu: false },
 	{ id: "z-ai/glm-5.3-flash:nitro", label: "GLM 5.3 Flash", eu: false },
 	{ id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", eu: false },
 	{ id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", eu: false },
@@ -567,8 +589,15 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 		? raw.category
 		: checkId === undefined
 			? "correctness"
-			: "observability"
+			: checkId.startsWith("PII-")
+				? "security"
+				: "observability"
 	if (category === "observability" && checkId === undefined) return undefined
+	// Observability findings carry their audit id; a security finding keeps only a privacy one.
+	const keptCheckId =
+		category === "observability" || (category === "security" && checkId?.startsWith("PII-") === true)
+			? checkId
+			: undefined
 	const startLine = Math.floor(line)
 	const endLine =
 		rawEndLine !== undefined && Math.floor(rawEndLine) > startLine ? Math.floor(rawEndLine) : undefined
@@ -577,7 +606,7 @@ export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrRevi
 		line: startLine,
 		...(endLine === undefined ? undefined : { endLine }),
 		category,
-		...(category === "observability" && checkId !== undefined ? { checkId } : undefined),
+		...(keptCheckId === undefined ? undefined : { checkId: keptCheckId }),
 		severity: isSeverity(raw.severity) ? raw.severity : "warn",
 		title: clip(raw.title?.trim() || "Review finding", 200),
 		body: clip(raw.body?.trim() || ""),
@@ -766,7 +795,7 @@ export interface PrReviewConfidenceResult {
 	readonly confidence: PrReviewConfidence
 	/** One sentence on what decides the number: the reviewer's, or why a finding held it down. */
 	readonly reason: string | undefined
-	/** What went into the number, each a short phrase: `1 warning`, `tests partial`, `risk high`. */
+	/** What went into the number, each with the points it took off: `1 warning −1`, `risk medium`. */
 	readonly factors: ReadonlyArray<string>
 	/** A finding or an early end held the number below what the other signals gave. */
 	readonly capped: boolean
@@ -778,52 +807,40 @@ export interface PrReviewConfidenceResult {
 export const PR_REVIEW_UNREAD_CAP_FILES = 3
 
 /**
- * What each signal takes off a 10. Whole points, so one soft signal (partial tests, a medium-risk
- * area) moves a clean review from 10 to 9, still "safe to merge"; on the old 1 to 5 scale it cost
- * a whole band.
+ * What each signal takes off a 10, in whole points. A note costs nothing and medium risk costs
+ * nothing: nearly every change is medium, so charging it only made 10 unreachable.
  */
 export const PR_REVIEW_CONFIDENCE_DEDUCTION = {
+	critical: 3,
+	warn: 1,
 	tests: { covered: 0, not_needed: 0, partial: 1, missing: 2 },
-	risk: { low: 0, medium: 1, high: 2 },
+	risk: { low: 0, medium: 0, high: 1 },
 	unobservable: 1,
 } as const
 
-/** How far the reviewer's own number may move the computed one: down for what it read, up rarely. */
-export const PR_REVIEW_CONFIDENCE_JUDGEMENT = { lower: 2, raise: 1 } as const
+/** The lowest a review reads without a critical, a security warning, an early end or unread areas. */
+export const PR_REVIEW_CONFIDENCE_FLOOR = 5
 
 const CONFIDENCE_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const satisfies ReadonlyArray<PrReviewConfidence>
 
 const toConfidence = (value: number): PrReviewConfidence =>
 	CONFIDENCE_LEVELS.filter((level) => level <= value).at(-1) ?? 1
 
-/** Findings' quality score on the confidence scale: a note reads 10, a warning 8, two warnings 6. */
-const QUALITY_LEVELS: ReadonlyArray<readonly [minScore: number, level: number]> = [
-	[98, 10],
-	[95, 9],
-	[90, 8],
-	[85, 7],
-	[80, 6],
-	[70, 5],
-	[60, 4],
-	[45, 3],
-	[25, 2],
-]
-
-const qualityLevel = (score: number): number =>
-	QUALITY_LEVELS.find(([minScore]) => score >= minScore)?.[1] ?? 1
-
 const findingPhrase = (n: number, label: string) => `${n} ${label}${n === 1 ? "" : "s"}`
 
+/** A factor as the comment prints it: the points it took off, when it took any. */
+const factor = (label: string, points: number) => (points > 0 ? `${label} −${points}` : label)
+
 /**
- * The review's confidence that the change is safe to merge, 1 to 10, computed rather than asked of
- * the model so the same change scores the same and the comment can say why.
+ * The review's confidence that the change is safe to merge, 1 to 10, computed from the report alone
+ * so the same findings and signals always give the same number, and the comment can show the sum.
  *
- * It starts from the findings' quality score, then takes whole points off for untested behavior, a
- * risky area and new work that cannot be observed. Findings cap it: a critical at 4 (2 with more
- * than one), a security warning at 6, any warning at 8, a review that ended early at 6, and
- * reviewed files left unread at 8 (6 from three files). The
- * reviewer's own number can lower the result by up to two points or raise it by one, never past a
- * cap. `undefined` for a pull request with nothing to review.
+ * It starts at 10 and takes whole points off per critical and warning, for untested behavior, a
+ * high-risk area and new work that cannot be observed. Caps hold it down: a critical at 4 (2 with
+ * more than one), a security warning at 6, any warning at 8, a review that ended early at 6, and
+ * reviewed files left unread at 8 (6 from three files). Without one of the dangers that cap at 6 or
+ * below, it never reads under 5. The reviewer's own number is not an input: a concern that should
+ * move it is a finding. `undefined` for a pull request with nothing to review.
  */
 export const confidencePrReview = (
 	report: PrReviewReport,
@@ -838,40 +855,37 @@ export const confidencePrReview = (
 		all.filter((finding) => finding.severity === severity).length
 	const criticals = count("critical")
 	const warns = count("warn")
+	const notes = count("info")
 	const securityWarn = all.some((finding) => finding.severity === "warn" && finding.category === "security")
-	const { score } = scorePrReview(report, carriedOpen)
 	const unobservable = report.coverage.filter((unit) => !unit.instrumented).length
 	const unread = report.unreviewed?.length ?? 0
+	const D = PR_REVIEW_CONFIDENCE_DEDUCTION
 
-	const factors: Array<string> = []
-	if (criticals > 0) factors.push(findingPhrase(criticals, "critical"))
-	if (warns > 0) factors.push(findingPhrase(warns, "warning"))
-	if (count("info") > 0) factors.push(findingPhrase(count("info"), "note"))
-	if (all.length === 0) factors.push("no findings")
-	if (report.tests !== undefined) factors.push(`tests ${report.tests.replace("_", " ")}`)
-	if (report.risk !== undefined) factors.push(`risk ${report.risk}`)
-	if (report.coverage.length > 0) {
-		factors.push(
-			`${report.coverage.length - unobservable}/${report.coverage.length} new units observable`,
-		)
-	}
-	if (unread > 0) factors.push(`${unread} ${unread === 1 ? "file" : "files"} not read`)
+	const deductions: ReadonlyArray<readonly [label: string, points: number]> = [
+		...(criticals > 0 ? [[findingPhrase(criticals, "critical"), criticals * D.critical] as const] : []),
+		...(warns > 0 ? [[findingPhrase(warns, "warning"), warns * D.warn] as const] : []),
+		...(notes > 0 ? [[findingPhrase(notes, "note"), 0] as const] : []),
+		...(all.length === 0 ? [["no findings", 0] as const] : []),
+		...(report.tests === undefined
+			? []
+			: [[`tests ${report.tests.replace("_", " ")}`, D.tests[report.tests]] as const]),
+		...(report.risk === undefined ? [] : [[`risk ${report.risk}`, D.risk[report.risk]] as const]),
+		...(report.coverage.length > 0
+			? [
+					[
+						`${report.coverage.length - unobservable}/${report.coverage.length} new units observable`,
+						unobservable > 0 ? D.unobservable : 0,
+					] as const,
+				]
+			: []),
+	]
+	const factors = [
+		...deductions.map(([label, points]) => factor(label, points)),
+		...(unread > 0 ? [`${unread} ${unread === 1 ? "file" : "files"} not read`] : []),
+	]
+	const total = deductions.reduce((sum, [, points]) => sum + points, 0)
 
-	const deduction =
-		(report.tests === undefined ? 0 : PR_REVIEW_CONFIDENCE_DEDUCTION.tests[report.tests]) +
-		(report.risk === undefined ? 0 : PR_REVIEW_CONFIDENCE_DEDUCTION.risk[report.risk]) +
-		(unobservable > 0 ? PR_REVIEW_CONFIDENCE_DEDUCTION.unobservable : 0)
-	const signals = Math.max(1, qualityLevel(score) - deduction)
-	const judged =
-		report.confidence === undefined
-			? signals
-			: Math.max(
-					signals - PR_REVIEW_CONFIDENCE_JUDGEMENT.lower,
-					Math.min(signals + PR_REVIEW_CONFIDENCE_JUDGEMENT.raise, Math.round(report.confidence)),
-				)
-
-	// Every cap that applies, tightest first; the first one is what the comment says held it down.
-	// A security warning holds at 6 like an early end or a pass that left 3+ files unread.
+	// Every cap that applies; the tightest is what the comment says held it down.
 	const caps: ReadonlyArray<{
 		readonly at: number
 		readonly by: NonNullable<PrReviewConfidenceResult["cappedBy"]>
@@ -899,14 +913,26 @@ export const confidencePrReview = (
 		undefined,
 	)
 	const cap = binding?.at ?? PR_REVIEW_CONFIDENCE_MAX
-	const confidence = toConfidence(Math.min(cap, judged))
-	if (binding !== undefined && judged > cap) {
+	// Ordinary warnings and soft signals say "needs attention" at worst; red is for the capped dangers.
+	const floor = cap > 6 ? PR_REVIEW_CONFIDENCE_FLOOR : 1
+	const computed = Math.max(floor, PR_REVIEW_CONFIDENCE_MAX - total)
+	const confidence = toConfidence(Math.min(cap, computed))
+	if (binding !== undefined && computed > cap) {
 		return {
 			confidence,
 			reason: `Held at ${cap} because ${binding.why}.`,
 			factors,
 			capped: true,
 			cappedBy: binding.by,
+		}
+	}
+	// The floor is shown like a cap, so the footer's points always add up to the number.
+	if (floor > 1 && PR_REVIEW_CONFIDENCE_MAX - total < floor) {
+		return {
+			confidence,
+			reason: `Kept at ${floor}: ordinary warnings and soft signals never read below ${floor}.`,
+			factors: [...factors, `floor ${floor}`],
+			capped: false,
 		}
 	}
 	return { confidence, reason: report.confidenceReason, factors, capped: false }
@@ -920,6 +946,8 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	outputTokens: Schema.optionalKey(Schema.Number),
 	/** Filed by the close-out turn after the pass ended without a report; posted as a partial. */
 	partial: Schema.optionalKey(Schema.Boolean),
+	/** Why the pass that preceded a partial stopped; the pull request is told this, not `ended_early`. */
+	partialReason: Schema.optionalKey(PrReviewFailureReason),
 	/** Handles of earlier findings this head fixes. */
 	resolved: Schema.optionalKey(Schema.Array(Schema.String)),
 	/** Where the reviewer says each removed telemetry name is still emitted; verified before use. */

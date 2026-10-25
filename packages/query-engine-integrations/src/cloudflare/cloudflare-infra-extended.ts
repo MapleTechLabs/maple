@@ -151,6 +151,7 @@ export function cloudflareZoneDnsBreakdownSQL(opts: CloudflareFilterOpts = {}) {
 export interface CloudflareQueueGaugesOutput {
 	/** `cloudflare-queue/{queueId}`. */
 	readonly serviceName: string
+	readonly accountId: string
 	/** Window-average backlog depth (messages). */
 	readonly backlogMessages: number
 	/** Window-peak backlog depth. */
@@ -164,6 +165,7 @@ export interface CloudflareQueueGaugesOutput {
 export interface CloudflareDurableObjectCountersOutput {
 	/** `cloudflare-worker/{scriptName}` — DOs live on their implementing Worker's service. */
 	readonly serviceName: string
+	readonly accountId: string
 	readonly requests: number
 	readonly errors: number
 }
@@ -182,6 +184,7 @@ export function cloudflareQueueGaugesSQL() {
 	return from(MetricsGauge)
 		.select(($) => ({
 			serviceName: $.ServiceName,
+			accountId: $.ResourceAttributes.get("cloudflare.account.id"),
 			backlogMessages: avgWhere($.Value, backlogMessagesCond($)),
 			backlogMessagesMax: CH.maxIf($.Value, backlogMessagesCond($)),
 			backlogBytes: avgWhere($.Value, $.MetricName.eq("cloudflare.queue.backlog.bytes")),
@@ -193,7 +196,7 @@ export function cloudflareQueueGaugesSQL() {
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
-		.groupBy("serviceName")
+		.groupBy("serviceName", "accountId")
 		.orderBy(["backlogMessagesMax", "desc"])
 		.limit(500)
 		.format("JSON")
@@ -204,6 +207,7 @@ export function cloudflareDurableObjectCountersSQL() {
 	return from(MetricsSum)
 		.select(($) => ({
 			serviceName: $.ServiceName,
+			accountId: $.ResourceAttributes.get("cloudflare.account.id"),
 			requests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.durable_object.requests")),
 			errors: CH.sumIf($.Value, $.MetricName.eq("cloudflare.durable_object.errors")),
 		}))
@@ -213,7 +217,7 @@ export function cloudflareDurableObjectCountersSQL() {
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
 		])
-		.groupBy("serviceName")
+		.groupBy("serviceName", "accountId")
 		.orderBy(["requests", "desc"])
 		.limit(500)
 		.format("JSON")

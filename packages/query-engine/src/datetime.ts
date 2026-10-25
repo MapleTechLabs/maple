@@ -65,6 +65,23 @@ export function formatWarehouseDateTime(epochMs: number): string {
  * `formatWarehouseDateTime` because truncating those to whole seconds
  * collapses events that must stay ordered.
  */
+const HOUR_MS = 3_600_000
+
+/**
+ * The whole hours `serviceHealthSnapshotQuery` reads for a window, [floor(start), ceil(end)),
+ * at the query's whole-second precision. Rates over that read divide by `seconds`.
+ */
+export function serviceHealthSnapshotHours(
+	startTime: string,
+	endTime: string,
+): { readonly startMs: number; readonly endMs: number; readonly seconds: number } {
+	const startSecondMs = Math.floor(parseWarehouseDateTime(startTime) / 1000) * 1000
+	const endSecondMs = Math.floor(parseWarehouseDateTime(endTime) / 1000) * 1000
+	const startMs = Math.floor(startSecondMs / HOUR_MS) * HOUR_MS
+	const endMs = Math.floor((endSecondMs + HOUR_MS - 1000) / HOUR_MS) * HOUR_MS
+	return { startMs, endMs, seconds: Math.max(0, endMs - startMs) / 1000 }
+}
+
 export function formatWarehouseDateTimeMs(epochMs: number): string {
 	return new Date(epochMs).toISOString().replace("T", " ").replace(/Z$/, "")
 }
@@ -1032,13 +1049,131 @@ export const ALERT_TICK_SECONDS = 60
  *     (`ErrorsService`'s cutoff floors to the minute and subtracts one more).
  *  2. SHARING — every rule in a tick computed its own `now`, so rules over the
  *     identical query still produced distinct windows and distinct cache keys.
- *     Snapping makes a tick's rules agree, which is what lets the `qe-evaluate`
- *     entry be reused by, say, warn-at-100 and page-at-500 on one signal.
+ *     Snapping makes a tick's rules agree, which is what lets the in-tick
+ *     bucket memo (`withAlertEvaluationScope`) serve, say, warn-at-100 and
+ *     page-at-500 on one signal from one read.
  *
  * Costs up to one tick of extra lag, which is bounded by the tick period the
  * scheduler already imposes.
  */
 export const snapAlertWindowEndMs = (epochMs: number): number => floorToBucketMs(epochMs, ALERT_TICK_SECONDS)
+
+/** Longest gap between a rule's checks, so a long-window rule still fires within minutes. */
+export const ALERT_MAX_EVALUATION_INTERVAL_MINUTES = 5
+
+/**
+ * Minutes between a rule's checks: a fifth of its window, 1 to 5. Every check
+ * reads the whole window, so consecutive windows overlap and no data goes unchecked.
+ */
+export const alertEvaluationIntervalMinutes = (windowMinutes: number): number =>
+	Math.min(ALERT_MAX_EVALUATION_INTERVAL_MINUTES, Math.max(1, Math.floor(windowMinutes / 5)))
+
+/**
+ * A rule's check interval: the one its author picked, else a fifth of its window,
+ * stretched to the scheduler's slowdown when its queries kept hitting their limit.
+ */
+export const alertRuleIntervalMinutes = (rule: {
+	readonly windowMinutes: number
+	readonly evaluationIntervalMinutes: number | null
+	readonly slowedIntervalMinutes?: number | null
+}): number =>
+	Math.max(
+		rule.evaluationIntervalMinutes ?? alertEvaluationIntervalMinutes(rule.windowMinutes),
+		rule.slowedIntervalMinutes ?? 0,
+	)
+
+/** What one check of a raw SQL rule may spend in the warehouse. */
+export interface AlertQueryLimits {
+	readonly timeSeconds: number
+	readonly memoryBytes: number
+}
+
+/**
+ * Rules checked less often may run longer queries: a check's cost is spread over its interval.
+ * The top limit stays under the query engine's 30s ceiling, so the warehouse's own typed
+ * timeout fires first and the scheduler can tell a slow query from a stuck one.
+ */
+export const alertQueryLimits = (intervalMinutes: number): AlertQueryLimits =>
+	intervalMinutes >= 15
+		? { timeSeconds: 25, memoryBytes: 1_000_000_000 }
+		: intervalMinutes >= 10
+			? { timeSeconds: 25, memoryBytes: 512_000_000 }
+			: intervalMinutes >= 5
+				? { timeSeconds: 15, memoryBytes: 512_000_000 }
+				: { timeSeconds: 5, memoryBytes: 256_000_000 }
+
+// The intervals a rule can pick (`ALERT_EVALUATION_INTERVALS` in `@maple/domain/http`, kept out of this module).
+const ALERT_PICKABLE_INTERVALS = [1, 5, 10, 15, 30, 60] as const
+
+/** Check intervals a query taking `elapsedMs` fits, keeping a fifth of each limit spare. */
+export const alertIntervalsFitting = (
+	elapsedMs: number,
+): ReadonlyArray<(typeof ALERT_PICKABLE_INTERVALS)[number]> =>
+	ALERT_PICKABLE_INTERVALS.filter(
+		(interval) => elapsedMs <= alertQueryLimits(interval).timeSeconds * 1000 * 0.8,
+	)
+
+/**
+ * The next interval up that raises the limit the query ran out of, at most `windowMinutes`
+ * so slowing down never leaves data between checks unread. Null when none is left.
+ */
+export const nextSlowerAlertInterval = (
+	intervalMinutes: number,
+	windowMinutes: number,
+	exceeded: "time" | "memory",
+): number | null => {
+	const current = alertQueryLimits(intervalMinutes)
+	return (
+		ALERT_PICKABLE_INTERVALS.find((candidate) => {
+			const limits = alertQueryLimits(candidate)
+			return (
+				candidate > intervalMinutes &&
+				candidate <= windowMinutes &&
+				(exceeded === "time"
+					? limits.timeSeconds > current.timeSeconds
+					: limits.memoryBytes > current.memoryBytes)
+			)
+		}) ?? null
+	)
+}
+
+// FNV-1a: a stable phase per rule, so rules sharing an interval split across its minutes.
+const alertRulePhase = (ruleId: string, intervalMinutes: number): number => {
+	let hash = 0x811c9dc5
+	for (let i = 0; i < ruleId.length; i++) {
+		hash = Math.imul(hash ^ ruleId.charCodeAt(i), 0x01000193)
+	}
+	return (hash >>> 0) % intervalMinutes
+}
+
+export interface AlertRuleDueInput {
+	readonly ruleId: string
+	/** `alertRuleIntervalMinutes` for the rule. */
+	readonly intervalMinutes: number
+	/** The rule's last edit, epoch ms. */
+	readonly updatedAt: number
+	/** When a tick last claimed the rule, epoch ms; 0 or undefined when never or released. */
+	readonly lastClaimedAt: number | undefined
+	/** The tick's snapped window end (`snapAlertWindowEndMs`). */
+	readonly windowEndMs: number
+}
+
+/**
+ * Whether a tick evaluates the rule: on its phase minute, or straight away when it
+ * was never claimed, was edited since, or missed its last slot.
+ */
+export const isAlertRuleDue = (input: AlertRuleDueInput): boolean => {
+	const tickMs = ALERT_TICK_SECONDS * 1000
+	const { intervalMinutes } = input
+	const lastClaimedAt = input.lastClaimedAt ?? 0
+	if (lastClaimedAt <= 0 || input.updatedAt > lastClaimedAt) return true
+	// Claims land seconds into their minute, so compare on the minute.
+	if (input.windowEndMs - floorToBucketMs(lastClaimedAt, ALERT_TICK_SECONDS) > intervalMinutes * tickMs) {
+		return true
+	}
+	const tick = Math.floor(input.windowEndMs / tickMs)
+	return tick % intervalMinutes === alertRulePhase(input.ruleId, intervalMinutes)
+}
 
 const floorToBucketMs = (epochMs: number, bucketSeconds: number): number => {
 	const bucketMs = bucketSeconds * 1000

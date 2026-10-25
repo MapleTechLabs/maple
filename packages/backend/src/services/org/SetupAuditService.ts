@@ -26,12 +26,17 @@ import {
 	type WarehouseAuditInputs,
 	runSetupAudit,
 } from "@maple/domain/setup-audit"
-import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, Effect, Layer } from "effect"
+import { alertRuleIntervalMinutes, CH, formatWarehouseDateTime } from "@maple/query-engine"
+import { Clock, Context, Effect, Layer, Option } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
+import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { readOrgCreatedAt } from "@maple/backend/services/org/org-created-at"
+import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import * as Integrations from "@maple/query-engine-integrations"
 
 /** Telemetry lookback for the warehouse-backed checks — matches the recommendations reconcile. */
@@ -39,22 +44,47 @@ const LOOKBACK_HOURS = 24
 
 /**
  * The trace-completeness joins read one hour, trailing 15 minutes behind now so exporter batching
- * cannot masquerade as a missing parent, with an extra hour of parent lookback for long spans. Same
- * shape and window size as the hourly service-map rollup, which is the cost precedent — do not widen.
+ * cannot masquerade as a missing parent, with an extra hour of parent lookback for long spans. The
+ * orphan join has the hourly service-map rollup's shape and window, which is the cost precedent; the
+ * rootless join reads raw `traces` over the same two hours. Do not widen either.
  */
 const TRACE_WINDOW_MINUTES = 60
 const TRACE_WINDOW_LAG_MINUTES = 15
 const TRACE_PARENT_LOOKBACK_MINUTES = 60
+
+/** What the ingest sampler keeps from traces it drops; null when it drops nothing. */
+const samplingOverrides = (
+	policy: ConfigAuditInputs["samplingPolicy"],
+): Integrations.AuditSamplingOverrides | null =>
+	policy === null || policy.traceSampleRatio >= 1
+		? null
+		: {
+				keepErrorSpans: policy.alwaysKeepErrorSpans,
+				slowSpanNs:
+					policy.alwaysKeepSlowSpansMs === null ? null : policy.alwaysKeepSlowSpansMs * 1_000_000,
+			}
 
 export interface SetupAuditServiceApi {
 	/** Runs every check against a fresh snapshot of config + telemetry. */
 	readonly run: (tenant: TenantContext) => Effect.Effect<SetupAuditReport, SetupAuditUnavailableError>
 }
 
-const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQueryService> = Effect.gen(
+type SetupAuditServiceRequirements =
+	| Database
+	| WarehouseQueryService
+	| IntegrationInventoryService
+	| OnboardingService
+	| OrganizationService
+	| SignalPresenceService
+
+const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirements> = Effect.gen(
 	function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
+		const inventory = yield* IntegrationInventoryService
+		const onboarding = yield* OnboardingService
+		const organizations = yield* OrganizationService
+		const signals = yield* SignalPresenceService
 
 		const dbExecute = makeDbExecute(
 			database,
@@ -107,6 +137,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 										"enabled",
 										"destinationIdsJson",
 										"windowMinutes",
+										"evaluationIntervalMinutes",
+										"slowedIntervalMinutes",
 										"lastScheduledAt",
 										"createdAt",
 									)
@@ -141,7 +173,11 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 							),
 							db.run(
 								PG.from(OrgIngestSamplingPolicies)
-									.select("traceSampleRatio", "alwaysKeepErrorSpans")
+									.select(
+										"traceSampleRatio",
+										"alwaysKeepErrorSpans",
+										"alwaysKeepSlowSpansMs",
+									)
 									.where(($) => [$.orgId.eq(orgId)])
 									.limit(1),
 							),
@@ -154,6 +190,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 										"sourceContext",
 										"sourceKey",
 										"targetKey",
+										"operation",
+										"updatedAt",
 									)
 									.where(($) => [$.orgId.eq(orgId)]),
 							),
@@ -220,15 +258,23 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			)
 
 			const clickhouseRow = rows.clickhouse[0]
+			// Optional: an unreadable inventory drops the inventory-backed checks to a pass, not the audit.
+			const integrationInventory = yield* inventory.list(orgId).pipe(
+				Effect.tapError((error) =>
+					Effect.logWarning("Setup audit could not read integrations", error.message),
+				),
+				Effect.option,
+			)
 
 			const config: ConfigAuditInputs = {
-				firstDataReceivedAt: rows.onboarding[0]?.firstDataReceivedAt ?? null,
+				telemetry: (rows.onboarding[0]?.firstDataReceivedAt ?? null) === null ? "absent" : "present",
 				alertRules: rows.rules.map((rule) => ({
 					id: rule.id,
 					name: rule.name,
 					enabled: rule.enabled,
 					destinationIds: rule.destinationIdsJson ?? [],
 					windowMinutes: rule.windowMinutes,
+					evaluationIntervalMinutes: alertRuleIntervalMinutes(rule),
 					lastScheduledAt: rule.lastScheduledAt,
 					createdAt: rule.createdAt,
 				})),
@@ -257,6 +303,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 					? {
 							traceSampleRatio: rows.sampling[0].traceSampleRatio,
 							alwaysKeepErrorSpans: rows.sampling[0].alwaysKeepErrorSpans,
+							alwaysKeepSlowSpansMs: rows.sampling[0].alwaysKeepSlowSpansMs,
 						}
 					: null,
 				attributeMappings: rows.mappings.map((mapping) => ({
@@ -266,6 +313,8 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 					sourceContext: mapping.sourceContext,
 					sourceKey: mapping.sourceKey,
 					targetKey: mapping.targetKey,
+					operation: mapping.operation,
+					updatedAt: mapping.updatedAt,
 				})),
 				clickhouse: clickhouseRow
 					? {
@@ -302,6 +351,9 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 					lastScrapeError: target.lastScrapeError,
 				})),
 				openRecommendationCount: rows.openRecommendations[0]?.count ?? 0,
+				...(Option.isSome(integrationInventory)
+					? { integrationInventory: integrationInventory.value }
+					: undefined),
 			}
 
 			return config
@@ -319,6 +371,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			tenant: TenantContext,
 			now: number,
 			spanCountOverLookback: number,
+			samplingOverrides: Integrations.AuditSamplingOverrides | null,
 		) {
 			const childEnd = now - TRACE_WINDOW_LAG_MINUTES * 60_000
 			const childStart = childEnd - TRACE_WINDOW_MINUTES * 60_000
@@ -334,18 +387,38 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			// empty connection pool rather than queueing behind a sibling's warehouse
 			// fetch. No-op on a warm memo.
 			yield* warehouse.warmRoute(tenant)
+			// Each join degrades alone: a timed-out rootless scan costs TRC-02, not TRC-01 and TRC-03.
+			const orEmpty = <A>(context: string, read: Effect.Effect<ReadonlyArray<A>, unknown>) =>
+				read.pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning("Setup audit trace-completeness join skipped").pipe(
+							Effect.annotateLogs({ context, cause }),
+							Effect.as([]),
+						),
+					),
+				)
 			const joined = yield* Effect.all(
 				{
-					orphans: warehouse.compiledQuery(tenant, Integrations.auditOrphanSpansSQL(window), {
-						profile: "aggregation",
-						settings: { maxThreads: 4 },
-						context: "setupAuditOrphanSpans",
-					}),
-					rootless: warehouse.compiledQuery(tenant, Integrations.auditRootlessTracesSQL(window), {
-						profile: "aggregation",
-						settings: { maxThreads: 4 },
-						context: "setupAuditRootlessTraces",
-					}),
+					orphans: orEmpty(
+						"setupAuditOrphanSpans",
+						warehouse.compiledQuery(tenant, Integrations.auditOrphanSpansSQL(window), {
+							profile: "aggregation",
+							settings: { maxThreads: 4 },
+							context: "setupAuditOrphanSpans",
+						}),
+					),
+					rootless: orEmpty(
+						"setupAuditRootlessTraces",
+						warehouse.compiledQuery(
+							tenant,
+							Integrations.auditRootlessTracesSQL(window, samplingOverrides),
+							{
+								profile: "aggregation",
+								settings: { maxThreads: 4 },
+								context: "setupAuditRootlessTraces",
+							},
+						),
+					),
 				},
 				{ concurrency: 2 },
 			)
@@ -366,6 +439,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 		 */
 		const fetchWarehouseInputs = Effect.fn("SetupAuditService.fetchWarehouseInputs")(function* (
 			tenant: TenantContext,
+			samplingOverrides: Integrations.AuditSamplingOverrides | null,
 		) {
 			const now = yield* Clock.currentTimeMillis
 			const window = {
@@ -423,7 +497,12 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			// and sizes its trace sampling from the volume they just reported. It degrades on its own:
 			// a join that times out costs the three TRC checks, not the whole telemetry half.
 			const totalSpans = results.spanShape.reduce((sum, row) => sum + row.weightedSpanCount, 0)
-			const traceCompleteness = yield* fetchTraceCompleteness(tenant, now, totalSpans).pipe(
+			const traceCompleteness = yield* fetchTraceCompleteness(
+				tenant,
+				now,
+				totalSpans,
+				samplingOverrides,
+			).pipe(
 				Effect.catchCause((cause) =>
 					Effect.logWarning("Setup audit trace-completeness checks skipped").pipe(
 						Effect.annotateLogs({ cause }),
@@ -474,21 +553,65 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 			return inputs
 		})
 
+		/**
+		 * `firstDataReceivedAt` has no ingest-side writer, so an unstamped org is checked against the
+		 * warehouse (same predicate as the onboarding checklist) and stamped here. `unavailable`
+		 * leaves the row unstamped so the next run probes again.
+		 */
+		const resolveTelemetry = Effect.fn("SetupAuditService.resolveTelemetry")(function* (
+			tenant: TenantContext,
+			recorded: ConfigAuditInputs["telemetry"],
+		) {
+			if (recorded === "present") return recorded
+			const report = yield* signals.read(tenant)
+			const hasTelemetry = report.signals.some(
+				(signal) =>
+					signal.status === "present" &&
+					(signal.signal === "traces" || signal.signal === "logs" || signal.signal === "metrics"),
+			)
+			const probe: ConfigAuditInputs["telemetry"] = report.warehouseAvailable
+				? hasTelemetry
+					? "present"
+					: "absent"
+				: "unavailable"
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.audit.first_data_probe": probe })
+			if (probe !== "present") return probe
+
+			// A failed write must not hide the audit from an org that has data; the next run retries.
+			const stamped = yield* onboarding
+				.recordFirstDataReceived(tenant.orgId, readOrgCreatedAt(organizations, tenant.orgId))
+				.pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning("Setup audit could not stamp first data received", error.message),
+					),
+					Effect.orElseSucceed(() => false),
+				)
+			yield* Effect.annotateCurrentSpan({ "maple.audit.first_data_stamped": stamped })
+			return probe
+		})
+
 		const run = Effect.fn("SetupAuditService.run")(function* (tenant: TenantContext) {
-			const config = yield* fetchConfigInputs(tenant.orgId)
+			const recorded = yield* fetchConfigInputs(tenant.orgId)
+			const config: ConfigAuditInputs = {
+				...recorded,
+				telemetry: yield* resolveTelemetry(tenant, recorded.telemetry),
+			}
 
 			// A warehouse outage must not take the whole audit down — the configuration half is the
 			// part that most often explains "why didn't anything page me", and it is always readable.
 			// `catchCause` rather than `Effect.option` deliberately: a driver-level defect should
 			// degrade this diagnostic endpoint to skipped checks, not 500 it.
-			const warehouseInputs = yield* fetchWarehouseInputs(tenant).pipe(
-				Effect.catchCause((cause) =>
-					Effect.logWarning("Setup audit telemetry checks skipped — warehouse unavailable").pipe(
-						Effect.annotateLogs({ cause }),
-						Effect.as(undefined),
-					),
-				),
-			)
+			// The presence probe already found the warehouse unreachable: skip the telemetry checks.
+			const warehouseInputs =
+				config.telemetry === "unavailable"
+					? undefined
+					: yield* fetchWarehouseInputs(tenant, samplingOverrides(config.samplingPolicy)).pipe(
+							Effect.catchCause((cause) =>
+								Effect.logWarning(
+									"Setup audit telemetry checks skipped: warehouse unavailable",
+								).pipe(Effect.annotateLogs({ cause }), Effect.as(undefined)),
+							),
+						)
 
 			const now = yield* Clock.currentTimeMillis
 			const report = runSetupAudit({ now, config, warehouse: warehouseInputs })
@@ -511,8 +634,18 @@ const make: Effect.Effect<SetupAuditServiceApi, never, Database | WarehouseQuery
 )
 
 export class SetupAuditService extends Context.Service<SetupAuditService, SetupAuditServiceApi>()(
-	"@maple/api/services/SetupAuditService",
+	"@maple/backend/services/SetupAuditService",
 	{ make },
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				IntegrationInventoryService.layer,
+				OnboardingService.layer,
+				OrganizationService.layer,
+				SignalPresenceService.layer,
+			),
+		),
+	)
 }

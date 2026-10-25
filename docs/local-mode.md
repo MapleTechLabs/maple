@@ -65,15 +65,25 @@ MAPLE_LOCAL_ADVERTISE_HOST=maple.home.arpa \
 # Equivalent: maple start --host 0.0.0.0 --advertise-host maple.home.arpa --offline
 ```
 
-Binding outside loopback exposes the complete, unauthenticated local-mode
-listener: OTLP ingest, `/local/query` read-only SQL, `/local/status`, `/health`, and the bundled UI.
-Maple restricts browser requests to the advertised same-origin UI and the exact
-configured hosted UI origin, but non-browser clients on the network still need
-no credentials. Use it only on a trusted network or behind a TLS proxy with
-browser-compatible authentication (for example, a session cookie or HTTP
-authentication). The bundled UI does not inject a Bearer API key or propagate
-an entry-page query parameter to its API requests. Open the advertised URL from
-another machine. The default UI hosted at `local.maple.dev` always talks to the
+Off loopback, set two secrets (`apps/cli/src/server/remote-auth.ts`), each at
+least 16 characters:
+
+- `MAPLE_LOCAL_INGEST_KEY` guards `/v1/*` (`Authorization: Bearer` or
+  `x-maple-ingest-key`, as hosted ingest). Write-only: it never opens a read.
+- `MAPLE_LOCAL_ACCESS_TOKEN` guards every other route but `/health`. `/login`
+  exchanges it for a stateless HMAC session cookie (30 days, keyed by the
+  token, so rotating it signs everyone out); scripts and the CLI send it as a
+  Bearer token. The server's own maintenance token still opens `/local/*` and
+  the event-consumer token still opens claims and acks. Failed sign-ins are
+  throttled globally (10 a minute).
+
+With an access token, a browser request is same-origin when its `Origin` host
+matches the request's `Host`, so a platform hostname works without
+`--advertise-host`; a DNS-rebinding page reaches the listener but never holds
+the cookie. Ingest keeps the advertised-host rule. Without the secrets the
+listener is open as before and the startup banner says so; use that only on a
+trusted network. Open the advertised URL from another machine. The default UI
+hosted at `local.maple.dev` always talks to the
 browser machine's loopback address, so it cannot reach a remote local-mode server.
 
 By default `maple start` points you at the auto-updating dashboard hosted at
@@ -156,13 +166,13 @@ There is a single binary, `maple`, compiled from **`apps/cli`** (package
 the server. It talks to the embedded ClickHouse engine **directly via
 `bun:ffi`**, with no subprocess and no second language in front:
 
-| Concern              | Where                          | How                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI commands         | `apps/cli/src/commands`        | `maple services`, `traces`, `errors`, … run against **either** the local server **or** a remote workspace. `apps/cli/src/core/operations.ts` picks the path per [mode](#local-vs-remote-mode).                                                                                                                                                                       |
-| `maple start` server | `apps/cli/src/server/serve.ts` | A `Bun.serve` hosting OTLP/HTTP ingest (`POST /v1/{traces,logs,metrics}`), the query API (`POST /local/query`), and the bundled SPA, all on one port.                                                                                                                                                                                                                |
-| Embedded ClickHouse  | `apps/cli/src/server/chdb.ts`  | `dlopen`s `libchdb` via `bun:ffi` (the `chdb_*` accessor C API) and holds a single connection for the process.                                                                                                                                                                                                                                                       |
-| OTLP → rows          | `apps/cli/src/server/otlp/`    | Decodes OTLP protobuf/JSON (protobufjs) and encodes each signal to per-table NDJSON, matching the generated `local-inserts.json` schema exactly. Ported from the production Rust encoders so row shapes can't diverge.                                                                                                                                               |
-| UI (SPA)             | `apps/local-ui` (Vite + React) | Hooks compile queries with `CH.compile(...)` and POST to `/local/query`. The same build is deployed to `local.maple.dev` (the default) **and** inlined into the binary as the `--offline` fallback (see [release bundle](#release-bundle)); it picks its query base URL from `window.location` at runtime (see [Where the UI comes from](#where-the-ui-comes-from)). |
+| Concern              | Where                            | How                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI commands         | `apps/cli/src/commands`          | `maple services`, `traces`, `errors`, … run against **either** the local server **or** a remote workspace. `apps/cli/src/core/operations.ts` picks the path per [mode](#local-vs-remote-mode).                                                                                                                                                                       |
+| `maple start` server | `apps/cli/src/server/serve.ts`   | A `Bun.serve` hosting OTLP/HTTP ingest (`POST /v1/{traces,logs,metrics}`), the query API (`POST /local/query`), and the bundled SPA, all on one port.                                                                                                                                                                                                                |
+| Embedded ClickHouse  | `apps/cli/src/server/chdb.ts`    | `dlopen`s `libchdb` via `bun:ffi` (the `chdb_*` accessor C API) and holds a single connection for the process.                                                                                                                                                                                                                                                       |
+| OTLP → rows          | `apps/cli/src/server/otlp/`      | Decodes OTLP protobuf/JSON (protobufjs) and encodes each signal to per-table NDJSON, matching the generated `local-inserts.json` schema exactly. Ported from the production Rust encoders so row shapes can't diverge.                                                                                                                                               |
+| UI (SPA)             | `apps/local-ui` (Vite + Foldkit) | Pages compile queries with `CH.compile(...)` and POST to `/local/query`. The same build is deployed to `local.maple.dev` (the default) **and** inlined into the binary as the `--offline` fallback (see [release bundle](#release-bundle)); it picks its query base URL from `window.location` at runtime (see [Where the UI comes from](#where-the-ui-comes-from)). |
 
 chDB allows exactly one connection per process and isn't safe to call
 concurrently. The long-lived `maple start` process owns the connection, and
@@ -217,6 +227,44 @@ killing it. While a server runs it writes `maple-server.json` (pid, URL, data
 dir) beside the store; the query CLI reads it to find a server on a non-default
 port. `maple start -d` checks the port before spawning and reports ready only
 when `/local/status` answers with the child's pid (120s budget).
+
+**Under a supervisor.** A start refusal that retrying cannot fix (an unloadable
+libchdb, a dirty or incompatible store; the list is `DETERMINISTIC_START_TAGS` in
+`apps/cli/src/commands/start-failures.ts`) exits with status **78**, and so does
+a `maple start -d` whose child exited 78. Tell the supervisor not to restart on
+it: systemd `RestartPreventExitStatus=78`, launchd `KeepAlive` =
+`{ SuccessfulExit = false; }` plus a `ThrottleInterval`, Docker
+`restart: on-failure:5`. A taken port keeps the ordinary exit code, since it can
+clear by itself. Either way `maple start` protects itself: it records the
+failure in `start-failures.json` beside the store (a `-d` child uses
+`start-failures-child.json`), reports the same failure to Maple's telemetry at
+most once an hour, and from the third consecutive non-interactive repeat waits
+before exiting (1s, doubling, capped at 60s). A successful start clears both.
+
+### In-memory mode
+
+`maple start --in-memory` keeps telemetry for one run only, for CI jobs, tests
+and throwaway sessions. It never touches `~/.maple/data`
+(`apps/cli/src/commands/in-memory-store.ts`).
+
+chDB cannot hold MergeTree tables in RAM: ClickHouse removed the `memory` disk
+type, and the C API treats `--path=:memory:` as an ordinary directory name. The
+store is therefore a fresh temp directory, deleted after chDB closes. On Linux
+it goes on `/dev/shm` (tmpfs, so it really is in RAM) when at least 1 GiB is
+free there. Docker caps `/dev/shm` at 64 MiB by default, so containers fall
+back to the OS temp dir unless run with `--shm-size`. Other platforms always
+use the OS temp dir. The banner prints `in memory` or `temporary` and the path.
+
+Nothing about durability applies: no checkpoints, no store-version or
+dirty-store checks, no migrations. The flag is refused with `--background`,
+`--data-dir`, `--reset`, `--checkpoint-interval`, `--on-dirty-store` and
+`--minimum-raw-telemetry-retention-days`. Stop the server with Ctrl-C (or
+SIGTERM); `maple stop` only finds servers with a data dir. Query commands find
+it through `~/.maple/in-memory-<pid>.maple-server.json`, removed on exit.
+Start failures are recorded in `~/.maple/in-memory.start-failures.json`, so a
+supervisor retrying a failing `--in-memory` start still backs off. A run
+killed with `kill -9` leaves its temp directory behind, and the next
+`--in-memory` start deletes every such directory whose server is gone.
 
 ### Service map rollup
 
@@ -277,8 +325,8 @@ classification. Per request, each table is handled one of three ways:
 - **filter**: the table declares every requested dimension, so
   `ALTER TABLE ... DELETE` removes exactly the matching rows. The six raw tables
   read namespace and env from `ResourceAttributes` and can always filter.
-  `trace_list_mv`, `service_overview_*`, `trace_facets_hourly`,
-  `logs_aggregates_hourly` and `trace_detail_spans` also carry the namespace;
+  `trace_list_mv`, `service_overview_*`, `trace_facets_hourly` and
+  `logs_aggregates_hourly` also carry the namespace;
   most other rollups carry `ServiceName` and `DeploymentEnv` only. On a merging
   engine (Aggregating, Summing, Replacing) every filter column must be in the
   sorting key, so a row never mixes scopes. `service_map_edges_hourly` and
@@ -657,6 +705,14 @@ field instead of being stored mangled. A hex trace id read as base64 yields a
 _deterministic_ 24-byte value, so the trace still self-joins and looks correct
 until you compare it against the emitting service's logs.
 
+## Release workflow opt-in
+
+Set the repository Actions variable `MAPLE_RELEASE_ENABLED=true` to enable **Release**
+and **Local Binary Release**, including manual runs. Forks can leave it unset to skip
+these jobs. Use a repository variable or an organization variable scoped to this
+repository, not an environment variable.
+Upstream maintainers must set it before merging the gate to keep releases running.
+
 ## Release bundle
 
 `scripts/build-local-binary.sh` produces a relocatable **2-file bundle** (also built
@@ -685,6 +741,41 @@ tricks are needed.
 
 ```bash
 scripts/build-local-binary.sh               # full 2-file bundle into ./dist
+MAPLE_TARGET=linux-arm64 scripts/build-local-binary.sh   # cross-compile (linux-x64, linux-arm64, darwin-x64, darwin-arm64)
+```
+
+## Container image
+
+`apps/cli/docker/` packages the Linux bundle as the self-hosted image
+`ghcr.io/mapletechlabs/maple` (user docs: `apps/landing/src/content/docs/self-hosting.md`).
+
+- `Dockerfile` takes prebuilt bundles from its context
+  (`linux-{amd64,arm64}/{maple,libchdb.so}`); the final stage only copies files,
+  so a multi-arch build needs no emulation. `HOME=/data` puts the store, sidecars
+  and config on the volume, so CLI defaults work under `docker exec`.
+- `entrypoint.sh` refuses `start` without `MAPLE_LOCAL_INGEST_KEY` and
+  `MAPLE_LOCAL_ACCESS_TOKEN`, binds `0.0.0.0:${PORT:-4318}` with `--offline`,
+  chowns a root-owned `/data` and drops to uid 10001 with `setpriv`. Its dirty-store
+  policy is `restore-checkpoint` once a checkpoint exists and `wipe` before that,
+  so a container killed before its first checkpoint starts instead of crash-looping.
+  `start --in-memory` gets no policy flag (it has no store to recover); pair it
+  with `--shm-size=1g` or more to keep the store in RAM.
+  Any other command runs `maple` as is.
+- `build-image.sh <tag> [platforms]` cross-compiles the bundles (or takes
+  `BUNDLES=<dir>`) and builds; `image-smoke.sh <image>` is the end-to-end check:
+  secrets, a root-owned volume, uid, auth through the published port,
+  `docker exec`, clean stop, restart, and kill recovery.
+- CI's `Local checkpoint native` job builds the amd64 image from its bundle and
+  runs the smoke. The release workflow's `image` job smokes the amd64 image and,
+  for a tag, pushes both platforms as `:<tag>` (and `:latest` unless it is a
+  pre-release) with a provenance attestation. A new GHCR package starts
+  private: after the first push, set `ghcr.io/mapletechlabs/maple` to public in
+  the organization's package settings, or anonymous pulls fail.
+- The entrypoint's dirty-store check reads `$HOME/.maple/data`, so the image's
+  data dir is fixed at `/data/.maple/data`; don't pass `--data-dir`.
+
+```bash
+apps/cli/docker/build-image.sh maple-local:dev && apps/cli/docker/image-smoke.sh maple-local:dev
 ```
 
 ## Release signing

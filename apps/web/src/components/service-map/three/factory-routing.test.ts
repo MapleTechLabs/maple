@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { SERVICE_MAP_3D_TOPOLOGY as topology } from "@/lab/service-map-3d/fixture"
+import { SERVICE_MAP_3D_TOPOLOGY as topology } from "../../../lab/service-map-3d/fixture"
 import { factoryLinks, factoryRoutes, decorateRoutes, beltGeometry, CurveSection } from "./factory-routing"
 import { spatialLayout } from "./spatial-layout"
 

@@ -6,7 +6,7 @@
  * Transcript rewriting used to be the only bound: it walked the transcript mid-turn and rewrote
  * old tool results in place. That works on token count and fails on everything else.
  *
- * The default chat route is OpenRouter (`z-ai/glm-5.3-flash:nitro`), which takes no cache
+ * The default chat route is OpenRouter (`deepseek/deepseek-v4.1-flash-1017:nitro`), which takes no cache
  * breakpoints — those are an Anthropic-protocol feature, and Maple posts an OpenAI-compatible chat
  * body. Caching on that path is *implicit prefix* caching: the provider matches the longest
  * identical prefix it has seen, and there is no breakpoint to place. Prefix stability is the only

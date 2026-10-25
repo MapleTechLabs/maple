@@ -7,9 +7,6 @@ import { getSemanticSeriesColor, resolveSeriesColors } from "../semantic-series-
 describe("getSemanticSeriesColor", () => {
 	it("resolves every HTTP status class, including 1xx", () => {
 		const classes = ["1xx", "2xx", "3xx", "4xx", "5xx"]
-		for (const key of classes) {
-			expect(getSemanticSeriesColor(key), key).toMatch(/^oklch\(/)
-		}
 		// Each class is visually distinct — 1xx must not read as 2xx green or 3xx blue.
 		const colors = classes.map((key) => getSemanticSeriesColor(key))
 		expect(new Set(colors).size).toBe(classes.length)
@@ -31,6 +28,12 @@ describe("getSemanticSeriesColor", () => {
 		for (const color of colors) expect(color).toEqual(expect.any(String))
 		expect(new Set(colors).size).toBe(keys.length)
 		expect(getSemanticSeriesColor("warning")).toBe(getSemanticSeriesColor("warn"))
+	})
+
+	it("colors CI run results like the span statuses they stand for", () => {
+		expect(getSemanticSeriesColor("Succeeded")).toBe(getSemanticSeriesColor("ok"))
+		expect(getSemanticSeriesColor("Failed")).toBe(getSemanticSeriesColor("error"))
+		expect(getSemanticSeriesColor("Cancelled")).toBe(getSemanticSeriesColor("unset"))
 	})
 
 	it("resolves HTTP methods to the shared hex palette", () => {

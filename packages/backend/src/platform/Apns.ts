@@ -243,7 +243,7 @@ export const makeSingleFlightTokenCache = <E, R>(
 	)
 
 export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
-	"@maple/api/platform/ApnsClient",
+	"@maple/backend/platform/ApnsClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

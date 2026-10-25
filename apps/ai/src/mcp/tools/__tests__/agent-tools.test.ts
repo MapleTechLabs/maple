@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
-import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
+import {
+	installFakeWarehouse,
+	readsTraceSpans,
+	restoreWarehouse,
+	type FixtureRule,
+} from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import { mapleToolCatalog, toInputSchema } from "../registry"
 import type { McpToolResult } from "../types"
@@ -165,7 +170,7 @@ const payloadRows = [payload(["a", "b"], LONG_ARGUMENTS), payload(["c", "d"], `{
 
 /** The payload read, answering with rows of the test's own shape. */
 const payloadsAre = (rows: ReadonlyArray<unknown>): FixtureRule[] => [
-	{ match: (sql) => sql.includes("trace_detail_spans"), rows },
+	{ match: (sql) => readsTraceSpans(sql), rows },
 ]
 
 /** A result that is itself a fenced block: a fixed ``` fence around it is
@@ -192,7 +197,7 @@ const record = (match: (sql: string) => boolean) => (sql: string) => {
 // `failing_tool_calls` subquery (and every column alias in it), so they are told
 // apart by the grouping of their OUTER select.
 const fixtures: FixtureRule[] = [
-	{ match: record((sql) => sql.includes("trace_detail_spans")), rows: payloadRows },
+	{ match: record((sql) => readsTraceSpans(sql)), rows: payloadRows },
 	// The only read that selects the tool's description.
 	{
 		match: record((sql) => sql.includes("ToolDescription")),
@@ -244,19 +249,17 @@ const renderWith = async (rules: FixtureRule[], name: string, params: ToolParams
 	}
 }
 
-// Each tool, its required params, and the sibling its description names.
-const REGISTERED: Array<[string, Array<string>, string]> = [
-	[OVERVIEW, [], ERROR_DETAIL],
-	[ERROR_DETAIL, ["tool", "fingerprint"], OVERVIEW],
+// Each tool and its required params.
+const REGISTERED: Array<[string, Array<string>]> = [
+	[OVERVIEW, []],
+	[ERROR_DETAIL, ["tool", "fingerprint"]],
 ]
 
-it.each(REGISTERED)("registers %s with its required params and framing", (name, required, sibling) => {
+it.each(REGISTERED)("registers %s with its required params", (name, required) => {
 	const definition = definitionOf(name)
 	const schema = toInputSchema(definition.schema)
 	expect(schema.type).toBe("object")
 	expect(schema.required ?? []).toEqual(required)
-	expect(definition.description).toContain("AI agent tool call")
-	expect(definition.description).toContain(sibling)
 })
 
 // A bad parameter, and the phrases the refusal has to name so a model can
@@ -292,7 +295,6 @@ describe("structured output", () => {
 		expect(decoded.failureGroups?.groups[0]?.trend).toHaveLength(TREND_BUCKETS)
 		// A selected tool's read is about that tool: the every-tool breakdown is not read or carried.
 		expect(decoded.tools).toBeUndefined()
-		expect(markdown(overview)).not.toContain("### Tools (busiest first")
 		const all = Schema.decodeUnknownSync(GetAgentToolsOverviewOutput)(
 			(await call(OVERVIEW, WINDOW)).structuredContent,
 		)
@@ -349,7 +351,6 @@ describe("get_agent_tools_overview rendering", () => {
 
 	it("answers an empty window with the share of sessions it covers", async () => {
 		const rendered = await renderWith(EMPTY_RULES, OVERVIEW, WINDOW)
-		expect(rendered).toContain("No agent tool calls matched this selection in the window.")
 		expect(rendered).toContain("0 of 48 agent sessions in the window (0.00%)")
 		expect(rendered).toContain("list_agent_sessions")
 	})

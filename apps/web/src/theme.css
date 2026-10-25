@@ -1,0 +1,996 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+/* Design tokens are shared with apps/landing — do not re-declare token names
+   here (enforced by `bun run check:tokens`). Must come after tailwindcss. */
+@import "@maple/ui/styles/tokens.css";
+/* `scroll-fade-*` / `shimmer` utilities the shadcn chat primitives depend on. */
+@import "@maple/ui/styles/shadcn-utilities.css";
+@import "@maple/ui/styles/chart-skeleton.css";
+@import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/geist";
+
+@source "../../../packages/ui/src";
+@source "../../../packages/web-data/src";
+
+/* Syntax highlighting palette (`lib/highlight.ts`); `--sh-foreground` colours unstyled tokens. */
+:root {
+	--sh-class: oklch(0.55 0.15 250);
+	--sh-identifier: oklch(0.55 0.01 286);
+	--sh-sign: oklch(0.55 0.01 286);
+	--sh-property: oklch(0.5 0.15 250);
+	--sh-entity: oklch(0.55 0.13 170);
+	--sh-string: oklch(0.55 0.13 170);
+	--sh-keyword: oklch(0.55 0.2 25);
+	--sh-comment: oklch(0.6 0.01 286);
+	--sh-foreground: var(--sh-identifier);
+}
+
+.dark {
+	--sh-class: oklch(0.75 0.12 255);
+	--sh-identifier: oklch(0.72 0.02 70);
+	--sh-sign: oklch(0.72 0.02 70);
+	--sh-property: oklch(0.75 0.12 255);
+	--sh-entity: oklch(0.65 0.15 155);
+	--sh-string: oklch(0.65 0.15 155);
+	--sh-keyword: oklch(0.7 0.16 60);
+	--sh-comment: oklch(0.46 0.02 55);
+	--sh-foreground: var(--sh-identifier);
+}
+
+/* Quick Start — pulsing dots loader */
+@keyframes pulse-dot {
+	0%,
+	80%,
+	100% {
+		opacity: 0.3;
+		transform: scale(0.8);
+	}
+	40% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+.pulse-dot {
+	animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+.pulse-dot:nth-child(2) {
+	animation-delay: 0.16s;
+}
+
+.pulse-dot:nth-child(3) {
+	animation-delay: 0.32s;
+}
+
+/* Investigation provenance canvas — the dashes drift from source to target, which
+   is what tells you which way the causality runs now that the arrowheads are gone.
+   Each keyframe travels exactly one dash cycle (dasharray 3+3, 4+4) so the loop
+   restarts on an identical frame; a round number like -10px would visibly jump.
+   Durations differ to keep both strands at the same ~7.5px/s drift. */
+@keyframes provenance-strand {
+	to {
+		stroke-dashoffset: -6px;
+	}
+}
+
+@keyframes provenance-strand-roadmap {
+	to {
+		stroke-dashoffset: -8px;
+	}
+}
+
+.provenance-strand {
+	animation: provenance-strand 0.8s linear infinite;
+}
+
+.provenance-strand-roadmap {
+	animation: provenance-strand-roadmap 1.05s linear infinite;
+}
+
+/* The one "this is still running" signal every live node on the canvas wears: an
+   indeterminate progress bar on a visible track.
+
+   It replaced two separate effects that both read as rendering faults rather than
+   as progress — a 1px full-bleed sweep along the card's bottom border, which looked
+   like a stray hairline, and an expanding ring around the icon tile, which looked
+   like a focus state misfiring. Neither said "loading" because neither had a
+   track: a lone travelling mark is ambiguous, and the same mark inside a channel
+   is unmistakable. One bar, one motion, on the spine node, the lens lanes and the
+   pending verdict alike. */
+@keyframes provenance-progress {
+	from {
+		transform: translateX(-100%);
+	}
+	to {
+		transform: translateX(250%);
+	}
+}
+
+.provenance-progress-fill {
+	animation: provenance-progress 1.5s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+/* The ghost canvas. Cards assemble left to right, the
+   strands fade in behind them, and one bar per card keeps breathing afterwards so
+   a graph that takes a while to arrive still reads as loading rather than as an
+   empty graph that finished. Same easing as the service map's ghost topology. */
+@keyframes provenance-load-node {
+	from {
+		opacity: 0;
+		transform: scale(0.94) translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+@keyframes provenance-load-strand {
+	from {
+		opacity: 0;
+	}
+}
+
+@keyframes provenance-load-bar {
+	0%,
+	100% {
+		opacity: 0.14;
+	}
+	50% {
+		opacity: 0.34;
+	}
+}
+
+.provenance-load-node {
+	transform-box: fill-box;
+	transform-origin: center;
+	animation: provenance-load-node 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.provenance-load-strand {
+	animation: provenance-load-strand 0.7s ease-out both;
+}
+
+.provenance-load-bar {
+	animation: provenance-load-bar 1.8s ease-in-out infinite;
+}
+
+/* Motion is the only thing that carries "live" here, so under reduced motion the
+   live strands still read: they keep the amber stroke, the amber junction dots
+   and the phase line the settled ones never get. */
+@media (prefers-reduced-motion: reduce) {
+	.provenance-strand,
+	.provenance-strand-roadmap,
+	.provenance-load-bar {
+		animation: none;
+	}
+
+	/* The bar stops travelling but keeps its track and its segment, so a running
+	   node still reads as running — a partly-filled channel is a progress bar
+	   whether or not it moves. */
+	.provenance-progress-fill {
+		animation: none;
+	}
+
+	/* The ghost's assembly is an entrance, so it has to settle rather than stop:
+	   `animation: none` on a `both`-filled keyframe would leave every card at its
+	   0% frame — a blank canvas. */
+	.provenance-load-node,
+	.provenance-load-strand {
+		animation-duration: 1ms;
+		animation-delay: 0s;
+	}
+}
+
+/* Cold-boot splash: branded self-assembling trace waterfall (see
+   layout/boot-splash.ts and the inline copy in index.html). The Maple tree blinks above five span bars
+   that grow in, in start-time order, while a thin amber playhead scans across them
+   so it reads as a trace being collected in real time, not a skeleton shimmering.
+   Keep this in sync with the inline copy in index.html.
+
+   The mark renders bare — no tile, no glow. Its eyes and the notch beside the trunk
+   are evenodd knockouts, so the page background reads THROUGH them; the fill stays
+   flat because a gradient shows through at a different value than at the silhouette
+   edge and the eyes stop reading as eyes. */
+.boot-mark {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--primary);
+	transform-origin: 50% 100%;
+	animation: maple-boot-squash 16.8s linear infinite;
+}
+
+/* Blink. The lid is a rect in tree colour over an eye knockout; scaling it up from
+   its own top edge fills the hole top-down, which reads as a lid closing. Resting
+   state is scaleY(0) — open — so if the animation never runs the eyes stay open.
+   The rects are unclipped and over-cover onto the canopy on purpose: clipping
+   them to the eye curve produces a seam.
+
+   `transform-box: fill-box` is load-bearing: without it `transform-origin` resolves
+   against the SVG viewport rather than the rect's own box and the lid slides across
+   the mark instead of closing over the eye.
+
+   A blink is not symmetric — the lid slams shut and drifts open — so the segment
+   easings differ: 90ms shut on an accelerating curve, 60ms held, 180ms open on a
+   decelerating one. Symmetric timing is most of what made this read mechanical.
+
+   The cycle is 16.8s with seven blinks at irregular gaps (first at 0.9s, then
+   2.5 / 2.7 / 1.25 / 2.85 / 2.6 / 0.95s apart) rather than a short loop with evenly
+   spaced blinks. Even spacing reads as a metronome no matter how good the easing
+   is, and 5.6s is short enough to consciously clock; at 16.8s a splash that shows
+   for the usual second or two never repeats at all. The first blink stays
+   front-loaded so a fast boot still catches one, and the two ~1s follow-ups do the
+   job the old explicit double-blink did without two squashes overlapping.
+
+   Both lids run on the same schedule. Offsetting one to suggest that real eyes
+   don't fire in lockstep backfires here: the close curve puts most of its travel at
+   the end, so even 20ms leaves one eye shut while the other is still half open,
+   which reads as a lazy eye rather than as softness.
+
+   The keyframes below are GENERATED — do not hand-edit; see the note above
+   @keyframes maple-boot-squash. */
+.boot-lid {
+	transform-box: fill-box;
+	transform-origin: 50% 0%;
+	transform: scaleY(0);
+	animation: maple-boot-blink 16.8s linear infinite;
+}
+
+@keyframes maple-boot-blink {
+	0% {
+		transform: scaleY(0);
+	}
+	5.357% {
+		transform: scaleY(0);
+		animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+	}
+	5.893% {
+		transform: scaleY(1);
+	}
+	6.25% {
+		transform: scaleY(1);
+		animation-timing-function: cubic-bezier(0.16, 0.75, 0.3, 1);
+	}
+	7.321% {
+		transform: scaleY(0);
+	}
+	20.238% {
+		transform: scaleY(0);
+		animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+	}
+	20.774% {
+		transform: scaleY(1);
+	}
+	21.131% {
+		transform: scaleY(1);
+		animation-timing-function: cubic-bezier(0.16, 0.75, 0.3, 1);
+	}
+	22.202% {
+		transform: scaleY(0);
+	}
+	36.31% {
+		transform: scaleY(0);
+		animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+	}
+	36.845% {
+		transform: scaleY(1);
+	}
+	37.202% {
+		transform: scaleY(1);
+		animation-timing-function: cubic-bezier(0.16, 0.75, 0.3, 1);
+	}
+	38.274% {
+		transform: scaleY(0);
+	}
+	43.75% {
+		transform: scaleY(0);
+		animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+	}
+	44.286% {
+		transform: scaleY(1);
+	}
+	44.643% {
+		transform: scaleY(1);
+		animation-timing-function: cubic-bezier(0.16, 0.75, 0.3, 1);
+	}
+	45.714% {
+		transform: scaleY(0);
+	}
+	60.714% {
+		transform: scaleY(0);
+		animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+	}
+	61.25% {
+		transform: scaleY(1);
+	}
+	61.607% {
+		transform: scaleY(1);
+		animation-timing-function: cubic-bezier(0.16, 0.75, 0.3, 1);
+	}
+	62.679% {
+		transform: scaleY(0);
+	}
+	76.19% {
+		transform: scaleY(0);
+		animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+	}
+	76.726% {
+		transform: scaleY(1);
+	}
+	77.083% {
+		transform: scaleY(1);
+		animation-timing-function: cubic-bezier(0.16, 0.75, 0.3, 1);
+	}
+	78.155% {
+		transform: scaleY(0);
+	}
+	81.845% {
+		transform: scaleY(0);
+		animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+	}
+	82.381% {
+		transform: scaleY(1);
+	}
+	82.738% {
+		transform: scaleY(1);
+		animation-timing-function: cubic-bezier(0.16, 0.75, 0.3, 1);
+	}
+	83.81% {
+		transform: scaleY(0);
+	}
+	100% {
+		transform: scaleY(0);
+	}
+}
+
+/* Squash. The tree compresses as the lids come down and springs back a touch taller
+   than rest before settling — anchored at the roots, since the trunk meets the
+   ground and only the canopy has anywhere to give. This is what stops the blink
+   reading as a shutter dropping over a static shape.
+
+   VERTICAL ONLY — scaleX stays 1, which costs the volume preservation a classic
+   squash would have. It has to. The mark's eyes are not symmetric about its centre:
+   the left sits at x=190, the right at x=355, and the mark's midline is x=369.5, so
+   the right eye is almost exactly ON the scaling axis. Any scaleX moves the left eye
+   ~12x further than the right (7.2 units vs 0.6 at scaleX 1.04), and one eye visibly
+   sliding while the other stays pinned reads as the eyes blinking out of sync — even
+   though the lids are frame-identical. Vertical scaling has no such problem: both
+   eyes travel ~17 units, a difference of well under a tenth of a pixel at 56px.
+
+   It deliberately runs SLOWER than the lid and peaks LATE. The lid is shut at 90ms;
+   the body does not reach full compression until 150ms and takes 700ms to resolve
+   (compress → overshoot ~2% taller at 380ms → settle). Matching the lid's 90ms made
+   the mark read snappy and weightless — a light thing has no follow-through. The lag
+   IS the mass.
+
+   Generated together with maple-boot-blink; to retune, edit the constants in the
+   generator and re-splice both this file and the index.html twin, so the two copies
+   cannot drift. */
+@keyframes maple-boot-squash {
+	0% {
+		transform: scale(1, 1);
+	}
+	5.357% {
+		transform: scale(1, 1);
+		animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+	}
+	6.25% {
+		transform: scale(1, 0.95);
+		animation-timing-function: cubic-bezier(0.25, 0.9, 0.35, 1);
+	}
+	7.619% {
+		transform: scale(1, 1.022);
+		animation-timing-function: ease-out;
+	}
+	9.524% {
+		transform: scale(1, 1);
+	}
+	20.238% {
+		transform: scale(1, 1);
+		animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+	}
+	21.131% {
+		transform: scale(1, 0.95);
+		animation-timing-function: cubic-bezier(0.25, 0.9, 0.35, 1);
+	}
+	22.5% {
+		transform: scale(1, 1.022);
+		animation-timing-function: ease-out;
+	}
+	24.405% {
+		transform: scale(1, 1);
+	}
+	36.31% {
+		transform: scale(1, 1);
+		animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+	}
+	37.202% {
+		transform: scale(1, 0.95);
+		animation-timing-function: cubic-bezier(0.25, 0.9, 0.35, 1);
+	}
+	38.571% {
+		transform: scale(1, 1.022);
+		animation-timing-function: ease-out;
+	}
+	40.476% {
+		transform: scale(1, 1);
+	}
+	43.75% {
+		transform: scale(1, 1);
+		animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+	}
+	44.643% {
+		transform: scale(1, 0.95);
+		animation-timing-function: cubic-bezier(0.25, 0.9, 0.35, 1);
+	}
+	46.012% {
+		transform: scale(1, 1.022);
+		animation-timing-function: ease-out;
+	}
+	47.917% {
+		transform: scale(1, 1);
+	}
+	60.714% {
+		transform: scale(1, 1);
+		animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+	}
+	61.607% {
+		transform: scale(1, 0.95);
+		animation-timing-function: cubic-bezier(0.25, 0.9, 0.35, 1);
+	}
+	62.976% {
+		transform: scale(1, 1.022);
+		animation-timing-function: ease-out;
+	}
+	64.881% {
+		transform: scale(1, 1);
+	}
+	76.19% {
+		transform: scale(1, 1);
+		animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+	}
+	77.083% {
+		transform: scale(1, 0.95);
+		animation-timing-function: cubic-bezier(0.25, 0.9, 0.35, 1);
+	}
+	78.452% {
+		transform: scale(1, 1.022);
+		animation-timing-function: ease-out;
+	}
+	80.357% {
+		transform: scale(1, 1);
+	}
+	81.845% {
+		transform: scale(1, 1);
+		animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+	}
+	82.738% {
+		transform: scale(1, 0.95);
+		animation-timing-function: cubic-bezier(0.25, 0.9, 0.35, 1);
+	}
+	84.107% {
+		transform: scale(1, 1.022);
+		animation-timing-function: ease-out;
+	}
+	86.012% {
+		transform: scale(1, 1);
+	}
+	100% {
+		transform: scale(1, 1);
+	}
+}
+
+.boot-trace {
+	position: relative;
+	width: 200px;
+	height: 73px;
+}
+
+.boot-track,
+.boot-span {
+	position: absolute;
+	height: 9px;
+	border-radius: 9999px;
+}
+
+/* faint empty slot so the un-arrived spans stay visible */
+.boot-track {
+	background: color-mix(in oklab, var(--primary) 9%, transparent);
+}
+
+.boot-span {
+	background: var(--primary);
+	transform-origin: left center;
+	transform: scaleX(0);
+	opacity: 0;
+	animation: maple-boot-land 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+/* row geometry: left = the span"s
+	start
+	time,
+width = its duration */
+.boot-track--1,
+.boot-span--1 {
+	top: 0;
+	left: 0;
+	width: 200px;
+}
+.boot-track--2,
+.boot-span--2 {
+	top: 16px;
+	left: 14px;
+	width: 124px;
+}
+.boot-track--3,
+.boot-span--3 {
+	top: 32px;
+	left: 28px;
+	width: 70px;
+}
+.boot-track--4,
+.boot-span--4 {
+	top: 48px;
+	left: 96px;
+	width: 52px;
+}
+.boot-track--5,
+.boot-span--5 {
+	top: 64px;
+	left: 140px;
+	width: 56px;
+}
+
+/* stagger arrival in start-time order; with `infinite` the phase offset persists every loop */
+.boot-span--1 {
+	animation-delay: 0s;
+}
+.boot-span--2 {
+	animation-delay: 0.13s;
+}
+.boot-span--3 {
+	animation-delay: 0.26s;
+}
+.boot-span--4 {
+	animation-delay: 0.42s;
+}
+.boot-span--5 {
+	animation-delay: 0.58s;
+}
+
+@keyframes maple-boot-land {
+	0% {
+		transform: scaleX(0);
+		opacity: 0;
+	}
+	13% {
+		transform: scaleX(1);
+		opacity: 1;
+	}
+	66% {
+		transform: scaleX(1);
+		opacity: 1;
+	}
+	84% {
+		transform: scaleX(1);
+		opacity: 0.2;
+	}
+	100% {
+		transform: scaleX(0);
+		opacity: 0;
+	}
+}
+
+/* the playhead that "collects" the spans as it sweeps across */
+.boot-scan {
+	position: absolute;
+	top: -6px;
+	bottom: -6px;
+	left: 0;
+	width: 2px;
+	border-radius: 2px;
+	background: linear-gradient(
+		180deg,
+		transparent,
+		color-mix(in oklab, var(--primary) 85%, transparent),
+		transparent
+	);
+	box-shadow: 0 0 10px 1px color-mix(in oklab, var(--primary) 45%, transparent);
+	transform: translateX(-2px);
+	opacity: 0;
+	animation: maple-boot-scan 2.4s linear infinite;
+}
+
+@keyframes maple-boot-scan {
+	0% {
+		transform: translateX(-2px);
+		opacity: 0;
+	}
+	8% {
+		opacity: 0.65;
+	}
+	78% {
+		opacity: 0.65;
+	}
+	100% {
+		transform: translateX(202px);
+		opacity: 0;
+	}
+}
+
+.boot-caption {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	letter-spacing: 0.02em;
+	color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	/* settle to the fully-assembled trace; no streaming, no playhead, eyes open */
+	.boot-span {
+		transform: scaleX(1);
+		opacity: 1;
+		animation: none;
+	}
+	.boot-scan {
+		display: none;
+	}
+	.boot-lid {
+		transform: scaleY(0);
+		animation: none;
+	}
+	.boot-mark {
+		transform: none;
+		animation: none;
+	}
+}
+
+/* Crash screen: the boot trace frozen at the moment of failure.
+   Reuses the .boot-track / .boot-span--N row
+   geometry; spans 1–3 landed, span 4 errored, span 5 never arrived. */
+.crash-trace {
+	position: relative;
+	width: 200px;
+	height: 73px;
+}
+
+.crash-span {
+	position: absolute;
+	height: 9px;
+	border-radius: 9999px;
+	background: var(--primary);
+}
+
+.crash-span--error {
+	background: var(--destructive);
+	box-shadow: 0 0 12px 0 color-mix(in oklab, var(--destructive) 45%, transparent);
+	animation: maple-crash-flicker 2.8s ease-in-out infinite;
+}
+
+/* the playhead, stopped where the error span ended */
+.crash-scan {
+	position: absolute;
+	top: -6px;
+	bottom: -6px;
+	left: 147px;
+	width: 2px;
+	border-radius: 2px;
+	background: linear-gradient(
+		180deg,
+		transparent,
+		color-mix(in oklab, var(--destructive) 85%, transparent),
+		transparent
+	);
+	box-shadow: 0 0 10px 1px color-mix(in oklab, var(--destructive) 45%, transparent);
+}
+
+@keyframes maple-crash-flicker {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.55;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.crash-span--error {
+		animation: none;
+	}
+}
+
+/* Accessibility: disable animations for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+	.pulse-dot {
+		animation: none;
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+/* Trace timeline bar hover: CSS-only, no re-render */
+.trace-timeline-bar:hover {
+	background-color: var(--hover-bg) !important;
+	box-shadow: inset 0 0 0 1px oklch(0.5 0.05 0 / 0.15);
+	z-index: 5;
+}
+
+/* Infra honeycomb — flat severity tiles.
+   Maple is a flat system: no shadows, no gradients, no glow. Each cell points
+   `--tone` at a severity token and fills flat. Per the design system, inactive
+   cells stay calm (tone mixed toward --card); hover/selected lift to the full
+   token — depth by tone, never by shadow. */
+@keyframes honeycomb-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+.honeycomb-cell {
+	--tone: var(--muted-foreground);
+	background-color: color-mix(in oklab, var(--tone) 66%, var(--card));
+	/* Opacity-only entrance: animating transform would pin it via fill-mode and
+	   block the :hover scale. */
+	animation: honeycomb-in 240ms ease-out both;
+	transition:
+		background-color 150ms ease,
+		transform 150ms ease;
+}
+.honeycomb-cell:hover,
+.honeycomb-cell:focus-visible {
+	background-color: var(--tone);
+}
+/* Not-reporting cells read as a calm neutral tile, not a severity tone. */
+.honeycomb-cell[data-tone="stale"] {
+	background-color: color-mix(in oklab, var(--muted-foreground) 24%, var(--card));
+}
+.honeycomb-cell[data-tone="stale"]:hover,
+.honeycomb-cell[data-tone="stale"]:focus-visible {
+	background-color: color-mix(in oklab, var(--muted-foreground) 42%, var(--card));
+}
+@media (prefers-reduced-motion: reduce) {
+	.honeycomb-cell {
+		animation: none;
+		transition: none;
+	}
+}
+
+/* Onboarding steps: each one comes into focus as it mounts. `backwards` only holds the first
+   frame, so no filter is left on the step (it would trap its sticky footer and fixed children). */
+@keyframes onboarding-focus-in {
+	from {
+		opacity: 0;
+		filter: blur(6px);
+	}
+	to {
+		opacity: 1;
+		filter: blur(0);
+	}
+}
+.onboarding-enter {
+	animation: onboarding-focus-in 360ms cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+.onboarding-enter-preview {
+	animation: onboarding-focus-in 520ms cubic-bezier(0.2, 0, 0, 1) 60ms backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+	.onboarding-enter,
+	.onboarding-enter-preview {
+		animation: none;
+	}
+}
+
+/* A scroll box whose clipped edges fade and blur out instead of cutting cards off (the onboarding
+   language grid). The box's own mask fades the content; over it, three blur layers ramp up in
+   overlapping bands so the blur has no seam. Both follow the scroll: the top edge appears once
+   scrolled, the bottom one clears at the end. Without scroll-driven animations only the bottom shows. */
+@property --edge-scroll-top {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+@property --edge-scroll-bottom {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 3rem;
+}
+.edge-scroll {
+	position: relative;
+	timeline-scope: --edge-scroll;
+}
+.edge-scroll__box {
+	scroll-timeline: --edge-scroll y;
+	mask-image: linear-gradient(
+		to bottom,
+		transparent,
+		black var(--edge-scroll-top),
+		black calc(100% - var(--edge-scroll-bottom)),
+		transparent
+	);
+}
+.edge-scroll__edge {
+	position: absolute;
+	inset-inline: 0;
+	z-index: 1;
+	height: 3rem;
+	pointer-events: none;
+}
+.edge-scroll__edge > span {
+	position: absolute;
+	inset: 0;
+}
+.edge-scroll__edge > span:nth-child(1) {
+	backdrop-filter: blur(1px);
+	mask-image: linear-gradient(
+		var(--edge-scroll-dir),
+		transparent 0%,
+		black 25%,
+		black 50%,
+		transparent 75%
+	);
+}
+.edge-scroll__edge > span:nth-child(2) {
+	backdrop-filter: blur(2px);
+	mask-image: linear-gradient(
+		var(--edge-scroll-dir),
+		transparent 25%,
+		black 50%,
+		black 75%,
+		transparent 100%
+	);
+}
+.edge-scroll__edge > span:nth-child(3) {
+	backdrop-filter: blur(4px);
+	mask-image: linear-gradient(var(--edge-scroll-dir), transparent 50%, black 75%);
+}
+.edge-scroll__edge--top {
+	--edge-scroll-dir: to top;
+	top: 0;
+	opacity: 0;
+}
+.edge-scroll__edge--bottom {
+	--edge-scroll-dir: to bottom;
+	bottom: 0;
+}
+@keyframes edge-scroll-mask {
+	from {
+		--edge-scroll-top: 0px;
+		--edge-scroll-bottom: 3rem;
+	}
+	40% {
+		--edge-scroll-top: 3rem;
+	}
+	60% {
+		--edge-scroll-bottom: 3rem;
+	}
+	to {
+		--edge-scroll-top: 3rem;
+		--edge-scroll-bottom: 0px;
+	}
+}
+@keyframes edge-scroll-top {
+	from {
+		opacity: 0;
+	}
+	40%,
+	to {
+		opacity: 1;
+	}
+}
+@keyframes edge-scroll-bottom {
+	from,
+	60% {
+		opacity: 1;
+	}
+	to {
+		opacity: 0;
+	}
+}
+@supports (animation-timeline: scroll()) {
+	.edge-scroll__box {
+		animation: edge-scroll-mask linear both;
+		animation-timeline: --edge-scroll;
+	}
+	.edge-scroll__edge--top {
+		animation: edge-scroll-top linear both;
+		animation-timeline: --edge-scroll;
+	}
+	.edge-scroll__edge--bottom {
+		animation: edge-scroll-bottom linear both;
+		animation-timeline: --edge-scroll;
+	}
+}
+
+/* "Build with your agent" (`page/kit/guided-setup.ts`), as on maple.dev: the label's letters blur
+   in one after another, the agent marks hop once when the prompt lands, and the press gives. */
+.agent-prompt {
+	transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.agent-prompt:active {
+	transform: scale(0.98);
+	transition-duration: 100ms;
+}
+.agent-prompt__text {
+	display: grid;
+}
+.agent-prompt__label {
+	grid-area: 1 / 1;
+	justify-self: start;
+	white-space: pre;
+}
+.agent-prompt__label > span {
+	display: inline-block;
+	opacity: 0;
+	filter: blur(6px);
+	transform: translateY(0.4em);
+	transition:
+		opacity 150ms cubic-bezier(0.23, 1, 0.32, 1),
+		filter 150ms cubic-bezier(0.23, 1, 0.32, 1),
+		transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.agent-prompt__label[data-label="idle"] > span {
+	transform: translateY(-0.4em);
+}
+.agent-prompt[data-copy-state="idle"] [data-label="idle"] > span,
+.agent-prompt[data-copy-state="copied"] [data-label="copied"] > span,
+.agent-prompt[data-copy-state="error"] [data-label="error"] > span {
+	opacity: 1;
+	filter: blur(0);
+	transform: none;
+	transition-duration: 240ms;
+	transition-delay: calc(30ms + var(--i) * 7ms);
+}
+.agent-prompt[data-copy-state="error"] [data-label="error"] {
+	color: var(--muted-foreground);
+}
+.agent-prompt[data-copy-state="copied"] .agent-prompt__mark svg {
+	animation: agent-prompt-hop 360ms cubic-bezier(0.77, 0, 0.175, 1) both;
+	animation-delay: calc(var(--n) * 50ms);
+}
+@keyframes agent-prompt-hop {
+	40% {
+		transform: translateY(-3px);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.agent-prompt,
+	.agent-prompt:active {
+		transform: none;
+	}
+	.agent-prompt__label > span {
+		filter: none !important;
+		transform: none !important;
+		transition-delay: 0ms !important;
+	}
+	.agent-prompt[data-copy-state="copied"] .agent-prompt__mark svg {
+		animation: none;
+	}
+}
+
+/* Infra "Operations Terminal" — shared primitives */
+@keyframes ref-line-draw {
+	from {
+		stroke-dashoffset: 240;
+	}
+	to {
+		stroke-dashoffset: 0;
+	}
+}
+
+.infra-ref-line line,
+.recharts-reference-line-line.infra-ref-line {
+	stroke-dasharray: 4 4;
+	animation: ref-line-draw 1.4s ease-out 0.1s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.infra-ref-line line,
+	.recharts-reference-line-line.infra-ref-line {
+		animation: none;
+	}
+}

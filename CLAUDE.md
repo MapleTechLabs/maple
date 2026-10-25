@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Maple is an OpenTelemetry observability platform: TanStack Start (React 19, Vite) + Effect on the
+Maple is an OpenTelemetry observability platform: a Foldkit (Vite) dashboard + Effect on the
 backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relational state.
 
 ## Workspace layout
@@ -17,7 +17,7 @@ backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relation
 ```bash
 bun dev                        # full alchemy dev stack at https://[<worktree>.]<app>.localhost
 bun dev api web                # subset
-bun --filter=@maple/web dev    # single app, raw port
+bun --filter=@maple/web dev   # single app, raw port
 bun run test                   # Vitest via turbo (NOT `bun test`)
 bun typecheck
 bun run tinybird:manifest      # after editing datasources.ts
@@ -107,13 +107,14 @@ truthiness.
   spans. Custom attributes use `maple.*`.
 - **Self-tracing:** the API traces itself through ingest; keep `withTracerDisabledWhen()` and avoid
   spans on hot paths like token validation.
-- **UI:** shadcn/Base UI + Tailwind 4, Recharts, Nucleo icons. Port icons into
-  `apps/web/src/components/icons/` from the local Nucleo DB:
+- **UI:** the dashboard (`apps/web`) and Maple Local (`apps/local-ui`) are Foldkit + `@foldkit/ui` +
+  Tailwind 4, Nucleo icons.
+  Add icons to `apps/web/src/ui/icons.generated.ts` (element trees) from the local Nucleo DB:
   ```bash
   sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \
     "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
   ```
-- `@/` resolves to each app's source. `src/routeTree.gen.ts` is generated.
+- `@/` resolves to each app's source.
 - **Tests:** assert behavior, not source. `test-slop/*` rules (`scripts/oxlint-plugins/test-slop.mjs`)
   ban constant-vs-literal pins, existence-only/does-not-throw tests, Tailwind class pins and tests that
   read source files. Import and architecture boundaries are `no-restricted-imports` overrides in
@@ -143,6 +144,28 @@ git clone in Cloudflare's Sandbox container (`apps/sandbox`, prd only). Invarian
 - Commands run unprivileged, read-only, no egress; refuse to run if the network namespace fails.
 
 Test with `bun run --cwd apps/sandbox verify:image` (needs Docker); it catches what unit tests can't.
+
+## PR previews
+
+A PR labelled `preview` deploys the full stack to `app-pr-<n>.maple.dev` / `api-pr-<n>.maple.dev`
+on the Clerk development instance (`docs/pr-previews.md`). Default to `preview:web` for dashboard,
+API or AI changes: it deploys only the Workers on the same seeded data, faster and without a VPC.
+Use `preview` only to test ingest, Electric live sync, landing, or a connect flow that sends
+telemetry. To sign in to either:
+
+```bash
+infisical run --env dev -- bun run preview:signin <n>   # one-shot signed-in link, valid 2 minutes
+```
+
+It signs in as the shared reviewer `preview-reviewer+clerk_test@maple.dev` in the `Preview` org,
+which the deploy's smoke test seeds with demo telemetry. Humans can instead use the "PR preview"
+form on the sign-in page with `PREVIEW_SIGNIN_KEY` (Infisical `dev`).
+
+- Never type the key into a form or print it: mint the link with the command above and open it.
+- `{"enabled":false}` from `GET /api/auth/preview/sign-in` means the deploy ran without the key;
+  re-run the preview deploy.
+- A preview hostname that will not resolve locally right after deploy is a cached NXDOMAIN; it
+  clears on its own (or use `curl --resolve` with `dig @1.1.1.1`).
 
 ## Docs
 

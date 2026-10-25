@@ -40,6 +40,8 @@ export class BillingBalance extends Schema.Class<BillingBalance>("BillingBalance
 	remaining: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	unlimited: Schema.optionalKey(Schema.Boolean),
 	overageAllowed: Schema.optionalKey(Schema.Boolean),
+	/** Epoch ms when the balance next resets to its grant; null for a one-off grant. */
+	nextResetAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 }) {}
 
 /**

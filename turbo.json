@@ -66,12 +66,53 @@
 			"dependsOn": ["^build"],
 			"outputs": []
 		},
-		// `gen-ai.test.ts` pins the stamp keys against the ingest gateway's Rust
-		// sources, which the default package-scoped inputs miss.
+		// Tests that read files outside their workspace declare them here, so the
+		// cache key and the CI test planner (scripts/ci/plan-tests.ts) both see them.
 		"@maple/domain#test": {
 			"dependsOn": ["^build"],
 			"outputs": [],
-			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/ingest/src/ai_session/*.rs"]
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/apps/ingest/src/ai_session/*.rs",
+				"$TURBO_ROOT$/apps/ios/Packages/MapleAPI/Sources/MapleAPI/openapi.json"
+			]
+		},
+		"@maple/web#test": {
+			"dependsOn": ["^build"],
+			"outputs": [],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/landing/src/content/docs/**"]
+		},
+		"@maple/ai#test": {
+			"dependsOn": ["^build"],
+			"outputs": [],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/skills/**"]
+		},
+		// alchemy-provider.integration.test.ts imports the provider by relative path.
+		"@maple/api#test": {
+			"dependsOn": ["^build"],
+			"outputs": [],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/alchemy-maple/src/**"]
+		},
+		"@maple/cli#test": {
+			"dependsOn": ["^build"],
+			"outputs": [],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/scripts/install.sh"]
+		},
+		// vendor-isolation.test.ts scans the connector's files across the repo.
+		"@maple/chat-platform#test": {
+			"dependsOn": ["^build"],
+			"outputs": [],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/apps/chat-bot/src/**",
+				"$TURBO_ROOT$/apps/api/src/routes/**",
+				"$TURBO_ROOT$/apps/web/src/page/integrations/**",
+				"$TURBO_ROOT$/packages/backend/src/services/alerts/**",
+				"$TURBO_ROOT$/packages/backend/src/services/auth/MembershipRevocationService.ts",
+				"$TURBO_ROOT$/packages/backend/src/services/integrations/**",
+				"$TURBO_ROOT$/packages/db/src/tables/chat-*.ts",
+				"$TURBO_ROOT$/packages/domain/src/http/v2/integrations-chat.ts"
+			]
 		},
 		"eval": {
 			"dependsOn": ["^build"],

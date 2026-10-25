@@ -1,4 +1,5 @@
 import {
+	AlertEvaluationErrorKind,
 	AlertForbiddenError,
 	AlertRuleDestinationNotFoundError,
 	AlertRuleNotFoundError,
@@ -25,7 +26,7 @@ import {
 	AlertRules,
 	AlertRuleStates,
 } from "@maple/db/tables"
-import { Array as Arr, Context, Effect, HashSet, Layer, Schema } from "effect"
+import { Array as Arr, Context, Effect, HashSet, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
@@ -36,12 +37,15 @@ import {
 	normalizeOptionalString,
 	rowToRuleDocument,
 	selectStoredAlertRules,
+	storedRuleCondition,
 	type RuleEvaluationState,
 } from "./AlertRuleModel"
+import { tierConditionChanged } from "./alert-thresholds"
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+const decodeErrorKindOption = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
 const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 const MAX_ACTIVE_ALERT_RULES_PER_ORG = 100
 
@@ -169,9 +173,14 @@ export const makeAlertRulePersistence = (options: {
 			comparator: normalized.comparator,
 			threshold: normalized.threshold,
 			thresholdUpper: normalized.thresholdUpper,
+			thresholdsJson: normalized.thresholds,
 			windowMinutes: normalized.windowMinutes,
+			evaluationIntervalMinutes: normalized.evaluationIntervalMinutes,
+			slowedIntervalMinutes: null,
+			slowedAt: null,
 			minimumSampleCount: normalized.minimumSampleCount,
 			consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
+			breachesOutOf: normalized.breachesOutOf,
 			consecutiveHealthyRequired: normalized.consecutiveHealthyRequired,
 			renotifyIntervalMinutes: normalized.renotifyIntervalMinutes,
 			apdexThresholdMs: normalized.apdexThresholdMs,
@@ -230,6 +239,22 @@ export const makeAlertRulePersistence = (options: {
 						}
 					}
 
+					const [previousRow] =
+						existingId == null
+							? []
+							: yield* db.run(
+									selectStoredAlertRules().where(($) => [
+										$.orgId.eq(orgId),
+										$.id.eq(existingId),
+									]),
+								)
+					const previous =
+						previousRow === undefined ? Option.none() : yield* storedRuleCondition(previousRow)
+					const conditionChanged = Option.match(previous, {
+						onNone: () => true,
+						onSome: (condition) => tierConditionChanged(condition, normalized),
+					})
+
 					return existingId == null
 						? yield* db.run(
 								PG.insertInto(AlertRules)
@@ -242,11 +267,40 @@ export const makeAlertRulePersistence = (options: {
 									})
 									.returning(() => ({ txid: currentTxid })),
 							)
-						: yield* db.run(
-								PG.update(AlertRules)
-									.set(ruleFields)
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(existingId)])
-									.returning(() => ({ txid: currentTxid })),
+						: yield* Effect.andThen(
+								// Ends any tick's claim on the old config: its next fenced write
+								// fails with AlertRuleClaimLostError instead of paging on it.
+								db.run(
+									PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(existingId)]),
+								),
+								db
+									.run(
+										PG.update(AlertRules)
+											.set(ruleFields)
+											.where(($) => [$.orgId.eq(orgId), $.id.eq(existingId)])
+											.returning(() => ({ txid: currentTxid })),
+									)
+									.pipe(
+										// Ticks judged against the old condition must not count toward the new one.
+										// Read under the lock, so a concurrent edit cannot restore it unnoticed.
+										Effect.tap(() =>
+											conditionChanged
+												? db.run(
+														PG.update(AlertRuleStates)
+															.set({
+																historyJson: [],
+																consecutiveBreaches: 0,
+																consecutiveHealthy: 0,
+																updatedAt: timestamp,
+															})
+															.where(($) => [
+																$.orgId.eq(orgId),
+																$.ruleId.eq(existingId),
+															]),
+													)
+												: Effect.void,
+										),
+									),
 							)
 				}),
 			),
@@ -289,7 +343,7 @@ export const makeAlertRulePersistence = (options: {
 		const stateRows = yield* dbExecute((db) =>
 			db.run(
 				PG.from(AlertRuleStates)
-					.select("ruleId", "lastError", "lastEvaluatedAt")
+					.select("ruleId", "lastError", "lastErrorKind", "lastEvaluatedAt")
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
 		)
@@ -300,6 +354,7 @@ export const makeAlertRulePersistence = (options: {
 			if (existing == null || (state.lastEvaluatedAt ?? 0) > (existing.evaluatedAt ?? 0)) {
 				errorByRule.set(state.ruleId, {
 					error: state.lastError,
+					errorKind: Option.getOrNull(decodeErrorKindOption(state.lastErrorKind)),
 					evaluatedAt: state.lastEvaluatedAt,
 				})
 			}
@@ -376,7 +431,7 @@ export const makeAlertRulePersistence = (options: {
 }
 
 export class AlertRulesService extends Context.Service<AlertRulesService, AlertRulesServiceApi>()(
-	"@maple/api/services/alerts/AlertRulesService",
+	"@maple/backend/services/alerts/AlertRulesService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

@@ -104,13 +104,14 @@ export function formatRelativeTimeOrDate(
 	input: TimeInput,
 	nowMs: number = Date.now(),
 	timeZone?: string,
+	locale?: string,
 ): string {
 	const epochMs = toEpochMs(input)
 	if (!Number.isFinite(epochMs)) return EMPTY_VALUE
 	if (nowMs - epochMs >= RELATIVE_CUTOVER_MS) {
 		// The date branch is a wall-clock reading, so it takes the viewer's selected
 		// zone where the page has one; the relative branch is zone-free.
-		return new Date(epochMs).toLocaleDateString(undefined, {
+		return new Date(epochMs).toLocaleDateString(locale, {
 			timeZone,
 			month: "short",
 			day: "numeric",

@@ -245,9 +245,15 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			// A literal the column cannot read, e.g. `EventsName != ''` on an Array.
 			"CANNOT_READ_ARRAY_FROM_TEXT",
 			"CANNOT_PARSE_TEXT",
+			// `Timestamp >= '2026-10-04T00:00:00Z'`, a column outside GROUP BY, a made-up function.
+			"CANNOT_PARSE_DATETIME",
+			"NOT_AN_AGGREGATE",
+			"UNKNOWN_AGGREGATE_FUNCTION",
 		]),
+		// `modifiers FINAL`: `FROM t FINAL` on Tinybird, whose tenant filter makes every table a
+		// subquery. Matched by message: its UNSUPPORTED_METHOD type also covers server-side limits.
 		pattern:
-			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['/i,
+			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error|Array does not start with '\['|Unknown (?:aggregate )?function|is not under aggregate function|modifiers FINAL are not supported/i,
 		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
@@ -297,8 +303,9 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 			"THERE_IS_NO_COLUMN",
 			"NOT_FOUND_COLUMN_IN_BLOCK",
 		]),
+		// Newer ClickHouse says `Unknown expression identifier`, which the drift rule's pattern misses.
 		pattern:
-			/Unknown (?:expression or function )?identifier|Missing columns|There is no column|No such column/i,
+			/Unknown (?:expression (?:or function )?)?identifier|Missing columns|There is no column|No such column/i,
 		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
@@ -323,6 +330,12 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 		make: (base) => new WarehouseSchemaDriftError(base),
 	},
 ]
+
+/** `[Error] Unknown expression identifier `x` ... FORMAT JSON. (UNKNOWN_IDENTIFIER)` */
+const TRAILING_EXCEPTION_TYPE = /\(([A-Z][A-Z0-9_]{2,})\)\s*$/
+
+const exceptionTypeFromMessage = (message: string): string | undefined =>
+	TRAILING_EXCEPTION_TYPE.exec(message)?.[1]
 
 export const toWarehouseQueryError = (pipe: string, error: unknown) => {
 	const rawMessage = unknownToMessage(error, "Warehouse query failed")
@@ -371,7 +384,10 @@ export const mapWarehouseError = (
 	}
 
 	const upstreamStatus = error.status ?? extractUpstreamStatus(rawMessage)
-	const hasIdentity = code !== undefined || type !== undefined
+	// Tinybird names the exception only in its text. Read it for caller SQL alone, so the
+	// classification of Maple's own queries is unchanged. A named type outranks the HTTP status.
+	const ruleType = type ?? (authoredBy === "caller" ? exceptionTypeFromMessage(rawMessage) : undefined)
+	const hasIdentity = code !== undefined || ruleType !== undefined
 	for (const rule of CLASSIFICATION_RULES) {
 		if (rule.authoredBy !== undefined && rule.authoredBy !== authoredBy) continue
 		const matches =
@@ -380,7 +396,7 @@ export const mapWarehouseError = (
 				!hasIdentity &&
 				upstreamStatus !== undefined &&
 				rule.status(upstreamStatus)) ||
-			(rule.types !== undefined && type !== undefined && rule.types.has(type)) ||
+			(rule.types !== undefined && ruleType !== undefined && rule.types.has(ruleType)) ||
 			(rule.pattern !== undefined && rule.pattern.test(rawMessage))
 		if (matches) return rule.make(base, upstreamStatus)
 	}

@@ -1,5 +1,17 @@
 import { Effect, Result, Schema } from "effect"
-import { foldObservation } from "./hysteresis"
+import {
+	appendTick,
+	classifyTier,
+	countersFromHistory,
+	encodeTick,
+	maxSeverity,
+	nearestSeverity,
+	resolveActiveSeverity,
+	seedHistory,
+	type AlertThresholdTier,
+	type AlertTierLevel,
+	type TieredHysteresisPolicy,
+} from "./tiers"
 import { makeCloudEvent, CloudEventInvalid, type MapleCloudEvent } from "@maple/eventing-core"
 
 import type {
@@ -7,8 +19,10 @@ import type {
 	AlertEventType,
 	AlertEvaluationResult,
 	AlertEvaluationStatus,
+	AlertSeverity,
 } from "@maple/domain/http"
 export type { AlertComparator, AlertEventType, AlertEvaluationStatus } from "@maple/domain/http"
+export * from "./tiers"
 
 export interface AlertObservation {
 	readonly value: number | null
@@ -18,8 +32,11 @@ export interface AlertObservation {
 
 export interface AlertEvaluationPolicy {
 	readonly comparator: AlertComparator
+	/** The primary (lowest) tier, reported on single-threshold surfaces. */
 	readonly threshold: number
 	readonly thresholdUpper: number | null
+	/** Every tier the value is classified against. */
+	readonly tiers: ReadonlyArray<AlertThresholdTier>
 	readonly minimumSampleCount: number
 	readonly noDataBehavior: "skip" | "zero" | "alert"
 }
@@ -37,32 +54,8 @@ export interface AlertEvaluation extends Pick<
 > {
 	/** Derived from an empty window: healthy when read as zero, breached when the rule alerts on no data. */
 	readonly derivedFromNoData: boolean
-}
-
-export const compareAlertThreshold = (
-	value: number,
-	comparator: AlertComparator,
-	threshold: number,
-	thresholdUpper: number | null = null,
-): boolean => {
-	switch (comparator) {
-		case "gt":
-			return value > threshold
-		case "gte":
-			return value >= threshold
-		case "lt":
-			return value < threshold
-		case "lte":
-			return value <= threshold
-		case "eq":
-			return value === threshold
-		case "neq":
-			return value !== threshold
-		case "between":
-			return thresholdUpper != null && value >= threshold && value <= thresholdUpper
-		case "not_between":
-			return thresholdUpper != null && (value < threshold || value > thresholdUpper)
-	}
+	/** Per-tier verdict; empty on a skipped tick. */
+	readonly levels: ReadonlyArray<AlertTierLevel>
 }
 
 export const evaluateAlertObservation = (
@@ -92,6 +85,7 @@ export const evaluateAlertObservation = (
 			reason: "No data in the selected window",
 			skipReason: "no_data",
 			derivedFromNoData: false,
+			levels: [],
 		}
 	}
 
@@ -106,6 +100,7 @@ export const evaluateAlertObservation = (
 			comparator: policy.comparator,
 			reason: "No data in the selected window",
 			derivedFromNoData: true,
+			levels: policy.tiers.map((tier) => ({ severity: tier.severity, status: "breach" as const })),
 		}
 	}
 
@@ -120,6 +115,7 @@ export const evaluateAlertObservation = (
 			reason: `Sample count ${sampleCount} is below minimum ${policy.minimumSampleCount}`,
 			skipReason: "below_min_samples",
 			derivedFromNoData: false,
+			levels: [],
 		}
 	}
 
@@ -134,13 +130,17 @@ export const evaluateAlertObservation = (
 			reason: "Alert evaluation did not return a scalar value",
 			skipReason: "no_value",
 			derivedFromNoData: false,
+			levels: [],
 		}
 	}
 
+	const levels = policy.tiers.map((tier) => ({
+		severity: tier.severity,
+		status: classifyTier(value, policy.comparator, tier),
+	}))
 	return {
-		status: compareAlertThreshold(value, policy.comparator, policy.threshold, policy.thresholdUpper)
-			? "breached"
-			: "healthy",
+		status: levels.some((level) => level.status === "breach") ? "breached" : "healthy",
+		levels,
 		value,
 		sampleCount,
 		threshold: policy.threshold,
@@ -153,22 +153,36 @@ export const evaluateAlertObservation = (
 
 export interface AlertLifecyclePolicy {
 	readonly consecutiveBreachesRequired: number
+	/** M in "N of the last M checks"; equal to N for "N in a row". */
+	readonly breachWindow: number
 	readonly consecutiveHealthyRequired: number
 	readonly renotifyIntervalMinutes: number
+	/** The rule's tier severities. */
+	readonly severities: ReadonlyArray<AlertSeverity>
 }
 
 export interface AlertLifecycleState {
 	readonly consecutiveBreaches: number
 	readonly consecutiveHealthy: number
+	/** Recent non-skipped ticks, oldest first; see `encodeTick`. */
+	readonly history: ReadonlyArray<number>
 }
 
 export interface AlertLifecycleIncident {
+	/** The incident's current severity. */
+	readonly severity: AlertSeverity
 	readonly firstTriggeredAtMs: number
 	readonly lastNotifiedAtMs: number | null
 	readonly lastDeliveredEventType: AlertEventType | null
 }
 
-export type AlertIncidentTransition = "none" | "opened" | "continued" | "resolved"
+export type AlertIncidentTransition =
+	| "none"
+	| "opened"
+	| "continued"
+	| "escalated"
+	| "deescalated"
+	| "resolved"
 export type AlertNotificationSuppression = "flapping" | "flap_resolution" | null
 export type AlertLifecycleHold = "missing_telemetry" | null
 
@@ -269,7 +283,10 @@ export const projectAlertLifecycleEvent = (
 export interface AlertLifecycleInput {
 	readonly policy: AlertLifecyclePolicy
 	readonly evaluation: AlertEvaluation
-	readonly state: AlertLifecycleState | null
+	/** Null for a group never evaluated; a null `history` (pre-tier row) is replayed from its counters. */
+	readonly state:
+		| (Omit<AlertLifecycleState, "history"> & { readonly history?: ReadonlyArray<number> | null })
+		| null
 	readonly openIncident: AlertLifecycleIncident | null
 	readonly nowMs: number
 	/** Most recent notification for a resolved incident with the same rule and group. */
@@ -281,6 +298,8 @@ export interface AlertLifecycleInput {
 export interface AlertLifecyclePlan {
 	readonly state: AlertLifecycleState
 	readonly transition: AlertIncidentTransition
+	/** Severity of the open incident after this tick; null when none stands. */
+	readonly severity: AlertSeverity | null
 	readonly eventType: AlertEventType | null
 	readonly notificationSuppression: AlertNotificationSuppression
 	readonly hold: AlertLifecycleHold
@@ -327,9 +346,14 @@ export const alertDeliveryRetryDelayMs = (
 	return base + Math.max(0, Math.floor(jitterMs))
 }
 
-const noTransition = (state: AlertLifecycleState, hold: AlertLifecycleHold = null): AlertLifecyclePlan => ({
+const noTransition = (
+	state: AlertLifecycleState,
+	severity: AlertSeverity | null,
+	hold: AlertLifecycleHold = null,
+): AlertLifecyclePlan => ({
 	state,
 	transition: "none",
+	severity,
 	eventType: null,
 	notificationSuppression: null,
 	hold,
@@ -346,6 +370,7 @@ const resolutionPlan = (
 	return {
 		state,
 		transition: "resolved",
+		severity: null,
 		eventType: flapResolutionSuppressed ? null : "resolve",
 		notificationSuppression: flapResolutionSuppressed ? "flap_resolution" : null,
 		hold: null,
@@ -362,9 +387,24 @@ const resolutionPlan = (
  * the hosted PostgreSQL/Tinybird adapter and a future Maple Local adapter.
  */
 export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<AlertLifecyclePlan> =>
-	Effect.gen(function* () {
+	Effect.sync(() => {
 		const { evaluation, policy, openIncident, nowMs } = input
-		const previous = input.state ?? { consecutiveBreaches: 0, consecutiveHealthy: 0 }
+		const current =
+			openIncident === null ? null : nearestSeverity(openIncident.severity, policy.severities)
+		const hysteresis: TieredHysteresisPolicy = {
+			breachesToOpen: policy.consecutiveBreachesRequired,
+			breachWindow: policy.breachWindow,
+			healthyToResolve: policy.consecutiveHealthyRequired,
+		}
+		const counters = input.state ?? { consecutiveBreaches: 0, consecutiveHealthy: 0, history: [] }
+		const seedSeverity =
+			current ??
+			policy.severities.reduce<AlertSeverity>((highest, s) => maxSeverity(highest, s) ?? s, "warning")
+		const previous: AlertLifecycleState = {
+			consecutiveBreaches: counters.consecutiveBreaches,
+			consecutiveHealthy: counters.consecutiveHealthy,
+			history: counters.history ?? seedHistory(counters, seedSeverity, hysteresis),
+		}
 
 		if (evaluation.status === "skipped") {
 			// Empty skipped windows use the same host liveness gate as missing
@@ -372,31 +412,17 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 			if (evaluation.skipReason === "no_data" && openIncident !== null) {
 				return input.allowNoDataResolution === true
 					? resolutionPlan(previous, openIncident)
-					: noTransition(previous, "missing_telemetry")
+					: noTransition(previous, current, "missing_telemetry")
 			}
-			return noTransition(previous)
+			return noTransition(previous, current)
 		}
 
-		const folded = yield* foldObservation(
-			{ ...previous, incidentOpen: openIncident !== null, lastResolvedAtMs: null },
-			evaluation.status,
-			{
-				breachesToOpen: policy.consecutiveBreachesRequired,
-				healthyToResolve: policy.consecutiveHealthyRequired,
-				cooldownMs: 0,
-			},
-			nowMs,
-		)
-		const state: AlertLifecycleState = {
-			consecutiveBreaches: folded.consecutiveBreaches,
-			consecutiveHealthy: folded.consecutiveHealthy,
-		}
+		const history = appendTick(previous.history, encodeTick(evaluation.levels), hysteresis)
+		const state: AlertLifecycleState = { ...countersFromHistory(history, hysteresis), history }
+		const next = resolveActiveSeverity(history, policy.severities, current, hysteresis)
 
-		if (
-			evaluation.status === "breached" &&
-			openIncident == null &&
-			state.consecutiveBreaches >= policy.consecutiveBreachesRequired
-		) {
+		if (openIncident === null) {
+			if (next === null) return noTransition(state, null)
 			const previousNotificationAtMs = input.previousNotificationAtMs ?? null
 			const flapSuppressed =
 				previousNotificationAtMs != null &&
@@ -404,6 +430,7 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 			return {
 				state,
 				transition: "opened",
+				severity: next,
 				eventType: flapSuppressed ? null : "trigger",
 				notificationSuppression: flapSuppressed ? "flapping" : null,
 				hold: null,
@@ -412,7 +439,31 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 			}
 		}
 
-		if (evaluation.status === "breached" && openIncident != null) {
+		if (next === null) {
+			if (evaluation.derivedFromNoData && input.allowNoDataResolution !== true) {
+				return noTransition(state, current, "missing_telemetry")
+			}
+			return resolutionPlan(state, openIncident)
+		}
+
+		// A severity change is news: escalation pages like a trigger, de-escalation
+		// reads as a reminder at the lower severity. Both restart the reminder clock.
+		// A tier moved by a rule edit (next === current) is announced on its first breaching tick.
+		if (next !== openIncident.severity && (next !== current || evaluation.status === "breached")) {
+			const escalated = maxSeverity(next, openIncident.severity) === next
+			return {
+				state,
+				transition: escalated ? "escalated" : "deescalated",
+				severity: next,
+				eventType: escalated ? "trigger" : "renotify",
+				notificationSuppression: null,
+				hold: null,
+				inheritedNotificationAtMs: null,
+				advanceNotificationAnchor: true,
+			}
+		}
+
+		if (evaluation.status === "breached") {
 			const renotifyDueAt =
 				(openIncident.lastNotifiedAtMs ?? openIncident.firstTriggeredAtMs) +
 				policy.renotifyIntervalMinutes * 60_000
@@ -420,6 +471,7 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 			return {
 				state,
 				transition: "continued",
+				severity: next,
 				eventType: renotifyDue ? "renotify" : null,
 				notificationSuppression: null,
 				hold: null,
@@ -428,19 +480,7 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 			}
 		}
 
-		if (
-			evaluation.status === "healthy" &&
-			openIncident != null &&
-			state.consecutiveHealthy >= policy.consecutiveHealthyRequired
-		) {
-			if (evaluation.derivedFromNoData && input.allowNoDataResolution !== true) {
-				return noTransition(state, "missing_telemetry")
-			}
-
-			return resolutionPlan(state, openIncident)
-		}
-
-		return noTransition(state)
+		return noTransition(state, next)
 	})
 
 /** Preserve per-tenant order while preventing one tenant from monopolizing a tick. */

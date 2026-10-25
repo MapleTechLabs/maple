@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 
 // Reuse the workspace's browser tooling; no browser dependency in the landing build.
-const { chromium } = createRequire(new URL("../../web/package.json", import.meta.url))("@playwright/test")
+const { chromium } = createRequire(new URL("../../web/package.json", import.meta.url))("playwright")
 const landing = new URL("../", import.meta.url)
 const dataUrl = async (path, mime) =>
 	`data:${mime};base64,${(await readFile(new URL(path, landing))).toString("base64")}`

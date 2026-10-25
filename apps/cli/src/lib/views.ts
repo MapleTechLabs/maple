@@ -10,11 +10,13 @@ import type {
 	MineLogPatternsOutput,
 	SearchLogsOutput,
 	SearchTracesOutput,
+	ServiceEdge,
 	ServiceHealthOutput,
 	ServiceSummary,
 	SpanNode,
 	SpanResult,
 } from "@maple/query-engine/observability"
+import type { CH } from "@maple/query-engine"
 import {
 	type Column,
 	type Section,
@@ -489,4 +491,86 @@ export const metricSeriesView = (empty: string): View<MetricSeriesOutput> => ({
 			},
 		]
 	},
+})
+
+/**
+ * Service edges plus what they call that runs no SDK of its own. `databases`
+ * and `external` are absent in remote mode (v2 has no resource for them), and
+ * `external` needs a service: its query is scoped to one caller.
+ */
+export interface ServiceMapResult {
+	readonly edges: ReadonlyArray<ServiceEdge>
+	readonly databases?: ReadonlyArray<CH.ServiceDbEdgesOutput>
+	readonly external?: ReadonlyArray<CH.ServiceExternalEdgesOutput>
+}
+
+/** The edge rollups' p95 is 0 for hours sealed before they kept a digest. */
+const p95Cell = (r: { readonly p95DurationMs: number }): string =>
+	r.p95DurationMs > 0 ? formatDuration(r.p95DurationMs) : "-"
+
+const errorRate = (r: { readonly callCount: number; readonly errorCount: number }): number =>
+	r.callCount > 0 ? r.errorCount / r.callCount : 0
+
+export const serviceMapView = (empty: string): View<ServiceMapResult> => ({
+	empty,
+	table: (d) => {
+		const sections: Array<Section> = []
+		if (d.edges.length > 0) {
+			sections.push({
+				title: "SERVICES",
+				body: renderTable(
+					[
+						{ header: "SOURCE", cell: (e) => e.sourceService },
+						{ header: "TARGET", cell: (e) => e.targetService },
+						{ header: "CALLS", cell: (e) => formatCount(e.callCount), align: right },
+						{ header: "ERROR RATE", cell: (e) => formatPercent(errorRate(e)), align: right },
+						{ header: "AVG", cell: (e) => formatDuration(e.avgDurationMs), align: right },
+						{ header: "MAX", cell: (e) => formatDuration(e.maxDurationMs), align: right },
+					],
+					d.edges,
+				),
+			})
+		}
+		if (d.databases !== undefined && d.databases.length > 0) {
+			sections.push({
+				title: "DATABASES",
+				body: renderTable(
+					[
+						{ header: "SOURCE", cell: (e) => e.sourceService },
+						{ header: "SYSTEM", cell: (e) => e.dbSystem },
+						{ header: "NAMESPACE", cell: (e) => e.dbNamespace },
+						{ header: "CALLS", cell: (e) => formatCount(e.callCount), align: right },
+						{ header: "ERROR RATE", cell: (e) => formatPercent(errorRate(e)), align: right },
+						{ header: "AVG", cell: (e) => formatDuration(e.avgDurationMs), align: right },
+						{ header: "P95", cell: p95Cell, align: right },
+					],
+					d.databases,
+				),
+			})
+		}
+		if (d.external !== undefined && d.external.length > 0) {
+			sections.push({
+				title: "EXTERNAL",
+				body: renderTable(
+					[
+						{ header: "SOURCE", cell: (e) => e.sourceService },
+						{ header: "TYPE", cell: (e) => e.targetType },
+						{ header: "TARGET", cell: (e) => e.targetName, maxWidth: 60 },
+						{ header: "CALLS", cell: (e) => formatCount(e.callCount), align: right },
+						{ header: "ERROR RATE", cell: (e) => formatPercent(errorRate(e)), align: right },
+						{ header: "AVG", cell: (e) => formatDuration(e.avgDurationMs), align: right },
+						{ header: "P95", cell: p95Cell, align: right },
+					],
+					d.external,
+				),
+			})
+		}
+		return sections
+	},
+	notes: (d) =>
+		d.databases === undefined
+			? ["databases and external calls are only listed in local mode"]
+			: d.external === undefined
+				? ["external calls (HTTP, messaging, RPC) are listed per service: add -s <service>"]
+				: [],
 })

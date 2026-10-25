@@ -3,6 +3,11 @@
 import * as React from "react"
 import { cn } from "../../lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip"
+import {
+	truncatedTextMonoStyles,
+	truncatedTextStyles,
+	truncatedTextTooltipStyles,
+} from "./truncated-text.styles"
 
 /**
  * Single-line text that truncates with an ellipsis and reveals the full value
@@ -27,7 +32,7 @@ export function TruncatedText({
 }): React.ReactElement {
 	const full = text ?? (typeof children === "string" ? children : undefined)
 	const [clipped, setClipped] = React.useState(false)
-	const classes = cn("block min-w-0 truncate", mono && "font-mono", className)
+	const classes = cn(truncatedTextStyles, mono && truncatedTextMonoStyles, className)
 
 	if (tooltip !== "overflow" || !full) {
 		return (
@@ -49,7 +54,7 @@ export function TruncatedText({
 			>
 				{children ?? full}
 			</TooltipTrigger>
-			<TooltipContent className="max-w-sm break-all">{full}</TooltipContent>
+			<TooltipContent className={truncatedTextTooltipStyles}>{full}</TooltipContent>
 		</Tooltip>
 	)
 }

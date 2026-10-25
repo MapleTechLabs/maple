@@ -28,6 +28,7 @@ import {
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
+import type { MapleSpanOptions } from "../shared/span-options.js"
 import { makeNoOpNotice } from "../shared/no-op-notice.js"
 import { SDK_VERSION } from "../version.js"
 import { resolveResource } from "./resource.js"
@@ -36,7 +37,7 @@ import type { MapleRegion } from "@maple/browser-session/region"
 /** Default auto-flush cadence (ms), matching `Otlp.layerJson`'s 5s export interval. */
 const DEFAULT_AUTO_FLUSH_MS = 5_000
 
-export interface MapleFlushableConfig {
+export interface MapleFlushableConfig extends MapleSpanOptions {
 	/**
 	 * Service name reported in traces, logs, and metrics. Falls back to `OTEL_SERVICE_NAME`,
 	 * then `"unknown"`.
@@ -67,16 +68,6 @@ export interface MapleFlushableConfig {
 	readonly attributes?: Record<string, unknown> | undefined
 	/** Skip Effect log spans in OTLP log attributes. Default `false`. */
 	readonly excludeLogSpans?: boolean | undefined
-	/** Span name prefixes to drop before OTLP export. */
-	readonly dropSpanNames?: ReadonlyArray<string> | undefined
-	/**
-	 * Stable `_tag` / `Error.name` identifiers of anticipated 4xx failures. Spans
-	 * failing entirely with these export as status `Ok` (no `exception` event),
-	 * so they stay visible but never count as errors.
-	 */
-	readonly anticipatedErrorIdentifiers?: ReadonlyArray<string> | undefined
-	/** @deprecated Use `anticipatedErrorIdentifiers`. */
-	readonly anticipatedErrorTags?: ReadonlyArray<string> | undefined
 	/** OTLP traces path appended to `endpoint`. Default `/v1/traces`. */
 	readonly tracesPath?: string | undefined
 	/** OTLP logs path appended to `endpoint`. Default `/v1/logs`. */
@@ -106,21 +97,7 @@ export interface FlushableTelemetry {
 }
 
 export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
-	const dropPrefixes = config.dropSpanNames
-	const dropSpan =
-		dropPrefixes !== undefined && dropPrefixes.length > 0
-			? (name: string) => dropPrefixes.some((prefix) => name.startsWith(prefix))
-			: undefined
-	const anticipatedErrorIdentifiers = [
-		...(config.anticipatedErrorIdentifiers ?? []),
-		...(config.anticipatedErrorTags ?? []),
-	]
-	const anticipatedIdentifiers =
-		anticipatedErrorIdentifiers.length > 0 ? new Set(anticipatedErrorIdentifiers) : undefined
-	const spans: SpanBuffer = makeSpanBuffer({
-		dropSpan,
-		anticipatedErrorIdentifiers: anticipatedIdentifiers,
-	})
+	const spans: SpanBuffer = makeSpanBuffer(config)
 	const logs: LogBuffer = makeLogBuffer({ excludeLogSpans: config.excludeLogSpans })
 	const metrics = makeMetricBuffer()
 	const layer = Layer.mergeAll(spans.tracerLayer, logs.loggerLayer, metrics.layer)

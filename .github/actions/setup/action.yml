@@ -1,0 +1,44 @@
+name: setup
+description: >-
+    Toolchain, dependencies and the shared turbo cache for a checked-out repo.
+    Run it before loading secrets, so install scripts never see them.
+
+inputs:
+    tools:
+        description: mise tools to install. Empty installs all of mise.toml (Rust included, ~1 GB).
+        required: false
+        default: bun node
+    install-filters:
+        description: Workspace filters for bun install; empty installs every workspace.
+        required: false
+        default: ""
+    turbo-cache:
+        description: Serve the turbo cache from the Actions cache.
+        required: false
+        default: "true"
+
+runs:
+    using: composite
+    steps:
+        - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+          with:
+              install_args: ${{ inputs.tools }}
+
+        # Deliberately NOT cached: ~750k inodes make the tar round-trip slower than a
+        # cold install (34s -> 57s measured). Measure both ways before adding actions/cache.
+        # A filtered install keeps the root `maple` workspace for the CI tools.
+        - name: bun install
+          shell: bash
+          env:
+              FILTERS: ${{ inputs.install-filters }}
+          run: |
+              read -r -a filters <<< "$FILTERS"
+              if (( ${#filters[@]} )); then
+                bun install --frozen-lockfile --filter=maple "${filters[@]/#/--filter=}"
+              else
+                bun install --frozen-lockfile
+              fi
+
+        # One cache for every job and workflow, so any job's build output is a hit for the rest.
+        - if: ${{ inputs.turbo-cache == 'true' }}
+          uses: rharkor/caching-for-turbo@760158c05c47e7a764f78e9a22ca3b5a6ed8c52e # v2.5.2

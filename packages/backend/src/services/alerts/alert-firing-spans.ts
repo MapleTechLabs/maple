@@ -1,19 +1,25 @@
 import { Effect } from "effect"
 
-import type { AlertEvaluationStatus } from "@maple/domain/http"
+import {
+	planAlertLifecycle,
+	type AlertEvaluation,
+	type AlertLifecycleIncident,
+	type AlertLifecycleInput,
+} from "@maple/alerting-core"
+import type { AlertSeverity, AlertThreshold } from "@maple/domain/http"
 
-import { foldObservation, type HysteresisConfig, type HysteresisRow } from "./incident-hysteresis"
-
-/** The rule fields the hysteresis reads — nothing else about a rule matters here. */
-export interface AlertCounterThresholds {
+/** The rule fields the lifecycle reads; nothing else about a rule matters here. */
+export interface AlertReplayPolicy {
 	readonly consecutiveBreachesRequired: number
+	readonly breachesOutOf: number | null
 	readonly consecutiveHealthyRequired: number
+	readonly thresholds: ReadonlyArray<Pick<AlertThreshold, "severity">>
 }
 
 /** One observation the preview replays, in the order the scheduler would see it. */
 export interface SimulatedEvaluation {
 	readonly bucketMs: number
-	readonly status: AlertEvaluationStatus
+	readonly evaluation: AlertEvaluation
 	/**
 	 * The trailing in-progress window. It charts, but the scheduler has not
 	 * evaluated it yet, so it stays out of the simulation entirely.
@@ -21,82 +27,122 @@ export interface SimulatedEvaluation {
 	readonly provisional?: boolean
 }
 
-/** A stretch of wall time the rule would have held an incident open. */
+/** A stretch of wall time the rule would have held an incident open at one severity. */
 export interface SimulatedFiringSpan {
 	readonly startMs: number
 	readonly endMs: number
+	readonly severity: AlertSeverity
+}
+
+interface ReplayState {
+	readonly state: AlertLifecycleInput["state"]
+	readonly incident: AlertLifecycleIncident | null
+	readonly open: { readonly startMs: number; readonly severity: AlertSeverity } | null
+	/** Buckets of the recent non-skipped ticks that breached, to date a span's first breach. */
+	readonly recentBreaches: ReadonlyArray<number | null>
+	readonly lastCompleteBucketMs: number | null
+	readonly spans: ReadonlyArray<SimulatedFiringSpan>
 }
 
 /**
- * Replay a whole series through the shared incident hysteresis and return the
- * spans during which the rule would have held an incident open.
- *
- * The preview promises to show what the scheduler will do, so it must not be a
- * second implementation of the scheduler: both run the same `foldObservation`,
- * and a drift here would only ever show up as a rule firing differently than
- * its chart said it would.
- *
- * A span opens at the start of the run's *first* breached window, not at the
- * window that tripped the counter — the incident is understood to have begun
- * when the breach did. A run still open at the end of the series is closed at
- * the last complete window's boundary rather than left dangling.
+ * Replay a series through the scheduler's `planAlertLifecycle` (no liveness probe, so empty windows
+ * are evidence of nothing). Spans start at the first breach inside the last M checks, split at each
+ * severity change, and an open run closes at the last complete window.
  */
 export const simulateFiringSpans = (
 	evaluations: ReadonlyArray<SimulatedEvaluation>,
-	thresholds: AlertCounterThresholds,
+	rule: AlertReplayPolicy,
 	windowMs: number,
 ): Effect.Effect<ReadonlyArray<SimulatedFiringSpan>> =>
 	Effect.gen(function* () {
-		const config: HysteresisConfig = {
-			breachesToOpen: thresholds.consecutiveBreachesRequired,
-			healthyToResolve: thresholds.consecutiveHealthyRequired,
-			cooldownMs: 0,
+		const breachWindow = rule.breachesOutOf ?? rule.consecutiveBreachesRequired
+		const policy: AlertLifecycleInput["policy"] = {
+			consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+			breachWindow,
+			consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+			renotifyIntervalMinutes: Number.MAX_SAFE_INTEGER,
+			severities: rule.thresholds.map((tier) => tier.severity),
 		}
 		const initial: ReplayState = {
-			row: {
-				consecutiveBreaches: 0,
-				consecutiveHealthy: 0,
-				incidentOpen: false,
-				lastResolvedAtMs: null,
-			},
-			openStartMs: null,
+			state: null,
+			incident: null,
+			open: null,
+			recentBreaches: [],
 			lastCompleteBucketMs: null,
 			spans: [],
 		}
 
 		const final = yield* Effect.reduce(
-			evaluations.filter((evaluation) => evaluation.provisional !== true),
+			evaluations.filter((tick) => tick.provisional !== true),
 			() => initial,
-			(state, evaluation) =>
-				foldObservation(state.row, evaluation.status, config, evaluation.bucketMs).pipe(
-					Effect.map((outcome): ReplayState => {
-						const row: HysteresisRow = {
-							consecutiveBreaches: outcome.consecutiveBreaches,
-							consecutiveHealthy: outcome.consecutiveHealthy,
-							incidentOpen:
-								outcome.transition === "open"
-									? true
-									: outcome.transition === "resolve"
-										? false
-										: state.row.incidentOpen,
-							lastResolvedAtMs: state.row.lastResolvedAtMs,
+			(acc, { bucketMs, evaluation }) =>
+				planAlertLifecycle({
+					policy,
+					evaluation,
+					state: acc.state,
+					openIncident: acc.incident,
+					nowMs: bucketMs,
+					allowNoDataResolution: evaluation.status !== "skipped",
+				}).pipe(
+					Effect.map((plan): ReplayState => {
+						const recentBreaches =
+							evaluation.status === "skipped"
+								? acc.recentBreaches
+								: [
+										...acc.recentBreaches,
+										evaluation.status === "breached" ? bucketMs : null,
+									].slice(-breachWindow)
+						const incident: AlertLifecycleIncident | null =
+							plan.transition === "resolved" || plan.severity === null
+								? null
+								: {
+										severity: plan.severity,
+										firstTriggeredAtMs: acc.incident?.firstTriggeredAtMs ?? bucketMs,
+										lastNotifiedAtMs: bucketMs,
+										lastDeliveredEventType: "trigger",
+									}
+						const base = {
+							...acc,
+							state: plan.state,
+							incident,
+							recentBreaches,
+							lastCompleteBucketMs: bucketMs,
 						}
-						const base = { ...state, row, lastCompleteBucketMs: evaluation.bucketMs }
-						if (outcome.transition === "open") {
+						if (plan.transition === "opened" && plan.severity !== null) {
+							const firstBreach = recentBreaches.find((ms) => ms !== null) ?? bucketMs
+							return { ...base, open: { startMs: firstBreach, severity: plan.severity } }
+						}
+						if (plan.transition === "resolved" && acc.open !== null) {
 							return {
 								...base,
-								openStartMs:
-									evaluation.bucketMs -
-									(thresholds.consecutiveBreachesRequired - 1) * windowMs,
+								open: null,
+								// A re-open within M must not date back past this resolve.
+								recentBreaches: [],
+								spans: [
+									...acc.spans,
+									{
+										startMs: acc.open.startMs,
+										endMs: bucketMs + windowMs,
+										severity: acc.open.severity,
+									},
+								],
 							}
 						}
-						if (outcome.transition === "resolve" && state.openStartMs != null) {
+						if (
+							acc.open !== null &&
+							plan.severity !== null &&
+							plan.severity !== acc.open.severity
+						) {
 							return {
 								...base,
-								openStartMs: null,
+								open: { startMs: bucketMs, severity: plan.severity },
 								spans: [
-									...state.spans,
-									{ startMs: state.openStartMs, endMs: evaluation.bucketMs + windowMs },
+									...acc.spans,
+									{
+										startMs: acc.open.startMs,
+										endMs: bucketMs,
+										severity: acc.open.severity,
+									},
 								],
 							}
 						}
@@ -105,14 +151,14 @@ export const simulateFiringSpans = (
 				),
 		)
 
-		return final.openStartMs != null && final.lastCompleteBucketMs != null
-			? [...final.spans, { startMs: final.openStartMs, endMs: final.lastCompleteBucketMs + windowMs }]
+		return final.open !== null && final.lastCompleteBucketMs !== null
+			? [
+					...final.spans,
+					{
+						startMs: final.open.startMs,
+						endMs: final.lastCompleteBucketMs + windowMs,
+						severity: final.open.severity,
+					},
+				]
 			: final.spans
 	})
-
-interface ReplayState {
-	readonly row: HysteresisRow
-	readonly openStartMs: number | null
-	readonly lastCompleteBucketMs: number | null
-	readonly spans: ReadonlyArray<SimulatedFiringSpan>
-}

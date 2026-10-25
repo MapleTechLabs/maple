@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
-import { Schema } from "effect"
+import { Array as Arr, Effect, Schema } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../../query-engine"
 import { PostgresTransactionId, UserId } from "../../primitives"
 import {
@@ -24,8 +24,15 @@ import {
 	AlertSignalType,
 	AlertValidationError,
 	AlertWindowMinutes,
+	AlertBreachWindow,
+	AlertEvaluationIntervalMinutes,
+	AlertEvaluationErrorKind,
+	type AlertThreshold,
 } from "../alerts"
 import { AlertDestinationPublicId } from "./alert-destinations"
+
+const EVALUATION_INTERVAL_DESCRIPTION =
+	"Minutes between checks: 1, 5, 10, 15, 30 or 60, at most `window_minutes`. Raw SQL rules checked less often may run longer queries (5s at 1 minute, 15s at 5, 25s at 10 or more). `null` checks every fifth of the window, 1 to 5 minutes."
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
@@ -41,6 +48,60 @@ const NonNegativeInt = Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.is
 const PositiveFloat = Schema.Number.pipe(Schema.check(Schema.isFinite(), Schema.isGreaterThan(0)))
 
 const GroupBy = Schema.Array(NonEmptyString).pipe(Schema.check(Schema.isMinLength(1)))
+
+export const V2AlertThreshold = Schema.Struct({
+	severity: AlertSeverity.annotate({ description: "The severity this tier opens or escalates to." }),
+	value: Schema.Number.annotate({
+		description: "The value that breaches this tier, compared with the rule's `comparator`.",
+		examples: [0.05],
+	}),
+	// Both may be omitted on input and read as `null`; responses always carry them.
+	upper: Schema.NullOr(Schema.Number)
+		.annotate({
+			description:
+				"Upper bound for range comparators (`between` / `not_between`), otherwise `null`. Defaults to `null`.",
+		})
+		.pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
+	recovery_value: Schema.NullOr(Schema.Number)
+		.annotate({
+			description:
+				"The value the signal must cross back over before this tier clears, or `null` (the default) to clear as soon as it stops breaching. Must sit on the healthy side of `value`.",
+			examples: [0.03],
+		})
+		.pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
+	destination_ids: Schema.Array(AlertDestinationPublicId).annotate({
+		description:
+			"Destinations (`dest_…`) this severity notifies. A `critical` incident also notifies every `warning` destination.",
+	}),
+}).annotate({
+	identifier: "AlertThreshold",
+	title: "Alert threshold",
+	description: "One severity tier of an alert rule.",
+})
+export type V2AlertThreshold = Schema.Schema.Type<typeof V2AlertThreshold>
+
+// A bounded array on the wire, not a tuple: generated clients (the iOS app's) do not
+// all read `prefixItems`. The refine narrows the decoded type to non-empty.
+// The refine goes first: annotations land on the last check, and a guard has no JSON Schema.
+const V2AlertThresholds = Schema.Array(V2AlertThreshold)
+	.pipe(Schema.refine(Arr.isReadonlyArrayNonEmpty))
+	.check(Schema.isMinLength(1), Schema.isMaxLength(2))
+
+export const fromV2Threshold = (tier: V2AlertThreshold): AlertThreshold => ({
+	severity: tier.severity,
+	value: tier.value,
+	upper: tier.upper,
+	recoveryValue: tier.recovery_value,
+	destinationIds: tier.destination_ids,
+})
+
+export const toV2Threshold = (tier: AlertThreshold): V2AlertThreshold => ({
+	severity: tier.severity,
+	value: tier.value,
+	upper: tier.upper,
+	recovery_value: tier.recoveryValue,
+	destination_ids: tier.destinationIds,
+})
 
 /** Mirrors the v1 caps (alerts.ts): 32-char tags, at most 20 per rule. */
 const RuleTags = Schema.Array(Schema.String.check(Schema.isMaxLength(32))).check(Schema.isMaxLength(20))
@@ -75,9 +136,22 @@ const alertRuleExample = {
 	comparator: "gt",
 	threshold: 0.05,
 	threshold_upper: null,
+	thresholds: [
+		{
+			severity: "critical",
+			value: 0.05,
+			upper: null,
+			recovery_value: null,
+			destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"],
+		},
+	],
 	window_minutes: 5,
+	evaluation_interval_minutes: null,
+	slowed_interval_minutes: null,
+	slowed_at: null,
 	minimum_sample_count: 50,
 	consecutive_breaches_required: 2,
+	breaches_out_of: null,
 	consecutive_healthy_required: 3,
 	renotify_interval_minutes: 60,
 	apdex_threshold_ms: null,
@@ -88,6 +162,7 @@ const alertRuleExample = {
 	no_data_behavior: "skip",
 	alert_on_no_data: false,
 	last_evaluation_error: null,
+	last_evaluation_error_kind: null,
 	last_evaluated_at: "2026-07-15T09:10:00.000Z",
 	last_scheduled_at: "2026-07-15T09:10:00.000Z",
 	created_at: "2026-07-01T12:00:00.000Z",
@@ -120,8 +195,13 @@ export const V2AlertRule = Schema.Struct({
 		examples: [true],
 	}),
 	severity: AlertSeverity.annotate({
-		description: "Severity attached to incidents this rule opens: `warning` or `critical`.",
+		description:
+			"The highest severity this rule can open an incident at: `warning` or `critical`. Derived from `thresholds`.",
 		examples: ["critical"],
+	}),
+	thresholds: V2AlertThresholds.annotate({
+		description:
+			"Severity tiers, lowest first. An incident opens at the tier the value breaches and moves between tiers as it changes.",
 	}),
 	service_names: Schema.Array(Schema.String).annotate({
 		description: "Services the rule is scoped to. Empty for all services.",
@@ -154,15 +234,28 @@ export const V2AlertRule = Schema.Struct({
 		examples: ["gt"],
 	}),
 	threshold: Schema.Number.annotate({
-		description: "The threshold the observed value is compared against. Error rates are 0–1 ratios.",
+		description: "The lowest tier's threshold. Error rates are 0–1 ratios. Derived from `thresholds`.",
 		examples: [0.05],
 	}),
 	threshold_upper: Schema.NullOr(Schema.Number).annotate({
-		description: "Upper bound for range comparators (`between` / `not_between`), otherwise `null`.",
+		description: "The lowest tier's upper bound for range comparators, otherwise `null`.",
 	}),
 	window_minutes: AlertWindowMinutes.annotate({
 		description: "Length of the evaluation window in minutes.",
 		examples: [5],
+	}),
+	evaluation_interval_minutes: Schema.NullOr(AlertEvaluationIntervalMinutes).annotate({
+		description: EVALUATION_INTERVAL_DESCRIPTION,
+		examples: [null],
+	}),
+	slowed_interval_minutes: Schema.NullOr(AlertEvaluationIntervalMinutes).annotate({
+		description:
+			"Set when Maple slowed the rule down after its query hit its time or memory limit 3 checks in a row: it is checked at least this many minutes apart, which allows a longer query. Any update clears it.",
+		examples: [null],
+	}),
+	slowed_at: Schema.NullOr(Timestamp).annotate({
+		description: "When the rule was last slowed down, or `null`.",
+		examples: [null],
 	}),
 	minimum_sample_count: NonNegativeInt.annotate({
 		description:
@@ -170,8 +263,14 @@ export const V2AlertRule = Schema.Struct({
 		examples: [50],
 	}),
 	consecutive_breaches_required: PositiveInt.annotate({
-		description: "Consecutive breached checks required before an incident opens.",
+		description:
+			"Breached checks required before an incident opens or escalates (N). In a row unless `breaches_out_of` is set.",
 		examples: [2],
+	}),
+	breaches_out_of: Schema.NullOr(AlertBreachWindow).annotate({
+		description:
+			'Count the required breaches over the last M checks instead of in a row ("N of M"), or `null`.',
+		examples: [null],
 	}),
 	consecutive_healthy_required: PositiveInt.annotate({
 		description: "Consecutive healthy checks required before an open incident resolves.",
@@ -193,7 +292,7 @@ export const V2AlertRule = Schema.Struct({
 			"For `raw_query` rules: how multi-row results reduce to one value (`identity`, `sum`, `avg`, `min`, `max`).",
 	}),
 	destination_ids: Schema.Array(AlertDestinationPublicId).annotate({
-		description: "The alert destinations (`dest_…`) this rule notifies.",
+		description: "Every destination (`dest_…`) any tier notifies. Derived from `thresholds`.",
 	}),
 	no_data_behavior: QueryEngineNoDataBehavior.annotate({
 		description:
@@ -207,6 +306,10 @@ export const V2AlertRule = Schema.Struct({
 	last_evaluation_error: Schema.NullOr(Schema.String).annotate({
 		description:
 			"The most recent evaluation error for this rule, or `null` if the last evaluation succeeded.",
+	}),
+	last_evaluation_error_kind: Schema.NullOr(AlertEvaluationErrorKind).annotate({
+		description:
+			"Why the last evaluation failed: `query_too_slow` or `query_too_much_memory` (the query hit its limit; check less often or narrow it), `invalid_query`, or `other`. `null` with no error.",
 	}),
 	last_evaluated_at: Schema.NullOr(Timestamp).annotate({
 		description: "When the rule was last evaluated, or `null` if never.",
@@ -278,10 +381,18 @@ const createParamsFields = {
 	enabled: Schema.optionalKey(
 		Schema.Boolean.annotate({ description: "Whether the rule starts enabled. Defaults to `true`." }),
 	),
-	severity: AlertSeverity.annotate({
-		description: "Severity attached to incidents this rule opens.",
-		examples: ["critical"],
-	}),
+	thresholds: Schema.optionalKey(
+		V2AlertThresholds.annotate({
+			description:
+				"Severity tiers (at most one `warning` and one `critical`). When set, `severity`, `threshold`, `threshold_upper` and `destination_ids` are ignored.",
+		}),
+	),
+	severity: Schema.optionalKey(
+		AlertSeverity.annotate({
+			description: "Severity of a single-threshold rule. Required unless `thresholds` is set.",
+			examples: ["critical"],
+		}),
+	),
 	service_names: Schema.optionalKey(Schema.Array(Schema.String)),
 	exclude_service_names: Schema.optionalKey(Schema.Array(Schema.String)),
 	environments: Schema.optionalKey(
@@ -302,17 +413,27 @@ const createParamsFields = {
 			"Comparison operator. Range forms (`between` / `not_between`) also require `threshold_upper`.",
 		examples: ["gt"],
 	}),
-	threshold: Schema.Number.annotate({
-		description: "The threshold to compare against. Error rates are 0–1 ratios.",
-		examples: [0.05],
-	}),
+	threshold: Schema.optionalKey(
+		Schema.Number.annotate({
+			description:
+				"Threshold of a single-threshold rule. Error rates are 0–1 ratios. Required unless `thresholds` is set.",
+			examples: [0.05],
+		}),
+	),
 	threshold_upper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	window_minutes: PositiveInt.annotate({
 		description: "Length of the evaluation window in minutes.",
 		examples: [5],
 	}),
+	evaluation_interval_minutes: Schema.optionalKey(
+		Schema.NullOr(AlertEvaluationIntervalMinutes).annotate({
+			description: EVALUATION_INTERVAL_DESCRIPTION,
+			examples: [10],
+		}),
+	),
 	minimum_sample_count: Schema.optionalKey(NonNegativeInt),
 	consecutive_breaches_required: Schema.optionalKey(PositiveInt),
+	breaches_out_of: Schema.optionalKey(Schema.NullOr(AlertBreachWindow)),
 	consecutive_healthy_required: Schema.optionalKey(PositiveInt),
 	renotify_interval_minutes: Schema.optionalKey(PositiveInt),
 	apdex_threshold_ms: Schema.optionalKey(Schema.NullOr(PositiveFloat)),
@@ -325,9 +446,11 @@ const createParamsFields = {
 				"Count a window with no data (e.g. a raw query returning no rows) as a breach, so a rule that goes blind opens an incident. Default `false`: such windows are skipped. Not supported on grouped rules, where a group that stops reporting keeps its incident open until telemetry returns.",
 		}),
 	),
-	destination_ids: Schema.Array(AlertDestinationPublicId).annotate({
-		description: "The alert destinations (`dest_…`) to notify. May be empty.",
-	}),
+	destination_ids: Schema.optionalKey(
+		Schema.Array(AlertDestinationPublicId).annotate({
+			description: "Destinations (`dest_…`) of a single-threshold rule.",
+		}),
+	),
 }
 
 export const V2AlertRuleCreateParams = Schema.Struct(createParamsFields).annotate({
@@ -353,12 +476,15 @@ export type V2AlertRuleCreateParams = Schema.Schema.Type<typeof V2AlertRuleCreat
 /** Every field optional: a true PATCH — omitted fields are left unchanged. */
 export const V2AlertRuleUpdateParams = Schema.Struct({
 	name: Schema.optionalKey(createParamsFields.name),
-	severity: Schema.optionalKey(createParamsFields.severity),
+	thresholds: createParamsFields.thresholds,
+	severity: createParamsFields.severity,
 	signal_type: Schema.optionalKey(createParamsFields.signal_type),
 	comparator: Schema.optionalKey(createParamsFields.comparator),
-	threshold: Schema.optionalKey(createParamsFields.threshold),
+	threshold: createParamsFields.threshold,
 	window_minutes: Schema.optionalKey(createParamsFields.window_minutes),
-	destination_ids: Schema.optionalKey(createParamsFields.destination_ids),
+	evaluation_interval_minutes: createParamsFields.evaluation_interval_minutes,
+	destination_ids: createParamsFields.destination_ids,
+	breaches_out_of: createParamsFields.breaches_out_of,
 	notes: createParamsFields.notes,
 	notification_template: createParamsFields.notification_template,
 	enabled: createParamsFields.enabled,
@@ -475,6 +601,9 @@ const V2AlertRulePreviewPoint = Schema.Struct({
 				"Set on the trailing in-progress window: evaluated over less than a full window, so its value may still move.",
 		}),
 	),
+	level: Schema.optionalKey(
+		AlertSeverity.annotate({ description: "The highest tier this window breached, when any." }),
+	),
 }).annotate({ identifier: "AlertRulePreviewPoint", title: "Alert rule preview point" })
 
 const V2AlertRulePreviewSeries = Schema.Struct({
@@ -488,10 +617,39 @@ const V2AlertRulePreviewFiringSpan = Schema.Struct({
 	group_key: Schema.String,
 	start: Timestamp,
 	end: Timestamp,
+	severity: AlertSeverity.annotate({
+		description: "The incident's severity during this span. A span splits at each severity change.",
+	}),
 }).annotate({
 	identifier: "AlertRulePreviewFiringSpan",
 	title: "Alert rule preview firing span",
 	description: "A span during which the rule's state machine would have held an open incident.",
+})
+
+export const V2AlertQueryTiming = Schema.Struct({
+	elapsed_ms: Schema.NullOr(Schema.Number).annotate({
+		description:
+			"Milliseconds one check of the latest window took, or null when it did not finish within `probe_limit_ms`.",
+	}),
+	failure: Schema.NullOr(Schema.Literals(["query_too_slow", "query_too_much_memory"])).annotate({
+		description: "Why the check did not finish, when it did not.",
+	}),
+	probe_limit_ms: Schema.Number.annotate({
+		description:
+			"The longest any check may run (the limit at the slowest intervals), where timing stops.",
+	}),
+	interval_minutes: Schema.Number.annotate({ description: "The rule's check interval, in minutes." }),
+	limit_ms: Schema.Number.annotate({
+		description:
+			"The query time limit at that interval: 5s under 5 minutes, 15s at 5, 25s at 10 or more.",
+	}),
+	fits_interval_minutes: Schema.Array(AlertEvaluationIntervalMinutes).annotate({
+		description: "Check intervals whose time limit the query fits with a fifth to spare.",
+	}),
+}).annotate({
+	identifier: "AlertQueryTiming",
+	title: "Alert query timing",
+	description: "How long one check of a raw SQL rule takes, timed once on the latest window.",
 })
 
 export const V2AlertRulePreviewResult = Schema.Struct({
@@ -502,6 +660,7 @@ export const V2AlertRulePreviewResult = Schema.Struct({
 	window_minutes: Schema.Number,
 	threshold: Schema.Number,
 	threshold_upper: Schema.NullOr(Schema.Number),
+	thresholds: V2AlertThresholds,
 	comparator: AlertComparator,
 	truncated_to_start: Schema.NullOr(Timestamp).annotate({
 		description: "Set when the requested range was clamped to the preview bucket cap.",
@@ -510,6 +669,15 @@ export const V2AlertRulePreviewResult = Schema.Struct({
 	would_fire: Schema.Array(V2AlertRulePreviewFiringSpan).annotate({
 		description: "Spans during which the rule would have held an open incident.",
 	}),
+	query_timing: Schema.optionalKey(V2AlertQueryTiming).annotate({
+		description: "Raw SQL rules only: one check timed against the time limit of the rule's interval.",
+	}),
+	series_failure: Schema.optionalKey(Schema.Literals(["query_too_slow", "query_too_much_memory"])).annotate(
+		{
+			description:
+				"Raw SQL rules only: the range was too heavy to chart within the longest limit, so `series` is empty. `query_timing` still says whether one check fits. Preview a shorter range to chart it.",
+		},
+	),
 }).annotate({
 	identifier: "AlertRulePreviewResult",
 	title: "Alert rule preview result",
@@ -522,6 +690,7 @@ export const V2AlertRulePreviewResult = Schema.Struct({
 			window_minutes: 5,
 			threshold: 0.05,
 			threshold_upper: null,
+			thresholds: alertRuleExample.thresholds,
 			comparator: "gt",
 			truncated_to_start: null,
 			series: [
@@ -542,6 +711,7 @@ export const V2AlertRulePreviewResult = Schema.Struct({
 					group_key: "__total__",
 					start: "2026-07-15T09:10:00.000Z",
 					end: "2026-07-15T09:40:00.000Z",
+					severity: "critical",
 				},
 			],
 		}),
@@ -582,8 +752,13 @@ export const V2AlertCheck = Schema.Struct({
 	}),
 	incident_transition: AlertIncidentTransition.annotate({
 		description:
-			"How this check moved the incident state machine: `none`, `opened`, `continued`, or `resolved`.",
+			"How this check moved the incident state machine: `none`, `opened`, `continued`, or `resolved`. A change of severity is `continued`; see `level`.",
 		examples: ["opened"],
+	}),
+	level: Schema.NullOr(AlertSeverity).annotate({
+		description:
+			"The highest severity tier this check breached, or `null` when none did (and on checks recorded before tiers).",
+		examples: ["critical"],
 	}),
 	evaluation_duration_ms: Schema.Number,
 	error_message: Schema.NullOr(Schema.String).annotate({
@@ -617,6 +792,7 @@ export const V2AlertCheck = Schema.Struct({
 			consecutive_healthy: 0,
 			incident_id: "inc_tC4d9V79DCDzgbGKhAnff9",
 			incident_transition: "opened",
+			level: "critical",
 			evaluation_duration_ms: 412,
 			error_message: null,
 			error_category: null,

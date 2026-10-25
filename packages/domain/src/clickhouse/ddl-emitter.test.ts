@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+import { FINGERPRINT_HASH_SALT } from "../tinybird/fingerprint"
 import { buildTinybirdProjectManifest } from "../tinybird/project-manifest"
 import {
 	emitCreateMaterializedView,
@@ -29,7 +30,7 @@ describe("ClickHouse DDL emitter", () => {
 		const ddl = emitCreateTable(traces!)
 		expect(ddl).not.toContain("`json:")
 		expect(ddl).toContain("OrgId LowCardinality(String)")
-		expect(ddl).toContain("ORDER BY (OrgId, ServiceName, SpanName, toDateTime(Timestamp))")
+		expect(ddl).toContain("ORDER BY (OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId)")
 		expect(ddl).toContain("PARTITION BY toDate(Timestamp)")
 		expect(ddl).toContain("TTL toDate(Timestamp) + INTERVAL 30 DAY")
 	})
@@ -90,7 +91,9 @@ describe("ClickHouse DDL emitter", () => {
 		expect(ddl).toMatch(/^CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv TO error_events AS/)
 		expect(ddl).toContain("FROM traces")
 		expect(ddl).toContain("WHERE StatusCode = 'Error'")
-		expect(ddl).toContain("cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig)")
+		expect(ddl).toContain(
+			`cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, '${FINGERPRINT_HASH_SALT}')`,
+		)
 	})
 
 	it("emits a JSONPath spec mapping each ingested column to its $.path", async () => {

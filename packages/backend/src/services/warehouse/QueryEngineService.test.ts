@@ -12,6 +12,8 @@ import {
 } from "@maple/domain/http"
 import {
 	baselineWarehouseCapabilities,
+	deriveWarehouseCapabilities,
+	type WarehouseCapabilities,
 	type QueryEngineEvaluateRequest,
 	type QueryEngineExecuteRequest,
 	type QueryEngineResult,
@@ -299,29 +301,35 @@ describe("makeQueryEngineExecute", () => {
 	)
 
 	// The sidebar's two reads: a failure on the first one is what either returns.
-	const traceSidebarStub = (failRollup: () => unknown) => {
+	const traceSidebarStub = (
+		failRollup: () => unknown,
+		capabilities: WarehouseCapabilities = baselineWarehouseCapabilities(),
+	) => {
 		const queries: Array<string> = []
-		const execute = makeQueryEngineExecute(
-			makeTinybirdStub({
-				sqlQuery: (_tenant, sql) => {
-					queries.push(sql)
-					return sql.includes("trace_facets_hourly")
-						? Effect.fail(failRollup() as WarehouseConfigError)
-						: Effect.succeed(
-								sql.includes("facetType")
-									? [{ name: "api", count: 3, facetType: "service" }]
-									: [
-											{
-												minDurationMs: 1,
-												maxDurationMs: 9,
-												p50DurationMs: 4,
-												p95DurationMs: 8,
-											},
-										],
-							)
-				},
-			}),
-		)
+		const stub = makeTinybirdStub({
+			sqlQuery: (_tenant, sql) => {
+				queries.push(sql)
+				return sql.includes("trace_facets_hourly")
+					? Effect.fail(failRollup() as WarehouseConfigError)
+					: Effect.succeed(
+							sql.includes("facetType")
+								? [{ name: "api", count: 3, facetType: "service" }]
+								: [
+										{
+											minDurationMs: 1,
+											maxDurationMs: 9,
+											p50DurationMs: 4,
+											p95DurationMs: 8,
+										},
+									],
+						)
+			},
+		})
+		const execute = makeQueryEngineExecute({
+			...stub,
+			compiledQueryWithCapabilities: (tenant, compile, options) =>
+				stub.compiledQuery(tenant, Effect.runSync(compile(capabilities)), options),
+		})
 		return { queries, execute }
 	}
 	const sidebarRequest = (kind: "facets" | "stats") => ({
@@ -346,6 +354,27 @@ describe("makeQueryEngineExecute", () => {
 				assert.strictEqual(queries.length, 2, kind)
 				assert.ok(queries[0]!.includes("trace_facets_hourly"), kind)
 				assert.ok(!queries[1]!.includes("trace_facets_hourly"), kind)
+				assert.strictEqual(response.result.kind, kind)
+			}
+		}),
+	)
+
+	it.effect("skips trace_facets_hourly up front when the capability probe found it absent", () =>
+		Effect.gen(function* () {
+			const probed = deriveWarehouseCapabilities({
+				indexes: [],
+				columns: [{ table: "traces", name: "TraceId" }],
+				optionalTables: ["trace_facets_hourly"],
+			})
+			for (const kind of ["facets", "stats"] as const) {
+				const { queries, execute } = traceSidebarStub(
+					() => new Error("rollup must not be read"),
+					probed,
+				)
+				const response = yield* execute(tenant, sidebarRequest(kind))
+
+				assert.strictEqual(queries.length, 1, kind)
+				assert.ok(!queries[0]!.includes("trace_facets_hourly"), kind)
 				assert.strictEqual(response.result.kind, kind)
 			}
 		}),

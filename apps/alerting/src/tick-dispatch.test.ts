@@ -2,13 +2,19 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING, TICK_PATH } from "./tick-dispatch"
 
-const CRONS = ["* * * * *", "0 * * * *"]
 const TOKEN = "secret-token"
 const ENV = { INTERNAL_SERVICE_TOKEN: TOKEN }
 
-const tickRequest = (init: { cron?: string; authorization?: string; method?: string; path?: string }) => {
+const tickRequest = (init: {
+	cron?: string
+	lane?: string
+	authorization?: string
+	method?: string
+	path?: string
+}) => {
 	const url = new URL(`https://maple-alerting.internal${init.path ?? TICK_PATH}`)
 	if (init.cron !== undefined) url.searchParams.set("cron", init.cron)
+	if (init.lane !== undefined) url.searchParams.set("lane", init.lane)
 	return new Request(url, {
 		method: init.method ?? "POST",
 		headers: init.authorization === undefined ? {} : { authorization: init.authorization },
@@ -29,7 +35,7 @@ const fakeBinding = (status: number) => {
 
 /** The refusal status for `request`, failing the test if it was authorized. */
 const refusedStatus = (request: Request, env: Record<string, unknown>) =>
-	authorizeTickRequest(request, env, CRONS).pipe(
+	authorizeTickRequest(request, env).pipe(
 		Effect.flip,
 		Effect.map((error) => {
 			expect(error._tag).toBe("@maple/alerting/errors/TickRequestRefused")
@@ -38,28 +44,52 @@ const refusedStatus = (request: Request, env: Record<string, unknown>) =>
 	)
 
 describe("authorizeTickRequest", () => {
-	it.effect("accepts a known cron with the internal bearer", () =>
+	it.effect("accepts a known cron and lane with the internal bearer", () =>
 		Effect.gen(function* () {
 			const tick = yield* authorizeTickRequest(
-				tickRequest({ cron: "0 * * * *", authorization: `Bearer ${TOKEN}` }),
+				tickRequest({
+					cron: "0 * * * *",
+					lane: "service_map_rollup",
+					authorization: `Bearer ${TOKEN}`,
+				}),
 				ENV,
-				CRONS,
 			)
-			expect(tick).toEqual({ cron: "0 * * * *", colo: "unknown", placement: "none" })
+			expect(tick).toEqual({
+				cron: "0 * * * *",
+				lane: "service_map_rollup",
+			})
 		}),
 	)
 
-	it.effect("refuses a wrong token, a missing token config, and an unknown cron", () =>
+	it.effect("refuses a wrong token, a missing token config, and an unknown cron or lane", () =>
 		Effect.gen(function* () {
 			const authorized = `Bearer ${TOKEN}`
 			expect(
-				yield* refusedStatus(tickRequest({ cron: "* * * * *", authorization: "Bearer nope" }), ENV),
+				yield* refusedStatus(
+					tickRequest({ cron: "* * * * *", lane: "alert", authorization: "Bearer nope" }),
+					ENV,
+				),
 			).toBe(401)
 			expect(
-				yield* refusedStatus(tickRequest({ cron: "* * * * *", authorization: authorized }), {}),
+				yield* refusedStatus(
+					tickRequest({ cron: "* * * * *", lane: "alert", authorization: authorized }),
+					{},
+				),
 			).toBe(401)
 			expect(
-				yield* refusedStatus(tickRequest({ cron: "*/7 * * * *", authorization: authorized }), ENV),
+				yield* refusedStatus(
+					tickRequest({ cron: "*/7 * * * *", lane: "alert", authorization: authorized }),
+					ENV,
+				),
+			).toBe(400)
+			expect(
+				yield* refusedStatus(tickRequest({ cron: "* * * * *", authorization: authorized }), ENV),
+			).toBe(400)
+			expect(
+				yield* refusedStatus(
+					tickRequest({ cron: "0 * * * *", lane: "alert", authorization: authorized }),
+					ENV,
+				),
 			).toBe(400)
 			expect(yield* refusedStatus(tickRequest({ method: "GET" }), ENV)).toBe(404)
 			expect(yield* refusedStatus(tickRequest({ path: "/" }), ENV)).toBe(404)
@@ -69,26 +99,26 @@ describe("authorizeTickRequest", () => {
 
 /** The real failure of a dispatch; an unavailable dispatch fails the test. */
 const dispatchFailure = (env: Record<string, unknown>) =>
-	dispatchTick("* * * * *", env).pipe(
+	dispatchTick("* * * * *", "alert", env).pipe(
 		Effect.catchTag("@maple/alerting/errors/TickDispatchUnavailable", Effect.die),
 		Effect.flip,
 	)
 
 describe("dispatchTick", () => {
-	it.effect("posts the cron to the self binding with the internal bearer", () =>
+	it.effect("posts the cron and lane to the self binding with the internal bearer", () =>
 		Effect.gen(function* () {
 			const { binding, seen } = fakeBinding(204)
-			yield* dispatchTick("*/5 * * * *", { ...ENV, [SELF_BINDING]: binding })
+			yield* dispatchTick("*/5 * * * *", "anomaly", { ...ENV, [SELF_BINDING]: binding })
 			expect(seen).toHaveLength(1)
-			const tick = yield* authorizeTickRequest(seen[0]!, ENV, ["*/5 * * * *"])
-			expect(tick).toMatchObject({ cron: "*/5 * * * *" })
+			const tick = yield* authorizeTickRequest(seen[0]!, ENV)
+			expect(tick).toMatchObject({ cron: "*/5 * * * *", lane: "anomaly" })
 		}),
 	)
 
 	it.effect("is unavailable without a binding or a token, or when the handler refuses", () =>
 		Effect.gen(function* () {
 			const unavailableReason = (env: Record<string, unknown>) =>
-				dispatchTick("* * * * *", env).pipe(
+				dispatchTick("* * * * *", "alert", env).pipe(
 					Effect.catchTag("@maple/alerting/errors/TickDispatchError", Effect.die),
 					Effect.flip,
 					Effect.map((error) => error.reason),

@@ -13,13 +13,24 @@
  */
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Schema } from "effect"
-import { AuthorizationUnavailableError, ErrorPersistenceError, RoleName } from "@maple/domain/http"
-import { CONNECTOR_TENANT_USER_ID, type ChatConnectorOrigin } from "@maple/domain/chat-session"
+import {
+	ActorDocument,
+	AuthorizationUnavailableError,
+	ErrorPersistenceError,
+	RoleName,
+} from "@maple/domain/http"
+import {
+	CONNECTOR_TENANT_USER_ID,
+	connectorTurnTenant,
+	type ChatConnectorOrigin,
+} from "@maple/domain/chat-session"
 import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { auditAttribution } from "@maple/backend/services/audit/audit-access"
+import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { resolveTenant } from "./apply-proposal"
+import { toTenantContext, turnTenant } from "./turn-actor"
 
 const ORG = Schema.decodeSync(OrgId)("org_1")
 const ADA = Schema.decodeSync(UserId)("user_ada")
@@ -38,7 +49,7 @@ const APPROVER: ChatConnectorOrigin = {
 const die = () => Effect.die("not reached in this test")
 
 /** A connector turn's actor lookup, which only the org-level branch reaches. */
-const unusedActors = {
+const unusedActors: ErrorActorsService["Service"] = {
 	registerAgent: die,
 	listAgents: die,
 	lookupActor: die,
@@ -48,6 +59,7 @@ const unusedActors = {
 	ensureAgentActor: die,
 	touchActor: die,
 	collectActorDocs: die,
+	findOwnedAgentActor: die,
 }
 
 const noActors = Layer.succeed(ErrorActorsService, unusedActors)
@@ -59,10 +71,20 @@ const actorsThat = (actor: ActorId | undefined): Layer.Layer<ErrorActorsService>
 		ensureAgentActor: () =>
 			actor === undefined
 				? Effect.fail(new ErrorPersistenceError({ message: "actors table unavailable" }))
-				: Effect.succeed({ id: actor, orgId: ORG, kind: "agent", name: "chat-connector-testchat" }),
-	} as ErrorActorsService)
+				: Effect.succeed(
+						new ActorDocument({
+							id: actor,
+							type: "agent",
+							userId: null,
+							agentName: "chat-connector-testchat",
+							model: null,
+							capabilities: [],
+							lastActiveAt: null,
+						}),
+					),
+	})
 
-const memberships = (verify: OrgMembershipService["verify"]): Layer.Layer<OrgMembershipService> =>
+const memberships = (verify: OrgMembershipService["Service"]["verify"]): Layer.Layer<OrgMembershipService> =>
 	Layer.succeed(OrgMembershipService, { verify })
 
 const proposal = (actingUserId?: UserId) => ({
@@ -77,7 +99,7 @@ const proposal = (actingUserId?: UserId) => ({
 describe("whose authority an approval runs under", () => {
 	it.effect("runs an app approval as the caller, under their own roles, audited as them", () =>
 		Effect.gen(function* () {
-			const tenant = yield* resolveTenant(ORG, {
+			const tenant: TenantContext = yield* resolveTenant(ORG, {
 				env: {},
 				sessionId: `${ORG}:tab-1`,
 				approver: { kind: "app" },
@@ -103,7 +125,7 @@ describe("whose authority an approval runs under", () => {
 
 	it.effect("gives a linked user their OWN roles, and grants nothing", () =>
 		Effect.gen(function* () {
-			const tenant = yield* resolveTenant(ORG, proposal(ADA)).pipe(
+			const tenant: TenantContext = yield* resolveTenant(ORG, proposal(ADA)).pipe(
 				Effect.provide(
 					Layer.mergeAll(
 						memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
@@ -137,7 +159,7 @@ describe("whose authority an approval runs under", () => {
 				Effect.flip,
 			)
 
-			assert.strictEqual(failure._tag, "@maple/ai/ApproverNotPermitted")
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
 		}),
 	)
 
@@ -160,13 +182,13 @@ describe("whose authority an approval runs under", () => {
 			)
 
 			// "Could not find out" is not "allowed": a blip must not downgrade the approval.
-			assert.strictEqual(failure._tag, "@maple/ai/ApproverNotPermitted")
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
 		}),
 	)
 
 	it.effect("acts as the org, with `org:admin`, when the connector cannot name who clicked", () =>
 		Effect.gen(function* () {
-			const tenant = yield* resolveTenant(ORG, proposal()).pipe(
+			const tenant: TenantContext = yield* resolveTenant(ORG, proposal()).pipe(
 				// The membership check is never consulted: there is no user to check. The actor lookup
 				// failing must not cost an answer either; `withConnectorActor` absorbs it.
 				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(undefined))),
@@ -182,10 +204,76 @@ describe("whose authority an approval runs under", () => {
 
 	it.effect("pins the connector's agent actor on that path, so the audit log names it", () =>
 		Effect.gen(function* () {
-			const tenant = yield* resolveTenant(ORG, proposal()).pipe(
+			const tenant: TenantContext = yield* resolveTenant(ORG, proposal()).pipe(
 				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
 			)
 
+			assert.strictEqual(tenant.actorId, CONNECTOR_ACTOR)
+		}),
+	)
+})
+
+describe("whose authority a connector turn reads under", () => {
+	const asking = (actingUserId?: UserId): ChatConnectorOrigin => ({
+		...APPROVER,
+		...(actingUserId === undefined ? undefined : { actingUserId }),
+	})
+	const run = (origin: ChatConnectorOrigin) =>
+		turnTenant(toTenantContext(connectorTurnTenant(ORG), origin), origin)
+
+	it.effect("reads as the linked asker, under the roles they hold now", () =>
+		Effect.gen(function* () {
+			const tenant: TenantContext = yield* run(asking(ADA)).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: MEMBER }))),
+						noActors,
+					),
+				),
+			)
+
+			assert.strictEqual(tenant.userId, ADA)
+			assert.deepStrictEqual(tenant.roles, [MEMBER])
+			assert.isUndefined(tenant.actorId)
+		}),
+	)
+
+	it.effect("refuses a linked asker who left the organization", () =>
+		Effect.gen(function* () {
+			const failure = yield* run(asking(ADA)).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						memberships(() => Effect.succeed(Option.none())),
+						noActors,
+					),
+				),
+				Effect.flip,
+			)
+
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
+			assert.strictEqual(failure.reason, "not_a_member")
+		}),
+	)
+
+	it.effect("refuses a linked id that does not decode, rather than reading as the connector", () =>
+		Effect.gen(function* () {
+			const failure = yield* run({ ...APPROVER, actingUserId: "" }).pipe(
+				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+				Effect.flip,
+			)
+
+			assert.strictEqual(failure._tag, "@maple/ai/LinkedUserNotPermitted")
+		}),
+	)
+
+	it.effect("reads as the connector, with no roles, when nobody is named", () =>
+		Effect.gen(function* () {
+			const tenant: TenantContext = yield* run(asking()).pipe(
+				Effect.provide(Layer.mergeAll(memberships(die), actorsThat(CONNECTOR_ACTOR))),
+			)
+
+			assert.strictEqual(tenant.userId, CONNECTOR_TENANT_USER_ID)
+			assert.deepStrictEqual(tenant.roles, [])
 			assert.strictEqual(tenant.actorId, CONNECTOR_ACTOR)
 		}),
 	)

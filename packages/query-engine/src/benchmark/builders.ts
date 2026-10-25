@@ -9,9 +9,8 @@
 // anti-rot test enforces that every module export is either fixtured here or
 // explicitly exempted there — adding a builder without either breaks the build.
 //
-// Batch ① (2026-08): session-replays, session-events, and the errors builders
-// only reachable from ErrorsService/telemetry. Remaining modules live on the
-// exemption list and shrink batch by batch.
+// Only builders swept through a pipe, or composed into a fixtured builder, are
+// exempt; every other builder has a fixture, so its tenant scope is checked.
 
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
@@ -554,6 +553,519 @@ const productEventsExploreFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+const RULE_ID = "rule_0af7651916cd43dd"
+const alertWindow = { orgId: ORG_ID, ruleId: RULE_ID, since: START_UTC, until: END_UTC }
+
+// Alerting correctness (alert checks, anomaly detection, liveness).
+const alertingFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		// backend AlertReadModelsService, first page of a rule's check history.
+		module: "alert-checks",
+		name: "listRuleChecksQuery",
+		label: "firstPage",
+		compile: () =>
+			CH.compileUnsafe(CH.listRuleChecksQuery({ limit: 50 }), { orgId: ORG_ID, ruleId: RULE_ID }),
+	},
+	{
+		// Same call site with every optional filter plus the keyset cursor.
+		module: "alert-checks",
+		name: "listRuleChecksQuery",
+		label: "filteredCursor",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.listRuleChecksQuery({
+					limit: 50,
+					groupKey: "api",
+					status: "breached",
+					since: START_UTC,
+					until: END_UTC,
+					beforeTimestamp: END_UTC,
+					beforeGroupKey: "api",
+				}),
+				{
+					...alertWindow,
+					groupKey: "api",
+					status: "breached",
+					beforeTimestamp: END_UTC,
+					beforeGroupKey: "api",
+				},
+			),
+	},
+	{
+		// backend AlertReadModelsService, top groups for the checks chart.
+		module: "alert-checks",
+		name: "alertCheckGroupTotalsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.alertCheckGroupTotalsQuery({ since: START_UTC, until: END_UTC, limit: 20 }),
+				alertWindow,
+			),
+	},
+	{
+		// backend AlertReadModelsService, bucketed checks for those groups.
+		module: "alert-checks",
+		name: "alertChecksSummaryQuery",
+		label: "topGroups",
+		compile: () =>
+			CH.compileUnsafe(CH.alertChecksSummaryQuery({ topGroupKeys: ["api", "web"] }), {
+				...alertWindow,
+				bucketSeconds: 300,
+			}),
+	},
+	{
+		module: "alert-checks",
+		name: "alertChecksSummaryQuery",
+		label: "noGroups",
+		compile: () =>
+			CH.compileUnsafe(CH.alertChecksSummaryQuery({ topGroupKeys: [] }), {
+				...alertWindow,
+				bucketSeconds: 300,
+			}),
+	},
+
+	// backend AnomalyDetectionService, detector baselines on matched hours.
+	{
+		module: "anomaly",
+		name: "anomalyTraceSignalsQuery",
+		label: "matchedHours",
+		compile: () =>
+			CH.compileUnsafe(CH.anomalyTraceSignalsQuery({ hoursOfDay: CH.matchedHoursOfDay(10) }), window),
+	},
+	{
+		module: "anomaly",
+		name: "anomalyLogVolumeQuery",
+		label: "matchedHours",
+		compile: () =>
+			CH.compileUnsafe(CH.anomalyLogVolumeQuery({ hoursOfDay: CH.matchedHoursOfDay(10) }), window),
+	},
+	// AnomalyDetectionService, error-spike current and baseline windows.
+	{
+		module: "anomaly",
+		name: "anomalyErrorSpikeCurrentQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.anomalyErrorSpikeCurrentQuery({}), {
+				orgId: ORG_ID,
+				startTime: START_UTC,
+				endTime: END_UTC,
+			}),
+	},
+	{
+		module: "anomaly",
+		name: "anomalyErrorSpikeBaselineQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.anomalyErrorSpikeBaselineQuery({}), {
+				orgId: ORG_ID,
+				startTime: START_UTC,
+				endTime: END_UTC,
+			}),
+	},
+	// AnomalyDetectionService, the incident detail chart series.
+	{
+		module: "anomaly",
+		name: "anomalyTraceSignalTimeseriesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.anomalyTraceSignalTimeseriesQuery(), {
+				...window,
+				serviceName: "api",
+				deploymentEnv: "production",
+			}),
+	},
+	{
+		module: "anomaly",
+		name: "anomalyLogVolumeTimeseriesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.anomalyLogVolumeTimeseriesQuery(), {
+				...window,
+				serviceName: "api",
+				deploymentEnv: "production",
+			}),
+	},
+	{
+		module: "anomaly",
+		name: "anomalyErrorSpikeTimeseriesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.anomalyErrorSpikeTimeseriesQuery(), {
+				...window,
+				fingerprintHash: FINGERPRINT,
+				deploymentEnv: "production",
+				bucketSeconds: 300,
+			}),
+	},
+	{
+		// No production caller yet; shaped like the fingerprint series above.
+		module: "anomaly",
+		name: "anomalyErrorSpikeServiceTimeseriesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.anomalyErrorSpikeServiceTimeseriesQuery(), {
+				...window,
+				serviceName: "api",
+				deploymentEnv: "production",
+				bucketSeconds: 300,
+			}),
+	},
+
+	// backend telemetry-liveness, the auto-resolve liveness probes.
+	{
+		module: "liveness",
+		name: "serviceLivenessQuery",
+		label: "allEnvironments",
+		compile: () => CH.compileUnsafe(CH.serviceLivenessQuery({}), { ...window, serviceName: "api" }),
+	},
+	{
+		module: "liveness",
+		name: "serviceLivenessQuery",
+		label: "scopedEnvironment",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceLivenessQuery({ scopeToEnvironment: true }), {
+				...window,
+				serviceName: "api",
+				deploymentEnv: "production",
+			}),
+	},
+	{
+		module: "liveness",
+		name: "orgTelemetryPulseQuery",
+		label: "default",
+		compile: () => CH.compileUnionUnsafe(CH.orgTelemetryPulseQuery(), window),
+	},
+]
+
+// Infra pages and the service-map / service-infra compiles.
+const infraFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		// registry `listHosts`.
+		module: "infra",
+		name: "listHostsQuery",
+		label: "searchPaged",
+		compile: () =>
+			CH.compileUnsafe(CH.listHostsQuery({ search: "ip-10", limit: 50, offset: 50 }), window),
+	},
+	{
+		// registry `hostDetailSummary`.
+		module: "infra",
+		name: "hostDetailSummaryQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.hostDetailSummaryQuery({ hostName: "ip-10-0-1-42" }), window),
+	},
+	{
+		// apps/api route `hostInfraTimeseries` network metric.
+		module: "infra",
+		name: "hostNetworkTimeseriesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.hostNetworkTimeseriesQuery({ hostName: "ip-10-0-1-42" }), {
+				...window,
+				bucketSeconds: 60,
+			}),
+	},
+	{
+		// registry `listPods`, default sort.
+		module: "infra",
+		name: "listPodsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.listPodsQuery({ limit: 50 }), window),
+	},
+	{
+		// Same call site with a fleet scope, which wraps the list in a scoped subquery.
+		module: "infra",
+		name: "listPodsQuery",
+		label: "scopedFiltered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.listPodsQuery({
+					search: "checkout",
+					namespaces: ["prod"],
+					excludedNodeNames: ["node-a"],
+					scope: "saturated",
+					sortBy: "cpuUsage",
+					sortDir: "desc",
+					limit: 50,
+				}),
+				window,
+			),
+	},
+	{
+		// registry `listPodsCount`.
+		module: "infra",
+		name: "listPodsSummaryQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(CH.listPodsSummaryQuery({ namespaces: ["prod"], clusters: ["eu-1"] }), window),
+	},
+	{
+		// registry `podDetailSummary`.
+		module: "infra",
+		name: "podDetailSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.podDetailSummaryQuery({ podName: "checkout-7d9f", namespace: "prod" }),
+				window,
+			),
+	},
+	{
+		// registry `listWorkloads`.
+		module: "infra",
+		name: "listWorkloadsQuery",
+		label: "deployments",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.listWorkloadsQuery({ kind: "deployment", namespaces: ["prod"], limit: 50 }),
+				window,
+			),
+	},
+	{
+		// registry `workloadDetailSummary`.
+		module: "infra",
+		name: "workloadDetailSummaryQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.workloadDetailSummaryQuery({
+					kind: "deployment",
+					workloadName: "checkout",
+					namespace: "prod",
+				}),
+				window,
+			),
+	},
+	{
+		// registry `serviceWorkloads`.
+		module: "service-infra",
+		name: "serviceWorkloadsSQL",
+		label: "default",
+		compile: () => runCompile(CH.serviceWorkloadsSQL({ services: ["api", "checkout"] }, window)),
+		sampleValues: { workloadKind: "deployment" },
+	},
+	{
+		// backend ServiceMapRollupService, the hourly resolutions rollup.
+		module: "service-map-rollup",
+		name: "serviceMapResolutionsRollupSQL",
+		label: "default",
+		compile: () =>
+			runCompile(
+				CH.serviceMapResolutionsRollupSQL({
+					orgId: ORG_ID,
+					hourStart: START_TIME,
+					hourEnd: END_TIME,
+				}),
+			),
+		sampleValues: { OrgId: ORG_ID },
+	},
+	{
+		// registry `servicePlatforms`.
+		module: "service-map",
+		name: "servicePlatformsSQL",
+		label: "envFiltered",
+		compile: () => runCompile(CH.servicePlatformsSQL({ deploymentEnv: "production" }, window)),
+	},
+]
+
+// Service detail raw fallbacks, health, and single trace/log lookups.
+const remainderFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		// apps/api route `getLog`, keyed by the span it belongs to.
+		module: "logs",
+		name: "getLogByKeyQuery",
+		label: "bySpan",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.getLogByKeyQuery({ serviceName: "api", traceId: TRACE_ID, spanId: SPAN_ID }),
+				{
+					...window,
+					timestamp: START_TIME,
+				},
+			),
+	},
+	{
+		// backend TelemetryReadService, v2 `GET /logs/:id` by record identity.
+		module: "logs",
+		name: "getLogByKeyQuery",
+		label: "byRecordIdentity",
+		compile: () =>
+			CH.compileUnsafe(CH.getLogByKeyQuery({ recordIdentity: FINGERPRINT }), {
+				...window,
+				timestamp: START_TIME,
+			}),
+	},
+	{
+		// registry `serviceEndpointsSummaryRaw`, the pre-0008 fallback.
+		module: "service-endpoints",
+		name: "serviceEndpointsSummaryRawQuery",
+		label: "envFiltered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceEndpointsSummaryRawQuery({
+					serviceName: "api",
+					environments: ["production"],
+					limit: 50,
+				}),
+				window,
+				{ rowSchema: CH.serviceEndpointsSummaryRowSchema },
+			),
+	},
+	{
+		// registry `serviceOperationsSummaryRaw`.
+		module: "service-operations",
+		name: "serviceOperationsSummaryRawQuery",
+		label: "envFiltered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceOperationsSummaryRawQuery({
+					serviceName: "api",
+					environments: ["production"],
+					limit: 50,
+				}),
+				window,
+				{ rowSchema: CH.serviceOperationsSummaryRowSchema },
+			),
+	},
+	{
+		// registry `serviceOperationsTimeseriesRaw`.
+		module: "service-operations",
+		name: "serviceOperationsTimeseriesRawQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceOperationsTimeseriesRawQuery({
+					serviceName: "api",
+					spanNames: ["GET /v2/services", "POST /v2/alerts"],
+					bucketSeconds: 300,
+				}),
+				{ ...window, bucketSeconds: 300 },
+			),
+	},
+	{
+		// registry `serviceHealthSnapshot`.
+		module: "services",
+		name: "serviceHealthSnapshotQuery",
+		label: "envFiltered",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceHealthSnapshotQuery({ environments: ["production"] }), window),
+	},
+	{
+		// registry `serviceHealthBaseline` and TelemetryReadService.
+		module: "services",
+		name: "serviceHealthBaselineQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceHealthBaselineQuery({ environments: ["production"], namespaces: ["backend"] }),
+				window,
+			),
+	},
+	{
+		// backend TelemetryReadService, the org-wide environment list.
+		module: "services",
+		name: "serviceEnvironmentsQuery",
+		label: "orgWide",
+		compile: () => CH.compileUnsafe(CH.serviceEnvironmentsQuery(), window),
+	},
+	{
+		// registry `serviceEnvironments` for one service.
+		module: "services",
+		name: "serviceEnvironmentsQuery",
+		label: "oneService",
+		compile: () => CH.compileUnsafe(CH.serviceEnvironmentsQuery({ serviceName: "api" }), window),
+	},
+	{
+		// registry `serviceUsage` with a comparison period.
+		module: "services",
+		name: "serviceUsageWithPreviousQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceUsageWithPreviousQuery({ serviceName: "api" }), {
+				...window,
+				previousStartTime: "2025-12-30 06:45:00",
+				previousEndTime: START_TIME,
+			}),
+	},
+	{
+		// backend TelemetryReadService, v2 trace search.
+		module: "traces",
+		name: "traceSummariesQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceSummariesQuery({
+					serviceName: "api",
+					hasError: true,
+					httpMethod: "GET",
+					deploymentEnv: "production",
+					limit: 50,
+				}),
+				window,
+			),
+	},
+	{
+		// v2 trace search as the iOS Traces tab sends it: root scope, no filters.
+		module: "traces",
+		name: "traceSummariesQuery",
+		label: "root-scope",
+		compile: () => CH.compileUnsafe(CH.traceSummariesQuery({ spanScope: "root", limit: 51 }), window),
+	},
+	{
+		// v2 trace search, root scope with a filter trace_list_mv cannot express.
+		module: "traces",
+		name: "traceSummariesQuery",
+		label: "root-scope-raw",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceSummariesQuery({
+					spanScope: "root",
+					httpRoute: "/users/:id",
+					hasError: true,
+					limit: 51,
+				}),
+				window,
+			),
+	},
+	{
+		// runtime query engine, grouped traces list.
+		module: "traces",
+		name: "traceListQuery",
+		label: "grouped",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceListQuery({ serviceName: "api", rootOnly: false, limit: 25, sortBy: "timestamp" }),
+				window,
+			),
+	},
+	{
+		// registry `spanHierarchyProbe`, the unbounded fallback.
+		module: "errors",
+		name: "traceTimeProbeQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.traceTimeProbeQuery({ traceId: TRACE_ID }), { orgId: ORG_ID }),
+	},
+	{
+		// registry `spanHierarchyProbeRecent`.
+		module: "errors",
+		name: "recentTraceTimeProbeQuery",
+		label: "openEnded",
+		compile: () =>
+			CH.compileUnsafe(CH.recentTraceTimeProbeQuery({ traceId: TRACE_ID }), {
+				orgId: ORG_ID,
+				startTime: START_TIME,
+			}),
+	},
+	{
+		// inspect-trace, the bounded probe tier.
+		module: "errors",
+		name: "recentTraceTimeProbeQuery",
+		label: "endBounded",
+		compile: () =>
+			CH.compileUnsafe(CH.recentTraceTimeProbeQuery({ traceId: TRACE_ID, endBounded: true }), window),
+	},
+]
+
 export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...productEventsFixtures,
 	...productEventsExploreFixtures,
@@ -817,6 +1329,29 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		// query-engine.http.ts spanDetail, after the detail row resolves the span's keys
+		module: "errors",
+		name: "spanEventsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.spanEventsQuery({
+					traceId: TRACE_ID,
+					spanId: SPAN_ID,
+					serviceName: "api",
+					spanName: "GET",
+				}),
+				window,
+			),
+	},
+	{
+		// query-engine.http.ts traceSpanEvents, the trace timeline's event markers
+		module: "errors",
+		name: "spanEventsByTraceQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.spanEventsByTraceQuery({ traceId: TRACE_ID }), window),
+	},
+	{
 		// ErrorsService errorIssuesScan (the scheduled sweep)
 		module: "errors",
 		name: "errorIssuesQuery",
@@ -1034,6 +1569,125 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 
+	// Service API tab — routes/internal/query-engine.http.ts. Totals and timeseries
+	// run the operations splice with migration 0048's HTTP measures; the raw tier
+	// is the per-org fallback when the rollups or those columns are absent.
+	{
+		module: "service-api",
+		name: "serviceEndpointsWithHttpQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceEndpointsWithHttpQuery({ serviceName: "api", limit: 50 }), window, {
+				rowSchema: CH.serviceEndpointsWithHttpRowSchema,
+			}),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTotalsQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTotalsQuery({ serviceName: "api", environments: ["production"] }),
+				window,
+				{
+					rowSchema: CH.serviceApiTotalsRowSchema,
+				},
+			),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTotalsQuery",
+		label: "rawTier",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceApiTotalsQuery({ serviceName: "api", tiers: "raw" }), window, {
+				rowSchema: CH.serviceApiTotalsRowSchema,
+			}),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTimeseriesQuery",
+		label: "mergedSubHour",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTimeseriesQuery({ serviceName: "api", bucketSeconds: 300 }),
+				{ ...window, bucketSeconds: 300 },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTimeseriesQuery",
+		label: "perEndpointHourly",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTimeseriesQuery({
+					serviceName: "api",
+					bucketSeconds: 3600,
+					spanNames: ["GET /v2/services", "POST /v2/alerts"],
+				}),
+				{ ...window, bucketSeconds: 3600 },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	},
+	{
+		module: "service-api",
+		name: "serviceApiTimeseriesQuery",
+		label: "rawTier",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceApiTimeseriesQuery({ serviceName: "api", bucketSeconds: 300, tiers: "raw" }),
+				{ ...window, bucketSeconds: 300 },
+				{ rowSchema: CH.serviceApiTimeseriesRowSchema },
+			),
+	},
+	// Endpoint detail — one hour-grain tier off service_endpoint_details_hourly.
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointStatusBreakdownQuery",
+		label: "allEndpoints",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceEndpointStatusBreakdownQuery({ serviceName: "api" }), window, {
+				rowSchema: CH.serviceEndpointStatusBreakdownRowSchema,
+			}),
+	},
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointStatusBreakdownQuery",
+		label: "oneEndpoint",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceEndpointStatusBreakdownQuery({
+					serviceName: "api",
+					environments: ["production"],
+					spanName: "GET /v2/services",
+				}),
+				window,
+				{ rowSchema: CH.serviceEndpointStatusBreakdownRowSchema },
+			),
+	},
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointDistributionQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceEndpointDistributionQuery({ serviceName: "api", spanName: "GET /v2/services" }),
+				window,
+				{ rowSchema: CH.serviceEndpointDistributionRowSchema },
+			),
+	},
+	{
+		module: "service-endpoint-details",
+		name: "serviceEndpointSlowestQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceEndpointSlowestQuery({ serviceName: "api", spanName: "GET /v2/services" }),
+				window,
+				{ rowSchema: CH.serviceEndpointSlowestRowSchema },
+			),
+	},
+
 	// Releases page — routes/internal/query-engine.http.ts `releasesList` and
 	// `releaseDetail`. Same splice as the services list, grouped one level
 	// finer (per commit), plus the error-events bridge keyed on the version.
@@ -1120,6 +1774,82 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "allRuns",
+		compile: () => CH.compileUnsafe(CH.ciRunsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciRunsQuery({
+					pipeline: "CI",
+					repository: "api",
+					branch: "main",
+					result: "failure",
+					limit: 50,
+				}),
+				window,
+			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciFailedJobsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.ciFailedJobsQuery({ traceIds: ["abc123"] }), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunsQuery",
+		label: "pageAfterCursor",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciRunsQuery({
+					ranOnly: true,
+					before: { startedAt: START_UTC, traceId: "abc123" },
+					limit: 51,
+				}),
+				{ ...window, beforeStartedAt: START_UTC, beforeTraceId: "abc123" },
+			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunTotalsQuery",
+		label: "allWorkflows",
+		compile: () => CH.compileUnsafe(CH.ciRunTotalsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciRunSeriesQuery",
+		label: "sixHourly",
+		compile: () => CH.compileUnsafe(CH.ciRunSeriesQuery({}), { ...window, bucketSeconds: 21_600 }),
+	},
+	{
+		module: "ci-runs",
+		name: "ciPipelineStatsQuery",
+		label: "oneRepository",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.ciPipelineStatsQuery({ owner: "acme", repository: "api", pipeline: "CI" }),
+				window,
+			),
+	},
+	{
+		module: "ci-runs",
+		name: "ciJobStatsQuery",
+		label: "allWorkflows",
+		compile: () => CH.compileUnsafe(CH.ciJobStatsQuery({}), window),
+	},
+	{
+		module: "ci-runs",
+		name: "ciQueueTotalsQuery",
+		label: "allWorkflows",
+		compile: () => CH.compileUnsafe(CH.ciQueueTotalsQuery({}), window),
+	},
+	{
 		module: "pr-review",
 		name: "operationTrafficHourlyQuery",
 		label: "allServices",
@@ -1188,6 +1918,44 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				}),
 				window,
 			),
+	},
+
+	// SourceUsageService: the sources list totals and one source's hourly chart.
+	{
+		module: "source-usage",
+		name: "sourceUsageTotalsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.sourceUsageTotalsQuery(), window),
+	},
+	{
+		module: "source-usage",
+		name: "sourceUsageHourlyQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.sourceUsageHourlyQuery(), {
+				...window,
+				sourceId: "src_aXunrkWtzvXSkw9Z2smcft",
+			}),
+	},
+
+	// AwsConnectionService.ingest: what one connection's metric stream stored.
+	{
+		module: "aws-ingest",
+		name: "awsIngestQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.awsIngestQuery(), {
+				...window,
+				connectionId: "018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8",
+			}),
+	},
+
+	// apps/cli `serviceHasTelemetry`: the `-s <name>` typo check.
+	{
+		module: "services",
+		name: "servicePresenceQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.servicePresenceQuery({ serviceName: "checkout" }), window),
 	},
 
 	// Service-catalog hourly-rollup splice.
@@ -1636,6 +2404,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			CH.compileUnsafe(CH.serviceDependenciesForServiceQuery({ serviceName: "web" }), window),
 	},
 	{
+		module: "service-map",
+		name: "serviceDependenciesInvolvingServiceQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.serviceDependenciesInvolvingServiceQuery({ serviceName: "web" }), window),
+	},
+	{
 		// Hourly MV UNION ALL the two partial hours from raw traces. Absent from
 		// this catalog until 2026-08-30, which is how its splice drifted: the
 		// hourly branch floored the start to the hour while the raw branch covered
@@ -1690,6 +2465,22 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "serviceDbTopQueriesSQL",
 		label: "default",
 		compile: () => runCompile(CH.serviceDbTopQueriesSQL({ ...window, dbSystem: "postgresql" })),
+	},
+	{
+		// apps/api/src/routes/queries.ts gcpCloudSqlStatementSpans.
+		module: "service-map",
+		name: "serviceDbQuerySpansQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.serviceDbQuerySpansQuery({
+					dbSystem: "postgresql",
+					dbNamespaces: ["orders"],
+					queryKeys: ["11640393269246331608"],
+					limit: 5,
+				}),
+				window,
+			),
 	},
 	{
 		// Hourly MV UNION ALL raw traces, minus the internal-resolution anti-join.
@@ -1762,4 +2553,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () => CH.compileUnsafe(CH.activeOrgsByLogsQuery(), { startTime: START_TIME }),
 		sampleValues: { orgId: ORG_ID },
 	},
+
+	...alertingFixtures,
+	...infraFixtures,
+	...remainderFixtures,
 ]

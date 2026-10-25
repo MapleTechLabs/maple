@@ -10,7 +10,7 @@
 		"schemas": "bun run scripts/generate-schemas.ts",
 		"schemas:check": "bun run scripts/generate-schemas.ts --check",
 		"test": "bun run schemas:check && vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
 		"effect": "catalog:effect"

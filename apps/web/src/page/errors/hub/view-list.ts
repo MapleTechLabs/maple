@@ -1,0 +1,131 @@
+import type { ErrorSignal } from "../../../lib/models/error-signal"
+import { Option } from "effect"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { button } from "../../../ui/button"
+import { toLoadFailure } from "../../../data/load-failure"
+import { errorState } from "../../../ui/error-state"
+import { skeletonList } from "../../../ui/skeleton"
+import { MountRowSelect } from "./command"
+import { listFailureOf, type ListStatus, type PagingState, pagingOf } from "./derive"
+import { bulkBar } from "./view-bulk"
+import { hubEmpty } from "./view-empty"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { type HeaderSelection, type RowState, signalHeader, signalRow, signalRowSkeleton } from "./view-row"
+
+// `ErrorsHubView`'s body: skeleton rows, the retry card, the rows, the empty states and paging.
+
+type H = HtmlBuilder<Message>
+
+/** The fallback when a failed list carries no error of its own. */
+const LIST_FAILURE = toLoadFailure("The errors list could not be loaded.")
+
+const SKELETON_ROWS = 8
+const LOAD_MORE_SKELETON_ROWS = 3
+
+const loadingBody = (h: H): ReadonlyArray<Html> => [
+	signalHeader(h, null),
+	skeletonList(h, {
+		rows: SKELETON_ROWS,
+		renderRow: (index) => signalRowSkeleton(h, index),
+		className: "gap-0 divide-y divide-border/40",
+	}),
+]
+
+const failedBody = (h: H, model: Model): ReadonlyArray<Html> => [
+	h.div(
+		[h.Class("p-4")],
+		[
+			errorState(h, {
+				failure: Option.getOrElse(listFailureOf(model), () => LIST_FAILURE),
+				title: "Failed to load errors",
+				onRetry: Message.ClickedRetry(),
+			}),
+		],
+	),
+]
+
+/** The bottom of a page that is not the bottom of the list. */
+const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => {
+	if (paging === "end") return []
+	if (paging === "loading") {
+		return [
+			skeletonList(h, {
+				rows: LOAD_MORE_SKELETON_ROWS,
+				renderRow: (index) => signalRowSkeleton(h, index),
+				className: "gap-0 divide-y divide-border/40 border-t border-border/40",
+			}),
+		]
+	}
+	return [
+		h.div(
+			[h.Class("flex items-center justify-center gap-3 border-t border-border/40 p-4")],
+			[
+				...(paging === "failed"
+					? [
+							h.span(
+								[h.Class("text-xs text-muted-foreground")],
+								["More errors could not be loaded."],
+							),
+						]
+					: []),
+				loadMoreButton(h, paging === "failed" ? "Retry" : "Load more"),
+			],
+		),
+	]
+}
+
+/** `LoadMoreButton`: an outline sm Button. */
+const loadMoreButton = (h: H, label: string): Html =>
+	button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedLoadMore())] }, [label])
+
+export type ListInputs = Readonly<{
+	status: ListStatus
+	signals: ReadonlyArray<ErrorSignal>
+	rowState: (signal: ErrorSignal) => RowState
+	isNarrowed: boolean
+}>
+
+/** The rows, or the empty state, under the column header. */
+const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> => {
+	const { signals } = inputs
+	if (signals.length === 0) {
+		return [
+			h.div([h.Key("empty"), h.Class("contents")], [hubEmpty(h, model, inputs.isNarrowed)]),
+			...bulkBar(h, model),
+		]
+	}
+	const ids = signals.map((signal) => signal.id)
+	const selection: HeaderSelection =
+		model.selectedIds.length === 0
+			? "none"
+			: ids.every((id) => model.selectedIds.includes(id))
+				? "all"
+				: "some"
+	return [
+		h.div(
+			[h.Key("rows")],
+			[
+				signalHeader(h, selection),
+				h.div(
+					[h.Role("list"), h.Class("divide-y divide-border/40"), h.OnMount(MountRowSelect())],
+					signals.map((signal) =>
+						h.div(
+							[h.Key(signal.id), h.Role("listitem")],
+							[signalRow(h, signal, inputs.rowState(signal))],
+						),
+					),
+				),
+				...pagingFooter(h, pagingOf(model)),
+			],
+		),
+		...bulkBar(h, model),
+	]
+}
+
+export const listBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> =>
+	inputs.status === "loading"
+		? loadingBody(h)
+		: inputs.status === "failed"
+			? failedBody(h, model)
+			: readyBody(h, model, inputs)

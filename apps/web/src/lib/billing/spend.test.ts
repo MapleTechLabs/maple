@@ -7,10 +7,17 @@ import type {
 	CatalogPlan,
 	DailySpendResponse,
 } from "@maple/domain/http"
-import { buildCumulativeSeries, buildSpendModel, featureUnit, formatRateLabel } from "./spend"
+import {
+	buildCumulativeSeries,
+	buildSpendModel,
+	costBreakdown,
+	featureUnit,
+	formatRateLabel,
+	rateCaption,
+	usageMeter,
+} from "./spend"
 
-// Mock builders construct only the consumed subset of each domain schema, the
-// same approach cost-estimate.test.ts takes.
+// Mock builders construct only the consumed subset of each domain schema.
 const CYCLE_START = Date.UTC(2026, 6, 1)
 const CYCLE_END = Date.UTC(2026, 7, 1)
 const NOW = Date.UTC(2026, 6, 29, 12)
@@ -24,8 +31,8 @@ const startupPlan = {
 		{ featureId: "traces", included: 100, price: { amount: 0.3 } },
 		{ featureId: "metrics", included: 100, price: { amount: 0.3 } },
 		{ featureId: "browser_sessions", included: 5_000, price: { amount: 0.002 } },
-		// Quoted per 1,000 events: `amount` is the price of one billing block.
-		{ featureId: "product_events", included: 1_000_000, price: { amount: 0.05, billingUnits: 1_000 } },
+		// Billed per 1,000 events: `amount` is the price of one billing block.
+		{ featureId: "product_events", included: 1_000_000, price: { amount: 0.005, billingUnits: 1_000 } },
 	],
 } as CatalogPlan
 
@@ -203,7 +210,7 @@ describe("buildSpendModel", () => {
 		expect(result?.partial).toBe(true)
 	})
 
-	it("prices product events per event from a rate quoted per 1,000", () => {
+	it("prices product events per event from a rate billed per 1,000", () => {
 		const result = buildSpendModel({
 			customer: buildCustomer(),
 			plans: [startupPlan],
@@ -214,12 +221,40 @@ describe("buildSpendModel", () => {
 
 		const events = result.features.find((feature) => feature.featureId === "product_events")
 		if (events === undefined) throw new Error("expected product_events")
-		// 400,000 events over × $0.05 / 1,000 = $20 — NOT 400,000 × $0.05.
+		// 400,000 events over × $0.005 / 1,000 = $2, NOT 400,000 × $0.005.
 		expect(events.overageUnits).toBe(400_000)
-		expect(events.overageCents).toBe(2_000)
-		expect(events.ratePerUnit).toBeCloseTo(0.00005, 10)
+		expect(events.overageCents).toBe(200)
+		expect(events.ratePerUnit).toBeCloseTo(0.000005, 12)
 		expect(events.billingUnits).toBe(1_000)
 		expect(result.topDriver?.featureId).toBe("product_events")
+	})
+
+	it("captions a feature with no rate in words, never a bare dash", () => {
+		const customer = buildCustomer({
+			balances: {
+				logs: { granted: 100, overageAllowed: false },
+				traces: { granted: 100 },
+				metrics: { granted: 100 },
+				browser_sessions: { granted: 5_000 },
+				product_events: { unlimited: true },
+			},
+		})
+		const plan = {
+			...startupPlan,
+			items: startupPlan.items.filter((item) => item.featureId !== "metrics"),
+		}
+		const result = buildSpendModel({ customer, plans: [plan], usage, nowMs: NOW })
+		if (result === null) throw new Error("expected a model")
+		const captions = Object.fromEntries(
+			result.features.map((feature) => [feature.featureId, rateCaption(feature)]),
+		)
+		expect(captions).toEqual({
+			logs: "No overage",
+			traces: "$0.30/GB",
+			metrics: "Rate unavailable",
+			browser_sessions: "$0.002/session",
+			product_events: "Included",
+		})
 	})
 
 	it("labels rates the way the price list quotes them", () => {
@@ -233,7 +268,7 @@ describe("buildSpendModel", () => {
 			traces: "$0.30/GB",
 			metrics: "$0.30/GB",
 			browser_sessions: "$0.002/session",
-			product_events: "$0.05/1,000 events",
+			product_events: "$5/1M events",
 		})
 		expect(featureUnit("product_events")).toBe("events")
 		expect(featureUnit("browser_sessions")).toBe("sessions")
@@ -249,6 +284,133 @@ describe("buildSpendModel", () => {
 		})
 		expect(result?.cycle.startMs).toBe(Date.UTC(2026, 6, 1))
 		expect(result?.baseCents).toBe(0)
+	})
+})
+
+describe("costBreakdown", () => {
+	const byoc = {
+		id: "bringyourowncloud",
+		name: "Bring Your Own Cloud",
+		addOn: true,
+		price: { amount: 99, interval: "month" },
+		items: [],
+	} as CatalogPlan
+	const withAddOn = (addOn: Partial<BillingSubscription>) =>
+		buildSpendModel({
+			customer: buildCustomer({
+				subscriptions: [
+					{
+						planId: "startup",
+						status: "active",
+						addOn: false,
+						currentPeriodStart: CYCLE_START,
+						currentPeriodEnd: CYCLE_END,
+					},
+					{ planId: "bringyourowncloud", status: "active", addOn: true, ...addOn },
+				],
+			}),
+			plans: [startupPlan, byoc],
+			usage,
+			nowMs: NOW,
+		})
+
+	it("lists plan, add-on and one overage line that sum to the spend figure", () => {
+		const result = withAddOn({})
+		if (result === null) throw new Error("expected a model")
+		const lines = costBreakdown(result)
+
+		expect(lines.map((line) => [line.label, line.cents])).toEqual([
+			["Startup plan", 3_900],
+			["Bring your own cloud add-on", 9_900],
+			["Usage overage", result.overageCents],
+		])
+		expect(lines.reduce((sum, line) => sum + (line.cents ?? 0), 0)).toBe(result.spendCents)
+		expect(lines[2]?.detail).toBe(
+			"Logs, traces, metrics and browser sessions past what's included, per feature in Usage",
+		)
+	})
+
+	it("multiplies an add-on by its quantity in both the breakdown and the spend", () => {
+		const result = withAddOn({ quantity: 2 })
+		if (result === null) throw new Error("expected a model")
+
+		expect(result.baseCents).toBe(3_900 + 2 * 9_900)
+		expect(costBreakdown(result)[1]?.cents).toBe(2 * 9_900)
+	})
+
+	it("keeps an add-on missing from the catalog as an unitemized charge and marks the spend partial", () => {
+		const result = buildSpendModel({
+			customer: buildCustomer({
+				subscriptions: [
+					{
+						planId: "startup",
+						status: "active",
+						addOn: false,
+						currentPeriodStart: CYCLE_START,
+						currentPeriodEnd: CYCLE_END,
+					},
+					{ planId: "retired_addon", status: "active", addOn: true },
+				],
+			}),
+			plans: [startupPlan],
+			usage,
+			nowMs: NOW,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		expect(result.partial).toBe(true)
+		expect(result.baseCents).toBe(3_900)
+		expect(costBreakdown(result).map((line) => [line.label, line.cents])).toEqual([
+			["Startup plan", 3_900],
+			["retired_addon add-on", null],
+			["Usage overage", result.overageCents],
+		])
+	})
+
+	it("stays complete for an add-on billed by usage alone", () => {
+		const result = buildSpendModel({
+			customer: buildCustomer({
+				subscriptions: [
+					{
+						planId: "startup",
+						status: "active",
+						addOn: false,
+						currentPeriodStart: CYCLE_START,
+						currentPeriodEnd: CYCLE_END,
+					},
+					{ planId: "usage_addon", status: "active", addOn: true },
+				],
+			}),
+			plans: [
+				startupPlan,
+				{
+					id: "usage_addon",
+					name: "Usage add-on",
+					addOn: true,
+					items: [{ featureId: "logs", included: 10 }],
+				} as CatalogPlan,
+			],
+			usage,
+			nowMs: NOW,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		expect(result.partial).toBe(false)
+		expect(costBreakdown(result)[1]?.cents).toBe(0)
+	})
+
+	it("does not itemize fixed fees for a plan it cannot price", () => {
+		const result = buildSpendModel({
+			customer: buildCustomer({
+				subscriptions: [{ planId: "legacy_pro", status: "active", addOn: false }],
+			}),
+			plans: [startupPlan],
+			usage,
+			nowMs: NOW,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		expect(costBreakdown(result).map((line) => line.cents)).toEqual([null, result.overageCents])
 	})
 })
 
@@ -383,5 +545,32 @@ describe("buildCumulativeSeries", () => {
 		const spendModel = model()
 		if (spendModel === null) throw new Error("expected a model")
 		expect(buildCumulativeSeries({ daily: undefined, model: spendModel })).toEqual([])
+	})
+})
+
+describe("usageMeter", () => {
+	const meters = (balances: Record<string, Partial<BillingBalance>>, total: BillingUsage["total"]) => {
+		const result = buildSpendModel({
+			customer: buildCustomer({ balances }),
+			plans: [startupPlan],
+			usage: total,
+			nowMs: NOW,
+		})
+		if (result === null) throw new Error("expected a model")
+		return Object.fromEntries(result.features.map((feature) => [feature.featureId, usageMeter(feature)]))
+	}
+
+	it("leaves an unlimited feature's bar empty instead of full", () => {
+		const result = meters({ logs: { granted: 100 }, product_events: { unlimited: true } }, {
+			logs: { sum: 50 },
+			product_events: { sum: 2_000_000 },
+		} as BillingUsage["total"])
+		expect(result.product_events).toEqual({ included: 0, overage: 0 })
+		expect(result.logs).toEqual({ included: 50, overage: 0 })
+	})
+
+	it("splits the bar at the allotment once usage runs past it", () => {
+		const result = meters({ logs: { granted: 100 } }, { logs: { sum: 400 } } as BillingUsage["total"])
+		expect(result.logs).toEqual({ included: 25, overage: 75 })
 	})
 })

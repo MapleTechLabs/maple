@@ -42,10 +42,11 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            # Installs the rust version pinned in the root mise.toml (was a floating
-            # `stable`). Keep rust-cache below — mise caches the toolchain, not the
-            # cargo registry / target dir.
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+            # mise caches the pinned toolchain; rust-cache below covers the cargo
+            # registry and target dir.
+            - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+              with:
+                  install_args: rust
 
             - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
               with:

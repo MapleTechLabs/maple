@@ -107,9 +107,20 @@ describe("agentPolicyFor", () => {
 		)
 	})
 
-	/** The review sees its clock and a warning at 80%; a chat turn keeps its cached prompt untouched. */
-	it("shows the review its run status, and no other agent", () => {
-		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT).runStatus).toBe("appended")
-		expect(agentPolicyFor(AGENTS.default!, GLM_CONTEXT).runStatus).toBe("off")
+	/**
+	 * Unattended passes see their clock and a warning at 80%, so they submit before the deadline;
+	 * a chat turn keeps its cached prompt untouched.
+	 */
+	it("shows the unattended passes their run status, and not the chat turn", () => {
+		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT, true).runStatus).toBe("appended")
+		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT, true).runStatus).toBe("appended")
+		expect(agentPolicyFor(AGENTS.default!, GLM_CONTEXT, true).runStatus).toBe("off")
+	})
+
+	// An attended follow-up in an `inv-` or `pr-` session runs on the same agent, and must answer
+	// rather than be told to file a partial at the warning.
+	it("keeps the run status off an attended follow-up on an investigation or review", () => {
+		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT, false).runStatus).toBe("off")
+		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT, false).runStatus).toBe("off")
 	})
 })

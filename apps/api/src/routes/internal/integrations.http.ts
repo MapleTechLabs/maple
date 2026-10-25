@@ -10,9 +10,11 @@ import {
 	CloudflareUsageResponse,
 	CurrentTenant,
 	ExternalUserId,
+	GcpResourcesResponse,
 	GithubDeleteRepositoryResponse,
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
+	GithubSetCiTracesResponse,
 	GithubSetPrReviewResponse,
 	GithubPrReviewConfigResponse,
 	GithubPrReviewSettingsResponse,
@@ -29,6 +31,8 @@ import {
 	MapleInternalApi,
 	RailwayDisconnectResponse,
 	RoleName,
+	SupabaseConnectResponse,
+	SupabaseDisconnectResponse,
 	UserId,
 	VCS_COMMIT_DETAILS_MAX_SHAS,
 	VCS_COMMIT_RANGES_MAX,
@@ -53,7 +57,15 @@ import {
 	topTrafficQuery,
 	type TopTrafficGroupDefinition,
 } from "@maple/backend/services/integrations/cloudflare-analytics/queries"
+import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
+import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
+import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
+import {
+	SUPABASE_CALLBACK_PATH,
+	SupabaseOAuthService,
+} from "@maple/backend/services/auth/SupabaseOAuthService"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
@@ -64,6 +76,8 @@ import {
 	GITHUB_CALLBACK_PATH,
 	HAZEL_CALLBACK_PATH,
 } from "@/routes/integrations-callback.http"
+import { isTrustedCallbackOrigin, resolveRequestOrigin } from "@/routes/v2/integrations.http"
+import { makeOAuthCompleter } from "@/routes/oauth-complete"
 
 const asExternalUserId = Schema.decodeUnknownSync(ExternalUserId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -75,32 +89,6 @@ const asUserId = Schema.decodeUnknownSync(UserId)
  * callback handler.
  */
 const CLOUDFLARE_PRIME_TIMEOUT = "20 seconds"
-
-const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): string => {
-	const headers = req.headers as Record<string, string | undefined>
-	const forwardedHost = headers["x-forwarded-host"]
-	const forwardedProto = headers["x-forwarded-proto"]
-	const host = forwardedHost ?? headers.host
-	if (host) {
-		const proto =
-			forwardedProto ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https")
-		return `${proto}://${host}`
-	}
-	// Fall back to parsing req.url which is absolute under wrangler/CF Workers.
-	return Option.match(Option.liftThrowable(() => new URL(req.url))(), {
-		onNone: () => "",
-		onSome: (parsed) => `${parsed.protocol}//${parsed.host}`,
-	})
-}
-
-const resolveCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
-	`${resolveRequestOrigin(req)}${HAZEL_CALLBACK_PATH}`
-
-const resolveGithubCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
-	`${resolveRequestOrigin(req)}${GITHUB_CALLBACK_PATH}`
-
-const resolveCloudflareCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
-	`${resolveRequestOrigin(req)}${CLOUDFLARE_CALLBACK_PATH}`
 
 const requireAdmin = (roles: ReadonlyArray<RoleName>) =>
 	requireAdminRole(
@@ -117,11 +105,37 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const cloudflare = yield* CloudflareOAuthService
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const railway = yield* RailwayMetricsService
+		const supabaseOAuth = yield* SupabaseOAuthService
+		const supabase = yield* SupabaseConnectionService
+		const supabaseLogs = yield* SupabaseLogsService
+		const supabaseInsights = yield* SupabaseInsightsService
+		const gcp = yield* GcpConnectorService
 		const edgeCache = yield* EdgeCacheService
 		const env = yield* Env
+		const completeOAuth = yield* makeOAuthCompleter
+
+		// The callback URL is replayed as `redirect_uri` and its origin comes from a
+		// client-settable header, so it must belong to the app's own host family.
+		const trustedCallbackUrl = (path: string) =>
+			Effect.gen(function* () {
+				const origin = resolveRequestOrigin(yield* HttpServerRequest.HttpServerRequest)
+				if (!isTrustedCallbackOrigin(origin, env)) {
+					return yield* new IntegrationsForbiddenError({
+						message: "Integrations cannot be connected from this host",
+					})
+				}
+				return `${origin}${path}`
+			})
 
 		return (
 			handlers
+				// The caller's own session is the proof: a state only redeems for the user who began it.
+				.handle("oauthComplete", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* completeOAuth(payload, { orgId: tenant.orgId, userId: tenant.userId })
+					}),
+				)
 				.handle("hazelStatus", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -148,9 +162,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						const req = yield* HttpServerRequest.HttpServerRequest
+						const callbackUrl = yield* trustedCallbackUrl(HAZEL_CALLBACK_PATH)
 						const result = yield* hazel.startConnect(tenant.orgId, tenant.userId, {
-							callbackUrl: resolveCallbackUrl(req),
+							callbackUrl,
 							returnTo: payload.returnTo,
 						})
 						return new HazelStartConnectResponse(result)
@@ -396,9 +410,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						const req = yield* HttpServerRequest.HttpServerRequest
+						const callbackUrl = yield* trustedCallbackUrl(CLOUDFLARE_CALLBACK_PATH)
 						const result = yield* cloudflare.startConnect(tenant.orgId, tenant.userId, {
-							callbackUrl: resolveCloudflareCallbackUrl(req),
+							callbackUrl,
 							returnTo: payload.returnTo,
 						})
 						return new CloudflareStartConnectResponse(result)
@@ -463,6 +477,68 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						return new RailwayDisconnectResponse(yield* railway.disconnect(tenant.orgId))
 					}),
 				)
+				// Any member may read the status; every change is an admin action, as for Railway.
+				.handle("supabaseStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* supabase.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("supabaseConnect", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const callbackUrl = yield* trustedCallbackUrl(SUPABASE_CALLBACK_PATH)
+						const result = yield* supabaseOAuth.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl,
+							returnTo: payload.returnTo,
+						})
+						return new SupabaseConnectResponse(result)
+					}),
+				)
+				.handle("supabaseSync", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// Spends the org's Supabase rate limit, so it is an admin action like connect.
+						yield* requireAdmin(tenant.roles)
+						return yield* supabase.sync(tenant.orgId)
+					}),
+				)
+				.handle("supabaseUpdateProject", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						// Drain first: switching a project from drain to polling turns the drain off before polling on.
+						const status = yield* supabase.updateProject(
+							tenant.orgId,
+							tenant.userId,
+							params.ref,
+							payload,
+						)
+						if (payload.logsEnabled === undefined) return status
+						yield* supabaseLogs.setLogsEnabled(tenant.orgId, params.ref, payload.logsEnabled)
+						return yield* supabase.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("supabaseProjectInsights", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* supabaseInsights.getInsights(tenant.orgId, params.ref)
+					}),
+				)
+				.handle("supabaseDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						return new SupabaseDisconnectResponse(yield* supabase.disconnect(tenant.orgId))
+					}),
+				)
+				.handle("gcpResources", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return new GcpResourcesResponse(yield* gcp.resources(tenant.orgId, query))
+					}),
+				)
 				.handle("githubStatus", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -473,6 +549,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							accountLogin: status.accountLogin,
 							accountType: status.accountType,
 							repositorySelection: status.repositorySelection,
+							ciTracesEnabled: status.ciTracesEnabled,
 							repositories: status.repositories,
 						})
 					}),
@@ -481,9 +558,9 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						const req = yield* HttpServerRequest.HttpServerRequest
+						const callbackUrl = yield* trustedCallbackUrl(GITHUB_CALLBACK_PATH)
 						const result = yield* github.startConnect(tenant.orgId, tenant.userId, {
-							callbackUrl: resolveGithubCallbackUrl(req),
+							callbackUrl,
 							returnTo: payload.returnTo,
 						})
 						return new GithubStartConnectResponse(result)
@@ -515,6 +592,14 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							payload.trackedBranch,
 						)
 						return new GithubSetTrackedBranchResponse(result)
+					}),
+				)
+				.handle("githubSetCiTraces", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* github.setCiTracesEnabled(tenant.orgId, payload.enabled)
+						return new GithubSetCiTracesResponse(result)
 					}),
 				)
 				.handle("githubSetPrReview", ({ params, payload }) =>

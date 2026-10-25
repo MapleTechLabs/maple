@@ -8,13 +8,16 @@ import { coerceLogRow } from "@maple/query-engine"
 import { countLabel, formatBytes, formatPercent, formatUptime } from "@maple/ui/lib/format"
 import { formatClock } from "@maple/ui/lib/replay-format"
 
-import type { HostRow } from "@/components/infra/host-table"
-import type { Finding } from "@/components/infra/overview/summaries"
-import type { PodRow } from "@/components/infra/pod-table"
-import type { ReleaseServiceImpact } from "@/components/releases/release-model"
-import type { Log } from "@/api/warehouse/logs"
-import { domainThresholdToForm, formatSignalValue } from "@/lib/alerts/form-utils"
-import { formatUsage } from "@/lib/billing/usage"
+import type { ListHostsResponse, ListPodsResponse } from "@maple/domain/http"
+import type { Finding } from "../components/infra/overview/summaries"
+import type { ReleaseServiceImpact } from "../components/releases/release-model"
+import type { Log } from "@maple/web-data/warehouse/logs"
+import { domainThresholdToForm, formatSignalValue } from "@maple/web-data/alerts/form-utils"
+import { formatUsage } from "../lib/billing/usage"
+
+// Relative and domain-typed imports keep this fixture loadable from apps/web.
+type HostRow = ListHostsResponse["data"][number]
+type PodRow = ListPodsResponse["data"][number]
 
 export type WorstCaseMode = "demo" | "worst"
 
@@ -57,7 +60,11 @@ export function formatterCases(mode: WorstCaseMode): ReadonlyArray<FormatterCase
 			c("countLabel", '3, "host"', countLabel(3, "host")),
 			c("formatUsage", "12.5", formatUsage(12.5)),
 			c("formatSignalValue(error_rate)", "0.05", formatSignalValue("error_rate", 0.05)),
-			c("domainThresholdToForm(error_rate)", "0.05", domainThresholdToForm("error_rate", 0.05)),
+			c(
+				"domainThresholdToForm(error_rate)",
+				"0.05",
+				domainThresholdToForm({ signalType: "error_rate" }, 0.05),
+			),
 		]
 	}
 	return [
@@ -84,8 +91,16 @@ export function formatterCases(mode: WorstCaseMode): ReadonlyArray<FormatterCase
 		c("formatUsage (GB)", "NaN", formatUsage(Number.NaN)),
 		c("formatSignalValue(error_rate)", "0.07", formatSignalValue("error_rate", 0.07)),
 		c("formatSignalValue(error_rate)", "0.29", formatSignalValue("error_rate", 0.29)),
-		c("domainThresholdToForm(error_rate)", "0.07", domainThresholdToForm("error_rate", 0.07)),
-		c("domainThresholdToForm(error_rate)", "0.29", domainThresholdToForm("error_rate", 0.29)),
+		c(
+			"domainThresholdToForm(error_rate)",
+			"0.07",
+			domainThresholdToForm({ signalType: "error_rate" }, 0.07),
+		),
+		c(
+			"domainThresholdToForm(error_rate)",
+			"0.29",
+			domainThresholdToForm({ signalType: "error_rate" }, 0.29),
+		),
 	]
 }
 

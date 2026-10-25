@@ -49,7 +49,12 @@ import {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 } from "../limits"
-import { attributeIndexMode, logBodySearchMode, type WarehouseCapabilities } from "../capabilities"
+import {
+	attributeIndexMode,
+	hasWarehouseTable,
+	logBodySearchMode,
+	type WarehouseCapabilities,
+} from "../capabilities"
 import { makeExecuteRawSql } from "./raw-sql"
 import {
 	logsCount,
@@ -93,6 +98,7 @@ export {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 	formatRangeSeconds,
 	maxRangeSecondsForKind,
+	timeWindowViolation,
 	validateRelativeRange,
 } from "../limits"
 export { relativeRangeSeconds, resolveRelativeRange, resolveRelativeRangeToWarehouse } from "../datetime"
@@ -112,7 +118,11 @@ export interface QueryEngineWarehouse<T extends QueryTenant = QueryTenant> {
 	readonly rawSqlQuery: (
 		tenant: T,
 		sql: string,
-		options: { readonly profile: QueryProfileName; readonly context: string },
+		options: {
+			readonly profile: QueryProfileName
+			readonly context: string
+			readonly settings?: WarehouseQuerySettings
+		},
 	) => Effect.Effect<
 		ReadonlyArray<Record<string, unknown>>,
 		WarehouseQueryPathError | RawSqlValidationError
@@ -316,8 +326,6 @@ export function snapToWindow(dateStr: string, windowSeconds: number): string {
 	return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`
 }
 
-const snapSeconds = (dateStr: string): string => snapToWindow(dateStr, CACHE_SNAP_S)
-
 /**
  * Discovery queries (attribute keys/values, facets) change slowly because
  * they're driven by what's been ingested. Use a wider snap window so
@@ -366,16 +374,6 @@ export function cacheTtlForQueryKind(kind: string): number {
 export function buildCacheKey(orgId: string, request: QueryEngineExecuteRequest): string {
 	const snap = snapWindowForQueryKind(request.query.kind)
 	return `${orgId}:${snapToWindow(request.startTime, snap)}:${snapToWindow(request.endTime, snap)}:${canonicalJSON(request.query)}`
-}
-
-export function buildEvaluateCacheKey(orgId: string, request: AlertEvaluateRequest): string {
-	// `source.kind` is part of the key so a spec plan and a raw-SQL plan can
-	// never share an entry.
-	const source =
-		request.source.kind === "spec"
-			? `spec:${canonicalJSON(request.source.query)}`
-			: `raw:${request.source.windowMinutes}:${request.source.sql}`
-	return `eval:${orgId}:${snapSeconds(request.startTime)}:${snapSeconds(request.endTime)}:${request.reducer}:${request.sampleCountStrategy}:${source}`
 }
 
 const DIRECT_CACHE_SNAP_KEYS = new Set(["startTime", "endTime"])
@@ -1132,11 +1130,18 @@ const executeCHUnionQuery = Effect.fnUntraced(function* <
 >(
 	warehouse: QueryEngineWarehouse<T>,
 	tenant: T,
-	query: CH.CHUnionQuery<Output>,
+	query: CH.CHUnionQuery<Output> | ((capabilities: WarehouseCapabilities) => CH.CHUnionQuery<Output>),
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
 ) {
+	if (typeof query === "function") {
+		const compile = (capabilities: WarehouseCapabilities) => CH.compileUnion(query(capabilities), params)
+		return yield* annotateWarehouseError(
+			warehouse.compiledQueryWithCapabilities(tenant, compile, { profile, context }),
+			context,
+		)
+	}
 	const compiled = CH.compileUnion(query, params)
 	return yield* annotateWarehouseError(
 		warehouse.compiledQuery(tenant, compiled, { profile, context }),
@@ -1415,7 +1420,7 @@ const isMissingTraceFacetsRollup = (error: unknown): boolean => {
 /**
  * `trace_facets_hourly` ships in a `requiredForIngest: false` migration (0034),
  * so a BYO cluster may not have it yet; the sidebar then reads `trace_list_mv`.
- * Only a read that actually included the rollup can be missing it.
+ * The capability probe skips it up front; this retry covers an unprobed cluster.
  */
 const withTraceFacetsFallback = <A, E, R>(
 	orgId: OrgId,
@@ -2141,7 +2146,13 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						executeCHUnionQuery(
 							warehouse,
 							tenant,
-							CH.tracesFacetsQuery({ ...opts, facet, rawOnly }),
+							(capabilities) =>
+								CH.tracesFacetsQuery({
+									...opts,
+									facet,
+									rawOnly:
+										rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+								}),
 							baseParams,
 							facet ? `tracesFacets:${facet}` : "tracesFacets",
 							"discovery",
@@ -2274,7 +2285,11 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					executeCHQuery(
 						warehouse,
 						tenant,
-						CH.tracesDurationStatsQuery({ ...opts, rawOnly }),
+						(capabilities) =>
+							CH.tracesDurationStatsQuery({
+								...opts,
+								rawOnly: rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+							}),
 						{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 						"tracesDurationStats",
 					),
@@ -2298,9 +2313,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		if (request.query.kind === "attributeValues") {
 			// Per-metric scoping reads the raw metric table (see attributeKeys above).
+			const { metricName, metricNames, metricType } = request.query
 			const metricScoped =
-				request.query.source === "metrics" && request.query.metricName && request.query.metricType
-					? { metricName: request.query.metricName, metricType: request.query.metricType }
+				request.query.source === "metrics" && (metricName || metricNames) && metricType
+					? { metricName, metricNames, metricType }
 					: undefined
 			const queryFn = Match.value(request.query.scope).pipe(
 				Match.when("resource", () => CH.resourceAttributeValuesQuery),
@@ -2314,6 +2330,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				metricScoped
 					? CH.metricScopedAttributeValuesQuery({
 							metricType: metricScoped.metricType,
+							metricNames: metricScoped.metricNames,
+							scope: request.query.scope === "resource" ? "resource" : "metric",
 							attributeKey: request.query.attributeKey,
 							limit: request.query.limit,
 						})
@@ -2322,7 +2340,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					orgId: tenant.orgId,
 					startTime: request.startTime,
 					endTime: request.endTime,
-					...(metricScoped ? { metricName: metricScoped.metricName } : undefined),
+					...(metricScoped?.metricName && !metricScoped.metricNames
+						? { metricName: metricScoped.metricName }
+						: undefined),
 				},
 				metricScoped ? "attributeValues:metric-scoped" : `attributeValues:${request.query.scope}`,
 				"discovery",
@@ -2426,7 +2446,13 @@ const RawSqlAlertRowSchema = Schema.Struct({
  */
 export type AlertBucketSource =
 	| { readonly kind: "spec"; readonly query: QuerySpec }
-	| { readonly kind: "raw_sql"; readonly sql: string; readonly windowMinutes: number }
+	| {
+			readonly kind: "raw_sql"
+			readonly sql: string
+			readonly windowMinutes: number
+			/** The rule's check interval, which sets the query's time and memory limits. */
+			readonly intervalMinutes: number
+	  }
 
 /** Structural request slice that {@link computeAlertBuckets} needs for one range. */
 export interface AlertBucketRequest {
@@ -2696,6 +2722,7 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 		granularitySeconds,
 		workload: "alert",
 		context: "alertRawQuery",
+		alertIntervalMinutes: source.intervalMinutes,
 		wholeRange: range.wholeRange,
 	}).pipe(
 		Effect.catchTag("@maple/http/errors/RawSqlValidationError", (error) =>
@@ -2826,8 +2853,8 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 			wholeRange: true,
 		}
 		const load = computeAlertBuckets(warehouse, tenant, bucketRequest, bucketSeconds)
-		// Raw SQL may contain volatile functions. Keep its existing whole-result
-		// cache policy; only structured queries share buckets across reducers.
+		// Raw SQL may contain volatile functions, so it always runs; only
+		// structured queries share buckets across reducers.
 		const obs = yield* request.source.kind === "spec"
 			? memoizeAlertBuckets(
 					warehouse,

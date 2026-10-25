@@ -1,0 +1,9 @@
+# The deploy image (apps/scraper/alchemy.run.ts). Context is apps/scraper/dist, holding the
+# single-file bundle from `bun run --cwd apps/scraper bundle`.
+FROM oven/bun:1.4.0
+WORKDIR /app
+COPY scraper.js ./
+# The scraper writes no files and listens above 1024, so it runs as the image's unprivileged user.
+USER bun
+EXPOSE 3475
+CMD ["bun", "scraper.js"]

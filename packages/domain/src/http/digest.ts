@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema } from "effect"
+import { DateTime, Option, Schema } from "effect"
 import { SessionAuthorization } from "./current-tenant"
 
 export const DigestSubscriptionId = Schema.String.check(Schema.isUUID()).pipe(
@@ -17,7 +17,10 @@ export class DigestSubscriptionResponse extends Schema.Class<DigestSubscriptionR
 	id: DigestSubscriptionId,
 	email: Schema.String,
 	enabled: Schema.Boolean,
+	/** 0 = Sunday ... 6 = Saturday, in `timezone`. */
 	dayOfWeek: Schema.Number,
+	/** Local hour (0-23) in `timezone` from which the digests are due. */
+	sendHour: Schema.Number,
 	timezone: Schema.String,
 	/** Empty = every namespace / environment. */
 	namespaces: Schema.Array(Schema.String),
@@ -37,13 +40,33 @@ export class DigestSubscriptionResponse extends Schema.Class<DigestSubscriptionR
  */
 const ScopeValues = Schema.Array(Schema.String.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(50))
 
+/** 0 = Sunday ... 6 = Saturday, matching `Date#getDay`. */
+export const DigestDayOfWeek = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isBetween({ minimum: 0, maximum: 6 }),
+)
+
+export const DigestSendHour = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isBetween({ minimum: 0, maximum: 23 }),
+)
+
+/** An IANA zone the runtime knows, so the scheduler never meets one it cannot resolve. */
+export const DigestTimeZone = Schema.String.check(
+	Schema.isMaxLength(64),
+	Schema.makeFilter((zone: string) => Option.isSome(DateTime.zoneMakeNamed(zone)) || "unknown time zone", {
+		identifier: "DigestTimeZone",
+	}),
+)
+
 export class UpsertDigestSubscriptionRequest extends Schema.Class<UpsertDigestSubscriptionRequest>(
 	"UpsertDigestSubscriptionRequest",
 )({
-	email: Schema.String,
+	// No address field: the server sends to the member's own verified primary email.
 	enabled: Schema.optionalKey(Schema.Boolean),
-	dayOfWeek: Schema.optionalKey(Schema.Number),
-	timezone: Schema.optionalKey(Schema.String),
+	dayOfWeek: Schema.optionalKey(DigestDayOfWeek),
+	sendHour: Schema.optionalKey(DigestSendHour),
+	timezone: Schema.optionalKey(DigestTimeZone),
 	namespaces: Schema.optionalKey(ScopeValues),
 	environments: Schema.optionalKey(ScopeValues),
 	webAnalyticsEnabled: Schema.optionalKey(Schema.Boolean),
@@ -83,6 +106,14 @@ export class DigestRenderError extends Schema.TaggedError<DigestRenderError>()(
 		message: Schema.String,
 	},
 	{ httpApiStatus: 500 },
+) {}
+
+export class DigestEmailUnavailableError extends Schema.TaggedError<DigestEmailUnavailableError>()(
+	"@maple/http/errors/DigestEmailUnavailableError",
+	{
+		message: Schema.String,
+	},
+	{ httpApiStatus: 422 },
 ) {}
 
 export class DigestUnsubscribeTokenInvalidError extends Schema.TaggedError<DigestUnsubscribeTokenInvalidError>()(
@@ -131,7 +162,7 @@ export class DigestApiGroup extends HttpApiGroup.make("digest")
 		HttpApiEndpoint.post("upsertSubscription", "/", {
 			payload: UpsertDigestSubscriptionRequest,
 			success: DigestSubscriptionResponse,
-			error: [DigestPersistenceError, DigestNotFoundError],
+			error: [DigestPersistenceError, DigestNotFoundError, DigestEmailUnavailableError],
 		}),
 	)
 	.add(

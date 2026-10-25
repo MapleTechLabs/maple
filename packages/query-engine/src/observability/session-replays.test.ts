@@ -21,12 +21,12 @@ interface MockResponses {
  * Mock executor that records each SQL string and dispatches rows by which query
  * is running, matched on its source table. This stays correct regardless of the
  * execution order of the concurrent detail (`session_replays`) and activity
- * (`session_events`) reads; the trace summaries read `trace_detail_spans`.
+ * (`session_events`) reads; the trace summaries read `traces` through `trace_index`.
  */
 const makeExecutor = (captured: Captured, responses: MockResponses): WarehouseExecutorApi => {
 	const rowsFor = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 		if (sql.includes("session_events")) return responses.activity ?? []
-		if (sql.includes("trace_detail_spans")) return responses.summaries ?? []
+		if (sql.includes("FROM trace_index")) return responses.summaries ?? []
 		return responses.detail ?? []
 	}
 	return {
@@ -116,7 +116,7 @@ describe("getSessionTraces", () => {
 			assert.deepStrictEqual(out.traces, [])
 			assert.strictEqual(out.totalTraceCount, 0)
 			// Detail + activity run concurrently; the summaries query never does.
-			assert.isUndefined(sqlFor(captured, "trace_detail_spans"))
+			assert.isUndefined(sqlFor(captured, "FROM trace_index"))
 		}),
 	)
 
@@ -135,7 +135,7 @@ describe("getSessionTraces", () => {
 			assert.deepStrictEqual(out.traces, [])
 			assert.strictEqual(out.totalTraceCount, 0)
 			// `TraceId IN ()` is never compiled.
-			assert.isUndefined(sqlFor(captured, "trace_detail_spans"))
+			assert.isUndefined(sqlFor(captured, "FROM trace_index"))
 		}),
 	)
 
@@ -175,9 +175,29 @@ describe("getSessionTraces", () => {
 			)
 
 			assert.strictEqual(out.totalTraceCount, 150)
-			const summarySql = sqlFor(captured, "trace_detail_spans")!
+			const summarySql = sqlFor(captured, "FROM trace_index")!
 			assert.include(summarySql, "trace-49")
 			assert.notInclude(summarySql, "trace-50")
+		}),
+	)
+
+	it.effect("bounds the summaries read to the session's span plus 15 minutes", () =>
+		Effect.gen(function* () {
+			const captured: Captured = { sqls: [] }
+			yield* getSessionTraces({ sessionId: "s1" }).pipe(
+				Effect.provide(
+					makeLayer(
+						makeExecutor(captured, {
+							detail: [sessionRow({ sessionId: "s1", traceIds: traceIds(3) })],
+						}),
+					),
+				),
+			)
+
+			const summarySql = sqlFor(captured, "FROM trace_index")!
+			assert.include(summarySql, "traces.Timestamp >= '2025-12-31 23:45:00'")
+			assert.include(summarySql, "traces.Timestamp <= '2026-01-01 00:20:00'")
+			assert.include(summarySql, "trace_index.Bucket <= toDateTime64('2026-01-01 00:20:00.000', 9)")
 		}),
 	)
 
@@ -194,7 +214,7 @@ describe("getSessionTraces", () => {
 				),
 			)
 
-			const summarySql = sqlFor(captured, "trace_detail_spans")!
+			const summarySql = sqlFor(captured, "FROM trace_index")!
 			assert.include(summarySql, "trace-99")
 			assert.notInclude(summarySql, "trace-100")
 		}),

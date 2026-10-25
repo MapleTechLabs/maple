@@ -29,7 +29,6 @@ describe("productEventsPathsQuery", () => {
 	it("scopes every table it reads to the org and derives an org-scoped result", () => {
 		const compiled = compileUnsafe(Result.getOrThrow(productEventsPathsQuery(base)), params)
 		expect(compiled.tenantScope).toBe("single-tenant")
-		expect(compiled.sql).toContain("FROM product_events AS e")
 		expect(compiled.sql).toContain("FROM identity_links")
 		expect(compiled.sql.match(/OrgId = 'org_1'/g)?.length).toBeGreaterThanOrEqual(2)
 	})
@@ -67,10 +66,8 @@ describe("productEventsPathsQuery", () => {
 		expect(sql).toContain("arrayFirstIndex(x -> x.4 = 1, arrayReverse(evs))")
 	})
 
-	it("only reads persons who have the anchor, and computes the hop rows once as a CTE", () => {
+	it("reads product_events twice: once for the anchor, once for the hops", () => {
 		const { sql } = compileUnsafe(Result.getOrThrow(productEventsPathsQuery(base)), params)
-		expect(sql).toContain("WITH path_hops AS")
-		expect(sql).toContain("FROM path_hops AS h")
 		expect(sql.match(/FROM product_events AS e/g)?.length).toBe(2)
 	})
 
@@ -94,7 +91,6 @@ describe("productEventsPathsQuery", () => {
 			"(r.isAnchor = 1 OR (r.kind = 'navigation' AND r.name NOT IN ('heartbeat', '/')))",
 		)
 		expect(sql).toContain("(e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev'")
-		expect(sql).toContain("SessionId AS key")
 		expect(sql).not.toContain("identity_links")
 	})
 
@@ -103,7 +99,7 @@ describe("productEventsPathsQuery", () => {
 			Result.getOrThrow(productEventsPathsQuery({ ...base, filters: { country: "DE" } })),
 			params,
 		)
-		expect(sql).toContain("FROM session_replays AS s")
+		expect(sql).toContain("FROM session_replays")
 		expect(sql).toContain("Country = 'DE'")
 	})
 

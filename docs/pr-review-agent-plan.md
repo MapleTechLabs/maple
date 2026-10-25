@@ -26,7 +26,6 @@ in order, skipping with the reason in brackets:
 
 - the action is `opened`, `reopened`, `synchronize` or `ready_for_review` (`action`);
 - the repository has `pr_review_enabled` (`disabled`);
-- the organization carries the `prreview` rollout flag, see "Staged rollout" (`not_rolled_out`);
 - the PR is not a draft (`draft`) and the job carries a head SHA (`no_head_sha`);
 - the author is not a bot: a `[bot]` suffix, dependabot, renovate or GitHub Actions
   (`bot_author`);
@@ -210,6 +209,27 @@ moved.
 conclude `failure` while an undismissed break is open. It is the only path to a failing check, and
 it rests on facts the service established, never on a model's opinion.
 
+### Personal data and secrets in telemetry
+
+Two layers, both filed as `security` findings with check id `PII-01`:
+
+- **Scan** (`telemetry/privacy.ts`, no model, no warehouse). At submit, every added line of a
+  runtime source file that hands data to telemetry (span attributes and events, `annotateLogs`, log
+  calls, Go/Rust/Python attribute helpers, or an entry of such a call opened above) is checked for
+  sensitive names (keys in key position and identifier chains, split on camelCase and separators,
+  the way clear-text-logging heuristics and scrubbing denylists read them) and recognizable literal
+  values (JWTs, private keys, known API key prefixes, SSNs, Luhn-valid card numbers with an issuer
+  prefix). Names about the value (`tokenCount`, `emailVerified`, `hashedPassword`), entries whose
+  value is derived (a comparison, a presence check, a constant), arguments to a function that
+  derives from them, and lines that redact or hash are skipped, as are lines over 1000 characters,
+  scripts, generated code and migrations. Credentials, government ids and payment data are
+  critical, contact data and whole bodies or header maps warn, client IPs info. One finding per
+  file and kind, naming the other lines, at most 10 per review.
+  `bun run --cwd apps/ai review:checklist <owner/repo> <n>` prints the scan for any pull request.
+- **Reviewer.** The prompt's privacy lens covers what a name cannot show: whole objects, error
+  messages built from input, URLs with tokens, innocently named keys. A reviewer finding with a
+  `PII-*` id on the same line replaces the scan's.
+
 ### After the merge ships
 
 A `closed` event with `merged` stamps the merged pull request's last completed review that has
@@ -237,32 +257,11 @@ minutes, and settles `failed` once the 48 h window passes. A review that finishe
 request merged schedules its own look, and a reviewed head that is reviewed again clears the old
 one.
 
-## Staged rollout
+## Availability
 
-Merging this feature turns it on for no one. It is gated per organization by the `prreview` rollout
-flag, in the same Clerk public metadata as the other rollout flags. To flag an organization, set
-this in the Clerk dashboard under the organization's public metadata:
-
-```json
-{ "prreview": true }
-```
-
-Only the literal boolean `true` counts; a missing key, `false` or the string `"true"` all read as
-off. The flag is enforced in three places:
-
-- **The section.** Code Review, and its per-repository switch, appear only for a flagged
-  organization.
-- **The endpoint.** The `pr-review` endpoint refuses to turn reviews on for an unflagged
-  organization, so the switch cannot be bypassed by calling the API. Turning reviews off is always
-  allowed.
-- **The trigger.** `PrReviewService` skips a pull request with `not_rolled_out` for an unflagged
-  organization, so removing the flag stops reviews even on repositories switched on earlier.
-
-The flag contract lives in `@maple/domain/organization-feature-flags` and is decoded on the server
-by `OrganizationFeatureFlagsService`, which reuses an organization's flags for 60 seconds per
-isolate, so withdrawing a flag takes effect within a minute. Self-hosted builds have no Clerk and
-get every rollout on, as the web app already did. A managed build that cannot reach Clerk treats
-every rollout as off for that call.
+Code review is available to every organization; the per-repository `pr_review_enabled` switch is the
+only gate. It shipped behind a `prreview` Clerk rollout flag, retired 2026-10-16; organizations that
+still carry the key in their metadata decode it as an ignored extra.
 
 Maple's hosted App (`MapleLabsApp`) currently grants `checks: read`. Until it is raised to read and
 write and each installation accepts the change, reviews post the summary comment and the inline
@@ -340,7 +339,7 @@ open.
 ## The full review agent
 
 Built 2026-09-23 (PR #1001). The observability reviewer became a general code review agent, sold as
-one product behind the same `prreview` rollout flag. Observability is one lens of it, with its
+one product. Observability is one lens of it, with its
 `maple-audit` check ids, because it is what no other reviewer can check: the warehouse.
 
 ### General review

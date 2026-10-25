@@ -1,5 +1,5 @@
 // BOUNDARY: explicitly selected local modules execute trusted code; their exports are decoded here.
-import { Effect, Result, Schema } from "effect"
+import { Effect, MutableRef, Result, Schema } from "effect"
 import { realpath, stat } from "node:fs/promises"
 import { extname, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -47,6 +47,50 @@ export const resolveProjectorModulePaths = (
 		}),
 	)
 
+const registerModule = (registry: ProjectorRegistry, path: string) =>
+	Effect.gen(function* () {
+		const namespace: unknown = yield* Effect.tryPromise({
+			try: () => import(pathToFileURL(path).href),
+			catch: (cause) => error(path, "import failed", cause),
+		})
+		const module = yield* Schema.decodeUnknownEffect(ModuleNamespace)(namespace).pipe(
+			Effect.mapError((cause) =>
+				error(path, "expected default export { apiVersion: 1, register }", cause),
+			),
+		)
+		const failures: ProjectorModuleError[] = []
+		// Retained callbacks cannot modify the registry after initialization.
+		const accepting = MutableRef.make(true)
+		const register: RegisterProjector = (projector) => {
+			if (!MutableRef.get(accepting)) return
+			const result = Result.try({
+				try: () => {
+					if (
+						typeof projector?.decodeConfig !== "function" ||
+						typeof projector?.decodeOutput !== "function" ||
+						typeof projector?.project !== "function"
+					)
+						return Result.fail(
+							error(
+								path,
+								"projector requires decodeConfig, decodeOutput and project functions",
+							),
+						)
+					return registry
+						.register(projector)
+						.pipe(Result.mapError((cause) => error(path, cause.message, cause)))
+				},
+				catch: (cause) => error(path, "invalid projector registration", cause),
+			}).pipe(Result.flatMap((result) => result))
+			if (Result.isFailure(result)) failures.push(result.failure)
+		}
+		yield* Effect.tryPromise({
+			try: async () => module.default.register(register),
+			catch: (cause) => error(path, "registration failed", cause),
+		}).pipe(Effect.ensuring(Effect.sync(() => MutableRef.set(accepting, false))))
+		if (failures[0] !== undefined) return yield* failures[0]
+	})
+
 /**
  * Each startup gets a fresh registry. No extension can replace an existing
  * id/version, and a failed registration refuses the whole startup even if the
@@ -57,57 +101,9 @@ export const loadProjectorModules = (
 ): Effect.Effect<ProjectorRegistry, ProjectorModuleError> =>
 	Effect.gen(function* () {
 		const resolved = yield* resolveProjectorModulePaths(paths)
+		const duplicate = resolved.find((path, index) => resolved.indexOf(path) !== index)
+		if (duplicate !== undefined) return yield* error(duplicate, "file selected more than once")
 		const registry = new ProjectorRegistry()
-		const seen = new Set<string>()
-		for (const path of resolved) {
-			if (seen.has(path)) return yield* error(path, "file selected more than once")
-			seen.add(path)
-			const namespace: unknown = yield* Effect.tryPromise({
-				try: () => import(pathToFileURL(path).href),
-				catch: (cause) => error(path, "import failed", cause),
-			})
-			const module = yield* Schema.decodeUnknownEffect(ModuleNamespace)(namespace).pipe(
-				Effect.mapError((cause) =>
-					error(path, "expected default export { apiVersion: 1, register }", cause),
-				),
-			)
-			const failures: ProjectorModuleError[] = []
-			let accepting = true
-			const register: RegisterProjector = (projector) => {
-				// Retained callbacks cannot modify the registry after initialization.
-				if (!accepting) return
-				const result = Result.try({
-					try: () => {
-						if (
-							typeof projector?.decodeConfig !== "function" ||
-							typeof projector?.decodeOutput !== "function" ||
-							typeof projector?.project !== "function"
-						)
-							return Result.fail(
-								error(
-									path,
-									"projector requires decodeConfig, decodeOutput and project functions",
-								),
-							)
-						return registry
-							.register(projector)
-							.pipe(Result.mapError((cause) => error(path, cause.message, cause)))
-					},
-					catch: (cause) => error(path, "invalid projector registration", cause),
-				}).pipe(Result.flatMap((result) => result))
-				if (Result.isFailure(result)) failures.push(result.failure)
-			}
-			yield* Effect.tryPromise({
-				try: async () => {
-					try {
-						await module.default.register(register)
-					} finally {
-						accepting = false
-					}
-				},
-				catch: (cause) => error(path, "registration failed", cause),
-			})
-			if (failures[0] !== undefined) return yield* failures[0]
-		}
+		yield* Effect.forEach(resolved, (path) => registerModule(registry, path), { discard: true })
 		return registry
 	})

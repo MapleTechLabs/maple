@@ -89,14 +89,13 @@
 		}
 	],
 	"ignorePatterns": [
+		"packages/security-audit/skill/**",
 		".agents/**",
 		".codex/**",
 		".context/**",
-		".deepsec/**",
 		".factory/**",
 		".impeccable/**",
 		".superset/**",
-		"apps/web/src/routeTree.gen.ts",
 		"lib/thinking-orbs/**"
 	]
 }

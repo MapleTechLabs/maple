@@ -21,9 +21,9 @@ The reusable machinery lives in two workspace libraries:
   `awaitTxIdEffect`. The backoff `onError` also dispatches window events:
   `collection:auth-error` (401), `collection:schema-error` (post-deploy schema
   drift) and `collection:sync-failed` (retries exhausted).
-- `@maple/unitflow/db` (`lib/unitflow`): collection subscriptions feed
-  model-scoped Stores used by the dashboards and alerts lists. Mutations use the
-  typed API write paths; alert toggles run through `Mutation.make`.
+- `apps/web/src/data/live-query.ts`: turns a TanStack DB live query into a
+  Foldkit Subscription stream for the dashboards and alerts lists. Mutations use
+  the typed API write paths.
 
 ## How it fits together
 
@@ -199,8 +199,11 @@ service runs `desiredCount: 1` with `minimumHealthyPercent: 0`: stop the old
 task, then start the new one. Every deploy therefore has a ~60s window with no
 sync. `/dashboards` degrades to its HTTP snapshot (`SyncDegradedBanner`), while
 the alerts lists have no fallback and sit in their retry state. This is why the
-image tag is pinned in `apps/electric/Dockerfile` rather than tracking `:latest`
-as local docker does.
+image is pinned by digest (`ELECTRIC_IMAGE` in `apps/electric/alchemy.run.ts`)
+rather than tracking `:latest` as local docker does, and why it is mirrored as an
+image ref instead of built from a Dockerfile: alchemy hashes a build context
+together with `bun.lock`, so any dependency bump retagged the image and restarted
+Electric (two ~2 min gaps on 2026-10-14).
 
 ### Standing it up
 
@@ -262,9 +265,9 @@ never reads the shared one, so a preview can never proxy shapes at another stage
    `CREATE/ALTER PUBLICATION` and `pg_publication_tables`, so the guard the early
    migrations carry protects nothing, and it is exactly what hid the EU failure.
 2. Add the shape to the whitelist in `apps/electric-sync/src/shapes/registry.ts`.
-3. Add a collection under `apps/web/src/lib/collections/` via
-   `createEffectCollection`. Model it on `dashboards.ts` for a write vertical or
-   `alerts.ts` for a read-only one: an identity `Schema.Struct` row schema that
+3. Add a collection in `apps/web/src/data/collections/` via
+   `createEffectCollection`. Model it on `dashboards.ts` for a write vertical or the
+   `alertRules` collection in `org-collections.ts` for a read-only one: an identity `Schema.Struct` row schema that
    mirrors the table columns, plus a `timestamptz` parser normalizing to ISO.
    Register it in `org-collections.ts` (constructor + `cleanup()`), and point the
    consumer read at the collection.

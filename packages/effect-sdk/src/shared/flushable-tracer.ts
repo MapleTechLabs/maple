@@ -8,6 +8,7 @@ import { Cause, Context, Exit, Layer, Option, Predicate, Tracer } from "effect"
 import * as ErrorReporter from "effect/ErrorReporter"
 import * as OtlpResource from "effect/observability/OtlpResource"
 import type { ExtractTag } from "effect/Types"
+import { resolveSpanFilter, type SpanFilter, type SpanFilterInput } from "./span-options.js"
 
 export interface CaptureExceptionOptions {
 	/** Span name. Default `"exception"`. */
@@ -46,29 +47,15 @@ export interface SpanBuffer {
 
 const MAX_BUFFER = 10_000
 
-export interface SpanBufferOptions {
+export interface SpanBufferOptions extends SpanFilterInput {
 	/**
-	 * Predicate run on each finished span before it's added to the buffer.
-	 * Returning `true` drops the span — it never reaches the OTLP exporter.
-	 * Use to suppress known-noisy span names (e.g. MCP protocol notifications).
+	 * Called as each span starts. The returned check, run as it ends, says why the
+	 * host lost its connection in between (or `undefined` if it did not). A span that
+	 * failed with an HTTP transport error meanwhile (the client span and any caller that
+	 * passed the error up) exports as `Unset` with the reason in `maple.connection_lost`:
+	 * a hidden, unloading or offline page cancelled the request, so nothing in the app failed.
 	 */
-	readonly dropSpan?: ((name: string) => boolean) | undefined
-	/**
-	 * Stable `_tag` or `Error.name` identifiers for failures that represent
-	 * anticipated outcomes (expected 4xx business errors: validation, not-found,
-	 * unauthorized, …). When a span's failure is caused *entirely* by errors with
-	 * one of these identifiers, the span is
-	 * still exported (so latency / `http.response.status_code` stay visible) but
-	 * with OTLP status `Ok` and **no** `exception` event — so it never lands in
-	 * error tracking (`error_events_mv` keys off `StatusCode='Error'`). Mirrors
-	 * the ingest gateway's `otel_status_for_rejection` (4xx → Ok) rule.
-	 *
-	 * Distinct from Effect's `ErrorReporter.ignore` flag, which *drops* the span
-	 * entirely (used for benign routing 404s).
-	 */
-	readonly anticipatedErrorIdentifiers?: ReadonlySet<string> | undefined
-	/** @deprecated Use `anticipatedErrorIdentifiers`. */
-	readonly anticipatedErrorTags?: ReadonlySet<string> | undefined
+	readonly watchConnection?: (() => () => string | undefined) | undefined
 }
 
 // Errors carrying Effect's `[ErrorReporter.ignore]` flag are benign by design —
@@ -78,46 +65,100 @@ export interface SpanBufferOptions {
 // rather than concrete error tags so the check stays robust and HTTP-agnostic.
 // An anticipated identifier wins over the flag: Effect also flags
 // `HttpApiSchemaError` (request-decode 400s), which should export as `Ok`, not vanish.
-const isIgnoredFailure = (error: unknown, anticipated: ReadonlySet<string> | undefined): boolean =>
+const isIgnoredFailure = (error: unknown, anticipated: SpanFilter["isAnticipated"]): boolean =>
 	Predicate.hasProperty(error, ErrorReporter.ignore) &&
 	error[ErrorReporter.ignore] === true &&
-	!(anticipated !== undefined && isAnticipatedFailure(error, anticipated))
+	!(anticipated !== undefined && anticipated(error))
 
-const isIgnoredSpan = (span: SpanImpl, anticipated: ReadonlySet<string> | undefined): boolean => {
-	const status = span.status
-	if (status._tag !== "Ended") return false
-	const exit = status.exit
+const isIgnoredExit = (
+	exit: Exit.Exit<unknown, unknown>,
+	anticipated: SpanFilter["isAnticipated"],
+): boolean => {
 	if (exit._tag !== "Failure") return false
 	if (exit.cause.reasons.some(Cause.isDieReason)) return false
 	const failures = exit.cause.reasons.filter(Cause.isFailReason)
 	return failures.length > 0 && failures.every((reason) => isIgnoredFailure(reason.error, anticipated))
 }
 
-export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
-	let buffer: Array<OtlpSpan> = []
-	let disabled = false
-	const dropSpan = options.dropSpan
-	const anticipatedErrorIdentifiers = options.anticipatedErrorIdentifiers ?? options.anticipatedErrorTags
-
-	const exportFn = (span: SpanImpl) => {
-		if (disabled) return
-		if (!span.sampled) return
-		if (dropSpan !== undefined && dropSpan(span.name)) return
-		if (isIgnoredSpan(span, anticipatedErrorIdentifiers)) return
-		if (buffer.length >= MAX_BUFFER) return
-		buffer.push(makeOtlpSpan(span, anticipatedErrorIdentifiers))
+/**
+ * Turns a finished span into its OTLP shape, or `undefined` when it must not be
+ * exported (unsampled, dropped, or an ignored failure).
+ */
+export const makeSpanEncoder = (filter: SpanFilter) => {
+	const drop = filter.drop
+	return (span: SpanImpl, connectionLost?: () => string | undefined): OtlpSpan | undefined => {
+		if (!span.sampled) return undefined
+		const status = span.status as ExtractTag<Tracer.SpanStatus, "Ended">
+		if (
+			drop !== undefined &&
+			drop({ name: span.name, kind: span.kind, attributes: span.attributes, exit: status.exit })
+		)
+			return undefined
+		if (isIgnoredExit(status.exit, filter.isAnticipated)) return undefined
+		return makeOtlpSpan(span, filter, connectionLost)
 	}
+}
 
-	const tracer = Tracer.make({
+/**
+ * A Tracer whose finished spans go to `exportFn`. A span matching
+ * `dropSpanSubtrees` starts unsampled, which its descendants inherit (Effect
+ * only samples a child of a sampled parent), so the whole subtree is skipped.
+ * Only ever forced to `false`: trace levels and incoming `00` headers win.
+ */
+export const makeMapleTracer = (
+	filter: SpanFilter,
+	exportFn: (span: SpanImpl, connectionLost?: () => string | undefined) => void,
+	watchConnection?: SpanBufferOptions["watchConnection"],
+): Tracer.Tracer => {
+	const dropSubtree = filter.dropSubtree
+	return Tracer.make({
 		span(spanOptions) {
+			const connectionLost = watchConnection?.()
 			return makeSpan({
 				...spanOptions,
+				sampled: spanOptions.sampled && (dropSubtree === undefined || !dropSubtree(spanOptions.name)),
 				status: { _tag: "Started", startTime: spanOptions.startTime },
 				attributes: new Map(),
-				export: exportFn,
+				export: (span) => exportFn(span, connectionLost),
 			})
 		},
 	})
+}
+
+export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
+	let buffer: Array<OtlpSpan> = []
+	let disabled = false
+	const filter = resolveSpanFilter(options)
+	const encode = makeSpanEncoder(filter)
+
+	const push = (span: SpanImpl, connectionLost?: () => string | undefined) => {
+		if (disabled) return
+		if (buffer.length >= MAX_BUFFER) return
+		const otlp = encode(span, connectionLost)
+		if (otlp !== undefined) buffer.push(otlp)
+	}
+
+	// A browser can reject a request between two `pagehide` listeners, before the one noting
+	// the unload has run. Such a transport failure is encoded a task later, or at the next
+	// drain, so the loss is known by then.
+	let unsettled: Array<readonly [SpanImpl, () => string | undefined]> = []
+	const settle = () => {
+		const items = unsettled
+		unsettled = []
+		for (const [span, connectionLost] of items) push(span, connectionLost)
+	}
+	const exportFn = (span: SpanImpl, connectionLost?: () => string | undefined) => {
+		if (disabled) return
+		if (connectionLost !== undefined && connectionLost() === undefined && isTransportFailure(span)) {
+			if (buffer.length + unsettled.length >= MAX_BUFFER) return
+			unsettled.push([span, connectionLost])
+			if (unsettled.length === 1) setTimeout(settle, 0)
+			return
+		}
+		push(span, connectionLost)
+	}
+
+	const tracer = makeMapleTracer(filter, exportFn, options.watchConnection)
 
 	const captureException = (error: unknown, captureOptions: CaptureExceptionOptions = {}): void => {
 		if (disabled) return
@@ -140,6 +181,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 		tracerLayer: Layer.succeed(Tracer.Tracer, tracer),
 		captureException,
 		drain: () => {
+			settle()
 			const items = buffer
 			buffer = []
 			return items
@@ -150,9 +192,12 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 		},
 		setDisabled: (value) => {
 			disabled = value
-			if (value) buffer = []
+			if (value) {
+				buffer = []
+				unsettled = []
+			}
 		},
-		size: () => buffer.length,
+		size: () => buffer.length + unsettled.length,
 	}
 }
 
@@ -162,7 +207,7 @@ const ATTR_EXCEPTION_TYPE = "exception.type"
 const ATTR_EXCEPTION_MESSAGE = "exception.message"
 const ATTR_EXCEPTION_STACKTRACE = "exception.stacktrace"
 
-interface SpanImpl extends Tracer.Span {
+export interface SpanImpl extends Tracer.Span {
 	readonly export: (span: SpanImpl) => void
 	readonly attributes: Map<string, unknown>
 	readonly links: Array<Tracer.SpanLink>
@@ -213,37 +258,16 @@ const generateId = (len: number): string => {
 	return result
 }
 
-// A failure is "anticipated" when its `_tag` is in the configured set. A span
-// whose failure is caused *entirely* by anticipated errors (no defects/Die)
-// records OTLP status `Ok` and emits no `exception` event.
-const failureIdentifier = (error: unknown): string | undefined => {
-	if (Predicate.hasProperty(error, "_tag") && typeof error._tag === "string") return error._tag
-	if (Predicate.hasProperty(error, "name") && typeof error.name === "string") return error.name
-	// An error that crossed an HTTP boundary arrives as a decoded *body*, not as
-	// the class that raised it. An API that wraps its bodies in `{ error: … }` —
-	// a common envelope convention — therefore hands the failure channel a plain
-	// object with no identifier of its own, and every identifier a caller
-	// configured goes unmatched: expected 4xx answers record as `Error` spans
-	// whose entire message is the JSON-stringified envelope. Unwrap one level, and
-	// only for the body's own tag.
-	const body = Predicate.hasProperty(error, "error") ? error.error : undefined
-	if (Predicate.hasProperty(body, "_tag") && typeof body._tag === "string") return body._tag
-	return undefined
-}
-
-const isAnticipatedFailure = (error: unknown, identifiers: ReadonlySet<string>): boolean => {
-	const identifier = failureIdentifier(error)
-	return identifier !== undefined && identifiers.has(identifier)
-}
-
+// A span whose failure is caused *entirely* by anticipated errors (no
+// defects/Die) records OTLP status `Ok` and emits no `exception` event.
 const isFullyAnticipated = (
 	cause: Cause.Cause<unknown>,
-	identifiers: ReadonlySet<string> | undefined,
+	isAnticipated: ((error: unknown) => boolean) | undefined,
 ): boolean => {
-	if (identifiers === undefined || identifiers.size === 0) return false
+	if (isAnticipated === undefined) return false
 	if (cause.reasons.some(Cause.isDieReason)) return false
 	const failErrors = cause.reasons.filter(Cause.isFailReason).map((reason) => reason.error)
-	return failErrors.length > 0 && failErrors.every((error) => isAnticipatedFailure(error, identifiers))
+	return failErrors.length > 0 && failErrors.every(isAnticipated)
 }
 
 // OTEL HTTP semconv for SERVER spans: a 5xx response is an error even when the
@@ -258,7 +282,77 @@ const renderedServerError = (self: SpanImpl): number | undefined => {
 	return Number.isInteger(code) && code >= 500 ? code : undefined
 }
 
-const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<string>): OtlpSpan => {
+// Effect 4.0.2+ fails a 5xx server span itself, with an `HttpServerError` whose reason is
+// `ResponseError`. That names nothing the rendered 5xx did not, so it takes the same road. One
+// carrying a cause or description is a failed response write, a real error of its own.
+const isStatusOnlyResponseError = (error: unknown): boolean =>
+	Predicate.isTagged(error, "ResponseError") &&
+	(!Predicate.hasProperty(error, "cause") || error.cause === undefined) &&
+	(!Predicate.hasProperty(error, "description") || error.description === undefined)
+
+const isResponseFailure = (exit: Exit.Exit<unknown, unknown>): boolean => {
+	if (exit._tag === "Success") return true
+	const [reason, ...rest] = exit.cause.reasons
+	return (
+		rest.length === 0 &&
+		reason !== undefined &&
+		Cause.isFailReason(reason) &&
+		Predicate.isTagged(reason.error, "HttpServerError") &&
+		Predicate.hasProperty(reason.error, "reason") &&
+		isStatusOnlyResponseError(reason.error.reason)
+	)
+}
+
+// The single failure of a raw HTTP client span, when it is an Effect `HttpClientError`
+// with this reason. Anything carrying a defect or a second failure is a real error.
+const httpClientFailureReason = (exit: Exit.Exit<unknown, unknown>, reasonTag: string): unknown => {
+	if (exit._tag === "Success") return undefined
+	const [reason, ...rest] = exit.cause.reasons
+	if (rest.length > 0 || reason === undefined || !Cause.isFailReason(reason)) return undefined
+	const error = reason.error
+	if (!Predicate.isTagged(error, "HttpClientError") || !Predicate.hasProperty(error, "reason"))
+		return undefined
+	return Predicate.isTagged(error.reason, reasonTag) ? error.reason : undefined
+}
+
+const isTransportFailure = (span: SpanImpl): boolean =>
+	span.status._tag === "Ended" && httpClientFailureReason(span.status.exit, "TransportError") !== undefined
+
+// Effect ends every 4xx client span itself, failed with a synthetic `StatusCodeError`, before
+// the caller has seen the response. Whether the 4xx is a fault is the caller's to say: an
+// unhandled one fails the caller's span too, which carries its own exception.
+const isClientStatus4xx = (self: SpanImpl, exit: Exit.Exit<unknown, unknown>): boolean => {
+	if (self.kind !== "client") return false
+	const reason = httpClientFailureReason(exit, "StatusCodeError")
+	if (!Predicate.hasProperty(reason, "response") || !Predicate.hasProperty(reason.response, "status")) {
+		return false
+	}
+	const code = reason.response.status
+	return typeof code === "number" && code >= 400 && code < 500
+}
+
+// Semconv `error.type` for a failed span that has none: the HTTP status code when the response
+// was the failure, else the HttpClientError reason (`TransportError`) or the error's own name.
+const errorTypeOf = (self: SpanImpl, exit: Exit.Exit<unknown, unknown>): string => {
+	const code = self.attributes.get("http.response.status_code")
+	if (typeof code === "number" && code >= 400) return String(code)
+	if (exit._tag === "Success") return "_OTHER"
+	const [reason] = exit.cause.reasons
+	if (reason !== undefined && Cause.isFailReason(reason)) {
+		const error = reason.error
+		if (Predicate.isTagged(error, "HttpClientError") && Predicate.hasProperty(error, "reason")) {
+			const tag = Predicate.hasProperty(error.reason, "_tag") ? error.reason._tag : undefined
+			if (typeof tag === "string") return tag
+		}
+	}
+	return Cause.prettyErrors(exit.cause)[0]?.name || "_OTHER"
+}
+
+const makeOtlpSpan = (
+	self: SpanImpl,
+	filter: SpanFilter,
+	connectionLost?: () => string | undefined,
+): OtlpSpan => {
 	const status = self.status as ExtractTag<Tracer.SpanStatus, "Ended">
 	const attributes = OtlpResource.entriesToAttributes(self.attributes.entries())
 	const events = self.events.map(([name, startTime, attrs]) => ({
@@ -269,7 +363,11 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 	}))
 
 	let otelStatus: Status
-	const serverError = status.exit._tag === "Success" ? renderedServerError(self) : undefined
+	const lostReason =
+		connectionLost !== undefined && httpClientFailureReason(status.exit, "TransportError") !== undefined
+			? connectionLost()
+			: undefined
+	const serverError = isResponseFailure(status.exit) ? renderedServerError(self) : undefined
 	if (serverError !== undefined) {
 		const method = self.attributes.get("http.request.method")
 		const path = self.attributes.get("url.path")
@@ -294,17 +392,31 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 	} else if (status.exit._tag === "Success") {
 		otelStatus = constOtelStatusSuccess
 	} else if (Cause.hasInterruptsOnly(status.exit.cause)) {
-		otelStatus = { code: StatusCode.Ok, message: "Interrupted" }
-		attributes.push(
-			{ key: "span.label", value: { stringValue: "⚠︎ Interrupted" } },
-			{ key: "status.interrupted", value: { boolValue: true } },
-		)
-	} else if (isFullyAnticipated(status.exit.cause, anticipatedErrorIdentifiers)) {
-		// Expected business outcome (4xx). Keep the span (latency / status code
-		// stay visible) but don't flag it as an error or fingerprint it.
+		// Cancelled, not failed. A status description is reserved for `Error`, so the attribute says it.
 		otelStatus = constOtelStatusSuccess
+		attributes.push({ key: "maple.interrupted", value: { boolValue: true } })
+	} else if (
+		renderedServerError(self) === undefined &&
+		isFullyAnticipated(status.exit.cause, filter.isAnticipated)
+	) {
+		// Expected business outcome (4xx). Keep the span (latency / status code
+		// stay visible) but don't flag it as an error or fingerprint it. A server
+		// span that still answered 5xx is a real error, anticipated or not.
+		otelStatus = constOtelStatusSuccess
+	} else if (isClientStatus4xx(self, status.exit)) {
+		// Semconv keeps a 4xx client span `Error`, but without an `exception` event: error
+		// tracking skips a 4xx span that carries none, so the issue is the caller's to open.
+		otelStatus = {
+			code: StatusCode.Error,
+			message: Cause.prettyErrors(status.exit.cause)[0]?.message ?? "",
+		}
+	} else if (lostReason !== undefined) {
+		otelStatus = { code: StatusCode.Unset }
+		attributes.push({ key: "maple.connection_lost", value: { stringValue: lostReason } })
 	} else {
-		const errors = Cause.prettyErrors(status.exit.cause)
+		const errors = Cause.prettyErrors(status.exit.cause, {
+			includeCauseInStack: filter.includeCauseInStack,
+		})
 		otelStatus = { code: StatusCode.Error }
 		const firstError = errors[0]
 		if (firstError) {
@@ -325,6 +437,10 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 				})
 			}
 		}
+	}
+
+	if (otelStatus.code === StatusCode.Error && !self.attributes.has("error.type")) {
+		attributes.push({ key: "error.type", value: { stringValue: errorTypeOf(self, status.exit) } })
 	}
 
 	return {

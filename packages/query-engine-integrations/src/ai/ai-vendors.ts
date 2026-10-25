@@ -173,10 +173,12 @@ const openInferenceIntegration: AiIntegration = {
 }
 
 /**
- * eve — a session envelope rather than a GenAI dialect: its `ai.eve.turn` spans
- * carry no generation attributes (the model call happens on Vercel AI SDK child
- * spans the gateway stamps separately) and the session id is already lifted
- * into `maple_ai.session.id`, so only the turn id is left to map.
+ * eve — eve 0.25 is a session envelope rather than a GenAI dialect: its
+ * `ai.eve.turn` spans carry no generation attributes (the model call happens on
+ * Vercel AI SDK child spans the gateway stamps separately) and the session id is
+ * already lifted into `maple_ai.session.id`, so only the turn id is left to map.
+ * eve 0.78 emits canonical `gen_ai.*` under the same vendor id, which the default
+ * integration decodes; its spans carry no `eve.turn.id`.
  */
 const eveIntegration: AiIntegration = {
 	id: "eve",

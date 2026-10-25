@@ -36,11 +36,16 @@ export const PublicIdPrefixes = {
 	scrapeTarget: "scrp",
 	recommendation: "rec",
 	ingestKey: "ingk",
+	source: "src",
 	attributeMapping: "amap",
 	sessionReplay: "srep",
 	mobileDevice: "mdev",
 	chatWorkspace: "chatw",
 	agentFeedback: "afb",
+	gcpConnector: "gcpc",
+	awsConnection: "awsc",
+	mcpConnection: "mcpc",
+	deviceCredential: "dcred",
 	/** Synthetic identity for logs, which have no native OTel record id. */
 	log: "log",
 	/** Reserved for the future events/webhooks system. */
@@ -184,12 +189,15 @@ export const PublicId = <S extends Schema.Codec<any, string>>(prefix: PublicIdPr
 			.pipe(
 				Schema.decodeTo(Schema.String, {
 					decode: SchemaGetter.transformEffect((publicId: string) => {
-						const internalId = decodePublicId(prefix, publicId)
+						// A raw UUID is the internal id itself, which MCP tools and older clients hold.
+						const internalId =
+							decodePublicId(prefix, publicId) ??
+							(UUID_RE.test(publicId) ? publicId.toLowerCase() : null)
 						return internalId === null
 							? Effect.fail(
 									new SchemaIssue.InvalidValue(
 										{
-											message: `Invalid ID: expected an ID with prefix "${prefix}_"`,
+											message: `Invalid ID: expected an ID with prefix "${prefix}_" or a UUID`,
 										},
 										publicId,
 									),

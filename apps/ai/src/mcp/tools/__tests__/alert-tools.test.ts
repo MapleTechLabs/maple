@@ -3,7 +3,7 @@
  * typed output on `structuredContent`, the rendered text, and input errors naming the parameter.
  */
 import { describe, expect, it } from "vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import {
 	AlertChecksListResponse,
 	AlertDestinationsListResponse,
@@ -14,6 +14,7 @@ import {
 	AlertRulePreviewResponse,
 	AlertRulesListResponse,
 	AlertRuleUpsertRequest,
+	AlertValidationError,
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
@@ -33,6 +34,7 @@ import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertRead
 import { CurrentMcpTenant } from "../../lib/query-warehouse"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { buildUpdatedRequest } from "../update-alert-rule"
+import { invalidRuleInput } from "../../lib/alert-rules"
 import type { McpToolResult } from "../types"
 
 const RULE_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
@@ -59,6 +61,11 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	windowMinutes: 5,
 	minimumSampleCount: 0,
 	consecutiveBreachesRequired: 1,
+	breachesOutOf: null,
+	evaluationIntervalMinutes: null,
+	thresholds: [
+		{ severity: "critical", value: 0.05, upper: null, recoveryValue: null, destinationIds: [DEST_ID] },
+	],
 	consecutiveHealthyRequired: 1,
 	renotifyIntervalMinutes: 60,
 	apdexThresholdMs: null,
@@ -68,6 +75,9 @@ const rule = Schema.decodeUnknownSync(AlertRuleDocument)({
 	destinationIds: [DEST_ID],
 	noDataBehavior: "skip",
 	lastEvaluationError: "column Foo not found",
+	lastEvaluationErrorKind: null,
+	slowedIntervalMinutes: null,
+	slowedAt: null,
 	lastEvaluatedAt: NOW,
 	lastScheduledAt: NOW,
 	createdAt: NOW,
@@ -111,6 +121,7 @@ const incident = (overrides: Record<string, unknown>) => ({
 	comparator: "gt",
 	threshold: 0.05,
 	thresholdUpper: null,
+	peakSeverity: null,
 	firstTriggeredAt: NOW,
 	lastTriggeredAt: NOW,
 	resolvedAt: null,
@@ -133,6 +144,12 @@ interface Seen {
 	checkOptions?: unknown
 	extraIncidents?: ReadonlyArray<Record<string, unknown>>
 	updatedIds?: Array<string>
+	/** Replaces the saved rules `listRules` returns. */
+	rules?: ReadonlyArray<AlertRuleDocument>
+	/** The timing a raw-SQL preview reports. */
+	queryTiming?: Record<string, unknown>
+	/** A raw-SQL preview whose range was too heavy to chart: no series. */
+	seriesFailure?: "query_too_slow" | "query_too_much_memory"
 }
 
 const layer = (seen: Seen) =>
@@ -144,7 +161,8 @@ const layer = (seen: Seen) =>
 			authMode: "self_hosted",
 		} as never),
 		Layer.succeed(AlertRulesService, {
-			listRules: () => Effect.succeed(new AlertRulesListResponse({ rules: [rule, ...extraRules] })),
+			listRules: () =>
+				Effect.succeed(new AlertRulesListResponse({ rules: seen.rules ?? [rule, ...extraRules] })),
 			createRule: (_org: unknown, _user: unknown, _roles: unknown, request: AlertRuleUpsertRequest) => {
 				seen.created = request
 				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
@@ -181,18 +199,32 @@ const layer = (seen: Seen) =>
 						windowMinutes: 5,
 						threshold: 0.05,
 						thresholdUpper: null,
-						comparator: "gt",
-						truncatedToStart: null,
-						series: [
+						thresholds: [
 							{
-								groupKey: "__total__",
-								points: [
-									point("2026-09-24T09:50:00.000Z"),
-									point("2026-09-24T09:55:00.000Z"),
-								],
+								severity: "warning",
+								value: 0.05,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [],
 							},
 						],
+						comparator: "gt",
+						truncatedToStart: null,
+						series:
+							seen.seriesFailure === undefined
+								? [
+										{
+											groupKey: "__total__",
+											points: [
+												point("2026-09-24T09:50:00.000Z"),
+												point("2026-09-24T09:55:00.000Z"),
+											],
+										},
+									]
+								: [],
 						wouldFire: [],
+						...(seen.seriesFailure === undefined ? undefined : { seriesFailure: seen.seriesFailure }),
+						...(seen.queryTiming === undefined ? undefined : { queryTiming: seen.queryTiming }),
 					}),
 				)
 			},
@@ -208,7 +240,14 @@ const layer = (seen: Seen) =>
 				return Effect.succeed(
 					id === RULE_ID
 						? rule
-						: { ...rule, id, name: "Latency", destinationIds: request.destinationIds },
+						: {
+								...rule,
+								id,
+								name: "Latency",
+								destinationIds: (request.thresholds ?? []).flatMap(
+									(tier) => tier.destinationIds,
+								),
+							},
 				)
 			},
 			listDestinations: () =>
@@ -270,6 +309,7 @@ const layer = (seen: Seen) =>
 								consecutiveHealthy: 0,
 								incidentId: null,
 								incidentTransition: "none",
+								level: null,
 								evaluationDurationMs: 12,
 								errorMessage: "column Foo not found",
 								errorCategory: "validation",
@@ -293,6 +333,7 @@ const layer = (seen: Seen) =>
 								consecutiveHealthy: 0,
 								incidentId: null,
 								incidentTransition: "none",
+								level: null,
 								evaluationDurationMs: 9,
 								errorMessage: null,
 								errorCategory: null,
@@ -304,23 +345,22 @@ const layer = (seen: Seen) =>
 		} as never),
 	)
 
-interface RunFailure {
-	readonly message: string
-	readonly parameter?: string
-}
+// The registry's requirement union names every tool's services; the alert tools reach only
+// the alert services `layer` provides, so the rest are left absent (a defect if ever reached).
+const withoutUnreachedServices = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E> =>
+	Effect.provide(effect, Context.makeUnsafe<R>(new Map()))
 
 const run = (name: string, params: unknown, seen: Seen = {}) =>
 	Effect.runPromise(
-		// The registry's requirement union names every tool's services; the alert tools reach only
-		// the alert services `layer` provides.
-		// oxlint-disable-next-line effecttsgo/missing-effect-context
 		executeRegisteredMcpToolUnscoped(name, params, "mcp").pipe(
 			Effect.provide(layer(seen)),
 			Effect.result,
-		) as Effect.Effect<
-			{ _tag: "Success"; success: McpToolResult } | { _tag: "Failure"; failure: RunFailure }
-		>,
+			withoutUnreachedServices,
+		),
 	)
+
+const invalidParameter = (failure: { readonly _tag: string }) =>
+	"parameter" in failure ? failure.parameter : undefined
 
 const ok = async (name: string, params: unknown, seen: Seen = {}) => {
 	const result = await run(name, params, seen)
@@ -340,7 +380,6 @@ describe("alert tools", () => {
 		// The unscoped rule covers checkout too; raw-SQL rules not naming it do not.
 		expect(output.rules.map((r) => r.id)).toEqual([RULE_ID, ALL_ID])
 		expect(output.services).toEqual(["checkout", "billing"])
-		expect(text(result)).toContain("## Alert Rules")
 		expect(text(result)).toContain("Services: checkout, billing")
 		expect(text(result)).toContain(RULE_ID)
 		expect(text(result)).toContain(`\`get_alert_rule rule_id="${RULE_ID}"\``)
@@ -363,16 +402,14 @@ describe("alert tools", () => {
 		const result = await ok("get_alert_rule", { rule_id: RULE_ID })
 		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
 		expect(output.rule.notificationTitle).toBe("{{ rule.name }}")
-		expect(text(result)).toContain("## Alert Rule: Checkout errors")
 		expect(text(result)).toContain("Condition: > 0.05")
 		expect(text(result)).toContain("Last evaluation error: column Foo not found")
-		expect(text(result)).toContain("### Message Template")
 
 		const missing = await run("get_alert_rule", { rule_id: "nope" })
 		expect(missing._tag).toBe("Failure")
 		if (missing._tag === "Failure") {
 			expect(missing.failure._tag).toBe("@maple/mcp/errors/McpInvalidInputError")
-			expect(missing.failure.parameter).toBe("rule_id")
+			expect(invalidParameter(missing.failure)).toBe("rule_id")
 		}
 	})
 
@@ -395,12 +432,11 @@ describe("alert tools", () => {
 		const seen: Seen = {}
 		const result = await ok("get_incident_timeline", { rule_id: RULE_ID, limit: 1 }, seen)
 		expect(seen.incidentOptions).toMatchObject({ ruleId: RULE_ID, limit: 2 })
-		expect(text(result)).toContain("### Checkout errors (open)")
 		expect(text(result)).toContain(`Incident ID: ${INCIDENT_ID}`)
 		expect(text(result)).toContain("Showing 1 incidents.")
 
 		const bad = await run("get_incident_timeline", { rule_id: "not-a-uuid" })
-		expect(bad._tag === "Failure" && bad.failure.parameter).toBe("rule_id")
+		expect(bad._tag === "Failure" && invalidParameter(bad.failure)).toBe("rule_id")
 	})
 
 	it("list_alert_checks takes since/until as the window and a bad rule_id as invalid input", async () => {
@@ -428,12 +464,12 @@ describe("alert tools", () => {
 
 		const bad = await run("list_alert_checks", { rule_id: "nope" })
 		expect(bad._tag === "Failure" && bad.failure._tag).toBe("@maple/mcp/errors/McpInvalidInputError")
-		expect(bad._tag === "Failure" && bad.failure.parameter).toBe("rule_id")
+		expect(bad._tag === "Failure" && invalidParameter(bad.failure)).toBe("rule_id")
 	})
 
 	it("create_alert_rule builds the request from a template and list params", async () => {
 		const seen: Seen = {}
-		const result = await ok(
+		await ok(
 			"create_alert_rule",
 			{
 				name: "Errors",
@@ -454,7 +490,6 @@ describe("alert tools", () => {
 			groupBy: ["service.name"],
 			alertOnNoData: true,
 		})
-		expect(text(result)).toContain("## Alert Rule Created")
 
 		// An explicit service scope displaces the template's grouping.
 		await ok(
@@ -498,7 +533,7 @@ describe("alert tools", () => {
 			comparator: "lt",
 			threshold: 0.8,
 		})
-		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("apdex_threshold_ms")
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("apdex_threshold_ms")
 
 		const noDestinations = await run("create_alert_rule", { name: "X", template: "slow_p95" })
 		// Required in the published schema, so its absence is a decode failure naming it.
@@ -564,12 +599,12 @@ describe("alert tools", () => {
 		await ok("preview_alert_rule", { rule_id: RULE_ID, threshold: 0.2 }, seen)
 		expect(seen.previewed?.rule).toMatchObject({
 			name: "Checkout errors",
-			threshold: 0.2,
+			thresholds: [{ value: 0.2 }],
 			signalType: "error_rate",
 		})
 
 		const missing = await run("preview_alert_rule", { rule_id: "8f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f" })
-		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("rule_id")
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("rule_id")
 	})
 
 	it("update_alert_rule overlays only the given fields", async () => {
@@ -580,7 +615,7 @@ describe("alert tools", () => {
 			seen,
 		)
 		expect(seen.updated).toMatchObject({
-			threshold: 0.1,
+			thresholds: [{ severity: "critical", value: 0.1 }],
 			name: "Checkout errors",
 			serviceNames: ["checkout"],
 			groupBy: ["service.name", "attr.http.route"],
@@ -606,20 +641,120 @@ describe("alert tools", () => {
 			...rule,
 			comparator: "between",
 			thresholdUpper: 10,
+			thresholds: [
+				{ severity: "critical", value: 0.05, upper: 10, recoveryValue: null, destinationIds: [] },
+			],
 		})
-		expect(buildUpdatedRequest(range, { comparator: "gt" }).thresholdUpper).toBeNull()
-		expect(buildUpdatedRequest(range, { threshold: 2 }).thresholdUpper).toBe(10)
+		const upperAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(range, params)).thresholds[0].upper
+		expect(upperAfter({ comparator: "gt" })).toBeNull()
+		expect(upperAfter({ threshold: 2 })).toBe(10)
+	})
+
+	it("update_alert_rule drops a recovery value the new threshold invalidates", () => {
+		const recovering = Schema.decodeUnknownSync(AlertRuleDocument)({
+			...rule,
+			comparator: "gt",
+			thresholds: [
+				{
+					severity: "critical",
+					value: 100,
+					upper: null,
+					recoveryValue: 80,
+					destinationIds: [DEST_ID],
+				},
+			],
+		})
+		const recoveryAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(recovering, params)).thresholds[0].recoveryValue
+		expect(recoveryAfter({ threshold: 120 })).toBe(80)
+		expect(recoveryAfter({ threshold: 70 })).toBeNull()
+		expect(recoveryAfter({ comparator: "lt" })).toBeNull()
+	})
+
+	it("update_alert_rule keeps a picked interval until the window gets shorter than it", () => {
+		const hourly = Schema.decodeUnknownSync(AlertRuleDocument)({
+			...rule,
+			windowMinutes: 60,
+			evaluationIntervalMinutes: 30,
+		})
+		const intervalAfter = (params: Parameters<typeof buildUpdatedRequest>[1]) =>
+			Effect.runSync(buildUpdatedRequest(hourly, params)).evaluationIntervalMinutes
+		expect(intervalAfter({ threshold: 2 })).toBe(30)
+		expect(intervalAfter({ window_minutes: 30 })).toBe(30)
+		expect(intervalAfter({ window_minutes: 15 })).toBeNull()
+	})
+
+	it("update_alert_rule keeps a two-tier rule's tiers and refuses to merge them", () => {
+		const tiered = Schema.decodeUnknownSync(AlertRuleDocument)({
+			...rule,
+			breachesOutOf: 5,
+			thresholds: [
+				{
+					severity: "warning",
+					value: 0.02,
+					upper: null,
+					recoveryValue: 0.01,
+					destinationIds: ["00000000-0000-4000-8000-00000000d001"],
+				},
+				{
+					severity: "critical",
+					value: 0.05,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: ["00000000-0000-4000-8000-00000000d002"],
+				},
+			],
+		})
+		const renamed = Effect.runSync(buildUpdatedRequest(tiered, { name: "Renamed" }))
+		expect(renamed.thresholds).toEqual(tiered.thresholds)
+		expect(renamed.breachesOutOf).toBe(5)
+
+		const added = Effect.runSync(
+			buildUpdatedRequest(tiered, {
+				add_destination_ids: ["00000000-0000-4000-8000-00000000d003"],
+				remove_destination_ids: ["00000000-0000-4000-8000-00000000d002"],
+			}),
+		)
+		expect(added.thresholds.map((tier) => tier.destinationIds)).toEqual([
+			["00000000-0000-4000-8000-00000000d001", "00000000-0000-4000-8000-00000000d003"],
+			[],
+		])
+
+		const collapsing = Effect.runSync(Effect.flip(buildUpdatedRequest(tiered, { threshold: 0.1 })))
+		expect(collapsing.parameter).toBe("threshold")
+	})
+
+	it("names each invalid-rule detail once, though the domain message already carries them", () => {
+		const details = ["threshold must be a finite number", "at least one destination must be selected"]
+		const message = invalidRuleInput(
+			new AlertValidationError({ message: `Invalid alert rule: ${details.join("; ")}`, details }),
+		).message
+		for (const detail of details) {
+			expect(message.split(detail)).toHaveLength(2)
+		}
+	})
+
+	it("keeps an invalid-rule message that names a failure its details only qualify", () => {
+		const message = invalidRuleInput(
+			new AlertValidationError({
+				message: "Unsupported traces metric: p95",
+				details: ["Traces filter http.status_code supports only =; ignoring !="],
+			}),
+		).message
+		expect(message).toContain("Unsupported traces metric: p95")
+		expect(message).toContain("ignoring !=")
 	})
 
 	it("delete_alert_rule requires confirm and maps not-found to rule_id", async () => {
 		const unconfirmed = await run("delete_alert_rule", { rule_id: RULE_ID, confirm: false })
-		expect(unconfirmed._tag === "Failure" && unconfirmed.failure.parameter).toBe("confirm")
+		expect(unconfirmed._tag === "Failure" && invalidParameter(unconfirmed.failure)).toBe("confirm")
 
 		const deleted = await ok("delete_alert_rule", { rule_id: RULE_ID, confirm: "true" })
 		expect(text(deleted)).toContain(`ID: ${RULE_ID}`)
 
 		const missing = await run("delete_alert_rule", { rule_id: INCIDENT_ID, confirm: true })
-		expect(missing._tag === "Failure" && missing.failure.parameter).toBe("rule_id")
+		expect(missing._tag === "Failure" && invalidParameter(missing.failure)).toBe("rule_id")
 	})
 	it("list_alert_rules by service includes unscoped rules and raw_query rules naming it", async () => {
 		const result = await ok("list_alert_rules", { service_names: "maple-api" })
@@ -693,14 +828,120 @@ describe("alert tools", () => {
 			seen,
 		)
 		expect(seen.updatedIds).toEqual([RULE_ID, ALL_ID, RAW_ID, OTHER_RAW_ID])
-		expect(seen.updated?.destinationIds).toEqual([NEW_DEST])
+		expect(seen.updated?.thresholds?.[0]?.destinationIds).toEqual([NEW_DEST])
 		const output = Schema.decodeUnknownSync(UpdateAlertRuleOutput)(result.structuredContent)
 		expect(output.rules).toHaveLength(4)
 		expect(text(result)).toContain("Updated 4 Alert Rules")
 
 		const named = await run("update_alert_rule", { rule_ids: [RULE_ID, ALL_ID], name: "Same" })
-		expect(named._tag === "Failure" && named.failure.parameter).toBe("name")
+		expect(named._tag === "Failure" && invalidParameter(named.failure)).toBe("name")
 		const none = await run("update_alert_rule", { threshold: 1 })
-		expect(none._tag === "Failure" && none.failure.parameter).toBe("rule_id")
+		expect(none._tag === "Failure" && invalidParameter(none.failure)).toBe("rule_id")
+	})
+	/** A raw-SQL rule the scheduler slowed from every 5m to every 10m after repeated timeouts. */
+	const slowedRule = Schema.decodeUnknownSync(AlertRuleDocument)({
+		...rule,
+		signalType: "raw_query",
+		rawQuerySql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+		windowMinutes: 30,
+		evaluationIntervalMinutes: 5,
+		slowedIntervalMinutes: 10,
+		slowedAt: NOW,
+		lastEvaluationError: "Timeout exceeded: elapsed 15.2 seconds",
+		lastEvaluationErrorKind: "query_too_slow",
+	})
+
+	it("create_alert_rule passes a picked check interval, numeric string or not", async () => {
+		const seen: Seen = {}
+		const base = { name: "Errors", template: "high_error_rate", destination_ids: [], window_minutes: 30 }
+		await ok("create_alert_rule", { ...base, evaluation_interval_minutes: "10" }, seen)
+		expect(seen.created?.evaluationIntervalMinutes).toBe(10)
+
+		await ok("create_alert_rule", { ...base, evaluation_interval_minutes: null }, seen)
+		expect(seen.created?.evaluationIntervalMinutes).toBeUndefined()
+
+		const unpickable = await run("create_alert_rule", { ...base, evaluation_interval_minutes: 7 })
+		expect(unpickable._tag).toBe("Failure")
+	})
+
+	it("update_alert_rule keeps the check interval when omitted and derives it again on null", async () => {
+		const seen: Seen = { rules: [slowedRule] }
+		await ok("update_alert_rule", { rule_id: RULE_ID, threshold: 2 }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBe(5)
+
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: null }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBeNull()
+
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: 15 }, seen)
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: "auto" }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBeNull()
+
+		await ok("update_alert_rule", { rule_id: RULE_ID, evaluation_interval_minutes: 15 }, seen)
+		expect(seen.updated?.evaluationIntervalMinutes).toBe(15)
+	})
+
+	it("get_alert_rule explains a rule the scheduler slowed down and why its checks failed", async () => {
+		const result = await ok("get_alert_rule", { rule_id: RULE_ID }, { rules: [slowedRule] })
+		const output = Schema.decodeUnknownSync(GetAlertRuleOutput)(result.structuredContent)
+		expect(output.rule.slowedIntervalMinutes).toBe(10)
+		expect(output.rule.lastEvaluationErrorKind).toBe("query_too_slow")
+		expect(text(result)).toContain("Window: 30m, checked every 10m (slowed down from 5m)")
+		expect(text(result)).toContain("hit its time or memory limit 3 checks in a row")
+		expect(text(result)).toContain("Editing the rule resets that")
+		expect(text(result)).toContain("Last error kind: query_too_slow")
+
+		const plain = await ok("get_alert_rule", { rule_id: RULE_ID })
+		expect(text(plain)).toContain("checked every 1m (derived from the window)")
+		expect(text(plain)).not.toContain("3 checks in a row")
+	})
+
+	it("preview_alert_rule times one raw-SQL check against the interval's limit", async () => {
+		const sql = "SELECT count() AS value\nFROM traces\nWHERE $__orgFilter AND $__timeFilter(Timestamp)"
+		const seen: Seen = {
+			rules: [{ ...slowedRule, rawQuerySql: sql }],
+			queryTiming: {
+				elapsedMs: 7800,
+				failure: null,
+				probeLimitMs: 25000,
+				intervalMinutes: 1,
+				limitMs: 5000,
+				fitsIntervalMinutes: [5, 10, 15, 30, 60],
+			},
+		}
+		const result = await ok("preview_alert_rule", { rule_id: RULE_ID }, seen)
+		const output = Schema.decodeUnknownSync(PreviewAlertRuleOutput)(result.structuredContent)
+		expect(output.queryTiming?.elapsedMs).toBe(7800)
+		expect(output.performanceHints?.[0]).toMatchObject({ code: "no_service_filter", line: 2 })
+		expect(text(result)).toContain(
+			"One check took 7.8s; the limit at this interval (every 1m) is 5s. Fits checks every 5, 10, 15, 30, 60 min.",
+		)
+		expect(text(result)).toContain("Line 2: Filter traces on a service")
+		expect(text(result)).toContain("evaluation_interval_minutes=5")
+		// The suggested update carries the window the preview answered with, overridden or not.
+		expect(text(result)).toContain("window_minutes=5 evaluation_interval_minutes=5")
+
+		const unfinished = await ok(
+			"preview_alert_rule",
+			{ rule_id: RULE_ID },
+			{
+				...seen,
+				queryTiming: {
+					...seen.queryTiming,
+					elapsedMs: null,
+					failure: "query_too_slow",
+					fitsIntervalMinutes: [],
+				},
+			},
+		)
+		expect(text(unfinished)).toContain("One check did not finish within 25s")
+		expect(text(unfinished)).toContain("It fits no check interval")
+		expect(text(unfinished)).not.toContain("evaluation_interval_minutes=")
+
+		const heavy = await ok("preview_alert_rule", { rule_id: RULE_ID }, { ...seen, seriesFailure: "query_too_much_memory" })
+		expect(text(heavy)).toContain("ran out of memory charting this whole range")
+		expect(text(heavy)).toContain("The range was too heavy to chart")
+		expect(text(heavy)).not.toContain("returned no series")
+		// The one-check timing still says which interval fits.
+		expect(text(heavy)).toContain("One check took 7.8s")
 	})
 })

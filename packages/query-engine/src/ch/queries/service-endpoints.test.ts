@@ -34,7 +34,6 @@ describe("serviceEndpointsSummaryQuery", () => {
 	it("reports p50/p95/p99 out of two-level stored t-digest state", () => {
 		const { sql } = compileUnsafe(serviceEndpointsSummaryQuery({ serviceName: "api" }), baseParams)
 		expect(sql).toContain("quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles)")
-		expect(sql).toContain("AS p99DurationMs")
 	})
 
 	it("scopes to the org on every branch", () => {
@@ -50,7 +49,16 @@ describe("serviceEndpointsSummaryQuery", () => {
 		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("service_operations_minutely")
 		expect(sql).toContain("match(if(((traces.SpanName LIKE 'http.server %'")
-		expect(sql).toContain("quantile(0.99)(traces.Duration)")
+		// One tier covers the whole window, so there is no splice boundary.
+		expect(sql).not.toContain("INTERVAL 1 MINUTE")
+	})
+
+	it("carries the HTTP status and body measures on every tier", () => {
+		const { sql } = compileUnsafe(serviceEndpointsSummaryQuery({ serviceName: "api" }), baseParams)
+		expect(sql).toContain("sum(service_operations_hourly.Http4xxCount)")
+		expect(sql).toContain("sum(service_operations_minutely.RequestBodyBytes)")
+		// The raw edge computes the same measure the view writes, Server spans only.
+		expect(sql).toContain("countIf(SpanKind = 'Server' AND toUInt16OrZero(")
 	})
 })
 

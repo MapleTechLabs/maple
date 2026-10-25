@@ -13,7 +13,7 @@ import { SpanId, TraceId, UserId } from "../../primitives"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
-import { V2CursorInvalid, V2CursorSortMismatch } from "./errors"
+import { defineV2Error, V2CursorInvalid, V2CursorSortMismatch, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { ActorPublicId, ErrorIncidentPublicId, ErrorIssuePublicId } from "./resource-ids"
@@ -131,6 +131,9 @@ export const V2ErrorIssueDetail = Schema.Struct({
 })
 export type V2ErrorIssueDetail = Schema.Schema.Type<typeof V2ErrorIssueDetail>
 
+/** Longest `search` term the list accepts; clients clamp to it rather than fail. */
+export const ERROR_ISSUE_SEARCH_MAX_LENGTH = 200
+
 export const V2ErrorIssueListQuery = Schema.Struct({
 	...ListQuery.fields,
 	workflow_state: Schema.optional(WorkflowState),
@@ -156,6 +159,13 @@ export const V2ErrorIssueListQuery = Schema.Struct({
 	// deploy introduced, rather than everything still occurring.
 	introduced_after: Schema.optional(Timestamp),
 	actionable: Schema.optional(Schema.Literal("true")),
+	// `open`: someone still has to act (same set as `actionable`). `closed`: the
+	// work is over or handed to verification (verifying, done, cancelled, wontfix).
+	state: Schema.optional(Schema.Literals(["open", "closed"])),
+	// Case-insensitive substring of the exception type, message, label or service.
+	search: Schema.optional(Schema.String.check(Schema.isMaxLength(ERROR_ISSUE_SEARCH_MAX_LENGTH))),
+	// Done issues are archived 14 days after they close; include them.
+	include_archived: Schema.optional(Schema.Literal("true")),
 	sort: Schema.optional(Schema.Literals(["last_seen", "severity"])),
 }).annotate({
 	identifier: "ErrorIssueListQuery",
@@ -193,7 +203,57 @@ const ErrorIssueServiceCountList = ListOf(V2ErrorIssueServiceCount).annotate({
 	title: "Error issue service count list",
 })
 
+export const V2ErrorIssueTransitionParams = Schema.Struct({
+	to_state: WorkflowState,
+	// Recorded on the issue's event log with the transition.
+	note: Schema.optionalKey(Schema.String),
+	// Only meaningful with `to_state: "snoozed"`; `null` clears it.
+	snooze_until: Schema.optionalKey(Schema.NullOr(Timestamp)),
+}).annotate({ identifier: "ErrorIssueTransitionParams", title: "Error issue transition parameters" })
+
+export const V2ErrorIssueClaimParams = Schema.Struct({
+	// How long the caller holds the lease; the server default applies when omitted.
+	lease_duration_seconds: Schema.optionalKey(
+		Schema.Int.check(Schema.isBetween({ minimum: 60, maximum: 7200 })),
+	),
+}).annotate({ identifier: "ErrorIssueClaimParams", title: "Error issue claim parameters" })
+
+export const V2ErrorIssueReleaseParams = Schema.Struct({
+	// Move the issue to this state as the lease is released.
+	transition_to: Schema.optionalKey(WorkflowState),
+	note: Schema.optionalKey(Schema.String),
+}).annotate({ identifier: "ErrorIssueReleaseParams", title: "Error issue release parameters" })
+
+export const V2ErrorIssueSeverityParams = Schema.Struct({
+	// `null` or an omitted key clears the severity (generated clients omit nil).
+	severity: Schema.optionalKey(Schema.NullOr(IssueSeverity)),
+	note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+}).annotate({ identifier: "ErrorIssueSeverityParams", title: "Error issue severity parameters" })
+
+export const V2ErrorIssueTransitionConflict = defineV2Error({
+	tag: "@maple/http/v2/ErrorIssueTransitionConflictError",
+	status: 409,
+	code: "error_issue_transition_invalid",
+	title: "Error issue transition not allowed",
+	message: "The issue cannot move to that state from its current state.",
+	retry: "never",
+	recovery: "refresh",
+	identifier: "ErrorIssueTransitionConflictError",
+})
+
+export const V2ErrorIssueLeaseConflict = defineV2Error({
+	tag: "@maple/http/v2/ErrorIssueLeaseConflictError",
+	status: 409,
+	code: "error_issue_lease_held",
+	title: "Error issue is claimed by someone else",
+	message: "Another actor holds the lease on this issue.",
+	retry: "never",
+	recovery: "refresh",
+	identifier: "ErrorIssueLeaseHeldError",
+})
+
 const [errorIssueNotFound, errorPersistence] = publicErrors(ErrorIssueNotFoundError, ErrorPersistenceError)
+const actionConflicts = [V2ErrorIssueTransitionConflict.schema, V2ErrorIssueLeaseConflict.schema] as const
 
 export class V2ErrorIssuesApiGroup extends HttpApiGroup.make("errorIssues")
 	.add(
@@ -206,28 +266,32 @@ export class V2ErrorIssuesApiGroup extends HttpApiGroup.make("errorIssues")
 				errorPersistence,
 				...V2WarehouseReadErrors,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listErrorIssues",
-				summary: "List error issues",
-				description:
-					"Returns a bounded, cursor-paginated page of your organization's issues. Requires `error_issues:read`.",
-			}),
-		),
+		})
+			.annotate(AuditedRead, "telemetry.read")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listErrorIssues",
+					summary: "List error issues",
+					description:
+						"Returns a bounded, cursor-paginated page of your organization's issues. Requires `error_issues:read`.",
+				}),
+			),
 	)
 	.add(
 		// Static path — must be registered before the `/:id` param route.
 		HttpApiEndpoint.get("serviceCounts", "/service_counts", {
 			success: ErrorIssueServiceCountList,
 			error: errorPersistence,
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listErrorIssueServiceCounts",
-				summary: "List open issue counts by service",
-				description:
-					"Returns the number of open (actionable-state) error issues per service, in one call. Alert-kind issues are excluded. Requires `error_issues:read`.",
-			}),
-		),
+		})
+			.annotate(AuditedRead, "telemetry.read")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listErrorIssueServiceCounts",
+					summary: "List open issue counts by service",
+					description:
+						"Returns the number of open (actionable-state) error issues per service, in one call. Alert-kind issues are excluded. Requires `error_issues:read`.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("retrieve", "/:id", {
@@ -235,18 +299,79 @@ export class V2ErrorIssuesApiGroup extends HttpApiGroup.make("errorIssues")
 			query: V2ErrorIssueDetailQuery,
 			success: V2ErrorIssueDetail,
 			error: [errorIssueNotFound, errorPersistence, ...V2WarehouseReadErrors],
+		})
+			.annotate(AuditedRead, "telemetry.read")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getErrorIssue",
+					summary: "Retrieve an error issue",
+					description:
+						"Returns an issue with its timeseries, representative traces, and incident history. Requires `error_issues:read`.",
+				}),
+			),
+	)
+	.add(
+		HttpApiEndpoint.post("transition", "/:id/transitions", {
+			params: { id: ErrorIssuePublicId },
+			payload: V2ErrorIssueTransitionParams,
+			success: V2ErrorIssue,
+			error: [errorIssueNotFound, errorPersistence, ...actionConflicts, V2ParameterInvalid.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
-				identifier: "getErrorIssue",
-				summary: "Retrieve an error issue",
+				identifier: "transitionErrorIssue",
+				summary: "Transition an error issue",
 				description:
-					"Returns an issue with its timeseries, representative traces, and incident history. Requires `error_issues:read`.",
+					"Moves the issue to another workflow state as the calling user, and returns the updated issue. Requires `error_issues:write`.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("claim", "/:id/claim", {
+			params: { id: ErrorIssuePublicId },
+			payload: V2ErrorIssueClaimParams,
+			success: V2ErrorIssue,
+			error: [errorIssueNotFound, errorPersistence, ...actionConflicts],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "claimErrorIssue",
+				summary: "Claim an error issue",
+				description:
+					"Takes the issue's lease as the calling user, so others see it is being worked on. Requires `error_issues:write`.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("release", "/:id/release", {
+			params: { id: ErrorIssuePublicId },
+			payload: V2ErrorIssueReleaseParams,
+			success: V2ErrorIssue,
+			error: [errorIssueNotFound, errorPersistence, ...actionConflicts],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "releaseErrorIssue",
+				summary: "Release an error issue",
+				description:
+					"Gives up the calling user's lease, optionally moving the issue to another state. Requires `error_issues:write`.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.put("setSeverity", "/:id/severity", {
+			params: { id: ErrorIssuePublicId },
+			payload: V2ErrorIssueSeverityParams,
+			success: V2ErrorIssue,
+			error: [errorIssueNotFound, errorPersistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "setErrorIssueSeverity",
+				summary: "Set an error issue's severity",
+				description:
+					"Sets or clears the issue's manual severity as the calling user. Requires `error_issues:write`.",
 			}),
 		),
 	)
 	.prefix("/v2/error_issues")
 	.middleware(AuthorizationV2)
-	.annotate(AuditedRead, "telemetry.read")
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Error Issues",

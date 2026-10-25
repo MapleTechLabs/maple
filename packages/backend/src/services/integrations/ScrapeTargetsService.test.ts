@@ -1,4 +1,5 @@
 import { FetchHttpClient } from "effect/http"
+import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
@@ -15,6 +16,7 @@ import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
+	insertTestSource,
 	makeStatementRecorder,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
@@ -63,6 +65,7 @@ const makeLayer = (testDb: TestDb) => {
 					Layer.provide(oauthLive),
 				),
 				oauthLive,
+				SupabaseOAuthService.layer,
 			),
 		),
 		Layer.provide(testDb.layer),
@@ -96,6 +99,88 @@ describe("ScrapeTargetsService", () => {
 
 			const headers = yield* service.authHeaders(row)
 			assert.deepStrictEqual(headers, { Authorization: "Bearer stored-token" })
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("creates each target with its own source and deletes the source with it", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const create = (orgId: string, name: string) =>
+				service.create(
+					asOrgId(orgId),
+					new CreateScrapeTargetRequest({
+						name,
+						url: `https://${name}.example.com/metrics`,
+						scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+					}),
+				)
+			const node = yield* create("org_1", "node")
+			const other = yield* create("org_2", "node")
+			const sources = () =>
+				Effect.promise(() =>
+					testDb.pglite.query<{
+						org_id: string
+						kind: string
+						platform: string
+						name: string
+						target: string
+					}>(
+						`SELECT s.org_id, s.kind, s.platform, s.name, t.id AS target
+						FROM sources s JOIN scrape_targets t ON t.source_id = s.id ORDER BY s.org_id`,
+					),
+				)
+			assert.deepStrictEqual(
+				(yield* sources()).rows.map((row) => [
+					row.org_id,
+					row.kind,
+					row.platform,
+					row.name,
+					row.target,
+				]),
+				[
+					["org_1", "integration", "prometheus", "node", node.id],
+					["org_2", "integration", "prometheus", "node", other.id],
+				],
+			)
+
+			yield* service.delete(asOrgId("org_1"), node.id)
+			const left = yield* Effect.promise(() =>
+				testDb.pglite.query<{ org_id: string }>("SELECT org_id FROM sources"),
+			)
+			assert.deepStrictEqual(
+				left.rows.map((row) => row.org_id),
+				["org_2"],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("listAllEnabled leaves out a target whose source is paused", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const create = (name: string) =>
+				service.create(
+					asOrgId("org_1"),
+					new CreateScrapeTargetRequest({
+						name,
+						url: `https://${name}.example.com/metrics`,
+						scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+					}),
+				)
+			const paused = yield* create("paused")
+			const live = yield* create("live")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE sources SET paused_at = now() WHERE id = (SELECT source_id FROM scrape_targets WHERE id = $1)",
+					[paused.id],
+				),
+			)
+			assert.deepStrictEqual(
+				(yield* service.listAllEnabled()).map((row) => row.id),
+				[live.id],
+			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -184,6 +269,93 @@ describe("ScrapeTargetsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("recordScrapeResults reports each batch onto the target's source", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			const create = (name: string) =>
+				service.create(
+					orgId,
+					new CreateScrapeTargetRequest({
+						name,
+						url: `https://metrics.example.com/${name}`,
+						scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+					}),
+				)
+			const api = yield* create("api")
+			const worker = yield* create("worker")
+			const readSource = () =>
+				Effect.promise(() =>
+					testDb.pglite.query<{
+						last_poll_ok_at: Date | null
+						last_poll_error: string | null
+						poll_resources: { total: number; unhealthy: number } | null
+					}>(
+						"SELECT s.last_poll_ok_at, s.last_poll_error, s.poll_resources FROM sources s JOIN scrape_targets t ON t.source_id = s.id WHERE t.id = $1",
+						[api.id],
+					),
+				).pipe(Effect.map((result) => result.rows[0]))
+
+			yield* service.recordScrapeResults([{ targetId: api.id, scrapedAt: 1750000000000, error: null }])
+			const healthy = yield* readSource()
+			assert.isNotNull(healthy!.last_poll_ok_at)
+			assert.isNull(healthy!.last_poll_error)
+			assert.isNull(healthy!.poll_resources)
+
+			yield* service.recordScrapeResults([
+				{ targetId: api.id, scrapedAt: 1750000015000, error: "HTTP 503" },
+			])
+			assert.strictEqual((yield* readSource())!.last_poll_error, "HTTP 503")
+
+			// Two targets on one source: the failure names its target and counts it unhealthy.
+			yield* Effect.promise(() =>
+				testDb.pglite.query(
+					"UPDATE scrape_targets SET source_id = (SELECT source_id FROM scrape_targets WHERE id = $1) WHERE id = $2",
+					[api.id, worker.id],
+				),
+			)
+			yield* service.recordScrapeResults([
+				{ targetId: api.id, scrapedAt: 1750000030000, error: null },
+				{ targetId: worker.id, scrapedAt: 1750000030000, error: "HTTP 401" },
+			])
+			const shared = yield* readSource()
+			assert.strictEqual(shared!.last_poll_error, "worker: HTTP 401")
+			assert.deepStrictEqual(shared!.poll_resources, { total: 2, unhealthy: 1 })
+
+			yield* service.recordScrapeResults([
+				{ targetId: worker.id, scrapedAt: 1750000045000, error: null },
+			])
+			const recovered = yield* readSource()
+			assert.isNull(recovered!.last_poll_error)
+			assert.deepStrictEqual(recovered!.poll_resources, { total: 2, unhealthy: 0 })
+
+			// A PlanetScale connection's target leaves its source to the connection's own poller.
+			yield* Effect.promise(() =>
+				testDb.pglite.query(
+					"UPDATE scrape_targets SET managed_by = 'planetscale:conn_1' WHERE id = $1",
+					[worker.id],
+				),
+			)
+			yield* service.recordScrapeResults([
+				{ targetId: worker.id, scrapedAt: 1750000200000, error: "HTTP 500" },
+			])
+			assert.isNull((yield* readSource())!.last_poll_error)
+
+			// A probe of a switched-off target says nothing about its source.
+			yield* Effect.promise(() =>
+				testDb.pglite.query(
+					"UPDATE scrape_targets SET managed_by = NULL, enabled = false WHERE id IN ($1, $2)",
+					[api.id, worker.id],
+				),
+			)
+			const before = yield* readSource()
+			yield* TestClock.adjust("2 minutes")
+			yield* service.recordScrapeResults([{ targetId: api.id, scrapedAt: 1750000300000, error: null }])
+			assert.deepStrictEqual(yield* readSource(), before)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("recordScrapeResults tolerates unknown target ids and processes batches", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -216,6 +388,10 @@ describe("ScrapeTargetsService", () => {
 		return Effect.gen(function* () {
 			const service = yield* ScrapeTargetsService
 			const orgId = asOrgId("org_1")
+			// One source for all six, as a PlanetScale connection's branch targets share one.
+			const sourceId = yield* Effect.promise(() =>
+				insertTestSource(testDb, { orgId, platform: "prometheus" }),
+			)
 			// Seeded with SQL, not create(), whose background probe would run its own
 			// recordScrapeResults alongside the one under test.
 			const [ok, failing, stale, ...rest] = yield* Effect.forEach(
@@ -226,13 +402,14 @@ describe("ScrapeTargetsService", () => {
 						Effect.promise(() =>
 							executeSql(
 								testDb,
-								"INSERT INTO scrape_targets (id, org_id, name, url, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $5)",
+								"INSERT INTO scrape_targets (id, org_id, source_id, name, url, created_at, updated_at) VALUES ($1, $2, $6, $3, $4, $5, $5)",
 								[
 									id,
 									orgId,
 									name,
 									`https://${name}.example.com/metrics`,
 									new Date(0).toISOString(),
+									sourceId,
 								],
 							),
 						),
@@ -258,8 +435,16 @@ describe("ScrapeTargetsService", () => {
 					...rest.map((target) => ({ targetId: target.id, scrapedAt, error: null })),
 				])
 				.pipe(Effect.withTracer(recorder.tracer))
-			// 6 targets: 1 UPDATE + 1 SELECT (org ids) + 1 INSERT (check rows).
-			assert.deepStrictEqual(recorder.verbs(), ["UPDATE", "SELECT", "INSERT"])
+			// 6 targets of one source: 1 UPDATE, 1 SELECT (org and source ids), the source's targets and
+			// poll state, 1 UPDATE of the source, then 1 INSERT (check rows).
+			assert.deepStrictEqual(recorder.verbs(), [
+				"UPDATE",
+				"SELECT",
+				"SELECT",
+				"SELECT",
+				"UPDATE",
+				"INSERT",
+			])
 
 			const okRow = yield* service.get(orgId, ok.id)
 			assert.strictEqual(okRow.lastScrapeAt, new Date(scrapedAt).toISOString())
@@ -526,6 +711,41 @@ describe("ScrapeTargetsService", () => {
 			const probed = yield* service.probe(orgId, target.id)
 			assert.isFalse(probed.success)
 			assert.strictEqual(probed.lastScrapeError, "Response contained no Prometheus metrics")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("manual probes judge an endless body by a bounded prefix", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			const target = yield* service.create(
+				orgId,
+				new CreateScrapeTargetRequest({
+					name: "Node Exporter",
+					url: "https://metrics.example.com/metrics",
+					scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+				}),
+			)
+
+			const pulled = { count: 0 }
+			// 7 bytes per line, so chunk boundaries cut lines and the cap lands mid-line.
+			const chunk = new TextEncoder().encode("up 1.5\n".repeat(10_000))
+			const fetchStub = (async () =>
+				new Response(
+					new ReadableStream<Uint8Array>({
+						pull: (controller) => {
+							pulled.count++
+							controller.enqueue(chunk)
+						},
+					}),
+					{ status: 200 },
+				)) as typeof fetch
+			const probed = yield* service
+				.probe(orgId, target.id)
+				.pipe(Effect.provideService(FetchHttpClient.Fetch, fetchStub))
+			assert.isTrue(probed.success)
+			assert.isBelow(pulled.count, 200)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

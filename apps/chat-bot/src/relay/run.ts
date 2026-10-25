@@ -9,10 +9,9 @@
  */
 import type { ChatConnector, ConnectorCredentials, InboundEvent } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
-import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
+import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
@@ -48,12 +47,10 @@ import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticip
  * for, so the spans a turn produces are exported from here or not at all — and flushed when the
  * event is done, because nothing else closes a scope around it.
  */
-const telemetry = MapleCloudflareSDK.make(
-	workerTelemetryConfig({
-		serviceName: "maple-chat-bot",
-		anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
-	}),
-)
+const telemetry = runtimeTelemetry({
+	serviceName: "maple-chat-bot",
+	anticipatedErrorIdentifiers: CHAT_ANTICIPATED_ERROR_IDENTIFIERS,
+})
 
 const APP_BASE_URL_FALLBACK = "https://app.maple.dev"
 
@@ -154,8 +151,8 @@ const lookupFailed =
 		)
 
 /**
- * The workspace this event belongs to: which org, which Maple user the clicker linked, and the
- * credential the connector posts with — in ONE connection.
+ * The workspace this event belongs to: which org, which Maple user the person behind the event
+ * linked, and the credential the connector posts with — in ONE connection.
  *
  * Sequential rather than parallel because the second question needs the first one's answer: a link
  * is per org, and the org is what the workspace names.
@@ -288,8 +285,13 @@ export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Pro
 					connector,
 					event.connector,
 					event.workspaceId,
-					// Only a click names a person; a message is answered for the workspace.
-					event.type === "action" ? event.actor.id : undefined,
+					// The person behind the event: who clicked, or who asked. A connector without an
+					// `identity` half skips the second query anyway.
+					event.type === "action"
+						? event.actor.id
+						: event.type === "message"
+							? event.author.id
+							: undefined,
 				),
 				(resolveWorkspace) => ports(host, environment, connector, resolveWorkspace),
 			)

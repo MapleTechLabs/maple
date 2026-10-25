@@ -22,6 +22,8 @@
  * commit's worktree, as production's sandbox does; this runs model-written code on your machine).
  * `--historical` disables execution and reads outside the selected head's ancestry.
  * `--number <n>` preserves the PR identity when replaying a local range.
+ * `--code-mode` offers `run_code`, its programs run in-process (not isolated) on your machine;
+ * `--code-only` also withholds the direct tools it can call.
  */
 import { spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -30,6 +32,7 @@ import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { ChatMessage, ChatToolCall } from "@maple/domain/chat-session"
+import { PermissionRule } from "@maple/domain/permission"
 import {
 	GitCommitSha,
 	OrgId,
@@ -52,19 +55,21 @@ import {
 	detectMergeSteps,
 	type NameVerdict,
 } from "@maple/backend/services/pr-review/merge-checklist"
+import { privacyFindings, withoutReviewerOverlap } from "@maple/backend/services/pr-review/telemetry/privacy"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { ConfigProvider, Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
 import type { ChatTurnEvent } from "@/chat/events"
 import { withToolTranscript } from "@/chat/close-out"
-import { PR_REVIEW_TOOLS } from "@/chat/permissions"
+import { PR_REVIEW_RULESET, PR_REVIEW_TOOLS } from "@/chat/permissions"
 import { normalizeArguments, argumentWarnings } from "@/mcp/lib/decode-issues"
 import { PR_REVIEW_CLOSE_OUT_PROMPT } from "@/chat/prompts"
 import { makeReviewCoverage } from "@/chat/review-coverage"
 import { makeReviewLedger } from "@/chat/review-ledger"
-import { runChatTurn } from "@/chat/run"
+import { runChatTurn, type SettledChild } from "@/chat/run"
 import { makeRunUsage, savedFindingsRequest } from "@/chat/tools"
 import type { McpToolExecutorApi } from "@/mcp/dispatcher"
+import { inProcessCodeExecutorLayer } from "@yielded/agent-testing/code-executor-substitute"
 import {
 	annotatePatch,
 	renderChangedFiles,
@@ -93,6 +98,10 @@ interface Args {
 	/** Let `sandbox_exec` run `node` and `bun`, which production's sandbox offers. Off by default. */
 	readonly allowExec: boolean
 	readonly historical?: boolean
+	/** Offer `run_code`; programs run in the in-process executor, which is not a security boundary. */
+	readonly codeMode: boolean
+	/** With `codeMode`, reads go only through `run_code`. */
+	readonly codeOnly: boolean
 }
 
 const usage = () => {
@@ -107,7 +116,13 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const positional: Array<string> = []
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
-		if (arg === "--post" || arg === "--allow-exec" || arg === "--historical") {
+		if (
+			arg === "--post" ||
+			arg === "--allow-exec" ||
+			arg === "--historical" ||
+			arg === "--code-mode" ||
+			arg === "--code-only"
+		) {
 			flags.set(arg.slice(2), "true")
 		} else if (arg.startsWith("--")) {
 			const value = argv[i + 1]
@@ -138,6 +153,8 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		range,
 		allowExec: flags.get("allow-exec") === "true",
 		historical: flags.has("historical"),
+		codeMode: flags.has("code-mode") || flags.has("code-only"),
+		codeOnly: flags.has("code-only"),
 	}
 }
 
@@ -857,6 +874,72 @@ const newSideLines = (file: PullRequestFile | undefined): Map<number, string> =>
  * One local review. `injected.model` replaces the resolved model, which is how the wiring is
  * exercised with a scripted model when no provider key is at hand.
  */
+/** A child reviewer's tool calls in order, each with its result and whether it failed. */
+const childCalls = (child: SettledChild) => {
+	const messages = child.history?.content ?? []
+	const results = new Map(
+		messages.flatMap((message) =>
+			message.role === "tool"
+				? message.content.flatMap((part) =>
+						part.type === "tool-result" ? [[part.id, part] as const] : [],
+					)
+				: [],
+		),
+	)
+	return messages.flatMap((message) =>
+		message.role === "assistant"
+			? message.content.flatMap((part) =>
+					part.type === "tool-call" ? [{ call: part, result: results.get(part.id) }] : [],
+				)
+			: [],
+	)
+}
+
+const childSummary = (child: SettledChild) => {
+	const calls = childCalls(child)
+	return {
+		toolCallId: child.event.toolCallId,
+		outcome: child.event._tag,
+		...(child.event._tag === "SubagentFailed"
+			? { errorTag: child.event.errorTag, message: child.event.message }
+			: undefined),
+		toolCalls: calls.length,
+		failedToolCalls: calls.filter(({ result }) => result?.isFailure === true).length,
+		historyRead: child.history !== undefined,
+	}
+}
+
+/** One child reviewer, as a transcript section: why it ended, then each call and what came back. */
+const childTranscript = (child: SettledChild, index: number): ReadonlyArray<string> => {
+	const text = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value, null, 2))
+	const answer = (child.history?.content ?? [])
+		.filter((message) => message.role === "assistant")
+		.flatMap((message) => message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])))
+		.join("")
+	return [
+		"",
+		`# Child ${index + 1} (review_files call ${child.event.toolCallId}): ${child.event._tag}`,
+		...(child.event._tag === "SubagentFailed"
+			? ["", `${child.event.errorTag}: ${child.event.message}`]
+			: []),
+		...(child.history === undefined ? ["", "(history unavailable)"] : []),
+		...childCalls(child).flatMap(({ call, result }, n) => [
+			"",
+			`## ${index + 1}.${n + 1}. ${call.name}${result?.isFailure === true ? " (error)" : ""}`,
+			"```json",
+			text(call.params),
+			"```",
+			"```",
+			result === undefined ? "(no result)" : text(result.result),
+			"```",
+		]),
+		"",
+		"## Child answer",
+		"",
+		answer || "(none)",
+	]
+}
+
 export const reviewLocally = async (
 	argv: ReadonlyArray<string>,
 	injected: { readonly model?: ResolvedModel } = {},
@@ -924,6 +1007,7 @@ export const reviewLocally = async (
 
 	const tools: Array<ToolRecord> = []
 	const byCall = new Map<string, ToolRecord>()
+	const children: Array<SettledChild> = []
 	let prose = ""
 	let submitted: SubmitPrReviewRequest | undefined
 	let endReason = "unknown"
@@ -982,14 +1066,33 @@ export const reviewLocally = async (
 				}),
 			...(turn.closeOut === true ? { closeOut: true } : undefined),
 			review: reviewState,
-			...(promptOverride === undefined
+			...(promptOverride === undefined && args.historical !== true
 				? undefined
-				: { agent: { ...AGENTS["pr-review"], prompt: promptOverride } }),
+				: {
+						agent: {
+							...AGENTS["pr-review"],
+							...(promptOverride === undefined ? undefined : { prompt: promptOverride }),
+							// A replay refuses every command, so the tool is not offered: a model that keeps
+							// trying it spends its consecutive-failure allowance on nothing.
+							...(args.historical === true
+								? {
+										autonomousPermission: [
+											...PR_REVIEW_RULESET,
+											new PermissionRule({ tool: "sandbox_exec", action: "deny" }),
+										],
+									}
+								: undefined),
+						},
+					}),
+			...(args.codeMode
+				? { codeExecutor: inProcessCodeExecutorLayer, codeOnly: args.codeOnly }
+				: undefined),
 			text: turn.text,
 			history: turn.history,
 			usage,
 			holdsTurn: () => true,
 			append,
+			onChildSettled: (child) => children.push(child),
 		}).pipe(
 			Effect.provide(layerLlm(settings)),
 			// The engine logs every tool execution at info; the progress lines above are the readable view.
@@ -1098,6 +1201,7 @@ export const reviewLocally = async (
 		"## Assistant prose",
 		"",
 		prose || "(none)",
+		...children.flatMap(childTranscript),
 	]
 	writeFileSync(join(dir, "transcript.md"), transcript.join("\n"))
 
@@ -1113,9 +1217,11 @@ export const reviewLocally = async (
 					pr: pr.html_url,
 					headSha: pr.head.sha,
 					model: model.name,
+					codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
 					usage,
 					durationMs,
 					endReason,
+					children: children.map(childSummary),
 					tools: tools.map(({ name, input, isError, output }) => ({
 						name,
 						input,
@@ -1143,8 +1249,13 @@ export const reviewLocally = async (
 		reviewer: reviewerSteps ?? [],
 		isIgnored: () => false,
 	})
+	// The privacy scan the service files at submit, so a local run posts what production would.
 	const report = new PrReviewReport({
 		...submittedReport,
+		findings: [
+			...submittedReport.findings,
+			...withoutReviewerOverlap(privacyFindings(files), submittedReport.findings),
+		],
 		...(beforeMerge.length > 0 ? { beforeMerge } : undefined),
 	})
 	const publication = buildPublication({
@@ -1213,6 +1324,7 @@ export const reviewLocally = async (
 				pr: pr.html_url,
 				headSha: pr.head.sha,
 				model: model.name,
+				codeMode: args.codeOnly ? "only" : args.codeMode ? "on" : "off",
 				usage,
 				durationMs,
 				endReason,
@@ -1221,6 +1333,7 @@ export const reviewLocally = async (
 				report,
 				publication,
 				offDiff: offDiff.map(({ annotation }) => `${annotation.path}:${annotation.startLine}`),
+				children: children.map(childSummary),
 				tools: tools.map(({ name, input, isError, output }) => ({
 					name,
 					input,

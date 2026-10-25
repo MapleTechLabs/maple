@@ -31,7 +31,7 @@
  * GITHUB_TOKEN/GH_TOKEN for the PR-state gate.
  */
 
-import { fetchPrState, hasPrStateCredentials } from "./lib/pr-state.ts"
+import { fetchPreviewState, hasPrStateCredentials } from "./lib/pr-state.ts"
 
 const FAILURE = 1
 
@@ -114,16 +114,16 @@ const main = async (): Promise<void> => {
 
 	const failures: string[] = []
 	for (const { id, name, match } of candidates) {
-		const state = await fetchPrState(match[1] as string)
-		if (state === "open") {
-			console.log(`… keeping ${name} (PR #${match[1]} is open)`)
+		const state = await fetchPreviewState(match[1] as string)
+		if (state === "live") {
+			console.log(`… keeping ${name} (PR #${match[1]} has a live preview)`)
 			continue
 		}
 		if (state === "unknown") {
 			console.log(`⚠ skipping ${name} (PR #${match[1]} state unknown)`)
 			continue
 		}
-		console.log(`… deleting orphan ${name} (PR #${match[1]} is closed)`)
+		console.log(`… deleting orphan ${name} (PR #${match[1]} is closed or unlabelled)`)
 		const removed = await cfRequest(token, `/accounts/${accountId}/hyperdrive/configs/${id}`, {
 			method: "DELETE",
 		})

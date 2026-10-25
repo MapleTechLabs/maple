@@ -8,9 +8,11 @@ import {
 	ScrapeTargetType,
 	UserId,
 } from "@maple/domain/http"
+import type { SourceId } from "@maple/domain/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { publicSourceId } from "@maple/backend/services/org/integration-sources"
 import {
 	PlanetScaleDiscoveryService,
 	type PlanetScaleSubTarget,
@@ -54,6 +56,8 @@ export interface ScrapeTargetRowLike {
 	readonly targetType: string
 	readonly scrapeIntervalSeconds: number
 	readonly labelsJson: unknown
+	/** The source the target sends as, stamped as `maple_source_id`. */
+	readonly sourceId: SourceId | null
 }
 
 export interface SubTargetOverride {
@@ -109,6 +113,7 @@ export const toInternalScrapeTarget = (
 					scrapeIntervalSeconds: decodeScrapeIntervalSecondsSync(row.scrapeIntervalSeconds),
 					labels,
 					ingestKey,
+					...(row.sourceId === null ? undefined : { sourceId: publicSourceId(row.sourceId) }),
 				}),
 			catch: (cause) =>
 				new InvalidScrapeTargetRow({
@@ -218,7 +223,6 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 					rows.map((row) => row.orgId),
 					SCRAPER_SYSTEM_USER,
 				)
-
 				// Rows are independent; most of the cost is one PlanetScale discovery
 				// GET per uncached row, so run them side by side, bounded.
 				const perRow = yield* Effect.forEach(

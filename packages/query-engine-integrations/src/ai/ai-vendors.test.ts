@@ -483,6 +483,33 @@ describe("eve", () => {
 		expect(mapped.isAiSpan).toBe(true)
 	})
 
+	it("decodes an eve 0.78 chat span through the default integration", () => {
+		// docs_eve_a: canonical gen_ai keys under the `eve.agent` scope, with the
+		// session id as the conversation id and no `eve.turn.id`.
+		const mapped = mapAiSpan(
+			row("eve", {
+				"agent.run.id": "wrun_01M4TB7Z6ACQ2Z7YJ7VEBZPQRM",
+				"gen_ai.agent.name": "support-agent",
+				"gen_ai.conversation.id": "wrun_01M4TB7Z6ACQ2Z7YJ7VEBZPQRM",
+				"gen_ai.operation.name": "chat",
+				"gen_ai.provider.name": "openrouter",
+				"gen_ai.request.model": "openai/gpt-4o-mini",
+				"gen_ai.usage.input_tokens": "2157",
+				"gen_ai.usage.output_tokens": "54",
+				"maple_ai.session.id": "wrun_01M4TB7Z6ACQ2Z7YJ7VEBZPQRM",
+			}),
+		)
+
+		expect(mapped.genAi.operationName).toBe("chat")
+		expect(mapped.genAi.requestModel).toBe("openai/gpt-4o-mini")
+		expect(mapped.genAi.providerName).toBe("openrouter")
+		expect(mapped.genAi.usageInputTokens).toBe(2157)
+		expect(mapped.genAi.usageOutputTokens).toBe(54)
+		expect(mapped.genAi.agentName).toBe("support-agent")
+		expect(mapped.genAi.conversationId).toBe("wrun_01M4TB7Z6ACQ2Z7YJ7VEBZPQRM")
+		expect(mapped.sessionId).toBe("wrun_01M4TB7Z6ACQ2Z7YJ7VEBZPQRM")
+	})
+
 	it("does not overwrite a conversation id the span already declared", () => {
 		const mapped = mapAiSpan(row("eve", { "gen_ai.conversation.id": "conv-1", "eve.turn.id": "turn_1" }))
 

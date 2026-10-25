@@ -7,13 +7,14 @@ import {
 	SETUP_AUDIT_CHECKS,
 	runSetupAudit,
 } from "./setup-audit"
+import { buildIntegrationInventory, type IntegrationInventoryInputs } from "./integration-inventory"
 
 const NOW = Date.UTC(2026, 6, 27, 12, 0, 0)
 const HOUR = 60 * 60_000
 
 /** A fully healthy org — every check passes. Each test perturbs exactly one field. */
 const healthyConfig: ConfigAuditInputs = {
-	firstDataReceivedAt: NOW - 30 * 24 * HOUR,
+	telemetry: "present",
 	alertRules: [
 		{
 			id: "rule-1",
@@ -21,6 +22,7 @@ const healthyConfig: ConfigAuditInputs = {
 			enabled: true,
 			destinationIds: ["dest-1"],
 			windowMinutes: 5,
+			evaluationIntervalMinutes: 1,
 			lastScheduledAt: NOW - 60_000,
 			createdAt: NOW - 10 * 24 * HOUR,
 		},
@@ -52,6 +54,25 @@ const spanKey = (key: string, usageCount = 100) => ({ scope: "span", key, usageC
 const resourceKey = (key: string, usageCount = 100) => ({ scope: "resource", key, usageCount })
 
 /** A fully healthy telemetry snapshot — every telemetry check passes against it. */
+/** Rootless rows as the query returns them: each carries the org-wide totals of all the rows. */
+const withOrgTotals = (
+	rows: ReadonlyArray<{
+		readonly entryService: string
+		readonly traceCount: number
+		readonly rootlessCount: number
+		readonly sampledRootlessCount: number
+	}>,
+) => {
+	const sum = (pick: (row: (typeof rows)[number]) => number) =>
+		rows.reduce((total, row) => total + pick(row), 0)
+	const totals = {
+		orgTraceCount: sum((row) => row.traceCount),
+		orgRootlessCount: sum((row) => row.rootlessCount),
+		orgSampledRootlessCount: sum((row) => row.sampledRootlessCount),
+	}
+	return rows.map((row) => ({ ...row, ...totals }))
+}
+
 const healthyWarehouse: WarehouseAuditInputs = {
 	lookbackHours: 24,
 	logCorrelationHours: 6,
@@ -112,7 +133,9 @@ const healthyWarehouse: WarehouseAuditInputs = {
 				sampleTraceIds: [],
 			},
 		],
-		rootless: [{ entryService: "api", traceCount: 800, rootlessCount: 3, sampledRootlessCount: 0 }],
+		rootless: withOrgTotals([
+			{ entryService: "api", traceCount: 10_000, rootlessCount: 1, sampledRootlessCount: 0 },
+		]),
 	},
 }
 
@@ -207,6 +230,8 @@ describe("runSetupAudit — baseline", () => {
 					sourceContext: "span",
 					sourceKey: `gone.key.${i}`,
 					targetKey: "http.request.method",
+					operation: "copy",
+					updatedAt: NOW - 10 * 24 * HOUR,
 				})),
 			}
 			const telemetry: WarehouseAuditInputs = {
@@ -276,7 +301,7 @@ describe("runSetupAudit — baseline", () => {
 						sampledOrphanCount: 0,
 						sampleTraceIds: [],
 					})),
-					rootless: [
+					rootless: withOrgTotals([
 						{ entryService: "api", traceCount: 800, rootlessCount: 0, sampledRootlessCount: 0 },
 						...each((i) => ({
 							entryService: `svc-${i}`,
@@ -284,7 +309,7 @@ describe("runSetupAudit — baseline", () => {
 							rootlessCount: 400,
 							sampledRootlessCount: 0,
 						})),
-					],
+					]),
 				},
 			}
 			return runSetupAudit({ now: NOW, config, warehouse: telemetry }).checks
@@ -292,14 +317,6 @@ describe("runSetupAudit — baseline", () => {
 
 		// Every check must actually have produced a sentence, or the guard proves nothing.
 		const sentences = failing.filter((row) => row.status === "fail" && row.detail !== null)
-		const fired = new Set(sentences.map((row) => row.id))
-		console.log("FIRED:", [...fired].sort().join(","))
-		console.log(
-			"SILENT:",
-			SETUP_AUDIT_CHECKS.map((c) => c.id)
-				.filter((id) => !fired.has(id))
-				.join(","),
-		)
 
 		const singularVerbAfterPluralNoun =
 			/\b\d+ [a-z][a-z .\-_*`]*s (is|has|emits|sends|receives|appears|uses|starts|logs|arrives|duplicates|marks)\b/
@@ -313,10 +330,19 @@ describe("runSetupAudit — baseline", () => {
 
 	it("short-circuits to no_data before any check runs when telemetry never arrived", () => {
 		// Deliberately also broken elsewhere: the gate must win over every other finding.
-		const report = runSetupAudit(inputs({ firstDataReceivedAt: null, alertDestinations: [] }))
+		const report = runSetupAudit(inputs({ telemetry: "absent", alertDestinations: [] }))
 		expect(report.dataStatus).toBe("no_data")
 		expect(report.checks).toEqual([])
 		expect(report.summary).toEqual({ critical: 0, warn: 0, info: 0, pass: 0, skip: 0 })
+	})
+
+	it("runs the config checks when whether telemetry ever arrived is unknown", () => {
+		const report = runSetupAudit(
+			inputsWith(undefined, { telemetry: "unavailable", alertDestinations: [] }),
+		)
+		expect(report.dataStatus).toBe("ok")
+		expect(check(report, "CFG-ALERT-01").status).toBe("fail")
+		expect(check(report, "CFG-MAP-01").status).toBe("skip")
 	})
 
 	it("skips warehouse checks instead of failing them when the warehouse is unavailable", () => {
@@ -390,6 +416,7 @@ describe("CFG-ALERT-02 — alert rules exist", () => {
 						enabled: false,
 						destinationIds: [],
 						windowMinutes: 5,
+						evaluationIntervalMinutes: 1,
 						lastScheduledAt: null,
 						createdAt: NOW - 10 * 24 * HOUR,
 					},
@@ -446,6 +473,7 @@ describe("CFG-ALERT-03 — rules route somewhere", () => {
 			enabled: true,
 			destinationIds: [],
 			windowMinutes: 5,
+			evaluationIntervalMinutes: 1,
 			lastScheduledAt: NOW - 60_000,
 			createdAt: NOW - 10 * 24 * HOUR,
 		}))
@@ -549,6 +577,38 @@ describe("CFG-ALERT-05 — rules are evaluating", () => {
 		)
 		expect(check(report, "CFG-ALERT-05").status).toBe("pass")
 	})
+
+	const hourlyRule = (lastScheduledAt: number) => ({
+		...healthyConfig.alertRules[0]!,
+		windowMinutes: 60,
+		evaluationIntervalMinutes: 60,
+		lastScheduledAt,
+	})
+
+	it("passes an hourly rule claimed 47 minutes ago", () => {
+		const report = runSetupAudit(inputs({ alertRules: [hourlyRule(NOW - 47 * 60_000)] }))
+		expect(check(report, "CFG-ALERT-05").status).toBe("pass")
+	})
+
+	it("flags an hourly rule that missed two intervals", () => {
+		const report = runSetupAudit(inputs({ alertRules: [hourlyRule(NOW - 3 * HOUR)] }))
+		expect(check(report, "CFG-ALERT-05").affected[0]?.note).toBe("last evaluated 3 hours ago")
+	})
+
+	it("flags a 5-minute rule claimed 45 minutes ago", () => {
+		const report = runSetupAudit(
+			inputs({
+				alertRules: [
+					{
+						...healthyConfig.alertRules[0]!,
+						evaluationIntervalMinutes: 5,
+						lastScheduledAt: NOW - 45 * 60_000,
+					},
+				],
+			}),
+		)
+		expect(check(report, "CFG-ALERT-05").affected[0]?.note).toBe("last evaluated 45 minutes ago")
+	})
 })
 
 describe("CFG-NOTIF-01 — error notifications reach someone", () => {
@@ -593,7 +653,13 @@ describe("CFG-ANOM-01 — anomaly detection", () => {
 describe("CFG-SAMP-01 — sampling is understood", () => {
 	it("passes at a ratio of exactly 1", () => {
 		const report = runSetupAudit(
-			inputs({ samplingPolicy: { traceSampleRatio: 1, alwaysKeepErrorSpans: true } }),
+			inputs({
+				samplingPolicy: {
+					traceSampleRatio: 1,
+					alwaysKeepErrorSpans: true,
+					alwaysKeepSlowSpansMs: null,
+				},
+			}),
 		)
 		expect(check(report, "CFG-SAMP-01").status).toBe("pass")
 	})
@@ -604,7 +670,13 @@ describe("CFG-SAMP-01 — sampling is understood", () => {
 
 	it("reports the ratio as a percentage and notes that errors are kept", () => {
 		const report = runSetupAudit(
-			inputs({ samplingPolicy: { traceSampleRatio: 0.1, alwaysKeepErrorSpans: true } }),
+			inputs({
+				samplingPolicy: {
+					traceSampleRatio: 0.1,
+					alwaysKeepErrorSpans: true,
+					alwaysKeepSlowSpansMs: null,
+				},
+			}),
 		)
 		const result = check(report, "CFG-SAMP-01")
 		expect(result.status).toBe("fail")
@@ -614,7 +686,13 @@ describe("CFG-SAMP-01 — sampling is understood", () => {
 
 	it("warns harder when error spans are sampled too", () => {
 		const report = runSetupAudit(
-			inputs({ samplingPolicy: { traceSampleRatio: 0.05, alwaysKeepErrorSpans: false } }),
+			inputs({
+				samplingPolicy: {
+					traceSampleRatio: 0.05,
+					alwaysKeepErrorSpans: false,
+					alwaysKeepSlowSpansMs: null,
+				},
+			}),
 		)
 		expect(check(report, "CFG-SAMP-01").detail).toContain("errors can be missed entirely")
 	})
@@ -644,7 +722,10 @@ describe("CFG-MAP-01 / CFG-MAP-02 — mapping liveness", () => {
 		sourceContext: "span",
 		sourceKey: "http.status_code",
 		targetKey: "http.response.status_code",
+		operation: "copy",
+		updatedAt: NOW - 10 * 24 * HOUR,
 	}
+	const move = { ...mapping, operation: "move" }
 
 	it("flags a mapping whose source key no longer arrives", () => {
 		const report = runSetupAudit(inputs({ attributeMappings: [mapping] }))
@@ -675,13 +756,44 @@ describe("CFG-MAP-01 / CFG-MAP-02 — mapping liveness", () => {
 		expect(check(report, "CFG-MAP-01").status).toBe("pass")
 	})
 
-	it("flags a mapping whose target key already arrives natively", () => {
-		const report = runSetupAudit(
+	it("passes a working copy or move mapping, whose target the mapping itself writes", () => {
+		const copyReport = runSetupAudit(
 			inputsWith(
 				warehouse({
 					attributeKeys: [spanKey("http.status_code", 9), spanKey("http.response.status_code", 9)],
 				}),
 				{ attributeMappings: [mapping] },
+			),
+		)
+		expect(check(copyReport, "CFG-MAP-02").status).toBe("pass")
+		const moveReport = runSetupAudit(
+			inputsWith(warehouse({ attributeKeys: [spanKey("http.response.status_code", 9)] }), {
+				attributeMappings: [move],
+			}),
+		)
+		expect(check(moveReport, "CFG-MAP-01").status).toBe("pass")
+		expect(check(moveReport, "CFG-MAP-02").status).toBe("pass")
+	})
+
+	it("does not flag a move changed inside the lookback, while older spans keep the source", () => {
+		const report = runSetupAudit(
+			inputsWith(
+				warehouse({
+					attributeKeys: [spanKey("http.status_code", 9), spanKey("http.response.status_code", 9)],
+				}),
+				{ attributeMappings: [{ ...move, updatedAt: NOW - HOUR }] },
+			),
+		)
+		expect(check(report, "CFG-MAP-02").status).toBe("pass")
+	})
+
+	it("flags a move mapping whose source survives because the target already arrives", () => {
+		const report = runSetupAudit(
+			inputsWith(
+				warehouse({
+					attributeKeys: [spanKey("http.status_code", 9), spanKey("http.response.status_code", 9)],
+				}),
+				{ attributeMappings: [move] },
 			),
 		)
 		const result = check(report, "CFG-MAP-02")
@@ -741,6 +853,135 @@ describe("integration checks", () => {
 		const result = check(report, "CFG-INTEG-01")
 		expect(result.status).toBe("fail")
 		expect(result.affected[0]).toMatchObject({ kind: "integration", name: "cloudflare" })
+	})
+
+	describe("inventory-backed integration checks", () => {
+		const inventoryOf = (partial: Partial<IntegrationInventoryInputs>) =>
+			buildIntegrationInventory(
+				{
+					oauthConnections: [],
+					vcsInstallations: [],
+					vcsRepositories: [],
+					cloudflareStates: [],
+					cloudflareLogpush: [],
+					cloudflareHyperdrives: [],
+					railwayConnection: null,
+					railwayEnvironments: [],
+					planetscaleConnection: null,
+					planetscaleDatabases: [],
+					planetscalePollStates: [],
+					scrapeTargets: [],
+					chatWorkspaces: [],
+					...partial,
+				},
+				NOW,
+			)
+		const railwayConnection = {
+			workspaceNames: "acme",
+			authFailedAt: null,
+			lastSuccessAt: NOW - 60_000,
+			lastErrorAt: null,
+			lastError: null,
+			createdAt: NOW - 30 * 24 * HOUR,
+		}
+
+		it("CFG-INTEG-04 names a stale Railway environment and how old its data is", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						railwayConnection,
+						railwayEnvironments: [
+							{
+								projectName: "shop",
+								environmentName: "preview",
+								serviceCount: 2,
+								lastSuccessAt: NOW - 4 * HOUR,
+								lastErrorAt: null,
+								lastError: null,
+							},
+						],
+					}),
+				}),
+			)
+			const result = check(report, "CFG-INTEG-04")
+			expect(result.status).toBe("fail")
+			expect(result.affected[0]?.name).toBe("environment shop / preview")
+			expect(result.affected[0]?.note).toContain("no successful update for 4 h")
+		})
+
+		it("CFG-INTEG-04 reports a rejected Railway token even with no environments", () => {
+			const report = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						railwayConnection: { ...railwayConnection, authFailedAt: NOW - HOUR },
+					}),
+				}),
+			)
+			const result = check(report, "CFG-INTEG-04")
+			expect(result.status).toBe("fail")
+			expect(result.affected[0]?.note).toContain("Railway rejected the API token")
+		})
+
+		it("CFG-INTEG-05 flags a PlanetScale grant waiting for an organization, but not a revoked one", () => {
+			const grant = {
+				provider: "planetscale",
+				externalAccountName: "acme",
+				externalUserEmail: null,
+				revokedAt: null,
+				createdAt: NOW - HOUR,
+			}
+			const pending = runSetupAudit(
+				inputs({ integrationInventory: inventoryOf({ oauthConnections: [grant] }) }),
+			)
+			expect(check(pending, "CFG-INTEG-05").affected[0]?.note).toContain(
+				"no PlanetScale organization is selected",
+			)
+
+			// A revoked grant is CFG-INTEG-01's finding; reporting it twice would double-count one problem.
+			const revoked = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						oauthConnections: [{ ...grant, revokedAt: NOW - HOUR }],
+					}),
+				}),
+			)
+			expect(check(revoked, "CFG-INTEG-05").status).toBe("pass")
+		})
+
+		it("CFG-INTEG-06 fails only on a Logpush job that errored, not one still waiting for traffic", () => {
+			const logpush = {
+				name: "edge-logs",
+				zoneName: "example.com",
+				serviceName: "edge",
+				lastReceivedAt: null,
+			}
+			const waiting = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						cloudflareLogpush: [{ ...logpush, lastError: null }],
+					}),
+				}),
+			)
+			expect(check(waiting, "CFG-INTEG-06").status).toBe("pass")
+
+			const broken = runSetupAudit(
+				inputs({
+					integrationInventory: inventoryOf({
+						cloudflareLogpush: [{ ...logpush, lastError: "HMAC signature mismatch" }],
+					}),
+				}),
+			)
+			const result = check(broken, "CFG-INTEG-06")
+			expect(result.status).toBe("fail")
+			expect(result.affected[0]?.note).toContain("HMAC signature mismatch")
+		})
+
+		it("passes the inventory checks when the inventory could not be read", () => {
+			const report = runSetupAudit(inputs())
+			for (const id of ["CFG-INTEG-04", "CFG-INTEG-05", "CFG-INTEG-06"]) {
+				expect(check(report, id).status).toBe("pass")
+			}
+		})
 	})
 
 	it("CFG-INTEG-02 fires only when the last error is newer than the last success", () => {
@@ -1302,51 +1543,130 @@ describe("trace completeness", () => {
 	})
 
 	describe("TRC-02 — rootless traces", () => {
-		it("flags one service whose traces lack a root", () => {
-			const report = traces({
-				rootless: [
-					{ entryService: "api", traceCount: 800, rootlessCount: 3, sampledRootlessCount: 0 },
-					{
-						entryService: "checkout",
-						traceCount: 800,
-						rootlessCount: 400,
-						sampledRootlessCount: 0,
-					},
-				],
+		const rootless = (
+			...rows: ReadonlyArray<
+				readonly [service: string, traces: number, rootless: number, sampled?: number]
+			>
+		) =>
+			traces({
+				rootless: withOrgTotals(
+					rows.map(([entryService, traceCount, rootlessCount, sampledRootlessCount = 0]) => ({
+						entryService,
+						traceCount,
+						rootlessCount,
+						sampledRootlessCount,
+					})),
+				),
 			})
-			const result = check(report, "TRC-02")
-			expect(result.status).toBe("fail")
-			expect(result.affected).toHaveLength(1)
-			expect(result.affected[0]?.name).toBe("checkout")
+
+		it("passes with a single trace that lacks a root", () => {
+			expect(check(rootless(["api", 9_000, 1]), "TRC-02").status).toBe("pass")
 		})
 
-		it("collapses a near-total, uniform rate into one upstream finding", () => {
-			const report = traces({
-				rootless: [
-					{ entryService: "api", traceCount: 800, rootlessCount: 800, sampledRootlessCount: 0 },
-					{
-						entryService: "checkout",
-						traceCount: 800,
-						rootlessCount: 796,
-						sampledRootlessCount: 0,
-					},
-				],
-			})
+		it("is info for two or more rootless traces at or below 0.1%", () => {
+			const report = rootless(["api", 9_000, 10], ["web", 1_000, 0])
 			const result = check(report, "TRC-02")
 			expect(result.status).toBe("fail")
-			expect(result.affected).toEqual([])
-			expect(result.detail).toContain("created upstream of your instrumented services")
+			expect(result.severity).toBe("info")
+			expect(result.detail).toContain("0.1% of traces have no root span: 10 of 10000 traces")
+			expect(report.summary.info).toBe(1)
 		})
 
-		it("does not treat a partially-affected org as systemic", () => {
-			const report = traces({
-				rootless: [
-					{ entryService: "api", traceCount: 800, rootlessCount: 800, sampledRootlessCount: 0 },
-					{ entryService: "checkout", traceCount: 800, rootlessCount: 0, sampledRootlessCount: 0 },
-				],
-			})
+		it("warns above 0.1% of traces, measured across the whole org", () => {
+			// 0.5% of api's own traces, but 0.25% of the org's: the org-wide rate picks the tier.
+			const report = rootless(["api", 4_000, 20], ["web", 4_000, 0])
 			const result = check(report, "TRC-02")
+			expect(result.status).toBe("fail")
+			expect(result.severity).toBe("warn")
+			expect(result.detail).toContain("0.25% of traces have no root span: 20 of 8000 traces")
 			expect(result.affected.map((entity) => entity.name)).toEqual(["api"])
+			expect(result.affected[0]?.note).toBe("0.5% of traces starting here have no root (20 of 4000)")
+			expect(report.summary.warn).toBe(1)
+		})
+
+		it("is critical above 1% of traces", () => {
+			const report = rootless(["worker", 500, 500], ["api", 5_000, 30], ["cli", 40_000, 3])
+			const result = check(report, "TRC-02")
+			expect(result.severity).toBe("critical")
+			expect(result.detail).toContain("1.2% of traces")
+			expect(result.affected.map((entity) => entity.name)).toEqual(["worker", "api", "cli"])
+			expect(report.summary.critical).toBe(1)
+			expect(report.summary.warn).toBe(0)
+		})
+
+		it("keeps its base severity while passing", () => {
+			expect(check(rootless(["api", 1_000, 0]), "TRC-02").severity).toBe("warn")
+		})
+
+		it("never escalates past info below 50 traces", () => {
+			expect(check(rootless(["api", 40, 40]), "TRC-02").severity).toBe("info")
+		})
+
+		it("does not blame upstream when no service has 50 traces", () => {
+			const result = check(rootless(["api", 40, 40]), "TRC-02")
+			expect(result.detail).toContain("100% of traces have no root span: 40 of 40 traces")
+		})
+
+		it("does not blame upstream when the row cap cut services it cannot see", () => {
+			const api = {
+				entryService: "api",
+				traceCount: 9_800,
+				rootlessCount: 9_800,
+				sampledRootlessCount: 0,
+				orgTraceCount: 10_000,
+				orgRootlessCount: 9_800,
+				orgSampledRootlessCount: 0,
+			}
+			const result = check(traces({ rootless: [api] }), "TRC-02")
+			expect(result.detail).toContain("98% of traces have no root span: 9800 of 10000 traces")
+		})
+
+		it("rates the whole org, including services past the row cap", () => {
+			// The query returned only api; the org totals also count 90,000 healthy traces it cut.
+			const api = {
+				entryService: "api",
+				traceCount: 10_000,
+				rootlessCount: 200,
+				sampledRootlessCount: 0,
+				orgTraceCount: 100_000,
+				orgRootlessCount: 200,
+				orgSampledRootlessCount: 0,
+			}
+			const report = traces({ rootless: [api] })
+			const result = check(report, "TRC-02")
+			expect(result.severity).toBe("warn")
+			expect(result.detail).toContain("0.2% of traces have no root span: 200 of 100000 traces")
+		})
+
+		it("does not count traces whose root the sampler dropped", () => {
+			expect(check(rootless(["api", 1_000, 50, 50]), "TRC-02").status).toBe("pass")
+		})
+
+		it("says when the counts come from a trace sample", () => {
+			const report = traces({
+				traceSampleModulus: 4,
+				rootless: withOrgTotals([
+					{ entryService: "api", traceCount: 1_000, rootlessCount: 5, sampledRootlessCount: 0 },
+				]),
+			})
+			expect(check(report, "TRC-02").detail).toContain("(1 in 4 sampled)")
+		})
+
+		it("warns, not escalates, at exactly 1% of traces", () => {
+			expect(check(rootless(["api", 1_000, 10]), "TRC-02").severity).toBe("warn")
+		})
+
+		it("blames upstream when every service's traces arrive without a root", () => {
+			const result = check(rootless(["api", 800, 800], ["checkout", 800, 796]), "TRC-02")
+			expect(result.severity).toBe("critical")
+			expect(result.detail).toContain("created upstream of your instrumented services")
+			expect(result.affected.map((entity) => entity.name)).toEqual(["api", "checkout"])
+		})
+
+		it("names the service when one dominant service is the whole problem", () => {
+			const result = check(rootless(["gateway-fronted", 9_700, 9_700], ["billing", 300, 0]), "TRC-02")
+			expect(result.detail).toContain("97% of traces have no root span")
+			expect(result.affected.map((entity) => entity.name)).toEqual(["gateway-fronted"])
 		})
 	})
 })

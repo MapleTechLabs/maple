@@ -17,7 +17,7 @@ import { InvestigationId, IsoDateTimeString } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
 import { AiTriageSettings, ErrorIssues, Investigations } from "@maple/db/tables"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema, type Semaphore } from "effect"
 
 import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -191,6 +191,8 @@ export interface MaybeEnqueueTriageInput {
 	readonly chatSessions?: ChatSessionsApi
 	/** Manual starts ignore the automation-enabled flag and the gates, but never the quota. */
 	readonly force?: boolean
+	/** One per org when a producer starts several at once: holds the quota read and the insert. */
+	readonly admission?: Semaphore.Semaphore
 }
 
 /**
@@ -562,80 +564,90 @@ export const maybeEnqueueTriage: (
 				? detected
 				: new InvestigationSubjectSnapshot({ ...detected, severity: gate.severity })
 
-		// One agent, one pass. Shared with `InvestigationService` so the two ceilings
-		// are judged the same way on both paths.
-		const usage = yield* database.execute((db) => selectInvestigationUsage(db, input.orgId, nowMs))
-		const quota = evaluateInvestigationQuota({
-			usage,
-			limits: settings,
-			passCount: 1,
-			nowMs,
-			// Severity decides which ceiling applies, in both units, so that a burst of
-			// `low` incidents just after UTC midnight cannot spend the slice a
-			// `critical` opening at noon needs.
-			severity: snapshot.severity,
-		})
-		if (quota.kind === "exceeded") {
-			yield* Effect.logWarning("Investigation daily budget reached; skipping autonomous start").pipe(
-				Effect.annotateLogs({
-					orgId: input.orgId,
-					incidentId: input.incidentId,
-					quotaDimension: quota.dimension,
-					quotaLimit: quota.limit,
-					// Without this the log says a start was refused but not what was
-					// refused. "runs, 100" read the same for a `low` anomaly and for the
-					// `critical` the reserve exists to protect, so there was no way to tell
-					// a working ceiling from one that had just turned away the day's only
-					// real incident.
-					severity: snapshot.severity ?? "unclassified",
-				}),
-			)
-			// A refused start has to be visible as a *refusal*. `start_result` used to
-			// be set only on the success path, so a budget-exhausted org looked
-			// identical in traces to one with nothing to investigate — which is how
-			// this went unnoticed for two weeks.
-			yield* Effect.annotateCurrentSpan({
-				orgId: input.orgId,
-				"maple.investigation.start_result": "quota_exceeded",
-				"maple.investigation.quota_dimension": quota.dimension,
-				"maple.investigation.quota_limit": quota.limit,
-				"maple.investigation.severity": snapshot.severity ?? "unclassified",
+		// Quota read through insert. Under `admission`, concurrent starts for one org
+		// cannot all read the same usage and overshoot the daily cap together.
+		const admit = Effect.gen(function* () {
+			// One agent, one pass. Shared with `InvestigationService` so the two ceilings
+			// are judged the same way on both paths.
+			const usage = yield* database.execute((db) => selectInvestigationUsage(db, input.orgId, nowMs))
+			const quota = evaluateInvestigationQuota({
+				usage,
+				limits: settings,
+				passCount: 1,
+				nowMs,
+				// Severity decides which ceiling applies, in both units, so that a burst of
+				// `low` incidents just after UTC midnight cannot spend the slice a
+				// `critical` opening at noon needs.
+				severity: snapshot.severity,
 			})
-			return { enqueued: false, reason: "daily_cap" as const }
-		}
-
-		const investigationId = decodeInvestigationId(randomUUID())
-		const subject = new InvestigationIncidentSubject({
-			type: "incident",
-			incidentKind: input.incidentKind,
-			incidentId: input.incidentId,
-			...(input.issueId ? { issueId: input.issueId } : undefined),
-		})
-		const inserted = yield* database.execute((db) =>
-			db.run(
-				PG.insertInto(Investigations)
-					.values({
-						id: investigationId,
+			if (quota.kind === "exceeded") {
+				yield* Effect.logWarning(
+					"Investigation daily budget reached; skipping autonomous start",
+				).pipe(
+					Effect.annotateLogs({
 						orgId: input.orgId,
-						status: "investigating",
-						seededBy: "system",
-						subjectJson: subject,
-						snapshotJson: snapshot,
-						incidentKind: input.incidentKind,
 						incidentId: input.incidentId,
-						issueId: input.issueId ?? null,
-						startedAt: nowMs,
-						autonomousTurns: 1,
-						createdAt: nowMs,
-						updatedAt: nowMs,
-					})
-					.onConflictDoNothing()
-					.returning("id"),
-			),
-		)
-		if (inserted.length === 0) {
-			return { enqueued: false, reason: "duplicate" as const }
-		}
+						quotaDimension: quota.dimension,
+						quotaLimit: quota.limit,
+						// Without this the log says a start was refused but not what was
+						// refused. "runs, 100" read the same for a `low` anomaly and for the
+						// `critical` the reserve exists to protect, so there was no way to tell
+						// a working ceiling from one that had just turned away the day's only
+						// real incident.
+						severity: snapshot.severity ?? "unclassified",
+					}),
+				)
+				// A refused start has to be visible as a *refusal*. `start_result` used to
+				// be set only on the success path, so a budget-exhausted org looked
+				// identical in traces to one with nothing to investigate, which is how
+				// this went unnoticed for two weeks.
+				yield* Effect.annotateCurrentSpan({
+					orgId: input.orgId,
+					"maple.investigation.start_result": "quota_exceeded",
+					"maple.investigation.quota_dimension": quota.dimension,
+					"maple.investigation.quota_limit": quota.limit,
+					"maple.investigation.severity": snapshot.severity ?? "unclassified",
+				})
+				return { refused: { enqueued: false, reason: "daily_cap" as const } }
+			}
+
+			const investigationId = decodeInvestigationId(randomUUID())
+			const subject = new InvestigationIncidentSubject({
+				type: "incident",
+				incidentKind: input.incidentKind,
+				incidentId: input.incidentId,
+				...(input.issueId ? { issueId: input.issueId } : undefined),
+			})
+			const inserted = yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(Investigations)
+						.values({
+							id: investigationId,
+							orgId: input.orgId,
+							status: "investigating",
+							seededBy: "system",
+							subjectJson: subject,
+							snapshotJson: snapshot,
+							incidentKind: input.incidentKind,
+							incidentId: input.incidentId,
+							issueId: input.issueId ?? null,
+							startedAt: nowMs,
+							autonomousTurns: 1,
+							createdAt: nowMs,
+							updatedAt: nowMs,
+						})
+						.onConflictDoNothing()
+						.returning("id"),
+				),
+			)
+			if (inserted.length === 0) {
+				return { refused: { enqueued: false, reason: "duplicate" as const } }
+			}
+			return { refused: null, investigationId, subject }
+		})
+		const admitted = yield* input.admission ? input.admission.withPermit(admit) : admit
+		if (admitted.refused !== null) return admitted.refused
+		const { investigationId, subject } = admitted
 
 		const started = yield* startInvestigationTurn({
 			orgId: input.orgId,

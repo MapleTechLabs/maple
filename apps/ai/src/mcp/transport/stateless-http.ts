@@ -24,7 +24,7 @@
  * live request. No `mcp-session-id` is issued, so clients never send one back
  * and the 404 branch cannot be reached. See `layerStatelessMcpServer`.
  */
-import { Cause, Context, Effect, Layer, Predicate, Queue, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Predicate, Queue, Ref, Scope } from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
@@ -35,6 +35,7 @@ import {
 	RequestId,
 	type RequestEncoded,
 } from "effect/rpc/RpcMessage"
+import type { McpToolsUnavailableError } from "../executor-loader"
 
 /**
  * JSON-RPC id for the `initialize` this transport synthesises. Namespaced so it
@@ -136,7 +137,7 @@ export const layerStatelessMcpHttp = (options: {
 	readonly allowedOrigins?: ReadonlyArray<string> | undefined
 	/** Registers the server's tools. Runs before any `tools/*` request, not up front: most
 	 * requests never touch a tool, and building the catalog dominates a cold request's CPU. */
-	readonly registerTools: Effect.Effect<void>
+	readonly registerTools: Effect.Effect<void, McpToolsUnavailableError>
 }): Layer.Layer<RpcServer.Protocol, never, RpcSerialization.RpcSerialization | HttpRouter.HttpRouter> =>
 	Layer.effect(RpcServer.Protocol)(
 		Effect.gen(function* () {
@@ -145,7 +146,7 @@ export const layerStatelessMcpHttp = (options: {
 
 			const disconnects = yield* Queue.make<number>()
 			let writeRequest!: (clientId: number, message: FromClientEncoded) => Effect.Effect<void>
-			let clientId = 0
+			const nextClientId = yield* Ref.make(0)
 
 			type Client = {
 				readonly write: (response: FromServerEncoded) => Effect.Effect<void>
@@ -186,7 +187,7 @@ export const layerStatelessMcpHttp = (options: {
 					)
 					if (body === undefined) return jsonRpcError(null, -32700, "Parse error")
 
-					const id = clientId++
+					const id = yield* Ref.getAndUpdate(nextClientId, (n) => n + 1)
 					const queue = yield* Queue.make<FromServerEncoded, Cause.Done>()
 					const requestIds: Array<RequestId> = []
 
@@ -237,7 +238,19 @@ export const layerStatelessMcpHttp = (options: {
 						return HttpServerResponse.empty({ status: 400 })
 					}
 
-					if (messages.some(isToolMessage)) yield* options.registerTools
+					if (messages.some(isToolMessage)) {
+						const registered = yield* Effect.exit(options.registerTools)
+						if (Exit.isFailure(registered)) {
+							yield* Effect.logError("MCP tool registration failed", registered.cause)
+							return HttpServerResponse.jsonUnsafe(
+								{
+									error: "service_unavailable",
+									message: "MCP tools are temporarily unavailable; retry with backoff.",
+								},
+								{ status: 503, headers: { "cache-control": "no-store" } },
+							)
+						}
+					}
 
 					// The handshake the client did not send, so the server has a negotiated
 					// profile for this exchange.

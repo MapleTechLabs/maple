@@ -1,4 +1,4 @@
-import type { ServicePlatform } from "@/api/warehouse/service-map"
+import type { ServicePlatform } from "@maple/web-data/warehouse/service-map"
 
 export type Vec3 = readonly [number, number, number]
 

@@ -16,6 +16,12 @@
  *   dropping data from users who never intended to opt out. Apps can turn it on.
  */
 
+import {
+	configurePersistence,
+	mayUseStorage,
+	type Persistence,
+	resetPersistenceForTests,
+} from "../platform/persistence"
 import { addUrlSanitizer, resetUrlSanitizersForTests } from "../platform/url-privacy"
 import { configureVisitorCookie } from "./visitor"
 
@@ -24,6 +30,12 @@ export interface PrivacyOptions {
 	readonly requireConsent?: boolean
 	/** Store a persistent visitor id. Default true. */
 	readonly persistVisitorId?: boolean
+	/**
+	 * `"memory"` keeps every SDK state in memory: no cookies, Web Storage or
+	 * IndexedDB, and no visitor id. A reload starts a new session. Default
+	 * `"browser"`.
+	 */
+	readonly persistence?: Persistence
 	/**
 	 * Scope the visitor-id cookie to the registered domain so a marketing site
 	 * and an app on sibling subdomains resolve to the same visitor. Default true.
@@ -56,6 +68,8 @@ interface ConsentState {
 	granted: boolean
 	respectDoNotTrack: boolean
 	allowedSince: number
+	/** Last withdrawal on this page; the only copy in memory-only mode. */
+	revokedAt: number
 	readonly listeners: Set<ConsentListener>
 }
 
@@ -72,13 +86,18 @@ const CONSENT_KEY = "__MAPLE_BROWSER_CONSENT__"
 function consentState(): ConsentState {
 	const owner = globalThis as Record<string, unknown>
 	const existing = owner[CONSENT_KEY] as ConsentState | undefined
-	if (existing) return existing
+	if (existing) {
+		// Created by an older SDK copy on the page, before the field existed.
+		existing.revokedAt ||= 0
+		return existing
+	}
 	const fresh: ConsentState = {
 		allowedSince: 0,
 		granted: false,
 		listeners: new Set(),
 		requireConsent: false,
 		respectDoNotTrack: false,
+		revokedAt: 0,
 	}
 	owner[CONSENT_KEY] = fresh
 	return fresh
@@ -88,6 +107,8 @@ function consentState(): ConsentState {
 const REVOKED_AT_KEY = "maple-consent-revoked-at"
 
 function writeRevokedAt(at: number): void {
+	consentState().revokedAt = at
+	if (!mayUseStorage()) return
 	try {
 		localStorage.setItem(REVOKED_AT_KEY, String(at))
 	} catch {}
@@ -95,10 +116,12 @@ function writeRevokedAt(at: number): void {
 
 /** Epoch ms of the last consent withdrawal on this origin, 0 if never. Data kept from before it must not be sent. */
 export function consentRevokedAt(): number {
+	const inMemory = consentState().revokedAt
+	if (!mayUseStorage()) return inMemory
 	try {
-		return Number(localStorage.getItem(REVOKED_AT_KEY)) || 0
+		return Math.max(inMemory, Number(localStorage.getItem(REVOKED_AT_KEY)) || 0)
 	} catch {
-		return 0
+		return inMemory
 	}
 }
 
@@ -132,6 +155,7 @@ export function configurePrivacy(options: PrivacyOptions | undefined): void {
 	const previous = hasConsent()
 	state.requireConsent = state.requireConsent || (options?.requireConsent ?? false)
 	state.respectDoNotTrack = state.respectDoNotTrack || (options?.respectDoNotTrack ?? false)
+	configurePersistence(options?.persistence)
 	configureVisitorCookie({
 		crossSubdomainCookie: options?.crossSubdomainCookie,
 		cookieDomain: options?.cookieDomain,
@@ -181,7 +205,7 @@ export function consentAllowedSince(): number {
  * because GPC/DNT suppress the cross-session id without suppressing capture.
  */
 export function mayPersistIdentifier(): boolean {
-	if (!hasConsent()) return false
+	if (!hasConsent() || !mayUseStorage()) return false
 	if (typeof navigator === "undefined") return true
 	const nav = navigator as Navigator & { globalPrivacyControl?: boolean }
 	if (nav.globalPrivacyControl === true) return false
@@ -196,6 +220,8 @@ export function resetConsentForTests(): void {
 	state.granted = false
 	state.respectDoNotTrack = false
 	state.allowedSince = 0
+	state.revokedAt = 0
 	state.listeners.clear()
 	resetUrlSanitizersForTests()
+	resetPersistenceForTests()
 }

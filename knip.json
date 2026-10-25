@@ -1,7 +1,7 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"ignoreWorkspaces": ["apps/ingest", "apps/ios", "examples/*"],
-	"ignore": [".deepsec/**", "**/*.type-test.ts"],
+	"ignore": ["**/*.type-test.ts"],
 	"ignoreExportsUsedInFile": true,
 	"workspaces": {
 		".": {
@@ -10,23 +10,11 @@
 			// alchemy's optional peer, dynamic-imported when the deploy applies migrations.
 			"ignoreDependencies": ["pg"]
 		},
-		"apps/web": {
-			// `src/worker-entry.ts` is the deployed Worker entry, named by the vite
-			// source as the string `main: "src/worker-entry.ts"` in `src/worker.ts`'s
-			// props. knip cannot follow a path in a string, so without this it reports
-			// the entry and everything only it reaches (the handler, the OG renderers)
-			// as unused files.
-			"entry": [
-				"src/routes/**/*.tsx",
-				"src/worker.ts",
-				"src/worker-entry.ts",
-				"src/components/ai-elements/**",
-				"src/components/icons/**",
-				"src/lib/effect-atom.ts"
-			]
-		},
 		"apps/landing": {
-			"entry": ["src/worker.ts", "tools/**/*.ts", "tools/**/*.js"],
+			// scripts/figures/*.mjs generate blog figures and covers, run by hand with node.
+			// iso/ is a vendored drawing kit; only part of its API is used.
+			"entry": ["src/worker.ts", "tools/**/*.ts", "tools/**/*.js", "scripts/figures/*.mjs"],
+			"ignore": ["src/components/blog/foldkit/iso/**"],
 			"ignoreDependencies": ["@paper-design/shaders"]
 		},
 		"apps/api": {
@@ -63,8 +51,17 @@
 			"entry": ["src/worker.ts", "alchemy.run.ts"],
 			"ignoreDependencies": ["cloudflare"]
 		},
+		// Run by path: the browser e2e suite (`e2e run`, `test:e2e`).
+		"apps/web": {
+			// `src/worker-entry.ts` is named by string in `src/worker.ts`.
+			"entry": ["src/worker-entry.ts", "e2e/e2e.config.ts", "e2e/tests/**/*.e2e.ts"]
+		},
+		// local-ui renders apps/web's source modules (ui, charts), so their runtime packages
+		// must resolve from this app too.
+		// `src/worker-entry.ts` is named by string in `src/worker.ts`.
 		"apps/local-ui": {
-			"entry": ["src/worker.ts"]
+			"entry": ["src/worker.ts", "src/worker-entry.ts"],
+			"ignoreDependencies": ["@floating-ui/dom", "@tanstack/charts", "@tanstack/charts-scales"]
 		},
 		"apps/cli": {
 			"entry": [
@@ -77,16 +74,17 @@
 			"ignoreBinaries": ["duckdb"]
 		},
 		"packages/db": {
-			"entry": ["scripts/**/*.ts", "effect-orm.config.ts"],
-			"ignoreBinaries": ["pscale"]
+			"entry": ["scripts/**/*.ts", "effect-orm.config.ts"]
+		},
+		"packages/security-audit": {
+			// The vendored skill's own validator tests run under `node --test`.
+			"entry": ["scripts/**/*.ts", "skill/*.test.cjs"]
 		},
 		"packages/email": {
 			"entry": ["scripts/**/*.ts"],
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
 		},
-		// fumapress reads press.config.tsx and src/app.css by convention, and Base UI
-		// arrives through fumadocs-ui's preset; knip sees no import edge to either.
 		"lib/ai-model-catalog": {
 			"entry": ["scripts/**/*.ts"]
 		},

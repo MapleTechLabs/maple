@@ -40,6 +40,7 @@ import {
 	PR_REVIEW_CONFIDENCE_LABEL,
 	PR_REVIEW_CONFIDENCE_MAX,
 	PR_REVIEW_FAILURE_COPY,
+	PR_REVIEW_FAILURE_NEEDS_FIX,
 	DEFAULT_REVIEWER_MENTION,
 	PrReviewFailureReason,
 	prReviewFailureReason,
@@ -85,7 +86,6 @@ import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
@@ -100,6 +100,7 @@ import {
 import { FindingEmbedder } from "./FindingEmbedder"
 import { isRuntimeSource, lineEmitting } from "./telemetry/diff"
 import { POST_MERGE_FIRST_LOOK } from "./telemetry/post-merge"
+import { privacyFindings, withoutReviewerOverlap } from "./telemetry/privacy"
 import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import {
 	buildChecklist,
@@ -126,6 +127,7 @@ import {
 	renderFollowUp,
 	renderIgnoredPaths,
 	resolvedByHandle,
+	SEVERITY_RANK,
 	threadForFinding,
 	type TrackedFinding,
 	withoutRepeats,
@@ -180,6 +182,15 @@ const ACTIVE_STATUSES: ReadonlyArray<PrReviewStatus> = ["queued", "running"]
 /** Automation authors whose pull requests are dependency bumps, not features. */
 const BOT_AUTHOR = /\[bot\]$|^(dependabot|renovate|github-actions)/i
 
+/** GitHub associations trusted with what the reviewer reads and posts; on a public repository anyone else is not. */
+/** Who started a review: the webhook, the webhook vouched for by a CI approval, or someone by name. */
+type TriggerMode = "automatic" | "approved" | "requested"
+
+const TRUSTED_ASSOCIATIONS: ReadonlySet<string> = new Set(["OWNER", "MEMBER", "COLLABORATOR"])
+
+export const isTrustedAuthorAssociation = (association: string | undefined): boolean =>
+	association !== undefined && TRUSTED_ASSOCIATIONS.has(association.toUpperCase())
+
 export interface PrReviewTriggerOutcome {
 	readonly reviewId: PrReviewId | null
 	readonly outcome: "started" | "deferred" | "skipped" | "failed"
@@ -226,6 +237,11 @@ export interface PrReviewServiceApi {
 	 * head that was already reviewed is reviewed again. Never fails, like the webhook entry.
 	 */
 	readonly reviewNow: (orgId: OrgId, job: PullRequestEventJob) => Effect.Effect<PrReviewTriggerOutcome>
+	/**
+	 * Review a head whose CI someone with write access let go, as the webhook would for a trusted
+	 * author: an outside contributor's pull request is reviewed once a maintainer approves its run.
+	 */
+	readonly onCiApproved: (orgId: OrgId, job: PullRequestEventJob) => Effect.Effect<PrReviewTriggerOutcome>
 	/**
 	 * Someone ticked or unticked "Before merge" steps on a review comment. Never fails, like the
 	 * webhook entry: a lost tick shows unticked on the next comment, and can be ticked again.
@@ -413,8 +429,6 @@ const renderConfigRules = (config: PrReviewRepositoryConfig | undefined): Readon
 	return lines
 }
 
-const SEVERITY_RANK = { info: 0, warn: 1, critical: 2 } as const satisfies Record<PrReviewSeverity, number>
-
 const severityLevel = (severity: PrReviewFinding["severity"]): PullRequestCheckAnnotation["level"] => {
 	switch (severity) {
 		case "critical":
@@ -495,6 +509,12 @@ export type PrReviewStatusNotice = typeof PrReviewStatusNotice.Type
 const failedSentence = (sha: string, reason: PrReviewFailureReason | undefined): string =>
 	`The review of ${sha} could not finish.${reason === undefined ? "" : ` ${PR_REVIEW_FAILURE_COPY[reason]}`}`
 
+/** How to run it again: a key or config problem has to be fixed first, so it is not "try again". */
+const retryHint = (reason: PrReviewFailureReason | undefined, mention: string, where = ""): string =>
+	reason !== undefined && PR_REVIEW_FAILURE_NEEDS_FIX.has(reason)
+		? `Once that is fixed, comment \`${mention} review\`${where} to run it again.`
+		: `Comment \`${mention} review\`${where} to try again.`
+
 /**
  * A review's comment while it has no result: the notice alone, under the review's marker.
  *
@@ -519,10 +539,7 @@ export const withReviewStatus = (
 				"> [!NOTE]",
 				`> ⏳ **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
 			]
-		: [
-				"> [!WARNING]",
-				`> ${failedSentence(sha, notice.reason)} Comment \`${mention} review\` to try again.`,
-			]
+		: ["> [!WARNING]", `> ${failedSentence(sha, notice.reason)} ${retryHint(notice.reason, mention)}`]
 	const status = encodeStatusMarker([STATUS_OPEN, notice.kind, " ", notice.headSha, " -->"])
 	return [marker, status, ...lines, STATUS_CLOSE].join("\n")
 }
@@ -543,7 +560,7 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice, mention: string) =>
 			...run,
 			state: { status: "completed" as const, conclusion: "neutral" as const },
 			title: "Review could not finish",
-			summary: `${failedSentence(sha, reason)} Comment \`${mention} review\` on the pull request to try again.`,
+			summary: `${failedSentence(sha, reason)} ${retryHint(reason, mention, " on the pull request")}`,
 		}),
 		superseded: () => ({
 			...run,
@@ -710,7 +727,6 @@ export const renderMergeReminder = (
 export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly heading: boolean }): string => {
 	const { report } = input
 	const carried = input.carried ?? NO_CARRIED
-	const { score } = scorePrReview(report, carried.open)
 	const lineUrl = (finding: { readonly path: string; readonly line: number; readonly endLine?: number }) =>
 		`${input.repositoryUrl.replace(/\/+$/, "")}/blob/${input.headSha}/${finding.path
 			.split("/")
@@ -737,7 +753,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		// An early end is already the warning below; the reason would only say it again.
 		if (confidence.reason !== undefined && confidence.cappedBy !== "partial")
 			lines.push(confidence.reason)
-		lines.push(`<sub>${[`quality ${score}/100`, ...confidence.factors].join(" · ")}</sub>`, "")
+		lines.push(`<sub>${confidence.factors.join(" · ")}</sub>`, "")
 	}
 	if (input.partial)
 		lines.push("> [!WARNING]", "> This review ended early; what follows is what it established.", "")
@@ -1021,7 +1037,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const dbExecute = makeDbExecute(database, "PrReviewService", toPersistence)
 			const repositories = yield* VcsRepository
 			const providers = yield* VcsProviderRegistry
-			const featureFlags = yield* OrganizationFeatureFlagsService
 			// Present inside a Worker, absent in tests; without it a trigger records `agent_unavailable`.
 			const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 			// Present where webhooks are consumed; without it a push's review starts at once.
@@ -1298,12 +1313,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 
 			/**
-			 * The reads behind the "before merge" checklist, at submit: the diff's candidates, and a
-			 * verdict for each name from a search of the default branch (5 hits, so a whole-word match
-			 * can be found among token matches). A failed search leaves the name unverified.
-			 * `undefined` when the files cannot be read; the review posts without diff steps.
+			 * The diff's reads at submit: the "before merge" candidates with a verdict for each name
+			 * from a search of the default branch (5 hits, so a whole-word match can be found among
+			 * token matches; a failed search leaves the name unverified), and the privacy scan.
+			 * `undefined` when the files cannot be read; the review posts without either.
 			 */
-			const mergeStepsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
+			const diffFactsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
 				Effect.gen(function* () {
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
@@ -1319,10 +1334,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							),
 						{ concurrency: 2 },
 					)
-					return { detected, verdicts: new Map<string, NameVerdict>(verdicts.flat()) }
+					return {
+						detected,
+						verdicts: new Map<string, NameVerdict>(verdicts.flat()),
+						privacy: privacyFindings(files),
+					}
 				}).pipe(
 					Effect.timeout("15 seconds"),
-					Effect.withSpan("PrReviewService.mergeStepsFor"),
+					Effect.withSpan("PrReviewService.diffFactsFor"),
 					Effect.catchCause((cause) =>
 						Effect.logWarning(
 							"[PrReview] could not read the diff for the before-merge steps",
@@ -1595,7 +1614,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						Effect.gen(function* () {
 							if (row.sessionId !== null && chatSessions !== undefined) {
 								const stub = chatSessions.session(row.sessionId)
-								yield* stub.abort().pipe(
+								yield* stub.abort("superseded").pipe(
 									Effect.catchCause((cause) =>
 										Effect.logWarning("Could not abort a superseded review turn").pipe(
 											Effect.annotateLogs({
@@ -1890,8 +1909,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const trigger = Effect.fn("PrReviewService.onPullRequestEvent")(function* (
 				orgId: OrgId,
 				job: PullRequestEventJob,
-				requested = false,
+				mode: TriggerMode = "automatic",
 			) {
+				const requested = mode === "requested"
 				const annotate = (outcome: string, extra?: Record<string, string | number | boolean>) =>
 					Effect.annotateCurrentSpan({
 						orgId,
@@ -1959,13 +1979,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return skip("disabled")
 				}
 				const repo: VcsRepo = repository.value
-				// Staged rollout, checked on the server so a repository enabled before the flag was
-				// withdrawn still stops. After the repository check: that one is a database read,
-				// this one a call to the identity provider.
-				if (!(yield* featureFlags.flags(orgId)).prReview) {
-					yield* annotate("skipped", { "maple.pr_review.skip_reason": "not_rolled_out" })
-					return skip("not_rolled_out")
-				}
 				const config = yield* repositories
 					.getEffectivePrReviewConfig(orgId, repo.id)
 					.pipe(Effect.mapError(toPersistence))
@@ -1981,6 +1994,20 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (job.authorLogin !== null && BOT_AUTHOR.test(job.authorLogin)) {
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "bot_author" })
 					return skip("bot_author")
+				}
+				// The automatic review reads org telemetry and posts to the pull request, so on a public
+				// repository it runs only for a trusted author. GitHub reports private org members as
+				// CONTRIBUTOR in webhooks, and only people with access can open a pull request on a private one.
+				if (
+					mode === "automatic" &&
+					!repo.isPrivate &&
+					!isTrustedAuthorAssociation(job.authorAssociation)
+				) {
+					yield* annotate("skipped", {
+						"maple.pr_review.skip_reason": "external_author",
+						"vcs.pull_request.author_association": job.authorAssociation ?? "absent",
+					})
+					return skip("external_author")
 				}
 				const nowMs = yield* Clock.currentTimeMillis
 				// The delayed copy of a push: start the row it queued, unless a later push replaced it.
@@ -2184,8 +2211,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				)
 
+			const onCiApproved: PrReviewServiceApi["onCiApproved"] = (orgId, job) =>
+				trigger(orgId, job, "approved").pipe(
+					Effect.catchCause((cause) =>
+						Effect.logError("[PrReview] approved pull request could not be reviewed").pipe(
+							Effect.annotateLogs({ orgId, number: job.number, cause: summarizeCause(cause) }),
+							Effect.as<PrReviewTriggerOutcome>({ reviewId: null, outcome: "failed" }),
+						),
+					),
+				)
+
 			const reviewNow: PrReviewServiceApi["reviewNow"] = (orgId, job) =>
-				trigger(orgId, job, true).pipe(
+				trigger(orgId, job, "requested").pipe(
 					Effect.catchCause((cause) =>
 						Effect.logError("[PrReview] requested review could not be started").pipe(
 							Effect.annotateLogs({ orgId, number: job.number, cause: summarizeCause(cause) }),
@@ -2397,7 +2434,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						),
 						Option.isNone(repository)
 							? Effect.succeed(undefined)
-							: mergeStepsFor(orgId, repository.value, review.number),
+							: diffFactsFor(orgId, repository.value, review.number),
 					],
 					{ concurrency: "unbounded" },
 				)
@@ -2436,10 +2473,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const stillOpen = open.filter((finding) => !resolved.includes(finding))
 				// The model's findings weighed by production traffic, and the facts the service files
 				// itself. The repository's settings are enforced here, not only stated in the kickoff.
-				const allowed = [
+				const scanned = withoutReviewerOverlap(read?.privacy ?? [], request.report.findings)
+				const proposed = [
 					...weighByTraffic(request.report.findings, telemetry),
 					...telemetryFindings(telemetry),
-				].filter(
+					...scanned,
+				]
+				const allowed = proposed.filter(
 					(finding) =>
 						!pathIgnored(finding.path, config.ignorePaths) &&
 						(config.categories === undefined ||
@@ -2516,7 +2556,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.findings": report.findings.length,
 					"maple.pr_review.repeated": repeated,
 					"maple.pr_review.suppressed": feedback.suppressed.length,
-					"maple.pr_review.ignored": request.report.findings.length - allowed.length,
+					"maple.pr_review.ignored": proposed.length - allowed.length,
+					"maple.pr_review.privacy.scanned": read?.privacy.length ?? 0,
+					"maple.pr_review.privacy.filed": scanned.length,
 					"maple.pr_review.resolved": resolved.length,
 					"maple.pr_review.carried_open": stillOpen.length,
 					"maple.pr_review.coverage": report.coverage.length,
@@ -2668,7 +2710,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* postReviewStatus(orgId, reviewId, repo, review.number, {
 						kind: "failed",
 						headSha: review.headSha,
-						reason: "ended_early",
+						reason: request.partialReason ?? "ended_early",
 					})
 				} else {
 					const publication = buildPublication({
@@ -2957,6 +2999,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				reviewModel,
 				onPullRequestEvent,
 				reviewNow,
+				onCiApproved,
 				onMergeStepsTicked,
 				getReview,
 				submitReview,
@@ -2967,12 +3010,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(
-				VcsRepository.layer,
-				VcsProviderRegistry.layer,
-				OrganizationFeatureFlagsService.layer,
-				PrReviewTelemetryService.layer,
-			),
+			Layer.mergeAll(VcsRepository.layer, VcsProviderRegistry.layer, PrReviewTelemetryService.layer),
 		),
 	)
 }

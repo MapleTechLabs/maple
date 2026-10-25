@@ -1,5 +1,10 @@
 import { feature, plan, reward } from "atmn"
-import { OPENROUTER_BYOK_ADDON_ID, OPENROUTER_BYOK_FEATURE_ID } from "@maple/domain/billing"
+import {
+	AI_CREDITS_FEATURE_ID,
+	AI_CREDITS_MARKUP_PERCENT,
+	OPENROUTER_BYOK_ADDON_ID,
+	OPENROUTER_BYOK_FEATURE_ID,
+} from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
 
 // Features
@@ -44,11 +49,13 @@ export const productEvents = feature({
 // AI usage in dollars: Autumn prices each model's tokens from models.dev and adds the markup.
 // Metered per model by `trackAiCredits` (packages/backend/src/services/billing/autumn-tracker.ts).
 // Every model Maple runs on is priced there, so no `modelMarkups` cost overrides are needed.
+// Security audits charge it too, in plain dollars: OpenRouter's cost with the same markup, plus a
+// sandbox fee per agent (`trackSecurityAuditCharge`).
 export const aiCredits = feature({
-	id: "ai_credits",
+	id: AI_CREDITS_FEATURE_ID,
 	name: "AI Credits",
 	type: "ai_credit_system",
-	defaultMarkup: 20,
+	defaultMarkup: AI_CREDITS_MARKUP_PERCENT,
 })
 
 // Legacy raw token counts, metered beside `ai_credits` for comparison. Delete once it is trusted.
@@ -128,14 +135,16 @@ export const startup = plan({
 			},
 		},
 		{
-			// BETA (2026-08-17): free and unlimited while product events are in
-			// beta. Usage is still metered by the gateway and tracked in Autumn so
-			// we know real volumes before pricing it. To start charging, replace
-			// `unlimited` with e.g. `included: 1_000_000` and a
-			// `price: { amount: 0.05, billingUnits: 1000, billingMethod:
-			// "usage_based", interval: "month" }` ($0.05 per 1,000 events).
+			// $5 per 1M events past 1M. Billed per 1,000 because Autumn rounds
+			// overage up to whole blocks; a 1M block would charge $5 for one event.
 			featureId: "product_events",
-			unlimited: true,
+			included: 1_000_000,
+			price: {
+				amount: 0.005,
+				billingUnits: 1000,
+				billingMethod: "usage_based",
+				interval: "month",
+			},
 		},
 		{
 			// One credit is one dollar of model spend after markup.

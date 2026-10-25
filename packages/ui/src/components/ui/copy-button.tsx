@@ -9,6 +9,20 @@ import { useCopy, type CopyStatus, type UseCopyOptions } from "../../hooks/use-c
 import { cn } from "../../lib/utils"
 import { CopyIcon, type IconComponent } from "../icons"
 import { Button, type ButtonProps } from "./button"
+import {
+	copyButtonStatusStyles,
+	copyButtonStyles,
+	copyIndicatorCheckDrawStyles,
+	copyIndicatorCopiedStyles,
+	copyIndicatorErrorStyles,
+	copyIndicatorFullStrengthStyles,
+	copyIndicatorLayerActiveStyles,
+	copyIndicatorLayerStyles,
+	copyIndicatorStyles,
+	copyLabelActiveStyles,
+	copyLabelLayerStyles,
+	copyLabelStyles,
+} from "./copy-button.styles"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip"
 
 /**
@@ -18,69 +32,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip"
  * as smaller than the copy glyph it replaces.
  */
 const CHECK_PATH = "M4.5 12.5L9.5 17.5L19.5 6.5"
-
-/**
- * `Button` dims unstyled child SVGs to 80% (its `[&_svg:not([class*='opacity-'])]`
- * rule). That's right for the resting glyph and wrong for the success/failure
- * ones — those carry semantic color and should land at full strength. Any class
- * matching `opacity-` opts out.
- */
-const FULL_STRENGTH = "opacity-100"
-
-/**
- * All three glyph layers stay mounted and the active one is picked purely in
- * CSS, off a `data-copy-status` attribute on the nearest `group/copy`. This is a
- * per-row affordance on detail surfaces — one per expanded JSON blob, per log
- * attribute chip, per key row — and it sits idle essentially all the time, so it
- * deliberately costs nothing per instance: no animation library, no
- * `prefers-reduced-motion` subscription, no work at all until the status flips.
- *
- * The timings are what the springs used to land on. The old crossfade spring was
- * overdamped (ζ≈1.18), which reads as a decel curve, so it maps onto a 240ms
- * ease-out; the draw keeps its original 260ms.
- */
-const EASE = "ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none"
-
-/** One grid cell, faded and scaled back until its status is the active one. */
-const LAYER = cn(
-	"col-start-1 row-start-1 flex items-center justify-center",
-	"scale-[0.92] opacity-0 transition-[opacity,scale] duration-[240ms]",
-	EASE,
-)
-
-/**
- * Spelled out per status rather than interpolated — Tailwind only emits classes
- * that appear literally in the source.
- */
-const LAYER_ACTIVE: Record<CopyStatus, string> = {
-	copied: "group-data-[copy-status=copied]/copy:scale-100 group-data-[copy-status=copied]/copy:opacity-100",
-	error: "group-data-[copy-status=error]/copy:scale-100 group-data-[copy-status=error]/copy:opacity-100",
-	idle: "group-data-[copy-status=idle]/copy:scale-100 group-data-[copy-status=idle]/copy:opacity-100",
-} satisfies Record<CopyStatus, string>
-
-/**
- * `pathLength="1"` renormalises the check to a unit length, so the dash pair is
- * a literal `1` rather than a measured one and the draw is a plain
- * `stroke-dashoffset: 1 → 0` — no JS ever touches the path.
- */
-const CHECK_DRAW = cn(
-	"[stroke-dasharray:1] [stroke-dashoffset:1] transition-[stroke-dashoffset] duration-[260ms]",
-	"group-data-[copy-status=copied]/copy:[stroke-dashoffset:0]",
-	EASE,
-)
-
-/** Same crossfade as the glyph, plus the blur/rise the label has always had. */
-const LABEL_LAYER = cn(
-	"col-start-1 row-start-1 whitespace-nowrap",
-	"translate-y-[3px] opacity-0 blur-[3px] transition-[opacity,filter,translate] duration-[240ms]",
-	EASE,
-)
-
-const LABEL_ACTIVE: Record<CopyStatus, string> = {
-	copied: "group-data-[copy-status=copied]/copy:translate-y-0 group-data-[copy-status=copied]/copy:opacity-100 group-data-[copy-status=copied]/copy:blur-[0px]",
-	error: "group-data-[copy-status=error]/copy:translate-y-0 group-data-[copy-status=error]/copy:opacity-100 group-data-[copy-status=error]/copy:blur-[0px]",
-	idle: "group-data-[copy-status=idle]/copy:translate-y-0 group-data-[copy-status=idle]/copy:opacity-100 group-data-[copy-status=idle]/copy:blur-[0px]",
-} satisfies Record<CopyStatus, string>
 
 export interface CopyTooltipLabels {
 	copiedLabel?: string
@@ -135,14 +86,20 @@ export function CopyIndicator({
 		<span
 			aria-hidden="true"
 			data-copy-status={status}
-			className={cn("group/copy grid shrink-0", className)}
+			className={cn(copyIndicatorStyles, className)}
 			style={{ height: iconSize, width: iconSize }}
 		>
-			<span className={cn(LAYER, LAYER_ACTIVE.idle)}>
+			<span className={cn(copyIndicatorLayerStyles, copyIndicatorLayerActiveStyles.idle)}>
 				<Idle size={iconSize} />
 			</span>
 
-			<span className={cn(LAYER, LAYER_ACTIVE.copied, "text-severity-info")}>
+			<span
+				className={cn(
+					copyIndicatorLayerStyles,
+					copyIndicatorLayerActiveStyles.copied,
+					copyIndicatorCopiedStyles,
+				)}
+			>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					viewBox="0 0 24 24"
@@ -150,7 +107,7 @@ export function CopyIndicator({
 					height={iconSize}
 					fill="none"
 					aria-hidden="true"
-					className={FULL_STRENGTH}
+					className={copyIndicatorFullStrengthStyles}
 				>
 					<path
 						d={CHECK_PATH}
@@ -158,12 +115,18 @@ export function CopyIndicator({
 						stroke="currentColor"
 						strokeWidth="2"
 						strokeLinecap="square"
-						className={CHECK_DRAW}
+						className={copyIndicatorCheckDrawStyles}
 					/>
 				</svg>
 			</span>
 
-			<span className={cn(LAYER, LAYER_ACTIVE.error, "text-destructive-foreground")}>
+			<span
+				className={cn(
+					copyIndicatorLayerStyles,
+					copyIndicatorLayerActiveStyles.error,
+					copyIndicatorErrorStyles,
+				)}
+			>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					viewBox="0 0 24 24"
@@ -171,7 +134,7 @@ export function CopyIndicator({
 					height={iconSize}
 					fill="none"
 					aria-hidden="true"
-					className={FULL_STRENGTH}
+					className={copyIndicatorFullStrengthStyles}
 				>
 					<path d="M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="square" />
 					<path d="M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="square" />
@@ -189,9 +152,9 @@ export function CopyIndicator({
  */
 function CopyLabel({ labels }: { labels: ReadonlyArray<readonly [CopyStatus, string]> }): React.ReactElement {
 	return (
-		<span aria-hidden="true" className="relative grid">
+		<span aria-hidden="true" className={copyLabelStyles}>
 			{labels.map(([key, text]) => (
-				<span key={key} className={cn(LABEL_LAYER, LABEL_ACTIVE[key])}>
+				<span key={key} className={cn(copyLabelLayerStyles, copyLabelActiveStyles[key])}>
 					{text}
 				</span>
 			))}
@@ -278,7 +241,7 @@ export function CopyButton({
 			variant={variant}
 			size={resolvedSize}
 			data-copy-status={status}
-			className={cn("group/copy text-muted-foreground hover:text-foreground", className)}
+			className={cn(copyButtonStyles, className)}
 			onClick={(event) => {
 				onClick?.(event)
 				if (event.defaultPrevented) return
@@ -296,7 +259,7 @@ export function CopyButton({
 					]}
 				/>
 			)}
-			<span role="status" aria-live="polite" className="sr-only">
+			<span role="status" aria-live="polite" className={copyButtonStatusStyles}>
 				{status === "copied" ? copiedLabel : status === "error" ? errorText : ""}
 			</span>
 		</Button>

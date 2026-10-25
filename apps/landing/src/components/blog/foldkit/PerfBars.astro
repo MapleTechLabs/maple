@@ -1,0 +1,140 @@
+---
+/**
+ * PerfBars: paired horizontal bars, legacy vs new, per metric. Lower is
+ * better for every row; the delta is computed, not typed.
+ */
+interface Props {
+	caption: string
+	before: string
+	after: string
+	rows: ReadonlyArray<{ metric: string; unit: string; before: number; after: number }>
+}
+
+const { caption, before, after, rows } = Astro.props
+const fmt = (n: number) => (Number.isInteger(n) ? n.toLocaleString("en-US") : n.toFixed(1))
+---
+
+<figure class="pfb">
+	<div class="pfb__head">
+		<span class="pfb__title">{caption}</span>
+		<span class="pfb__keys">
+			<span class="pfb__key pfb__key--before">{before}</span>
+			<span class="pfb__key pfb__key--after">{after}</span>
+		</span>
+	</div>
+	<div class="pfb__rows">
+		{
+			rows.map((r) => {
+				const max = Math.max(r.before, r.after)
+				const delta = Math.round(((r.after - r.before) / r.before) * 100)
+				return (
+					<div class="pfb__row">
+						<div class="pfb__meta">
+							<span class="pfb__metric">{r.metric}</span>
+							<span class={`pfb__delta ${delta < 0 ? "pfb__delta--good" : "pfb__delta--flat"}`}>
+								{delta === 0 ? "same" : `${delta > 0 ? "+" : ""}${delta}%`}
+							</span>
+						</div>
+						<div class="pfb__bar pfb__bar--before">
+							<span style={`width: calc((100% - 92px) * ${r.before / max})`} />
+							<em>
+								{fmt(r.before)} {r.unit}
+							</em>
+						</div>
+						<div class="pfb__bar pfb__bar--after">
+							<span style={`width: calc((100% - 92px) * ${r.after / max})`} />
+							<em>
+								{fmt(r.after)} {r.unit}
+							</em>
+						</div>
+					</div>
+				)
+			})
+		}
+	</div>
+</figure>
+
+<style>
+	.pfb {
+		margin: 40px 0;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		overflow: hidden;
+		background: color-mix(in oklab, var(--bg-elevated) 30%, transparent);
+		--pfb-before: color-mix(in oklab, var(--muted-foreground) 55%, transparent);
+		--pfb-after: var(--primary);
+	}
+	.pfb__head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 12px;
+		padding: 9px 14px;
+		background: var(--bg-elevated);
+		border-bottom: 1px solid var(--border);
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.pfb__keys {
+		display: flex;
+		gap: 14px;
+	}
+	.pfb__key::before {
+		content: "";
+		display: inline-block;
+		width: 8px;
+		height: 8px;
+		margin-right: 6px;
+		border-radius: 2px;
+		vertical-align: -0.5px;
+	}
+	.pfb__key--before::before { background: var(--pfb-before); }
+	.pfb__key--after::before { background: var(--pfb-after); }
+	.pfb__rows {
+		display: flex;
+		flex-direction: column;
+		gap: 18px;
+		padding: 18px 16px;
+	}
+	.pfb__meta {
+		display: flex;
+		justify-content: space-between;
+		margin-bottom: 6px;
+		font-size: 12.5px;
+	}
+	.pfb__metric {
+		color: var(--foreground);
+	}
+	.pfb__delta {
+		font-family: var(--font-mono);
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
+	}
+	.pfb__delta--good { color: var(--chart-3); }
+	.pfb__delta--flat { color: var(--muted-foreground); }
+	.pfb__bar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		height: 16px;
+		margin-top: 3px;
+	}
+	.pfb__bar span {
+		height: 100%;
+		border-radius: 3px;
+	}
+	.pfb__bar--before span { background: var(--pfb-before); }
+	.pfb__bar--after span { background: var(--pfb-after); }
+	.pfb__bar em {
+		flex: none;
+		font-style: normal;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+	}
+	.pfb__bar--after em { color: var(--foreground); }
+</style>

@@ -1590,6 +1590,7 @@ dependencies = [
  "opentelemetry_sdk",
  "prost",
  "reqwest",
+ "ring",
  "rustls",
  "serde",
  "serde_json",

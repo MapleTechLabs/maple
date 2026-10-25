@@ -858,18 +858,22 @@ const make: Effect.Effect<
 			due,
 			(row) =>
 				Effect.gen(function* () {
+					// Read per row, not once per drain: a drain runs up to 100 rows at
+					// 15s each, and a lease dated from its start would be born expired,
+					// so an overlapping tick could claim the row again and re-send it.
+					const claimTime = yield* Clock.currentTimeMillis
 					const claimedRows = yield* dbExecute((db) =>
 						db.run(
 							PG.update(ErrorNotificationDeliveries)
 								.set(($) => ({
 									status: "processing",
 									attemptCount: $.attemptCount.add(1),
-									claimedAt: currentTime,
-									claimExpiresAt: currentTime + NOTIFICATION_CLAIM_TTL_MS,
+									claimedAt: claimTime,
+									claimExpiresAt: claimTime + NOTIFICATION_CLAIM_TTL_MS,
 									claimedBy: notificationWorkerId,
-									updatedAt: currentTime,
+									updatedAt: claimTime,
 								}))
-								.where(($) => [$.id.eq(row.id), claimableNotificationWhere($, currentTime)])
+								.where(($) => [$.id.eq(row.id), claimableNotificationWhere($, claimTime)])
 								.returning(),
 						),
 					)
@@ -883,12 +887,12 @@ const make: Effect.Effect<
 								PG.update(ErrorNotificationDeliveries)
 									.set({
 										status: "failed",
-										attemptedAt: currentTime,
+										attemptedAt: claimTime,
 										errorMessage: "Stored error notification payload is invalid",
 										claimedAt: null,
 										claimExpiresAt: null,
 										claimedBy: null,
-										updatedAt: currentTime,
+										updatedAt: claimTime,
 									})
 									.where(($) => [
 										$.id.eq(claimed.id),
@@ -909,6 +913,7 @@ const make: Effect.Effect<
 					const retryable = destination == null || destination.status === "failed"
 					const exhausted = claimed.attemptCount >= NOTIFICATION_MAX_ATTEMPTS
 					const retryDelayMs = Math.min(30_000 * 2 ** (claimed.attemptCount - 1), 15 * 60_000)
+					const finishedAt = yield* Clock.currentTimeMillis
 
 					yield* dbExecute((db) =>
 						db.run(
@@ -917,28 +922,28 @@ const make: Effect.Effect<
 									delivered
 										? {
 												status: "success",
-												attemptedAt: currentTime,
+												attemptedAt: finishedAt,
 												errorMessage: null,
 												claimedAt: null,
 												claimExpiresAt: null,
 												claimedBy: null,
-												updatedAt: currentTime,
+												updatedAt: finishedAt,
 											}
 										: retryable && !exhausted
 											? {
 													status: "queued",
-													scheduledAt: currentTime + retryDelayMs,
-													attemptedAt: currentTime,
+													scheduledAt: finishedAt + retryDelayMs,
+													attemptedAt: finishedAt,
 													errorMessage:
 														destination?.error ?? "Notification delivery failed",
 													claimedAt: null,
 													claimExpiresAt: null,
 													claimedBy: null,
-													updatedAt: currentTime,
+													updatedAt: finishedAt,
 												}
 											: {
 													status: "failed",
-													attemptedAt: currentTime,
+													attemptedAt: finishedAt,
 													errorMessage:
 														destination?.error ??
 														destination?.status ??
@@ -946,7 +951,7 @@ const make: Effect.Effect<
 													claimedAt: null,
 													claimExpiresAt: null,
 													claimedBy: null,
-													updatedAt: currentTime,
+													updatedAt: finishedAt,
 												},
 								)
 								.where(($) => [$.id.eq(claimed.id), $.claimedBy.eq(notificationWorkerId)]),
@@ -1859,7 +1864,7 @@ const make: Effect.Effect<
 })
 
 export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceApi>()(
-	"@maple/api/services/ErrorsService",
+	"@maple/backend/services/ErrorsService",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

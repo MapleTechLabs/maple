@@ -2,20 +2,39 @@
 // each source's own list page already fetches. Nothing here queries: the
 // overview reads the same atoms the list pages do, so the numbers agree.
 
-import type { CloudflareZoneRow } from "@/api/warehouse/cloudflare-infra"
-import type { RailwayServiceRow } from "@/api/warehouse/railway-infra"
-import type { PlanetScaleDatabaseStat } from "@/api/warehouse/service-map"
+import type { CloudflareZoneRow } from "@maple/web-data/warehouse/cloudflare-infra"
+import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
+import type { SupabaseProjectRow } from "@maple/web-data/warehouse/supabase-infra"
+import type { PlanetScaleDatabaseStat } from "@maple/web-data/warehouse/service-map"
+import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { countLabel, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
 
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import type { ContainerScopeCounts } from "../container-summary-band"
-import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-summary-band"
-import type { HostRow } from "../host-table"
+import {
+	GCP_INFRA_COLUMNS,
+	formatGcpValue,
+	gcpWorkloadName,
+	gcpWorkloadTone,
+	type GcpFleetService,
+} from "../gcp/tabs"
+import type { ContainerScopeCounts } from "../container-scopes"
+import { HOST_LIST_LIMIT, countHostScopes, hostPeak } from "../host-scopes"
+import type { ListHostsResponse } from "@maple/domain/http"
 import { formatLag, formatStoragePercent, lagTone, utilizationTone } from "../planetscale/metrics"
-import { railwayInScope } from "../railway/railway-service-table"
+import { railwayInScope } from "../railway/railway-scope"
 import type { Tone } from "../severity-tokens"
 
-export type SourceId = "hosts" | "containers" | "kubernetes" | "cloudflare" | "railway" | "planetscale"
+type HostRow = ListHostsResponse["data"][number]
+
+export type SourceId =
+	| "hosts"
+	| "containers"
+	| "kubernetes"
+	| "cloudflare"
+	| "railway"
+	| "supabase"
+	| "planetscale"
+	| "gcp"
 
 export type FindingTone = Extract<Tone, "crit" | "warn"> | "stale"
 
@@ -27,7 +46,10 @@ export type FindingTarget =
 	| { kind: "pods"; scope: "saturated" | "elevated" | "unbounded" }
 	| { kind: "zone"; zoneName: string }
 	| { kind: "railway"; serviceId: string; environmentId: string }
+	| { kind: "supabase"; projectRef: string }
 	| { kind: "planetscale"; database: string }
+	| { kind: "gcp"; service: GcpInfraServiceId; keys: ReadonlyArray<string> }
+	| { kind: "gcpService"; service: GcpInfraServiceId }
 
 export interface Finding {
 	readonly key: string
@@ -227,10 +249,10 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 	}))
 
 	let requests = 0
-	let cacheHits = 0
+	let clientErrors = 0
 	for (const zone of zones) {
 		requests += zone.requests
-		cacheHits += zone.cacheHits
+		clientErrors += zone.errors4xx
 	}
 	return {
 		resources: countLabel(zones.length, "zone"),
@@ -239,7 +261,8 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 			{ key: "elevated", count: erroring.length - crit },
 			{ key: "saturated", count: crit },
 		],
-		headline: `${formatNumber(requests)} requests, ${formatPercent(requests > 0 ? cacheHits / requests : 0)} cached`,
+		// 4xx, not cache share: hits over all requests read "0.1% cached" for any API-heavy account.
+		headline: `${formatNumber(requests)} requests, ${formatPercent(requests > 0 ? clientErrors / requests : 0)} 4xx`,
 		headlineTone: worstTone(findings),
 		findings,
 	}
@@ -270,6 +293,123 @@ export function summarizeRailway(services: ReadonlyArray<RailwayServiceRow>): So
 			saturated.length + elevated > 0
 				? `${countLabel(saturated.length + elevated, "service")} above 60% of limit`
 				: "all under 60% of limit",
+		headlineTone: worstTone(findings),
+		findings,
+	}
+}
+
+/**
+ * Supabase projects by their busiest share of CPU, memory or the data volume, like hosts: 90%
+ * and up is saturated, 60% and up elevated. `names` maps refs to discovery's project names.
+ */
+export function summarizeSupabase(
+	projects: ReadonlyArray<SupabaseProjectRow>,
+	names: ReadonlyMap<string, string>,
+): SourceSummary {
+	const peakOf = (row: SupabaseProjectRow) => Math.max(row.cpuMax, row.memoryMax, row.diskUsedMax)
+	const byPeak = [...projects].sort((a, b) => peakOf(b) - peakOf(a))
+	const saturated = byPeak.filter((row) => peakOf(row) >= 0.9)
+	const elevated = byPeak.filter((row) => peakOf(row) >= 0.6 && peakOf(row) < 0.9)
+	const findings: Finding[] = [...saturated, ...elevated].slice(0, MAX_FINDINGS_PER_SOURCE).map((row) => {
+		const values = [row.cpuMax, row.memoryMax, row.diskUsedMax]
+		const worst = values.indexOf(Math.max(...values))
+		const name = names.get(row.projectRef) || row.projectRef
+		return {
+			key: `supabase:${row.projectRef}`,
+			source: "supabase",
+			tone: peakOf(row) >= 0.9 ? "crit" : "warn",
+			subject: name,
+			title: `${name} at ${formatPercent(values[worst] ?? 0)} ${METRIC_NAMES[worst]}`,
+			detail: `CPU ${formatPercent(row.cpuMax)}, memory ${formatPercent(row.memoryMax)}, disk ${formatPercent(row.diskUsedMax)} at peak`,
+			target: { kind: "supabase", projectRef: row.projectRef },
+		}
+	})
+	return {
+		resources: countLabel(projects.length, "project"),
+		segments: [
+			{ key: "ok", count: okCount(projects.length, saturated.length, elevated.length) },
+			{ key: "elevated", count: elevated.length },
+			{ key: "saturated", count: saturated.length },
+		],
+		headline:
+			saturated.length + elevated.length > 0
+				? `${countLabel(saturated.length + elevated.length, "project")} above 60% at peak`
+				: "all under 60% at peak",
+		headlineTone: worstTone(findings),
+		findings,
+	}
+}
+
+const gcpTitles = (fleet: ReadonlyArray<GcpFleetService>) =>
+	fleet.map(({ service }) => GCP_INFRA_SERVICES[service].title).join(", ")
+
+/**
+ * Google Cloud workloads by their busiest share of a limit and by their error rate. A service
+ * whose read failed is a finding of its own, and null when none could be read.
+ */
+export function summarizeGcp(fleet: ReadonlyArray<GcpFleetService>): SourceSummary | null {
+	const unread = fleet.filter(({ failed }) => failed)
+	if (unread.length > 0 && unread.length === fleet.length) return null
+	const flagged = fleet
+		.flatMap(({ service, workloads }) =>
+			workloads.map((workload) => {
+				const tone = gcpWorkloadTone(workload)
+				// The column behind the tone: the error rate when it is as bad, else the busiest limit.
+				const format = workload.errors === tone ? "errorRate" : "percent"
+				const worst = GCP_INFRA_COLUMNS[service]
+					.map((spec, index) => ({
+						label: spec.label,
+						format: spec.format,
+						value: workload.values[index] ?? 0,
+					}))
+					.filter((column) => column.format === format)
+					.reduce((a, b) => (b.value > a.value ? b : a), { label: "", format, value: 0 })
+				return { service, workload, tone, worst }
+			}),
+		)
+		.filter((entry) => entry.tone !== "neutral")
+		// Critical before elevated, then the larger share first.
+		.sort((a, b) => (a.tone === b.tone ? b.worst.value - a.worst.value : a.tone === "crit" ? -1 : 1))
+	const workloadFindings = flagged.map(({ service, workload, tone, worst }): Finding => ({
+		key: `gcp:${service}:${workload.keys.join("/")}`,
+		source: "gcp",
+		tone: tone === "crit" ? "crit" : "warn",
+		// "orders-db at 93% disk", "api at 8.0% 5xx rate": an acronym keeps its capitals.
+		title: `${gcpWorkloadName(service, workload.keys)} at ${formatGcpValue(worst.format, worst.value)} ${worst.label.replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())}`,
+		detail: [GCP_INFRA_SERVICES[service].title, ...workload.keys.slice(1)].join(" / "),
+		target: { kind: "gcp", service, keys: workload.keys },
+	}))
+	// Capped like every source: critical workloads, then the unread services (their workloads are
+	// unknown, not healthy: the tab says the same and offers the reload), then elevated ones.
+	const findings = [
+		...workloadFindings.filter((finding) => finding.tone === "crit"),
+		...unread.map(({ service }): Finding => ({
+			key: `gcp:${service}:unread`,
+			source: "gcp",
+			tone: "warn",
+			// The service first: a phone shows only the start of a title.
+			title: `${GCP_INFRA_SERVICES[service].title} metrics could not be read`,
+			detail: "Reload to try again",
+			target: { kind: "gcpService", service },
+		})),
+		...workloadFindings.filter((finding) => finding.tone !== "crit"),
+	].slice(0, MAX_FINDINGS_PER_SOURCE)
+	const total = fleet.reduce((sum, { workloads }) => sum + workloads.length, 0)
+	const crit = flagged.filter((entry) => entry.tone === "crit").length
+	return {
+		resources: countLabel(total, "workload"),
+		segments: [
+			{ key: "ok", count: okCount(total, flagged.length) },
+			{ key: "elevated", count: flagged.length - crit },
+			{ key: "saturated", count: crit },
+		],
+		headline:
+			[
+				...(unread.length > 0 ? [`${gcpTitles(unread)} not read`] : []),
+				...(flagged.length > 0
+					? [`${countLabel(flagged.length, "workload")} elevated or erroring`]
+					: []),
+			].join(", ") || (fleet.length > 0 ? gcpTitles(fleet) : "no metrics in this window"),
 		headlineTone: worstTone(findings),
 		findings,
 	}

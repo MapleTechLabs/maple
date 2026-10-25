@@ -207,7 +207,7 @@ Requires docker Postgres running (`bun run db:migrate:local`).
 
 ```bash
 bun dev web                    # in the stack: https://web.localhost
-bun --filter=@maple/web dev    # alone, raw port
+bun --filter=@maple/web dev   # alone, raw port
 ```
 
 Default raw URL: `http://localhost:3471`

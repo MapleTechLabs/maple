@@ -20,6 +20,11 @@ import { registerGetAlertRuleTool } from "./get-alert-rule"
 import { registerGetDashboardTool } from "./get-dashboard"
 import { registerGetIncidentTimelineTool } from "./get-incident-timeline"
 import { registerAuditSetupTool } from "./audit-setup"
+import { registerListIntegrationsTool } from "./list-integrations"
+import { registerListSourcesTool } from "./list-sources"
+import { registerCiRunsTool } from "./ci-runs"
+import { registerCompareCommitsTool } from "./compare-commits"
+import { registerIntegrationWriteTools } from "./integration-writes"
 import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
 import { registerGetServiceTopOperationsTool } from "./get-service-top-operations"
 import { registerServiceDeploymentsTool } from "./service-deployments"
@@ -50,6 +55,7 @@ import { registerSetIssueSeverityTool } from "./set-issue-severity"
 import { registerTransitionErrorIssueTool } from "./transition-error-issue"
 import { registerTransitionErrorIssuesTool } from "./transition-error-issues"
 import { registerUpdateErrorNotificationPolicyTool } from "./update-error-notification-policy"
+import { registerGetErrorNotificationPolicyTool } from "./get-error-notification-policy"
 import { registerListDashboardsTool } from "./list-dashboards"
 import { registerListMetricsTool } from "./list-metrics"
 import { registerListServicesTool } from "./list-services"
@@ -183,6 +189,7 @@ const isEmptyStructSchema = (base: Record<string, unknown>): boolean => {
  * Safe only while no MCP parameter is GENUINELY nullable — `Schema.NullOr` would
  * render identically and be wrongly narrowed here. `registry.test.ts` pins that
  * invariant by decoding `null` into every parameter of every tool.
+ * The one exception, `P.optionalNullableNumberOneOf`, is optional and names null in its description.
  */
 const collapseNullableUnions = (node: unknown): unknown => {
 	if (Array.isArray(node)) return node.map(collapseNullableUnions)
@@ -417,6 +424,11 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerIngestUsageTool(registrar)
 	registerGetInstrumentationRecommendationsTool(registrar)
 	registerAuditSetupTool(registrar)
+	registerListIntegrationsTool(registrar)
+	registerListSourcesTool(registrar)
+	registerCiRunsTool(registrar)
+	registerCompareCommitsTool(registrar)
+	registerIntegrationWriteTools(registrar)
 	registerSourceCodeTools(registrar)
 	registerSandboxTools(registrar)
 	registerPullRequestTools(registrar)
@@ -433,6 +445,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerRegisterAgentTool(registrar)
 	registerSendMapleFeedbackTool(registrar)
 	registerListErrorIncidentsTool(registrar)
+	registerGetErrorNotificationPolicyTool(registrar)
 	registerUpdateErrorNotificationPolicyTool(registrar)
 
 	return definitions

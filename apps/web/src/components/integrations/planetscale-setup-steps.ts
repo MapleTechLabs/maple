@@ -1,200 +1,258 @@
 // Setup progression for the PlanetScale integration.
 //
-// Connecting PlanetScale is genuinely two-part and the UI used to hide that. The
-// OAuth grant covers the management plane (inventory, query insights, webhooks),
-// but PlanetScale's metrics data plane only accepts service tokens — so the
-// bearer probe almost always fails and a freshly-connected org sits at
-// `metricsAuth: "missing"` with a paused scrape target. Presenting that as a
-// warning badge on an otherwise "Connected" card taught people the integration
-// was broken. Presenting it as step 3 of 4 teaches them it isn't finished.
+// The OAuth grant covers everything: inventory, query insights, webhooks, and
+// branch metrics, which Maple polls from PlanetScale's metrics API every 5
+// minutes. A service token switches metrics to Prometheus scraping
+// (`metrics_auth: "service_token"`); health is derived from whichever source
+// the connection uses, so the status row and the Go live checks always agree.
 //
-// Pure — no React, no atoms — so the progression rules are testable on their own
+// Pure, so the progression rules are testable on their own
 // (same shape as branch-selection.ts).
 
-import type { V2PlanetScaleIntegration, V2PlanetScaleScrapeTarget } from "@maple/domain/http/v2"
+import type { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 
-export type MetricsAuth = "oauth" | "service_token" | "missing"
+/** Where branch metrics come from. Legacy wire values ("oauth", "missing") mean the API poller. */
+export type MetricsAuth = "api" | "service_token"
+
+type MetricsStatus = Pick<V2PlanetScaleIntegration, "metrics_auth" | "api_metrics" | "scrape_target">
+
+export const metricsAuthOf = (status: Pick<V2PlanetScaleIntegration, "metrics_auth">): MetricsAuth =>
+	status.metrics_auth === "service_token" ? "service_token" : "api"
+
+/** The poller runs every 5 minutes and reads up to 2 behind, so 20 minutes of silence is a fault. */
+const API_POLL_STALL_MS = 20 * 60 * 1000
 
 /**
- * Outcome-level health of the managed branch-metrics scrape. One machine, shared
- * by the status row and the setup checklist, so the two can never disagree about
+ * Outcome-level health of branch-metrics collection. One machine, shared by the
+ * status row and the setup checklist, so the two can never disagree about
  * whether metrics are flowing.
  *
- * `unconfigured` is distinct from `waiting`: nothing has been *asked* to scrape
- * yet, versus a scrape that was asked for and hasn't landed.
+ * `unconfigured` is distinct from `waiting`: a service-token connection whose
+ * scrape target row is missing, versus collection that hasn't landed yet.
  */
 export type MetricsHealthState = "unconfigured" | "waiting" | "healthy" | "stalled" | "degraded"
 
-export function metricsHealthState(
-	target: V2PlanetScaleScrapeTarget | null,
-	metricsAuth: MetricsAuth,
-	nowMs: number,
-): MetricsHealthState {
-	if (metricsAuth === "missing" || target === null) return "unconfigured"
-	if (target.last_scrape_error !== null) return "degraded"
-	if (target.last_scrape_at === null) return "waiting"
-	// Three intervals of silence: one missed scrape is jitter, three is a fault.
-	const lastScrapeMs = Date.parse(target.last_scrape_at)
-	if (nowMs - lastScrapeMs > 3 * target.scrape_interval_seconds * 1000) return "stalled"
-	return "healthy"
+/** When metrics last landed, from whichever source the connection uses. */
+export const metricsLastCollectedAt = (status: MetricsStatus): string | null =>
+	metricsAuthOf(status) === "service_token"
+		? (status.scrape_target?.last_scrape_at ?? null)
+		: (status.api_metrics?.last_polled_at ?? null)
+
+/** The most recent collection error, from whichever source the connection uses. */
+export const metricsLastError = (status: MetricsStatus): string | null =>
+	metricsAuthOf(status) === "service_token"
+		? (status.scrape_target?.last_scrape_error ?? null)
+		: (status.api_metrics?.last_error ?? null)
+
+export function metricsHealthState(status: MetricsStatus, nowMs: number): MetricsHealthState {
+	const target = status.scrape_target
+	if (metricsAuthOf(status) === "service_token" && target === null) return "unconfigured"
+	if (metricsLastError(status) !== null) return "degraded"
+	const lastAt = metricsLastCollectedAt(status)
+	if (lastAt === null) return "waiting"
+	// Scrapes: three intervals of silence, since one missed scrape is jitter.
+	const stallMs =
+		target !== null && metricsAuthOf(status) === "service_token"
+			? 3 * target.scrape_interval_seconds * 1000
+			: API_POLL_STALL_MS
+	return nowMs - Date.parse(lastAt) > stallMs ? "stalled" : "healthy"
+}
+
+/** Collection broke after working: an error, or silence well past the cadence. */
+export const metricsCollectionFailing = (status: MetricsStatus, nowMs: number): boolean => {
+	const state = metricsHealthState(status, nowMs)
+	return state === "degraded" || state === "stalled"
 }
 
 /**
- * No branch metric has ever been collected for this connection — as opposed to
+ * No branch metric has ever been collected for this connection, as opposed to
  * "collection broke", which still has history worth rendering.
  *
- * The infra pages branch on this: never-collected shows the setup card, because
- * a stat rail and a table of dashes over a connection that was never asked to
- * scrape reads as a broken product rather than an unfinished setup. Once one
- * scrape has landed the pages render normally forever after, and degradation is
- * carried by the inline notices instead.
+ * The infra pages branch on this: never-collected shows the setup card instead
+ * of a stat rail full of dashes. Once metrics have landed the pages render
+ * normally, and degradation is carried by the inline notices instead.
  */
 export const metricsNeverCollected = (status: V2PlanetScaleIntegration): boolean =>
-	status.metrics_auth === "missing" ||
-	status.scrape_target === null ||
-	status.scrape_target.last_scrape_at === null
+	metricsLastCollectedAt(status) === null
 
-export type SetupStepId = "connected" | "permissions" | "metrics-token" | "first-metrics"
+export type LiveCheckId = "access" | "resources" | "first-metrics" | "webhooks"
 
-/**
- * `blocked` is not `pending`: something is wrong and the operator has to act.
- * `current` is the one step the card expands.
- */
-export type SetupStepState = "done" | "current" | "blocked" | "pending"
+/** `failed` is not `waiting`: something is wrong and the operator has to act. */
+export type LiveCheckState = "done" | "working" | "waiting" | "failed"
 
-export interface SetupStep {
-	readonly id: SetupStepId
+export interface LiveCheck {
+	readonly id: LiveCheckId
+	readonly state: LiveCheckState
 	readonly title: string
-	readonly state: SetupStepState
-	/** One line: what happened, or what to do next. Rendered under the title. */
+	/** One line: what happened, or what to do next. */
 	readonly detail: string
-	/**
-	 * The step is `current` because Maple is working, not because the operator
-	 * is. Drives whether the marker spins — a spinner next to a step that is
-	 * waiting on a paste reads as "don't touch this", which is the opposite of
-	 * what it means.
-	 */
-	readonly waitingOnMaple: boolean
 }
 
+export type LiveHealth = "pending" | "healthy" | "attention"
+
 export interface PlanetScaleSetup {
-	readonly steps: ReadonlyArray<SetupStep>
-	/** Every step done — the card collapses to its quiet connected form. */
-	readonly complete: boolean
+	/** Go live's checklist: access, resources, first metrics, then webhooks when Maple reports them. */
+	readonly checks: ReadonlyArray<LiveCheck>
+	/** The grant can't be used: revoked, or it can't read databases. */
+	readonly accessBlocked: boolean
 	/**
-	 * A token exists and the first scrape hasn't landed. The card polls status
-	 * while this is true so "waiting" resolves to "streaming" without a reload.
+	 * The first scrape or poll hasn't landed. The page polls status while this is
+	 * true so "waiting" resolves to "streaming" without a reload.
 	 */
 	readonly awaitingFirstScrape: boolean
 	readonly health: MetricsHealthState
-	/** 1-based index of the `current`/`blocked` step, or null once complete. */
-	readonly activeStepNumber: number | null
+	readonly live: LiveHealth
 }
 
+/** What the inventory found, when it has loaded. */
+export type InventoryCounts = Readonly<{ databases: number; branches: number }>
+
+const plural = (count: number, noun: string, nouns: string) => `${count} ${count === 1 ? noun : nouns}`
+
 /**
- * Derive the four-step progression from the status the card already fetches.
- * Everything here is a function of `status` — no extra requests, no local state.
+ * Derive Go live's checks from the status the page already fetches.
+ * Everything here is a function of `status` and the inventory counts: no extra requests, no local state.
  */
-export function derivePlanetScaleSetup(status: V2PlanetScaleIntegration, nowMs: number): PlanetScaleSetup {
-	const target = status.scrape_target
-	const health = metricsHealthState(target, status.metrics_auth, nowMs)
+export function derivePlanetScaleSetup(
+	status: V2PlanetScaleIntegration,
+	nowMs: number,
+	inventory: InventoryCounts | null = null,
+): PlanetScaleSetup {
+	const health = metricsHealthState(status, nowMs)
+	const viaApi = metricsAuthOf(status) === "api"
 	const revoked = status.revoked_at !== null
-	// `detected_permissions` is null before the org is bound; absent is unknown,
-	// not denied — only an explicit `false` blocks.
+	// `detected_permissions` is null before the org is bound; absent is unknown, not denied.
 	const readDatabasesDenied = status.detected_permissions?.readDatabases === false
-	const hasToken = status.metrics_auth !== "missing"
+	const accessBlocked = revoked || readDatabasesDenied
+	const notYetCollected = health === "waiting" || health === "unconfigured"
+	const organization = status.organization ?? "your organization"
 
-	const step = (
-		id: SetupStepId,
-		title: string,
-		state: SetupStepState,
-		detail: string,
-		waitingOnMaple = false,
-	): SetupStep => ({ id, title, state, detail, waitingOnMaple })
+	const check = (id: LiveCheckId, state: LiveCheckState, title: string, detail: string): LiveCheck => ({
+		id,
+		state,
+		title,
+		detail,
+	})
 
-	const connected = revoked
-		? step(
-				"connected",
-				"Authorization",
-				"blocked",
-				"The PlanetScale authorization was revoked — reconnect to resume collection.",
+	const access = revoked
+		? check(
+				"access",
+				"failed",
+				"Authorization revoked",
+				"Maple can no longer read this organization. Reconnect to resume collection.",
 			)
-		: step(
-				"connected",
-				"Authorization",
-				"done",
-				status.organization !== null
-					? `Connected to ${status.organization}`
-					: "OAuth authorization stored",
-			)
-
-	const permissions = revoked
-		? step("permissions", "Permissions", "pending", "Checked once the authorization is restored.")
 		: readDatabasesDenied
-			? step(
-					"permissions",
-					"Permissions",
-					"blocked",
-					"The authorization can't read databases — grant the read_databases scope, then reconnect.",
+			? check(
+					"access",
+					"failed",
+					"Can't read databases",
+					"The grant is missing the read_databases scope. Reconnect and keep it checked.",
 				)
-			: step("permissions", "Permissions", "done", "Inventory, query insights, and webhooks are live.")
+			: check(
+					"access",
+					"done",
+					"Access works",
+					viaApi
+						? `The grant reads ${organization}`
+						: `The grant reads ${organization}, the service token reads metrics endpoints`,
+				)
 
-	// The token step is only *current* once the two above are settled, so the
-	// card never asks for a token while the grant itself is broken.
-	const upstreamBlocked = revoked || readDatabasesDenied
-	const metricsToken = hasToken
-		? step(
-				"metrics-token",
-				"Branch metrics access",
-				"done",
-				status.metrics_auth === "oauth"
-					? "The authorization covers the metrics endpoints — no token needed."
-					: "Authenticated with a service token.",
-			)
-		: step(
-				"metrics-token",
-				"Branch metrics access",
-				upstreamBlocked ? "pending" : "current",
-				"PlanetScale only serves branch metrics to service tokens. Add one to finish.",
-			)
+	const resources = accessBlocked
+		? check("resources", "waiting", "Databases and branches", "Listed once access is restored.")
+		: status.last_inventory_error !== null
+			? check("resources", "failed", "Listing databases failed", status.last_inventory_error)
+			: status.last_inventory_at === null
+				? check("resources", "working", "Listing databases and branches", "Usually within a minute")
+				: check(
+						"resources",
+						"done",
+						"Resources found",
+						inventory === null
+							? "Databases and branches listed"
+							: `${plural(inventory.databases, "database", "databases")}, ${plural(inventory.branches, "branch", "branches")}`,
+					)
 
-	const firstMetrics = ((): SetupStep => {
-		const title = "Metrics arriving"
-		if (!hasToken) {
-			return step(
-				"first-metrics",
-				title,
-				"pending",
-				"Starts automatically once branch metrics access is set up.",
-			)
-		}
+	const metricsTitle = viaApi ? "First poll, branch metrics" : "First scrape, branch metrics"
+	const firstMetrics = (() => {
+		// Nothing is collected while the grant is broken, so don't spin over it.
+		if (accessBlocked && notYetCollected)
+			return check("first-metrics", "waiting", metricsTitle, "Starts once access is restored.")
 		switch (health) {
 			case "healthy":
-				return step("first-metrics", title, "done", "Streaming branch metrics.")
-			case "degraded":
-				return step("first-metrics", title, "blocked", "The last scrape failed.")
-			case "stalled":
-				return step(
+				return check(
 					"first-metrics",
-					title,
-					"blocked",
-					"Metrics stopped arriving — collection has stalled.",
+					"done",
+					"Branch metrics arriving",
+					viaApi ? "Polled from PlanetScale every 5 minutes" : "Scraped with the service token",
+				)
+			case "degraded":
+				return check(
+					"first-metrics",
+					"failed",
+					metricsTitle,
+					`${viaApi ? "The last poll failed" : "The last scrape failed"}: ${metricsLastError(status) ?? ""}`,
+				)
+			case "stalled":
+				return check(
+					"first-metrics",
+					"failed",
+					"Branch metrics stopped",
+					"Metrics stopped arriving, collection has stalled.",
 				)
 			default:
-				// The only step where nothing is asked of the operator: Maple is
-				// scraping and the first sample hasn't landed.
-				return step("first-metrics", title, "current", "Waiting for the first scrape.", true)
+				return check(
+					"first-metrics",
+					"working",
+					metricsTitle,
+					viaApi ? "Usually within 10 minutes" : "Usually under a minute",
+				)
 		}
 	})()
 
-	const steps = [connected, permissions, metricsToken, firstMetrics]
-	const activeIndex = steps.findIndex((step) => step.state === "current" || step.state === "blocked")
+	const webhooks = status.webhooks ?? null
+	const webhookCheck =
+		webhooks === null
+			? []
+			: [
+					webhooks.state === "active"
+						? check(
+								"webhooks",
+								"done",
+								"Webhooks registered",
+								plural(webhooks.databases, "database", "databases"),
+							)
+						: webhooks.state === "pending"
+							? check(
+									"webhooks",
+									"working",
+									"Registering webhooks",
+									`${webhooks.registered_databases} of ${webhooks.databases} databases so far`,
+								)
+							: webhooks.state === "failing"
+								? check(
+										"webhooks",
+										"failed",
+										"Webhooks failing",
+										`${webhooks.registered_databases} of ${webhooks.databases} databases. ${webhooks.last_error ?? ""}`.trim(),
+									)
+								: check(
+										"webhooks",
+										"failed",
+										"Webhooks need reauthorization",
+										"This grant predates webhooks. Reconnect so Maple can register them.",
+									),
+				]
 
 	return {
-		steps,
-		complete: activeIndex === -1,
-		awaitingFirstScrape: hasToken && (health === "waiting" || health === "unconfigured"),
+		checks: [access, resources, firstMetrics, ...webhookCheck],
+		accessBlocked,
+		awaitingFirstScrape: !accessBlocked && notYetCollected,
 		health,
-		activeStepNumber: activeIndex === -1 ? null : activeIndex + 1,
+		live:
+			accessBlocked || health === "degraded" || health === "stalled"
+				? "attention"
+				: health === "healthy"
+					? "healthy"
+					: "pending",
 	}
 }

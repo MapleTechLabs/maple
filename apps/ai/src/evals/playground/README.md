@@ -49,6 +49,53 @@ against the final answer; `Efficient path` is the call count a well-designed too
 | 7   | Build me a dashboard with CPU utilization per host.                             | create_dashboard on source=metrics, `system.cpu.utilization`, group by `resource.host.name` | 1-3            |
 | 8   | How many 5xx errors did the API return today? (negative)                        | does not use the infra tools; traces/errors tools instead                                   | n/a            |
 
+## The integration world
+
+`src/mcp/__evals__/integration-world.ts` seeds Postgres with connected integrations and adds
+warehouse rules for CI runs and deployed versions. It shares names with `provider-world.ts`
+(zones, the `shop` Railway project, the PlanetScale databases). The playground tenant is an org
+admin, so the admin-only integration tools run.
+
+| Fact                                                                                                    | Where                                                |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `acme/api` stopped syncing: the GitHub App lost access                                                  | list_integrations, audit_setup                       |
+| Cloudflare analytics for `status.example.com` fail on a missing Analytics:Read permission               | list_integrations, audit_setup                       |
+| Railway `shop / preview` has had no successful poll for 4 h; production and staging are fresh           | list_integrations, audit_setup, sync_railway         |
+| PlanetScale deploy-request sync for `maple-analytics` fails (HTTP 404); metrics flow                    | list_integrations, audit_setup                       |
+| Scrape target `legacy-exporter` fails with connection refused                                           | list_integrations, audit_setup, update_scrape_target |
+| `shop` CI has failed since `a1a1…` ("allow stacking two coupons"): job `test (small-6)`, `cart.test.ts` | ci_runs                                              |
+| `checkout` (production) moved from `a0a0…` to `a3a3…`: three commits                                    | service_deployments, compare_commits                 |
+
+### Integration scenarios
+
+| #   | Ask                                                                                        | Must find                                                                        | Efficient path |
+| --- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- | -------------- |
+| I1  | What third-party stuff do we have hooked up, and is any of it broken?                      | all five problems above                                                          | 1              |
+| I2  | Our Railway preview charts stopped updating. What's going on, and can you kick it?         | preview stale 4 h, others fresh; sync_railway                                    | 2              |
+| I3  | CI on the shop repo has been red since yesterday. What broke, and which change started it? | test (small-6) fails on cart.test.ts since the coupon commit; last green at a0a0 | 1-2            |
+| I4  | What shipped in the latest checkout deploy?                                                | the three commits between a0a0 and a3a3                                          | 1              |
+| I5  | Can you look at the acme/api source to see how it calls the payments service?              | acme/api is not syncing (App lost access); grant access                          | 1-2            |
+| I6  | The legacy-exporter target has been dead for a day. Pause it.                              | update_scrape_target enabled=false                                               | 1              |
+| I7  | Is our api service healthy? It runs on Railway.                                            | Railway api in production at 99 % of its CPU limit                               | 1-2            |
+| I8  | Start collecting metrics from https://metrics.acme.dev/node2 for billing.                  | create_scrape_target with service billing                                        | 1              |
+
+### Integration results (Haiku; data calls, excluding `catalog`/`schema`)
+
+| #   | Round 1                       | Round 2                                   | Round 3    | Round 4                | Notes                                                                                                                                                       |
+| --- | ----------------------------- | ----------------------------------------- | ---------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I1  | 2, correct                    | 2                                         | 2          |                        | fixed: overview shows unhealthy of total, two `next` calls instead of twelve                                                                                |
+| I2  | wrong (fixture contradiction) | 8, correct                                | 5, correct |                        | sync_railway now says an environment is still stale after the poll and why                                                                                  |
+| I3  |                               | 14, correct                               | failed     | 2 (+3 wasted), correct | ci_runs names the red streak, its first failing and last green commits, and hands full SHAs to compare_commits; `result` no longer hides the last green run |
+| I4  |                               | 2, correct                                |            |                        |                                                                                                                                                             |
+| I5  | blocked (fixture ids)         | blocked (no GitHub App in the playground) | correct    |                        | list_source_repositories flags repositories that stopped syncing                                                                                            |
+| I6  |                               | 2, correct                                |            |                        | paused targets say so, with no "after the next scrape" hint                                                                                                 |
+| I7  |                               | 4, correct                                |            |                        | diagnose_service says "no spans", not a healthy 0 %                                                                                                         |
+| I8  |                               | 2, correct                                |            |                        |                                                                                                                                                             |
+
+Open: `list_infra` with no rows does not say its default window is 1 hour, and its `environment`
+filter does not say it takes the bare Railway environment name (`preview`, not `shop / preview`).
+CI trace ids from the fixture do not resolve in `inspect_trace`: the world has no CI spans.
+
 ## Grading
 
 Per scenario, from the agent's report and the JSONL log:
@@ -81,16 +128,16 @@ Run at most four subagents at once: each call starts a vitest process.
 
 ## Results so far (Haiku unless noted; data calls, excluding `catalog`/`schema`)
 
-| # | Round 1 | Round 2 | Round 3 | Round 4 | Status |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 2 | 2 | | 1 (Sonnet) | done |
-| 2 | 3 | 4 | 3 | 3 | done; 2 is reachable (list_infra, then inspect_infra workload) |
-| 3 | 1 | | 1 | | done |
-| 4 | | 2 | 3 | 4 | correct; call count varies on Haiku |
-| 5 | 3 | | 2 | | done |
-| 6 | | 2 | 2 | | done |
-| 7 | | | 10, then 7 (broken dashboard) | 3 | done after the sandbox modeled metric discovery |
-| 8 | | | correct, no infra calls | | done |
+| #   | Round 1 | Round 2 | Round 3                       | Round 4    | Status                                                         |
+| --- | ------- | ------- | ----------------------------- | ---------- | -------------------------------------------------------------- |
+| 1   | 2       | 2       |                               | 1 (Sonnet) | done                                                           |
+| 2   | 3       | 4       | 3                             | 3          | done; 2 is reachable (list_infra, then inspect_infra workload) |
+| 3   | 1       |         | 1                             |            | done                                                           |
+| 4   |         | 2       | 3                             | 4          | correct; call count varies on Haiku                            |
+| 5   | 3       |         | 2                             |            | done                                                           |
+| 6   |         | 2       | 2                             |            | done                                                           |
+| 7   |         |         | 10, then 7 (broken dashboard) | 3          | done after the sandbox modeled metric discovery                |
+| 8   |         |         | correct, no infra calls       |            | done                                                           |
 
 Every answer was correct from round 2 on. The open items the agents still raise:
 

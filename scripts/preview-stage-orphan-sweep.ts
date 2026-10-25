@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Tear down whole PR-preview stages whose PR is closed.
+ * Tear down whole PR-preview stages whose PR is closed or lost its `preview` label.
  *
  *   bun scripts/preview-stage-orphan-sweep.ts [--dry-run]
  *
@@ -14,7 +14,7 @@
  *   - Neon branches named `pr-<n>` in NEON_PROJECT_ID (alchemy.run.ts, declarePreviewDb),
  *   - R2 buckets named `maple-replay-blobs-pr-<n>`, which alchemy RETAINS on destroy
  *     (apps/api/src/resources/replay-blobs.ts), so every deployed stage keeps one.
- * For each PR the GitHub API affirmatively reports closed (unknown/open → keep), it runs
+ * For each PR the GitHub API affirmatively reports retired (unknown/live → keep), it runs
  * `alchemy destroy --yes --stage pr-<n>`, then deletes the Neon branch and empties and
  * deletes the R2 bucket. If the destroy fails, the branch and bucket stay so the next run
  * rediscovers the stage and retries. Stages run one at a time; a failure does not stop
@@ -31,7 +31,7 @@
 
 import { spawnSync } from "node:child_process"
 import { join } from "node:path"
-import { fetchPrState, hasPrStateCredentials } from "./lib/pr-state.ts"
+import { fetchPreviewState, hasActivePreviewRun, hasPrStateCredentials } from "./lib/pr-state.ts"
 
 const FAILURE = 1
 const DRY_RUN = process.argv.includes("--dry-run")
@@ -292,18 +292,27 @@ const main = async (): Promise<void> => {
 	for (const prNumber of prNumbers) {
 		const stage = `pr-${prNumber}`
 		const markers = candidates.get(prNumber) ?? []
-		const state = await fetchPrState(prNumber)
-		if (state === "open") {
-			console.log(`… keeping ${stage} (PR #${prNumber} is open)`)
+		const state = await fetchPreviewState(prNumber)
+		if (state === "live") {
+			console.log(`… keeping ${stage} (PR #${prNumber} has a live preview)`)
 			continue
 		}
 		if (state === "unknown") {
 			console.log(`⚠ skipping ${stage} (PR #${prNumber} state unknown)`)
 			continue
 		}
+		const activeRun = await hasActivePreviewRun(prNumber)
+		if (activeRun !== false) {
+			console.log(
+				`⚠ skipping ${stage} (${activeRun === true ? `a preview run for PR #${prNumber} is active` : "preview runs unknown"})`,
+			)
+			continue
+		}
 		const bucket = markers.find((marker) => REPLAY_BUCKET_PATTERN.test(marker))
 		const branchId = neonBranchIdByPr.get(prNumber)
-		console.log(`… tearing down ${stage} (PR #${prNumber} is closed; found ${markers.join(", ")})`)
+		console.log(
+			`… tearing down ${stage} (PR #${prNumber} is closed or unlabelled; found ${markers.join(", ")})`,
+		)
 		if (DRY_RUN) {
 			console.log(
 				`  would destroy ${stage}${branchId ? `, delete Neon branch ${branchId}` : ""}${bucket ? `, empty and delete ${bucket}` : ""}`,

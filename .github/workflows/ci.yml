@@ -1,5 +1,8 @@
 name: CI
 
+# Jobs queue behind the org's concurrency limit, so the job count per push is the
+# main cost: every job below is path-gated, and test lanes run only for affected
+# workspaces. docs/ci-performance.md has the measurements behind the sizing.
 on:
     push:
         branches: [main]
@@ -14,14 +17,8 @@ permissions:
     contents: read
 
 jobs:
-    # Which jobs are worth running for this diff. Most filters carry the `base` anchor.
-    #
-    # Push events filter too. paths-filter compares `github.event.before..github.sha`
-    # there, which spans the whole push — correct for squash-merges, for direct
-    # pushes to main, and for the `Merge branch 'main'` commits this history carries.
-    # A main push therefore gets exactly the guarantee a PR gets. This used to force
-    # every output true on push, which cost ~40% of CI's monthly runner spend re-running
-    # the full suite for diffs that could not have affected it.
+    # paths-filter diffs the PR, or `before..sha` on a push to main, so main gets
+    # the same gating a PR does.
     changes:
         name: Detect changes
         runs-on: ubuntu-latest
@@ -29,18 +26,23 @@ jobs:
         outputs:
             ts: ${{ steps.filter.outputs.ts == 'true' }}
             tests: ${{ steps.tests.outputs.matrix }}
+            has-tests: ${{ steps.tests.outputs.has-tests }}
             cli: ${{ steps.filter.outputs.cli == 'true' }}
             archive: ${{ steps.filter.outputs.archive == 'true' }}
-            web: ${{ steps.filter.outputs.web == 'true' }}
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
+            ingest: ${{ steps.filter.outputs.ingest == 'true' }}
+            collector: ${{ steps.filter.outputs.collector == 'true' }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
             - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
               id: filter
               with:
+                  list-files: json
                   filters: |
+                      changed:
+                        - '**'
                       base: &base
                         - 'bun.lock'
                         - 'package.json'
@@ -49,8 +51,8 @@ jobs:
                         - '.oxlintrc*.json'
                         - 'mise.toml'
                         - '.github/workflows/ci.yml'
-                        - '.github/scripts/*tests*'
                         - '.github/actions/**'
+                        - 'scripts/ci/**'
                       ts:
                         - *base
                         - 'alchemy.run.ts'
@@ -59,25 +61,21 @@ jobs:
                         - 'packages/**'
                         - 'lib/**'
                         - 'scripts/**'
+                        - 'skills/**'
                         - '!apps/ingest/**'
-                        # Swift; built by ios.yml. Note the asymmetry: a
-                        # packages/domain change still triggers ios:openapi:check
-                        # below, so an iOS contract break fails on the cheap
-                        # Linux runner rather than a macOS one.
+                        # Read by @maple/domain's tests (turbo.json test inputs).
+                        - 'apps/ingest/src/ai_session/**'
+                        - 'apps/ios/Packages/MapleAPI/Sources/MapleAPI/openapi.json'
+                        # Swift is ios.yml's; ios:openapi:check below still covers the contract.
                         - '!apps/ios/**'
-                      # The workspace-dependency closure of apps/cli + apps/local-ui
-                      # (plus what alchemy:build-deps builds): cli → effect-sdk,
-                      # domain, query-engine; local-ui → infra, query-engine, ui;
-                      # domain/query-engine → effect-clickhouse; effect-sdk /
-                      # @maple-dev/browser → browser-session. The old blanket
-                      # `lib/**` + `packages/**` ran this job and all seven archive
-                      # legs for changes to packages the bundle never links (db,
-                      # auth, email, …). Update this list when those package.json
-                      # workspace deps change.
+                      # The workspace closure of apps/cli + apps/local-ui. Update it when
+                      # their package.json workspace deps change.
                       cli:
                         - *base
                         - 'apps/cli/**'
                         - 'apps/local-ui/**'
+                        # local-ui renders apps/web's source modules.
+                        - 'apps/web/src/**'
                         - 'packages/effect-sdk/**'
                         - 'packages/domain/**'
                         - 'packages/query-engine/**'
@@ -87,60 +85,34 @@ jobs:
                         - 'packages/browser-session/**'
                         - 'scripts/build-local-binary.sh'
                         - 'scripts/gen-ui-embed.ts'
-                      # The archive probes test the CLI's own on-disk archive
-                      # format: crash recovery, merge, GC, retention. The `cli`
-                      # closure above is the right gate for "does the bundle still
-                      # build and open a store", which `local-checkpoint-native`
-                      # answers in one job. It is the wrong gate for these: measured
-                      # over 60 merged PRs, `cli` fired on 78% but only 20% touched
-                      # apps/cli at all — the rest were query-engine and domain edits
-                      # dragging seven crash-recovery legs along with them, 38% of the
-                      # repo's entire runner spend. Anything that changes archive
-                      # behaviour lives in one of these paths (`base` included: a
-                      # lockfile change can move chdb).
+                      # The archive probes test the CLI's own on-disk format, which only
+                      # these paths can change (a lockfile change can move chdb). Keep it
+                      # narrower than `cli`: that ran every archive leg on query-engine edits.
                       archive:
                         - *base
                         - 'apps/cli/**'
                         - 'apps/local-ui/**'
                         - 'scripts/build-local-binary.sh'
                         - 'scripts/gen-ui-embed.ts'
-                      web:
-                        - *base
-                        - 'apps/web/**'
-                        - 'packages/ui/**'
-                        - 'packages/domain/**'
-                        - 'packages/query-engine/**'
+                      # Query definitions, the warehouse schema and the migrations the
+                      # e2e job replays: without them a schema change skips the only
+                      # job that runs it against a real ClickHouse.
                       clickhouse:
                         - *base
                         - 'lib/effect-clickhouse-http/**'
                         - 'apps/api/scripts/query-bench/**'
                         - 'packages/backend/src/services/warehouse/**'
                         - 'packages/db/**'
-                        - 'scripts/*clickhouse*'
-                        # The SQL catalog sweep lives in this job, so a change to a
-                        # query definition or to the warehouse schema has to trigger
-                        # it. Without these two the PR that broke every main chart
-                        # would still skip the only job that could have caught it.
                         - 'packages/query-engine/**'
-                        - 'packages/domain/src/clickhouse/**'
-                        - 'packages/domain/src/tinybird/**'
-                        # The migrations this job replays, and the datasource
-                        # definitions the generated DDL is derived from. Without
-                        # these a PR that adds a migration only triggers the job
-                        # if it incidentally touches `base` (e.g. bun.lock) —
-                        # which is exactly how a schema change can merge without
-                        # ever being replayed against a real ClickHouse.
+                        # The sweep analyzes the integration builders too.
+                        - 'packages/query-engine-integrations/**'
                         - 'packages/domain/src/clickhouse/**'
                         - 'packages/domain/src/tinybird/**'
                         - 'packages/domain/src/generated/**'
+                        - 'scripts/*clickhouse*'
+                      # The only place DatabasePgLive meets a real server; keep these broad.
                       postgres:
                         - *base
-                        # The connection layer and everything that decides how many
-                        # sockets a request opens. The unit suite replaces the dial
-                        # with a fake and the rest of the api suite runs on PGlite,
-                        # so this job is the ONLY place `DatabasePgLive` meets a real
-                        # server — narrow these and the per-request socket
-                        # guarantee stops being checked.
                         - 'packages/backend/src/platform/**'
                         - 'apps/api/test/integration/**'
                         - 'apps/api/vitest.integration.config.ts'
@@ -149,17 +121,38 @@ jobs:
                         - *base
                         - 'scripts/*.sh'
                         - 'apps/cli/test/*.sh'
+                        - 'apps/cli/docker/*.sh'
+                      # Not `*base`: the JS lockfile and tsconfigs cannot move a Rust or Go build.
+                      ingest:
+                        - '.github/workflows/ci.yml'
+                        - 'mise.toml'
+                        - 'apps/ingest/**'
+                        # Embedded by telemetry.rs's cross-language contract test.
+                        - 'apps/scraper/src/__fixtures__/otlp-export.json'
+                        - 'packages/db/drizzle/**'
+                        - 'packages/db/src/tables/**'
+                      collector:
+                        - '.github/workflows/ci.yml'
+                        - 'packages/otel-collector-maple-exporter/**'
 
-            - name: Plan test lanes and verify scaling
+            - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+              with:
+                  install_args: bun
+
+            # A `base` change (lockfile, CI config, root tsconfig) can move any suite. So
+            # can a huge diff: the list must fit one env var (128 KB) and the PR files API
+            # stops at 3000, so past 1000 files every suite runs.
+            - name: Plan test lanes for affected workspaces
               id: tests
+              env:
+                  CHANGED_FILES: ${{ steps.filter.outputs.base != 'true' && fromJSON(steps.filter.outputs.changed_count) <= 1000 && steps.filter.outputs.changed_files || '' }}
               run: |
-                  python3 -m unittest discover -s .github/scripts -p 'test_plan_tests.py'
-                  echo "matrix=$(python3 .github/scripts/plan-tests.py)" >> "$GITHUB_OUTPUT"
+                  bun test scripts/ci/plan-tests.test.ts scripts/lib/pr-state.test.ts
+                  matrix="$(bun scripts/ci/plan-tests.ts)"
+                  echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+                  echo "has-tests=$(jq '.include | length > 0' <<< "$matrix")" >> "$GITHUB_OUTPUT"
 
-            # Shell linting lives here rather than in its own job: it needs only the
-            # checkout this job already has — no bun, no mise, no install — so a
-            # dedicated runner was ~90% setup for ~4s of work. shellcheck is
-            # preinstalled on the runner image.
+            # shellcheck is preinstalled; a runner of its own would be ~90% setup.
             - name: shellcheck
               if: ${{ steps.filter.outputs.shell == 'true' }}
               run: >-
@@ -173,8 +166,12 @@ jobs:
                   apps/cli/test/native-archive-gc-probe.sh
                   apps/cli/test/native-archive-merge-probe.sh
                   apps/cli/test/native-retention-probe.sh
+                  apps/cli/test/native-remote-auth-smoke.sh
+                  apps/cli/docker/entrypoint.sh
+                  apps/cli/docker/build-image.sh
+                  apps/cli/docker/image-smoke.sh
 
-            # Syntax-check the POSIX installers against the actual /bin/sh they claim.
+            # The installers claim POSIX /bin/sh; check them against it.
             - name: sh -n
               if: ${{ steps.filter.outputs.shell == 'true' }}
               run: |
@@ -185,134 +182,72 @@ jobs:
         name: TypeScript (${{ matrix.shard }})
         needs: changes
         if: ${{ needs.changes.outputs.ts == 'true' }}
-        # Builds and typechecks retain independent caches. Tests have their own
-        # automatically sized matrix below so workspace moves cannot strand them.
-        # Shards are sized to ~1-2 minutes of work: each one pays ~30s of setup,
-        # and the org runs ~16 jobs at once, so short shards queued the whole run.
-        # The short builds and checks share one `quality` shard and run as parallel
-        # steps; the tsc- and lint-heavy shards stay separate jobs for their cores.
         runs-on: ubuntu-latest
         timeout-minutes: 12
         strategy:
             fail-fast: false
             matrix:
-                include:
-                    # Every Worker: the root alchemy.run.ts imports each src/worker.ts,
-                    # so the Alchemy-entrypoints typecheck resolves each graph through
-                    # that app's node_modules.
-                    # Knip needs the full install, which covers the Workers too.
-                    - shard: quality
-                      install-filters: ""
-                    - shard: effect-lint
-                      install-filters: ""
-                    - shard: typecheck-core
-                      install-filters: "@maple/api ./packages/*"
-                    - shard: typecheck-rest
-                      install-filters: >-
-                          @maple/ai @maple/alerting @maple/chat-bot @maple/cli
-                          @maple/clickhouse-builder-docs
-                          @maple/electric-sync @maple/landing @maple/local-ui
-                          @maple/sandbox @maple/scraper ./lib/* ./examples/*
+                shard: [quality, effect-lint, typecheck]
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-              with:
-                  # Rust and Python are for the ingest and Tinybird workflows; skipping
-                  # them keeps this job off their ~1 GB of toolchain cache.
-                  install_args: bun node
+            - uses: ./.github/actions/setup
 
-            - uses: ./.github/actions/bun-install
-              with:
-                  filters: ${{ matrix.install-filters }}
-
-            # The append-only schema-history gate below reads the base branch's
-            # history file through `git show origin/<base>:...`. checkout leaves a
-            # narrow refspec behind, so name the destination explicitly — a plain
-            # `git fetch origin <branch>` can leave refs/remotes/origin/<branch>
-            # absent, which the gate would read as "no base history yet".
+            # The append-only schema gate reads `git show origin/<base>:...`; checkout's
+            # narrow refspec can leave that ref absent, which the gate reads as "no base
+            # history" and passes. Name the destination explicitly.
             - name: Fetch base branch for the append-only schema gate
               if: ${{ matrix.shard == 'quality' && github.event_name == 'pull_request' }}
               run: |
                   git fetch --no-tags --depth=1 origin \
                     "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
 
-            # One turbo cache shared by every job and workflow, served from the
-            # Actions cache one artifact at a time. A result any job has produced
-            # (the effect-sdk build every test lane depends on, say) is a hit for
-            # all the others; per-job tarballs rebuilt it in each of them.
-            - name: Turbo remote cache
-              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
-
             # Every build the quality checks read, in ONE turbo run: parallel turbo
-            # runs over shared dependencies would race on the same dist/ writes.
-            # Alchemy entrypoints also need the SDK and Alchemy declarations.
+            # runs over shared dependencies race on the same dist/ writes. The Alchemy
+            # entrypoints typecheck needs the SDK and Alchemy declarations.
             - name: Build production bundles
               if: ${{ matrix.shard == 'quality' }}
               run: >-
-                  bun turbo build --filter=@maple/web --filter=@maple-dev/alchemy
+                  bun turbo build --filter=@maple-dev/alchemy
                   --filter=@maple-dev/browser
                   --filter=@maple-dev/effect-sdk --filter=@maple/landing
                   --filter=@maple/local-ui --concurrency=2
 
-            # Read-only over the build above. Nothing here may run turbo with its
-            # dependency graph: a cache restore rewrites dist/ under the others.
+            # Read-only over the build above: nothing here may run turbo with its
+            # dependency graph, or a cache restore rewrites dist/ under the others.
             - parallel:
                   - name: Validate generated ClickHouse and local-store schemas
                     if: ${{ matrix.shard == 'quality' }}
                     run: bun run clickhouse:schema:check
 
-                  # The Swift client is generated from a committed, pruned copy of the v2
-                  # OpenAPI document. Checking it here means a contract change that breaks
-                  # the iOS client fails on Linux, not on a 10x-priced macOS runner.
+                  # A v2 contract change that breaks the Swift client fails here, not on macOS.
                   - name: Validate the generated iOS OpenAPI spec
                     if: ${{ matrix.shard == 'quality' }}
                     run: bun run ios:openapi:check
 
-                  # Shared design tokens live in packages/ui/src/styles/tokens.css;
-                  # fails if an app re-declares one (landing ↔ web drift guard).
+                  # Fails if an app re-declares a token from packages/ui/src/styles/tokens.css.
                   - name: Validate shared design tokens
                     if: ${{ matrix.shard == 'quality' }}
                     run: bun run check:tokens
 
-                  # Guard what installing @maple-dev/browser costs a page. Splits the
-                  # bundled+minified+gzipped graph into what every page load pays and
-                  # what only replay-sampled visitors pay, and fails on the budgets in
-                  # scripts/size.ts. Without this an eager-graph regression is only
-                  # discoverable in a customer's Lighthouse report — which is how a
-                  # bundled `effect/Schema` once took the eager side 53% over budget.
+                  # What @maple-dev/browser costs every page load vs replay-sampled
+                  # visitors only; budgets live in scripts/size.ts.
                   - name: Browser SDK bundle budget
                     if: ${{ matrix.shard == 'quality' }}
                     run: bun run size
                     working-directory: packages/browser
 
-                  # `turbo typecheck` does not cover tsconfig.alchemy.json (alchemy.run.ts,
-                  # the ECS factories and every Worker module it imports) — only the root
-                  # `typecheck` script chains it, and CI calls turbo directly.
+                  # `turbo typecheck` does not cover tsconfig.alchemy.json.
                   - name: Typecheck Alchemy entrypoints
                     if: ${{ matrix.shard == 'quality' }}
-                    run: bunx tsc -p tsconfig.alchemy.json
-
-                  # Guard the code-split web bundle: initial-load gzip budget and no
-                  # chat/replay code in the startup graph. Reads the dist/ the turbo
-                  # build step just produced (or restored from cache).
-                  - name: Web bundle budget
-                    if: ${{ matrix.shard == 'quality' }}
-                    run: bun run check:bundle
-                    working-directory: apps/web
-
-                  # `--only` skips the ^build edge, which the build step already ran.
-                  - name: Typecheck web
-                    if: ${{ matrix.shard == 'quality' }}
-                    run: bun turbo typecheck --filter=@maple/web --only
+                    run: bunx tsrs -p tsconfig.alchemy.json
 
                   - name: Find unused files and dependencies
                     if: ${{ matrix.shard == 'quality' }}
                     run: bun knip
 
-            # Type-aware lint resolves the three workspace packages whose exports point
-            # at dist/. Build them before linting so Effect requirement/error channels
-            # cannot silently degrade to `any` through missing declarations.
+            # Type-aware lint resolves the dist/ exports of these three; without their
+            # declarations Effect channels silently degrade to `any`.
             - name: Build workspace libraries for type-aware Effect lint
               if: ${{ matrix.shard == 'effect-lint' }}
               run: >-
@@ -324,23 +259,17 @@ jobs:
               if: ${{ matrix.shard == 'effect-lint' }}
               run: bun run lint
 
-            - name: Typecheck remaining apps, libraries, and examples
-              if: ${{ matrix.shard == 'typecheck-rest' }}
+            - name: Typecheck apps, packages, libraries and examples
+              if: ${{ matrix.shard == 'typecheck' }}
               run: >-
-                  bun turbo typecheck --filter='./apps/*' --filter='./lib/*'
-                  --filter='./examples/*' --filter='!@maple/api'
-                  --filter='!@maple/web' --filter='!@maple/ingest' --concurrency=2
-
-            - name: Typecheck API and packages
-              if: ${{ matrix.shard == 'typecheck-core' }}
-              run: >-
-                  bun turbo typecheck --filter=@maple/api --filter='./packages/*'
-                  --concurrency=2
+                  bun turbo typecheck --filter='./apps/*' --filter='./packages/*'
+                  --filter='./lib/*' --filter='./examples/*'
+                  --filter='!@maple/ingest' --concurrency=3
 
     tests:
         name: Tests (${{ matrix.name }})
         needs: changes
-        if: ${{ needs.changes.outputs.ts == 'true' }}
+        if: ${{ needs.changes.outputs.ts == 'true' && needs.changes.outputs.has-tests == 'true' }}
         runs-on: ubuntu-latest
         timeout-minutes: 8
         strategy:
@@ -348,19 +277,17 @@ jobs:
             matrix: ${{ fromJSON(needs.changes.outputs.tests) }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+
+            - uses: ./.github/actions/setup
               with:
-                  # Rust and Python are for the ingest and Tinybird workflows; skipping
-                  # them keeps this job off their ~1 GB of toolchain cache.
-                  install_args: bun node
-            - uses: ./.github/actions/bun-install
-              with:
-                  filters: ${{ join(matrix.filters, ' ') }}
+                  install-filters: ${{ join(matrix.filters, ' ') }}
+
             - name: Read Playwright version
               if: matrix.browser-workspace != ''
               id: test-playwright
               working-directory: ${{ matrix.browser-workspace }}
               run: echo "version=$(bun -e 'console.log(require("playwright/package.json").version)')" >> "$GITHUB_OUTPUT"
+
             - name: Cache Chromium
               if: matrix.browser-workspace != ''
               id: test-browser-cache
@@ -368,31 +295,45 @@ jobs:
               with:
                   path: ~/.cache/ms-playwright
                   key: playwright-${{ runner.os }}-${{ steps.test-playwright.outputs.version }}-chromium
-            # As in the performance job, ubuntu-latest supplies Chromium's shared
-            # libraries. Install the pinned browser; don't repeat apt on every lane.
+
+            # ubuntu-latest already carries Chromium's shared libraries.
             - name: Install Chromium
               if: matrix.browser-workspace != '' && steps.test-browser-cache.outputs.cache-hit != 'true'
               working-directory: ${{ matrix.browser-workspace }}
               run: bun run playwright install chromium
-            - name: Turbo remote cache
-              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
+
+            # Bun suites get their own turbo run: `bun test` rejects Vitest flags. Both
+            # runs go even if one fails. The budget includes cold dependency builds; a
+            # lane over it means a slow file to fix, not a reason to raise it.
             - name: Run bounded test lane
               timeout-minutes: 5
               env:
                   TEST_LANE: ${{ toJSON(matrix) }}
-                  # Runners and Workers are UTC, which hides any code that reads a
-                  # zone-less warehouse timestamp as local time. +05:45 shifts both
-                  # hours and minutes, so such a bug fails here instead of on a laptop.
+                  # +05:45 shifts hours and minutes, so code reading a zone-less
+                  # warehouse timestamp as local time fails here, not on a laptop.
                   TZ: Asia/Kathmandu
-              run: python3 .github/scripts/run-tests.py
+              run: |
+                  mapfile -t vitest < <(jq -r '(.filters - ."bun-filters")[] | "--filter=" + .' <<< "$TEST_LANE")
+                  mapfile -t bunf < <(jq -r '."bun-filters"[] | "--filter=" + .' <<< "$TEST_LANE")
+                  mapfile -t args < <(jq -r '.args[]' <<< "$TEST_LANE")
+                  name="$(jq -r .name <<< "$TEST_LANE")"
+                  status=0
+                  if (( ${#vitest[@]} )); then
+                    bun turbo test --concurrency=1 "${vitest[@]}" -- "${args[@]}" || status=$?
+                  fi
+                  if (( ${#bunf[@]} )); then
+                    bun turbo test --concurrency=1 "${bunf[@]}" || { code=$?; (( status )) || status=$code; }
+                  fi
+                  echo "$name: ${SECONDS}s / 240s budget (includes dependency builds)" | tee -a "$GITHUB_STEP_SUMMARY"
+                  if (( SECONDS > 240 )); then
+                    echo "::error::Test lane exceeded 240s. Inspect slow files and the sizing in scripts/ci/plan-tests.ts; see docs/ci-performance.md."
+                    (( status )) || status=1
+                  fi
+                  exit "$status"
 
-    # The only job where `DatabasePgLive` meets a real Postgres. Everything else that
-    # touches the Database service runs on PGlite (in-process, single-connection,
-    # marks connected immediately), and the connection-scope unit tests inject a
-    # fake dial — so "one socket per request" is asserted here against
-    # pg_stat_activity, or nowhere. Port 5499 matches
-    # docker-compose.development.yml so the same command works locally after
-    # `bun db:up`.
+    # The only job where `DatabasePgLive` meets a real Postgres (everything else runs
+    # on PGlite), so "one socket per request" is asserted here or nowhere. Port 5499
+    # matches docker-compose.development.yml.
     postgres-connection-e2e:
         name: Postgres connection scope E2E
         needs: changes
@@ -416,34 +357,26 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-              with:
-                  # Rust and Python are for the ingest and Tinybird workflows; skipping
-                  # them keeps this job off their ~1 GB of toolchain cache.
-                  install_args: bun node
+            - uses: ./.github/actions/setup
 
-            - uses: ./.github/actions/bun-install
-
-            - name: Turbo remote cache
-              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
-
-            # No migrations: the suite creates the one scratch table it needs and
-            # drops it. Keeping it schema-independent means a migration change can
-            # never make this job red for a reason unrelated to connections.
+            # Schema-independent on purpose: the suite creates and drops its own table.
             - name: Connection scope against a real Postgres
               env:
                   MAPLE_TEST_PG_URL: postgres://maple:maple@127.0.0.1:5499/maple
               run: bun run --cwd apps/api test:integration
 
-    # Single version, not a matrix. Two legs cost ~380s of setup each to run ~50s of
-    # actual work, so the second version was ~88% overhead. Pinned to the same tag as
-    # docker-compose.development.yml so local dev and CI verify the same server.
+    # One server version, pinned to docker-compose.development.yml's tag.
     clickhouse-schema-e2e:
         name: ClickHouse schema + SQL catalog E2E
         needs: changes
         if: ${{ needs.changes.outputs.clickhouse == 'true' }}
         runs-on: ubuntu-latest
         timeout-minutes: 20
+        env:
+            CLICKHOUSE_E2E: "1"
+            CLICKHOUSE_E2E_URL: http://127.0.0.1:8123
+            CLICKHOUSE_E2E_USER: maple
+            CLICKHOUSE_E2E_PASSWORD: maple
         services:
             clickhouse:
                 image: clickhouse/clickhouse-server:26.2
@@ -461,13 +394,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-              with:
-                  # Rust and Python are for the ingest and Tinybird workflows; skipping
-                  # them keeps this job off their ~1 GB of toolchain cache.
-                  install_args: bun node
-
-            - uses: ./.github/actions/bun-install
+            - uses: ./.github/actions/setup
 
             - name: Native ClickHouse HTTP protocol and live wire-format tests
               env:
@@ -477,56 +404,25 @@ jobs:
                   CLICKHOUSE_HTTP_PASSWORD: maple
               run: bun run --cwd lib/effect-clickhouse-http test
 
-            - name: Turbo remote cache
-              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
-
-            - name: Replay migrations and verify search indexes
-              env:
-                  CLICKHOUSE_E2E: "1"
-                  CLICKHOUSE_E2E_URL: http://127.0.0.1:8123
-                  CLICKHOUSE_E2E_USER: maple
-                  CLICKHOUSE_E2E_PASSWORD: maple
+            # Migration replay and search indexes, raw-vs-rollup parity for web
+            # analytics (a divergence renders as a plausible wrong number), and the
+            # cascaded trace facets rollup (one that never fires reads as "no data").
+            - name: Replay migrations and verify rollups
               run: >-
                   bun run --filter=@maple/backend test --
                   src/services/warehouse/WarehouseQueryService.clickhouse.e2e.test.ts
                   src/services/warehouse/alert-window-alignment.clickhouse.e2e.test.ts
+                  src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts
+                  src/services/warehouse/trace-facets-hourly-materialization.clickhouse.e2e.test.ts
+                  src/services/warehouse/ci-runs.clickhouse.e2e.test.ts
+                  src/services/warehouse/service-api-materialization.clickhouse.e2e.test.ts
 
-            # Type-checks every SQL shape the product can emit against the real
-            # analyzer. ~80 shapes, ~2s — the unit tests only compare SQL text,
-            # which is how a NO_COMMON_TYPE reached production with CI green.
+            # Every SQL shape the product emits, against the real analyzer: unit tests
+            # only compare SQL text, which is how a NO_COMMON_TYPE reached production.
             - name: Analyze the SQL catalog
-              env:
-                  CLICKHOUSE_E2E: "1"
-                  CLICKHOUSE_E2E_URL: http://127.0.0.1:8123
-                  CLICKHOUSE_E2E_USER: maple
-                  CLICKHOUSE_E2E_PASSWORD: maple
               run: >-
                   bun run --filter=@maple/api test --
                   scripts/query-bench/catalog.clickhouse.e2e.test.ts
-
-            # The catalog sweep proves the rollup SQL parses; this proves it
-            # AGREES with the raw path it replaced. A divergence here renders as a
-            # plausible-looking wrong number, so nothing downstream would catch it.
-            - name: Verify web analytics raw-vs-rollup parity
-              env:
-                  CLICKHOUSE_E2E: "1"
-                  CLICKHOUSE_E2E_URL: http://127.0.0.1:8123
-                  CLICKHOUSE_E2E_USER: maple
-                  CLICKHOUSE_E2E_PASSWORD: maple
-              run: >-
-                  bun run --filter=@maple/backend test --
-                  src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts
-
-            # A cascaded rollup that never fires reads as "no data", not as an error.
-            - name: Verify the trace facets rollup
-              env:
-                  CLICKHOUSE_E2E: "1"
-                  CLICKHOUSE_E2E_URL: http://127.0.0.1:8123
-                  CLICKHOUSE_E2E_USER: maple
-                  CLICKHOUSE_E2E_PASSWORD: maple
-              run: >-
-                  bun run --filter=@maple/backend test --
-                  src/services/warehouse/trace-facets-hourly-materialization.clickhouse.e2e.test.ts
 
     local-checkpoint-native:
         name: Local checkpoint native
@@ -535,36 +431,47 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 20
         steps:
+            # Probes bind fixed ports in 452xx-454xx, inside the default ephemeral range.
+            - name: Keep ephemeral ports off the probe ports
+              run: sudo sysctl -w net.ipv4.ip_local_port_range="50000 65000"
+
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-
-            - uses: ./.github/actions/bun-install
-
-            - name: Turbo remote cache
-              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
+            - uses: ./.github/actions/setup
 
             - name: Build native local bundle
               timeout-minutes: 5
               run: scripts/build-local-binary.sh
 
-            # Each probe owns its TMPDIR and port, so they run side by side.
+            # The only job with a libchdb, so the chDB suites the bounded lane skips run here.
+            # MAPLE_REQUIRE_LIBCHDB turns a missing library into a failure, not a skip. One
+            # process per file: chDB is process-global.
+            - name: Run chDB-backed CLI tests
+              timeout-minutes: 4
+              working-directory: apps/cli
+              env:
+                  MAPLE_LIBCHDB: ${{ github.workspace }}/dist/libchdb.so
+                  MAPLE_REQUIRE_LIBCHDB: "1"
+                  MAPLE_TELEMETRY: off
+              run: |
+                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard; do
+                      bun test "test/$file.test.ts"
+                  done
+
+            # Each probe owns its TMPDIR and port, so they run side by side. Probes
+            # induce failures on purpose; MAPLE_TELEMETRY keeps them out of prod errors.
             - parallel:
                   - name: Run repeated checkpoint restore and fresh-process reopen smoke
                     timeout-minutes: 4
                     env:
                         KEEP_ROOT: "1"
                         TMPDIR: ${{ runner.temp }}/maple-native-checkpoint
-                        # Probes induce failures on purpose; keep them out of the prod errors hub.
                         MAPLE_TELEMETRY: off
                     run: |
                         mkdir -p "$TMPDIR"
                         apps/cli/test/native-checkpoint-smoke.sh "$GITHUB_WORKSPACE/dist"
 
-                  # The crash path the checkpoint smoke does not cover: a FRESH store
-                  # that accumulates telemetry and then dies to a SIGKILL, which is the
-                  # journey that stranded people with a dirty store and nothing to
-                  # restore from.
+                  # A fresh store that accumulates telemetry and then dies to SIGKILL.
                   - name: Run native checkpoint refresh and crash-recovery probe
                     timeout-minutes: 5
                     env:
@@ -595,50 +502,52 @@ jobs:
                         mkdir -p "$TMPDIR"
                         apps/cli/test/native-local-store-migration.sh "$GITHUB_WORKSPACE/dist"
 
-            # failure() alone skips the upload when a step-level timeout or a
-            # concurrency cancel kills the probe mid-hang — precisely the runs
-            # whose evidence matters most.
+                  # Ingest key, access token, sign-in and the CLI against a server off loopback.
+                  - name: Run native remote auth smoke
+                    timeout-minutes: 3
+                    env:
+                        KEEP_ROOT: "1"
+                        TMPDIR: ${{ runner.temp }}/maple-native-remote-auth
+                        MAPLE_TELEMETRY: off
+                    run: |
+                        mkdir -p "$TMPDIR"
+                        apps/cli/test/native-remote-auth-smoke.sh "$GITHUB_WORKSPACE/dist"
+
+                  # The self-hosted image around this bundle: secrets, a root-owned volume, restart.
+                  - name: Build and smoke the self-hosted image
+                    timeout-minutes: 5
+                    run: |
+                        mkdir -p "$RUNNER_TEMP/image-bundles/linux-amd64"
+                        cp dist/maple dist/libchdb.so "$RUNNER_TEMP/image-bundles/linux-amd64/"
+                        BUNDLES="$RUNNER_TEMP/image-bundles" apps/cli/docker/build-image.sh maple-local:ci linux/amd64
+                        apps/cli/docker/image-smoke.sh maple-local:ci
+
+            # cancelled() too: a timeout or concurrency cancel mid-hang is the evidence that matters.
             - name: Upload checkpoint failure evidence
               if: ${{ failure() || cancelled() }}
               uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: native-checkpoint-failure-${{ github.run_id }}
-                  # Both probes' roots: the migration probe used to fail without
-                  # leaving any evidence because only the checkpoint dir was
-                  # collected.
                   path: |
                       ${{ runner.temp }}/maple-native-checkpoint
+                      ${{ runner.temp }}/maple-native-cp-refresh
                       ${{ runner.temp }}/maple-native-migration
+                      ${{ runner.temp }}/maple-native-remote-auth
                       ${{ runner.temp }}/maple-native-projectors
                   if-no-files-found: ignore
 
+    # Each leg rebuilds the ~400 MB bundle (~10s); uploading it once and downloading
+    # it per leg is slower. The two long probes get a leg each, the short ones share.
     local-archive-native:
-        # Was a single 7-probe job on ubuntu-latest: ~355s of probes end to end, 7m
-        # typical and 21m at worst — the wall-clock critical path for all of CI. The
-        # probes are independent, so they fan out; wall clock is now the slowest single
-        # probe (crash-recovery, ~125s) plus setup.
-        #
-        # Each leg rebuilds the bundle rather than sharing one via upload-artifact:
-        # dist/ is ~403MB (libchdb.so 334MB + maple 69MB), and build-local-binary.sh
-        # takes ~14s including the libchdb download. Uploading once and downloading
-        # seven times is strictly slower.
         name: Local archive native (${{ matrix.leg }})
         needs: changes
-        # Narrower than the `cli` closure that gates local-checkpoint-native — see the
-        # `archive` filter. A change that only reaches the bundle through the workspace
-        # dependency graph gets the checkpoint job's build + store-open probes; it does
-        # not get all the archive legs.
         if: ${{ needs.changes.outputs.archive == 'true' }}
         runs-on: ubuntu-latest
         timeout-minutes: 20
-        # The two long probes get a leg each. The four short ones (7-27s each)
-        # share one: alone, each paid ~50s of install and bundle build for seconds
-        # of work, and the extra legs queued behind the org's concurrency limit.
-        # Each entry is `script:tmp-dir:KEEP_ROOT`; adversarial leaves KEEP_ROOT
-        # empty on purpose, and every probe reads "${KEEP_ROOT:-0}" == "1".
         strategy:
             fail-fast: false
             matrix:
+                # `script:tmp-dir:KEEP_ROOT`; adversarial leaves KEEP_ROOT empty on purpose.
                 include:
                     - leg: crash-recovery
                       probes: native-archive-crash-recovery-probe.sh:maple-native-archive-recovery:1
@@ -651,13 +560,14 @@ jobs:
                           native-archive-merge-probe.sh:maple-native-archive-merge:1
                           native-retention-probe.sh:maple-native-retention:1
         steps:
+            # Probes bind fixed ports in 452xx-454xx, inside the default ephemeral range.
+            - name: Keep ephemeral ports off the probe ports
+              run: sudo sysctl -w net.ipv4.ip_local_port_range="50000 65000"
+
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+            - uses: ./.github/actions/setup
 
-            - uses: ./.github/actions/bun-install
-
-            # Every leg runs a probe that reads archives with DuckDB; installing it is ~2s.
             - name: Install pinned DuckDB CLI
               run: |
                   curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
@@ -672,13 +582,11 @@ jobs:
             - name: Build native local bundle
               run: scripts/build-local-binary.sh
 
-            # Every probe in the leg runs even after one fails, so a red leg reports
-            # all of its failures at once.
+            # Every probe runs even after one fails, so a red leg reports all its failures.
             - name: Run archive ${{ matrix.leg }} probes
               env:
                   PROBES: ${{ matrix.probes }}
                   EVIDENCE: ${{ runner.temp }}/archive-${{ matrix.leg }}
-                  # Probes induce failures on purpose; keep them out of the prod errors hub.
                   MAPLE_TELEMETRY: off
               run: |
                   failed=()
@@ -698,8 +606,6 @@ jobs:
                     exit 1
                   fi
 
-            # The artifact name must carry the leg: legs run concurrently and would
-            # otherwise collide on a single name, failing the upload.
             - name: Upload archive failure evidence
               if: ${{ failure() }}
               uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -708,160 +614,78 @@ jobs:
                   path: ${{ runner.temp }}/archive-${{ matrix.leg }}
                   if-no-files-found: ignore
 
-    service-map-perf:
-        name: Web perf (${{ matrix.shard }})
+    # Here, not in its own workflow, so `CI passed` (and with it deploy-prd, which ships
+    # this binary) waits on it. The load benchmark is opt-in in ingest-bench.yml.
+    ingest-rust:
+        name: Ingest Rust tests
         needs: changes
-        if: ${{ needs.changes.outputs.web == 'true' }}
+        if: ${{ needs.changes.outputs.ingest == 'true' }}
         runs-on: ubuntu-latest
-        timeout-minutes: 15
-        # One Playwright worker per machine (playwright.config.ts) so concurrent
-        # browsers cannot distort frame timings. service-map (~125s of tests) is split
-        # across two machines and the two non-Chromium smokes get one each; the short
-        # Chromium groups (~25-35s each) run back to back on one, still one browser
-        # at a time, instead of each paying ~45s of install and dependency build.
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    # The spec runs its tests in parallel mode, which lets --shard
-                    # split them; with one worker they still run one at a time.
-                    - shard: service-map-1
-                      browser: chromium
-                      projects: chromium-performance
-                      specs: perf/service-map.perf.spec.ts
-                      playwright-args: --shard=1/2
-                    - shard: service-map-2
-                      browser: chromium
-                      projects: chromium-performance
-                      specs: perf/service-map.perf.spec.ts
-                      playwright-args: --shard=2/2
-                    # The projects split by the @cross-browser tag, so their union
-                    # runs each test exactly once.
-                    - shard: chromium
-                      browser: chromium
-                      projects: chromium-performance chromium-smoke
-                      specs: >-
-                          perf/infra.perf.spec.ts perf/logs.perf.spec.ts
-                          perf/logs-hover.spec.ts perf/service-detail.perf.spec.ts
-                          perf/cross-browser.perf.spec.ts
-                    - shard: firefox-smoke
-                      browser: firefox
-                      projects: firefox-smoke
-                      specs: perf/cross-browser.perf.spec.ts
-                    - shard: webkit-smoke
-                      browser: webkit
-                      projects: webkit-smoke
-                      specs: perf/cross-browser.perf.spec.ts
+        # A cold cache (Cargo.lock change) compiles the crate graph twice, debug and release.
+        timeout-minutes: 30
+        env:
+            CARGO_TERM_COLOR: never
+        defaults:
+            run:
+                working-directory: apps/ingest
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
               with:
-                  # Rust and Python are for the ingest and Tinybird workflows; skipping
-                  # them keeps this job off their ~1 GB of toolchain cache.
-                  install_args: bun node
+                  persist-credentials: false
 
-            - uses: ./.github/actions/bun-install
+            - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
               with:
-                  filters: "@maple/web"
+                  install_args: rust
 
-            - name: Turbo remote cache
-              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
-
-            # The perf dev server (vite) resolves @maple-dev/browser and
-            # @maple-dev/effect-sdk from their built dist/ (gitignored), so build
-            # web's workspace deps before booting it — otherwise vite fails to
-            # resolve those imports and the bench page never signals ready.
-            - name: Build web workspace deps
-              run: bun turbo build --filter=@maple/web^...
-
-            # Browser binaries are version-pinned, so key on the resolved
-            # @playwright/test version rather than the caret range in package.json.
-            - name: Resolve Playwright version
-              id: playwright
-              working-directory: apps/web
-              run: |
-                  version="$(bun -e 'console.log(require("@playwright/test/package.json").version)')"
-                  echo "version=$version" >> "$GITHUB_OUTPUT"
-
-            - name: Cache Playwright browsers
-              id: playwright-cache
-              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+            - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
               with:
-                  path: ~/.cache/ms-playwright
-                  key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.browser }}
-                  restore-keys: |
-                      playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.browser }}-
-                      playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+                  workspaces: apps/ingest
 
-            - name: Install Playwright browser
-              if: steps.playwright-cache.outputs.cache-hit != 'true'
-              env:
-                  PW_BROWSER: ${{ matrix.browser }}
-              run: bunx playwright install "$PW_BROWSER"
-              working-directory: apps/web
+            - name: Run ingest unit and fake Tinybird e2e tests
+              run: cargo test --locked
 
-            # Deliberately NOT folded into `install --with-deps`: system libs go to
-            # apt paths that ~/.cache/ms-playwright does not cover, so on a cache hit
-            # the combined form would skip them and webkit would fail to launch.
-            #
-            # Skipped for chromium, where it installed nothing we need and cost more
-            # than the tests. On ubuntu-latest the runner image already carries every
-            # shared library chromium links, so `install-deps chromium` resolved to
-            # exactly nine font packages -- fonts-{wqy-zenhei,ipafont-gothic,unifont,
-            # tlwg-loma-otf,freefont-ttf} and xfonts-* -- i.e. CJK, Cyrillic and Thai
-            # glyph coverage. The bench pages render latin service names only, so those
-            # fonts change no pixel we measure, yet the 21 MB pull off the Azure mirror
-            # ran 12s on a good day and 205s on a bad one, against a 55s test body.
-            # firefox (40 packages) and webkit (100+) do pull real libraries -- keep it.
-            #
-            # If chromium ever fails to launch here, the runner image dropped a library:
-            # re-enable this for chromium rather than debugging the browser.
-            #
-            # The apt mirror sometimes stalls a connection instead of failing it, which
-            # hung apt for 11 minutes and timed the job out. Cap each read and each
-            # attempt so a stalled mirror costs a retry, not the run. `timeout` only
-            # kills playwright: the root apt-get it started through sudo survives and
-            # holds the dpkg lock, so stop it and wait for the lock before retrying.
-            - name: Install Playwright system deps
-              if: ${{ matrix.browser != 'chromium' }}
-              env:
-                  PW_BROWSER: ${{ matrix.browser }}
+            # The deploy builds release only; catch a release-only break before merge.
+            - name: Build the release binary
+              run: cargo build --locked --release --bin maple-ingest
+
+    otel-collector:
+        name: OTel collector exporter tests
+        needs: changes
+        if: ${{ needs.changes.outputs.collector == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        defaults:
+            run:
+                working-directory: packages/otel-collector-maple-exporter
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+
+            - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+              with:
+                  # Match `go 1.25.0` in packages/otel-collector-maple-exporter/go.mod.
+                  go-version-file: packages/otel-collector-maple-exporter/go.mod
+                  cache: true
+                  cache-dependency-path: packages/otel-collector-maple-exporter/go.sum
+
+            - name: gofmt -l
               run: |
-                  printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\n' \
-                      | sudo tee /etc/apt/apt.conf.d/99ci-timeouts > /dev/null
-                  for attempt in 1 2 3; do
-                      timeout 180 bunx playwright install-deps "$PW_BROWSER" && exit 0
-                      echo "::warning::playwright install-deps attempt $attempt failed"
-                      sudo pkill -x apt-get || true
-                      if ! sudo timeout 60 sh -c 'while fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 2; done'; then
-                          echo "::error::dpkg lock still held 60s after stopping apt-get"
-                          exit 1
-                      fi
-                      sudo dpkg --configure -a || true
-                  done
-                  exit 1
-              working-directory: apps/web
+                  diff=$(gofmt -l .)
+                  if [ -n "$diff" ]; then
+                    echo "::error::gofmt found unformatted files:"
+                    echo "$diff"
+                    exit 1
+                  fi
 
-            - name: Run perf shard
-              env:
-                  PW_PROJECTS: ${{ matrix.projects }}
-                  PW_SPECS: ${{ matrix.specs }}
-                  PW_ARGS: ${{ matrix.playwright-args }}
-              run: |
-                  read -r -a specs <<< "$PW_SPECS"
-                  read -r -a projects <<< "$PW_PROJECTS"
-                  read -r -a args <<< "$PW_ARGS"
-                  bunx playwright test "${specs[@]}" "${projects[@]/#/--project=}" "${args[@]}"
-              working-directory: apps/web
+            - name: go vet
+              run: go vet ./...
 
-    # The single required status check. Individual jobs above are path-filtered, and a
-    # skipped job never reports — so if any of them were required directly, branch
-    # protection would hang pending forever on PRs that legitimately skip them. This
-    # job always runs and collapses the fan-in to one result.
-    #
-    # `skipped` is deliberately absent from the failure condition; that is the point.
-    # Requires branch protection to require exactly "CI passed" and nothing else.
+            - name: go test
+              run: go test -race -count=1 ./...
+
+    # The single required check, and branch protection must require only this one:
+    # skipped path-filtered jobs never report, so requiring them would hang forever.
     ci:
         name: CI passed
         runs-on: ubuntu-latest
@@ -875,14 +699,11 @@ jobs:
             - clickhouse-schema-e2e
             - local-checkpoint-native
             - local-archive-native
-            - service-map-perf
+            - ingest-rust
+            - otel-collector
         steps:
             - name: Fail if any job failed or was cancelled
               if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
               run: |
                   echo "One or more CI jobs did not pass." >&2
                   exit 1
-
-    # Note: the `apps/ingest` Rust crate is built and tested by
-    # `.github/workflows/ingest-rust-tests.yml`, which also runs the load
-    # benchmark and posts results to the PR.

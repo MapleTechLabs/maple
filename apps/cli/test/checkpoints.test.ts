@@ -420,18 +420,32 @@ describe("checkpoint state resolution", () => {
 		})
 	})
 
-	it("reports a current checkpoint from an older build as unusable, not as absent", async () => {
+	it("reports a current checkpoint from another build as that, not as absent or corrupt", async () => {
 		await withDataDir(async (dataDir) => {
 			const stale = newCheckpointId()
 			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
 			writeState(dataDir, stale)
 			const availability = await checkpointAvailability(dataDir)
 			strictEqual(availability.available, false)
+			strictEqual(availability.available === false && availability.reason, "other_build")
+			strictEqual(
+				availability.available === false &&
+					availability.reason === "other_build" &&
+					availability.checkpointId,
+				stale,
+			)
 			match(
-				availability.available === false && availability.reason === "unusable"
+				availability.available === false && availability.reason === "other_build"
 					? availability.detail
 					: "",
 				/checkpoint schema mismatch/,
+			)
+			// Same release, different schema: no version to send the user to.
+			strictEqual(
+				availability.available === false &&
+					availability.reason === "other_build" &&
+					availability.restoreWith,
+				null,
 			)
 		})
 	})
@@ -494,7 +508,7 @@ describe("checkpoint state resolution", () => {
 			mkdirSync(outside)
 			writeFileSync(
 				join(outside, "manifest.json"),
-				`${JSON.stringify(manifest(checkpointId, newCheckpointId(), dataDir))}\n`,
+				`${JSON.stringify(manifest(checkpointId, newCheckpointOperationId(), dataDir))}\n`,
 			)
 			mkdirSync(join(outside, "backup"))
 			mkdirSync(snapshot, { recursive: true })

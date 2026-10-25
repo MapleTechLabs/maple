@@ -55,6 +55,8 @@ export {
 	sdkHint,
 } from "./platform/transport"
 export { getVisitorId, isVisitorIdPersisted, setVisitorTracking } from "./identity/visitor"
+export type { Persistence } from "./platform/persistence"
+export { mayUseStorage } from "./platform/persistence"
 export type { MapleRegion } from "./platform/region"
 export {
 	DEFAULT_MAPLE_REGION,

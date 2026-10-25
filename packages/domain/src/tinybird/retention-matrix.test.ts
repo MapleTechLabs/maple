@@ -3,7 +3,10 @@ import { tinybirdProjectManifest } from "../generated/tinybird-project-manifest"
 
 const RETENTION_DAYS = {
 	alert_checks: 365,
-	// Raw-tier sibling of trace_detail_spans: rebuilt from `traces`, so holding
+	// CI projections outlive their raw traces on purpose: a year of run history.
+	ci_jobs: 365,
+	ci_runs: 365,
+	// Raw-tier projection of `traces`: rebuilt from it, so holding
 	// it past the source's own retention would store rows detection can no
 	// longer cross-check against a raw trace.
 	ai_trace_index: 30,
@@ -24,6 +27,8 @@ const RETENTION_DAYS = {
 	metrics_histogram: 90,
 	metrics_sum: 90,
 	service_address_resolutions_hourly: 365,
+	// Hour-grain only, read for windows of days; a year would be a second annual table.
+	service_endpoint_details_hourly: 90,
 	service_external_edges_hourly: 365,
 	service_map_children: 30,
 	service_map_db_edges_hourly: 365,
@@ -40,11 +45,12 @@ const RETENTION_DAYS = {
 	service_overview_spans: 30,
 	service_platforms_hourly: 365,
 	service_usage: 365,
+	source_usage_hourly: 90,
 	session_events: 30,
 	session_replay_events: 30,
 	session_replays: 30,
 	span_metrics_calls_hourly: 90,
-	trace_detail_spans: 30,
+	trace_index: 30,
 	// Matches its source, trace_list_mv: facet counts past the list's own window
 	// would offer values that filter the list down to nothing.
 	trace_facets_hourly: 30,
@@ -97,8 +103,12 @@ describe("Tinybird retention matrix", () => {
 	 * data movement, which is the only correct shape here. Migration 0023's first
 	 * deploy attempt failed on exactly this.
 	 */
-	it("applies service-operations rollup changes by ALTER, never by rebuild", () => {
-		for (const name of ["service_operations_minutely_mv", "service_operations_hourly_mv"]) {
+	it("applies service-operations and endpoint-details rollup changes by ALTER, never by rebuild", () => {
+		for (const name of [
+			"service_operations_minutely_mv",
+			"service_operations_hourly_mv",
+			"service_endpoint_details_hourly_mv",
+		]) {
 			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
 			expect(pipe, name).toBeDefined()
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")

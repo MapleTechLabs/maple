@@ -8,10 +8,17 @@ import { FetchHttpClient } from "effect/http"
 import { cli } from "./cli"
 import { MapleConfig } from "./core/config"
 import { Mode } from "./core/mode"
-import { annotateOutcome, isExpectedFailure, recoverExpected, renderUnexpected } from "./core/outcomes"
+import {
+	annotateOutcome,
+	isExpectedFailure,
+	markFailedExit,
+	recoverExpected,
+	renderUnexpected,
+} from "./core/outcomes"
 import { TelemetryLayer } from "./core/telemetry"
 import { maybeNotifyUpdate } from "./core/update"
 import { maybeNotifyWhatsNew } from "./core/changelog"
+import { LocalAccessHttpClient } from "./core/local-access"
 import { WarehouseExecutorFromMode } from "./core/warehouse"
 import { debugEnabled } from "./lib/debug"
 import { makeHelpCapture, usageHint } from "./lib/help"
@@ -27,7 +34,7 @@ const MainLayer = WarehouseExecutorFromMode.pipe(
 	Layer.provideMerge(Mode.layer),
 	Layer.provideMerge(MapleConfig.layer),
 	Layer.provideMerge(BunServices.layer),
-	Layer.provideMerge(FetchHttpClient.layer),
+	Layer.provideMerge(LocalAccessHttpClient.pipe(Layer.provide(FetchHttpClient.layer))),
 )
 
 // Throttled, non-blocking "update available" notice before dispatching the
@@ -132,7 +139,7 @@ if (checkpointProbeDataDir !== undefined) {
 				? Effect.failCause(cause)
 				: Effect.sync(() => {
 						process.stderr.write(renderUnexpected(cause, debugEnabled()))
-						process.exitCode = 1
+						markFailedExit()
 					}),
 		),
 		// Logs are diagnostics, never results: keep them off stdout.

@@ -1,11 +1,13 @@
-import { GitCommitSha } from "@maple/domain/http"
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { GitCommitSha, VcsRepositoryBlockedError, VcsRepoUnavailableError } from "@maple/domain/http"
+import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schedule, Schema, Stream } from "effect"
 import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { githubWebBaseUrl } from "./github-hosts"
 import { timestampMs } from "@maple/backend/platform/time"
+import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
+import { type InstallationToken, SharedInstallationTokens } from "../../installation-tokens"
 
 // GitHub App REST client. Vendor-specific: mints a short-lived App JWT (RS256,
 // Web Crypto), exchanges it for per-installation tokens, and calls the GitHub
@@ -29,6 +31,33 @@ export class GithubAppError extends Schema.TaggedError<GithubAppError>()(
 	},
 ) {}
 
+/** GitHub's answer for a resource that is gone or that this installation can no longer see. */
+export const isGoneStatus = (status?: number) => status === 404 || status === 410
+
+// GitHub answers 451 for a repository taken down for legal reasons, and carries
+// the same `{"block":{"reason":"dmca"}}` body on the 403 variant. Neither clears
+// on retry, so both are terminal — matched on the body rather than on 403 alone,
+// which is otherwise an ordinary (retryable) permission failure.
+const BLOCK_BODY = /"block"\s*:|Repository access blocked/
+export const isBlockedRepository = (error: GithubAppError) =>
+	error.status === 451 || (error.status === 403 && BLOCK_BODY.test(error.message))
+
+export type RepositoryListingError = GithubAppError | VcsRepoUnavailableError | VcsRepositoryBlockedError
+
+// A gone or blocked repository is an answer the sync records, not a client fault. Failing with
+// the anticipated domain error keeps the listing span out of error tracking.
+const toRepositoryListingError = (error: GithubAppError): RepositoryListingError => {
+	if (error.retryAfterSeconds !== undefined) return error
+	if (isBlockedRepository(error)) {
+		return new VcsRepositoryBlockedError({
+			message: error.message,
+			...(error.status === undefined ? undefined : { status: error.status }),
+		})
+	}
+	if (isGoneStatus(error.status)) return new VcsRepoUnavailableError({ message: error.message })
+	return error
+}
+
 const GITHUB_API_VERSION = "2022-11-28"
 const USER_AGENT = "maple-vcs-integration"
 const PER_PAGE = 100
@@ -37,6 +66,14 @@ const MAX_COMPARE_FILES = 300
 // Paginate effectively to the end (up to 100k items) while still bounding a
 // pathological loop. Hitting this cap is logged — truncation is never silent.
 const MAX_PAGES = 1000
+/** Pages of check-run annotations read looking for a failure, past warnings and notices. */
+const MAX_ANNOTATION_PAGES = 3
+/**
+ * A job's log can trail its `completed` webhook by a few seconds; until then GitHub answers 404.
+ * Three retries from two seconds wait out about fourteen.
+ */
+const JOB_LOG_NOT_READY_RETRIES = 3
+const JOB_LOG_NOT_READY_BACKOFF = Duration.seconds(2)
 /** GitHub lists at most 3,000 files for one pull request. */
 const MAX_PR_FILE_PAGES = 30
 
@@ -79,6 +116,9 @@ const MAX_INLINE_RATE_LIMIT_RETRIES = 5
 // Retire a cached token this early so it never expires mid-request. Tokens last
 // ~1h, so the extra minute just costs an occasional re-mint.
 const INSTALLATION_TOKEN_EXPIRY_SKEW_MS = 60_000
+// A cached token that lacks `actions: read` is re-minted once it is this old, so a permission
+// accepted since the mint applies within minutes, not when the token expires.
+const PERMISSION_DENIAL_RECHECK_MS = 5 * 60_000
 
 // A GitHub rate-limit response is a 429, or a 403 that carries `retry-after` /
 // reports zero remaining (the secondary-limit shape). Plain 403s (permissions)
@@ -113,6 +153,9 @@ const rateLimitWaitSeconds = (response: HttpClientResponse.HttpClientResponse, n
 const GithubInstallationTokenResponse = Schema.Struct({
 	token: Schema.String,
 	expires_at: Schema.String,
+	// What the installation has accepted, e.g. `{ actions: "read" }`. A permission it never
+	// accepted is absent, so its calls would 403.
+	permissions: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 })
 
 // `GET /app/installations/{id}` (App-JWT auth): the installed account + which
@@ -141,12 +184,18 @@ const GithubOAuthTokenResponse = Schema.Struct({
 	error_description: Schema.optionalKey(Schema.String),
 })
 
-// `GET /user/installations` — the installations this user can manage. We use it to
-// confirm they actually own the one they're connecting.
+// `GET /user/installations`: the installations this user can access (not necessarily administer).
 const GithubUserInstallationsResponse = Schema.Struct({
 	total_count: Schema.Number,
 	installations: Schema.Array(Schema.Struct({ id: Schema.Number })),
 })
+
+// `GET /user` and `GET /user/memberships/orgs/{org}`: who the user is and their role in an org.
+const GithubAuthenticatedUser = Schema.Struct({ id: Schema.Number, login: Schema.String })
+const GithubOrgMembership = Schema.Struct({ state: Schema.String, role: Schema.String })
+
+/** Whether a user token's owner administers an installation's account. */
+export type GithubAccountAdminCheck = "admin" | "not-admin" | "unverifiable"
 
 const GithubApiRepoSchema = Schema.Struct({
 	id: Schema.Number,
@@ -462,9 +511,13 @@ const GithubContentFileSchema = Schema.Struct({
 	encoding: Schema.String,
 	content: Schema.String,
 })
+type GithubContentFile = Schema.Schema.Type<typeof GithubContentFileSchema>
 
+const decodeRepositorySize = Schema.decodeUnknownEffect(Schema.Struct({ size: Schema.Number }))
 const decodeOAuthToken = Schema.decodeUnknownEffect(GithubOAuthTokenResponse)
 const decodeUserInstallations = Schema.decodeUnknownEffect(GithubUserInstallationsResponse)
+const decodeAuthenticatedUser = Schema.decodeUnknownEffect(GithubAuthenticatedUser)
+const decodeOrgMembership = Schema.decodeUnknownEffect(GithubOrgMembership)
 const decodeInstallationToken = Schema.decodeUnknownEffect(GithubInstallationTokenResponse)
 const decodeInstallationDetail = Schema.decodeUnknownEffect(GithubInstallationDetailSchema)
 const decodeInstallationRepos = Schema.decodeUnknownEffect(GithubInstallationReposResponse)
@@ -476,6 +529,17 @@ const decodePullRequest = Schema.decodeUnknownEffect(GithubApiPullRequestSchema)
 const decodePullRequestFiles = Schema.decodeUnknownEffect(GithubApiPullRequestFileList)
 const decodeCheckRun = Schema.decodeUnknownEffect(GithubApiCheckRunSchema)
 const decodeOwnCheckRunList = Schema.decodeUnknownEffect(GithubApiOwnCheckRunList)
+const decodeCheckRunAnnotations = Schema.decodeUnknownEffect(
+	Schema.Array(
+		Schema.Struct({
+			annotation_level: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			message: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			title: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			path: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			start_line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		}),
+	),
+)
 const decodePullRequestCommits = Schema.decodeUnknownEffect(GithubApiPullRequestCommitList)
 const decodeDiscussionComments = Schema.decodeUnknownEffect(GithubApiDiscussionCommentList)
 const decodeCheckRunList = Schema.decodeUnknownEffect(GithubApiCheckRunList)
@@ -528,6 +592,17 @@ const pemToPkcs8 = (pem: string): ArrayBuffer => {
 	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
 }
 
+/** GitHub answers 401 to a revoked or expired token; some endpoints answer 403 "Bad credentials". */
+const rejectsCredentials = (response: HttpClientResponse.HttpClientResponse) =>
+	response.status === 401
+		? Effect.succeed(true)
+		: response.status === 403
+			? response.text.pipe(
+					Effect.map((body) => body.includes("Bad credentials")),
+					Effect.orElseSucceed(() => false),
+				)
+			: Effect.succeed(false)
+
 interface GithubRequestInit {
 	readonly method?: "GET" | "POST" | "PATCH" | "DELETE"
 	readonly headers: Readonly<Record<string, string>>
@@ -541,15 +616,16 @@ interface ResolvedAppConfig {
 }
 
 export class GithubAppClient extends Context.Service<GithubAppClient>()(
-	"@maple/api/services/vcs/vendor/github/GithubAppClient",
+	"@maple/backend/services/vcs/vendor/github/GithubAppClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
 
-			// Reuse one token per installation instead of minting a fresh one per repo.
-			// Tokens last ~1h; cache is per-isolate (externalInstallationId → token + expiry).
-			const installationTokens = new Map<string, { token: string; expiresAtMs: number }>()
+			// Reuse one token per installation instead of minting a fresh one per repo. Tokens last
+			// ~1h. A Worker provides one store for the isolate so the cache outlives one event.
+			const installationTokens =
+				(yield* SharedInstallationTokens) ?? (yield* makeExpiringStore<InstallationToken>())
 
 			// Every GitHub REST call goes through here so the dependency is a real
 			// Client-kind span: `peer.service` is what draws the GitHub node/edge on
@@ -586,6 +662,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					Effect.mapError((cause) => new GithubAppError({ message: errorMessage, cause })),
 				)
 				yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+				// A cached installation token GitHub rejects is evicted, so the next call re-mints and
+				// sees the installation-gone answer the mint gives. The body read is memoized.
+				const sent = init?.headers["authorization"]
+				if (sent?.startsWith("token ") === true && (yield* rejectsCredentials(response))) {
+					yield* installationTokens.removeWhere(({ token }) => sent === `token ${token}`)
+					yield* Effect.annotateCurrentSpan({ "vcs.provider.token_evicted": true })
+				}
 				return response
 			})
 
@@ -607,10 +690,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						// immediate-redelivery loop after we stop spinning.
 						const exhausted = inlineRetries >= MAX_INLINE_RATE_LIMIT_RETRIES
 						if (waitS > INLINE_BACKOFF_CAP_S || exhausted) {
+							const retryAfterSeconds = exhausted ? Math.max(waitS, 60) : waitS
 							return yield* new GithubAppError({
-								message: `GitHub rate limited (retry after ${waitS}s)`,
+								message: `GitHub rate limited (retry after ${retryAfterSeconds}s)`,
 								status: response.status,
-								retryAfterSeconds: exhausted ? Math.max(waitS, 60) : waitS,
+								retryAfterSeconds,
 							})
 						}
 						// Surface the inline-wait on the active HTTP span so a slow GitHub call
@@ -712,15 +796,17 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					),
 				)
 
-			const mintInstallationToken = Effect.fn("GithubAppClient.mintInstallationToken")(function* (
+			const installationToken = Effect.fn("GithubAppClient.mintInstallationToken")(function* (
 				externalInstallationId: string,
 			) {
 				// Return a cached token if it's still good, so we don't re-mint per repo.
-				const now = yield* Clock.currentTimeMillis
-				const cached = installationTokens.get(externalInstallationId)
-				if (cached !== undefined && cached.expiresAtMs - INSTALLATION_TOKEN_EXPIRY_SKEW_MS > now) {
+				const cached = yield* installationTokens.get(
+					externalInstallationId,
+					INSTALLATION_TOKEN_EXPIRY_SKEW_MS,
+				)
+				if (Option.isSome(cached)) {
 					yield* Effect.annotateCurrentSpan({ "vcs.provider.token_cache": "hit" })
-					return cached.token
+					return cached.value
 				}
 				yield* Effect.annotateCurrentSpan({ "vcs.provider.token_cache": "miss" })
 
@@ -755,11 +841,35 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 				// Cache it. If we can't read the expiry, skip caching rather than risk
 				// reusing a token forever.
-				const expiresAtMs = timestampMs(decoded.expires_at)
-				if (Number.isFinite(expiresAtMs)) {
-					installationTokens.set(externalInstallationId, { token: decoded.token, expiresAtMs })
+				const minted: InstallationToken = {
+					token: decoded.token,
+					expiresAtMs: timestampMs(decoded.expires_at),
+					mintedAtMs: yield* Clock.currentTimeMillis,
+					permissions: decoded.permissions,
 				}
-				return decoded.token
+				if (Number.isFinite(minted.expiresAtMs)) {
+					yield* installationTokens.set(externalInstallationId, minted, minted.expiresAtMs)
+				}
+				return minted
+			})
+
+			const mintInstallationToken = (externalInstallationId: string) =>
+				installationToken(externalInstallationId).pipe(Effect.map((minted) => minted.token))
+
+			// Job logs need `actions: read`. An installation that has not accepted it gets a 403 on
+			// every log download, so callers skip the download. No permissions listed: assume granted.
+			const grantsActions = ({ permissions }: InstallationToken) =>
+				permissions === undefined ||
+				permissions["actions"] === "read" ||
+				permissions["actions"] === "write"
+			const canReadActions = Effect.fnUntraced(function* (externalInstallationId: string) {
+				const token = yield* installationToken(externalInstallationId)
+				const now = yield* Clock.currentTimeMillis
+				if (grantsActions(token) || now - token.mintedAtMs < PERMISSION_DENIAL_RECHECK_MS) {
+					return grantsActions(token)
+				}
+				yield* installationTokens.remove(externalInstallationId)
+				return grantsActions(yield* installationToken(externalInstallationId))
 			})
 
 			const authedGet = (_config: ResolvedAppConfig, token: string, url: string) =>
@@ -838,7 +948,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							token,
 							`${base}?per_page=${PER_PAGE}&page=${page}`,
 						)
-						if (!isOk(response)) return yield* failure(response, "List branches", "repository")
+						if (!isOk(response))
+							return yield* failure(response, "List branches", "repository").pipe(
+								Effect.mapError(toRepositoryListingError),
+							)
 						const json = yield* parseJson(response, "List branches")
 						return yield* decodeBranchList(json).pipe(
 							Effect.mapError(
@@ -870,8 +983,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				repo: string,
 				params: { sha?: string; sinceIso?: string; untilIso?: string },
 			) {
-				const rateLimited = (error: GithubAppError, commits: ReadonlyArray<GithubApiCommit>) =>
-					error.retryAfterSeconds === undefined
+				const rateLimited = (
+					error: RepositoryListingError,
+					commits: ReadonlyArray<GithubApiCommit>,
+				) =>
+					!(error instanceof GithubAppError) || error.retryAfterSeconds === undefined
 						? Effect.fail(error)
 						: Effect.succeed({
 								commits,
@@ -894,7 +1010,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						// Anything else non-2xx (incl. 404 = repo deleted / access lost) is
 						// surfaced as a repository-scoped failure so the orchestrator can mark
 						// the repo unavailable rather than mistaking it for an empty repo.
-						if (!isOk(response)) return yield* failure(response, "List commits", "repository")
+						if (!isOk(response))
+							return yield* failure(response, "List commits", "repository").pipe(
+								Effect.mapError(toRepositoryListingError),
+							)
 						const json = yield* parseJson(response, "List commits")
 						return yield* decodeCommitList(json).pipe(
 							Effect.mapError(
@@ -907,7 +1026,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					const walk = (
 						page: number,
 						commits: ReadonlyArray<GithubApiCommit>,
-					): Effect.Effect<CommitWalk, GithubAppError> =>
+					): Effect.Effect<CommitWalk, RepositoryListingError> =>
 						page > COMMIT_PAGES_PER_INVOCATION
 							? // Full final page with no break → more remain; yield a continuation.
 								Effect.succeed({
@@ -918,7 +1037,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							: fetchPage(page).pipe(
 									Effect.matchEffect({
 										onFailure: (error) => rateLimited(error, commits),
-										onSuccess: (decoded): Effect.Effect<CommitWalk, GithubAppError> => {
+										onSuccess: (
+											decoded,
+										): Effect.Effect<CommitWalk, RepositoryListingError> => {
 											if (decoded === undefined)
 												return Effect.succeed({ commits, complete: true as const })
 											const next = [...commits, ...decoded]
@@ -949,11 +1070,34 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`,
 				)
+				// 404 (not in this repo) and 422 ("No commit found for SHA") are answers, not
+				// failures: none, so the span stays Ok.
+				if (response.status === 404 || response.status === 422) return Option.none<GithubApiCommit>()
 				if (!isOk(response)) return yield* failure(response, "Get commit", "repository")
 				const json = yield* parseJson(response, "Get commit")
 				return yield* decodeCommit(json).pipe(
+					Effect.map(Option.some),
 					Effect.mapError(
 						(cause) => new GithubAppError({ message: "Unexpected commit payload", cause }),
+					),
+				)
+			})
+
+			/** The repository's size as GitHub reports it (`size`, in KiB): the packed history, before any clone. */
+			const getRepositorySizeKib = Effect.fn("GithubAppClient.getRepositorySizeKib")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(config, token, repoBase(config, owner, repo))
+				if (!isOk(response)) return yield* failure(response, "Get repository", "repository")
+				const json = yield* parseJson(response, "Get repository")
+				return yield* decodeRepositorySize(json).pipe(
+					Effect.map((body) => body.size),
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected repository payload", cause }),
 					),
 				)
 			})
@@ -1025,11 +1169,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				owner: string,
 				repo: string,
 				limit: number,
+				head?: string,
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
 				const params = new URLSearchParams({
-					state: "all",
+					...(head === undefined ? { state: "all" } : { state: "open", head }),
 					sort: "updated",
 					direction: "desc",
 					per_page: String(Math.min(limit, PER_PAGE)),
@@ -1840,15 +1985,107 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?${params.toString()}`,
 				)
+				// A path absent at that ref (rule files most repos lack, files a PR deletes) is none.
+				if (response.status === 404) return Option.none<GithubContentFile>()
 				if (!isOk(response)) return yield* failure(response, "Get repository file", "repository")
 				const json = yield* parseJson(response, "Get repository file")
 				return yield* decodeContentFile(json).pipe(
+					Effect.map(Option.some),
 					Effect.mapError(
 						(cause) =>
 							new GithubAppError({ message: "Unexpected repository file payload", cause }),
 					),
 				)
 			})
+
+			// An Actions job id is its check run id. Reading annotations needs only `checks: read`,
+			// which the App's `checks: write` covers. Paging stops at the first page holding a failure:
+			// that is what CI traces want, and warnings before it should not hide it.
+			const listCheckRunAnnotations = Effect.fn("GithubAppClient.listCheckRunAnnotations")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				checkRunId: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const url = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs/${encodeURIComponent(checkRunId)}/annotations`
+				const pages = yield* Stream.paginate(1, (page: number) =>
+					Effect.gen(function* () {
+						const response = yield* authedGet(
+							config,
+							token,
+							`${url}?per_page=${PER_PAGE}&page=${page}`,
+						)
+						if (!isOk(response))
+							return yield* failure(response, "List check run annotations", "repository")
+						const annotations = yield* decodeCheckRunAnnotations(
+							yield* parseJson(response, "List check run annotations"),
+						).pipe(
+							Effect.mapError(
+								(cause) =>
+									new GithubAppError({ message: "Unexpected annotations payload", cause }),
+							),
+						)
+						const more =
+							annotations.length >= PER_PAGE &&
+							page < MAX_ANNOTATION_PAGES &&
+							!annotations.some((annotation) => annotation.annotation_level === "failure")
+						return [[annotations], more ? Option.some(page + 1) : Option.none<number>()] as const
+					}),
+				).pipe(Stream.runCollect)
+				return pages.flat()
+			})
+
+			// An Actions job's log as text lines, read as it downloads so a long log never sits in
+			// memory and a caller that stops early stops the download. Needs `actions: read`
+			// (`canReadActions`). GitHub redirects to a short-lived signed URL on
+			// another host; the redirect is followed by hand so the installation token is not sent there.
+			const streamJobLog = (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				jobId: string,
+			): Stream.Stream<string, GithubAppError> =>
+				Stream.unwrap(
+					Effect.gen(function* () {
+						const config = yield* resolveConfig
+						const token = yield* mintInstallationToken(externalInstallationId)
+						const url = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${encodeURIComponent(jobId)}/logs`
+						const downloadUrl = yield* authedGet(config, token, url).pipe(
+							Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+							Effect.flatMap((response) => {
+								const location = response.headers["location"]
+								if (response.status >= 300 && response.status < 400 && location !== undefined)
+									return Effect.succeed(location)
+								return failure(response, "Get job log", "repository")
+							}),
+							Effect.retry({
+								while: (error) => error.status === 404,
+								schedule: Schedule.exponential(JOB_LOG_NOT_READY_BACKOFF),
+								times: JOB_LOG_NOT_READY_RETRIES,
+							}),
+						)
+						const download = yield* tracedFetch(
+							downloadUrl,
+							{ headers: { "user-agent": USER_AGENT } },
+							"GitHub job log download failed",
+						)
+						if (!isOk(download)) return yield* failure(download, "Download job log", "repository")
+						return download.stream.pipe(
+							Stream.mapError(
+								(cause) =>
+									new GithubAppError({ message: "GitHub job log download failed", cause }),
+							),
+							Stream.decodeText,
+							Stream.splitLines,
+						)
+					}),
+				).pipe(
+					Stream.withSpan("GithubAppClient.streamJobLog", {
+						attributes: { "cicd.pipeline.task.run.id": jobId },
+					}),
+				)
 
 			// Used by the dashboard connect flow to populate the installation row.
 			const getInstallation = Effect.fn("GithubAppClient.getInstallation")(function* (
@@ -1958,12 +2195,60 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return new Set(items.map((installation) => String(installation.id)))
 			})
 
+			// Org accounts need an active `admin` membership (a 403 means the App lacks Members: read,
+			// so it is "unverifiable"); a user account must be the authenticated user.
+			const checkAccountAdmin = Effect.fn("GithubAppClient.checkAccountAdmin")(function* (
+				userAccessToken: string,
+				account: { readonly type: string; readonly id: number; readonly login: string },
+			) {
+				const config = yield* resolveConfig
+				if (account.type !== "Organization") {
+					const response = yield* authedGet(config, userAccessToken, `${config.apiBaseUrl}/user`)
+					if (!isOk(response)) return yield* failure(response, "Get authenticated user")
+					const json = yield* parseJson(response, "Get authenticated user")
+					const user = yield* decodeAuthenticatedUser(json).pipe(
+						Effect.mapError(
+							(cause) =>
+								new GithubAppError({
+									message: "Unexpected authenticated user payload",
+									cause,
+								}),
+						),
+					)
+					const verdict: GithubAccountAdminCheck = user.id === account.id ? "admin" : "not-admin"
+					return verdict
+				}
+				const response = yield* authedGet(
+					config,
+					userAccessToken,
+					`${config.apiBaseUrl}/user/memberships/orgs/${encodeURIComponent(account.login)}`,
+				)
+				if (response.status === 404) return "not-admin" satisfies GithubAccountAdminCheck
+				if (response.status === 403) return "unverifiable" satisfies GithubAccountAdminCheck
+				if (!isOk(response)) return yield* failure(response, "Get organization membership")
+				const json = yield* parseJson(response, "Get organization membership")
+				const membership = yield* decodeOrgMembership(json).pipe(
+					Effect.mapError(
+						(cause) =>
+							new GithubAppError({
+								message: "Unexpected organization membership payload",
+								cause,
+							}),
+					),
+				)
+				const verdict: GithubAccountAdminCheck =
+					membership.state === "active" && membership.role === "admin" ? "admin" : "not-admin"
+				return verdict
+			})
+
 			return {
 				mintInstallationToken,
+				checkAccountAdmin,
 				listInstallationRepositories,
 				listBranches,
 				listCommits,
 				getCommit,
+				getRepositorySizeKib,
 				listPullRequests,
 				getPullRequest,
 				listPullRequestFiles,
@@ -1983,6 +2268,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				upsertIssueComment,
 				searchCode,
 				getSourceFile,
+				listCheckRunAnnotations,
+				streamJobLog,
+				canReadActions,
 				mintCloneCredentials,
 				getInstallation,
 				exchangeUserOAuthCode,

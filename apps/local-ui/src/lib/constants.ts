@@ -2,7 +2,6 @@ export { LOCAL_ORG_ID } from "@maple/query-engine/local"
 
 // Default OTLP/HTTP + query port for `maple start`.
 export const DEFAULT_LOCAL_PORT = "4318"
-const DEFAULT_LOOPBACK_ENDPOINT = `http://127.0.0.1:${DEFAULT_LOCAL_PORT}`
 const HOSTED_LOCAL_UI_HOST = "local.maple.dev"
 const HOSTED_API_MODE_PARAM = "maple-local-api"
 
@@ -48,26 +47,6 @@ export const localServerPortForLocation = (location: LocalUiLocation): string =>
 	return location.origin.startsWith("https:") ? "443" : "80"
 }
 
-export function localServerPort(): string {
-	return typeof window === "undefined" ? DEFAULT_LOCAL_PORT : localServerPortForLocation(window.location)
-}
-
-export function isHostedUi(): boolean {
-	return typeof window !== "undefined" && isHostedLocation(window.location)
-}
-
-export function localApiBase(): string {
-	return typeof window === "undefined" ? "" : localApiBaseForLocation(window.location)
-}
-
 /** OTLP/HTTP endpoint shown in the UI's connection hints. */
 export const localOtlpEndpointForLocation = (location: LocalUiLocation): string =>
 	localApiBaseForLocation(location) || location.origin
-
-export function localOtlpEndpoint(): string {
-	return typeof window === "undefined"
-		? DEFAULT_LOOPBACK_ENDPOINT
-		: localOtlpEndpointForLocation(window.location)
-}
-
-export const LOCAL_OTLP_ENDPOINT = localOtlpEndpoint()

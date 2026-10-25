@@ -1,7 +1,7 @@
 import { SpanId, TraceId } from "@maple/domain"
 import { Schema } from "effect"
 
-import type { Log } from "@/api/warehouse/logs"
+import type { LogRow as Log } from "@maple/query-engine"
 
 /**
  * A realistic slice of a production log stream for `/lab/logs`: HTTP access

@@ -16,6 +16,7 @@ import {
 } from "@maple/domain/http"
 import { QueryEngineAlertReducer } from "@maple/domain"
 import { rawAlertSampleCountWarning } from "@maple/domain/raw-sql"
+import { alertRuleIntervalMinutes } from "@maple/query-engine/datetime"
 import { McpInvalidInputError } from "../tools/types"
 import { doc, type ToolDoc } from "./tool-doc"
 
@@ -67,10 +68,36 @@ export const toAlertRuleRow = (rule: AlertRuleDocument): typeof AlertRuleRow.Typ
 	comparator: rule.comparator,
 	threshold: rule.threshold,
 	windowMinutes: rule.windowMinutes,
+	evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
+	slowedIntervalMinutes: rule.slowedIntervalMinutes,
 	destinationIds: [...rule.destinationIds],
 	createdAt: rule.createdAt,
 	updatedAt: rule.updatedAt,
 })
+
+interface RuleCadence {
+	readonly windowMinutes: number
+	readonly evaluationIntervalMinutes: number | null
+	readonly slowedIntervalMinutes: number | null
+}
+
+/** How often the rule is checked, and whether that was picked, derived or slowed down. */
+export const formatCheckInterval = (rule: RuleCadence): string => {
+	const base = alertRuleIntervalMinutes({ ...rule, slowedIntervalMinutes: null })
+	const effective = alertRuleIntervalMinutes(rule)
+	if (effective !== base) return `every ${effective}m (slowed down from ${base}m)`
+	return rule.evaluationIntervalMinutes === null
+		? `every ${effective}m (derived from the window)`
+		: `every ${effective}m`
+}
+
+/** Why a slowed rule runs less often than configured, and how to undo it. */
+export const slowedNotice = (rule: RuleCadence): ReadonlyArray<string> =>
+	rule.slowedIntervalMinutes === null
+		? []
+		: [
+				`The scheduler slowed this rule down to every ${alertRuleIntervalMinutes(rule)}m after its query hit its time or memory limit 3 checks in a row. Editing the rule resets that; make the query cheaper first (preview_alert_rule times it).`,
+			]
 
 /** How a rule covers a service: named in its scope, unscoped (every service), or a raw query mentioning it. */
 export type RuleServiceMatch = "scoped" | "all_services" | "raw_query_mention"
@@ -107,14 +134,26 @@ export const parseRuleId = (ruleId: string) =>
 		onSome: (id) => Effect.succeed(id),
 	})
 
+/**
+ * An invalid rule as the model reads it: the message and each detail once. A
+ * message that already folds in every detail is dropped as a repeat; any other
+ * message names the failure the details only qualify, so it stays.
+ */
+export const invalidRuleInput = (error: AlertValidationError) => {
+	const repeatsDetails =
+		error.details.length > 0 && error.details.every((detail) => error.message.includes(detail))
+	return new McpInvalidInputError({
+		message: [
+			repeatsDetails ? "Invalid alert rule:" : `Invalid alert rule: ${error.message}`,
+			...error.details.map((detail) => `- ${detail}`),
+		].join("\n"),
+	})
+}
+
 /** The write failures that are the caller's to fix, as input errors naming the parameter. */
 export const ruleWriteInputErrors = {
 	"@maple/http/errors/AlertValidationError": (error: AlertValidationError) =>
-		Effect.fail(
-			new McpInvalidInputError({
-				message: [`Invalid alert rule: ${error.message}`, ...error.details].join("\n"),
-			}),
-		),
+		Effect.fail(invalidRuleInput(error)),
 	"@maple/http/errors/AlertRuleDestinationNotFoundError": (error: AlertRuleDestinationNotFoundError) =>
 		Effect.fail(
 			new McpInvalidInputError({
@@ -139,12 +178,15 @@ export const ruleConfigWarnings = (rule: {
 	return warning === null ? [] : [warning]
 }
 
-const evaluationBlocks = (evaluation: typeof AlertRuleFirstEvaluation.Type | undefined) => {
+const evaluationBlocks = (
+	evaluation: typeof AlertRuleFirstEvaluation.Type | undefined,
+	intervalMinutes: number,
+) => {
 	if (evaluation === undefined) return []
 	const when =
 		evaluation.nextEvaluationAt === null
 			? "The rule is disabled, so the scheduler will not evaluate it."
-			: `First scheduled evaluation by ${evaluation.nextEvaluationAt.slice(0, 19)}Z (every minute after), no need to poll list_alert_checks before then.`
+			: `First scheduled evaluation by ${evaluation.nextEvaluationAt.slice(0, 19)}Z (every ${intervalMinutes}m after), no need to poll list_alert_checks before then.`
 	const now =
 		evaluation.previewError !== undefined
 			? `A preview of the latest window failed: ${evaluation.previewError}. Run preview_alert_rule to see what it observes.`
@@ -196,31 +238,38 @@ export const renderRuleWrite = (
 	rule: typeof AlertRuleRow.Type,
 	warnings: ReadonlyArray<string> = [],
 	evaluation?: typeof AlertRuleFirstEvaluation.Type,
-): ToolDoc => ({
-	title,
-	...(warnings.length > 0 ? { notices: warnings } : undefined),
-	blocks: [
-		...evaluationBlocks(evaluation),
-		doc.fields([
-			["ID", rule.id],
-			["Name", rule.name],
-			["Service Names", rule.serviceNames.length > 0 ? rule.serviceNames.join(", ") : undefined],
-			["Severity", rule.severity],
-			["Signal", rule.signalType],
-			["Condition", formatCondition(rule)],
-			["Window", `${rule.windowMinutes}m`],
-			["Enabled", rule.enabled ? "Yes" : "No"],
-			["Destinations", rule.destinationIds.length],
-			["Environments", rule.environments.length > 0 ? rule.environments.join(", ") : undefined],
-		]),
-	],
-	next: [
-		doc.next("get_alert_rule", { rule_id: rule.id }, "full configuration"),
-		doc.next(
-			"preview_alert_rule",
-			{ rule_id: rule.id },
-			"replay it over the last day to see what it would have done",
-		),
-		doc.next("list_alert_checks", { rule_id: rule.id }, "its evaluations once the scheduler picks it up"),
-	],
-})
+): ToolDoc => {
+	const notices = [...warnings, ...slowedNotice(rule)]
+	return {
+		title,
+		...(notices.length > 0 ? { notices } : undefined),
+		blocks: [
+			...evaluationBlocks(evaluation, alertRuleIntervalMinutes(rule)),
+			doc.fields([
+				["ID", rule.id],
+				["Name", rule.name],
+				["Service Names", rule.serviceNames.length > 0 ? rule.serviceNames.join(", ") : undefined],
+				["Severity", rule.severity],
+				["Signal", rule.signalType],
+				["Condition", formatCondition(rule)],
+				["Window", `${rule.windowMinutes}m, checked ${formatCheckInterval(rule)}`],
+				["Enabled", rule.enabled ? "Yes" : "No"],
+				["Destinations", rule.destinationIds.length],
+				["Environments", rule.environments.length > 0 ? rule.environments.join(", ") : undefined],
+			]),
+		],
+		next: [
+			doc.next("get_alert_rule", { rule_id: rule.id }, "full configuration"),
+			doc.next(
+				"preview_alert_rule",
+				{ rule_id: rule.id },
+				"replay it over the last day to see what it would have done",
+			),
+			doc.next(
+				"list_alert_checks",
+				{ rule_id: rule.id },
+				"its evaluations once the scheduler picks it up",
+			),
+		],
+	}
+}

@@ -1,4 +1,4 @@
-import type { Node, Edge } from "@xyflow/react"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
 import { getServiceColor, getValueHue } from "../../lib/colors"
 import { type ErrorRateLevel, errorRateLevel } from "../../lib/error-rate"
@@ -15,8 +15,8 @@ import {
 	CLOUDFLARE_COLOR,
 	getDbNodeColor,
 	PLANETSCALE_COLOR,
-	resolveDbNodePresentation,
-} from "./service-map-db"
+	resolveDbNodeStyle,
+} from "./service-map-db-style"
 import {
 	matchHyperdriveConfigs,
 	type HyperdriveConfigInput,
@@ -114,6 +114,7 @@ export interface ServiceNodeData {
 const PLATFORM_COLORS: Record<ServicePlatform | "unknown", string> = {
 	kubernetes: "oklch(0.62 0.16 250)",
 	cloudflare: CLOUDFLARE_COLOR,
+	gcp: "oklch(0.63 0.2 27)",
 	lambda: "oklch(0.7 0.18 60)",
 	web: "oklch(0.65 0.15 145)",
 	unknown: "oklch(0.55 0.02 270)",
@@ -478,7 +479,7 @@ export function buildFlowElements({
 				hyperdrive,
 				// Named databases show their identity; the generic node keeps the system;
 				// Hyperdrive-fronted databases collapse to a single "Hyperdrive" node.
-				label: resolveDbNodePresentation(agg.dbSystem, agg.dbNamespace).title,
+				label: resolveDbNodeStyle(agg.dbSystem, agg.dbNamespace).title,
 				kind: "database",
 				// Sample-weighted, like every service node beside it. This divided the
 				// RAW count and hardcoded `hasSampling: false`, so at a sample rate of

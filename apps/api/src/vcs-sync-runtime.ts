@@ -1,5 +1,4 @@
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
-import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, Option } from "effect"
 import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 
@@ -20,10 +19,21 @@ import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewServi
 import { prReviewPullRequestHandler } from "@maple/backend/services/pr-review/pull-request-review-handler"
 import {
 	PullRequestChecklistSinkLive,
+	PullRequestCiApprovalSinkLive,
 	PullRequestCommentSinkLive,
 } from "@maple/backend/services/pr-review/pull-request-comment-handler"
+import { CiTraceSinkLive } from "@maple/backend/services/integrations/ci-traces/CiTraceService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
+import type { Message } from "@cloudflare/workers-types"
+import {
+	applyOutcome,
+	type MessageOutcome,
+	type PlacedMessage,
+	toPlacedMessage,
+	VCS_SYNC_MAX_RETRIES,
+	vcsSyncTelemetry,
+} from "./worker/vcs-sync-dispatch"
 
 // Per-invocation runtime for the VCS sync queue, independent of the HTTP graph.
 // No tracer or logger of its own: the Worker provides `vcsSyncTelemetry` around
@@ -31,11 +41,8 @@ import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 // its `ConfigProvider` and the binding ports come from the Worker too
 // (`apiPorts`), provided around the event.
 
-/**
- * Deliberately not `maple-api`: background work sharing the request-facing
- * service's name skewed its percentiles (p99 32s, 2026-09-04).
- */
-export const vcsSyncTelemetry = eventTelemetry({ serviceName: "maple-vcs-sync" })
+// Defined beside the dispatch, which the Worker imports eagerly; one SDK instance per isolate.
+export { vcsSyncTelemetry }
 
 // One delivery, two readers: the issue link / verification window, and the
 // review trigger. Each is isolated in the fan-out so a defect in
@@ -57,8 +64,12 @@ export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(PullRequestEventSinkLive),
 	// `@maple` mentions on pull requests; the review debounce's queue is not needed to answer.
 	Layer.provide(PullRequestCommentSinkLive),
+	// A maintainer approving an outside contributor's CI runs that pull request's review.
+	Layer.provide(PullRequestCiApprovalSinkLive),
 	// Ticked "Before merge" boxes on review comments.
 	Layer.provide(PullRequestChecklistSinkLive.pipe(Layer.provide(PrReviewLive))),
+	// Finished CI runs and jobs, written as spans into the org's traces.
+	Layer.provide(CiTraceSinkLive),
 	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
 )
 
@@ -96,100 +107,134 @@ export const runScheduledSync = Effect.gen(function* () {
 	Effect.withSpan("VcsScheduledSync.tick"),
 )
 
-// Must match the consumer's `maxRetries` in worker.ts. No DLQ exists, so on the
-// final delivery (attempt > max_retries) we persist a terminal status instead of silently dropping.
-const VCS_SYNC_MAX_RETRIES = 3
+// No DLQ exists, so on the final delivery (attempt > max_retries) we persist a terminal status
+// instead of silently dropping.
 
+const settleMessage = (service: VcsSyncService["Service"], message: PlacedMessage) =>
+	service.processMessage(message.body).pipe(
+		Effect.matchCauseEffect({
+			onFailure: (cause): Effect.Effect<MessageOutcome> => {
+				// Rate-limited: delay redelivery until the VCS budget resets instead of retrying immediately.
+				const failure = Option.getOrUndefined(Cause.findErrorOption(cause))
+				const isRateLimited = failure?._tag === "@maple/http/errors/VcsRateLimitedError"
+
+				const delaySeconds = isRateLimited
+					? clampQueueDelaySeconds(failure.retryAfterSeconds)
+					: undefined
+				const isDelaySecondsSet = delaySeconds !== undefined
+				// Last retry exhausted: persist terminal status so repos don't get stuck backfilling, then ack.
+				const isFinalAttempt = message.attempts > VCS_SYNC_MAX_RETRIES
+
+				// Low-cardinality outcome label; the full Cause stays in the log, not the span.
+				const outcome = isFinalAttempt ? "exhausted" : isDelaySecondsSet ? "retry_delayed" : "retry"
+
+				return Effect.annotateCurrentSpan({
+					"vcs.queue.message.outcome": outcome,
+					// Tag rate-limit errors so `retry_delayed`/`exhausted` spans are filterable without parsing logs.
+					...(isRateLimited
+						? { "vcs.queue.failure.tag": "@maple/http/errors/VcsRateLimitedError" }
+						: undefined),
+					...(isDelaySecondsSet ? { "vcs.queue.retry.delay_seconds": delaySeconds } : undefined),
+				}).pipe(
+					Effect.flatMap(() =>
+						Effect.logError("[VCS] sync message failed").pipe(
+							Effect.annotateLogs({
+								error: summarizeCause(cause),
+								attempt: message.attempts,
+								outcome,
+								...(isFinalAttempt ? { exhausted: true } : undefined),
+								...(isDelaySecondsSet ? { retryDelaySeconds: delaySeconds } : undefined),
+							}),
+						),
+					),
+					Effect.flatMap((): Effect.Effect<MessageOutcome> =>
+						isFinalAttempt
+							? service
+									.recordExhaustedFailure(message.body)
+									.pipe(Effect.as({ id: message.id, outcome: "ack" }))
+							: Effect.succeed(
+									isDelaySecondsSet
+										? { id: message.id, outcome: "retry", delaySeconds }
+										: { id: message.id, outcome: "retry" },
+								),
+					),
+				)
+			},
+			onSuccess: () =>
+				Effect.annotateCurrentSpan({ "vcs.queue.message.outcome": "succeeded_ack" }).pipe(
+					Effect.as<MessageOutcome>({ id: message.id, outcome: "ack" }),
+				),
+		}),
+		Effect.withSpan("VcsSyncQueue.processMessage", {
+			kind: "consumer",
+			attributes: {
+				"messaging.system": MESSAGING_SYSTEM,
+				"messaging.destination.name": MESSAGING_DESTINATION,
+				"messaging.operation.name": "process",
+				"messaging.message.delivery_attempt": message.attempts,
+			},
+		}),
+	)
+
+const batchSpan = (messageCount: number, dispatch: "inline" | "placed") =>
+	Effect.withSpan("VcsSyncQueue.processBatch", {
+		kind: "consumer",
+		attributes: {
+			"messaging.system": MESSAGING_SYSTEM,
+			"messaging.destination.name": MESSAGING_DESTINATION,
+			"messaging.operation.name": "receive",
+			"messaging.batch.message_count": messageCount,
+			"maple.vcs.dispatch": dispatch,
+		},
+	})
+
+/** The batch in this invocation, each message acked or retried as soon as it settles. */
 export const processBatch = (batch: QueueBatch) =>
 	Effect.gen(function* () {
 		const service = yield* VcsSyncService
 		yield* Effect.forEach(
 			batch.messages,
 			(message) =>
-				service.processMessage(message.body).pipe(
-					Effect.matchCauseEffect({
-						onFailure: (cause) => {
-							// Rate-limited: delay redelivery until the VCS budget resets instead of retrying immediately.
-							const failure = Option.getOrUndefined(Cause.findErrorOption(cause))
-							const isRateLimited = failure?._tag === "@maple/http/errors/VcsRateLimitedError"
+				settleMessage(service, toPlacedMessage(message)).pipe(
+					Effect.flatMap((outcome) => applyOutcome(message, outcome)),
+				),
+			{ discard: true },
+		)
+	}).pipe(batchSpan(batch.messages.length, "inline"))
 
-							const delaySeconds = isRateLimited
-								? clampQueueDelaySeconds(failure.retryAfterSeconds)
-								: undefined
-							const isDelaySecondsSet = delaySeconds !== undefined
-							// Last retry exhausted: persist terminal status so repos don't get stuck backfilling, then ack.
-							const isFinalAttempt = message.attempts > VCS_SYNC_MAX_RETRIES
+/** The batch in the placed fetch handler: the outcomes go back to the consumer that holds the messages. */
+export const processPlacedBatch = (messages: ReadonlyArray<PlacedMessage>, placement: string) =>
+	Effect.gen(function* () {
+		const service = yield* VcsSyncService
+		yield* Effect.annotateCurrentSpan("maple.placement", placement)
+		return yield* Effect.forEach(messages, (message) => settleMessage(service, message))
+	}).pipe(batchSpan(messages.length, "placed"))
 
-							// Low-cardinality outcome label — full Cause stays in the log, not the span.
-							const outcome = isFinalAttempt
-								? "exhausted"
-								: isDelaySecondsSet
-									? "retry_delayed"
-									: "retry"
-
-							return Effect.annotateCurrentSpan({
-								"vcs.queue.message.outcome": outcome,
-								// Tag rate-limit errors so `retry_delayed`/`exhausted` spans are filterable without parsing logs.
-								...(isRateLimited
-									? {
-											"vcs.queue.failure.tag": "@maple/http/errors/VcsRateLimitedError",
-										}
-									: undefined),
-								...(isDelaySecondsSet
-									? { "vcs.queue.retry.delay_seconds": delaySeconds }
-									: undefined),
-							}).pipe(
-								Effect.flatMap(() =>
-									Effect.logError("[VCS] sync message failed").pipe(
-										Effect.annotateLogs({
-											error: summarizeCause(cause),
-											attempt: message.attempts,
-											outcome,
-											...(isFinalAttempt ? { exhausted: true } : undefined),
-											...(isDelaySecondsSet
-												? { retryDelaySeconds: delaySeconds }
-												: undefined),
-										}),
-									),
-								),
-								Effect.flatMap(() =>
-									isFinalAttempt
-										? service
-												.recordExhaustedFailure(message.body)
-												.pipe(Effect.flatMap(() => Effect.sync(() => message.ack())))
-										: Effect.sync(() =>
-												isDelaySecondsSet
-													? message.retry({ delaySeconds })
-													: message.retry(),
-											),
-								),
-							)
-						},
-						onSuccess: () =>
-							Effect.annotateCurrentSpan({
-								"vcs.queue.message.outcome": "succeeded_ack",
-							}).pipe(Effect.flatMap(() => Effect.sync(() => message.ack()))),
-					}),
-					Effect.withSpan("VcsSyncQueue.processMessage", {
-						kind: "consumer",
-						attributes: {
-							"messaging.system": MESSAGING_SYSTEM,
-							"messaging.destination.name": MESSAGING_DESTINATION,
-							"messaging.operation.name": "process",
-							"messaging.message.delivery_attempt": message.attempts,
-						},
-					}),
+/**
+ * Final deliveries whose placed run failed with an unknown outcome: no redelivery is left, so the
+ * terminal status is recorded and the message acked, as a failed final attempt inline would be.
+ */
+export const recordExhaustedBatch = (messages: ReadonlyArray<Message<unknown>>) =>
+	Effect.gen(function* () {
+		const service = yield* VcsSyncService
+		yield* Effect.forEach(
+			messages,
+			(message) =>
+				Effect.logError("[VCS] sync message exhausted after a failed placed run").pipe(
+					Effect.annotateLogs({ attempt: message.attempts, outcome: "exhausted", exhausted: true }),
+					Effect.andThen(service.recordExhaustedFailure(message.body)),
+					Effect.andThen(Effect.sync(() => message.ack())),
 				),
 			{ discard: true },
 		)
 	}).pipe(
-		Effect.withSpan("VcsSyncQueue.processBatch", {
+		Effect.withSpan("VcsSyncQueue.recordExhausted", {
 			kind: "consumer",
 			attributes: {
 				"messaging.system": MESSAGING_SYSTEM,
 				"messaging.destination.name": MESSAGING_DESTINATION,
-				"messaging.operation.name": "receive",
-				"messaging.batch.message_count": batch.messages.length,
+				"messaging.operation.name": "settle",
+				"messaging.batch.message_count": messages.length,
 			},
 		}),
 	)

@@ -20,6 +20,7 @@ import { CloudflareHyperdriveConfigs } from "./cloudflare-hyperdrive-configs"
 import { CloudflareLogpushConnectors } from "./cloudflare-logpush-connectors"
 import { DashboardShares } from "./dashboard-shares"
 import { Dashboards, DashboardVersions } from "./dashboards"
+import { DeviceCredentials, DeviceProofReplays } from "./device-credentials"
 import { DigestSubscriptions } from "./digest"
 import {
 	Actors,
@@ -35,6 +36,9 @@ import {
 	ErrorIssueVerifications,
 } from "./errors"
 import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
+import { AwsConnections } from "./aws-connections"
+import { GcpConnectors } from "./gcp-connectors"
+import { GcpResources } from "./gcp-resources"
 import { Investigations } from "./investigations"
 import { LiveActivities } from "./live-activities"
 import { McpOAuthClients, McpOAuthAuthorizations, McpOAuthRefreshTokens } from "./mcp-oauth"
@@ -46,6 +50,7 @@ import { OrgClickHouseSettings } from "./org-clickhouse-settings"
 import { OrgIngestAttributeMappings } from "./org-ingest-attribute-mappings"
 import { OrgIngestKeys } from "./org-ingest-keys"
 import { OrgIngestSamplingPolicies } from "./org-ingest-sampling-policies"
+import { Sources } from "./sources"
 import { OrgRecommendationIssues } from "./org-recommendation-issues"
 import { PlanetscaleConnections } from "./planetscale-connections"
 import {
@@ -57,6 +62,17 @@ import {
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
+import {
+	SecurityAuditEvents,
+	SecurityAuditFindings,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
+	SecurityAuditRunFindings,
+	SecurityAuditRuns,
+	SecurityAuditTargets,
+	SecurityAuditUnits,
+} from "./security-audit"
+import { SupabaseConnections, SupabaseProjectInsights, SupabaseProjects } from "./supabase"
 import { OrgSupportChannels } from "./support-channels"
 import {
 	VcsInstallations,
@@ -86,9 +102,13 @@ export * from "./cloudflare-hyperdrive-configs"
 export * from "./cloudflare-logpush-connectors"
 export * from "./dashboard-shares"
 export * from "./dashboards"
+export * from "./device-credentials"
 export * from "./digest"
 export * from "./errors"
 export * from "./escalations"
+export * from "./aws-connections"
+export * from "./gcp-connectors"
+export * from "./gcp-resources"
 export * from "./investigations"
 export * from "./live-activities"
 export * from "./mcp-oauth"
@@ -106,6 +126,9 @@ export * from "./planetscale-inventory"
 export * from "./openrouter-keys"
 export * from "./railway"
 export * from "./scrape-targets"
+export * from "./security-audit"
+export * from "./sources"
+export * from "./supabase"
 export * from "./support-channels"
 export * from "./vcs"
 
@@ -133,6 +156,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	DashboardShares,
 	Dashboards,
 	DashboardVersions,
+	DeviceCredentials,
+	DeviceProofReplays,
 	DigestSubscriptions,
 	Actors,
 	ErrorIssues,
@@ -147,6 +172,9 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	ErrorIssueVerifications,
 	IssueEscalationPolicies,
 	IssueEscalations,
+	GcpConnectors,
+	GcpResources,
+	AwsConnections,
 	Investigations,
 	LiveActivities,
 	McpOAuthClients,
@@ -162,6 +190,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	OrgIngestKeys,
 	OrgIngestSamplingPolicies,
 	OrgOpenRouterKeys,
+	Sources,
 	OrgRecommendationIssues,
 	PlanetscaleConnections,
 	PlanetscalePollState,
@@ -172,6 +201,17 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	RailwayEnvironments,
 	ScrapeTargets,
 	ScrapeTargetChecks,
+	SecurityAuditTargets,
+	SecurityAuditRuns,
+	SecurityAuditUnits,
+	SecurityAuditRunFindings,
+	SecurityAuditFindings,
+	SecurityAuditEvents,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
+	SupabaseConnections,
+	SupabaseProjects,
+	SupabaseProjectInsights,
 	OrgSupportChannels,
 	VcsInstallations,
 	VcsRepositories,

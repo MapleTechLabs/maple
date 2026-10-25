@@ -1,157 +1,92 @@
-/// <reference types="vitest/config" />
 import path from "node:path"
-import { playwright } from "@vitest/browser-playwright"
-import { defineConfig, loadEnv } from "vite"
-import { devtools } from "@tanstack/devtools-vite"
-import tanstackRouter from "@tanstack/router-plugin/vite"
-import viteReact from "@vitejs/plugin-react"
+import { foldkit } from "@foldkit/vite-plugin"
 import tailwindcss from "@tailwindcss/vite"
+import { defineConfig, loadEnv, type Plugin } from "vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
+import { clerkJsUrl } from "./src/platform/clerk-js-url.ts"
 import { versionManifest } from "./vite-plugin-version-manifest.ts"
 
 const envDir = path.resolve(import.meta.dirname, "../..")
 
-export default defineConfig(({ mode }) => {
+// Every VITE_* key the app reads.
+const overrideKeys = [
+	"VITE_API_BASE_URL",
+	"VITE_API_PUBLIC_URL",
+	"VITE_INGEST_URL",
+	"VITE_MAPLE_SELF_INGEST_URL",
+	"VITE_ELECTRIC_SYNC_URL",
+	"VITE_MAPLE_REGION",
+	"VITE_MAPLE_REGION_APP_URLS",
+	"VITE_MAPLE_AUTH_MODE",
+	"VITE_CLERK_PUBLISHABLE_KEY",
+	"VITE_MAPLE_INGEST_KEY",
+	"VITE_COMMIT_SHA",
+	"VITE_MAPLE_ENVIRONMENT",
+	"VITE_MAPLE_REPLAY",
+	"VITE_MAPLE_CAPTURE",
+	"VITE_MAPLE_COOKIE_DOMAIN",
+	"VITE_MAPLE_LAB",
+] as const
+
+/**
+ * Fetch clerk-js while the app bundle downloads instead of after it runs, and open the
+ * credentialed connection `clerk.load()` calls the Frontend API on.
+ */
+const clerkEarlyLoad = (publishableKey: string): Plugin => ({
+	name: "maple-clerk-early-load",
+	transformIndexHtml: () => {
+		const href = clerkJsUrl(publishableKey)
+		return [
+			{
+				tag: "link",
+				attrs: { rel: "preload", as: "script", href, crossorigin: "anonymous" },
+				injectTo: "head-prepend",
+			},
+			{
+				tag: "link",
+				attrs: { rel: "preconnect", href: new URL(href).origin },
+				injectTo: "head-prepend",
+			},
+		]
+	},
+})
+
+export default defineConfig(({ mode, command }) => {
 	const env = loadEnv(mode, envDir, "")
 
-	// `bun dev` no longer reaches this: web is a `Cloudflare.Website.Vite` Worker,
-	// so alchemy runs vite itself and supplies these three from the stack's own
-	// URLs as `define`. It stays for a vite server started by hand next to a
-	// portless stack (`bun --filter=@maple/web dev`), which has no other way to
-	// learn its siblings' routes.
 	if (process.env.PORTLESS_URL) {
 		process.env.VITE_API_BASE_URL ??= siblingUrl("api")
 		process.env.VITE_INGEST_URL ??= siblingUrl("ingest")
 		process.env.VITE_ELECTRIC_SYNC_URL ??= siblingUrl("electric-sync")
 	}
+	process.env.VITE_MAPLE_AUTH_MODE ||= env.MAPLE_AUTH_MODE?.trim() || "self_hosted"
+	process.env.VITE_CLERK_PUBLISHABLE_KEY ||= env.CLERK_PUBLISHABLE_KEY?.trim() || ""
+	process.env.VITE_MAPLE_INGEST_KEY ||= env.MAPLE_OTEL_PUBLIC_INGEST_KEY?.trim() || ""
+	process.env.VITE_MAPLE_COOKIE_DOMAIN ||= env.PUBLIC_MAPLE_COOKIE_DOMAIN?.trim() || ""
 
-	if (!process.env.VITE_MAPLE_AUTH_MODE) {
-		process.env.VITE_MAPLE_AUTH_MODE = env.MAPLE_AUTH_MODE?.trim() || "self_hosted"
-	}
+	const clerkKey = process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim()
 
-	if (!process.env.VITE_CLERK_PUBLISHABLE_KEY) {
-		process.env.VITE_CLERK_PUBLISHABLE_KEY = env.CLERK_PUBLISHABLE_KEY?.trim() || ""
-	}
-
-	if (!process.env.VITE_MAPLE_INGEST_KEY) {
-		process.env.VITE_MAPLE_INGEST_KEY = env.MAPLE_OTEL_PUBLIC_INGEST_KEY?.trim() || ""
-	}
-
-	// One root-level var drives the cookie scope for both this app and the Astro
-	// landing site — they only share a visitor id if they agree on the domain.
-	if (!process.env.VITE_MAPLE_COOKIE_DOMAIN) {
-		process.env.VITE_MAPLE_COOKIE_DOMAIN = env.PUBLIC_MAPLE_COOKIE_DOMAIN?.trim() || ""
-	}
-
-	// Under Vitest the first `tracedFetch` builds the telemetry layer, whose replay
-	// session POSTs to ingest mid-test and lands in tests' `window.fetch` spies.
-	if (process.env.VITEST) {
-		process.env.VITE_MAPLE_REPLAY ||= "off"
-		process.env.VITE_MAPLE_CAPTURE ||= "off"
-	}
-
-	// Vite's loadEnv gives `.env*` files higher precedence than `process.env` for
-	// VITE_* keys. During a deploy build we inject VITE_* via process.env, so
-	// override the Vite default with `define` to make process.env win.
-	const overrideKeys = [
-		"VITE_API_BASE_URL",
-		"VITE_API_PUBLIC_URL",
-		"VITE_INGEST_URL",
-		"VITE_MAPLE_SELF_INGEST_URL",
-		"VITE_ELECTRIC_SYNC_URL",
-		"VITE_MAPLE_REGION",
-		"VITE_MAPLE_REGION_APP_URLS",
-		"VITE_MAPLE_AUTH_MODE",
-		"VITE_CLERK_PUBLISHABLE_KEY",
-		"VITE_MAPLE_INGEST_KEY",
-		// Injected at deploy time (CI sets VITE_COMMIT_SHA=github.sha); stamped onto
-		// browser telemetry as `vcs.ref.head.revision` / `service.version`.
-		"VITE_COMMIT_SHA",
-		// "off" disables rrweb self-recording. The perf bench sets it via
-		// process.env (playwright.config.ts) and must win over any `.env*` value,
-		// or bench runs would record and post sessions to real ingest.
-		"VITE_MAPLE_REPLAY",
-		// "off" sends no browser telemetry at all (the perf bench; see
-		// playwright.config.ts). Same precedence rule as VITE_MAPLE_REPLAY.
-		"VITE_MAPLE_CAPTURE",
-		// Forces the visitor-id cookie's Domain=. Only needed locally, where
-		// *.localhost cookies are host-only and web/landing would not share a
-		// visitor id; production discovers `.maple.dev` by probing.
-		"VITE_MAPLE_COOKIE_DOMAIN",
-	] as const
+	// `.env*` files outrank process.env for VITE_* keys; `define` makes process.env win.
 	const define: Record<string, string> = {}
 	for (const key of overrideKeys) {
 		const value = process.env[key]?.trim()
-		if (value) {
-			define[`import.meta.env.${key}`] = JSON.stringify(value)
-		}
+		if (value) define[`import.meta.env.${key}`] = JSON.stringify(value)
 	}
 
 	return {
-		optimizeDeps: { include: ["react-dom/client", "web-vitals"] },
 		envDir,
-		// Keep the Playwright perf suite (perf/*.perf.spec.ts) out of the Vitest
-		// run — it's executed separately via `bun run test:perf`.
-		test: {
-			projects: [
-				{
-					test: {
-						name: "node",
-						server: { deps: { inline: ["@effect/vitest"] } },
-						environment: "node",
-						include: ["src/**/*.test.{ts,tsx}"],
-						exclude: ["src/**/*.browser.test.{ts,tsx}"],
-					},
-				},
-				{
-					test: {
-						name: "browser",
-						include: ["src/**/*.browser.test.{ts,tsx}"],
-						browser: {
-							enabled: true,
-							headless: true,
-							provider: playwright(),
-							instances: [{ browser: "chromium" }],
-						},
-					},
-				},
-			],
-		},
-		resolve: {
-			tsconfigPaths: true,
-		},
+		resolve: { tsconfigPaths: true },
 		define,
 		plugins: [
-			// Console piping forwards every browser console line into the dev server's stdout.
-			devtools({ consolePiping: { enabled: false } }),
-			tanstackRouter({
-				target: "react",
-				autoCodeSplitting: true,
-				codeSplittingOptions: {
-					// Loaders frequently import the warehouse query layer. Keeping them in
-					// the route shell makes every route's data stack part of startup even
-					// when its component is split.
-					defaultBehavior: [
-						["loader"],
-						["component"],
-						["pendingComponent"],
-						["errorComponent"],
-						["notFoundComponent"],
-					],
-				},
-			}),
 			tailwindcss(),
-			viteReact(),
-			// Reads the same `process.env` the `define` block above does, rather than
-			// `import.meta.env`, because this runs in the Vite process and not in the
-			// bundle. An empty value (any build that is not a deploy) makes the
-			// client-side check inert — see `use-app-version.ts`.
+			// The DevTools MCP relay only exists on the dev server.
+			foldkit(command === "serve" ? {} : { devToolsMcpPort: false }),
+			// `/version.json`, which open tabs poll to offer a reload after a deploy (shell/version.ts).
 			versionManifest(process.env.VITE_COMMIT_SHA?.trim() || ""),
+			...(process.env.VITE_MAPLE_AUTH_MODE?.trim().toLowerCase() === "clerk" && clerkKey
+				? [clerkEarlyLoad(clerkKey)]
+				: []),
 		],
-		build: {
-			// The bundle budget reads Vite's static/dynamic import graph instead of
-			// guessing relationships from hashed filenames.
-			manifest: true,
-		},
+		build: { manifest: true },
 	}
 })

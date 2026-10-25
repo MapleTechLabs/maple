@@ -11,6 +11,8 @@ import { Effect } from "effect"
 import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
 import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS } from "./ChatSession"
 import type { RunChatSessionTurnInput } from "./turn-runner"
+import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
+import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import { makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 
 // Encoded, because that is what actually crosses the Durable Object boundary: RPC serializes with
@@ -43,18 +45,6 @@ const makeSession = () => {
 				| undefined
 		)?.running_message_id ?? undefined
 	return { session, state, turnId }
-}
-
-interface ChatSessionWaiterHarness {
-	readonly waiters: Set<() => void>
-	readonly appends: number
-	readonly waitForAppend: (seen: number, timeoutMs: number) => Effect.Effect<boolean>
-}
-
-const waiterHarness = (session: ChatSession): ChatSessionWaiterHarness => {
-	// SAFETY: this test intentionally exercises ChatSession's private waiter lifecycle; the
-	// interface mirrors the three members declared by ChatSession and never escapes the test.
-	return session as ChatSessionWaiterHarness
 }
 
 describe("ChatSession.history", () => {
@@ -570,6 +560,101 @@ describe("ChatSession eviction recovery", () => {
 	})
 })
 
+describe("ChatSession abort interrupts the running turn", () => {
+	const recording = (state = makeFakeDurableObjectState()) => {
+		const runs: Array<RunChatSessionTurnInput> = []
+		const session = new ChatSession(state, {}, undefined, (input) => {
+			runs.push(input)
+			return new Promise<void>(() => undefined)
+		})
+		return { session, state, runs }
+	}
+
+	const begin = (session: ChatSession, messageId: string) =>
+		session.beginTurn({ sessionId: "org_test:tab", messageId, text: "hi", tenant: TENANT, origin: APP })
+
+	/** The span a turn records when its run is interrupted by the session's signal. */
+	const interruptedSpan = async (signal: AbortSignal | undefined) => {
+		const { spans, tracer } = makeRecordingTracer()
+		await Effect.runPromise(
+			Effect.never.pipe(
+				interruptOnAbort(signal, makeTurnObservability()),
+				Effect.withSpan("chat.turn"),
+				Effect.withTracer(tracer),
+			),
+		)
+		return spans.find((span) => span.name === "chat.turn")
+	}
+
+	for (const reason of ["user", "superseded"] as const) {
+		it(`interrupts the run and records why on an abort by ${reason}`, async () => {
+			const { session, runs } = recording()
+			begin(session, "u1")
+			const signal = runs[0]?.signal
+
+			const span = interruptedSpan(signal)
+			session.abort(reason)
+
+			assert.strictEqual(signal?.reason, reason)
+			const turn = await span
+			assert.strictEqual(turn?.attributes.get("maple.chat.outcome"), "aborted")
+			assert.strictEqual(turn?.attributes.get("maple.chat.abort_reason"), reason)
+		})
+	}
+
+	it("calls an abort from an older caller, with no reason, a user's", () => {
+		const { session, runs } = recording()
+		begin(session, "u1")
+		session.abort()
+		assert.strictEqual(runs[0]?.signal?.reason, "user")
+	})
+
+	it("interrupts a turn whose claim went stale", async () => {
+		const { session, state, runs } = recording()
+		begin(session, "u1")
+		const span = interruptedSpan(runs[0]?.signal)
+		state.storage.sql.exec(
+			"UPDATE session SET running_since = ? WHERE id = 1",
+			Date.now() - TURN_STALE_MS - 1,
+		)
+
+		assert.isFalse(session.running())
+
+		assert.strictEqual((await span)?.attributes.get("maple.chat.abort_reason"), "stale")
+	})
+
+	it("never interrupts a newer turn on behalf of an older one", () => {
+		const { session, runs } = recording()
+		begin(session, "u1")
+		session.abort("superseded")
+		begin(session, "u2")
+
+		assert.isFalse(runs[1]?.signal?.aborted)
+		session.abort("user")
+		assert.strictEqual(runs[0]?.signal?.reason, "superseded")
+		assert.strictEqual(runs[1]?.signal?.reason, "user")
+	})
+
+	it("records an evicted turn's abandonment as an eviction", () => {
+		const attributes = turnSpanAttributes({ outcome: "abandoned" }, undefined)
+		assert.strictEqual(attributes["maple.chat.abort_reason"], "evicted")
+	})
+
+	it("leaves a turn that finished on its own without an abort reason", async () => {
+		const { session, runs } = recording()
+		begin(session, "u1")
+		const { spans, tracer } = makeRecordingTracer()
+		await Effect.runPromise(
+			Effect.void.pipe(
+				interruptOnAbort(runs[0]?.signal, makeTurnObservability()),
+				Effect.withSpan("chat.turn"),
+				Effect.withTracer(tracer),
+			),
+		)
+		assert.isFalse(spans[0]?.attributes.has("maple.chat.abort_reason"))
+	})
+})
+
 describe("ChatSession.subscribe", () => {
 	/** Read the whole subscription, which ends at `turn-end`. */
 	const drain = async (stream: ReadableStream<Uint8Array>): Promise<string> => {
@@ -652,13 +737,10 @@ describe("ChatSession.subscribe", () => {
 
 	it("removes a timed-out waiter before the next idle reconnect", async () => {
 		const { session } = makeSession()
-		const harness = waiterHarness(session)
-
+		// Element access reaches the private waiter lifecycle this test pins, without a cast.
 		for (let reconnect = 0; reconnect < 3; reconnect++) {
-			assert.isFalse(
-				await Effect.runPromise(harness.waitForAppend.call(session, harness.appends, 0)),
-			)
-			assert.equal(harness.waiters.size, 0)
+			assert.isFalse(await Effect.runPromise(session["waitForAppend"](session["appends"], 0)))
+			assert.equal(session["waiters"].size, 0)
 		}
 	})
 })

@@ -83,12 +83,17 @@ describe("MapleApiV2 OpenAPI", () => {
 			"DELETE /v2/dashboards/{id}",
 			"DELETE /v2/dashboards/{id}/share",
 			"DELETE /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"DELETE /v2/device_credentials/{installation_id}",
+			"DELETE /v2/integrations/aws/connections/{id}",
 			"DELETE /v2/integrations/chat_connectors/{connector}/identity",
 			"DELETE /v2/integrations/chat_workspaces/{id}",
+			"DELETE /v2/integrations/gcp/connectors/{id}",
 			"DELETE /v2/integrations/planetscale",
+			"DELETE /v2/mcp_connections/{id}",
 			"DELETE /v2/mobile_devices/{token}",
 			"DELETE /v2/mobile_devices/{token}/live_activities/{incident_id}",
 			"DELETE /v2/scrape_targets/{id}",
+			"DELETE /v2/sources/{id}",
 			"DELETE /v2/widget_credentials/{installation_id}",
 			"GET /v2/agent_feedback",
 			"GET /v2/alerts/deliveries",
@@ -118,6 +123,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/dashboards/{id}/versions",
 			"GET /v2/dashboards/{id}/versions/{version_id}",
 			"GET /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"GET /v2/device_credentials/{installation_id}/attestation_challenge",
 			"GET /v2/environments",
 			"GET /v2/error_issues",
 			"GET /v2/error_issues/service_counts",
@@ -126,8 +132,12 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/instrumentation/audit",
 			"GET /v2/instrumentation/recommendations",
 			"GET /v2/instrumentation/signals",
+			"GET /v2/integrations/aws",
+			"GET /v2/integrations/aws/connections/{id}/ingest",
+			"GET /v2/integrations/aws/connections/{id}/setup",
 			"GET /v2/integrations/chat_connectors",
 			"GET /v2/integrations/chat_workspaces/{id}/destinations",
+			"GET /v2/integrations/gcp",
 			"GET /v2/integrations/planetscale",
 			"GET /v2/integrations/planetscale/databases",
 			"GET /v2/integrations/planetscale/organizations",
@@ -135,6 +145,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/investigations",
 			"GET /v2/investigations/{id}",
 			"GET /v2/logs/{id}",
+			"GET /v2/mcp_connections",
 			"GET /v2/metrics",
 			"GET /v2/mobile_devices",
 			"GET /v2/onboarding/checklist",
@@ -150,6 +161,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/session_replays/{id}/events",
 			"GET /v2/session_replays/{id}/manifest",
 			"GET /v2/session_replays/{id}/transcript",
+			"GET /v2/sources",
+			"GET /v2/sources/usage",
+			"GET /v2/sources/{id}",
+			"GET /v2/sources/{id}/usage",
 			"GET /v2/support/slack_channel",
 			"GET /v2/traces/{trace_id}",
 			"GET /v2/traces/{trace_id}/spans/{span_id}",
@@ -159,8 +174,11 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PATCH /v2/anomalies/settings",
 			"PATCH /v2/attribute_mappings/{id}",
 			"PATCH /v2/dashboards/{id}",
+			"PATCH /v2/integrations/aws/connections/{id}",
 			"PATCH /v2/integrations/chat_workspaces/{id}",
+			"PATCH /v2/integrations/gcp/connectors/{id}",
 			"PATCH /v2/scrape_targets/{id}",
+			"PATCH /v2/sources/{id}",
 			"POST /v2/agent_feedback",
 			"POST /v2/alerts/destinations",
 			"POST /v2/alerts/destinations/telegram/chats",
@@ -178,13 +196,23 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/dashboards/templates/{template_id}/preview",
 			"POST /v2/dashboards/{id}/share/rotate",
 			"POST /v2/dashboards/{id}/versions/{version_id}/restore",
+			"POST /v2/dashboards/{id}/widget_data",
 			"POST /v2/dashboards/{id}/widgets/{widget_id}/share/rotate",
+			"POST /v2/device_tokens",
+			"POST /v2/error_issues/{id}/claim",
+			"POST /v2/error_issues/{id}/release",
+			"POST /v2/error_issues/{id}/transitions",
 			"POST /v2/ingest_keys/private/roll",
 			"POST /v2/ingest_keys/public/roll",
 			"POST /v2/instrumentation/recommendations/{id}/dismiss",
 			"POST /v2/instrumentation/recommendations/{id}/reopen",
+			"POST /v2/integrations/aws/connections",
+			"POST /v2/integrations/aws/connections/{id}/check",
 			"POST /v2/integrations/chat_connectors/{connector}/identity/link",
 			"POST /v2/integrations/chat_connectors/{connector}/install",
+			"POST /v2/integrations/gcp/connectors",
+			"POST /v2/integrations/gcp/connectors/{id}/confirm_removal",
+			"POST /v2/integrations/gcp/connectors/{id}/setup_scripts",
 			"POST /v2/integrations/planetscale/connect",
 			"POST /v2/integrations/planetscale/events",
 			"POST /v2/integrations/planetscale/metrics_token",
@@ -201,6 +229,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/onboarding/checklist/claim",
 			"POST /v2/scrape_targets",
 			"POST /v2/scrape_targets/{id}/probe",
+			"POST /v2/services/health",
 			"POST /v2/session_replays/for_trace",
 			"POST /v2/session_replays/search",
 			"POST /v2/share/alert-chart",
@@ -209,6 +238,10 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/share/og-meta",
 			"POST /v2/share/resolve",
 			"POST /v2/share/widget-data",
+			"POST /v2/sources",
+			"POST /v2/sources/{id}/pause",
+			"POST /v2/sources/{id}/resume",
+			"POST /v2/sources/{id}/roll",
 			"POST /v2/support/slack_channel/invite",
 			"POST /v2/traces/breakdown",
 			"POST /v2/traces/search",
@@ -216,6 +249,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PUT /v2/anomalies/incidents/{id}/issue",
 			"PUT /v2/dashboards/{id}/share",
 			"PUT /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"PUT /v2/device_credentials/{installation_id}",
+			"PUT /v2/error_issues/{id}/severity",
 			"PUT /v2/mobile_devices/{token}",
 			"PUT /v2/mobile_devices/{token}/live_activities/{incident_id}",
 			"PUT /v2/widget_credentials/{installation_id}",
@@ -246,6 +281,8 @@ describe("MapleApiV2 OpenAPI", () => {
 		"resolveShareOgCard",
 		"resolveAlertChart",
 		"resolveChatChart",
+		// The DPoP token endpoint: the signed proof in the `DPoP` header is the credential.
+		"issueDeviceToken",
 	])
 
 	/**
@@ -496,6 +533,7 @@ describe("MapleApiV2 OpenAPI", () => {
 		expect(responseErrorTags("get", "/v2/integrations/planetscale/organizations", "401")).toEqual([
 			"@maple/http/errors/IntegrationsRevokedError",
 			"@maple/http/v2/InvalidCredentialsError",
+			"@maple/http/v2/InvalidDpopProofError",
 			"@maple/http/errors/UnauthorizedError",
 		])
 		expect(responseErrorTags("get", "/v2/session_replays/{id}/events", "413")).toEqual([
@@ -525,6 +563,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			// From `AuthorizationV2` itself, so every v2 operation carries it: a request
 			// can always name an organization (`x-maple-org-id`) the caller is not in.
 			"@maple/http/v2/OrganizationAccessDeniedError",
+			// Also `AuthorizationV2`: a session token with no active organization.
+			"@maple/http/v2/NoActiveOrganizationError",
 		])
 		expect(responseErrorTags("get", "/v2/ingest_keys", "403")).toEqual([
 			"@maple/http/v2/InsufficientPermissionsError",
@@ -532,6 +572,8 @@ describe("MapleApiV2 OpenAPI", () => {
 			// From `AuthorizationV2` itself, so every v2 operation carries it: a request
 			// can always name an organization (`x-maple-org-id`) the caller is not in.
 			"@maple/http/v2/OrganizationAccessDeniedError",
+			// Also `AuthorizationV2`: a session token with no active organization.
+			"@maple/http/v2/NoActiveOrganizationError",
 		])
 	})
 
@@ -604,11 +646,14 @@ describe("MapleApiV2 OpenAPI", () => {
 				"@maple/http/errors/WarehouseQuotaExceededError",
 			)
 			expect(responseErrorTags(method, path, "503")).toContain(
-				"@maple/http/errors/OrgClickHouseSettingsPersistenceError",
+				"@maple/http/errors/WarehouseUpstreamError",
 			)
 			const declaredTags = ["400", "401", "403", "404", "409", "429", "500", "502", "503", "504"]
 				.filter((status) => operation(method, path).responses[status] !== undefined)
 				.flatMap((status) => responseErrorTags(method, path, status))
+			expect(declaredTags, path).not.toContain(
+				"@maple/http/errors/OrgClickHouseSettingsPersistenceError",
+			)
 			expect(declaredTags, path).not.toContain("@maple/http/errors/TinybirdOrgTokenConfigError")
 			expect(declaredTags, path).not.toContain("@maple/http/errors/TinybirdOrgTokenMintError")
 			expect(declaredTags, path).not.toContain("@maple/http/errors/WarehouseValidationError")

@@ -243,6 +243,38 @@ fun processOrder(orderId: String) = tracer.span("process-order") { span ->
 
 Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
+## Attributes Maple uses
+
+Most attributes are optional. These unlock specific features.
+
+### Commits and GitHub
+
+Set `vcs.ref.head.revision` (the full 40-character commit SHA) and `vcs.repository.url.full` on the resource. They drive deploy markers, the Releases page and, with the [GitHub integration](/docs/integrations/github), commit hover cards on traces. Read the SHA from your CI or host at build time, such as `GITHUB_SHA` or `VERCEL_GIT_COMMIT_SHA`, not from `git` at runtime:
+
+```bash
+export OTEL_RESOURCE_ATTRIBUTES="vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=$GITHUB_SHA"
+```
+
+### Databases
+
+The Java agent instruments JDBC, R2DBC and the Mongo and Redis clients, and sets these attributes for you. Without the agent, set them on a `Client` span:
+
+```kotlin
+val span = tracer.spanBuilder("SELECT users")
+    .setSpanKind(SpanKind.CLIENT)
+    .setAttribute("db.system.name", "postgresql")
+    .setAttribute("db.namespace", "app")
+    .setAttribute("db.query.text", "SELECT * FROM users WHERE id = ?")
+    .startSpan()
+try {
+    span.makeCurrent().use { findUser(id) }
+} finally {
+    span.end()
+}
+```
+
+`db.system.name` and `db.namespace` draw the database node on the [service map](/docs/explore/service-map). `db.query.text` groups statements into query shapes, so record it with placeholders, not bound values. See [Database queries](/docs/concepts/otel-conventions#database-queries) for the full list.
+
 ## Log correlation
 
 With the agent, Logback, Log4j2 and JUL records are exported as OpenTelemetry log records with the active trace and span IDs, so Maple links each log line to its trace. The agent also puts `trace_id` and `span_id` into the MDC if you want them in your console output:

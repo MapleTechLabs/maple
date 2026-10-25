@@ -7,7 +7,7 @@ import {
 } from "@maple/cache"
 import { OrganizationWrongRegionError, OrgId } from "@maple/domain/http"
 import type { MapleRegion } from "@maple/domain/organization-regions"
-import { Effect, Exit, Fiber, Option, Ref, Schema } from "effect"
+import { Deferred, Effect, Exit, Fiber, Option, Ref, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
 import {
@@ -39,10 +39,11 @@ const makeDirectory = Effect.fnUntraced(function* (initial: Option.Option<Direct
 							new ClerkRequestError({
 								operation: "Clerk.organizations.getOrganization",
 								message: "Clerk is down",
+								status: 503,
 								cause: undefined,
 							}),
 						),
-					onSome: Effect.succeed,
+					onSome: (organization) => Effect.succeed(Option.some(organization)),
 				}),
 			),
 		)
@@ -132,13 +133,21 @@ describe("OrganizationRegionService", () => {
 		}),
 	)
 
+	it.effect("an organization Clerk no longer has is deleted, not unknown, and still served", () =>
+		Effect.gen(function* () {
+			const regions = yield* isolate(makeMemoryBackend(), { read: () => Effect.succeedNone })
+			assert.strictEqual(yield* regions.servedHere(orgId), "deleted")
+			yield* regions.ensureServedHere(orgId)
+		}),
+	)
+
 	it.effect("a Clerk failure serves the request and is not cached as a region", () =>
 		Effect.gen(function* () {
 			const backend = makeMemoryBackend()
 			const directory = yield* makeDirectory(Option.none())
 			const regions = yield* isolate(backend, directory)
 			yield* regions.ensureServedHere(orgId)
-			assert.deepStrictEqual(yield* regions.servedHere(orgId), Option.none())
+			assert.strictEqual(yield* regions.servedHere(orgId), "unknown")
 			yield* Ref.set(directory.answer, Option.some(chosen("eu")))
 			assert.isTrue(isWrongRegion(yield* Effect.exit(regions.ensureServedHere(orgId))))
 			assert.isTrue(
@@ -191,6 +200,125 @@ describe("OrganizationRegionService", () => {
 			)
 			yield* TestClock.adjust("1 second")
 			assert.isTrue(Exit.isSuccess(yield* Fiber.join(pending)))
+		}),
+	)
+
+	it.effect("parallel misses in one isolate read Clerk once and share its answer", () =>
+		Effect.gen(function* () {
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			const slowClerk = { read: (id: OrgId) => Effect.delay(directory.read(id), "120 millis") }
+			const regions = yield* isolate(makeMemoryBackend(), slowClerk)
+			const pending = yield* Effect.forkChild(
+				Effect.all(
+					Array.from({ length: 4 }, () => Effect.exit(regions.ensureServedHere(orgId))),
+					{ concurrency: "unbounded" },
+				),
+			)
+			yield* TestClock.adjust("200 millis")
+			const exits = yield* Fiber.join(pending)
+			assert.isTrue(exits.every(Exit.isSuccess))
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+		}),
+	)
+
+	it.effect("waiting requests share a refusal too, which is never remembered", () =>
+		Effect.gen(function* () {
+			const directory = yield* makeDirectory(Option.some(chosen("eu")))
+			const slowClerk = { read: (id: OrgId) => Effect.delay(directory.read(id), "120 millis") }
+			const regions = yield* isolate(makeMemoryBackend(), slowClerk)
+			const pending = yield* Effect.forkChild(
+				Effect.all(
+					Array.from({ length: 3 }, () => Effect.exit(regions.ensureServedHere(orgId))),
+					{ concurrency: "unbounded" },
+				),
+			)
+			yield* TestClock.adjust("200 millis")
+			assert.isTrue((yield* Fiber.join(pending)).every(isWrongRegion))
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+			// The next request reads again, so a region just chosen here is served at once.
+			yield* Ref.set(directory.answer, Option.some(chosen("us")))
+			const next = yield* Effect.forkChild(Effect.exit(regions.ensureServedHere(orgId)))
+			yield* TestClock.adjust("200 millis")
+			assert.isTrue(Exit.isSuccess(yield* Fiber.join(next)))
+		}),
+	)
+
+	it.effect("a request waiting on a hung read gives up and reads for itself", () =>
+		Effect.gen(function* () {
+			const directory = yield* makeDirectory(Option.some(chosen("eu")))
+			const calls = yield* Ref.make(0)
+			const firstHangs = {
+				read: (id: OrgId) =>
+					Ref.getAndUpdate(calls, (n) => n + 1).pipe(
+						Effect.flatMap((n) => (n === 0 ? Effect.never : directory.read(id))),
+					),
+			}
+			const regions = yield* isolate(makeMemoryBackend(), firstHangs)
+			yield* Effect.forkChild(regions.ensureServedHere(orgId))
+			yield* TestClock.adjust("10 millis")
+			const follower = yield* Effect.forkChild(Effect.exit(regions.ensureServedHere(orgId)))
+			yield* TestClock.adjust("6 seconds")
+			assert.isTrue(isWrongRegion(yield* Fiber.join(follower)))
+			assert.strictEqual(yield* Ref.get(calls), 2)
+		}),
+	)
+
+	it.effect("requests wait out a slow Clerk read instead of each calling Clerk", () =>
+		Effect.gen(function* () {
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			const slowClerk = { read: (id: OrgId) => Effect.delay(directory.read(id), "2 seconds") }
+			const regions = yield* isolate(makeMemoryBackend(), slowClerk)
+			const pending = yield* Effect.forkChild(
+				Effect.all(
+					Array.from({ length: 3 }, () => Effect.exit(regions.ensureServedHere(orgId))),
+					{ concurrency: "unbounded" },
+				),
+			)
+			yield* TestClock.adjust("5 seconds")
+			assert.isTrue((yield* Fiber.join(pending)).every(Exit.isSuccess))
+			assert.strictEqual(yield* Ref.get(directory.reads), 1)
+		}),
+	)
+
+	it.effect("a read started before forget never answers a request that came after it", () =>
+		Effect.gen(function* () {
+			const directory = yield* makeDirectory(Option.some(chosen("us")))
+			const calls = yield* Ref.make(0)
+			const firstReadStarted = yield* Deferred.make<void>()
+			// Each call reads Clerk at once and answers later; the pre-forget read lands first.
+			const clerk = {
+				read: (id: OrgId) =>
+					Effect.flatMap(
+						Ref.getAndUpdate(calls, (n) => n + 1),
+						(n) =>
+							Effect.flatMap(directory.read(id), (answer) =>
+								Deferred.succeed(firstReadStarted, undefined).pipe(
+									Effect.andThen(Effect.sleep(n === 0 ? "100 millis" : "200 millis")),
+									Effect.as(answer),
+								),
+							),
+					),
+			}
+			const regions = yield* isolate(makeMemoryBackend(), clerk)
+			const before = yield* Effect.forkChild(Effect.exit(regions.ensureServedHere(orgId)))
+			yield* Deferred.await(firstReadStarted)
+			// The region is written in the same millisecond, before the first read answers.
+			yield* Ref.set(directory.answer, Option.some(chosen("eu")))
+			yield* regions.forget(orgId)
+			const after = yield* Effect.forkChild(
+				Effect.all(
+					[
+						Effect.exit(regions.ensureServedHere(orgId)),
+						Effect.exit(regions.ensureServedHere(orgId)),
+					],
+					{
+						concurrency: "unbounded",
+					},
+				),
+			)
+			yield* TestClock.adjust("300 millis")
+			assert.isTrue(Exit.isSuccess(yield* Fiber.join(before)))
+			assert.isTrue((yield* Fiber.join(after)).every(isWrongRegion))
 		}),
 	)
 })

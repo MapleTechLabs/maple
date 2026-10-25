@@ -18,6 +18,7 @@ Hosted Maple deletes data automatically once it passes its retention period. The
 | Product events                                                                                    | 365 days |
 | Error occurrences (the individual events behind error issues)                                     | 90 days  |
 | Hourly rollups of traces and logs (service overview, service map edges, trace and log aggregates) | 365 days |
+| CI workflow runs and jobs (Code Review → CI)                                                      | 365 days |
 
 Individual spans, log lines and data points cannot be read once they pass these periods. Charts built on hourly rollups, such as service overviews and the service map, can reach further back, up to the rollup's 365 days. Some queries have shorter maximum time ranges. See [Limits](/docs/reference/limits#queries).
 
@@ -37,7 +38,7 @@ Individual spans, log lines and data points cannot be read once they pass these 
 | Data                                                         | Kept for             |
 | ------------------------------------------------------------ | -------------------- |
 | Alert rule checks (each evaluation, with its observed value) | 365 days             |
-| Organization audit log (**Settings → Audit Log**)            | 6 years (2,190 days) |
+| Organization audit log (**Settings → Audit log**)            | 6 years (2,190 days) |
 
 ## Maple Local
 

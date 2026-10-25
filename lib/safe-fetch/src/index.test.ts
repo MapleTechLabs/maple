@@ -75,6 +75,32 @@ describe("parseExternalUrl", () => {
 		"http://224.0.0.1/",
 		"http://239.255.255.250/",
 		"http://240.0.0.1/",
+		// Container task metadata (169.254.170.2) sits in the link-local range.
+		"http://169.254.170.2/v2/credentials/",
+		"http://[fd00:ec2::254]/",
+		"http://[fd00::1]/",
+		"http://[ff02::1]/",
+		// IPv4-compatible, SIIT, NAT64 local-use and Teredo forms.
+		"http://[::127.0.0.1]/",
+		"http://[::7f00:1]/",
+		"http://[::8.8.8.8]/",
+		"http://[::ffff:0:127.0.0.1]/",
+		"http://[::ffff:0:a9fe:a9fe]/",
+		"http://[64:ff9b:1::7f00:1]/",
+		"http://[64:ff9b:1::8.8.8.8]/",
+		"http://[2001:0:4136:e378:8000:63bf:80ff:fffe]/",
+		"http://[0:0:0:0:0:ffff:7f00:1]/",
+		// Names that only resolve on a private network.
+		"http://db.internal/",
+		"http://ip-10-0-0-1.ec2.internal/",
+		"http://printer.local/",
+		"http://app.localhost/",
+		"http://nas.lan/",
+		"http://router.home.arpa/",
+		"http://api.default.svc.cluster.local/",
+		"http://api.default.svc/",
+		"http://DB.Internal./",
+		"http://internal/",
 	])("rejects private/loopback host: %s", (raw) => {
 		expect(rejects(raw)).toBe(true)
 	})
@@ -99,7 +125,13 @@ describe("parseExternalUrl", () => {
 		"http://198.20.0.1/",
 		"http://223.255.255.255/",
 		"http://[2001:db8::1]/",
-		"http://[2002::1]/",
+		"http://[2002:808:808::1]/",
+		"http://[64:ff9b::808:808]/",
+		"http://[::ffff:8.8.8.8]/",
+		"http://[2606:4700::1111]/",
+		"https://internal.example.com/hook",
+		"https://local.example.com/hook",
+		"https://svc.example.com/hook",
 		// Hostnames that merely start like a blocked range. The IPv4 patterns are
 		// prefix matches, so they are only applied to actual address literals.
 		"https://10.example.com/hook",

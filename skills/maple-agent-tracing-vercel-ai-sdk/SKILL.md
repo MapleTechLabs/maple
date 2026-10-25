@@ -16,7 +16,7 @@ Known gaps (tell the user, don't try to fix): cost shows as "unpriced" (AI SDK e
 - `ai` version in `package.json` / lockfile:
   - `>= 7`: this skill. Upgrade to `^7.0.106` or newer if older (earlier 7.x leave spans open when a stream errors mid-read). Node.js >= 22 required.
   - `5.x` / `6.x`: ask the user whether to upgrade to 7 (recommended; `npx @ai-sdk/codemod v7`). The codemod only renames `experimental_telemetry` to `telemetry`; you still install `@ai-sdk/otel`, call `registerTelemetry()`, and move the id from `metadata` (removed in 7) to `runtimeContext`, then drop any `ConversationIdProcessor`. If not, go to "AI SDK 5/6" at the end.
-- Mastra (`@mastra/core`) or another framework built on `ai`: stop, use that framework's skill instead.
+- Mastra (`@mastra/core`), eve (`eve`) or another framework built on `ai`: stop, use that framework's skill instead.
 - Existing OpenTelemetry: search for `NodeSDK`, `NodeTracerProvider`, `registerOTel`, `@vercel/otel`, `Sentry.init`, `@langfuse/otel`, `LangfuseSpanProcessor`, `braintrust`, `registerTelemetry(`, `experimental_telemetry`, `telemetry:`.
   - An SDK/provider already exists: reuse it. Add one Maple exporting span processor to it. Never start a second SDK.
   - `registerTelemetry(...)` already exists: extend that call's `OpenTelemetry` options; never call it twice (it appends, so every span is emitted twice).

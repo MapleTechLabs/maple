@@ -7,9 +7,10 @@
  * tool failure the model can read rather than an authorization denial that ends the turn.
  */
 import { OrgId, UserId } from "@maple/domain"
-import { Effect, Result, Schema } from "effect"
+import { DateTime, Effect, Result, Schema, Scope } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../dispatcher"
+import { noRepositoryWarmup } from "../../../test/chat/tool-executor"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import { AgentSpawner } from "@yielded/agent/agent-runtime"
@@ -27,6 +28,7 @@ const TENANT: TenantContext = {
 const countingExecutor = () => {
 	let dispatched = 0
 	const executor: McpToolExecutorApi = {
+		...noRepositoryWarmup,
 		execute: (_tenant, name) => {
 			dispatched += 1
 			return Effect.succeed({ content: [{ type: "text" as const, text: `${name} ran` }] })
@@ -40,7 +42,9 @@ const inRun = (runId: string) =>
 	Effect.provideService(
 		AgentSpawner,
 		AgentSpawner.of({
+			scope: Scope.makeUnsafe(),
 			policy: agentPolicyFor(agentForSession("org_test:tab-1")),
+			durationDeadline: DateTime.nowUnsafe(),
 			depth: 0,
 			parent: {
 				agentId: Schema.decodeSync(AgentId)("pr-review"),
@@ -97,6 +101,7 @@ describe("buildMapleToolkit", () => {
 	it("hands every successful answer to onAnswer and never a failed one", async () => {
 		const seen: Array<string> = []
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: (_tenant, name) =>
 				Effect.succeed(
 					name === "run_sql"
@@ -115,6 +120,7 @@ describe("buildMapleToolkit", () => {
 
 	it("gives the model text only and hands the typed output to the UI under its call id", async () => {
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: () =>
 				Effect.succeed({
 					content: [{ type: "text" as const, text: "## Services" }],
@@ -136,10 +142,7 @@ describe("buildMapleToolkit", () => {
 	it("strips a legacy UI block from the model's text and still recovers it for the UI", () => {
 		const legacy = JSON.stringify({ __maple_ui: true, tool: "list_services", data: { services: [] } })
 		const split = splitToolResult("list_services", {
-			content: [
-				{ type: "text", text: "## Services" },
-				{ type: "text", text: legacy },
-			],
+			content: [{ text: "## Services" }, { text: legacy }],
 		})
 		assert.equal(split.text, "## Services")
 		assert.deepEqual(split.ui, { __maple_ui: true, tool: "list_services", data: { services: [] } })
@@ -147,6 +150,7 @@ describe("buildMapleToolkit", () => {
 
 	it("fails a tool that reported an error with its message", async () => {
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: () =>
 				Effect.succeed({
 					isError: true,
@@ -167,6 +171,7 @@ describe("buildMapleToolkit", () => {
 
 	it("fails a tool that died with a summary, never the cause", async () => {
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: () => Effect.die(new Error("connection reset")),
 		}
 		const result = await Effect.runPromise(

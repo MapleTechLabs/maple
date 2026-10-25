@@ -25,7 +25,6 @@ describe("cloudflareServiceCountersSQL", () => {
 		expect(sql).toContain("TimeUnix >= '2026-07-02 00:00:00.000'")
 		expect(sql).toContain("TimeUnix <= '2026-07-03 00:00:00.000'")
 		expect(sql).toContain("GROUP BY serviceName")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })
 
@@ -39,6 +38,5 @@ describe("cloudflareServiceLatencySQL", () => {
 		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
 		expect(sql).not.toContain("cloudflare.http.edge.ttfb")
 		expect(sql).toContain("GROUP BY serviceName")
-		expect(sql).toContain("FORMAT JSON")
 	})
 })

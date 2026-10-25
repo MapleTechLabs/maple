@@ -119,6 +119,13 @@ Two limits close that gap:
   WAL replay are stamped at replay time, so a restart's backlog gets a full window to export in
   rather than being shed on sight for having been written before the restart. Set to 0 to queue
   without an age bound.
+- **An open ClickHouse target circuit breaker** defers the batch, with the lane cursor held, for
+  one window: one breaker cooldown, at most 30s and at most a quarter of the max queue age. A
+  target blip shorter than that is delivered without loss. Past the window that org's batch is
+  shed as `shed_circuit_open` (metered as `circuit_open`) and the cursor advances, and later
+  batches for the org shed at once until a probe succeeds. One lane exports every org on its
+  shard in turn, so the window is also the most a broken target delays the other orgs there:
+  waiting longer would age their frames out instead.
 - **`INGEST_REQUEST_TIMEOUT_SECS`** bounds one HTTP request. Without it the accept path had no
   deadline anywhere, so saturation did not surface as errors: requests queued on the WAL append and
   sat there, p95 in the tens of seconds with per-route error rates flat near zero. Timed-out

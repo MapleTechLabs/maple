@@ -1,7 +1,7 @@
 import { formatWarehouseDateTimeMs } from "@maple/query-engine"
 import { buildTraceDetail, type SpanHierarchyRow } from "@maple/ui/lib/span-tree"
 
-import { LONG_SERVICE, type WorstCaseMode } from "@/lab/worst-case-fixture"
+import { LONG_SERVICE, type WorstCaseMode } from "./worst-case-fixture"
 
 const T0_MS = new Date("2026-07-21T10:00:00.000Z").getTime()
 

@@ -13,11 +13,6 @@ export type AutoContext =
 	| { kind: "traces_explorer"; id: string }
 	| { kind: "service_map"; id: string }
 
-export interface PageContextPayload {
-	pathname: string
-	contexts: AutoContext[]
-}
-
 /**
  * A chip renders the kind and the subject separately — the kind is what the user
  * already knows (they are on that page), the subject is the part worth reading —
@@ -40,13 +35,22 @@ export function autoContextDisplay(ctx: AutoContext): AutoContextDisplay {
 						kind: "Dashboard widget",
 						subject: `${shortId(ctx.dashboardId, "generic", { length: 8, ellipsis: true })}/${shortId(ctx.widgetId, "generic", { length: 6, ellipsis: true })}`,
 					}
-				: { kind: "Dashboard", subject: shortId(ctx.dashboardId, "generic", { length: 8, ellipsis: true }) }
+				: {
+						kind: "Dashboard",
+						subject: shortId(ctx.dashboardId, "generic", { length: 8, ellipsis: true }),
+					}
 		case "error_type":
 			return { kind: "Error type", subject: ctx.errorType }
 		case "error_issue":
-			return { kind: "Error issue", subject: shortId(ctx.issueId, "generic", { length: 8, ellipsis: true }) }
+			return {
+				kind: "Error issue",
+				subject: shortId(ctx.issueId, "generic", { length: 8, ellipsis: true }),
+			}
 		case "alert_rule":
-			return { kind: "Alert rule", subject: shortId(ctx.ruleId, "generic", { length: 8, ellipsis: true }) }
+			return {
+				kind: "Alert rule",
+				subject: shortId(ctx.ruleId, "generic", { length: 8, ellipsis: true }),
+			}
 		case "host":
 			return { kind: "Host", subject: ctx.hostName }
 		case "container":

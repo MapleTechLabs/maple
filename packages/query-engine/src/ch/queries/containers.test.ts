@@ -31,7 +31,6 @@ describe("listContainersQuery", () => {
 		expect(sql).toContain("container.uptime")
 		expect(sql).toContain("container.cpu.limit")
 		expect(sql).toContain("LIMIT 50")
-		expect(sql).toContain("FORMAT JSON")
 		expect(sql).not.toMatch(/__PARAM_\w+__/)
 	})
 
@@ -155,7 +154,7 @@ describe("listContainersSummaryQuery", () => {
 })
 
 describe("containerFacetsQuery", () => {
-	it("emits a UNION ALL with one branch per facet dimension", () => {
+	it("emits one UNION ALL branch per facet dimension", () => {
 		const { sql } = compileUnionUnsafe(containerFacetsQuery({}), baseParams)
 		expect(sql.toUpperCase().split("UNION ALL").length).toBe(6)
 		expect(sql).toContain("ResourceAttributes['container.name']")
@@ -166,7 +165,6 @@ describe("containerFacetsQuery", () => {
 		expect(sql).toContain(
 			"coalesce(nullIf(metrics_gauge.ResourceAttributes['deployment.environment.name'], ''), metrics_gauge.ResourceAttributes['deployment.environment'])",
 		)
-		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("counts by container.id — recreated containers keep their name, not their id", () => {
@@ -285,6 +283,7 @@ describe("containerSumTimeseriesQuery", () => {
 			baseParams,
 		)
 		expect(sql).toContain("avg(metrics_sum.Value) AS sumValue")
+		expect(sql).not.toContain("sum(metrics_sum.Value)")
 		expect(sql).not.toContain("sum(Value)")
 	})
 

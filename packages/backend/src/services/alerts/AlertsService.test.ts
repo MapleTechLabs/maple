@@ -1,4 +1,11 @@
-import { AlertValidationError } from "@maple/domain/http"
+import {
+	AlertDeliveryError,
+	AlertDeliveryRejectedError,
+	type AlertEvaluationIntervalMinutes,
+	AlertValidationError,
+	WarehouseQuotaExceededError,
+} from "@maple/domain/http"
+import type { WarehouseQuerySettings } from "@maple/query-engine/profiles"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
@@ -8,6 +15,7 @@ import { ChatAlertPoster } from "./ChatAlertPoster"
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
+	Fiber,
 	Array as Arr,
 	Cause,
 	Clock,
@@ -15,11 +23,15 @@ import {
 	Duration,
 	Effect,
 	Exit,
+	HashMap,
 	HashSet,
 	Layer,
+	Logger,
 	Option,
+	Order,
 	Ref,
 	Schema,
+	Tracer,
 } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
@@ -35,6 +47,7 @@ import {
 	AlertRuleUpsertRequest,
 	OrgId,
 	WarehouseQueryError,
+	WarehouseUpstreamError,
 	RoleName,
 	UserId,
 } from "@maple/domain/http"
@@ -52,7 +65,12 @@ import { AlertReadModelsService } from "./AlertReadModelsService"
 import { AlertRulesService } from "./AlertRulesService"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
-import { baselineWarehouseCapabilities } from "@maple/query-engine"
+import {
+	baselineWarehouseCapabilities,
+	formatWarehouseDateTime,
+	isAlertRuleDue,
+	snapAlertWindowEndMs,
+} from "@maple/query-engine"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
@@ -67,9 +85,13 @@ import {
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
-import { Database } from "@maple/backend/platform/DatabaseLive"
+import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
+import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
+import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 
 const trackedDbs: TestDb[] = []
 
@@ -210,11 +232,15 @@ const defaultTestRuntime: AlertRuntimeApi = {
 	deliveryTimeoutMs: () => 15_000,
 	schedulerTickBudgetMs: () => 25_000,
 	schedulerEvalTimeoutMs: () => 15_000,
+	// Unpaced, so a tick runs as fast as its evaluations; the pacing tests opt in.
+	schedulerSpreadMs: () => 0,
 }
 
 interface TestOverrides extends Partial<AlertRuntimeApi> {
 	/** Provided as `FetchHttpClient.Fetch`, so every outbound call goes through it. */
 	readonly fetch?: typeof fetch
+	/** The investigation agent's port; absent means investigations cannot start. */
+	readonly chatSessions?: ChatSessionsApi
 }
 
 // The fixed epoch scheduler tests start TestClock at, mirroring the previous
@@ -268,7 +294,7 @@ const makeLayer = (
 	emailStub?: (typeof EmailService)["Service"],
 	chatAlertPoster: Layer.Layer<ChatAlertPoster, never, Database | Env> = ChatAlertPoster.layer,
 ) => {
-	const { fetch: fetchImpl = globalThis.fetch, ...runtimeOverrides } = overrides
+	const { fetch: fetchImpl = globalThis.fetch, chatSessions, ...runtimeOverrides } = overrides
 	const configLive = makeConfig()
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
 	const databaseLive = testDb.layer
@@ -331,6 +357,7 @@ const makeLayer = (
 		Layer.provide(alertDestinationsLive),
 		Layer.provide(alertReadModelsLive),
 		Layer.provide(alertRulesLive),
+		Layer.provide(chatSessions === undefined ? Layer.empty : Layer.succeed(ChatSessions, chatSessions)),
 	)
 	return Layer.mergeAll(alertDestinationsLive, alertReadModelsLive, alertRulesLive, alertsLive).pipe(
 		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)),
@@ -575,6 +602,162 @@ describe("AlertsService", () => {
 				incidentsAfterSecondTick.incidents[0]?.dedupeKey,
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
+	})
+
+	it.effect("never opens an incident whose trigger delivery could not be queued", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			tracesAggregateRows: [
+				tracesRow({
+					count: 200,
+					avgDuration: 40,
+					p50Duration: 20,
+					p95Duration: 120,
+					p99Duration: 240,
+					errorRate: 10,
+					satisfiedCount: 180,
+					toleratingCount: 10,
+					apdexScore: 0.925,
+				}),
+			],
+		}
+		const requests: Array<string> = []
+		const fetchImpl = (async (input: RequestInfo | URL) => {
+			requests.push(String(input))
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+		const sql = (statement: string) => Effect.promise(() => executeSql(testDb, statement))
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alerts_outbox")
+			const userId = asUserId("user_alerts_outbox")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			yield* alerts.runSchedulerTick()
+
+			// The tick that opens the incident cannot queue its delivery.
+			yield* sql(
+				"CREATE FUNCTION refuse_delivery() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'delivery insert refused'; END $$ LANGUAGE plpgsql",
+			)
+			yield* sql(
+				"CREATE TRIGGER refuse_delivery BEFORE INSERT ON alert_delivery_events FOR EACH ROW EXECUTE FUNCTION refuse_delivery()",
+			)
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 0)
+
+			yield* sql("DROP TRIGGER refuse_delivery ON alert_delivery_events")
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+
+			const incidents = yield* alerts.listIncidents(orgId)
+			const events = yield* alerts.listDeliveryEvents(orgId)
+			assert.strictEqual(incidents.incidents[0]?.status, "open")
+			assert.deepStrictEqual(
+				events.events.map((event) => [event.eventType, event.status]),
+				[["trigger", "success"]],
+			)
+			assert.deepStrictEqual(requests, ["https://example.com/maple-alerts"])
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
+	})
+
+	it.effect("a rule disabled while a tick evaluates it neither opens an incident nor pages", () => {
+		const testDb = createTestDb(trackedDbs)
+		const base = makeWarehouseStub({
+			tracesAggregateRows: [
+				tracesRow({
+					count: 200,
+					avgDuration: 40,
+					p50Duration: 20,
+					p95Duration: 120,
+					p99Duration: 240,
+					errorRate: 10,
+					satisfiedCount: 180,
+					toleratingCount: 10,
+					apdexScore: 0.925,
+				}),
+			],
+		})
+		// Runs before the next warehouse read, once; set when the edit should land.
+		let beforeQuery: Effect.Effect<void> = Effect.void
+		const hooked = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+			Effect.suspend(() => {
+				const hook = beforeQuery
+				beforeQuery = Effect.void
+				return Effect.andThen(hook, effect)
+			})
+		const stub: WarehouseQueryServiceApi = {
+			...base,
+			sqlQuery: (...args) => hooked(base.sqlQuery(...args)),
+			rawSqlQuery: (...args) => hooked(base.rawSqlQuery(...args)),
+			compiledQuery: (...args) => hooked(base.compiledQuery(...args)),
+			compiledQueryWithCapabilities: (...args) => hooked(base.compiledQueryWithCapabilities(...args)),
+			compiledQueryFirst: (...args) => hooked(base.compiledQueryFirst(...args)),
+		}
+		const requests: Array<string> = []
+		const fetchImpl = (async (input: RequestInfo | URL) => {
+			requests.push(String(input))
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alerts_edit_fence")
+			const userId = asUserId("user_alerts_edit_fence")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			yield* alerts.runSchedulerTick()
+
+			// The tick that would open the incident reads the warehouse after
+			// claiming the rule; the rule is disabled in between. The claim is then
+			// put back at this tick's time, as a tick still holding the pre-edit
+			// snapshot would when it claims the rule afresh.
+			const tickAt = DEFAULT_CLOCK_EPOCH_MS + 60_000
+			beforeQuery = alerts
+				.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						severity: "critical",
+						enabled: false,
+						serviceNames: ["checkout"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 2,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(
+					Effect.orDie,
+					Effect.andThen(
+						Effect.promise(() =>
+							executeSql(
+								testDb,
+								"insert into alert_rule_claims (rule_id, org_id, last_scheduled_at) values ($1, $2, $3) on conflict (rule_id) do update set last_scheduled_at = excluded.last_scheduled_at",
+								[rule.id, orgId, new Date(tickAt).toISOString()],
+							),
+						),
+					),
+					Effect.asVoid,
+				)
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 0)
+			assert.lengthOf((yield* alerts.listDeliveryEvents(orgId)).events, 0)
+			assert.deepStrictEqual(requests, [])
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: fetchImpl })))
 	})
 
 	it.effect("snapshots a custom notification template into the delivered payload", () => {
@@ -1052,6 +1235,526 @@ describe("AlertsService", () => {
 				["resolve", "trigger"],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	describe("severity tiers", () => {
+		const errorRateRows = (errorRate: number) => [
+			tracesRow({
+				count: 200,
+				avgDuration: 40,
+				p50Duration: 20,
+				p95Duration: 120,
+				p99Duration: 240,
+				errorRate,
+				satisfiedCount: 180,
+				toleratingCount: 10,
+				apdexScore: 0.925,
+			}),
+		]
+
+		const createTieredSetup = (alerts: AlertsServiceApi, orgId: OrgId, userId: UserId) =>
+			Effect.gen(function* () {
+				const warnHook = yield* alerts.createDestination(orgId, userId, adminRoles, {
+					type: "webhook",
+					name: "Team channel",
+					enabled: true,
+					url: "https://example.com/warn",
+					signingSecret: "warn-secret",
+				})
+				const pageHook = yield* alerts.createDestination(orgId, userId, adminRoles, {
+					type: "webhook",
+					name: "Pager",
+					enabled: true,
+					url: "https://example.com/page",
+					signingSecret: "page-secret",
+				})
+				const rule = yield* alerts.createRule(
+					orgId,
+					userId,
+					adminRoles,
+					new AlertRuleUpsertRequest({
+						name: "Checkout error rate tiers",
+						enabled: true,
+						serviceNames: ["checkout"],
+						signalType: "error_rate",
+						comparator: "gt",
+						thresholds: [
+							{
+								severity: "critical",
+								value: 20,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [pageHook.id],
+							},
+							{
+								severity: "warning",
+								value: 5,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [warnHook.id],
+							},
+						],
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 2,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+					}),
+				)
+				return { warnHook, pageHook, rule }
+			})
+
+		it.effect("opens at warning, pages on escalation, and resolves to everyone it notified", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<{ url: string; eventType: string | null }> = []
+			const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+				requests.push({
+					url: String(input),
+					eventType: new Headers(init?.headers).get("x-maple-event-type"),
+				})
+				return new Response("ok", { status: 200 })
+			}) as typeof fetch
+
+			const tick = (alerts: AlertsServiceApi) =>
+				Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+				})
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers")
+				const userId = asUserId("user_tiers")
+				const { rule } = yield* createTieredSetup(alerts, orgId, userId)
+
+				// Stored lowest tier first; the single-threshold fields mirror it.
+				assert.deepStrictEqual(
+					rule.thresholds.map((tier) => tier.severity),
+					["warning", "critical"],
+				)
+				assert.strictEqual(rule.severity, "critical")
+				assert.strictEqual(rule.threshold, 5)
+
+				yield* alerts.runSchedulerTick()
+				yield* tick(alerts)
+				const opened = (yield* alerts.listIncidents(orgId)).incidents[0]
+				assert.strictEqual(opened?.severity, "warning")
+				assert.deepStrictEqual(requests, [{ url: "https://example.com/warn", eventType: "trigger" }])
+
+				state.tracesAggregateRows = errorRateRows(30)
+				yield* tick(alerts)
+				yield* tick(alerts)
+				const escalated = (yield* alerts.listIncidents(orgId)).incidents[0]
+				assert.strictEqual(escalated?.id, opened?.id)
+				assert.strictEqual(escalated?.severity, "critical")
+				assert.strictEqual(escalated?.peakSeverity, "critical")
+				assert.strictEqual(escalated?.threshold, 20)
+				// The linked issue follows the escalation while the detector owns its severity.
+				const issues = yield* Effect.promise(() =>
+					testDb.pglite.query<{ severity: string }>(
+						"select severity from error_issues where org_id = $1 and kind = 'alert'",
+						[orgId],
+					),
+				)
+				assert.deepStrictEqual(
+					issues.rows.map((issue) => issue.severity),
+					["critical"],
+				)
+				assert.sameMembers(
+					requests.slice(1).map((request) => `${request.eventType} ${request.url}`),
+					["trigger https://example.com/warn", "trigger https://example.com/page"],
+				)
+
+				state.tracesAggregateRows = errorRateRows(0.5)
+				yield* tick(alerts)
+				yield* tick(alerts)
+				const resolved = (yield* alerts.listIncidents(orgId)).incidents[0]
+				assert.strictEqual(resolved?.status, "resolved")
+				assert.sameMembers(
+					requests.slice(3).map((request) => `${request.eventType} ${request.url}`),
+					["resolve https://example.com/warn", "resolve https://example.com/page"],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
+		})
+
+		const recordingFetch = (requests: Array<string>) =>
+			(async (input: RequestInfo | URL, init?: RequestInit) => {
+				requests.push(`${new Headers(init?.headers).get("x-maple-event-type")} ${String(input)}`)
+				return new Response("ok", { status: 200 })
+			}) as typeof fetch
+
+		it.effect("reminds only the current tier after a de-escalation", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+			const tick = (alerts: AlertsServiceApi, minutes = 1) =>
+				Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(minutes))
+					yield* alerts.runSchedulerTick()
+				})
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_remind")
+				yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_remind"))
+
+				yield* alerts.runSchedulerTick()
+				yield* tick(alerts)
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.severity, "critical")
+
+				state.tracesAggregateRows = errorRateRows(10)
+				yield* tick(alerts)
+				yield* tick(alerts)
+				const deescalated = (yield* alerts.listIncidents(orgId)).incidents[0]
+				assert.strictEqual(deescalated?.severity, "warning")
+				assert.strictEqual(deescalated?.peakSeverity, "critical")
+				// The pager that heard the critical hears it calm down.
+				assert.sameMembers(requests.slice(2), [
+					"renotify https://example.com/warn",
+					"renotify https://example.com/page",
+				])
+
+				yield* tick(alerts, 31)
+				assert.deepStrictEqual(requests.slice(4), ["renotify https://example.com/warn"])
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
+		it.effect("resolves a warning incident ended by a rule edit without paging", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_edit")
+				const userId = asUserId("user_tiers_edit")
+				const { rule } = yield* createTieredSetup(alerts, orgId, userId)
+
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(requests, ["trigger https://example.com/warn"])
+
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						enabled: false,
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: rule.thresholds,
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
+				assert.deepStrictEqual(requests.slice(1), ["resolve https://example.com/warn"])
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
+		it.effect("resolves to the remaining tier after the incident's tier is removed", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_removed")
+				const userId = asUserId("user_tiers_removed")
+				const { rule, pageHook } = yield* createTieredSetup(alerts, orgId, userId)
+				const tick = Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+				})
+
+				yield* alerts.runSchedulerTick()
+				yield* tick
+				assert.deepStrictEqual(requests, ["trigger https://example.com/warn"])
+
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: [
+							{
+								severity: "critical",
+								value: 20,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [pageHook.id],
+							},
+						],
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+				state.tracesAggregateRows = errorRateRows(0.5)
+				yield* tick
+				yield* tick
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
+				// The remaining tier's pager, and the webhook that heard the trigger.
+				assert.sameMembers(requests.slice(1), [
+					"resolve https://example.com/page",
+					"resolve https://example.com/warn",
+				])
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
+		it.effect("resolves to a destination an edit removed after it was paged", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>> }
+			const requests: Array<string> = []
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_removed_dest")
+				const userId = asUserId("user_tiers_removed_dest")
+				const { rule, warnHook } = yield* createTieredSetup(alerts, orgId, userId)
+
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.sameMembers(requests, [
+					"trigger https://example.com/warn",
+					"trigger https://example.com/page",
+				])
+
+				// Same condition, but the critical tier no longer pages the pager.
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: rule.name,
+						enabled: true,
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: [
+							rule.thresholds[0],
+							{ ...rule.thresholds[1]!, destinationIds: [warnHook.id] },
+						],
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+
+				state.tracesAggregateRows = errorRateRows(0.5)
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
+				assert.include(requests, "resolve https://example.com/page")
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+				),
+			)
+		})
+
+		it.effect("keeps counting ticks across an edit that leaves the condition alone", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_rename")
+				const userId = asUserId("user_tiers_rename")
+				const { rule } = yield* createTieredSetup(alerts, orgId, userId)
+
+				yield* alerts.runSchedulerTick()
+				yield* alerts.updateRule(
+					orgId,
+					userId,
+					adminRoles,
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: "Renamed",
+						serviceNames: [...rule.serviceNames],
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						thresholds: rule.thresholds,
+						windowMinutes: rule.windowMinutes,
+						minimumSampleCount: rule.minimumSampleCount,
+						consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+						consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+						renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					}),
+				)
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				// The breach before the rename still counts: two in a row open the incident.
+				assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.severity, "warning")
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+		})
+
+		it.effect("does not count ticks judged against an edited threshold", () => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_edit_history")
+				const userId = asUserId("user_tiers_edit_history")
+				const destination = yield* createWebhookDestination(alerts, orgId, userId)
+				const request = (value: number) =>
+					new AlertRuleUpsertRequest({
+						name: "Two of five",
+						serviceNames: ["checkout"],
+						signalType: "error_rate",
+						comparator: "gt",
+						thresholds: [
+							{
+								severity: "warning",
+								value,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [destination.id],
+							},
+						],
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 2,
+						breachesOutOf: 5,
+					})
+				const rule = yield* alerts.createRule(orgId, userId, adminRoles, request(5))
+				const tick = Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+				})
+
+				// One breach, then a healthy tick, both against the old threshold of 5.
+				yield* alerts.runSchedulerTick()
+				state.tracesAggregateRows = errorRateRows(1)
+				yield* tick
+				yield* alerts.updateRule(orgId, userId, adminRoles, rule.id, request(15))
+
+				// A single breach of the new threshold is one of five, not two.
+				state.tracesAggregateRows = errorRateRows(30)
+				yield* tick
+				assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 0)
+				yield* tick
+				assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 1)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+		})
+
+		it.effect(
+			"records the critical tier's threshold on the issue of an incident that opens at critical",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const state = {
+					tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>>,
+				}
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+					const alerts = yield* AlertsService
+					const orgId = asOrgId("org_tiers_issue")
+					yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_issue"))
+
+					yield* alerts.runSchedulerTick()
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* alerts.runSchedulerTick()
+
+					const incident = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(incident?.severity, "critical")
+					assert.strictEqual(incident?.threshold, 20)
+					const issue = yield* Effect.promise(() =>
+						queryFirstRow<{ exception_message: string }>(
+							testDb,
+							"select exception_message from error_issues where org_id = $1 and kind = 'alert'",
+							[orgId],
+						),
+					)
+					assert.include(issue?.exception_message ?? "", "gt 20")
+				}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+			},
+		)
+
+		it.effect("rejects a critical threshold that is not worse than the warning one", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const orgId = asOrgId("org_tiers_invalid")
+				const userId = asUserId("user_tiers_invalid")
+				const destination = yield* createWebhookDestination(alerts, orgId, userId)
+				const exit = yield* alerts
+					.createRule(
+						orgId,
+						userId,
+						adminRoles,
+						new AlertRuleUpsertRequest({
+							name: "Inverted tiers",
+							signalType: "error_rate",
+							comparator: "gt",
+							thresholds: [
+								{
+									severity: "warning",
+									value: 20,
+									upper: null,
+									recoveryValue: 25,
+									destinationIds: [destination.id],
+								},
+								{
+									severity: "critical",
+									value: 5,
+									upper: null,
+									recoveryValue: null,
+									destinationIds: [destination.id],
+								},
+							],
+							windowMinutes: 5,
+						}),
+					)
+					.pipe(Effect.exit)
+				assert.isTrue(Exit.isFailure(exit))
+				const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+				assert.instanceOf(error, AlertValidationError)
+				assert.includeMembers(error instanceof AlertValidationError ? [...error.details] : [], [
+					"the critical threshold must be worse than the warning threshold",
+					"thresholds[0].recoveryValue must be on the healthy side of thresholds[0].value",
+				])
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: [] }))))
+		})
 	})
 
 	it.effect("suppresses trigger and resolve notifications while an incident flaps", () => {
@@ -3565,14 +4268,16 @@ describe("AlertsService evaluation error persistence", () => {
 		failing: boolean
 		rows: ReadonlyArray<Record<string, unknown>>
 		ingested: Array<Record<string, unknown>>
+		failure?: WarehouseQueryError | WarehouseUpstreamError
 	}): WarehouseQueryServiceApi => {
 		const sqlQueryStub = () =>
 			state.failing
 				? Effect.fail(
-						new WarehouseQueryError({
-							message: "Unknown column FooBar in traces",
-							pipeName: "tracesAlertEval",
-						}),
+						state.failure ??
+							new WarehouseQueryError({
+								message: "Unknown column FooBar in traces",
+								pipeName: "tracesAlertEval",
+							}),
 					)
 				: Effect.succeed(state.rows)
 		return {
@@ -3606,6 +4311,51 @@ describe("AlertsService evaluation error persistence", () => {
 			},
 		}
 	}
+
+	it.effect("retries a failed long-window rule on the next tick, then settles onto its interval", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			rows: [] as ReadonlyArray<Record<string, unknown>>,
+			ingested: [] as Array<Record<string, unknown>>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_retry")
+			const userId = asUserId("user_alert_retry")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Retry rule",
+					severity: "warning",
+					enabled: true,
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 30,
+					destinationIds: [destination.id],
+				}),
+			)
+			const tickAndCount = Effect.gen(function* () {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+				return state.ingested.length
+			})
+
+			// Two failing ticks then a clean one, each a minute apart.
+			const failing = yield* Effect.forEach(Arr.range(1, 2), () => tickAndCount)
+			state.failing = false
+			const recovered = yield* tickAndCount
+			assert.deepStrictEqual([...failing, recovered], [1, 2, 3])
+			// Healthy again, it waits for its 5-minute slot.
+			const later = yield* Effect.forEach(Arr.range(1, 4), () => tickAndCount)
+			assert.isBelow(later[3]! - recovered, 4)
+		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
+	})
 
 	it.effect("persists scheduler failures to lastError + audit log, gated, and clears on recovery", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -3682,6 +4432,139 @@ describe("AlertsService evaluation error persistence", () => {
 			yield* alerts.runSchedulerTick()
 			const rulesAfterRecovery = yield* alerts.listRules(orgId)
 			assert.isNull(rulesAfterRecovery.rules[0]?.lastEvaluationError)
+		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("skips rules on a warehouse outage without counting failures, warning once per org", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			rows: [],
+			ingested: [] as Array<Record<string, unknown>>,
+			failure: new WarehouseUpstreamError({
+				message: "HTTP 503",
+				pipeName: "tracesAlertEval",
+				upstreamStatus: 503,
+			}),
+		}
+		const logs: Array<{ readonly message: string; readonly level: string }> = []
+		const captureLogs = Logger.layer([
+			Logger.make(({ message, logLevel }) => {
+				logs.push({ message: String(message), level: logLevel })
+			}),
+		])
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_outage")
+			const userId = asUserId("user_alert_outage")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id, "Outage rule A")
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id, "Outage rule B")
+
+			const tick = yield* alerts.runSchedulerTick()
+
+			assert.strictEqual(tick.evaluationFailureCount, 0)
+			assert.strictEqual(tick.warehouseUnavailableSkipCount, 2)
+			assert.lengthOf(
+				logs.filter((log) => log.message.includes("Alert rule evaluation failed")),
+				0,
+			)
+			const outageWarnings = logs.filter((log) =>
+				log.message.includes("Alert rule evaluations skipped: warehouse unavailable"),
+			)
+			assert.lengthOf(outageWarnings, 1)
+			assert.strictEqual(outageWarnings[0]?.level, "Warn")
+			// The check history still shows the gap, labelled as an outage.
+			const checks = state.ingested.filter((row) => row.Status === "error")
+			assert.lengthOf(checks, 2)
+			assert.isTrue(checks.every((row) => row.ErrorCategory === "warehouse_unavailable"))
+			const rules = yield* alerts.listRules(orgId)
+			// Not the rule's fault, so the rule is not flagged as failing.
+			assert.isTrue(rules.rules.every((rule) => rule.lastEvaluationError === null))
+		}).pipe(
+			Effect.provide(
+				Layer.merge(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch }), captureLogs),
+			),
+		)
+	})
+
+	it.effect("skips the rest of an org's rules once its warehouse is down this tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			rows: [],
+			ingested: [] as Array<Record<string, unknown>>,
+			failure: new WarehouseUpstreamError({
+				message: "HTTP 503",
+				pipeName: "tracesAlertEval",
+				upstreamStatus: 503,
+			}),
+		}
+		const base = failingWarehouseStub(state)
+		let warehouseQueries = 0
+		const counted = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+			Effect.suspend(() => {
+				warehouseQueries += 1
+				return effect
+			})
+		const stub: WarehouseQueryServiceApi = {
+			...base,
+			sqlQuery: (...args) => counted(base.sqlQuery(...args)),
+			rawSqlQuery: (...args) => counted(base.rawSqlQuery(...args)),
+			compiledQuery: (...args) => counted(base.compiledQuery(...args)),
+			compiledQueryWithCapabilities: (...args) => counted(base.compiledQueryWithCapabilities(...args)),
+			compiledQueryFirst: (...args) => counted(base.compiledQueryFirst(...args)),
+		}
+		const ruleCount = 8
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_outage_breaker")
+			const userId = asUserId("user_alert_outage_breaker")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			for (const n of Array.from({ length: ruleCount }, (_, i) => i)) {
+				yield* createErrorRateRule(alerts, orgId, userId, destination.id, `Outage rule ${n}`)
+			}
+
+			const tick = yield* alerts.runSchedulerTick()
+
+			// Every rule is accounted for as an outage skip, none as the rule's fault.
+			assert.strictEqual(tick.warehouseUnavailableSkipCount, ruleCount)
+			assert.strictEqual(tick.evaluationFailureCount, 0)
+			// Only the rules already in flight when the first failure landed queried
+			// the warehouse; the rest were skipped without waiting on it.
+			assert.isBelow(warehouseQueries, ruleCount)
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
+	})
+
+	it.effect("still counts a 4xx upstream rejection as an evaluation failure", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			rows: [],
+			ingested: [] as Array<Record<string, unknown>>,
+			failure: new WarehouseUpstreamError({
+				message: "HTTP 429",
+				pipeName: "tracesAlertEval",
+				upstreamStatus: 429,
+			}),
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_alert_rejected")
+			const userId = asUserId("user_alert_rejected")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+
+			const tick = yield* alerts.runSchedulerTick()
+
+			assert.strictEqual(tick.evaluationFailureCount, 1)
+			assert.strictEqual(tick.warehouseUnavailableSkipCount, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
 	})
 
@@ -4053,6 +4936,154 @@ describe("AlertsService.previewRule", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
+	describe("query timing", () => {
+		const rawPreview = (windowMinutes: number) =>
+			decodePreviewRequest({
+				rule: {
+					name: "Raw timing",
+					severity: "warning",
+					signalType: "raw_query",
+					rawQuerySql:
+						"SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+					comparator: "gt",
+					threshold: 10,
+					windowMinutes,
+					destinationIds: [],
+				},
+				startTime: "2026-01-01T00:00:00.000Z",
+				endTime: "2026-01-01T00:30:00.000Z",
+			})
+
+		// The timing probe reads the latest window (TestClock starts at the epoch), the chart the
+		// requested 2026 range; `chart` answers the chart's query, `probe` runs before the probe's.
+		const probeWarehouse = (
+			probe: Effect.Effect<void, WarehouseQuotaExceededError>,
+			chart: Effect.Effect<void, WarehouseQuotaExceededError> = Effect.void,
+		) => {
+			const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+			return {
+				...stub,
+				rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
+					Effect.andThen(args[1].includes("1970-01-01") ? probe : chart, stub.rawSqlQuery(...args)),
+			} satisfies WarehouseQueryServiceApi
+		}
+
+		it.effect("times one check and says which intervals the query fits", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_fits"),
+					adminRoles,
+					rawPreview(5),
+				)
+				assert.deepStrictEqual(preview.queryTiming && { ...preview.queryTiming }, {
+					elapsedMs: 7_800,
+					failure: null,
+					probeLimitMs: 25_000,
+					intervalMinutes: 1,
+					limitMs: 5_000,
+					// 7.8 s fits 5 minutes and up; a 5-minute window allows no longer interval.
+					fitsIntervalMinutes: [5],
+				})
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, probeWarehouse(TestClock.adjust(Duration.millis(7_800))), {
+						fetch: okFetch,
+					}),
+				),
+			)
+		})
+
+		it.effect("reports a query that ran past every limit as too slow for all of them", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_slow"),
+					adminRoles,
+					rawPreview(5),
+				)
+				assert.strictEqual(preview.queryTiming?.elapsedMs, null)
+				assert.strictEqual(preview.queryTiming?.failure, "query_too_slow")
+				assert.deepStrictEqual(preview.queryTiming?.fitsIntervalMinutes, [])
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						testDb,
+						probeWarehouse(
+							Effect.fail(
+								new WarehouseQuotaExceededError({
+									message: "Timeout exceeded",
+									pipeName: "rawSqlQuery",
+									setting: "max_execution_time",
+								}),
+							),
+						),
+						{ fetch: okFetch },
+					),
+				),
+			)
+		})
+
+		it.effect("keeps the timing when the range is too heavy to chart, instead of failing", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_heavy"),
+					adminRoles,
+					rawPreview(5),
+				)
+				assert.strictEqual(preview.seriesFailure, "query_too_slow")
+				assert.lengthOf(preview.series, 0)
+				assert.strictEqual(preview.queryTiming?.elapsedMs, 7_800)
+			}).pipe(
+				Effect.provide(
+					makeLayer(
+						testDb,
+						probeWarehouse(
+							TestClock.adjust(Duration.millis(7_800)),
+							Effect.fail(
+								new WarehouseQuotaExceededError({
+									message: "Timeout exceeded",
+									pipeName: "rawSqlQuery",
+									setting: "max_execution_time",
+								}),
+							),
+						),
+						{ fetch: okFetch },
+					),
+				),
+			)
+		})
+
+		it.effect("leaves timing off a builder rule, whose queries read rollups", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				const preview = yield* alerts.previewRule(
+					asOrgId("org_timing_builder"),
+					adminRoles,
+					decodePreviewRequest({
+						rule: {
+							name: "Error rate",
+							severity: "warning",
+							signalType: "error_rate",
+							comparator: "gt",
+							threshold: 5,
+							windowMinutes: 5,
+							destinationIds: [],
+						},
+						startTime: "2026-01-01T00:00:00.000Z",
+						endTime: "2026-01-01T00:30:00.000Z",
+					}),
+				)
+				assert.isUndefined(preview.queryTiming)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+		})
+	})
+
 	it.effect("charts a no-data series for a raw-SQL rule whose query matches nothing", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { rawQueryRows: [] }
@@ -4323,16 +5354,16 @@ describe("AlertsService delivery lease freshness", () => {
 	it.effect("claims later rows with a fresh timestamp, not the batch head's", () => {
 		const fixedTime = 1_710_000_400_000
 		const testDb = createTestDb(trackedDbs)
-		// Virtual scheduler clock: the first delivery "takes" longer than the
-		// lease TTL, so a claim dated from the batch-head timestamp would be
-		// born expired and an overlapping tick could re-send the event.
+		// Virtual scheduler clock: the first delivery "takes" most of the drain
+		// budget, so a second claim dated from the batch-head timestamp would
+		// expire mid-delivery and an overlapping tick could re-send the event.
 		let virtualNow = fixedTime
 		let call = 0
 		let laterRowLeaseExpiry: number | null = null
 		const fetchImpl = (async () => {
 			call += 1
 			if (call === 1) {
-				virtualNow += 31_000
+				virtualNow += 19_000
 			} else {
 				const row = await queryFirstRow<{ claimExpiresAt: Date | null }>(
 					testDb,
@@ -4389,10 +5420,105 @@ describe("AlertsService delivery lease freshness", () => {
 
 			assert.strictEqual(call, 2)
 			// The second claim must be dated from its own claim time (after the
-			// 31s "slow" first delivery), so its lease is still alive while the
-			// delivery is in flight. A batch-head lease would already be expired.
+			// 19s "slow" first delivery). A batch-head lease would end at
+			// fixedTime + TTL, 19s short of the one this delivery holds.
 			assert.isNotNull(laterRowLeaseExpiry)
-			assert.isAbove(laterRowLeaseExpiry ?? 0, fixedTime + 31_000)
+			assert.isAbove(laterRowLeaseExpiry ?? 0, fixedTime + 30_000)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+					fetch: fetchImpl,
+					now: Effect.sync(() => virtualNow),
+				}),
+			),
+		)
+	})
+})
+
+describe("AlertsService delivery drain across destinations", () => {
+	it.effect("a slow destination costs its own rows, not another destination's page", () => {
+		const fixedTime = 1_710_000_450_000
+		const testDb = createTestDb(trackedDbs)
+		// Virtual clock: every delivery to the slow endpoint "takes" 15s.
+		let virtualNow = fixedTime
+		const delivered: Array<string> = []
+		const fetchImpl = (async (input: RequestInfo | URL) => {
+			const url = String(input)
+			if (url === "https://example.com/maple-alerts") virtualNow += 15_000
+			delivered.push(url)
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_drain_fairness")
+			const userId = asUserId("user_drain_fairness")
+			const slow = yield* createWebhookDestination(alerts, orgId, userId)
+			const fast = yield* alerts.createDestination(orgId, userId, adminRoles, {
+				type: "webhook",
+				name: "Fast webhook",
+				enabled: true,
+				url: "https://example.com/fast",
+				signingSecret: "webhook-secret",
+			})
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, slow.id)
+			// Break the rule's stored query so the tick queues nothing of its own.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "update alert_rules set query_spec_json = $1::jsonb where id = $2", [
+					"{}",
+					rule.id,
+				]),
+			)
+
+			// Three rows for the slow endpoint, queued ahead of the fast one's.
+			const queued = [
+				[slow.id, "slow-1"],
+				[slow.id, "slow-2"],
+				[slow.id, "slow-3"],
+				[fast.id, "fast-1"],
+			] as const
+			for (const [index, [destinationId, deliveryKey]] of queued.entries()) {
+				yield* Effect.promise(() =>
+					insertDeliveryEventRow(testDb, {
+						id: `00000000-0000-4000-8000-00000000040${index}`,
+						orgId,
+						incidentId: null,
+						ruleId: rule.id,
+						destinationId,
+						deliveryKey,
+						eventType: "test",
+						attemptNumber: 1,
+						status: "queued",
+						scheduledAt: fixedTime - 10 + index,
+						payloadJson: JSON.stringify({
+							eventType: "test",
+							incidentId: null,
+							incidentStatus: "resolved",
+							dedupeKey: deliveryKey,
+							observed: { value: 0, sampleCount: 0 },
+						}),
+					}),
+				)
+			}
+			yield* alerts.runSchedulerTick()
+
+			const statuses = yield* Effect.promise(() =>
+				testDb.pglite.query<{ deliveryKey: string; status: string }>(
+					`select delivery_key as "deliveryKey", status from alert_delivery_events order by delivery_key`,
+				),
+			)
+			assert.include(delivered, "https://example.com/fast")
+			assert.deepStrictEqual(
+				statuses.rows.map((row) => [row.deliveryKey, row.status]),
+				[
+					["fast-1", "success"],
+					["slow-1", "success"],
+					["slow-2", "success"],
+					// Started past the drain budget, so it waits for the next tick.
+					["slow-3", "queued"],
+				],
+			)
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
@@ -4602,6 +5728,162 @@ describe("AlertsService delivery drain", () => {
 			),
 		)
 	})
+})
+
+describe("AlertsService chat digests", () => {
+	const fixedTime = 1_710_000_900_000
+	const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("44444444-4444-4444-8444-444444444444")
+
+	/** Queues `count` trigger deliveries for one chat destination, runs a tick, and reads the queue. */
+	const runBurst = (
+		count: number,
+		outcome: "posted" | "rate_limited" | "rejected",
+		eventTypeOf: (n: number) => string = () => "trigger",
+	) => {
+		const testDb = createTestDb(trackedDbs)
+		const posts: Array<string> = []
+		const poster = Layer.succeed(ChatAlertPoster, {
+			post: (request) =>
+				Effect.suspend(() => {
+					const card = request.blocks[0]
+					posts.push(card?.kind === "alert" ? card.title : "")
+					if (outcome === "posted")
+						return Effect.succeed({
+							connectorName: "Test Chat",
+							messageId: `message-${posts.length}`,
+						})
+					const fields = {
+						message: "Discord refused this message",
+						destinationType: "chat" as const,
+					}
+					return Effect.fail(
+						outcome === "rejected"
+							? new AlertDeliveryRejectedError(fields)
+							: new AlertDeliveryError(fields),
+					)
+				}),
+			findChannel: () =>
+				Effect.succeed({
+					connector: Schema.decodeUnknownSync(ChatConnectorId)("testchat"),
+					workspaceName: "Acme",
+					channelName: "incidents",
+				}),
+		})
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_chat_digest")
+			const userId = asUserId("user_chat_digest")
+			const destination = yield* alerts.createDestination(orgId, userId, adminRoles, {
+				type: "chat",
+				name: "Incidents",
+				workspaceId,
+				channelId: "channel-1",
+			})
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			yield* Effect.forEach(Arr.range(1, count), (n) =>
+				Effect.promise(() =>
+					insertDeliveryEventRow(testDb, {
+						id: `00000000-0000-4000-8000-${String(900 + n).padStart(12, "0")}`,
+						orgId,
+						incidentId: null,
+						ruleId: rule.id,
+						destinationId: destination.id,
+						deliveryKey: `digest-${n}`,
+						eventType: eventTypeOf(n),
+						attemptNumber: 1,
+						status: "queued",
+						scheduledAt: fixedTime - 100 + n,
+						payloadJson: JSON.stringify({
+							eventType: eventTypeOf(n) === "test" ? "test" : "trigger",
+							dedupeKey: `digest-${n}`,
+						}),
+					}),
+				),
+			)
+			yield* alerts.runSchedulerTick()
+			const queue = yield* Effect.promise(() =>
+				queryFirstRow<{ summary: string }>(
+					testDb,
+					`select string_agg(status || '@' || attempt_number, ',' order by status, attempt_number) as summary
+					 from alert_delivery_events where delivery_key like 'digest-%'`,
+					[],
+				),
+			)
+			const health = yield* Effect.promise(() =>
+				queryFirstRow<{ failures: number; enabled: boolean }>(
+					testDb,
+					"select consecutive_failures as failures, enabled from alert_destinations where id = $1",
+					[destination.id],
+				),
+			)
+			return { posts, queue: queue?.summary ?? "", health }
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					testDb,
+					makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
+					undefined,
+					undefined,
+					poster,
+				),
+			),
+		)
+	}
+
+	it.effect("sends a burst of five for one channel as one digest and delivers every row", () =>
+		Effect.gen(function* () {
+			const { posts, queue } = yield* runBurst(5, "posted")
+			assert.deepStrictEqual(posts, ["\u{1F514} 5 alert notifications"])
+			assert.strictEqual(queue, Array(5).fill("success@1").join(","))
+		}),
+	)
+
+	it.effect("keeps two deliveries as two ordinary messages", () =>
+		Effect.gen(function* () {
+			const { posts, queue } = yield* runBurst(2, "posted")
+			assert.lengthOf(posts, 2)
+			assert.notInclude(posts.join(","), "alert notifications")
+			assert.strictEqual(queue, "success@1,success@1")
+		}),
+	)
+
+	it.effect("counts a refused digest as one destination failure, not one per row", () =>
+		Effect.gen(function* () {
+			const { posts, queue, health } = yield* runBurst(4, "rejected")
+			assert.lengthOf(posts, 1)
+			assert.strictEqual(queue, Array(4).fill("failed@1").join(","))
+			assert.strictEqual(health?.failures, 1)
+			assert.isTrue(health?.enabled)
+		}),
+	)
+
+	it.effect("finishes every row of a failed digest even when one row's recovery fails", () =>
+		Effect.gen(function* () {
+			// The first row's stored event type cannot be read, so its retry insert fails.
+			const { queue } = yield* runBurst(4, "rate_limited", (n) =>
+				n === 1 ? "not-an-event-type" : "trigger",
+			)
+			assert.strictEqual(queue, [...Array(4).fill("failed@1"), ...Array(3).fill("queued@2")].join(","))
+		}),
+	)
+
+	it.effect("posts a digest where its first row sits in the batch, after earlier deliveries", () =>
+		Effect.gen(function* () {
+			const { posts } = yield* runBurst(5, "posted", (n) => (n === 1 ? "test" : "trigger"))
+			assert.lengthOf(posts, 2)
+			assert.notInclude(posts[0], "alert notifications")
+			assert.strictEqual(posts[1], "\u{1F514} 4 alert notifications")
+		}),
+	)
+
+	it.effect("leaves every row of a failed digest queued for a retry", () =>
+		Effect.gen(function* () {
+			const { posts, queue } = yield* runBurst(5, "rate_limited")
+			assert.lengthOf(posts, 1)
+			assert.strictEqual(queue, [...Array(5).fill("failed@1"), ...Array(5).fill("queued@2")].join(","))
+		}),
+	)
 })
 
 describe("alert incident open uniqueness", () => {
@@ -5113,6 +6395,423 @@ describe("AlertsService held incidents", () => {
 	})
 })
 
+describe("AlertsService evaluation cadence", () => {
+	const createCadenceRule = (alerts: AlertsServiceApi, orgId: OrgId, windowMinutes: number) =>
+		createWebhookDestination(alerts, orgId, asUserId("user_cadence")).pipe(
+			Effect.flatMap((destination) =>
+				alerts.createRule(
+					orgId,
+					asUserId("user_cadence"),
+					adminRoles,
+					new AlertRuleUpsertRequest({
+						name: `Cadence ${windowMinutes}m`,
+						severity: "warning",
+						enabled: true,
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes,
+						destinationIds: [destination.id],
+					}),
+				),
+			),
+		)
+
+	// Runs `count` ticks a minute apart and returns each tick's evaluated count.
+	const tickEveryMinute = (alerts: AlertsServiceApi, count: number) =>
+		Effect.forEach(Arr.range(1, count), () =>
+			alerts.runSchedulerTick().pipe(
+				Effect.map((tick) => tick.evaluatedCount),
+				Effect.tap(() => TestClock.adjust(Duration.minutes(1))),
+			),
+		)
+
+	it.effect("checks a 15-minute rule every third minute and a 5-minute rule every minute", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createCadenceRule(alerts, asOrgId("org_cadence_short_a"), 5)
+			yield* createCadenceRule(alerts, asOrgId("org_cadence_long"), 15)
+			yield* createCadenceRule(alerts, asOrgId("org_cadence_short_b"), 5)
+
+			const counts = yield* tickEveryMinute(alerts, 10)
+
+			// Both 5-minute rules run every tick; the long rule adds one on its own minutes.
+			const longTicks = Arr.filter(Arr.range(0, counts.length - 1), (index) => counts[index] === 3)
+			assert.isTrue(counts.every((count) => count === 2 || count === 3))
+			// The first tick runs it (never claimed), then it settles onto every third minute.
+			assert.strictEqual(longTicks[0], 0)
+			const settled = longTicks.slice(1)
+			assert.isAtLeast(settled.length, 3)
+			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i]!, 3))
+			assert.isAtMost(settled[0]!, 3)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+
+	it.effect("checks an edited rule on the next tick instead of waiting for its slot", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_cadence_edit")
+			const rule = yield* createCadenceRule(alerts, orgId, 30)
+			const claimedAt = yield* Clock.currentTimeMillis
+			yield* alerts.runSchedulerTick()
+
+			// One of the next two minutes is off the rule's every-fifth-minute phase.
+			const idle = [1, 2].find(
+				(n) =>
+					!isAlertRuleDue({
+						ruleId: rule.id,
+						intervalMinutes: 5,
+						updatedAt: claimedAt,
+						lastClaimedAt: claimedAt,
+						windowEndMs: snapAlertWindowEndMs(claimedAt + n * 60_000),
+					}),
+			)!
+			yield* TestClock.adjust(Duration.minutes(idle))
+			// Back on an idle minute: an edit makes the rule due there.
+			yield* alerts.updateRule(
+				orgId,
+				asUserId("user_cadence"),
+				adminRoles,
+				rule.id,
+				new AlertRuleUpsertRequest({
+					name: "Edited",
+					severity: "warning",
+					enabled: true,
+					signalType: rule.signalType,
+					comparator: rule.comparator,
+					threshold: 10,
+					windowMinutes: rule.windowMinutes,
+					destinationIds: [...rule.destinationIds],
+				}),
+			)
+			const afterEdit = yield* alerts.runSchedulerTick()
+			assert.strictEqual(afterEdit.evaluatedCount, 1)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+})
+
+describe("AlertsService check intervals", () => {
+	const RAW_SQL = "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
+
+	// Records the settings each raw SQL query ran with.
+	const recordingWarehouse = (settings: Array<WarehouseQuerySettings | undefined>) => {
+		const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+		return {
+			...stub,
+			rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) => {
+				settings.push(args[2]?.settings)
+				return stub.rawSqlQuery(...args)
+			},
+		} satisfies WarehouseQueryServiceApi
+	}
+
+	const createIntervalRule = (
+		alerts: AlertsServiceApi,
+		orgId: OrgId,
+		rule: {
+			readonly signalType: "raw_query" | "error_rate"
+			readonly windowMinutes: number
+			readonly evaluationIntervalMinutes: AlertEvaluationIntervalMinutes | null
+		},
+	) =>
+		createWebhookDestination(alerts, orgId, asUserId("user_interval")).pipe(
+			Effect.flatMap((destination) =>
+				alerts.createRule(
+					orgId,
+					asUserId("user_interval"),
+					adminRoles,
+					new AlertRuleUpsertRequest({
+						name: `Interval ${rule.signalType} ${rule.evaluationIntervalMinutes}`,
+						severity: "warning",
+						enabled: true,
+						signalType: rule.signalType,
+						...(rule.signalType === "raw_query" ? { rawQuerySql: RAW_SQL } : undefined),
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: rule.windowMinutes,
+						evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
+						destinationIds: [destination.id],
+					}),
+				),
+			),
+		)
+
+	it.effect("runs a raw SQL rule checked every 10 minutes in the long-query lane with a 25s limit", () => {
+		const testDb = createTestDb(trackedDbs)
+		const settings: Array<WarehouseQuerySettings | undefined> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createIntervalRule(alerts, asOrgId("org_interval_long"), {
+				signalType: "raw_query",
+				windowMinutes: 10,
+				evaluationIntervalMinutes: 10,
+			})
+
+			assert.strictEqual((yield* alerts.runSchedulerTick("standard")).evaluatedCount, 0)
+			assert.strictEqual((yield* alerts.runSchedulerTick("long_query")).evaluatedCount, 1)
+			assert.deepStrictEqual(settings, [{ maxExecutionTime: 25, maxMemoryUsage: 512_000_000 }])
+		}).pipe(Effect.provide(makeLayer(testDb, recordingWarehouse(settings), { fetch: okFetch })))
+	})
+
+	it.effect("keeps a raw SQL rule checked every minute in the standard lane with a 5s limit", () => {
+		const testDb = createTestDb(trackedDbs)
+		const settings: Array<WarehouseQuerySettings | undefined> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* createIntervalRule(alerts, asOrgId("org_interval_short"), {
+				signalType: "raw_query",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+			})
+
+			assert.strictEqual((yield* alerts.runSchedulerTick("long_query")).evaluatedCount, 0)
+			assert.strictEqual((yield* alerts.runSchedulerTick("standard")).evaluatedCount, 1)
+			assert.deepStrictEqual(settings, [{ maxExecutionTime: 5, maxMemoryUsage: 256_000_000 }])
+		}).pipe(Effect.provide(makeLayer(testDb, recordingWarehouse(settings), { fetch: okFetch })))
+	})
+
+	it.effect("checks a rule on the interval its author picked", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			// A 15-minute window alone would be checked every third minute.
+			yield* createIntervalRule(alerts, asOrgId("org_interval_builder"), {
+				signalType: "error_rate",
+				windowMinutes: 15,
+				evaluationIntervalMinutes: 10,
+			})
+
+			const counts = yield* Effect.forEach(Arr.range(1, 25), () =>
+				alerts.runSchedulerTick().pipe(
+					Effect.map((tick) => tick.evaluatedCount),
+					Effect.tap(() => TestClock.adjust(Duration.minutes(1))),
+				),
+			)
+			const ran = Arr.filter(Arr.range(0, counts.length - 1), (index) => counts[index] === 1)
+			// Right away (never claimed), then on its phase minute every ten.
+			assert.strictEqual(ran[0], 0)
+			const settled = ran.slice(1)
+			assert.isAtMost(settled[0]!, 10)
+			assert.isAtLeast(settled.length, 2)
+			Arr.forEach(settled.slice(1), (tick, i) => assert.strictEqual(tick - settled[i]!, 10))
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+
+	it.effect("defers a slow rule with no room left in the long-query lane to the very next tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		// Each query takes 26 s two at a time, so the second pair would start with under 35 s of the 60 s budget left.
+		const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+		const slowWarehouse = {
+			...stub,
+			rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
+				Effect.andThen(Effect.sleep(Duration.seconds(26)), stub.rawSqlQuery(...args)),
+		} satisfies WarehouseQueryServiceApi
+		// A tick under the test clock, which moves a second at a time while the tick sleeps.
+		const tickWithClock = (alerts: AlertsServiceApi) =>
+			Effect.gen(function* () {
+				const tick = yield* Effect.forkChild(alerts.runSchedulerTick("long_query"))
+				yield* Effect.forEach(Arr.range(1, 90), () => TestClock.adjust(Duration.seconds(1)), { discard: true })
+				return yield* Fiber.join(tick)
+			})
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			yield* Effect.forEach(["a", "b", "c", "d"], (org) =>
+				createIntervalRule(alerts, asOrgId(`org_interval_room_${org}`), {
+					signalType: "raw_query",
+					windowMinutes: 10,
+					evaluationIntervalMinutes: 10,
+				}),
+			)
+
+			const first = yield* tickWithClock(alerts)
+			assert.deepStrictEqual(
+				{ evaluated: first.evaluatedCount, failed: first.evaluationFailureCount, deferred: first.deferredCount },
+				{ evaluated: 2, failed: 0, deferred: 2 },
+			)
+			// Their claims were released, so they run on the next tick rather than on their next 10-minute slot.
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + 2 * 60_000)
+			assert.strictEqual((yield* tickWithClock(alerts)).evaluatedCount, 2)
+		}).pipe(Effect.provide(makeLayer(testDb, slowWarehouse, { fetch: okFetch })))
+	})
+
+	it.effect("rejects a check interval longer than the window", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const exit = yield* createIntervalRule(alerts, asOrgId("org_interval_gap"), {
+				signalType: "error_rate",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: 15,
+			}).pipe(Effect.exit)
+			const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null
+			assert.instanceOf(error, AlertValidationError)
+			assert.include(
+				error instanceof AlertValidationError ? error.details.join("\n") : "",
+				"must be at least evaluationIntervalMinutes",
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
+	})
+
+	// A raw SQL warehouse whose queries run 6s and time out while `failing` holds.
+	const timingOutWarehouse = (state: {
+		failing: boolean
+		readonly limits: Array<number | undefined>
+		readonly checkDurations: Array<unknown>
+	}) => {
+		const stub = makeWarehouseStub({ rawQueryRows: [{ value: 1, samples: 1 }] })
+		return {
+			...stub,
+			rawSqlQuery: (...args: Parameters<WarehouseQueryServiceApi["rawSqlQuery"]>) =>
+				Effect.gen(function* () {
+					state.limits.push(args[2]?.settings?.maxExecutionTime)
+					yield* TestClock.adjust(Duration.seconds(6))
+					if (!state.failing) return yield* stub.rawSqlQuery(...args)
+					return yield* new WarehouseQuotaExceededError({
+						message: "Timeout exceeded: elapsed 6000 ms",
+						pipeName: "rawSqlQuery",
+						setting: "max_execution_time",
+					})
+				}),
+			ingest: (_tenant, datasource, rows) =>
+				Effect.sync(() => {
+					if (datasource === "alert_checks") {
+						state.checkDurations.push(...rows.map((row) => row.EvaluationDurationMs))
+					}
+				}),
+		} satisfies WarehouseQueryServiceApi
+	}
+
+	// Both lanes, once a minute.
+	const tickBothLanes = (alerts: AlertsServiceApi, minutes: number) =>
+		Effect.forEach(
+			Arr.range(1, minutes),
+			() =>
+				alerts
+					.runSchedulerTick("standard")
+					.pipe(
+						Effect.andThen(alerts.runSchedulerTick("long_query")),
+						Effect.andThen(TestClock.adjust(Duration.minutes(1))),
+					),
+			{ discard: true },
+		)
+
+	it.effect("slows a rule whose query keeps timing out, a step at a time, up to its window", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			limits: [] as Array<number | undefined>,
+			checkDurations: [] as Array<unknown>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_slowdown")
+			// Checked every 2 minutes by its window, under the 5s limit.
+			yield* createIntervalRule(alerts, orgId, {
+				signalType: "raw_query",
+				windowMinutes: 10,
+				evaluationIntervalMinutes: null,
+			})
+
+			yield* tickBothLanes(alerts, 60)
+
+			// Three timeouts at each limit, then 5-minute checks at 15s, then 10-minute checks at 25s.
+			assert.deepStrictEqual(state.limits.slice(0, 9), [5, 5, 5, 15, 15, 15, 25, 25, 25])
+			// The window caps it: 15 minutes would leave data unread between checks.
+			assert.isTrue(state.limits.slice(6).every((limit) => limit === 25))
+			assert.isAtMost(state.limits.length, 3 + 3 + 6)
+			const [rule] = (yield* alerts.listRules(orgId)).rules
+			assert.strictEqual(rule?.slowedIntervalMinutes, 10)
+			assert.isNotNull(rule?.slowedAt)
+			assert.strictEqual(rule?.lastEvaluationErrorKind, "query_too_slow")
+			// A failed check records how long its query ran, not 0.
+			assert.isNotEmpty(state.checkDurations)
+			assert.isTrue(state.checkDurations.every((ms) => ms === 6000))
+		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
+	})
+
+	it.effect("does not slow a rule whose timeouts a clean check interrupts", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			limits: [] as Array<number | undefined>,
+			checkDurations: [] as Array<unknown>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_slowdown_reset")
+			yield* createIntervalRule(alerts, orgId, {
+				signalType: "raw_query",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+			})
+
+			yield* tickBothLanes(alerts, 2)
+			state.failing = false
+			yield* tickBothLanes(alerts, 1)
+			state.failing = true
+			yield* tickBothLanes(alerts, 2)
+
+			assert.deepStrictEqual(state.limits, [5, 5, 5, 5, 5])
+			const [rule] = (yield* alerts.listRules(orgId)).rules
+			assert.isNull(rule?.slowedIntervalMinutes)
+		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
+	})
+
+	it.effect("gives a slowed rule its own interval back when it is edited", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			failing: true,
+			limits: [] as Array<number | undefined>,
+			checkDurations: [] as Array<unknown>,
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_slowdown_edit")
+			const created = yield* createIntervalRule(alerts, orgId, {
+				signalType: "raw_query",
+				windowMinutes: 5,
+				evaluationIntervalMinutes: null,
+			})
+			yield* tickBothLanes(alerts, 3)
+			assert.strictEqual((yield* alerts.listRules(orgId)).rules[0]?.slowedIntervalMinutes, 5)
+
+			yield* alerts.updateRule(
+				orgId,
+				asUserId("user_interval"),
+				adminRoles,
+				created.id,
+				new AlertRuleUpsertRequest({
+					name: "Faster query",
+					severity: "warning",
+					signalType: "raw_query",
+					rawQuerySql: RAW_SQL,
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					destinationIds: [...created.destinationIds],
+				}),
+			)
+			state.failing = false
+			state.limits.length = 0
+			yield* tickBothLanes(alerts, 3)
+
+			assert.deepStrictEqual(state.limits, [5, 5, 5])
+			assert.isNull((yield* alerts.listRules(orgId)).rules[0]?.slowedIntervalMinutes)
+		}).pipe(Effect.provide(makeLayer(testDb, timingOutWarehouse(state), { fetch: okFetch })))
+	})
+})
+
 describe("AlertsService scheduler pool", () => {
 	const RULE_COUNT = 50
 	const SLOW_EVAL_MS = 3_000
@@ -5203,6 +6902,304 @@ describe("AlertsService scheduler pool", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
 	})
 
+	// Records when each org's first warehouse query started, i.e. when its rule began evaluating.
+	const makeStartRecorder = () => {
+		const firstQueryAt = Ref.makeUnsafe(HashMap.empty<string, number>())
+		const { stub } = makeSlowWarehouse((orgId) =>
+			Clock.currentTimeMillis.pipe(
+				Effect.tap((ms) =>
+					Ref.update(firstQueryAt, (starts) =>
+						HashMap.has(starts, orgId) ? starts : HashMap.set(starts, orgId, ms),
+					),
+				),
+				Effect.as(Duration.millis(FAST_EVAL_MS)),
+			),
+		)
+		const startOffsets = (tickStartedAt: number) =>
+			Ref.get(firstQueryAt).pipe(
+				Effect.map((starts) =>
+					Arr.map(Arr.range(0, RULE_COUNT - 1), (index) =>
+						Option.match(HashMap.get(starts, orgAt(index)), {
+							onNone: () => Number.NaN,
+							onSome: (ms) => ms - tickStartedAt,
+						}),
+					),
+				),
+			)
+		return { stub, startOffsets }
+	}
+
+	it.live("spaces rule starts evenly across the spread", () => {
+		const testDb = createTestDb(trackedDbs)
+		const spreadMs = 1_000
+		const { stub, startOffsets } = makeStartRecorder()
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			yield* createPoolRules(alerts)
+
+			const startedAt = yield* Clock.currentTimeMillis
+			const tick = yield* alerts.runSchedulerTick()
+			const offsets = yield* startOffsets(startedAt)
+
+			assert.strictEqual(tick.evaluatedCount, RULE_COUNT)
+			assert.strictEqual(tick.deferredCount, 0)
+			// Rule i waits for its slot at i * spreadMs / RULE_COUNT. The upper bound is from the
+			// first start, so the tick's setup before the spread is not counted against the slack.
+			const slotMs = spreadMs / RULE_COUNT
+			Arr.forEach(offsets, (offset, index) => {
+				assert.isAtLeast(offset, index * slotMs)
+				assert.isBelow(offset - offsets[0]!, index * slotMs + 500)
+			})
+		}).pipe(
+			Effect.provide(makeLayer(testDb, stub, { fetch: okFetch, schedulerSpreadMs: () => spreadMs })),
+		)
+	})
+
+	it.live("shortens the spread to fit the tick deadline instead of deferring rules", () => {
+		const testDb = createTestDb(trackedDbs)
+		// 10 s of the 11 s budget stays clear at the end, so 1 s is left to spread over.
+		const roomMs = 1_000
+		const { stub, startOffsets } = makeStartRecorder()
+		const { spans, tracer } = makeRecordingTracer()
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			yield* createPoolRules(alerts)
+
+			const startedAt = yield* Clock.currentTimeMillis
+			const tick = yield* alerts.runSchedulerTick().pipe(Effect.withTracer(tracer))
+			const offsets = yield* startOffsets(startedAt)
+
+			assert.strictEqual(tick.evaluatedCount, RULE_COUNT)
+			assert.strictEqual(tick.deferredCount, 0)
+			assert.isBelow(Math.max(...offsets) - Math.min(...offsets), roomMs + 500)
+			// The tick span reports the spread it actually used, not the configured 60 s.
+			const [reported] = spansNamed(spans, "AlertsService.evaluateScheduledRules").map((span) =>
+				span.attributes.get("maple.alerting.spread_ms"),
+			)
+			assert.isAbove(Number(reported), 0)
+			assert.isAtMost(Number(reported), roomMs)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, stub, {
+					fetch: okFetch,
+					schedulerTickBudgetMs: () => 10_000 + roomMs,
+					schedulerSpreadMs: () => 60_000,
+				}),
+			),
+		)
+	})
+
+	it.live("claims each chunk only when its first rule's slot comes up", () => {
+		const testDb = createTestDb(trackedDbs)
+		const spreadMs = 2_000
+		const { stub, startOffsets } = makeStartRecorder()
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			yield* createPoolRules(alerts)
+
+			const startedAt = yield* Clock.currentTimeMillis
+			yield* alerts.runSchedulerTick()
+			const offsets = yield* startOffsets(startedAt)
+			const claims = yield* Effect.promise(() =>
+				testDb.pglite.query<{ orgId: string; claimedAt: Date }>(
+					`select org_id as "orgId", last_scheduled_at as "claimedAt" from alert_rule_claims`,
+				),
+			)
+			const claimOffset = new Map(
+				claims.rows.map((row) => [row.orgId, row.claimedAt.getTime() - startedAt]),
+			)
+
+			// A claim is never older than one chunk of slots when its rule starts, so the
+			// second chunk is claimed about halfway through the spread, not up front.
+			const chunkSpanMs = (spreadMs / RULE_COUNT) * 25
+			Arr.forEach(offsets, (offset, index) => {
+				const claimedAt = claimOffset.get(orgAt(index))
+				assert.isDefined(claimedAt)
+				assert.isAtMost(claimedAt!, offset)
+				assert.isBelow(offset - claimedAt!, chunkSpanMs + 500)
+			})
+			assert.isAtLeast(claimOffset.get(orgAt(25))!, chunkSpanMs - 100)
+		}).pipe(
+			Effect.provide(makeLayer(testDb, stub, { fetch: okFetch, schedulerSpreadMs: () => spreadMs })),
+		)
+	})
+
+	it.live("a stuck rule holds one lane while the rest keep their slots", () => {
+		const testDb = createTestDb(trackedDbs)
+		const spreadMs = 1_000
+		const firstQueryAt = Ref.makeUnsafe(HashMap.empty<string, number>())
+		const { stub } = makeSlowWarehouse((orgId) =>
+			Clock.currentTimeMillis.pipe(
+				Effect.tap((ms) =>
+					Ref.update(firstQueryAt, (starts) =>
+						HashMap.has(starts, orgId) ? starts : HashMap.set(starts, orgId, ms),
+					),
+				),
+				Effect.as<EvalDelay>(orgId === orgAt(0) ? "stuck" : Duration.millis(FAST_EVAL_MS)),
+			),
+		)
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			yield* createPoolRules(alerts)
+
+			const startedAt = yield* Clock.currentTimeMillis
+			const tick = yield* alerts.runSchedulerTick()
+			const starts = yield* Ref.get(firstQueryAt)
+
+			assert.strictEqual(tick.evaluatedCount, RULE_COUNT)
+			assert.strictEqual(tick.deferredCount, 0)
+			const slotMs = spreadMs / RULE_COUNT
+			const firstStart = Option.getOrThrow(HashMap.get(starts, orgAt(0)))
+			Arr.forEach(Arr.range(1, RULE_COUNT - 1), (index) => {
+				const offset = Option.getOrThrow(HashMap.get(starts, orgAt(index))) - startedAt
+				assert.isAtLeast(offset, index * slotMs)
+				assert.isBelow(offset - (firstStart - startedAt), index * slotMs + 500)
+			})
+			const stuckRule = (yield* alerts.listRules(orgAt(0))).rules[0]!
+			assert.include(stuckRule.lastEvaluationError ?? "", "exceeded")
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, stub, {
+					fetch: okFetch,
+					schedulerSpreadMs: () => spreadMs,
+					schedulerEvalTimeoutMs: () => 1_500,
+				}),
+			),
+		)
+	})
+
+	it.live("keeps at most two rules in flight when the spread outpaces evaluation", () => {
+		const testDb = createTestDb(trackedDbs)
+		// 40 ms slots against 20 ms evaluations: unpaced, all five lanes fill at once.
+		const spreadMs = 2_000
+		const inFlight = Ref.makeUnsafe(0)
+		const peak = Ref.makeUnsafe(0)
+		const base = makeSlowWarehouse(() => Effect.succeed(Duration.millis(FAST_EVAL_MS)))
+		const tracked = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+			Effect.acquireUseRelease(
+				Ref.updateAndGet(inFlight, (n) => n + 1).pipe(
+					Effect.tap((n) => Ref.update(peak, (max) => Math.max(max, n))),
+				),
+				() => effect,
+				() => Ref.update(inFlight, (n) => n - 1),
+			)
+		const stub: WarehouseQueryServiceApi = {
+			...base.stub,
+			sqlQuery: (...args) => tracked(base.stub.sqlQuery(...args)),
+			rawSqlQuery: (...args) => tracked(base.stub.rawSqlQuery(...args)),
+			compiledQuery: (...args) => tracked(base.stub.compiledQuery(...args)),
+			compiledQueryWithCapabilities: (...args) =>
+				tracked(base.stub.compiledQueryWithCapabilities(...args)),
+			compiledQueryFirst: (...args) => tracked(base.stub.compiledQueryFirst(...args)),
+		}
+		const runTick = (spread: number) =>
+			Effect.gen(function* () {
+				yield* Ref.set(peak, 0)
+				const alerts = yield* AlertsService
+				const tick = yield* alerts.runSchedulerTick()
+				assert.strictEqual(tick.evaluatedCount, RULE_COUNT)
+				return yield* Ref.get(peak)
+			}).pipe(
+				Effect.provide(makeLayer(testDb, stub, { fetch: okFetch, schedulerSpreadMs: () => spread })),
+			)
+		return Effect.gen(function* () {
+			yield* Effect.gen(function* () {
+				yield* createPoolRules(yield* AlertsService)
+			}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
+			// Each tick is a minute after the last, past every claim's TTL.
+			const unpacedPeak = yield* runTick(0)
+			yield* Effect.promise(() =>
+				testDb.pglite.query(
+					`update alert_rule_claims set last_scheduled_at = last_scheduled_at - interval '2 minutes'`,
+				),
+			)
+			const pacedPeak = yield* runTick(spreadMs)
+
+			assert.strictEqual(unpacedPeak, 5)
+			assert.isAtMost(pacedPeak, 2)
+		})
+	})
+
+	it.live(
+		"every rule in a tick reads and records the same window, even when the spread crosses a minute",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const shiftMs = Ref.makeUnsafe(0)
+			const shiftedNow = Effect.zipWith(
+				Clock.currentTimeMillis,
+				Ref.get(shiftMs),
+				(ms, shift) => ms + shift,
+			)
+			// The latest 'YYYY-MM-DD HH:MM:SS' literal in a rule's SQL is its window end.
+			const windowEnds = Ref.makeUnsafe(HashMap.empty<string, string>())
+			const recordWindowEnd = (orgId: string, sql: string) =>
+				Ref.update(windowEnds, (ends) => {
+					const latest = Arr.last(
+						Arr.sort(sql.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/g) ?? [], Order.String),
+					)
+					return Option.match(latest, {
+						onNone: () => ends,
+						onSome: (end) => HashMap.set(ends, orgId, end),
+					})
+				})
+			const base = makeSlowWarehouse(() => Effect.succeed(Duration.millis(FAST_EVAL_MS)))
+			const decodeCheckWindow = Schema.decodeUnknownSync(
+				Schema.Struct({ WindowStart: Schema.String, WindowEnd: Schema.String }),
+			)
+			const checkWindows = Ref.makeUnsafe<ReadonlyArray<string>>([])
+			const stub: WarehouseQueryServiceApi = {
+				...base.stub,
+				ingest: (_tenant, datasource, rows) =>
+					datasource === "alert_checks"
+						? Ref.update(checkWindows, (windows) => [
+								...windows,
+								...rows.map((row) => {
+									const { WindowStart, WindowEnd } = decodeCheckWindow(row)
+									return `${WindowStart} - ${WindowEnd}`
+								}),
+							])
+						: Effect.void,
+				compiledQuery: (tenant, compiled, ...rest) =>
+					recordWindowEnd(tenant.orgId, compiledQueryOf(compiled).sql).pipe(
+						Effect.andThen(base.stub.compiledQuery(tenant, compiled, ...rest)),
+					),
+				compiledQueryWithCapabilities: (tenant, compile, ...rest) =>
+					recordWindowEnd(
+						tenant.orgId,
+						Effect.runSync(compile(baselineWarehouseCapabilities())).sql,
+					).pipe(Effect.andThen(base.stub.compiledQueryWithCapabilities(tenant, compile, ...rest))),
+			}
+			return Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				yield* createPoolRules(alerts)
+
+				// Start the tick 1.5 s before a minute boundary, so a 2 s spread crosses it.
+				const realNow = yield* Clock.currentTimeMillis
+				const tickAt = (Math.floor(realNow / 60_000) + 2) * 60_000 - 1_500
+				yield* Ref.set(shiftMs, tickAt - realNow)
+				const tick = yield* alerts.runSchedulerTick()
+
+				assert.strictEqual(tick.evaluatedCount, RULE_COUNT)
+				const ends = Arr.fromIterable(HashMap.values(yield* Ref.get(windowEnds)))
+				assert.strictEqual(ends.length, RULE_COUNT)
+				assert.deepStrictEqual(Arr.dedupe(ends), [formatWarehouseDateTime(tickAt - 58_500)])
+				// The audit rows name that same window, not each rule's later claim time.
+				const windows = yield* Ref.get(checkWindows)
+				assert.strictEqual(windows.length, RULE_COUNT)
+				assert.lengthOf(Arr.dedupe(windows), 1)
+				assert.include(windows[0]!, formatWarehouseDateTime(tickAt - 58_500))
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, stub, {
+						fetch: okFetch,
+						now: shiftedNow,
+						schedulerSpreadMs: () => 2_000,
+					}),
+				),
+			)
+		},
+	)
+
 	it.live("stops at the tick deadline and leads the next tick with the deferred rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		const tickBudgetMs = 1_500
@@ -5218,13 +7215,23 @@ describe("AlertsService scheduler pool", () => {
 			schedulerTickBudgetMs: () => tickBudgetMs,
 			schedulerEvalTimeoutMs: () => 800,
 		}
+		const { spans, tracer } = makeRecordingTracer()
 		return Effect.gen(function* () {
 			const alerts = yield* AlertsService
 			yield* createPoolRules(alerts)
 
 			const startedAt = yield* Clock.currentTimeMillis
-			const firstTick = yield* alerts.runSchedulerTick()
+			const firstTick = yield* alerts.runSchedulerTick().pipe(Effect.withTracer(tracer))
 			const wallMs = (yield* Clock.currentTimeMillis) - startedAt
+
+			// The deferred rules are counted on the tick span, where tick dashboards look.
+			assert.isAbove(firstTick.deferredCount, 0)
+			assert.deepStrictEqual(
+				spansNamed(spans, "AlertsService.runSchedulerTick").map((span) =>
+					span.attributes.get("maple.alerting.rules_deferred"),
+				),
+				[firstTick.deferredCount],
+			)
 
 			// Slack for a loaded CI runner; without the deadline the stuck rule never returns.
 			assert.isBelow(wallMs, tickBudgetMs + 2_500)
@@ -5387,4 +7394,521 @@ describe("AlertsService claim fence", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, stub, overrides)))
 		},
 	)
+})
+
+describe("AlertsService fenced state flush", () => {
+	// One healthy ungrouped rule: no transition, so its only write is the state flush.
+	// `during` runs raw SQL on the database while the rule's evaluation is in flight.
+	const flushWith = (during: string) => {
+		const testDb = createTestDb(trackedDbs)
+		const hook = Ref.makeUnsafe(false)
+		const base = makeWarehouseStub({
+			tracesAggregateRows: [tracesRow({ count: 200, errorRate: 1, estimatedSpanCount: 200 })],
+		})
+		const interfere = Effect.flatMap(Ref.getAndSet(hook, false), (armed) =>
+			armed ? Effect.promise(() => testDb.pglite.exec(during)) : Effect.void,
+		)
+		const stub: WarehouseQueryServiceApi = {
+			...base,
+			compiledQueryWithCapabilities: (tenant, compile, options) =>
+				Effect.andThen(interfere, base.compiledQueryWithCapabilities(tenant, compile, options)),
+		}
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_fenced_flush")
+			const userId = asUserId("user_fenced_flush")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+			yield* Ref.set(hook, true)
+			yield* alerts.runSchedulerTick()
+			const states = yield* Effect.promise(() =>
+				queryFirstRow<{ n: number }>(
+					testDb,
+					"select count(*)::int as n from alert_rule_states where rule_id = $1",
+					[rule.id],
+				),
+			)
+			return { stateRows: states?.n ?? 0 }
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
+	}
+
+	it.effect("writes the state rows while the claim and the rule are unchanged", () =>
+		Effect.map(flushWith("select 1"), ({ stateRows }) => assert.strictEqual(stateRows, 1)),
+	)
+
+	it.effect("writes nothing once a later tick has re-claimed the rule", () =>
+		Effect.map(
+			flushWith(
+				"update alert_rule_claims set last_scheduled_at = last_scheduled_at + interval '30 seconds'",
+			),
+			({ stateRows }) => assert.strictEqual(stateRows, 0),
+		),
+	)
+
+	it.effect("writes nothing once the rule was edited after the tick loaded it", () =>
+		Effect.map(
+			flushWith("update alert_rules set updated_at = updated_at + interval '1 second'"),
+			({ stateRows }) => assert.strictEqual(stateRows, 0),
+		),
+	)
+})
+
+describe("AlertsService post-evaluation writes", () => {
+	const GROUPS = 30
+	const EXECUTE_DELAY_MS = 100
+
+	// Every `Database.execute` waits first, like a Hyperdrive round trip at peak.
+	const slowDb = (testDb: TestDb): TestDb => ({
+		...testDb,
+		layer: Layer.effect(
+			Database,
+			Effect.gen(function* () {
+				const inner = yield* Database
+				return Database.of({
+					execute: (fn) =>
+						Effect.sleep(Duration.millis(EXECUTE_DELAY_MS)).pipe(
+							Effect.andThen(inner.execute(fn)),
+						),
+				})
+			}),
+		).pipe(Layer.provide(testDb.layer)),
+	})
+
+	it.live("writes a grouped rule's state rows in one batch, not one transaction per group", () => {
+		const testDb = createTestDb(trackedDbs)
+		const services = Arr.makeBy(GROUPS, (index) => `svc-${String(index).padStart(2, "0")}`)
+		const stub = makeWarehouseStub({
+			tracesAggregateRows: services.map((groupName) =>
+				tracesRow({ groupName, count: 200, errorRate: 0.5, estimatedSpanCount: 200 }),
+			),
+		})
+		const { spans, tracer } = makeRecordingTracer()
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_state_batch")
+			const userId = asUserId("user_state_batch")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Grouped error rate",
+					severity: "warning",
+					enabled: true,
+					groupBy: ["service.name"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					destinationIds: [destination.id],
+				}),
+			)
+
+			const startedAt = yield* Clock.currentTimeMillis
+			const tick = yield* alerts.runSchedulerTick().pipe(Effect.withTracer(tracer))
+			const wallMs = (yield* Clock.currentTimeMillis) - startedAt
+
+			assert.strictEqual(tick.evaluatedCount, 1)
+			// One transaction per group would spend GROUPS * EXECUTE_DELAY_MS on writes alone.
+			assert.isBelow(wallMs, GROUPS * EXECUTE_DELAY_MS)
+			const flushes = spansNamed(spans, "AlertsService.flushRuleStates")
+			assert.deepStrictEqual(
+				flushes.map((span) => span.attributes.get("maple.alerting.state_rows")),
+				[GROUPS],
+			)
+
+			const stored = yield* Effect.promise(() =>
+				queryFirstRow<{ groups: number; healthy: number }>(
+					testDb,
+					`select count(*)::int as "groups",
+					        count(*) filter (where last_status = 'healthy' and consecutive_healthy = 1)::int as "healthy"
+					   from alert_rule_states where rule_id = $1`,
+					[rule.id],
+				),
+			)
+			assert.deepStrictEqual(stored, { groups: GROUPS, healthy: GROUPS })
+		}).pipe(Effect.provide(makeLayer(slowDb(testDb), stub, { fetch: okFetch })))
+	})
+
+	it.live("retries a state flush that failed on a transient error", () => {
+		const testDb = createTestDb(trackedDbs)
+		const services = ["svc-a", "svc-b", "svc-c"]
+		const stub = makeWarehouseStub({
+			tracesAggregateRows: services.map((groupName) =>
+				tracesRow({ groupName, count: 200, errorRate: 0.5, estimatedSpanCount: 200 }),
+			),
+		})
+		const flushFailures = Ref.makeUnsafe(1)
+		// The flush's first transaction fails like a dropped connection, which
+		// the contention retry inside dbExecute does not cover.
+		const flakyFlushDb: TestDb = {
+			...testDb,
+			layer: Layer.effect(
+				Database,
+				Effect.gen(function* () {
+					const inner = yield* Database
+					return Database.of({
+						execute: (fn) =>
+							Effect.gen(function* () {
+								const span = yield* Effect.currentSpan.pipe(Effect.orElseSucceed(() => null))
+								const fail =
+									span?.name === "AlertsService.flushRuleStates" &&
+									(yield* Ref.modify(flushFailures, (left) => [
+										left > 0,
+										Math.max(0, left - 1),
+									]))
+								if (fail) {
+									return yield* new DatabaseError({
+										message: "Connection terminated unexpectedly",
+										cause: null,
+									})
+								}
+								return yield* inner.execute(fn)
+							}),
+					})
+				}),
+			).pipe(Layer.provide(testDb.layer)),
+		}
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_state_batch_retry")
+			const userId = asUserId("user_state_batch_retry")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Grouped error rate",
+					severity: "warning",
+					enabled: true,
+					groupBy: ["service.name"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					destinationIds: [destination.id],
+				}),
+			)
+
+			yield* alerts.runSchedulerTick()
+
+			assert.strictEqual(yield* Ref.get(flushFailures), 0, "the flush failed once")
+			const stored = yield* Effect.promise(() =>
+				queryFirstRow<{ healthy: number }>(
+					testDb,
+					`select count(*) filter (where last_status = 'healthy')::int as "healthy"
+					   from alert_rule_states where rule_id = $1`,
+					[rule.id],
+				),
+			)
+			assert.deepStrictEqual(stored, { healthy: services.length })
+		}).pipe(Effect.provide(makeLayer(flakyFlushDb, stub, { fetch: okFetch })))
+	})
+
+	it.effect("a rule edited before its flush keeps neither the buffered states nor their checks", () => {
+		const testDb = createTestDb(trackedDbs)
+		const services = ["svc-a", "svc-b", "svc-c"]
+		const base = makeWarehouseStub({
+			tracesAggregateRows: services.map((groupName) =>
+				tracesRow({ groupName, count: 200, errorRate: 0.5, estimatedSpanCount: 200 }),
+			),
+		})
+		const ingested: Array<Record<string, unknown>> = []
+		// The rule to disable on the next warehouse query: set once the rule
+		// exists, cleared by the edit so it runs once.
+		const pendingEdit = Ref.makeUnsafe<string | null>(null)
+		// An admin disables the rule while its evaluation is in flight, after the
+		// tick loaded the rule and before the groups' state rows are flushed.
+		const disableRule = Ref.getAndSet(pendingEdit, null).pipe(
+			Effect.flatMap((ruleId) =>
+				ruleId === null
+					? Effect.void
+					: Effect.promise(() =>
+							queryFirstRow(
+								testDb,
+								`update alert_rules set enabled = false, updated_at = updated_at + interval '1 second'
+								  where id = $1 returning id`,
+								[ruleId],
+							),
+						),
+			),
+		)
+		const stub: WarehouseQueryServiceApi = {
+			...base,
+			compiledQuery: (tenant, compiled) =>
+				disableRule.pipe(Effect.andThen(base.compiledQuery(tenant, compiled))),
+			compiledQueryWithCapabilities: (tenant, compile) =>
+				disableRule.pipe(Effect.andThen(base.compiledQueryWithCapabilities(tenant, compile))),
+			ingest: (_tenant, _datasource, rows) =>
+				Effect.sync(() => {
+					ingested.push(...(rows as Array<Record<string, unknown>>))
+				}),
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_state_batch_edit")
+			const userId = asUserId("user_state_batch_edit")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Grouped error rate",
+					severity: "warning",
+					enabled: true,
+					groupBy: ["service.name"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					destinationIds: [destination.id],
+				}),
+			)
+			yield* Ref.set(pendingEdit, rule.id)
+
+			yield* alerts.runSchedulerTick()
+
+			assert.isNull(yield* Ref.get(pendingEdit), "the edit ran during the tick")
+			const stored = yield* Effect.promise(() =>
+				queryFirstRow<{ healthy: number }>(
+					testDb,
+					`select count(*) filter (where last_status = 'healthy')::int as "healthy"
+					   from alert_rule_states where rule_id = $1`,
+					[rule.id],
+				),
+			)
+			assert.deepStrictEqual(stored, { healthy: 0 })
+			assert.deepStrictEqual(
+				ingested.filter((row) => row.RuleId === rule.id && row.Status === "healthy"),
+				[],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
+	})
+})
+
+describe("AlertsService investigation starts", () => {
+	// One grouped rule whose `groupCount` groups all breach on the first tick, with
+	// triage enabled, and a chat port that records each investigation turn it starts.
+	const setupTriageStorm = (
+		testDb: TestDb,
+		groupCount: number,
+		adapt: {
+			readonly stub?: (stub: WarehouseQueryServiceApi) => WarehouseQueryServiceApi
+			readonly now?: Effect.Effect<number>
+		} = {},
+	) => {
+		const groups = Arr.makeBy(groupCount, (i) => `svc-${i}`)
+		const alertRows: ReadonlyArray<Record<string, unknown>> = groups.map((groupName) =>
+			tracesRow({ groupName, count: 200, errorRate: 10, satisfiedCount: 180, estimatedSpanCount: 200 }),
+		)
+		const baseStub = makeWarehouseStub({ tracesAggregateRows: alertRows })
+		const stub = adapt.stub ? adapt.stub(baseStub) : baseStub
+		const turns: Array<string> = []
+		const chatSessions = fakeChatSessions(() => ({
+			beginTurn: async (input: { sessionId: string; messageId: string }) => {
+				turns.push(input.sessionId)
+				return { cursor: 0, messageId: input.messageId, turnMessageId: input.messageId }
+			},
+		}))
+		const createRule = Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_triage_storm")
+			const userId = asUserId("user_triage_storm")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Every service error rate",
+					severity: "critical",
+					enabled: true,
+					groupBy: ["service.name"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 1,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 30,
+					destinationIds: [destination.id],
+				}),
+			)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"insert into ai_triage_settings (org_id, enabled, max_runs_per_day, updated_at) values ($1, true, 100, now())",
+					[orgId],
+				),
+			)
+			return { alerts, orgId, rule }
+		})
+		const committedStates = (ruleId: string) =>
+			Effect.promise(() =>
+				queryFirstRow<{ n: number }>(
+					testDb,
+					"select count(*)::int as n from alert_rule_states where rule_id = $1",
+					[ruleId],
+				),
+			).pipe(Effect.map((row) => row?.n ?? 0))
+		const layer = makeLayer(testDb, stub, {
+			fetch: okFetch,
+			chatSessions,
+			now: adapt.now ?? Clock.currentTimeMillis,
+		})
+		return { groups, turns, createRule, committedStates, layer }
+	}
+
+	it.effect("starts a grouped rule's investigations after its state is written, several at once", () => {
+		const testDb = createTestDb(trackedDbs)
+		const { groups, turns, createRule, committedStates, layer } = setupTriageStorm(testDb, 12)
+
+		return Effect.gen(function* () {
+			const { alerts, orgId, rule } = yield* createRule
+			// What the classifier sees when it is called: how many of the rule's groups have a
+			// committed state row, and how many classifications are in flight with it.
+			const inFlight = yield* Ref.make(0)
+			const peakInFlight = yield* Ref.make(0)
+			const statesAtFirstCall = yield* Ref.make<number | null>(null)
+			const classifier = Layer.succeed(IncidentClassifier, {
+				classify: () =>
+					Effect.gen(function* () {
+						const states = yield* committedStates(rule.id)
+						yield* Ref.update(statesAtFirstCall, (seen) => seen ?? states)
+						const current = yield* Ref.updateAndGet(inFlight, (n) => n + 1)
+						yield* Ref.update(peakInFlight, (peak) => Math.max(peak, current))
+						yield* Effect.yieldNow.pipe(Effect.repeat({ times: 5 }))
+						yield* Ref.update(inFlight, (n) => n - 1)
+						return null
+					}),
+			})
+
+			yield* alerts.runSchedulerTick().pipe(Effect.provide(classifier))
+
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, groups.length)
+			assert.lengthOf(turns, groups.length)
+			assert.strictEqual(yield* Ref.get(statesAtFirstCall), groups.length)
+			assert.isAbove(yield* Ref.get(peakInFlight), 1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("starts every queued investigation when the triage phase runs past the claim TTL", () => {
+		const testDb = createTestDb(trackedDbs)
+		// The production storm: one rule opening 34 incidents.
+		const { groups, turns, createRule, committedStates, layer } = setupTriageStorm(testDb, 34)
+
+		return Effect.gen(function* () {
+			const { alerts, rule } = yield* createRule
+			const firstCall = yield* Ref.make<{ elapsedMs: number; states: number } | null>(null)
+			// Every classification takes the classifier's full 10 s timeout, so the phase
+			// runs far past tick start + 30 s.
+			const classifier = Layer.succeed(IncidentClassifier, {
+				classify: () =>
+					Effect.gen(function* () {
+						const elapsedMs = (yield* Clock.currentTimeMillis) - DEFAULT_CLOCK_EPOCH_MS
+						const states = yield* committedStates(rule.id)
+						yield* Ref.update(firstCall, (seen) => seen ?? { elapsedMs, states })
+						yield* TestClock.adjust("10 seconds")
+						return null
+					}),
+			})
+
+			yield* alerts.runSchedulerTick().pipe(Effect.provide(classifier))
+
+			const seen = yield* Ref.get(firstCall)
+			assert.isNotNull(seen)
+			assert.strictEqual(seen?.states, groups.length)
+			assert.isBelow(seen?.elapsedMs ?? Infinity, 1_000)
+			assert.isAbove((yield* Clock.currentTimeMillis) - DEFAULT_CLOCK_EPOCH_MS, 30_000)
+			assert.lengthOf(turns, groups.length)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("releases the tick's unstarted claims before triage begins", () => {
+		const testDb = createTestDb(trackedDbs)
+		// Every warehouse answer moves the scheduler's clock a minute on, so once the first
+		// evaluations return, the rules still waiting for a lane pass the tick deadline.
+		const shiftMs = Ref.makeUnsafe(0)
+		const advance = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+			Effect.tap(effect, () => Ref.update(shiftMs, (shift) => shift + 60_000))
+		const { turns, createRule, layer } = setupTriageStorm(testDb, 3, {
+			now: Effect.zipWith(Clock.currentTimeMillis, Ref.get(shiftMs), (ms, shift) => ms + shift),
+			stub: (base) => ({
+				...base,
+				compiledQuery: (...args) => advance(base.compiledQuery(...args)),
+				compiledQueryWithCapabilities: (...args) =>
+					advance(base.compiledQueryWithCapabilities(...args)),
+				compiledQueryFirst: (...args) => advance(base.compiledQueryFirst(...args)),
+			}),
+		})
+		const { spans, tracer } = makeRecordingTracer()
+
+		return Effect.gen(function* () {
+			const { alerts } = yield* createRule
+			// Created after the storm rule, so the scheduler reaches them later: more rules
+			// than lanes, in an org without triage.
+			const otherOrg = asOrgId("org_triage_other")
+			const destination = yield* createWebhookDestination(alerts, otherOrg, asUserId("user_other"))
+			yield* Effect.forEach(
+				Arr.range(1, 6),
+				(index) =>
+					TestClock.adjust("2 millis").pipe(
+						Effect.andThen(
+							alerts.createRule(
+								otherOrg,
+								asUserId("user_other"),
+								adminRoles,
+								new AlertRuleUpsertRequest({
+									name: `Other rule ${index}`,
+									severity: "warning",
+									enabled: true,
+									signalType: "error_rate",
+									comparator: "gt",
+									threshold: 99,
+									windowMinutes: 5,
+									destinationIds: [destination.id],
+								}),
+							),
+						),
+					),
+				{ discard: true },
+			)
+			// Whether the release had finished each time the triage phase opened.
+			const releasedAtTriageStart: Array<boolean> = []
+			const classifier = Layer.succeed(IncidentClassifier, { classify: () => Effect.succeed(null) })
+			const recording = Tracer.make({
+				span(options) {
+					if (options.name === "AlertsService.startPendingTriages") {
+						releasedAtTriageStart.push(
+							spansNamed(spans, "AlertsService.releaseClaims").some(
+								(span) => span.status._tag === "Ended",
+							),
+						)
+					}
+					return tracer.span(options)
+				},
+			})
+
+			const tick = yield* alerts
+				.runSchedulerTick()
+				.pipe(Effect.provide(classifier), Effect.withTracer(recording))
+
+			assert.isAbove(tick.deferredCount, 0)
+			assert.deepStrictEqual(releasedAtTriageStart, [true])
+			assert.lengthOf(turns, 3)
+		}).pipe(Effect.provide(layer))
+	})
 })

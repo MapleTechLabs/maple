@@ -1,4 +1,4 @@
-import type { ChatOutboundError } from "@maple/chat-platform"
+import type { ChatOutboundError, ChatOutboundTransport } from "@maple/chat-platform"
 import {
 	AlertDeliveryAuthError,
 	AlertDeliveryError,
@@ -11,7 +11,7 @@ import {
 	type ChatWorkspaceId,
 	type OrgId,
 } from "@maple/domain/http"
-import { Context, Duration, Effect, Layer, Option, Redacted } from "effect"
+import { Context, Duration, Effect, Layer, Option, Redacted, Ref } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -91,6 +91,9 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 		const registry = yield* ChatConnectorRegistry
 		const runtime = yield* AlertRuntime
 		const outboundConfig = env.CHAT_CONNECTOR_OUTBOUND_CONFIG
+		// One transport per linked workspace, so a burst of alerts to one channel shares the
+		// connector's rate-limit buckets and queue instead of each post starting blind.
+		const transports = yield* Ref.make(new Map<string, ChatOutboundTransport>())
 
 		// Held as an Option rather than failing the layer: the services this sits beside already
 		// refuse to boot on a bad key, so this is never the first to notice.
@@ -155,7 +158,12 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 						`${connector.manifest.name} is not configured on this deployment (${missing.join(", ")})`,
 					)
 				}
-				const transport = yield* chatOutboundTransport(workspace.value, outboundConfig, httpClient)
+				const transportKey = `${connector.id}\u0000${externalWorkspaceId}\u0000${workspace.value.credentials ?? ""}`
+				const cached = (yield* Ref.get(transports)).get(transportKey)
+				const transport =
+					cached ?? (yield* chatOutboundTransport(workspace.value, outboundConfig, httpClient))
+				if (cached === undefined)
+					yield* Ref.update(transports, (map) => new Map(map).set(transportKey, transport))
 				const posted = yield* transport
 					.post({ workspaceId: externalWorkspaceId, channelId: request.channelId }, request.blocks)
 					.pipe(
@@ -242,7 +250,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 )
 
 export class ChatAlertPoster extends Context.Service<ChatAlertPoster, ChatAlertPosterApi>()(
-	"@maple/api/services/ChatAlertPoster",
+	"@maple/backend/services/ChatAlertPoster",
 	{ make },
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))

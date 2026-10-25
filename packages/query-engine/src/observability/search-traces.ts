@@ -22,9 +22,8 @@ const MAX_OFFSET = 1_000_000
  * Search for spans matching the given criteria.
  *
  * When `spanName` is provided (and `rootOnly` is not true), queries the
- * `span_search` pipe to find matching spans. Broad searches use `traces`; a
- * concrete trace-id search uses `trace_detail_spans`, which is sorted for that
- * lookup pattern. This avoids the unreliable EXISTS subquery in the
+ * `span_search` pipe to find matching spans. Broad searches scan `traces`; a
+ * concrete trace-id search seeks the trace's granules through `trace_index`. This avoids the unreliable EXISTS subquery in the
  * `list_traces` pipe and returns the **matched span** data instead of root
  * span summaries.
  *

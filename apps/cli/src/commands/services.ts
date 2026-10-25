@@ -5,8 +5,8 @@ import { Effect, Option } from "effect"
 import type { TracesMetric } from "@maple/query-engine"
 import * as f from "../lib/flags"
 import { CliNotFoundError } from "../lib/errors"
-import { printResult } from "../lib/output"
-import { diagnoseView, servicesView, topOpsView } from "../lib/views"
+import { isEmptyResult, printResult } from "../lib/output"
+import { diagnoseView, serviceMapView, servicesView, topOpsView } from "../lib/views"
 import { describeWindow, resolveRangeChecked, type Range } from "../core/time"
 import * as Ops from "../core/operations"
 
@@ -16,8 +16,8 @@ import * as Ops from "../core/operations"
  */
 export const assertKnownService = (service: string, range: Range, window: string) =>
 	Effect.gen(function* () {
+		if (yield* Ops.serviceHasTelemetry(service, range)) return
 		const known = yield* Ops.knownServices(range)
-		if (known.includes(service)) return
 		const shown = known.slice(0, 8)
 		return yield* new CliNotFoundError({
 			message: `no telemetry for '${service}' in ${window}`,
@@ -160,22 +160,34 @@ export const serviceMap = Command.make("service-map", {
 	service: f.service,
 	environment: f.environment,
 }).pipe(
-	Command.withDescription("Service dependency edges (call counts, errors, latency)"),
+	Command.withDescription(
+		"Service dependency edges and the databases services call (call counts, errors, latency)",
+	),
 	Command.withExamples([
 		{ command: "maple service-map --format table", description: "Every edge seen in the last 6h" },
-		{ command: "maple service-map -s checkout-service", description: "Edges touching one service" },
+		{
+			command: "maple service-map -s checkout-service",
+			description: "Edges touching one service, plus its databases and external calls",
+		},
 	]),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const range = yield* resolveRangeChecked(a)
+			const service = Option.getOrUndefined(a.service)
+			const window = describeWindow(a, range)
 			const result = yield* Ops.serviceMap({
 				range,
-				service: Option.getOrUndefined(a.service),
+				service,
 				environment: Option.getOrUndefined(a.environment),
 			})
-			yield* printResult(result, {
-				empty: `No service-to-service calls in ${describeWindow(a, range)}`,
-			})
+			if (service !== undefined && isEmptyResult(result))
+				yield* assertKnownService(service, range, window)
+			// Remote mode never queried databases or external calls, so an empty map must say so.
+			const empty =
+				result.databases === undefined
+					? `No service-to-service calls in ${window}; databases and external calls are only listed in local mode`
+					: `No dependencies in ${window}`
+			yield* printResult(result, serviceMapView(empty))
 		}),
 	),
 )

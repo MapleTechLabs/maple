@@ -24,14 +24,22 @@ const breached: AlertEvaluation = {
 	comparator: "gt",
 	reason: "above threshold",
 	derivedFromNoData: false,
+	levels: [{ severity: "warning", status: "breach" }],
 }
 
-const healthy: AlertEvaluation = { ...breached, status: "healthy", value: 9 }
+const healthy: AlertEvaluation = {
+	...breached,
+	status: "healthy",
+	value: 9,
+	levels: [{ severity: "warning", status: "clear" }],
+}
 
 const policy = {
 	consecutiveBreachesRequired: 2,
+	breachWindow: 2,
 	consecutiveHealthyRequired: 2,
 	renotifyIntervalMinutes: 10,
+	severities: ["warning" as const],
 }
 
 const projectAlertLifecycleEvent = (input: Parameters<typeof projectAlertLifecycleEventResult>[0]) =>
@@ -45,6 +53,7 @@ describe("evaluateAlertObservation", () => {
 					comparator: "between",
 					threshold: 10,
 					thresholdUpper: 20,
+					tiers: [{ severity: "warning", value: 10, upper: 20, recoveryValue: null }],
 					minimumSampleCount: 2,
 					noDataBehavior: "skip",
 				},
@@ -61,6 +70,7 @@ describe("evaluateAlertObservation", () => {
 					comparator: "gt",
 					threshold: 10,
 					thresholdUpper: null,
+					tiers: [{ severity: "warning", value: 10, upper: null, recoveryValue: null }],
 					minimumSampleCount: 0,
 					noDataBehavior: "zero",
 				},
@@ -113,6 +123,7 @@ describe("planAlertLifecycle", () => {
 			evaluation: healthy,
 			state: { consecutiveBreaches: 0, consecutiveHealthy: 1 },
 			openIncident: {
+				severity: "warning" as const,
 				firstTriggeredAtMs: 600_000,
 				lastNotifiedAtMs: opened.inheritedNotificationAtMs,
 				lastDeliveredEventType: null,
@@ -132,6 +143,7 @@ describe("planAlertLifecycle", () => {
 			evaluation: breached,
 			state: { consecutiveBreaches: 2, consecutiveHealthy: 0 },
 			openIncident: {
+				severity: "warning" as const,
 				firstTriggeredAtMs: 0,
 				lastNotifiedAtMs: 1_000,
 				lastDeliveredEventType: "trigger",
@@ -152,6 +164,7 @@ describe("planAlertLifecycle", () => {
 			evaluation: noDataHealthy,
 			state: { consecutiveBreaches: 0, consecutiveHealthy: 1 },
 			openIncident: {
+				severity: "warning" as const,
 				firstTriggeredAtMs: 0,
 				lastNotifiedAtMs: 0,
 				lastDeliveredEventType: "trigger" as const,
@@ -170,6 +183,7 @@ describe("planAlertLifecycle", () => {
 				comparator: "gt",
 				threshold: 10,
 				thresholdUpper: null,
+				tiers: [{ severity: "warning", value: 10, upper: null, recoveryValue: null }],
 				minimumSampleCount: 0,
 				noDataBehavior: "skip",
 			},
@@ -182,6 +196,7 @@ describe("planAlertLifecycle", () => {
 			evaluation,
 			state: { consecutiveBreaches: 2, consecutiveHealthy: 0 },
 			openIncident: {
+				severity: "warning" as const,
 				firstTriggeredAtMs: 0,
 				lastNotifiedAtMs: 0,
 				lastDeliveredEventType: "trigger" as const,
@@ -223,6 +238,7 @@ describe("planAlertLifecycle", () => {
 				comparator: "gt",
 				threshold: 10,
 				thresholdUpper: null,
+				tiers: [{ severity: "warning", value: 10, upper: null, recoveryValue: null }],
 				minimumSampleCount: 50,
 				noDataBehavior: "alert",
 			},
@@ -247,6 +263,7 @@ describe("planAlertLifecycle", () => {
 				comparator: "gt",
 				threshold: 10,
 				thresholdUpper: null,
+				tiers: [{ severity: "warning", value: 10, upper: null, recoveryValue: null }],
 				minimumSampleCount: 50,
 				noDataBehavior: "alert",
 			},
@@ -267,6 +284,7 @@ describe("planAlertLifecycle", () => {
 					comparator: "gt",
 					threshold: 10,
 					thresholdUpper: null,
+					tiers: [{ severity: "warning", value: 10, upper: null, recoveryValue: null }],
 					minimumSampleCount: 2,
 					noDataBehavior: "skip",
 				},
@@ -282,6 +300,7 @@ describe("planAlertLifecycle", () => {
 					evaluation,
 					state,
 					openIncident: {
+						severity: "warning" as const,
 						firstTriggeredAtMs: 0,
 						lastNotifiedAtMs: 0,
 						lastDeliveredEventType: "trigger",
@@ -328,6 +347,7 @@ describe("delivery policy", () => {
 			comparator: "gt" as const,
 			threshold: 5,
 			thresholdUpper: null,
+			tiers: [{ severity: "warning", value: 5, upper: null, recoveryValue: null }],
 			windowMinutes: 5,
 			value: 7.2,
 			sampleCount: 12,

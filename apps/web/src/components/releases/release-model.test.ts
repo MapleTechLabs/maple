@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { CommitSha, ServiceName } from "@maple/domain/http"
-import type { Release, ReleaseTimelineBucket } from "@/api/warehouse/releases"
+import type { Release, ReleaseTimelineBucket } from "@maple/web-data/warehouse/releases"
 import {
 	attributeIssues,
 	countIssues,

@@ -1,0 +1,67 @@
+---
+/**
+ * GitHub · CI runs as traces. The tab carries the argument (a red streak with its
+ * first failing commit); the run's trace and the PR sheet below show where it leads.
+ */
+import * as m from "../../../paraglide/messages.js";
+import { GALLERY_SHOT_SIZE } from "../../../lib/page-registry";
+import MediaFrame from "../../home/MediaFrame.astro";
+
+const shots = [
+	{
+		src: "/screenshots/gallery-ci-trace.webp",
+		route: "/traces/:id",
+		title: m.gh_ci_trace_title(),
+		alt: "A failed CI run as a trace: runner waits, jobs and steps, with the failing test shard marked",
+	},
+	{
+		src: "/screenshots/gallery-code-review-pr.webp",
+		route: "/code-review/pull-requests",
+		title: m.gh_ci_pr_title(),
+		alt: "A pull request's review sheet: outcome, confidence, quality, summary, key changes and before-merge steps",
+	},
+];
+---
+
+<section class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-32">
+		<div class="grid gap-6 lg:grid-cols-2 lg:items-end lg:gap-20">
+			<div>
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.gh_ci_eyebrow()}</p>
+				<h2
+					class="mt-4 max-w-[16ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px] lg:text-[54px]"
+				>
+					{m.gh_ci_title()}
+				</h2>
+			</div>
+			<p class="max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{m.gh_ci_lede()}</p>
+		</div>
+
+		<MediaFrame
+			class="mt-12 md:mt-16"
+			label="The Code Review CI tab: runs, success rate, run time and runner wait against the previous week, with the failing workflow and its last green commit"
+			src="/screenshots/surface-ci.webp"
+			width={GALLERY_SHOT_SIZE.width}
+			height={GALLERY_SHOT_SIZE.height}
+		/>
+
+		<div class="mt-6 grid gap-6 md:grid-cols-2">
+			{
+				shots.map((shot) => (
+					<figure class="min-w-0">
+						<MediaFrame
+							label={shot.alt}
+							src={shot.src}
+							width={GALLERY_SHOT_SIZE.width}
+							height={GALLERY_SHOT_SIZE.height}
+						/>
+						<figcaption class="mt-3 flex items-baseline gap-3">
+							<span class="op-key">{shot.route}</span>
+							<span class="text-[13px] text-fg">{shot.title}</span>
+						</figcaption>
+					</figure>
+				))
+			}
+		</div>
+	</div>
+</section>

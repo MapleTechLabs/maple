@@ -166,6 +166,7 @@ describe("trace-completeness joins", () => {
 	it("auditOrphanSpansSQL left-joins children to parents over a lagged window", () => {
 		const { sql } = Effect.runSync(auditOrphanSpansSQL(window))
 		expect(sql).toContain("FROM service_map_children")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- an inner join would count no orphans
 		expect(sql).toContain("LEFT JOIN")
 		expect(sql).toContain("FROM service_map_spans")
 		expect(sql).toContain("ON (c.TraceId = p.TraceId AND c.ParentSpanId = p.SpanId)")
@@ -179,14 +180,34 @@ describe("trace-completeness joins", () => {
 		expect(sql).toContain("sampledOrphanCount")
 	})
 
-	it("auditRootlessTracesSQL joins observed traces against the root-span index", () => {
-		const { sql } = Effect.runSync(auditRootlessTracesSQL(window))
+	it("auditRootlessTracesSQL joins every observed trace against the root-span index", () => {
+		const { sql } = Effect.runSync(auditRootlessTracesSQL(window, null))
 		expect(sql).toContain("FROM trace_list_mv")
-		expect(sql).toContain(
-			"argMin(service_map_children.ServiceName, service_map_children.Timestamp) AS entryService",
-		)
+		// Every span, not only entry spans: a trace whose lost root was its only Server span still counts.
+		expect(sql).toContain("FROM traces\n")
+		expect(sql).toContain("argMin(traces.ServiceName, traces.Timestamp) AS entryService")
 		expect(sql).toContain("countIf(r.TraceId = '')")
 		expect(sql).toContain("GROUP BY TraceId")
+	})
+
+	it("auditRootlessTracesSQL only counts traces that start inside the window", () => {
+		const { sql } = Effect.runSync(auditRootlessTracesSQL(window, null))
+		// Read from the parent lookback, so a trace with spans before `childStart` is seen as older.
+		expect(sql).toContain("traces.Timestamp >= '2024-01-01 09:00:00'")
+		expect(sql).toContain("HAVING min(traces.Timestamp) >= '2024-01-01 10:00:00'")
+	})
+
+	it("auditRootlessTracesSQL treats traces made only of sampler-kept spans as sampled", () => {
+		const none = Effect.runSync(auditRootlessTracesSQL(window, null)).sql
+		expect(none).not.toContain("StatusCode")
+
+		const { sql } = Effect.runSync(
+			auditRootlessTracesSQL(window, { keepErrorSpans: true, slowSpanNs: 2_000_000_000 }),
+		)
+		expect(sql).toContain(
+			"countIf(NOT ((traces.StatusCode = 'Error' OR traces.Duration >= 2000000000))) AS unkeptSpans",
+		)
+		expect(sql).toContain("(t.thresholdSampled = 1 OR t.unkeptSpans = 0)")
 	})
 
 	it("applies the trace-sampling modulus to both sides of each join, or neither", () => {
@@ -195,7 +216,7 @@ describe("trace-completeness joins", () => {
 
 		for (const sql of [
 			Effect.runSync(auditOrphanSpansSQL({ ...window, traceSampleModulus: 16 })).sql,
-			Effect.runSync(auditRootlessTracesSQL({ ...window, traceSampleModulus: 16 })).sql,
+			Effect.runSync(auditRootlessTracesSQL({ ...window, traceSampleModulus: 16 }, null)).sql,
 		]) {
 			// Both sides, so every span of a kept trace survives and per-trace correctness is exact.
 			expect(sql.match(/cityHash64\(\w+\.TraceId\) % 16 = 0/g)).toHaveLength(2)
@@ -216,7 +237,7 @@ describe("trace-completeness joins", () => {
 		// both join sides being scoped. Asserting it by hand is what these used to
 		// do, and an omitted filter would have sailed through the executor's gate.
 		expect(Effect.runSync(auditOrphanSpansSQL(window)).tenantScope).toBe("single-tenant")
-		expect(Effect.runSync(auditRootlessTracesSQL(window)).tenantScope).toBe("single-tenant")
+		expect(Effect.runSync(auditRootlessTracesSQL(window, null)).tenantScope).toBe("single-tenant")
 	})
 
 	it("escapes the org id so an embedded quote cannot terminate the literal", () => {

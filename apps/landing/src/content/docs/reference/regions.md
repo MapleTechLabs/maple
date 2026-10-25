@@ -23,7 +23,7 @@ Keys do not cross regions. An ingest key or API key created in one region is rej
 
 ## Find your organization's region
 
-- **Settings → Organization** shows a **Data region** row: "United States" or "European Union (Frankfurt)".
+- **Settings → General** shows a **Data region** row: "United States" or "European Union (Frankfurt)".
 - The organization switcher in the sidebar shows `· US` or `· EU` after the organization name.
 - The dashboard host you use is the region: `app.maple.dev` is US, `app.eu.maple.dev` is EU.
 

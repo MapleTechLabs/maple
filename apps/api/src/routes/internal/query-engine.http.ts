@@ -1,5 +1,7 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { HttpApiBuilder } from "effect/http-api"
+import { mergeSupabaseSeries } from "./supabase-infra-series"
+import { apiTrafficResponse, mergeSupabaseCallers, mergeSupabaseProjects } from "./supabase-insights-merge"
 import {
 	CurrentTenant,
 	MapleInternalApi,
@@ -7,6 +9,7 @@ import {
 	type RawSqlValidationError,
 	SpanHierarchyResponse,
 	SpanDetailResponse,
+	TraceSpanEventsResponse,
 	ErrorsByTypeResponse,
 	ErrorsSparkResponse,
 	ErrorsSummaryResponse,
@@ -18,11 +21,29 @@ import {
 	ServiceApdexResponse,
 	PlanetScaleInfraTimeseriesResponse,
 	RailwayInfraRowsResponse,
+	SupabaseInfraRowsResponse,
+	SupabaseApiPath,
+	SupabaseApiTopPathsResponse,
+	SupabaseLogIssue,
+	SupabaseLogIssuesResponse,
+	SupabaseProjectCallersResponse,
+	AwsInfraMetricsResponse,
+	AwsInfraPresenceResponse,
+	AwsInfraSparklinesResponse,
+	AwsInfraTimeseriesResponse,
+	GcpInfraMetricsResponse,
+	GcpInfraPresenceResponse,
+	GcpInfraSparklinesResponse,
+	GcpCloudSqlDatabasesResponse,
+	GcpCloudSqlStatementSpansResponse,
+	GcpCloudSqlTopQueriesResponse,
+	GcpInfraTimeseriesResponse,
 	ServiceCloudflareStatsResponse,
 	ServicePlanetScaleStatsResponse,
 	CloudflareInfraZonesResponse,
 	CloudflareInfraZoneTimeseriesResponse,
 	CloudflareInfraZoneDetailResponse,
+	CloudflareInfraWorkerDetailResponse,
 	CloudflareInfraZoneSecurityResponse,
 	CloudflareInfraZoneBreakdownResponse,
 	CloudflareInfraZoneDnsResponse,
@@ -38,9 +59,11 @@ import {
 	ServiceMapBundleResponse,
 	ServiceWorkloadsResponse,
 	ServiceUsageResponse,
-	ServiceEndpointsRequest,
 	ServiceEndpointsResponse,
-	ServiceOperationsRequest,
+	ServiceApiOverviewResponse,
+	ServiceEndpointsTimeseriesResponse,
+	ServiceEndpointStatusBreakdownResponse,
+	ServiceEndpointDetailResponse,
 	ServiceOperationsResponse,
 	ListLogsResponse,
 	GetLogResponse,
@@ -95,32 +118,32 @@ import {
 	TraceId,
 	SpanId,
 } from "@maple/domain/http"
+import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
+import { GCP_INFRA_SERVICE_IDS, gcpInfraMetrics } from "@maple/domain/gcp-infra"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { isAiContentFormat } from "@maple/domain/ai-traffic"
-import { Cause, Clock, DateTime, Effect, Option, Schema } from "effect"
+import { DateTime, Effect, Option, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
 	isMissingProductEvents,
-	isMissingServiceOperationsRollup,
+	isMissingServiceEndpointDetails,
 } from "@maple/backend/services/warehouse/missing-table"
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import { describeFailure, recordRawSqlAudit } from "@maple/backend/services/audit/audit-access"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 import {
-	baselineWarehouseCapabilities,
+	alignServiceApiBucketSeconds,
 	CH,
 	computeBucketSecondsForRange,
 	formatWarehouseDateTime,
 	QueryEngineExecuteBatchResponse,
-	parseWarehouseDateTime,
+	parseSpanEvents,
 } from "@maple/query-engine"
 
 import {
 	containerMetricSpec,
 	hostMetricSpec,
 	nodeMetricSpec,
-	partitionWindowAround,
 	podMetricSpec,
 	toCloudflareFilters,
 	validateFunnelDefinition,
@@ -128,30 +151,16 @@ import {
 	workloadMetricSpec,
 } from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
+import { productEventsFunnelOpts, productEventsPathsOpts } from "@maple/query-engine/registry"
 import {
-	productEventsFunnelOpts,
-	productEventsPathsOpts,
-	type QueryDefinition,
-} from "@maple/query-engine/registry"
-import { makeQueryRunners } from "@maple/backend/queries/query-runner"
+	makeDashboardReads,
+	makeRollupFallback,
+	mapExecError,
+	withServiceApiFallback,
+} from "@maple/backend/queries/dashboard-reads"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 import type { ExecutionTenant, WarehouseExecutionError } from "@maple/query-engine/execution"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import * as Integrations from "@maple/query-engine-integrations"
-
-// `warehouse.sqlQuery` fails with the warehouse error union (distinct tagged
-// classes per failure mode). The typed error channel threads through unchanged
-// so HTTP status mapping stays accurate — every endpoint declares the full set
-// via `warehouseHttpErrors`; on any failure, defects included, the context
-// string lands on the route span so a failed request names which step broke.
-const mapExecError = <A, E, R>(effect: Effect.Effect<A, E, R>, context: string): Effect.Effect<A, E, R> =>
-	effect.pipe(
-		Effect.tapCause((cause) =>
-			Cause.hasInterruptsOnly(cause)
-				? Effect.void
-				: Effect.annotateCurrentSpan({ "maple.query_engine.failed_step": context }),
-		),
-	)
 
 /**
  * Payload → query-engine filter opts. Every Cloudflare zone endpoint carries the same optional
@@ -160,63 +169,48 @@ const mapExecError = <A, E, R>(effect: Effect.Effect<A, E, R>, context: string):
  * mark a panel zone-wide instead of pretending the filter applied.
  */
 
-/**
- * Read a rollup table, degrading to the raw-source query on a cluster that does
- * not have it.
- *
- * **This is error recovery, not a rollout switch.** There is no flag and nothing
- * to set: these rollups ship in `requiredForIngest: false` migrations, which
- * reach a BYO-ClickHouse cluster only when an org admin opens Settings → BYO
- * Backend and clicks Apply schema. Nothing reconciles that — there is no cron,
- * no on-deploy hook, and `upsert` deliberately runs no DDL.
- * `ClickHouseSchemaApplyWorkflow` even skips perf-only migrations in its first
- * pass and retries them best-effort inside a try/catch, so a run can report
- * `succeeded` with the table still absent. So the window where an org lacks one
- * is unbounded, per-org, and invisible from here, and the only correct response
- * is to notice at query time and read the other table. Without this, those orgs
- * get a hard 502 titled "Database is not configured correctly" with no
- * remediation hint, indefinitely.
- *
- * The two definitions in each pair are required to return identical rows — this
- * is a source swap, not a semantics change, enforced for web analytics by
- * `web-analytics-parity.clickhouse.e2e.test.ts` — so the degrade is invisible to
- * the caller and needs no response-shape branching. `Effect.fn` would give this
- * a second span; it is deliberately a plain helper so the fallback annotation
- * lands on the handler's own span.
- */
-const makeRollupFallback =
-	(detect: (error: unknown) => boolean, warning: string) =>
-	<A, P, E, R>(
-		rollup: (tenant: TenantContext, payload: P) => Effect.Effect<A, E, R>,
-		raw: (tenant: TenantContext, payload: P) => Effect.Effect<A, E, R>,
-		tenant: TenantContext,
-		payload: P,
-	): Effect.Effect<A, E, R> =>
-		rollup(tenant, payload).pipe(
-			Effect.catch((error) => {
-				if (!detect(error)) return Effect.fail(error)
-				return Effect.gen(function* () {
-					yield* Effect.logWarning(warning).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
-					yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
-					return yield* raw(tenant, payload)
-				})
-			}),
-		)
-
 const withProductEventsFallback = makeRollupFallback(
 	isMissingProductEvents,
 	"product_events is absent on this cluster; reading raw session_events. Apply ClickHouse schema to restore the fast path.",
 )
 
-const withServiceOperationsFallback = makeRollupFallback(
-	isMissingServiceOperationsRollup,
-	"service_operations rollup is absent on this cluster; reading raw traces. Apply ClickHouse schema to restore the fast path.",
-)
+/** Endpoint detail has no raw fallback: without migration 0048 the panel is empty. */
+const orEmptyWithoutEndpointDetails = <A, E, R>(effect: Effect.Effect<A, E, R>, empty: A) =>
+	effect.pipe(
+		Effect.catch((error) =>
+			isMissingServiceEndpointDetails(error)
+				? Effect.as(Effect.annotateCurrentSpan("query.rollup.missing", true), empty)
+				: Effect.fail(error),
+		),
+	)
 
-interface SparklinePoint {
-	readonly bucket: string
-	readonly count: number
+const emptyServiceApiTotals: CH.ServiceApiTotalsOutput = {
+	spanCount: 0,
+	estimatedSpanCount: 0,
+	httpClassifiedSpanCount: 0,
+	httpStatusCount: 0,
+	http4xxCount: 0,
+	http5xxCount: 0,
+	requestBodyBytes: 0,
+	requestBodyCount: 0,
+	p50DurationMs: 0,
+	p95DurationMs: 0,
+	p99DurationMs: 0,
 }
+
+const toServiceApiBucket = (row: CH.ServiceApiTimeseriesOutput) => ({
+	bucket: DateTime.formatIso(row.bucket),
+	spanName: row.spanName,
+	estimatedSpanCount: row.estimatedSpanCount,
+	httpStatusCount: row.httpStatusCount,
+	http4xxCount: row.http4xxCount,
+	httpClassifiedSpanCount: row.httpClassifiedSpanCount,
+	http5xxCount: row.http5xxCount,
+	requestBodyBytes: row.requestBodyBytes,
+	p50DurationMs: row.p50DurationMs,
+	p95DurationMs: row.p95DurationMs,
+	p99DurationMs: row.p99DurationMs,
+})
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeSpanId = Schema.decodeSync(SpanId)
@@ -231,13 +225,6 @@ const decodeStatusCodeOption = Schema.decodeUnknownOption(StatusCode)
 const coerceStatusCode = (value: string): StatusCode =>
 	Option.getOrElse(decodeStatusCodeOption(value), () => "Unset" as const)
 
-// Most traces opened without a timestamp are still recent (list rows carry
-// `?t=`; it's direct/shared/AI links that don't, and those overwhelmingly
-// point at fresh traces). Probing the last 48h first prunes to ~2 daily
-// partitions; only older traces fall back to the unbounded every-partition
-// probe.
-const PROBE_RECENT_WINDOW_MS = 48 * 3_600_000
-
 const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 	const k8sCluster = row.k8sCluster
 	const k8sPodName = row.k8sPodName
@@ -249,17 +236,21 @@ const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 	const processRuntimeName = row.processRuntimeName
 	// cluster.name alone does not prove the service runs in Kubernetes.
 	const isKubernetes = k8sPodName !== "" || k8sDeploymentName !== ""
-	// Host infrastructure takes precedence over SDK self-report.
-	const platform: "kubernetes" | "cloudflare" | "lambda" | "web" | "unknown" =
+	// Host infrastructure takes precedence over SDK self-report. Google Cloud's
+	// detector sets `faas.name` on Cloud Run and Cloud Functions, so it is checked
+	// before the Lambda rule.
+	const platform: "kubernetes" | "cloudflare" | "gcp" | "lambda" | "web" | "unknown" =
 		cloudPlatform === "cloudflare.workers" || cloudProvider === "cloudflare"
 			? "cloudflare"
-			: faasName !== "" || cloudPlatform === "aws_lambda"
-				? "lambda"
-				: isKubernetes
-					? "kubernetes"
-					: mapleSdkType === "client"
-						? "web"
-						: "unknown"
+			: cloudProvider === "gcp"
+				? "gcp"
+				: faasName !== "" || cloudPlatform === "aws_lambda"
+					? "lambda"
+					: isKubernetes
+						? "kubernetes"
+						: mapleSdkType === "client"
+							? "web"
+							: "unknown"
 	return {
 		serviceName: decodeServiceName(row.serviceName),
 		platform,
@@ -323,102 +314,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 	Effect.gen(function* () {
 		const queryEngine = yield* QueryEngineService
 		const warehouse = yield* WarehouseQueryService
-		const { runQuery, runQueryFirst } = makeQueryRunners({ warehouse, queryEngine })
-
-		/**
-		 * Summary + per-row sparkline for the operation rollup, shared by the
-		 * Operations tab (every span) and the API tab (HTTP endpoints only).
-		 *
-		 * Both reads try `service_operations_minutely`/`_hourly` and degrade
-		 * per-org on UNKNOWN_TABLE. The timeseries read repeats the probe rather
-		 * than inheriting the summary's verdict: one extra failed query on a
-		 * cluster that never applied migration 0008 is cheaper than the mutable
-		 * flag this replaced.
-		 */
-		const operationRowsWithSparklines = (
-			tenant: TenantContext,
-			payload: ServiceOperationsRequest | ServiceEndpointsRequest,
-			queries: {
-				readonly summary: QueryDefinition<ServiceOperationsRequest, CH.ServiceOperationsSummaryOutput>
-				readonly summaryRaw: QueryDefinition<
-					ServiceOperationsRequest,
-					CH.ServiceOperationsSummaryOutput
-				>
-				readonly label: string
-				/**
-				 * The Operations tab draws a sparkline per row; the API tab does not,
-				 * and issuing its timeseries anyway cost a second warehouse query whose
-				 * result was discarded — and capped the summary at ~50 rows, since the
-				 * timeseries returns `rows × buckets` against a 10k limit.
-				 */
-				readonly sparklines: boolean
-			},
-		) =>
-			Effect.gen(function* () {
-				const toNumber = (value: unknown) => Number(value ?? 0)
-				const summaryRows = yield* mapExecError(
-					withServiceOperationsFallback(
-						(t, pl) => runQuery(queries.summary, t, pl),
-						(t, pl) => runQuery(queries.summaryRaw, t, pl),
-						tenant,
-						payload,
-					),
-					`${queries.label} query failed`,
-				)
-				if (summaryRows.length === 0) {
-					return []
-				}
-
-				const toRow = (row: (typeof summaryRows)[number], sparkline: SparklinePoint[]) => ({
-					spanName: row.spanName,
-					spanCount: toNumber(row.spanCount),
-					estimatedSpanCount: toNumber(row.estimatedSpanCount),
-					errorCount: toNumber(row.errorCount),
-					estimatedErrorCount: toNumber(row.estimatedErrorCount),
-					errorRate: toNumber(row.errorRate),
-					avgDurationMs: toNumber(row.avgDurationMs),
-					p50DurationMs: toNumber(row.p50DurationMs),
-					p95DurationMs: toNumber(row.p95DurationMs),
-					p99DurationMs: toNumber(row.p99DurationMs),
-					sparkline,
-				})
-
-				if (!queries.sparklines) {
-					return summaryRows.map((row) => toRow(row, []))
-				}
-
-				const spanNames = summaryRows.map((row) => row.spanName)
-				// The rollup is minute-grain, so every sparkline interval must be
-				// a whole-minute multiple. Nearest-minute rounding keeps ~50 points.
-				const windowSeconds = Math.max(
-					0,
-					(parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)) /
-						1000,
-				)
-				const requestedBucketSeconds =
-					("bucketSeconds" in payload ? payload.bucketSeconds : undefined) ?? windowSeconds / 50
-				const bucketSeconds = Math.max(1, Math.round(requestedBucketSeconds / 60)) * 60
-				const timeseriesInput = { ...payload, spanNames, bucketSeconds }
-				const timeseriesRows = yield* mapExecError(
-					withServiceOperationsFallback(
-						(t, pl) => runQuery(Queries.serviceOperationsTimeseries, t, pl),
-						(t, pl) => runQuery(Queries.serviceOperationsTimeseriesRaw, t, pl),
-						tenant,
-						timeseriesInput,
-					),
-					"serviceOperationsTimeseries query failed",
-				)
-
-				const sparklines = new Map<string, SparklinePoint[]>()
-				for (const row of timeseriesRows) {
-					const key = row.spanName
-					const points = sparklines.get(key) ?? []
-					points.push({ bucket: DateTime.formatIso(row.bucket), count: toNumber(row.count) })
-					sparklines.set(key, points)
-				}
-
-				return summaryRows.map((row) => toRow(row, sparklines.get(row.spanName) ?? []))
-			})
+		const reads = makeDashboardReads({ warehouse, queryEngine })
+		const { runQuery, runQueryFirst } = reads
 
 		const executeRawSql = makeExecuteRawSql<
 			ExecutionTenant,
@@ -449,57 +346,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("spanHierarchy", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const nowMs = yield* Clock.currentTimeMillis
-						// The cache stores rows through the query's row codec, so a hit
-						// returns the same `DateTime.Utc` start times a miss does.
-						const rowSchema = yield* Queries.spanHierarchy
-							.compile(payload, tenant.orgId, baselineWarehouseCapabilities())
-							.pipe(
-								Effect.map((compiled) => compiled.rowSchema),
-								Effect.orElseSucceed(() => undefined),
-							)
-						const rows = yield* queryEngine.cachedDirect(
-							tenant,
-							"spanHierarchy",
-							payload,
-							// Wrapped in cachedDirect's effect so the probe only fires on a
-							// cache miss. `trace_detail_spans` is partitioned by
-							// `toDate(Timestamp)`. Without a time predicate the hierarchy query
-							// seeks across every daily partition (~30) — p95 ~8.8s vs ~2.3s when
-							// pruned to one. When the caller has no timestamp (direct URL,
-							// shared link, AI link), resolve one via a cheap LIMIT-1 probe and
-							// derive a ±1h window so the main query can prune. The probe itself
-							// tries the recent window first (see PROBE_RECENT_WINDOW_MS).
-							Effect.gen(function* () {
-								let startTime = payload.startTime
-								let endTime = payload.endTime
-								if (startTime == null || endTime == null) {
-									const probe =
-										(yield* runQueryFirst(Queries.spanHierarchyProbeRecent, tenant, {
-											traceId: payload.traceId,
-											startTime: formatWarehouseDateTime(
-												nowMs - PROBE_RECENT_WINDOW_MS,
-											),
-										})) ??
-										(yield* runQueryFirst(Queries.spanHierarchyProbe, tenant, payload))
-									if (probe?.timestamp != null) {
-										const window = partitionWindowAround(
-											DateTime.formatIso(probe.timestamp),
-										)
-										startTime = window.startTime
-										endTime = window.endTime
-									}
-								}
-								return yield* runQuery(Queries.spanHierarchy, tenant, {
-									traceId: payload.traceId,
-									spanId: payload.spanId,
-									startTime,
-									endTime,
-								})
-							}),
-							traceCacheTtlSeconds(payload.endTime, nowMs),
-							rowSchema === undefined ? undefined : Schema.Array(rowSchema),
-						)
+						const { rows } = yield* reads.spanHierarchy(tenant, payload)
 						const typedRows = rows.map((row) => ({
 							...row,
 							startTime: DateTime.formatIso(row.startTime),
@@ -516,14 +363,48 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						const row = yield* runQueryFirst(Queries.spanDetail, tenant, payload)
+						if (!row) return new SpanDetailResponse({ data: null })
+						// Events are read separately: the detail row resolves the span's
+						// service and start second, which seek its granules.
+						const startMs = DateTime.toEpochMillis(row.startTime)
+						const events = yield* runQueryFirst(Queries.spanEvents, tenant, {
+							traceId: row.traceId,
+							spanId: row.spanId,
+							serviceName: row.serviceName,
+							spanName: row.rawSpanName,
+							startTime: formatWarehouseDateTime(startMs),
+							endTime: formatWarehouseDateTime(startMs + 1000),
+						}).pipe(
+							Effect.map((raw) => (raw ? parseSpanEvents(raw) : [])),
+							// Events are supplementary; a failed lookup must not hide the attributes.
+							Effect.tapError((error) => Effect.logWarning("span events lookup failed", error)),
+							Effect.orElseSucceed(() => []),
+						)
 						return new SpanDetailResponse({
-							data: row
-								? {
-										...row,
-										traceId: decodeTraceId(row.traceId),
-										spanId: decodeSpanId(row.spanId),
-									}
-								: null,
+							data: {
+								traceId: decodeTraceId(row.traceId),
+								spanId: decodeSpanId(row.spanId),
+								spanAttributes: row.spanAttributes,
+								resourceAttributes: row.resourceAttributes,
+								events,
+							},
+						})
+					}),
+				)
+				.handle("traceSpanEvents", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.traceSpanEvents, tenant, payload)
+						return new TraceSpanEventsResponse({
+							data: rows.flatMap((row) => {
+								const events = parseSpanEvents(row).map(({ name, offsetMs }) => ({
+									name,
+									offsetMs,
+								}))
+								return events.length === 0
+									? []
+									: [{ spanId: decodeSpanId(row.spanId), events }]
+							}),
 						})
 					}),
 				)
@@ -615,7 +496,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("serviceHealthSnapshot", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.serviceHealthSnapshot, tenant, payload)
+						const rows = yield* reads.serviceHealthSnapshot(tenant, payload)
 						return new ServiceHealthSnapshotResponse({
 							data: rows.map((row) => ({
 								serviceName: decodeServiceName(row.serviceName),
@@ -630,7 +511,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("serviceHealthBaseline", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.serviceHealthBaseline, tenant, payload)
+						const rows = yield* reads.serviceHealthBaseline(tenant, payload)
 						return new ServiceHealthBaselineResponse({
 							data: rows.map((row) => ({
 								serviceName: decodeServiceName(row.serviceName),
@@ -807,6 +688,198 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
+				// Gauges, CPU and the logs summary are three reads; a project with no CPU samples yet
+				// reads 0% CPU, one with logs but no metrics reads zero metrics.
+				.handle("supabaseInfraProjects", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [gauges, cpu, logs] = yield* Effect.all(
+							[
+								runQuery(Queries.supabaseInfraProjectGauges, tenant, payload),
+								runQuery(Queries.supabaseInfraProjectCpu, tenant, payload),
+								runQuery(Queries.supabaseLogsProjectsSummary, tenant, payload),
+							],
+							{ concurrency: 3 },
+						)
+						return new SupabaseInfraRowsResponse({
+							data: mergeSupabaseProjects(gauges, cpu, logs),
+						})
+					}),
+				)
+				// Buckets present in either read; a missing half reads as zeros.
+				.handle("supabaseInfraProjectTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [gauges, rates] = yield* Effect.all(
+							[
+								runQuery(Queries.supabaseInfraProjectGaugeSeries, tenant, payload),
+								runQuery(Queries.supabaseInfraProjectRateSeries, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						return new SupabaseInfraRowsResponse({ data: mergeSupabaseSeries(gauges, rates) })
+					}),
+				)
+				.handle("supabaseApiTraffic", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [series, totals] = yield* Effect.all(
+							[
+								runQuery(Queries.supabaseApiTrafficSeries, tenant, payload),
+								runQuery(Queries.supabaseApiTrafficTotals, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						return apiTrafficResponse(series, totals[0])
+					}),
+				)
+				.handle("supabaseApiTopPaths", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.supabaseApiTopPaths, tenant, payload)
+						return new SupabaseApiTopPathsResponse({
+							paths: rows.map((row) => new SupabaseApiPath(row)),
+						})
+					}),
+				)
+				.handle("supabaseProjectCallers", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [callers, series] = yield* Effect.all(
+							[
+								runQuery(Queries.supabaseProjectCallers, tenant, payload),
+								runQuery(Queries.supabaseProjectCallerSeries, tenant, payload),
+							],
+							{ concurrency: 2 },
+						)
+						return new SupabaseProjectCallersResponse({
+							callers: mergeSupabaseCallers(callers, series),
+						})
+					}),
+				)
+				.handle("supabaseLogIssues", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.supabaseLogIssues, tenant, payload)
+						return new SupabaseLogIssuesResponse({
+							issues: rows.map(
+								(row) =>
+									new SupabaseLogIssue({
+										...row,
+										lastSeen: DateTime.formatIso(row.lastSeen),
+									}),
+							),
+						})
+					}),
+				)
+				.handle("awsInfraPresence", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.awsInfraPresence, tenant, payload)
+						const reported = new Set(rows.map((row) => row.metric))
+						return new AwsInfraPresenceResponse({
+							kinds: AWS_INFRA_KIND_IDS.filter((kind) =>
+								AWS_INFRA_KINDS[kind].metrics.some((metric) => reported.has(metric.name)),
+							),
+						})
+					}),
+				)
+				.handle("awsInfraMetrics", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.awsInfraMetrics, tenant, payload)
+						return new AwsInfraMetricsResponse({
+							data: rows.map((row) => ({ ...row, lastSeen: DateTime.formatIso(row.lastSeen) })),
+						})
+					}),
+				)
+				.handle("awsInfraSparklines", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.awsInfraSparklines, tenant, payload)
+						return new AwsInfraSparklinesResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("awsInfraTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.awsInfraTimeseries, tenant, payload)
+						return new AwsInfraTimeseriesResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("gcpInfraPresence", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraPresence, tenant, payload)
+						const reported = new Set(rows.map((row) => row.metric))
+						return new GcpInfraPresenceResponse({
+							services: GCP_INFRA_SERVICE_IDS.filter((service) =>
+								gcpInfraMetrics(service).some((metric) => reported.has(metric.name)),
+							),
+						})
+					}),
+				)
+				.handle("gcpInfraMetrics", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraMetrics, tenant, payload)
+						return new GcpInfraMetricsResponse({ data: rows })
+					}),
+				)
+				.handle("gcpInfraTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraTimeseries, tenant, payload)
+						return new GcpInfraTimeseriesResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("gcpInfraSparklines", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpInfraSparklines, tenant, payload)
+						return new GcpInfraSparklinesResponse({
+							data: rows.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("gcpCloudSqlTopQueries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpCloudSqlTopQueries, tenant, payload)
+						return new GcpCloudSqlTopQueriesResponse({ data: rows })
+					}),
+				)
+				.handle("gcpCloudSqlDatabases", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpCloudSqlDatabases, tenant, payload)
+						return new GcpCloudSqlDatabasesResponse({
+							databases: rows.map((row) => row.database),
+						})
+					}),
+				)
+				.handle("gcpCloudSqlStatementSpans", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.gcpCloudSqlStatementSpans, tenant, payload)
+						return new GcpCloudSqlStatementSpansResponse({
+							data: rows.map((row) => ({
+								...row,
+								timestamp: DateTime.formatIso(row.timestamp),
+							})),
+						})
+					}),
+				)
 				.handle("cloudflareInfraZones", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -829,7 +902,11 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								serviceName: row.serviceName,
 								requests: row.requests,
 								errors5xx: row.errors5xx,
+								errors4xx: row.errors4xx,
+								requests2xx: row.requests2xx,
+								requests3xx: row.requests3xx,
 								cacheHits: row.cacheHits,
+								cacheableRequests: row.cacheableRequests,
 								bytes: row.bytes,
 								visits: row.visits,
 								ttfbP50Ms: latency?.ttfbP50Ms ?? 0,
@@ -889,6 +966,25 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								Integrations.CF_METRIC.edgeTtfb,
 								Integrations.CF_METRIC.originDuration,
 							]),
+						})
+					}),
+				)
+				.handle("cloudflareInfraWorkerDetail", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [outcomeRows, latencyRows, durableObjectRows] = yield* Effect.all(
+							[
+								runQuery(Queries.cloudflareInfraWorkerDetailOutcomes, tenant, payload),
+								runQuery(Queries.cloudflareInfraWorkerDetailLatency, tenant, payload),
+								runQuery(Queries.cloudflareInfraWorkerDetailDurableObjects, tenant, payload),
+							],
+							{ concurrency: 3 },
+						)
+						return new CloudflareInfraWorkerDetailResponse({
+							outcomeBuckets: outcomeRows.map((row) => ({ ...row })),
+							latencyBuckets: latencyRows.map((row) => ({ ...row })),
+							durableObjectBuckets: durableObjectRows.map((row) => ({ ...row })),
 						})
 					}),
 				)
@@ -1057,11 +1153,15 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							],
 							{ concurrency: 2 },
 						)
-						const latencyByService = new Map(latencyRows.map((row) => [row.serviceName, row]))
+						// Keyed by account too: same-named scripts in two accounts are different Workers.
+						const workerKey = (row: { serviceName: string; accountId: string }) =>
+							`${row.accountId}|${row.serviceName}`
+						const latencyByWorker = new Map(latencyRows.map((row) => [workerKey(row), row]))
 						const data = counterRows.map((row) => {
-							const latency = latencyByService.get(row.serviceName)
+							const latency = latencyByWorker.get(workerKey(row))
 							return {
 								serviceName: row.serviceName,
+								accountId: row.accountId,
 								requests: row.requests,
 								errors: row.errors,
 								subrequests: row.subrequests,
@@ -1301,36 +1401,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("serviceOperations", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const data = yield* queryEngine.cachedDirect(
-							tenant,
-							"serviceOperations",
-							payload,
-							operationRowsWithSparklines(tenant, payload, {
-								summary: Queries.serviceOperationsSummary,
-								summaryRaw: Queries.serviceOperationsSummaryRaw,
-								label: "serviceOperations",
-								sparklines: true,
-							}),
-							30,
-						)
+						const data = yield* reads.serviceOperations(tenant, payload)
 						return new ServiceOperationsResponse({ data })
 					}),
 				)
 				.handle("serviceEndpoints", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const rows = yield* queryEngine.cachedDirect(
-							tenant,
-							"serviceEndpoints",
-							payload,
-							operationRowsWithSparklines(tenant, payload, {
-								summary: Queries.serviceEndpointsSummary,
-								summaryRaw: Queries.serviceEndpointsSummaryRaw,
-								label: "serviceEndpoints",
-								sparklines: false,
-							}),
-							30,
-						)
+						const rows = yield* reads.serviceEndpoints(tenant, payload)
 						// The split is display-only, so it happens after the cache read
 						// rather than being baked into the cached payload.
 						const data = rows.map((row) => ({
@@ -1338,6 +1416,162 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							...CH.splitEndpointName(row.spanName),
 						}))
 						return new ServiceEndpointsResponse({ data })
+					}),
+				)
+				.handle("serviceApiOverview", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const bucketSeconds = alignServiceApiBucketSeconds(payload.bucketSeconds)
+						const window = (startTime: string, endTime: string) => ({
+							serviceName: payload.serviceName,
+							environments: payload.environments,
+							startTime,
+							endTime,
+						})
+						const totals = (startTime: string, endTime: string) =>
+							mapExecError(
+								withServiceApiFallback(
+									(t, pl) => runQuery(Queries.serviceApiTotals, t, pl),
+									(t, pl) => runQuery(Queries.serviceApiTotalsRaw, t, pl),
+									tenant,
+									window(startTime, endTime),
+								),
+								"serviceApiTotals query failed",
+							).pipe(Effect.map((rows) => rows[0] ?? emptyServiceApiTotals))
+						const { previousStartTime, previousEndTime } = payload
+						const overview = Effect.all(
+							{
+								totals: totals(payload.startTime, payload.endTime),
+								previous:
+									previousStartTime !== undefined && previousEndTime !== undefined
+										? totals(previousStartTime, previousEndTime)
+										: Effect.succeed(null),
+								buckets: mapExecError(
+									withServiceApiFallback(
+										(t, pl) => runQuery(Queries.serviceApiTimeseries, t, pl),
+										(t, pl) => runQuery(Queries.serviceApiTimeseriesRaw, t, pl),
+										tenant,
+										{ ...window(payload.startTime, payload.endTime), bucketSeconds },
+									),
+									"serviceApiTimeseries query failed",
+								).pipe(Effect.map((rows) => rows.map(toServiceApiBucket))),
+							},
+							{ concurrency: "unbounded" },
+						)
+						const data = yield* queryEngine.cachedDirect(
+							tenant,
+							"serviceApiOverview",
+							payload,
+							overview,
+							30,
+						)
+						return new ServiceApiOverviewResponse(data)
+					}),
+				)
+				.handle("serviceEndpointsTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const input = {
+							serviceName: payload.serviceName,
+							environments: payload.environments,
+							startTime: payload.startTime,
+							endTime: payload.endTime,
+							bucketSeconds: alignServiceApiBucketSeconds(payload.bucketSeconds),
+							spanNames: payload.spanNames,
+						}
+						const buckets = yield* queryEngine.cachedDirect(
+							tenant,
+							"serviceEndpointsTimeseries",
+							payload,
+							mapExecError(
+								withServiceApiFallback(
+									(t, pl) => runQuery(Queries.serviceApiTimeseries, t, pl),
+									(t, pl) => runQuery(Queries.serviceApiTimeseriesRaw, t, pl),
+									tenant,
+									input,
+								),
+								"serviceEndpointsTimeseries query failed",
+							).pipe(Effect.map((rows) => rows.map(toServiceApiBucket))),
+							30,
+						)
+						return new ServiceEndpointsTimeseriesResponse({ buckets })
+					}),
+				)
+				.handle("serviceEndpointStatusBreakdown", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* queryEngine.cachedDirect(
+							tenant,
+							"serviceEndpointStatusBreakdown",
+							payload,
+							orEmptyWithoutEndpointDetails(
+								mapExecError(
+									runQuery(Queries.serviceEndpointStatusBreakdown, tenant, payload),
+									"serviceEndpointStatusBreakdown query failed",
+								).pipe(Effect.map((result) => result.map((row) => ({ ...row })))),
+								[],
+							),
+							30,
+						)
+						return new ServiceEndpointStatusBreakdownResponse({ rows })
+					}),
+				)
+				.handle("serviceEndpointDetail", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const detail = Effect.all(
+							{
+								distribution: mapExecError(
+									runQuery(Queries.serviceEndpointDistribution, tenant, payload),
+									"serviceEndpointDistribution query failed",
+								),
+								slowest: mapExecError(
+									runQuery(Queries.serviceEndpointSlowest, tenant, payload),
+									"serviceEndpointSlowest query failed",
+								),
+							},
+							{ concurrency: "unbounded" },
+						).pipe(
+							Effect.map(({ distribution: [row], slowest }) => ({
+								latencyQuantileLevels: [...CH.ENDPOINT_LATENCY_QUANTILE_LEVELS],
+								latencyQuantilesMs: [...(row?.latencyQuantilesMs ?? [])],
+								body:
+									row !== undefined && row.bodyCount > 0
+										? {
+												p50Bytes: row.bodyP50Bytes,
+												p95Bytes: row.bodyP95Bytes,
+												maxBytes: row.bodyMaxBytes,
+												count: row.bodyCount,
+											}
+										: null,
+								userAgents: (row?.userAgents ?? []).map((value, index) => ({
+									value,
+									count: row?.userAgentCounts[index] ?? null,
+								})),
+								slowest: slowest.map((request) => ({
+									traceId: request.traceId,
+									timestamp: DateTime.formatIso(request.timestamp),
+									durationMs: request.durationMs,
+									httpStatusCode: request.httpStatusCode,
+									// The rollup writes -1 for a request without a body size.
+									bodyBytes: request.bodyBytes < 0 ? null : request.bodyBytes,
+								})),
+							})),
+						)
+						const data = yield* queryEngine.cachedDirect(
+							tenant,
+							"serviceEndpointDetail",
+							payload,
+							orEmptyWithoutEndpointDetails(detail, {
+								latencyQuantileLevels: [...CH.ENDPOINT_LATENCY_QUANTILE_LEVELS],
+								latencyQuantilesMs: [],
+								body: null,
+								userAgents: [],
+								slowest: [],
+							}),
+							30,
+						)
+						return new ServiceEndpointDetailResponse(data)
 					}),
 				)
 				.handle("listLogs", ({ payload }) =>
@@ -1819,9 +2053,14 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								environment: row.environment,
 								podCount: row.podCount || 0,
 								lastSeen: DateTime.formatIso(row.lastSeen),
-								avgCpuLimitPct: row.avgCpuLimitPct || 0,
-								avgMemoryLimitPct: row.avgMemoryLimitPct || 0,
-								avgCpuUsage: row.avgCpuUsage || 0,
+								desiredReplicas: row.replicaSamples > 0 ? row.desiredReplicas : null,
+								readyReplicas: row.replicaSamples > 0 ? row.readyReplicas : null,
+								failedPods: row.failedPods || 0,
+								restarts: row.restarts || 0,
+								lastTerminatedReason: row.lastTerminatedReason,
+								peakCpuLimitPct: row.peakCpuLimitPct || 0,
+								peakMemoryLimitPct: row.peakMemoryLimitPct || 0,
+								cpuUsage: row.cpuUsage || 0,
 							})),
 						})
 					}),

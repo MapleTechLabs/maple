@@ -2,7 +2,7 @@ name: Publish Electric image
 
 # Upstream's `electricsql/electric` Docker Hub repo was deleted (electric-sql/electric#4822),
 # which broke every PRD deploy at the Electric image build. This builds the same release
-# from upstream source, once, into our own registry; `apps/electric/Dockerfile` pins the
+# from upstream source, once, into our own registry; `ELECTRIC_IMAGE` in `apps/electric/alchemy.run.ts` pins the
 # resulting digest. Run it again only to adopt a new Electric version.
 
 on:
@@ -91,7 +91,7 @@ jobs:
                   {
                     echo "Pushed \`${NAME}:${VERSION}@${DIGEST}\`"
                     echo
-                    echo "Built from electric-sql/electric@${UPSTREAM_SHA}. Pin it in apps/electric/Dockerfile:"
+                    echo "Built from electric-sql/electric@${UPSTREAM_SHA}. Pin it as ELECTRIC_IMAGE in apps/electric/alchemy.run.ts:"
                     echo
-                    echo "    FROM ${NAME}:${VERSION}@${DIGEST}"
+                    echo "    ${NAME}:${VERSION}@${DIGEST}"
                   } >> "$GITHUB_STEP_SUMMARY"

@@ -150,6 +150,8 @@ export class ChatSubToolCall extends Schema.Class<ChatSubToolCall>("@maple/ChatS
 	input: Schema.Unknown,
 	output: Schema.optionalKey(Schema.Unknown),
 	isError: Schema.optionalKey(Schema.Boolean),
+	/** The turn ended before this call settled. */
+	stopped: Schema.optionalKey(Schema.Boolean),
 	textOffset: Schema.optionalKey(Schema.Number),
 }) {}
 
@@ -178,6 +180,11 @@ export class ChatToolCall extends Schema.Class<ChatToolCall>("@maple/ChatToolCal
 	/** Present once the tool settled. */
 	output: Schema.optionalKey(Schema.Unknown),
 	isError: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * The turn ended (stopped, failed or ran out of steps) before this call settled, so it never
+	 * will. Without it a reader shows the call as still running, forever.
+	 */
+	stopped: Schema.optionalKey(Schema.Boolean),
 	/**
 	 * True when this call is an approval-gated mutation the agent paused on. The tool did NOT run;
 	 * the client renders an approval card and applies it through `POST /internal/chat/apply`.
@@ -493,9 +500,13 @@ export const ChatTurnOrigin = Schema.Union([
 	/** An investigation's own unattended pass, which has no reader at all. */
 	Schema.Struct({ kind: Schema.Literal("autonomous") }),
 	/**
-	 * Someone addressing Maple from a chat platform. The identity is the platform's, not Maple's:
-	 * there is no user row behind `externalUserId`, and `displayName` is what that platform shows.
-	 * The engine reads only `kind`; the rest is what the audit model will attribute a turn by.
+	 * Someone addressing Maple from a chat platform. `externalUserId` and `displayName` are the
+	 * platform's; the rest of the audit model attributes a turn by them.
+	 *
+	 * `actingUserId` is the Maple user that chat account is linked to, resolved by the host from its
+	 * own database. Present means the turn runs as that user, under the roles they hold in the org
+	 * when it starts. Absent means the connector cannot prove who is asking, and the turn runs as the
+	 * connector (see `ChatConnector.identity`).
 	 */
 	Schema.Struct({
 		kind: Schema.Literal("connector"),
@@ -503,6 +514,7 @@ export const ChatTurnOrigin = Schema.Union([
 		workspaceId: Schema.String,
 		externalUserId: ExternalUserId,
 		displayName: Schema.String,
+		actingUserId: Schema.optionalKey(UserId),
 	}),
 ])
 /**
@@ -514,9 +526,9 @@ export type ChatTurnOrigin = (typeof ChatTurnOrigin)["Encoded"]
 /**
  * The user id a connector turn's tenant carries.
  *
- * `TenantContext` requires one and no Maple user stands behind a connector turn, so this is a
- * placeholder to satisfy that type — **nothing branches on it**. Every behavioural question is
- * answered by {@link ChatTurnOrigin}.
+ * `TenantContext` requires one, and the Maple user behind a connector turn (when there is one)
+ * rides on the origin's `actingUserId` instead, so this is a placeholder to satisfy that type.
+ * **Nothing branches on it**: every behavioural question is answered by {@link ChatTurnOrigin}.
  */
 export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connector")
 
@@ -525,7 +537,8 @@ export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connecto
  *
  * No roles: a connector turn proposes mutations rather than performing them, so the only reader of
  * roles — the authorization check inside a mutating tool — is reached by the apply path, under
- * whoever approved the proposal, not by the turn that wrote it.
+ * whoever approved the proposal, not by the turn that wrote it. A turn whose origin names an
+ * `actingUserId` is widened to that user's tenant on the other side of the hop.
  */
 export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	encodeChatTurnTenant({

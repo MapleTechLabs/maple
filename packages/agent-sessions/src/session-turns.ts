@@ -62,9 +62,32 @@ export function spanEndMs(span: AiSessionSpan): number {
 	return spanStartMs(span) + span.durationMs
 }
 
-/** The model the span actually ran on, falling back to the one it asked for. */
+/**
+ * The model the span ran on, falling back to the one it asked for. When the
+ * response only resolved the request to a dated snapshot or dropped its
+ * provider prefix, the requested name stands, so one model is one name
+ * whether a call answered `gpt-4o-mini-2024-07-18`, `gpt-4o-mini` or failed
+ * first. The ingest gateway stamps `maple_ai.model` by the same rule.
+ */
 export function spanModel(span: AiSessionSpan): string | undefined {
-	return span.genAi.responseModel ?? span.genAi.requestModel
+	const { responseModel, requestModel } = span.genAi
+	if (responseModel !== undefined && requestModel !== undefined && sameModel(requestModel, responseModel)) {
+		return requestModel
+	}
+	return responseModel ?? requestModel
+}
+
+const RELEASE_DATE = /-(?:\d{4}-\d{2}-\d{2}|\d{8})$/
+
+/** `response` is `request` itself: compared without a provider prefix or the
+ *  dots some providers spell as dashes, and, when the request names no
+ *  release, without the release date the response resolved it to. A pinned
+ *  request answered by another release is a different model. */
+function sameModel(request: string, response: string): boolean {
+	const base = (model: string) => (model.split("/").at(-1) ?? model).replaceAll(".", "-").toLowerCase()
+	const [asked, answered] = [base(request), base(response)]
+	if (asked === answered) return true
+	return !RELEASE_DATE.test(asked) && answered.replace(RELEASE_DATE, "") === asked
 }
 
 export function classifyAiSpan(span: AiSessionSpan): AiSpanCategory {

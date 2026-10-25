@@ -21,7 +21,7 @@ Use the base URL of your organization's [region](/docs/reference/regions). A key
 
 ## Authentication
 
-Create an API key in the dashboard under **Settings → API Keys**, or with `POST /v2/api_keys` using an existing key. Send it as a Bearer token on every request:
+Create an API key in the dashboard under **Settings → Keys**, or with `POST /v2/api_keys` using an existing key. Send it as a Bearer token on every request:
 
 ```bash
 curl https://api.maple.dev/v2/services \

@@ -7,7 +7,9 @@ import {
 	SATURATED,
 	type LensInput,
 } from "./service-lens-summary"
-import type { PodRow } from "@/components/infra/pod-table"
+import type { ListPodsResponse } from "@maple/domain/http"
+
+type PodRow = ListPodsResponse["data"][number]
 
 const pod = (saturation: number, opts?: { unbounded?: boolean }): PodRow =>
 	({

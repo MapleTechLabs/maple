@@ -44,21 +44,13 @@ const GUARDED_FILES = [
 	"packages/backend/src/services/auth/MembershipRevocationService.ts",
 	"apps/api/src/routes/v2/integrations-chat.http.ts",
 	"apps/api/src/routes/chat-integration.http.ts",
-	"apps/web/src/components/integrations/chat-integration-card.tsx",
-	// The per-organization gate: the connector's own id derives its metadata key.
-	"apps/web/src/lib/organization-feature-flags.ts",
-	"apps/web/src/hooks/use-organization-feature-flags.ts",
-]
-
-/**
- * Files this feature only *touched*, which name a vendor for reasons that predate it — the
- * integrations catalog has carried a Slack card for a year. They stay guarded against every OTHER
- * vendor, which is what stops a `connector === "…"` branch appearing in the generic chat code they
- * now also hold.
- */
-const PARTIALLY_GUARDED: ReadonlyArray<{ readonly path: string; readonly allow: ReadonlyArray<string> }> = [
-	{ path: "apps/web/src/components/integrations/integration-catalog.tsx", allow: ["slack"] },
-	{ path: "apps/web/src/routes/integrations.tsx", allow: ["slack"] },
+	// The dashboard's integrations page: the catalog and the chat card, dialog and callback.
+	"apps/web/src/page/integrations/catalog.ts",
+	"apps/web/src/page/integrations/chat.ts",
+	"apps/web/src/page/integrations/chat-callback.ts",
+	"apps/web/src/page/integrations/update-chat.ts",
+	"apps/web/src/page/integrations/view-chat.ts",
+	"apps/web/src/page/integrations/view-chat-card.ts",
 ]
 
 const VENDORS = ["discord", "slack", "teams", "telegram", "whatsapp"]
@@ -148,15 +140,8 @@ describe("vendor isolation", () => {
 		expect(offenders).toEqual([])
 	})
 
-	it("keeps the shared dashboard files free of every vendor they did not already carry", () => {
-		const offenders = PARTIALLY_GUARDED.flatMap((guarded) =>
-			offendingLines(join(repoRoot, guarded.path), guarded.allow, never),
-		)
-		expect(offenders).toEqual([])
-	})
-
 	it("guards files that exist", () => {
-		const missing = [...GUARDED_FILES, ...PARTIALLY_GUARDED.map((guarded) => guarded.path)].filter(
+		const missing = GUARDED_FILES.filter(
 			(path) => statSync(join(repoRoot, path), { throwIfNoEntry: false }) === undefined,
 		)
 		expect(missing).toEqual([])

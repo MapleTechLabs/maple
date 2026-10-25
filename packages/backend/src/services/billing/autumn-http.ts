@@ -1,5 +1,5 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import type { BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
@@ -139,6 +139,25 @@ const toBillingUpstreamError = (error: unknown) =>
 		message: error instanceof Error ? error.message : String(error),
 	})
 
+/** Ceiling on one billing call, so a stalled Autumn or Stripe cannot hang the request. */
+export const BILLING_REQUEST_TIMEOUT = Duration.seconds(25)
+
+/** Bounds `call` and surfaces the timeout as the typed `BillingUpstreamError`. */
+export const withBillingTimeout =
+	(vendor: string, route: string) =>
+	<A, E, R>(call: Effect.Effect<A, E, R>): Effect.Effect<A, E | BillingUpstreamError, R> =>
+		call.pipe(
+			Effect.timeoutOrElse({
+				duration: BILLING_REQUEST_TIMEOUT,
+				orElse: () =>
+					Effect.fail(
+						new BillingUpstreamError({
+							message: `${vendor} ${route} timed out after ${Duration.format(BILLING_REQUEST_TIMEOUT)}`,
+						}),
+					),
+			}),
+		)
+
 const JsonBody = Schema.fromJsonString(Schema.Unknown)
 
 const decodeJson = Schema.decodeEffect(JsonBody)
@@ -236,7 +255,10 @@ const callAutumn = (
 					yield* Effect.annotateCurrentSpan({ "maple.autumn.code": errorBody.code })
 				}
 				return { statusCode: response.status, response: errorBody }
-			}).pipe(Effect.withSpan("autumn.request", { attributes: { "maple.autumn.route": route } }))
+			}).pipe(
+				withBillingTimeout("Autumn", route),
+				Effect.withSpan("autumn.request", { attributes: { "maple.autumn.route": route } }),
+			)
 
 type AutumnCall = Effect.Effect<AutumnResult, AutumnTransportFailure>
 
@@ -390,6 +412,7 @@ const callUpdateBillingControls = (
 						: yield* decodeJson(text).pipe(Effect.mapError(toBillingUpstreamError))
 				return { statusCode: response.status, response: responseBody } satisfies AutumnResult
 			}).pipe(
+				withBillingTimeout("Autumn", "updateCustomerBillingControls"),
 				Effect.withSpan("autumn.request", {
 					attributes: { "maple.autumn.route": "updateCustomerBillingControls" },
 				}),
@@ -408,7 +431,7 @@ const callUpdateBillingControls = (
  * here, the check stays per call.
  */
 export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>()(
-	"@maple/api/services/billing/AutumnClient",
+	"@maple/backend/services/billing/AutumnClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

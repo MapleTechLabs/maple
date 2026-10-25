@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/browser",
-	"version": "0.10.1",
+	"version": "0.12.0",
 	"description": "Maple browser SDK — OpenTelemetry tracing and rrweb session replay in one package. Every span and replay event shares a session id for trace↔replay correlation.",
 	"keywords": [
 		"maple",
@@ -41,7 +41,7 @@
 	},
 	"scripts": {
 		"build": "tsdown",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsrs --noEmit",
 		"test": "vitest run",
 		"size": "bun scripts/size.ts"
 	},

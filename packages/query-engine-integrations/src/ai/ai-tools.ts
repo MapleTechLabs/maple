@@ -79,7 +79,14 @@ import {
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
 import { Array as Arr, type DateTime, Schema } from "effect"
 import { QueryBuilderDefect, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import { AiTraceIndex, TraceDetailSpans, exactDateTime64, orgIdParam } from "@maple/query-engine/ch/tables"
+import {
+	AiTraceIndex,
+	Traces,
+	exactDateTime64,
+	inTraces,
+	orgIdParam,
+	paramTraceWindow,
+} from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { aiToolCallPayload } from "./ai-integrations"
@@ -987,7 +994,7 @@ export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPay
 /** A span row's `(TraceId, SpanId)`, for the payload read's tuple `IN`. Raw
  *  because the DSL has no tuple; qualified because the occurrences' own keys are
  *  literals of the same shape. */
-const traceSpanKey = CH.rawExpr("(trace_detail_spans.TraceId, trace_detail_spans.SpanId)", T.string)
+const traceSpanKey = CH.rawExpr("(traces.TraceId, traces.SpanId)", T.string)
 
 /** The attribute map with every value cut to {@link AI_TOOL_ERROR_ATTRIBUTE_MAX}
  *  characters. Raw because the DSL has no `mapApply`. */
@@ -1009,9 +1016,9 @@ const cutAttributeBytes = (attributes: CH.Expr<Record<string, string>>): CH.Expr
  * what came back — the only facts on this page that live on the raw span.
  *
  * `calls` are the occurrences step one ranked, so the read is bounded twice and
- * by nothing else: `(TraceId, SpanId) IN (<their literal tuples>)`, a
- * primary-key seek on `trace_detail_spans`' `(OrgId, TraceId, SpanId)` order,
- * and `sliceStart`/`sliceEnd` = their own first and last timestamps. The bounds
+ * by nothing else: `(TraceId, SpanId) IN (<their literal tuples>)`, seeked
+ * through `trace_index`, and `sliceStart`/`sliceEnd` = their own first and last
+ * timestamps. The bounds
  * are exact and unpadded: the index copies `Timestamp` from the span verbatim,
  * so the call is inside its own bounds by construction, and a pad would only buy
  * partitions.
@@ -1026,7 +1033,7 @@ const cutAttributeBytes = (attributes: CH.Expr<Record<string, string>>): CH.Expr
  * that were, so a sample costs kilobytes on the wire rather than its whole span.
  */
 export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>) {
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -1038,6 +1045,10 @@ export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiTool
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(param.dateTime("sliceStart")),
 			$.Timestamp.lte(param.dateTime("sliceEnd")),
+			inTraces(
+				(id) => CH.inList(id, [...new Set(calls.map((call) => call.traceId))]),
+				paramTraceWindow("sliceStart", "sliceEnd"),
+			),
 			CH.inExprList(
 				traceSpanKey,
 				calls.map((call) =>
@@ -1129,7 +1140,7 @@ export const aiToolDescriptionRowSchema: CompiledQueryRowSchema<AiToolDescriptio
  * The latest non-empty description one tool stamped in the window.
  *
  * This read was the page's render gate — it ranked the tool's hundred most
- * recent calls on the index and then seeked `trace_detail_spans` for each, 7.7s
+ * recent calls on the index and then seeked `traces` for each, 7.7s
  * at the median and 15.8s at the profile's ceiling over a week of production.
  * `ToolDescription` is the same coalesce, evaluated at insert (migration 0032),
  * so the ranking and the seek are both gone and the answer is one `argMax` over

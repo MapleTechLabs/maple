@@ -1,4 +1,5 @@
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest"
+import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { ConfigProvider, Duration, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
@@ -54,7 +55,7 @@ const makeLayer = (testDb: TestDb, fetchStub?: typeof globalThis.fetch) => {
 		discoveryLive,
 		Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
 			Layer.provide(FetchHttpClient.layer),
-			Layer.provide(Layer.mergeAll(discoveryLive, oauthLive)),
+			Layer.provide(Layer.mergeAll(discoveryLive, oauthLive, SupabaseOAuthService.layer)),
 		),
 		oauthLive,
 	).pipe(Layer.provide(testDb.layer), Layer.provide(Env.layer), Layer.provide(makeConfig()))
@@ -517,7 +518,10 @@ describe("PlanetScaleDiscoveryService", () => {
 			const { state } = yield* oauth.startConnect(asOrgId("org_1"), asUserId("user_1"), {
 				callbackUrl: "https://api.example.com/api/integrations/planetscale/callback",
 			})
-			yield* oauth.completeConnect("auth-code", state)
+			yield* oauth.completeConnect("auth-code", state, {
+				orgId: asOrgId("org_1"),
+				userId: asUserId("user_1"),
+			})
 			const created = yield* targets.create(
 				asOrgId("org_1"),
 				new CreateScrapeTargetRequest({

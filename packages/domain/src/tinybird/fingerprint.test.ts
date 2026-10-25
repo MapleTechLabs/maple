@@ -2,13 +2,18 @@ import { describe, expect, it } from "vitest"
 import {
 	chPattern,
 	computeFingerprintInputs,
+	EFFECT_SPAN_FRAME_MARKER,
+	ERROR_MSG_REDACTIONS,
+	FINGERPRINT_HASH_SALT,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
 	JSON_VALUE_REDACTIONS,
 	MAX_FINGERPRINT_FRAMES,
 	MSG_SCAN_CHARS,
 	MSG_SIGNATURE_CHARS,
-	MSG_TEXT_REDACTIONS,
+	NAMESPACED_TYPE_MAX_FRAMES,
+	SCHEMA_PATH_LINE_PATTERN,
+	SPAN_NAME_FRAME_PATTERN,
 } from "./fingerprint"
 import { ERROR_EVENTS_MV_SQL } from "./materializations"
 
@@ -464,7 +469,7 @@ describe("error fingerprint normalization", () => {
 			expect(a.msgSignature).toContain("/api/query-engine/overview")
 		})
 
-		it("collapses per-user home directories but keeps the rest of the path", () => {
+		it("collapses a home-directory path to PATH, so two users' stores are one bug", () => {
 			const a = computeFingerprintInputs({
 				exceptionType: "IngestRejected",
 				exceptionStacktrace: "",
@@ -478,7 +483,7 @@ describe("error fingerprint normalization", () => {
 			})
 
 			expect(a.msgSignature).toBe(b.msgSignature)
-			expect(a.msgSignature).toContain("/.maple/data/store")
+			expect(a.msgSignature).toBe("Cannot open file PATH: No space left on device")
 		})
 
 		it("redacts an email address out of the signature", () => {
@@ -582,13 +587,24 @@ describe("SQL parity", () => {
 
 	it("renders the frame matcher and every redaction from the shared constants", () => {
 		expect(sql).toContain(`match(line, ${chPattern(FRAME_LINE_PATTERN)})`)
+		expect(sql).toContain(`position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0`)
+		expect(sql).toContain(`NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})`)
+		expect(sql).toContain(`NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})`)
+		// The frame limit reads _msgSig, so the signature must be defined first.
+		expect(sql.indexOf("AS _msgSig")).toBeLessThan(sql.indexOf("AS _rawFrames"))
 		for (const [pattern, replacement] of [
 			...FRAME_REDACTIONS,
 			...JSON_VALUE_REDACTIONS,
-			...MSG_TEXT_REDACTIONS,
+			...ERROR_MSG_REDACTIONS,
 		]) {
-			expect(sql).toContain(`${chPattern(pattern)}, ${chPattern(replacement)}`)
+			const chReplacement = replacement.replace(/\$([1-9])/g, "\\$1")
+			expect(sql).toContain(`${chPattern(pattern)}, ${chPattern(chReplacement)}`)
 		}
+	})
+
+	it("hashes the version salt, so a FINGERPRINT_VERSION bump rotates every issue", () => {
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the salt is semantic: it rotates every issue
+		expect(sql).toContain(`_msgSig, ${chPattern(FINGERPRINT_HASH_SALT)}) AS FingerprintHash`)
 	})
 
 	it("truncates by character in both implementations, not by byte", () => {
@@ -600,28 +616,34 @@ describe("SQL parity", () => {
 	})
 
 	it("keeps the frame limit in step", () => {
-		expect(sql).toContain(`1, ${MAX_FINGERPRINT_FRAMES}\n          ) AS _rawFrames`)
+		expect(sql).toContain(
+			`1, if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES})\n          ) AS _rawFrames`,
+		)
 	})
 
 	it("emits patterns ClickHouse's RE2 can compile", () => {
 		// RE2 rejects backreferences and lookaround; JS accepts both, so a pattern
 		// written here can typecheck, pass every test above, and still fail at
 		// deploy time against the warehouse.
-		for (const [pattern] of [...FRAME_REDACTIONS, ...JSON_VALUE_REDACTIONS, ...MSG_TEXT_REDACTIONS]) {
+		for (const [pattern] of [...FRAME_REDACTIONS, ...JSON_VALUE_REDACTIONS, ...ERROR_MSG_REDACTIONS]) {
 			expect(pattern).not.toMatch(/\(\?[=!<]/)
 			expect(pattern).not.toMatch(/\\[1-9]/)
 		}
 		expect(FRAME_LINE_PATTERN).not.toMatch(/\(\?[=!<]/)
 	})
 
-	it("uses replacements neither engine reinterprets", () => {
-		for (const [, replacement] of [
+	it("uses no replacement syntax beyond a group reference both engines share", () => {
+		// `$1` (JS) and `\1` (ClickHouse) are the one form rendered across; `$&`,
+		// `$<name>` or a literal backslash would mean different things on each side.
+		for (const [pattern, replacement] of [
 			...FRAME_REDACTIONS,
 			...JSON_VALUE_REDACTIONS,
-			...MSG_TEXT_REDACTIONS,
+			...ERROR_MSG_REDACTIONS,
 		]) {
-			expect(replacement).not.toContain("$")
-			expect(replacement).not.toContain("\\")
+			const groups = [...replacement.matchAll(/\$([1-9])/g)].map((m) => Number(m[1]))
+			expect(replacement.replace(/\$[1-9]/g, "")).not.toMatch(/[$\\]/)
+			const capturing = new RegExp(`${pattern}|`).exec("")?.length ?? 1
+			for (const group of groups) expect(group).toBeLessThan(capturing)
 		}
 	})
 })
@@ -727,5 +749,258 @@ describe("Apple crash frames", () => {
 			})
 			expect(result.fpFrames, line).toBe("")
 		}
+	})
+})
+
+describe("fingerprint v3", () => {
+	const key = (exceptionType: string, exceptionStacktrace: string, statusMessage: string) => {
+		const inputs = computeFingerprintInputs({ exceptionType, exceptionStacktrace, statusMessage })
+		return `${inputs.fpFrames}\u0000${inputs.msgSignature}`
+	}
+	const stack = (...frames: ReadonlyArray<string>) => ["Error: boom", ...frames].join("\n")
+
+	describe("frames", () => {
+		it("keeps only the throw site for a namespaced type, so its callers are one issue", () => {
+			const throwSite = "    at toUpstreamError (/app/src/upstream.ts:40:11)"
+			const a = stack(
+				throwSite,
+				"    at listTraces (/app/src/traces.ts:12:3)",
+				"    at handler (/app/src/http.ts:9:1)",
+			)
+			const b = stack(
+				throwSite,
+				"    at serviceMap (/app/src/map.ts:88:7)",
+				"    at handler (/app/src/http.ts:9:1)",
+			)
+			const type = "@maple/http/errors/UpstreamUnavailable"
+
+			expect(key(type, a, "upstream 503")).toBe(key(type, b, "upstream 503"))
+			expect(
+				computeFingerprintInputs({
+					exceptionType: type,
+					exceptionStacktrace: a,
+					statusMessage: "upstream 503",
+				}).fpFrames,
+			).toBe("    at toUpstreamError (/app/src/upstream.ts)")
+		})
+
+		it("keeps all 3 frames for a namespaced type with no message, since frames are all that is left", () => {
+			const throwSite = "    at fail (/app/src/fail.ts:4:1)"
+			const a = stack(throwSite, "    at listTraces (/app/src/traces.ts:12:3)")
+			const b = stack(throwSite, "    at serviceMap (/app/src/map.ts:88:7)")
+			const type = "@maple/discord/RateLimited"
+
+			expect(key(type, a, "")).not.toBe(key(type, b, ""))
+		})
+
+		it("ignores a schema error's key path as a frame", () => {
+			const withPath = stack('  at [2]["params"]', "    at decode (/app/src/schema.ts:9:4)")
+
+			expect(key("ParseError", withPath, "")).toBe(
+				key("ParseError", stack("    at decode (/app/src/schema.ts:9:4)"), ""),
+			)
+		})
+
+		it("strips file:///bundle/, repeated bundle hashes and Astro asset hashes", () => {
+			const top = (line: string) =>
+				computeFingerprintInputs({
+					exceptionType: "Error",
+					exceptionStacktrace: stack(line),
+					statusMessage: "",
+				}).topFrame
+
+			expect(top("    at a (file:///bundle/worker.js:1:2)")).toBe("    at a (worker.js)")
+			expect(top("    at a (https://x.dev/assets/index-AbCd1234-EfGh5678.js:1:2)")).toBe(
+				"    at a (/assets/index.js)",
+			)
+			expect(top("    at a (https://x.dev/_astro/Layout.AbCd1234.js:1:2)")).toBe(
+				"    at a (/_astro/Layout.js)",
+			)
+		})
+
+		it("keeps generic TypeErrors thrown at different callers apart", () => {
+			const a = stack("    at Array.map (<anonymous>)", "    at renderRows (/app/src/table.ts:10:2)")
+			const b = stack("    at Array.map (<anonymous>)", "    at renderChart (/app/src/chart.ts:31:9)")
+			const message = "Cannot read properties of undefined (reading 'id')"
+
+			expect(key("TypeError", a, message)).not.toBe(key("TypeError", b, message))
+		})
+
+		it("drops Effect span frames, so span depth does not split one call path", () => {
+			const plain = stack("    at query (/app/src/db.ts:5:1)", "    at load (/app/src/load.ts:7:2)")
+			const withSpans = stack(
+				"    at query (/app/src/db.ts:5:1)",
+				"    at db.query (definition) (/app/src/db.ts:3:20)",
+				"    at load (/app/src/load.ts:7:2)",
+			)
+
+			expect(key("DatabaseError", withSpans, "")).toBe(key("DatabaseError", plain, ""))
+		})
+
+		it("redacts the package version in a store path", () => {
+			const at = (version: string) =>
+				stack(
+					`    at fail (/app/node_modules/.bun/effect@${version}/node_modules/effect/dist/Effect.js:1:1)`,
+				)
+
+			expect(key("Error", at("4.0.3"), "")).toBe(key("Error", at("4.0.4-beta.1"), ""))
+			expect(
+				computeFingerprintInputs({
+					exceptionType: "Error",
+					exceptionStacktrace: at("4.0.3"),
+					statusMessage: "",
+				}).topFrame,
+			).toContain("effect@#/")
+		})
+
+		it("drops location-less span frames, so an Effect span rename keeps the issue", () => {
+			const httpClientError = (spanFrame: string) =>
+				[
+					"HttpClientError: Transport error (POST https://app.maple.dev/_api/internal/query-engine/infra-presence)",
+					"    at catch (https://app.maple.dev/assets/atom-client-C8D2PDUe.js:1:16420)",
+					"    at https://app.maple.dev/assets/Effect-lYjf0hDm.js:13:6044",
+					spanFrame,
+					"    at infraPresence (https://app.maple.dev/assets/warehouse-query-atoms-C2u8hHOl.js:1:6826)",
+				].join("\n")
+			const message =
+				"Transport error (POST https://app.maple.dev/_api/internal/query-engine/infra-presence)"
+			const before = httpClientError("    at http.client POST")
+
+			expect(key("HttpClientError", before, message)).toBe(
+				key("HttpClientError", httpClientError("    at POST"), message),
+			)
+			expect(
+				computeFingerprintInputs({
+					exceptionType: "HttpClientError",
+					exceptionStacktrace: before,
+					statusMessage: message,
+				}).fpFrames,
+			).toContain("at infraPresence")
+		})
+
+		it("still counts a Node frame with a location but no parens", () => {
+			const a = stack("    at file:///app/a.js:1:2")
+			const b = stack("    at file:///app/b.js:1:2")
+
+			expect(key("Error", a, "")).not.toBe(key("Error", b, ""))
+		})
+
+		it("redacts the index in `(index N)`", () => {
+			const at = (index: number) => stack(`    at Promise.all (index ${index})`)
+
+			expect(key("Error", at(3), "")).toBe(key("Error", at(17), ""))
+		})
+	})
+
+	describe("message signature", () => {
+		const signature = (statusMessage: string) =>
+			computeFingerprintInputs({ exceptionType: "", exceptionStacktrace: "", statusMessage })
+				.msgSignature
+
+		it("cuts only the query a ClickHouse error echoes, keeping the identifier that names the bug", () => {
+			const echo = (query: string) =>
+				signature(
+					`Code: 47. DB::Exception: Unknown expression identifier \`ServiceVersion\` in scope ${query}`,
+				)
+
+			expect(echo("SELECT ServiceVersion FROM traces")).toBe(
+				"Code: #. DB::Exception: Unknown expression identifier `ServiceVersion`",
+			)
+			expect(echo("SELECT * FROM (SELECT ServiceVersion FROM logs)")).toBe(
+				echo("SELECT ServiceVersion FROM traces"),
+			)
+			expect(
+				signature(
+					"DB::Exception: Illegal type String of argument of function plus: While processing plus(a, 1)",
+				),
+			).toBe("DB::Exception: Illegal type String of argument of function plus:")
+		})
+
+		it("keeps different missing identifiers apart", () => {
+			expect(signature("[Error] Unknown identifier `TraceIdd` in scope SELECT 1")).not.toBe(
+				signature("[Error] Unknown identifier `Severity` in scope SELECT 1"),
+			)
+		})
+
+		it("cuts the echoed query from the `[Error]` envelope", () => {
+			expect(
+				signature("[Error] Unknown identifier `TraceIdd` in scope SELECT TraceIdd FROM traces"),
+			).toBe("[Error] Unknown identifier `TraceIdd`")
+		})
+
+		it("strips terminal colour codes", () => {
+			expect(signature("\x1b[31mconnection refused\x1b[0m")).toBe("connection refused")
+		})
+
+		it("ends a filesystem root at a separator, so `/data.x` is a path and `/datasets` is not", () => {
+			expect(signature("cannot open /data.quarantine-x1/store")).toBe(
+				signature("cannot open /data/store"),
+			)
+			expect(signature("read /datasets/x failed")).toBe("read /datasets/x failed")
+		})
+
+		it("replaces `~/` paths and adjacent paths, but not a `~` before a number", () => {
+			expect(signature("open ~/.maple/data failed")).toBe("open PATH failed")
+			expect(signature("copy /tmp/a /var/b")).toBe("copy PATH PATH")
+			expect(signature("retry in ~5 min")).toBe("retry in ~# min")
+		})
+
+		it("keeps a snake_case name with no digit or capital", () => {
+			expect(signature("unknown key top_operations")).toBe("unknown key top_operations")
+		})
+
+		it("keeps a 4xx and 500 exact and folds every other 5xx into one class", () => {
+			const returned = (status: number) => signature(`upstream returned ${status}`)
+
+			expect(new Set([returned(401), returned(404), returned(500)]).size).toBe(3)
+			expect(returned(502)).toBe("upstream returned 5xx")
+			expect(returned(520)).toBe(returned(502))
+			expect(returned(524)).toBe(returned(502))
+			expect(signature("status: 429 too many")).toBe("status: 429 too many")
+			expect(signature("HTTP 503 from gateway")).toBe("HTTP 5xx from gateway")
+		})
+
+		it("replaces filesystem-rooted paths with PATH", () => {
+			expect(signature("ENOENT: no such file or directory, open '/tmp/maple-a81f/wal.log'")).toBe(
+				"ENOENT: no such file or directory, open 'PATH'",
+			)
+			expect(signature("socket /var/run/maple/abc.sock closed")).toBe(
+				signature("socket /var/run/maple/xyz.sock closed"),
+			)
+		})
+
+		it("keeps route paths, including ones that contain a filesystem root name", () => {
+			expect(signature("Transport error (POST /api/data/export)")).toBe(
+				"Transport error (POST /api/data/export)",
+			)
+			expect(signature("Transport error (POST /api/query-engine/service-overview)")).not.toBe(
+				signature("Transport error (POST /api/query-engine/service-map)"),
+			)
+		})
+
+		it("keeps different quoted table names apart", () => {
+			expect(signature("Table 'checkout_events' doesn't exist")).not.toBe(
+				signature("Table 'planetscale_events' doesn't exist"),
+			)
+		})
+
+		it("replaces prefixed ids and ULIDs with ID", () => {
+			expect(signature("no billing customer for org_2NnAbCdEfGhIjKlM")).toBe(
+				"no billing customer for ID",
+			)
+			expect(signature("subscription cus_QwErTyUiOpAsDf lapsed")).toBe(
+				signature("subscription cus_ZxCvBnMlKjHgFd lapsed"),
+			)
+			expect(signature("run 01HZY3K4W7Q9N2B6C8D0E5F1GA failed")).toBe("run ID failed")
+		})
+
+		it("redacts UUIDs, dashes included, inside a JSON value", () => {
+			const json = (id: string) => JSON.stringify({ error: "not_found", id })
+
+			expect(signature(json("550e8400-e29b-41d4-a716-446655440000"))).toBe(
+				signature(json("9b2f1c3e-0d4a-4f6b-8c7e-1a2b3c4d5e6f")),
+			)
+			expect(signature(json("550e8400-e29b-41d4-a716-446655440000"))).toBe('error="not_found"|id="#"')
+		})
 	})
 })

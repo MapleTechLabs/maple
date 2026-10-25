@@ -5,8 +5,20 @@
  */
 export const DOCS = {
 	instrumentation: "/docs/instrumentation",
+	nodejsGuide: "/docs/guides/instrumentation-nodejs",
+	nextjsGuide: "/docs/guides/instrumentation-nextjs",
+	pythonGuide: "/docs/guides/instrumentation-python",
+	goGuide: "/docs/guides/instrumentation-go",
+	javaGuide: "/docs/guides/instrumentation-java",
+	rustGuide: "/docs/guides/instrumentation-rust",
+	kotlinGuide: "/docs/guides/instrumentation-kotlin",
+	dotnetGuide: "/docs/guides/instrumentation-csharp",
+	laravelGuide: "/docs/guides/instrumentation-laravel",
+	effectSdk: "/docs/sdks/effect",
 	quickstart: "/docs/getting-started/quickstart",
 	otelConventions: "/docs/concepts/otel-conventions",
+	samplingThroughput: "/docs/concepts/sampling-throughput",
+	missingRootSpans: "/docs/concepts/missing-root-spans",
 	retention: "/docs/reference/retention",
 	traces: "/docs/explore/traces",
 	logs: "/docs/explore/logs",
@@ -32,6 +44,11 @@ export const DOCS = {
 	docker: "/docs/infrastructure/docker",
 	kubernetes: "/docs/infrastructure/kubernetes",
 	cloudflare: "/docs/integrations/cloudflare",
+	gcp: "/docs/integrations/gcp",
+	aws: "/docs/integrations/aws",
+	gcpOpenTelemetry: "/docs/integrations/gcp-opentelemetry",
+	gcpManualSetup: "/docs/integrations/gcp-manual-setup",
+	gcpInfrastructureAsCode: "/docs/integrations/gcp-infrastructure-as-code",
 	planetscale: "/docs/integrations/planetscale",
 	prometheus: "/docs/integrations/prometheus",
 	warpstream: "/docs/integrations/warpstream",
@@ -43,6 +60,7 @@ export type DocsPage = keyof typeof DOCS
 
 const DOCS_ORIGIN = "https://maple.dev"
 
-export function docsUrl(page: DocsPage): string {
-	return `${DOCS_ORIGIN}${DOCS[page]}`
+/** `anchor` is a heading slug on that page, e.g. `trace-correlation`. */
+export function docsUrl(page: DocsPage, anchor?: string): string {
+	return `${DOCS_ORIGIN}${DOCS[page]}${anchor === undefined ? "" : `#${anchor}`}`
 }

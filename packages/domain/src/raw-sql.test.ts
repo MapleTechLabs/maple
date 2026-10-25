@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { rawAlertSampleCountWarning, RawSqlText, rawSqlIssue } from "./raw-sql"
+import { rawAlertPerformanceHints, rawAlertSampleCountWarning, RawSqlText, rawSqlIssue } from "./raw-sql"
 
 const ok = "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 
@@ -138,8 +138,64 @@ describe("rawSqlIssue", () => {
 		expect(rawSqlIssue("SELECT 1 WHERE $__orgFilter FORMAT JSONEachRow")).toBeNull()
 	})
 
-	it("does not mistake a column named settings or format for a clause", () => {
-		expect(rawSqlIssue("SELECT settings, format FROM t WHERE $__orgFilter")).toBeNull()
+	it("does not mistake a column named format, or a quoted settings, for a clause", () => {
+		expect(rawSqlIssue("SELECT `settings`, format FROM t WHERE $__orgFilter")).toBeNull()
+	})
+
+	// A SETTINGS in a subquery applies to the whole query context, so it is refused at any depth.
+	it.each([
+		"SELECT 1 FROM traces WHERE $__orgFilter AND SpanId IN (SELECT SpanId FROM traces SETTINGS max_execution_time=3000)",
+		"SELECT * FROM (SELECT 1 FROM traces SETTINGS max_memory_usage=0) WHERE $__orgFilter",
+	])("rejects a nested SETTINGS clause: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.message).toContain("SETTINGS is managed by Maple")
+	})
+
+	it.each([
+		"SELECT * FROM cosn('https://x/y.parquet') WHERE $__orgFilter",
+		"SELECT * FROM oss('https://x/y.parquet') WHERE $__orgFilter",
+		"SELECT * FROM paimonS3('https://x/y') WHERE $__orgFilter",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT query FROM merge('db', '^q'))",
+		"SELECT * FROM traces WHERE $__orgFilter AND SpanId IN (SELECT * FROM mergeTreeIndex('db', 't'))",
+	])("rejects further table functions: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
+	})
+
+	it("names an exact-match table function in its message", () => {
+		expect(rawSqlIssue("SELECT * FROM url('http://x/') WHERE $__orgFilter")?.message).toContain(
+			"Table function 'url'",
+		)
+	})
+
+	// The masker blanks quoted identifiers, so a quoted name was invisible to the function check.
+	it.each([
+		"SELECT * FROM `url`('http://x/', JSONEachRow) WHERE $__orgFilter",
+		"SELECT * FROM \"file\"('/etc/hosts', LineAsString) WHERE $__orgFilter",
+		"SELECT * FROM default.`s3` /* c */ ('https://x/y') WHERE $__orgFilter",
+	])("rejects a quoted function name: %s", (sql) => {
+		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
+	})
+
+	// Syntax the masker does not lex, so it and the server would disagree on what is code.
+	it.each([
+		["SELECT 1 FROM traces WHERE $__orgFilter # trailing", "'#' comments"],
+		["#!/x\nSELECT 1 FROM traces WHERE $__orgFilter", "'#' comments"],
+		["SELECT $$it's$$ FROM traces WHERE $__orgFilter", "Heredoc strings"],
+		["SELECT $q$x$q$ FROM traces WHERE $__orgFilter", "Heredoc strings"],
+		["SELECT 1 FROM traces /* a /* b */ c */ WHERE $__orgFilter", "Nested /* */ comments"],
+	])("rejects syntax the validator cannot see through: %s", (sql, message) => {
+		const issue = rawSqlIssue(sql)
+		expect(issue?.code).toBe("DisallowedStatement")
+		expect(issue?.message).toContain(message)
+	})
+
+	it.each([
+		"SELECT '#1' AS tag FROM traces WHERE $__orgFilter",
+		"SELECT '$$' AS s, '$x$' AS t, '*/' AS u FROM traces WHERE $__orgFilter",
+		'SELECT `file`, "url" FROM traces WHERE $__orgFilter -- # not code',
+		"SELECT `Url` AS u, count(`Url`) AS c FROM traces WHERE $__orgFilter /* $$ */",
+		"SELECT urlHash(Url) AS h FROM traces WHERE $__orgFilter AND Url IN ('a', \"b\")",
+	])("still accepts these characters in literals, comments and plain identifiers: %s", (sql) => {
+		expect(rawSqlIssue(sql)).toBeNull()
 	})
 })
 
@@ -276,5 +332,42 @@ describe("rawSqlIssue org filter review follow-ups", () => {
 		"WITH c AS (SELECT 1 AS OrgId) SELECT 1 FROM traces t, c l WHERE $__orgFilter(t) AND $__orgFilter(l)",
 	])("still rejects a comma item that is not a table: %s", (sql) => {
 		expect(rawSqlIssue(sql)?.code).toBe("InvalidMacro")
+	})
+})
+
+describe("rawAlertPerformanceHints", () => {
+	const codes = (sql: string) => rawAlertPerformanceHints(sql).map((hint) => [hint.code, hint.line])
+
+	it("asks for a service filter on logs and traces, at the FROM line", () => {
+		expect(
+			codes("SELECT count() AS value\nFROM logs\nWHERE $__orgFilter AND $__timeFilter(Timestamp)"),
+		).toEqual([["no_service_filter", 2]])
+		expect(codes("SELECT count() AS value FROM default.traces WHERE $__orgFilter")).toEqual([
+			["no_service_filter", 1],
+		])
+	})
+
+	it("flags a Body match that starts with a wildcard", () => {
+		const sql = [
+			"SELECT count() AS value FROM logs",
+			"WHERE $__orgFilter AND ServiceName = 'api'",
+			"  AND Body ILIKE '%webhook%failed%'",
+		].join("\n")
+		expect(codes(sql)).toEqual([["body_wildcard_match", 3]])
+	})
+
+	it("stays quiet on a query that already filters well", () => {
+		expect(
+			codes(
+				"SELECT count() AS value FROM logs WHERE $__orgFilter AND ServiceName = 'api' AND Body LIKE 'webhook failed%'",
+			),
+		).toEqual([])
+		expect(codes("SELECT count() AS value FROM metrics_sum WHERE $__orgFilter")).toEqual([])
+	})
+
+	it("ignores table names and patterns inside strings and comments", () => {
+		expect(
+			codes("SELECT 'FROM logs' AS value FROM metrics_gauge WHERE $__orgFilter -- Body ILIKE '%x'"),
+		).toEqual([])
 	})
 })

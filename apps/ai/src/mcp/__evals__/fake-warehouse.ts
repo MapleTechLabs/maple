@@ -11,6 +11,10 @@ export interface FixtureRule {
 	readonly rows: ReadonlyArray<unknown> | ((sql: string) => ReadonlyArray<unknown>)
 }
 
+/** A read of known traces' spans: `traces` seeked through the `trace_index` subquery. */
+export const readsTraceSpans = (sql: string): boolean =>
+	/\bFROM traces\b/.test(sql) && sql.includes("FROM trace_index")
+
 /**
  * Default fixtures for the large-trace `inspect_trace` scenario. Both the
  * `span_hierarchy` and `list_logs` pipes compile to SQL referencing their CH
@@ -18,7 +22,7 @@ export interface FixtureRule {
  */
 export const defaultTraceFixtures = (): FixtureRule[] => [
 	{
-		match: (sql) => sql.includes("trace_detail_spans") && sql.includes(FIXTURES.traceId),
+		match: (sql) => readsTraceSpans(sql) && sql.includes(FIXTURES.traceId),
 		rows: makeLargeTraceSpans(),
 	},
 	// Only the fixture trace's logs: a bare `FROM logs` also matches log search and analytics.

@@ -8,6 +8,7 @@ import {
 	PRODUCT_EVENTS_TRACE_BACKFILL,
 	PRODUCT_EVENTS_TRACE_FILTER,
 	errorRollupBackfill,
+	tracesTraceKeyRekey,
 } from "./backfills"
 import {
 	addColumns,
@@ -16,6 +17,7 @@ import {
 	dropColumns,
 	dropTables,
 	dropViews,
+	modifyTtl,
 	unchangedRowCount,
 	type StepSpec,
 } from "./step-executor"
@@ -25,6 +27,12 @@ import type { StateDispositionEntry } from "../local-store-migration-module"
 const TRACE_FACETS_HOURLY_BACKFILL = [
 	"TRUNCATE TABLE IF EXISTS trace_facets_hourly",
 	"INSERT INTO trace_facets_hourly (OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, TraceCount, DurationMin, DurationMax, DurationQuantiles) SELECT OrgId, toStartOfHour(Timestamp) AS Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError, count() AS TraceCount, min(Duration) AS DurationMin, max(Duration) AS DurationMax, quantilesTDigestState(0.5, 0.95)(Duration) AS DurationQuantiles FROM trace_list_mv GROUP BY OrgId, Hour, ServiceName, SpanName, HttpMethod, HttpStatusCode, DeploymentEnv, ServiceNamespace, HasError",
+] as const
+
+/** Indexes every retained span; the truncate makes a resumed step converge. */
+const TRACE_INDEX_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS trace_index",
+	"INSERT INTO trace_index (OrgId, TraceId, ServiceName, Bucket, MinTimestamp, MaxTimestamp) SELECT OrgId, TraceId, ServiceName, toStartOfFiveMinutes(Timestamp) AS Bucket, min(Timestamp) AS MinTimestamp, max(Timestamp) AS MaxTimestamp FROM traces GROUP BY OrgId, TraceId, ServiceName, Bucket",
 ] as const
 
 /** Existing rollup rows keep what the old view bodies wrote and age out with their TTL. */
@@ -65,6 +73,37 @@ const AI_TRACE_INDEX_FORWARD = {
 	sourceRetentionDays: 30,
 	targetRetentionDays: 30,
 } as const
+
+/** v36 TTLs that keyed off a raw timestamp instead of its day. */
+const ALIGNED_TTLS = [
+	["service_map_spans", "toDate(Timestamp) + INTERVAL 30 DAY"],
+	["service_map_children", "toDate(Timestamp) + INTERVAL 30 DAY"],
+	["service_overview_spans", "toDate(Timestamp) + INTERVAL 30 DAY"],
+	["error_events", "toDate(Timestamp) + INTERVAL 90 DAY"],
+	["error_events_by_time", "toDate(Timestamp) + INTERVAL 90 DAY"],
+	["error_fingerprints_minutely", "toDate(Minute) + INTERVAL 90 DAY"],
+	["trace_list_mv", "toDate(Timestamp) + INTERVAL 30 DAY"],
+	["trace_facets_hourly", "toDate(Hour) + INTERVAL 30 DAY"],
+	["metric_catalog", "toDate(Hour) + INTERVAL 90 DAY"],
+	["attribute_keys_hourly", "toDate(Hour) + INTERVAL 90 DAY"],
+	["attribute_values_hourly", "toDate(Hour) + INTERVAL 90 DAY"],
+] as const
+
+/** v39: rolls up every retained HTTP server span; the truncate makes a resumed step converge. */
+const SERVICE_ENDPOINT_DETAILS_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS service_endpoint_details_hourly",
+	"INSERT INTO service_endpoint_details_hourly (OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType, SpanCount, EstimatedSpanCount, DurationQuantiles, BodySizeQuantiles, BodySizeMax, BodyCount, UserAgents, SlowestDuration, SlowestTraceId, SlowestTimestamp, SlowestBodySize) SELECT OrgId, ServiceName, toStartOfHour(toDateTime(Timestamp)) AS Hour, coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) AS DeploymentEnv, if(((SpanName LIKE 'http.server %' OR SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (SpanAttributes['http.route'] != '' OR SpanAttributes['url.path'] != '')), concat(if(SpanName LIKE 'http.server %', replaceOne(SpanName, 'http.server ', ''), SpanName), ' ', if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], SpanAttributes['url.path'])), SpanName) AS SpanName, if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) AS HttpStatusCode, SpanAttributes['error.type'] AS ErrorType, count() AS SpanCount, sum(SampleRate) AS EstimatedSpanCount, quantilesTDigestState(0.5, 0.95, 0.99)(Duration) AS DurationQuantiles, quantilesTDigestIfState(0.5, 0.95, 0.99)(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodySizeQuantiles, maxIf(ifNull(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])), 0), toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodySizeMax, countIf(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length'])) IS NOT NULL) AS BodyCount, approx_top_kState(10)(coalesce(nullIf(SpanAttributes['user_agent.original'], ''), nullIf(SpanAttributes['http.user_agent'], ''), '')) AS UserAgents, max(Duration) AS SlowestDuration, argMaxState(TraceId, Duration) AS SlowestTraceId, argMaxState(Timestamp, Duration) AS SlowestTimestamp, argMaxState(ifNull(toInt64(toUInt64OrNull(if(SpanAttributes['http.request.body.size'] != '', SpanAttributes['http.request.body.size'], SpanAttributes['http.request_content_length']))), -1), Duration) AS SlowestBodySize FROM traces WHERE SpanKind = 'Server' AND if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) != '' GROUP BY OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType",
+] as const
+
+/** The six HTTP measures v39 adds to both service-operations rollups. */
+const SERVICE_OPERATIONS_HTTP_COLUMNS = [
+	["HttpClassifiedSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
+	["HttpStatusCount", "SimpleAggregateFunction(sum, UInt64)"],
+	["Http4xxCount", "SimpleAggregateFunction(sum, UInt64)"],
+	["Http5xxCount", "SimpleAggregateFunction(sum, UInt64)"],
+	["RequestBodyBytes", "SimpleAggregateFunction(sum, UInt64)"],
+	["RequestBodyCount", "SimpleAggregateFunction(sum, UInt64)"],
+] as const
 
 export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
@@ -1220,6 +1259,309 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				preservationInterval: "from the migration forward",
 				sourceRetentionDays: 30,
 				targetRetentionDays: 365,
+			},
+		],
+	},
+	{
+		// TODO(v29 -> v30): what changes, and what is NOT backfilled. Fill beforeBootstrap
+		// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
+		// plan line and dispositions. The v30 physical verify fails an unfinished row.
+		id: "local-0029-to-0030-error-fingerprint-v3",
+		from: 29,
+		to: 30,
+		description: "Rebuild the error-events views with fingerprint v3 grouping and a version-salted hash",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so new occurrences are hashed with fingerprint v3",
+			],
+		],
+		verifies: "Verify the v30 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their v2 FingerprintHash untouched; occurrences materialized after the migration carry v3 hashes, and the v2 rows age out with the retention window.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		id: "local-0030-to-0031-error-fingerprint-span-name-frames",
+		from: 30,
+		to: 31,
+		description: "Drop location-less Effect span frames from the error fingerprint",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events views so a location-less span frame no longer enters the hash",
+			],
+		],
+		verifies: "Verify the v31 physical schema and retained raw telemetry counts",
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; only occurrences whose stack carries a location-less span frame hash differently after the migration.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		id: "local-0031-to-0032-alert-checks-level",
+		from: 31,
+		to: 32,
+		description: "Add Level to alert_checks",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [addColumns("alert_checks", [["Level", "LowCardinality(String) DEFAULT ''"]])],
+		plan: [
+			[
+				"widen-alert-checks",
+				"Add Level to alert_checks so checks record the severity tier they breached",
+			],
+		],
+		verifies: "Verify the v32 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "alert_checks",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing check rows are kept as written with an empty Level; only checks recorded after the migration carry one.",
+			},
+		],
+	},
+	{
+		// Both objects are new; the backfill indexes the spans already retained.
+		id: "local-0032-to-0033-trace-index",
+		from: 32,
+		to: 33,
+		description: "Create trace_index and its view: where each trace's spans live in traces",
+		clonedBefore: "any DDL runs",
+		afterBootstrap: [backfill(...TRACE_INDEX_BACKFILL)],
+		plan: [
+			[
+				"create-trace-index",
+				"Create trace_index and trace_index_mv via the v33 bootstrap and index every retained span from traces",
+			],
+		],
+		verifies: "Verify the v33 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_index",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Rebuilt from every span traces retains; both keep 30 days.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
+	{
+		// The bootstrap keeps the v33 traces (IF NOT EXISTS); the custom step swaps in a
+		// v34-keyed copy. Every view and rollup is untouched: none fires on the copy.
+		id: "local-0033-to-0034-traces-trace-key",
+		from: 33,
+		to: 34,
+		description: "Re-sort traces by service, 5-minute bucket and trace id, with a span-name bloom index",
+		clonedBefore: "any DDL runs",
+		custom: tracesTraceKeyRekey,
+		plan: [
+			[
+				"resort-traces",
+				"Copy traces into a view-free table with the v34 sort key and span-name index, then exchange it in for traces",
+			],
+		],
+		verifies:
+			"Verify the v34 physical schema, the retained raw telemetry counts, and that no staging table is left",
+		dispositions: [
+			{
+				name: "traces",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee:
+					"Every span inside its TTL is copied as written into the re-sorted table, keeping the store's TTL; spans already past it are dropped as a merge would. No view fires on the copy, so no rollup counts a span twice.",
+			},
+		],
+	},
+	{
+		// The view goes before its table, or inserts into traces fail on the missing target.
+		id: "local-0034-to-0035-drop-trace-detail-spans",
+		from: 34,
+		to: 35,
+		description: "Drop trace_detail_spans and its view; trace-id reads seek traces through trace_index",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [dropViews("trace_detail_spans_mv"), dropTables("trace_detail_spans")],
+		plan: [["drop-trace-detail-spans", "Drop trace_detail_spans and trace_detail_spans_mv"]],
+		verifies: "Verify the v35 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "trace_detail_spans",
+				classification: "derived",
+				disposition: "invalidate",
+				guarantee:
+					"Dropped permanently with its view. Every trace-id read seeks traces through trace_index, and the rows were a copy of traces.",
+			},
+		],
+	},
+	{
+		// Rows are not rewritten: each TTL moves to its partition's toDate(...) expression.
+		id: "local-0035-to-0036-aligned-ttls",
+		from: 35,
+		to: 36,
+		description: "Align raw-timestamp TTLs to their daily partitions",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: ALIGNED_TTLS.map(([table, ttl]) => modifyTtl(table, ttl)),
+		plan: [
+			[
+				"align-ttls",
+				"Key the TTL of each table partitioned by day off toDate(...) so a day's rows expire together",
+			],
+		],
+		verifies: "Verify the v36 physical schema and the retained raw telemetry counts",
+		dispositions: ALIGNED_TTLS.map(([name]) => ({
+			name,
+			classification: "derived",
+			disposition: "preserve-exact",
+			guarantee:
+				"Only the TTL expression changes. A row now expires at the start of its day, up to a day earlier than before.",
+		})),
+	},
+	{
+		// Purely additive and filled forward only: the sources view reads 24 hours,
+		// and local OTLP ingest stamps no maple_source_id, so there is nothing to backfill.
+		id: "local-0036-to-0037-source-usage-hourly",
+		from: 36,
+		to: 37,
+		description: "source_usage_hourly + its six views: hourly volume and bytes per source",
+		clonedBefore: "additive DDL runs",
+		plan: [
+			[
+				"install-source-usage-hourly",
+				"Install the source_usage_hourly rollup and its six materialized views via the v37 bootstrap",
+			],
+		],
+		verifies: "Verify the v37 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "source_usage_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Filled forward from traces, logs and metrics writes that carry a source id; complete once the 24-hour read window passes.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
+			},
+		],
+	},
+	{
+		// Purely additive and filled forward only: CI traces come from the GitHub App's
+		// webhooks, which never reach a local store, so there is nothing to backfill.
+		id: "local-0037-to-0038-ci-runs-jobs",
+		from: 37,
+		to: 38,
+		description: "ci_runs + ci_jobs and their views: CI runs and jobs off github-actions traces",
+		clonedBefore: "additive DDL runs",
+		plan: [
+			[
+				"install-ci-runs-jobs",
+				"Install the ci_runs and ci_jobs projections and their materialized views via the v38 bootstrap",
+			],
+		],
+		verifies: "Verify the v38 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "ci_runs",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Filled forward from github-actions root spans written after the migration.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 365,
+			},
+			{
+				name: "ci_jobs",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee: "Filled forward from github-actions job spans written after the migration.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 365,
+			},
+		],
+	},
+	{
+		// Six additive counters on both service-operations rollups (zeros on old rows, which
+		// HttpClassifiedSpanCount = 0 marks unknown) plus the new endpoint-details rollup,
+		// backfilled from retained traces like trace_facets_hourly at v24.
+		id: "local-0038-to-0039-service-api-http-details",
+		from: 38,
+		to: 39,
+		description: "HTTP measures on service_operations_* and the service_endpoint_details_hourly rollup",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("service_operations_minutely", SERVICE_OPERATIONS_HTTP_COLUMNS),
+			addColumns("service_operations_hourly", SERVICE_OPERATIONS_HTTP_COLUMNS),
+			dropViews("service_operations_minutely_mv", "service_operations_hourly_mv"),
+		],
+		afterBootstrap: [backfill(...SERVICE_ENDPOINT_DETAILS_BACKFILL)],
+		counts: {
+			group: "rollupRows",
+			measure: [
+				["minutely", "SELECT toString(count()) AS count FROM service_operations_minutely"],
+				["hourly", "SELECT toString(count()) AS count FROM service_operations_hourly"],
+			],
+			checks: [unchangedRowCount("minutely"), unchangedRowCount("hourly")],
+		},
+		plan: [
+			[
+				"add-operation-http-measures",
+				"Add the six HTTP status and request-body counters to both service-operations rollups and recreate their views",
+			],
+			[
+				"create-service-endpoint-details",
+				"Create service_endpoint_details_hourly and its view via the v39 bootstrap and backfill it from retained traces",
+			],
+		],
+		verifies: "Verify the v39 physical schema, retained raw telemetry counts, and the rollup row counts",
+		dispositions: [
+			{
+				name: "service_operations_minutely",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Six counter columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and existing rows read back as zero, which HttpClassifiedSpanCount marks as unknown.",
+			},
+			{
+				name: "service_operations_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Six counter columns are added as metadata-only defaults; no part is rewritten and the row count is verified unchanged.",
+			},
+			{
+				name: "service_endpoint_details_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Rebuilt from every HTTP server span traces retains, then filled forward by its view.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
 			},
 		],
 	},

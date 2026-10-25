@@ -8,6 +8,13 @@ const SPAN_STATUS_COLORS: Record<string, string> = {
 	unset: "var(--muted-foreground)",
 } satisfies Record<string, string>
 
+// Run results (CI runs, and any chart's series named so), colored like the span statuses.
+const RUN_RESULT_COLORS: Record<string, string> = {
+	succeeded: "var(--severity-info)",
+	failed: "var(--severity-error)",
+	cancelled: "var(--muted-foreground)",
+} satisfies Record<string, string>
+
 const AGGREGATE_COLORS: Record<string, string> = {
 	p50: "var(--chart-p50)",
 	median: "var(--chart-p50)",
@@ -60,6 +67,7 @@ function detectColor(key: string): string | null {
 
 	// Span status codes ("error" is matched here, before the severity map)
 	if (lower in SPAN_STATUS_COLORS) return SPAN_STATUS_COLORS[lower]
+	if (lower in RUN_RESULT_COLORS) return RUN_RESULT_COLORS[lower]
 
 	// Log severities — the shared uppercase-keyed map from ./severity
 	const severity = SEVERITY_COLORS[lower.toUpperCase()]

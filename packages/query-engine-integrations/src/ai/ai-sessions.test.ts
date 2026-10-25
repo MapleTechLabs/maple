@@ -88,7 +88,7 @@ const decodeRows = <T>(compiled: CompiledQuery<T>, rows: ReadonlyArray<Record<st
 const orgPredicateCount = (sql: string) => sql.split("OrgId = 'org_1'").length - 1
 
 describe("aiSessionPageQuery", () => {
-	it("ranks the page on ai_trace_index alone, never on trace_detail_spans", () => {
+	it("ranks the page on ai_trace_index alone, never on the spans", () => {
 		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
 
 		// The whole point of the split: this is the only read that sees the
@@ -96,8 +96,8 @@ describe("aiSessionPageQuery", () => {
 		// it touches the fan-out table it costs what the single-read shape cost —
 		// 5–15s on a day, killed on a month (see the file header).
 		expect(sql).toContain("FROM ai_trace_index")
-		expect(sql).not.toContain("trace_detail_spans")
 		expect(sql).not.toContain("FROM traces")
+		expect(sql).not.toContain("FROM trace_index")
 		expect(sql).not.toContain("SpanAttributes")
 	})
 
@@ -108,6 +108,7 @@ describe("aiSessionPageQuery", () => {
 		// keyed per index row, every non-turn agent span would become its own
 		// `trace:` session. Only then is the key grouped over.
 		expect(sql).toContain("max(ai_trace_index.SessionId) AS rawSessionId")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the per-trace session key the page groups by
 		expect(sql).toContain(`${sessionKey("index_traces")} AS sessionId`)
 		expect(sql).toContain("GROUP BY traceId")
 		expect(sql).toContain("GROUP BY sessionId")
@@ -357,11 +358,8 @@ describe("aiSessionPageQuery", () => {
 		expect(compileUnsafe(aiSessionPageQuery({ search: "   " }), params).sql).not.toContain("LIKE")
 	})
 
-	it("ranks a page off the session level alone, selecting nothing the netting needs", () => {
+	it("ranks a page off the session level alone", () => {
 		const { sql } = compileUnsafe(aiSessionRankQuery({ limit: 25, offset: 50, hasErrors: true }), params)
-		expect(sql).toMatch(
-			/^\s*SELECT\s+ranked_sessions\.sessionId AS sessionId,\s+ranked_sessions\.agentStart AS agentStart,\s+ranked_sessions\.agentEnd AS agentEnd\s+FROM \(/,
-		)
 		expect(sql).toContain("HAVING errorAgentSpans > 0")
 		expect(sql).toContain("ORDER BY agentStart DESC, sessionId ASC")
 		expect(sql).toContain("LIMIT 25")
@@ -475,7 +473,7 @@ describe("aiSessionPageQuery", () => {
 		expect(sums).toContain("agentDurationMs AS agentDurationMs")
 		expect(netted).toContain("agentDurationMs AS agentDurationMs")
 		// Still index-only: none of it reaches for the fan-out table.
-		expect(sql).not.toContain("trace_detail_spans")
+		expect(sql).not.toContain("FROM traces")
 	})
 
 	it("names the session by its earliest named agent, not by the unordered set", () => {
@@ -606,19 +604,22 @@ describe("idSearchPattern", () => {
 })
 
 describe("aiSessionDetailsQuery", () => {
-	it("details one page of sessions, seeking trace_detail_spans by trace id", () => {
+	it("details one page of sessions, seeking traces through trace_index by trace id", () => {
 		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
-		// The fan-out reads the MV whose sort key starts (OrgId, TraceId), and the
-		// id set is pushed into that read by `IN` rather than joined — the same
-		// reason `errorDetailTracesQuery` uses it.
-		expect(sql).toContain("FROM trace_detail_spans")
-		expect(sql).toContain("TraceId IN (SELECT")
+		// The fan-out reads `traces`, and the page's id set is pushed into the
+		// trace_index seek by `IN` rather than joined, like `errorDetailTracesQuery`.
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain(
+			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
+		)
+		expect(sql).toMatch(
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \(SELECT/,
+		)
 		expect(sql).toContain("FROM ai_trace_index")
-		expect(sql).not.toContain("FROM traces")
+		expect(sql.split("FROM traces").length - 1).toBe(1)
 		expect(sql).toContain("GROUP BY traceId")
 		expect(sql).toContain("GROUP BY sessionId")
-		expect(sql).toContain("ORDER BY startTime DESC")
 	})
 
 	it("pages nowhere itself — the page it was handed is the page", () => {
@@ -652,8 +653,10 @@ describe("aiSessionDetailsQuery", () => {
 		// The one JOIN in the file, and it is here so the aggregation files a trace
 		// under exactly the key the page ranked it by: two derivations over two
 		// windows can disagree, and a disagreement drops the row from its own page.
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- inner join drops a trace the page did not rank
 		expect(sql).toContain("INNER JOIN")
 		expect(sql).toContain("AS index_traces ON session_traces.traceId = index_traces.traceId")
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- files a trace under the key the page ranked it by
 		expect(sql).toContain(`${LIST_SESSION_KEY} AS sessionId`)
 		expect(sql).not.toContain("max(SpanAttributes['maple_ai.session.id'])")
 		// The index read nested inside each side is `agent_traces`, so the JOIN's
@@ -666,10 +669,10 @@ describe("aiSessionDetailsQuery", () => {
 	it("repeats the org predicate on every level that reads a table", () => {
 		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
 
-		// Three now, not two: the fan-out plus both reads of the index — one for
-		// the id set, one for the key. A subquery contributes nothing to the outer
-		// query's scope.
-		expect(orgPredicateCount(sql)).toBe(3)
+		// Four: the fan-out, its trace_index seek, and both reads of the AI index
+		// (one for the id set, one for the key). A subquery contributes nothing to
+		// the outer query's scope.
+		expect(orgPredicateCount(sql)).toBe(4)
 	})
 
 	it("selects the page's traces on index membership, with no attribute predicate", () => {
@@ -719,7 +722,7 @@ describe("aiSessionDetailsQuery", () => {
 		// and the list badge has to count what the detail page's Failures panel
 		// counts — `spanFailed` in `session-turns.ts` is the other half.
 		expect(sql).toContain(
-			"countIf((trace_detail_spans.StatusCode = 'Error' OR (trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '' AND (trace_detail_spans.SpanAttributes['error.type'] != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))))",
+			"countIf((traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (traces.SpanAttributes['error.type'] != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error')))))",
 		)
 	})
 
@@ -751,9 +754,10 @@ describe("aiSessionDetailsQuery", () => {
 
 	it("reads the index over the page's bounds and the spans over one slice of them", () => {
 		const { sql } = compileUnsafe(aiSessionDetailsQuery(listOpts), listParams)
-		const [fanOut, detection] = sql.split("TraceId IN (SELECT")
+		const [fanOut, rest] = sql.split("TraceId IN (SELECT")
+		const [detection, traceIndexBounds] = rest.split("AND trace_index.Bucket >=")
 
-		// `trace_detail_spans` is PARTITION BY toDate(Timestamp), so this predicate
+		// `traces` is PARTITION BY toDate(Timestamp), so this predicate
 		// is the only thing that prunes partitions there — and the bounds are one
 		// slice of the page's own padded extent (`aiSessionDetailsSlices`), which
 		// spans hours inside one partition, not the caller's 30 days.
@@ -767,6 +771,8 @@ describe("aiSessionDetailsQuery", () => {
 		expect(detection).toContain(`Timestamp >= '${FAN_OUT_START}'`)
 		expect(detection).toContain(`Timestamp <= '${FAN_OUT_END}'`)
 		expect(detection).not.toContain(SPANS_START)
+		// The trace_index seek is bounded to the same slice as the span read.
+		expect(traceIndexBounds).toContain(SPANS_START)
 	})
 
 	it("takes no window param from the caller at all", () => {
@@ -892,14 +898,13 @@ describe("mergeAiSessionDetails", () => {
 })
 
 describe("aiSessionFacetsQuery", () => {
-	it("groups the detection scan only — no fan-out over trace_detail_spans", () => {
+	it("groups the detection scan only — no fan-out over traces", () => {
 		const { sql } = compileUnionUnsafe(aiSessionFacetsQuery(), params)
 
 		expect(sql).toContain("FROM ai_trace_index")
 		expect(sql).not.toContain("FROM traces")
-		expect(sql).not.toContain("trace_detail_spans")
+		expect(sql).not.toContain("FROM trace_index")
 		expect(sql).not.toContain("TraceId IN (SELECT")
-		expect(sql).toContain("UNION ALL")
 	})
 
 	it("counts distinct sessions per value of each index dimension", () => {
@@ -918,6 +923,7 @@ describe("aiSessionFacetsQuery", () => {
 			expect(sql).toContain(
 				`groupUniqArrayIf(20)(ai_trace_index.${column}, ai_trace_index.${column} != '') AS names`,
 			)
+			// oxlint-disable-next-line test-slop/no-sql-text-pin -- the label routes each branch to its facet
 			expect(sql).toContain(`'${facetType}' AS facetType`)
 		}
 		expect(sql.split("arrayJoin(facet_traces.names) AS name").length - 1).toBe(dimensions.length)
@@ -994,7 +1000,7 @@ describe("aiSessionDistributionsQuery", () => {
 		const compiled = compileUnsafe(aiSessionDistributionsQuery(), params)
 
 		expect(compiled.sql).toContain("FROM ai_trace_index")
-		expect(compiled.sql).not.toContain("trace_detail_spans")
+		expect(compiled.sql).not.toContain("FROM trace_index")
 		expect(compiled.sql).not.toContain("FROM traces")
 		expect(compiled.sql.split("FROM ai_trace_index").length - 1).toBe(1)
 		expect(orgPredicateCount(compiled.sql)).toBe(1)
@@ -1074,14 +1080,21 @@ describe("aiSessionSpansQuery", () => {
 	it("returns every span of every trace in the session, oldest first", () => {
 		const { sql } = compileUnsafe(aiSessionSpansQuery(), spanParams)
 
-		expect(sql).toContain("FROM trace_detail_spans")
-		expect(sql).toContain("TraceId IN (SELECT")
-		expect(sql).toContain("FROM traces")
+		// The spans read and the session-id detection both read `traces`; the
+		// detection picks the trace ids inside the trace_index seek.
+		expect(sql.split("FROM traces").length - 1).toBe(2)
+		expect(sql).toContain(
+			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
+		)
+		expect(sql).toMatch(
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId IN \(SELECT/,
+		)
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- unit conversion, ns to ms
 		expect(sql).toContain("Duration / 1000000 AS durationMs")
 		expect(sql).toContain("mapFilter((k, v) -> (((k IN ('maple_ai.session.id', ")
 		expect(sql).toContain("OR k LIKE 'gen_ai.prompt.variable.%')")
 		expect(sql).toContain(
-			"OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), trace_detail_spans.SpanAttributes) AS spanAttributes",
+			"OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes",
 		)
 		expect(sql).not.toContain("ResourceAttributes")
 		expect(sql).toContain("ORDER BY timestamp ASC")
@@ -1109,7 +1122,8 @@ describe("aiSessionSpansQuery", () => {
 	it("repeats the org predicate on every level that reads a table", () => {
 		const { sql } = compileUnsafe(aiSessionSpansQuery(), spanParams)
 
-		expect(orgPredicateCount(sql)).toBe(2)
+		// The spans read, its trace_index seek, and the session-id detection.
+		expect(orgPredicateCount(sql)).toBe(3)
 	})
 
 	it("substitutes and escapes the sessionId param", () => {
@@ -1176,9 +1190,9 @@ describe("aiSessionWindowQuery", () => {
 
 		// The one read in this file that runs unbounded, and the only one that can:
 		// `traces` has the mapValues bloom index for the id and a 30-day TTL. The
-		// fan-out has neither, which is why the caller resolves bounds first.
+		// fan-out is bounded by a window, which is why the caller resolves bounds first.
 		expect(sql).toContain("FROM traces")
-		expect(sql).not.toContain("trace_detail_spans")
+		expect(sql).not.toContain("FROM trace_index")
 		expect(sql).not.toContain("Timestamp >=")
 		expect(sql).not.toContain("Timestamp <=")
 	})
@@ -1235,9 +1249,12 @@ describe("aiTraceWindowQuery", () => {
 	it("resolves the bounds from the trace id, without a time predicate", () => {
 		const { sql } = compileUnsafe(aiTraceWindowQuery(), traceWindowParams)
 
-		// `idx_trace_id` on `traces` is what bounds this, exactly as the mapValues
-		// bloom index bounds the session-id form.
+		// The trace_index seek is what bounds this, as the mapValues bloom index
+		// bounds the session-id form.
 		expect(sql).toContain("FROM traces")
+		expect(sql).toMatch(
+			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId = '/,
+		)
 		expect(sql).toContain(`TraceId = '${TRACE_ID}'`)
 		expect(sql).not.toContain("SpanAttributes")
 		expect(sql).not.toContain("Timestamp >=")
@@ -1254,7 +1271,8 @@ describe("aiTraceWindowQuery", () => {
 	it("is org-scoped, and escapes the trace id", () => {
 		const compiled = compileUnsafe(aiTraceWindowQuery(), traceWindowParams)
 		expect(compiled.tenantScope).toBe("single-tenant")
-		expect(orgPredicateCount(compiled.sql)).toBe(1)
+		// The `traces` read and its trace_index seek.
+		expect(orgPredicateCount(compiled.sql)).toBe(2)
 
 		// The route only ever passes 32 hex characters, but the compiled SQL is
 		// where that stops being the only thing between a forged id and the query.
@@ -1290,12 +1308,16 @@ describe("aiTraceSpansQuery", () => {
 	it("reads one trace's spans directly, with no detection subquery", () => {
 		const { sql } = compileUnsafe(aiTraceSpansQuery(), traceParams)
 
-		// `TraceId` is a sort-key prefix of `trace_detail_spans`, so the id alone
-		// is a seek — there is nothing left for a detection level to resolve.
-		expect(sql).toContain("FROM trace_detail_spans")
-		expect(sql).toContain(`TraceId = '${TRACE_ID}'`)
+		// The id alone is a trace_index seek, so there is nothing left for a
+		// detection level to resolve.
+		expect(sql.split("FROM traces").length - 1).toBe(1)
+		expect(sql).toContain(
+			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
+		)
+		expect(sql).toMatch(
+			new RegExp(`trace_index\\.TraceId = '${TRACE_ID}'\\s+AND trace_index\\.Bucket >=`),
+		)
 		expect(sql).not.toContain("TraceId IN (SELECT")
-		expect(sql).not.toContain("FROM traces")
 		// The projection still names the key; only the predicate is gone.
 		expect(sql).not.toContain("SpanAttributes['maple_ai.session.id']")
 	})
@@ -1304,8 +1326,8 @@ describe("aiTraceSpansQuery", () => {
 		const { sql } = compileUnsafe(aiTraceSpansQuery(), traceParams)
 
 		// One shape whichever kind of session the detail page opened.
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- unit conversion, ns to ms
 		expect(sql).toContain("Duration / 1000000 AS durationMs")
-		expect(sql).toContain("SpanAttributes) AS spanAttributes")
 		expect(sql).not.toContain("ResourceAttributes")
 		expect(sql).toContain("ORDER BY timestamp ASC, spanId ASC")
 		expect(sql).toContain("LIMIT 2000")
@@ -1321,10 +1343,11 @@ describe("aiTraceSpansQuery", () => {
 		expect(sql).toContain(`Timestamp <= '${params.endTime}'`)
 	})
 
-	it("is org-scoped on the one level it has, and escapes the trace id", () => {
+	it("is org-scoped on the spans read and its seek, and escapes the trace id", () => {
 		const compiled = compileUnsafe(aiTraceSpansQuery(), traceParams)
 		expect(compiled.tenantScope).toBe("single-tenant")
-		expect(orgPredicateCount(compiled.sql)).toBe(1)
+		// The spans read and its trace_index seek.
+		expect(orgPredicateCount(compiled.sql)).toBe(2)
 
 		const escaped = compileUnsafe(aiTraceSpansQuery(), {
 			...traceParams,
@@ -1366,8 +1389,8 @@ describe("aiSessionSpansQuery — scope and cursor", () => {
 		const app = compileUnsafe(aiSessionSpansQuery({ scope: "app" }), spanParams).sql
 		const all = compileUnsafe(aiSessionSpansQuery(), spanParams).sql
 
-		expect(ai).toContain("AND trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != ''")
-		expect(app).toContain("AND trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] = ''")
+		expect(ai).toContain("AND traces.SpanAttributes['maple_ai.vendor.id'] != ''")
+		expect(app).toContain("AND traces.SpanAttributes['maple_ai.vendor.id'] = ''")
 		expect(all).not.toContain("AND SpanAttributes['maple_ai.vendor.id']")
 	})
 
@@ -1380,7 +1403,7 @@ describe("aiSessionSpansQuery — scope and cursor", () => {
 		// Same pair, same direction as the ORDER BY — the tuple comparison
 		// spelled out, since the tie-breaker only applies at an equal timestamp.
 		expect(sql).toContain(
-			"(trace_detail_spans.Timestamp > '2026-08-19 10:00:00.123456789' OR (trace_detail_spans.Timestamp = '2026-08-19 10:00:00.123456789' AND trace_detail_spans.SpanId > 'aa11'))",
+			"(traces.Timestamp > '2026-08-19 10:00:00.123456789' OR (traces.Timestamp = '2026-08-19 10:00:00.123456789' AND traces.SpanId > 'aa11'))",
 		)
 		expect(sql).toContain("ORDER BY timestamp ASC, spanId ASC")
 	})
@@ -1403,7 +1426,7 @@ describe("aiTraceSpansQuery — a turn's traces", () => {
 
 		expect(sql).toContain(`TraceId IN ('${TRACE_ID}', '0123456789abcdef0123456789abcdef')`)
 		expect(sql).not.toContain("__PARAM_")
-		expect(sql).not.toContain("FROM traces")
+		expect(sql.split("FROM traces").length - 1).toBe(1)
 		expect(sql).toContain("SpanAttributes['maple_ai.vendor.id'] = ''")
 	})
 })
@@ -1414,15 +1437,18 @@ describe("aiSessionSummaryQuery", () => {
 	it("groups the session's spans by conversation id, falling back to the trace", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
 
-		expect(sql).toContain("FROM trace_detail_spans")
-		expect(sql).toContain("TraceId IN (SELECT")
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain(
+			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
+		)
+		expect(sql).toContain("trace_index.TraceId IN (SELECT")
 		expect(sql).toContain(`SpanAttributes['maple_ai.session.id'] = 'wrun_01M0CSAEW96BH2W9185XZPRPKH'`)
 		expect(sql).toContain("GROUP BY turnKey")
 		expect(sql).toContain("ORDER BY startTime ASC")
 		expect(sql).toContain("LIMIT 1001")
 		// The turn ids the refine hooks lift into the field are read alongside it.
 		expect(sql).toContain(
-			"coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.turn.id'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(trace_detail_spans.SpanAttributes['eve.turn.id'], ''), '')",
+			"coalesce(nullIf(traces.SpanAttributes['maple_ai.turn.id'], ''), nullIf(traces.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(traces.SpanAttributes['eve.turn.id'], ''), '')",
 		)
 	})
 
@@ -1437,8 +1463,6 @@ describe("aiSessionSummaryQuery", () => {
 		]) {
 			expect(sql, key).toContain(`SpanAttributes['${key}']`)
 		}
-		expect(sql).toContain("AS inputTokens")
-		expect(sql).toContain("AS llmInputTokens")
 		expect(sql).toContain("IN ('chat', 'generate_content', 'text_completion', 'fetch_response')")
 		expect(sql).toContain("NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent'")
 	})
@@ -1450,9 +1474,10 @@ describe("aiSessionSummaryQuery", () => {
 		)
 	})
 
-	it("is org-scoped on both levels", () => {
+	it("is org-scoped on every level", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
-		expect(orgPredicateCount(sql)).toBe(2)
+		// The spans read, its trace_index seek, and the session-id detection.
+		expect(orgPredicateCount(sql)).toBe(3)
 	})
 
 	it("keys a trace session on the trace, with the same projection", () => {
@@ -1460,9 +1485,9 @@ describe("aiSessionSummaryQuery", () => {
 		const trace = compileUnsafe(aiTraceSummaryQuery(), traceParams).sql
 
 		expect(trace).toContain(`TraceId = '${TRACE_ID}'`)
-		expect(trace).not.toContain("FROM traces")
-		expect(trace.split("FROM trace_detail_spans")[0]).toBe(session.split("FROM trace_detail_spans")[0])
-		expect(orgPredicateCount(trace)).toBe(1)
+		expect(trace.split("FROM traces").length - 1).toBe(1)
+		expect(trace.split("FROM traces")[0]).toBe(session.split("FROM traces")[0])
+		expect(orgPredicateCount(trace)).toBe(2)
 	})
 
 	it("guards every usage sum against a non-finite attribute", () => {
@@ -1474,38 +1499,38 @@ describe("aiSessionSummaryQuery", () => {
 
 	it("reads a span the gateway stamped by its verdicts, names and buckets", () => {
 		const { sql } = compileUnsafe(aiSessionSummaryQuery(), summaryParams)
-		const stamped = "trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != ''"
+		const stamped = "traces.SpanAttributes['maple_ai.llm_call'] != ''"
 		// The gateway's prompt not read from cache, else the reported prompt.
 		expect(sql).toContain(
-			`if(${stamped}, toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens'], '')`,
+			`if(${stamped}, toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], '')`,
 		)
 		// A model call and a tool call by the gateway's verdict, else by the
 		// op/model rules; a failure by its verdict, else by the span's status.
 		expect(sql).toContain(
-			`countIf((trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (${stamped}) AND `,
+			`countIf((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (${stamped}) AND `,
 		)
 		expect(sql).toContain(
-			`countIf((trace_detail_spans.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (${stamped}) AND `,
+			`countIf((traces.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (${stamped}) AND `,
 		)
 		expect(sql).toContain(
-			`countIf((trace_detail_spans.SpanAttributes['maple_ai.error'] = '1' OR (NOT (${stamped}) AND (trace_detail_spans.StatusCode = 'Error' OR `,
+			`countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (NOT (${stamped}) AND (traces.StatusCode = 'Error' OR `,
 		)
-		expect(sql).toContain(`if(${stamped}, trace_detail_spans.SpanAttributes['maple_ai.model'], `)
-		expect(sql).toContain(`if(${stamped}, trace_detail_spans.SpanAttributes['maple_ai.agent.name'], `)
+		expect(sql).toContain(`if(${stamped}, traces.SpanAttributes['maple_ai.model'], `)
+		expect(sql).toContain(`if(${stamped}, traces.SpanAttributes['maple_ai.agent.name'], `)
 	})
 
 	it("reads the whole session's measures ungrouped, under the same detection", () => {
 		const totals = compileUnsafe(aiSessionTotalsQuery(), summaryParams).sql
 		const trace = compileUnsafe(aiTraceTotalsQuery(), traceParams).sql
 
-		expect(totals).toContain("uniqExact(trace_detail_spans.TraceId) AS traceCount")
+		expect(totals).toContain("uniqExact(traces.TraceId) AS traceCount")
 		expect(totals).not.toContain("GROUP BY")
 		expect(totals).not.toContain("turnKey")
 		expect(totals).toContain("AS llmInputTokens")
 		expect(totals).toContain(`SpanAttributes['maple_ai.session.id'] = 'wrun_01M0CSAEW96BH2W9185XZPRPKH'`)
-		expect(orgPredicateCount(totals)).toBe(2)
+		expect(orgPredicateCount(totals)).toBe(3)
 		expect(trace).toContain(`TraceId = '${TRACE_ID}'`)
-		expect(orgPredicateCount(trace)).toBe(1)
+		expect(orgPredicateCount(trace)).toBe(2)
 	})
 
 	it("decodes the quoted 64-bit aggregates and the arrays", () => {

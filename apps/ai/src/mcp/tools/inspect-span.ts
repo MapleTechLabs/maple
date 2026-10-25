@@ -208,8 +208,8 @@ const undecoded = (reason: string) => Effect.succeed({ _tag: "undecoded" as cons
  * the raw attributes above it already answer the question, so a failure of
  * either read below lands as a note rather than as the tool's answer.
  *
- * The read is keyed on the trace and always bounded: `trace_detail_spans` is
- * partitioned by day, so an unbounded lookup seeks every partition. A caller
+ * The read is keyed on the trace and always bounded: `traces` is partitioned
+ * by day, so an unbounded lookup seeks every partition. A caller
  * that passed `timestamp` has already named an instant inside the trace, and
  * the pad around it is the one the page reads a session's row with — wide
  * enough that a tool span at the other end of the trace is still inside the

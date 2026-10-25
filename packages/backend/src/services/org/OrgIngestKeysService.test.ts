@@ -5,7 +5,10 @@ import { IngestKeyEncryptionError, IngestKeyPersistenceError, OrgId, UserId } fr
 import { hashIngestKey } from "@maple/db"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
+import type { OrgIngestKeyRow } from "@maple/db/tables"
+import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import { OrgIngestKeysService } from "./OrgIngestKeysService"
+import { SharedIngestKeysMemo } from "./shared-ingest-keys-memo"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -80,6 +83,25 @@ describe("OrgIngestKeysService", () => {
 			assert.isTrue(result.privateKey.startsWith("maple_sk_"))
 			assert.isFalse(Number.isNaN(Date.parse(result.publicRotatedAt)))
 			assert.isFalse(Number.isNaN(Date.parse(result.privateRotatedAt)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("creates the org's default source with its keys", () => {
+		const testDb = createTestDb(trackedDbs)
+
+		return Effect.gen(function* () {
+			const keys = yield* OrgIngestKeysService
+			yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+			yield* keys.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
+
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ count: number; name: string; key_hash: string | null }>(
+					testDb,
+					"SELECT count(*)::int AS count, min(name) AS name, min(key_hash) AS key_hash FROM sources WHERE org_id = $1 AND kind = 'default'",
+					["org_a"],
+				),
+			)
+			assert.deepStrictEqual(row, { count: 1, name: "Default", key_hash: null })
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -298,6 +320,27 @@ describe("OrgIngestKeysService", () => {
 		}),
 	)
 
+	it.effect("a shared memo carries an org's keys from one service instance to the next", () => {
+		const testDb = createTestDb(trackedDbs)
+		const second = makeStatementRecorder()
+		return Effect.gen(function* () {
+			const shared = Layer.succeed(SharedIngestKeysMemo, yield* makeExpiringStore<OrgIngestKeyRow>())
+			const getOrCreate = OrgIngestKeysService.use((keys) =>
+				keys.getOrCreate(asOrgId("org_a"), asUserId("user_a")),
+			)
+			// Two builds of the layer, as two queue batches in one isolate build theirs.
+			const first = yield* getOrCreate.pipe(
+				Effect.provide(makeLayer(testDb).pipe(Layer.provide(shared))),
+			)
+			const again = yield* getOrCreate.pipe(
+				Effect.withTracer(second.tracer),
+				Effect.provide(makeLayer(testDb).pipe(Layer.provide(shared))),
+			)
+			assert.deepStrictEqual(again, first)
+			assert.deepStrictEqual(second.verbs(), [])
+		})
+	})
+
 	it.effect("getOrCreateMany resolves every org with one SELECT and creates only missing rows", () => {
 		const testDb = createTestDb(trackedDbs)
 		const user = asUserId("user_a")
@@ -322,8 +365,8 @@ describe("OrgIngestKeysService", () => {
 				return cold
 			}).pipe(Effect.provide(makeLayer(testDb)))
 
-			// One batched SELECT for all four orgs, then org_d's first-use create path.
-			assert.deepStrictEqual(coldBatch.verbs(), ["SELECT", "SELECT", "INSERT", "SELECT"])
+			// One batched SELECT for all four orgs, then org_d's first-use create path (keys, default source).
+			assert.deepStrictEqual(coldBatch.verbs(), ["SELECT", "SELECT", "INSERT", "INSERT", "SELECT"])
 			// Every org is memoized after the first batch: no statements at all.
 			assert.deepStrictEqual(warmBatch.verbs(), [])
 			assert.strictEqual(keys.size, 4)

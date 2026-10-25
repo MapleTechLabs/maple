@@ -58,19 +58,19 @@ Local mode only. `maple start` is the long-lived process that owns the embedded 
 
 Start the local ingest and query server.
 
-| Flag                                         | Default          | Description                                                                                                                                                   |
-| -------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--host <address>`                           | `127.0.0.1`      | Bind address. Anything but loopback exposes the UI, OTLP ingest and raw SQL to the network without authentication (see [Server endpoints](#server-endpoints)) |
-| `--advertise-host <host>`                    | the bind address | Hostname printed for clients and used by the bundled UI                                                                                                       |
-| `--port <int>`                               | `4318`           | Port for OTLP ingest, the query API and the bundled UI                                                                                                        |
-| `--data-dir <path>`                          | `~/.maple/data`  | Embedded ClickHouse data directory                                                                                                                            |
-| `--offline`                                  | `false`          | Serve the UI bundled in the binary instead of linking to `local.maple.dev`                                                                                    |
-| `--background`, `-d`                         | `false`          | Run detached, logging to `~/.maple/maple.log`; stop with `maple stop`                                                                                         |
-| `--reset`                                    | `false`          | Wipe live data before starting, keeping checkpoints. For an incompatible upgrade                                                                              |
-| `--checkpoint-interval <dur>`                | `30m`            | How often to refresh the restore point while running (`45s`, `2h`, or `off`)                                                                                  |
-| `--on-dirty-store <policy>`                  | `fail`           | What to do when the store was not cleanly closed: `fail`, `wipe` or `restore-checkpoint`                                                                      |
-| `--chdb-config-file <path>`                  | generated        | Your own ClickHouse config for the embedded engine. Must keep backups enabled for checkpoints to work                                                         |
-| `--minimum-raw-telemetry-retention-days <n>` |                  | Persist a retention floor for the raw tables (at least 90 days). Survives reset and restore                                                                   |
+| Flag                                         | Default          | Description                                                                                                                                                                                     |
+| -------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--host <address>`                           | `127.0.0.1`      | Bind address. Off loopback, set `MAPLE_LOCAL_INGEST_KEY` and `MAPLE_LOCAL_ACCESS_TOKEN`, or the UI, OTLP ingest and raw SQL are open to the network (see [Server endpoints](#server-endpoints)) |
+| `--advertise-host <host>`                    | the bind address | Hostname printed for clients and used by the bundled UI                                                                                                                                         |
+| `--port <int>`                               | `4318`           | Port for OTLP ingest, the query API and the bundled UI                                                                                                                                          |
+| `--data-dir <path>`                          | `~/.maple/data`  | Embedded ClickHouse data directory                                                                                                                                                              |
+| `--offline`                                  | `false`          | Serve the UI bundled in the binary instead of linking to `local.maple.dev`                                                                                                                      |
+| `--background`, `-d`                         | `false`          | Run detached, logging to `~/.maple/maple.log`; stop with `maple stop`                                                                                                                           |
+| `--reset`                                    | `false`          | Wipe live data before starting, keeping checkpoints. For an incompatible upgrade                                                                                                                |
+| `--checkpoint-interval <dur>`                | `30m`            | How often to refresh the restore point while running (`45s`, `2h`, or `off`)                                                                                                                    |
+| `--on-dirty-store <policy>`                  | `fail`           | What to do when the store was not cleanly closed: `fail`, `wipe` or `restore-checkpoint`                                                                                                        |
+| `--chdb-config-file <path>`                  | generated        | Your own ClickHouse config for the embedded engine. Must keep backups enabled for checkpoints to work                                                                                           |
+| `--minimum-raw-telemetry-retention-days <n>` |                  | Persist a retention floor for the raw tables (at least 90 days). Survives reset and restore                                                                                                     |
 
 ```bash
 maple start                    # foreground, UI from local.maple.dev
@@ -187,6 +187,12 @@ Deep-dive one service: health, top errors, recent traces and logs.
 ### `maple service-map`
 
 Service dependency edges with call counts, errors and latency. Flags: `--since` / `--start` / `--end`, `--service`, `--env`.
+
+- `edges`: service-to-service calls, drawn when an instrumented callee continues the caller's trace
+- `databases`: calls from client spans with `db.system.name` (or the legacy `db.system`), keyed by system and `db.namespace`
+- `external`: HTTP, messaging and RPC targets that are not a traced service; listed only with `--service`, since that query is scoped to one caller
+
+Databases and external calls are local-only. In remote mode the command prints `edges`, and `--service` keeps that service's outbound edges only; locally it keeps both directions.
 
 ### `maple top-ops <service-name>`
 
@@ -344,7 +350,7 @@ maple use remote                                   # optional: stop auto-detecti
 maple services --since 1h
 ```
 
-`maple auth login` opens your browser, and you approve the CLI for one organization. The CLI then holds an [API key](/docs/reference/authentication#api-keys) with full access that expires after 90 days. It appears under **Settings → API Keys** with the description "Created by maple auth login". Run `maple auth login` again when it expires, and `maple auth logout` to revoke it.
+`maple auth login` opens your browser, and you approve the CLI for one organization. The CLI then holds an [API key](/docs/reference/authentication#api-keys) with full access that expires after 90 days. It appears under **Settings → Keys** with the description "Created by maple auth login". Run `maple auth login` again when it expires, and `maple auth logout` to revoke it.
 
 Every command except `maple query` works in remote mode. The server commands (`start`, `stop`, `reset`, `checkpoint`, `restore`, `archive`, `schema`) always act on the local store. Which region your organization is in is on [Regions](/docs/reference/regions).
 
@@ -388,16 +394,18 @@ Pin the default backend so commands stop auto-detecting, or `auto` to clear the 
 
 ## Server endpoints
 
-`maple start` binds `127.0.0.1` by default. `--host` or `MAPLE_LOCAL_BIND_HOST` can select another address. Every route below is then reachable from the network.
+`maple start` binds `127.0.0.1` by default. `--host` or `MAPLE_LOCAL_BIND_HOST` can select another address. Every route below is then reachable from the network, so set the two secrets below whenever you do.
 
 | Method    | Path                                                                                                          | Auth                 | Purpose                                                                                 |
 | --------- | ------------------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
 | `GET`     | `/health`                                                                                                     | None                 | Liveness probe, returns `OK`. Used by mode auto-detect                                  |
-| `POST`    | `/v1/traces`                                                                                                  | None                 | OTLP traces ingest, responds `{ "accepted": <rowCount> }`                               |
-| `POST`    | `/v1/logs`                                                                                                    | None                 | OTLP logs ingest                                                                        |
-| `POST`    | `/v1/metrics`                                                                                                 | None                 | OTLP metrics ingest                                                                     |
-| `POST`    | `/local/query`                                                                                                | None                 | Run SQL: `{ "sql": "..." }` in, a bare JSON array of rows out                           |
-| `GET`     | any other path                                                                                                | None                 | The bundled UI, with `--offline` only                                                   |
+| `POST`    | `/v1/traces`                                                                                                  | Ingest key           | OTLP traces ingest, responds `{ "accepted": <rowCount> }`                               |
+| `POST`    | `/v1/logs`                                                                                                    | Ingest key           | OTLP logs ingest                                                                        |
+| `POST`    | `/v1/metrics`                                                                                                 | Ingest key           | OTLP metrics ingest                                                                     |
+| `POST`    | `/local/query`                                                                                                | Access token         | Run SQL: `{ "sql": "..." }` in, a bare JSON array of rows out                           |
+| `GET`     | `/local/status`                                                                                               | Access token         | Server identity, version and last ingest time                                           |
+| `GET`     | `/login`, `POST /local/auth/login`                                                                            | None                 | Sign-in page; exchanges the access token for a session cookie                           |
+| `GET`     | any other path                                                                                                | Access token         | The bundled UI, with `--offline` only. Signed-out page loads go to `/login`             |
 | `OPTIONS` | `*`                                                                                                           | None                 | CORS and private-network preflight, for the configured hosted UI origin only            |
 | `POST`    | `/local/checkpoint/backup`                                                                                    | Maintenance token    | Take a checkpoint. `maple checkpoint` calls this                                        |
 | `POST`    | `/local/retention/retire`                                                                                     | Maintenance token    | Delete one UTC day from the live tables. `maple archive retire-live --apply` calls this |
@@ -405,7 +413,11 @@ Pin the default backend so commands stop auto-detecting, or `auto` to clear the 
 | `POST`    | `/local/eventing/projections`, `/consumers`, `/consumers/disable`, `/consumers/accept-gap`, `/outbox/abandon` | Maintenance token    | Administer local event projections and consumers                                        |
 | `POST`    | `/local/eventing/claims`, `/local/eventing/acks`                                                              | Event consumer token | Claim and acknowledge local events                                                      |
 
-**None** means no credential is checked. On a non-loopback bind, anyone who can reach the port can read all local telemetry through `/local/query` and write to it through OTLP.
+**Ingest key** and **Access token** apply only when `MAPLE_LOCAL_INGEST_KEY` and `MAPLE_LOCAL_ACCESS_TOKEN` are set (each at least 16 characters; `openssl rand -hex 32` makes a good one). Unset, those routes check nothing, and on a non-loopback bind anyone who can reach the port can read all local telemetry through `/local/query` and write to it through OTLP. `maple start` warns when that is the case.
+
+- The ingest key goes in `Authorization: Bearer <key>` or `x-maple-ingest-key`, the same headers Maple's hosted ingest accepts, so an exporter configured for Maple only needs its endpoint changed. It never grants a read.
+- The access token signs browsers in through `/login` (a 30-day, HttpOnly session cookie; rotating the token signs everyone out) and is accepted as `Authorization: Bearer <token>` by scripts. CLI commands send it when `MAPLE_LOCAL_ACCESS_TOKEN` is set in their environment. Ten failed sign-ins within a minute lock the sign-in form for everyone until the minute passes; Bearer requests and existing sessions are unaffected.
+- With an access token set, the dashboard works on whatever hostname reaches it (a platform URL, a reverse proxy), without `--advertise-host`.
 
 The maintenance token is sent in `x-maple-maintenance-token` and the event consumer token in `x-maple-event-consumer-token`. `maple start` creates them on first run as `<data-dir>.maintenance-token` and `<data-dir>.event-consumer-token` (mode `0600`). Anyone who can read those files can call the token routes, including `/local/retention/retire`, which deletes data. The event routes are described in the [local event consumers design doc](https://github.com/MapleTechLabs/maple/blob/main/docs/local-event-consumers.md).
 
@@ -420,6 +432,8 @@ OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The 
 | `MAPLE_LOCAL_BIND_HOST`      | `127.0.0.1`               | Server bind host and the CLI's default local target; wildcards map to loopback                                                                                 |
 | `MAPLE_LOCAL_ADVERTISE_HOST` | the bind host             | Host printed for clients and used by the bundled UI                                                                                                            |
 | `MAPLE_LOCAL_URL`            | bind host + `4318`        | Explicit base URL for CLI queries and mode detection                                                                                                           |
+| `MAPLE_LOCAL_INGEST_KEY`     |                           | Required on OTLP ingest (`/v1/*`) when set. At least 16 characters                                                                                             |
+| `MAPLE_LOCAL_ACCESS_TOKEN`   |                           | Required on the dashboard and query API when set, and sent by CLI commands. At least 16 characters                                                             |
 | `MAPLE_LOCAL_UI_URL`         | `https://local.maple.dev` | The hosted UI origin `maple start` links to and allows through CORS                                                                                            |
 | `MAPLE_LIBCHDB`              | _(auto)_                  | Explicit path to `libchdb`. Otherwise resolved beside the binary, then `~/.maple/bin/libchdb.{so,dylib}`                                                       |
 | `MAPLE_API_URL`              | `https://api.maple.dev`   | Remote API base URL                                                                                                                                            |

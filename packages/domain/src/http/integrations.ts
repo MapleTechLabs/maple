@@ -1,7 +1,18 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { ExternalUserId, ScrapeTargetId, UserId } from "../primitives"
+import {
+	AwsAccountId,
+	ExternalUserId,
+	GcpProjectId,
+	GcpResourceNumber,
+	GcpScopeType,
+	ScrapeTargetId,
+	SourceId,
+	SupabaseProjectRef,
+	UserId,
+} from "../primitives"
 import { SessionAuthorization } from "./current-tenant"
+import { OAuthCompleteRequest, OAuthCompleteResponse } from "./oauth-return"
 import { HttpTaggedError } from "./error-policy"
 import { PrReviewOrgSettings, PrReviewRepositoryConfig } from "./pr-review"
 import {
@@ -349,6 +360,29 @@ export class PlanetScaleScrapeTargetSummary extends Schema.Class<PlanetScaleScra
 	lastScrapeError: Schema.NullOr(Schema.String),
 }) {}
 
+export class PlanetScaleApiMetricsStatus extends Schema.Class<PlanetScaleApiMetricsStatus>(
+	"PlanetScaleApiMetricsStatus",
+)({
+	/** Epoch ms of the last poll that landed its window; null before the first. */
+	lastPolledAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
+/** The webhooks Maple registers on the bound organization's databases. */
+export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookStatus>(
+	"PlanetScaleWebhookStatus",
+)({
+	/**
+	 * `needs_reauthorization`: the grant predates the `write_databases` access webhooks need.
+	 * `pending`: not every database has one yet. `failing`: registering one failed.
+	 */
+	state: Schema.Literals(["active", "pending", "failing", "needs_reauthorization"]),
+	registeredDatabases: Schema.Number,
+	databases: Schema.Number,
+	/** The most recent registration failure, or null. */
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
 export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegrationStatus>(
 	"PlanetScaleIntegrationStatus",
 )({
@@ -364,14 +398,16 @@ export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegr
 	/** API permissions probed at org-binding time (e.g. readMetricsEndpoints). */
 	detectedPermissions: Schema.NullOr(Schema.Record(Schema.String, Schema.Boolean)),
 	/**
-	 * How branch-metrics scraping authenticates. PlanetScale's metrics endpoints
-	 * only document service-token auth, so "oauth" applies only when the bearer
-	 * probe succeeded; "missing" means scraping is paused until a service token
-	 * with the read_metrics_endpoints permission is added (the one manual step —
-	 * inventory, insights, and webhooks run on the OAuth grant regardless).
+	 * Where branch metrics come from: `api` polls PlanetScale's metrics API on the
+	 * OAuth grant; `service_token` scrapes Prometheus with a token stored on the
+	 * managed target (connections set up before the API existed).
 	 */
-	metricsAuth: Schema.Literals(["oauth", "service_token", "missing"]),
+	metricsAuth: Schema.Literals(["api", "service_token"]),
+	/** The metrics API poller's progress; null for `service_token` and before binding. */
+	apiMetrics: Schema.NullOr(PlanetScaleApiMetricsStatus),
 	scrapeTarget: Schema.NullOr(PlanetScaleScrapeTargetSummary),
+	/** Null until an organization is bound. */
+	webhooks: Schema.NullOr(PlanetScaleWebhookStatus),
 	/** Epoch ms of the last successful inventory refresh; null before the first. */
 	lastInventoryAt: Schema.NullOr(Schema.Number),
 	lastInventoryError: Schema.NullOr(Schema.String),
@@ -697,6 +733,8 @@ export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatu
 		accountLogin: Schema.NullOr(Schema.String),
 		accountType: Schema.NullOr(VcsAccountType),
 		repositorySelection: Schema.NullOr(VcsRepoSelection),
+		/** Whether GitHub Actions runs become traces. True before the org has connected. */
+		ciTracesEnabled: Schema.Boolean,
 		repositories: Schema.Array(GithubRepoSummary),
 	},
 ) {}
@@ -740,6 +778,18 @@ export class GithubSetTrackedBranchResponse extends Schema.Class<GithubSetTracke
 	trackedBranch: Schema.String,
 	// True when the change enqueued a historical backfill of the new branch.
 	backfillQueued: Schema.Boolean,
+}) {}
+
+export class GithubSetCiTracesRequest extends Schema.Class<GithubSetCiTracesRequest>(
+	"GithubSetCiTracesRequest",
+)({
+	enabled: Schema.Boolean,
+}) {}
+
+export class GithubSetCiTracesResponse extends Schema.Class<GithubSetCiTracesResponse>(
+	"GithubSetCiTracesResponse",
+)({
+	enabled: Schema.Boolean,
 }) {}
 
 export class GithubSetPrReviewRequest extends Schema.Class<GithubSetPrReviewRequest>(
@@ -858,6 +908,62 @@ export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesRespons
 	},
 ) {}
 
+/** A Cloud SQL instance's settings, read off its Cloud Asset Inventory resource. */
+export const GcpCloudSqlSettings = Schema.Struct({
+	/** `POSTGRES_15`, `MYSQL_8_0`, `SQLSERVER_2022_STANDARD`, ... */
+	databaseVersion: Schema.NullOr(Schema.String),
+	/** `ENTERPRISE` or `ENTERPRISE_PLUS`. */
+	edition: Schema.NullOr(Schema.String),
+	tier: Schema.NullOr(Schema.String),
+	/** Read off the tier; null for a tier Maple does not know. */
+	cpus: Schema.NullOr(Schema.Finite),
+	memoryGb: Schema.NullOr(Schema.Finite),
+	/** `REGIONAL` is high availability, `ZONAL` is not. */
+	availabilityType: Schema.NullOr(Schema.String),
+	/** The primary of a read replica, as `<project>:<instance>`. */
+	primary: Schema.NullOr(Schema.String),
+	diskSizeGb: Schema.NullOr(Schema.Finite),
+	queryInsightsEnabled: Schema.Boolean,
+	/**
+	 * The `max_connections` flag, or PostgreSQL's default for the memory of the larger of the
+	 * instance and its primary. Null when neither is known.
+	 */
+	maxConnections: Schema.NullOr(Schema.Finite),
+	maxConnectionsSource: Schema.NullOr(Schema.Literals(["flag", "default"])),
+})
+export type GcpCloudSqlSettings = Schema.Schema.Type<typeof GcpCloudSqlSettings>
+
+/** Rows one read of the Google Cloud resource inventory returns. */
+export const GCP_RESOURCES_LIMIT = 500
+
+/** One Cloud Asset Inventory entry in the scope of a Google Cloud connector. */
+export const GcpResource = Schema.Struct({
+	/** Full resource name: `//run.googleapis.com/projects/p/locations/l/services/s`. */
+	name: Schema.String,
+	assetType: Schema.String,
+	projectId: Schema.String,
+	location: Schema.NullOr(Schema.String),
+	displayName: Schema.NullOr(Schema.String),
+	state: Schema.NullOr(Schema.String),
+	labels: Schema.Record(Schema.String, Schema.String),
+	/** A Cloud SQL instance's settings; null for every other type, and until the sync reads them. */
+	details: Schema.NullOr(GcpCloudSqlSettings),
+})
+export type GcpResource = Schema.Schema.Type<typeof GcpResource>
+
+export class GcpResourcesResponse extends Schema.Class<GcpResourcesResponse>("GcpResourcesResponse")({
+	/** The first `GCP_RESOURCES_LIMIT` resources matching the filter, by asset type and name. */
+	resources: Schema.Array(GcpResource),
+	/** How many resources match the filter. */
+	total: Schema.Number,
+	/** The whole inventory by asset type: the type filter's options, and the project count. */
+	types: Schema.Array(Schema.Struct({ assetType: Schema.String, count: Schema.Number })),
+	/** Every project with a resource: the project filter's options. */
+	projects: Schema.Array(Schema.String),
+}) {}
+
+const GcpResourceFilterValue = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))
+
 export class RailwayEnvironmentStatus extends Schema.Class<RailwayEnvironmentStatus>(
 	"RailwayEnvironmentStatus",
 )({
@@ -896,6 +1002,171 @@ export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectRes
 	disconnected: Schema.Boolean,
 }) {}
 
+/**
+ * A log drain configured on a Supabase project, as discovery last listed it. Only the destination
+ * host is kept: drain configs carry API keys and auth headers.
+ */
+export const SupabaseLogDrainSummary = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	/** Supabase's `backend_type`: `otlp`, `datadog`, `s3`, `webhook`, ... */
+	backendType: Schema.String,
+	/** Host, bucket or region the drain sends to; null when the config names none. */
+	destination: Schema.NullOr(Schema.String),
+	/** The drain sends to this Maple deployment's ingest gateway. */
+	toMaple: Schema.Boolean,
+	/** Maple's integration created it (the project's managed drain). */
+	managedByMaple: Schema.Boolean,
+})
+export type SupabaseLogDrainSummary = typeof SupabaseLogDrainSummary.Type
+
+/** One project discovered under the connected Supabase organization. */
+export class SupabaseProjectStatus extends Schema.Class<SupabaseProjectStatus>("SupabaseProjectStatus")({
+	ref: SupabaseProjectRef,
+	name: Schema.String,
+	region: Schema.String,
+	/** Supabase's lifecycle status as reported, e.g. `ACTIVE_HEALTHY` or `INACTIVE`. */
+	status: Schema.String,
+	metricsEnabled: Schema.Boolean,
+	/** Logs arrive through a Supabase log drain Maple created (opt-in; excludes `logsEnabled`). */
+	logDrainEnabled: Schema.Boolean,
+	/** Why an enabled drain is not delivering (removed in Supabase, its source deleted). */
+	logDrainError: Schema.NullOr(Schema.String),
+	/** The token source the managed drain sends as. */
+	logDrainSourceId: Schema.NullOr(SourceId),
+	/** Every drain on the project at the last discovery, including ones set up outside Maple. */
+	logDrains: Schema.Array(SupabaseLogDrainSummary),
+	/** When `logDrains` was last listed; null when it never was (or the listing keeps failing). */
+	logDrainsCheckedAt: Schema.NullOr(Schema.Number),
+	/** Whether Maple polls this project's logs (opt-in). */
+	logsEnabled: Schema.Boolean,
+	logsLastPolledAt: Schema.NullOr(Schema.Number),
+	/** The last logs poll's error, cleared by the next good poll. */
+	logsError: Schema.NullOr(Schema.String),
+	lastSeenAt: Schema.Number,
+}) {}
+
+export class SupabaseOrganizationSummary extends Schema.Class<SupabaseOrganizationSummary>(
+	"SupabaseOrganizationSummary",
+)({
+	id: Schema.String,
+	slug: Schema.String,
+	name: Schema.String,
+}) {}
+
+/** Connection state of the Supabase integration (Management API OAuth, one organization per org). */
+export class SupabaseIntegrationStatus extends Schema.Class<SupabaseIntegrationStatus>(
+	"SupabaseIntegrationStatus",
+)({
+	/** False when this Maple deployment has no Supabase OAuth app configured. */
+	configured: Schema.Boolean,
+	connected: Schema.Boolean,
+	organization: Schema.NullOr(SupabaseOrganizationSummary),
+	connectedByUserId: Schema.NullOr(UserId),
+	connectedAt: Schema.NullOr(Schema.Number),
+	/** True when Supabase rejected the grant; discovery stops until the org reconnects. */
+	revoked: Schema.Boolean,
+	lastDiscoveryAt: Schema.NullOr(Schema.Number),
+	lastDiscoveryError: Schema.NullOr(Schema.String),
+	/** Projects currently present in the organization, by name. */
+	projects: Schema.Array(SupabaseProjectStatus),
+}) {}
+
+export class SupabaseConnectRequest extends Schema.Class<SupabaseConnectRequest>("SupabaseConnectRequest")({
+	returnTo: Schema.optionalKey(IntegrationReturnPath),
+}) {}
+
+export class SupabaseConnectResponse extends Schema.Class<SupabaseConnectResponse>("SupabaseConnectResponse")(
+	{
+		redirectUrl: Schema.String,
+		state: Schema.String,
+	},
+) {}
+
+/** Per-project switches. `logDrainEnabled` creates or deletes a log drain at Supabase. */
+export class SupabaseProjectUpdateRequest extends Schema.Class<SupabaseProjectUpdateRequest>(
+	"SupabaseProjectUpdateRequest",
+)({
+	metricsEnabled: Schema.optionalKey(Schema.Boolean),
+	logsEnabled: Schema.optionalKey(Schema.Boolean),
+	logDrainEnabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export class SupabaseDisconnectResponse extends Schema.Class<SupabaseDisconnectResponse>(
+	"SupabaseDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
+export const SupabaseAdvisorLevel = Schema.Literals(["ERROR", "WARN", "INFO"])
+export type SupabaseAdvisorLevel = typeof SupabaseAdvisorLevel.Type
+
+/** Which Management API advisor reported a lint. */
+export const SupabaseAdvisorKind = Schema.Literals(["performance", "security"])
+export type SupabaseAdvisorKind = typeof SupabaseAdvisorKind.Type
+
+/** One advisor finding (a Splinter lint such as `unindexed_foreign_keys`), as stored and served. */
+export const SupabaseAdvisorLint = Schema.Struct({
+	advisor: SupabaseAdvisorKind,
+	/** The lint id, e.g. `rls_disabled_in_public`. */
+	name: Schema.String,
+	title: Schema.String,
+	level: SupabaseAdvisorLevel,
+	/** `PERFORMANCE`, `SECURITY`, `HEALTH`. */
+	categories: Schema.Array(Schema.String),
+	description: Schema.String,
+	/** The finding itself, naming the object (markdown-ish text from Supabase). */
+	detail: Schema.String,
+	/** A docs URL. */
+	remediation: Schema.String,
+	/** The database object the lint is about, when it names one. */
+	schema: Schema.NullOr(Schema.String),
+	object: Schema.NullOr(Schema.String),
+	/** `table`, `view`, `function`, `extension`, `auth`... */
+	objectType: Schema.NullOr(Schema.String),
+	cacheKey: Schema.String,
+})
+export type SupabaseAdvisorLint = typeof SupabaseAdvisorLint.Type
+
+/** One `pg_stat_statements` entry, ranked by total execution time. */
+export const SupabaseTopQuery = Schema.Struct({
+	/** `queryid` as text (a 64-bit hash). */
+	queryId: Schema.String,
+	/** Normalized statement text (`$1` placeholders), cut at 2000 chars. */
+	query: Schema.String,
+	calls: Schema.Number,
+	totalExecMs: Schema.Number,
+	meanExecMs: Schema.Number,
+	rows: Schema.Number,
+})
+export type SupabaseTopQuery = typeof SupabaseTopQuery.Type
+
+export class SupabaseAdvisorsByLevel extends Schema.Class<SupabaseAdvisorsByLevel>("SupabaseAdvisorsByLevel")(
+	{
+		error: Schema.Array(SupabaseAdvisorLint),
+		warn: Schema.Array(SupabaseAdvisorLint),
+		info: Schema.Array(SupabaseAdvisorLint),
+	},
+) {}
+
+/**
+ * A project's polled advisors (hourly) and slowest statements (every 15 minutes). A null
+ * `*CheckedAt` means never polled; an `*Error` is the last poll's failure, with the previous
+ * good result kept beside it.
+ */
+export class SupabaseProjectInsights extends Schema.Class<SupabaseProjectInsights>("SupabaseProjectInsights")(
+	{
+		projectRef: SupabaseProjectRef,
+		advisors: SupabaseAdvisorsByLevel,
+		advisorsCheckedAt: Schema.NullOr(Schema.Number),
+		advisorsError: Schema.NullOr(Schema.String),
+		/** Top 10 by total execution time since the project's stats were last reset. */
+		topQueries: Schema.Array(SupabaseTopQuery),
+		queriesCheckedAt: Schema.NullOr(Schema.Number),
+		queriesError: Schema.NullOr(Schema.String),
+	},
+) {}
+
 export class IntegrationsForbiddenError extends HttpTaggedError<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
 	{
@@ -920,6 +1191,22 @@ export class IntegrationsValidationError extends HttpTaggedError<IntegrationsVal
 		status: 400,
 		code: "integration_request_invalid",
 		title: "Invalid integration request",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The provider refused a feature the connected account's plan does not include. */
+export class IntegrationsPlanRequiredError extends HttpTaggedError<IntegrationsPlanRequiredError>()(
+	"@maple/http/errors/IntegrationsPlanRequiredError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 402,
+		code: "integration_plan_required",
+		title: "Provider plan required",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "public_message",
@@ -1024,6 +1311,76 @@ export class IntegrationsNotFoundError extends HttpTaggedError<IntegrationsNotFo
 		title: "Integration not found",
 		retry: "never",
 		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The organization already has a connector for this Google Cloud project, folder or organization. */
+export class GcpScopeAlreadyConnectedError extends HttpTaggedError<GcpScopeAlreadyConnectedError>()(
+	"@maple/http/errors/GcpScopeAlreadyConnectedError",
+	{
+		scopeType: GcpScopeType,
+		scopeId: Schema.Union([GcpProjectId, GcpResourceNumber]),
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "gcp_scope_already_connected",
+		title: "Already connected",
+		param: "scope_id",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** Metrics were requested on a deployment that has no Google identity to collect them with. */
+export class GcpMetricsUnavailableError extends HttpTaggedError<GcpMetricsUnavailableError>()(
+	"@maple/http/errors/GcpMetricsUnavailableError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "gcp_metrics_unavailable",
+		title: "Metrics collection is not available",
+		param: "metrics_enabled",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
+/** The organization already has a connection for this AWS account. */
+export class AwsAccountAlreadyConnectedError extends HttpTaggedError<AwsAccountAlreadyConnectedError>()(
+	"@maple/http/errors/AwsAccountAlreadyConnectedError",
+	{
+		accountId: AwsAccountId,
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "aws_account_already_connected",
+		title: "Already connected",
+		param: "account_id",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** This Maple deployment has no AWS identity to assume customer roles with. */
+export class AwsIntegrationUnavailableError extends HttpTaggedError<AwsIntegrationUnavailableError>()(
+	"@maple/http/errors/AwsIntegrationUnavailableError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "aws_integration_unavailable",
+		title: "AWS is not available",
+		retry: "never",
+		recovery: "none",
 		exposure: "public_message",
 	},
 ) {}
@@ -1189,9 +1546,83 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.get("supabaseStatus", "/supabase/status", {
+			success: SupabaseIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Starts the Management API OAuth flow (PKCE); the callback binds the granted organization.
+		HttpApiEndpoint.post("supabaseConnect", "/supabase/connect", {
+			payload: SupabaseConnectRequest,
+			success: SupabaseConnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsConfigurationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Runs project discovery now instead of waiting for the hourly cron.
+		HttpApiEndpoint.post("supabaseSync", "/supabase/sync", {
+			success: SupabaseIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsNotConnectedError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.patch("supabaseUpdateProject", "/supabase/projects/:ref", {
+			params: { ref: SupabaseProjectRef },
+			payload: SupabaseProjectUpdateRequest,
+			success: SupabaseIntegrationStatus,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsNotFoundError,
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsPlanRequiredError,
+				IntegrationsValidationError,
+				IntegrationsConfigurationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("supabaseProjectInsights", "/supabase/projects/:ref/insights", {
+			params: { ref: SupabaseProjectRef },
+			success: SupabaseProjectInsights,
+			error: [IntegrationsNotFoundError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("supabaseDisconnect", "/supabase", {
+			success: SupabaseDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// The inventory behind Infrastructure -> Google Cloud. Connectors are public v2
+		// (`/v2/integrations/gcp`); only the dashboard reads what they discovered.
+		HttpApiEndpoint.get("gcpResources", "/gcp/resources", {
+			query: Schema.Struct({
+				assetType: Schema.optional(GcpResourceFilterValue),
+				projectId: Schema.optional(GcpResourceFilterValue),
+				/** The last segment of the resource name: how a workload's page finds its resource. */
+				name: Schema.optional(GcpResourceFilterValue),
+			}),
+			success: GcpResourcesResponse,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.get("githubStatus", "/github/status", {
 			success: GithubIntegrationStatus,
 			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Finishes any OAuth / app-install return for the signed-in caller (see `oauth-return.ts`).
+		// Failures come back as an `error` status with display copy, like the old callback page.
+		HttpApiEndpoint.post("oauthComplete", "/oauth/complete", {
+			payload: OAuthCompleteRequest,
+			success: OAuthCompleteResponse,
 		}),
 	)
 	.add(
@@ -1230,6 +1661,14 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			},
 			payload: GithubSetTrackedBranchRequest,
 			success: GithubSetTrackedBranchResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Org-wide opt-out of CI traces from GitHub Actions. Admin only.
+		HttpApiEndpoint.put("githubSetCiTraces", "/github/ci-traces", {
+			payload: GithubSetCiTracesRequest,
+			success: GithubSetCiTracesResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)

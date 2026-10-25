@@ -25,7 +25,7 @@ Maple is an observability platform built on OpenTelemetry. Your applications sen
 - [Replays](/docs/session-replay/replays): recordings of browser sessions, linked to their traces.
 - [Web analytics](/docs/product-events/web-analytics): page views and visitors from the browser SDK.
 - [Agent Sessions](/docs/agent-sessions/overview): AI agent conversations, with every model call and tool call.
-- Infrastructure: [Hosts](/docs/infrastructure/hosts), [Kubernetes](/docs/infrastructure/kubernetes), [Containers](/docs/infrastructure/docker), [Cloudflare](/docs/integrations/cloudflare) and [PlanetScale](/docs/integrations/planetscale).
+- Infrastructure: [Hosts](/docs/infrastructure/hosts), [Kubernetes](/docs/infrastructure/kubernetes), [Containers](/docs/infrastructure/docker), [Cloudflare](/docs/integrations/cloudflare), [Google Cloud](/docs/integrations/gcp) and [PlanetScale](/docs/integrations/planetscale).
 
 ## Getting started
 

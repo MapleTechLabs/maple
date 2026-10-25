@@ -8,17 +8,23 @@ SELECT
           toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
           intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
         FROM (SELECT
-          trace_detail_spans.TraceId AS traceId,
+          traces.TraceId AS traceId,
           count() AS spanCount,
-          countIf((trace_detail_spans.StatusCode = 'Error' OR (trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '' AND (trace_detail_spans.SpanAttributes['error.type'] != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
-          groupUniqArray(trace_detail_spans.ServiceName) AS serviceNames,
-          min(trace_detail_spans.Timestamp) AS traceStart,
-          max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) AS traceEndNanos
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-02 09:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-02 13:30:00'
-          AND trace_detail_spans.TraceId IN (SELECT
+          countIf((traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (traces.SpanAttributes['error.type'] != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          groupUniqArray(traces.ServiceName) AS serviceNames,
+          min(traces.Timestamp) AS traceStart,
+          max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) AS traceEndNanos
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-02 09:30:00'
+          AND traces.Timestamp <= '2026-01-02 13:30:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT
           agent_traces.traceId AS traceId
         FROM (SELECT
           ai_trace_index.TraceId AS traceId,
@@ -48,6 +54,8 @@ SELECT
         GROUP BY traceId
         HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0) AS agent_traces
         WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-02 09:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-02 13:30:00', 9))
         GROUP BY traceId) AS session_traces
         INNER JOIN (SELECT
           agent_traces.traceId AS traceId,
@@ -94,17 +102,23 @@ SELECT
           toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
           intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
         FROM (SELECT
-          trace_detail_spans.TraceId AS traceId,
+          traces.TraceId AS traceId,
           count() AS spanCount,
-          countIf((trace_detail_spans.StatusCode = 'Error' OR (trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '' AND (trace_detail_spans.SpanAttributes['error.type'] != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
-          groupUniqArray(trace_detail_spans.ServiceName) AS serviceNames,
-          min(trace_detail_spans.Timestamp) AS traceStart,
-          max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) AS traceEndNanos
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-02 09:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-02 13:30:00'
-          AND trace_detail_spans.TraceId IN (SELECT
+          countIf((traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (traces.SpanAttributes['error.type'] != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          groupUniqArray(traces.ServiceName) AS serviceNames,
+          min(traces.Timestamp) AS traceStart,
+          max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) AS traceEndNanos
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-02 09:30:00'
+          AND traces.Timestamp <= '2026-01-02 13:30:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT
           agent_traces.traceId AS traceId
         FROM (SELECT
           ai_trace_index.TraceId AS traceId,
@@ -139,6 +153,8 @@ SELECT
           AND countIf(ai_trace_index.ToolName IN ('send_email')) > 0
           AND countIf((ai_trace_index.SessionId LIKE '%wrun\\_01%' OR ai_trace_index.TraceId LIKE 'wrun\\_01%')) > 0) AS agent_traces
         WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-02 09:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-02 13:30:00', 9))
         GROUP BY traceId) AS session_traces
         INNER JOIN (SELECT
           agent_traces.traceId AS traceId,
@@ -190,17 +206,23 @@ SELECT
           toString(fromUnixTimestamp64Nano(max(session_traces.traceEndNanos))) AS endTime,
           intDiv(max(session_traces.traceEndNanos) - toUnixTimestamp64Nano(min(session_traces.traceStart)), 1000000) AS durationMs
         FROM (SELECT
-          trace_detail_spans.TraceId AS traceId,
+          traces.TraceId AS traceId,
           count() AS spanCount,
-          countIf((trace_detail_spans.StatusCode = 'Error' OR (trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '' AND (trace_detail_spans.SpanAttributes['error.type'] != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
-          groupUniqArray(trace_detail_spans.ServiceName) AS serviceNames,
-          min(trace_detail_spans.Timestamp) AS traceStart,
-          max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) AS traceEndNanos
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-02 09:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-02 13:30:00'
-          AND trace_detail_spans.TraceId IN (SELECT
+          countIf((traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (traces.SpanAttributes['error.type'] != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          groupUniqArray(traces.ServiceName) AS serviceNames,
+          min(traces.Timestamp) AS traceStart,
+          max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) AS traceEndNanos
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-02 09:30:00'
+          AND traces.Timestamp <= '2026-01-02 13:30:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT
           agent_traces.traceId AS traceId
         FROM (SELECT
           ai_trace_index.TraceId AS traceId,
@@ -232,6 +254,8 @@ SELECT
           AND countIf(ai_trace_index.VendorId IN ('eve')) > 0
           AND countIf(ai_trace_index.ServiceName IN ('maple-slack-agent')) > 0) AS agent_traces
         WHERE if(agent_traces.rawSessionId = '', concat('trace:', agent_traces.traceId), agent_traces.rawSessionId) IN ('wrun_sql_catalog', 'trace:7f3a4b5c6d7e8f901234567890abcdef'))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-02 09:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-02 13:30:00', 9))
         GROUP BY traceId) AS session_traces
         INNER JOIN (SELECT
           agent_traces.traceId AS traceId,
@@ -886,22 +910,28 @@ SELECT
 
 -- builder:ai-sessions:aiSessionSpansQuery:ai-scope-after-cursor
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          trace_detail_spans.ParentSpanId AS parentSpanId,
-          trace_detail_spans.SpanName AS spanName,
-          trace_detail_spans.SpanKind AS spanKind,
-          trace_detail_spans.ServiceName AS serviceName,
-          trace_detail_spans.Duration / 1000000 AS durationMs,
-          trace_detail_spans.StatusCode AS statusCode,
-          trace_detail_spans.StatusMessage AS statusMessage,
-          toString(trace_detail_spans.Timestamp) AS timestamp,
-          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), trace_detail_spans.SpanAttributes) AS spanAttributes
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId IN (SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.ParentSpanId AS parentSpanId,
+          traces.SpanName AS spanName,
+          traces.SpanKind AS spanKind,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          toString(traces.Timestamp) AS timestamp,
+          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT
           traces.TraceId AS TraceId
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -909,30 +939,38 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (mapContains(traces.SpanAttributes, 'maple_ai.session.id') AND traces.SpanAttributes['maple_ai.session.id'] != '')
           AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
-          AND trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != ''
-          AND (trace_detail_spans.Timestamp > '2026-01-01 10:30:00.123456789' OR (trace_detail_spans.Timestamp = '2026-01-01 10:30:00.123456789' AND trace_detail_spans.SpanId > '00000000000007d0'))
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
+          AND traces.SpanAttributes['maple_ai.vendor.id'] != ''
+          AND (traces.Timestamp > '2026-01-01 10:30:00.123456789' OR (traces.Timestamp = '2026-01-01 10:30:00.123456789' AND traces.SpanId > '00000000000007d0'))
         ORDER BY timestamp ASC, spanId ASC
         LIMIT 2000
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionSpansQuery:default
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          trace_detail_spans.ParentSpanId AS parentSpanId,
-          trace_detail_spans.SpanName AS spanName,
-          trace_detail_spans.SpanKind AS spanKind,
-          trace_detail_spans.ServiceName AS serviceName,
-          trace_detail_spans.Duration / 1000000 AS durationMs,
-          trace_detail_spans.StatusCode AS statusCode,
-          trace_detail_spans.StatusMessage AS statusMessage,
-          toString(trace_detail_spans.Timestamp) AS timestamp,
-          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), trace_detail_spans.SpanAttributes) AS spanAttributes
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId IN (SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.ParentSpanId AS parentSpanId,
+          traces.SpanName AS spanName,
+          traces.SpanKind AS spanKind,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          toString(traces.Timestamp) AS timestamp,
+          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT
           traces.TraceId AS TraceId
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -940,39 +978,47 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (mapContains(traces.SpanAttributes, 'maple_ai.session.id') AND traces.SpanAttributes['maple_ai.session.id'] != '')
           AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         ORDER BY timestamp ASC, spanId ASC
         LIMIT 2000
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionSummaryQuery:default
 SELECT
-          if(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.turn.id'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(trace_detail_spans.SpanAttributes['eve.turn.id'], ''), '') != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.turn.id'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(trace_detail_spans.SpanAttributes['eve.turn.id'], ''), ''), trace_detail_spans.TraceId) AS turnKey,
-          max(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.turn.id'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(trace_detail_spans.SpanAttributes['eve.turn.id'], ''), '')) AS conversationId,
-          groupUniqArray(trace_detail_spans.TraceId) AS traceIds,
-          toString(min(trace_detail_spans.Timestamp)) AS startTime,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - toUnixTimestamp64Nano(min(trace_detail_spans.Timestamp)), 1000000) AS durationMs,
+          if(coalesce(nullIf(traces.SpanAttributes['maple_ai.turn.id'], ''), nullIf(traces.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(traces.SpanAttributes['eve.turn.id'], ''), '') != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.turn.id'], ''), nullIf(traces.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(traces.SpanAttributes['eve.turn.id'], ''), ''), traces.TraceId) AS turnKey,
+          max(coalesce(nullIf(traces.SpanAttributes['maple_ai.turn.id'], ''), nullIf(traces.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(traces.SpanAttributes['eve.turn.id'], ''), '')) AS conversationId,
+          groupUniqArray(traces.TraceId) AS traceIds,
+          toString(min(traces.Timestamp)) AS startTime,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - toUnixTimestamp64Nano(min(traces.Timestamp)), 1000000) AS durationMs,
           count() AS spanCount,
-          countIf(trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.error'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (trace_detail_spans.StatusCode = 'Error' OR (trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.completion'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
-          countIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
-          ifNotFinite(sum(toFloat64OrZero(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
-          ifNotFinite(sumIf(toFloat64OrZero(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
-          groupUniqArrayIf(50)(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.model'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '')), ((trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = '')))) AND if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.model'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
-          groupUniqArrayIf(50)(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId IN (SELECT
+          countIf(traces.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
+          countIf((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
+          countIf((traces.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND traces.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(traces.SpanAttributes['error.type'], ''), '') != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
+          countIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
+          ifNotFinite(sumIf(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
+          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')), ((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = '')))) AND if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
+          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT
           traces.TraceId AS TraceId
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -980,6 +1026,8 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (mapContains(traces.SpanAttributes, 'maple_ai.session.id') AND traces.SpanAttributes['maple_ai.session.id'] != '')
           AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         GROUP BY turnKey
         ORDER BY startTime ASC
         LIMIT 1001
@@ -987,31 +1035,37 @@ SELECT
 
 -- builder:ai-sessions:aiSessionTotalsQuery:default
 SELECT
-          uniqExact(trace_detail_spans.TraceId) AS traceCount,
-          toString(min(trace_detail_spans.Timestamp)) AS startTime,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - toUnixTimestamp64Nano(min(trace_detail_spans.Timestamp)), 1000000) AS durationMs,
+          uniqExact(traces.TraceId) AS traceCount,
+          toString(min(traces.Timestamp)) AS startTime,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - toUnixTimestamp64Nano(min(traces.Timestamp)), 1000000) AS durationMs,
           count() AS spanCount,
-          countIf(trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.error'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (trace_detail_spans.StatusCode = 'Error' OR (trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.completion'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
-          countIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
-          ifNotFinite(sum(toFloat64OrZero(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
-          ifNotFinite(sumIf(toFloat64OrZero(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
-          groupUniqArrayIf(50)(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.model'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '')), ((trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = '')))) AND if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.model'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
-          groupUniqArrayIf(50)(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId IN (SELECT
+          countIf(traces.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
+          countIf((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
+          countIf((traces.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND traces.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(traces.SpanAttributes['error.type'], ''), '') != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
+          countIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
+          ifNotFinite(sumIf(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
+          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')), ((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = '')))) AND if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
+          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN (SELECT
           traces.TraceId AS TraceId
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -1019,6 +1073,8 @@ SELECT
           AND traces.Timestamp <= '2026-01-03 14:15:00'
           AND (mapContains(traces.SpanAttributes, 'maple_ai.session.id') AND traces.SpanAttributes['maple_ai.session.id'] != '')
           AND traces.SpanAttributes['maple_ai.session.id'] = 'wrun_sql_catalog')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         FORMAT JSON
 
 -- builder:ai-sessions:aiSessionWindowQuery:default
@@ -1034,78 +1090,102 @@ SELECT
 
 -- builder:ai-sessions:aiTraceSpansQuery:default
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          trace_detail_spans.ParentSpanId AS parentSpanId,
-          trace_detail_spans.SpanName AS spanName,
-          trace_detail_spans.SpanKind AS spanKind,
-          trace_detail_spans.ServiceName AS serviceName,
-          trace_detail_spans.Duration / 1000000 AS durationMs,
-          trace_detail_spans.StatusCode AS statusCode,
-          trace_detail_spans.StatusMessage AS statusMessage,
-          toString(trace_detail_spans.Timestamp) AS timestamp,
-          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), trace_detail_spans.SpanAttributes) AS spanAttributes
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.ParentSpanId AS parentSpanId,
+          traces.SpanName AS spanName,
+          traces.SpanKind AS spanKind,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          toString(traces.Timestamp) AS timestamp,
+          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         ORDER BY timestamp ASC, spanId ASC
         LIMIT 2000
         FORMAT JSON
 
 -- builder:ai-sessions:aiTraceSpansQuery:traces-app-scope
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          trace_detail_spans.ParentSpanId AS parentSpanId,
-          trace_detail_spans.SpanName AS spanName,
-          trace_detail_spans.SpanKind AS spanKind,
-          trace_detail_spans.ServiceName AS serviceName,
-          trace_detail_spans.Duration / 1000000 AS durationMs,
-          trace_detail_spans.StatusCode AS statusCode,
-          trace_detail_spans.StatusMessage AS statusMessage,
-          toString(trace_detail_spans.Timestamp) AS timestamp,
-          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), trace_detail_spans.SpanAttributes) AS spanAttributes
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef', '0123456789abcdef0123456789abcdef')
-          AND trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] = ''
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.ParentSpanId AS parentSpanId,
+          traces.SpanName AS spanName,
+          traces.SpanKind AS spanKind,
+          traces.ServiceName AS serviceName,
+          traces.Duration / 1000000 AS durationMs,
+          traces.StatusCode AS statusCode,
+          traces.StatusMessage AS statusMessage,
+          toString(traces.Timestamp) AS timestamp,
+          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef', '0123456789abcdef0123456789abcdef')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
+          AND traces.SpanAttributes['maple_ai.vendor.id'] = ''
         ORDER BY timestamp ASC, spanId ASC
         LIMIT 2000
         FORMAT JSON
 
 -- builder:ai-sessions:aiTraceSummaryQuery:default
 SELECT
-          if(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.turn.id'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(trace_detail_spans.SpanAttributes['eve.turn.id'], ''), '') != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.turn.id'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(trace_detail_spans.SpanAttributes['eve.turn.id'], ''), ''), trace_detail_spans.TraceId) AS turnKey,
-          max(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.turn.id'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(trace_detail_spans.SpanAttributes['eve.turn.id'], ''), '')) AS conversationId,
-          groupUniqArray(trace_detail_spans.TraceId) AS traceIds,
-          toString(min(trace_detail_spans.Timestamp)) AS startTime,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - toUnixTimestamp64Nano(min(trace_detail_spans.Timestamp)), 1000000) AS durationMs,
+          if(coalesce(nullIf(traces.SpanAttributes['maple_ai.turn.id'], ''), nullIf(traces.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(traces.SpanAttributes['eve.turn.id'], ''), '') != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.turn.id'], ''), nullIf(traces.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(traces.SpanAttributes['eve.turn.id'], ''), ''), traces.TraceId) AS turnKey,
+          max(coalesce(nullIf(traces.SpanAttributes['maple_ai.turn.id'], ''), nullIf(traces.SpanAttributes['gen_ai.conversation.id'], ''), nullIf(traces.SpanAttributes['eve.turn.id'], ''), '')) AS conversationId,
+          groupUniqArray(traces.TraceId) AS traceIds,
+          toString(min(traces.Timestamp)) AS startTime,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - toUnixTimestamp64Nano(min(traces.Timestamp)), 1000000) AS durationMs,
           count() AS spanCount,
-          countIf(trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.error'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (trace_detail_spans.StatusCode = 'Error' OR (trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.completion'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
-          countIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
-          ifNotFinite(sum(toFloat64OrZero(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
-          ifNotFinite(sumIf(toFloat64OrZero(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
-          groupUniqArrayIf(50)(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.model'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '')), ((trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = '')))) AND if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.model'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
-          groupUniqArrayIf(50)(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+          countIf(traces.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
+          countIf((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
+          countIf((traces.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND traces.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(traces.SpanAttributes['error.type'], ''), '') != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
+          countIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
+          ifNotFinite(sumIf(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
+          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')), ((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = '')))) AND if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
+          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         GROUP BY turnKey
         ORDER BY startTime ASC
         LIMIT 1001
@@ -1113,31 +1193,39 @@ SELECT
 
 -- builder:ai-sessions:aiTraceTotalsQuery:default
 SELECT
-          uniqExact(trace_detail_spans.TraceId) AS traceCount,
-          toString(min(trace_detail_spans.Timestamp)) AS startTime,
-          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration))) AS endTime,
-          intDiv(max(toUnixTimestamp64Nano(trace_detail_spans.Timestamp) + toInt64(trace_detail_spans.Duration)) - toUnixTimestamp64Nano(min(trace_detail_spans.Timestamp)), 1000000) AS durationMs,
+          uniqExact(traces.TraceId) AS traceCount,
+          toString(min(traces.Timestamp)) AS startTime,
+          fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration))) AS endTime,
+          intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - toUnixTimestamp64Nano(min(traces.Timestamp)), 1000000) AS durationMs,
           count() AS spanCount,
-          countIf(trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
-          countIf((trace_detail_spans.SpanAttributes['maple_ai.error'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (trace_detail_spans.StatusCode = 'Error' OR (trace_detail_spans.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['error.type'], ''), '') != '' OR trace_detail_spans.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
-          ifNotFinite(sum(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.completion'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
-          ifNotFinite(sumIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
-          countIf(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
-          ifNotFinite(sum(toFloat64OrZero(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
-          ifNotFinite(sumIf(toFloat64OrZero(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(trace_detail_spans.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.cost.total'], ''), ''))), (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
-          groupUniqArrayIf(50)(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.model'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '')), ((trace_detail_spans.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.toolCall.name'], ''), nullIf(trace_detail_spans.SpanAttributes['tool.name'], ''), '') = '')))) AND if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.model'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.response.model'], ''), nullIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.model.id'], ''), nullIf(trace_detail_spans.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
-          groupUniqArrayIf(50)(if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(trace_detail_spans.SpanAttributes['maple_ai.llm_call'] != '', trace_detail_spans.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(trace_detail_spans.SpanAttributes['gen_ai.agent.name'], ''), nullIf(trace_detail_spans.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
-          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
-          AND trace_detail_spans.TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+          countIf(traces.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
+          countIf((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
+          countIf((traces.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND traces.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(traces.SpanAttributes['error.type'], ''), '') != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
+          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
+          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
+          countIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
+          ifNotFinite(sumIf(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
+          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')), ((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = '')))) AND if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
+          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-01 10:30:00', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-03 14:15:00', 9))
         FORMAT JSON
 
 -- builder:ai-sessions:aiTraceWindowQuery:default
@@ -1148,6 +1236,13 @@ SELECT
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.TraceId = '7f3a4b5c6d7e8f901234567890abcdef'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId = '7f3a4b5c6d7e8f901234567890abcdef')
         FORMAT JSON
 
 -- builder:ai-tools:aiToolDescriptionQuery:default
@@ -1288,16 +1383,25 @@ SELECT
 
 -- builder:ai-tools:aiToolErrorPayloadsQuery:default
 SELECT
-          trace_detail_spans.TraceId AS traceId,
-          trace_detail_spans.SpanId AS spanId,
-          trace_detail_spans.StatusCode AS statusCode,
-          mapApply((k, v) -> (k, leftUTF8(v, 16384)), mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), trace_detail_spans.SpanAttributes)) AS spanAttributes,
-          mapApply((k, v) -> (k, length(v)), mapFilter((k, v) -> lengthUTF8(v) > 16384, mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), trace_detail_spans.SpanAttributes))) AS cutAttributeBytes
-        FROM trace_detail_spans
-        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
-          AND trace_detail_spans.Timestamp >= '2026-01-02 11:15:00.000000000'
-          AND trace_detail_spans.Timestamp <= '2026-01-02 11:45:30.000000000'
-          AND (trace_detail_spans.TraceId, trace_detail_spans.SpanId) IN (tuple('7f3a4b5c6d7e8f901234567890abcdef', '00000000000007d0'), tuple('7f3a4b5c6d7e8f901234567890abcdef', '00000000000007d1'))
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.StatusCode AS statusCode,
+          mapApply((k, v) -> (k, leftUTF8(v, 16384)), mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes)) AS spanAttributes,
+          mapApply((k, v) -> (k, length(v)), mapFilter((k, v) -> lengthUTF8(v) > 16384, mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes))) AS cutAttributeBytes
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-02 11:15:00.000000000'
+          AND traces.Timestamp <= '2026-01-02 11:45:30.000000000'
+          AND (traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT
+          trace_index.ServiceName AS ServiceName,
+          trace_index.Bucket AS Bucket,
+          trace_index.TraceId AS TraceId
+        FROM trace_index
+        WHERE trace_index.OrgId = 'org_sql_catalog'
+          AND trace_index.TraceId IN ('7f3a4b5c6d7e8f901234567890abcdef')
+          AND trace_index.Bucket >= toStartOfFiveMinutes(toDateTime64('2026-01-02 11:15:00.000000000', 9))
+          AND trace_index.Bucket <= toDateTime64('2026-01-02 11:45:30.000000000', 9))
+          AND (traces.TraceId, traces.SpanId) IN (tuple('7f3a4b5c6d7e8f901234567890abcdef', '00000000000007d0'), tuple('7f3a4b5c6d7e8f901234567890abcdef', '00000000000007d1'))
         FORMAT JSON
 
 -- builder:ai-tools:aiToolErrorSessionsQuery:default
@@ -2063,6 +2167,739 @@ SELECT
         HAVING countIf((((ai_trace_index.SessionId != '' OR ai_trace_index.IsLlmCall = 1) OR ai_trace_index.IsToolCall = 1) OR ai_trace_index.AgentName != '')) > 0) AS window_traces
 FORMAT JSON
 
+-- builder:aws-infra:awsInfraMetricsSQL:ec2
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.instance_id'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.ec2.network_in.sum', 'aws.ec2.network_out.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.instance_id'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization', 'aws.ec2.status_check_failed')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:ecs
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.service_name'], metrics_sum.Attributes['aws.dimension.cluster_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.service_name'], metrics_gauge.Attributes['aws.dimension.cluster_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 5000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:lambda
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.function_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.resource'] = ''
+          AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.function_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.lambda.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:loadBalancers
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.load_balancer'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.load_balancer'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.application_elb.target_response_time')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:rds
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.db_instance_identifier'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.db_instance_identifier'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:sqs
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples,
+          max(points.value) AS peak,
+          max(points.t) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.queue_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.sqs.number_of_messages_sent.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.queue_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 7500
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraPresenceSQL:default
+SELECT
+          metric_catalog.MetricName AS metric
+        FROM metric_catalog
+        WHERE metric_catalog.OrgId = 'org_sql_catalog'
+          AND metric_catalog.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization', 'aws.ec2.cpu_utilization', 'aws.ec2.network_in.sum', 'aws.ec2.network_out.sum', 'aws.ec2.status_check_failed', 'aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum', 'aws.application_elb.target_response_time', 'aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory', 'aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum', 'aws.lambda.duration', 'aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message', 'aws.sqs.number_of_messages_sent.sum')
+          AND metric_catalog.Hour >= toStartOfInterval(toDateTime('2026-01-01 10:30:00'), INTERVAL 3600 SECOND)
+          AND metric_catalog.Hour <= '2026-01-03 14:15:00'
+        GROUP BY metric
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:ec2
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.instance_id'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.instance_id'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:ecs
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.service_name'], metrics_sum.Attributes['aws.dimension.cluster_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.service_name'], metrics_gauge.Attributes['aws.dimension.cluster_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:lambda
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.function_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.resource'] = ''
+          AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.function_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:loadBalancers
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.load_balancer'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.load_balancer'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:rds
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.db_instance_identifier'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.db_instance_identifier'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraSparklinesSQL:sqs
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.queue_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.queue_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 1555000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:ec2
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.ec2.network_in.sum', 'aws.ec2.network_out.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] = 'acme-instance_id'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization', 'aws.ec2.status_check_failed')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] = 'acme-instance_id'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:ecs
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.service_name'] = 'acme-service_name'
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] = 'acme-cluster_name'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] = 'acme-service_name'
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] = 'acme-cluster_name'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:lambda
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.resource'] = ''
+          AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+          AND metrics_sum.Attributes['aws.dimension.function_name'] = 'acme-function_name'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.lambda.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] = 'acme-function_name'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:loadBalancers
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] = 'acme-load_balancer'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.application_elb.target_response_time')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] = 'acme-load_balancer'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:rds
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] = 'acme-db_instance_identifier'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] = 'acme-db_instance_identifier'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraTimeseriesSQL:sqs
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.sqs.number_of_messages_sent.sum')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] = 'acme-queue_name'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = '123456789012'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] = 'acme-queue_name'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-east-1'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = '123456789012'
+) AS points
+        GROUP BY bucket, metric
+        ORDER BY bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
 -- builder:billing-usage:dailyProductEventCountQuery:default
 SELECT
           toStartOfInterval(product_events.Timestamp, INTERVAL 86400 SECOND) AS day,
@@ -2271,6 +3108,7 @@ FORMAT JSON
 -- builder:cloudflare-infra-extended:cloudflareDurableObjectCountersSQL:default
 SELECT
           metrics_sum.ServiceName AS serviceName,
+          metrics_sum.ResourceAttributes['cloudflare.account.id'] AS accountId,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.durable_object.requests') AS requests,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.durable_object.errors') AS errors
         FROM metrics_sum
@@ -2278,7 +3116,7 @@ SELECT
           AND metrics_sum.MetricName IN ('cloudflare.durable_object.requests', 'cloudflare.durable_object.errors')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
-        GROUP BY serviceName
+        GROUP BY serviceName, accountId
         ORDER BY requests DESC
         LIMIT 500
         FORMAT JSON
@@ -2286,6 +3124,7 @@ SELECT
 -- builder:cloudflare-infra-extended:cloudflareQueueGaugesSQL:default
 SELECT
           metrics_gauge.ServiceName AS serviceName,
+          metrics_gauge.ResourceAttributes['cloudflare.account.id'] AS accountId,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'cloudflare.queue.backlog.messages'), 0), 0) AS backlogMessages,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'cloudflare.queue.backlog.messages') AS backlogMessagesMax,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, metrics_gauge.MetricName = 'cloudflare.queue.backlog.bytes'), 0), 0) AS backlogBytes,
@@ -2295,7 +3134,7 @@ SELECT
           AND metrics_gauge.MetricName IN ('cloudflare.queue.backlog.messages', 'cloudflare.queue.backlog.bytes', 'cloudflare.queue.consumer.concurrency')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
-        GROUP BY serviceName
+        GROUP BY serviceName, accountId
         ORDER BY backlogMessagesMax DESC
         LIMIT 500
         FORMAT JSON
@@ -2367,6 +3206,7 @@ SELECT
 -- builder:cloudflare-infra:cloudflareWorkerCountersSQL:default
 SELECT
           metrics_sum.ServiceName AS serviceName,
+          metrics_sum.ResourceAttributes['cloudflare.account.id'] AS accountId,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.worker.requests') AS requests,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.worker.errors') AS errors,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.worker.subrequests') AS subrequests
@@ -2375,14 +3215,30 @@ SELECT
           AND metrics_sum.MetricName IN ('cloudflare.worker.requests', 'cloudflare.worker.errors', 'cloudflare.worker.subrequests')
           AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
-        GROUP BY serviceName
+        GROUP BY serviceName, accountId
         ORDER BY requests DESC
         LIMIT 500
+        FORMAT JSON
+
+-- builder:cloudflare-infra:cloudflareWorkerDurableObjectTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(metrics_sum.TimeUnix, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.durable_object.requests') AS requests,
+          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.durable_object.errors') AS errors
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.ServiceName = 'cloudflare-zone-example-com'
+          AND metrics_sum.MetricName IN ('cloudflare.durable_object.requests', 'cloudflare.durable_object.errors')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY bucket
+        ORDER BY bucket ASC
         FORMAT JSON
 
 -- builder:cloudflare-infra:cloudflareWorkerLatencySQL:default
 SELECT
           metrics_gauge.ServiceName AS serviceName,
+          metrics_gauge.ResourceAttributes['cloudflare.account.id'] AS accountId,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.cpu_time' AND metrics_gauge.Attributes['quantile'] = '0.5')), 0), 0) AS cpuP50Ms,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.cpu_time' AND metrics_gauge.Attributes['quantile'] = '0.99')), 0), 0) AS cpuP99Ms,
           ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.duration' AND metrics_gauge.Attributes['quantile'] = '0.5')), 0), 0) AS durationP50Ms,
@@ -2392,8 +3248,42 @@ SELECT
           AND metrics_gauge.MetricName IN ('cloudflare.worker.duration', 'cloudflare.worker.cpu_time')
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
-        GROUP BY serviceName
+        GROUP BY serviceName, accountId
         LIMIT 500
+        FORMAT JSON
+
+-- builder:cloudflare-infra:cloudflareWorkerLatencyTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(metrics_gauge.TimeUnix, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.cpu_time' AND metrics_gauge.Attributes['quantile'] = '0.5')), 0), 0) AS cpuP50Ms,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.cpu_time' AND metrics_gauge.Attributes['quantile'] = '0.99')), 0), 0) AS cpuP99Ms,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.duration' AND metrics_gauge.Attributes['quantile'] = '0.5')), 0), 0) AS durationP50Ms,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.worker.duration' AND metrics_gauge.Attributes['quantile'] = '0.99')), 0), 0) AS durationP99Ms,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.durable_object.wall_time' AND metrics_gauge.Attributes['quantile'] = '0.5')), 0), 0) AS doWallP50Ms,
+          ifNull(ifNotFinite(avgIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'cloudflare.durable_object.wall_time' AND metrics_gauge.Attributes['quantile'] = '0.99')), 0), 0) AS doWallP99Ms
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.ServiceName = 'cloudflare-zone-example-com'
+          AND metrics_gauge.MetricName IN ('cloudflare.worker.duration', 'cloudflare.worker.cpu_time', 'cloudflare.durable_object.wall_time')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:cloudflare-infra:cloudflareWorkerOutcomeTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(metrics_sum.TimeUnix, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          metrics_sum.Attributes['worker.status'] AS status,
+          sum(metrics_sum.Value) AS requests
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.ServiceName = 'cloudflare-zone-example-com'
+          AND metrics_sum.MetricName = 'cloudflare.worker.requests'
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY bucket, status
+        ORDER BY bucket ASC, status ASC
         FORMAT JSON
 
 -- builder:cloudflare-infra:cloudflareZoneCacheTimeseriesSQL:default
@@ -2418,7 +3308,11 @@ SELECT
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '5xx')) AS errors5xx,
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] IN ('hit', 'stale', 'revalidated', 'updating'))) AS cacheHits,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.bytes') AS bytes,
-          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.visits') AS visits
+          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.visits') AS visits,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '2xx')) AS requests2xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '3xx')) AS requests3xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '4xx')) AS errors4xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] NOT IN ('', 'none', 'dynamic', 'bypass', 'unknown'))) AS cacheableRequests
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('cloudflare.http.requests', 'cloudflare.http.bytes', 'cloudflare.http.visits')
@@ -2436,7 +3330,11 @@ SELECT
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '5xx')) AS errors5xx,
           sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] IN ('hit', 'stale', 'revalidated', 'updating'))) AS cacheHits,
           sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.bytes') AS bytes,
-          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.visits') AS visits
+          sumIf(metrics_sum.Value, metrics_sum.MetricName = 'cloudflare.http.visits') AS visits,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '2xx')) AS requests2xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '3xx')) AS requests3xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['http.status_class'] = '4xx')) AS errors4xx,
+          sumIf(metrics_sum.Value, (metrics_sum.MetricName = 'cloudflare.http.requests' AND metrics_sum.Attributes['cache.status'] NOT IN ('', 'none', 'dynamic', 'bypass', 'unknown'))) AS cacheableRequests
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('cloudflare.http.requests', 'cloudflare.http.bytes', 'cloudflare.http.visits')
@@ -2612,6 +3510,873 @@ SELECT
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
         FORMAT JSON
 
+-- builder:gcp-infra:gcpCloudSqlDatabasesSQL:default
+SELECT
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName = 'gcp.cloud_sql.postgresql.connection.count'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName = 'gcp/cloudsql_database'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.database_id'] = 'acme-prod:orders-db'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'acme-prod'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-central1'
+          AND metrics_gauge.Attributes['gcp.metric.labels.database'] != ''
+        GROUP BY database
+        ORDER BY database ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpCloudSqlTopQueriesSQL:default
+SELECT
+          polls.hash AS queryHash,
+          anyIf(polls.statement, polls.statement != '') AS statement,
+          sum(polls.callCount) AS calls,
+          sum(polls.executionTime) AS executionSeconds,
+          sum(polls.lockTime) AS lockSeconds,
+          sum(polls.ioTime) AS ioSeconds,
+          sum(polls.rowCount) AS rowCount,
+          ifNull(ifNotFinite(sum(polls.p50 * polls.callCount) / sum(polls.callCount), 0), 0) AS p50Seconds,
+          ifNull(ifNotFinite(sum(polls.p95 * polls.callCount) / sum(polls.callCount), 0), 0) AS p95Seconds
+        FROM (SELECT
+          points.hash AS hash,
+          points.t AS t,
+          anyIf(points.statement, points.statement != '') AS statement,
+          sumIf(points.value, points.metric = 'gcp.cloud_sql.query.statement.calls') AS callCount,
+          sumIf(points.value, points.metric = 'gcp.cloud_sql.query.statement.execution.time') AS executionTime,
+          sumIf(points.value, points.metric = 'gcp.cloud_sql.query.statement.lock.time') AS lockTime,
+          sumIf(points.value, points.metric = 'gcp.cloud_sql.query.statement.io.time') AS ioTime,
+          sumIf(points.value, points.metric = 'gcp.cloud_sql.query.statement.rows') AS rowCount,
+          maxIf(points.value, (points.metric = 'gcp.cloud_sql.query.statement.duration' AND points.quantile = '0.5')) AS p50,
+          maxIf(points.value, (points.metric = 'gcp.cloud_sql.query.statement.duration' AND points.quantile = '0.95')) AS p95
+        FROM (
+SELECT
+          metrics_sum.Attributes['gcp.metric.labels.query_hash'] AS hash,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Attributes['quantile'] AS quantile,
+          metrics_sum.Attributes['db.query.text'] AS statement,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloud_sql.query.statement.calls', 'gcp.cloud_sql.query.statement.execution.time', 'gcp.cloud_sql.query.statement.lock.time', 'gcp.cloud_sql.query.statement.io.time', 'gcp.cloud_sql.query.statement.rows')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ServiceName = 'gcp/cloudsql_database'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.database_id'] = 'acme-prod:orders-db'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'acme-prod'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'us-central1'
+UNION ALL
+SELECT
+          metrics_gauge.Attributes['gcp.metric.labels.query_hash'] AS hash,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Attributes['quantile'] AS quantile,
+          metrics_gauge.Attributes['db.query.text'] AS statement,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.cloud_sql.query.statement.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName = 'gcp/cloudsql_database'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.database_id'] = 'acme-prod:orders-db'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'acme-prod'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'us-central1'
+) AS points
+        GROUP BY hash, t) AS polls
+        GROUP BY queryHash
+        ORDER BY executionSeconds DESC, queryHash ASC
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraMetricsSQL:cloudFunctions
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['service.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.status'], metrics_sum.Attributes['gcp.metric.labels.state'], metrics_sum.Attributes['network.io.direction']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloud_functions.executions', 'gcp.cloud_functions.network.io')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['service.name'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.region']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.status'], metrics_gauge.Attributes['gcp.metric.labels.state'], metrics_gauge.Attributes['network.io.direction']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.cloud_functions.execution.duration', 'gcp.cloud_functions.instance.count', 'gcp.cloud_functions.memory.usage')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, metric, label
+        ORDER BY keys ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraMetricsSQL:cloudRun
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['service.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_code_class'], metrics_sum.Attributes['gcp.metric.labels.state']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloud_run.requests', 'gcp.cloud_run.container.billable_time')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['service.name'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.region']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_code_class'], metrics_gauge.Attributes['gcp.metric.labels.state']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.cloud_run.request.duration', 'gcp.cloud_run.container.instance.count', 'gcp.cloud_run.container.cpu.utilization', 'gcp.cloud_run.container.memory.utilization', 'gcp.cloud_run.container.request.max_concurrency')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, metric, label
+        ORDER BY keys ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraMetricsSQL:cloudSql
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['gcp.resource.labels.database_id'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['disk.io.direction'], metrics_sum.Attributes['gcp.metric.labels.state'], metrics_sum.Attributes['gcp.metric.labels.source']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloud_sql.disk.operations', 'gcp.cloud_sql.postgresql.deadlocks', 'gcp.cloud_sql.postgresql.block_reads', 'gcp.cloud_sql.postgresql.temp_file.io', 'gcp.cloud_sql.mysql.slow_queries', 'gcp.cloud_sql.queries', 'gcp.cloud_sql.query.execution.time', 'gcp.cloud_sql.query.io.time', 'gcp.cloud_sql.query.lock.time')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['gcp.resource.labels.database_id'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.region']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['disk.io.direction'], metrics_gauge.Attributes['gcp.metric.labels.state'], metrics_gauge.Attributes['gcp.metric.labels.source']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.cloud_sql.cpu.utilization', 'gcp.cloud_sql.memory.utilization', 'gcp.cloud_sql.disk.utilization', 'gcp.cloud_sql.connection.count', 'gcp.cloud_sql.replication.lag', 'gcp.cloud_sql.memory.usage', 'gcp.cloud_sql.disk.usage', 'gcp.cloud_sql.disk.limit', 'gcp.cloud_sql.postgresql.connection.count', 'gcp.cloud_sql.postgresql.transaction_id.utilization', 'gcp.cloud_sql.query.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, metric, label
+        ORDER BY keys ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraMetricsSQL:computeEngine
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['host.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.availability_zone']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['network.io.direction'], metrics_sum.Attributes['disk.io.direction']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.gce.network.io', 'gcp.gce.disk.io')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['host.name'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.availability_zone']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['network.io.direction'], metrics_gauge.Attributes['disk.io.direction']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.gce.cpu.utilization', 'gcp.gce.memory.usage')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, metric, label
+        ORDER BY keys ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraMetricsSQL:gke
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['k8s.container.name'], metrics_sum.ResourceAttributes['k8s.namespace.name'], metrics_sum.ResourceAttributes['k8s.cluster.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['gcp.resource.labels.location']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.memory_type']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.gke.container.cpu.time', 'gcp.gke.container.restarts')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['k8s.container.name'], metrics_gauge.ResourceAttributes['k8s.namespace.name'], metrics_gauge.ResourceAttributes['k8s.cluster.name'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['gcp.resource.labels.location']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.memory_type']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.gke.container.cpu.limit.utilization', 'gcp.gke.container.memory.usage', 'gcp.gke.container.memory.limit.utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, metric, label
+        ORDER BY keys ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraMetricsSQL:loadBalancing
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['gcp.resource.labels.url_map_name'], metrics_sum.ResourceAttributes['gcp.resource.labels.backend_target_name'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_code_class'], metrics_sum.Attributes['network.io.direction']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.load_balancing.requests', 'gcp.load_balancing.backend.requests', 'gcp.load_balancing.network.io')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['gcp.resource.labels.url_map_name'], metrics_gauge.ResourceAttributes['gcp.resource.labels.backend_target_name'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_code_class'], metrics_gauge.Attributes['network.io.direction']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.load_balancing.request.duration', 'gcp.load_balancing.backend.request.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, metric, label
+        ORDER BY keys ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraMetricsSQL:pubsub
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['gcp.resource.labels.subscription_id'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_class']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.pubsub.subscription.sent_messages', 'gcp.pubsub.subscription.acked_messages', 'gcp.pubsub.subscription.push_requests', 'gcp.pubsub.subscription.dead_lettered_messages')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['gcp.resource.labels.subscription_id'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_class']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.pubsub.subscription.undelivered_messages', 'gcp.pubsub.subscription.oldest_unacked_message.age')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, metric, label
+        ORDER BY keys ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraPresenceSQL:default
+SELECT
+          metric_catalog.MetricName AS metric
+        FROM metric_catalog
+        WHERE metric_catalog.OrgId = 'org_sql_catalog'
+          AND metric_catalog.MetricName IN ('gcp.cloud_run.requests', 'gcp.cloud_run.request.duration', 'gcp.cloud_run.container.instance.count', 'gcp.cloud_run.container.cpu.utilization', 'gcp.cloud_run.container.memory.utilization', 'gcp.cloud_run.container.request.max_concurrency', 'gcp.cloud_run.container.billable_time', 'gcp.cloud_functions.executions', 'gcp.cloud_functions.execution.duration', 'gcp.cloud_functions.instance.count', 'gcp.cloud_functions.memory.usage', 'gcp.cloud_functions.network.io', 'gcp.gke.container.cpu.time', 'gcp.gke.container.cpu.limit.utilization', 'gcp.gke.container.memory.usage', 'gcp.gke.container.memory.limit.utilization', 'gcp.gke.container.restarts', 'gcp.gce.cpu.utilization', 'gcp.gce.memory.usage', 'gcp.gce.network.io', 'gcp.gce.disk.io', 'gcp.cloud_sql.cpu.utilization', 'gcp.cloud_sql.memory.utilization', 'gcp.cloud_sql.disk.utilization', 'gcp.cloud_sql.connection.count', 'gcp.cloud_sql.disk.operations', 'gcp.cloud_sql.replication.lag', 'gcp.cloud_sql.memory.usage', 'gcp.cloud_sql.disk.usage', 'gcp.cloud_sql.disk.limit', 'gcp.cloud_sql.postgresql.connection.count', 'gcp.cloud_sql.postgresql.deadlocks', 'gcp.cloud_sql.postgresql.transaction_id.utilization', 'gcp.cloud_sql.postgresql.block_reads', 'gcp.cloud_sql.postgresql.temp_file.io', 'gcp.cloud_sql.mysql.slow_queries', 'gcp.cloud_sql.query.duration', 'gcp.cloud_sql.queries', 'gcp.cloud_sql.query.execution.time', 'gcp.cloud_sql.query.io.time', 'gcp.cloud_sql.query.lock.time', 'gcp.pubsub.subscription.undelivered_messages', 'gcp.pubsub.subscription.oldest_unacked_message.age', 'gcp.pubsub.subscription.sent_messages', 'gcp.pubsub.subscription.acked_messages', 'gcp.pubsub.subscription.push_requests', 'gcp.pubsub.subscription.dead_lettered_messages', 'gcp.load_balancing.requests', 'gcp.load_balancing.request.duration', 'gcp.load_balancing.backend.request.duration', 'gcp.load_balancing.backend.requests', 'gcp.load_balancing.network.io')
+          AND metric_catalog.Hour >= toStartOfInterval(toDateTime('2026-01-01 10:30:00'), INTERVAL 3600 SECOND)
+          AND metric_catalog.Hour <= '2026-01-03 14:15:00'
+        GROUP BY metric
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraSparklinesSQL:cloudFunctions
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['service.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloud_functions.executions')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['service.name'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.region']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraSparklinesSQL:cloudRun
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['service.name'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloud_run.requests')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['service.name'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.region']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraSparklinesSQL:cloudSql
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['gcp.resource.labels.database_id'], metrics_sum.ResourceAttributes['cloud.account.id'], metrics_sum.ResourceAttributes['cloud.region']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloud_sql.queries')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['gcp.resource.labels.database_id'], metrics_gauge.ResourceAttributes['cloud.account.id'], metrics_gauge.ResourceAttributes['cloud.region']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraSparklinesSQL:pubsub
+SELECT
+          points.keys AS keys,
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          sum(points.value) AS total,
+          count() AS samples
+        FROM (
+SELECT
+          [metrics_sum.ResourceAttributes['gcp.resource.labels.subscription_id'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.pubsub.subscription.sent_messages')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+UNION ALL
+SELECT
+          [metrics_gauge.ResourceAttributes['gcp.resource.labels.subscription_id'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.pubsub.subscription.undelivered_messages')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+) AS points
+        GROUP BY keys, bucket, metric
+        ORDER BY keys ASC, bucket ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:cloudFunctions
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.status'], metrics_sum.Attributes['gcp.metric.labels.state'], metrics_sum.Attributes['network.io.direction']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloud_functions.executions', 'gcp.cloud_functions.network.io')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ServiceName = 'function'
+          AND metrics_sum.ResourceAttributes['service.name'] = 'function'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'region'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.status'], metrics_gauge.Attributes['gcp.metric.labels.state'], metrics_gauge.Attributes['network.io.direction']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.cloud_functions.execution.duration', 'gcp.cloud_functions.instance.count', 'gcp.cloud_functions.memory.usage')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName = 'function'
+          AND metrics_gauge.ResourceAttributes['service.name'] = 'function'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'region'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:cloudRun
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_code_class'], metrics_sum.Attributes['gcp.metric.labels.state']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloud_run.requests', 'gcp.cloud_run.container.billable_time')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ServiceName = 'service'
+          AND metrics_sum.ResourceAttributes['service.name'] = 'service'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'region'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_code_class'], metrics_gauge.Attributes['gcp.metric.labels.state']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.cloud_run.request.duration', 'gcp.cloud_run.container.instance.count', 'gcp.cloud_run.container.cpu.utilization', 'gcp.cloud_run.container.memory.utilization', 'gcp.cloud_run.container.request.max_concurrency')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName = 'service'
+          AND metrics_gauge.ResourceAttributes['service.name'] = 'service'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'region'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:cloudSql
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['disk.io.direction'], metrics_sum.Attributes['gcp.metric.labels.state'], metrics_sum.Attributes['gcp.metric.labels.source']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.cloud_sql.disk.operations', 'gcp.cloud_sql.postgresql.deadlocks', 'gcp.cloud_sql.postgresql.block_reads', 'gcp.cloud_sql.postgresql.temp_file.io', 'gcp.cloud_sql.mysql.slow_queries', 'gcp.cloud_sql.queries', 'gcp.cloud_sql.query.execution.time', 'gcp.cloud_sql.query.io.time', 'gcp.cloud_sql.query.lock.time')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ServiceName = 'gcp/cloudsql_database'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.database_id'] = 'instance'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['cloud.region'] = 'region'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['disk.io.direction'], metrics_gauge.Attributes['gcp.metric.labels.state'], metrics_gauge.Attributes['gcp.metric.labels.source']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.cloud_sql.cpu.utilization', 'gcp.cloud_sql.memory.utilization', 'gcp.cloud_sql.disk.utilization', 'gcp.cloud_sql.connection.count', 'gcp.cloud_sql.replication.lag', 'gcp.cloud_sql.memory.usage', 'gcp.cloud_sql.disk.usage', 'gcp.cloud_sql.disk.limit', 'gcp.cloud_sql.postgresql.connection.count', 'gcp.cloud_sql.postgresql.transaction_id.utilization', 'gcp.cloud_sql.query.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName = 'gcp/cloudsql_database'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.database_id'] = 'instance'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['cloud.region'] = 'region'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:computeEngine
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['network.io.direction'], metrics_sum.Attributes['disk.io.direction']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.gce.network.io', 'gcp.gce.disk.io')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ServiceName = 'instance'
+          AND metrics_sum.ResourceAttributes['host.name'] = 'instance'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['cloud.availability_zone'] = 'zone'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['network.io.direction'], metrics_gauge.Attributes['disk.io.direction']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.gce.cpu.utilization', 'gcp.gce.memory.usage')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName = 'instance'
+          AND metrics_gauge.ResourceAttributes['host.name'] = 'instance'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['cloud.availability_zone'] = 'zone'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:gke
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.memory_type']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.gke.container.cpu.time', 'gcp.gke.container.restarts')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ServiceName = 'container'
+          AND metrics_sum.ResourceAttributes['k8s.container.name'] = 'container'
+          AND metrics_sum.ResourceAttributes['k8s.namespace.name'] = 'namespace'
+          AND metrics_sum.ResourceAttributes['k8s.cluster.name'] = 'cluster'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.location'] = 'location'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.memory_type']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.gke.container.cpu.limit.utilization', 'gcp.gke.container.memory.usage', 'gcp.gke.container.memory.limit.utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName = 'container'
+          AND metrics_gauge.ResourceAttributes['k8s.container.name'] = 'container'
+          AND metrics_gauge.ResourceAttributes['k8s.namespace.name'] = 'namespace'
+          AND metrics_gauge.ResourceAttributes['k8s.cluster.name'] = 'cluster'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.location'] = 'location'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:gkeNodes
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.memory_type']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ServiceName = 'gcp/k8s_node'
+          AND metrics_sum.ResourceAttributes['k8s.cluster.name'] = 'cluster'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.location'] = 'location'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.memory_type']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.gke.node.cpu.allocatable.utilization', 'gcp.gke.node.memory.allocatable.utilization')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName = 'gcp/k8s_node'
+          AND metrics_gauge.ResourceAttributes['k8s.cluster.name'] = 'cluster'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.location'] = 'location'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:loadBalancing
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_code_class'], metrics_sum.Attributes['network.io.direction']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.load_balancing.requests', 'gcp.load_balancing.backend.requests', 'gcp.load_balancing.network.io')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ServiceName = 'gcp/https_lb_rule'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.url_map_name'] = 'url map'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.backend_target_name'] = 'backend'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_code_class'], metrics_gauge.Attributes['network.io.direction']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.load_balancing.request.duration', 'gcp.load_balancing.backend.request.duration')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName = 'gcp/https_lb_rule'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.url_map_name'] = 'url map'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.backend_target_name'] = 'backend'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:gcp-infra:gcpInfraTimeseriesSQL:pubsub
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          points.metric AS metric,
+          points.label AS label,
+          sum(points.value) AS total,
+          countIf(points.database = '') + uniqIf(points.t, points.database != '') AS samples
+        FROM (
+SELECT
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metric,
+          arrayStringConcat([metrics_sum.Attributes['quantile'], metrics_sum.Attributes['gcp.metric.labels.response_class']], '') AS label,
+          metrics_sum.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_sum.Value AS value
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('gcp.pubsub.subscription.sent_messages', 'gcp.pubsub.subscription.acked_messages', 'gcp.pubsub.subscription.push_requests', 'gcp.pubsub.subscription.dead_lettered_messages')
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.ServiceName = 'gcp/pubsub_subscription'
+          AND metrics_sum.ResourceAttributes['gcp.resource.labels.subscription_id'] = 'subscription'
+          AND metrics_sum.ResourceAttributes['cloud.account.id'] = 'project'
+UNION ALL
+SELECT
+          metrics_gauge.TimeUnix AS t,
+          metrics_gauge.MetricName AS metric,
+          arrayStringConcat([metrics_gauge.Attributes['quantile'], metrics_gauge.Attributes['gcp.metric.labels.response_class']], '') AS label,
+          metrics_gauge.Attributes['gcp.metric.labels.database'] AS database,
+          metrics_gauge.Value AS value
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('gcp.pubsub.subscription.undelivered_messages', 'gcp.pubsub.subscription.oldest_unacked_message.age')
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.ServiceName = 'gcp/pubsub_subscription'
+          AND metrics_gauge.ResourceAttributes['gcp.resource.labels.subscription_id'] = 'subscription'
+          AND metrics_gauge.ResourceAttributes['cloud.account.id'] = 'project'
+) AS points
+        GROUP BY bucket, metric, label
+        ORDER BY bucket ASC, metric ASC, label ASC
+        LIMIT 10000
+        FORMAT JSON
+
 -- builder:internal:dbStatementSamplesQuery:default
 SELECT
           coalesce(nullIf(traces.SpanAttributes['db.query.fingerprint'], ''), traces.SpanAttributes['db.statement.fingerprint']) AS fingerprint,
@@ -2645,16 +4410,16 @@ SELECT
           sum(points.availableSamples) AS storageSamples
         FROM (SELECT
           metrics_gauge.TimeUnix AS t,
-          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')) AS totalConnections,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages')) AS cpuMax,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages')) AS memMax,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')) AS totalConnections,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages')) AS cpuMax,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages')) AS memMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')) AS lagMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_volume_capacity_bytes')) AS capacityBytes,
           minIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_volume_available_bytes')) AS availableBytes,
           countIf(metrics_gauge.MetricName IN ('planetscale_volume_available_bytes')) AS availableSamples
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_branch_name'], ''), metrics_gauge.Attributes['planetscale_branch']) = 'main'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
@@ -2676,16 +4441,16 @@ SELECT
           sum(points.availableSamples) AS storageSamples
         FROM (SELECT
           metrics_gauge.TimeUnix AS t,
-          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')) AS totalConnections,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages')) AS cpuMax,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages')) AS memMax,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')) AS totalConnections,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages')) AS cpuMax,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages')) AS memMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')) AS lagMax,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_volume_capacity_bytes')) AS capacityBytes,
           minIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_volume_available_bytes')) AS availableBytes,
           countIf(metrics_gauge.MetricName IN ('planetscale_volume_available_bytes')) AS availableSamples
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections', 'planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds', 'planetscale_volume_capacity_bytes', 'planetscale_volume_available_bytes')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -2708,7 +4473,7 @@ SELECT
           sum(metrics_gauge.Value) AS totalConnections
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -2721,12 +4486,12 @@ SELECT
 SELECT
           coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) AS database,
           coalesce(nullIf(metrics_gauge.Attributes['planetscale_branch_name'], ''), metrics_gauge.Attributes['planetscale_branch']) AS branch,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages')) AS cpuMaxPercent,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages')) AS memMaxPercent,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages')) AS cpuMaxPercent,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages')) AS memMaxPercent,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')) AS replicaLagMaxSeconds
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')
+          AND metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) = 'maple-prd'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -2769,7 +4534,7 @@ SELECT
           sum(metrics_gauge.Value) AS totalConnections
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections')
+          AND metrics_gauge.MetricName IN ('planetscale_edge_active_connections', 'planetscale_edge_postgres_active_connections', 'planetscale_api_connections')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) != ''
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -2781,12 +4546,12 @@ SELECT
 -- builder:planetscale-map:planetscaleGaugesSQL:default
 SELECT
           coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) AS database,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages')) AS cpuMaxPercent,
-          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages')) AS memMaxPercent,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages')) AS cpuMaxPercent,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages')) AS memMaxPercent,
           maxIf(metrics_gauge.Value, metrics_gauge.MetricName IN ('planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')) AS replicaLagMaxSeconds
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
-          AND metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')
+          AND metrics_gauge.MetricName IN ('planetscale_pods_cpu_util_percentages', 'planetscale_vtgate_cpu_util_percentages', 'planetscale_pods_mem_util_percentages', 'planetscale_vtgate_mem_util_percentages', 'planetscale_mysql_replica_lag_seconds', 'planetscale_vttablet_replication_lag', 'planetscale_postgres_replica_lag_seconds')
           AND coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) != ''
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
@@ -3021,16 +4786,21 @@ SELECT
           t.entryService AS entryService,
           count() AS traceCount,
           countIf(r.TraceId = '') AS rootlessCount,
-          countIf((r.TraceId = '' AND t.isSampled = 1)) AS sampledRootlessCount
+          countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AS sampledRootlessCount,
+          sum(count()) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgTraceCount,
+          sum(countIf(r.TraceId = '')) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgRootlessCount,
+          sum(countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0)))) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgSampledRootlessCount
         FROM (SELECT
-          service_map_children.TraceId AS TraceId,
-          argMin(service_map_children.ServiceName, service_map_children.Timestamp) AS entryService,
-          max(match(service_map_children.TraceState, 'th:[0-9a-f]+')) AS isSampled
-        FROM service_map_children
-        WHERE service_map_children.OrgId = 'org_sql_catalog'
-          AND service_map_children.Timestamp >= '2026-01-01 10:30:00'
-          AND service_map_children.Timestamp < '2026-01-03 14:15:00'
-        GROUP BY TraceId) AS t
+          traces.TraceId AS TraceId,
+          argMin(traces.ServiceName, traces.Timestamp) AS entryService,
+          max(match(traces.TraceState, 'th:[0-9a-f]+')) AS thresholdSampled,
+          countIf(NOT ((traces.StatusCode = 'Error' OR traces.Duration >= 2000000000))) AS unkeptSpans
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 08:30:00'
+          AND traces.Timestamp < '2026-01-03 14:15:00'
+        GROUP BY TraceId
+        HAVING min(traces.Timestamp) >= '2026-01-01 10:30:00') AS t
         LEFT JOIN (SELECT
           trace_list_mv.TraceId AS TraceId
         FROM trace_list_mv
@@ -3039,8 +4809,8 @@ SELECT
           AND trace_list_mv.Timestamp < '2026-01-03 14:15:00'
         GROUP BY TraceId) AS r ON t.TraceId = r.TraceId
         GROUP BY entryService
-        ORDER BY rootlessCount DESC
-        LIMIT 200
+        ORDER BY traceCount DESC
+        LIMIT 1000
         FORMAT JSON
 
 -- builder:setup-audit:auditSamplingByServiceQuery:default
@@ -3078,4 +4848,368 @@ SELECT
         GROUP BY serviceName
         ORDER BY weightedSpanCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectCpuSQL:default
+SELECT
+          buckets.projectRef AS projectRef,
+          ifNull(ifNotFinite(greatest(1 - sum(buckets.idle) / sum(buckets.total), 0), 0), 0) AS cpuAvg,
+          ifNull(ifNotFinite(maxIf(1 - buckets.idle / buckets.total, buckets.total > 0), 0), 0) AS cpuMax
+        FROM (SELECT
+          deltas.projectRef AS projectRef,
+          toStartOfInterval(deltas.t, INTERVAL 300 SECOND) AS bucket,
+          sumIf(deltas.delta, deltas.mode = 'idle') AS idle,
+          sum(deltas.delta) AS total
+        FROM (SELECT
+          metrics_sum.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metricName,
+          metrics_sum.Attributes['mode'] AS mode,
+          metrics_sum.Attributes['device'] AS device,
+          multiIf(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = metrics_sum.TimeUnix, 1, 0) AS isFirst,
+          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName = 'node_cpu_seconds_total'
+          AND metrics_sum.Attributes['supabase_project_ref'] != ''
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 120 SECOND
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00') AS deltas
+        WHERE deltas.t >= '2026-01-01 10:30:00'
+        GROUP BY projectRef, bucket) AS buckets
+        GROUP BY projectRef
+        ORDER BY projectRef ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectGaugeSeriesSQL:default
+SELECT
+          toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
+          ifNull(ifNotFinite(avgIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryAvg,
+          ifNull(ifNotFinite(maxIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryMax,
+          max(points.memTotal) AS memoryTotal,
+          ifNull(ifNotFinite(maxIf(1 - points.diskAvailable / points.diskSize, (points.diskSize > 0 AND points.diskAvailableSamples > 0)), 0), 0) AS diskUsed,
+          max(points.diskSize) AS diskSize,
+          maxIf(points.dbSize, points.dbSizeSamples > 0) AS dbSize,
+          ifNull(ifNotFinite(avgIf(points.backends, points.backendSamples > 0), 0), 0) AS connectionsAvg,
+          maxIf(points.backends, points.backendSamples > 0) AS connectionsMax,
+          maxIf(points.maxConnections, points.maxConnectionsSamples > 0) AS maxConnections,
+          ifNull(ifNotFinite(avgIf(points.poolerClients, points.poolerSamples > 0), 0), 0) AS poolerClients,
+          max(points.authUsers) AS authUsers,
+          sum(points.authSamples) AS authSamples,
+          maxIf(points.postgrestPoolMax, points.postgrestPoolMaxSamples > 0) AS postgrestPoolMax,
+          ifNull(ifNotFinite(avgIf(greatest(points.postgrestPoolMax - points.postgrestPoolAvailable, 0), (points.postgrestPoolMaxSamples > 0 AND points.postgrestPoolAvailableSamples > 0)), 0), 0) AS postgrestPoolInUse,
+          maxIf(points.postgrestPoolWaiting, points.postgrestPoolWaitingSamples > 0) AS postgrestPoolWaiting
+        FROM (SELECT
+          metrics_gauge.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_gauge.TimeUnix AS t,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemTotal_bytes') AS memTotal,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailable,
+          countIf(metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailableSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_size_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskSize,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailable,
+          countIf((metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailableSamples,
+          sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSize,
+          countIf((metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSizeSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backends,
+          countIf(metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backendSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerClients,
+          countIf(metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnections,
+          countIf((metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnectionsSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authUsers,
+          countIf((metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMax,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMaxSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailable,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailableSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaiting,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaitingSamples
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'max_connections_connection_count', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
+          AND metrics_gauge.Attributes['supabase_project_ref'] = 'abcdefghijklmnopqrst'
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY projectRef, t) AS points
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectGaugesSQL:default
+SELECT
+          points.projectRef AS projectRef,
+          ifNull(ifNotFinite(avgIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryAvg,
+          ifNull(ifNotFinite(maxIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryMax,
+          max(points.memTotal) AS memoryTotal,
+          ifNull(ifNotFinite(maxIf(1 - points.diskAvailable / points.diskSize, (points.diskSize > 0 AND points.diskAvailableSamples > 0)), 0), 0) AS diskUsedMax,
+          max(points.diskSize) AS diskSize,
+          maxIf(points.dbSize, points.dbSizeSamples > 0) AS dbSize,
+          ifNull(ifNotFinite(avgIf(points.backends, points.backendSamples > 0), 0), 0) AS connectionsAvg,
+          maxIf(points.backends, points.backendSamples > 0) AS connectionsMax,
+          maxIf(points.maxConnections, points.maxConnectionsSamples > 0) AS maxConnections,
+          max(points.t) AS lastSeen
+        FROM (SELECT
+          metrics_gauge.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_gauge.TimeUnix AS t,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemTotal_bytes') AS memTotal,
+          maxIf(metrics_gauge.Value, metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailable,
+          countIf(metrics_gauge.MetricName = 'node_memory_MemAvailable_bytes') AS memAvailableSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_size_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskSize,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailable,
+          countIf((metrics_gauge.MetricName = 'node_filesystem_avail_bytes' AND metrics_gauge.Attributes['mountpoint'] = '/data')) AS diskAvailableSamples,
+          sumIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSize,
+          countIf((metrics_gauge.MetricName = 'pg_database_size_bytes' AND metrics_gauge.Attributes['datname'] NOT IN ('template0', 'template1'))) AS dbSizeSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backends,
+          countIf(metrics_gauge.MetricName = 'pg_stat_database_num_backends') AS backendSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerClients,
+          countIf(metrics_gauge.MetricName = 'pgbouncer_used_clients') AS poolerSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnections,
+          countIf((metrics_gauge.MetricName = 'max_connections_connection_count' AND metrics_gauge.Attributes['service_type'] = 'postgresql')) AS maxConnectionsSamples,
+          maxIf(metrics_gauge.Value, (metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authUsers,
+          countIf((metrics_gauge.MetricName = 'auth_users_user_count' AND metrics_gauge.Value >= 0)) AS authSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMax,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_max') AS postgrestPoolMaxSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailable,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_available') AS postgrestPoolAvailableSamples,
+          sumIf(metrics_gauge.Value, metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaiting,
+          countIf(metrics_gauge.MetricName = 'pgrst_db_pool_waiting') AS postgrestPoolWaitingSamples
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('node_memory_MemTotal_bytes', 'node_memory_MemAvailable_bytes', 'node_filesystem_size_bytes', 'node_filesystem_avail_bytes', 'pg_database_size_bytes', 'pg_stat_database_num_backends', 'pgbouncer_used_clients', 'max_connections_connection_count', 'auth_users_user_count', 'pgrst_db_pool_max', 'pgrst_db_pool_available', 'pgrst_db_pool_waiting')
+          AND metrics_gauge.Attributes['supabase_project_ref'] != ''
+          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+        GROUP BY projectRef, t) AS points
+        GROUP BY projectRef
+        ORDER BY projectRef ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:supabase-infra:supabaseProjectRateSeriesSQL:default
+SELECT
+          toStartOfInterval(deltas.t, INTERVAL 300 SECOND) AS bucket,
+          if(1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0) < 0, 0, 1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0)) AS cpu,
+          sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_commit_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'pg_stat_database_xact_commit_total'), 1), 0), 0) AS commitsPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_rollback_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'pg_stat_database_xact_rollback_total'), 1), 0), 0) AS rollbacksPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_blks_hit_total') / nullIf(sumIf(deltas.delta, deltas.metricName IN ('pg_stat_database_blks_hit_total', 'pg_stat_database_blks_read_total')), 0) AS cacheHitRatio,
+          sumIf(deltas.delta, (deltas.metricName = 'node_network_receive_bytes_total' AND deltas.device != 'lo')) / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, (deltas.metricName = 'node_network_receive_bytes_total' AND deltas.device != 'lo')), 1), 0), 0) AS networkRxPerSecond,
+          sumIf(deltas.delta, (deltas.metricName = 'node_network_transmit_bytes_total' AND deltas.device != 'lo')) / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, (deltas.metricName = 'node_network_transmit_bytes_total' AND deltas.device != 'lo')), 1), 0), 0) AS networkTxPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'node_disk_read_bytes_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'node_disk_read_bytes_total'), 1), 0), 0) AS diskReadPerSecond,
+          sumIf(deltas.delta, deltas.metricName = 'node_disk_written_bytes_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'node_disk_written_bytes_total'), 1), 0), 0) AS diskWritePerSecond
+        FROM (SELECT
+          metrics_sum.Attributes['supabase_project_ref'] AS projectRef,
+          metrics_sum.TimeUnix AS t,
+          metrics_sum.MetricName AS metricName,
+          metrics_sum.Attributes['mode'] AS mode,
+          metrics_sum.Attributes['device'] AS device,
+          multiIf(lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = metrics_sum.TimeUnix, 1, 0) AS isFirst,
+          multiIf(AggregationTemporality = 1, metrics_sum.Value, metrics_sum.Value < lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), metrics_sum.Value, (metrics_sum.StartTimeUnix > lagInFrame(metrics_sum.TimeUnix, 1, metrics_sum.TimeUnix) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AND metrics_sum.StartTimeUnix < metrics_sum.TimeUnix), metrics_sum.Value, metrics_sum.Value - lagInFrame(metrics_sum.Value, 1, metrics_sum.Value) OVER (PARTITION BY metrics_sum.MetricName, cityHash64(mapKeys(metrics_sum.Attributes), mapValues(metrics_sum.Attributes)), cityHash64(mapKeys(metrics_sum.ResourceAttributes), mapValues(metrics_sum.ResourceAttributes)) ORDER BY metrics_sum.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) AS delta
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('node_cpu_seconds_total', 'pg_stat_database_xact_commit_total', 'pg_stat_database_xact_rollback_total', 'pg_stat_database_blks_hit_total', 'pg_stat_database_blks_read_total', 'node_network_receive_bytes_total', 'node_network_transmit_bytes_total', 'node_disk_read_bytes_total', 'node_disk_written_bytes_total')
+          AND metrics_sum.Attributes['supabase_project_ref'] = 'abcdefghijklmnopqrst'
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 120 SECOND
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00') AS deltas
+        WHERE deltas.t >= '2026-01-01 10:30:00'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTopPathsSQL:default
+SELECT
+          logs.LogAttributes['request.method'] AS method,
+          extract(logs.LogAttributes['request.path'], '^[^?#]*') AS path,
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS errors5xx,
+          ifNull(ifNotFinite(quantile(0.95)(toFloat64OrNull(logs.LogAttributes['response.origin_time'])), 0), 0) AS p95OriginMs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        GROUP BY method, path
+        ORDER BY requests DESC, method ASC, path ASC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTrafficSeriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(logs.TimestampTime, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 200 AND 299) AS status2xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 300 AND 399) AS status3xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 400 AND 499) AS status4xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS status5xx
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseApiTrafficTotalsSQL:default
+SELECT
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599) AS errors5xx,
+          ifNull(ifNotFinite(quantile(0.95)(toFloat64OrNull(logs.LogAttributes['response.origin_time'])), 0), 0) AS p95OriginMs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst'
+          AND logs.LogAttributes['supabase.log.source'] = 'edge_logs'
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogIssuesSQL:org
+SELECT
+          records.projectRef AS projectRef,
+          records.source AS source,
+          records.message AS message,
+          count() AS count,
+          max(records.t) AS lastSeen,
+          max(records.severity) AS maxSeverity
+        FROM (SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          logs.LogAttributes['supabase.log.source'] AS source,
+          leftUTF8(replaceRegexpAll(multiIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs', concat(logs.LogAttributes['request.method'], ' ', extract(logs.LogAttributes['request.path'], '^[^?#]*'), ' ', logs.LogAttributes['response.status_code']), logs.LogAttributes['msg'] != '', logs.LogAttributes['msg'], logs.Body), '[0-9]+', '0'), 200) AS message,
+          logs.Timestamp AS t,
+          logs.SeverityNumber AS severity
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.SeverityNumber >= 13
+          AND logs.ResourceAttributes['supabase.project.ref'] != '') AS records
+        GROUP BY projectRef, source, message
+        ORDER BY count DESC, lastSeen DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogIssuesSQL:project
+SELECT
+          records.projectRef AS projectRef,
+          records.source AS source,
+          records.message AS message,
+          count() AS count,
+          max(records.t) AS lastSeen,
+          max(records.severity) AS maxSeverity
+        FROM (SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          logs.LogAttributes['supabase.log.source'] AS source,
+          leftUTF8(replaceRegexpAll(multiIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs', concat(logs.LogAttributes['request.method'], ' ', extract(logs.LogAttributes['request.path'], '^[^?#]*'), ' ', logs.LogAttributes['response.status_code']), logs.LogAttributes['msg'] != '', logs.LogAttributes['msg'], logs.Body), '[0-9]+', '0'), 200) AS message,
+          logs.Timestamp AS t,
+          logs.SeverityNumber AS severity
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.SeverityNumber >= 13
+          AND logs.ResourceAttributes['supabase.project.ref'] = 'abcdefghijklmnopqrst') AS records
+        GROUP BY projectRef, source, message
+        ORDER BY count DESC, lastSeen DESC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseLogsProjectsSummarySQL:default
+SELECT
+          logs.ResourceAttributes['supabase.project.ref'] AS projectRef,
+          countIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs') AS requests,
+          ifNull(ifNotFinite(countIf(logs.LogAttributes['supabase.log.source'] = 'edge_logs') * 60 / greatest(toUnixTimestamp(toDateTime('2026-01-03 14:15:00')) - toUnixTimestamp(toDateTime('2026-01-01 10:30:00')), 1), 0), 0) AS requestsPerMinute,
+          countIf((logs.LogAttributes['supabase.log.source'] = 'edge_logs' AND toUInt16OrZero(logs.LogAttributes['response.status_code']) BETWEEN 500 AND 599)) AS errors5xx,
+          countIf(logs.SeverityNumber >= 13) AS issueCount,
+          max(logs.Timestamp) AS lastSeen
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'supabase'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['supabase.project.ref'] != ''
+        GROUP BY projectRef
+        ORDER BY projectRef ASC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseProjectCallerSeriesSQL:default
+SELECT
+          traces.ServiceName AS serviceName,
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          count() AS calls
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))
+          AND traces.ServiceName IN (SELECT
+          callers.serviceName AS serviceName
+        FROM (SELECT
+          traces.ServiceName AS serviceName,
+          count() AS calls
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))
+        GROUP BY serviceName
+        ORDER BY calls DESC, serviceName ASC
+        LIMIT 100) AS callers)
+        GROUP BY serviceName, bucket
+        ORDER BY serviceName ASC, bucket ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:supabase-insights:supabaseProjectCallersSQL:default
+SELECT
+          spans.serviceName AS serviceName,
+          count() AS calls,
+          ifNull(ifNotFinite(count() * 60 / greatest(toUnixTimestamp(toDateTime('2026-01-03 14:15:00')) - toUnixTimestamp(toDateTime('2026-01-01 10:30:00')), 1), 0), 0) AS callsPerMinute,
+          sum(spans.failed) AS errors,
+          ifNull(ifNotFinite(sum(spans.failed) / count(), 0), 0) AS errorRate,
+          ifNull(ifNotFinite(quantile(0.95)(spans.duration) / 1000000, 0), 0) AS p95DurationMs,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/rest/%')) AS rest,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/auth/%')) AS auth,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/storage/%')) AS storage,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/realtime/%')) AS realtime,
+          countIf((spans.isPostgres = 0 AND spans.path LIKE '/functions/%')) AS functions,
+          countIf(spans.isPostgres = 1) AS postgres,
+          countIf((spans.isPostgres = 0 AND NOT (match(spans.path, '^/(rest|auth|storage|realtime|functions)/')))) AS other
+        FROM (SELECT
+          traces.ServiceName AS serviceName,
+          traces.Duration AS duration,
+          if(traces.StatusCode = 'Error', 1, 0) AS failed,
+          if(coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql', 1, 0) AS isPostgres,
+          if(traces.SpanAttributes['url.path'] != '', traces.SpanAttributes['url.path'], path(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url']))) AS path
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Client'
+          AND ((((traces.SpanAttributes['server.address'] = concat('abcdefghijklmnopqrst', '.supabase.co') OR traces.SpanAttributes['net.peer.name'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR traces.SpanAttributes['http.host'] = concat('abcdefghijklmnopqrst', '.supabase.co')) OR domain(coalesce(nullIf(traces.SpanAttributes['url.full'], ''), traces.SpanAttributes['http.url'])) = concat('abcdefghijklmnopqrst', '.supabase.co')) OR (coalesce(nullIf(traces.SpanAttributes['db.system.name'], ''), traces.SpanAttributes['db.system']) = 'postgresql' AND (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) = concat('db.', 'abcdefghijklmnopqrst', '.supabase.co') OR (coalesce(nullIf(traces.SpanAttributes['server.address'], ''), traces.SpanAttributes['net.peer.name']) LIKE '%.pooler.supabase.com' AND traces.SpanAttributes['db.user'] LIKE concat('%.', 'abcdefghijklmnopqrst')))))) AS spans
+        GROUP BY serviceName
+        ORDER BY calls DESC, serviceName ASC
+        LIMIT 100
         FORMAT JSON

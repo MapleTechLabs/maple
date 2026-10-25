@@ -8,6 +8,7 @@
 
 import { finiteOrZero } from "./format"
 import {
+	DB_QUERY_KEY_LAZY_SQL,
 	DB_QUERY_KEY_SQL,
 	DB_QUERY_LABEL_SQL,
 	DB_STATEMENT_SQL,
@@ -316,7 +317,13 @@ export interface ServiceDependenciesForServiceOpts {
  * rather than by two hand-written inequalities agreeing. A window inside a
  * single hour has an empty interior and is served entirely by the raw branch.
  */
-export function serviceDependenciesQueryBase(opts: { serviceName?: string; deploymentEnv?: string }) {
+export function serviceDependenciesQueryBase(opts: {
+	serviceName?: string
+	/** Edges with this service on either end; applied before the limit, unlike a caller-side filter. */
+	involvingService?: string
+	deploymentEnv?: string
+}) {
+	const involving = opts.involvingService
 	const envFilterMv = (deploymentEnv: CH.Expr<string>) =>
 		opts.deploymentEnv ? deploymentEnv.eq(opts.deploymentEnv) : undefined
 
@@ -342,6 +349,7 @@ export function serviceDependenciesQueryBase(opts: { serviceName?: string; deplo
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.SourceService.eq(opts.serviceName) : undefined,
+			involving ? $.SourceService.eq(involving).or($.TargetService.eq(involving)) : undefined,
 			...utcInteriorConditions($.Hour),
 			envFilterMv($.DeploymentEnv),
 		])
@@ -374,7 +382,10 @@ export function serviceDependenciesQueryBase(opts: { serviceName?: string; deplo
 				bucketMaxDurationMs: CH.max_($.c.Duration.div(1000000)),
 				bucketEstimatedSpanCount: CH.sum(sampleWeightExpr($.c.TraceState)),
 			}))
-			.where(($) => [$.ServiceName.neq($.c.ServiceName)])
+			.where(($) => [
+				$.ServiceName.neq($.c.ServiceName),
+				involving ? $.ServiceName.eq(involving).or($.c.ServiceName.eq(involving)) : undefined,
+			])
 			.groupBy("sourceService", "targetService")
 
 	// Outer wrap: re-aggregate across both branches so avg duration uses
@@ -404,6 +415,14 @@ export function serviceDependenciesQueryBase(opts: { serviceName?: string; deplo
  */
 export function serviceDependenciesForServiceQuery(opts: ServiceDependenciesForServiceOpts) {
 	return serviceDependenciesQueryBase(opts)
+}
+
+/** Inbound and outbound edges of one service, for `maple service-map -s`. */
+export function serviceDependenciesInvolvingServiceQuery(opts: ServiceDependenciesForServiceOpts) {
+	return serviceDependenciesQueryBase({
+		involvingService: opts.serviceName,
+		deploymentEnv: opts.deploymentEnv,
+	})
 }
 
 // Service ↔ database edges
@@ -812,7 +831,7 @@ const serviceDbRawFilters = (
 		SpanAttributes: CH.ColumnRef<"SpanAttributes", StringMap>
 		ResourceAttributes: CH.ColumnRef<"ResourceAttributes", StringMap>
 	},
-	params: ServiceDbQuerySummaryParams,
+	params: Pick<ServiceDbQuerySummaryParams, "dbSystem" | "dbNamespace" | "sourceService" | "deploymentEnv">,
 	scope: "edge" | "fullWindow",
 ) => [
 	$.OrgId.eq(orgIdParam),
@@ -1073,6 +1092,35 @@ export function serviceDbTopQueriesSQL(
 		.format("JSON")
 
 	return compile(query, params, { rowSchema: ServiceDbTopQueryOutputSchema })
+}
+
+/**
+ * The slowest client spans of some query keys (`ServiceDbTopQueryOutput.queryKey`) against some
+ * databases over the window, each a link to its trace. Raw `traces` over the whole window: the
+ * rollup keeps no span ids. The key is `serviceDbTopQueriesSQL`'s, derived lazily.
+ */
+export function serviceDbQuerySpansQuery(params: {
+	dbSystem: string
+	dbNamespaces: ReadonlyArray<string>
+	queryKeys: ReadonlyArray<string>
+	limit: number
+}) {
+	return from(Traces)
+		.select(($) => ({
+			traceId: $.TraceId,
+			spanId: $.SpanId,
+			serviceName: CH.toString_($.ServiceName),
+			timestamp: $.Timestamp,
+			durationMs: _toFloat64($.Duration).div(1000000),
+		}))
+		.where(($) => [
+			...serviceDbRawFilters($, { dbSystem: params.dbSystem }, "fullWindow"),
+			CH.inList(dbNamespaceExpr($), params.dbNamespaces),
+			CH.inList(CH.rawExpr(DB_QUERY_KEY_LAZY_SQL, T.string), params.queryKeys),
+		])
+		.orderBy(["durationMs", "desc"], ["traceId", "asc"], ["spanId", "asc"])
+		.limit(params.limit)
+		.format("JSON")
 }
 
 // Service ↔ external target edges (http / messaging / rpc)

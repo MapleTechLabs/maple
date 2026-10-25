@@ -10,11 +10,12 @@ import { DebugErrorsPrompt } from "./prompts/debug-errors"
 import { LatencyAnalysisPrompt } from "./prompts/latency-analysis"
 import { IncidentTriagePrompt } from "./prompts/incident-triage"
 import { InstructionsResource } from "./resources/instructions"
-import type { McpToolExecutor } from "./dispatcher"
+import type { McpToolExecutorLoader } from "./executor-loader"
 import { CurrentMcpRequestTenant, CurrentMcpTenant, resolveHttpMcpTenant } from "./lib/query-warehouse"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { INTERNAL_SERVICE_PREFIX } from "./lib/resolve-tenant"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import {
 	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
@@ -71,14 +72,14 @@ const negotiateProtocolVersion = (request: HttpServerRequest.HttpServerRequest) 
 	})
 }
 
-const mcpChallenge = (invalid: boolean, message = "Authenticate with Maple to access this MCP server.") =>
-	Effect.gen(function* () {
-		const request = yield* HttpServerRequest.HttpServerRequest
-		const proto = request.headers["x-forwarded-proto"]?.split(",")[0]?.trim() ?? "https"
-		const host = request.headers["x-forwarded-host"]?.split(",")[0]?.trim() ?? request.headers.host
-		const resourceMetadata = host
-			? `${proto}://${host}/.well-known/oauth-protected-resource/mcp`
-			: "/.well-known/oauth-protected-resource/mcp"
+const mcpChallenge = (
+	apiBaseUrl: string,
+	invalid: boolean,
+	message = "Authenticate with Maple to access this MCP server.",
+) =>
+	Effect.sync(() => {
+		// The configured API origin, which is where the OAuth metadata is actually served.
+		const resourceMetadata = `${apiBaseUrl.replace(/\/+$/, "")}/.well-known/oauth-protected-resource/mcp`
 		const challenge = `Bearer ${[
 			`resource_metadata="${resourceMetadata}"`,
 			'scope="mcp:tools"',
@@ -141,6 +142,7 @@ const mcpRateLimited = () =>
 const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpTenant }>()(
 	Effect.gen(function* () {
 		const apiKeys = yield* ApiKeysService
+		const actors = yield* ErrorActorsService
 		const auth = yield* AuthService
 		const env = yield* Env
 		const rateLimiter = yield* McpToolRateLimiter
@@ -149,6 +151,7 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 				const request = yield* HttpServerRequest.HttpServerRequest
 				return yield* resolveHttpMcpTenant.pipe(
 					Effect.provideService(ApiKeysService, apiKeys),
+					Effect.provideService(ErrorActorsService, actors),
 					Effect.provideService(AuthService, auth),
 					Effect.provideService(Env, env),
 					Effect.flatMap((tenant) =>
@@ -174,14 +177,16 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 						}),
 					),
 					Effect.catchTags({
-						"@maple/mcp/errors/McpAuthMissingError": () => mcpChallenge(false),
+						"@maple/mcp/errors/McpAuthMissingError": () =>
+							mcpChallenge(env.MAPLE_API_BASE_URL, false),
 						// A malformed bearer gets its specific fix; other reasons keep the generic text.
 						"@maple/mcp/errors/McpAuthInvalidError": (error) =>
 							error.reason === "malformed_token"
-								? mcpChallenge(true, error.message)
-								: mcpChallenge(true),
+								? mcpChallenge(env.MAPLE_API_BASE_URL, true, error.message)
+								: mcpChallenge(env.MAPLE_API_BASE_URL, true),
 						"@maple/mcp/errors/McpAuthUnavailableError": mcpUnavailable,
-						"@maple/mcp/errors/McpInvalidTenantError": () => mcpChallenge(true),
+						"@maple/mcp/errors/McpInvalidTenantError": () =>
+							mcpChallenge(env.MAPLE_API_BASE_URL, true),
 					}),
 					Effect.provideService(
 						HttpServerRequest.HttpServerRequest,
@@ -219,7 +224,13 @@ const McpHttpLive = layerStatelessMcpServer({
 export const McpLive: Layer.Layer<
 	never,
 	Cause.IllegalArgumentError,
-	HttpRouter.HttpRouter | ApiKeysService | AuthService | Env | McpToolExecutor | McpToolRateLimiter
+	| HttpRouter.HttpRouter
+	| ApiKeysService
+	| AuthService
+	| Env
+	| ErrorActorsService
+	| McpToolExecutorLoader
+	| McpToolRateLimiter
 > = Layer.mergeAll(
 	McpHttpLive,
 	DebugErrorsPrompt,

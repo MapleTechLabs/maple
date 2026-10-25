@@ -26,6 +26,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { readOrgCreatedAt } from "@maple/backend/services/org/org-created-at"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 
@@ -136,15 +137,7 @@ const make = Effect.gen(function* () {
 			}
 		}
 
-		const createdAt = yield* organizations.retrieve(tenant.orgId).pipe(
-			Effect.map((org) => org.createdAtMs),
-			Effect.catchCause((cause) =>
-				Effect.logWarning("Onboarding checklist could not read the org's creation time").pipe(
-					Effect.annotateLogs({ orgId: tenant.orgId, cause }),
-					Effect.as<number | null>(null),
-				),
-			),
-		)
+		const createdAt = yield* readOrgCreatedAt(organizations, tenant.orgId)
 		if (createdAt === null) return { orgCreatedAtMs: null, rewardClaimedAtMs: null }
 
 		const row = yield* unavailable(
@@ -359,7 +352,7 @@ const make = Effect.gen(function* () {
 export class OnboardingChecklistService extends Context.Service<
 	OnboardingChecklistService,
 	OnboardingChecklistServiceApi
->()("@maple/api/services/OnboardingChecklistService", { make }) {
+>()("@maple/backend/services/OnboardingChecklistService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(

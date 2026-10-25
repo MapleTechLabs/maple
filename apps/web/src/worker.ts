@@ -1,12 +1,12 @@
 /**
- * The dashboard's Worker, built by `Cloudflare.Website.Vite` (one `vite build`
- * for client and server). `bun dev` serves it through alchemy's vite child, which
- * strips the CLI's `NODE_ENV=production` so `import.meta.env.DEV` is correct.
- * `VITE_*` env keys are inlined into the client; other keys are Worker bindings.
+ * The dashboard's Worker at `app.maple.dev` (and every region and stage), built by
+ * `Cloudflare.Website.Vite`: one `vite build` for client and server. `VITE_*` env keys are
+ * inlined into the client; other keys are Worker bindings.
  */
 import {
 	ApiWorker,
 	MapleStack,
+	resolveDeploymentEnvironment,
 	resolveRegionAppUrls,
 	resolveWorkerName,
 	resolveWorkerPlacement,
@@ -14,28 +14,28 @@ import {
 import { plainFrom, selfObservabilityEnv } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
-import { API_PROXY_PREFIX } from "./api-proxy"
+import { API_PROXY_PREFIX } from "./api-proxy.ts"
 
-const rootDir = new URL("..", import.meta.url).pathname
+// `memo.include` also hashes the `@maple/*` sources; `lockfile` is restated because `include` drops it.
+const MEMO_INCLUDE = ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"]
 
 const props = Effect.gen(function* () {
 	const { stage, region, domains, urls } = yield* MapleStack
 	const api = yield* ApiWorker
 	return {
 		name: resolveWorkerName("web", stage, region),
-		rootDir,
+		rootDir: new URL("..", import.meta.url).pathname,
 		main: "src/worker-entry.ts",
 		assets: {
 			// Deep links serve the shell in place; otherwise hard reloads 307 to "/".
 			notFoundHandling: "single-page-application" as const,
 			// Or the SPA fallback answers the API proxy.
 			runWorkerFirst: [API_PROXY_PREFIX, `${API_PROXY_PREFIX}/*`],
+			// Vite's content-hashed output never changes under a name. Served by the asset layer,
+			// not worker-first: the Worker is placed in one region, a hop that cost ~1s per cold load.
+			headers: "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n",
 		},
-		// Also hash the `@maple/*` sources; `lockfile` is restated because `include` drops it.
-		memo: {
-			include: ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"],
-			lockfile: true,
-		},
+		memo: { include: MEMO_INCLUDE, lockfile: true },
 		placement: resolveWorkerPlacement(region),
 		workersDev: true,
 		domain: domains.web,
@@ -73,6 +73,8 @@ const props = Effect.gen(function* () {
 				["VITE_MAPLE_INGEST_KEY", "MAPLE_OTEL_PUBLIC_INGEST_KEY"],
 				"",
 			),
+			// Browser telemetry's `deployment.environment.name`, matching the Worker's (`pr-<n>` on previews).
+			VITE_MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 			// Stamped onto browser telemetry as `vcs.ref.head.revision` / `service.version`.
 			VITE_COMMIT_SHA: yield* plainFrom(["VITE_COMMIT_SHA", "COMMIT_SHA", "GITHUB_SHA"], ""),
 		},

@@ -29,7 +29,9 @@ export const forwardsToAi = (path: string): boolean =>
 	path === "/mcp" ||
 	path.startsWith("/mcp/") ||
 	path.startsWith("/api/chat/") ||
-	path.startsWith("/internal/chat/")
+	path.startsWith("/internal/chat/") ||
+	path.startsWith("/internal/mcp/") ||
+	path.startsWith("/api/security-audit/")
 
 /** maple-ai could not be reached. CORS headers included: the dashboard's chat calls this from a browser. */
 export const aiUnavailableResponse = (): HttpServerResponse.HttpServerResponse =>

@@ -24,6 +24,7 @@ import {
 	runPlanetScale,
 } from "@maple/backend/services/integrations/planetscale/api"
 import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS, toUpstreamError } from "./oauth/connection-helpers"
+import type { OAuthFlowInitiator } from "./oauth/oauth-state"
 
 const PLANETSCALE_PROVIDER = "planetscale"
 
@@ -144,6 +145,7 @@ export interface PlanetScaleOAuthServiceApi {
 	readonly completeConnect: (
 		code: string,
 		state: string,
+		initiator: OAuthFlowInitiator,
 	) => Effect.Effect<
 		{
 			readonly orgId: OrgId
@@ -185,12 +187,15 @@ export interface PlanetScaleOAuthServiceApi {
 	readonly connectedByUserId: (orgId: OrgId) => Effect.Effect<string | null, IntegrationsPersistenceError>
 	/**
 	 * Grant lifecycle timestamps (epoch ms), so the UI can name a revoked grant
-	 * directly instead of inferring it from whichever downstream call failed.
+	 * directly instead of inferring it from whichever downstream call failed, and
+	 * the scopes PlanetScale granted (unprefixed, e.g. `write_databases`).
 	 */
-	readonly grantStatus: (
-		orgId: OrgId,
-	) => Effect.Effect<
-		{ readonly revokedAt: number | null; readonly expiresAt: number | null },
+	readonly grantStatus: (orgId: OrgId) => Effect.Effect<
+		{
+			readonly revokedAt: number | null
+			readonly expiresAt: number | null
+			readonly scopes: ReadonlyArray<string>
+		},
 		IntegrationsPersistenceError
 	>
 	/** Drop the stored grant. PlanetScale documents no revoke endpoint. */
@@ -202,7 +207,7 @@ export interface PlanetScaleOAuthServiceApi {
 export class PlanetScaleOAuthService extends Context.Service<
 	PlanetScaleOAuthService,
 	PlanetScaleOAuthServiceApi
->()("@maple/api/services/PlanetScaleOAuthService", {
+>()("@maple/backend/services/PlanetScaleOAuthService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -361,10 +366,10 @@ export class PlanetScaleOAuthService extends Context.Service<
 		const completeConnect = Effect.fn("PlanetScaleOAuthService.completeConnect")(function* (
 			code: string,
 			state: string,
+			initiator: OAuthFlowInitiator,
 		) {
 			const config = yield* resolveConfig(env)
-			const stateRow = yield* oauth.requireStateRow(state)
-			yield* oauth.deleteAuthState(state)
+			const stateRow = yield* oauth.consumeStateRow(state, initiator)
 
 			const tokenResponse = yield* oauth.exchangeAuthorizationCode(config, code, stateRow.redirectUri)
 
@@ -505,36 +510,12 @@ export class PlanetScaleOAuthService extends Context.Service<
 			orgId: OrgId,
 			use: (accessToken: string) => Effect.Effect<A, E | PlanetScaleTokenRejectedError>,
 		) =>
-			Effect.gen(function* () {
-				const { accessToken } = yield* getValidAccessToken(orgId)
-				return yield* use(accessToken).pipe(
-					Effect.catchIf(isPlanetScaleTokenRejected, () =>
-						Effect.gen(function* () {
-							const config = yield* resolveConfig(env)
-							const refreshed = yield* oauth.refreshRejectedToken(config, orgId, accessToken)
-							return yield* use(refreshed.accessToken).pipe(
-								Effect.catchIf(isPlanetScaleTokenRejected, (rejected) =>
-									oauth.markRejectedTokenRevoked(orgId, refreshed.accessToken).pipe(
-										Effect.tap((stamped) =>
-											Effect.annotateCurrentSpan(
-												"maple.planetscale.grant_revoked",
-												stamped,
-											),
-										),
-										Effect.andThen(
-											Effect.fail(
-												new IntegrationsRevokedError({
-													message: rejected.message,
-												}),
-											),
-										),
-									),
-								),
-							)
-						}),
-					),
-				)
-			}).pipe(Effect.withSpan("PlanetScaleOAuthService.withAccessToken", { attributes: { orgId } }))
+			resolveConfig(env).pipe(
+				Effect.flatMap((config) =>
+					oauth.withRejectedTokenRetry(config, orgId, isPlanetScaleTokenRejected, use),
+				),
+				Effect.withSpan("PlanetScaleOAuthService.withAccessToken", { attributes: { orgId } }),
+			)
 
 		const listOrganizations = Effect.fn("PlanetScaleOAuthService.listOrganizations")(function* (
 			orgId: OrgId,
@@ -563,6 +544,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			return {
 				revokedAt: row?.revokedAt ?? null,
 				expiresAt: row?.expiresAt ?? null,
+				scopes: (row?.scope ?? "").split(" ").filter((scope) => scope !== ""),
 			}
 		})
 

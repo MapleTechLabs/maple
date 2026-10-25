@@ -1,0 +1,812 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight, type GuideLang } from "../../lib/guide-highlight";
+import LanguageTabs from "../../components/docs/LanguageTabs.astro";
+import LanguageTab from "../../components/docs/LanguageTab.astro";
+
+const pageTitle = "Prometheus metrics explained: types and examples | Maple";
+const pageDescription =
+    "What a Prometheus metric is, the four metric types with examples, the metrics worth watching, and how to collect and chart them.";
+const published = "2026-10-19";
+const updatedLabel = "October 19, 2026";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const toc = [
+    { depth: 2, slug: "what-is-a-metric", text: "What a metric is" },
+    { depth: 2, slug: "metric-types", text: "The four metric types" },
+    { depth: 3, slug: "counter", text: "Counter" },
+    { depth: 3, slug: "gauge", text: "Gauge" },
+    { depth: 3, slug: "histogram", text: "Histogram" },
+    { depth: 3, slug: "summary", text: "Summary" },
+    { depth: 2, slug: "what-to-watch", text: "Metrics worth watching" },
+    { depth: 2, slug: "collect", text: "Collect and chart them" },
+    { depth: 3, slug: "expose", text: "Expose /metrics" },
+    { depth: 3, slug: "prometheus-grafana", text: "Prometheus and Grafana" },
+    { depth: 3, slug: "maple", text: "Maple" },
+    { depth: 2, slug: "mistakes", text: "Common mistakes" },
+];
+const sectionNav = toc.filter((h) => h.depth === 2);
+
+// One color per metric type, used by every badge, chart and table on the page.
+const types = [
+    { slug: "counter", name: "Counter", color: "var(--chart-1)", gist: "Only goes up", example: "Requests served, errors, bytes sent", query: "rate(), increase()" },
+    { slug: "gauge", name: "Gauge", color: "var(--chart-2)", gist: "Goes up and down", example: "Memory in use, queue depth, temperature", query: "Read it directly, max_over_time()" },
+    { slug: "histogram", name: "Histogram", color: "var(--chart-3)", gist: "Counts values into buckets", example: "Request duration, response size", query: "histogram_quantile()" },
+    { slug: "summary", name: "Summary", color: "var(--chart-5)", gist: "Ready-made percentiles", example: "Latency of one process", query: "Read the quantile label" },
+] as const;
+const typeColor = Object.fromEntries(types.map((t) => [t.name, t.color]));
+
+// The bucket counts from the exposition example, reused by the bucket chart.
+const buckets = [
+    { le: "50 ms", count: 8121 },
+    { le: "100 ms", count: 9630 },
+    { le: "250 ms", count: 10210 },
+    { le: "500 ms", count: 10391 },
+    { le: "1 s", count: 10440 },
+    { le: "+Inf", count: 10449 },
+];
+const totalRequests = buckets[buckets.length - 1].count;
+
+const watchList = [
+    { signal: "Traffic", metric: "http_requests_total", type: "Counter", query: `sum by (route) (rate(http_requests_total[5m]))` },
+    { signal: "Errors", metric: "http_requests_total", type: "Counter", query: `sum(rate(http_requests_total{status=~"5.."}[5m]))\n  / sum(rate(http_requests_total[5m]))` },
+    { signal: "Latency", metric: "http_request_duration_seconds", type: "Histogram", query: `histogram_quantile(0.95,\n  sum by (le) (rate(http_request_duration_seconds_bucket[5m])))` },
+    { signal: "CPU", metric: "node_cpu_seconds_total", type: "Counter", query: `1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))` },
+    { signal: "Memory", metric: "node_memory_MemAvailable_bytes", type: "Gauge", query: `node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes` },
+    { signal: "Disk", metric: "node_filesystem_avail_bytes", type: "Gauge", query: `node_filesystem_avail_bytes / node_filesystem_size_bytes` },
+    { signal: "Scrape health", metric: "up", type: "Gauge", query: `up == 0` },
+];
+
+const exposition = `# HELP http_requests_total Total HTTP requests handled.
+# TYPE http_requests_total counter
+http_requests_total{method="GET",status="200"} 10432
+http_requests_total{method="POST",status="500"} 17`;
+
+const clients: { id: string; label: string; lang: GuideLang; install: string; code: string }[] = [
+    { id: "python", label: "Python", lang: "python", install: "pip install prometheus-client", code: `from prometheus_client import Counter, Histogram, start_http_server
+
+REQUESTS = Counter("http_requests", "HTTP requests handled.", ["method", "status"])
+LATENCY = Histogram("http_request_duration_seconds", "Request latency.")
+
+start_http_server(8000)  # serves /metrics on port 8000
+
+# Call this from your request handler
+def record(method, status, handle):
+    with LATENCY.time():
+        handle()
+    REQUESTS.labels(method, str(status)).inc()` },
+    { id: "typescript", label: "TypeScript", lang: "typescript", install: "npm install prom-client", code: `import { createServer } from "node:http";
+import { Counter, Histogram, register } from "prom-client";
+
+const requests = new Counter({ name: "http_requests_total", help: "HTTP requests handled.", labelNames: ["method", "status"] });
+const latency = new Histogram({ name: "http_request_duration_seconds", help: "Request latency." });
+
+createServer(async (req, res) => {
+  if (req.url === "/metrics") {
+    res.setHeader("Content-Type", register.contentType);
+    res.end(await register.metrics());
+    return;
+  }
+  const stopTimer = latency.startTimer();
+  res.end("ok");
+  stopTimer();
+  requests.inc({ method: req.method, status: String(res.statusCode) });
+}).listen(8000);` },
+    { id: "go", label: "Go", lang: "go", install: "go get github.com/prometheus/client_golang", code: `package main
+
+import (
+	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+var (
+	requests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "http_requests_total", Help: "HTTP requests handled.",
+	}, []string{"method", "status"})
+	latency = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name: "http_request_duration_seconds", Help: "Request latency.",
+	})
+)
+
+func handle(w http.ResponseWriter, r *http.Request) {
+	timer := prometheus.NewTimer(latency)
+	defer timer.ObserveDuration()
+	w.Write([]byte("ok"))
+	requests.WithLabelValues(r.Method, "200").Inc()
+}
+
+func main() {
+	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/", handle)
+	http.ListenAndServe(":8000", nil)
+}` },
+    { id: "rust", label: "Rust", lang: "rust", install: "cargo add prometheus", code: `use prometheus::{register_histogram, register_int_counter_vec, Encoder, TextEncoder};
+use std::io::{Read, Write};
+use std::net::TcpListener;
+
+fn main() {
+    let requests = register_int_counter_vec!(
+        "http_requests_total", "HTTP requests handled.", &["method", "status"]
+    ).unwrap();
+    let latency = register_histogram!(
+        "http_request_duration_seconds", "Request latency."
+    ).unwrap();
+
+    // In a real service, do this in your request handler.
+    let timer = latency.start_timer();
+    requests.with_label_values(&["GET", "200"]).inc();
+    timer.observe_duration();
+
+    // Serve /metrics. With axum or actix, return this body from a route instead.
+    for stream in TcpListener::bind("0.0.0.0:8000").unwrap().incoming() {
+        let mut stream = stream.unwrap();
+        stream.read(&mut [0; 1024]).unwrap();
+        let mut body = Vec::new();
+        TextEncoder::new().encode(&prometheus::gather(), &mut body).unwrap();
+        write!(stream, "HTTP/1.1 200 OK\\r\\nContent-Length: {}\\r\\n\\r\\n", body.len()).unwrap();
+        stream.write_all(&body).unwrap();
+    }
+}` },
+    { id: "java", label: "Java", lang: "java", install: "io.prometheus:prometheus-metrics-core + prometheus-metrics-exporter-httpserver", code: `import io.prometheus.metrics.core.datapoints.Timer;
+import io.prometheus.metrics.core.metrics.Counter;
+import io.prometheus.metrics.core.metrics.Histogram;
+import io.prometheus.metrics.exporter.httpserver.HTTPServer;
+
+public class App {
+    static final Counter requests = Counter.builder()
+            .name("http_requests_total").help("HTTP requests handled.")
+            .labelNames("method", "status").register();
+    static final Histogram latency = Histogram.builder()
+            .name("http_request_duration_seconds").help("Request latency.")
+            .classicOnly().register();
+
+    public static void main(String[] args) throws Exception {
+        HTTPServer.builder().port(8000).buildAndStart(); // serves /metrics
+
+        // In a real service, do this in your request handler.
+        try (Timer timer = latency.startTimer()) {
+            requests.labelValues("GET", "200").inc();
+        }
+        Thread.currentThread().join();
+    }
+}` },
+    { id: "csharp", label: "C#", lang: "csharp", install: "dotnet add package prometheus-net", code: `using Prometheus;
+
+var requests = Metrics.CreateCounter("http_requests_total", "HTTP requests handled.", "method", "status");
+var latency = Metrics.CreateHistogram("http_request_duration_seconds", "Request latency.");
+
+using var server = new MetricServer(port: 8000); // serves /metrics
+server.Start();
+
+// In a real service, do this in your request handler.
+using (latency.NewTimer())
+{
+    requests.WithLabels("GET", "200").Inc();
+}
+
+await Task.Delay(Timeout.Infinite);` },
+];
+
+const composeFiles = [
+    { name: "compose.yaml", code: `services:
+  prometheus:
+    image: prom/prometheus
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts: ["host.docker.internal:host-gateway"]
+  grafana:
+    image: grafana/grafana
+    ports: ["3000:3000"]
+    volumes:
+      - ./grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml` },
+    { name: "prometheus.yml", code: `scrape_configs:
+  - job_name: api
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["host.docker.internal:8000"]` },
+    { name: "grafana-datasource.yml", code: `apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    url: http://prometheus:9090
+    isDefault: true` },
+];
+
+const mistakes = [
+    ["Charting a raw counter", "A counter only tells you something through its rate. Plotted raw it is a line that climbs, then drops to zero whenever the process restarts."],
+    ["Summing before rate", "Write <code>sum(rate(x[5m]))</code>, not <code>rate(sum(x)[5m])</code>. <code>rate()</code> detects restarts per series, and summing first hides them."],
+    ["A label for every user", "Every distinct label value is a new time series. User IDs, emails or full URLs in labels can grow one metric into millions of series."],
+    ["Averaging summary quantiles", "A p99 from five processes cannot be averaged into a service p99. Use a histogram and compute the percentile across all of them."],
+    ["Units missing from names", "Base units go in the name: <code>_seconds</code>, <code>_bytes</code>, and <code>_total</code> for counters. <code>http_request_duration_seconds</code> needs no comment."],
+    ["A rate window that is too short", "<code>rate()</code> needs at least two samples in its window. With a 15 s scrape interval, <code>[1m]</code> is the shortest safe window."],
+];
+
+const faqs = [
+    {
+        question: "What are the 4 types of metrics in Prometheus?",
+        answer:
+            "Counter, gauge, histogram and summary. A counter only goes up, such as requests served. A gauge goes up and down, such as memory in use. A histogram counts values into buckets so you can compute percentiles when you query. A summary computes percentiles inside the application and exposes them ready-made.",
+    },
+    {
+        question: "What is the difference between a counter and a gauge?",
+        answer:
+            "A counter only increases and resets to zero when the process restarts, so you query its rate of change with rate() or increase(). A gauge is a current value that can rise or fall, so you read it directly. If a value can go down for any reason other than a restart, it is a gauge.",
+    },
+    {
+        question: "Should I use a histogram or a summary?",
+        answer:
+            "A histogram, in almost every case. Histogram buckets from many instances add up, so you can compute a percentile for the whole service and pick the percentile when you query. Summary percentiles are computed per process and cannot be combined across instances.",
+    },
+    {
+        question: "Which Prometheus metrics should I monitor?",
+        answer:
+            "For a service: request rate, error ratio and latency percentiles, from a request counter and a duration histogram. For a host: CPU, memory and disk from node_exporter. Add an alert on up == 0 so you know when a target stops being scraped.",
+    },
+    {
+        question: "How do I see Prometheus metrics in Grafana?",
+        answer:
+            "Add Prometheus as a data source in Grafana with the address of your Prometheus server, for example http://prometheus:9090. Then create a dashboard panel, choose that data source and enter a PromQL query such as sum(rate(http_requests_total[5m])).",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Prometheus metrics, explained",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: published,
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/prometheus-metrics`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Prometheus metrics" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="relative mx-auto max-w-6xl px-6 pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Metrics</span>
+                    <span>7 min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Prometheus metrics, explained
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    The four metric types, the handful worth watching, and how to collect and chart them.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime={published}>Updated {updatedLabel}</time>
+                </div>
+            </div>
+        </header>
+
+        <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep">
+            <div class="mx-auto flex max-w-6xl gap-6 overflow-x-auto px-6 py-4 font-mono text-[10px] whitespace-nowrap text-fg-muted">
+                {sectionNav.map((h) => (
+                    <a href={`#${h.slug}`} class="transition-colors hover:text-primary">{h.text}</a>
+                ))}
+            </div>
+        </nav>
+
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
+            <aside class="hidden lg:block">
+                <TableOfContents headings={toc} class="sticky top-28" />
+            </aside>
+
+            <article class="prom-guide min-w-0">
+                <section id="what-is-a-metric" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · Definition</p>
+                    <h2>What a Prometheus metric is</h2>
+
+                    <div class="guide-answer">
+                        <p>A <strong>Prometheus metric</strong> is a named number that your application keeps up to date, such as how many requests it has served. Prometheus reads it every few seconds and stores each reading, so you can chart how the number changes over time.</p>
+                    </div>
+
+                    <p>
+                        Applications publish their metrics as plain text on an HTTP endpoint, usually <code>/metrics</code>. Every line is one number:
+                    </p>
+
+                    <div class="anatomy" role="img" aria-label="An annotated metric line: http_requests_total is the metric name, method POST and status 500 are labels, 17 is the current value.">
+                        <div class="anatomy__line" aria-hidden="true">
+                            {[
+                                ["name", "http_requests_total", "Name", "What is measured"],
+                                ["labels", '{method="POST",status="500"}', "Labels", "Which slice of it"],
+                                ["value", "17", "Value", "The number right now"],
+                            ].map(([part, text, title, body]) => (
+                                <div class={`anatomy__col anatomy__col--${part}`}>
+                                    <span class="anatomy__part">{text}</span>
+                                    <div class="anatomy__key"><strong>{title}</strong><span>{body}</span></div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <p>
+                        Every combination of label values is its own <strong>time series</strong>. A <code>POST</code> that returned <code>500</code> and a <code>GET</code> that returned <code>200</code> are counted separately, as two series of the same metric. That is what lets a query pick out only the errors, or only one route.
+                    </p>
+                    <p>
+                        Two comment lines above the samples give each metric a description and a type:
+                    </p>
+                    <pre><code set:html={highlight(exposition, "exposition")} /></pre>
+
+                    <figure class="pull" aria-label="The pull model. The scraper sends GET /metrics to your app every 15 seconds, your app answers with its current values, and the scraper stores each value with a timestamp. Storage builds a series of readings over time, which queries, dashboards and alerts read.">
+                        <svg viewBox="0 0 760 170" aria-hidden="true">
+                            <defs>
+                                <marker id="pull-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                                    <path d="M0,0 L8,4 L0,8 z" class="pull__head" />
+                                </marker>
+                                <marker id="pull-arrow-answer" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                                    <path d="M0,0 L8,4 L0,8 z" class="pull__head pull__head--answer" />
+                                </marker>
+                            </defs>
+                            <rect x="0" y="45" width="150" height="80" rx="8" class="pull__box pull__box--app" />
+                            <text x="75" y="80" text-anchor="middle" class="pull__title">Your app</text>
+                            <text x="75" y="102" text-anchor="middle" class="pull__mono">/metrics</text>
+
+                            <line x1="276" y1="70" x2="156" y2="70" marker-end="url(#pull-arrow)" class="pull__line" />
+                            <text x="216" y="60" text-anchor="middle" class="pull__mono pull__mono--accent">GET /metrics</text>
+                            <line x1="156" y1="100" x2="276" y2="100" marker-end="url(#pull-arrow-answer)" class="pull__line pull__line--answer" />
+                            <text x="216" y="122" text-anchor="middle" class="pull__mono">current values</text>
+
+                            <rect x="282" y="45" width="140" height="80" rx="8" class="pull__box" />
+                            <text x="352" y="80" text-anchor="middle" class="pull__title">Scraper</text>
+                            <text x="352" y="102" text-anchor="middle" class="pull__mono">every 15 s</text>
+
+                            <line x1="428" y1="85" x2="494" y2="85" marker-end="url(#pull-arrow)" class="pull__line" />
+                            <text x="461" y="75" text-anchor="middle" class="pull__mono">+ time</text>
+
+                            <rect x="500" y="20" width="260" height="130" rx="8" class="pull__box" />
+                            <text x="518" y="46" class="pull__title">Storage</text>
+                            <text x="518" y="66" class="pull__mono pull__mono--name">http_requests_total</text>
+                            <polyline points="545,108 605,104 665,99 725,95" class="pull__series" />
+                            {[["545","108","10,401","12:00:00"],["605","104","10,417",":15"],["665","99","10,432",":30"],["725","95","10,449",":45"]].map(([x, y, v, t]) => (
+                                <g>
+                                    <circle cx={x} cy={y} r="3.5" class="pull__dot" />
+                                    <text x={x} y={Number(y) - 10} text-anchor="middle" class="pull__mono pull__mono--value">{v}</text>
+                                    <text x={x} y="135" text-anchor="middle" class="pull__mono">{t}</text>
+                                </g>
+                            ))}
+                        </svg>
+                    </figure>
+                    <p class="guide-caption">Prometheus pulls: the scraper asks and your app answers. Every answer becomes one more reading in storage, which is what queries, dashboards and alerts read.</p>
+                </section>
+
+                <section id="metric-types" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · Types</p>
+                    <h2>The four Prometheus metric types</h2>
+                    <p>
+                        The type decides how a number behaves over time, and that decides which query makes sense for it.
+                    </p>
+
+                    <div class="types-grid" role="img" aria-label="How each metric type moves over time. Counter: climbs steadily and drops to zero on a restart. Gauge: rises and falls. Histogram: counts values into buckets. Summary: separate lines for the median and the 99th percentile.">
+                        {types.map((t) => (
+                            <div class="types-grid__card" style={`--type: ${t.color}`} aria-hidden="true">
+                                <span class="type-badge">{t.name}</span>
+                                <svg viewBox="0 0 200 80" class="types-grid__chart">
+                                    {t.slug === "counter" && (
+                                        <>
+                                            <polyline points="0,72 25,66 50,58 75,49 100,41 125,30 140,24" />
+                                            <polyline points="140,74 160,68 180,60 200,52" />
+                                            <line x1="140" y1="24" x2="140" y2="74" class="types-grid__dash" />
+                                            <text x="146" y="20">restart</text>
+                                        </>
+                                    )}
+                                    {t.slug === "gauge" && <polyline points="0,46 22,30 44,50 66,24 88,40 110,18 132,52 154,34 176,44 200,28" />}
+                                    {t.slug === "histogram" && [10, 26, 44, 30, 16, 7].map((h, i) => (
+                                        <rect x={8 + i * 32} y={76 - h * 1.5} width="24" height={h * 1.5} rx="2" />
+                                    ))}
+                                    {t.slug === "summary" && (
+                                        <>
+                                            <polyline points="0,22 30,16 60,26 90,12 120,24 150,10 180,20 200,14" />
+                                            <polyline points="0,62 30,60 60,63 90,58 120,61 150,59 180,62 200,60" class="types-grid__faint" />
+                                            <text x="200" y="8" text-anchor="end">p99</text>
+                                            <text x="200" y="76" text-anchor="end">p50</text>
+                                        </>
+                                    )}
+                                </svg>
+                                <p><strong>{t.gist}.</strong> {t.example}.</p>
+                            </div>
+                        ))}
+                    </div>
+
+                    <h3 id="counter" class="scroll-mt-24"><span class="type-dot" style={`--type: ${typeColor.Counter}`}></span>Counter: a number that only goes up</h3>
+                    <p>
+                        Requests served, errors, bytes sent. The raw value is a running total since the process started, which is rarely what you want to see. Ask how fast it grows instead:
+                    </p>
+                    <pre><code set:html={highlight(`rate(http_requests_total[5m])       # requests per second\nincrease(http_requests_total[1h])   # requests in the last hour`, "promql")} /></pre>
+                    <p>
+                        When the process restarts, the counter drops to zero. <code>rate()</code> and <code>increase()</code> notice the drop and carry on as if it hadn't happened.
+                    </p>
+
+                    <h3 id="gauge" class="scroll-mt-24"><span class="type-dot" style={`--type: ${typeColor.Gauge}`}></span>Gauge: a number that goes up and down</h3>
+                    <p>
+                        Memory in use, items in a queue, open connections. A gauge is a snapshot, so its raw value is the answer:
+                    </p>
+                    <pre><code set:html={highlight(`process_resident_memory_bytes                        # memory now\nmax_over_time(process_resident_memory_bytes[1h])     # peak in the last hour`, "promql")} /></pre>
+
+                    <h3 id="histogram" class="scroll-mt-24"><span class="type-dot" style={`--type: ${typeColor.Histogram}`}></span>Histogram: how values are spread</h3>
+                    <p>
+                        Use a histogram for durations and sizes, where the average hides the slow requests you care about. Instead of storing every request's duration, it counts how many requests finished within each limit. The buckets are cumulative: the 250 ms bucket also contains everything under 100 ms.
+                    </p>
+
+                    <figure class="buckets" aria-label={`Cumulative histogram buckets for ${totalRequests.toLocaleString("en-US")} requests. The 95th percentile falls inside the 100 to 250 millisecond bucket, at about 177 milliseconds.`}>
+                        <div class="buckets__rows" aria-hidden="true">
+                            {buckets.map((b) => (
+                                <div class="buckets__row">
+                                    <span class="buckets__label">≤ {b.le}</span>
+                                    <span class="buckets__track"><span class="buckets__bar" style={`width: ${(b.count / totalRequests) * 100}%`}></span></span>
+                                    <span class="buckets__count">{b.count.toLocaleString("en-US")}</span>
+                                </div>
+                            ))}
+                            <span class="buckets__p95" style={`left: calc(var(--label-w) + (100% - var(--label-w) - var(--count-w)) * 0.95)`}><span>95%</span></span>
+                        </div>
+                        <figcaption>95% of {totalRequests.toLocaleString("en-US")} requests is 9,927. That count falls between the 100 ms and 250 ms buckets, so the p95 is somewhere in that range: <code>histogram_quantile()</code> estimates about 177 ms.</figcaption>
+                    </figure>
+
+                    <pre><code set:html={highlight(`# p95 latency across every instance\nhistogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))`, "promql")} /></pre>
+                    <p>
+                        Because bucket counts add up, you can combine histograms from every instance and get one percentile for the whole service. Pick bucket limits around your targets: if the goal is 300 ms, put a bucket at 300 ms.
+                    </p>
+
+                    <h3 id="summary" class="scroll-mt-24"><span class="type-dot" style={`--type: ${typeColor.Summary}`}></span>Summary: percentiles computed in the app</h3>
+                    <p>
+                        A summary works out percentiles such as p50 and p99 inside your application and publishes them ready-made:
+                    </p>
+                    <pre><code set:html={highlight(`rpc_duration_seconds{quantile="0.99"} 0.231`, "exposition")} /></pre>
+                    <p>
+                        That is convenient for one process and a dead end for a service. Percentiles from five instances cannot be averaged into the service's p99, and you can't ask for a p95 later if the app only computed p50 and p99. Reach for a histogram unless you have a reason not to.
+                    </p>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Type</th><th>Use it for</th><th>Query it with</th></tr>
+                            </thead>
+                            <tbody>
+                                {types.map((t) => (
+                                    <tr>
+                                        <td><span class="type-badge" style={`--type: ${t.color}`}>{t.name}</span></td>
+                                        <td>{t.example}</td>
+                                        <td><code>{t.query}</code></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="what-to-watch" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · What to watch</p>
+                    <h2>Prometheus metrics worth watching</h2>
+                    <p>
+                        An exporter can publish hundreds of metrics. A useful first dashboard needs seven. The first three come from your own service: a request counter and a duration histogram. The rest come from <a href="https://github.com/prometheus/node_exporter" target="_blank" rel="noopener noreferrer">node_exporter</a> on each host, plus <code>up</code>, which Prometheus records for every target it scrapes.
+                    </p>
+
+                    <div class="watch-list">
+                        {watchList.map((w) => (
+                            <div class="watch-list__row">
+                                <div class="watch-list__head">
+                                    <strong>{w.signal}</strong>
+                                    <span class="type-badge" style={`--type: ${typeColor[w.type]}`}>{w.type}</span>
+                                </div>
+                                <pre><code set:html={highlight(w.query, "promql")} /></pre>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div class="guide-callout">
+                        <p class="guide-kicker">Alert on up == 0 first</p>
+                        <p>
+                            When a target stops answering, its other metrics don't turn red. They stop arriving, and a dashboard shows a gap that is easy to miss. <code>up</code> is 0 for every failed scrape, so it is the one alert that catches an exporter or a whole host going away.
+                        </p>
+                    </div>
+                </section>
+
+                <section id="collect" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · Collect</p>
+                    <h2>Collect and chart Prometheus metrics</h2>
+
+                    <h3 id="expose" class="scroll-mt-24">1. Expose /metrics from your code</h3>
+                    <p>
+                        Every major language has a Prometheus client library. Each example creates the counter and histogram from this guide and serves them on port 8000:
+                    </p>
+                    <LanguageTabs tabs={clients.map(({ id, label }) => ({ id, label }))}>
+                        {clients.map((c) => (
+                            <LanguageTab id={c.id}>
+                                <p class="client-install"><span>Install</span><code>{c.install}</code></p>
+                                <pre><code set:html={highlight(c.code, c.lang)} /></pre>
+                            </LanguageTab>
+                        ))}
+                    </LanguageTabs>
+                    <p>
+                        Open <code>http://localhost:8000/metrics</code> and you'll see the counter, and the histogram as <code>_bucket</code>, <code>_sum</code> and <code>_count</code> series. The Python client adds <code>_total</code> to the counter name itself. For software you don't own, such as databases, queues or the host itself, install an <a href="https://prometheus.io/docs/instrumenting/exporters/" target="_blank" rel="noopener noreferrer">exporter</a> that serves the same format.
+                    </p>
+
+                    <h3 id="prometheus-grafana" class="scroll-mt-24">2. Run Prometheus and Grafana</h3>
+                    <p>
+                        Your app now has a <code>/metrics</code> page, but nothing is reading it yet. That is the job of the <strong>Prometheus server</strong>, a separate program you run: it reads a config file listing the endpoints to scrape, requests each one every 15 seconds, and stores the results. <strong>Grafana</strong> is another program that draws dashboards from what Prometheus stored.
+                    </p>
+                    <p>
+                        The quickest way to run both is Docker Compose. Put these three files in one folder:
+                    </p>
+                    {composeFiles.map((f) => (
+                        <div class="code-file">
+                            <p class="code-file__name">{f.name}</p>
+                            <pre><code set:html={highlight(f.code, "yaml")} /></pre>
+                        </div>
+                    ))}
+                    <p>
+                        Run <code>docker compose up</code> with your app running on port 8000. <code>host.docker.internal</code> is how the containers reach your machine.
+                    </p>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h4>Check the scrape in Prometheus</h4><p>Open <code>http://localhost:9090</code>, type <code>up</code> and run it. A <code>1</code> means Prometheus reached your app. Any query from the list above works here too.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h4>Chart it in Grafana</h4><p>Open <code>http://localhost:3000</code> and sign in with <code>admin</code> / <code>admin</code>. The Prometheus data source is already set up by <code>grafana-datasource.yml</code>. Go to <strong>Explore</strong>, enter a query, and add it to a dashboard.</p></div>
+                        </li>
+                    </ol>
+                    <div class="guide-callout">
+                        <p class="guide-kicker">Use $__rate_interval in Grafana</p>
+                        <p>
+                            <code>rate()</code> needs at least two samples inside its window. Zoom a Grafana panel in far enough and a fixed window like <code>[1m]</code> can hold fewer than that, so the line goes blank. Write <code>rate(http_requests_total[$__rate_interval])</code> instead: Grafana then sets the window to at least four scrape intervals, whatever the zoom.
+                        </p>
+                    </div>
+
+                    <h3 id="maple" class="scroll-mt-24">3. Or scrape straight into Maple</h3>
+                    <p>
+                        Maple can do the scraping, so there's no Prometheus server to run. It converts each sample to an OpenTelemetry metric, next to your traces and logs.
+                    </p>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h4>Add a target</h4><p>Open <strong>Integrations → Prometheus</strong>, click <strong>Add target</strong> and enter the endpoint's URL, a scrape interval (5 to 300 seconds) and, if needed, a bearer token or basic auth. The service name is what the metrics appear under.</p>
+                                <figure class="guide-figure guide-figure--narrow"><img src="/screenshots/guides/prometheus-metrics-01-add-target.webp" data-zoomable alt="The Add scrape target dialog filled in: name Node exporter, service name node-exporter, URL https://node.demo.prometheus.io/metrics, scrape interval 15 seconds, authentication None." width="1024" height="1168" loading="lazy" /></figure></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h4>Check that it's up</h4><p>Click <strong>Test</strong> for an immediate scrape. It reports success, or the exact HTTP, TLS or timeout error. Once the scheduled scrapes start, the target shows <strong>Up</strong>, with each run's duration and sample count in its check history.</p>
+                                <figure class="guide-figure guide-figure--narrow"><img src="/screenshots/guides/prometheus-metrics-02-target-up.webp" data-zoomable alt="The Node exporter target marked Up: a 15 second interval, a 529 ms scrape with 1.4K samples, and a check history of successful scrapes every 15 seconds." width="767" height="1655" loading="lazy" /></figure></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h4>Chart, then alert</h4><p>Find the metric in the <strong>Metrics</strong> explorer. Counters default to <code>rate</code>. Filter and group by any label, then use <strong>Add to dashboard</strong> or <strong>Create alert</strong>.</p>
+                                <figure class="guide-figure"><img src="/screenshots/guides/prometheus-metrics-03-chart.webp" data-zoomable alt="The metrics explorer charting rate(node_cpu_seconds_total) grouped by attr.mode with the filter attr.mode != idle, showing user, system and softirq CPU time over the last 15 minutes." width="2368" height="1180" loading="lazy" /></figure>
+                                <p class="guide-caption">The same CPU query as in the list above, in Maple: <code>rate</code> of <code>node_cpu_seconds_total</code>, grouped by <code>mode</code>, idle filtered out.</p></div>
+                        </li>
+                    </ol>
+
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Prometheus type</th><th>Stored in Maple as</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><span class="type-badge" style={`--type: ${typeColor.Counter}`}>Counter</span></td><td>Cumulative monotonic sum</td></tr>
+                                <tr><td><span class="type-badge" style={`--type: ${typeColor.Gauge}`}>Gauge</span></td><td>Gauge (untyped metrics too)</td></tr>
+                                <tr><td><span class="type-badge" style={`--type: ${typeColor.Histogram}`}>Histogram</span></td><td>Histogram with the original bucket limits</td></tr>
+                                <tr><td><span class="type-badge" style={`--type: ${typeColor.Summary}`}>Summary</span></td><td><code>_sum</code> and <code>_count</code> as sums, the quantiles as a gauge</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Maple only scrapes public endpoints. For one inside a private network, run an OpenTelemetry Collector there with a <code>prometheus</code> receiver and send the results to Maple over OTLP.
+                    </p>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Set it up in Maple</p>
+                        <h3>Scrape your first endpoint</h3>
+                        <p>Every field, the scrape history and troubleshooting are in the docs.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/docs/integrations/prometheus" class="guide-button guide-button--primary">Prometheus scraping docs</a>
+                            <a href="/docs/explore/metrics" class="guide-button">Metrics explorer</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="mistakes" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · Mistakes</p>
+                    <h2>Common Prometheus metric mistakes</h2>
+                    <div class="guide-checklist">
+                        {mistakes.map(([title, body], index) => (
+                            <div><span>{String(index + 1).padStart(2, "0")}</span><div><h4>{title}</h4><p set:html={body} /></div></div>
+                        ))}
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://prometheus.io/docs/concepts/metric_types/" target="_blank" rel="noopener noreferrer">Prometheus: Metric types</a></li>
+                        <li><a href="https://prometheus.io/docs/practices/histograms/" target="_blank" rel="noopener noreferrer">Prometheus: Histograms and summaries</a></li>
+                        <li><a href="https://prometheus.io/docs/practices/naming/" target="_blank" rel="noopener noreferrer">Prometheus: Metric and label naming</a></li>
+                        <li><a href="https://prometheus.io/docs/instrumenting/exposition_formats/" target="_blank" rel="noopener noreferrer">Prometheus: Exposition formats</a></li>
+                        <li><a href="https://grafana.com/docs/grafana/latest/datasources/prometheus/" target="_blank" rel="noopener noreferrer">Grafana: Prometheus data source</a></li>
+                        <li><a href="/docs/integrations/prometheus">Maple docs: Prometheus scraping</a></li>
+                        <li><a href="/docs/explore/metrics">Maple docs: Metrics</a></li>
+                    </ul>
+                </section>
+            </article>
+        </div>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<style is:global>
+    .prom-guide { max-width: 46rem; font-family: var(--font-display); }
+    .prom-guide section + section { margin-top: 5.5rem; }
+    .prom-guide .guide-eyebrow { margin: 0 0 0.9rem; font-family: var(--font-mono); font-size: 10px; line-height: 1.4; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); }
+    .prom-guide .guide-eyebrow span { color: var(--primary); }
+    .prom-guide h2 { margin: 0 0 1.5rem; font-family: var(--font-display); font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--foreground); text-wrap: balance; }
+    .prom-guide h3 { display: flex; align-items: center; gap: 0.6rem; margin: 3rem 0 0.8rem; font-family: var(--font-display); font-size: 1.2rem; font-weight: 550; line-height: 1.3; letter-spacing: -0.015em; color: var(--foreground); }
+    .prom-guide h4 { margin: 0; font-family: var(--font-display); font-size: 0.95rem; font-weight: 550; color: var(--foreground); }
+    .prom-guide > section > p:not(.guide-eyebrow, .guide-kicker, .guide-caption), .prom-guide .guide-answer p { margin: 0 0 1.15rem; font-size: 17px; line-height: 1.7; font-weight: 430; color: color-mix(in oklab, var(--foreground) 85%, var(--background)); }
+    .prom-guide strong { font-weight: 600; color: var(--foreground); }
+    .prom-guide code:not(pre code) { border: 1px solid var(--border); background: var(--bg-elevated); padding: 0.1rem 0.35rem; font-family: var(--font-mono); font-size: 12px; color: var(--foreground); }
+    .prom-guide pre { margin: 1.25rem 0 1.5rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg-deep); padding: 0.9rem 1.1rem; font-family: var(--font-mono); font-size: 12px; line-height: 1.75; color: var(--foreground); }
+    .prom-guide a:not(.guide-button) { color: var(--primary); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent); text-underline-offset: 3px; transition: color 150ms ease; }
+    .prom-guide a:not(.guide-button):hover { color: var(--foreground); }
+    .prom-guide .guide-caption { margin: 0.7rem 0 0; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; color: var(--muted-foreground); }
+    .prom-guide .guide-answer { margin: 2rem 0; border-left: 2px solid var(--primary); border-radius: 0 0.5rem 0.5rem 0; background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .prom-guide .guide-answer p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--foreground); }
+    .prom-guide .guide-kicker { margin: 0; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+
+    /* One color per metric type: set --type on the element. */
+    .prom-guide .type-badge { display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid color-mix(in oklab, var(--type) 45%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--type) 14%, transparent); padding: 0.15rem 0.6rem; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: color-mix(in oklab, var(--type) 70%, var(--foreground)); white-space: nowrap; }
+    .prom-guide .type-dot { width: 0.6rem; height: 0.6rem; flex: none; border-radius: 999px; background: var(--type); box-shadow: 0 0 0 4px color-mix(in oklab, var(--type) 18%, transparent); }
+
+    .anatomy { margin: 1.5rem 0 1.75rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.4rem 1.25rem 1.2rem; }
+    .anatomy__line { display: flex; align-items: flex-start; font-family: var(--font-mono); font-size: clamp(12px, 2vw, 15px); }
+    .anatomy__col { display: grid; gap: 0.9rem; }
+    .anatomy__col--value { margin-left: 0.75em; }
+    .anatomy__col--name { --part: var(--chart-1); }
+    .anatomy__col--labels { --part: var(--chart-2); }
+    .anatomy__col--value { --part: var(--chart-3); }
+    .anatomy__part { justify-self: start; border-bottom: 2px solid var(--part); padding-bottom: 0.35rem; white-space: nowrap; color: color-mix(in oklab, var(--part) 55%, var(--foreground)); }
+    .anatomy__key { display: grid; gap: 0.1rem; border-left: 2px solid var(--part); padding-left: 0.6rem; white-space: nowrap; font-family: var(--font-display); }
+    .anatomy__key strong { font-size: 13px; }
+    .anatomy__key span { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); }
+
+    .pull { margin: 2rem 0 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem; }
+    .pull svg { display: block; width: 100%; min-width: 600px; height: auto; }
+    .pull__box { fill: var(--background); stroke: var(--border); }
+    .pull__box--app { stroke: color-mix(in oklab, var(--primary) 60%, transparent); }
+    .pull__title { fill: var(--foreground); font-family: var(--font-display); font-size: 15px; font-weight: 550; }
+    .pull__mono { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
+    .pull__mono--accent { fill: var(--primary); }
+    .pull__mono--name { fill: color-mix(in oklab, var(--chart-1) 70%, var(--foreground)); }
+    .pull__mono--value { fill: color-mix(in oklab, var(--chart-3) 70%, var(--foreground)); }
+    .pull__line { stroke: var(--primary); stroke-width: 1.5; }
+    .pull__line--answer { stroke: var(--chart-3); }
+    .pull__head { fill: var(--primary); }
+    .pull__head--answer { fill: var(--chart-3); }
+    .pull__series { fill: none; stroke: color-mix(in oklab, var(--chart-1) 60%, transparent); stroke-width: 1.5; stroke-dasharray: 3 3; }
+    .pull__dot { fill: var(--chart-1); }
+
+    .prom-guide .lt { margin: 1.5rem 0; }
+    .prom-guide .lt pre { margin: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+    .prom-guide .client-install { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 0; border: 1px solid var(--border); border-bottom: 0; background: var(--bg-elevated); padding: 0.55rem 1.1rem; }
+    .prom-guide .client-install span { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .prom-guide .client-install code { border: 0 !important; background: transparent !important; padding: 0 !important; font-size: 11.5px; }
+    .prom-guide .code-file { margin: 1.25rem 0; }
+    .prom-guide .code-file__name { margin: 0; width: fit-content; border: 1px solid var(--border); border-bottom: 0; border-radius: 0.5rem 0.5rem 0 0; background: var(--bg-elevated); padding: 0.35rem 0.8rem; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); }
+    .prom-guide .code-file pre { margin: 0; border-top-left-radius: 0; }
+    .prom-guide .tok-comment { color: var(--muted-foreground); }
+    .prom-guide .tok-name { color: color-mix(in oklab, var(--chart-1) 75%, var(--foreground)); }
+    .prom-guide .tok-labels { color: color-mix(in oklab, var(--chart-2) 75%, var(--foreground)); }
+    .prom-guide .tok-value { color: color-mix(in oklab, var(--chart-3) 75%, var(--foreground)); }
+    .prom-guide .tok-fn { color: color-mix(in oklab, var(--chart-5) 80%, var(--foreground)); }
+
+    .types-grid { display: grid; gap: 0.75rem; margin: 2rem 0 0.5rem; }
+    .types-grid__card { border: 1px solid color-mix(in oklab, var(--type) 30%, var(--border)); border-radius: 0.75rem; background: linear-gradient(180deg, color-mix(in oklab, var(--type) 9%, var(--bg-deep)), var(--bg-deep)); padding: 1rem 1.1rem 1.1rem; }
+    .types-grid__chart { display: block; width: 100%; height: auto; margin: 0.9rem 0 0.75rem; overflow: visible; }
+    .types-grid__chart polyline, .types-grid__chart line { fill: none; stroke: var(--type); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .types-grid__chart rect { fill: color-mix(in oklab, var(--type) 70%, transparent); }
+    .types-grid__chart .types-grid__dash { stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.6; }
+    .types-grid__chart .types-grid__faint { opacity: 0.45; }
+    .types-grid__chart text { fill: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; }
+    .types-grid__card p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--muted-foreground); }
+
+    .buckets { --label-w: 4.5rem; --count-w: 3.75rem; margin: 1.75rem 0 1.5rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.25rem 1.25rem 1rem; }
+    .buckets__rows { position: relative; display: grid; gap: 0.5rem; }
+    .buckets__row { display: grid; grid-template-columns: var(--label-w) 1fr var(--count-w); align-items: center; }
+    .buckets__label, .buckets__count { font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); }
+    .buckets__count { text-align: right; color: var(--foreground); }
+    .buckets__track { height: 0.9rem; border-radius: 0.25rem; background: color-mix(in oklab, var(--chart-3) 8%, transparent); }
+    .buckets__bar { display: block; height: 100%; border-radius: inherit; background: color-mix(in oklab, var(--chart-3) 75%, transparent); }
+    .buckets__p95 { position: absolute; top: -0.5rem; bottom: -0.25rem; width: 0; border-left: 1.5px dashed var(--chart-p99); }
+    .buckets__p95 span { position: absolute; top: -0.85rem; left: 0.3rem; font-family: var(--font-mono); font-size: 10px; color: var(--chart-p99); }
+    .buckets figcaption { margin-top: 1.1rem; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+
+    .watch-list { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .watch-list__row { display: grid; gap: 0.6rem; background: var(--background); padding: 1rem 1.15rem; }
+    .watch-list__head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .watch-list__head strong { font-size: 14px; }
+    .prom-guide .watch-list pre { margin: 0; border: 0; background: transparent; padding: 0; font-size: 11.5px; color: var(--muted-foreground); }
+
+    .prom-guide .guide-table { margin: 1.75rem 0 2rem; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
+    .prom-guide table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; line-height: 1.6; color: var(--muted-foreground); }
+    .prom-guide th { border-bottom: 1px solid var(--border); background: var(--bg-deep); padding: 0.7rem 0.9rem; text-align: left; font-family: var(--font-mono); font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--primary); }
+    .prom-guide td { border-bottom: 1px solid var(--border); padding: 0.8rem 0.9rem; vertical-align: middle; }
+    .prom-guide td + td { border-left: 1px solid var(--border); }
+    .prom-guide tbody tr:last-child td { border-bottom: 0; }
+
+    .prom-guide .guide-callout { margin: 2rem 0; border: 1px solid var(--border); border-left: 2px solid var(--warning); border-radius: 0.5rem; background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep)); padding: 1.25rem 1.35rem; }
+    .prom-guide .guide-callout .guide-kicker { color: var(--warning); }
+    .prom-guide .guide-callout p:not(.guide-kicker) { margin: 0.6rem 0 0; font-size: 14px; line-height: 1.75; color: var(--muted-foreground); }
+    .prom-guide .guide-steps { margin: 1.75rem 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+    .prom-guide .guide-steps li { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; border-bottom: 1px solid var(--border); padding: 1.2rem 0; }
+    .prom-guide .guide-steps > li > span { display: grid; width: 1.9rem; height: 1.9rem; place-items: center; border: 1px solid color-mix(in oklab, var(--primary) 45%, transparent); border-radius: 0.4rem; background: color-mix(in oklab, var(--primary) 12%, transparent); font-family: var(--font-mono); font-size: 10px; color: var(--primary); }
+    .prom-guide .guide-figure { margin: 1rem 0 0; }
+    .prom-guide .guide-figure--narrow { max-width: 22rem; }
+    .prom-guide .guide-figure img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 0.6rem; background: var(--bg-deep); }
+    .prom-guide .guide-steps p { margin: 0.4rem 0 0; font-size: 13px; line-height: 1.65; color: var(--muted-foreground); }
+    .prom-guide .guide-checklist { display: grid; gap: 1px; margin: 2rem 0; overflow: hidden; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--border); }
+    .prom-guide .guide-checklist > div { display: grid; grid-template-columns: 2rem 1fr; gap: 0.8rem; background: var(--background); padding: 1.15rem 1.25rem; }
+    .prom-guide .guide-checklist span { padding-top: 0.2rem; font-family: var(--font-mono); font-size: 9px; color: var(--destructive); }
+    .prom-guide .guide-checklist p { margin: 0.35rem 0 0; font-size: 12.5px; line-height: 1.6; color: var(--muted-foreground); }
+    .prom-guide .guide-maple { margin-top: 3rem; border: 1px solid var(--primary); border-radius: 0.75rem; background: var(--bg-deep); padding: 1.5rem; }
+    .prom-guide .guide-maple h3 { margin: 0.55rem 0 0.6rem; font-size: 1.35rem; }
+    .prom-guide .guide-maple > p:not(.guide-kicker) { margin: 0; font-size: 13px; line-height: 1.7; color: var(--muted-foreground); }
+    .prom-guide .guide-button { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.55rem 0.8rem; font-size: 12px; font-weight: 550; color: var(--foreground); text-decoration: none; transition: background-color 150ms ease, border-color 150ms ease; }
+    .prom-guide .guide-button:hover { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); }
+    .prom-guide .guide-button--primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
+    .prom-guide .guide-button--primary:hover { background: color-mix(in oklab, var(--primary) 82%, black); }
+    .prom-guide .guide-sources { border-top: 1px solid var(--border); padding-top: 2rem; }
+    .prom-guide .guide-sources ul { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+    .prom-guide .guide-sources li { font-family: var(--font-mono); font-size: 10px; }
+    @media (min-width: 640px) {
+        .types-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .prom-guide .guide-checklist { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .prom-guide .guide-maple { padding: 2rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .prom-guide a, .prom-guide .guide-button { transition: none; }
+    }
+</style>

@@ -1,5 +1,5 @@
 // The Maple stack: each Worker is its app's `src/worker.ts`; the ECS services (ingest,
-// electric) are `create*` factories. Decision history lives in docs/infra.md.
+// electric, scraper) are `create*` factories. Decision history lives in docs/infra.md.
 import { appendFileSync } from "node:fs"
 import path from "node:path"
 import * as Alchemy from "alchemy"
@@ -15,11 +15,12 @@ import { SourceError } from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
-import { AwsRegionMismatchError, resolveAwsRegion } from "@maple/infra/aws"
+import { AwsRegionMismatchError, createMapleAwsOidcKey, resolveAwsRegion } from "@maple/infra/aws"
 import {
 	ApiWorker,
 	AiWorker,
 	SandboxWorker,
+	createMapleDeviceTokenKey,
 	formatMapleDeployment,
 	formatMapleStage,
 	ManagedMapleDb,
@@ -37,6 +38,7 @@ import {
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import * as Acm from "@maple/infra/acm"
+import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
 import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"
 import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
@@ -48,6 +50,7 @@ import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
 import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
+import { createMapleScraper } from "./apps/scraper/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
 import LocalUi from "./apps/local-ui/src/worker.ts"
 import Web from "./apps/web/src/worker.ts"
@@ -209,8 +212,16 @@ const MapleStackLive = Layer.effect(
 	Effect.gen(function* () {
 		// The stage string (`prd`, `prd-eu`) names the instance; alchemy keys state by it.
 		const deployment = yield* parseMapleDeploymentEffect(yield* Alchemy.Stage)
-		const domains = resolveMapleDomains(deployment)
-		const profile = resolveMapleProfile(deployment)
+		// The `preview:web` label: Workers and seeded branches only, no AWS (docs/pr-previews.md).
+		const webOnlyPreview =
+			deployment.stage.kind === "pr" &&
+			(yield* optionalPlain("MAPLE_PREVIEW_WEB_ONLY")).MAPLE_PREVIEW_WEB_ONLY === "1"
+		const allDomains = resolveMapleDomains(deployment)
+		// Without ingest and Electric their hostnames would resolve nowhere.
+		const domains = webOnlyPreview
+			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync }
+			: allDomains
+		const profile = resolveMapleProfile(deployment, { webOnlyPreview })
 		const context: MapleStackContext = {
 			...deployment,
 			domains,
@@ -229,6 +240,8 @@ const MapleStackLive = Layer.effect(
 			workerDev,
 			devEnv,
 			db: yield* declareMapleDb(deployment, profile),
+			awsOidc: yield* createMapleAwsOidcKey(),
+			deviceToken: yield* createMapleDeviceTokenKey(),
 		}
 		return context
 	}),
@@ -296,6 +309,13 @@ export default Alchemy.Stack(
 			? yield* createMapleIngest({ stage, region, domains, profile, dbLogin: db?.ingest })
 			: undefined
 
+		// Account audit controls (CloudTrail, Config, GuardDuty): prd instances only.
+		const { awsSecurityBaseline } = profile.deploys
+		const securityBaseline =
+			awsSecurityBaseline === "none"
+				? undefined
+				: yield* createAwsSecurityBaseline({ stage, region, baseline: awsSecurityBaseline })
+
 		// Yielded here first so its `MAPLE_PG_URL` read happens outside any Worker init,
 		// where alchemy would bind it as a secret.
 		if (profile.database === "managed") yield* ManagedMapleDb
@@ -325,6 +345,18 @@ export default Alchemy.Stack(
 						dbLogin: db.electric,
 					})
 				: undefined
+
+		// The scraper runs in ingest's VPC and posts to its public hostname.
+		if (ingest && profile.deploys.scraper && domains.api && domains.ingest) {
+			yield* createMapleScraper({
+				stage,
+				region,
+				profile,
+				network: ingest.network,
+				apiUrl: `https://${domains.api}`,
+				ingestUrl: `https://${domains.ingest}`,
+			})
+		}
 
 		const electricSync = yield* ElectricSync
 		yield* serveWorker("electric-sync", electricSync)
@@ -383,6 +415,8 @@ export default Alchemy.Stack(
 			ingestServiceUrl: ingest?.serviceUrl,
 			ingestCollectorEndpoint: ingest?.collectorEndpoint,
 			electricServiceUrl: electric?.serviceUrl,
+			auditTrailArn: securityBaseline?.trailArn,
+			guardDutyDetectorId: securityBaseline?.guardDutyDetectorId,
 			apiWorker: api.workerName,
 			electricSyncWorker: electricSync.workerName,
 			webWorker: web?.workerName,

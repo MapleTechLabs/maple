@@ -9,7 +9,7 @@ import { forwardsToAi, forwardToAi } from "./ai-forward"
  * all. Both failures are silent in a typecheck, hence the table.
  */
 describe("forwardsToAi", () => {
-	it("forwards the MCP transport and the chat surfaces", () => {
+	it("forwards the MCP transport, the chat surfaces and the security audit API", () => {
 		for (const path of [
 			"/mcp",
 			"/mcp/",
@@ -19,6 +19,9 @@ describe("forwardsToAi", () => {
 			"/api/chat/sessions/org:tab/messages",
 			"/api/chat/sessions/org:tab/abort",
 			"/internal/chat/apply",
+			"/internal/mcp/tools",
+			"/api/security-audit/targets",
+			"/api/security-audit/runs/run-1/events",
 		]) {
 			assert.isTrue(forwardsToAi(path), path)
 		}
@@ -35,7 +38,11 @@ describe("forwardsToAi", () => {
 			"/api/chatter",
 			"/api/chat",
 			"/internal/chatty",
+			"/internal/mcp",
+			"/internal/mcpx",
 			"/internal/ai-sessions",
+			"/api/security-audit",
+			"/api/security-auditx/targets",
 			"/v2/errors",
 		]) {
 			assert.isFalse(forwardsToAi(path), path)

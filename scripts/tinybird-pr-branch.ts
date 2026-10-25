@@ -33,6 +33,7 @@
  */
 import { spawnSync } from "node:child_process"
 import { appendFileSync } from "node:fs"
+import { fetchPreviewState, hasPrStateCredentials } from "./lib/pr-state.ts"
 import { writeTinybirdDatafiles } from "./write-tinybird-datafiles"
 
 type Subcommand = "up" | "down" | "sweep"
@@ -141,6 +142,32 @@ const resolveBranch = async (
 	return { id: id as string, token: token as string }
 }
 
+/**
+ * The branch's "workspace admin token". Tinybird verifies self-signed JWTs only against
+ * that token; the environments list hands out a per-user admin token, which it rejects.
+ */
+const resolveSigningKey = async (
+	branch: { host: string; token: string },
+	branchName: string,
+): Promise<string> => {
+	const response = await fetch(`${branch.host}/v0/tokens`, {
+		headers: { Authorization: `Bearer ${branch.token}` },
+	})
+	if (!response.ok)
+		fail(`Could not list Tinybird tokens for branch ${branchName} (HTTP ${response.status}).`)
+	const parsed = (await response.json()) as {
+		tokens?: { name?: string; token?: string; scopes?: { type?: string }[] }[]
+	}
+	const admin = parsed.tokens?.find(
+		(candidate) =>
+			candidate.name === "workspace admin token" &&
+			candidate.scopes?.some((scope) => scope.type === "ADMIN"),
+	)
+	const token = admin?.token?.trim()
+	if (!token) fail(`Branch ${branchName} has no workspace admin token to sign raw-SQL JWTs with.`)
+	return token as string
+}
+
 const exportToGithubEnv = (vars: Record<string, string>): void => {
 	const githubEnv = process.env.GITHUB_ENV?.trim()
 	const lines = Object.entries(vars).map(([key, value]) => `${key}=${value}`)
@@ -182,17 +209,19 @@ const up = async (branchName: string): Promise<void> => {
 		fail(`Failed to deploy project schema to Tinybird branch ${branchName}.`)
 	}
 
-	// Mask the token in CI logs before it can appear anywhere downstream.
+	// Mask the tokens in CI logs before they can appear anywhere downstream.
 	console.log(`::add-mask::${branch.token}`)
+	const signingKey = await resolveSigningKey(branch, branchName)
+	console.log(`::add-mask::${signingKey}`)
 
 	// 4. Hand the branch creds to the rest of the workflow. The branch is reached on
 	//    the same regional host as its parent — the branch-scoped token does the
 	//    routing, so only the token changes. Raw-SQL JWTs are signed with the
-	//    branch's admin token and name the branch, or they would query the parent.
+	//    branch's workspace admin token and name the branch, or they would query the parent.
 	exportToGithubEnv({
 		TINYBIRD_HOST: branch.host,
 		TINYBIRD_TOKEN: branch.token,
-		TINYBIRD_SIGNING_KEY: branch.token,
+		TINYBIRD_SIGNING_KEY: signingKey,
 		TINYBIRD_WORKSPACE_ID: branchId,
 	})
 	console.log(`✓ Tinybird branch ${branchName} ready; preview stack will bind to it.`)
@@ -208,38 +237,7 @@ const down = (branchName: string): void => {
 }
 
 /**
- * PR state via the GitHub REST API. Returns "unknown" when no token/repo is
- * available (local runs) or the API call fails — callers must treat "unknown"
- * as "don't block", never as "closed".
- */
-const fetchPrState = async (prNumber: string): Promise<"open" | "closed" | "unknown"> => {
-	const repo = process.env.GITHUB_REPOSITORY?.trim()
-	const token = (process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN)?.trim()
-	if (!repo || !token) return "unknown"
-	try {
-		const response = await fetch(`https://api.github.com/repos/${repo}/pulls/${prNumber}`, {
-			headers: {
-				Authorization: `Bearer ${token}`,
-				Accept: "application/vnd.github+json",
-				"X-GitHub-Api-Version": "2022-11-28",
-			},
-		})
-		if (!response.ok) {
-			console.log(`⚠ Could not look up PR #${prNumber} state (HTTP ${response.status})`)
-			return "unknown"
-		}
-		const parsed = (await response.json()) as { state?: string }
-		return parsed.state === "open" ? "open" : parsed.state === "closed" ? "closed" : "unknown"
-	} catch (error) {
-		console.log(
-			`⚠ Could not look up PR #${prNumber} state (${error instanceof Error ? error.message : String(error)})`,
-		)
-		return "unknown"
-	}
-}
-
-/**
- * Remove every `pr_<n>` branch whose PR is closed. `tb branch ls` prints a
+ * Remove every `pr_<n>` branch whose PR is closed or lost its `preview` label. `tb branch ls` prints a
  * human-readable table (no JSON mode), so candidate names are extracted by the
  * exact `pr_<digits>` token shape — `main` and any other branch name are never
  * candidates. Branches whose PR state cannot be determined are skipped
@@ -249,10 +247,7 @@ const sweep = async (): Promise<void> => {
 	// The PR-state lookup is the sweep's only guard against deleting a LIVE
 	// preview; without a token every branch resolves to "unknown" and the run
 	// green-no-ops forever. Fail loudly instead — this is the safety net.
-	if (
-		!process.env.GITHUB_REPOSITORY?.trim() ||
-		!(process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN)?.trim()
-	) {
+	if (!hasPrStateCredentials()) {
 		fail("sweep requires GITHUB_REPOSITORY and GITHUB_TOKEN (or GH_TOKEN) to check PR state")
 	}
 	const parent = { host: requireEnv("TINYBIRD_HOST"), token: requireEnv("TINYBIRD_TOKEN") }
@@ -274,16 +269,16 @@ const sweep = async (): Promise<void> => {
 
 	const failures: string[] = []
 	for (const candidate of candidates) {
-		const state = await fetchPrState(candidate.prNumber)
-		if (state === "open") {
-			console.log(`… keeping ${candidate.name} (PR #${candidate.prNumber} is open)`)
+		const state = await fetchPreviewState(candidate.prNumber)
+		if (state === "live") {
+			console.log(`… keeping ${candidate.name} (PR #${candidate.prNumber} has a live preview)`)
 			continue
 		}
 		if (state === "unknown") {
 			console.log(`⚠ skipping ${candidate.name} (PR #${candidate.prNumber} state unknown)`)
 			continue
 		}
-		console.log(`… deleting orphan ${candidate.name} (PR #${candidate.prNumber} is closed)`)
+		console.log(`… deleting orphan ${candidate.name} (PR #${candidate.prNumber} is closed or unlabelled)`)
 		const removed = runTb(parent, ["branch", "rm", candidate.name, "--yes"])
 		if (removed.exitCode !== 0 && !isNotFound(removed)) {
 			failures.push(candidate.name)

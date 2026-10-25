@@ -25,17 +25,13 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	 * reachable by URL for anyone; the flag only decides who is shown the door.
 	 */
 	releases: DisabledByDefaultFeatureFlag,
-	/**
-	 * Gates the pull request review: the per-repository switch in the GitHub
-	 * integration, and the review trigger itself on the server, so merging the feature rolls it
-	 * out to no one until an organization is flagged.
-	 */
-	prReview: DisabledByDefaultFeatureFlag,
+	/** Gates the scheduled security audit API; internal-only while it is built out. */
+	securityAudit: DisabledByDefaultFeatureFlag,
 }).pipe(
 	Schema.encodeKeys({
 		aiAutoTriage: "aiautotriage",
 		releases: "releases",
-		prReview: "prreview",
+		securityAudit: "securityaudit",
 	}),
 )
 
@@ -47,7 +43,7 @@ const decodeOrganizationFeatureFlags = Schema.decodeUnknownOption(OrganizationFe
 export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: false,
 	releases: false,
-	prReview: false,
+	securityAudit: false,
 }
 
 /**
@@ -59,7 +55,7 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: true,
 	releases: true,
-	prReview: true,
+	securityAudit: true,
 }
 
 /** Decode Clerk metadata, falling back to every rollout disabled for non-object input. */

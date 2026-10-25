@@ -29,7 +29,7 @@ export interface ScraperEnvConfig {
 // Defaults target the local dev stack (`bun dev`: api on 3472, ingest on
 // 3474, the docker-compose dev token) so the scraper boots without extra
 // configuration instead of crashing the turbo dev TUI. Production overrides
-// all three (see apps/scraper/railway.json deploy notes); a missing override
+// all three (apps/scraper/alchemy.run.ts); a missing override
 // degrades to visible per-reconcile warnings, never a crash loop.
 //
 // Numeric settings ARE validated at layer build, unlike the URLs: a missing

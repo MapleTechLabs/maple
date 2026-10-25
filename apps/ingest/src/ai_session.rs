@@ -269,6 +269,7 @@ struct ScopeFacts {
     claude: bool,
     dspy: bool,
     eve: bool,
+    eve_agent: bool,
     flue: bool,
     genkit: bool,
     google_adk: bool,
@@ -303,6 +304,7 @@ const SCOPE_NAMES: &[&str] = &[
     "com.anthropic.claude_code.",
     "openinference.instrumentation.",
     "eve",
+    "eve.agent",
     "@flue/opentelemetry",
     "genkit-tracer",
     "gcp.vertex.agent",
@@ -348,6 +350,7 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
         "com.anthropic.claude_code" => facts.claude = true,
         "openinference.instrumentation.dspy" => facts.dspy = true,
         "eve" => facts.eve = true,
+        "eve.agent" => facts.eve_agent = true,
         "@flue/opentelemetry" => facts.flue = true,
         "genkit-tracer" => facts.genkit = true,
         "gcp.vertex.agent" | "openinference.instrumentation.google_adk" => {
@@ -398,6 +401,7 @@ fn scope_facts(scope_name: &str, resource: &ResourceFacts) -> ScopeFacts {
     facts.any = facts.claude
         || facts.dspy
         || facts.eve
+        || facts.eve_agent
         || facts.flue
         || facts.google_adk
         || facts.haystack
@@ -1172,8 +1176,10 @@ fn detect_dspy(c: &Ctx) -> bool {
 }
 
 fn detect_eve(c: &Ctx) -> bool {
-    // "eve" alone is a bare English word; require the turn span name too.
-    c.scope.eve && c.span_name == "ai.eve.turn"
+    // eve 0.78 traces a whole turn under its own `eve.agent` scope. eve 0.25
+    // used the scope "eve", a bare English word, so there the turn span name
+    // is required too.
+    c.scope.eve_agent || (c.scope.eve && c.span_name == "ai.eve.turn")
 }
 
 fn detect_flue(c: &Ctx) -> bool {
@@ -2022,6 +2028,63 @@ mod tests {
     fn eve_requires_scope_and_turn_span_name() {
         assert!(classify("eve", "other", &[], &[]).is_none());
         assert!(classify("other", "ai.eve.turn", &[], &[]).is_none());
+    }
+
+    #[test]
+    fn eve_agent_scope_is_eve_for_every_span_of_a_turn() {
+        // eve_user / eve_agents (eve 0.78): the turn, its steps, model calls,
+        // tools and approvals share one scope, and the session is the
+        // conversation id. The tool span's `gen_ai.execute_tool.duration` used
+        // to send it to the Vercel AI SDK and the rest to `unknown:genai`.
+        let session = ("gen_ai.conversation.id", "wrun_1");
+        let cases: &[(&str, &[(&str, &str)])] = &[
+            (
+                "invoke_agent support-agent",
+                &[("gen_ai.operation.name", "invoke_agent"), session],
+            ),
+            (
+                "agent.step",
+                &[("gen_ai.operation.name", "workflow"), session],
+            ),
+            (
+                "chat openai/gpt-4o-mini",
+                &[
+                    ("gen_ai.operation.name", "chat"),
+                    ("ai.response.finish_reason", "stop"),
+                    session,
+                ],
+            ),
+            (
+                "execute_tool get_weather",
+                &[
+                    ("gen_ai.operation.name", "execute_tool"),
+                    ("gen_ai.execute_tool.duration", "0.002"),
+                    session,
+                ],
+            ),
+            (
+                "agent.approval",
+                &[("gen_ai.operation.name", "workflow"), session],
+            ),
+        ];
+        for (span_name, attrs) in cases {
+            classified("eve.agent", span_name, attrs, &[], "eve", Some("wrun_1"));
+        }
+    }
+
+    #[test]
+    fn eve_agent_tool_span_outside_the_scope_stays_vercel() {
+        classified(
+            "gen_ai",
+            "execute_tool get_weather",
+            &[
+                ("gen_ai.operation.name", "execute_tool"),
+                ("gen_ai.execute_tool.duration", "0.002"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            None,
+        );
     }
 
     #[test]

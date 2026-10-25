@@ -1276,6 +1276,70 @@ describe("relaying everything else a connector reports", () => {
 	)
 })
 
+describe("relaying a message on a connector that can name the asker", () => {
+	it.effect("runs a linked asker's turn as their Maple user", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub, {
+				supportsIdentity: true,
+				linkedUserId: ADA,
+			})
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			expect(agent.turns).toHaveLength(1)
+			expect(agent.turns[0]?.origin).toEqual({
+				kind: "connector",
+				connectorId: TESTCHAT,
+				workspaceId: WORKSPACE,
+				externalUserId: "author-1",
+				displayName: "Ada",
+				actingUserId: ADA,
+			})
+		}),
+	)
+
+	it.effect("answers an unlinked asker with where to link, and reads nothing", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub, { supportsIdentity: true })
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			expect(agent.turns).toEqual([])
+			// No thread opened for an answer that will never come.
+			expect(platform.threads).toEqual([])
+			expect(platform.historyCalls).toEqual([])
+			expect(platform.calls).toHaveLength(1)
+			expect(platform.calls[0]?.ref.target).toEqual({ workspaceId: WORKSPACE, channelId: CHANNEL })
+			const text = prose(blocksOf(platform.calls))
+			expect(text).toContain("**Link your Testchat account to Maple to ask it questions.**")
+			expect(text).toContain("(https://app.maple.dev/integrations)")
+		}),
+	)
+
+	it.effect("ignores an unlinked person's follow-up in the bot's own conversation", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub, {
+				supportsIdentity: true,
+				opened: [CONVERSATION],
+			})
+
+			yield* relayInboundEvent(
+				{ ...mention, messageId: "message-2", channelId: CONVERSATION, mentionsBot: false },
+				deployment.ports,
+			)
+
+			expect(agent.turns).toEqual([])
+			expect(platform.calls).toEqual([])
+		}),
+	)
+})
+
 describe("reading the workspace row", () => {
 	const NOW = Date.parse("2026-09-23T12:00:00.000Z")
 	const followUp: InboundMessage = {

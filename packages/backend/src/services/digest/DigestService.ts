@@ -53,6 +53,7 @@ import {
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import * as CH from "@maple/query-engine/ch"
+import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
 import { unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -273,7 +274,7 @@ function buildBreakdownFromRows(
 		.sort((a, b) => b.requests - a.requests)
 }
 
-export class DigestService extends Context.Service<DigestService>()("@maple/api/services/DigestService", {
+export class DigestService extends Context.Service<DigestService>()("@maple/backend/services/DigestService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "DigestService", toPersistenceError)
@@ -320,6 +321,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				email: string
 				enabled?: boolean
 				dayOfWeek?: number
+				sendHour?: number
 				timezone?: string
 				namespaces?: ReadonlyArray<string>
 				environments?: ReadonlyArray<string>
@@ -343,6 +345,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							enabled: input.enabled !== false,
 							optedOutAt: input.enabled === false ? now : null,
 							dayOfWeek: input.dayOfWeek ?? 1,
+							...(input.sendHour != null ? { sendHour: input.sendHour } : undefined),
 							timezone: input.timezone ?? "UTC",
 							namespacesJson: JSON.stringify(input.namespaces ?? []),
 							environmentsJson: JSON.stringify(input.environments ?? []),
@@ -361,6 +364,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 								// can tell an opt-out from a member it disabled itself.
 								optedOutAt: input.enabled === false ? now : null,
 								...(input.dayOfWeek != null ? { dayOfWeek: input.dayOfWeek } : undefined),
+								...(input.sendHour != null ? { sendHour: input.sendHour } : undefined),
 								...(input.timezone != null ? { timezone: input.timezone } : undefined),
 								...(input.namespaces != null
 									? { namespacesJson: JSON.stringify(input.namespaces) }
@@ -800,7 +804,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				ingestion: { ...curUsage, approximate: isScoped },
 				baseUrl: env.MAPLE_APP_BASE_URL,
 				dashboardUrl: env.MAPLE_APP_BASE_URL,
-				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings?tab=notifications`,
+				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/account?tab=email-preferences`,
 			}
 
 			yield* Effect.annotateCurrentSpan("maple.digest.total_requests", totalRequests)
@@ -1035,9 +1039,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			)
 
 			const now = yield* Clock.currentTimeMillis
-			const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
-			const todayStartMs = now - (now % 86_400_000)
-			const currentDayOfWeek = new Date(now).getUTCDay()
+			const resendCutoffMs = digestResendCutoffMs(now)
 
 			const subs = yield* dbExecute((db) =>
 				db.run(
@@ -1047,9 +1049,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				),
 			)
 
-			const dueSubs = subs.filter(
-				(s) =>
-					s.dayOfWeek === currentDayOfWeek && (s.lastSentAt == null || s.lastSentAt < sevenDaysAgo),
+			const dueSubs = subs.filter((s) =>
+				isDigestDue(s, lastDigestActivity(s.lastSentAt, s.lastAttemptedAt), now),
 			)
 
 			if (dueSubs.length === 0) {
@@ -1084,7 +1085,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 						// Orgs whose warehouse rejected queries with an auth/config-class
 						// error are parked (see warehouse-org-quarantine.ts). Checked before
-						// the claim so a parked org isn't marked attempted for the day.
+						// the claim so a parked org isn't marked attempted for the window.
 						if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) {
 							yield* Effect.logInfo("Skipping digest for org with quarantined warehouse").pipe(
 								Effect.annotateLogs({ orgId: rawOrgId }),
@@ -1098,14 +1099,17 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 									.set({ lastAttemptedAt: now })
 									.where(($) => [
 										PG.inList($.id, orgSubIds),
-										PG.or($.lastAttemptedAt.isNull(), $.lastAttemptedAt.lt(todayStartMs)),
+										PG.or(
+											$.lastAttemptedAt.isNull(),
+											$.lastAttemptedAt.lte(resendCutoffMs),
+										),
 									])
 									.returning("id"),
 							),
 						)
 
 						if (claim.length === 0) {
-							yield* Effect.logInfo("Skipping digest org already attempted today").pipe(
+							yield* Effect.logInfo("Skipping digest org already attempted this window").pipe(
 								Effect.annotateLogs({
 									orgId: rawOrgId,
 									subscriptionCount: orgSubs.length,
@@ -1119,7 +1123,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 						if (claimedSubs.length < orgSubs.length) {
 							yield* Effect.logInfo(
-								"Skipping digest subscriptions already attempted today",
+								"Skipping digest subscriptions already attempted this window",
 							).pipe(
 								Effect.annotateLogs({
 									orgId: rawOrgId,
@@ -1265,6 +1269,7 @@ function rowToResponse(row: DigestSubscriptionRow): DigestSubscriptionResponse {
 		email: row.email,
 		enabled: row.enabled,
 		dayOfWeek: row.dayOfWeek,
+		sendHour: row.sendHour,
 		timezone: row.timezone,
 		namespaces: parseScopeColumn(row.namespacesJson),
 		environments: parseScopeColumn(row.environmentsJson),

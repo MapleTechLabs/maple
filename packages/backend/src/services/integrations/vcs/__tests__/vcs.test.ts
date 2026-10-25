@@ -12,8 +12,23 @@ import {
 	VcsSyncJob,
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
+	type WorkflowJobAnnotation,
+	type WorkflowJobJob,
 } from "@maple/domain/http"
-import { Array as Arr, Clock, Effect, Exit, Layer, Option, Schema } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Deferred,
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Option,
+	Schema,
+	Stream,
+} from "effect"
+import { TestClock } from "effect/testing"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -33,6 +48,7 @@ import {
 	type VcsProviderRegistryApi,
 } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { PullRequestEventSink } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
+import { WorkflowEventSink } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { clampQueueDelaySeconds } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
@@ -182,6 +198,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				title: "Fix the checkout crash",
 				body: "Fixes the crash.",
 				user: { login: "octocat" },
+				author_association: "CONTRIBUTOR",
 				merged: true,
 				merge_commit_sha: SHA,
 				merged_at: "2026-01-02T03:04:05Z",
@@ -206,6 +223,7 @@ describe("GithubProvider.webhookToJobs", () => {
 			assert.strictEqual(job.merged, true)
 			assert.strictEqual(job.mergeCommitSha, SHA)
 			assert.strictEqual(job.authorLogin, "octocat")
+			assert.strictEqual(job.authorAssociation, "CONTRIBUTOR")
 			assert.strictEqual(job.mergedAtMs, Date.parse("2026-01-02T03:04:05Z"))
 		}).pipe(Effect.provide(providerLayer())),
 	)
@@ -842,6 +860,214 @@ describe("GithubProvider.webhookToJobs", () => {
 
 	// An unrecognized event (e.g. GitHub's `ping`, sent on every webhook reconfigure)
 	// is accepted as a no-op — it must NOT throw / 500 the receiver.
+	const workflowRunBody = (overrides: Record<string, unknown> = {}) =>
+		JSON.stringify({
+			action: "completed",
+			workflow_run: {
+				id: 9001,
+				name: "CI",
+				path: ".github/workflows/ci.yml",
+				run_number: 314,
+				run_attempt: 2,
+				event: "pull_request",
+				conclusion: "failure",
+				head_branch: "feat/x",
+				head_sha: SHA,
+				html_url: "https://github.com/octo/repo/actions/runs/9001",
+				created_at: "2026-01-01T00:00:00Z",
+				run_started_at: "2026-01-01T00:00:05Z",
+				updated_at: "2026-01-01T00:05:00Z",
+				actor: { login: "octocat" },
+				pull_requests: [{ number: 612 }],
+				...overrides,
+			},
+			repository: { id: 7, full_name: "octo/repo" },
+			installation: { id: 42 },
+		})
+
+	const workflowJobBody = (action = "completed", overrides: Record<string, unknown> = {}) =>
+		JSON.stringify({
+			action,
+			workflow_job: {
+				id: 555,
+				run_id: 9001,
+				run_attempt: 2,
+				name: "test (1/4)",
+				workflow_name: "CI",
+				conclusion: "success",
+				head_branch: "feat/x",
+				head_sha: SHA,
+				html_url: "https://github.com/octo/repo/actions/runs/9001/job/555",
+				created_at: "2026-01-01T00:00:10Z",
+				started_at: "2026-01-01T00:00:40Z",
+				completed_at: "2026-01-01T00:03:00Z",
+				runner_name: "GitHub Actions 12",
+				labels: ["ubuntu-latest"],
+				steps: [
+					{
+						number: 1,
+						name: "Set up job",
+						conclusion: "success",
+						started_at: "2026-01-01T00:00:40Z",
+						completed_at: "2026-01-01T00:00:42Z",
+					},
+					{
+						number: 2,
+						name: "Deploy",
+						conclusion: "skipped",
+						started_at: null,
+						completed_at: null,
+					},
+				],
+				...overrides,
+			},
+			repository: { id: 7, full_name: "octo/repo" },
+			installation: { id: 42 },
+		})
+
+	const mapWorkflow = (event: "workflow_run" | "workflow_job", body: string) =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			return yield* provider.webhookToJobs({
+				headers: { "x-github-event": event, "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+		})
+
+	it.effect("maps a completed workflow run to a workflow-run job", () =>
+		Effect.gen(function* () {
+			const jobs = yield* mapWorkflow("workflow_run", workflowRunBody())
+			assert.strictEqual(jobs.length, 1)
+			const job = jobs[0]!
+			assert.strictEqual(job.kind, "workflow-run")
+			if (job.kind !== "workflow-run") return
+			assert.strictEqual(job.runId, "9001")
+			assert.strictEqual(job.runAttempt, 2)
+			assert.strictEqual(job.workflowName, "CI")
+			assert.strictEqual(job.conclusion, "failure")
+			assert.deepStrictEqual(job.pullRequestNumbers, [612])
+			assert.strictEqual(job.startedAtMs, Date.parse("2026-01-01T00:00:05Z"))
+			assert.strictEqual(job.completedAtMs, Date.parse("2026-01-01T00:05:00Z"))
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("maps a completed workflow job with only the steps that ran", () =>
+		Effect.gen(function* () {
+			const jobs = yield* mapWorkflow("workflow_job", workflowJobBody())
+			assert.strictEqual(jobs.length, 1)
+			const job = jobs[0]!
+			assert.strictEqual(job.kind, "workflow-job")
+			if (job.kind !== "workflow-job") return
+			assert.strictEqual(job.runId, "9001")
+			assert.strictEqual(job.jobId, "555")
+			assert.strictEqual(job.queuedAtMs, Date.parse("2026-01-01T00:00:10Z"))
+			assert.strictEqual(job.startedAtMs, Date.parse("2026-01-01T00:00:40Z"))
+			assert.deepStrictEqual(
+				job.steps.map((step) => step.name),
+				["Set up job"],
+			)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("gives a job skipped before reaching a runner a zero-length span at completion", () =>
+		Effect.gen(function* () {
+			const jobs = yield* mapWorkflow(
+				"workflow_job",
+				workflowJobBody("completed", { conclusion: "skipped", started_at: null, steps: [] }),
+			)
+			const job = jobs[0]!
+			if (job.kind !== "workflow-job") return assert.fail(`unexpected ${job.kind}`)
+			assert.strictEqual(job.startedAtMs, job.completedAtMs)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("skips workflow events that have not finished", () =>
+		Effect.gen(function* () {
+			assert.lengthOf(yield* mapWorkflow("workflow_job", workflowJobBody("in_progress")), 0)
+			assert.lengthOf(yield* mapWorkflow("workflow_job", workflowJobBody("queued")), 0)
+			const requested = { ...JSON.parse(workflowRunBody()), action: "requested" }
+			assert.lengthOf(yield* mapWorkflow("workflow_run", JSON.stringify(requested)), 0)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	// Approving a fork's held run re-attempts it with the approver as `triggering_actor`; GitHub
+	// sends `in_progress`, then `completed`, and no pull request number for a fork.
+	const approvedForkRun = (action: string, overrides: Record<string, unknown> = {}) =>
+		JSON.stringify({
+			...JSON.parse(
+				workflowRunBody({
+					conclusion: action === "completed" ? "success" : null,
+					triggering_actor: { login: "maintainer", type: "User" },
+					head_repository: { full_name: "octocat/repo" },
+					pull_requests: [],
+					...overrides,
+				}),
+			),
+			action,
+		})
+
+	it.effect("maps a fork run a maintainer approved to a CI approval", () =>
+		Effect.gen(function* () {
+			const started = yield* mapWorkflow("workflow_run", approvedForkRun("in_progress"))
+			assert.strictEqual(started.length, 1)
+			const job = started[0]!
+			if (job.kind !== "pull-request-ci-approved") return assert.fail(`unexpected ${job.kind}`)
+			assert.strictEqual(job.approverLogin, "maintainer")
+			assert.strictEqual(job.authorLogin, "octocat")
+			assert.strictEqual(job.headRepoFullName, "octocat/repo")
+			assert.strictEqual(job.headBranch, "feat/x")
+			assert.strictEqual(job.headSha, SHA)
+			assert.deepStrictEqual(job.pullRequestNumbers, [])
+
+			const finished = yield* mapWorkflow("workflow_run", approvedForkRun("completed"))
+			assert.deepStrictEqual(
+				finished.map((each) => each.kind),
+				["workflow-run", "pull-request-ci-approved"],
+			)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("finds no approval in a run the author started, a held run, or a bot's re-run", () =>
+		Effect.gen(function* () {
+			const kinds = (body: string) =>
+				mapWorkflow("workflow_run", body).pipe(Effect.map((jobs) => jobs.map((job) => job.kind)))
+			assert.deepStrictEqual(
+				yield* kinds(
+					approvedForkRun("in_progress", { triggering_actor: { login: "OctoCat", type: "User" } }),
+				),
+				[],
+			)
+			assert.deepStrictEqual(
+				yield* kinds(approvedForkRun("completed", { conclusion: "action_required" })),
+				["workflow-run"],
+			)
+			assert.deepStrictEqual(
+				yield* kinds(
+					approvedForkRun("in_progress", {
+						triggering_actor: { login: "renovate[bot]", type: "Bot" },
+					}),
+				),
+				[],
+			)
+			assert.deepStrictEqual(yield* kinds(approvedForkRun("in_progress", { event: "push" })), [])
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("keeps a workflow job under the queue's message cap with many steps", () =>
+		Effect.gen(function* () {
+			const steps = Array.from({ length: 1000 }, (_, n) => ({
+				number: n + 1,
+				name: `Step ${n + 1} ${"x".repeat(2000)}`,
+				conclusion: "success",
+				started_at: "2026-01-01T00:00:40Z",
+				completed_at: "2026-01-01T00:00:41Z",
+			}))
+			const jobs = yield* mapWorkflow("workflow_job", workflowJobBody("completed", { steps }))
+			const wireBytes = Buffer.byteLength(JSON.stringify(Schema.encodeSync(VcsSyncJob)(jobs[0]!)))
+			assert.isBelow(wireBytes, 128 * 1024)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
 	it.effect("accepts an unhandled event (ping) as a no-op", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
@@ -1117,10 +1343,10 @@ describe("VcsRepository", () => {
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
-					`INSERT INTO vcs_installations
+					`WITH source AS (INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at) VALUES (gen_random_uuid()::text, $2, 'Source', 'github', 'integration', now(), now()) RETURNING id) INSERT INTO vcs_installations
 						(id, org_id, provider, external_installation_id, account_login, account_type,
-						 external_account_id, repository_selection, status, installed_by_user_id, created_at, updated_at)
-					 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now())`,
+						 external_account_id, repository_selection, status, installed_by_user_id, created_at, updated_at, source_id)
+					 SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now(), source.id FROM source`,
 					[randomUUID(), "org_x", "github", "55", "octo", "team", "1", "all", "active", "user_1"],
 				),
 			)
@@ -1186,8 +1412,16 @@ describe("VcsRepository", () => {
 				yield* upsertCommitsFor(repo, orgId, "7", [commitFixture(SHA_42)])
 				yield* upsertCommitsFor(repo, orgId, "8", [commitFixture(SHA_99)])
 
+				// Each installation sends CI traces as its own source, purged with it.
+				const sources = () =>
+					Effect.promise(() =>
+						testDb.pglite.query<{ name: string }>("SELECT name FROM sources ORDER BY name"),
+					).pipe(Effect.map((result) => result.rows.map((row) => row.name)))
+				assert.deepStrictEqual(yield* sources(), ["GitHub octo", "GitHub other"])
+
 				yield* purgeInstallationFor(repo, orgId, "42")
 
+				assert.deepStrictEqual(yield* sources(), ["GitHub other"])
 				assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 				assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 0)
 				assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA_42))))
@@ -1421,6 +1655,55 @@ describe("VcsRepository", () => {
 		}).pipe(Effect.provide(repoLayer(testDb)))
 	})
 
+	it.effect("reports repository syncs and installation status on the installation's source", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sourceState = Effect.promise(() =>
+			queryFirstRow<{
+				last_poll_ok_at: Date | null
+				last_poll_error: string | null
+				disconnected_at: Date | null
+				poll_resources: { total: number; unhealthy: number } | null
+			}>(
+				testDb,
+				`SELECT s.last_poll_ok_at, s.last_poll_error, s.disconnected_at, s.poll_resources
+				 FROM vcs_installations i JOIN sources s ON s.id = i.source_id
+				 WHERE i.external_installation_id = '42'`,
+			),
+		).pipe(Effect.map((row) => row!))
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_health")
+			yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+			yield* upsertReposFor(repo, "42", [
+				repoFixture({ externalRepoId: "7", fullName: "octo/a", name: "a" }),
+				repoFixture({ externalRepoId: "8", fullName: "octo/b", name: "b" }),
+			])
+			const a = yield* repoFor(repo, orgId, "7")
+			const b = yield* repoFor(repo, orgId, "8")
+
+			yield* repo.updateRepoSyncStatus(a.id, { status: "ready", syncedAt: 1 })
+			const ok = yield* sourceState
+			assert.isNotNull(ok.last_poll_ok_at)
+			assert.isNull(ok.last_poll_error)
+			assert.deepStrictEqual(ok.poll_resources, { total: 2, unhealthy: 0 })
+
+			yield* repo.markRepoSyncError(b.id, "upstream unavailable")
+			const failed = yield* sourceState
+			assert.strictEqual(failed.last_poll_error, "octo/b: upstream unavailable")
+			assert.deepStrictEqual(failed.poll_resources, { total: 2, unhealthy: 1 })
+
+			// A suspension disconnects the source; reactivating reconnects it at once with its
+			// repositories' health, so the still-failing repo keeps it failing.
+			yield* markInstStatusFor(repo, "42", "suspended")
+			assert.isNotNull((yield* sourceState).disconnected_at)
+			yield* markInstStatusFor(repo, "42", "active")
+			const recovered = yield* sourceState
+			assert.isNull(recovered.disconnected_at)
+			assert.strictEqual(recovered.last_poll_error, "octo/b: upstream unavailable")
+			assert.deepStrictEqual(recovered.poll_resources, { total: 2, unhealthy: 1 })
+		}).pipe(Effect.provide(repoLayer(testDb)))
+	})
+
 	// A SHA persisted in any case is normalized to lowercase (the GitCommitSha decode
 	// lowercases on the write path), so an uppercase push and a lowercase lookup never
 	// split into two rows.
@@ -1490,6 +1773,13 @@ describe("VcsSyncService orchestrator", () => {
 
 	interface StubOpts {
 		readonly sent: Array<VcsSyncJob>
+		/** What the stubbed provider answers when asked why a CI job failed. */
+		readonly workflowAnnotations?: ReadonlyArray<WorkflowJobAnnotation>
+		readonly workflowAnnotationsError?: VcsProviderError
+		/** Completed when the provider is asked, which then never answers (GitHub stuck in backoff). */
+		readonly workflowAnnotationsHang?: Deferred.Deferred<void>
+		/** The annotations each forwarded CI job came with, in order. */
+		readonly forwardedAnnotations?: Array<ReadonlyArray<WorkflowJobAnnotation>>
 		readonly sentDelays?: Array<number | undefined>
 		/**
 		 * Pull-request events the sync service forwarded, in order. The sink is a
@@ -1497,6 +1787,20 @@ describe("VcsSyncService orchestrator", () => {
 		 * error-issue stack.
 		 */
 		readonly forwardedPullRequests?: Array<{ orgId: string; job: PullRequestEventJob }>
+		/** CI runs and jobs the sync service forwarded; absent means no workflow sink is bound. */
+		readonly forwardedWorkflows?: Array<{ orgId: string; kind: string; runId: string }>
+		/** CI job logs the sync service forwarded, read to the end. */
+		readonly forwardedLogs?: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }>
+		/** The lines the stubbed provider serves as any job's log. */
+		readonly workflowLog?: ReadonlyArray<string>
+		/** Completed when the stubbed provider is asked for a log it then never finishes sending. */
+		readonly workflowLogHang?: Deferred.Deferred<void>
+		/** False when the stubbed installation has not granted access to CI logs. */
+		readonly workflowLogsReadable?: boolean
+		/** Completed when the first permission check starts, which then never answers. */
+		readonly workflowLogsCheckHang?: Deferred.Deferred<void>
+		/** Job ids whose log the stubbed provider was asked to stream. */
+		readonly workflowLogRequests?: Array<string>
 		readonly repos?: ReadonlyArray<{
 			externalRepoId: string
 			owner: string
@@ -1559,6 +1863,31 @@ describe("VcsSyncService orchestrator", () => {
 							branches: opts.branches ?? [],
 							truncated: opts.branchesTruncated ?? false,
 						}),
+			fetchWorkflowJobAnnotations: () =>
+				opts.workflowAnnotationsHang
+					? Deferred.succeed(opts.workflowAnnotationsHang, undefined).pipe(
+							Effect.andThen(Effect.never),
+						)
+					: opts.workflowAnnotationsError
+						? Effect.fail(opts.workflowAnnotationsError)
+						: Effect.succeed(opts.workflowAnnotations ?? []),
+			canReadWorkflowLogs: () =>
+				opts.workflowLogsCheckHang === undefined
+					? Effect.succeed(opts.workflowLogsReadable ?? true)
+					: Deferred.succeed(opts.workflowLogsCheckHang, undefined).pipe(
+							// Only the first check stalls, as a throttled token mint would.
+							Effect.flatMap((first) => (first ? Effect.never : Effect.succeed(true))),
+						),
+			streamWorkflowJobLog: (_installation, _repo, jobId) => {
+				opts.workflowLogRequests?.push(jobId)
+				return opts.workflowLogHang
+					? Stream.fromEffect(
+							Deferred.succeed(opts.workflowLogHang, undefined).pipe(
+								Effect.andThen(Effect.never),
+							),
+						)
+					: Stream.fromIterable(opts.workflowLog ?? [])
+			},
 		}
 		const registry = Layer.succeed(VcsProviderRegistry, {
 			ids: ["github"],
@@ -1573,8 +1902,36 @@ describe("VcsSyncService orchestrator", () => {
 					forwarded?.push({ orgId, job })
 				}),
 		})
+		const workflows = opts.forwardedWorkflows
+		const workflowSink =
+			workflows === undefined
+				? Layer.empty
+				: Layer.succeed(WorkflowEventSink, {
+						onWorkflowRun: (orgId, job) =>
+							Effect.sync(() => {
+								workflows.push({ orgId, kind: job.kind, runId: job.runId })
+							}),
+						onWorkflowJob: (orgId, job, annotations) =>
+							Effect.sync(() => {
+								workflows.push({ orgId, kind: job.kind, runId: job.runId })
+								opts.forwardedAnnotations?.push(annotations)
+							}),
+						onWorkflowJobLog: (orgId, job, lines) =>
+							Stream.runCollect(lines).pipe(
+								Effect.tap((collected) =>
+									Effect.sync(() => {
+										opts.forwardedLogs?.push({
+											orgId,
+											jobId: job.jobId,
+											lines: collected,
+										})
+									}),
+								),
+								Effect.ignore,
+							),
+					})
 		return Layer.effect(VcsSyncService, VcsSyncService.make).pipe(
-			Layer.provideMerge(Layer.mergeAll(repoLive, registry, queue, sink)),
+			Layer.provideMerge(Layer.mergeAll(repoLive, registry, queue, sink, workflowSink)),
 		)
 	}
 
@@ -1690,6 +2047,303 @@ describe("VcsSyncService orchestrator", () => {
 			assert.strictEqual(forwarded?.orgId, orgId)
 			assert.deepStrictEqual(forwarded?.job, job)
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, forwardedPullRequests })))
+	})
+
+	const workflowJob = (
+		externalInstallationId: string,
+		conclusion = "success",
+		steps: WorkflowJobJob["steps"] = [
+			{
+				number: 1,
+				name: "Run tests",
+				conclusion: "success",
+				startedAtMs: 1_700_000_001_000,
+				completedAtMs: 1_700_000_059_000,
+			},
+		],
+	): VcsSyncJob => ({
+		kind: "workflow-job",
+		provider: "github",
+		externalInstallationId,
+		externalRepoId: "7",
+		repoFullName: "octo/repo",
+		runId: "9001",
+		runAttempt: 1,
+		jobId: "555",
+		name: "test",
+		workflowName: "CI",
+		conclusion,
+		headBranch: "main",
+		headSha: null,
+		runnerName: null,
+		labels: [],
+		url: "https://github.com/octo/repo/actions/runs/9001/job/555",
+		queuedAtMs: 1_700_000_000_000,
+		startedAtMs: 1_700_000_001_000,
+		completedAtMs: 1_700_000_060_000,
+		steps,
+	})
+
+	it.effect("forwards CI runs and jobs to the workflow sink under the installation's org", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_ci")
+			yield* seedInstallation(repo, orgId)
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42")))
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "workflow-run",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					repoFullName: "octo/repo",
+					runId: "9001",
+					runAttempt: 1,
+					runNumber: 3,
+					workflowName: "CI",
+					workflowPath: null,
+					triggerEvent: "push",
+					conclusion: "success",
+					headBranch: "main",
+					headSha: null,
+					actorLogin: null,
+					pullRequestNumbers: [],
+					url: "https://github.com/octo/repo/actions/runs/9001",
+					startedAtMs: 1_700_000_000_000,
+					completedAtMs: 1_700_000_060_000,
+				}),
+			)
+			// An installation Maple does not know has no org to write the spans into.
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("does-not-exist")))
+			assert.deepStrictEqual(forwardedWorkflows, [
+				{ orgId, kind: "workflow-job", runId: "9001" },
+				{ orgId, kind: "workflow-run", runId: "9001" },
+			])
+
+			// An org that turned CI traces off gets nothing forwarded.
+			const installation = yield* repo.resolveInstallation("github", "42")
+			if (Option.isNone(installation)) return assert.fail("installation not seeded")
+			yield* repo.setCiTracesEnabled(orgId, installation.value.id, false)
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42")))
+			assert.strictEqual(forwardedWorkflows.length, 2)
+		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent: [], forwardedWorkflows })))
+	})
+
+	it.effect("forwards a failed CI job with the annotations that say why, a passed one without", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+		const forwardedAnnotations: Array<ReadonlyArray<WorkflowJobAnnotation>> = []
+		const annotation: WorkflowJobAnnotation = {
+			level: "failure",
+			message: "expected 2 to be 3",
+			title: "src/math.test.ts > adds",
+			path: "src/math.test.ts",
+			startLine: 12,
+		}
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			yield* seedInstallation(repo, asOrgId("org_ci"))
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42", "failure")))
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42")))
+			assert.deepStrictEqual(forwardedAnnotations, [[annotation], []])
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows,
+					forwardedAnnotations,
+					workflowAnnotations: [annotation],
+				}),
+			),
+		)
+	})
+
+	it.effect("forwards a job's log alongside its traces, and neither once CI traces is off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_ci")
+			yield* seedInstallation(repo, orgId)
+			const installation = yield* repo.resolveInstallation("github", "42")
+			if (Option.isNone(installation)) return assert.fail("installation not seeded")
+			const job = Schema.encodeSync(VcsSyncJob)(workflowJob("42"))
+
+			yield* svc.processMessage(job)
+			assert.deepStrictEqual(forwardedLogs, [{ orgId, jobId: "555", lines: ["first", "second"] }])
+
+			// A job none of whose steps ran has no log worth asking for.
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42", "skipped", [])))
+			// One switch covers both: CI traces off means no logs either.
+			yield* repo.setCiTracesEnabled(orgId, installation.value.id, false)
+			yield* svc.processMessage(job)
+			assert.lengthOf(forwardedLogs, 1)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows: [],
+					forwardedLogs,
+					workflowLog: ["first", "second"],
+				}),
+			),
+		)
+	})
+
+	it.effect(
+		"skips the log of an installation that has not granted access to it, keeping the traces",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+			const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
+			const workflowLogRequests: Array<string> = []
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				yield* seedInstallation(repo, asOrgId("org_ci"))
+				yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42")))
+				assert.lengthOf(forwardedWorkflows, 1)
+				assert.lengthOf(forwardedLogs, 0)
+				assert.lengthOf(workflowLogRequests, 0)
+			}).pipe(
+				Effect.provide(
+					orchestratorLayer(testDb, {
+						sent: [],
+						forwardedWorkflows,
+						forwardedLogs,
+						workflowLog: ["first", "second"],
+						workflowLogsReadable: false,
+						workflowLogRequests,
+					}),
+				),
+			)
+		},
+	)
+
+	it.effect("lets go of a job's log that outlasts its budget, so the rest of the batch moves on", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
+		const asked = Deferred.makeUnsafe<void>()
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_ci")
+			yield* seedInstallation(repo, orgId)
+			const processing = yield* Effect.forkChild(
+				svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42"))),
+			)
+			yield* Deferred.await(asked)
+			yield* TestClock.adjust(Duration.seconds(31))
+			const exit = yield* Fiber.await(processing)
+			assert.isTrue(Exit.isSuccess(exit))
+			assert.lengthOf(forwardedLogs, 0)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows: [],
+					forwardedLogs,
+					workflowLogHang: asked,
+				}),
+			),
+		)
+	})
+
+	it.effect(
+		"bounds a stalled permission check by the log budget, so the next job in the batch runs",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+			const forwardedLogs: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }> = []
+			const workflowLogRequests: Array<string> = []
+			const checking = Deferred.makeUnsafe<void>()
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				yield* seedInstallation(repo, asOrgId("org_ci"))
+				const batch = [workflowJob("42"), { ...workflowJob("42"), jobId: "556" }]
+				const processing = yield* Effect.forkChild(
+					Effect.forEach(batch, (job) => svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))),
+				)
+				yield* Deferred.await(checking)
+				yield* TestClock.adjust(Duration.seconds(31))
+				assert.isTrue(Exit.isSuccess(yield* Fiber.await(processing)))
+				assert.lengthOf(forwardedWorkflows, 2)
+				// The stalled check never reached the log; the next job's log went out.
+				assert.deepStrictEqual(workflowLogRequests, ["556"])
+				assert.deepStrictEqual(
+					forwardedLogs.map((log) => log.jobId),
+					["556"],
+				)
+			}).pipe(
+				Effect.provide(
+					orchestratorLayer(testDb, {
+						sent: [],
+						forwardedWorkflows,
+						forwardedLogs,
+						workflowLog: ["first"],
+						workflowLogsCheckHang: checking,
+						workflowLogRequests,
+					}),
+				),
+			)
+		},
+	)
+
+	it.effect("still forwards a failed CI job when its annotations cannot be read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+		const forwardedAnnotations: Array<ReadonlyArray<WorkflowJobAnnotation>> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			yield* seedInstallation(repo, asOrgId("org_ci"))
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42", "failure")))
+			assert.strictEqual(forwardedWorkflows.length, 1)
+			assert.deepStrictEqual(forwardedAnnotations, [[]])
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows,
+					forwardedAnnotations,
+					workflowAnnotationsError: new VcsProviderError({ message: "GitHub is down" }),
+				}),
+			),
+		)
+	})
+
+	it.effect("forwards a failed CI job without annotations once their read runs out of time", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedWorkflows: Array<{ orgId: string; kind: string; runId: string }> = []
+		const forwardedAnnotations: Array<ReadonlyArray<WorkflowJobAnnotation>> = []
+		const asked = Deferred.makeUnsafe<void>()
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			yield* seedInstallation(repo, asOrgId("org_ci"))
+			const processing = yield* Effect.forkChild(
+				svc.processMessage(Schema.encodeSync(VcsSyncJob)(workflowJob("42", "failure"))),
+			)
+			yield* Deferred.await(asked)
+			yield* TestClock.adjust(Duration.seconds(11))
+			yield* Fiber.join(processing)
+			assert.deepStrictEqual(forwardedAnnotations, [[]])
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(testDb, {
+					sent: [],
+					forwardedWorkflows,
+					forwardedAnnotations,
+					workflowAnnotationsHang: asked,
+				}),
+			),
+		)
 	})
 
 	it.effect("drops a pull-request event for an installation it does not know", () => {
@@ -3340,6 +3994,7 @@ describe("GithubProvider rate-limit handling", () => {
 		repositorySelection: "all",
 		status: "active",
 		suspendedAt: null,
+		ciTracesEnabled: true,
 		installedByUserId: "user_1",
 		createdAt: 0,
 		updatedAt: 0,

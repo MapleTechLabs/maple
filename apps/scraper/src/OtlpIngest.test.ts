@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Fiber, Layer, Redacted } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OtlpIngest } from "./OtlpIngest"
@@ -20,6 +20,17 @@ const testEnv: ScraperEnvConfig = {
 const TestLayer = OtlpIngest.layer.pipe(
 	Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(ScraperEnv, testEnv))),
 )
+
+/** Lets the stubbed fetch settle on the real event loop, then moves the test clock past a backoff. */
+const settleAndAdvance = (steps: number, by: Duration.Input = "2 seconds") =>
+	Effect.forEach(
+		Array.from({ length: steps }),
+		() =>
+			Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0))).pipe(
+				Effect.andThen(TestClock.adjust(by)),
+			),
+		{ discard: true },
+	)
 
 const SAMPLE_REQUEST: OtlpExportRequest = {
 	resourceMetrics: [
@@ -136,6 +147,28 @@ describe("OtlpIngest", () => {
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
+	it.effect("retries a gateway 503 and delivers the export", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const otlp = yield* OtlpIngest
+			const fiber = yield* Effect.forkChild(
+				otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch(recorded, () =>
+							recorded.length === 1
+								? new Response("deploying", { status: 503 })
+								: Response.json({ partialSuccess: {} }),
+						),
+					),
+				),
+			)
+			yield* settleAndAdvance(2)
+			yield* Fiber.join(fiber)
+			assert.lengthOf(recorded, 2)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
 	// A billing block is the expected, caller-side outcome for an org over its
 	// limit: the typed error still reaches the caller, but the span stays Ok.
 	it.effect("annotates rather than errors its span on a billing rejection (402)", () =>
@@ -175,7 +208,8 @@ describe("OtlpIngest", () => {
 					.pipe(Effect.provideService(FetchHttpClient.Fetch, stalled), Effect.flip),
 				{ startImmediately: true },
 			)
-			yield* TestClock.adjust("31 seconds")
+			// Each of the three attempts times out at 30s, with a backoff between them.
+			yield* settleAndAdvance(3, "35 seconds")
 			const error = yield* Fiber.join(fiber)
 			assert.strictEqual(error.reason, "scrape_failed")
 			assert.strictEqual(error.statusCode, null)

@@ -6,26 +6,7 @@
 // behave", and the honest way to compare two countries is two looks, not a
 // union that neither the KPI row nor the coverage figure could attribute.
 
-import { Schema } from "effect"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-
-/** URL search-param fields. Spread into the route's `validateSearch` schema. */
-export const analyticsFilterSearchFields = {
-	host: Schema.optional(Schema.String),
-	pagePath: Schema.optional(Schema.String),
-	referrerHost: Schema.optional(Schema.String),
-	country: Schema.optional(Schema.String),
-	deviceType: Schema.optional(Schema.String),
-	browserName: Schema.optional(Schema.String),
-	osName: Schema.optional(Schema.String),
-	language: Schema.optional(Schema.String),
-	utmSource: Schema.optional(Schema.String),
-	utmMedium: Schema.optional(Schema.String),
-	utmCampaign: Schema.optional(Schema.String),
-	visitorType: Schema.optional(Schema.Literals(["new", "returning"])),
-	traffic: Schema.optional(Schema.Literals(["all", "humans", "bots"])),
-	eventName: Schema.optional(Schema.String),
-}
 
 export interface AnalyticsFilters {
 	host?: string

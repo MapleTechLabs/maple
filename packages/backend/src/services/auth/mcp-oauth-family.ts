@@ -14,6 +14,15 @@ import { Effect } from "effect"
  * has to come through here. Run them inside the caller's transaction.
  */
 
+/**
+ * The grant's absolute ceiling, independent of rotation. `expires_at` is
+ * reset on every refresh, so without this a client that rotates once a month
+ * holds an MCP credential forever. A quarter is long enough that no healthy
+ * client is ever interrupted (it re-consents once) and short enough that a
+ * grant which escaped every revocation path still dies on its own.
+ */
+export const REFRESH_FAMILY_ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000
+
 /** Revoke a whole family and every access key it has ever minted. */
 export const revokeRefreshFamily = (
 	orm: MapleDb,

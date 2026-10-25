@@ -286,7 +286,7 @@ export const readAiSessionDetails = Effect.fn("AiSessionReads.details")(function
 	payload: ListAiSessionDetailsRequest,
 ) {
 	const warehouse = yield* WarehouseQueryService
-	// The fan-out over `trace_detail_spans`, bounded by the page's own
+	// The fan-out over `traces`, bounded by the page's own
 	// extent rather than the list's window — the client hands back the
 	// bounds the page rows carried. Seconds on a cold partition, which
 	// is why it is its own request rather than part of `list`, and one

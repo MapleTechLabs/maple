@@ -2,16 +2,15 @@ import { assert, describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Layer, Schema, Tracer } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
-import { McpToolExecutor, listMcpTools } from "./dispatcher"
+import { McpToolExecutor } from "./dispatcher"
+import { listMcpTools } from "./tool-catalog"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
 import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
-import {
-	WarehouseQueryService,
-	type WarehouseQueryServiceApi,
-} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryError } from "@maple/domain"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import {
@@ -331,10 +330,10 @@ describe("MCP dispatcher", () => {
 		it.effect("fails the dispatcher span on a real query failure", () =>
 			Effect.gen(function* () {
 				// SAFETY: run_sql reaches only rawSqlQuery on the warehouse; no other method is called.
-				const warehouse = {
+				const warehouse = makeWarehouseServiceStub({
 					rawSqlQuery: () =>
 						Effect.fail(new WarehouseQueryError({ message: "boom", pipeName: "run_sql" })),
-				} as WarehouseQueryServiceApi
+				})
 				const executor = yield* McpToolExecutor.make.pipe(
 					Effect.provide(
 						Context.make(AuditLogService, makeMemoryAuditLog()).pipe(
@@ -387,6 +386,8 @@ describe("McpToolExecutor repository preparation", () => {
 		htmlUrl: `https://github.com/${fullName}`,
 		isPrivate: false,
 		isArchived,
+		syncStatus: "ready",
+		lastSyncError: null,
 	})
 
 	it.effect("prepares every unarchived connected repository through the sandbox it acquired", () => {

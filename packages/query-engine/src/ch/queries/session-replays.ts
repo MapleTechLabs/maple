@@ -16,7 +16,7 @@
 // Stale-prone post-aggregation predicates (e.g. exact Status) are deliberately
 // not exposed as SQL filters since the DSL has no HAVING clause.
 
-import type { DateTime } from "effect"
+import { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { compileFnCallCond } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
@@ -36,13 +36,15 @@ import {
 	ProductEvents,
 	SessionReplays,
 	SessionReplayEvents,
-	TraceDetailSpans,
+	Traces,
+	inTraces,
 	orgIdParam,
 	utcSecondsParam,
+	utcTraceWindow,
 } from "../tables"
 import { sessionActivityAggregateQuery, sessionEventMatchQuery } from "./session-events"
 import { sessionQualityExpr, sessionTagFacet, taggedSessionIds } from "./session-tags"
-import type { FacetOutput } from "./query-helpers"
+import { ROOT_SPAN_ATTR_KEYS, type FacetOutput } from "./query-helpers"
 
 // argMax(value, ordering) — finalize a ReplacingMergeTree column to its latest
 // version. The builder's own, which keeps the value's type: this file finalizes
@@ -1004,21 +1006,29 @@ export function sessionsForTraceQuery(opts: SessionsForTraceOpts) {
 //
 // One row per TraceId, used to draw a single bar per trace on the session
 // replay timeline (the expandable span lanes fetch full spans on demand via
-// spanHierarchyQuery). Reads `trace_detail_spans`, whose sort key
-// (OrgId, TraceId, SpanId) makes `TraceId IN (...)` a cheap prefix lookup
-// WITHIN a part. But the table is PARTITION BY toDate(Timestamp) with a 30-day
-// TTL, so without a Timestamp predicate ClickHouse reads the primary index of
-// every daily partition to find these traces — pure scan fan-out (observed at
-// 7s+ for a handful of matching spans on a high-volume org). The optional
-// startTime/endTime bounds (the session's time window — its correlated traces
-// fired within it) prune to the 1-2 partitions the session spans. The root
-// span (ParentSpanId = '') supplies the trace's name/service/duration, with a
-// fallback for traces whose root span wasn't ingested.
+// spanHierarchyQuery). Reads `traces` seeked through `trace_index`; the
+// startTime/endTime bounds (the session's own span plus slack) bound both the
+// index lookup and the span read. The root span (ParentSpanId = '') supplies
+// the trace's name/service/duration, with a fallback for traces whose root
+// span wasn't ingested.
+
+/** Most trace ids one summaries read takes; the query returns at most this many rows. */
+export const MAX_SESSION_TRACE_SUMMARIES = 200
+
+const SESSION_TRACE_MARGIN = { minutes: 15 }
+/** The browser SDK's session lifetime cap: the end of a session that never reported one. */
+const SESSION_MAX_LIFETIME = { hours: 24 }
+
+/** A session's correlated traces fired within its span; the margin covers spans that outlast it. */
+export const sessionTraceWindow = (startTime: DateTime.Utc, endTime: DateTime.Utc | null) => ({
+	startTime: DateTime.subtract(startTime, SESSION_TRACE_MARGIN),
+	endTime: DateTime.add(endTime ?? DateTime.add(startTime, SESSION_MAX_LIFETIME), SESSION_TRACE_MARGIN),
+})
 
 export interface SessionTraceSummariesOpts {
 	/** The correlated trace ids to summarize (from session_replays.TraceIds). */
 	traceIds: ReadonlyArray<string>
-	/** Optional session time window — prunes daily partitions. Omit to scan all. */
+	/** The session's window. Omit only without a known time: the index lookup then probes every partition. */
 	startTime?: DateTime.Utc
 	endTime?: DateTime.Utc
 	limit?: number
@@ -1032,22 +1042,29 @@ export interface SessionTraceSummaryOutput {
 	readonly rootServiceName: string
 	/** Root span's OTel kind as stored (e.g. `Client`), so the UI can format the HTTP label. */
 	readonly rootSpanKind: string
-	/** Root span's attribute map, JSON-encoded — parsed by the UI for `getHttpInfo`. */
+	/** Root span's HTTP attributes (`ROOT_SPAN_ATTR_KEYS`), JSON-encoded, parsed by the UI for `getHttpInfo`. */
 	readonly rootSpanAttributes: string
 	readonly spanCount: number
 	readonly hasError: number
 }
 
 export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
-	const limit = opts.limit ?? 200
+	const limit = opts.limit ?? MAX_SESSION_TRACE_SUMMARIES
+	const window =
+		opts.startTime !== undefined && opts.endTime !== undefined
+			? utcTraceWindow(opts.startTime, opts.endTime)
+			: undefined
 
-	return from(TraceDetailSpans)
+	return from(Traces)
 		.select(($) => {
 			const isRoot = $.ParentSpanId.eq("")
 			// Root span duration is the canonical "trace duration" elsewhere in the
 			// codebase; fall back to the widest span when no root span is present.
 			const entryDurationMs = CH.maxIf($.Duration, isRoot).div(1000000)
 			const fallbackDurationMs = CH.max_($.Duration).div(1000000)
+			// Pick the root's map per trace, then project and serialize once per row
+			// out; `anyIf(toJSONString(...))` serialized every span's whole map.
+			const rootAttributes = CH.anyIf($.SpanAttributes, isRoot)
 			return {
 				traceId: $.TraceId,
 				startTime: CH.min_($.Timestamp),
@@ -1057,19 +1074,22 @@ export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
 					CH.nullIf(CH.anyIf($.ServiceName, isRoot), ""),
 					CH.any_($.ServiceName),
 				),
-				// Root span's kind + attributes let the UI render the canonical HTTP
+				// Root span's kind + HTTP attributes let the UI render the canonical
 				// label (`POST /api/foo`) instead of the raw span name. Traces with no
-				// ingested root span yield empty strings — the UI's getHttpInfo then
-				// falls back to name-only parsing.
+				// ingested root span carry blanks, and getHttpInfo parses the name.
 				rootSpanKind: CH.anyIf($.SpanKind, isRoot),
-				rootSpanAttributes: CH.anyIf(CH.toJSONString($.SpanAttributes), isRoot),
+				rootSpanAttributes: CH.toJSONString(
+					CH.mapLiteral(
+						...ROOT_SPAN_ATTR_KEYS.map((key) => [key, CH.mapGet(rootAttributes, key)] as const),
+					),
+				),
 				spanCount: CH.count(),
 				hasError: CH.if_(CH.countIf($.StatusCode.eq("Error")).gt(0), CH.lit(1), CH.lit(0)),
 			}
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TraceId.in_(...opts.traceIds),
+			inTraces((id) => id.in_(...opts.traceIds), window),
 			CH.when(opts.startTime, (v: DateTime.Utc) => $.Timestamp.gte(v)),
 			CH.when(opts.endTime, (v: DateTime.Utc) => $.Timestamp.lte(v)),
 		])

@@ -9,13 +9,14 @@ import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
-import { HttpAuthLive, HttpAuthPublicLive } from "@/routes/auth.http"
+import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/billing-public.http"
 import { HttpEmailPublicLive } from "@/routes/email-public.http"
 import { HttpV2SharePublicLive } from "@/routes/v2/share.http"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpDemoLive } from "@/routes/internal/demo.http"
+import { AwsOidcRouter } from "@/routes/aws-oidc.http"
 import { DiscoveryRouter, instanceApiV2, NotFoundRouter } from "@/routes/discovery.http"
 import { HttpDigestLive } from "@/routes/internal/digest.http"
 import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
@@ -48,10 +49,14 @@ import { HttpV2DashboardsLive } from "@/routes/v2/dashboards.http"
 import { V2TransportErrorBoundaryLive } from "@/routes/v2/error-envelope"
 import { HttpV2ErrorIssuesLive } from "@/routes/v2/error-issues.http"
 import { HttpV2IngestKeysLive } from "@/routes/v2/ingest-keys.http"
+import { HttpV2SourcesLive } from "@/routes/v2/sources.http"
 import { HttpV2ChatIntegrationsLive } from "@/routes/v2/integrations-chat.http"
+import { HttpV2AwsIntegrationsLive } from "@/routes/v2/integrations-aws.http"
+import { HttpV2GcpIntegrationsLive } from "@/routes/v2/integrations-gcp.http"
 import { HttpV2PlanetScaleIntegrationsLive } from "@/routes/v2/integrations.http"
 import { HttpV2InvestigationsLive } from "@/routes/v2/investigations.http"
 import { HttpV2AgentFeedbackLive } from "@/routes/v2/agent-feedback.http"
+import { HttpV2McpConnectionsLive } from "@/routes/v2/mcp-connections.http"
 import { HttpV2MobileDevicesLive } from "@/routes/v2/mobile-devices.http"
 import { HttpV2OrganizationLive } from "@/routes/v2/organization.http"
 import { HttpV2InstrumentationRecommendationsLive } from "@/routes/v2/recommendations.http"
@@ -73,6 +78,8 @@ import {
 } from "@/routes/v2/telemetry.http"
 import { HttpV2WidgetSummaryLive } from "@/routes/v2/widget-summary.http"
 import { HttpV2WidgetCredentialsLive } from "@/routes/v2/widget-credentials.http"
+import { HttpV2DeviceCredentialsLive, HttpV2DeviceTokensLive } from "@/routes/v2/device-credentials.http"
+import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
 import { ApiAuthorizationLive } from "@maple/backend/services/auth/ApiAuthorizationLive"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import {
@@ -108,6 +115,7 @@ const DocsV2Route = apiReferenceRoute("/v2/docs")
 const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
+	Layer.provide(HttpAuthSessionLive),
 	Layer.provide(HttpBillingPublicLive),
 	Layer.provide(HttpEmailPublicLive),
 	Layer.provide(ApiErrorBoundaryLive),
@@ -161,8 +169,11 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AlertDestinationsLive,
 			HttpV2AlertIncidentsLive,
 			HttpV2IngestKeysLive,
+			HttpV2SourcesLive,
 			HttpV2ChatIntegrationsLive,
 			HttpV2PlanetScaleIntegrationsLive,
+			HttpV2GcpIntegrationsLive,
+			HttpV2AwsIntegrationsLive,
 			HttpV2ErrorIssuesLive,
 			HttpV2AttributeMappingsLive,
 			HttpV2AuditLogLive,
@@ -177,6 +188,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AnomaliesLive,
 			HttpV2OrganizationLive,
 			HttpV2MobileDevicesLive,
+			HttpV2McpConnectionsLive,
 			HttpV2AgentFeedbackLive,
 			HttpV2SessionReplaysLive,
 			HttpV2TracesLive,
@@ -187,6 +199,8 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2EnvironmentsLive,
 			HttpV2WidgetSummaryLive,
 			HttpV2WidgetCredentialsLive,
+			HttpV2DeviceCredentialsLive,
+			HttpV2DeviceTokensLive,
 		),
 	),
 	Layer.provide(V2TransportErrorBoundaryLive),
@@ -232,6 +246,7 @@ const RawRoutes = rawRoutes(
 		DocsRoute,
 		DocsV2Route,
 		DiscoveryRouter,
+		AwsOidcRouter,
 		// Last by convention only — find-my-way ranks the wildcard below every other
 		// route regardless of registration order.
 		NotFoundRouter,
@@ -252,6 +267,8 @@ export const ApiAuthLive = Layer.mergeAll(
 	Layer.provideMerge(ApiV2RateLimiter.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
+	// `Authorization: DPoP` device tokens; also serves the device credential routes.
+	Layer.provideMerge(DeviceCredentialsService.layer),
 	Layer.provideMerge(OrganizationRegionService.layer),
 	// Denied attempts and audited reads are recorded from inside the auth layers.
 	Layer.provideMerge(AuditLogService.layer),

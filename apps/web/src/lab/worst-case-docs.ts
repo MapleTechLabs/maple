@@ -2,19 +2,17 @@
  * The decoded half of the `/lab/worst-case` fixture: documents that carry
  * branded ids, built through their real schemas so no value is cast to a brand.
  */
-import { ActorDocument, AlertRuleDocument, ErrorIssueSampleTrace } from "@maple/domain/http"
+import { AlertRuleDocument, ErrorIssueSampleTrace } from "@maple/domain/http"
 import { V2Investigation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 
-import { resolveActorIdentity, type ActorIdentity } from "@/components/errors/actor-chip"
-import type { ActorDirectory, DirectoryPerson } from "@/hooks/use-actor-directory"
-import type { DerivedRuleStatus } from "@/lib/alerts/rule-status"
-import type { AlertRuleStateRow } from "@/lib/collections/alerts"
-import type { ErrorSignal } from "@/lib/models/error-signal"
-import { VERDICT_LAB_CASES } from "@/lab/verdict-fixture"
-import { LONG_SERVICE, LONG_URL, type WorstCaseMode } from "@/lab/worst-case-fixture"
+import type { DerivedRuleStatus } from "@maple/web-data/alerts/rule-status"
+import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
+import type { ErrorSignal } from "../lib/models/error-signal"
+import { VERDICT_LAB_CASES } from "./verdict-fixture"
+import { LONG_SERVICE, LONG_URL, type WorstCaseMode } from "./worst-case-fixture"
 
-const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
+export const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 const NOW = Date.now()
 
 /* Verdict ---------------------------------------------------------------------------------- */
@@ -81,9 +79,15 @@ export function errorSignal(mode: WorstCaseMode, base: ErrorSignal): ErrorSignal
 
 /* Actors ----------------------------------------------------------------------------------- */
 
-const decodeActor = Schema.decodeUnknownSync(ActorDocument)
+/** A directory member, shaped like `DirectoryPerson`; resolved in `worst-case-actors.ts`. */
+export interface WorstCasePerson {
+	readonly userId: string
+	readonly name: string
+	readonly email: string | null
+	readonly imageUrl: string | null
+}
 
-const PEOPLE = {
+export const WORST_CASE_PEOPLE = {
 	demo: [
 		{ userId: "user_demo_1", name: "Asha Rao", email: "asha@example.com", imageUrl: null },
 		{ userId: "user_demo_2", name: "Ren Ito", email: "ren@example.com", imageUrl: null },
@@ -98,30 +102,7 @@ const PEOPLE = {
 		},
 		{ userId: "user_wc_han_noimg", name: "Đặng Thị Ngọc Hân", email: null, imageUrl: null },
 	],
-} satisfies Record<WorstCaseMode, ReadonlyArray<DirectoryPerson>>
-
-export function actorIdentities(mode: WorstCaseMode): ReadonlyArray<ActorIdentity> {
-	const people = PEOPLE[mode]
-	const directory: ActorDirectory = {
-		lookup: (userId) => people.find((p) => p.userId === userId) ?? null,
-		me: null,
-		isLoaded: true,
-	}
-	return people.map((person, i) =>
-		resolveActorIdentity(
-			decodeActor({
-				id: uuid(900 + i),
-				type: "user",
-				userId: person.userId,
-				agentName: null,
-				model: null,
-				capabilities: [],
-				lastActiveAt: null,
-			}),
-			directory,
-		),
-	)
-}
+} satisfies Record<WorstCaseMode, ReadonlyArray<WorstCasePerson>>
 
 /* Alert rules ------------------------------------------------------------------------------ */
 
@@ -155,6 +136,17 @@ export function rulesFixture(mode: WorstCaseMode): RulesFixture {
 			windowMinutes: 5,
 			minimumSampleCount: 0,
 			consecutiveBreachesRequired: 1,
+			breachesOutOf: null,
+			evaluationIntervalMinutes: null,
+			thresholds: [
+				{
+					severity: "critical",
+					value: threshold,
+					upper: null,
+					recoveryValue: null,
+					destinationIds: [],
+				},
+			],
 			consecutiveHealthyRequired: 1,
 			renotifyIntervalMinutes: 60,
 			apdexThresholdMs: null,
@@ -164,6 +156,9 @@ export function rulesFixture(mode: WorstCaseMode): RulesFixture {
 			destinationIds: [],
 			noDataBehavior: "skip",
 			lastEvaluationError: worst ? `Query failed: ${"x".repeat(400)}` : null,
+			lastEvaluationErrorKind: null,
+			slowedIntervalMinutes: null,
+			slowedAt: null,
 			lastEvaluatedAt: new Date(NOW - 60_000).toISOString(),
 			lastScheduledAt: null,
 			createdAt: "2026-09-01T00:00:00.000Z",
@@ -187,7 +182,7 @@ export function rulesFixture(mode: WorstCaseMode): RulesFixture {
 			r.id,
 			{
 				status: worst && i === 0 ? "error" : "healthy",
-				attention: { noDestinations: true, recentDeliveryFailure: false },
+				attention: { noDestinations: true, recentDeliveryFailure: false, slowedDown: false },
 				reason: worst && i === 0 ? r.lastEvaluationError : null,
 			},
 		]),

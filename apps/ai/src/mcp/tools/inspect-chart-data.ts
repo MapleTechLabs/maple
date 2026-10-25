@@ -90,7 +90,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 		title: "Inspect Chart Data",
 		description: inspectChartDataDescription,
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID"),
+			dashboard_id: P.resourceId("dashboard", "Dashboard ID"),
 			widget_id: P.text("Widget ID (get_dashboard lists them)"),
 			start_time: P.optionalTimestamp(
 				"Start of an override window (pass with end_time; omit both for the widget's pinned timeRange, else the dashboard's)",

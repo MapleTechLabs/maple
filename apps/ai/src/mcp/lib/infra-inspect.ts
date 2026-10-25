@@ -21,9 +21,11 @@ import {
 	type InfraWindow,
 	type WorkloadKind,
 } from "./infra"
+import type { ProviderEntityKind } from "./infra-providers"
 
 export interface InspectTarget {
-	readonly kind: InfraEntityKind
+	/** Collector kinds only; provider kinds go through `inspectProvider`. */
+	readonly kind: Exclude<InfraEntityKind, ProviderEntityKind>
 	readonly name: string
 	readonly namespace?: string | undefined
 	readonly host?: string | undefined

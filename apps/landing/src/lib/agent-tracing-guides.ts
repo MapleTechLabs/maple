@@ -41,6 +41,7 @@ export const AGENT_FRAMEWORK_GUIDES: readonly AgentGuide[] = [
 	]),
 	// No Genkit brand mark yet; Google's, as on the page itself.
 	guide("genkit", "Genkit", "Flows, tools and sessions", "googleadk", ["typescript"]),
+	guide("eve", "eve", "Sessions, subagents and approvals", "vercel", ["typescript"]),
 	guide("openai-agents", "OpenAI Agents SDK", "Handoffs and agents as tools", "openai", [
 		"python",
 		"typescript",
@@ -53,6 +54,7 @@ export const AGENT_FRAMEWORK_GUIDES: readonly AgentGuide[] = [
 		"typescript",
 		"python",
 	]),
+	guide("claude-api", "Claude API & SDK", "Built-in SDK tracing and Console export", "claude", ["typescript"]),
 	guide("google-adk", "Google ADK", "Runners, sub-agents and sessions", "googleadk", [
 		"python",
 		"typescript",

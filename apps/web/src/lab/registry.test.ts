@@ -1,36 +1,16 @@
 import { describe, expect, it } from "vitest"
 
-import { routeTree } from "@/routeTree.gen"
+import { labEntryPaths } from "./boot"
 import { LAB_ENTRIES, LAB_ROOT, isLabPath, isSessionlessLabPath } from "./registry"
 
-// Route ids are only assigned once a router builds the tree, and building the
-// real router drags in the Effect runtime. The generated tree already carries
-// each route's `options.path` and its children, so join segments structurally.
-// Trailing-slash ids (`/lab/` for the index) are excluded by name below.
-function collectFullPaths(route: unknown, parentPath = "", into: string[] = []): string[] {
-	if (typeof route !== "object" || route === null) return into
-	const { options, children } = route as { options?: { path?: unknown }; children?: unknown }
-	const segment = typeof options?.path === "string" ? options.path : ""
-	const fullPath = `${parentPath}/${segment}`.replace(/\/{2,}/g, "/")
-	if (segment) into.push(fullPath)
-	const list = Array.isArray(children)
-		? children
-		: typeof children === "object" && children !== null
-			? Object.values(children)
-			: []
-	for (const child of list) collectFullPaths(child, fullPath, into)
-	return into
-}
-
-const routePaths = collectFullPaths(routeTree)
+// `index` is `/lab` itself; `data-probe` is the S6 spike, not listed.
+const UNLISTED = new Set([`${LAB_ROOT}/index`, `${LAB_ROOT}/data-probe`])
+const entryPaths = labEntryPaths().filter((path) => !UNLISTED.has(path))
 
 describe("lab registry", () => {
-	it("lists exactly the routes under /lab (excluding the layout and index)", () => {
-		const routed = routePaths
-			.filter((id) => id.startsWith(`${LAB_ROOT}/`) && id !== `${LAB_ROOT}/`)
-			.sort()
+	it("lists exactly the lab entry modules", () => {
 		const registered = LAB_ENTRIES.map((entry) => entry.path).sort()
-		expect(registered).toEqual(routed)
+		expect(registered).toEqual([...entryPaths].sort())
 	})
 
 	it("has unique paths", () => {

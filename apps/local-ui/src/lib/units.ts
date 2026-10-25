@@ -5,7 +5,6 @@ import { Schema } from "effect"
 import { lookup } from "./lookup"
 
 export const MetricTypeSchema = Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])
-export type MetricType = Schema.Schema.Type<typeof MetricTypeSchema>
 export const isMetricType = Schema.is(MetricTypeSchema)
 
 const UNIT_WORDS = {

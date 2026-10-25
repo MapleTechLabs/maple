@@ -1,6 +1,8 @@
 import { HttpApi, OpenApi } from "effect/http-api"
 import { ChatApiGroup } from "./chat"
 import { IncidentTriageApiGroup } from "./incident-triage"
+import { McpToolsApiGroup } from "./mcp-tools"
+import { SecurityAuditApiGroup } from "./security-audit"
 import { ApiSchemaErrors, ApiUnexpectedErrors } from "./api-boundary"
 
 /**
@@ -23,8 +25,12 @@ import { ApiSchemaErrors, ApiUnexpectedErrors } from "./api-boundary"
  */
 export class MapleAiApi extends HttpApi.make("MapleAiApi")
 	.add(ChatApiGroup)
+	// The public tool catalog for Settings > MCP; the registry lives in this Worker.
+	.add(McpToolsApiGroup)
 	// Worker-to-Worker only: alerting asks before an incident earns an investigation.
 	.add(IncidentTriageApiGroup)
+	// Scheduled security audits; the Workflow that runs them is hosted here.
+	.add(SecurityAuditApiGroup)
 	.middleware(ApiSchemaErrors)
 	.middleware(ApiUnexpectedErrors)
 	.annotateMerge(

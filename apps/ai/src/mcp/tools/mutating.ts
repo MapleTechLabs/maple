@@ -30,6 +30,11 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"propose_fix",
 	"link_pull_request",
 	"register_agent",
+	// integrations
+	"sync_railway",
+	"create_scrape_target",
+	"update_scrape_target",
+	"delete_scrape_target",
 	// feedback
 	"send_maple_feedback",
 ])

@@ -19,6 +19,7 @@ import {
 	type PrReviewReplyCommand,
 	PrReviewReplyId,
 	type PrReviewReplyStatus,
+	type PullRequestCiApprovedJob,
 	type PullRequestCommentJob,
 	type PullRequestEventJob,
 	type PullRequestHead,
@@ -41,18 +42,14 @@ import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
-import { PrReviewService } from "./PrReviewService"
+import { isTrustedAuthorAssociation, PrReviewService } from "./PrReviewService"
 
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
 
 /** Answers an organization may start per UTC day, across its pull requests. */
 export const PR_REPLY_DAILY_CEILING = 100
-
-/** GitHub associations whose mentions are answered; anyone else on a public repository is not. */
-const ANSWERED_ASSOCIATIONS: ReadonlySet<string> = new Set(["OWNER", "MEMBER", "COLLABORATOR"])
 
 /** Repository permissions that may have Maple commit to their pull request. */
 const WRITE_PERMISSIONS: ReadonlySet<string> = new Set(["admin", "maintain", "write"])
@@ -74,6 +71,11 @@ export interface PrReplyOutcome {
 export interface PrReviewConversationServiceApi {
 	/** Webhook entry point. Never fails, for the reason `onPullRequestEvent` never does. */
 	readonly onPullRequestComment: (orgId: OrgId, job: PullRequestCommentJob) => Effect.Effect<PrReplyOutcome>
+	/**
+	 * Someone other than the author ran a pull request's CI. When they have write access and the
+	 * pull request's head is still the run's, its review starts as a trusted author's would. Never fails.
+	 */
+	readonly onCiApproved: (orgId: OrgId, job: PullRequestCiApprovedJob) => Effect.Effect<void>
 	/** Post the agent's answer, committing a `fix`'s staged edits first. */
 	readonly submitReply: (
 		orgId: OrgId,
@@ -93,6 +95,36 @@ export interface PrReviewConversationServiceApi {
 		error: string,
 	) => Effect.Effect<void, PrReviewPersistenceError>
 }
+
+/** The pull request read fresh, as the `opened` event a review starts from. */
+const reviewJobFor = (
+	source: Pick<
+		PullRequestCommentJob,
+		"provider" | "externalInstallationId" | "externalRepoId" | "repoFullName"
+	>,
+	pr: PullRequestHead,
+): PullRequestEventJob => ({
+	kind: "pull-request-event",
+	provider: source.provider,
+	externalInstallationId: source.externalInstallationId,
+	externalRepoId: source.externalRepoId,
+	repoFullName: source.repoFullName,
+	number: pr.number,
+	action: "opened",
+	url: pr.url,
+	title: pr.title,
+	body: pr.body,
+	authorLogin: pr.authorLogin,
+	merged: false,
+	mergeCommitSha: null,
+	mergedAtMs: null,
+	headSha: pr.headSha,
+	baseSha: pr.baseSha,
+	headRef: pr.headRef,
+	baseRef: pr.baseRef,
+	draft: pr.draft,
+	headRepoFullName: pr.headRepoFullName,
+})
 
 const toPersistence = (error: { readonly message: string }) =>
 	new PrReviewPersistenceError({ message: error.message })
@@ -202,13 +234,12 @@ export const buildReplyKickoff = (input: {
 export class PrReviewConversationService extends Context.Service<
 	PrReviewConversationService,
 	PrReviewConversationServiceApi
->()("@maple/api/services/pr-review/PrReviewConversationService", {
+>()("@maple/backend/services/pr-review/PrReviewConversationService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "PrReviewConversationService", toPersistence)
 		const repositories = yield* VcsRepository
 		const providers = yield* VcsProviderRegistry
-		const featureFlags = yield* OrganizationFeatureFlagsService
 		const reviews = yield* PrReviewService
 		const chatSessions = Option.getOrUndefined(yield* Effect.serviceOption(ChatSessions))
 
@@ -322,12 +353,12 @@ export class PrReviewConversationService extends Context.Service<
 				return skip("disabled")
 			}
 			const repo = repository.value
-			if (!(yield* featureFlags.flags(orgId)).prReview) {
-				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "not_rolled_out" })
-				return skip("not_rolled_out")
-			}
-			if (!ANSWERED_ASSOCIATIONS.has(job.authorAssociation.toUpperCase())) {
-				yield* annotate("skipped", { "maple.pr_reply.skip_reason": "not_collaborator" })
+			// Webhooks report private org members as CONTRIBUTOR, so the association only gates public repositories.
+			if (!repo.isPrivate && !isTrustedAuthorAssociation(job.authorAssociation)) {
+				yield* annotate("skipped", {
+					"maple.pr_reply.skip_reason": "not_collaborator",
+					"vcs.pull_request.author_association": job.authorAssociation,
+				})
 				return skip("not_collaborator")
 			}
 			const nowMs = yield* Clock.currentTimeMillis
@@ -411,29 +442,7 @@ export class PrReviewConversationService extends Context.Service<
 
 			if (command === "review") {
 				const pr = head.value
-				const reviewJob: PullRequestEventJob = {
-					kind: "pull-request-event",
-					provider: job.provider,
-					externalInstallationId: job.externalInstallationId,
-					externalRepoId: job.externalRepoId,
-					repoFullName: job.repoFullName,
-					number: pr.number,
-					action: "opened",
-					url: pr.url,
-					title: pr.title,
-					body: pr.body,
-					authorLogin: pr.authorLogin,
-					merged: false,
-					mergeCommitSha: null,
-					mergedAtMs: null,
-					headSha: pr.headSha,
-					baseSha: pr.baseSha,
-					headRef: pr.headRef,
-					baseRef: pr.baseRef,
-					draft: pr.draft,
-					headRepoFullName: pr.headRepoFullName,
-				}
-				const outcome = yield* reviews.reviewNow(orgId, reviewJob)
+				const outcome = yield* reviews.reviewNow(orgId, reviewJobFor(job, pr))
 				if (outcome.outcome !== "started")
 					return yield* fail(
 						`review ${outcome.skipReason ?? outcome.outcome}`,
@@ -563,6 +572,78 @@ export class PrReviewConversationService extends Context.Service<
 					Effect.logError("[PrReply] pull request comment could not be answered").pipe(
 						Effect.annotateLogs({ orgId, number: job.number, cause: summarizeCause(cause) }),
 						Effect.as<PrReplyOutcome>({ replyId: null, outcome: "failed" }),
+					),
+				),
+			)
+
+		const ciApproved = Effect.fn("PrReviewConversationService.onCiApproved")(function* (
+			orgId: OrgId,
+			job: PullRequestCiApprovedJob,
+		) {
+			const annotate = (outcome: string, extra?: Record<string, string | number | boolean>) =>
+				Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": job.repoFullName,
+					"cicd.pipeline.run.id": job.runId,
+					"maple.pr_review.ci_approval": outcome,
+					...extra,
+				})
+			const repo = yield* repositories
+				.resolveRepository(orgId, job.provider, job.externalRepoId)
+				.pipe(Effect.mapError(toPersistence))
+			if (Option.isNone(repo) || !repo.value.prReviewEnabled) return yield* annotate("disabled")
+			const upstream = yield* upstreamFor(orgId, repo.value)
+			if (Option.isNone(upstream)) return yield* annotate("disconnected")
+			const { provider, installation, ref } = upstream.value
+			// Anyone can re-run CI on their own pull request; only write access vouches for someone else's.
+			const permission = yield* provider
+				.fetchCommenterPermission(installation, ref, job.approverLogin)
+				.pipe(Effect.orElseSucceed(() => "none"))
+			if (!WRITE_PERMISSIONS.has(permission))
+				return yield* annotate("not_permitted", { "vcs.repository.permission": permission })
+			// Fork runs carry no pull request number: the open one from the run's branch is it.
+			const numbers =
+				job.pullRequestNumbers.length > 0
+					? job.pullRequestNumbers
+					: (yield* provider.fetchPullRequests(installation, ref, {
+							limit: 5,
+							head: `${job.headRepoFullName.split("/")[0]}:${job.headBranch}`,
+						})).map((pr) => pr.number)
+			if (numbers.length === 0) return yield* annotate("no_pull_request")
+			yield* Effect.forEach(
+				numbers,
+				(number) =>
+					Effect.gen(function* () {
+						const pr = yield* provider.fetchPullRequestHead(installation, ref, number)
+						// The approval covers the commit it ran on, not one pushed since.
+						if (pr.state !== "open" || pr.headSha !== job.headSha)
+							return yield* annotate("head_moved", { "vcs.pull_request.number": number })
+						// And the pull request it ran for: the author gate is waived on this identity.
+						if (
+							pr.headRef !== job.headBranch ||
+							pr.headRepoFullName?.toLowerCase() !== job.headRepoFullName.toLowerCase() ||
+							pr.authorLogin?.toLowerCase() !== job.authorLogin.toLowerCase()
+						)
+							return yield* annotate("other_pull_request", {
+								"vcs.pull_request.number": number,
+							})
+						const outcome = yield* reviews.onCiApproved(orgId, reviewJobFor(job, pr))
+						yield* annotate(outcome.outcome, {
+							"vcs.pull_request.number": number,
+							...(outcome.skipReason === undefined
+								? undefined
+								: { "maple.pr_review.skip_reason": outcome.skipReason }),
+						})
+					}),
+				{ discard: true },
+			)
+		})
+
+		const onCiApproved: PrReviewConversationServiceApi["onCiApproved"] = (orgId, job) =>
+			ciApproved(orgId, job).pipe(
+				Effect.catchCause((cause) =>
+					Effect.logError("[PrReview] CI approval could not be applied").pipe(
+						Effect.annotateLogs({ orgId, runId: job.runId, cause: summarizeCause(cause) }),
 					),
 				),
 			)
@@ -751,6 +832,7 @@ export class PrReviewConversationService extends Context.Service<
 
 		return {
 			onPullRequestComment,
+			onCiApproved,
 			submitReply,
 			stageEdit,
 			failReply,
@@ -758,13 +840,6 @@ export class PrReviewConversationService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				PrReviewService.layer,
-				VcsRepository.layer,
-				VcsProviderRegistry.layer,
-				OrganizationFeatureFlagsService.layer,
-			),
-		),
+		Layer.provide(Layer.mergeAll(PrReviewService.layer, VcsRepository.layer, VcsProviderRegistry.layer)),
 	)
 }

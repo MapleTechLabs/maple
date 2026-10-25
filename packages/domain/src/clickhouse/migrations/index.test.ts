@@ -1,6 +1,6 @@
 import { String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { isBackfill, renderStatementFull } from "../backfill"
+import { type BackfillSpec, isBackfill, renderStatementFull } from "../backfill"
 import { migration_0004_service_namespace_projections } from "./0004_service_namespace_projections"
 import {
 	migration_0008_service_operations_minutely,
@@ -16,6 +16,7 @@ import { migration_0030_error_events_attribute_fallback } from "./0030_error_eve
 import { migration_0034_trace_facets_hourly, traceFacetsHourlyBackfill } from "./0034_trace_facets_hourly"
 import { migration_0037_service_overview_spans_span_kind } from "./0037_service_overview_spans_span_kind"
 import { migration_0038_external_edges_legacy_db_system } from "./0038_external_edges_legacy_db_system"
+import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { migrations } from "./index"
 
@@ -88,6 +89,7 @@ describe("ClickHouse migrations", () => {
 
 		// The recreated bodies must actually populate the columns, or the ALTERs
 		// are cosmetic and errorIssuesScan keeps returning empty version arrays.
+		// oxlint-disable-next-line test-slop/no-sql-text-pin -- MV must write the ALTERed column
 		expect(sql).toContain("AS ServiceVersion")
 		expect(sql).toContain("groupUniqArray(ServiceVersion) AS ServiceVersions")
 
@@ -234,13 +236,18 @@ describe("ClickHouse migrations", () => {
 		// scratch (DROP TABLE IF EXISTS <fresh> + rename swap), or scoped-deleted
 		// for a dual-fed target (0021). An additive INSERT…SELECT into a surviving
 		// table doubles on the rerun and nothing downstream can detect it.
-		// identity_links is exempt because a replay is a merge no-op: its only
-		// aggregate is SimpleAggregateFunction(min) keyed by the full sorting key,
-		// so re-inserted rows collapse to the values already stored.
-		const mergeIdempotentTargets = new Set(["identity_links"])
+		// identity_links and trace_index are exempt because a replay is a merge
+		// no-op: their only aggregates are SimpleAggregateFunction(min/max) keyed by
+		// the full sorting key, so re-inserted rows collapse to the values stored.
+		// A backfill that skips every span its target already holds (0047) converges
+		// without emptying a target that outlives its source.
+		const mergeIdempotentTargets = new Set(["identity_links", "trace_index"])
+		const skipsStored = (stmt: BackfillSpec) =>
+			stmt.where?.includes(`(TraceId, SpanId) NOT IN (SELECT TraceId, SpanId FROM ${stmt.target})`) ===
+			true
 		for (const migration of migrations) {
 			migration.statements.forEach((stmt, index) => {
-				if (!isBackfill(stmt) || mergeIdempotentTargets.has(stmt.target)) return
+				if (!isBackfill(stmt) || mergeIdempotentTargets.has(stmt.target) || skipsStored(stmt)) return
 				const before = migration.statements
 					.slice(0, index)
 					.filter((s): s is string => typeof s === "string")
@@ -307,7 +314,10 @@ describe("migration 0034: trace_facets_hourly", () => {
 		expect(drop).toBe("DROP VIEW IF EXISTS trace_facets_hourly_mv")
 		expect(truncate).toBe("TRUNCATE TABLE IF EXISTS trace_facets_hourly")
 		expect(backfill).toBe(traceFacetsHourlyBackfill)
-		expect(latestSnapshotStatements).toContain(table)
+		// 0045 later moved its TTL onto the partition's day.
+		expect(latestSnapshotStatements).toContain(
+			String(table).replace("TTL Hour + INTERVAL", "TTL toDate(Hour) + INTERVAL"),
+		)
 		expect(latestSnapshotStatements).toContain(view)
 	})
 })
@@ -338,5 +348,44 @@ describe("migration 0038: legacy db.system spans stay off the external edges", (
 		expect(create).toContain(
 			"AND coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = ''",
 		)
+	})
+})
+
+describe("migration 0045: TTL eviction drops whole parts", () => {
+	const tables = latestSnapshotStatements.flatMap((stmt) => {
+		const name = stmt.match(/^CREATE TABLE IF NOT EXISTS (\w+) \(/)?.[1]
+		const partition = stmt.match(/\nPARTITION BY (.+)/)?.[1]
+		const ttl = stmt.match(/\nTTL (.+)/)?.[1]
+		return name === undefined || ttl === undefined ? [] : [{ name, partition, ttl }]
+	})
+	const datePartitioned = tables.filter(
+		(table) => table.partition !== undefined && table.partition !== "tuple()",
+	)
+	const statements = migrations.flatMap((migration) =>
+		migration.statements.filter((stmt): stmt is string => typeof stmt === "string"),
+	)
+
+	it("keys each date-partitioned TTL off the day of its partition column", () => {
+		const misaligned = datePartitioned
+			.filter(({ partition, ttl }) => {
+				const column = partition?.match(/^to(?:Date|YYYYMM)\((\w+)\)$/)?.[1]
+				return column === undefined || !ttl.startsWith(`toDate(${column}) + INTERVAL `)
+			})
+			.map(({ name }) => name)
+		expect(misaligned).toEqual([])
+	})
+
+	it("sets ttl_only_drop_parts on every date-partitioned table, and only on those", () => {
+		const withSetting = statements.flatMap(
+			(stmt) => stmt.match(/^ALTER TABLE (\w+) MODIFY SETTING ttl_only_drop_parts = 1$/)?.[1] ?? [],
+		)
+		expect([...withSetting].sort()).toEqual(datePartitioned.map(({ name }) => name).sort())
+	})
+
+	it("sets the setting before it moves any TTL", () => {
+		const kinds = migration_0045_ttl_only_drop_parts.statements.map((stmt) =>
+			stmt.includes("MODIFY SETTING") ? "setting" : "ttl",
+		)
+		expect(kinds.indexOf("ttl")).toBe(kinds.lastIndexOf("setting") + 1)
 	})
 })

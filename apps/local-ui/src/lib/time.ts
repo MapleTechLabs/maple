@@ -6,7 +6,7 @@
 
 import { DateTime } from "effect"
 import { computeBucketSeconds, formatWarehouseDateTime } from "@maple/query-engine"
-import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 /** Format an epoch-ms instant as a ClickHouse DateTime string (UTC, second precision). */
 export function toClickHouseDateTime(epochMs: number): string {
@@ -88,12 +88,6 @@ export function parseClickHouseDateTime(chDateTime: WarehouseTime): number | nul
 	return Number.isFinite(ms) && ms > 0 ? ms : null
 }
 
-/** Compact relative-time label ("3m ago") from a ClickHouse DateTime string. */
-export function formatRelativeTime(chDateTime: WarehouseTime): string {
-	const ms = parseClickHouseDateTime(chDateTime)
-	return ms === null ? "-" : formatRelativeFrom(ms)
-}
-
 const pad = (value: number, width = 2) => String(value).padStart(width, "0")
 
 function isSameLocalDay(a: Date, b: Date): boolean {
@@ -116,15 +110,6 @@ export function formatLocalTimestamp(
 	if (isSameLocalDay(date, new Date(options.nowMs ?? Date.now()))) return time
 	const day = date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
 	return `${day} ${time}`
-}
-
-/** Full local date and time with millis, for detail panels. */
-export function formatLocalDateTime(chDateTime: WarehouseTime): string {
-	const ms = parseClickHouseDateTime(chDateTime)
-	if (ms === null) return "-"
-	const date = new Date(ms)
-	const day = date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-	return `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`
 }
 
 /** The stored value, verbatim and zone-marked, for `title` tooltips and copy. */

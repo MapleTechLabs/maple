@@ -46,6 +46,13 @@ const REGIONS_CACHE_BUCKET = "org-regions"
 const CLERK_HEDGE_AFTER_MS = 40
 /** Frees a hung shared read. Clerk is already answering by then. */
 const SHARED_READ_DEADLINE_MS = 1_000
+/**
+ * Parallel requests from one phone miss together in an isolate, so one reads and the rest poll
+ * inert state for its answer: Workers tie I/O to the request that started it.
+ */
+const FOLLOWER_POLL_MS = 10
+/** Followers wait as long as their leader runs, up to this; then they read for themselves. */
+const FOLLOWER_WAIT_MS = 5_000
 
 /** One Clerk answer. Every tier measures its age from `readAtMs`, so reuse never adds up across tiers. */
 const RegionRead = Schema.Struct({
@@ -83,9 +90,30 @@ export interface DirectoryOrganization {
 	readonly createdAt: number
 }
 
+/** None when the directory no longer has the organization: it was deleted. */
 export type ReadDirectoryOrganization = (
 	orgId: OrgId,
-) => Effect.Effect<DirectoryOrganization, ClerkRequestError>
+) => Effect.Effect<Option.Option<DirectoryOrganization>, ClerkRequestError>
+
+/**
+ * Whether this instance is an organization's home. `unknown` when Clerk could not say; `deleted`
+ * when Clerk no longer has the organization, an answer every region gets alike.
+ */
+export type HomeAnswer = "here" | "elsewhere" | "deleted" | "unknown"
+
+/** What the directory said: the organization's metadata, that it is gone, or nothing. */
+type DirectoryAnswer =
+	| { readonly _tag: "Found"; readonly metadata: unknown }
+	| { readonly _tag: "Deleted" }
+	| { readonly _tag: "Unreachable" }
+
+const found = (metadata: unknown): DirectoryAnswer => ({ _tag: "Found", metadata })
+
+/** The read running for each organization, and the last one that finished. */
+interface Coalescing {
+	readonly running: HashMap.HashMap<OrgId, { readonly id: number; readonly startedAtMs: number }>
+	readonly settled: HashMap.HashMap<OrgId, { readonly id: number; readonly answer: DirectoryAnswer }>
+}
 
 export interface OrganizationRegionServiceApi {
 	/** The instance's own region. */
@@ -93,11 +121,10 @@ export interface OrganizationRegionServiceApi {
 	/** Fails when the organization lives in another region. Never fails on a Clerk outage. */
 	readonly ensureServedHere: (orgId: OrgId) => Effect.Effect<void, OrganizationWrongRegionError>
 	/**
-	 * Whether this instance is the organization's home. `None` when Clerk could not say: for
-	 * background work that every region receives and exactly one must do, which has to wait
-	 * rather than be served on a guess.
+	 * For background work that every region receives and exactly one must do, which has to wait
+	 * on `unknown` rather than be served on a guess.
 	 */
-	readonly servedHere: (orgId: OrgId) => Effect.Effect<Option.Option<boolean>>
+	readonly servedHere: (orgId: OrgId) => Effect.Effect<HomeAnswer>
 	/** Drops what this instance remembers about the organization, after its region was written. */
 	readonly forget: (orgId: OrgId) => Effect.Effect<void>
 }
@@ -112,11 +139,18 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 ) {
 	const edgeCache = yield* EdgeCacheService
 	const remembered = yield* Ref.make(HashMap.empty<OrgId, RegionRead>())
+	// A counter, not the clock, names a read: Workers' clock stands still between I/O.
+	const readIds = yield* Ref.make(0)
+	const coalescing = yield* Ref.make<Coalescing>({ running: HashMap.empty(), settled: HashMap.empty() })
 
 	const readDirectory = Effect.fnUntraced(function* (read: ReadDirectoryOrganization, orgId: OrgId) {
 		const readAtMs = yield* Clock.currentTimeMillis
 		const organization = yield* read(orgId)
-		return { metadata: organization.publicMetadata, createdAtMs: organization.createdAt, readAtMs }
+		return Option.map(organization, (found): RegionRead => ({
+			metadata: found.publicMetadata,
+			createdAtMs: found.createdAt,
+			readAtMs,
+		}))
 	})
 
 	const readEdge = (orgId: OrgId, nowMs: number) =>
@@ -135,13 +169,13 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 	const readOrigin = (read: ReadDirectoryOrganization, orgId: OrgId) =>
 		readDirectory(read, orgId).pipe(
 			Effect.tap((entry) =>
-				organizationServedIn(entry.metadata, region)
+				Option.isSome(entry) && organizationServedIn(entry.value.metadata, region)
 					? edgeCache
 							.rawPut(
 								REGIONS_CACHE_BUCKET,
 								orgId,
-								entry,
-								Math.ceil(regionTtlMs(entry, entry.readAtMs) / 1000),
+								entry.value,
+								Math.ceil(regionTtlMs(entry.value, entry.value.readAtMs) / 1000),
 							)
 							.pipe(
 								Effect.catch((error) =>
@@ -152,7 +186,7 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 							)
 					: Effect.void,
 			),
-			Effect.map((entry) => answer(entry, "origin")),
+			Effect.map(Option.map((entry) => answer(entry, "origin"))),
 		)
 
 	const readShared = Effect.fnUntraced(function* (
@@ -164,7 +198,7 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		const early = yield* Fiber.join(shared).pipe(Effect.timeoutOption(CLERK_HEDGE_AFTER_MS))
 		if (Option.isSome(early)) {
 			return Option.isSome(early.value)
-				? answer(early.value.value, "edge")
+				? Option.some(answer(early.value.value, "edge"))
 				: yield* readOrigin(read, orgId)
 		}
 		// Usually a fresh isolate's first read. Ask Clerk as well and take whichever answers first.
@@ -173,49 +207,128 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 			Effect.flatMap(
 				Option.match({
 					onNone: () => Effect.fail(new RegionNotShared({ message: "No shared region answer" })),
-					onSome: (entry) => Effect.succeed(answer(entry, "edge")),
+					onSome: (entry) => Effect.succeed(Option.some(answer(entry, "edge"))),
 				}),
 			),
 		)
 		return yield* Effect.race(lateHit, readOrigin(read, orgId))
 	})
 
-	const read = Effect.fn("OrganizationRegionService.read")(function* (orgId: OrgId) {
-		if (Option.isNone(readOrganization)) return Option.none<unknown>()
+	const readTiers = (read: ReadDirectoryOrganization, orgId: OrgId, nowMs: number) =>
+		readShared(read, orgId, nowMs).pipe(
+			Effect.flatMap(
+				Option.match({
+					onNone: () =>
+						Effect.as(Effect.annotateCurrentSpan("maple.org_deleted", true), {
+							_tag: "Deleted" as const,
+						}),
+					onSome: ({ entry, layer }) =>
+						Effect.andThen(
+							Effect.annotateCurrentSpan({
+								"cache.hit": layer === "edge",
+								"cache.layer": layer,
+							}),
+							organizationServedIn(entry.metadata, region)
+								? Ref.update(remembered, HashMap.set(orgId, entry))
+								: Effect.void,
+						).pipe(Effect.as(found(entry.metadata))),
+				}),
+			),
+			Effect.catch((error) =>
+				Effect.logWarning("Could not read organization regions; serving the request").pipe(
+					Effect.annotateLogs({ orgId, error: error.message }),
+					Effect.as<DirectoryAnswer>({ _tag: "Unreachable" }),
+				),
+			),
+		)
+
+	/** The leader's answer once it lands; none if the leader is gone or ran past the cap. */
+	const awaitLeader = (
+		orgId: OrgId,
+		leader: { readonly id: number; readonly startedAtMs: number },
+	): Effect.Effect<Option.Option<DirectoryAnswer>> =>
+		Effect.gen(function* () {
+			const state = yield* Ref.get(coalescing)
+			const done = Option.filter(HashMap.get(state.settled, orgId), (entry) => entry.id === leader.id)
+			if (Option.isSome(done)) return Option.some(done.value.answer)
+			const running = Option.exists(
+				HashMap.get(state.running, orgId),
+				(entry) => entry.id === leader.id,
+			)
+			const expired = (yield* Clock.currentTimeMillis) - leader.startedAtMs >= FOLLOWER_WAIT_MS
+			if (!running || expired) return Option.none()
+			yield* Effect.sleep(FOLLOWER_POLL_MS)
+			return yield* awaitLeader(orgId, leader)
+		})
+
+	const lead = (read: ReadDirectoryOrganization, orgId: OrgId, id: number, nowMs: number) =>
+		readTiers(read, orgId, nowMs).pipe(
+			// Settles only while still the running read, so a forgotten read hands nothing on.
+			Effect.tap((answer) =>
+				Ref.update(coalescing, (state) =>
+					Option.exists(HashMap.get(state.running, orgId), (entry) => entry.id === id)
+						? {
+								running: HashMap.remove(state.running, orgId),
+								settled: HashMap.set(state.settled, orgId, { id, answer }),
+							}
+						: state,
+				),
+			),
+			Effect.ensuring(
+				Ref.update(coalescing, (state) =>
+					Option.exists(HashMap.get(state.running, orgId), (entry) => entry.id === id)
+						? { ...state, running: HashMap.remove(state.running, orgId) }
+						: state,
+				),
+			),
+		)
+
+	const read = Effect.fn("OrganizationRegionService.read")(function* (
+		orgId: OrgId,
+	): Effect.fn.Return<DirectoryAnswer> {
+		if (Option.isNone(readOrganization)) return { _tag: "Unreachable" }
 		const nowMs = yield* Clock.currentTimeMillis
 		const local = Option.filter(HashMap.get(yield* Ref.get(remembered), orgId), (entry) =>
 			isFresh(entry, nowMs),
 		)
 		if (Option.isSome(local)) {
 			yield* Effect.annotateCurrentSpan({ "cache.hit": true, "cache.layer": "isolate" })
-			return Option.some(local.value.metadata)
+			return found(local.value.metadata)
 		}
-		return yield* readShared(readOrganization.value, orgId, nowMs).pipe(
-			Effect.tap(({ entry, layer }) =>
-				Effect.andThen(
-					Effect.annotateCurrentSpan({ "cache.hit": layer === "edge", "cache.layer": layer }),
-					organizationServedIn(entry.metadata, region)
-						? Ref.update(remembered, HashMap.set(orgId, entry))
-						: Effect.void,
-				),
-			),
-			Effect.map(({ entry }) => Option.some(entry.metadata)),
-			Effect.catch((error) =>
-				Effect.logWarning("Could not read organization regions; serving the request").pipe(
-					Effect.annotateLogs({ orgId, error: error.message }),
-					Effect.as(Option.none<unknown>()),
-				),
-			),
-		)
+		const id = yield* Ref.updateAndGet(readIds, (n) => n + 1)
+		// Claim the read, or learn which read is already running. No yield between check and set.
+		const leader = yield* Ref.modify(coalescing, (state) => {
+			const current = Option.filter(
+				HashMap.get(state.running, orgId),
+				(entry) => nowMs - entry.startedAtMs < FOLLOWER_WAIT_MS,
+			)
+			return Option.isSome(current)
+				? [current, state]
+				: [
+						Option.none<{ readonly id: number; readonly startedAtMs: number }>(),
+						{ ...state, running: HashMap.set(state.running, orgId, { id, startedAtMs: nowMs }) },
+					]
+		})
+		if (Option.isNone(leader)) return yield* lead(readOrganization.value, orgId, id, nowMs)
+		const coalesced = yield* awaitLeader(orgId, leader.value)
+		if (Option.isSome(coalesced)) {
+			yield* Effect.annotateCurrentSpan({
+				"cache.hit": true,
+				"cache.layer": "isolate",
+				"cache.coalesced": true,
+			})
+			return coalesced.value
+		}
+		return yield* readTiers(readOrganization.value, orgId, nowMs)
 	})
 
 	const ensureServedHere: OrganizationRegionServiceApi["ensureServedHere"] = Effect.fn(
 		"OrganizationRegionService.ensureServedHere",
 	)(function* (orgId) {
-		const metadata = yield* read(orgId)
-		if (Option.isNone(metadata)) return
-		if (organizationRegionsFrom(metadata.value).includes(region)) return
-		const orgRegion = organizationHomeRegion(metadata.value)
+		const directory = yield* read(orgId)
+		if (directory._tag !== "Found") return
+		if (organizationRegionsFrom(directory.metadata).includes(region)) return
+		const orgRegion = organizationHomeRegion(directory.metadata)
 		yield* Effect.annotateCurrentSpan({ "maple.org_region": orgRegion, "maple.region": region })
 		return yield* new OrganizationWrongRegionError({
 			message: `This organization lives in the ${MAPLE_REGION_LABELS[orgRegion].short} region.`,
@@ -229,13 +342,26 @@ export const makeOrganizationRegionService = Effect.fnUntraced(function* (
 		"OrganizationRegionService.servedHere",
 	)(function* (orgId) {
 		// No directory means one instance, which serves everything.
-		if (Option.isNone(readOrganization)) return Option.some(true)
-		return Option.map(yield* read(orgId), (metadata) => organizationHomeRegion(metadata) === region)
+		if (Option.isNone(readOrganization)) return "here"
+		const directory = yield* read(orgId)
+		switch (directory._tag) {
+			case "Found":
+				return organizationHomeRegion(directory.metadata) === region ? "here" : "elsewhere"
+			case "Deleted":
+				return "deleted"
+			case "Unreachable":
+				return "unknown"
+		}
 	})
 
 	const forget: OrganizationRegionServiceApi["forget"] = Effect.fn("OrganizationRegionService.forget")(
 		function* (orgId) {
 			yield* Ref.update(remembered, HashMap.remove(orgId))
+			// A read started before the write must not hand its answer to anyone after it.
+			yield* Ref.update(coalescing, (state) => ({
+				running: HashMap.remove(state.running, orgId),
+				settled: HashMap.remove(state.settled, orgId),
+			}))
 			yield* edgeCache
 				.rawDelete(REGIONS_CACHE_BUCKET, orgId)
 				.pipe(
@@ -271,6 +397,12 @@ export class OrganizationRegionService extends Context.Service<
 					(orgId) =>
 						clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
 							client.organizations.getOrganization({ organizationId: orgId }),
+						).pipe(
+							Effect.map(Option.some),
+							Effect.catchIf(
+								(error) => error.status === 404,
+								() => Effect.succeedNone,
+							),
 						),
 			),
 		)
@@ -282,7 +414,7 @@ export class OrganizationRegionService extends Context.Service<
 	static readonly servesAll = Layer.succeed(this, {
 		region: "us",
 		ensureServedHere: () => Effect.void,
-		servedHere: () => Effect.succeed(Option.some(true)),
+		servedHere: () => Effect.succeed("here"),
 		forget: () => Effect.void,
 	})
 }

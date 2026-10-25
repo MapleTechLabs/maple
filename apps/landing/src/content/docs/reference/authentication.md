@@ -11,7 +11,7 @@ Maple uses two kinds of credential. **Ingest keys** send telemetry. **API keys**
 | ------------------ | ----------- | ---------------------------------------- | ---------------------------------------------- | ---------------------------- |
 | Public ingest key  | `maple_pk_` | **Settings → Ingestion**                 | Send telemetry                                 | Yes                          |
 | Private ingest key | `maple_sk_` | **Settings → Ingestion**                 | Send telemetry                                 | No                           |
-| API key            | `maple_ak_` | **Settings → API Keys**                  | REST API and MCP server, limited by its scopes | No                           |
+| API key            | `maple_ak_` | **Settings → Keys**                  | REST API and MCP server, limited by its scopes | No                           |
 | MCP key            | `maple_ak_` | **Settings → MCP**                       | MCP server only                                | No                           |
 | OAuth token        |             | Issued to an MCP client when you sign in | MCP server only                                | No                           |
 
@@ -44,7 +44,7 @@ The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is disc
 
 ## API keys
 
-Create API keys under **Settings → API Keys**, or with `POST /v2/api_keys`. When you create one you choose:
+Create API keys under **Settings → Keys**, or with `POST /v2/api_keys`. When you create one you choose:
 
 | Field                        | Options                                               |
 | ---------------------------- | ----------------------------------------------------- |
@@ -64,7 +64,7 @@ API requests are limited to 600 per 60 seconds per key. See [Limits](/docs/refer
 
 An MCP client can authenticate in three ways:
 
-- **An API key** from **Settings → API Keys**, sent as `Authorization: Bearer maple_ak_…`.
+- **An API key** from **Settings → Keys**, sent as `Authorization: Bearer maple_ak_…`.
 - **An MCP key** from **Settings → MCP**. It has full access to the MCP tools and is rejected by the REST API.
 - **OAuth**, for clients that support the MCP authorization flow. The client discovers Maple's authorization server from the endpoint URL, registers itself, and opens a browser sign-in. You pick the organization on the consent screen. Access tokens last 1 hour and are refreshed automatically. The client has to sign in again after 30 days without a refresh, and 90 days after the first sign-in at the latest. OAuth tokens only work on the MCP server.
 

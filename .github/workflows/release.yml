@@ -28,6 +28,7 @@ permissions:
 
 jobs:
     release:
+        if: ${{ vars.MAPLE_RELEASE_ENABLED == 'true' }}
         name: Version or publish
         runs-on: ubuntu-latest
         timeout-minutes: 20
@@ -39,8 +40,9 @@ jobs:
             actions: write # dispatch the local binary release for a new CLI version
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-            - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-            - run: bun install --frozen-lockfile
+            - uses: ./.github/actions/setup
+              with:
+                  turbo-cache: "false"
             - name: Configure npm token fallback
               env:
                   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

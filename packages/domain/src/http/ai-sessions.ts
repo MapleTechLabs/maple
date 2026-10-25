@@ -253,9 +253,9 @@ export class ListAiSessionDetailsResponse extends Schema.Class<ListAiSessionDeta
 	/**
 	 * One item per session the fan-out found, in no particular order — merge by
 	 * `sessionId`. A page session can be missing: `ai_trace_index` and
-	 * `trace_detail_spans` are two materialized views written one after the
-	 * other from the same insert, so the newest session can be ranked a moment
-	 * before its spans are readable. Its row keeps the index's figures.
+	 * `trace_index` are two materialized views written one after the other from
+	 * the same insert, so the newest session can be ranked a moment before its
+	 * spans are findable. Its row keeps the index's figures.
 	 */
 	data: Schema.Array(AiSessionDetailsItem),
 }) {}

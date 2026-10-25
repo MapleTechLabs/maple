@@ -32,24 +32,44 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`Duration` is in NANOSECONDS (UInt64). Divide by 1e6 for milliseconds, 1e9 for seconds.",
 		"`SpanAttributes` and `ResourceAttributes` are `Map(LowCardinality(String), String)` — access with `SpanAttributes['http.route']`; missing keys return '' not NULL.",
 		"`SampleRate` defaults to 1.0; multiply counts by `SampleRate` for unbiased throughput estimates.",
-		"Sorting key starts with `(OrgId, ServiceName, Timestamp)` — filter on these first.",
+		"Sorting key: `(OrgId, ServiceName, toStartOfFiveMinutes(Timestamp), TraceId)` — filter on `ServiceName` and a `Timestamp` window first.",
+		"To read whole traces by id, seek them through `trace_index`: `(ServiceName, toStartOfFiveMinutes(Timestamp), TraceId) IN (SELECT ServiceName, Bucket, TraceId FROM trace_index WHERE OrgId = … AND TraceId IN (…))`. A bare `TraceId = …` probes every daily partition.",
 		"For service-level metrics (per-service throughput, latency), prefer `service_overview_spans` — it's pre-filtered to entry-point spans and ~10× smaller.",
 	],
 	ai_trace_index: [
 		"GenAI agent spans ONLY (every row carries a non-empty `VendorId`), with the `maple_ai.*` identity pre-extracted to plain columns. ALWAYS prefer this over `traces` + `mapContains(SpanAttributes, 'maple_ai.…')` for finding agent traces/sessions — the raw-traces scan reads the full attribute Map per span and times out on day-plus windows.",
 		"`SessionId` is '' on most rows: vendors stamp the session key only on turn-owning spans. Resolve a trace's session as `max(SessionId) GROUP BY TraceId`, and treat a trace whose max is '' as a sessionless single-trace session.",
-		"`DeploymentEnv`, `Model`, `AgentName` and `ToolName` are the span's environment and GenAI identity; `Model`, `AgentName` and `ToolName` are stamped by the ingest gateway (`maple_ai.model`, `maple_ai.agent.name`, `maple_ai.tool.name`), which reads every dialect (`gen_ai.*`, Vercel AI SDK `ai.*`, OpenInference `llm.*`/`tool.*`). '' where the span carries no such fact — a chat span has no tool — and on rows materialized before migration 0026. Filter and facet on these here rather than on `trace_detail_spans` attributes.",
+		"`DeploymentEnv`, `Model`, `AgentName` and `ToolName` are the span's environment and GenAI identity; `Model`, `AgentName` and `ToolName` are stamped by the ingest gateway (`maple_ai.model`, `maple_ai.agent.name`, `maple_ai.tool.name`), which reads every dialect (`gen_ai.*`, Vercel AI SDK `ai.*`, OpenInference `llm.*`/`tool.*`). '' where the span carries no such fact — a chat span has no tool — and on rows materialized before migration 0026. Filter and facet on these here rather than on `traces` attributes.",
 		"`IsLlmCall`, `IsToolCall`, `IsError` (UInt8 flags), `Tokens`, `Cost` (Float64) are the span's kind, failure and usage as the ingest gateway stamped them (`maple_ai.llm_call`, `maple_ai.tool_call`, `maple_ai.error`, `maple_ai.usage.*`); a tool call paused for a human's approval is no call until it runs, so its paused copy has `IsToolCall` 0; `SpanId`/`ParentSpanId`/`Duration` are its own. `Tokens` is the sum of the five disjoint buckets the gateway normalised into `maple_ai.usage.*` — a prompt figure that already contains its cached tokens (OpenAI, OpenRouter, Gemini) or a completion figure that contains its reasoning is NOT double counted, so it can read below `input + cache_read + output + reasoning` summed off the raw `gen_ai.usage.*` attributes. Only the model-call span carries usage, so sum per session here for calls, failures, tokens and cost. Rows materialized before migration 0035 keep the view's older figures, where a wrapper span could repeat its children's usage: net a child reporter's tokens off its parent (`ParentSpanId = SpanId`) on those rows only.",
 		"`VendorVersion` (LowCardinality String) is the framework's version beside `VendorId`, and `InputTokens`, `CacheReadTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens` (Float64) are the disjoint split of `Tokens`, read from the gateway's normalised `maple_ai.usage.*` — '' / 0 on rows materialized before migration 0031.",
-		"`ErrorType` (LowCardinality String, `error.type`), `StatusMessage` and `ToolDescription` (`gen_ai.tool.description`, tool spans only) are the span's own failure reason and tool documentation, truncated at insert — '' on rows materialized before migration 0032. Group failures by `ErrorType` here rather than reading `trace_detail_spans` for it. `FailedToolCallResult` (String) is a failed tool call's result, where many frameworks put the error — '' on every other row — and `ErrorFingerprint` (UInt64, select it as `toString(ErrorFingerprint)`) groups failures by that result, else the status message, with volatile values redacted; 0 on rows that did not fail.",
-		"Holds only the agent spans, and only their identity — for every span of a detected trace, or for anything it does not carry (`StatusCode`, the tool call's arguments and result, `gen_ai.usage.*` per key), collect `TraceId`s here first, then read `trace_detail_spans` with `TraceId IN (…)` AND a `Timestamp` window.",
+		"`ErrorType` (LowCardinality String, `error.type`), `StatusMessage` and `ToolDescription` (`gen_ai.tool.description`, tool spans only) are the span's own failure reason and tool documentation, truncated at insert — '' on rows materialized before migration 0032. Group failures by `ErrorType` here rather than reading `traces` for it. `FailedToolCallResult` (String) is a failed tool call's result, where many frameworks put the error — '' on every other row — and `ErrorFingerprint` (UInt64, select it as `toString(ErrorFingerprint)`) groups failures by that result, else the status message, with volatile values redacted; 0 on rows that did not fail.",
+		"Holds only the agent spans, and only their identity — for every span of a detected trace, or for anything it does not carry (`StatusCode`, the tool call's arguments and result, `gen_ai.usage.*` per key), collect `TraceId`s here first, then read their spans from `traces` through `trace_index` (see the `traces` notes) AND a `Timestamp` window.",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV, so windows predating the cluster's schema apply under-report.",
+	],
+	trace_index: [
+		"Where each trace's spans live in `traces`: one row per (TraceId, ServiceName, 5-minute `Bucket`), with `MinTimestamp`/`MaxTimestamp` of the spans in that bucket. No span data; use it to locate traces, then read `traces`.",
+		"A trace's time range: `SELECT min(MinTimestamp), max(MaxTimestamp) FROM trace_index WHERE OrgId = … AND TraceId = … GROUP BY TraceId`.",
 	],
 	ai_crawler_requests: [
 		"Server spans whose user agent names an AI crawler (GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-SearchBot, Claude-User, PerplexityBot, Meta-ExternalAgent, Bytespider, CCBot, Amazonbot, ...), with `Crawler` (display name), `Host`, `Path` (no query string) and `HttpStatus` pre-extracted. ALWAYS prefer this over `traces` + `SpanAttributes['user_agent.original']`, which times out past about two days.",
 		"One row per SPAN: a proxied request has several Server spans in one trace, so count requests as `uniq(TraceId)`, never `count()`.",
 		"Scanners borrow crawler user agents and mostly get 404s: count pages actually read with `HttpStatus < 400` (0 means the span carried no status).",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0033, never backfilled.",
+	],
+	ci_runs: [
+		"One row per CI workflow run attempt: the root span of a `github-actions` trace, with `Owner`, `Repository`, `Pipeline` (workflow name), `Result` (success, failure, timeout, error, cancellation, skip), `Branch`, `Revision`, `PullRequest` (0 = none) and `Attempt` pre-extracted. ALWAYS prefer this over `traces` + `SpanAttributes['cicd.pipeline.*']`.",
+		"`Duration` is NANOSECONDS. Leave out `Result = 'skip'` for durations and success rates: a skipped run did nothing.",
+		"Keeps 365 days, past the 30-day raw trace its `TraceId` links to. Sorting key: `(OrgId, Timestamp, TraceId)`.",
+	],
+	ci_jobs: [
+		"One row per CI job (a child of a run span; steps and runner waits are not included), with `Job`, `Result`, `QueueMs` (wait for a runner), `RunnerName`, `RunnerLabels` and `FailureReason` pre-extracted. Join to `ci_runs` on `TraceId`.",
+		"`Duration` is NANOSECONDS and includes the queue wait. A skipped job, or one cancelled before a runner took it (`Duration = 0`), never ran.",
+		"Keeps 365 days. Sorting key: `(OrgId, Timestamp, TraceId)`.",
+	],
+	service_endpoint_details_hourly: [
+		"HTTP Server spans with a response status, one row per (service, hour, env, normalized `SpanName` = `METHOD /route`, `HttpStatusCode`, `ErrorType` = `error.type`). ALWAYS prefer this over `traces` + `SpanAttributes['http.response.status_code']` for per-endpoint status, error-type, latency, body-size and user-agent breakdowns.",
+		"Aggregate state columns: merge `DurationQuantiles` with `quantilesTDigestMerge(0.5, 0.95, 0.99)` (NANOSECONDS), `BodySizeQuantiles` with `quantilesTDigestIfMerge(0.5, 0.95, 0.99)` (bytes), `UserAgents` with `approx_top_kMerge(10)`, and `SlowestTraceId`/`SlowestTimestamp`/`SlowestBodySize` with `argMaxMerge` (`SlowestBodySize` -1 = no body size). Sum `SpanCount`/`EstimatedSpanCount`/`BodyCount`.",
+		"Keeps 90 days at hour grain. Sorting key: `(OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType)`.",
 	],
 	service_overview_spans: [
 		"Pre-materialized projection of entry-point spans only (Server/Consumer kinds + root spans). Use for per-service request count, error rate, p50/p95/p99 latency.",
@@ -98,6 +118,11 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Metric counts are split across four columns by point type (`SumMetricCount`, `GaugeMetricCount`, `HistogramMetricCount`, `ExpHistogramMetricCount`) — add all four for a total metric-point count.",
 		"Has no `DeploymentEnv` dimension, so prod-vs-staging splits are impossible here; use `logs_aggregates_hourly` / `traces_aggregates_hourly` for that.",
 	],
+	source_usage_hourly: [
+		"Hourly per-source rollup of STORED rows, keyed by `SourceId`, the public `src_…` id the ingest gateway stamps as `ResourceAttributes['maple_source_id']`. Rows without a source id are not counted here.",
+		"`SpanCount`, `LogCount` and `MetricCount` (data points across every metric type) with `*SizeBytes` STORAGE ESTIMATES computed like `service_usage`'s; never present them as billed usage.",
+		"Filled forward by its views from migration 0046, never backfilled, 90-day TTL.",
+	],
 } satisfies Record<string, ReadonlyArray<string>>
 
 interface ColumnInfo {
@@ -131,7 +156,7 @@ const ENGINE_NOTES: ReadonlyMap<string, string> = new Map([
 	],
 	[
 		"ReplacingMergeTree",
-		"ReplacingMergeTree: superseded versions of a row may still be present; read with `FINAL` or take `argMax(col, Version)` per key.",
+		"ReplacingMergeTree: superseded versions of a row may still be present; take `argMax(col, Version)` per key. `FINAL` is refused on the managed warehouse, which reads every table through a per-org subquery.",
 	],
 ])
 

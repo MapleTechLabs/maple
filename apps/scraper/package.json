@@ -6,7 +6,8 @@
 		"start": "bun run src/main.ts",
 		"dev": "bun --env-file=../../.env.local --watch src/main.ts",
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit",
+		"bundle": "bun build src/main.ts --target=bun --outfile dist/scraper.js"
 	},
 	"dependencies": {
 		"@effect/platform-bun": "catalog:effect",

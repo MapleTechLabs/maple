@@ -1,6 +1,7 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { randomUUID } from "node:crypto"
 import { spawnSync } from "node:child_process"
+import { Worker } from "node:worker_threads"
 import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { lstat, mkdir, readFile, readdir, rm, rmdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -188,6 +189,9 @@ const MaintenanceOwnerSchema = Schema.Struct({
 	operationId: CheckpointOperationId,
 	pid: NonNegativeInt,
 	startedAt: IsoDateTime,
+	// Distinguishes this process from an earlier one that got the same PID
+	// (containers restart with deterministic PIDs).
+	instanceId: Schema.optionalKey(Schema.String),
 })
 
 type MaintenanceOwner = Schema.Schema.Type<typeof MaintenanceOwnerSchema>
@@ -969,6 +973,35 @@ export type CheckpointAvailability =
 	| { readonly available: true; readonly checkpointId: CheckpointId }
 	| { readonly available: false; readonly reason: "none" }
 	| { readonly available: false; readonly reason: "unusable"; readonly detail: string }
+	/**
+	 * The registry is intact, but another maple build (older or newer) took the current checkpoint
+	 * and this one cannot restore it. `restoreWith` is the release that took it, or null when that
+	 * is this same version or a dev build, so no release is known to restore it.
+	 */
+	| {
+			readonly available: false
+			readonly reason: "other_build"
+			readonly checkpointId: CheckpointId
+			readonly restoreWith: string | null
+			readonly detail: string
+	  }
+
+/** A release that differs from this build, so installing it can change the outcome. */
+const releaseThatTook = (mapleVersion: string): string | null =>
+	mapleVersion === MAPLE_VERSION || mapleVersion === "dev" ? null : mapleVersion
+
+/** The current checkpoint when the registry only fails this build's schema or chDB gate. */
+const currentFromOtherBuild = async (dataDir: string): Promise<ResolvedCheckpoint | undefined> => {
+	try {
+		const state = await readStateFileOptional(dataDir)
+		if (!state) return undefined
+		const current = await resolveCheckpoint(dataDir, state.current, state, "registry")
+		if (state.previous) await resolveCheckpoint(dataDir, state.previous, state, "registry")
+		return current
+	} catch {
+		return undefined
+	}
+}
 
 export const checkpointAvailability = async (dataDir: string): Promise<CheckpointAvailability> => {
 	try {
@@ -976,6 +1009,16 @@ export const checkpointAvailability = async (dataDir: string): Promise<Checkpoin
 		return { available: true, checkpointId: state.current }
 	} catch (error) {
 		const detail = errorMessage(error)
+		const otherBuild = await currentFromOtherBuild(dataDir)
+		if (otherBuild !== undefined) {
+			return {
+				available: false,
+				reason: "other_build",
+				checkpointId: otherBuild.checkpointId,
+				restoreWith: releaseThatTook(otherBuild.manifest.mapleVersion),
+				detail,
+			}
+		}
 		try {
 			// A present-but-unreadable state file, or stray checkpoint data beside a
 			// missing one, is a fault to surface rather than an empty registry.
@@ -1239,9 +1282,67 @@ const processIsAlive = (pid: number): boolean => {
 	}
 }
 
+const PROCESS_INSTANCE_ID = randomUUID()
+const ORPHANED_LOCK_GRACE_MS = 60_000
+
+// Only the holder's identity decides liveness, so a record written by another
+// format version still protects a live holder.
+const LockHolderSchema = Schema.Struct({
+	pid: NonNegativeInt,
+	instanceId: Schema.optionalKey(Schema.String),
+})
+type LockHolder = Schema.Schema.Type<typeof LockHolderSchema>
+
+// Only an absent record can prove a crash leftover; unreadable or undecodable
+// records may belong to a live holder, so they stay "uncertain".
+const readMaintenanceOwner = (lockPath: string): Promise<LockHolder | "absent" | "uncertain"> => {
+	const ownerPath = join(lockPath, "owner.json")
+	return assertRealFile(ownerPath, "maintenance lock owner")
+		.then(async () =>
+			Schema.decodeUnknownSync(LockHolderSchema)(JSON.parse(await readFile(ownerPath, "utf8"))),
+		)
+		.catch((error: NodeJS.ErrnoException): "absent" | "uncertain" =>
+			error?.code === "ENOENT" ? "absent" : "uncertain",
+		)
+}
+
+const lockIsOlderThan = (lockPath: string, ms: number): Promise<boolean> =>
+	stat(lockPath).then(
+		(info) => Date.now() - info.mtimeMs > ms,
+		() => false,
+	)
+
+/** Our own PID only counts as live when the record names this process
+ *  instance; otherwise an earlier container run wrote it under a reused PID. */
+const maintenanceOwnerIsLive = async (owner: LockHolder, lockPath: string): Promise<boolean> =>
+	// Records without an instance id come from builds that never heartbeat, so
+	// only PID liveness can judge them (our PID is alive, so they are refused).
+	owner.pid !== process.pid || owner.instanceId === undefined
+		? processIsAlive(owner.pid)
+		: owner.instanceId === PROCESS_INSTANCE_ID ||
+			!(await lockIsOlderThan(lockPath, ORPHANED_LOCK_GRACE_MS))
+
+const LOCK_HEARTBEAT_MS = 10_000
+const LOCK_HEARTBEAT_SOURCE = `const { workerData } = require("node:worker_threads")
+const { utimes } = require("node:fs/promises")
+const beat = () => { const now = new Date(); utimes(workerData.path, now, now).catch(() => {}) }
+setInterval(beat, workerData.intervalMs)`
+
+/** Keeps the lock dir's mtime fresh while held. It runs on a worker so a
+ *  synchronous chDB BACKUP on the main thread cannot stall it. */
+const startLockHeartbeat = (lockPath: string, intervalMs: number): (() => Promise<void>) => {
+	const worker = new Worker(LOCK_HEARTBEAT_SOURCE, {
+		eval: true,
+		workerData: { path: lockPath, intervalMs },
+	})
+	worker.unref()
+	return () => worker.terminate().then(() => undefined)
+}
+
 const acquireMaintenance = async (
 	dataDir: string,
 	operationId: CheckpointOperationId,
+	heartbeatMs: number = LOCK_HEARTBEAT_MS,
 ): Promise<() => Promise<void>> => {
 	const lockPath = maintenanceLockPath(dataDir)
 	if (existsSync(lockPath)) await assertRealDirectory(lockPath, "maintenance lock")
@@ -1253,18 +1354,18 @@ const acquireMaintenance = async (
 		await mkdir(lockPath, { mode: 0o700 })
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
-		let owner: MaintenanceOwner
-		try {
-			const ownerPath = join(lockPath, "owner.json")
-			await assertRealFile(ownerPath, "maintenance lock owner")
-			owner = Schema.decodeUnknownSync(MaintenanceOwnerSchema)(
-				JSON.parse(readFileSync(ownerPath, "utf8")),
+		const owner = await readMaintenanceOwner(lockPath)
+		if (owner === "absent" || owner === "uncertain") {
+			// The owner record is written right after the lock dir, so an old lock
+			// with no record at all is a crash leftover, never a live holder.
+			if (owner === "uncertain" || !(await lockIsOlderThan(lockPath, ORPHANED_LOCK_GRACE_MS))) {
+				throw new Error(`maintenance lock is present but ownership is uncertain: ${lockPath}`)
+			}
+		} else if (await maintenanceOwnerIsLive(owner, lockPath)) {
+			throw new Error(
+				`another Maple maintenance operation is active (PID ${owner.pid}). ` +
+					`If no Maple process uses this store (for example after a container restart), remove ${lockPath} and retry.`,
 			)
-		} catch {
-			throw new Error(`maintenance lock is present but ownership is uncertain: ${lockPath}`)
-		}
-		if (processIsAlive(owner.pid)) {
-			throw new Error(`another Maple maintenance operation is active (PID ${owner.pid})`)
 		}
 		const quarantinedLock = `${lockPath}.quarantine-${randomUUID()}`
 		await durableRename(lockPath, quarantinedLock)
@@ -1275,9 +1376,12 @@ const acquireMaintenance = async (
 		operationId,
 		pid: process.pid,
 		startedAt: new Date().toISOString(),
+		instanceId: PROCESS_INSTANCE_ID,
 	}
 	await durableJson(join(lockPath, "owner.json"), owner)
+	const stopHeartbeat = startLockHeartbeat(lockPath, heartbeatMs)
 	return async () => {
+		await stopHeartbeat()
 		const ownerPath = join(lockPath, "owner.json")
 		await assertRealFile(ownerPath, "maintenance lock owner")
 		const current = Schema.decodeUnknownSync(MaintenanceOwnerSchema)(
@@ -1605,8 +1709,9 @@ export const withMaintenanceLock = async <A>(
 	dataDir: string,
 	operationId: string,
 	fn: () => A | Promise<A>,
+	options: { readonly heartbeatMs?: number } = {},
 ): Promise<A> => {
-	const release = await acquireMaintenance(dataDir, validateOperationId(operationId))
+	const release = await acquireMaintenance(dataDir, validateOperationId(operationId), options.heartbeatMs)
 	try {
 		return await fn()
 	} finally {

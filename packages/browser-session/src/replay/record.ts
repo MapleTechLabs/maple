@@ -4,6 +4,7 @@ import { BLOCK_SELECTOR } from "../privacy-markers"
 import { clearPendingChunk, PENDING_CHUNK_KEY } from "../session/pending-chunk"
 import { markActivity, nextChunkSeq } from "../session/session"
 import { isJsonObject } from "../platform/json"
+import { mayUseStorage } from "../platform/persistence"
 import type { IngestConfig } from "../platform/transport"
 import {
 	type BlobPostOutcome,
@@ -110,6 +111,7 @@ function targetOf(config: IngestConfig): string {
 }
 
 function readPending(): PendingChunk | undefined {
+	if (!mayUseStorage()) return undefined
 	try {
 		const parsed: unknown = JSON.parse(window.sessionStorage.getItem(PENDING_CHUNK_KEY) ?? "null")
 		return isPendingChunk(parsed) ? parsed : undefined
@@ -123,6 +125,7 @@ function readPending(): PendingChunk | undefined {
  * (storage blocked or full): it is then only as durable as its upload.
  */
 function storePending(chunk: PendingChunk): boolean {
+	if (!mayUseStorage()) return false
 	try {
 		if (readPending()) return false
 		window.sessionStorage.setItem(PENDING_CHUNK_KEY, JSON.stringify(chunk))

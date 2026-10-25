@@ -1,0 +1,126 @@
+---
+/**
+ * ParityBar: one parity run as a stacked bar (identical / pass / fail),
+ * with the counts as big numbers underneath in the same tones.
+ */
+interface Props {
+	identical: number
+	pass: number
+	fail: number
+	caption: string
+}
+
+const { identical, pass, fail, caption } = Astro.props
+const total = identical + pass + fail
+const segments = [
+	{ key: "identical", label: "identical", sub: "0 px, 0 behavior diffs", count: identical },
+	{ key: "pass", label: "pass", sub: "within perceptual tolerance", count: pass },
+	{ key: "fail", label: "fail", sub: "timing races, see below", count: fail },
+] as const
+---
+
+<figure class="pbar">
+	<div class="pbar__head">
+		<span class="pbar__title">{caption}</span>
+		<span class="pbar__total">{total.toLocaleString("en-US")} variants</span>
+	</div>
+	<div class="pbar__body">
+		<div
+			class="pbar__track"
+			role="img"
+			aria-label={`${identical} identical, ${pass} pass, ${fail} fail out of ${total} variants`}
+		>
+			{
+				segments.map((s) => (
+					<span
+						class={`pbar__seg pbar__seg--${s.key}`}
+						style={`flex-grow: ${s.count}; min-width: ${s.count > 0 ? "6px" : "0"}`}
+					/>
+				))
+			}
+		</div>
+		<div class="pbar__legend">
+			{
+				segments.map((s) => (
+					<div class={`pbar__item pbar__item--${s.key}`}>
+						<span class="pbar__count">{s.count.toLocaleString("en-US")}</span>
+						<span class="pbar__label">{s.label}</span>
+						<span class="pbar__sub">{s.sub}</span>
+					</div>
+				))
+			}
+		</div>
+	</div>
+</figure>
+
+<style>
+	.pbar {
+		margin: 40px 0;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		overflow: hidden;
+		background: color-mix(in oklab, var(--bg-elevated) 30%, transparent);
+	}
+	.pbar__head {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 9px 14px;
+		background: var(--bg-elevated);
+		border-bottom: 1px solid var(--border);
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.pbar__body {
+		padding: 20px 16px 18px;
+	}
+	.pbar__track {
+		display: flex;
+		gap: 3px;
+		height: 14px;
+	}
+	.pbar__seg {
+		border-radius: 3px;
+		background: var(--pbar-tone);
+	}
+	.pbar__seg--identical,
+	.pbar__item--identical { --pbar-tone: var(--chart-3); }
+	.pbar__seg--pass,
+	.pbar__item--pass { --pbar-tone: var(--chart-2); }
+	.pbar__seg--fail,
+	.pbar__item--fail { --pbar-tone: var(--severity-error); }
+	.pbar__legend {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 16px;
+		margin-top: 18px;
+	}
+	.pbar__item {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.pbar__count {
+		font-family: var(--font-display, inherit);
+		font-size: clamp(28px, 4.5vw, 40px);
+		font-weight: 600;
+		line-height: 1;
+		letter-spacing: -0.03em;
+		font-variant-numeric: tabular-nums;
+		color: var(--pbar-tone);
+	}
+	.pbar__label {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--foreground);
+	}
+	.pbar__sub {
+		font-size: 12px;
+		color: var(--muted-foreground);
+	}
+</style>

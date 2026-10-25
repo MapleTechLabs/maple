@@ -1,6 +1,7 @@
 import { Effect, Layer } from "effect"
 import {
 	PullRequestChecklistSink,
+	PullRequestCiApprovalSink,
 	PullRequestCommentSink,
 } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { PrReviewConversationService } from "./PrReviewConversationService"
@@ -27,6 +28,15 @@ export const PullRequestCommentSinkLive = Layer.effect(
 					),
 				),
 		}
+	}),
+).pipe(Layer.provide(PrReviewConversationService.layer))
+
+/** A maintainer approving an outside contributor's CI, which also lets the review run. */
+export const PullRequestCiApprovalSinkLive = Layer.effect(
+	PullRequestCiApprovalSink,
+	Effect.gen(function* () {
+		const conversations = yield* PrReviewConversationService
+		return { onCiApproved: (orgId, job) => conversations.onCiApproved(orgId, job) }
 	}),
 ).pipe(Layer.provide(PrReviewConversationService.layer))
 

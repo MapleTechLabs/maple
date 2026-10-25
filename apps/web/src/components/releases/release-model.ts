@@ -1,10 +1,10 @@
-// Pure derivations for the Releases pages. Kept free of React so the
+// Pure derivations for the Releases pages, so the
 // thresholds unit-test cleanly and the list, the swimlanes and the detail page
 // all describe a release the same way.
 
 import { startOfDayInTimeZone } from "@maple/query-engine/datetime"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import type { Release, ReleaseTimelineBucket } from "@/api/warehouse/releases"
+import type { Release, ReleaseTimelineBucket } from "@maple/web-data/warehouse/releases"
 import { shortId } from "@maple/ui/lib/ids"
 
 /**

@@ -10,6 +10,9 @@ cancellation and posts a report to a Slack channel in Maple's workspace.
 2. Set on the api Worker: `AUTUMN_WEBHOOK_SECRET` (the endpoint's signing secret),
    `MAPLE_SUPPORT_SLACK_BOT_TOKEN`, and `MAPLE_CANCELLATION_SLACK_CHANNEL_ID`.
 3. Invite the support bot to that channel.
+4. Optional: `MAPLE_CLERK_DASHBOARD_URL`, the production instance's dashboard URL
+   (`https://dashboard.clerk.com/apps/<app>/instances/<ins>`). Without it the report's Clerk links
+   open the last-active instance.
 
 Without a channel id nothing is reviewed.
 
@@ -44,6 +47,15 @@ a year, so an org that switched off months ago is not read as one that never sta
 
 A section that cannot be read is `null` and named in the report. Only the region lookup and the
 Autumn customer read are required.
+
+The report also links the org in Clerk, Stripe and Autumn, lists its integrations
+(`IntegrationInventoryService`) and the other Clerk orgs its members (the first 10) belong to,
+each with its plan and links from one Autumn read per org shown. These are shown only, never
+stored or used by the rules.
+
+Each snapshot section is one stat in the report; its signal sentences only colour it (red or
+green, nothing for neutral). Sentences about a section with no stat, such as a past-due payment,
+are listed under the reason.
 
 ## How the reason is decided
 

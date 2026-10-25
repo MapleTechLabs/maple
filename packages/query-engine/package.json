@@ -25,7 +25,7 @@
 	},
 	"scripts": {
 		"test": "vitest run",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
 		"@maple-dev/effect-orm": "0.5.0",
@@ -37,7 +37,6 @@
 	"devDependencies": {
 		"@effect/language-service": "catalog:effect",
 		"@types/node": "catalog:tooling",
-		"expect-type": "^1.4.0",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}

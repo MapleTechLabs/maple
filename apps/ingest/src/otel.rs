@@ -307,6 +307,7 @@ pub fn grpc_server_span(rpc_service: &'static str, signal_path: &'static str) ->
         "maple.signal" = signal_path,
         "maple.org_id" = Empty,
         "maple.ingest.key_type" = Empty,
+        "maple.source.id" = Empty,
         "maple.ingest.destination" = Empty,
     )
 }
@@ -325,6 +326,7 @@ pub fn auth_internal_span() -> Span {
         "maple.ingest.cache_hit" = Empty,
         "maple.ingest.key_type" = Empty,
         "maple.ingest.key_id" = Empty,
+        "maple.source.id" = Empty,
         "maple.org_id" = Empty,
         "maple.ingest.self_managed" = Empty,
         "maple.ingest.clickhouse_ready" = Empty,
@@ -445,8 +447,9 @@ pub fn wal_commit_internal_span(destination: &'static str) -> Span {
 ///
 /// One span per *attempt*, not per batch, so a retry storm is visible as a
 /// sequence rather than one long opaque span. `maple.ingest.outcome` is the
-/// field to filter on: `delivered` | `retry` | `dropped` | `shed_circuit_open`.
-/// Only a terminal `dropped` sets `Error` — a retry that later succeeds is not
+/// field to filter on: `delivered` | `retry` | `dropped` | `deferred_circuit_open` |
+/// `shed_circuit_open`.
+/// Only a terminal `dropped` or `shed_circuit_open` sets `Error`: a retry that later succeeds is not
 /// a failure of the batch, and marking every attempt `Error` would turn a
 /// self-healing blip into an error-rate spike.
 pub fn export_client_span(

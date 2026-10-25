@@ -1,14 +1,56 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Exit, Fiber, Latch, Layer } from "effect"
+import { TestClock } from "effect/testing"
 import { env as workerEnv } from "../test/stubs/cloudflare-workers"
-import { layerTick, catchTickFailure, selectScheduledProgram, type ScheduledTickPrograms } from "./scheduled"
+import { scheduleFor } from "./schedule"
+import { layerTick, catchTickFailure, selectLaneProgram, type ScheduledTickPrograms } from "./scheduled"
 
 const cronCases = [
-	["*/5 * * * *", ["anomaly", "cloudflareAnalytics", "planetScale", "railwayMetrics", "prReviewPostMerge"]],
-	["*/15 * * * *", ["digest"]],
-	["0 * * * *", ["serviceMapRollup"]],
-	["* * * * *", ["alert", "error", "escalation", "fixVerification"]],
+	[
+		"*/5 * * * *",
+		[
+			"anomaly",
+			"cloudflareAnalytics",
+			"gcpMetrics",
+			"planetScale",
+			"planetScaleMetrics",
+			"railwayMetrics",
+			"prReviewPostMerge",
+		],
+	],
+	["*/15 * * * *", ["digest", "supabaseInsights"]],
+	["0 * * * *", ["serviceMapRollup", "supabaseDiscovery", "awsConnections"]],
+	["* * * * *", ["alert", "alertLongQuery", "error", "escalation", "fixVerification", "supabaseLogs"]],
 ] as const
+
+/** Every tick recording its name when it runs, with `overrides` swapped in. */
+const recordingTicks = (
+	calls: Array<string>,
+	overrides: Partial<ScheduledTickPrograms> = {},
+): ScheduledTickPrograms => {
+	const tick = (name: string) => Effect.sync(() => calls.push(name)).pipe(Effect.asVoid)
+	return {
+		alert: tick("alert"),
+		alertLongQuery: tick("alertLongQuery"),
+		anomaly: tick("anomaly"),
+		awsConnections: tick("awsConnections"),
+		cloudflareAnalytics: tick("cloudflareAnalytics"),
+		digest: tick("digest"),
+		error: tick("error"),
+		escalation: tick("escalation"),
+		fixVerification: tick("fixVerification"),
+		gcpMetrics: tick("gcpMetrics"),
+		planetScale: tick("planetScale"),
+		planetScaleMetrics: tick("planetScaleMetrics"),
+		prReviewPostMerge: tick("prReviewPostMerge"),
+		railwayMetrics: tick("railwayMetrics"),
+		serviceMapRollup: tick("serviceMapRollup"),
+		supabaseDiscovery: tick("supabaseDiscovery"),
+		supabaseLogs: tick("supabaseLogs"),
+		supabaseInsights: tick("supabaseInsights"),
+		...overrides,
+	}
+}
 
 describe("alerting Effect root", () => {
 	it.effect("acquires the production layer graph", () =>
@@ -16,85 +58,68 @@ describe("alerting Effect root", () => {
 	)
 
 	for (const [cron, expected] of cronCases) {
-		it.effect(`dispatches ${cron} to its characterized tick group`, () => {
-			const calls: Array<string> = []
-			const tick = (name: string) => Effect.sync(() => calls.push(name)).pipe(Effect.asVoid)
-			const ticks = {
-				alert: tick("alert"),
-				anomaly: tick("anomaly"),
-				cloudflareAnalytics: tick("cloudflareAnalytics"),
-				digest: tick("digest"),
-				error: tick("error"),
-				escalation: tick("escalation"),
-				fixVerification: tick("fixVerification"),
-				planetScale: tick("planetScale"),
-				prReviewPostMerge: tick("prReviewPostMerge"),
-				railwayMetrics: tick("railwayMetrics"),
-				serviceMapRollup: tick("serviceMapRollup"),
-			} satisfies ScheduledTickPrograms
-
-			return selectScheduledProgram(cron, ticks).pipe(
-				Effect.tap(() =>
-					Effect.sync(() => expect(calls.toSorted()).toEqual([...expected].toSorted())),
-				),
-			)
-		})
+		it.effect(`runs each tick of ${cron} in exactly one of its lanes`, () =>
+			Effect.gen(function* () {
+				const lanes = scheduleFor(cron)?.lanes ?? []
+				const perLane: Array<Array<string>> = []
+				for (const lane of lanes) {
+					const calls: Array<string> = []
+					yield* selectLaneProgram(cron, lane, recordingTicks(calls))
+					perLane.push(calls)
+				}
+				expect(perLane.flat().toSorted()).toEqual([...expected].toSorted())
+				expect(perLane.every((calls) => calls.length > 0)).toBe(true)
+			}),
+		)
 	}
 
-	it.effect("never starts fixVerification before the error tick completes", () => {
-		// The adversarial schedule for concurrency 2: alert and escalation are
-		// instant, so both finish while error is still running. Listing the four
-		// ticks side by side would hand the freed slot to fixVerification here —
-		// only the explicit error→fixVerification chain keeps the ordering.
-		const calls: Array<string> = []
-		const record = (name: string) => Effect.sync(() => calls.push(name)).pipe(Effect.asVoid)
-		return Effect.gen(function* () {
+	it.effect("never starts fixVerification before the error tick completes", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = []
 			const errorGate = yield* Latch.make(false)
-			const ticks = {
-				alert: record("alert"),
-				anomaly: record("anomaly"),
-				cloudflareAnalytics: record("cloudflareAnalytics"),
-				digest: record("digest"),
-				error: errorGate.await.pipe(Effect.andThen(record("error"))),
-				escalation: record("escalation"),
-				fixVerification: record("fixVerification"),
-				planetScale: record("planetScale"),
-				prReviewPostMerge: record("prReviewPostMerge"),
-				railwayMetrics: record("railwayMetrics"),
-				serviceMapRollup: record("serviceMapRollup"),
-			} satisfies ScheduledTickPrograms
-			const fiber = yield* Effect.forkChild(selectScheduledProgram("* * * * *", ticks))
-			// Let alert and escalation run to completion while error is held open.
+			const ticks = recordingTicks(calls, {
+				error: errorGate.await.pipe(
+					Effect.andThen(Effect.sync(() => calls.push("error"))),
+					Effect.asVoid,
+				),
+			})
+			const fiber = yield* Effect.forkChild(selectLaneProgram("* * * * *", "error", ticks))
 			yield* Effect.yieldNow
 			yield* Effect.yieldNow
 			expect(calls).not.toContain("fixVerification")
 			yield* errorGate.open
 			yield* Fiber.join(fiber)
-			expect(calls.indexOf("error")).toBeLessThan(calls.indexOf("fixVerification"))
-		})
-	})
+			expect(calls).toEqual(["error", "fixVerification"])
+		}),
+	)
 
-	it.effect("fails closed for an unknown cron", () => {
-		const calls: Array<string> = []
-		const tick = (name: string) => Effect.sync(() => calls.push(name)).pipe(Effect.asVoid)
-		const ticks = {
-			alert: tick("alert"),
-			anomaly: tick("anomaly"),
-			cloudflareAnalytics: tick("cloudflareAnalytics"),
-			digest: tick("digest"),
-			error: tick("error"),
-			escalation: tick("escalation"),
-			fixVerification: tick("fixVerification"),
-			planetScale: tick("planetScale"),
-			prReviewPostMerge: tick("prReviewPostMerge"),
-			railwayMetrics: tick("railwayMetrics"),
-			serviceMapRollup: tick("serviceMapRollup"),
-		} satisfies ScheduledTickPrograms
+	it.effect("fails closed for an unknown cron or a lane of another cron", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = []
+			yield* selectLaneProgram("1 2 3 4 5", "alert", recordingTicks(calls))
+			yield* selectLaneProgram("0 * * * *", "alert", recordingTicks(calls))
+			yield* selectLaneProgram("* * * * *", "nope", recordingTicks(calls))
+			expect(calls).toEqual([])
+		}),
+	)
 
-		return selectScheduledProgram("1 2 3 4 5", ticks).pipe(
-			Effect.tap(() => Effect.sync(() => expect(calls).toEqual([]))),
-		)
-	})
+	it.effect("interrupts a lane at its cron's deadline and completes the fire", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = []
+			const ticks = recordingTicks(calls, {
+				alert: Effect.never.pipe(
+					Effect.onInterrupt(() => Effect.sync(() => calls.push("alert interrupted"))),
+				),
+			})
+			const fiber = yield* Effect.forkChild(selectLaneProgram("* * * * *", "alert", ticks))
+			yield* TestClock.adjust("109 seconds")
+			expect(fiber.pollUnsafe()).toBeUndefined()
+			yield* TestClock.adjust("1 second")
+			const exit = yield* Fiber.await(fiber)
+			expect(Exit.isSuccess(exit)).toBe(true)
+			expect(calls).toEqual(["alert interrupted"])
+		}),
+	)
 
 	it.effect("isolates ordinary tick failures", () =>
 		Effect.gen(function* () {

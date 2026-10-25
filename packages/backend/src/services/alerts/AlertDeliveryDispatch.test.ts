@@ -399,6 +399,39 @@ describe("dispatchDelivery", () => {
 		}),
 	)
 
+	it.effect("webhook: reads only a bounded prefix of an endless error body", () =>
+		Effect.gen(function* () {
+			const webhookContext: DispatchContext = {
+				...pagerdutyContext,
+				destination: { ...destinationRow, name: "Webhook", type: "webhook" },
+				publicConfig: { summary: "POST hooks.example.test", channelLabel: null },
+				secretConfig: {
+					type: "webhook",
+					url: "https://hooks.example.test/maple",
+					signingSecret: null,
+				},
+			}
+			const pulled = { count: 0 }
+			const chunk = new TextEncoder().encode("boom ".repeat(200))
+			const fetchFn: typeof fetch = async () =>
+				new Response(
+					new ReadableStream<Uint8Array>({
+						pull: (controller) => {
+							pulled.count++
+							controller.enqueue(chunk)
+						},
+					}),
+					{ status: 500 },
+				)
+
+			const error = yield* Effect.flip(
+				dispatchDelivery(webhookContext, "{}", fetchFn, 5_000, LINK, CHAT, noEmailDeps),
+			)
+			assert.include(error.message, "delivery failed with 500: boom boom")
+			assert.isBelow(pulled.count, 100)
+		}),
+	)
+
 	const failingFetch: typeof fetch = async () => {
 		throw new Error("fetch must not be called for email dispatch")
 	}

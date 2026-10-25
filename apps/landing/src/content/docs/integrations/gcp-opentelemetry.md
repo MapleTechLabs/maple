@@ -1,0 +1,182 @@
+---
+title: "Google Cloud with OpenTelemetry"
+description: "Which telemetry to send from your workloads over OpenTelemetry and which to collect through the Google Cloud connection, for GKE, Cloud Run and Compute Engine."
+group: "Integrations"
+order: 8
+navLabel: "Google Cloud + OpenTelemetry"
+---
+
+Your workloads send traces, logs and metrics straight to Maple over OpenTelemetry. The [Google Cloud connection](/docs/integrations/gcp) forwards Cloud Logging entries and reads Cloud Monitoring metrics for everything your code never sees. Set up both, and keep container logs on the OpenTelemetry side.
+
+| Signal    | Over OpenTelemetry                       | Google Cloud connection                                                                                                             |
+| --------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Traces    | Every span your services create          | None                                                                                                                                |
+| Logs      | Application logs, linked to their traces | Cloud Run and load balancer request logs, audit logs, managed-service logs such as Cloud SQL and Pub/Sub, GKE node and cluster logs |
+| Metrics   | Application and runtime metrics          | Platform metrics from Cloud Monitoring, named `gcp.*`                                                                               |
+| Resources | None                                     | The resource list: projects, services, clusters, instances and databases                                                            |
+
+## Recommended setup
+
+### GKE
+
+1. Instrument each service with an OpenTelemetry SDK. Export to Maple, or to the [Maple Kubernetes collector](/docs/infrastructure/kubernetes) in the cluster.
+2. [Connect Google Cloud](/docs/integrations/gcp#connect) and leave **Log filter** as it is: no application output is forwarded.
+
+The connection then adds node and cluster logs, audit logs and the `gcp.gke.*` metrics.
+
+### Cloud Run
+
+1. Instrument the service with an OpenTelemetry SDK that exports to Maple, with the settings under [Instrument a Cloud Run service](#instrument-a-cloud-run-service).
+2. [Connect Google Cloud](/docs/integrations/gcp#connect).
+3. If the service exports logs over OpenTelemetry, untick **Cloud Run** under [**Log filter**](#change-the-filter): by default the connection forwards what a Cloud Run container writes to stdout and stderr.
+
+The connection adds Cloud Run's request logs and the `gcp.cloud_run.*` metrics. Cloud Run sends a `traceparent` header with every request. An SDK that continues it gives the server span the trace ID of Google's request log for that request, so the request log, your spans and your log lines join on one trace.
+
+### Compute Engine
+
+1. Instrument the application with an OpenTelemetry SDK that exports to Maple.
+2. Run the OpenTelemetry Collector on the VM for [host metrics](/docs/infrastructure/hosts).
+3. [Connect Google Cloud](/docs/integrations/gcp#connect).
+
+The connection adds audit logs and the `gcp.gce.*` metrics.
+
+## Application output
+
+Application output is what the code of a runtime writes to stdout and stderr. The connection forwards none by default: send it over OpenTelemetry. Platform, request and audit logs are forwarded either way. For workloads that can't, click **Can't forward via OpenTelemetry** under **Log filter** and tick their runtimes.
+
+| Runtime             | Left out when unticked                                                                                | Still forwarded                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| **Cloud Run**       | `run.googleapis.com/stdout` and `stderr` of services, jobs, worker pools and 2nd gen functions        | Request logs, system logs, audit logs    |
+| **Cloud Functions** | `cloudfunctions.googleapis.com/cloud-functions` of 1st gen functions, with its start and finish lines | Audit logs                               |
+| **App Engine**      | `stdout` and `stderr` of `gae_app`                                                                    | Request logs, audit logs                 |
+| **GKE containers**  | Everything of `resource.type="k8s_container"`                                                         | Node, pod and cluster events, audit logs |
+
+Don't tick a runtime whose workloads already send their logs to Maple:
+
+| Reason        | Detail                                                                                                                                                                                 |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Duplicates    | A workload that exports logs over OpenTelemetry and also prints them, or a collector that reads pod logs, already delivers each line. Forwarding it from Google Cloud stores it twice. |
+| No trace link | The OpenTelemetry copy carries the trace and span ID of the request that wrote it. The copy from Google Cloud has neither.                                                             |
+| Volume        | Application output grows with traffic. Every forwarded line counts toward your Maple plan and toward the Pub/Sub usage Google bills to your account.                                   |
+
+Maple does not check which workloads send their logs another way. A runtime with both kinds of workloads is one tick: tick it when the uninstrumented ones matter more, since Cloud Logging is the only place their lines exist.
+
+Other places your code runs have no tick and are always forwarded: Compute Engine logs collected by the Ops Agent, and the job output of Batch, Dataflow, Dataproc, Cloud Composer and Vertex AI. Leave them out with a filter of your own.
+
+## Change the filter
+
+On the connection's row, click **Configure**. Under **Log filter**, choose **Replace filter**. To forward application output, click **Can't forward via OpenTelemetry** and tick its runtimes. Click **Continue to the script**, then copy the script and run it in Cloud Shell again.
+
+| Log filter              | The sink forwards                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| **Keep current filter** | What it forwards now. Preselected once a run has set log forwarding up.               |
+| **Replace filter**      | Platform, request and audit logs, plus the application output of any ticked runtimes. |
+
+For any other filter, paste the script into an editor, edit `LOG_FILTER` near its top, set `LOG_FILTER_MODE` to `set` and run it. The filter uses the [Logging query language](https://cloud.google.com/logging/docs/view/logging-query-language).
+
+## Instrument a Cloud Run service
+
+These settings decide whether every trace arrives and joins Google's request log. They apply in any language. The example is Node.js, and the [Node.js guide](/docs/guides/instrumentation-nodejs) covers the SDK basics.
+
+| Setting      | On Cloud Run                                                                                                                                                                                                                                                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Service name | Set `service.name` to the Cloud Run service name, `K_SERVICE`. Google's request logs arrive in Maple under that name. With another one, your spans and logs land in a different service than the request logs.                                                                                                                             |
+| Sampling     | Sample every trace: `AlwaysOnSampler`, or `OTEL_TRACES_SAMPLER=always_on`. Cloud Run sets the sampled flag of `traceparent` on about one request per ten seconds per instance. The SDK's default sampler follows that flag and drops the rest, while the log records of those requests still arrive.                                       |
+| Flushing     | Flush the span and log processors when the server span ends. Call `sdk.shutdown()` on `SIGTERM` and keep `node` as PID 1. Cloud Run throttles the container's CPU once the response is sent: with the default batch timers, telemetry arrives 5 to 6 seconds after the request on a warm instance and about 30 seconds after a cold start. |
+| Logs         | Emit application logs over OpenTelemetry, not stdout. Each record carries the trace and span ID of its request, and nothing is stored twice.                                                                                                                                                                                               |
+
+For Node.js 22 with `@opentelemetry/sdk-node`:
+
+```js
+// tracing.mjs
+import { register } from "node:module"
+import { SpanKind } from "@opentelemetry/api"
+import { NodeSDK } from "@opentelemetry/sdk-node"
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
+import { envDetector, processDetector, resourceFromAttributes } from "@opentelemetry/resources"
+import { gcpDetector } from "@opentelemetry/resource-detector-gcp"
+import { AlwaysOnSampler, BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto"
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto"
+
+// Lets the instrumentations patch ES modules.
+register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
+
+// The exporters read OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS.
+const spans = new BatchSpanProcessor(new OTLPTraceExporter())
+const logRecords = new BatchLogRecordProcessor({ exporter: new OTLPLogExporter() })
+const metricExporter = new OTLPMetricExporter()
+
+// Export as each request finishes, before Cloud Run throttles the CPU.
+const flushOnRequestEnd = {
+	onStart() {},
+	onEnd(span) {
+		if (span.kind !== SpanKind.SERVER) return
+		void spans.forceFlush()
+		void logRecords.forceFlush()
+	},
+	forceFlush: () => Promise.resolve(),
+	shutdown: () => Promise.resolve(),
+}
+
+const sdk = new NodeSDK({
+	// The name Google's request logs carry.
+	resource: resourceFromAttributes({ "service.name": process.env.K_SERVICE }),
+	// gcpDetector adds cloud.platform, cloud.region and the faas.* attributes.
+	resourceDetectors: [envDetector, processDetector, gcpDetector],
+	sampler: new AlwaysOnSampler(),
+	spanProcessors: [spans, flushOnRequestEnd],
+	logRecordProcessors: [logRecords],
+	metricReaders: [new PeriodicExportingMetricReader({ exporter: metricExporter })],
+	instrumentations: [getNodeAutoInstrumentations()],
+})
+sdk.start()
+
+// Cloud Run sends SIGTERM before it stops an instance.
+process.on("SIGTERM", () => {
+	sdk.shutdown().finally(() => process.exit(0))
+})
+```
+
+Start the container with `node` as PID 1, so that it receives `SIGTERM`:
+
+```dockerfile
+CMD ["node", "--import", "./tracing.mjs", "server.mjs"]
+```
+
+Set these on the service:
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: `https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` for an EU organization.
+- `OTEL_EXPORTER_OTLP_HEADERS`: `Authorization=Bearer YOUR_INGEST_KEY`.
+
+Emit a log record inside a request and it carries the active trace and span ID:
+
+```js
+import { logs, SeverityNumber } from "@opentelemetry/api-logs"
+
+const logger = logs.getLogger("checkout")
+
+logger.emit({
+	severityText: "INFO",
+	severityNumber: SeverityNumber.INFO,
+	body: "checkout completed",
+	attributes: { "order.id": orderId },
+})
+```
+
+A service that has to log to stdout keeps the link by writing JSON lines with `logging.googleapis.com/trace` (`projects/PROJECT_ID/traces/TRACE_ID`) and `logging.googleapis.com/spanId`. Send each line one way only: over OpenTelemetry or through stdout.
+
+Limits of this setup:
+
+- Your service's top span is the child of a span inside Google's infrastructure that Maple does not receive, so the trace has no root span.
+- Flushing per request makes one export per request. Check the overhead before you use it on a service with a high request rate.
+
+## Instrumentation guides
+
+- Languages: [Node.js](/docs/guides/instrumentation-nodejs), [Next.js](/docs/guides/instrumentation-nextjs), [Python](/docs/guides/instrumentation-python), [Go](/docs/guides/instrumentation-go), [Rust](/docs/guides/instrumentation-rust), [Java](/docs/guides/instrumentation-java), [Kotlin](/docs/guides/instrumentation-kotlin), [C# / .NET](/docs/guides/instrumentation-csharp) and [Laravel](/docs/guides/instrumentation-laravel).
+- [Kubernetes infrastructure](/docs/infrastructure/kubernetes): the collector that receives OTLP from in-cluster services.
+- [Hosts](/docs/infrastructure/hosts): host metrics from a VM.
+- [Google Cloud](/docs/integrations/gcp): connect, verify and troubleshoot the connection.

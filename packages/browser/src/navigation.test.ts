@@ -46,6 +46,7 @@ const CONFIG = {
 	maskAllInputs: true,
 	maskAllText: false,
 	persistVisitorId: true,
+	persistence: "browser" as const,
 	crossSubdomainCookie: true,
 	cookieDomain: undefined,
 	requireConsent: false,

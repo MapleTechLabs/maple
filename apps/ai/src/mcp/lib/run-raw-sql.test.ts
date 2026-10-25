@@ -7,6 +7,7 @@ import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
@@ -16,12 +17,8 @@ const makeStub = (
 	rows: ReadonlyArray<Record<string, unknown>>,
 	captured?: { sql?: string; profile?: string; context?: string },
 ): WarehouseQueryServiceApi =>
-	({
-		rawSqlQuery: (
-			_t: unknown,
-			sql: string,
-			options?: { readonly profile?: string; readonly context?: string },
-		) => {
+	makeWarehouseServiceStub({
+		rawSqlQuery: (_t, sql, options) => {
 			if (captured) {
 				captured.sql = sql
 				captured.profile = options?.profile
@@ -29,7 +26,7 @@ const makeStub = (
 			}
 			return Effect.succeed(rows)
 		},
-	}) as WarehouseQueryServiceApi
+	})
 
 // `runRawSql` records `telemetry.sql_executed` on every path, rejections
 // included, so the audit service is part of every harness here — the in-memory

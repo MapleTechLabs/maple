@@ -14,7 +14,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import { ApiKeys, McpOAuthAuthorizations, McpOAuthClients, McpOAuthRefreshTokens } from "@maple/db/tables"
-import { revokeRefreshFamily } from "./mcp-oauth-family"
+import { REFRESH_FAMILY_ABSOLUTE_TTL_MS, revokeRefreshFamily } from "./mcp-oauth-family"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -25,14 +25,6 @@ const AUTHORIZATION_REQUEST_TTL_MS = 10 * 60 * 1000
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
 const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
-/**
- * The grant's absolute ceiling, independent of rotation. `expires_at` is
- * reset on every refresh, so without this a client that rotates once a month
- * holds an MCP credential forever. A quarter is long enough that no healthy
- * client is ever interrupted (it re-consents once) and short enough that a
- * grant which escaped every revocation path still dies on its own.
- */
-const REFRESH_FAMILY_ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000
 const MCP_SCOPE = "mcp:tools"
 export class McpOAuthProtocolError extends Schema.TaggedError<McpOAuthProtocolError>()(
 	"@maple/backend/errors/McpOAuthProtocolError",
@@ -279,7 +271,7 @@ export class McpOAuthService extends Context.Service<
 		>
 		readonly revoke: (token: string, clientId: string) => Effect.Effect<void, McpOAuthPersistenceError>
 	}
->()("@maple/api/services/McpOAuthService", {
+>()("@maple/backend/services/McpOAuthService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const dbExecute = makeDbExecute(database, "McpOAuthService", persistenceError)

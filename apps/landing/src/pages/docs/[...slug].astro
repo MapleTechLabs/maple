@@ -2,6 +2,7 @@
 import { getCollection, render } from "astro:content";
 import DocsLayout from "../../layouts/DocsLayout.astro";
 import Breadcrumb from "../../components/docs/Breadcrumb.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
 
 export async function getStaticPaths() {
     const docs = await getCollection("docs", ({ data }) => !data.draft);
@@ -13,6 +14,7 @@ export async function getStaticPaths() {
 
 const { doc } = Astro.props;
 const { Content, headings } = await render(doc);
+const author = doc.data.author ? CONTRIBUTORS[doc.data.author] : undefined;
 
 // The glob loader records the source path relative to the landing app.
 const editHref = doc.filePath
@@ -25,6 +27,7 @@ const editHref = doc.filePath
     description={doc.data.description}
     headings={headings}
     currentSlug={doc.id}
+    image={`/og/docs/${doc.id}.jpg`}
     mdHref={`/docs/${doc.id}.md`}
     editHref={editHref}
 >
@@ -33,6 +36,12 @@ const editHref = doc.filePath
     <article class="docs-content docs-prose max-w-none">
         <h1 class="text-[30px] font-semibold leading-[1.15] tracking-[-0.025em] text-balance text-fg md:text-[34px]">{doc.data.title}</h1>
         <p class="mt-3 max-w-[62ch] text-[16px] leading-[1.6] text-pretty text-fg-muted">{doc.data.description}</p>
+        {author && (
+            <div class="docs-byline mt-4 flex items-center gap-2 text-[13px] text-fg-muted">
+                <img src={author.avatar} alt="" width="20" height="20" loading="lazy" />
+                {author.name}
+            </div>
+        )}
         <div class="docs-body mt-8 border-t border-border pt-8">
             <Content />
         </div>

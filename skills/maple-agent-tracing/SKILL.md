@@ -1,6 +1,6 @@
 ---
 name: maple-agent-tracing
-description: "Trace an AI agent or LLM app with Maple so each conversation shows up as one Agent Session with its transcript, model calls, tool calls, tokens, cost and failures. Detects the agent framework (Vercel AI SDK, OpenAI Agents SDK, Mastra, LangChain/LangGraph, Claude Agent SDK, Pydantic AI, LlamaIndex, CrewAI, Google ADK, Strands, smolagents, Agno, DSPy, Haystack, Microsoft Agent Framework, Spring AI, LiteLLM, OpenRouter, raw provider SDKs) and installs the matching per-framework skill. Triggers on 'trace my agent', 'add agent observability', 'LLM tracing with Maple', 'set up Maple agent sessions', 'OpenTelemetry for my AI agent'."
+description: "Trace an AI agent or LLM app with Maple so each conversation shows up as one Agent Session with its transcript, model calls, tool calls, tokens, cost and failures. Detects the agent framework (Vercel AI SDK, eve, OpenAI Agents SDK, Mastra, LangChain/LangGraph, Claude Agent SDK, Pydantic AI, LlamaIndex, CrewAI, Google ADK, Strands, smolagents, Agno, DSPy, Haystack, Microsoft Agent Framework, Spring AI, LiteLLM, OpenRouter, raw provider SDKs) and installs the matching per-framework skill. Triggers on 'trace my agent', 'add agent observability', 'LLM tracing with Maple', 'set up Maple agent sessions', 'OpenTelemetry for my AI agent'."
 ---
 
 # Maple agent tracing (router)
@@ -24,6 +24,7 @@ Then read the installed `SKILL.md` and follow it. If `npx skills` is unavailable
 | Dependency | Skill |
 | --- | --- |
 | `@mastra/core` | `maple-agent-tracing-mastra` |
+| `eve` (Vercel's eve framework, an `agent/` directory with `agent.ts` or `instructions.md`) | `maple-agent-tracing-eve`, loaded with `npx skills use MapleTechLabs/maple/skills --skill maple-agent-tracing-eve` instead of `skills add`: in an eve project `skills add` installs into the eve agent's own `agent/skills/` |
 | `@openai/agents`, `openai-agents` | `maple-agent-tracing-openai-agents` |
 | `langchain`, `langgraph`, `langchain-core` (Python) | `maple-agent-tracing-langchain` |
 | LangChain.js / LangGraph.js (`langchain`, `@langchain/core`, `@langchain/langgraph`) | `maple-agent-tracing-langchain` (TypeScript: `references/typescript.md`) |
@@ -47,7 +48,7 @@ Then read the installed `SKILL.md` and follow it. If `npx skills` is unavailable
 | Only a provider SDK: `openai`, `@anthropic-ai/sdk`, `anthropic`, `google-genai`, `@google/genai` | `maple-agent-tracing-provider-sdks` |
 | Anything else, a hand-rolled agent loop, or another language | `maple-agent-tracing-opentelemetry` |
 
-Order matters: a framework row wins over the provider-SDK row, because frameworks depend on provider SDKs and instrumenting both records every model call twice. Mastra depends on `ai` and LangChain.js on `openai` too; match the framework first, and don't route a LangChain.js service to the provider-SDK skill.
+Order matters: a framework row wins over the provider-SDK row, because frameworks depend on provider SDKs and instrumenting both records every model call twice. Mastra and eve depend on `ai` and LangChain.js on `openai` too; match the framework first, and don't route a LangChain.js service to the provider-SDK skill.
 
 ## Step 3: Hand-off
 

@@ -101,6 +101,89 @@ export type PostgresTransactionId = Schema.Schema.Type<typeof PostgresTransactio
 export const ScrapeTargetId = MapleUuidId("@maple/ScrapeTargetId", "Scrape Target ID")
 export type ScrapeTargetId = Schema.Schema.Type<typeof ScrapeTargetId>
 
+export const GcpConnectorId = MapleUuidId("@maple/GcpConnectorId", "GCP Connector ID")
+export type GcpConnectorId = Schema.Schema.Type<typeof GcpConnectorId>
+
+export const SupabaseConnectionId = MapleUuidId("@maple/SupabaseConnectionId", "Supabase Connection ID")
+export type SupabaseConnectionId = Schema.Schema.Type<typeof SupabaseConnectionId>
+
+export const SupabaseProjectId = MapleUuidId("@maple/SupabaseProjectId", "Supabase Project ID")
+export type SupabaseProjectId = Schema.Schema.Type<typeof SupabaseProjectId>
+
+/** Supabase's own project identifier: 20 lowercase letters per the Management API spec. */
+export const SupabaseProjectRef = Schema.String.check(Schema.isPattern(/^[a-z]{20}$/u)).pipe(
+	Schema.brand("@maple/SupabaseProjectRef"),
+	Schema.annotate({ identifier: "@maple/SupabaseProjectRef", title: "Supabase Project Ref" }),
+)
+export type SupabaseProjectRef = Schema.Schema.Type<typeof SupabaseProjectRef>
+
+// Google's project id rules. The id is interpolated into a shell script, so nothing looser.
+export const GcpProjectId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u)).pipe(
+	Schema.brand("@maple/GcpProjectId"),
+	Schema.annotate({ identifier: "@maple/GcpProjectId", title: "Google Cloud Project ID" }),
+)
+export type GcpProjectId = Schema.Schema.Type<typeof GcpProjectId>
+
+/** The numeric id of a Google Cloud folder or organization. */
+export const GcpResourceNumber = Schema.String.check(Schema.isPattern(/^[0-9]{1,20}$/u)).pipe(
+	Schema.brand("@maple/GcpResourceNumber"),
+	Schema.annotate({ identifier: "@maple/GcpResourceNumber", title: "Google Cloud Resource Number" }),
+)
+export type GcpResourceNumber = Schema.Schema.Type<typeof GcpResourceNumber>
+
+export const AwsConnectionId = MapleUuidId("@maple/AwsConnectionId", "AWS Connection ID")
+export type AwsConnectionId = Schema.Schema.Type<typeof AwsConnectionId>
+
+// Twelve digits, as AWS prints it. It is interpolated into role ARNs and setup scripts.
+export const AwsAccountId = Schema.String.check(Schema.isPattern(/^[0-9]{12}$/u)).pipe(
+	Schema.brand("@maple/AwsAccountId"),
+	Schema.annotate({ identifier: "@maple/AwsAccountId", title: "AWS Account ID" }),
+)
+export type AwsAccountId = Schema.Schema.Type<typeof AwsAccountId>
+
+/**
+ * What an AWS connection lets Maple read. Each module is its own managed policy on the role, so
+ * turning one on is a stack update, not a reconnect.
+ */
+export const AWS_MODULES = ["observability", "inventory", "security", "cost"] as const
+export const AwsModule = Schema.Literals(AWS_MODULES)
+export type AwsModule = Schema.Schema.Type<typeof AwsModule>
+
+/** A commercial or GovCloud AWS region code, like `us-east-1` or `us-gov-west-1`. */
+export const AwsRegion = Schema.String.check(Schema.isPattern(/^[a-z]{2}(-gov)?-[a-z]+-[0-9]$/u)).pipe(
+	Schema.brand("@maple/AwsRegion"),
+	Schema.annotate({ identifier: "@maple/AwsRegion", title: "AWS Region" }),
+)
+export type AwsRegion = Schema.Schema.Type<typeof AwsRegion>
+
+/** CloudWatch namespaces a connection's metric stream may send. */
+export const AWS_METRIC_NAMESPACES = [
+	"AWS/ECS",
+	"ECS/ContainerInsights",
+	"AWS/ApplicationELB",
+	"AWS/NetworkELB",
+	"AWS/RDS",
+	"AWS/Lambda",
+	"AWS/SQS",
+	"AWS/EC2",
+	"AWS/DynamoDB",
+	"AWS/ApiGateway",
+] as const
+export const AwsMetricNamespace = Schema.Literals(AWS_METRIC_NAMESPACES)
+export type AwsMetricNamespace = Schema.Schema.Type<typeof AwsMetricNamespace>
+
+/** What a Google Cloud connector covers: one project, or everything under a folder or organization. */
+export const GcpScopeType = Schema.Literals(["project", "folder", "organization"])
+export type GcpScopeType = Schema.Schema.Type<typeof GcpScopeType>
+
+/**
+ * A runtime whose application output a log sink forwards or leaves out: what its code writes to
+ * stdout and stderr. `cloud_run` covers services, jobs, worker pools and 2nd gen functions,
+ * `cloud_functions` the 1st gen ones. In display order.
+ */
+export const GcpLogRuntime = Schema.Literals(["cloud_run", "cloud_functions", "app_engine", "gke"])
+export type GcpLogRuntime = Schema.Schema.Type<typeof GcpLogRuntime>
+
 export const AlertDestinationId = MapleUuidId("@maple/AlertDestinationId", "Alert Destination ID")
 export type AlertDestinationId = Schema.Schema.Type<typeof AlertDestinationId>
 
@@ -115,6 +198,14 @@ export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventI
 
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
+
+/** One MCP OAuth grant: the refresh-token family a connected client rotates through. */
+export const McpConnectionId = MapleUuidId("@maple/McpConnectionId", "MCP Connection ID")
+export type McpConnectionId = Schema.Schema.Type<typeof McpConnectionId>
+
+/** A device-bound (DPoP) credential: one registered public key for one installation and org. */
+export const DeviceCredentialId = MapleUuidId("@maple/DeviceCredentialId", "Device Credential ID")
+export type DeviceCredentialId = Schema.Schema.Type<typeof DeviceCredentialId>
 
 export const AgentFeedbackId = MapleUuidId("@maple/AgentFeedbackId", "Agent Feedback ID")
 export type AgentFeedbackId = Schema.Schema.Type<typeof AgentFeedbackId>
@@ -199,13 +290,14 @@ export const ScrapeAuthType = Schema.Literals([
 	"basic",
 	"token",
 	"planetscale_oauth",
+	"supabase_oauth",
 ]).annotate({
 	identifier: "@maple/ScrapeAuthType",
 	title: "Scrape Auth Type",
 })
 export type ScrapeAuthType = Schema.Schema.Type<typeof ScrapeAuthType>
 
-export const ScrapeTargetType = Schema.Literals(["prometheus", "planetscale"]).annotate({
+export const ScrapeTargetType = Schema.Literals(["prometheus", "planetscale", "supabase"]).annotate({
 	identifier: "@maple/ScrapeTargetType",
 	title: "Scrape Target Type",
 })
@@ -228,6 +320,94 @@ export const IngestMappingOperation = Schema.Literals(["move", "copy"]).annotate
 	title: "Ingest Mapping Operation",
 })
 export type IngestMappingOperation = Schema.Schema.Type<typeof IngestMappingOperation>
+
+export const SourceId = MapleUuidId("@maple/SourceId", "Source ID")
+export type SourceId = Schema.Schema.Type<typeof SourceId>
+
+/** Platforms that send telemetry to Maple with their own source token. */
+export const PUSH_SOURCE_PLATFORMS = [
+	"opentelemetry",
+	"nodejs",
+	"python",
+	"go",
+	"java",
+	"dotnet",
+	"ruby",
+	"php",
+	"rust",
+	"browser",
+	"kubernetes",
+	"docker",
+	"host",
+	"cloudflare_ai_gateway",
+	"claude_code",
+] as const
+
+/** Platforms Maple pulls from; their config lives in the integration's own table. */
+export const PULL_SOURCE_PLATFORMS = [
+	"prometheus",
+	"cloudflare",
+	"gcp",
+	"railway",
+	"planetscale",
+	"github",
+	"aws",
+	"supabase",
+] as const
+
+export const PushSourcePlatform = Schema.Literals(PUSH_SOURCE_PLATFORMS).annotate({
+	identifier: "@maple/PushSourcePlatform",
+	title: "Push Source Platform",
+})
+export type PushSourcePlatform = Schema.Schema.Type<typeof PushSourcePlatform>
+
+export const PullSourcePlatform = Schema.Literals(PULL_SOURCE_PLATFORMS).annotate({
+	identifier: "@maple/PullSourcePlatform",
+	title: "Pull Source Platform",
+})
+export type PullSourcePlatform = Schema.Schema.Type<typeof PullSourcePlatform>
+
+export const SourcePlatform = Schema.Literals([...PUSH_SOURCE_PLATFORMS, ...PULL_SOURCE_PLATFORMS]).annotate({
+	identifier: "@maple/SourcePlatform",
+	title: "Source Platform",
+})
+export type SourcePlatform = Schema.Schema.Type<typeof SourcePlatform>
+
+export const isPushSourcePlatform = Schema.is(PushSourcePlatform)
+
+/**
+ * `default` stands for the org's public/private ingest keys, `token` carries its own
+ * `maple_src_` token, `integration` is owned by an integration row (its `source_id`).
+ */
+export const SourceKind = Schema.Literals(["default", "token", "integration"]).annotate({
+	identifier: "@maple/SourceKind",
+	title: "Source Kind",
+})
+export type SourceKind = Schema.Schema.Type<typeof SourceKind>
+
+/** Signal families a source can be limited to; `sessions` covers replays and session events. */
+export const SourceSignal = Schema.Literals(["traces", "logs", "metrics", "sessions", "events"]).annotate({
+	identifier: "@maple/SourceSignal",
+	title: "Source Signal",
+})
+export type SourceSignal = Schema.Schema.Type<typeof SourceSignal>
+
+/** `set` always overwrites the resource attribute; `default` only fills it when the sender left it out. */
+export const SourceAttributeMode = Schema.Literals(["set", "default"]).annotate({
+	identifier: "@maple/SourceAttributeMode",
+	title: "Source Attribute Mode",
+})
+export type SourceAttributeMode = Schema.Schema.Type<typeof SourceAttributeMode>
+
+export const SourceResourceAttribute = Schema.Struct({
+	key: Schema.String,
+	value: Schema.String,
+	mode: SourceAttributeMode,
+}).annotate({
+	identifier: "@maple/SourceResourceAttribute",
+	title: "Source Resource Attribute",
+})
+export type SourceResourceAttribute = Schema.Schema.Type<typeof SourceResourceAttribute>
 
 export const RecommendationIssueId = MapleUuidId("@maple/RecommendationIssueId", "Recommendation Issue ID")
 export type RecommendationIssueId = Schema.Schema.Type<typeof RecommendationIssueId>

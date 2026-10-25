@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { applyWhereClause, parseWhereClause, toWhereClause } from "@/lib/traces/advanced-filter-sync"
+import { applyWhereClause, parseWhereClause, toWhereClause } from "./advanced-filter-sync"
 
 describe("parseWhereClause", () => {
 	it("parses service.name", () => {

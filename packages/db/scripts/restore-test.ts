@@ -50,7 +50,10 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import * as Predicate from "effect/Predicate"
-import postgres from "postgres"
+import * as PgClient from "@effect/sql-pg/PgClient"
+import { Effect, ManagedRuntime, Redacted } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import type * as Statement from "effect/sql/Statement"
 import { fail, resolveDatabase, runPscale, withBranchConnection } from "./planetscale-connection"
 
 const READY_TIMEOUT_MS = 25 * 60 * 1000
@@ -269,7 +272,10 @@ interface Verification {
 }
 
 const verify = async (connectionUrl: string, backup: Backup): Promise<Verification> => {
-	const sql = postgres(connectionUrl, { max: 1, fetch_types: false })
+	// The script owns its one connection; a failed connect rejects every query.
+	const db = ManagedRuntime.make(PgClient.layer({ url: Redacted.make(connectionUrl), maxConnections: 1 }))
+	const query = <A extends object>(statement: (sql: SqlClient.SqlClient) => Statement.Statement<A>) =>
+		db.runPromise(Effect.flatMap(SqlClient.SqlClient, statement))
 	const checks: Check[] = []
 	// A query that fails is a failed check with the report still written, not
 	// a crash that loses the report.
@@ -283,9 +289,11 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 	}
 	try {
 		const mig = await checked("migrations journal restored", async () => {
-			const [row] = await sql<Array<{ applied: number; latest_at: string | null }>>`
+			const [row] = await query(
+				(sql) => sql<{ applied: number; latest_at: string | null }>`
 				SELECT count(*)::int AS applied, max(created_at)::text AS latest_at
-				FROM drizzle.__drizzle_migrations`
+				FROM drizzle.__drizzle_migrations`,
+			)
 			return row
 		})
 		const migrations = {
@@ -302,19 +310,25 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 
 		const publicTables =
 			(await checked("public tables", async () => {
-				const [row] = await sql<Array<{ n: number }>>`
+				const [row] = await query(
+					(sql) => sql<{ n: number }>`
 					SELECT count(*)::int AS n FROM information_schema.tables
-					WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
+					WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
+				)
 				return row?.n ?? 0
 			})) ?? 0
 
 		const rowCounts: Record<string, string> = {}
 		for (const { name, nonEmpty } of CRITICAL_TABLES) {
 			const n = await checked(`table ${name}`, async () => {
-				const [exists] = await sql<Array<{ present: boolean }>>`
-					SELECT to_regclass(${`public.${name}`}) IS NOT NULL AS present`
+				const [exists] = await query(
+					(sql) => sql<{ present: boolean }>`
+					SELECT to_regclass(${`public.${name}`}) IS NOT NULL AS present`,
+				)
 				if (!exists?.present) return null
-				const [row] = await sql<Array<{ n: number }>>`SELECT count(*)::int AS n FROM ${sql(name)}`
+				const [row] = await query(
+					(sql) => sql<{ n: number }>`SELECT count(*)::int AS n FROM ${sql(name)}`,
+				)
 				return row?.n ?? 0
 			})
 			if (n === undefined) continue
@@ -334,12 +348,14 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 		// backup's own window (not after it completed, not stale before it
 		// started) — this is what shows the branch holds the backup's snapshot.
 		const newestAt = await checked("newest record inside the backup window", async () => {
-			const [row] = await sql<Array<{ newest: string | null }>>`
+			const [row] = await query(
+				(sql) => sql<{ newest: string | null }>`
 				SELECT greatest(
 					(SELECT max(created_at) FROM error_issue_events),
 					(SELECT max(updated_at) FROM alert_rules),
 					(SELECT max(updated_at) FROM dashboards)
-				)::text AS newest`
+				)::text AS newest`,
+			)
 			return row?.newest ? new Date(row.newest).toISOString() : null
 		})
 		if (newestAt !== undefined) {
@@ -356,10 +372,12 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 		}
 
 		const orphans = await checked("dashboard_versions → dashboards integrity", async () => {
-			const [row] = await sql<Array<{ n: number }>>`
+			const [row] = await query(
+				(sql) => sql<{ n: number }>`
 				SELECT count(*)::int AS n FROM dashboard_versions v
 				LEFT JOIN dashboards d ON d.id = v.dashboard_id
-				WHERE d.id IS NULL`
+				WHERE d.id IS NULL`,
+			)
 			return row?.n ?? 0
 		})
 		if (orphans !== undefined) {
@@ -371,10 +389,12 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 		}
 
 		const sample = await checked("sample record readable with its history", async () => {
-			const [row] = await sql<Array<{ version_count: number }>>`
+			const [row] = await query(
+				(sql) => sql<{ version_count: number }>`
 				SELECT count(v.id)::int AS version_count
 				FROM dashboards d LEFT JOIN dashboard_versions v ON v.dashboard_id = d.id
-				GROUP BY d.id ORDER BY max(d.updated_at) DESC NULLS LAST LIMIT 1`
+				GROUP BY d.id ORDER BY max(d.updated_at) DESC NULLS LAST LIMIT 1`,
+			)
 			return row ?? null
 		})
 		if (sample !== undefined) {
@@ -395,7 +415,7 @@ const verify = async (connectionUrl: string, backup: Backup): Promise<Verificati
 			newest_record_at: newestAt ?? null,
 		}
 	} finally {
-		await sql.end()
+		await db.dispose()
 	}
 }
 

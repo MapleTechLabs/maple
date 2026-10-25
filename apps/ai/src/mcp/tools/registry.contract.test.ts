@@ -88,6 +88,16 @@ describe("MCP tool catalog contract", () => {
 		expect(JSON.stringify(ids?.[1])).toContain('"array"')
 	})
 
+	it("publishes a value that clears a picked check interval, since the schema cannot say null", () => {
+		for (const name of ["create_alert_rule", "update_alert_rule"]) {
+			const tool = mapleToolCatalog.find((candidate) => candidate.name === name)
+			const interval = properties(tool === undefined ? {} : inputSchemaOf(tool)).find(
+				([parameter]) => parameter === "evaluation_interval_minutes",
+			)
+			expect(JSON.stringify(interval?.[1])).toContain('"auto"')
+		}
+	})
+
 	it("points every alias at a parameter the tool has", () => {
 		const offenders: Array<string> = []
 		for (const tool of mapleToolCatalog) {

@@ -52,7 +52,7 @@ const emailSentStamp = (field: OnboardingEmailField, now: number) => {
 }
 
 export class OnboardingService extends Context.Service<OnboardingService>()(
-	"@maple/api/services/OnboardingService",
+	"@maple/backend/services/OnboardingService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -158,20 +158,46 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				return rowToResponse(row)
 			})
 
-			/** Stamp first-data time only if not already set. Returns true when newly stamped. */
+			/**
+			 * Stamp first-data time only if not already set. Returns true when newly stamped.
+			 * A missing row is created with the org's real creation time (it dates the reward
+			 * window); when `orgCreatedAt` yields null no row is created and nothing is stamped.
+			 */
 			const recordFirstDataReceived = Effect.fn("OnboardingService.recordFirstDataReceived")(function* (
 				orgId: OrgId,
+				orgCreatedAt: Effect.Effect<number | null>,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				const result = yield* dbExecute((db) =>
+				const stampExisting = dbExecute((db) =>
 					db.run(
 						PG.update(OrgOnboardingState)
 							.set({ firstDataReceivedAt: now, updatedAt: now })
 							.where(($) => [$.orgId.eq(orgId), $.firstDataReceivedAt.isNull()])
 							.returning(($) => ({ id: $.orgId })),
 					),
+				).pipe(Effect.map((rows) => rows.length > 0))
+
+				if (yield* stampExisting) return true
+				if ((yield* findRow(orgId)) !== undefined) return false
+
+				const createdAt = yield* orgCreatedAt
+				if (createdAt === null) return false
+				const inserted = yield* dbExecute((db) =>
+					db.run(
+						PG.insertInto(OrgOnboardingState)
+							.values({
+								orgId,
+								demoDataRequested: false,
+								firstDataReceivedAt: now,
+								createdAt,
+								updatedAt: now,
+							})
+							.onConflictDoNothing()
+							.returning(($) => ({ id: $.orgId })),
+					),
 				)
-				return result.length > 0
+				// Lost a race with another creator: stamp the row it made instead.
+				return inserted.length > 0 ? true : yield* stampExisting
 			})
 
 			/**

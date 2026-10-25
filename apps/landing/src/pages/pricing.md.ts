@@ -2,9 +2,7 @@
  * `/pricing.md`: the agent-readable twin of `/pricing`.
  *
  * Reads the same `getOffer()` the page does, so the two can't disagree. The
- * meter becomes a table, the FAQ becomes `###` sections, and the enterprise
- * rail keeps its "From $2,000" anchor because that number is what makes $39
- * read as nothing.
+ * meter becomes a table and the FAQ becomes `###` sections.
  */
 import type { APIRoute } from "astro"
 import { blocks, docHeader, markdown, table } from "../lib/page-markdown"
@@ -107,7 +105,7 @@ export const GET: APIRoute = async () => {
 			trial,
 			"Start at [app.maple.dev](https://app.maple.dev).",
 
-			`## ${m.pricing_enterprise()}: ${m.pricing_enterprise_price()}`,
+			`## ${m.pricing_enterprise()}`,
 			m.pricing_enterprise_rail(),
 			"Talk to a founder: [cal.com/david-granzin](https://cal.com/david-granzin/30min?overlayCalendar=true).",
 

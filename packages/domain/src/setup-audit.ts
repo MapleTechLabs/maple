@@ -8,7 +8,9 @@
 // every `needsWarehouse` check emits `skip` and the report still returns the config findings.
 //
 // Severity is fixed per check, never computed inside `evaluate`. Conditional severity ("critical if
-// referenced, warn otherwise") is a smell — split it into two checks or pick the honest one.
+// referenced, warn otherwise") is a smell — split it into two checks or pick the honest one. The one
+// exception is a rate with tiered thresholds (TRC-02): one condition, so one check, and its evaluation
+// names the tier it crossed.
 //
 // Checks deliberately NOT included, so nobody re-adds them: escalation policy disabled (defaults to
 // false — would fire on nearly every org), AI triage disabled (opt-in by design), no scrape targets /
@@ -18,6 +20,7 @@
 
 import { Schema } from "effect"
 import { HttpTaggedError } from "./http/error-policy"
+import type { IntegrationEntry, IntegrationInventory } from "./integration-inventory"
 
 export class SetupAuditUnavailableError extends HttpTaggedError<SetupAuditUnavailableError>()(
 	"@maple/http/errors/SetupAuditUnavailableError",
@@ -74,6 +77,8 @@ export interface AuditEvaluation {
 	readonly affected?: ReadonlyArray<AuditAffectedEntity>
 	/** Total affected before capping; defaults to `affected.length`. */
 	readonly affectedCount?: number
+	/** The tier a tiered-rate check crossed; defaults to the check's own severity. */
+	readonly severity?: AuditSeverity
 }
 
 export interface AuditCheck {
@@ -129,6 +134,9 @@ export interface AuditAlertRule {
 	readonly enabled: boolean
 	readonly destinationIds: ReadonlyArray<string>
 	readonly windowMinutes: number
+	/** Effective minutes between checks: picked, derived from the window, or slowed by the scheduler. */
+	readonly evaluationIntervalMinutes: number
+	/** Heartbeat stamped when the scheduler claims the rule, so it advances once per interval. */
 	readonly lastScheduledAt: number | null
 	readonly createdAt: number
 }
@@ -153,11 +161,18 @@ export interface AuditAttributeMapping {
 	readonly sourceContext: string
 	readonly sourceKey: string
 	readonly targetKey: string
+	/** `copy` keeps the source key on the span; `move` deletes it once the target is written. */
+	readonly operation: string
+	/** Epoch ms of the last change; spans stored before it predate the current rule. */
+	readonly updatedAt: number
 }
 
 export interface ConfigAuditInputs {
-	/** Null when the org has never received telemetry — gates the whole report. */
-	readonly firstDataReceivedAt: number | null
+	/**
+	 * Whether the org has ever received telemetry; gates the whole report. `absent` short-circuits to
+	 * `no_data`; `unavailable` (the warehouse could not answer) runs the config checks only.
+	 */
+	readonly telemetry: "present" | "absent" | "unavailable"
 	readonly alertRules: ReadonlyArray<AuditAlertRule>
 	readonly alertRuleStates: ReadonlyArray<AuditAlertRuleState>
 	readonly alertDestinations: ReadonlyArray<AuditAlertDestination>
@@ -173,6 +188,7 @@ export interface ConfigAuditInputs {
 	readonly samplingPolicy: {
 		readonly traceSampleRatio: number
 		readonly alwaysKeepErrorSpans: boolean
+		readonly alwaysKeepSlowSpansMs: number | null
 	} | null
 	readonly attributeMappings: ReadonlyArray<AuditAttributeMapping>
 	/** Null when the org is on managed Tinybird rather than BYO ClickHouse. */
@@ -203,6 +219,11 @@ export interface ConfigAuditInputs {
 		readonly lastScrapeError: string | null
 	}>
 	readonly openRecommendationCount: number
+	/**
+	 * Every connected integration with its derived health (`buildIntegrationInventory`), for the
+	 * providers the narrower inputs above do not cover. Absent when it could not be read.
+	 */
+	readonly integrationInventory?: IntegrationInventory
 }
 
 export interface AuditAttributeKey {
@@ -301,6 +322,10 @@ export interface TraceCompletenessInputs {
 		readonly traceCount: number
 		readonly rootlessCount: number
 		readonly sampledRootlessCount: number
+		/** Org-wide totals, the same on every row; they include services past the row cap. */
+		readonly orgTraceCount: number
+		readonly orgRootlessCount: number
+		readonly orgSampledRootlessCount: number
 	}>
 }
 
@@ -315,8 +340,11 @@ export interface SetupAuditInputs {
 /** How many affected entities a single finding carries; the rest are counted, not listed. */
 const AFFECTED_LIMIT = 20
 
-/** An enabled rule whose scheduler claim is older than this has stopped being picked up. */
-const RULE_SCHEDULE_STALE_MS = 30 * 60_000
+/** Floor for how old an enabled rule's scheduler claim may get before it counts as stalled. */
+const RULE_SCHEDULE_STALE_FLOOR_MS = 30 * 60_000
+/** A claim older than this has missed at least one full interval, not just a slow tick. */
+const ruleScheduleStaleMs = (intervalMinutes: number): number =>
+	Math.max(RULE_SCHEDULE_STALE_FLOOR_MS, 2 * intervalMinutes * 60_000)
 /** Grace period before a never-scheduled rule counts as broken rather than brand new. */
 const RULE_NEVER_SCHEDULED_GRACE_MS = 2 * 60 * 60_000
 /** Max characters of a provider error quoted into a finding, ellipsis included. */
@@ -355,6 +383,12 @@ const briefError = (message: string): string =>
 const percent = (numerator: number, denominator: number): string =>
 	denominator === 0 ? "0%" : `${Math.round((numerator / denominator) * 100)}%`
 
+/** Like `percent`, with two significant digits below 10% so a 0.1% threshold reads as one. */
+const sharePercent = (numerator: number, denominator: number): string => {
+	const share = denominator === 0 ? 0 : (numerator / denominator) * 100
+	return share >= 10 ? `${Math.round(share)}%` : `${Number(share.toPrecision(2))}%`
+}
+
 const keysForScope = (warehouse: WarehouseAuditInputs, scope: string): Set<string> =>
 	new Set(warehouse.attributeKeys.filter((row) => row.scope === scope).map((row) => row.key))
 
@@ -389,7 +423,7 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 		category: "alerting",
 		title: "At least one notification destination is enabled",
 		severity: "critical",
-		fixHint: "Add a destination in Alerts → Destinations (Slack, PagerDuty, webhook, email, …).",
+		fixHint: "Add a destination in Alerts → Routing (Slack, PagerDuty, webhook, email, …).",
 		evaluate: ({ config }) =>
 			config.alertDestinations.some((destination) => destination.enabled)
 				? PASS
@@ -461,7 +495,7 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 		title: "Notification destinations delivered successfully on their last test",
 		severity: "warn",
 		fixHint:
-			"Re-test the destination in Alerts → Destinations; a stale webhook URL or revoked token is the usual cause.",
+			"Re-test the destination in Alerts → Routing; a stale webhook URL or revoked token is the usual cause.",
 		evaluate: ({ config }) => {
 			const failing = config.alertDestinations
 				.filter((destination) => destination.enabled && destination.lastTestError !== null)
@@ -518,10 +552,10 @@ const alertingChecks: ReadonlyArray<AuditCheck> = [
 								]
 							: []
 					}
-					// The scheduler re-claims each rule every tick under a 30s lock, so a claim this old
-					// means the rule has fallen out of the rotation entirely.
+					// The scheduler claims a rule once per its effective interval (1 to 60 minutes, picked or
+					// slowed), so a claim older than two intervals means it fell out of the rotation.
 					const age = now - rule.lastScheduledAt
-					return age > RULE_SCHEDULE_STALE_MS
+					return age > ruleScheduleStaleMs(rule.evaluationIntervalMinutes)
 						? [
 								{
 									kind: "alert_rule" as const,
@@ -549,7 +583,8 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		category: "notifications",
 		title: "New errors notify someone",
 		severity: "warn",
-		fixHint: "Settings → Notifications: enable error notifications and select at least one destination.",
+		fixHint:
+			"Error notifications have no settings screen yet. Ask the Maple MCP to read the policy with `get_error_notification_policy`, then run `update_error_notification_policy` with `enabled: true` and at least one enabled destination from Alerts → Routing.",
 		evaluate: ({ config }) => {
 			// A missing row means Maple's defaults apply: enabled, but with an empty destination list —
 			// which still routes nowhere, so the second arm below catches it.
@@ -574,7 +609,7 @@ const notificationChecks: ReadonlyArray<AuditCheck> = [
 		title: "Anomaly detection is enabled",
 		severity: "info",
 		fixHint:
-			"Settings → Automation: re-enable anomaly detection to get baseline-relative alerts without authoring rules.",
+			'Anomaly detection has no settings screen yet. Re-enable it with `PATCH /v2/anomalies/settings` and `{"enabled": true}` (org admin, `anomalies:write` scope) to get baseline-relative alerts without authoring rules.',
 		evaluate: ({ config }) =>
 			// Only an explicit opt-out counts; a missing row means the zero-config default (enabled).
 			config.anomalyDetector !== null && !config.anomalyDetector.enabled
@@ -649,7 +684,9 @@ const ingestionChecks: ReadonlyArray<AuditCheck> = [
 					(mapping) =>
 						mapping.enabled &&
 						mapping.sourceContext === "span" &&
-						!present.has(mapping.sourceKey),
+						!present.has(mapping.sourceKey) &&
+						// A working move deletes its source, so the target arriving means it runs.
+						!(mapping.operation === "move" && present.has(mapping.targetKey)),
 				)
 				.map((mapping) => ({
 					kind: "attribute_mapping" as const,
@@ -673,13 +710,24 @@ const ingestionChecks: ReadonlyArray<AuditCheck> = [
 		needsWarehouse: true,
 		fixHint:
 			"Stop emitting the source key at the SDK — the mapping cannot merge two keys, so it will never run.",
-		evaluate: ({ config, warehouse }) => {
+		evaluate: ({ config, warehouse, now }) => {
 			if (!warehouse) return PASS
 			const present = spanKeySet(warehouse)
-			// The ingest gateway never overwrites an existing target key (apps/ingest/src/telemetry.rs
-			// `apply_attribute_mappings`), so a mapping whose target already arrives can never fire.
+			const lookbackMs = warehouse.lookbackHours * 60 * 60 * 1000
+			// Stored spans are post-mapping, so a working mapping's target is always present. Only a
+			// span move is decidable: it deletes its source, so a surviving source means it was skipped
+			// because the target already arrived (`apply_attribute_mappings` never overwrites).
 			const noop = config.attributeMappings
-				.filter((mapping) => mapping.enabled && present.has(mapping.targetKey))
+				.filter(
+					(mapping) =>
+						mapping.enabled &&
+						mapping.sourceContext === "span" &&
+						mapping.operation === "move" &&
+						// Spans from before the mapping changed still carry the source key.
+						now - mapping.updatedAt > lookbackMs &&
+						present.has(mapping.sourceKey) &&
+						present.has(mapping.targetKey),
+				)
 				.map((mapping) => ({
 					kind: "attribute_mapping" as const,
 					id: mapping.id,
@@ -703,7 +751,7 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 		title: "Bring-your-own ClickHouse is reachable",
 		severity: "critical",
 		fixHint:
-			"Settings → Data Platform: re-test the connection. Credentials, network policy and cluster health are the usual causes.",
+			"Settings → Data platform: re-test the connection. Credentials, network policy and cluster health are the usual causes.",
 		evaluate: ({ config }) => {
 			const clickhouse = config.clickhouse
 			if (clickhouse === null || clickhouse.syncStatus !== "error") return PASS
@@ -718,7 +766,7 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 		title: "Bring-your-own ClickHouse schema is up to date",
 		severity: "warn",
 		fixHint:
-			"Settings → Data Platform → Apply schema. Newer Maple features query tables the older schema doesn't have.",
+			"Settings → Data platform → Apply schema. Newer Maple features query tables the older schema doesn't have.",
 		evaluate: ({ config }) => {
 			const clickhouse = config.clickhouse
 			if (clickhouse === null) return PASS
@@ -738,6 +786,34 @@ const platformChecks: ReadonlyArray<AuditCheck> = [
 		},
 	},
 ]
+
+/** One provider's problems from the inventory: its own condition first, then each unhealthy resource. */
+const inventoryFindings = (
+	inventory: IntegrationInventory | undefined,
+	provider: IntegrationEntry["provider"],
+	only?: { readonly kinds: ReadonlySet<string>; readonly failingOnly: boolean },
+): ReadonlyArray<AuditAffectedEntity> => {
+	const entry = inventory?.integrations.find((integration) => integration.provider === provider)
+	if (entry === undefined) return []
+	const resources = entry.resources
+		.filter((resource) =>
+			only?.failingOnly ? resource.status === "failing" : resource.status !== "healthy",
+		)
+		.filter((resource) => only === undefined || only.kinds.has(resource.kind))
+		.map((resource) => ({
+			kind: "integration" as const,
+			name: `${resource.kind} ${resource.name}`,
+			note: `${resource.status}: ${briefError(resource.lastError ?? resource.note ?? resource.status)}`,
+		}))
+	// A provider-wide problem the resources do not explain (a pending setup step, a rejected token).
+	// A revoked OAuth grant is CFG-INTEG-01's finding already.
+	const revoked = entry.status === "disconnected" && provider !== "railway"
+	const own =
+		only === undefined && !revoked && entry.problem !== null && resources.length === 0
+			? [{ kind: "integration" as const, name: provider, note: briefError(entry.problem) }]
+			: []
+	return [...own, ...resources]
+}
 
 const integrationChecks: ReadonlyArray<AuditCheck> = [
 	{
@@ -794,7 +870,7 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		title: "Source repositories are syncing",
 		severity: "warn",
 		fixHint:
-			"Re-check the repository's installation in Settings → Integrations; commit linking and release markers depend on it.",
+			"Re-check the repository's installation in Sources; commit linking and release markers depend on it.",
 		evaluate: ({ config }) => {
 			const failing = config.vcsRepositories
 				.filter((repository) => repository.syncStatus === "error")
@@ -813,11 +889,62 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		},
 	},
 	{
+		id: "CFG-INTEG-04",
+		category: "integrations",
+		title: "Railway metrics are being collected",
+		severity: "warn",
+		fixHint:
+			"Sources → Railway: save a new API token if Railway rejected it; a stale environment usually means the token lost access to its project.",
+		evaluate: ({ config }) => {
+			const affected = inventoryFindings(config.integrationInventory, "railway")
+			return affected.length === 0
+				? PASS
+				: fail(
+						`Railway collection has ${plural(affected.length, "problem")}: charts for the affected environments stop at the last successful poll.`,
+						affected,
+					)
+		},
+	},
+	{
+		id: "CFG-INTEG-05",
+		category: "integrations",
+		title: "PlanetScale is fully set up and polling",
+		severity: "warn",
+		fixHint:
+			"Sources → PlanetScale: finish picking the organization, or reconnect with the missing permissions.",
+		evaluate: ({ config }) => {
+			const affected = inventoryFindings(config.integrationInventory, "planetscale")
+			return affected.length === 0
+				? PASS
+				: fail(
+						`PlanetScale has ${plural(affected.length, "problem")}: database metrics, inventory or deploy requests are incomplete.`,
+						affected,
+					)
+		},
+	},
+	{
+		id: "CFG-INTEG-06",
+		category: "integrations",
+		title: "Cloudflare Logpush jobs are delivering",
+		severity: "warn",
+		fixHint:
+			"Check the Logpush job in the Cloudflare dashboard; its destination must be Maple's Logpush endpoint.",
+		evaluate: ({ config }) => {
+			const affected = inventoryFindings(config.integrationInventory, "cloudflare", {
+				kinds: new Set(["logpush"]),
+				failingOnly: true,
+			})
+			return affected.length === 0
+				? PASS
+				: fail(`${plural(affected.length, "Logpush job")} reported an error.`, affected)
+		},
+	},
+	{
 		id: "CFG-SCRAPE-01",
 		category: "integrations",
 		title: "Prometheus scrape targets are reachable",
 		severity: "warn",
-		fixHint: "Verify the target URL and credentials in Settings → Integrations → Prometheus.",
+		fixHint: "Verify the target URL and credentials in Sources → Prometheus.",
 		evaluate: ({ config }) => {
 			const failing = config.scrapeTargets
 				.filter((target) => target.enabled && target.lastScrapeError !== null)
@@ -1428,9 +1555,14 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 
 /** Below this many observed children a service's orphan rate is noise. */
 const TRACE_MIN_SAMPLE = 50
-/** Orphan / rootless share above which the gap is structural rather than incidental. */
+/** Orphan share above which the gap is structural rather than incidental. */
 const TRACE_GAP_RATIO = 0.1
-/** Above this share, a rootless rate is systemic — one upstream finding, not one per service. */
+/** Share of traces without a root span above which TRC-02 warns, and above which it is critical. */
+const ROOTLESS_WARN_RATIO = 0.001
+const ROOTLESS_CRITICAL_RATIO = 0.01
+/** One rootless trace is a crashed request or a restart; from two on, TRC-02 reports at least `info`. */
+const ROOTLESS_MIN_TRACES = 2
+/** Above this share, trace context is created upstream of everything instrumented. */
 const ROOTLESS_SYSTEMIC_RATIO = 0.95
 /** Share of orphans that must sit inside sampled traces before sampling is the better explanation. */
 const SAMPLING_EXPLAINS_RATIO = 0.5
@@ -1477,35 +1609,64 @@ const traceCompletenessChecks: ReadonlyArray<AuditCheck> = [
 		severity: "warn",
 		needsWarehouse: true,
 		fixHint:
-			"Instrument the first hop that creates trace context, or let your ingress service start the trace instead of continuing one from upstream.",
+			"A root span is exported when it ends, so it is the span most often lost: make sure the process flushes the exporter before it exits or is frozen (serverless handlers, CLI commands, worker shutdown). If an uninstrumented proxy or gateway starts the trace, instrument it or let your ingress service start the trace instead. A root that stays open for more than a few minutes (a WebSocket session, a long job) also reads as missing until it ends; start a new trace per message or step and link it instead.",
 		evaluate: ({ warehouse }) => {
 			const traces = warehouse?.traceCompleteness
-			if (!traces) return PASS
-			const eligible = traces.rootless.filter((row) => row.traceCount >= TRACE_MIN_SAMPLE)
-			const gaps = eligible.filter(
-				(row) => (row.rootlessCount - row.sampledRootlessCount) / row.traceCount > TRACE_GAP_RATIO,
-			)
-			if (gaps.length === 0) return PASS
+			const org = traces?.rootless[0]
+			if (!traces || !org) return PASS
+			// Rootless traces inside sampling-marked traces are the sampler's doing, not a lost root.
+			const rows = traces.rootless.map((row) => ({
+				...row,
+				missing: row.rootlessCount - row.sampledRootlessCount,
+			}))
+			const total = org.orgTraceCount
+			const missing = org.orgRootlessCount - org.orgSampledRootlessCount
+			if (missing < ROOTLESS_MIN_TRACES) return PASS
+			const ratio = missing / total
+			// Below the minimum sample a rate is noise, so it never escalates past info.
+			const severity =
+				total < TRACE_MIN_SAMPLE || ratio <= ROOTLESS_WARN_RATIO
+					? "info"
+					: ratio > ROOTLESS_CRITICAL_RATIO
+						? "critical"
+						: "warn"
 
-			// A near-total, uniform rootless rate is one architectural fact — trace context is being
-			// created upstream of anything instrumented — not N independent per-service defects.
-			const systemic =
-				gaps.length === eligible.length &&
-				eligible.every((row) => row.rootlessCount / row.traceCount > ROOTLESS_SYSTEMIC_RATIO)
-			if (systemic) {
-				return fail(
-					"Essentially every trace arrives without a root span, across all services. Trace context is being created upstream of your instrumented services — typically a proxy, gateway or load balancer that injects `traceparent` but exports no spans of its own.",
-				)
-			}
-
-			return fail(
-				`${plural(gaps.length, "service")} ${conj(gaps.length, "starts", "start")} traces that have no root span. Trace duration and the waterfall's origin are both wrong for them.`,
-				gaps.map((row) => ({
+			const affected = rows
+				.filter((row) => row.missing > 0)
+				.sort((a, b) => b.missing - a.missing)
+				.map((row) => ({
 					kind: "service" as const,
 					name: row.entryService,
-					note: `${percent(row.rootlessCount - row.sampledRootlessCount, row.traceCount)} of traces entering here have no root`,
-				})),
-			)
+					note: `${sharePercent(row.missing, row.traceCount)} of traces starting here have no root (${row.missing} of ${row.traceCount})`,
+				}))
+
+			// One upstream fact, not N service defects — but only when every sizable service shows it,
+			// so the rows must cover every trace (none cut by the query's row cap).
+			const sizable = rows.filter((row) => row.traceCount >= TRACE_MIN_SAMPLE)
+			const everyService = rows.reduce((sum, row) => sum + row.traceCount, 0) === total
+			const systemic =
+				ratio > ROOTLESS_SYSTEMIC_RATIO &&
+				everyService &&
+				sizable.length > 0 &&
+				sizable.every((row) => row.missing / row.traceCount > ROOTLESS_SYSTEMIC_RATIO)
+			if (systemic) {
+				return {
+					...fail(
+						"Essentially every trace arrives without a root span, across all services. Trace context is being created upstream of your instrumented services — typically a proxy, gateway or load balancer that injects `traceparent` but exports no spans of its own.",
+						affected,
+					),
+					severity,
+				}
+			}
+
+			const sample = traces.traceSampleModulus > 1 ? ` (1 in ${traces.traceSampleModulus} sampled)` : ""
+			return {
+				...fail(
+					`${sharePercent(missing, total)} of traces have no root span: ${missing} of ${total} traces over ${plural(traces.windowMinutes, "minute")}${sample}. Their duration and waterfall start at the first span that did arrive, so both are wrong.`,
+					affected,
+				),
+				severity,
+			}
 		},
 	},
 	{
@@ -1569,7 +1730,7 @@ const emptySummary: SetupAuditSummary = { critical: 0, warn: 0, info: 0, pass: 0
 export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 	const warehouseAvailable = inputs.warehouse !== undefined
 
-	if (inputs.config.firstDataReceivedAt === null) {
+	if (inputs.config.telemetry === "absent") {
 		return {
 			generatedAt: inputs.now,
 			dataStatus: "no_data",
@@ -1601,14 +1762,15 @@ export function runSetupAudit(inputs: SetupAuditInputs): SetupAuditReport {
 		}
 
 		const evaluation = check.evaluate(inputs)
+		const severity = evaluation.severity ?? check.severity
 		if (evaluation.status === "pass") summary.pass += 1
-		else summary[check.severity] += 1
+		else summary[severity] += 1
 
 		checks.push({
 			id: check.id,
 			category: check.category,
 			title: check.title,
-			severity: check.severity,
+			severity,
 			status: evaluation.status,
 			detail: evaluation.detail ?? null,
 			affected: evaluation.affected ?? [],

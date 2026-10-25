@@ -1,5 +1,3 @@
-import type { GetServiceEndpointsInput } from "@/api/warehouse/service-endpoints"
-
 /**
  * The list is capped server-side by traffic, BEFORE the browser classifies
  * probes and unrouted paths — so a noisy service can spend part of the budget on
@@ -30,21 +28,6 @@ import type { GetServiceEndpointsInput } from "@/api/warehouse/service-endpoints
  * only and the collapsed buckets carry true counts instead of capped ones.
  */
 export const ENDPOINTS_LIMIT = 200
-
-export function serviceEndpointsQueryInput(args: {
-	serviceName: string
-	effectiveStartTime: string
-	effectiveEndTime: string
-	environments?: readonly string[]
-}): GetServiceEndpointsInput {
-	return {
-		serviceName: args.serviceName,
-		startTime: args.effectiveStartTime,
-		endTime: args.effectiveEndTime,
-		environments: args.environments?.length ? args.environments : undefined,
-		limit: ENDPOINTS_LIMIT,
-	}
-}
 
 /** The warehouse returned a full page, so there are probably more endpoints. */
 export function isTruncated(returned: number): boolean {

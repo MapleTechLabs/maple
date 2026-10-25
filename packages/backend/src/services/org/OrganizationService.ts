@@ -33,9 +33,13 @@ import {
 	ChatWorkspaces,
 	CliDeviceAuthorizations,
 	CloudflareLogpushConnectors,
+	AwsConnections,
+	GcpConnectors,
+	GcpResources,
 	Dashboards,
 	DashboardShares,
 	DashboardVersions,
+	DeviceCredentials,
 	DigestSubscriptions,
 	ErrorIncidents,
 	ErrorIssueEvents,
@@ -57,6 +61,10 @@ import {
 	RailwayConnections,
 	RailwayEnvironments,
 	ScrapeTargets,
+	Sources,
+	SupabaseConnections,
+	SupabaseProjectInsights,
+	SupabaseProjects,
 	VcsCommits,
 	PrReviews,
 	PrReviewSettings,
@@ -65,6 +73,14 @@ import {
 	PrReviewMergeSteps,
 	PrReviewReplies,
 	PrReviewEdits,
+	SecurityAuditEvents,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
+	SecurityAuditFindings,
+	SecurityAuditRunFindings,
+	SecurityAuditRuns,
+	SecurityAuditTargets,
+	SecurityAuditUnits,
 	VcsInstallations,
 	VcsRepositories,
 } from "@maple/db/tables"
@@ -112,6 +128,7 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	ApiKeys,
 	CancellationReviews,
 	OrgIngestKeys,
+	Sources,
 	OrgClickHouseSettings,
 	ScrapeTargets,
 	OAuthConnections,
@@ -124,6 +141,12 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	ChatIdentities,
 	DigestSubscriptions,
 	CloudflareLogpushConnectors,
+	// A surviving push secret would keep the ingest gateway accepting logs for a deleted org.
+	GcpConnectors,
+	// Also removed with its connector, by the foreign key.
+	GcpResources,
+	// A surviving row would keep Maple signing tokens for, and assuming, the customer's role.
+	AwsConnections,
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,
@@ -145,6 +168,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// hourly, so a deleted org's MCP client kept working for up to 30 days.
 	McpOAuthRefreshTokens,
 	MobileDevices,
+	// Device-held widget keys: their tokens re-read the row, so deleting it ends them.
+	DeviceCredentials,
 	// A share link is a public bearer credential: `resolveByToken` matches the
 	// token hash and `revoked_at is null` and nothing else, then queries the
 	// warehouse as the org. It only went dead on deletion by accident of a
@@ -159,6 +184,10 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	RailwayConnections,
 	RailwayEnvironments,
+	// The Supabase grant itself is in oauth_connections; these hold the org binding and projects.
+	SupabaseProjectInsights,
+	SupabaseProjects,
+	SupabaseConnections,
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
 	OrgOpenRouterKeys,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
@@ -166,6 +195,15 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	LiveActivities,
 	// Nothing secret, but the channel belongs to the org; a recreated org starts fresh.
 	OrgSupportChannels,
+	// Security audit evidence about the org's source code: exploit traces must not outlive the org.
+	SecurityAuditEvents,
+	SecurityAuditOrgReservations,
+	SecurityAuditOrgSettings,
+	SecurityAuditRunFindings,
+	SecurityAuditFindings,
+	SecurityAuditUnits,
+	SecurityAuditRuns,
+	SecurityAuditTargets,
 ]
 
 /**
@@ -268,7 +306,7 @@ export interface OrganizationServiceApi {
 }
 
 export class OrganizationService extends Context.Service<OrganizationService, OrganizationServiceApi>()(
-	"@maple/api/services/OrganizationService",
+	"@maple/backend/services/OrganizationService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database

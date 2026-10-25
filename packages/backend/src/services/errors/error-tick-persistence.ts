@@ -98,7 +98,7 @@ export interface PersistErrorTickWindowResult {
  * the threshold is that a genuinely rare error is delayed until it recurs, and
  * anything that only ever happens once is not worth a triage row.
  */
-const PROMOTION_MIN_OCCURRENCES = 3
+export const PROMOTION_MIN_OCCURRENCES = 3
 
 /**
  * How long after an issue is resolved before an occurrence counts as a
@@ -663,8 +663,34 @@ export const persistErrorTickWindow = (
 									resolvedByActorId: null,
 									lastRegressedAt: windowEnd,
 									regressionCount: $.regressionCount.add(1),
+									// A regression on an issue retention already archived must be seen.
+									archivedAt: null,
 									updatedAt: windowEnd,
 								}))
+								.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk)]),
+						),
+					{ discard: true },
+				)
+
+				// Only retention archives an issue, on the premise that it stopped occurring.
+				// One that occurs again was retired too early: a fingerprint bump whose new
+				// hashes are not live yet (a self-hosted warehouse that has not applied the
+				// view, or a deploy gap), so it comes back with its state intact. A resolved
+				// one stays archived unless the occurrence is a regression, handled above.
+				const restoredIds = resolvedRows
+					.filter(
+						(entry) =>
+							entry.prior !== undefined &&
+							entry.prior.archivedAt !== null &&
+							entry.prior.workflowState !== "done",
+					)
+					.map((entry) => entry.issueId)
+				yield* Effect.forEach(
+					chunks(restoredIds),
+					(chunk) =>
+						tx.run(
+							PG.update(ErrorIssues)
+								.set({ archivedAt: null, updatedAt: windowEnd })
 								.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk)]),
 						),
 					{ discard: true },

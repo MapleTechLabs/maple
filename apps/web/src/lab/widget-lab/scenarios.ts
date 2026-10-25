@@ -1,7 +1,16 @@
-import type { WidgetDataState, WidgetDisplayConfig } from "@/components/dashboard-builder/types"
-import { chartRegistry } from "@maple/ui/components/charts/registry"
+import type { WidgetDisplayConfigSchema } from "@maple/domain/http"
 import { funnelDropoffSampleData, pathsSampleData } from "@maple/ui/components/charts/_shared/sample-data"
 import { HEATMAP_COLOR_SCALES } from "@maple/domain/http"
+import { CHART_GALLERY, sampleDataOf } from "../../page/dashboards/kit/chart-registry"
+
+// Copied from apps/web/src/lab/widget-lab/scenarios.ts; the registry is `CHART_GALLERY` here.
+
+type WidgetDisplayConfig = typeof WidgetDisplayConfigSchema.Type
+
+export type WidgetDataState =
+	| { status: "loading" }
+	| { status: "error"; title?: string; message?: string; kind?: "decode" | "runtime" | "range" | "config" | "empty" }
+	| { status: "ready"; data: unknown }
 
 export interface WidgetScenario {
 	label: string
@@ -356,8 +365,7 @@ export const statSparklineScenarios: StatSparklineScenario[] = [
 // Chart — iterate every registry entry with its built-in sampleData
 
 // Threshold + legend scenarios reuse a registry chart's bundled sample data.
-const sampleFor = (chartId: string): Record<string, unknown>[] =>
-	chartRegistry.find((entry) => entry.id === chartId)?.sampleData ?? []
+const sampleFor = sampleDataOf
 
 const latencyThresholds = [
 	{ value: 200, color: "var(--color-amber-500)", label: "Warn" },
@@ -365,7 +373,7 @@ const latencyThresholds = [
 ]
 
 export const chartScenarios: ChartScenario[] = [
-	...chartRegistry.map((entry): ChartScenario => ({
+	...CHART_GALLERY.map((entry): ChartScenario => ({
 		label: entry.name,
 		chartId: entry.id,
 		chartName: entry.name,

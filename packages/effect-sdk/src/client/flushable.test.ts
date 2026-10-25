@@ -7,7 +7,9 @@ import {
 	resetConsentForTests,
 	setConsent,
 } from "@maple/browser-session"
-import { Effect, Metric } from "effect"
+import { Deferred, Effect, Fiber, Metric } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
 import { afterEach, expect, vi } from "vitest"
 import { make } from "./flushable.js"
 
@@ -109,6 +111,9 @@ const setupDom = () => {
 		listen: (type: string, fn: () => void) => void (listeners[type] ??= new Set()).add(fn),
 		setHidden: () => {
 			doc.visibilityState = "hidden"
+		},
+		setVisible: () => {
+			doc.visibilityState = "visible"
 		},
 		listenerCount: (type: string) => listeners[type]?.size ?? 0,
 		restore: () => {
@@ -294,7 +299,8 @@ describe("MapleFlush.make (client)", () => {
 		expect(attrMap["user_agent.original"]).toBe("TestAgent/1.0")
 		expect(attrMap["browser.language"]).toBe("en-GB")
 		// Intl is always present in node/browsers; just assert it's a non-empty string.
-		expect(typeof attrMap["browser.timezone"]).toBe("string")
+		expect(typeof attrMap["maple.browser.timezone"]).toBe("string")
+		expect(attrMap["telemetry.sdk.language"]).toBe("webjs")
 	})
 
 	it("links the active replay session: records the trace id + stamps session.id", async () => {
@@ -502,12 +508,20 @@ describe("MapleFlush.make (client)", () => {
 		expect(calls.some((c) => c.url.endsWith("/v1/traces"))).toBe(true)
 	})
 
-	it("registers no unload listeners when flushOnUnload is false", () => {
+	it("does not flush on unload when flushOnUnload is false", async () => {
+		const { calls, restore: rf } = setupFetch()
 		const dom = setupDom()
-		restore = dom.restore
-		make({ ...baseConfig, flushOnUnload: false })
-		expect(dom.listenerCount("pagehide")).toBe(0)
-		expect(dom.listenerCount("visibilitychange")).toBe(0)
+		restore = () => {
+			rf()
+			dom.restore()
+		}
+		const telemetry = make({ ...baseConfig, flushOnUnload: false })
+		await recordSpans(telemetry, ["op"])
+		dom.setHidden()
+		dom.fire("visibilitychange")
+		dom.fire("pagehide")
+		await tick()
+		expect(traceCalls(calls)).toHaveLength(0)
 	})
 
 	it("dispose() flushes buffered spans even without a manual flush", async () => {
@@ -928,5 +942,102 @@ describe("MapleFlush.make (client)", () => {
 		await telemetry.flush()
 		expect(calls).toHaveLength(0)
 		await telemetry.dispose()
+	})
+
+	describe("a request failing in transport", () => {
+		interface ExportedSpan {
+			readonly kind: number
+			readonly status: { readonly code: number }
+			readonly attributes: ReadonlyArray<{ key: string; value: { stringValue?: string } }>
+		}
+		const exportedClientSpan = (calls: ReadonlyArray<FetchCall>) =>
+			traceCalls(calls)
+				.flatMap(
+					(c) =>
+						(
+							c.body as {
+								resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<ExportedSpan> }> }>
+							}
+						).resourceSpans[0].scopeSpans[0].spans,
+				)
+				.find((span) => span.kind === 3 /* client */)
+
+		// Runs one HttpClient request whose fetch rejects only after `during` has run.
+		const failRequest = (telemetry: ReturnType<typeof make>, during: () => void) =>
+			Effect.gen(function* () {
+				const started = yield* Deferred.make<void>()
+				const fetch = () =>
+					new Promise<Response>((_, reject) => {
+						Deferred.doneUnsafe(started, Effect.void)
+						setTimeout(() => reject(new TypeError("Failed to fetch")), 5)
+					})
+				const fiber = yield* HttpClient.get("https://api.test/v1/things").pipe(
+					Effect.provide(FetchHttpClient.layer),
+					Effect.provideService(FetchHttpClient.Fetch, fetch),
+					Effect.provide(telemetry.layer),
+					Effect.exit,
+					Effect.forkChild,
+				)
+				yield* Deferred.await(started)
+				during()
+				yield* Fiber.await(fiber)
+			})
+
+		it("exports a request the page unloaded under as Unset, not as an error", async () => {
+			const { calls, restore: rf } = setupFetch()
+			const dom = setupDom()
+			restore = () => {
+				rf()
+				dom.restore()
+			}
+			const telemetry = make({ ...baseConfig, flushOnUnload: true })
+
+			await Effect.runPromise(failRequest(telemetry, () => dom.fire("pagehide")))
+			dom.fire("pageshow")
+			await telemetry.flush()
+
+			const span = exportedClientSpan(calls)
+			expect(span?.status.code).toBe(0)
+			expect(span?.attributes.find((a) => a.key === "maple.connection_lost")?.value.stringValue).toBe(
+				"page_unload",
+			)
+			await telemetry.dispose()
+		})
+
+		it("still recognises an unload when unload flushing is off", async () => {
+			const { calls, restore: rf } = setupFetch()
+			const dom = setupDom()
+			restore = () => {
+				rf()
+				dom.restore()
+			}
+			const telemetry = make({ ...baseConfig, flushOnUnload: false })
+
+			await Effect.runPromise(failRequest(telemetry, () => dom.fire("pagehide")))
+			dom.fire("pageshow")
+			await telemetry.flush()
+
+			expect(exportedClientSpan(calls)?.status.code).toBe(0)
+			await telemetry.dispose()
+		})
+
+		it("keeps a request that fails on a visible page an error, after an earlier hide", async () => {
+			const { calls, restore: rf } = setupFetch()
+			const dom = setupDom()
+			restore = () => {
+				rf()
+				dom.restore()
+			}
+			const telemetry = make({ ...baseConfig, flushOnUnload: true })
+			dom.setHidden()
+			dom.fire("visibilitychange")
+			dom.setVisible()
+
+			await Effect.runPromise(failRequest(telemetry, () => {}))
+			await telemetry.flush()
+
+			expect(exportedClientSpan(calls)?.status.code).toBe(2)
+			await telemetry.dispose()
+		})
 	})
 })

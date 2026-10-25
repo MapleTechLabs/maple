@@ -42,6 +42,35 @@ export function isActivePlanSubscription(sub: PlanGatingSubscription | null | un
 export const OPENROUTER_BYOK_ADDON_ID = "openrouter_byok"
 export const OPENROUTER_BYOK_FEATURE_ID = "openrouter_byok"
 
+/** AI usage in dollars: one credit is one dollar. Chat, triage, reviews and security audits draw on it. */
+export const AI_CREDITS_FEATURE_ID = "ai_credits"
+
+/** Percent Autumn adds to a model's token price on `ai_credits`; audits apply it to their own cost. */
+export const AI_CREDITS_MARKUP_PERCENT = 20
+
+/** What a provider charged, as the AI credits an org pays for it. */
+export const aiCreditsUsd = (providerUsd: number): number =>
+	providerUsd * (1 + AI_CREDITS_MARKUP_PERCENT / 100)
+
+/**
+ * The plan features a pricing card lists, in display order. An allowlist on purpose: a feature
+ * added to a plan for metering or gating (raw AI tokens) stays off every card
+ * until it is added here.
+ */
+export const PRICING_CARD_FEATURE_IDS = [
+	"logs",
+	"traces",
+	"metrics",
+	"browser_sessions",
+	"product_events",
+	"ai_credits",
+] as const
+
+const pricingCardFeatureIds: ReadonlySet<string> = new Set(PRICING_CARD_FEATURE_IDS)
+
+export const isPricingCardFeature = (featureId: string | null | undefined): featureId is string =>
+	featureId !== null && featureId !== undefined && pricingCardFeatureIds.has(featureId)
+
 /** Does a raw Autumn customer carry this boolean feature? Autumn keys granted ones under `flags`. */
 export const customerHasFlag = (response: unknown, featureId: string): boolean =>
 	Predicate.isObject(response) &&

@@ -78,7 +78,7 @@ export interface VcsSyncQueueApi {
 }
 
 export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueApi>()(
-	"@maple/api/services/vcs/VcsSyncQueue",
+	"@maple/backend/services/vcs/VcsSyncQueue",
 	{
 		make: Effect.gen(function* () {
 			const queue = yield* VcsSyncQueueProducer

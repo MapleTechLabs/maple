@@ -1,6 +1,6 @@
 import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
 
-import { normalizeRuleQueryDraft, rawSqlHasValueColumn, type RuleFormState } from "@/lib/alerts/form-utils"
+import { normalizeRuleQueryDraft, rawSqlHasValueColumn, type RuleFormState } from "@maple/web-data/alerts/form-utils"
 import { buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import { SERIES_REDUCER_TO_ALERT_REDUCER, toQueryBuilderDataSource } from "@maple/query-model"
 import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@maple/widgets/dashboard"
@@ -84,10 +84,9 @@ function queryToForm(
 		name: widgetAlertName(widget),
 		signalType: "builder_query",
 		queryBuilderDraft,
-		// Builder thresholds compare against the query's raw output. error_rate
-		// is a 0–1 ratio, so the blank-form default of "5" (tuned for the
-		// percent-entry error_rate signal) would mean a 500% error rate.
-		threshold: query.aggregation === "error_rate" ? "0.05" : base.threshold,
+		// error_rate is entered as a percent in every mode (see formThresholdToDomain),
+		// so the blank form's "5" carries over as 5%.
+		threshold: base.threshold,
 		groupBy: [],
 	}
 }

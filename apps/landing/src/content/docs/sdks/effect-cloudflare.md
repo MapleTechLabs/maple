@@ -56,22 +56,17 @@ A flush fails when the request throws (for example a network error) or the inges
 
 ## Cloudflare-specific config
 
-`make()` accepts the [common options](/docs/sdks/effect#configuration-reference) marked for Cloudflare (`serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `serviceNamespace`, `environment`, `repositoryUrl`, `attributes`), plus these:
+`make()` accepts the [common options](/docs/sdks/effect#configuration-reference) marked for Cloudflare (`serviceName`, `region`, `endpoint`, `ingestKey`, `serviceVersion`, `serviceNamespace`, `environment`, `repositoryUrl`, `attributes`), the [span options](/docs/sdks/effect#dropping-spans) (`excludeLogSpans`, `dropSpanNames`, `dropSpanSubtrees`, `dropSpan`, `anticipatedErrorIdentifiers`, `isAnticipatedError`), plus these:
 
-| Option                        | Type                    | Default       | Description                                                                                            |
-| ----------------------------- | ----------------------- | ------------- | ------------------------------------------------------------------------------------------------------ |
-| `excludeLogSpans`             | `boolean`               | `false`       | Skip Effect log spans in OTLP log attributes                                                           |
-| `dropSpanNames`               | `ReadonlyArray<string>` | none          | Drop spans whose name starts with any prefix in this list                                              |
-| `anticipatedErrorIdentifiers` | `ReadonlyArray<string>` | none          | `_tag` / `Error.name` values of expected 4xx failures. Spans export as `Ok`, with no `exception` event |
-| `tracesPath`                  | `string`                | `/v1/traces`  | OTLP traces path appended to `endpoint`                                                                |
-| `logsPath`                    | `string`                | `/v1/logs`    | OTLP logs path appended to `endpoint`                                                                  |
-| `metricsPath`                 | `string`                | `/v1/metrics` | OTLP metrics path appended to `endpoint`                                                               |
-
-`anticipatedErrorIdentifiers` keeps expected rejections (a 404, a 401) visible as traces without counting them as errors. A span still exports as `Error` if its cause contains any defect.
+| Option        | Type     | Default       | Description                              |
+| ------------- | -------- | ------------- | ---------------------------------------- |
+| `tracesPath`  | `string` | `/v1/traces`  | OTLP traces path appended to `endpoint`  |
+| `logsPath`    | `string` | `/v1/logs`    | OTLP logs path appended to `endpoint`    |
+| `metricsPath` | `string` | `/v1/metrics` | OTLP metrics path appended to `endpoint` |
 
 An error that crossed an HTTP boundary is a decoded body rather than the class that raised it, so a failure shaped `{ error: { _tag } }` (the envelope convention many APIs use) is matched on the body's `_tag`. Client-side spans classify the same as the server-side ones they mirror, with no separate identifiers to configure.
 
-`dropSpanNames` suppresses protocol-level chatter. For example, `["McpServer/Notifications."]` drops MCP notification spans without dropping handler spans.
+`dropSpanNames` suppresses protocol-level chatter. For example, `["McpServer/Notifications."]` drops MCP notification spans without dropping handler spans. Use `dropSpanSubtrees` instead when the children should go too.
 
 ## Endpoint resolution
 

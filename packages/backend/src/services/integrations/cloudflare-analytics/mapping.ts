@@ -56,6 +56,7 @@ export const METRIC_HTTP_BYTES_BY_COUNTRY = "cloudflare.http.bytes.by_country"
 export const METRIC_HTTP_REQUESTS_BY_CLIENT = "cloudflare.http.requests.by_client"
 export const METRIC_WORKER_REQUESTS = "cloudflare.worker.requests"
 export const METRIC_WORKER_ERRORS = "cloudflare.worker.errors"
+export const METRIC_WORKER_SUBREQUESTS = "cloudflare.worker.subrequests"
 export const METRIC_WORKER_CPU_TIME = "cloudflare.worker.cpu_time"
 export const METRIC_WORKER_DURATION = "cloudflare.worker.duration"
 export const METRIC_FIREWALL_EVENTS = "cloudflare.firewall.events"
@@ -730,6 +731,7 @@ export const mapWorkersGroups = (input: MapWorkersGroupsInput): CloudflareMetric
 		const counters: ReadonlyArray<readonly [string, string, string, number]> = [
 			[METRIC_WORKER_REQUESTS, "Worker invocations", "{requests}", group.sum?.requests ?? 0],
 			[METRIC_WORKER_ERRORS, "Worker invocation errors", "{errors}", group.sum?.errors ?? 0],
+			[METRIC_WORKER_SUBREQUESTS, "Worker subrequests", "{requests}", group.sum?.subrequests ?? 0],
 		]
 		for (const [metricName, description, unit, value] of counters) {
 			if (value <= 0) continue

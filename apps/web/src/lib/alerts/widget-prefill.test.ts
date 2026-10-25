@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { defaultRuleForm } from "@/lib/alerts/form-utils"
+import { buildRuleCreateParamsV2, defaultRuleForm } from "@maple/web-data/alerts/form-utils"
 import { createWidgetAlertPrefill, resolveWidgetAlertPrefill } from "./widget-prefill"
 
 function builderQuery(overrides: Record<string, unknown> = {}) {
@@ -147,9 +147,9 @@ describe("createWidgetAlertPrefill", () => {
 			defaultRuleForm(),
 		)
 
-		// error_rate evaluates as a 0–1 ratio; the blank-form default of "5"
-		// (percent entry for the built-in signal) would mean 500%.
-		expect(result.form.threshold).toBe("0.05")
+		// Entered as a percent like the built-in signal; saved as the 0.05 ratio.
+		expect(result.form.threshold).toBe("5")
+		expect(buildRuleCreateParamsV2(result.form).threshold).toBe(0.05)
 	})
 
 	it("keeps the default threshold for non-ratio aggregations", () => {

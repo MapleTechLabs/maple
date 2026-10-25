@@ -31,6 +31,7 @@
 			"@maple/infra/dev-urls": ["./packages/infra/src/dev-urls.ts"],
 			"@maple/infra/env": ["./packages/infra/src/env.ts"],
 			"@maple/infra/r2-credentials": ["./packages/infra/src/cloudflare/r2-credentials.ts"],
+			"@maple/infra/security-baseline": ["./packages/infra/src/aws/security-baseline.ts"],
 			"@maple/infra/worker-build": ["./packages/infra/src/cloudflare/worker-build.ts"],
 			"@maple/infra/worker-http": ["./packages/infra/src/cloudflare/worker-http.ts"],
 			"@maple/infra/worker-runtime": ["./packages/infra/src/cloudflare/worker-runtime.ts"],

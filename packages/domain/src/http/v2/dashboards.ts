@@ -28,6 +28,7 @@ import {
 } from "../dashboards"
 import {
 	DashboardShareMode,
+	SHARE_WIDGET_BATCH_MAX,
 	ShareNotConfiguredError,
 	ShareNotFoundError,
 	SharePersistenceError,
@@ -43,15 +44,23 @@ import {
 	PathsAnchor,
 	PathsDirection,
 	PathsInclude,
+	QUERY_BUILDER_METRIC_TYPES,
 	QUERY_RESULT_KINDS,
 	QueryBuilderFormulaSchema,
 	QueryBuilderQueryDraftSchema,
 	QueryComparisonSchema,
 } from "@maple/query-model"
 import { HEATMAP_COLOR_SCALES, HEATMAP_SCALE_TYPES, WIDGET_VISUALIZATIONS } from "../widget-types"
+import { WireValue } from "../../wire"
+import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
-import { V2ParameterInvalid, V2ParameterMissing } from "./errors"
+import {
+	V2InsufficientPermissions,
+	V2ParameterInvalid,
+	V2ParameterMissing,
+	V2TimeRangeInvalid,
+} from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { publicErrors } from "./public-error"
 
@@ -538,6 +547,19 @@ const V2DashboardVariableSource = Schema.Union([
 		scope: Schema.Literals(["span", "resource"]),
 		attributeKey: Schema.String,
 	}).pipe(Schema.encodeKeys({ attributeKey: "attribute_key" })),
+	Schema.Struct({
+		kind: Schema.Literal("metric"),
+		metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES),
+		metricNames: Schema.Array(Schema.String).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+		scope: Schema.Literals(["metric", "resource"]),
+		attributeKey: Schema.String,
+	}).pipe(
+		Schema.encodeKeys({
+			metricType: "metric_type",
+			metricNames: "metric_names",
+			attributeKey: "attribute_key",
+		}),
+	),
 ])
 
 const variableBase = {
@@ -748,7 +770,7 @@ export const V2DashboardTemplateRequirement = Schema.Struct({
 	missing: optional(
 		Schema.String.annotate({
 			description:
-				'Short statement of what is missing, e.g. "not connected". Absent for `metrics`, where clients derive `no <prefix>*` from `required_metric_prefixes`.',
+				'Short statement of what is missing, e.g. "no metrics". Usually absent; clients derive `no <prefix>*` from `required_metric_prefixes`.',
 		}),
 	),
 	collector: Schema.String.annotate({
@@ -895,6 +917,62 @@ export const V2DashboardShareDeleteResponse = Schema.Struct({
 	})
 export type V2DashboardShareDeleteResponse = Schema.Schema.Type<typeof V2DashboardShareDeleteResponse>
 
+/** Widgets per `widget_data` call; the same per-request cost cap as the share page. */
+export const DASHBOARD_WIDGET_DATA_BATCH_MAX = SHARE_WIDGET_BATCH_MAX
+
+export const V2DashboardWidgetDataRequest = Schema.Struct({
+	widget_id: Schema.String,
+	// `sparkline` reads the tile's sparkline data source instead of its own.
+	source: optional(Schema.Literals(["primary", "sparkline"])),
+	// The tile's rendered width in points; picks the auto bucket of a timeseries tile.
+	max_data_points: optional(Schema.Int.check(Schema.isGreaterThan(0))),
+}).annotate({ identifier: "DashboardWidgetDataRequest", title: "Dashboard widget data request" })
+
+export const V2DashboardWidgetDataParams = Schema.Struct({
+	requests: Schema.Array(V2DashboardWidgetDataRequest).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(DASHBOARD_WIDGET_DATA_BATCH_MAX),
+	),
+	time_range: V2TimeRange,
+	// Selected values by variable name, checked against the board's own definitions.
+	variable_values: optional(StringRecord),
+}).annotate({
+	identifier: "DashboardWidgetDataParams",
+	title: "Dashboard widget data parameters",
+	parseOptions: { reportInput: true },
+})
+export type V2DashboardWidgetDataParams = Schema.Schema.Type<typeof V2DashboardWidgetDataParams>
+
+export const V2DashboardWidgetDataOutcome = Schema.Struct({
+	widget_id: Schema.String,
+	ok: Schema.Boolean,
+	// Present when `ok`: the rows the web dashboard renders, `null` for a static tile.
+	data: optional(WireValue),
+	// Set when the server narrowed the window for a list-shaped tile.
+	narrowed_to_seconds: optional(Schema.Number),
+	// Present when not `ok`. `unsupported` is a muted tile; `failed` is retryable.
+	reason: optional(Schema.Literals(["unsupported", "not_found", "failed"])),
+	message: optional(Schema.String),
+}).annotate({
+	identifier: "DashboardWidgetDataOutcome",
+	title: "Dashboard widget data outcome",
+	description:
+		"One widget's result. A widget that cannot be served fails inside the 200 so its neighbours still render.",
+})
+export type V2DashboardWidgetDataOutcome = Schema.Schema.Type<typeof V2DashboardWidgetDataOutcome>
+
+export const V2DashboardWidgetData = Schema.Struct({
+	object: Schema.Literal("dashboard_widget_data"),
+	results: Schema.Array(V2DashboardWidgetDataOutcome),
+	// The value each dashboard variable resolved to, `$__all` for All.
+	variables: StringRecord,
+}).annotate({
+	identifier: "DashboardWidgetData",
+	title: "Dashboard widget data",
+	description: "Per-widget data for one batch, in request order, plus the resolved variable values.",
+})
+export type V2DashboardWidgetData = Schema.Schema.Type<typeof V2DashboardWidgetData>
+
 const DashboardList = ListOf(V2Dashboard).annotate({ identifier: "DashboardList" })
 const DashboardVersionList = ListOf(V2DashboardVersion).annotate({ identifier: "DashboardVersionList" })
 const DashboardTemplateList = ListOf(V2DashboardTemplate).annotate({ identifier: "DashboardTemplateList" })
@@ -1038,6 +1116,28 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 		),
 	)
 	.add(
+		HttpApiEndpoint.post("widgetData", "/:id/widget_data", {
+			params: { id: DashboardPublicId },
+			payload: V2DashboardWidgetDataParams,
+			success: V2DashboardWidgetData,
+			error: [
+				V2TimeRangeInvalid.schema,
+				V2ParameterInvalid.schema,
+				dashboardPersistence,
+				dashboardNotFound,
+				dashboardStoredConfigInvalid,
+			],
+		})
+			.annotate(AuditedRead, "telemetry.read")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "queryDashboardWidgetData",
+					summary: "Query dashboard widget data",
+					description: `Evaluates up to ${DASHBOARD_WIDGET_DATA_BATCH_MAX} widgets of a saved dashboard over a time range, from the stored widget definitions, exactly as the dashboard renders them. Read-only; requires \`dashboards:read\`.`,
+				}),
+			),
+	)
+	.add(
 		HttpApiEndpoint.patch("update", "/:id", {
 			params: { id: DashboardPublicId },
 			payload: V2DashboardUpdateParams,
@@ -1149,6 +1249,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			payload: V2DashboardShareParams,
 			success: V2DashboardShare,
 			error: [
+				V2InsufficientPermissions.schema,
 				sharePersistence,
 				shareNotConfigured,
 				dashboardPersistence,
@@ -1170,6 +1271,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			params: { id: DashboardPublicId, widget_id: Schema.String },
 			success: V2DashboardShare,
 			error: [
+				V2InsufficientPermissions.schema,
 				sharePersistence,
 				shareNotConfigured,
 				shareNotFound,
@@ -1220,6 +1322,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			payload: V2DashboardShareParams,
 			success: V2DashboardShare,
 			error: [
+				V2InsufficientPermissions.schema,
 				sharePersistence,
 				shareNotConfigured,
 				dashboardPersistence,
@@ -1240,6 +1343,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			params: { id: DashboardPublicId },
 			success: V2DashboardShare,
 			error: [
+				V2InsufficientPermissions.schema,
 				sharePersistence,
 				shareNotConfigured,
 				shareNotFound,

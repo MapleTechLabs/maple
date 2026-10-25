@@ -1,5 +1,5 @@
 // Pure geometry + derivation for the chart's commit deploy markers. Kept free of
-// React/recharts so it unit-tests cleanly and the overlay component stays thin.
+// rendering so it unit-tests cleanly and the overlay component stays thin.
 import { shortId } from "@maple/ui/lib/ids"
 
 /** A row of the per-bucket release timeline (one per distinct commit per bucket). */

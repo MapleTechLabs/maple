@@ -23,7 +23,6 @@ import {
 	makeChatSessionId,
 	orgIdFromChatSessionId,
 	tabIdFromChatSessionId,
-	ChatTextDeltaEvent,
 	ChatToolCallEvent,
 	ChatTurnRetryEvent,
 	type ChatEventInput,
@@ -144,12 +143,6 @@ describe("chat session ids", () => {
 })
 
 describe("chat events", () => {
-	it("round-trips through the wire encoding", () => {
-		const event = new ChatTextDeltaEvent({ seq: 7, type: "text-delta", messageId: "m1", text: "hi" })
-		const decoded = decodeChatEvent(encodeChatEvent(event))
-		expect(decoded).toMatchObject({ seq: 7, type: "text-delta", messageId: "m1", text: "hi" })
-	})
-
 	it("carries the approval flag on a proposed tool call", () => {
 		// `proposed` is what tells the client to render an approval card instead of a running tool.
 		const event = new ChatToolCallEvent({

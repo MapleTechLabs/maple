@@ -16,10 +16,12 @@ import { assert, describe, it } from "vitest"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
-import type { ResolvedModel } from "../platform/Llm"
+import { noRepositoryWarmup } from "../../test/chat/tool-executor"
+import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import { runChatTurn } from "./run"
 import { makeReviewLedger } from "./review-ledger"
 import { makeRunUsage } from "./tools"
+import { interruptOnAbort, makeTurnObservability } from "./turn-outcome"
 
 const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
@@ -44,6 +46,9 @@ const answer = (text: string): ReadonlyArray<Response.StreamPartEncoded> => [
 	{ type: "finish", reason: "stop", usage: USAGE },
 ]
 
+/** Placeholder provider clients the scripted model never calls; `runChatTurn` requires them. */
+const llmClients = layerLlm({})
+
 /** One response per model call, parent and child alike, in the order the engine asks. */
 const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEncoded>>): ResolvedModel => {
 	let calls = 0
@@ -59,7 +64,7 @@ const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEn
 			Layer.effect(
 				LanguageModel.LanguageModel,
 				LanguageModel.make({
-					generateText: () => Effect.succeed([...respond()]),
+					generateText: () => Effect.die("the turn streams; generateText is never called"),
 					streamText: () => Stream.suspend(() => Stream.fromIterable(respond())),
 				}),
 			),
@@ -71,6 +76,7 @@ describe("runChatTurn review_files children", () => {
 	it("gives a child its own repeated-call budget and files its spans under the review", async () => {
 		const dispatched: Array<string> = []
 		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
 			execute: (_tenant, name) =>
 				Effect.sync(() => {
 					dispatched.push(name)
@@ -111,7 +117,7 @@ describe("runChatTurn review_files children", () => {
 				usage: makeRunUsage(),
 				holdsTurn: () => true,
 				append: () => {},
-			}).pipe(Effect.withTracer(tracer)),
+			}).pipe(Effect.withTracer(tracer), Effect.provide(llmClients)),
 		)
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
@@ -129,5 +135,67 @@ describe("runChatTurn review_files children", () => {
 		for (const span of spans.filter((span) => span.name.startsWith("execute_tool "))) {
 			assert.strictEqual(span.attributes.get("maple_ai.session.id"), REVIEW_SESSION, span.name)
 		}
+	})
+
+	it("interrupts a superseded turn's in-flight child instead of letting it run to its next event", async () => {
+		const supersede = new AbortController()
+		let childInterrupted = false
+		// The child's first call never answers on its own, as a worker mid-tool does.
+		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
+			execute: () =>
+				Effect.sync(() => supersede.abort("superseded")).pipe(
+					Effect.andThen(Effect.never),
+					Effect.onInterrupt(() =>
+						Effect.sync(() => {
+							childInterrupted = true
+						}),
+					),
+				),
+		}
+		const model = scriptedModel([
+			callTool("p-1", "review_files", {
+				repository: "acme/shop",
+				number: 7,
+				headSha: "abc123",
+				paths: ["src/a.ts"],
+			}),
+			callTool("c-1", "pr_changed_files", CHANGED_FILES),
+		])
+		const { spans, tracer } = makeRecordingTracer()
+		const observability = makeTurnObservability()
+
+		const exit = await Effect.runPromiseExit(
+			runChatTurn({
+				sessionId: REVIEW_SESSION,
+				messageId: "msg-1",
+				tenant: TENANT,
+				origin: { kind: "autonomous" },
+				toolExecutor: executor,
+				model,
+				submitDiagnosis: () => Effect.die("no investigation in a review session"),
+				submitReview: () => Effect.void,
+				review: { coverage: { observe: () => {}, unread: () => [] }, ledger: makeReviewLedger() },
+				text: "Review pull request #7 of acme/shop.",
+				history: [],
+				usage: makeRunUsage(),
+				// The claim is still held: only the interrupt can stop this run.
+				holdsTurn: () => true,
+				append: () => {},
+			}).pipe(
+				Effect.asVoid,
+				interruptOnAbort(supersede.signal, observability),
+				Effect.withSpan("chat.turn"),
+				Effect.withTracer(tracer),
+				Effect.provide(llmClients),
+			),
+		)
+
+		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
+		assert.isTrue(childInterrupted, "the child's in-flight call was interrupted")
+		assert.strictEqual(observability.outcome, "aborted")
+		const turn = spans.find((span) => span.name === "chat.turn")
+		assert.strictEqual(turn?.attributes.get("maple.chat.outcome"), "aborted")
+		assert.strictEqual(turn?.attributes.get("maple.chat.abort_reason"), "superseded")
 	})
 })

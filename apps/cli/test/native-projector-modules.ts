@@ -16,6 +16,7 @@ import {
 import { createHash } from "node:crypto"
 import { serverPidPath, storeMarkerPath, storeOpenMarkerPath } from "../src/server/store-version"
 import { tmpdir } from "node:os"
+import { Schema } from "effect"
 import { join, resolve } from "node:path"
 
 const bundle = resolve(process.argv[2] ?? "dist")
@@ -116,6 +117,14 @@ const request = async (path: string, body?: unknown) => {
 	ok(response.ok, `${path}: HTTP ${response.status}: ${await response.clone().text()}`)
 	return response.json()
 }
+const outbox = Schema.decodeUnknownSync(
+	Schema.Struct({
+		events: Schema.Array(
+			Schema.Struct({ event: Schema.Struct({ id: Schema.String, data: Schema.Unknown }) }),
+		),
+	}),
+)
+const projections = Schema.decodeUnknownSync(Schema.Array(Schema.Unknown))
 const projection = {
 	id: "example-projection",
 	revision: 1,
@@ -153,7 +162,7 @@ try {
 	await healthy()
 	await request("/local/eventing/projections", projection)
 	await request("/v1/logs", ingest)
-	const first = await request("/local/eventing/outbox")
+	const first = outbox(await request("/local/eventing/outbox"))
 	strictEqual(first.events.length, 1)
 	deepStrictEqual(first.events[0].event.data, { label: "external projector", occurrenceId: "delivery-42" })
 	await stop()
@@ -213,10 +222,10 @@ try {
 	detached = true
 	strictEqual(await exit(spawn("background", [...args, "--background", ...moduleArgs])), 0)
 	await healthy()
-	const active = await request("/local/eventing/projections")
+	const active = projections(await request("/local/eventing/projections"))
 	strictEqual(active.length, 1)
 	await request("/v1/logs", ingest)
-	const restarted = await request("/local/eventing/outbox")
+	const restarted = outbox(await request("/local/eventing/outbox"))
 	strictEqual(restarted.events.length, 1)
 	strictEqual(restarted.events[0].event.id, first.events[0].event.id)
 	await stop()
@@ -235,7 +244,7 @@ try {
 	strictEqual(await exit(spawn("valid-reset", [...args, "--background", "--reset", ...moduleArgs])), 0)
 	await healthy()
 	deepStrictEqual(await request("/local/eventing/projections"), [])
-	strictEqual((await request("/local/eventing/outbox")).events.length, 0)
+	strictEqual(outbox(await request("/local/eventing/outbox")).events.length, 0)
 	await stop()
 	detached = false
 	console.log(

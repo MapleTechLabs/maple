@@ -198,8 +198,7 @@ describe("embedded release public key", () => {
 		strictEqual(installer, MAPLE_RELEASE_PUBLIC_KEY)
 	})
 
-	it("is an Ed25519 key once provisioned", async () => {
-		if (MAPLE_RELEASE_PUBLIC_KEY === "") return
+	it("is an Ed25519 key", async () => {
 		const error = await Effect.runPromise(
 			Effect.flip(verifyReleaseManifest(MANIFEST, SIGNATURE, MAPLE_RELEASE_PUBLIC_KEY)),
 		)

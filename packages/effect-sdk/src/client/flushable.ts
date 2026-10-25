@@ -30,8 +30,8 @@ import {
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { type CaptureExceptionOptions, makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
-import { browserDocument, browserNavigator } from "./browser-globals.js"
-import { trySyncOrUndefined } from "../shared/try-sync.js"
+import type { MapleSpanOptions } from "../shared/span-options.js"
+import { browserDocument, browserNavigator, browserResourceAttributes } from "./browser-globals.js"
 import { type ClientReplayConfig, startClientSession } from "./replay-loader.js"
 import { withSessionLink } from "./session-link.js"
 import type { PrivacyOptions } from "./track.js"
@@ -47,7 +47,7 @@ const browserInstanceId =
 	globalThis.crypto?.randomUUID?.() ??
 	`browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 
-export interface MapleClientFlushableConfig {
+export interface MapleClientFlushableConfig extends MapleSpanOptions {
 	/** Service name reported in traces, logs, and metrics. */
 	readonly serviceName: string
 	/**
@@ -77,16 +77,6 @@ export interface MapleClientFlushableConfig {
 	readonly attributes?: Record<string, unknown> | undefined
 	/** Skip Effect log spans in OTLP log attributes. Default `false`. */
 	readonly excludeLogSpans?: boolean | undefined
-	/** Span name prefixes to drop before OTLP export. */
-	readonly dropSpanNames?: ReadonlyArray<string> | undefined
-	/**
-	 * Stable `_tag` / `Error.name` identifiers of anticipated 4xx failures. Spans
-	 * failing entirely with these export as status `Ok` (no `exception` event),
-	 * so they stay visible but never count as errors.
-	 */
-	readonly anticipatedErrorIdentifiers?: ReadonlyArray<string> | undefined
-	/** @deprecated Use `anticipatedErrorIdentifiers`. */
-	readonly anticipatedErrorTags?: ReadonlyArray<string> | undefined
 	/** OTLP traces path appended to `endpoint`. Default `/v1/traces`. */
 	readonly tracesPath?: string | undefined
 	/** OTLP logs path appended to `endpoint`. Default `/v1/logs`. */
@@ -177,22 +167,10 @@ const postOtlp = (url: string, headers: Record<string, string>, body: unknown) =
 
 const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<string, unknown> => {
 	const attributes: Record<string, unknown> = {
+		...browserResourceAttributes(),
 		"maple.sdk.type": "client",
 		"service.instance.id": browserInstanceId,
 	} satisfies Record<string, unknown>
-	const nav = browserNavigator()
-	if (nav) {
-		// `user_agent.original` is the semconv key; `browser.user_agent` was
-		// deprecated in favour of it.
-		if (nav.userAgent) attributes["user_agent.original"] = nav.userAgent
-		if (nav.language) attributes["browser.language"] = nav.language
-	}
-	if (typeof Intl !== "undefined") {
-		// A locale-stripped build throws from `DateTimeFormat` rather than
-		// reporting an unknown zone.
-		const timezone = trySyncOrUndefined(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
-		if (timezone) attributes["browser.timezone"] = timezone
-	}
 	if (config.environment) {
 		// Dual-emit: legacy key (pre-extracted by Tinybird MVs) + the canonical
 		// resource attribute. Keep both until the MVs coalesce them.
@@ -210,17 +188,6 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 }
 
 export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => {
-	const dropPrefixes = config.dropSpanNames
-	const dropSpan =
-		dropPrefixes !== undefined && dropPrefixes.length > 0
-			? (name: string) => dropPrefixes.some((prefix) => name.startsWith(prefix))
-			: undefined
-	const anticipatedErrorIdentifiers = [
-		...(config.anticipatedErrorIdentifiers ?? []),
-		...(config.anticipatedErrorTags ?? []),
-	]
-	const anticipatedIdentifiers =
-		anticipatedErrorIdentifiers.length > 0 ? new Set(anticipatedErrorIdentifiers) : undefined
 	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
 	warnIfKeylessMapleIngest({
 		logPrefix: "[MapleClientSDK]",
@@ -239,10 +206,24 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		privacy: config.privacy,
 	})
 
-	const spans: SpanBuffer = makeSpanBuffer({
-		dropSpan,
-		anticipatedErrorIdentifiers: anticipatedIdentifiers,
-	})
+	// Each time the page goes away or offline. A request in flight across one was cancelled
+	// by the browser, so its transport failure is not the app's.
+	let connectionLosses = 0
+	let lastLossReason = ""
+	const noteLost = (reason: string): void => {
+		connectionLosses += 1
+		lastLossReason = reason
+	}
+	const watchConnection = () => {
+		const lossesAtStart = connectionLosses
+		return (): string | undefined => {
+			if (browserNavigator()?.onLine === false) return "offline"
+			if (browserDocument()?.visibilityState === "hidden") return "page_hidden"
+			return connectionLosses !== lossesAtStart ? lastLossReason : undefined
+		}
+	}
+
+	const spans: SpanBuffer = makeSpanBuffer({ ...config, watchConnection })
 	const logs: LogBuffer = makeLogBuffer({
 		excludeLogSpans: config.excludeLogSpans,
 	})
@@ -407,22 +388,29 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		globalThis.addEventListener("unhandledrejection", onUnhandledRejection)
 	}
 
+	// Connection-loss tracking needs these events even when unload flushing is off.
+	const flushOnUnload = config.flushOnUnload ?? true
 	const onPageHide = (): void => {
 		unloading = true
 		pageHides += 1
-		void pageHideFlush()
+		noteLost("page_unload")
+		if (flushOnUnload) void pageHideFlush()
 	}
 	const onPageShow = (): void => {
 		unloading = false
 	}
 	const onVisibilityChange = (): void => {
-		if (browserDocument()?.visibilityState === "hidden") void hiddenFlush()
+		if (browserDocument()?.visibilityState !== "hidden") return
+		noteLost("page_hidden")
+		if (flushOnUnload) void hiddenFlush()
 	}
-	const canListen = (config.flushOnUnload ?? true) && typeof globalThis.addEventListener === "function"
+	const onOffline = (): void => noteLost("offline")
+	const canListen = typeof globalThis.addEventListener === "function"
 	if (canListen) {
 		globalThis.addEventListener("pagehide", onPageHide)
 		globalThis.addEventListener("pageshow", onPageShow)
 		globalThis.addEventListener("visibilitychange", onVisibilityChange)
+		globalThis.addEventListener("offline", onOffline)
 	}
 
 	const dispose = async (): Promise<void> => {
@@ -434,6 +422,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 			globalThis.removeEventListener("pagehide", onPageHide)
 			globalThis.removeEventListener("pageshow", onPageShow)
 			globalThis.removeEventListener("visibilitychange", onVisibilityChange)
+			globalThis.removeEventListener("offline", onOffline)
 		}
 		if (canCaptureGlobals) {
 			globalThis.removeEventListener("error", onWindowError)

@@ -3,10 +3,15 @@ import * as Integrations from "@maple/query-engine-integrations"
 import { defineQuery } from "@maple/query-engine/registry"
 import { Queries as Core } from "@maple/query-engine/registry"
 import type {
+	AwsInfraMetricsRequest,
+	AwsInfraPresenceRequest,
+	AwsInfraSparklinesRequest,
+	AwsInfraTimeseriesRequest,
 	CloudflareInfraZoneBreakdownRequest,
 	HostInfraTimeseriesRequest,
 	CloudflareInfraZoneFacetsRequest,
 	CloudflareInfraZoneDetailRequest,
+	CloudflareInfraWorkerDetailRequest,
 	ServicePlanetScaleStatsRequest,
 	CloudflareInfraPlatformResourcesRequest,
 	CloudflareInfraWorkersRequest,
@@ -15,6 +20,12 @@ import type {
 	CloudflareInfraZoneTimeseriesRequest,
 	CloudflareInfraZonesRequest,
 	ContainerInfraTimeseriesRequest,
+	GcpInfraMetricsRequest,
+	GcpInfraPresenceRequest,
+	GcpCloudSqlInstanceRequest,
+	GcpCloudSqlStatementSpansRequest,
+	GcpInfraSparklinesRequest,
+	GcpInfraTimeseriesRequest,
 	GetLogRequest,
 	NodeInfraTimeseriesRequest,
 	PlanetScaleInfraTimeseriesRequest,
@@ -23,6 +34,11 @@ import type {
 	RailwayInfraServiceTimeseriesRequest,
 	ServiceCloudflareStatsRequest,
 	SpanDetailRequest,
+	SupabaseInfraProjectsRequest,
+	SupabaseInfraProjectTimeseriesRequest,
+	SupabaseLogIssuesRequest,
+	SupabaseProjectWindowRequest,
+	TraceSpanEventsRequest,
 	WorkloadInfraTimeseriesRequest,
 } from "@maple/domain/http"
 import {
@@ -287,6 +303,287 @@ const railwayInfraServiceTimeseries = defineQuery({
 		}),
 })
 
+// /infra/supabase: gauges and counter rates are separate reads (metrics_gauge, metrics_sum),
+// merged per project or bucket by the handler.
+const supabaseInfraProjectGauges = defineQuery({
+	id: "supabaseInfraProjectGauges",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectGaugesSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const supabaseInfraProjectCpu = defineQuery({
+	id: "supabaseInfraProjectCpu",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectCpuSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const supabaseProjectSeriesParams = (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+	bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
+	projectRef: payload.projectRef,
+})
+
+const supabaseInfraProjectGaugeSeries = defineQuery({
+	id: "supabaseInfraProjectGaugeSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectGaugeSeriesSQL(), supabaseProjectSeriesParams(payload, orgId)),
+})
+
+const supabaseInfraProjectRateSeries = defineQuery({
+	id: "supabaseInfraProjectRateSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectRateSeriesSQL(), supabaseProjectSeriesParams(payload, orgId)),
+})
+
+// /infra/supabase insights: the polled Supabase logs and the org's client spans to a project.
+const supabaseProjectParams = (payload: SupabaseProjectWindowRequest, orgId: OrgId) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+	projectRef: payload.projectRef,
+})
+
+const supabaseLogsProjectsSummary = defineQuery({
+	id: "supabaseLogsProjectsSummary",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseLogsProjectsSummarySQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const supabaseApiTrafficSeries = defineQuery({
+	id: "supabaseApiTrafficSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseApiTrafficSeriesSQL(), supabaseProjectSeriesParams(payload, orgId)),
+})
+
+const supabaseApiTrafficTotals = defineQuery({
+	id: "supabaseApiTrafficTotals",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseProjectWindowRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseApiTrafficTotalsSQL(), supabaseProjectParams(payload, orgId)),
+})
+
+const supabaseApiTopPaths = defineQuery({
+	id: "supabaseApiTopPaths",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseProjectWindowRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseApiTopPathsSQL(), supabaseProjectParams(payload, orgId)),
+})
+
+const supabaseProjectCallers = defineQuery({
+	id: "supabaseProjectCallers",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.supabaseProjectCallersSQL(), supabaseProjectParams(payload, orgId)),
+})
+
+const supabaseProjectCallerSeries = defineQuery({
+	id: "supabaseProjectCallerSeries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseInfraProjectTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.supabaseProjectCallerSeriesSQL(),
+			supabaseProjectSeriesParams(payload, orgId),
+		),
+})
+
+// One project, or (no `projectRef`) every project of the org.
+const supabaseLogIssues = defineQuery({
+	id: "supabaseLogIssues",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: SupabaseLogIssuesRequest, orgId: OrgId) =>
+		payload.projectRef === undefined
+			? CH.compile(Integrations.supabaseLogIssuesSQL({ byProject: false }), {
+					orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+				})
+			: CH.compile(Integrations.supabaseLogIssuesSQL({ byProject: true }), {
+					orgId,
+					startTime: payload.startTime,
+					endTime: payload.endTime,
+					projectRef: payload.projectRef,
+				}),
+})
+
+// A small read of the hourly catalog that decides which tabs /infra/aws shows.
+const awsInfraPresence = defineQuery({
+	id: "awsInfraPresence",
+	profile: "discovery",
+	cache: 60,
+	compile: (payload: AwsInfraPresenceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.awsInfraPresenceSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const awsInfraMetrics = defineQuery({
+	id: "awsInfraMetrics",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: AwsInfraMetricsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.awsInfraMetricsSQL(payload.kind), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const awsInfraSparklines = defineQuery({
+	id: "awsInfraSparklines",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: AwsInfraSparklinesRequest, orgId: OrgId) => {
+		// The stream sends one point per minute.
+		const bucketSeconds = Math.max(60, payload.bucketSeconds)
+		const buckets = Integrations.awsInfraBucketCount(payload.startTime, payload.endTime, bucketSeconds)
+		return CH.compile(Integrations.awsInfraSparklinesSQL(payload.kind, buckets), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			bucketSeconds,
+		})
+	},
+})
+
+const awsInfraTimeseries = defineQuery({
+	id: "awsInfraTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: AwsInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.awsInfraTimeseriesSQL(payload.kind, payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			bucketSeconds: Math.max(60, payload.bucketSeconds),
+		}),
+})
+
+// A small read of the hourly catalog that decides which tabs /infra/gcp shows.
+const gcpInfraPresence = defineQuery({
+	id: "gcpInfraPresence",
+	profile: "discovery",
+	cache: 60,
+	compile: (payload: GcpInfraPresenceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraPresenceSQL(), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpInfraMetrics = defineQuery({
+	id: "gcpInfraMetrics",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraMetricsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraMetricsSQL(payload.service), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpInfraTimeseries = defineQuery({
+	id: "gcpInfraTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraTimeseriesSQL(payload.source, payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			// The poller stores one point per minute.
+			bucketSeconds: Math.max(60, payload.bucketSeconds),
+		}),
+})
+
+const gcpInfraSparklines = defineQuery({
+	id: "gcpInfraSparklines",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpInfraSparklinesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpInfraSparklinesSQL(payload.service), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+			// The poller stores one point per minute.
+			bucketSeconds: Math.max(60, payload.bucketSeconds),
+		}),
+})
+
+const gcpCloudSqlTopQueries = defineQuery({
+	id: "gcpCloudSqlTopQueries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: GcpCloudSqlInstanceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpCloudSqlTopQueriesSQL(payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpCloudSqlDatabases = defineQuery({
+	id: "gcpCloudSqlDatabases",
+	profile: "list",
+	cache: 15,
+	compile: (payload: GcpCloudSqlInstanceRequest, orgId: OrgId) =>
+		CH.compile(Integrations.gcpCloudSqlDatabasesSQL(payload.keys), {
+			orgId,
+			startTime: payload.startTime,
+			endTime: payload.endTime,
+		}),
+})
+
+const gcpCloudSqlStatementSpans = defineQuery({
+	id: "gcpCloudSqlStatementSpans",
+	profile: "list",
+	cache: 15,
+	compile: (payload: GcpCloudSqlStatementSpansRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.serviceDbQuerySpansQuery({
+				dbSystem: "postgresql",
+				dbNamespaces: payload.databases,
+				queryKeys: payload.queryKeys,
+				limit: 5,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
 const zoneDetailParams = (payload: CloudflareInfraZoneDetailRequest, orgId: OrgId) => ({
 	orgId,
 	serviceName: payload.serviceName,
@@ -324,6 +621,54 @@ const cloudflareInfraZoneDetailLatency = defineQuery({
 	cache: 15,
 	compile: (payload: CloudflareInfraZoneDetailRequest, orgId: OrgId) =>
 		CH.compile(Integrations.cloudflareZoneLatencyTimeseriesSQL(), zoneDetailParams(payload, orgId)),
+})
+
+const workerDetailParams = (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) => ({
+	orgId,
+	serviceName: payload.serviceName,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+	bucketSeconds: payload.bucketSeconds,
+	// Declared by the query either way; only read when `byAccount` adds the condition.
+	accountId: payload.accountId ?? "",
+})
+
+const workerDetailOpts = (payload: CloudflareInfraWorkerDetailRequest) => ({
+	// Rows without the account attribute carry "", which would match nothing: treat it as absent.
+	byAccount: (payload.accountId ?? "") !== "",
+})
+
+const cloudflareInfraWorkerDetailOutcomes = defineQuery({
+	id: "cloudflareInfraWorkerDetailOutcomes",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.cloudflareWorkerOutcomeTimeseriesSQL(workerDetailOpts(payload)),
+			workerDetailParams(payload, orgId),
+		),
+})
+
+const cloudflareInfraWorkerDetailLatency = defineQuery({
+	id: "cloudflareInfraWorkerDetailLatency",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.cloudflareWorkerLatencyTimeseriesSQL(workerDetailOpts(payload)),
+			workerDetailParams(payload, orgId),
+		),
+})
+
+const cloudflareInfraWorkerDetailDurableObjects = defineQuery({
+	id: "cloudflareInfraWorkerDetailDurableObjects",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: CloudflareInfraWorkerDetailRequest, orgId: OrgId) =>
+		CH.compile(
+			Integrations.cloudflareWorkerDurableObjectTimeseriesSQL(workerDetailOpts(payload)),
+			workerDetailParams(payload, orgId),
+		),
 })
 
 // Each reads either the database-level or the branch-level rollup depending on
@@ -432,7 +777,8 @@ const hostInfraGaugeTimeseries = defineQuery({
 				hostName: payload.hostName,
 				metricName: spec.metricName,
 				groupByAttributeKey: spec.groupByAttributeKey,
-				attributeEquals: spec.attributeEquals,
+				attributeIn: spec.attributeIn,
+				attributeNotIn: spec.attributeNotIn,
 			}),
 			{
 				orgId,
@@ -624,6 +970,50 @@ export const Queries = {
 		},
 	}),
 
+	/**
+	 * Events of a span `spanDetail` already resolved. Keyed by the span's exact
+	 * start second, so the row it reads is written and immutable.
+	 */
+	spanEvents: defineQuery({
+		id: "spanEvents",
+		profile: "discovery",
+		cache: 600,
+		compile: (
+			payload: {
+				readonly traceId: string
+				readonly spanId: string
+				readonly serviceName: string
+				readonly spanName: string
+				readonly startTime: string
+				readonly endTime: string
+			},
+			orgId: OrgId,
+		) =>
+			CH.compile(
+				CH.spanEventsQuery({
+					traceId: payload.traceId,
+					spanId: payload.spanId,
+					serviceName: payload.serviceName,
+					spanName: payload.spanName,
+				}),
+				{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			),
+	}),
+
+	/** Event times and names for every span of a trace, for the timeline markers. */
+	traceSpanEvents: defineQuery({
+		id: "traceSpanEvents",
+		profile: "list",
+		cache: (payload: TraceSpanEventsRequest, nowMs: number) =>
+			traceCacheTtlSeconds(payload.endTime, nowMs),
+		compile: (payload: TraceSpanEventsRequest, orgId: OrgId) =>
+			CH.compile(CH.spanEventsByTraceQuery({ traceId: payload.traceId }), {
+				orgId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+			}),
+	}),
+
 	podInfraTimeseries: defineQuery({
 		id: "podInfraTimeseries",
 		profile: "aggregation",
@@ -714,11 +1104,36 @@ export const Queries = {
 	planetscaleInfraTimeseries,
 	railwayInfraServices,
 	railwayInfraServiceTimeseries,
+	supabaseInfraProjectGauges,
+	supabaseInfraProjectCpu,
+	supabaseInfraProjectGaugeSeries,
+	supabaseInfraProjectRateSeries,
+	supabaseLogsProjectsSummary,
+	supabaseApiTrafficSeries,
+	supabaseApiTrafficTotals,
+	supabaseApiTopPaths,
+	supabaseProjectCallers,
+	supabaseProjectCallerSeries,
+	supabaseLogIssues,
+	awsInfraPresence,
+	awsInfraMetrics,
+	awsInfraSparklines,
+	awsInfraTimeseries,
+	gcpInfraPresence,
+	gcpInfraMetrics,
+	gcpInfraTimeseries,
+	gcpInfraSparklines,
+	gcpCloudSqlTopQueries,
+	gcpCloudSqlDatabases,
+	gcpCloudSqlStatementSpans,
 
 	// ZoneDetail / PlanetScaleStats sub-queries, declared above.
 	cloudflareInfraZoneDetailStatus,
 	cloudflareInfraZoneDetailCache,
 	cloudflareInfraZoneDetailLatency,
+	cloudflareInfraWorkerDetailOutcomes,
+	cloudflareInfraWorkerDetailLatency,
+	cloudflareInfraWorkerDetailDurableObjects,
 	planetscaleServiceGauges,
 	planetscaleServiceConnections,
 	planetscaleServiceStorage,

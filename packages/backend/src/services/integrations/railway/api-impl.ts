@@ -15,7 +15,7 @@ import {
 	type QueryError,
 	type RailwayGlobalError,
 } from "@distilled.cloud/railway"
-import { Array as Arr, Duration, Effect, Layer, Stream } from "effect"
+import { Array as Arr, Duration, Effect, Layer, Redacted, Schedule, Stream } from "effect"
 import { HttpClient } from "effect/http"
 import { RailwayApiError } from "./errors"
 
@@ -57,6 +57,20 @@ const toApiError = (error: SdkError): RailwayApiError => {
 	})
 }
 
+/** Railway's GraphQL answers a passing hiccup with "Problem processing request"; so does a 5xx. */
+const isTransient = (error: SdkError): boolean => {
+	const issues = error instanceof GraphQLFailure ? error.errors : [error]
+	return (
+		(error instanceof GraphQLTransportError && error.status !== undefined && error.status >= 500) ||
+		issues.some((issue) => /problem processing request/i.test(issue.message))
+	)
+}
+
+const TRANSIENT_RETRY = Schedule.max([
+	Schedule.jittered(Schedule.exponential("500 millis")),
+	Schedule.recurs(2),
+])
+
 /** Run one SDK query with the given token over the caller's HttpClient. */
 const run = <A>(
 	httpClient: HttpClient.HttpClient,
@@ -64,6 +78,7 @@ const run = <A>(
 	effect: Effect.Effect<A, SdkError, GqlTransport>,
 ) =>
 	effect.pipe(
+		Effect.retry({ schedule: TRANSIENT_RETRY, while: isTransient }),
 		Effect.mapError(toApiError),
 		Effect.timeoutOrElse({
 			duration: REQUEST_TIMEOUT,
@@ -75,7 +90,12 @@ const run = <A>(
 		// The token is per org, so this cannot be hoisted into the static service graph;
 		// the layer closes the distilled SDK query over it.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.mergeAll(GraphQLLive, CredentialsFromToken({ token, tokenKind: "account" }))),
+		Effect.provide(
+			Layer.mergeAll(
+				GraphQLLive,
+				CredentialsFromToken({ token: Redacted.make(token), tokenKind: "account" }),
+			),
+		),
 		Effect.provideService(HttpClient.HttpClient, httpClient),
 		Effect.annotateSpans("peer.service", "railway"),
 	)
@@ -155,15 +175,13 @@ export const discover = (httpClient: HttpClient.HttpClient, token: string) =>
 				)
 				return project.environments
 					.filter((environment) => environment.isEphemeral !== true)
-					.map(
-						(environment): RailwayDiscoveredEnvironment => ({
-							projectId: project.id,
-							projectName: project.name,
-							environmentId: environment.id,
-							environmentName: environment.name,
-							services,
-						}),
-					)
+					.map((environment): RailwayDiscoveredEnvironment => ({
+						projectId: project.id,
+						projectName: project.name,
+						environmentId: environment.id,
+						environmentName: environment.name,
+						services,
+					}))
 			}),
 			(a, b) => a.environmentId === b.environmentId,
 		)

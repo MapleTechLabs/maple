@@ -58,16 +58,25 @@ struct TimeWindowTests {
 		#expect(window.duration <= 7 * 24 * 3600)
 	}
 
-	@Test("Buckets snap up to whole minutes and never below one", arguments: TimeWindow.allCases)
-	func bucketsAreMinuteMultiples(window: TimeWindow) throws {
-		let resolved = window.resolve()
-		let bucket = resolved.bucketSeconds(targetPoints: 48)
-		#expect(bucket >= 60)
-		#expect(bucket % 60 == 0)
-		// Never denser than asked for: the rounding only ever widens a bucket.
-		let points = Int(window.duration) / bucket
-		#expect(points <= 48)
-		#expect(points >= 24, "a \(window.rawValue) window at \(bucket)s gives only \(points) buckets")
+	/// (window seconds, target points, bucket the web picks)
+	static let webBuckets: [(Double, Int, Int)] = [
+		(3600, 48, 60), (21600, 48, 300), (86400, 48, 1800), (604800, 48, 14400),
+		(3600, 100, 60), (86400, 100, 900), (300, 48, 60),
+	]
+
+	@Test("Buckets match the web dashboard's ladder", arguments: webBuckets)
+	func bucketsMatchWebLadder(case: (Double, Int, Int)) {
+		let end = Date(timeIntervalSince1970: 1_800_000_000)
+		let window = ResolvedTimeWindow(start: end.addingTimeInterval(-`case`.0), end: end)
+		#expect(window.bucketSeconds(targetPoints: `case`.1) == `case`.2)
+	}
+
+	@Test("A short window keeps at least six buckets")
+	func shortWindowKeepsSixBuckets() {
+		let end = Date(timeIntervalSince1970: 1_800_000_000)
+		// 2h at 4 points rounds to 30 minutes, which would leave four buckets.
+		let window = ResolvedTimeWindow(start: end.addingTimeInterval(-7200), end: end)
+		#expect(window.bucketSeconds(targetPoints: 4) == 900)
 	}
 
 	@Test("Round-trips the timestamps the API returns")

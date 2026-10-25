@@ -50,7 +50,7 @@ import {
 	type ChatTurnTenantEncoded,
 	prReviewIdFromChatSessionId,
 } from "@maple/domain/chat-session"
-import type { ChatSessionRpc } from "@maple/domain/chat-session-stub"
+import { type ChatAbortReason, type ChatSessionRpc, isChatAbortReason } from "@maple/domain/chat-session-stub"
 import { type ChatSessionNamespace, ChatSessionObject } from "@maple/backend/platform/chat-sessions"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { AppliedProposal, ApplyChatProposalInput } from "./apply-proposal"
@@ -265,8 +265,9 @@ export class ChatSession {
 	/**
 	 * The turn this activation is actually running. SQL says which turn holds the slot; only this
 	 * says its fiber still exists — an evicted object comes back with the claim and without the turn.
+	 * Its controller is how an abort interrupts the fiber instead of waiting for its next event.
 	 */
-	private liveTurn: string | undefined
+	private liveTurn: { readonly messageId: string; readonly controller: AbortController } | undefined
 
 	/**
 	 * Proposals this activation is part-way through settling.
@@ -326,6 +327,7 @@ export class ChatSession {
 					reason: "error",
 					error: "The turn stopped responding and was abandoned.",
 				})
+				this.interruptTurn(messageId, "stale")
 			}
 			return undefined
 		}
@@ -528,13 +530,15 @@ export class ChatSession {
 		// its result, and the in-memory half catches it while the first is still running the tool.
 		if (proposal.settled || this.settling.has(input.toolCallId)) return "settled"
 		this.settling.add(input.toolCallId)
+		// Only an explicit approve runs the tool. This arrives undecoded over RPC from other
+		// Workers, so a skewed or malformed decision declines rather than approving.
 		const decided: Effect.Effect<AppliedProposal> =
-			input.decision === "deny"
-				? Effect.succeed({
+			input.decision === "approve"
+				? this.applyProposal(input, proposal)
+				: Effect.succeed({
 						output: `Declined ${decidedBy(input.approver)}. The tool did not run.`,
 						isError: true,
 					})
-				: this.applyProposal(input, proposal)
 		return Effect.runPromise(
 			decided.pipe(
 				Effect.map((result): ChatProposalOutcome => {
@@ -619,20 +623,26 @@ export class ChatSession {
 	/**
 	 * Abort the running turn.
 	 *
-	 * The DO cannot synchronously cancel the fiber, so it clears the claim and records the terminal
-	 * event against the message that actually holds it — the turn notices via `holdsTurn` at its
-	 * next step and stops. Taking the message id from the session rather than the caller is what
-	 * makes the emitted `turn-end` land on the assistant message the client is rendering; a
-	 * caller-supplied id named a message that never existed, so no client ever cleared its
-	 * streaming state.
+	 * Clears the claim, records the terminal event against the message that actually holds it, and
+	 * interrupts that turn's fiber, sub-agents included, rather than letting it run to its next event.
+	 * Taking the message id from the session rather than the caller is what makes the emitted
+	 * `turn-end` land on the assistant message the client is rendering; a caller-supplied id named a
+	 * message that never existed, so no client ever cleared its streaming state.
 	 */
-	abort(): void {
+	abort(reason?: ChatAbortReason): void {
 		const messageId = this.runningTurn()
 		if (messageId === undefined) return
 		this.clearRunning()
 		if (messageId !== null) {
 			this.append({ type: "turn-end", messageId, reason: "aborted" })
+			// Over RPC from another Worker, so not trusted to be one of ours.
+			this.interruptTurn(messageId, isChatAbortReason(reason) ? reason : "user")
 		}
+	}
+
+	/** Interrupt `messageId`'s fiber if this activation runs it; a straggler's id matches nothing. */
+	private interruptTurn(messageId: string, reason: ChatAbortReason): void {
+		if (this.liveTurn?.messageId === messageId) this.liveTurn.controller.abort(reason)
 	}
 
 	running(): boolean {
@@ -649,7 +659,7 @@ export class ChatSession {
 	alarm(): void {
 		const messageId = this.runningTurn()
 		if (messageId === undefined) return
-		if (messageId !== null && this.liveTurn !== messageId) {
+		if (messageId !== null && this.liveTurn?.messageId !== messageId) {
 			this.recoverEvictedTurn(messageId)
 			return
 		}
@@ -713,11 +723,13 @@ export class ChatSession {
 	 * memory for up to 15 minutes; the heartbeat alarm covers longer turns.
 	 */
 	private startTurn(turnId: string, turn: TurnInput, restart?: { readonly resume: number }): void {
-		this.liveTurn = turnId
+		const controller = new AbortController()
+		this.liveTurn = { messageId: turnId, controller }
 		this.armHeartbeat()
 		this.ctx.waitUntil(
 			this.runTurn({
 				...this.turnRunInput(turnId, turn),
+				signal: controller.signal,
 				...(restart === undefined
 					? undefined
 					: {
@@ -771,7 +783,7 @@ export class ChatSession {
 				),
 				Effect.ensuring(
 					Effect.sync(() => {
-						if (this.liveTurn === messageId) this.liveTurn = undefined
+						if (this.liveTurn?.messageId === messageId) this.liveTurn = undefined
 						this.endTurn(messageId)
 					}),
 				),
@@ -817,7 +829,7 @@ export const chatSessionRpc = (session: ChatSession) =>
 		settleProposal: (input) => Effect.promise(() => session.settleProposal(input)),
 		holdsTurn: (messageId) => Effect.sync(() => session.holdsTurn(messageId)),
 		endTurn: (messageId) => Effect.sync(() => session.endTurn(messageId)),
-		abort: () => Effect.sync(() => session.abort()),
+		abort: (reason) => Effect.sync(() => session.abort(reason)),
 		alarm: () => Effect.sync(() => session.alarm()),
 	}) satisfies ChatSessionRpc
 
