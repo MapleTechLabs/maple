@@ -41,7 +41,7 @@ import { integrationNotConnected } from "../../kit/empty-states"
 import { integrationConnectCta } from "../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
 import { GCP_ACCENT } from "../../../integrations/catalog"
-import { heroChip } from "../../../infra/kit/hero-chip"
+import { heroFieldChip } from "../../../infra/kit/hero-chip"
 import { linkTabStrip } from "../../../infra/kit/view-tabs"
 import { pageHero, pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
@@ -519,7 +519,7 @@ const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 						value: project,
 					})
 				: projects.length === 1
-					? heroChip(h, `project ${projects[0] ?? ""}`)
+					? heroFieldChip(h, { label: "project", value: projects[0] ?? "" })
 					: undefined,
 			actions: [],
 		},

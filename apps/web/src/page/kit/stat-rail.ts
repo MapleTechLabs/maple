@@ -163,9 +163,14 @@ export const statRailItemSkeleton = <M>(h: HtmlBuilder<M>, className?: string): 
 		],
 	)
 
-export const statRailLoading = <M>(h: HtmlBuilder<M>, count = 4, columns?: StatRailColumns): Html =>
+export const statRailLoading = <M>(
+	h: HtmlBuilder<M>,
+	count = 4,
+	columns?: StatRailColumns,
+	className?: string,
+): Html =>
 	statRail(
 		h,
-		{ columns, isBusy: true },
+		{ columns, className, isBusy: true },
 		Array.from({ length: count }, () => statRailItemSkeleton(h)),
 	)

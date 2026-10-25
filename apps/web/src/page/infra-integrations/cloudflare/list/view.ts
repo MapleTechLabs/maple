@@ -29,7 +29,7 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
-import { heroChip } from "../../../infra/kit/hero-chip"
+import { heroFieldChip } from "../../../infra/kit/hero-chip"
 import { linkTabStrip } from "../../../infra/kit/view-tabs"
 import { pageHero, pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import { pageTime } from "../../kit/page-time"
@@ -281,7 +281,7 @@ const header = (
 	const account = scope.multiAccount
 		? accountMenu(h, model.accountMenu, scope.accounts, scope.accountId)
 		: singleAccountName
-			? heroChip(h, ["account ", singleAccountName])
+			? heroFieldChip(h, { label: "account", value: singleAccountName })
 			: undefined
 	return { trailing: account, actions: [] }
 }

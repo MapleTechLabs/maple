@@ -7,7 +7,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartBucketSeconds } from "../../../../charts/infra-metric-series"
 import { AppRoute, hrefOf } from "../../../../route"
 import { button, linkButton } from "../../../../ui/button"
-import { badge } from "../../../../ui/display"
+import { heroFieldChip } from "../../../infra/kit/hero-chip"
 import { errorState } from "../../../../ui/error-state"
 import { icon } from "../../../../ui/icon"
 import type { PageViewInputs } from "../../../contract"
@@ -308,7 +308,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const hero = pageHeroParts(h, {
 		title: "AWS",
 		description: description(status),
-		trailing: accounts === 0 ? [] : [badge(h, { variant: "muted" }, [countLabel(accounts, "account")])],
+		trailing:
+			accounts === 0
+				? []
+				: [
+						heroFieldChip(h, {
+							label: pluralize(accounts, "account"),
+							value: accounts.toLocaleString(),
+							isValueFirst: true,
+						}),
+					],
 	})
 	return dashboardPage(
 		h,

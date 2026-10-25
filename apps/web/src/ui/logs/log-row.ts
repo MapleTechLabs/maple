@@ -8,7 +8,7 @@ import type { LogChip, LogRowView, PinnedCell } from "./log-row-view"
 import { highlightedText } from "./highlight"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
-import { CHIP_CLASS, CHIP_TONE_CLASSES, rowClass } from "./styles"
+import { CHIP_CLASS, CHIP_KEY_TONE_CLASSES, CHIP_TONE_CLASSES, rowClass } from "./styles"
 import type * as AttributesPanel from "../attributes/attributes-panel"
 import type { CopyStatus } from "../copy-button"
 import { logRowExpanded } from "./log-row-expanded"
@@ -135,7 +135,7 @@ const chipButton = <Message>(
 			),
 		],
 		[
-			h.span([rowClass(h, "shrink-0 opacity-70")], [chip.displayKey]),
+			h.span([rowClass(h, cn("shrink-0", CHIP_KEY_TONE_CLASSES[chip.tone]))], [chip.displayKey]),
 			h.span([rowClass(h, "shrink-0 opacity-40")], [":"]),
 			h.span([rowClass(h, "min-w-0 max-w-[18ch] truncate")], [chip.displayValue]),
 		],
