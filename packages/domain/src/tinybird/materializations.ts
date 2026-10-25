@@ -672,7 +672,8 @@ export const serviceMapDbEdgesHourlyMv = defineMaterializedView("service_map_db_
 /**
  * Minute twin of `service_map_db_edges_hourly_mv`, read by `serviceDbEdges` for
  * the partial hours at the ends of a window (see `serviceMapDbEdgesMinutely`).
- * Same filter and keys as the hourly view, so the two tiers merge cleanly.
+ * Same filter, keys and derivation as the hourly view, so the two tiers merge; keep
+ * them in step. It omits the hourly view's sampled/unsampled counts, which no read uses.
  */
 export const serviceMapDbEdgesMinutelyMv = defineMaterializedView("service_map_db_edges_minutely_mv", {
 	description:

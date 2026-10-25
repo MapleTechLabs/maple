@@ -568,8 +568,9 @@ export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_ho
 export type ServiceMapDbEdgesHourlyRow = InferRow<typeof serviceMapDbEdgesHourly>
 
 /**
- * Minute-grain twin of `service_map_db_edges_hourly`: same columns, same view
- * SQL, `Minute` for `Hour`. It serves the partial hours at the ends of a map
+ * Minute-grain twin of `service_map_db_edges_hourly`: the same keys, derivation
+ * and measures the read uses, `Minute` for `Hour`. It drops the hourly table's
+ * Sampled/UnsampledSpanCount (no query reads them) and adds `FirstInsertedAt`. It serves the partial hours at the ends of a map
  * window, which `serviceDbEdges` used to read from raw `traces` by decoding both
  * attribute maps of every Client span (24s and 30 GB for one heavy org's 12h map).
  *
@@ -582,7 +583,7 @@ export type ServiceMapDbEdgesHourlyRow = InferRow<typeof serviceMapDbEdgesHourly
 export const serviceMapDbEdgesMinutely = defineDatasource("service_map_db_edges_minutely", {
 	tenantColumn: "OrgId",
 	description:
-		"Pre-aggregated per-minute service-to-database edges for the partial hours at the ends of a service map window. Same columns as service_map_db_edges_hourly. Populated by materialized view.",
+		"Pre-aggregated per-minute service-to-database edges for the partial hours at the ends of a service map window. Same keys and read measures as service_map_db_edges_hourly, plus FirstInsertedAt. Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
