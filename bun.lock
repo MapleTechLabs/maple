@@ -709,6 +709,7 @@
       "name": "@maple/domain",
       "version": "0.0.0",
       "dependencies": {
+        "@alchemy.run/domain": "catalog:alchemy",
         "@maple-dev/effect-orm": "0.8.0",
         "@maple/primitives": "workspace:*",
         "@maple/query-model": "workspace:*",

@@ -56,3 +56,40 @@ resize and keyboard rearranging. It replaced react-grid-layout 2.3.0 (and its `r
 one drag across a 50-widget board: 12 React commits instead of 182, ~86 ms of React work instead
 of ~495 ms, no dropped frames or long tasks (the old grid had 2 and 1), and the same 28 widgets
 moved. Resize: 9 commits instead of 122. Mount: 1 commit instead of 2, no layout shift in either.
+
+## First domain pass: dashboard names
+
+`@maple/domain/dashboard-domain` defines the name context with import and rename commands,
+semantic events, typed rejections, an aggregate and a name view. Its in-memory tests cover
+serialization, duplicate command IDs, bootstrap conflicts, tenant-qualified keys, receipt
+confirmation and reconnecting a view. These runtime guarantees are tested model behavior;
+the model is not hosted in production yet.
+
+The v2 PATCH route uses the same rename decision and event fold inside
+`DashboardPersistenceService.mutate`, which retries against the latest org-scoped Postgres
+row. Postgres remains the authoritative store for every existing caller (dashboard UI, API,
+MCP, imports, templates and history restore). Existing dashboards need no migration: each
+rename starts with the stored name. Deletion uses the existing row deletion and a later rename
+returns not-found; there is no second aggregate that could resurrect it. Existing version
+snapshots remain the persistent history. Rename events and Domain command receipts are not
+persisted by this adapter, and HTTP PATCH does not gain commandId deduplication.
+
+The browser collection now sends only fields changed between a transaction's original and
+modified documents. A stale rename no longer replaces another client's widgets; a widget edit
+no longer restores an older name. Concurrent changes to the same array still use replacement
+semantics. The existing optimistic collection, Postgres txid confirmation and Foldkit
+`documentStream` subscription remain the production live-update path. A Domain view subscription
+has not replaced Electric, and the separate Local UI is unaffected.
+
+A persistent Domain cutover must move **all** writes for this context together, bootstrap
+without overwriting live edits, preserve deletion tombstones, and make any Postgres projection
+idempotent and explicitly eventually consistent. Production reads would need receipt-based
+read-your-own-write behavior. The new model has no public Api: HTTP session/preview auth and
+WebSocket cookie, origin and tenant authorization must be implemented before exposing it.
+
+EU deployment is also unresolved for Domain hosting in beta.84: Cloudflare supports
+[`namespace.jurisdiction("eu")`](https://developers.cloudflare.com/durable-objects/reference/data-location/),
+but the installed Domain platform uses unqualified `getByName` calls and its exported
+`DurableObjects` layer has no jurisdiction option. Do not mount this model on that platform
+for EU tenants until namespace selection is explicit. No new Durable Object, projection,
+WebSocket endpoint or deployment flag is introduced by this first pass.

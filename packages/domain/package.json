@@ -62,7 +62,8 @@
 		"./organization-feature-flags": "./src/organization-feature-flags.ts",
 		"./organization-regions": "./src/organization-regions.ts",
 		"./chat-session-stub": "./src/chat-session-stub.ts",
-		"./chat-transcript": "./src/chat-transcript.ts"
+		"./chat-transcript": "./src/chat-transcript.ts",
+		"./dashboard-domain": "./src/dashboard-domain.ts"
 	},
 	"scripts": {
 		"gen:anticipated-errors": "bun scripts/gen-anticipated-errors.ts",
@@ -71,6 +72,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@alchemy.run/domain": "catalog:alchemy",
 		"@maple-dev/effect-orm": "0.8.0",
 		"@maple/primitives": "workspace:*",
 		"@maple/query-model": "workspace:*",

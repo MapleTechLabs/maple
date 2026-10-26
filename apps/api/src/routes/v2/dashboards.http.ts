@@ -42,6 +42,7 @@ import { getTemplateById, listTemplateMetadata } from "@maple/backend/dashboard-
 import type { TemplateParameterValues } from "@maple/backend/dashboard-templates"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { renameDashboardDocument } from "@maple/backend/services/dashboards/dashboard-domain"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
@@ -232,7 +233,7 @@ const applyUpdate = (
 
 	return new DashboardDocument({
 		id: current.id,
-		name: payload.name ?? current.name,
+		name: payload.name === undefined ? current.name : renameDashboardDocument(current, payload.name).name,
 		...(description !== undefined ? { description } : undefined),
 		...(tags !== undefined ? { tags } : undefined),
 		timeRange:
@@ -512,6 +513,11 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				.handle("update", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						if (payload.name !== undefined) {
+							yield* Effect.annotateCurrentSpan({
+								"maple.dashboard.command": "RenameDashboard",
+							})
+						}
 						const updatedAt = asIsoDateTime(
 							new Date(yield* Clock.currentTimeMillis).toISOString(),
 						)
