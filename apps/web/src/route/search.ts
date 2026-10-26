@@ -331,6 +331,15 @@ export const AlertsCreateSearch = Schema.Struct({
 	chart: Schema.optional(Schema.String),
 })
 
+/** `/alerts/uptime/new`: `monitorId` edits that monitor; `serviceName` and `kind` prefill a new one. */
+export const AlertsUptimeNewSearch = Schema.Struct({
+	monitorId: Schema.optional(Schema.String),
+	serviceName: Schema.optional(Schema.String),
+	kind: Schema.optional(Schema.String),
+})
+
+export const AlertsUptimeMonitorSearch = Schema.Struct({})
+
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)
 
 export const CodeReviewIssuesSearch = Schema.Struct(CodeReviewIssuesSearchFields)

@@ -30,6 +30,16 @@ describe("routes", () => {
 		expect(hrefOf(route)).toBe("/services/checkout%20api")
 	})
 
+	test("uptime routes parse ahead of a rule id and print back", () => {
+		expect(parse("/alerts/uptime/new?serviceName=%22api%22")).toMatchObject({
+			_tag: "AlertsUptimeNew",
+			search: { serviceName: "api" },
+		})
+		const monitor = parse("/alerts/uptime/upm_abc")
+		expect(monitor).toMatchObject({ _tag: "AlertsUptimeMonitor", monitorId: "upm_abc" })
+		expect(hrefOf(monitor)).toBe("/alerts/uptime/upm_abc")
+	})
+
 	test("a literal sibling wins over a param route", () => {
 		expect(parse("/infra/hosts")._tag).toBe("InfraHosts")
 		expect(parse("/alerts/create")._tag).toBe("AlertsCreate")
