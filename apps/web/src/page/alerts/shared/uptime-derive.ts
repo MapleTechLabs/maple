@@ -122,7 +122,8 @@ export const uptimeShare = (recent: ReadonlyArray<RecentCheck>): number | null =
 /** `99.58%`; whole shares drop the decimals. */
 export const formatShare = (share: number | null): string => {
 	if (share === null) return "–"
-	const percent = share * 100
+	// Rounded first: 11/20 * 100 is 55.00000000000001, which must still read "55%".
+	const percent = Math.round(share * 10_000) / 100
 	return Number.isInteger(percent) ? `${percent}%` : `${percent.toFixed(2)}%`
 }
 
