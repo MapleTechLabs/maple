@@ -271,6 +271,29 @@ describe("uptime monitor form", () => {
 		expect(typed.form.name).toBe("Mail")
 	})
 
+	test("an edited monitor's destinations are not called unavailable before they sync", () => {
+		const monitor = httpMonitor()
+		const entered = init(
+			{ _tag: "AlertsUptimeNew", search: { monitorId: publicId(monitor.id) } },
+			context,
+		).model
+		const opened = asAdmin(
+			pageUpdate(
+				entered,
+				Message.CompletedFetchExisting({
+					key: entered.existing.key ?? "",
+					result: Result.succeed(monitor),
+				}),
+			).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			expectView(text("Unavailable destination")).not.toExist(),
+			expectView(role("button", { name: "Stop notifying Destination" })).toExist(),
+		)
+	})
+
 	test("a heartbeat grace that is not whole minutes survives an unrelated edit", () => {
 		const monitor = heartbeatMonitor()
 		const entered = init(
