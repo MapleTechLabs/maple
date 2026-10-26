@@ -114,6 +114,15 @@ describe("uptime monitor page", () => {
 		)
 	})
 
+	test("before destinations sync, the setup counts them instead of calling them unavailable", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(opened(httpMonitor())),
+			expectView(text("1 destination")).toExist(),
+			expectView(text(/Unavailable destination/u)).not.toExist(),
+		)
+	})
+
 	test("the last check shows the status code, with the error on its own line", () => {
 		scene(
 			{ update: pageUpdate, view },

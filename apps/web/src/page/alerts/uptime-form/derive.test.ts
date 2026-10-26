@@ -47,4 +47,18 @@ describe("formIssues", () => {
 		expect(issues("https://:80")).not.toEqual([])
 		expect(issues("https://api.acme.dev/health")).toEqual([])
 	})
+
+	it("names a header line without a colon instead of saving the monitor without it", () => {
+		const issues = formIssues(
+			emptyForm({
+				kind: "http",
+				name: "api",
+				url: "https://api.acme.dev/health",
+				headers: "Accept: application/json\nX-Api-Key secret\n",
+			}),
+		)
+		expect(issues).toEqual([
+			"Header line 'X-Api-Key secret' needs a name and a colon, like Authorization: Bearer token.",
+		])
+	})
 })
