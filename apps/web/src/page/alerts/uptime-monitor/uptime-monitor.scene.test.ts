@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { destinationRow, incidentRow, NOW, ORG } from "../shared/test-rows"
 import type { UptimeMonitor } from "../shared/uptime-derive"
-import { downMonitor, heartbeatMonitor, httpMonitor } from "../shared/uptime-test-monitors"
+import { downMonitor, heartbeatMonitor, httpMonitor, MONITOR_RULE } from "../shared/uptime-test-monitors"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -52,16 +52,22 @@ describe("uptime monitor page", () => {
 		)
 	})
 
-	test("a down monitor leads with what it returns and links the failing trace and incident", () => {
+	test("a down monitor leads with what it returns and links the failing trace and its rule's open incident", () => {
 		const monitor = downMonitor()
 		const incident = incidentRow({
 			signal_type: "uptime",
-			rule_name: monitor.name,
+			rule_id: MONITOR_RULE,
+			rule_name: "Renamed since",
 			group_key: "__total__",
+		})
+		const otherRule = incidentRow({
+			id: "0199a003-0000-7000-8000-000000000009",
+			signal_type: "uptime",
+			rule_name: monitor.name,
 		})
 		scene(
 			{ update: pageUpdate, view },
-			given(opened(monitor, [Message.UpdatedIncidents({ orgId: ORG, rows: [incident] })])),
+			given(opened(monitor, [Message.UpdatedIncidents({ orgId: ORG, rows: [otherRule, incident] })])),
 			expectView(text("Returning 503 since 11:54:00 AM")).toExist(),
 			expectView(text("Service Unavailable")).toExist(),
 			expectView(role("link", { name: "Open failing trace" })).toHaveAttr(

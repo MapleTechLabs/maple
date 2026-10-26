@@ -1,14 +1,16 @@
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDestinationId } from "@maple/domain/http"
+import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { DESTINATION_ID, NOW } from "./test-rows"
+import { DESTINATION_ID, NOW, ruleId } from "./test-rows"
 import type { UptimeMonitor } from "./uptime-derive"
 
 // Uptime monitors as `uptimeMonitors.list` decodes them, for the scene tests.
 
 export const monitorId = (n: number) =>
 	Schema.decodeSync(UptimeMonitorId)(`0199a009-0000-7000-8000-00000000000${n}`)
+/** The backing alert rule of the default monitor; incidents carry it as `rule_id`. */
+export const MONITOR_RULE = Schema.decodeSync(AlertRuleId)(ruleId(7))
 export const DESTINATION = Schema.decodeSync(AlertDestinationId)(DESTINATION_ID)
 
 const iso = (msBefore: number) => new Date(NOW - msBefore).toISOString()
@@ -43,6 +45,7 @@ const BASE: UptimeMonitor = {
 	destination_ids: [DESTINATION],
 	enabled: true,
 	heartbeat_url: null,
+	alert_rule_id: MONITOR_RULE,
 	state: {
 		status: "up",
 		consecutive_failures: 0,

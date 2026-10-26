@@ -134,6 +134,7 @@ describe("v2 uptime monitors", () => {
 			})
 			expect(created.status).toBe(200)
 			expect(created.body.id).toMatch(/^upm_/)
+			expect(created.body.alert_rule_id).toMatch(/^alrt_/)
 			expect(created.body).toMatchObject({
 				object: "uptime_monitor",
 				kind: "http",

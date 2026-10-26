@@ -37,6 +37,7 @@ const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
 	enabled: monitor.enabled,
 	destination_ids: monitor.destinationIds,
 	heartbeat_url: monitor.heartbeatUrl,
+	alert_rule_id: monitor.alertRuleId,
 	state: {
 		status: monitor.state.status,
 		consecutive_failures: monitor.state.consecutiveFailures,

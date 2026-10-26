@@ -25,7 +25,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { AlertDestinationPublicId } from "./resource-ids"
+import { AlertDestinationPublicId, AlertRulePublicId } from "./resource-ids"
 
 /** `upm_…` public ID ⇄ internal `UptimeMonitorId` (raw UUID). */
 export const UptimeMonitorPublicId = PublicId(PublicIdPrefixes.uptimeMonitor, UptimeMonitorId)
@@ -386,6 +386,7 @@ const uptimeMonitorExample = {
 	enabled: true,
 	destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"],
 	heartbeat_url: null,
+	alert_rule_id: "alrt_YofPTrK9782DWwcnXhpcCw",
 	state: {
 		status: "up",
 		consecutive_failures: 0,
@@ -433,6 +434,10 @@ export const V2UptimeMonitor = Schema.Struct({
 	heartbeat_url: Schema.NullOr(Schema.String).annotate({
 		description:
 			"Heartbeats only: the URL your job sends `GET` or `POST` to on success (append `/fail` to report a failure). `null` for other kinds.",
+	}),
+	alert_rule_id: Schema.NullOr(AlertRulePublicId).annotate({
+		description:
+			"The alert rule backing this monitor: its incidents carry this rule id. `null` only for a monitor whose rule is missing.",
 	}),
 	state: V2UptimeMonitorState,
 	created_at: Timestamp.annotate({ description: "When the monitor was created." }),

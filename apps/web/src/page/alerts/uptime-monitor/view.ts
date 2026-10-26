@@ -97,11 +97,13 @@ const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 			: []),
 	])
 
-/** The open uptime incident for this monitor: its backing rule carries the monitor's name. */
+/** The open incident of the monitor's backing alert rule. */
 const openIncidentId = (model: Model, monitor: UptimeMonitor): string | null =>
-	(model.incidents ?? []).find(
-		(row) => row.signal_type === "uptime" && row.status === "open" && row.rule_name === monitor.name,
-	)?.id ?? null
+	monitor.alert_rule_id === null
+		? null
+		: ((model.incidents ?? []).find(
+				(row) => row.rule_id === monitor.alert_rule_id && row.status === "open",
+			)?.id ?? null)
 
 /** "Returning 503 since 14:02:18", the check's error, and the way to the failing trace. */
 const incidentBlock = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): Html => {
