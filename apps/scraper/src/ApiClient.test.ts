@@ -12,6 +12,7 @@ const testEnv: ScraperEnvConfig = {
 	SCRAPER_CONCURRENCY: 10,
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: 60,
 	SCRAPER_OTLP_MAX_DATA_POINTS: 10_000,
+	SCRAPER_OTLP_MAX_BODY_BYTES: 4 * 1024 * 1024,
 	PORT: 0,
 }
 
@@ -163,7 +164,10 @@ describe("ApiClient", () => {
 					.pipe(
 						Effect.provideService(
 							FetchHttpClient.Fetch,
-							stubFetch(recorded, () => new Response("persistence unavailable", { status: 503 })),
+							stubFetch(
+								recorded,
+								() => new Response("persistence unavailable", { status: 503 }),
+							),
 						),
 						Effect.flip,
 					),
