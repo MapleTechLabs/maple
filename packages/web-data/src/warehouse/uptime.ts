@@ -18,9 +18,10 @@ export interface UptimeCheckStatsInput {
 	readonly endTime: string
 }
 
-/** Checks one list page reads, and the pages read at once: 24 hours at a 30s interval fit. */
-const CHECK_PAGE = 1000
-const CHECK_PAGES = 3
+/** Checks one list page reads (the traces list caps `limit` at 200), and the pages read. */
+const CHECK_PAGE = 200
+/** Offsets 0 to 2000, the list's offset cap: 24 hours at a 1m interval fit. */
+const CHECK_PAGES = 11
 /** Most checks one window lists; past it the newest are kept. */
 export const UPTIME_CHECK_LIST_LIMIT = CHECK_PAGE * CHECK_PAGES
 
@@ -95,7 +96,7 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 					offset,
 				},
 			}),
-		{ concurrency: "unbounded" },
+		{ concurrency: 4 },
 	)
 
 	const [series, p50Ms, p95Ms, p99Ms, list] = yield* Effect.all(
