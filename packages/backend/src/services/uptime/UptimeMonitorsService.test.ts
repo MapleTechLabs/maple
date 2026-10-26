@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Option, Ref, Schema } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
+import { TestClock } from "effect/testing"
 import { BillingCustomer, OrgId, UptimeMonitorLimitReachedError, UserId } from "@maple/domain/http"
 import { UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
 import { UPTIME_USER_AGENT, UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
@@ -76,6 +77,32 @@ const makeLayer = (
 		Layer.provide(Env.layer),
 		Layer.provide(config()),
 	)
+
+/**
+ * A Database that, once armed, runs `hook` just before its `calls`th execute: a write that lands
+ * between a service method's read and its write.
+ */
+const racingDatabase = (testDb: TestDb) =>
+	Effect.gen(function* () {
+		const countdown = yield* Ref.make(0)
+		const hook = yield* Ref.make<Effect.Effect<void>>(Effect.void)
+		const layer = Layer.effect(
+			Database,
+			Effect.gen(function* () {
+				const inner = yield* Database
+				return {
+					execute: (fn) =>
+						Ref.modify(countdown, (n) => [n, n > 0 ? n - 1 : n] as const).pipe(
+							Effect.flatMap((n) => (n === 1 ? Effect.flatten(Ref.get(hook)) : Effect.void)),
+							Effect.andThen(inner.execute(fn)),
+						),
+				}
+			}),
+		).pipe(Layer.provide(testDb.layer))
+		const arm = (calls: number, effect: Effect.Effect<void>) =>
+			Ref.set(hook, effect).pipe(Effect.andThen(Ref.set(countdown, calls)))
+		return { layer, arm }
+	})
 
 const httpConfig = (url = "https://status.example.com/health"): UptimeMonitorConfig => ({
 	_tag: "http",
@@ -406,6 +433,110 @@ describe("UptimeMonitorsService", () => {
 			})
 			yield* program.pipe(Effect.provide(makeLayer(testDb, { database })))
 		})
+	})
+
+	it.effect("applies both of two pings that race, and none to a monitor paused mid-ping", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const racing = yield* racingDatabase(testDb)
+			const program = Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* service.create(ORG, {
+					name: "nightly backup",
+					kind: "heartbeat",
+					config: heartbeatConfig,
+					createdBy: USER,
+				})
+				const url = monitor.heartbeatUrl ?? ""
+				const token = url.slice(url.lastIndexOf("/") + 1)
+				// Another ping lands between this ping's read (call 1) and write (call 2).
+				yield* racing.arm(2, Effect.orDie(service.recordPing(token, true)))
+				yield* service.recordPing(token, true)
+				const both = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(both.state.status, "up")
+				assert.strictEqual(both.state.consecutiveSuccesses, 2)
+				assert.strictEqual(both.state.recent.length, 2)
+
+				// A pause between the read and the write: the ping is not applied.
+				yield* racing.arm(
+					2,
+					Effect.asVoid(Effect.orDie(service.update(ORG, monitor.id, { enabled: false }))),
+				)
+				const refused = yield* Effect.flip(service.recordPing(token, false))
+				assert.strictEqual(refused._tag, "@maple/backend/uptime/HeartbeatNotFound")
+				const paused = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(paused.state.status, "paused")
+				assert.strictEqual(paused.state.recent.length, 2)
+			})
+			yield* program.pipe(Effect.provide(makeLayer(testDb, { database: racing.layer })))
+		})
+	})
+
+	it.effect("drops a check batch read before the monitor's settings changed", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const racing = yield* racingDatabase(testDb)
+			const program = Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("API", { failuresToDown: 2 })
+				// Settings change between the batch's read (call 1) and its write (call 2).
+				yield* racing.arm(
+					2,
+					TestClock.adjust("5 seconds").pipe(
+						Effect.andThen(service.update(ORG, monitor.id, { failuresToDown: 1 })),
+						Effect.orDie,
+						Effect.asVoid,
+					),
+				)
+				assert.strictEqual(yield* service.recordChecks([report(monitor.id, 1_000, false)]), 0)
+				const after = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(after.failuresToDown, 1)
+				assert.strictEqual(after.state.consecutiveFailures, 0)
+				// The next batch uses the new setting: one failure is now down.
+				assert.strictEqual(yield* service.recordChecks([report(monitor.id, 2_000, false)]), 1)
+				assert.strictEqual((yield* service.get(ORG, monitor.id)).state.status, "down")
+			})
+			yield* program.pipe(Effect.provide(makeLayer(testDb, { database: racing.layer })))
+		})
+	})
+
+	it.effect("refuses to send hidden header values to a URL on a new origin", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* service.create(ORG, {
+				name: "API",
+				kind: "http",
+				config: { ...httpConfig(), headers: { Authorization: "Bearer secret" } },
+				createdBy: USER,
+			})
+			const redacted = { Authorization: "[redacted]" }
+			const moved = yield* Effect.flip(
+				service.update(ORG, monitor.id, {
+					config: { ...httpConfig("https://elsewhere.example.net/health"), headers: redacted },
+				}),
+			)
+			assert.strictEqual(moved._tag, "@maple/http/errors/UptimeMonitorValidationError")
+			assert.include(moved.message, "re-enter the header values")
+
+			// Same origin keeps the stored value; a new origin with fresh values is fine.
+			const samePath = yield* service.update(ORG, monitor.id, {
+				config: { ...httpConfig("https://status.example.com/v2/health"), headers: redacted },
+			})
+			assert.deepStrictEqual(samePath.config._tag === "http" ? samePath.config.headers : null, {
+				Authorization: "Bearer secret",
+			})
+			const reentered = yield* service.update(ORG, monitor.id, {
+				config: {
+					...httpConfig("https://elsewhere.example.net/health"),
+					headers: { Authorization: "Bearer other" },
+				},
+			})
+			assert.strictEqual(
+				reentered.config._tag === "http" ? reentered.config.url : null,
+				"https://elsewhere.example.net/health",
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("records heartbeat pings by token", () => {

@@ -51,6 +51,15 @@ import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import { UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
 
+/** The state changed between a ping's read and its write; the ping is read and applied again. */
+class UptimeHeartbeatPingConflict extends Schema.TaggedError<UptimeHeartbeatPingConflict>()(
+	"@maple/backend/uptime/HeartbeatPingConflict",
+	{ message: Schema.String },
+) {}
+
+/** Attempts after the first before a ping that keeps losing its race gives up with a 503. */
+const PING_CONFLICT_RETRIES = 4
+
 /** An unknown, disabled or non-heartbeat token was pinged. */
 export class UptimeHeartbeatNotFound extends Schema.TaggedError<UptimeHeartbeatNotFound>()(
 	"@maple/backend/uptime/HeartbeatNotFound",
@@ -272,6 +281,21 @@ const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorCo
 	})
 }
 
+const originOf = (url: string): string => (URL.canParse(url) ? new URL(url).origin : url)
+
+/** A stored header value goes only to the origin it was entered for; a new origin needs them re-entered. */
+const refuseRedactedHeadersForNewOrigin = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) =>
+	current._tag === "http" &&
+	next._tag === "http" &&
+	originOf(next.url) !== originOf(current.url) &&
+	Object.values(next.headers).some((value) => value === UPTIME_REDACTED_HEADER_VALUE)
+		? Effect.fail(
+				invalid(
+					"The URL now points at a different origin; re-enter the header values instead of keeping the hidden ones",
+				),
+			)
+		: Effect.void
+
 type MonitorWithStateRow = Pick<
 	UptimeMonitorRow,
 	| "id"
@@ -296,7 +320,7 @@ type MonitorWithStateRow = Pick<
 		| "lastCheckJson"
 		| "recentJson"
 		| "lastPingAt"
-	>
+	> & { readonly stateUpdatedAt: number }
 
 /** Every monitor with its state; each monitor gets its state row in the same transaction. */
 const selectMonitors = () =>
@@ -322,6 +346,7 @@ const selectMonitors = () =>
 			lastCheckJson: $.s.lastCheckJson,
 			recentJson: $.s.recentJson,
 			lastPingAt: $.s.lastPingAt,
+			stateUpdatedAt: $.s.updatedAt,
 		}))
 
 const decodeInterval = Schema.decodeUnknownEffect(UptimeIntervalSeconds)
@@ -592,6 +617,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						`A ${current.kind} monitor cannot become ${input.config._tag}; create a new monitor instead`,
 					)
 				}
+				if (input.config !== undefined)
+					yield* refuseRedactedHeadersForNewOrigin(current.config, input.config)
 				const config =
 					input.config === undefined
 						? undefined
@@ -609,6 +636,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						? Option.some(input.enabled)
 						: Option.none<boolean>()
 				const now = yield* Clock.currentTimeMillis
+				const settingsChanged =
+					config !== undefined ||
+					input.intervalSeconds !== undefined ||
+					failuresToDown !== undefined
 
 				yield* dbExecute((db) =>
 					db.transaction(
@@ -633,7 +664,17 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)]),
 							)
 							// Pause parks the state; resume starts over from `pending`.
-							if (Option.isNone(enabledChange)) return
+							if (Option.isNone(enabledChange)) {
+								// New settings drop check batches computed from the old ones (they fence on it).
+								if (settingsChanged) {
+									yield* db.run(
+										PG.update(UptimeMonitorStates)
+											.set({ updatedAt: now })
+											.where(($) => [$.orgId.eq(orgId), $.monitorId.eq(monitorId)]),
+									)
+								}
+								return
+							}
 							yield* db.run(
 								PG.update(UptimeMonitorStates)
 									.set({
@@ -808,7 +849,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			})
 
 			// Heartbeats are a public hot path: no spans of its own beyond the two queries.
-			const recordPing = Effect.fnUntraced(function* (token: string, ok: boolean) {
+			const applyPing = Effect.fnUntraced(function* (token: string, ok: boolean) {
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						selectMonitors()
@@ -822,7 +863,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				}
 				const now = yield* Clock.currentTimeMillis
 				const status: UptimeMonitorStatus = ok ? "up" : "down"
-				yield* dbExecute((db) =>
+				const written = yield* dbExecute((db) =>
 					db.run(
 						PG.update(UptimeMonitorStates)
 							.set({
@@ -846,10 +887,38 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								lastPingAt: now,
 								updatedAt: now,
 							})
-							.where(($) => [$.orgId.eq(row.orgId), $.monitorId.eq(row.id)]),
+							// Fenced on the state read: a ping or pause in between changes the counters or
+							// `updated_at`, and this ping is read and applied again instead of overwriting it.
+							.where(($) => [
+								$.orgId.eq(row.orgId),
+								$.monitorId.eq(row.id),
+								$.updatedAt.eq(row.stateUpdatedAt),
+								$.consecutiveFailures.eq(row.consecutiveFailures),
+								$.consecutiveSuccesses.eq(row.consecutiveSuccesses),
+								$.status.neq("paused"),
+							])
+							.returning("monitorId"),
 					),
 				)
+				if (written.length === 0) {
+					return yield* new UptimeHeartbeatPingConflict({
+						message: "The heartbeat changed during the ping",
+					})
+				}
 			})
+
+			const recordPing = (token: string, ok: boolean) =>
+				applyPing(token, ok).pipe(
+					Effect.retry({
+						times: PING_CONFLICT_RETRIES,
+						while: (error) => error._tag === "@maple/backend/uptime/HeartbeatPingConflict",
+					}),
+					Effect.catchTag("@maple/backend/uptime/HeartbeatPingConflict", (error) =>
+						Effect.fail(
+							new UptimeMonitorPersistenceError({ message: error.message, cause: error }),
+						),
+					),
+				)
 
 			const testHttp = Effect.fn("UptimeMonitorsService.testHttp")(function* (
 				raw: UptimeMonitorConfig,
