@@ -17,6 +17,7 @@ import type { RailwayMetricsService } from "@maple/backend/services/integrations
 import type { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import type { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import type { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import type { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import type { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import type { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import type { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -49,6 +50,7 @@ export type McpToolRuntimeRequirements =
 	| RepoSandboxService
 	| ScrapeTargetsService
 	| SetupAuditService
+	| UptimeMonitorsService
 	| VcsCommitService
 	| VcsSourceService
 	| WarehouseQueryService

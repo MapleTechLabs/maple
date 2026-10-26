@@ -196,6 +196,9 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					...(open.length === 0
 						? [doc.next("list_alert_rules", {}, "review alert configuration")]
 						: []),
+					...(output.incidents.some((i) => i.signalType === "uptime")
+						? [doc.next("list_uptime_monitors", {}, "the uptime monitors behind these incidents")]
+						: []),
 				],
 			}
 		},

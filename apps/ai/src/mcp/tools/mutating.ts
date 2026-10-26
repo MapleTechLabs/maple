@@ -35,6 +35,10 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"create_scrape_target",
 	"update_scrape_target",
 	"delete_scrape_target",
+	// uptime monitors
+	"create_uptime_monitor",
+	"update_uptime_monitor",
+	"delete_uptime_monitor",
 	// feedback
 	"send_maple_feedback",
 ])
