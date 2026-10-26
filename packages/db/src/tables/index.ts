@@ -132,7 +132,6 @@ export * from "./sources"
 export * from "./supabase"
 export * from "./support-channels"
 export * from "./uptime"
-export * from "./uptime"
 export * from "./vcs"
 
 /** Every table the application database has, for schema checks and DDL. */
