@@ -2,9 +2,14 @@ import { assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Fiber, Layer, Metric, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { ScrapeResultReport, ScrapeTargetId } from "@maple/domain/http"
+import { UptimeMonitorId } from "@maple/domain/primitives"
+import { UptimeCheckReport, UptimeCheckReportList, UPTIME_CHECK_REPORT_BATCH_MAX } from "@maple/domain/uptime"
 import { ApiClient, ApiRequestError } from "./ApiClient"
 import { bufferedResults } from "./Metrics"
-import { REPORT_BATCH_SIZE, REPORT_INTERVAL, ResultReporter } from "./ResultReporter"
+import { REPORT_BATCH_SIZE, REPORT_INTERVAL, ResultReporter, UptimeReporter } from "./ResultReporter"
+import { MONITOR_A } from "./testing/uptime"
+
+const monitorId = Schema.decodeSync(UptimeMonitorId)(MONITOR_A)
 
 const targetId = Schema.decodeSync(ScrapeTargetId)("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 const report = (scrapedAt: number) => new ScrapeResultReport({ targetId, scrapedAt, error: null })
@@ -131,6 +136,47 @@ describe("ResultReporter", () => {
 				assert.deepStrictEqual(scrapedAts(harness), [1, 2])
 				assert.strictEqual(yield* reporter.pending, 0)
 			}).pipe(Effect.provide(reporterLayer(harness)))
+		}),
+	)
+})
+
+describe("UptimeReporter", () => {
+	it.effect("never posts a batch the API's uptime results endpoint would refuse", () =>
+		Effect.gen(function* () {
+			const delivered: Array<ReadonlyArray<UptimeCheckReport>> = []
+			const layer = UptimeReporter.layer.pipe(
+				Layer.provide(
+					Layer.succeed(ApiClient, {
+						listTargets: () => Effect.succeed([]),
+						listUptimeTargets: () => Effect.succeed([]),
+						reportResults: () => Effect.void,
+						reportUptimeResults: (results) => Effect.sync(() => void delivered.push(results)),
+					}),
+				),
+			)
+			yield* Effect.gen(function* () {
+				const reporter = yield* UptimeReporter
+				const total = UPTIME_CHECK_REPORT_BATCH_MAX * 2 + 1
+				const reports = Array.from(
+					{ length: total },
+					(_, i) =>
+						new UptimeCheckReport({
+							monitorId,
+							checkedAt: i,
+							ok: true,
+							durationMs: 5,
+							statusCode: 200,
+							error: null,
+							traceId: null,
+						}),
+				)
+				yield* Effect.forEach(reports, reporter.record, { discard: true })
+				yield* Effect.forkChild(reporter.run)
+				yield* Effect.repeat(Effect.yieldNow, { times: 10 })
+				assert.strictEqual(delivered.flat().length, total)
+				const decode = Schema.decodeUnknownExit(UptimeCheckReportList)
+				assert.isTrue(delivered.every((batch) => decode(batch)._tag === "Success"))
+			}).pipe(Effect.provide(layer))
 		}),
 	)
 })

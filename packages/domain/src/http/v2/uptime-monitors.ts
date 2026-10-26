@@ -46,6 +46,10 @@ const timeoutField = Schema.optionalKey(
 
 // --- Wire config (snake_case, discriminated by `type`) ---
 
+const jsonPathField = NonEmptyString.annotate({
+	description: "Dot path with `[n]` indexes, e.g. `checks[0].status`.",
+})
+
 export const V2UptimeAssertion = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("status"),
@@ -65,19 +69,27 @@ export const V2UptimeAssertion = Schema.Union([
 		op: Schema.Literals(["contains", "not_contains"]),
 		value: NonEmptyString,
 	}),
+	Schema.Struct({ type: Schema.Literal("json_path"), path: jsonPathField, op: Schema.Literal("exists") }),
 	Schema.Struct({
 		type: Schema.Literal("json_path"),
-		path: NonEmptyString.annotate({
-			description: "Dot path with `[n]` indexes, e.g. `checks[0].status`.",
+		path: jsonPathField,
+		op: Schema.Literal("equals"),
+		value: Schema.String.annotate({
+			description: "Compared to the value's JSON text (`null` for null).",
 		}),
-		op: Schema.Literals(["equals", "exists"]),
-		value: Schema.optionalKey(Schema.String),
+	}),
+	Schema.Struct({ type: Schema.Literal("header"), name: NonEmptyString, op: Schema.Literal("exists") }),
+	Schema.Struct({
+		type: Schema.Literal("header"),
+		name: NonEmptyString,
+		op: Schema.Literal("equals"),
+		value: Schema.String,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("header"),
 		name: NonEmptyString,
-		op: Schema.Literals(["equals", "contains", "exists"]),
-		value: Schema.optionalKey(Schema.String),
+		op: Schema.Literal("contains"),
+		value: NonEmptyString,
 	}),
 ]).annotate({
 	identifier: "UptimeAssertion",
@@ -184,19 +196,15 @@ const assertionFromWire = (assertion: V2UptimeAssertion): UptimeAssertion => {
 		case "body":
 			return { _tag: "body", op: assertion.op, value: assertion.value }
 		case "json_path":
-			return {
-				_tag: "json_path",
-				path: assertion.path,
-				op: assertion.op,
-				...(assertion.value === undefined ? undefined : { value: assertion.value }),
-			}
+			return assertion.op === "exists"
+				? { _tag: "json_path", path: assertion.path, op: "exists" }
+				: { _tag: "json_path", path: assertion.path, op: "equals", value: assertion.value }
 		case "header":
-			return {
-				_tag: "header",
-				name: assertion.name,
-				op: assertion.op,
-				...(assertion.value === undefined ? undefined : { value: assertion.value }),
-			}
+			return assertion.op === "exists"
+				? { _tag: "header", name: assertion.name, op: "exists" }
+				: assertion.op === "equals"
+					? { _tag: "header", name: assertion.name, op: "equals", value: assertion.value }
+					: { _tag: "header", name: assertion.name, op: "contains", value: assertion.value }
 	}
 }
 
@@ -209,19 +217,15 @@ const assertionToWire = (assertion: UptimeAssertion): V2UptimeAssertion => {
 		case "body":
 			return { type: "body", op: assertion.op, value: assertion.value }
 		case "json_path":
-			return {
-				type: "json_path",
-				path: assertion.path,
-				op: assertion.op,
-				...(assertion.value === undefined ? undefined : { value: assertion.value }),
-			}
+			return assertion.op === "exists"
+				? { type: "json_path", path: assertion.path, op: "exists" }
+				: { type: "json_path", path: assertion.path, op: "equals", value: assertion.value }
 		case "header":
-			return {
-				type: "header",
-				name: assertion.name,
-				op: assertion.op,
-				...(assertion.value === undefined ? undefined : { value: assertion.value }),
-			}
+			return assertion.op === "exists"
+				? { type: "header", name: assertion.name, op: "exists" }
+				: assertion.op === "equals"
+					? { type: "header", name: assertion.name, op: "equals", value: assertion.value }
+					: { type: "header", name: assertion.name, op: "contains", value: assertion.value }
 	}
 }
 
