@@ -148,6 +148,8 @@ const statusMatches = (matcher: string, code: number): boolean =>
 	matcher.endsWith("xx") ? Math.floor(code / 100) === Number(matcher[0]) : code === Number(matcher)
 
 const PATH_TOKEN = /[^.[\]]+|\[(\d+)\]/gu
+const asJsonArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown))
+const asJsonObject = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))
 
 /** Reads `a.b[0].c` from parsed JSON; `None` when any step is missing. */
 export const readJsonPath = (root: unknown, path: string): Option.Option<unknown> =>
@@ -155,10 +157,13 @@ export const readJsonPath = (root: unknown, path: string): Option.Option<unknown
 		(current, match) =>
 			Option.flatMap(current, (value) => {
 				const key = match[1] ?? match[0]
-				if (Array.isArray(value)) return Option.fromNullishOr(value[Number(key)])
-				if (typeof value === "object" && value !== null && Object.hasOwn(value, key))
-					return Option.some(Reflect.get(value, key))
-				return Option.none()
+				return Option.orElse(
+					Option.flatMap(asJsonArray(value), (items) => Option.fromNullishOr(items[Number(key)])),
+					() =>
+						Option.flatMap(asJsonObject(value), (record) =>
+							Object.hasOwn(record, key) ? Option.fromNullishOr(record[key]) : Option.none(),
+						),
+				)
 			}),
 		Option.some(root),
 	)
