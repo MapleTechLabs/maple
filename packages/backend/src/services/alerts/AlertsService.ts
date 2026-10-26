@@ -159,6 +159,7 @@ import { AlertDestinationsService, type AlertDestinationsServiceApi } from "./Al
 import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from "./AlertDestinationDelivery"
 import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
 import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
+import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import {
 	decodeStoredAlertRuleMetadata,
 	storedRuleCondition,
@@ -172,6 +173,7 @@ import {
 	selectStoredAlertRules,
 	type NormalizedRule,
 	type StoredAlertRuleRow,
+	UPTIME_RULE_MANAGED_MESSAGE,
 } from "./AlertRuleModel"
 import { mapSignalUnit, resolveSignalDisplay } from "./alert-signal-display"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -399,6 +401,7 @@ const StoredDeliveryPayloadSchema = Schema.StructWithRest(
 			Schema.Struct({
 				value: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 				sampleCount: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+				detail: Schema.optionalKey(Schema.NullOr(Schema.String)),
 			}),
 		),
 		template: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
@@ -599,6 +602,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const queryEngine = yield* QueryEngineService
 			const warehouse = yield* WarehouseQueryService
 			const runtime = yield* AlertRuntime
+			const uptimeAlerts = yield* UptimeAlertSource
 			const httpClient = yield* HttpClient.HttpClient
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
@@ -1024,11 +1028,32 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			): Effect.fn.Return<
 				ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }>,
 				| AlertValidationError
+				| AlertPersistenceError
 				| QueryEngineValidationError
 				| QueryEngineTimeoutError
 				| WarehouseQueryPathError
 			> {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": rule.id })
+				// An uptime rule observes its monitor, never the warehouse, and never skips:
+				// 1 while down, 0 otherwise. A monitor that is gone observes nothing.
+				if (rule.signalType === "uptime") {
+					const observation = yield* uptimeAlerts
+						.observe(orgId, rule.id, yield* now)
+						.pipe(Effect.mapError(makePersistenceError))
+					return Option.match(observation, {
+						onNone: () => [],
+						onSome: (observed) => [
+							{
+								evaluation: applyEvaluationLogic(
+									rule,
+									{ value: observed.down ? 1 : 0, sampleCount: 1, hasData: true },
+									observed.detail ?? "The check is passing",
+								),
+								groupKey: observed.groupKey,
+							},
+						],
+					})
+				}
 				// Snapped, not raw `now`: excludes the still-filling current minute and
 				// lets rules over the same signal share bucket reads within a tick. See
 				// `snapAlertWindowEndMs`. A scheduler tick passes its own.
@@ -1221,6 +1246,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							threshold: rule.threshold,
 							thresholdUpper: rule.thresholdUpper,
 							value: evaluation.value,
+							detail: rule.signalType === "uptime" ? evaluation.reason : null,
 							groupKey: incident.groupKey,
 							serviceNames: rule.serviceNames,
 							windowMinutes: rule.windowMinutes,
@@ -1315,14 +1341,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					nowMs: scheduledAt,
 					windowMinutes: rule.windowMinutes,
 				})
-				const series = yield* loadChartSeries(warehouse, systemTenant(orgId), {
-					orgId,
-					ruleId: rule.id,
-					groupKey: incident.groupKey,
-					comparator: rule.comparator,
-					threshold: rule.threshold,
-					...window,
-				})
+				// An uptime rule's series is a 0/1 step that says less than the check's error, so it gets no chart.
+				const series =
+					rule.signalType === "uptime"
+						? null
+						: yield* loadChartSeries(warehouse, systemTenant(orgId), {
+								orgId,
+								ruleId: rule.id,
+								groupKey: incident.groupKey,
+								comparator: rule.comparator,
+								threshold: rule.threshold,
+								...window,
+							})
 
 				// The image URL rides with the series it describes: both pin the
 				// same window, so a retry an hour later renders the same picture
@@ -1371,6 +1401,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						windowMinutes: rule.windowMinutes,
 						value: evaluation.value,
 						sampleCount: evaluation.sampleCount,
+						// The evaluator puts the check's error in the reason of an uptime rule.
+						detail: rule.signalType === "uptime" ? evaluation.reason : null,
 						sparkline: series?.sparkline ?? null,
 						chartUrl,
 						template: rule.notificationTemplate,
@@ -1482,6 +1514,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				})
 				yield* requireAdmin(roles)
 				const oldRow = yield* requireRuleRow(orgId, ruleId)
+				if (oldRow.signalType === "uptime") {
+					return yield* Effect.fail(makeValidationError(UPTIME_RULE_MANAGED_MESSAGE))
+				}
 				const oldNormalized = yield* normalizeRuleRow(oldRow)
 				const newNormalized = yield* normalizeRule(orgId, request)
 				const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
@@ -2347,6 +2382,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							dedupeKey: incidentRow?.dedupeKey ?? String(payload.dedupeKey ?? row.deliveryKey),
 							value: payload.observed?.value ?? null,
 							sampleCount: payload.observed?.sampleCount ?? null,
+							detail: payload.observed?.detail ?? null,
 							template: payload.template ?? storedRule?.notificationTemplate ?? null,
 							sparkline: payload.chart?.sparkline ?? null,
 							chartUrl: payload.chart?.url ?? null,
@@ -3651,10 +3687,22 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const resolveOutcomes = yield* Effect.forEach(orphaned, (incident) => {
 						const groupKey = incident.groupKey ?? UNGROUPED_GROUP_KEY
 						return Effect.gen(function* () {
-							const liveness = yield* livenessFor(
-								livenessServicesForIncident(normalized, incident.groupKey),
-								incident.firstTriggeredAt,
-							)
+							// An uptime group leaves when its monitor is relinked or deleted, never
+							// because telemetry stopped, so there is nothing to probe.
+							const liveness: LivenessVerdict =
+								normalized.signalType === "uptime"
+									? {
+											dataFlowing: true,
+											reason: "ok",
+											observedCount: 0,
+											baselineCount: 0,
+											ratio: null,
+											samplingDelta: null,
+										}
+									: yield* livenessFor(
+											livenessServicesForIncident(normalized, incident.groupKey),
+											incident.firstTriggeredAt,
+										)
 							const gate = decideLivenessGate(
 								incident,
 								liveness,
@@ -4576,7 +4624,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// which processEvaluation stamps on state and incident rows.
 				const evaluateClaimedRule = (row: StoredAlertRuleRow, timestamp: number, startedAt: number) =>
 					Effect.gen(function* () {
-						if (HashSet.has(yield* Ref.get(unavailableOrgs), row.orgId)) {
+						// Uptime rules never read the warehouse, so its outage does not skip them.
+						if (
+							row.signalType !== "uptime" &&
+							HashSet.has(yield* Ref.get(unavailableOrgs), row.orgId)
+						) {
 							return yield* new WarehouseUpstreamError({
 								message: "Skipped: this org's warehouse failed earlier in the tick",
 								pipeName: "alertEvaluation",
@@ -4646,8 +4698,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// UNGROUPED_GROUP_KEY entry (with a no-data fallback) when the
 						// compiled plan is ungrouped. So both shapes flow through the
 						// same loop with no key translation here.
-						const grouped = isGroupedPlan(normalized.compiledPlan)
 						const results = yield* evaluateBeforeDeadline(row, normalized)
+						// An uptime rule has no plan; it is keyed by its monitor's service when linked.
+						const grouped =
+							normalized.signalType === "uptime"
+								? results.some((r) => r.groupKey !== UNGROUPED_GROUP_KEY)
+								: isGroupedPlan(normalized.compiledPlan)
 						const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
 						const eligible = grouped
 							? Arr.filter(results, (r) => !HashSet.has(excludeSet, r.groupKey))
@@ -5100,6 +5156,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				AlertDestinationsService.layer,
 				AlertReadModelsService.layer,
 				AlertRulesService.layer,
+				UptimeAlertSource.layer,
 			),
 		),
 	)
