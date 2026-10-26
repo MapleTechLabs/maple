@@ -25,7 +25,8 @@ export const uptimeMonitorLimit = (customer: BillingCustomer): Option.Option<num
 	return Option.some(balance.granted ?? 0)
 }
 
-const limitReached = (limit: number) =>
+/** The 402 a create past the plan's allowance fails with, in the words the API returns. */
+export const limitReached = (limit: number) =>
 	new UptimeMonitorLimitReachedError({
 		message:
 			limit === 0

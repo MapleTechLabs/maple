@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -14,7 +14,7 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
-import { UptimeMonitorAllowance } from "@maple/backend/services/uptime/UptimeMonitorAllowance"
+import { limitReached, UptimeMonitorAllowance } from "@maple/backend/services/uptime/UptimeMonitorAllowance"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
@@ -52,7 +52,7 @@ const testConfig = () =>
 		}),
 	)
 
-const makeHarness = () => {
+const makeHarness = (allowance: Layer.Layer<UptimeMonitorAllowance> = UptimeMonitorAllowance.unmetered) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const servicesLive = Layer.mergeAll(
@@ -64,7 +64,7 @@ const makeHarness = () => {
 		LiveActivitiesService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 	const uptimeLive = Layer.effect(UptimeMonitorsService, UptimeMonitorsService.make).pipe(
-		Layer.provide(UptimeMonitorAllowance.unmetered),
+		Layer.provide(allowance),
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer)),
 	)
@@ -124,16 +124,47 @@ const makeHarness = () => {
 }
 
 /** Runs `body` against a fresh harness, disposed however the body ends. */
-const withHarness = (body: (harness: ReturnType<typeof makeHarness>) => Promise<void>) =>
+const withHarness = (
+	body: (harness: ReturnType<typeof makeHarness>) => Promise<void>,
+	allowance?: Layer.Layer<UptimeMonitorAllowance>,
+) =>
 	Effect.runPromise(
 		Effect.acquireUseRelease(
-			Effect.sync(makeHarness),
+			Effect.sync(() => makeHarness(allowance)),
 			(harness) => Effect.promise(() => body(harness)),
 			(harness) => Effect.promise(() => harness.dispose()),
 		),
 	)
 
+/** A plan that allows one monitor. */
+const ONE_MONITOR_PLAN = Layer.succeed(UptimeMonitorAllowance, {
+	limit: () => Effect.succeed(Option.some(1)),
+	track: () => Effect.void,
+})
+
 describe("v2 uptime monitors", () => {
+	it("refuses a create past the plan's allowance with a 402 and creates nothing", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const monitor = (name: string) => ({
+				name,
+				kind: "http",
+				config: { type: "http", url: `https://api.example.com/${name}` },
+			})
+			expect(
+				(await harness.request("POST", "/v2/uptime_monitors", token, monitor("first"))).status,
+			).toBe(200)
+
+			const refused = await harness.request("POST", "/v2/uptime_monitors", token, monitor("second"))
+			expect(refused.status).toBe(402)
+			expect(refused.body.error).toMatchObject({
+				code: "uptime_monitor_limit_reached",
+				message: limitReached(1).message,
+			})
+			const listed = await harness.request("GET", "/v2/uptime_monitors", token)
+			expect(listed.body.data.map((row: { readonly name: string }) => row.name)).toEqual(["first"])
+		}, ONE_MONITOR_PLAN))
+
 	it("creates, lists, retrieves, pauses, resumes and deletes a monitor", () =>
 		withHarness(async (harness) => {
 			const { secret: token } = await harness.bootstrapKey()
