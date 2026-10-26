@@ -1,4 +1,4 @@
-import { Array as Arr, Context, Duration, Effect, Layer, Metric, Queue, Schema } from "effect"
+import { Array as Arr, Context, Duration, Effect, Layer, Metric, Queue, Ref, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { ScraperEnv } from "./Env"
 import { bufferedUptimeSpans } from "./Metrics"
@@ -39,7 +39,9 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 			const client = yield* HttpClient.HttpClient
 			const queue = yield* Queue.sliding<UptimeCheckSpan>(MAX_BUFFERED_SPANS)
 
-			const pending = Effect.sync(() => Queue.sizeUnsafe(queue))
+			// The batch being posted (or retried) has left the queue but is not delivered yet.
+			const inFlight = yield* Ref.make(0)
+			const pending = Effect.map(Ref.get(inFlight), (held) => held + Queue.sizeUnsafe(queue))
 			const publishGauge = Effect.flatMap(pending, (count) => Metric.update(bufferedUptimeSpans, count))
 
 			const record = (check: UptimeCheckSpan) =>
@@ -58,6 +60,13 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 					const response = yield* client.execute(request).pipe(
 						Effect.annotateSpans("peer.service", "ingest"),
 						Effect.timeout(REQUEST_TIMEOUT),
+						Effect.withSpan("UptimeSpanExporter.post", {
+							kind: "client",
+							attributes: {
+								"peer.service": "ingest",
+								"maple.uptime.span_count": checks.length,
+							},
+						}),
 						Effect.mapError(
 							(error) =>
 								new UptimeSpanExportError({
@@ -97,7 +106,10 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 
 			const flushNext = Effect.gen(function* () {
 				const batch = yield* Queue.takeBetween(queue, 1, SPAN_FLUSH_BATCH)
+				yield* Ref.set(inFlight, batch.length)
 				yield* flush(batch).pipe(Effect.onInterrupt(() => finalFlush(batch)))
+				yield* Ref.set(inFlight, 0)
+				yield* publishGauge
 				if (batch.length < SPAN_FLUSH_BATCH) yield* Effect.sleep(SPAN_FLUSH_INTERVAL)
 			})
 
