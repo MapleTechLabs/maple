@@ -1,7 +1,7 @@
 import { Duration, Effect } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import type { AlertSeverity } from "@maple/domain/http"
-import { displayGroupKey, truncate } from "../../alert-formatting"
+import { displayGroupKey, formatAlertHeadline, truncate, uptimeSummaryLine } from "../../alert-formatting"
 import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
 
@@ -77,7 +77,13 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 					context.eventType === "resolve" ? "warning" : keySeverity(context),
 				),
 				payload: {
-					summary: truncate(templated?.title ?? `${context.ruleName} ${context.eventType}`, 1024),
+					summary: truncate(
+						templated?.title ??
+							(context.signalType === "uptime"
+								? `${formatAlertHeadline(context)}: ${uptimeSummaryLine(context)}`
+								: `${context.ruleName} ${context.eventType}`),
+						1024,
+					),
 					source: displayGroupKey(context.groupKey) ?? "maple-alerts",
 					// The tier the key was chosen for, so a stale critical event cannot raise the warning alert.
 					severity: keySeverity(context) === "critical" ? "critical" : "warning",
@@ -86,6 +92,7 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 						ruleName: context.ruleName,
 						signalType: context.signalType,
 						value: context.value,
+						...(context.detail == null ? undefined : { detail: context.detail }),
 						threshold: context.threshold,
 						thresholdUpper: context.thresholdUpper,
 						comparator: context.comparator,

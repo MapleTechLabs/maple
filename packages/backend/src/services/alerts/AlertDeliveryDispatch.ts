@@ -22,6 +22,7 @@ import {
 	displayGroupKey,
 	eventTypeEmoji,
 	formatComparator,
+	formatAlertHeadline,
 	formatEventTypeLabel,
 	formatObservedSummary,
 	formatSeverityLabel,
@@ -31,6 +32,7 @@ import {
 	formatWindow,
 	signalDisplayOf,
 	truncate,
+	uptimeSummaryLine,
 	type TemplateRenderContext,
 } from "./alert-formatting"
 import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
@@ -115,6 +117,7 @@ type SummaryLineContext = Pick<
 	| "thresholdUpper"
 	| "value"
 	| "windowMinutes"
+	| "detail"
 >
 
 /**
@@ -126,6 +129,7 @@ type SummaryLineContext = Pick<
  * that HTML mode would otherwise read as tags.
  */
 export const buildSummaryLine = (context: SummaryLineContext, em: (value: string) => string): string => {
+	if (context.signalType === "uptime") return em(uptimeSummaryLine(context))
 	const signal = formatSignalLabel(context)
 	const observed = formatSignalMetric(context.value, signalDisplayOf(context))
 	const window = formatWindow(context.windowMinutes)
@@ -157,7 +161,7 @@ const discordFooterText = (context: Pick<DispatchContext, "sparkline">): string 
 
 export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, chatUrl: string) => [
 	{
-		title: `${eventTypeEmoji(context.eventType)} ${context.ruleName} — ${formatEventTypeLabel(context.eventType)}`,
+		title: `${eventTypeEmoji(context.eventType)} ${formatAlertHeadline(context)}`,
 		url: linkUrl,
 		color: discordEmbedColor(context.eventType, context.severity),
 		fields: [
@@ -220,7 +224,10 @@ const telegramBody = (title: string, lines: ReadonlyArray<string>): string =>
 
 /** No link arguments: Telegram carries both links in the inline keyboard. */
 export const buildTelegramText = (context: DispatchContext): string => {
-	const title = `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(context.ruleName)}</b> \u{2014} ${escapeTelegramHtml(formatEventTypeLabel(context.eventType))}`
+	const title =
+		context.signalType === "uptime"
+			? `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(formatAlertHeadline(context))}</b>`
+			: `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(context.ruleName)}</b> \u{2014} ${escapeTelegramHtml(formatEventTypeLabel(context.eventType))}`
 	return telegramBody(title, [
 		escapeTelegramHtml(buildSummaryLine(context, (value) => value)),
 		"",

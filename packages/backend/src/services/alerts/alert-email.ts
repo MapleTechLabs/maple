@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import {
 	displayGroupKey,
 	eventTypeEmoji,
+	formatAlertHeadline,
 	formatEventTypeLabel,
 	formatObservedSummary,
 	formatSignalLabel,
@@ -47,7 +48,7 @@ export const buildAlertEmailContent = (
 				chatUrl,
 			})
 			return {
-				subject: `${emoji} ${context.ruleName} — ${eventLabel}`,
+				subject: `${emoji} ${formatAlertHeadline(context)}`,
 				html,
 			}
 		},

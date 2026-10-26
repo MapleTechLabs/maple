@@ -21,7 +21,16 @@ import { McpInvalidInputError } from "../tools/types"
 import { doc, type ToolDoc } from "./tool-doc"
 
 export const ALERT_SEVERITIES = AlertSeverity.literals
-export const ALERT_SIGNAL_TYPES = AlertSignalType.literals
+/** `uptime` rules are made and edited through uptime monitors, so the rule tools never offer it. */
+export const ALERT_SIGNAL_TYPES = AlertSignalType.pick([
+	"error_rate",
+	"p95_latency",
+	"p99_latency",
+	"apdex",
+	"throughput",
+	"builder_query",
+	"raw_query",
+]).literals
 /** The range comparators need `thresholdUpper`, which the tools do not take. */
 export const ALERT_COMPARATORS = AlertComparator.pick(["gt", "gte", "lt", "lte", "eq", "neq"]).literals
 export const ALERT_REDUCERS = QueryEngineAlertReducer.literals

@@ -46,6 +46,8 @@ export const AlertSignalType = Schema.Literals([
 	"throughput",
 	"builder_query",
 	"raw_query",
+	/** The hidden rule behind an uptime monitor; managed only through the monitor. */
+	"uptime",
 ]).annotate({
 	identifier: "@maple/AlertSignalType",
 	title: "Alert Signal Type",
