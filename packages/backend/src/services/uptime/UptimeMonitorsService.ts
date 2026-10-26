@@ -729,29 +729,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					input.failuresToDown === undefined
 						? undefined
 						: yield* validateFailuresToDown(input.failuresToDown)
-				const enabledChange =
-					input.enabled !== undefined && input.enabled !== current.enabled
-						? Option.some(input.enabled)
-						: Option.none<boolean>()
 				const now = yield* Clock.currentTimeMillis
-				const rule = {
-					name: name ?? current.name,
-					serviceName: input.serviceName === undefined ? current.serviceName : input.serviceName,
-					enabled: input.enabled ?? current.enabled,
-					destinationIds:
-						input.destinationIds === undefined
-							? current.destinationIds
-							: Arr.dedupe(input.destinationIds),
-				}
-				// The backing rule is written only when it changes: alert_rules is Electric-synced.
-				const ruleChanged =
-					current.alertRuleId === null ||
-					rule.name !== current.name ||
-					rule.serviceName !== current.serviceName ||
-					rule.enabled !== current.enabled ||
-					rule.destinationIds.length !== current.destinationIds.length ||
-					rule.destinationIds.some((id, index) => id !== current.destinationIds[index])
-				const ruleId = current.alertRuleId ?? AlertRuleId.make(randomUUID())
 				const settingsChanged =
 					config !== undefined ||
 					input.intervalSeconds !== undefined ||
@@ -760,10 +738,43 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							// Lock, then re-read: the rule comes from a row no other write changes before
+							// commit, and a concurrent delete either finished first or waits for this one.
+							yield* lockOrgMonitors(db, orgId)
+							const lockedRows = yield* db.run(
+								selectMonitors()
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)])
+									.limit(1),
+							)
+							const lockedRow = lockedRows[0]
+							if (lockedRow === undefined) return yield* notFound(monitorId)
+							const locked = yield* toRecord(lockedRow)
+							const rule = {
+								name: name ?? locked.name,
+								serviceName:
+									input.serviceName === undefined ? locked.serviceName : input.serviceName,
+								enabled: input.enabled ?? locked.enabled,
+								destinationIds:
+									input.destinationIds === undefined
+										? locked.destinationIds
+										: Arr.dedupe(input.destinationIds),
+							}
+							// The backing rule is written only when it changes: alert_rules is Electric-synced.
+							const ruleChanged =
+								locked.alertRuleId === null ||
+								rule.name !== locked.name ||
+								rule.serviceName !== locked.serviceName ||
+								rule.enabled !== locked.enabled ||
+								rule.destinationIds.length !== locked.destinationIds.length ||
+								rule.destinationIds.some((id, index) => id !== locked.destinationIds[index])
+							const ruleId = locked.alertRuleId ?? AlertRuleId.make(randomUUID())
+							const enabledChange =
+								input.enabled !== undefined && input.enabled !== locked.enabled
+									? Option.some(input.enabled)
+									: Option.none<boolean>()
 							if (ruleChanged) {
-								yield* lockOrgMonitors(db, orgId)
 								yield* claimRuleWrite(db, orgId, ruleId, rule)
-								yield* current.alertRuleId === null
+								yield* locked.alertRuleId === null
 									? db.run(
 											PG.insertInto(AlertRules).values({
 												id: ruleId,
@@ -797,7 +808,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							yield* db.run(
 								PG.update(UptimeMonitors)
 									.set({
-										...(current.alertRuleId === null
+										...(locked.alertRuleId === null
 											? { alertRuleId: ruleId }
 											: undefined),
 										...(name === undefined ? undefined : { name }),
@@ -854,6 +865,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const deleted = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							// The lock update and rule writes take, so neither recreates a rule for a gone monitor.
+							yield* lockOrgMonitors(db, orgId)
 							const removed = yield* db.run(
 								PG.deleteFrom(UptimeMonitors)
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)])
