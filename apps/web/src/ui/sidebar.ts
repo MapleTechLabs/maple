@@ -83,10 +83,13 @@ export const sidebarDesktop = <Message>(
 	children: Children,
 	/** `<Sidebar className>`: lands on the fixed container. */
 	className?: string,
+	/** Snap to `state` without the width transition (keyboard toggles). */
+	isInstant = false,
 ): Html =>
 	h.div(
 		[
 			h.Class(sidebarDesktopStyles),
+			...(isInstant ? [h.DataAttribute("instant", "")] : []),
 			h.DataAttribute("collapsible", state === "collapsed" ? "icon" : ""),
 			h.DataAttribute("side", "left"),
 			h.DataAttribute("slot", "sidebar"),
