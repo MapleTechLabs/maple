@@ -34,6 +34,7 @@ export const PublicIdPrefixes = {
 	investigation: "inv",
 	anomalyIncident: "anom",
 	scrapeTarget: "scrp",
+	uptimeMonitor: "upm",
 	recommendation: "rec",
 	ingestKey: "ingk",
 	source: "src",

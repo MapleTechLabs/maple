@@ -45,6 +45,9 @@ export const OPENROUTER_BYOK_FEATURE_ID = "openrouter_byok"
 /** AI usage in dollars: one credit is one dollar. Chat, triage, reviews and security audits draw on it. */
 export const AI_CREDITS_FEATURE_ID = "ai_credits"
 
+/** Uptime monitors an org has, metered as continuous use: +1 on create, -1 on delete. */
+export const UPTIME_MONITORS_FEATURE_ID = "uptime_monitors"
+
 /** Percent Autumn adds to a model's token price on `ai_credits`; audits apply it to their own cost. */
 export const AI_CREDITS_MARKUP_PERCENT = 20
 
