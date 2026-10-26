@@ -305,6 +305,86 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("skips a monitor whose stored state no longer decodes and records the rest", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const healthy = yield* createHttp("healthy", { failuresToDown: 1 })
+			const corrupt = yield* createHttp("corrupt", { failuresToDown: 1 })
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE uptime_monitor_states SET recent_json = '{"not":"an array"}'::jsonb WHERE monitor_id = $1`,
+					[corrupt.id],
+				),
+			)
+			const applied = yield* service.recordChecks([
+				report(corrupt.id, 1_000, false),
+				report(healthy.id, 1_000, false),
+			])
+			assert.strictEqual(applied, 1)
+			assert.strictEqual((yield* service.get(ORG, healthy.id)).state.status, "down")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("drops results read before a pause and resume instead of overwriting the resumed state", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			// Counts down per `Database.execute`; the call that sees 1 pauses and resumes first.
+			const countdown = yield* Ref.make(0)
+			const target = yield* Ref.make("")
+			const database = Layer.effect(
+				Database,
+				Effect.gen(function* () {
+					const inner = yield* Database
+					return {
+						execute: (fn) =>
+							Ref.modify(countdown, (n) => [n, n > 0 ? n - 1 : n] as const).pipe(
+								Effect.flatMap((n) =>
+									n === 1
+										? Ref.get(target).pipe(
+												Effect.flatMap((id) =>
+													Effect.promise(() =>
+														executeSql(
+															testDb,
+															`UPDATE uptime_monitor_states SET status = 'pending', consecutive_failures = 0,
+																consecutive_successes = 0, updated_at = '1970-01-01T00:00:05.000Z'
+															WHERE monitor_id = $1`,
+															[id],
+														),
+													),
+												),
+											)
+										: Effect.void,
+								),
+								Effect.andThen(inner.execute(fn)),
+							),
+					}
+				}),
+			).pipe(Layer.provide(testDb.layer))
+
+			const program = Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("API", { failuresToDown: 2 })
+				yield* service.recordChecks([report(monitor.id, 1_000, false)])
+				yield* Ref.set(target, monitor.id)
+				// The read sees one failure; the resume lands before the write.
+				yield* Ref.set(countdown, 2)
+				assert.strictEqual(yield* service.recordChecks([report(monitor.id, 2_000, false)]), 0)
+				const resumed = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(resumed.state.status, "pending")
+				assert.strictEqual(resumed.state.consecutiveFailures, 0)
+
+				// The next batch reads the resumed state and applies normally.
+				assert.strictEqual(yield* service.recordChecks([report(monitor.id, 3_000, false)]), 1)
+				const after = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(after.state.status, "pending")
+				assert.strictEqual(after.state.consecutiveFailures, 1)
+			})
+			yield* program.pipe(Effect.provide(makeLayer(testDb, { database })))
+		})
+	})
+
 	it.effect("records heartbeat pings by token", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

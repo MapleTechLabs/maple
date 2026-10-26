@@ -17,9 +17,9 @@ import {
 import {
 	UptimeIntervalSeconds,
 	UptimeMonitorId,
+	UptimeMonitorKind,
+	UptimeMonitorStatus,
 	type OrgId,
-	type UptimeMonitorKind,
-	type UptimeMonitorStatus,
 	type UserId,
 } from "@maple/domain/primitives"
 import {
@@ -27,12 +27,12 @@ import {
 	applyUptimeCheck,
 	firstFailedAssertion,
 	UPTIME_REDACTED_HEADER_VALUE,
+	UptimeCheckDetail,
 	UptimeMonitorConfig,
-	type UptimeCheckDetail,
+	UptimeRecentCheck,
 	type UptimeCheckReport,
 	type UptimeMonitorStateSnapshot,
 	type UptimeProbeConfig,
-	type UptimeRecentCheck,
 } from "@maple/domain/uptime"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
@@ -326,6 +326,47 @@ const decodeInterval = Schema.decodeUnknownEffect(UptimeIntervalSeconds)
 
 const UpdatedStateRow = Schema.Struct({ monitor_id: Schema.String })
 
+/** recordChecks' read: decoded columns are typed scalars, the rest are decoded per row. */
+const selectCheckStates = () =>
+	PG.from(UptimeMonitors, "m")
+		.innerJoin(UptimeMonitorStates, "s", (m, s) => m.id.eq(s.monitorId).and(m.orgId.eq(s.orgId)))
+		.select(($) => ({
+			id: $.id,
+			orgId: $.orgId,
+			kind: PG.undecoded($.kind),
+			failuresToDown: $.failuresToDown,
+			status: PG.undecoded($.s.status),
+			consecutiveFailures: $.s.consecutiveFailures,
+			consecutiveSuccesses: $.s.consecutiveSuccesses,
+			statusChangedAt: $.s.statusChangedAt,
+			lastCheckJson: PG.undecoded($.s.lastCheckJson),
+			recentJson: PG.undecoded($.s.recentJson),
+			stateUpdatedAt: $.s.updatedAt,
+		}))
+
+const StoredCheckState = Schema.Struct({
+	kind: UptimeMonitorKind,
+	status: UptimeMonitorStatus,
+	lastCheckJson: Schema.NullOr(UptimeCheckDetail),
+	recentJson: Schema.Array(UptimeRecentCheck),
+})
+const decodeStoredCheckState = Schema.decodeUnknownEffect(StoredCheckState)
+
+/** A monitor's state as a batch of checks folds into it. */
+interface CheckStateRow {
+	readonly id: UptimeMonitorId
+	readonly orgId: OrgId
+	readonly kind: UptimeMonitorKind
+	readonly failuresToDown: number
+	readonly status: UptimeMonitorStatus
+	readonly consecutiveFailures: number
+	readonly consecutiveSuccesses: number
+	readonly statusChangedAt: number | null
+	readonly lastCheckJson: UptimeCheckDetail | null
+	readonly recentJson: ReadonlyArray<UptimeRecentCheck>
+	readonly stateUpdatedAt: number
+}
+
 interface FoldedChecks {
 	readonly snapshot: UptimeMonitorStateSnapshot
 	readonly statusChangedAt: number | null
@@ -333,7 +374,7 @@ interface FoldedChecks {
 }
 
 /** Applies one monitor's reports in time order, as one write per report would have. */
-const foldReports = (row: MonitorWithStateRow, reports: ReadonlyArray<UptimeCheckReport>): FoldedChecks =>
+const foldReports = (row: CheckStateRow, reports: ReadonlyArray<UptimeCheckReport>): FoldedChecks =>
 	reports.reduce<FoldedChecks>(
 		(acc, report) => {
 			const snapshot = applyUptimeCheck(acc.snapshot, report.ok, row.failuresToDown)
@@ -653,11 +694,27 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				if (firstId === undefined) return 0
 				yield* Effect.annotateCurrentSpan({ "maple.uptime.report_count": reports.length })
 				// System path: the batch spans orgs, so the read is by id only.
-				const rows = yield* dbExecute((db) =>
+				const stored = yield* dbExecute((db) =>
 					db.run(
-						selectMonitors().where(($) => [$.id.in_(firstId, ...restIds), $.enabled.eq(true)]),
+						selectCheckStates().where(($) => [$.id.in_(firstId, ...restIds), $.enabled.eq(true)]),
 					),
 				)
+				// A row that no longer decodes is skipped, so it cannot fail every org's batch.
+				const rows = yield* Effect.forEach(stored, (row) =>
+					decodeStoredCheckState(row).pipe(
+						Effect.map((decoded): ReadonlyArray<CheckStateRow> => [{ ...row, ...decoded }]),
+						Effect.catchTag("SchemaError", (error) =>
+							Effect.logWarning("Skipping uptime monitor with an undecodable state row").pipe(
+								Effect.annotateLogs({
+									monitorId: row.id,
+									orgId: row.orgId,
+									cause: error.message,
+								}),
+								Effect.as([]),
+							),
+						),
+					),
+				).pipe(Effect.map(Arr.flatten))
 				const rowsById = new Map(rows.map((row) => [row.id, row]))
 				const now = yield* Clock.currentTimeMillis
 				const states = Object.values(Arr.groupBy(reports, (report) => report.monitorId)).flatMap(
@@ -684,7 +741,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								statusChangedAt: folded.statusChangedAt,
 								lastCheckJson: toCheckDetail(last.value),
 								recentJson: folded.recent,
-								lastPingAt: row.lastPingAt,
+								readUpdatedAt: row.stateUpdatedAt,
 								updatedAt: now,
 							},
 						]
@@ -694,12 +751,12 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const values = Orm.sql.join(
 					states.map(
 						(state) =>
-							Orm.sql`(${state.monitorId}::text, ${state.status}::text, ${state.consecutiveFailures}::int4, ${state.consecutiveSuccesses}::int4, ${state.statusChangedAt === null ? null : msToSqlTimestamp(state.statusChangedAt)}::timestamptz, ${JSON.stringify(state.lastCheckJson)}::jsonb, ${JSON.stringify(state.recentJson)}::jsonb, ${msToSqlTimestamp(state.updatedAt)}::timestamptz)`,
+							Orm.sql`(${state.monitorId}::text, ${state.status}::text, ${state.consecutiveFailures}::int4, ${state.consecutiveSuccesses}::int4, ${state.statusChangedAt === null ? null : msToSqlTimestamp(state.statusChangedAt)}::timestamptz, ${JSON.stringify(state.lastCheckJson)}::jsonb, ${JSON.stringify(state.recentJson)}::jsonb, ${msToSqlTimestamp(state.readUpdatedAt)}::timestamptz, ${msToSqlTimestamp(state.updatedAt)}::timestamptz)`,
 					),
 					Orm.sql`, `,
 				)
-				// One UPDATE for the batch: a monitor deleted since the read has no state row and is
-				// simply not matched, and one paused since the read keeps its paused state.
+				// One UPDATE for the batch: a monitor deleted, paused or resumed since the read no longer
+				// matches its read `updated_at`, so stale results never overwrite the newer state.
 				const updated = yield* dbExecute((db) =>
 					db.query(
 						Orm.sql`
@@ -711,8 +768,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								last_check_json = v.last_check_json,
 								recent_json = v.recent_json,
 								updated_at = v.updated_at
-							FROM (VALUES ${values}) AS v(monitor_id, status, consecutive_failures, consecutive_successes, status_changed_at, last_check_json, recent_json, updated_at)
-							WHERE s.monitor_id = v.monitor_id AND s.status <> 'paused'
+							FROM (VALUES ${values}) AS v(monitor_id, status, consecutive_failures, consecutive_successes, status_changed_at, last_check_json, recent_json, read_updated_at, updated_at)
+							WHERE s.monitor_id = v.monitor_id
+								AND date_trunc('milliseconds', s.updated_at) = v.read_updated_at
+								AND s.status <> 'paused'
 							RETURNING s.monitor_id`,
 						UpdatedStateRow,
 					),
