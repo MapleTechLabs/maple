@@ -239,6 +239,8 @@ export const firstFailedAssertion = (
 
 /** `service.name` of the spans the scraper exports per check; the service map drops it. */
 export const UPTIME_SERVICE_NAME = "maple-uptime"
+/** The resource attribute naming the monitor a check span belongs to. */
+export const UPTIME_MONITOR_ID_ATTRIBUTE = "maple.uptime.monitor_id"
 /** `service.namespace` of Maple's own synthetic services, so users can filter them out. */
 export const MAPLE_SERVICES_NAMESPACE = "maple-services"
 

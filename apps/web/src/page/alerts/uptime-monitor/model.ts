@@ -39,6 +39,8 @@ export type CheckSample = typeof CheckSample.Type
 
 /** `UptimeCheckStats` (@maple/web-data/warehouse/uptime): the window's checks from their spans. */
 export const CheckStats = Schema.Struct({
+	/** The window these were read for; a switch keeps showing them until the new ones land. */
+	window: UptimeWindow,
 	points: Schema.Array(CheckPoint),
 	samples: Schema.Array(CheckSample),
 	samplesTruncated: Schema.Boolean,
@@ -70,6 +72,8 @@ export const Model = Schema.Struct({
 	copies: Schema.Record(Schema.String, CopyButton.Model),
 	window: UptimeWindow,
 	stats: KeyedSchema(CheckStats, LoadFailure),
+	/** The scatter's hovered check, by its index in `samples`. */
+	hoveredCheck: Schema.NullOr(Schema.Number),
 	chart: Chart.Model,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),

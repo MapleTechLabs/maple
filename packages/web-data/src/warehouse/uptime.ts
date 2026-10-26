@@ -1,6 +1,6 @@
 import { QueryEngineExecuteRequest, type QueryEngineExecuteResponse } from "@maple/query-engine"
 import type { TracesFilters } from "@maple/domain/query-engine"
-import { UPTIME_SERVICE_NAME } from "@maple/domain/uptime"
+import { UPTIME_MONITOR_ID_ATTRIBUTE, UPTIME_SERVICE_NAME } from "@maple/domain/uptime"
 import { Clock, Effect, Schema } from "effect"
 import { ServiceName } from "@maple/domain/http"
 import { buildServiceDetailPoints } from "./custom-charts"
@@ -11,9 +11,6 @@ import { computeBucketSeconds, toIsoBucket } from "./timeseries-utils"
 
 // One uptime monitor's checks over a window, read from its check spans: the chart's buckets and
 // the window's own percentiles (bucket percentiles cannot be merged into a window's).
-
-/** The resource attribute every check span of a monitor carries. */
-export const UPTIME_MONITOR_ID_ATTRIBUTE = "maple.uptime.monitor_id"
 
 export interface UptimeCheckStatsInput {
 	readonly monitorId: string
@@ -127,8 +124,13 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 
 	const nowMs = yield* Clock.currentTimeMillis
 	const points = buildServiceDetailPoints(series, input.startTime, input.endTime, bucketSeconds, nowMs)
-	const checks = points.reduce((sum, point) => sum + point.totalCount, 0)
-	const failures = points.reduce((sum, point) => sum + Math.round(point.errorRate * point.totalCount), 0)
+	// Totals read every bucket the warehouse returned; the chart's points drop a partial first one.
+	const buckets = series.result.kind === "timeseries" ? series.result.data : []
+	const checks = buckets.reduce((sum, bucket) => sum + (bucket.series.count ?? 0), 0)
+	const failures = buckets.reduce(
+		(sum, bucket) => sum + Math.round((bucket.series.error_rate ?? 0) * (bucket.series.count ?? 0)),
+		0,
+	)
 	const samples = list
 		.flatMap((page) => page.data)
 		.map((row): UptimeCheckSample => ({

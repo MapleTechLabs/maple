@@ -1,5 +1,10 @@
 import { Array as Arr, Option } from "effect"
-import { MAPLE_SERVICES_NAMESPACE, UPTIME_SERVICE_NAME, type UptimeProbeTarget } from "@maple/domain/uptime"
+import {
+	MAPLE_SERVICES_NAMESPACE,
+	UPTIME_MONITOR_ID_ATTRIBUTE,
+	UPTIME_SERVICE_NAME,
+	type UptimeProbeTarget,
+} from "@maple/domain/uptime"
 import type { CheckTraceContext, ProbeOutcome } from "./UptimeProbe"
 
 /** Everything one check span needs; buffered until the org's next flush. */
@@ -135,7 +140,7 @@ const resourceAttributes = (monitor: UptimeCheckSpan["monitor"]) =>
 	keyValues({
 		"service.name": UPTIME_SERVICE_NAME,
 		"service.namespace": MAPLE_SERVICES_NAMESPACE,
-		"maple.uptime.monitor_id": monitor.id,
+		[UPTIME_MONITOR_ID_ATTRIBUTE]: monitor.id,
 		"maple.uptime.monitor_name": monitor.name,
 		...(monitor.serviceName === null ? undefined : { "maple.uptime.service_name": monitor.serviceName }),
 	})

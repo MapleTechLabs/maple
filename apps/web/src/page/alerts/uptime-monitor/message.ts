@@ -23,6 +23,7 @@ export const Message = defineMessageUnion({
 	CompletedCheckNow: { result: outcome(V2UptimeMonitorTestResult) },
 	GotCopyMessage: { id: Schema.String, message: CopyButton.Message },
 	PickedWindow: { window: UptimeWindow },
+	HoveredCheck: { index: Schema.NullOr(Schema.Number) },
 	CompletedFetchStats: { key: Schema.String, result: outcome(CheckStats) },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },

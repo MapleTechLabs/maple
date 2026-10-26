@@ -66,7 +66,7 @@ export const FetchCheckStats = Command.define("FetchUptimeCheckStats", {
 				monitorId,
 				startTime: formatWarehouseDateTime(nowMs - WINDOW_MS[window]),
 				endTime: formatWarehouseDateTime(nowMs),
-			})
+			}).pipe(Effect.map((stats) => ({ ...stats, window })))
 		}).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,

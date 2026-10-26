@@ -1,9 +1,10 @@
 import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import { cn } from "@maple/ui/lib/utils"
-import { formatAlertTime } from "@maple/web-data/alerts/form-utils"
+import { formatAlertDateTime, formatAlertTime } from "@maple/web-data/alerts/form-utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
 import * as Chart from "../../../charts/chart"
 import { ChartSpec } from "../../../charts/chart-spec"
 import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
@@ -72,6 +73,13 @@ const STATUS_WORD = {
 export type ChartContext = Readonly<{ theme: ThemeColors; timeZone: string; nowMs: number }>
 
 const statsOf = (model: Model): Option.Option<CheckStats> => AsyncData.getData(model.stats.data)
+
+/** A switched window shows the previous figures until its own land; they are dimmed meanwhile. */
+const isStatsRefreshing = (model: Model): boolean => AsyncData.isRefreshing(model.stats.data)
+
+/** Time of day within an hour, the date as well over longer windows. */
+const timeLabel = (window: UptimeWindow, iso: string, timeZone: string): string =>
+	window === "1h" ? formatAlertTime(iso, timeZone) : formatAlertDateTime(iso, timeZone)
 
 /** `3m ago`. */
 const ago = (nowMs: number, atMs: number): string => `${formatSpan(nowMs - atMs)} ago`
@@ -159,10 +167,10 @@ export const kpiRail = (
 			p50: data.p50Ms,
 			p95: data.p95Ms,
 			p99: data.p99Ms,
-			scope: WINDOW_LABEL[model.window],
+			scope: WINDOW_LABEL[data.window],
 			subline:
 				data.checks === 0
-					? `No checks in the ${WINDOW_LABEL[model.window]}`
+					? `No checks in the ${WINDOW_LABEL[data.window]}`
 					: `${data.checks.toLocaleString()} checks, ${data.failures.toLocaleString()} failed`,
 		}),
 	})
@@ -173,20 +181,28 @@ export const kpiRail = (
 			compact: true,
 			subline: figures.scope,
 		})
-	return statRail(h, { columns: 3, className: "lg:grid-cols-6 lg:divide-y-0" }, [
-		statusItem,
-		lastItem,
-		statRailItem(h, {
-			eyebrow: "Uptime",
-			value: formatShare(figures.share),
-			tone: figures.share !== null && figures.share < 1 ? "warn" : "neutral",
-			compact: true,
-			subline: figures.subline,
-		}),
-		percentile("P50", figures.p50),
-		percentile("P95", figures.p95),
-		percentile("P99", figures.p99),
-	])
+	return statRail(
+		h,
+		{
+			columns: 3,
+			isBusy: isStatsRefreshing(model),
+			className: cn("lg:grid-cols-6 lg:divide-y-0", refreshingClass(isStatsRefreshing(model))),
+		},
+		[
+			statusItem,
+			lastItem,
+			statRailItem(h, {
+				eyebrow: "Uptime",
+				value: formatShare(figures.share),
+				tone: figures.share !== null && figures.share < 1 ? "warn" : "neutral",
+				compact: true,
+				subline: figures.subline,
+			}),
+			percentile("P50", figures.p50),
+			percentile("P95", figures.p95),
+			percentile("P99", figures.p99),
+		],
+	)
 }
 
 const chartRows = (points: ReadonlyArray<CheckPoint>) =>
@@ -230,15 +246,20 @@ const latencyChart = (h: H, model: Model, points: ReadonlyArray<CheckPoint>, con
 	})
 
 /** One segment per bucket under the chart: green when every check passed, red with any failure. */
-const availabilityStrip = (h: H, points: ReadonlyArray<CheckPoint>, timeZone: string): Html =>
+const availabilityStrip = (
+	h: H,
+	points: ReadonlyArray<CheckPoint>,
+	window: UptimeWindow,
+	timeZone: string,
+): Html =>
 	h.div(
 		[h.Class("flex h-2 gap-px pl-16"), h.AriaHidden(true)],
 		points.map((point) => {
 			const failed = Math.round(point.errorRate * point.totalCount)
 			const label =
 				point.totalCount === 0
-					? `${formatAlertTime(point.bucket, timeZone)}: no checks`
-					: `${formatAlertTime(point.bucket, timeZone)}: ${point.totalCount} checks, ${failed} failed`
+					? `${timeLabel(window, point.bucket, timeZone)}: no checks`
+					: `${timeLabel(window, point.bucket, timeZone)}: ${point.totalCount} checks, ${failed} failed`
 			return h.span(
 				[
 					h.Key(point.bucket),
@@ -271,21 +292,39 @@ export const responseTimePanel = (h: H, model: Model, context: ChartContext | nu
 						? h.p(
 								[h.Class("py-16 text-center text-sm text-muted-foreground")],
 								[
-									`No checks in the ${WINDOW_LABEL[model.window]}. The next one runs shortly.`,
+									`No checks in the ${WINDOW_LABEL[stats.window]}. The next one runs shortly.`,
 								],
 							)
-						: context === null
-							? h.div([h.Class("h-56")], [chartSkeleton(h, "line")])
-							: h.div(
-									[h.Class("flex flex-col gap-2")],
-									[
-										h.div(
-											[h.Class("h-56")],
-											[latencyChart(h, model, stats.points, context)],
-										),
-										availabilityStrip(h, stats.points, context.timeZone),
-									],
-								),
+						: model.chartRuntime._tag === "Failed"
+							? h.p(
+									[h.Class("py-16 text-center text-sm text-muted-foreground")],
+									["The chart couldn't load. Reload the page to try again."],
+								)
+							: context === null
+								? h.div([h.Class("h-56")], [chartSkeleton(h, "line")])
+								: h.div(
+										[
+											...(isStatsRefreshing(model) ? [h.AriaBusy(true)] : []),
+											h.Class(
+												cn(
+													"flex flex-col gap-2",
+													refreshingClass(isStatsRefreshing(model)),
+												),
+											),
+										],
+										[
+											h.div(
+												[h.Class("h-56")],
+												[latencyChart(h, model, stats.points, context)],
+											),
+											availabilityStrip(
+												h,
+												stats.points,
+												stats.window,
+												context.timeZone,
+											),
+										],
+									),
 			})
 	return panel(h, {}, [
 		panelHeader(h, {
@@ -362,53 +401,73 @@ const scatterLines = (h: H, stats: CheckStats, domain: Domain, yMax: number): Ht
 	)
 }
 
-/** One dot, a link to the check's trace, with its card on hover. */
-const scatterDot = (h: H, sample: CheckSample, domain: Domain, yMax: number, timeZone: string): Html => {
-	const span = Math.max(1, domain.endMs - domain.startMs)
-	const left = ((isoMs(sample.at) - domain.startMs) / span) * 100
-	const bottom = Math.min(1, sample.durationMs / yMax) * 100
-	const result = sample.statusCode === null ? (sample.ok ? "Passed" : "Failed") : String(sample.statusCode)
-	return h.a(
+/** Where a check sits on the plot, as percentages of its width and height. */
+const dotPosition = (sample: CheckSample, domain: Domain, yMax: number) => ({
+	left: ((isoMs(sample.at) - domain.startMs) / Math.max(1, domain.endMs - domain.startMs)) * 100,
+	bottom: Math.min(1, sample.durationMs / yMax) * 100,
+})
+
+/** One element per check: a dot linking its trace that reports hover. Out of the tab order (thousands). */
+const scatterDots = (
+	h: H,
+	samples: ReadonlyArray<CheckSample>,
+	startMs: number,
+	endMs: number,
+	yMax: number,
+): Html =>
+	h.div(
 		[
-			h.Key(`${sample.traceId}-${sample.at}`),
-			h.Href(traceHref(sample.traceId)),
-			h.AriaLabel(`${formatAlertTime(sample.at, timeZone)}, ${result}, ${formatMs(sample.durationMs)}`),
-			h.Class("group absolute z-10 -translate-x-1/2 translate-y-1/2 p-0.5 hover:z-30"),
-			h.Style({ left: `${left}%`, bottom: `${bottom}%` }),
+			h.AriaHidden(true),
+			h.Class("absolute inset-0"),
+			h.OnMouseLeave(Message.HoveredCheck({ index: null })),
 		],
-		[
-			h.span(
+		samples.map((sample, index) => {
+			const position = dotPosition(sample, { startMs, endMs }, yMax)
+			return h.a(
 				[
+					h.Key(`${sample.traceId}-${index}`),
+					h.Href(traceHref(sample.traceId)),
+					h.Attribute("tabindex", "-1"),
+					h.OnMouseEnter(Message.HoveredCheck({ index })),
 					h.Class(
 						cn(
-							"block rounded-full transition-transform group-hover:scale-150",
+							"absolute -translate-x-1/2 translate-y-1/2 rounded-full hover:scale-150",
 							sample.ok ? "size-1 bg-success/60" : "size-1.5 bg-destructive",
 						),
 					),
+					h.Style({ left: `${position.left}%`, bottom: `${position.bottom}%` }),
 				],
 				[],
+			)
+		}),
+	)
+
+const dotsSlot = createLazy()
+
+/** The hovered check's card, drawn once beside its dot. */
+const hoverCard = (h: H, sample: CheckSample, domain: Domain, yMax: number, timeZone: string): Html => {
+	const position = dotPosition(sample, domain, yMax)
+	const result = sample.statusCode === null ? (sample.ok ? "Passed" : "Failed") : String(sample.statusCode)
+	return h.div(
+		[
+			h.Class(
+				cn(
+					"pointer-events-none absolute z-20 mb-2 flex w-max flex-col gap-0.5 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md",
+					position.left > 70 ? "-translate-x-full" : undefined,
+				),
 			),
+			h.Style({ left: `${position.left}%`, bottom: `${position.bottom}%` }),
+		],
+		[
+			h.span([h.Class("text-muted-foreground")], [formatAlertDateTime(sample.at, timeZone)]),
 			h.span(
+				[h.Class("flex items-center gap-2 font-mono tabular-nums")],
 				[
-					h.Class(
-						cn(
-							"pointer-events-none absolute bottom-full mb-1.5 hidden w-max flex-col gap-0.5 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md group-hover:flex",
-							left > 70 ? "right-0" : "left-0",
-						),
-					),
-				],
-				[
-					h.span([h.Class("text-muted-foreground")], [formatAlertTime(sample.at, timeZone)]),
-					h.span(
-						[h.Class("flex items-center gap-2 font-mono tabular-nums")],
-						[
-							h.span([h.Class(sample.ok ? "text-success" : "text-destructive")], [result]),
-							formatMs(sample.durationMs),
-						],
-					),
-					h.span([h.Class("text-primary")], ["Open trace"]),
+					h.span([h.Class(sample.ok ? "text-success" : "text-destructive")], [result]),
+					formatMs(sample.durationMs),
 				],
 			),
+			h.span([h.Class("text-primary")], ["Click to open the trace"]),
 		],
 	)
 }
@@ -423,13 +482,12 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 			const failed = stats.samples.filter((sample) => !sample.ok).length
 			// Past the list's limit the axis starts at the oldest check shown, not the window's start.
 			const oldest = stats.samples[0]
-			const domain: Domain = {
-				startMs:
-					stats.samplesTruncated && oldest !== undefined ? isoMs(oldest.at) : stats.windowStartMs,
-				endMs: stats.windowEndMs,
-			}
+			const startMs =
+				stats.samplesTruncated && oldest !== undefined ? isoMs(oldest.at) : stats.windowStartMs
+			const domain: Domain = { startMs, endMs: stats.windowEndMs }
+			const hovered = model.hoveredCheck === null ? undefined : stats.samples[model.hoveredCheck]
 			const ticks = [0, 0.25, 0.5, 0.75, 1].map(
-				(share) => domain.startMs + (domain.endMs - domain.startMs) * share,
+				(share) => startMs + (stats.windowEndMs - startMs) * share,
 			)
 			return panel(h, {}, [
 				panelHeader(h, {
@@ -446,7 +504,10 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 				}),
 				uptimePanelBody(h, [
 					h.div(
-						[h.Class("flex flex-col gap-2")],
+						[
+							...(isStatsRefreshing(model) ? [h.AriaBusy(true)] : []),
+							h.Class(cn("flex flex-col gap-2", refreshingClass(isStatsRefreshing(model)))),
+						],
 						[
 							h.div(
 								[h.Class("flex h-56")],
@@ -464,9 +525,9 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 									),
 									h.div(
 										[
-											h.Role("group"),
+											h.Role("img"),
 											h.AriaLabel(
-												`Each check's response time over the ${WINDOW_LABEL[model.window]}`,
+												`${stats.samples.length} checks over the ${WINDOW_LABEL[stats.window]}, ${failed} failed`,
 											),
 											h.Class(
 												"relative min-w-0 flex-1 border-b border-l border-border/60 bg-[linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] bg-[length:100%_50%] bg-repeat-y",
@@ -474,9 +535,17 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 										],
 										[
 											scatterLines(h, stats, domain, yMax),
-											...stats.samples.map((sample) =>
-												scatterDot(h, sample, domain, yMax, timeZone),
-											),
+											// Memoized: hover and other page messages do not rebuild thousands of dots.
+											dotsSlot(scatterDots, [
+												h,
+												stats.samples,
+												startMs,
+												stats.windowEndMs,
+												yMax,
+											]),
+											...(hovered === undefined
+												? []
+												: [hoverCard(h, hovered, domain, yMax, timeZone)]),
 										],
 									),
 								],
@@ -491,7 +560,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 								ticks.map((ms) =>
 									h.span(
 										[h.Key(String(ms))],
-										[formatAlertTime(new Date(ms).toISOString(), timeZone)],
+										[timeLabel(stats.window, new Date(ms).toISOString(), timeZone)],
 									),
 								),
 							),

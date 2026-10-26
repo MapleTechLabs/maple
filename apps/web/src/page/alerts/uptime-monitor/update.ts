@@ -74,6 +74,7 @@ export const init = (route: MonitorRoute, context: PageContext): Return => {
 		copies: {},
 		window: "24h",
 		stats: Keyed.idle(),
+		hoveredCheck: null,
 		chart: Chart.init(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -187,8 +188,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		PickedWindow: ({ window }) =>
 			window === model.window ? { model } : requestStats({ ...model, window }, context, "Load"),
 		CompletedFetchStats: ({ key, result }) => ({
-			model: { ...model, stats: Keyed.accept(model.stats, key, result) },
+			model: { ...model, stats: Keyed.accept(model.stats, key, result), hoveredCheck: null },
 		}),
+		HoveredCheck: ({ index }) =>
+			index === model.hoveredCheck ? { model } : { model: { ...model, hoveredCheck: index } },
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },

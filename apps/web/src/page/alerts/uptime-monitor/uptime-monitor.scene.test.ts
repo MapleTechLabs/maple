@@ -155,6 +155,7 @@ describe("uptime monitor page", () => {
 			Message.CompletedFetchStats({
 				key: model.stats.key ?? "",
 				result: Result.succeed({
+					window: "24h",
 					points: [],
 					samples: [],
 					samplesTruncated: false,
@@ -194,6 +195,7 @@ describe("uptime monitor page", () => {
 			Message.CompletedFetchStats({
 				key: model.stats.key ?? "",
 				result: Result.succeed({
+					window: "1h",
 					points: [],
 					samples: [sample(30, true, "a".repeat(32)), sample(10, false, "b".repeat(32))],
 					samplesTruncated: false,
@@ -211,9 +213,77 @@ describe("uptime monitor page", () => {
 			{ update: pageUpdate, view },
 			given(withStats),
 			themeResolved(),
-			expectView(text("2 checks, 1 failed")).toExist(),
-			expectView(role("link", { name: /200, 120 ms/u })).toHaveAttr("href", traceHref("a".repeat(32))),
-			expectView(role("link", { name: /Failed, 10.00 s/u })).toHaveAttr("href", traceHref("b".repeat(32))),
+			expectView(role("img", { name: "2 checks over the last hour, 1 failed" })).toExist(),
+			expectView(selector(`a[href="${traceHref("a".repeat(32))}"]`)).toExist(),
+			expectView(selector(`a[href="${traceHref("b".repeat(32))}"]`)).toExist(),
+		)
+		// Hovering the failed check shows its card with what it returned.
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(withStats, Message.HoveredCheck({ index: 1 })).model),
+			themeResolved(),
+			expectView(text("Failed")).toExist(),
+			expectView(text("10.00 s")).toExist(),
+			expectView(text("Click to open the trace")).toExist(),
+		)
+	})
+
+	test("switching windows keeps the old figures labelled with their own window until the new ones land", () => {
+		const model = opened(httpMonitor())
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 96,
+					failures: 0,
+					p50Ms: 121,
+					p95Ms: 310,
+					p99Ms: 884,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(loaded, Message.PickedWindow({ window: "7d" })).model),
+			themeResolved(),
+			expectView(text("last 24 hours")).toExist(),
+			expectView(text("last 7 days")).not.toExist(),
+		)
+	})
+
+	test("a chart runtime that fails to load says so instead of loading forever", () => {
+		const model = opened(httpMonitor())
+		const failed = [
+			Message.FailedLoadChartRuntime({ reason: "network" }),
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 4,
+					failures: 0,
+					p50Ms: 100,
+					p95Ms: 100,
+					p99Ms: 100,
+				}),
+			}),
+		].reduce((current, message) => pageUpdate(current, message).model, model)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			expectView(text("The chart couldn't load. Reload the page to try again.")).toExist(),
 		)
 	})
 
