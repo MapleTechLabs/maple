@@ -6,7 +6,7 @@ import { requestKey } from "../../../data/request-key"
 import type { AppRoute } from "../../../route"
 import * as Menu from "../../../ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { LIMIT_REACHED_CODE, monitorHref, monitorIdFromUrl } from "../shared/uptime-commands"
+import { monitorHref, monitorIdFromUrl } from "../shared/uptime-commands"
 import {
 	FetchExistingMonitor,
 	FetchFormServices,
@@ -40,7 +40,7 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		existing: Keyed.idle(),
 		form: emptyForm({ kind: kindOf(route.search.kind), serviceName: route.search.serviceName ?? "" }),
 		isSaving: false,
-		isLimitReached: false,
+		saveFailure: null,
 		isTesting: false,
 		testResult: null,
 		testFailure: null,
@@ -49,6 +49,7 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		destinations: null,
 		destinationMenu: Menu.init(DESTINATION_MENU_ID),
 		isAdmin: false,
+		isSessionLoaded: false,
 	}
 	const common = [FetchFormServices(), ReadFormTimeZones(), FetchFormSession({ orgId: context.orgId })]
 	if (editingId === null) return { model, commands: common }
@@ -86,9 +87,6 @@ const addAssertion = (model: Model): Return =>
 		nextAssertionId: model.form.nextAssertionId + 1,
 	})
 
-const toast = (type: "success" | "error", title: string, description = ""): PageOutMessage =>
-	PageOutMessage.RequestedToast({ type, title, description })
-
 const test = (model: Model): Return =>
 	model.isTesting || model.form.kind !== "http"
 		? { model }
@@ -98,10 +96,10 @@ const test = (model: Model): Return =>
 			}
 
 const save = (model: Model): Return =>
-	model.isSaving || formIssues(model.form).length > 0
+	model.isSaving || !model.isAdmin || formIssues(model.form).length > 0
 		? { model }
 		: {
-				model: { ...model, isSaving: true, isLimitReached: false },
+				model: { ...model, isSaving: true, saveFailure: null },
 				commands: [
 					SaveDraft({
 						editingId: model.editingId,
@@ -151,7 +149,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchServices: ({ services }) => ({ model: { ...model, services } }),
 		CompletedReadTimeZones: ({ zones }) => ({ model: { ...model, timeZones: zones } }),
 		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin } } : { model },
+			orgId === context.orgId ? { model: { ...model, isAdmin, isSessionLoaded: true } } : { model },
 		PickedKind: ({ kind }) =>
 			model.editingId !== null
 				? { model }
@@ -206,12 +204,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						},
 					}),
 				}),
-				onFailure: (failure): Return =>
-					failure.code === LIMIT_REACHED_CODE
-						? { model: { ...model, isSaving: false, isLimitReached: true } }
-						: {
-								model: { ...model, isSaving: false },
-								outMessage: toast("error", "Couldn't save the monitor", failure.message),
-							},
+				// Inline beside the action bar, never a toast over its buttons.
+				onFailure: (saveFailure): Return => ({ model: { ...model, isSaving: false, saveFailure } }),
 			}),
 	})

@@ -12,7 +12,7 @@ import { wirePayload } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
-import { LIMIT_MESSAGE, view as pageView } from "./view"
+import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const publicId = Schema.encodeSync(UptimeMonitorPublicId)
@@ -22,8 +22,11 @@ const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
 
+const asAdmin = (model: Model): Model =>
+	pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, isAdmin: true })).model
+
 const fresh = (search: Model["search"] = {}): Model =>
-	init({ _tag: "AlertsUptimeNew", search }, context).model
+	asAdmin(init({ _tag: "AlertsUptimeNew", search }, context).model)
 
 const withUrl = (url: string): Model =>
 	pageUpdate(fresh(), Message.ChangedText({ field: "url", value: url })).model
@@ -123,17 +126,64 @@ describe("uptime monitor form", () => {
 		)
 	})
 
-	test("a create past the plan's allowance explains the limit instead of a generic error", () => {
+	test("a create past the plan's allowance shows the server's limit beside the buttons", () => {
 		const saving = pageUpdate(withUrl("https://api.acme.dev/health"), Message.ClickedSave())
 		expect(names(saving.commands)).toEqual(["SaveUptimeDraft"])
+		const message =
+			"This organization already has 25 uptime monitors, the most its plan allows. Delete one or upgrade to add more."
 		const limited = pageUpdate(
 			saving.model,
 			Message.CompletedSave({
-				result: Result.fail({ ...toLoadFailure(new Error("limit")), code: LIMIT_REACHED_CODE }),
+				result: Result.fail({
+					...toLoadFailure(new Error(message)),
+					message,
+					code: LIMIT_REACHED_CODE,
+				}),
 			}),
 		)
 		expect(limited.outMessage).toBeUndefined()
-		scene({ update: pageUpdate, view }, given(limited.model), expectView(text(LIMIT_MESSAGE)).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(limited.model),
+			expectView(text("Uptime monitor limit reached")).toExist(),
+			expectView(text(message)).toExist(),
+		)
+	})
+
+	test("a failed save says why inline, with no toast over the action bar", () => {
+		const saving = pageUpdate(withUrl("https://api.acme.dev/health"), Message.ClickedSave())
+		const message = "URL host 'internal.acme.dev' resolves to a loopback, private, or metadata address"
+		const failed = pageUpdate(
+			saving.model,
+			Message.CompletedSave({ result: Result.fail({ ...toLoadFailure(new Error(message)), message }) }),
+		)
+		expect(failed.outMessage).toBeUndefined()
+		scene(
+			{ update: pageUpdate, view },
+			given(failed.model),
+			expectView(text("Couldn't save the monitor")).toExist(),
+			expectView(text(message)).toExist(),
+			expectView(role("button", { name: "Create monitor" })).not.toBeDisabled(),
+		)
+	})
+
+	test("a member sees that the form is admin-only, and cannot save", () => {
+		const member = pageUpdate(
+			init({ _tag: "AlertsUptimeNew", search: {} }, context).model,
+			Message.CompletedFetchSession({ orgId: ORG, isAdmin: false }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(text("Only org admins can create or change uptime monitors")).toExist(),
+			expectView(role("button", { name: "Create monitor" })).not.toExist(),
+		)
+		const tried = pageUpdate(
+			pageUpdate(member, Message.ChangedText({ field: "url", value: "https://api.acme.dev/health" }))
+				.model,
+			Message.ClickedSave(),
+		)
+		expect(tried.commands ?? []).toHaveLength(0)
 	})
 
 	test("a saved monitor opens its page with a toast", () => {

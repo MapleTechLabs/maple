@@ -9,7 +9,8 @@ import { panel, panelHeader } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { monitorHref, uptimeTabHref } from "../shared/uptime-commands"
+import { failureMessage, type LoadFailure } from "../../../data/load-failure"
+import { LIMIT_REACHED_CODE, monitorHref, uptimeTabHref } from "../shared/uptime-commands"
 import { formatMs } from "../shared/uptime-derive"
 import { uptimePanelBody } from "../shared/uptime-view"
 import { formIssues } from "./derive"
@@ -47,9 +48,6 @@ const KINDS: ReadonlyArray<{ kind: MonitorKind; label: string; icon: IconName; d
 		description: "Your job pings Maple. Alert when it stops.",
 	},
 ]
-
-export const LIMIT_MESSAGE =
-	"Your plan includes 10 uptime monitors. Remove one or contact us to raise the limit."
 
 const kindPicker = (h: H, model: Model): Html =>
 	h.div(
@@ -215,6 +213,7 @@ const actionBar = (h: H, model: Model): Html => {
 	return h.div(
 		[h.Class("sticky bottom-0 z-20 -mx-4 -mb-4 mt-6 border-t bg-background/95 px-4 py-3 backdrop-blur")],
 		[
+			...(model.saveFailure === null ? [] : [saveFailureNotice(h, model.saveFailure)]),
 			h.div(
 				[h.Class("flex items-center justify-between gap-4")],
 				[
@@ -292,11 +291,45 @@ const kindSections = (h: H, model: Model): ReadonlyArray<Html> => {
 	}
 }
 
-const limitNotice = (h: H): Html =>
-	alert(h, { variant: "warn" }, [
-		icon(h, "CircleWarningIcon"),
-		alertTitle(h, ["Uptime monitor limit reached"]),
-		alertDescription(h, [LIMIT_MESSAGE]),
+/** The last save's failure, in the server's words: the plan's limit, or why it was refused. */
+const saveFailureNotice = (h: H, failure: LoadFailure): Html =>
+	failure.code === LIMIT_REACHED_CODE
+		? alert(h, { variant: "warn", size: "sm", className: "mb-3" }, [
+				icon(h, "CircleWarningIcon"),
+				alertTitle(h, ["Uptime monitor limit reached"]),
+				alertDescription(h, [failure.message]),
+			])
+		: alert(h, { variant: "crit", size: "sm", className: "mb-3" }, [
+				icon(h, "CircleXmarkIcon"),
+				alertTitle(h, ["Couldn't save the monitor"]),
+				alertDescription(h, [failureMessage(failure)]),
+			])
+
+/** Members can read monitors but not create or change them; the API refuses them too. */
+const adminOnlyPage = (
+	h: H,
+	model: Model,
+	header: { readonly title: string; readonly description: string },
+) =>
+	dashboardPage(h, header, [
+		alert(h, { variant: "info" }, [
+			icon(h, "ShieldIcon"),
+			alertTitle(h, ["Only org admins can create or change uptime monitors"]),
+			alertDescription(h, ["Ask an admin to make this change."]),
+		]),
+		h.div(
+			[],
+			[
+				linkButton(
+					h,
+					{
+						variant: "outline",
+						href: model.editingId === null ? uptimeTabHref() : monitorHref(model.editingId),
+					},
+					[model.editingId === null ? "Back to uptime" : "Back to the monitor"],
+				),
+			],
+		),
 	])
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
@@ -305,6 +338,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		title: isEdit ? "Edit monitor" : "New monitor",
 		description: "Maple checks it from Ashburn, US and records every check as a trace.",
 	}
+	if (model.isSessionLoaded && !model.isAdmin) return adminOnlyPage(h, model, header)
 	if (isEdit && AsyncData.isFailure(model.existing.data))
 		return dashboardPage(h, header, [
 			errorState(h, { failure: model.existing.data.error, title: "Couldn't load the monitor" }),
@@ -313,7 +347,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, gap: "lg" }, [
 		kindPicker(h, model),
-		...(model.isLimitReached ? [limitNotice(h)] : []),
 		h.div(
 			[h.Class("grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]")],
 			[
