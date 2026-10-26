@@ -11,6 +11,7 @@ import { CHART_TOKENS, metricsGrid } from "./view-charts"
 import { deploysPanel, issuesPanel } from "./view-deploys"
 import { dependencyStrip, usagePanel, workloadsPanel } from "./view-footprint"
 import { SPARKLINE_TOKEN, topOperationsPanel } from "./view-panels"
+import { uptimePanel } from "./view-uptime"
 
 // The Overview tab: the chart grid, then the quiet panels and the "Talks to" strip.
 
@@ -57,6 +58,7 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 					issuesPanel(h, model, clock, isLimited),
 					deploysPanel(h, model, clock, isDetailLoading),
 					usagePanel(h, model, envFilterActive),
+					uptimePanel(h, model),
 					workloadsPanel(h, model, envFilterActive),
 				],
 			),

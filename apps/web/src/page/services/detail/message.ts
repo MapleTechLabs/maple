@@ -1,3 +1,4 @@
+import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "../../../charts/chart"
@@ -8,7 +9,15 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { ServiceTab } from "./derive"
 import { ENDPOINT_FILTERS } from "./derive-api"
 import * as EndpointPeek from "./endpoint-peek/message"
-import { ApiBucket, ApiOverview, DependencyBundle, Endpoint, Operation, SortTable, StatusRow } from "./model-tabs"
+import {
+	ApiBucket,
+	ApiOverview,
+	DependencyBundle,
+	Endpoint,
+	Operation,
+	SortTable,
+	StatusRow,
+} from "./model-tabs"
 import { Commit, CommitFailure, Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
 
 /** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
@@ -35,6 +44,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchStatusBreakdown: result(Schema.Array(StatusRow)),
 	CompletedFetchIssues: result(Schema.Array(Issue)),
 	CompletedFetchUsage: result(Usage),
+	CompletedFetchUptimeMonitors: result(Schema.Array(V2UptimeMonitor)),
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
 	CompletedFetchDependencies: result(DependencyBundle),
 	CompletedFetchCommit: { sha: Schema.String, result: Schema.Result(Commit, CommitFailure) },
