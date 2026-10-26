@@ -202,6 +202,34 @@ describe("alerts hub, Uptime tab", () => {
 		)
 	})
 
+	test("Delete from a row menu confirms, deletes that monitor once and re-reads the list", () => {
+		const target = downMonitor()
+		const asking = pageUpdate(
+			withMonitors(THREE),
+			Message.GotRowMenuMessage({
+				menuId: monitorMenuId(target.id),
+				message: Menu.Message.ClickedItem({ index: 2, item: { kind: "Item", value: "delete" } }),
+			}),
+		)
+		expect(asking.model.confirmDeleteMonitorId).toBe(target.id)
+		const deleting = pageUpdate(asking.model, Message.ClickedConfirmDeleteMonitor())
+		expect(deleting.commands).toMatchObject([
+			{ name: "DeleteUptimeMonitor", args: { monitorId: target.id } },
+		])
+		// A second confirm while the first is in flight sends nothing.
+		expect(pageUpdate(deleting.model, Message.ClickedConfirmDeleteMonitor()).commands ?? []).toEqual([])
+
+		const done = pageUpdate(
+			deleting.model,
+			Message.CompletedDeleteMonitor({ monitorId: target.id, result: Result.succeed(undefined) }),
+		)
+		expect(names(done.commands)).toContain("FetchAlertsHubMonitors")
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Monitor deleted", description: "" }),
+		)
+		expect(done.model.deletingMonitorId).toBeNull()
+	})
+
 	test("the New rule chevron opens both kinds, and Uptime check goes to the uptime form", () => {
 		scene(
 			{ update: pageUpdate, view },

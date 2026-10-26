@@ -194,9 +194,11 @@ export const serviceSection = (h: H, model: Model): Html => {
 /** Who hears about it: the chosen destinations and a menu of the rest. */
 export const notifySection = (h: H, model: Model): Html => {
 	const rows = model.destinations ?? []
+	// `null` until destinations sync: a neutral name, not "unavailable", for the saved ones.
+	const fallback = model.destinations === null ? "Destination" : "Unavailable destination"
 	const selected = model.form.destinationIds.map((id) => ({
 		id,
-		name: rows.find((row) => row.id === id)?.name ?? "Unavailable destination",
+		name: rows.find((row) => row.id === id)?.name ?? fallback,
 	}))
 	const available = rows.filter((row) => !model.form.destinationIds.some((id) => id === row.id))
 	return section(h, "Notify", undefined, [
