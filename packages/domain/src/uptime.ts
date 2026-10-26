@@ -331,11 +331,13 @@ export const heartbeatDeadline = (config: UptimeHeartbeatConfig, anchorMs: numbe
 	const graceMs = config.graceSeconds * 1000
 	const schedule = config.schedule
 	if (schedule._tag === "interval") return Option.some(anchorMs + schedule.seconds * 1000 + graceMs)
-	return Option.map(
-		parseHeartbeatCron(schedule.expression, schedule.timezone),
-		(cron) => Cron.next(cron, anchorMs).getTime() + graceMs,
+	// `Cron.next` throws for a schedule with no occurrence, such as `0 0 30 2 *`.
+	return Option.flatMap(parseHeartbeatCron(schedule.expression, schedule.timezone), (cron) =>
+		Option.map(nextCronDate(cron, anchorMs), (next) => next.getTime() + graceMs),
 	)
 }
+
+const nextCronDate = Option.liftThrowable(Cron.next)
 
 const relativeAge = (ms: number): string => {
 	const minutes = Math.max(1, Math.round(ms / 60_000))

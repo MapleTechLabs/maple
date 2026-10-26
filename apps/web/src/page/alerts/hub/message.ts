@@ -61,6 +61,7 @@ export const Message = defineMessageUnion({
 	ChangedUptimeQuery: { value: Schema.String },
 	ClickedUptimeStatus: { filter: UptimeStatusFilter },
 	ChangedUptimeKind: { kind: UptimeKindFilter },
+	ClickedClearUptimeFilters: {},
 	CompletedToggleMonitor: { monitorId: UptimeMonitorId, result: outcome(V2UptimeMonitor) },
 	ClickedConfirmDeleteMonitor: {},
 	CompletedDeleteMonitor: { monitorId: UptimeMonitorId, result: outcome(Schema.Void) },

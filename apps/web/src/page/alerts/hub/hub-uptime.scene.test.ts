@@ -161,6 +161,22 @@ describe("alerts hub, Uptime tab", () => {
 		)
 	})
 
+	test("Clear filters on an empty result resets the query, status and type", () => {
+		const filtered = [
+			Message.ChangedUptimeQuery({ value: "nothing-matches" }),
+			Message.ClickedUptimeStatus({ filter: "down" }),
+			Message.ChangedUptimeKind({ kind: "tcp" }),
+		].reduce((model, message) => pageUpdate(model, message).model, withMonitors(THREE))
+		scene(
+			{ update: pageUpdate, view },
+			given(filtered),
+			click(role("button", { name: "Clear filters" })),
+			expectView(role("link", { name: "payments-api" })).toExist(),
+			expectView(role("link", { name: "checkout-api" })).toExist(),
+			expectView(role("link", { name: "legacy-api" })).toExist(),
+		)
+	})
+
 	test("Pause from a row menu PATCHes once and re-reads the list when it lands", () => {
 		const model = withMonitors(THREE)
 		const target = httpMonitor()

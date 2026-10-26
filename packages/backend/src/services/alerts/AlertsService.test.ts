@@ -8141,6 +8141,48 @@ describe("AlertsService uptime rules", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
 	})
 
+	it.effect("a monitor whose backing rule cannot be created does not block the others", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_uptime_backfill_isolated")
+			const seed = (name: string) =>
+				seedUptimeMonitor(testDb, {
+					orgId,
+					name,
+					serviceName: null,
+					destinationIds: [],
+					config: httpMonitorConfig,
+					status: "down",
+					error: "Status 503, expected 2xx",
+				})
+			// The first keeps its old rule row, so a new rule with its name violates the unique name.
+			const blocked = yield* seed("Blocked check")
+			const legacy = yield* seed("Legacy check")
+			yield* Effect.promise(async () => {
+				await executeSql(
+					testDb,
+					"update uptime_monitors set alert_rule_id = null where org_id = $1",
+					[orgId],
+				)
+				await executeSql(testDb, "delete from alert_rules where id = $1", [legacy.ruleId])
+			})
+			const ruleOf = (monitorId: string) =>
+				Effect.promise(() =>
+					queryFirstRow<{ readonly alert_rule_id: string | null }>(
+						testDb,
+						"select alert_rule_id from uptime_monitors where id = $1",
+						[monitorId],
+					),
+				)
+
+			yield* alerts.runSchedulerTick()
+			assert.isNull((yield* ruleOf(blocked.monitorId))?.alert_rule_id)
+			assert.isNotNull((yield* ruleOf(legacy.monitorId))?.alert_rule_id)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+	})
+
 	it.effect("a paused monitor never fires, and pausing resolves an open incident", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

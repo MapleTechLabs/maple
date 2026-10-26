@@ -498,6 +498,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedUptimeQuery: ({ value }) => ({ model: { ...model, uptimeQuery: value } }),
 		ClickedUptimeStatus: ({ filter }) => ({ model: { ...model, uptimeStatus: filter } }),
 		ChangedUptimeKind: ({ kind }) => ({ model: { ...model, uptimeKind: kind } }),
+		ClickedClearUptimeFilters: () => ({
+			model: { ...model, uptimeQuery: "", uptimeStatus: "all", uptimeKind: "all" },
+		}),
 		CompletedToggleMonitor: ({ monitorId, result }) => {
 			const settled = {
 				...model,

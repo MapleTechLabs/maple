@@ -160,7 +160,12 @@ export class UptimeDnsProbe extends Context.Service<UptimeDnsProbe, UptimeDnsPro
 					}
 					if (config.expected === undefined) return succeeded(durationMs)
 					const expected = normalize(config.recordType, config.expected)
-					if (answers.some((answer) => normalize(config.recordType, answer) === expected)) {
+					// A private address never confirms a check, or a monitor could map internal names.
+					const isAddress = config.recordType === "A" || config.recordType === "AAAA"
+					const confirms = (answer: string) =>
+						!(isAddress && isPrivateAddress(answer.trim())) &&
+						normalize(config.recordType, answer) === expected
+					if (answers.some(confirms)) {
 						return succeeded(durationMs)
 					}
 					return failed(durationMs, "assertion", describeMismatch(config, config.expected, answers))

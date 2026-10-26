@@ -28,6 +28,17 @@ describe("isHeartbeatOverdue", () => {
 		assert.isTrue(isHeartbeatOverdue(nineAmNewYork(), at("2026-07-16T13:06:00Z")))
 	})
 
+	it("treats a schedule with no next run as never overdue", () => {
+		const never = nineAmNewYork({
+			config: {
+				_tag: "heartbeat",
+				schedule: { _tag: "cron", expression: "0 0 30 2 *", timezone: "UTC" },
+				graceSeconds: 0,
+			},
+		})
+		assert.isFalse(isHeartbeatOverdue(never, at("2027-01-01T00:00:00Z")))
+	})
+
 	it("never marks a paused, already down or disabled heartbeat", () => {
 		const late = at("2026-07-20T00:00:00Z")
 		assert.isFalse(isHeartbeatOverdue(nineAmNewYork({ status: "paused" }), late))

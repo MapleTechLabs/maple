@@ -987,4 +987,25 @@ describe("UptimeMonitorsService backing alert rule", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/UptimeMonitorValidationError")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
+
+	it.effect("refuses a heartbeat cron schedule that never runs", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const error = yield* Effect.flip(
+				service.create(ORG, {
+					name: "Leap day",
+					kind: "heartbeat",
+					config: {
+						_tag: "heartbeat",
+						schedule: { _tag: "cron", expression: "0 0 30 2 *", timezone: "UTC" },
+						graceSeconds: 0,
+					},
+					createdBy: USER,
+				}),
+			)
+			assert.strictEqual(error._tag, "@maple/http/errors/UptimeMonitorValidationError")
+			assert.include(error.message, "never runs")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
 })
