@@ -166,7 +166,11 @@ export function buildIncidentTimeline(input: {
 }): ReadonlyArray<IncidentTimelineEntry> {
 	const { incident } = input
 	const group = incidentGroup(incident)
-	const condition = `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
+	// An uptime rule has no threshold to read out: the monitor's checks failed.
+	const condition =
+		incident.signalType === "uptime"
+			? `${incident.ruleName} went down`
+			: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
 
 	const opened: IncidentTimelineEntry = {
 		key: "opened",

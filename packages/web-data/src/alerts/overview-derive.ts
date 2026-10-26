@@ -7,6 +7,7 @@ import {
 	isRangeComparator,
 	signalLabels,
 } from "./form-utils"
+import { incidentGroup } from "./incident-timeline"
 import { type DerivedRuleStatus, needsAttention } from "./rule-status"
 
 /** The four mutually exclusive buckets the Rules tab filters by. */
@@ -41,11 +42,39 @@ export function ruleConditionSummary(rule: AlertRuleDocument): string {
 	return parts.join(" · ")
 }
 
-/** "Error rate 8.4% on checkout": what an open incident is about, in one line. */
-export function incidentTitle(incident: AlertIncidentDocument): string {
+type IncidentLine = Pick<
+	AlertIncidentDocument,
+	"signalType" | "ruleName" | "groupKey" | "status" | "lastObservedValue" | "threshold"
+>
+
+/** Uptime incidents name the monitor ("checkout-api is down"), not a signal and a value. */
+const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "uptime"
+
+/** "Error rate 8.4% on checkout", or "checkout-api is down": what an incident is about, in one line. */
+export function incidentTitle(incident: IncidentLine): string {
+	if (isUptime(incident))
+		return `${incident.ruleName} ${incident.status === "resolved" ? "is back up" : "is down"}`
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
 	return incident.groupKey === null ? base : `${base} on ${incident.groupKey}`
+}
+
+/** The group shown next to the rule name: an uptime incident's only when it is a real service. */
+export function incidentScope(incident: IncidentLine): string | null {
+	return isUptime(incident) ? incidentGroup(incident) : incident.groupKey
+}
+
+/** An empty cell, without an em dash. */
+export const NO_THRESHOLD = "–"
+
+/** The Now / threshold cells: an uptime incident is "Down" (or "Up") with no threshold. */
+export function incidentValues(incident: IncidentLine): Readonly<{ now: string; threshold: string }> {
+	if (isUptime(incident))
+		return { now: incident.status === "resolved" ? "Up" : "Down", threshold: NO_THRESHOLD }
+	return {
+		now: formatSignalValue(incident.signalType, incident.lastObservedValue),
+		threshold: formatSignalValue(incident.signalType, incident.threshold),
+	}
 }
 
 export interface Headroom {

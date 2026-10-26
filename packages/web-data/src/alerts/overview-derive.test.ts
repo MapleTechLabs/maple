@@ -6,6 +6,9 @@ import { defaultRuleForm } from "./form-utils"
 import {
 	blindSpots,
 	fireLanes,
+	incidentScope,
+	incidentTitle,
+	incidentValues,
 	ruleBucket,
 	ruleConditionSummary,
 	ruleHeadroom,
@@ -102,6 +105,41 @@ const derived = (overrides: Partial<DerivedRuleStatus> = {}): DerivedRuleStatus 
 	attention: { noDestinations: false, recentDeliveryFailure: false, slowedDown: false },
 	reason: null,
 	...overrides,
+})
+
+describe("incident lines", () => {
+	const uptime = (overrides: Record<string, unknown> = {}) =>
+		makeIncident({
+			ruleName: "checkout-api",
+			signalType: "uptime",
+			comparator: "gte",
+			threshold: 1,
+			lastObservedValue: 1,
+			status: "open",
+			resolvedAt: null,
+			groupKey: "__total__",
+			...overrides,
+		})
+
+	it("names an uptime incident by its monitor, down or back up, with no threshold", () => {
+		expect(incidentTitle(uptime())).toBe("checkout-api is down")
+		expect(incidentTitle(uptime({ status: "resolved", resolvedAt: iso(HOUR) }))).toBe(
+			"checkout-api is back up",
+		)
+		expect(incidentValues(uptime())).toEqual({ now: "Down", threshold: "–" })
+	})
+
+	it("shows an uptime incident's group only when it is a service", () => {
+		expect(incidentScope(uptime())).toBeNull()
+		expect(incidentScope(uptime({ groupKey: "checkout" }))).toBe("checkout")
+	})
+
+	it("keeps a telemetry incident's signal, value, group and threshold", () => {
+		const incident = makeIncident({ groupKey: "checkout", status: "open", resolvedAt: null })
+		expect(incidentTitle(incident)).toBe("Error rate 8.0% on checkout")
+		expect(incidentScope(incident)).toBe("checkout")
+		expect(incidentValues(incident)).toEqual({ now: "8.0%", threshold: "5.0%" })
+	})
 })
 
 describe("ruleBucket", () => {
