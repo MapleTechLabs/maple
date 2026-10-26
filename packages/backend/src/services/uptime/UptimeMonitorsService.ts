@@ -182,6 +182,7 @@ const IPV4_PATTERN = /^\d{1,3}(\.\d{1,3}){3}$/u
 const toPersistenceError = (error: unknown) =>
 	new UptimeMonitorPersistenceError({
 		message: error instanceof Error ? error.message : "Uptime monitor persistence failed",
+		cause: error,
 	})
 
 const invalid = (message: string) => new UptimeMonitorValidationError({ message })
@@ -393,9 +394,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			const toRecord = (row: MonitorWithStateRow) =>
 				decodeInterval(row.intervalSeconds).pipe(
 					Effect.mapError(
-						() =>
+						(error) =>
 							new UptimeMonitorPersistenceError({
 								message: `Stored interval of uptime monitor ${row.id} is invalid`,
+								cause: error,
 							}),
 					),
 					Effect.map((intervalSeconds): UptimeMonitorRecord => ({
