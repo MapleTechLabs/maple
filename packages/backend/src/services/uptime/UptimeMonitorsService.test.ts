@@ -18,6 +18,7 @@ import {
 	uptimeMonitorLimit,
 	type UptimeMonitorAllowanceApi,
 } from "./UptimeMonitorAllowance"
+import { UptimeAlertSource } from "./UptimeAlertSource"
 import { UptimeMonitorsService } from "./UptimeMonitorsService"
 
 const trackedDbs: TestDb[] = []
@@ -415,6 +416,76 @@ describe("UptimeMonitorsService", () => {
 				assert.strictEqual(after.state.consecutiveFailures, 1)
 			})
 			yield* program.pipe(Effect.provide(makeLayer(testDb, { database })))
+		})
+	})
+
+	it.effect("an overdue heartbeat stays up when a ping lands between the tick's read and write", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			// Counts down per `Database.execute`; the call that sees 1 records a ping first.
+			const countdown = yield* Ref.make(0)
+			const target = yield* Ref.make("")
+			const database = Layer.effect(
+				Database,
+				Effect.gen(function* () {
+					const inner = yield* Database
+					return {
+						execute: (fn) =>
+							Ref.modify(countdown, (n) => [n, n > 0 ? n - 1 : n] as const).pipe(
+								Effect.flatMap((n) =>
+									n === 1
+										? Ref.get(target).pipe(
+												Effect.flatMap((id) =>
+													Effect.promise(() =>
+														executeSql(
+															testDb,
+															`UPDATE uptime_monitor_states SET status = 'up',
+																last_ping_at = '1970-01-01T00:16:00.000Z',
+																updated_at = '1970-01-01T00:16:00.000Z'
+															WHERE monitor_id = $1`,
+															[id],
+														),
+													),
+												),
+											)
+										: Effect.void,
+								),
+								Effect.andThen(inner.execute(fn)),
+							),
+					}
+				}),
+			).pipe(Layer.provide(testDb.layer))
+
+			const program = Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const alerts = yield* UptimeAlertSource
+				const monitor = yield* service.create(ORG, {
+					name: "nightly backup",
+					kind: "heartbeat",
+					config: heartbeatConfig,
+					createdBy: USER,
+				})
+				const url = monitor.heartbeatUrl ?? ""
+				yield* service.recordPing(url.slice(url.lastIndexOf("/") + 1), true)
+				yield* Ref.set(target, monitor.id)
+				// Pinged at 0 every 300 s with 60 s grace: overdue at 1000 s. The read runs at 2, the write at 1.
+				yield* Ref.set(countdown, 2)
+				const ruleId = monitor.alertRuleId
+				if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
+				const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
+				assert.isTrue(Option.isSome(observed) && !observed.value.down)
+				const after = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(after.state.status, "up")
+				assert.strictEqual(after.state.lastPingAt, 960_000)
+			})
+			yield* program.pipe(
+				Effect.provide(
+					Layer.merge(
+						makeLayer(testDb, { database }),
+						UptimeAlertSource.layer.pipe(Layer.provide(database)),
+					),
+				),
+			)
 		})
 	})
 
