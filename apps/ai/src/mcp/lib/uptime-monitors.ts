@@ -266,6 +266,12 @@ const heartbeatSchedule = (
 		return invalid("Pass heartbeat_interval_seconds or cron, not both.", "cron")
 	}
 	if (fields.heartbeat_interval_seconds !== undefined) {
+		if (fields.timezone !== undefined) {
+			return invalid(
+				"timezone applies to a cron schedule; this heartbeat runs on an interval.",
+				"timezone",
+			)
+		}
 		return Effect.succeed({ _tag: "interval", seconds: fields.heartbeat_interval_seconds })
 	}
 	return Effect.succeed(

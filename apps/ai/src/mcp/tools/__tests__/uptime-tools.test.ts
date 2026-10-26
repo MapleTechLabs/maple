@@ -78,6 +78,30 @@ describe("create_uptime_monitor", () => {
 		expect(markdown(result)).toContain("structured output")
 	})
 
+	it("refuses a timezone with an interval heartbeat instead of dropping it", async () => {
+		const created = await runToolDirect(admin, "create_uptime_monitor", {
+			name: "hb-zone",
+			kind: "heartbeat",
+			heartbeat_interval_seconds: 3600,
+			timezone: "Europe/Berlin",
+		})
+		expect(created.isError).toBe(true)
+		expect(markdown(created)).toContain("timezone applies to a cron schedule")
+
+		await runToolDirect(admin, "create_uptime_monitor", {
+			name: "hb-zone-update",
+			kind: "heartbeat",
+			heartbeat_interval_seconds: 3600,
+		})
+		const updated = await runToolDirect(admin, "update_uptime_monitor", {
+			monitor: "hb-zone-update",
+			heartbeat_interval_seconds: 7200,
+			timezone: "Europe/Berlin",
+		})
+		expect(updated.isError).toBe(true)
+		expect(markdown(updated)).toContain("timezone applies to a cron schedule")
+	})
+
 	it("refuses probe-only settings for a heartbeat, naming the field", async () => {
 		const interval = await runToolDirect(admin, "create_uptime_monitor", {
 			name: "hb-interval",
