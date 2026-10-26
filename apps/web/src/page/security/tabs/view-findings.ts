@@ -361,7 +361,8 @@ const groupBlock = (
 	]
 }
 
-/** The tab's one-line explanation, kept above the list in every state but the admin gate. */
+/** The tab's one-line explanation above the list. The gate and the failure card go without it,
+ * so the failure lines up with the other Security tabs. */
 const findingsIntro = (h: H): Html =>
 	h.p(
 		[h.Class("-mb-3 font-prose text-xs text-muted-foreground")],
@@ -374,7 +375,6 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 	if (state._tag === "Gated") return [gateState(h, state.gate)]
 	if (state._tag === "Failed")
 		return [
-			findingsIntro(h),
 			errorState(h, {
 				failure: state.failure,
 				title: "Couldn't load findings",

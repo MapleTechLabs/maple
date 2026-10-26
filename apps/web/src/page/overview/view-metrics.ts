@@ -313,11 +313,16 @@ const cardContent = (
 			// The page strip already names this failure and retries it: the card keeps its frame, a flat
 			// baseline and a one-line caption in the strip's failure class.
 			if (pageFailureKeys.split(FAILURE_KEY_SEPARATOR).includes(failureKey(cardFailure)))
+				// The caption centres in the plot area; the baseline sits where the axis would.
 				return h.div(
-					[h.Class("flex h-full flex-col items-center justify-center gap-3 px-6")],
+					[h.Class("flex h-full flex-col px-6 pb-6")],
 					[
 						h.span(
-							[h.Class("text-xs text-muted-foreground/70")],
+							[
+								h.Class(
+									"flex flex-1 items-center justify-center font-prose text-xs text-muted-foreground/70",
+								),
+							],
 							[STRIPPED_CAPTION[failureKind(cardFailure)]],
 						),
 						h.div([h.Class("h-px w-full bg-border"), h.AriaHidden(true)], []),

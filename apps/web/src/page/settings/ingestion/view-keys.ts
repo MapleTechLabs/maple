@@ -204,11 +204,12 @@ export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 			onNone: () => [],
 			onSome: (error) => [
 				errorState(h, {
-					variant: "quiet",
+					variant: "row",
 					failure: error,
 					title: "Couldn't load the ingest keys",
 					onRetry: Message.ClickedRetryIngestKeys(),
-					className: "px-4 py-2.5",
+					// A row of the keys card: the card draws the frame, not the dashed border.
+					className: "rounded-none border-0 px-4 py-3",
 				}),
 			],
 		}),

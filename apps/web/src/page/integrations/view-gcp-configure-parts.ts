@@ -46,7 +46,10 @@ export const chip = (h: H, children: Children): Html =>
 
 /** One short line at the footer's start: why the action waits, or what closing leaves behind. */
 export const footerNote = (h: H, children: Children): Html =>
-	h.p([h.Class("text-xs/5 text-pretty text-muted-foreground sm:mr-auto sm:self-center")], children)
+	h.p(
+		[h.Class("font-prose text-xs/5 text-pretty text-muted-foreground sm:mr-auto sm:self-center")],
+		children,
+	)
 
 export type StepIndex = 0 | 1 | 2 | 3
 
@@ -118,5 +121,6 @@ export const configureHeader = (h: H, title: Children, step: StepIndex | null): 
 export const configurePanel = (h: H, children: ReadonlyArray<Html>, className?: string): Html =>
 	DialogView.dialogPanel(h, "dialog", CONFIGURE_DIALOG_ID, children, className)
 
+// The popup reads in the display face; the footer's buttons keep the standard button face.
 export const configureFooter = (h: H, children: ReadonlyArray<Html>): Html =>
-	DialogView.dialogFooter(h, "dialog", children)
+	DialogView.dialogFooter(h, "dialog", children, "font-sans")

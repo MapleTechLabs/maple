@@ -208,7 +208,8 @@ const commandBlock = (h: H, model: Model): Html =>
 				[
 					h.Id("connect-skill-command"),
 					h.Class(
-						"min-w-0 flex-1 select-all overflow-x-auto whitespace-nowrap py-0.5 font-mono text-xs leading-5 scroll-fade-x [scrollbar-width:none]",
+						// A fixed 3rem fade: the default caps at 12% of the row, too short to read as overflow.
+						"min-w-0 flex-1 select-all overflow-x-auto whitespace-nowrap py-0.5 font-mono text-xs leading-5 scroll-fade-x [--scroll-fade-size:3rem] [scrollbar-width:none]",
 					),
 				],
 				[ONBOARD_SKILL_COMMAND],

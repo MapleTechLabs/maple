@@ -229,20 +229,30 @@ const pageNote = (h: H, model: Model): ReadonlyArray<Html> => {
 		: [
 				alert(h, { size: "sm", role: "status", className: "mb-6" }, [
 					icon(h, "LockIcon"),
+					// One paragraph, so the link runs on after the sentence instead of stacking.
 					alertDescription(h, [
-						reason,
-						...(linksToPlans
-							? [
-									" ",
-									h.a(
-										[
-											h.Href(hrefOf(AppRoute.Settings({ search: { tab: "billing" } }))),
-											h.Class(INLINE_LINK_CLASS),
-										],
-										["See plans"],
-									),
-								]
-							: []),
+						h.p(
+							[],
+							[
+								reason,
+								...(linksToPlans
+									? [
+											" ",
+											h.a(
+												[
+													h.Href(
+														hrefOf(
+															AppRoute.Settings({ search: { tab: "billing" } }),
+														),
+													),
+													h.Class(INLINE_LINK_CLASS),
+												],
+												["See plans"],
+											),
+										]
+									: []),
+							],
+						),
 					]),
 				]),
 			]

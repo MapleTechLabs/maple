@@ -31,15 +31,20 @@ const UNREACHABLE = /failed to fetch|networkerror|load failed|network request fa
 const writeFailureCause = (error: string): string =>
 	UNREACHABLE.test(error) ? "Couldn't reach Maple" : error.replace(/[.\s]+$/, "")
 
+/** Said on the list's failure card and on the disabled buttons when both are down. */
+const LIST_FAILED_READ_ONLY = "Creating and importing are off until Maple reconnects."
+
 /** Why writes are off, or `null` while they are on. */
 const readOnlyReason = (model: Model): string | null =>
-	model.persistenceError !== null
-		? UNREACHABLE.test(model.persistenceError)
-			? "Couldn't reach Maple. Editing is off until it reconnects."
-			: `${writeFailureCause(model.persistenceError)}. Editing is off until it recovers.`
-		: isDegraded(model)
-			? "Live sync is unavailable. Editing is off until it reconnects."
-			: null
+	model.persistenceError === null && !isDegraded(model)
+		? null
+		: isLoadFailed(model)
+			? LIST_FAILED_READ_ONLY
+			: model.persistenceError === null
+				? "Live sync is unavailable. Editing is off until it reconnects."
+				: UNREACHABLE.test(model.persistenceError)
+					? "Couldn't reach Maple. Editing is off until it reconnects."
+					: `${writeFailureCause(model.persistenceError)}. Editing is off until it recovers.`
 
 /** Browse templates, Import (the hidden file input) and Create dashboard. */
 const actions = (h: H, reason: string | null): Html =>
@@ -123,8 +128,13 @@ const LIST_LOAD_FAILURE: LoadFailure = {
 	recovery: "retry",
 }
 
-const listLoadError = (h: H): Html =>
-	errorState(h, { failure: LIST_LOAD_FAILURE, onRetry: Message.ClickedRetrySync(), className: "min-h-64" })
+const listLoadError = (h: H, isReadOnly: boolean): Html =>
+	errorState(h, {
+		failure: LIST_LOAD_FAILURE,
+		onRetry: Message.ClickedRetrySync(),
+		note: isReadOnly ? LIST_FAILED_READ_ONLY : undefined,
+		className: "min-h-64",
+	})
 
 /** `SyncDegradedBanner`: the rows are a frozen HTTP snapshot and writes are off. */
 const degradedBanner = (h: H): Html =>
@@ -167,16 +177,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					),
 				]
 			: []
+	const reason = readOnlyReason(model)
 	const title = h.div([], [h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], ["Dashboards"]), ...summary])
 	return dashboardPage(
 		h,
 		{
 			titleContent: title,
-			actions: actions(h, readOnlyReason(model)),
+			actions: actions(h, reason),
 			sticky: persistenceBanner(h, model.persistenceError, isLoadFailed(model)),
 		},
 		isLoadFailed(model)
-			? [listLoadError(h)]
+			? [listLoadError(h, reason !== null)]
 			: [
 					...(isDegraded(model) ? [degradedBanner(h)] : []),
 					isReady && listed !== null && model.nowMs !== null
