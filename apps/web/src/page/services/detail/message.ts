@@ -44,7 +44,8 @@ export const Message = defineMessageUnion({
 	CompletedFetchStatusBreakdown: result(Schema.Array(StatusRow)),
 	CompletedFetchIssues: result(Schema.Array(Issue)),
 	CompletedFetchUsage: result(Usage),
-	CompletedFetchUptimeMonitors: result(Schema.Array(V2UptimeMonitor)),
+	/** `isAdmin` comes with the list: only admins are offered a new monitor. */
+	CompletedFetchUptimeMonitors: { ...result(Schema.Array(V2UptimeMonitor)), isAdmin: Schema.Boolean },
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
 	CompletedFetchDependencies: result(DependencyBundle),
 	CompletedFetchCommit: { sha: Schema.String, result: Schema.Result(Commit, CommitFailure) },

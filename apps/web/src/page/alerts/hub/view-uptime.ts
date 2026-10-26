@@ -59,7 +59,7 @@ const isKindFilter = (value: string): value is UptimeKindFilter =>
 	KIND_FILTERS.some((kind) => kind.value === value)
 
 /** The empty org: what uptime checks are and the first one to add. */
-const uptimeEmptyState = (h: H, serviceName: string | undefined): Html =>
+const uptimeEmptyState = (h: H, serviceName: string | undefined, isAdmin: boolean): Html =>
 	empty(
 		h,
 		[
@@ -70,12 +70,16 @@ const uptimeEmptyState = (h: H, serviceName: string | undefined): Html =>
 					"Maple checks a URL, port or DNS record from outside on a schedule, or waits for your cron job to ping it. Each check is a trace, and a failing one opens an incident.",
 				]),
 			]),
-			emptyActions(h, [
-				linkButton(h, { size: "sm", href: newMonitorHref({ serviceName }) }, [
-					icon(h, "PlusIcon"),
-					"New uptime check",
-				]),
-			]),
+			...(isAdmin
+				? [
+						emptyActions(h, [
+							linkButton(h, { size: "sm", href: newMonitorHref({ serviceName }) }, [
+								icon(h, "PlusIcon"),
+								"New uptime check",
+							]),
+						]),
+					]
+				: []),
 		],
 		"py-12",
 	)
@@ -282,7 +286,7 @@ const table = (h: H, model: Model, rows: ReadonlyArray<UptimeMonitor>, nowMs: nu
 	)
 
 const loaded = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>, nowMs: number): Html => {
-	if (monitors.length === 0) return uptimeEmptyState(h, model.search.serviceName)
+	if (monitors.length === 0) return uptimeEmptyState(h, model.search.serviceName, model.isAdmin)
 	const rows = monitors.filter(
 		(monitor) =>
 			matchesStatus(monitor, model.uptimeStatus) &&

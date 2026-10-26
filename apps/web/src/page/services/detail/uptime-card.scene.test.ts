@@ -23,7 +23,7 @@ const mounted = [
 ] as const
 
 /** The Overview of `checkout-api` with the org's monitors answered. */
-const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>): Model => {
+const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>, isAdmin = true): Model => {
 	const start = init({ serviceName: "checkout-api", search: {} }, context).model
 	const resolved = pageUpdate(start, Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" })).model
 	return pageUpdate(
@@ -31,11 +31,22 @@ const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>): Model => {
 		Message.CompletedFetchUptimeMonitors({
 			key: resolved.uptimeMonitors.key ?? "",
 			result: Result.succeed(monitors),
+			isAdmin,
 		}),
 	).model
 }
 
 describe("service detail, Uptime card", () => {
+	test("a member sees the service's monitors but is not offered a new one", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withMonitors([downMonitor({ service_name: "checkout-api" })], false)),
+			...mounted,
+			expectView(text("checked from outside")).toExist(),
+			expectView(role("link", { name: "Add uptime check for this service" })).not.toExist(),
+		)
+	})
+
 	test("a service no monitor watches shows no Uptime card", () => {
 		scene(
 			{ update: pageUpdate, view },

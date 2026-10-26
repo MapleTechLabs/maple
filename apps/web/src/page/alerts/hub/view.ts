@@ -143,13 +143,18 @@ const newRuleButton = (h: H, model: Model): Html =>
 							"ChartLineIcon",
 							"Error rate, latency or any query on traces, logs and metrics.",
 						),
-						newRuleItem(
-							h,
-							"uptime",
-							"Uptime check",
-							"GlobeIcon",
-							"Check a URL, port, DNS record or cron job from outside.",
-						),
+						// Uptime monitors are admin-only to create; the API refuses members too.
+						...(model.isAdmin
+							? [
+									newRuleItem(
+										h,
+										"uptime",
+										"Uptime check",
+										"GlobeIcon",
+										"Check a URL, port, DNS record or cron job from outside.",
+									),
+								]
+							: []),
 					],
 					align: "end",
 					className: "w-80",
