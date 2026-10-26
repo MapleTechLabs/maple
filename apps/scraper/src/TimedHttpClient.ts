@@ -1,6 +1,7 @@
 import * as http from "node:http"
 import * as https from "node:https"
-import { Readable } from "node:stream"
+import { pipeline, Readable, type Transform } from "node:stream"
+import * as zlib from "node:zlib"
 import { Effect, type Layer, Predicate } from "effect"
 import { HttpClient, HttpClientError, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { DialServerName } from "@maple/safe-fetch"
@@ -8,6 +9,25 @@ import { recordPhases } from "./UptimePhases"
 
 /** Statuses a web `Response` must be built without a body. */
 const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([101, 204, 205, 304])
+
+/** What fetch offered and decoded for us; a configured `Accept-Encoding` replaces it. */
+const ACCEPT_ENCODING = "gzip, deflate, br"
+
+const DECODERS = new Map<string, () => Transform>([
+	["gzip", () => zlib.createGunzip()],
+	["x-gzip", () => zlib.createGunzip()],
+	["deflate", () => zlib.createInflate()],
+	["br", () => zlib.createBrotliDecompress()],
+])
+
+/** The body as the assertions should read it: decoded, like fetch did, when its encoding is one we know. */
+const decodedBody = (response: http.IncomingMessage): Readable => {
+	const decoder = DECODERS.get((response.headers["content-encoding"] ?? "").trim().toLowerCase())?.()
+	if (decoder === undefined) return response
+	// Destroys both ends on a corrupt body or an early cancel; the error reaches the reader.
+	pipeline(response, decoder, () => undefined)
+	return decoder
+}
 
 const transportError = (request: HttpClientRequest.HttpClientRequest, cause: unknown, description?: string) =>
 	new HttpClientError.HttpClientError({
@@ -65,7 +85,7 @@ const exchange = (
 		const marks = new Map<"connect" | "tls", number>()
 		const options: https.RequestOptions = {
 			method: request.method,
-			headers: request.headers,
+			headers: { "accept-encoding": ACCEPT_ENCODING, ...request.headers },
 			// No pooling: every check measures, and dials, a connection of its own.
 			agent: false,
 			signal,
@@ -108,12 +128,19 @@ const toWeb = (request: HttpClientRequest.HttpClientRequest, response: http.Inco
 			const bodyless = request.method === "HEAD" || NULL_BODY_STATUSES.has(status)
 			// A body-less answer is drained; a late socket error on it has nobody to tell.
 			if (bodyless) response.on("error", () => undefined).resume()
+			const body = bodyless ? null : decodedBody(response)
+			const headers = webHeaders(response.headers)
+			// A decoded body no longer matches the length or encoding the server declared.
+			if (body !== null && body !== response) {
+				headers.delete("content-encoding")
+				headers.delete("content-length")
+			}
 			return HttpClientResponse.fromWeb(
 				request,
-				new Response(bodyless ? null : Readable.toWeb(response), {
+				new Response(body === null ? null : Readable.toWeb(body), {
 					status,
 					statusText: response.statusMessage,
-					headers: webHeaders(response.headers),
+					headers,
 				}),
 			)
 		},

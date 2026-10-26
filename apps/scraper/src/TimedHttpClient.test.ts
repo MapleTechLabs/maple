@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib"
 import { assert, describe, it } from "@effect/vitest"
 import { Deferred, Duration, Effect, Ref, Result } from "effect"
 import { HttpClientRequest } from "effect/http"
@@ -109,6 +110,62 @@ describe("timedHttpClient", () => {
 				Effect.scoped,
 			)
 			assert.deepStrictEqual([prefix.text.length, prefix.truncated], [1024, true])
+		}),
+	)
+
+	it.live("asks for compressed bodies like fetch did and hands assertions the decoded text", () =>
+		Effect.gen(function* () {
+			const encoders = new Map([
+				["gzip", gzipSync],
+				["deflate", deflateSync],
+				["br", brotliCompressSync],
+			])
+			const server = yield* serve((request, _, response) => {
+				const encoding = request.url?.slice(1) ?? ""
+				const encode = encoders.get(encoding)
+				const body = Buffer.from(
+					`{"status":"healthy","asked":"${request.headers["accept-encoding"]}"}`,
+				)
+				response
+					.writeHead(200, encode === undefined ? {} : { "content-encoding": encoding })
+					.end(encode === undefined ? body : encode(body))
+			})
+			const read = (path: string) =>
+				timedHttpClient.get(urlOf(server, path)).pipe(
+					Effect.flatMap((response) =>
+						Effect.map(response.text, (text) => ({
+							text,
+							stillEncoded: Object.hasOwn(response.headers, "content-encoding"),
+						})),
+					),
+					Effect.scoped,
+				)
+			const decoded = yield* Effect.forEach(["/gzip", "/deflate", "/br"], read)
+			const expected = { text: '{"status":"healthy","asked":"gzip, deflate, br"}', stillEncoded: false }
+			assert.deepStrictEqual(decoded, [expected, expected, expected])
+		}),
+	)
+
+	it.live("keeps a configured Accept-Encoding and passes an encoding it cannot decode through", () =>
+		Effect.gen(function* () {
+			const server = yield* serve((request, _, response) =>
+				response
+					.writeHead(200, { "content-encoding": "zstd" })
+					.end(`raw ${request.headers["accept-encoding"]}`),
+			)
+			const result = yield* timedHttpClient
+				.execute(
+					HttpClientRequest.get(urlOf(server)).pipe(
+						HttpClientRequest.setHeader("accept-encoding", "zstd"),
+					),
+				)
+				.pipe(
+					Effect.flatMap((response) =>
+						Effect.map(response.text, (text) => [text, response.headers["content-encoding"]]),
+					),
+					Effect.scoped,
+				)
+			assert.deepStrictEqual(result, ["raw zstd", "zstd"])
 		}),
 	)
 
