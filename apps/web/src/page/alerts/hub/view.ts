@@ -237,8 +237,8 @@ const hubBody = (
 				serviceName: model.search.serviceName,
 				onAddDestination: model.isAdmin ? Message.ClickedNewDestination() : undefined,
 			})
-			// An org with only uptime monitors has no visible rules but may have their incidents to show.
-			const hasUptimeIncidents = data.incidents.some((incident) => incident.signalType === "uptime")
+			// An org with only uptime monitors has no visible rules but may have open incidents to show.
+			const hasUptimeIncidents = data.openIncidents.some((incident) => incident.signalType === "uptime")
 			if (tab === "inbox")
 				return data.rules.length === 0 && !hasUptimeIncidents ? emptyState : inboxTab(h, data)
 			return rulesTab(h, model, {

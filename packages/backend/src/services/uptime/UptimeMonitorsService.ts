@@ -485,10 +485,11 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			const dbExecute = makeDbExecute(database, "UptimeMonitorsService", toPersistenceError)
 			const env = yield* Env
 			const allowance = yield* UptimeMonitorAllowance
-			// Scoped per hop, so an unread body is cancelled on exit. The headers are user config,
-			// so a cross-origin redirect drops them all.
+			// Scoped per hop, so an unread body is cancelled on exit. A cross-origin redirect drops
+			// the configured headers and keeps only the user-agent we set, as the probe does.
 			const testClient = guard(HttpClient.withScope(yield* HttpClient.HttpClient), {
 				strictRedirects: true,
+				ownHeaders: ["user-agent"],
 			})
 			const apiBaseUrl = env.MAPLE_API_BASE_URL.replace(/\/+$/u, "")
 

@@ -111,13 +111,19 @@ const racingDatabase = (testDb: TestDb) =>
 		return { layer, arm }
 	})
 
-const httpConfig = (url = "https://status.example.com/health"): UptimeMonitorConfig => ({
+type HttpMonitorConfig = Extract<UptimeMonitorConfig, { readonly _tag: "http" }>
+
+const httpConfig = (
+	url = "https://status.example.com/health",
+	overrides: Partial<Omit<HttpMonitorConfig, "_tag" | "url">> = {},
+): HttpMonitorConfig => ({
 	_tag: "http",
 	url,
 	method: "GET",
 	headers: {},
 	assertions: [{ _tag: "status", op: "is", value: "2xx" }],
 	timeoutMs: 5000,
+	...overrides,
 })
 
 const heartbeatConfig: UptimeMonitorConfig = {
@@ -446,6 +452,52 @@ describe("UptimeMonitorsService", () => {
 		})
 	})
 
+	it.effect(
+		"an overdue heartbeat reports a failure ping that lands between the tick's read and write",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const racing = yield* racingDatabase(testDb)
+				const program = Effect.gen(function* () {
+					const service = yield* UptimeMonitorsService
+					const alerts = yield* UptimeAlertSource
+					const monitor = yield* service.create(ORG, {
+						name: "nightly backup",
+						kind: "heartbeat",
+						config: heartbeatConfig,
+						createdBy: USER,
+					})
+					const url = monitor.heartbeatUrl ?? ""
+					const token = url.slice(url.lastIndexOf("/") + 1)
+					yield* service.recordPing(token, true)
+					const ruleId = monitor.alertRuleId
+					if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
+					// The job reports a failure between the tick's read (call 1) and its fenced write (call 2).
+					yield* racing.arm(
+						2,
+						TestClock.adjust("1 second").pipe(
+							Effect.andThen(service.recordPing(token, false)),
+							Effect.orDie,
+						),
+					)
+					const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
+					assert.deepStrictEqual(
+						Option.map(observed, (value) => [value.down, value.detail]),
+						Option.some([true, "The job reported a failure"]),
+					)
+				})
+				yield* program.pipe(
+					Effect.provide(
+						Layer.merge(
+							makeLayer(testDb, { database: racing.layer }),
+							UptimeAlertSource.layer.pipe(Layer.provide(racing.layer)),
+						),
+					),
+				)
+			})
+		},
+	)
+
 	it.effect("an overdue heartbeat stays up when a ping lands between the tick's read and write", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -592,14 +644,14 @@ describe("UptimeMonitorsService", () => {
 			const monitor = yield* service.create(ORG, {
 				name: "API",
 				kind: "http",
-				config: { ...httpConfig(), headers: { Authorization: "Bearer secret" } },
+				config: httpConfig(undefined, { headers: { Authorization: "Bearer secret" } }),
 				createdBy: USER,
 			})
 			const redacted = { Authorization: "[redacted]" }
 			const moved = yield* Effect.flip(
 				service.update(ORG, monitor.id, {
 					updatedBy: USER,
-					config: { ...httpConfig("https://elsewhere.example.net/health"), headers: redacted },
+					config: httpConfig("https://elsewhere.example.net/health", { headers: redacted }),
 				}),
 			)
 			assert.strictEqual(moved._tag, "@maple/http/errors/UptimeMonitorValidationError")
@@ -608,17 +660,16 @@ describe("UptimeMonitorsService", () => {
 			// Same origin keeps the stored value; a new origin with fresh values is fine.
 			const samePath = yield* service.update(ORG, monitor.id, {
 				updatedBy: USER,
-				config: { ...httpConfig("https://status.example.com/v2/health"), headers: redacted },
+				config: httpConfig("https://status.example.com/v2/health", { headers: redacted }),
 			})
 			assert.deepStrictEqual(samePath.config._tag === "http" ? samePath.config.headers : null, {
 				Authorization: "Bearer secret",
 			})
 			const reentered = yield* service.update(ORG, monitor.id, {
 				updatedBy: USER,
-				config: {
-					...httpConfig("https://elsewhere.example.net/health"),
+				config: httpConfig("https://elsewhere.example.net/health", {
 					headers: { Authorization: "Bearer other" },
-				},
+				}),
 			})
 			assert.strictEqual(
 				reentered.config._tag === "http" ? reentered.config.url : null,
@@ -755,11 +806,12 @@ describe("UptimeMonitorsService", () => {
 				const service = yield* UptimeMonitorsService
 				// No status assertion at all: a 503 still fails, as it would in the probe.
 				const result = yield* service.testHttp({
-					...httpConfig(),
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: '{"ping":true}',
-					assertions: [],
+					...httpConfig(undefined, {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: '{"ping":true}',
+						assertions: [],
+					}),
 				})
 				assert.isFalse(result.ok)
 				assert.strictEqual(result.failedAssertion, "Status 503, expected 2xx")

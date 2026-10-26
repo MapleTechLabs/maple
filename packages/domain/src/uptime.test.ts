@@ -88,6 +88,14 @@ describe("readJsonPath", () => {
 		expect(readJsonPath({ a: [] }, "a[2]")).toEqual(Option.none())
 	})
 
+	it("accepts JSONPath-style paths with a leading $", () => {
+		const json = { status: "ok", checks: [{ status: "pass" }] }
+		expect(readJsonPath(json, "$.status")).toEqual(Option.some("ok"))
+		expect(readJsonPath(json, "status")).toEqual(Option.some("ok"))
+		expect(readJsonPath(json, "$.checks[0].status")).toEqual(Option.some("pass"))
+		expect(readJsonPath(json, "$.missing")).toEqual(Option.none())
+	})
+
 	it("reads a present JSON null as a value, not as missing", () => {
 		expect(readJsonPath({ status: null }, "status")).toEqual(Option.some(null))
 		expect(readJsonPath({ a: [null] }, "a[0]")).toEqual(Option.some(null))

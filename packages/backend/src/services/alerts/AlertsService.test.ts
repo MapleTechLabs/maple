@@ -8098,6 +8098,49 @@ describe("AlertsService uptime rules", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: fetchImpl })))
 	})
 
+	it.effect("a monitor created before backing rules gets one, once, and then fires", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_uptime_backfill")
+			const { ruleId, monitorId } = yield* seedUptimeMonitor(testDb, {
+				orgId,
+				name: "Legacy check",
+				serviceName: null,
+				destinationIds: [],
+				config: httpMonitorConfig,
+				status: "down",
+				error: "Status 503, expected 2xx",
+			})
+			// As the v2 API created monitors before this shipped: no backing rule.
+			yield* Effect.promise(async () => {
+				await executeSql(testDb, "update uptime_monitors set alert_rule_id = null where id = $1", [
+					monitorId,
+				])
+				await executeSql(testDb, "delete from alert_rules where id = $1", [ruleId])
+			})
+			const ruleCount = Effect.promise(() =>
+				queryFirstRow<{ readonly n: number }>(
+					testDb,
+					"select count(*)::int as n from alert_rules where org_id = $1",
+					[orgId],
+				),
+			)
+
+			yield* alerts.runSchedulerTick()
+			assert.strictEqual((yield* ruleCount)?.n, 1)
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			assert.strictEqual((yield* ruleCount)?.n, 1)
+			const opened = (yield* alerts.listIncidents(orgId)).incidents
+			assert.deepStrictEqual(
+				opened.map((incident) => [incident.ruleName, incident.status]),
+				[["Legacy check", "open"]],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+	})
+
 	it.effect("a paused monitor never fires, and pausing resolves an open incident", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
