@@ -417,6 +417,7 @@ describe("MCP HTTP authorization", () => {
 				Context.empty() as never,
 			)
 			expect(stale.status).toBe(200)
+			expect(await stale.text()).toContain("inspect_trace")
 		} finally {
 			await second.dispose()
 		}
