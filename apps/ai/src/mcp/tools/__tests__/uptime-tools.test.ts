@@ -330,6 +330,27 @@ describe("uptime monitor config and errors", () => {
 		})
 	})
 
+	it("replaces an is_not status rule instead of adding a second status rule beside it", async () => {
+		const current = {
+			_tag: "http" as const,
+			url: "https://api.acme.dev/health",
+			method: "GET" as const,
+			headers: {},
+			timeoutMs: 10000,
+			assertions: [
+				{ _tag: "status" as const, op: "is_not" as const, value: "5xx" },
+				{ _tag: "body" as const, op: "not_contains" as const, value: "error" },
+			],
+		}
+		const next = await Effect.runPromise(updateUptimeConfig(current, { expected_status: "503" }))
+		expect(next).toMatchObject({
+			assertions: [
+				{ _tag: "status", op: "is", value: "503" },
+				{ _tag: "body", op: "not_contains", value: "error" },
+			],
+		})
+	})
+
 	it("refuses a heartbeat with both an interval and a cron schedule", async () => {
 		const exit = await Effect.runPromiseExit(
 			buildUptimeConfig("heartbeat", { heartbeat_interval_seconds: 3600, cron: "0 * * * *" }),

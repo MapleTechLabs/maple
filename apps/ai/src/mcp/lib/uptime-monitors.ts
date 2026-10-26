@@ -186,17 +186,17 @@ const decodeConfig = (kind: UptimeMonitorKind, raw: unknown) =>
 		),
 	)
 
-/** Swaps the assertion `matches` finds for `next`, or appends it; unchanged when `next` is absent. */
+/** Replaces every assertion `matches` finds with one `next`; unchanged when `next` is absent. */
 const withAssertion = (
 	assertions: ReadonlyArray<UptimeAssertion>,
 	next: UptimeAssertion | undefined,
 	matches: (assertion: UptimeAssertion) => boolean,
-): ReadonlyArray<UptimeAssertion> =>
-	next === undefined
-		? assertions
-		: assertions.some(matches)
-			? assertions.map((assertion) => (matches(assertion) ? next : assertion))
-			: [...assertions, next]
+): ReadonlyArray<UptimeAssertion> => {
+	if (next === undefined) return assertions
+	const at = assertions.findIndex(matches)
+	const kept = assertions.filter((assertion) => !matches(assertion))
+	return at === -1 ? [...kept, next] : [...kept.slice(0, at), next, ...kept.slice(at)]
+}
 
 const httpAssertions = (current: ReadonlyArray<UptimeAssertion>, fields: UptimeConfigFields) =>
 	withAssertion(
@@ -206,7 +206,8 @@ const httpAssertions = (current: ReadonlyArray<UptimeAssertion>, fields: UptimeC
 				fields.expected_status === undefined
 					? undefined
 					: { _tag: "status", op: "is", value: fields.expected_status },
-				(assertion) => assertion._tag === "status" && assertion.op === "is",
+				// An expected status replaces every status rule, so `is_not 5xx` cannot contradict it.
+				(assertion) => assertion._tag === "status",
 			),
 			fields.max_response_ms === undefined
 				? undefined
