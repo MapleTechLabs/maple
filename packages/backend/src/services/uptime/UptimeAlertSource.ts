@@ -74,12 +74,8 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "UptimeAlertSource", toPersistenceError)
 
-			const observe = Effect.fn("UptimeAlertSource.observe")(function* (
-				orgId: OrgId,
-				ruleId: AlertRuleId,
-				nowMs: number,
-			) {
-				const rows = yield* dbExecute((db) =>
+			const readMonitor = (orgId: OrgId, ruleId: AlertRuleId) =>
+				dbExecute((db) =>
 					db.run(
 						PG.from(UptimeMonitors, "m")
 							.innerJoin(UptimeMonitorStates, "s", (m, s) =>
@@ -102,19 +98,33 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 							.where(($) => [$.orgId.eq(orgId), $.alertRuleId.eq(ruleId)])
 							.limit(1),
 					),
-				)
-				const row = rows[0]
-				if (row === undefined) return Option.none<UptimeAlertObservation>()
+				).pipe(Effect.map((rows) => Option.fromUndefinedOr(rows[0])))
+
+			/** The monitor as its state row says it is: down with the failing check's error, or not. */
+			const asStored = (row: {
+				readonly serviceName: string | null
+				readonly status: UptimeMonitorStatus
+				readonly lastCheckJson: { readonly error: string | null } | null
+			}): UptimeAlertObservation => {
+				const down = row.status === "down"
+				return {
+					groupKey: row.serviceName ?? UNGROUPED_GROUP_KEY,
+					down,
+					detail: down ? (row.lastCheckJson?.error ?? "The check is failing") : null,
+				}
+			}
+
+			const observe = Effect.fn("UptimeAlertSource.observe")(function* (
+				orgId: OrgId,
+				ruleId: AlertRuleId,
+				nowMs: number,
+			) {
+				const read = yield* readMonitor(orgId, ruleId)
+				if (Option.isNone(read)) return Option.none<UptimeAlertObservation>()
+				const row = read.value
 				const groupKey = row.serviceName ?? UNGROUPED_GROUP_KEY
 				const watch = { ...row, config: row.configJson }
-				if (!isHeartbeatOverdue(watch, nowMs)) {
-					const down = row.status === "down"
-					return Option.some({
-						groupKey,
-						down,
-						detail: down ? (row.lastCheckJson?.error ?? "The check is failing") : null,
-					})
-				}
+				if (!isHeartbeatOverdue(watch, nowMs)) return Option.some(asStored(row))
 				// Fenced on the state read above: a ping or check landing in between wins.
 				const error = describeMissedHeartbeat(row.lastPingAt, nowMs)
 				const marked = yield* dbExecute((db) =>
@@ -153,11 +163,9 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 					"maple.uptime.monitor_id": row.id,
 					"maple.uptime.heartbeat_overdue": marked.length > 0,
 				})
-				return Option.some({
-					groupKey,
-					down: marked.length > 0,
-					detail: marked.length > 0 ? error : null,
-				})
+				if (marked.length > 0) return Option.some({ groupKey, down: true, detail: error })
+				// A ping or failure landed between the read and the write: report what it left.
+				return Option.map(yield* readMonitor(orgId, ruleId), asStored)
 			})
 
 			return { observe } satisfies UptimeAlertSourceApi

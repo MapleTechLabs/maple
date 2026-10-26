@@ -446,6 +446,52 @@ describe("UptimeMonitorsService", () => {
 		})
 	})
 
+	it.effect(
+		"an overdue heartbeat reports a failure ping that lands between the tick's read and write",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const racing = yield* racingDatabase(testDb)
+				const program = Effect.gen(function* () {
+					const service = yield* UptimeMonitorsService
+					const alerts = yield* UptimeAlertSource
+					const monitor = yield* service.create(ORG, {
+						name: "nightly backup",
+						kind: "heartbeat",
+						config: heartbeatConfig,
+						createdBy: USER,
+					})
+					const url = monitor.heartbeatUrl ?? ""
+					const token = url.slice(url.lastIndexOf("/") + 1)
+					yield* service.recordPing(token, true)
+					const ruleId = monitor.alertRuleId
+					if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
+					// The job reports a failure between the tick's read (call 1) and its fenced write (call 2).
+					yield* racing.arm(
+						2,
+						TestClock.adjust("1 second").pipe(
+							Effect.andThen(service.recordPing(token, false)),
+							Effect.orDie,
+						),
+					)
+					const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
+					assert.deepStrictEqual(
+						Option.map(observed, (value) => [value.down, value.detail]),
+						Option.some([true, "The job reported a failure"]),
+					)
+				})
+				yield* program.pipe(
+					Effect.provide(
+						Layer.merge(
+							makeLayer(testDb, { database: racing.layer }),
+							UptimeAlertSource.layer.pipe(Layer.provide(racing.layer)),
+						),
+					),
+				)
+			})
+		},
+	)
+
 	it.effect("an overdue heartbeat stays up when a ping lands between the tick's read and write", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
