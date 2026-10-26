@@ -19,7 +19,7 @@ import {
 import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@maple/infra/env"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer, Ref, Scope } from "effect"
 import { HttpRouter } from "effect/http"
 import { resolveConnectorConfig, socketConnectors, type IngressConnector } from "./config.ts"

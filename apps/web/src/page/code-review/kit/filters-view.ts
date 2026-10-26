@@ -75,7 +75,8 @@ export const filtersView = <M>(h: HtmlBuilder<M>, options: FiltersOptions<M>): H
 					entries: optionEntries,
 					size: "sm",
 					ariaLabel: isAuthor ? "Author" : "Workflow",
-					className: isAuthor ? "w-full min-w-0 @2xl/page:w-40" : "w-full min-w-0 @2xl/page:w-44",
+					// Sized to its label: the floor fits "All workflows", the cap keeps long authors in check.
+					className: "w-full min-w-0 @2xl/page:w-auto @2xl/page:min-w-40 @2xl/page:max-w-56",
 					toView: (parts) => h.div([h.Class("contents")], parts),
 					renderItem: (option: SelectOption) =>
 						!isAuthor || option.value === ALL ? [option.label] : [authorLabel(h, option.value)],

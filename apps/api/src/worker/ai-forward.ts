@@ -11,7 +11,7 @@
  * itself arrives already narrowed, as the `AiWorkerFetcher` port.
  */
 import { ISOLATE_AGE_HEADER, ISOLATE_ORDINAL_HEADER } from "@maple/infra/isolate-age"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { API_CORS_RESPONSE_HEADERS } from "@maple/backend/http/api-cors"

@@ -49,11 +49,11 @@ export function warnUnresolvedColors(definition: unknown, ariaLabel: string): vo
 		if (typeof value === "string") {
 			if (BARE_TOKEN.test(value)) {
 				// Warn, never throw. A colour smell is worth a console line and is
-				// never worth unmounting the page it was spotted on — throwing here
+				// never worth unmounting the page it was spotted on; throwing here
 				// turned a mis-painted series into a blank widget.
 				console.error(
 					`PlotFrame(${ariaLabel}): unresolved colour token ${JSON.stringify(value)} at ${path}. ` +
-						`A bare custom property is not a colour — the canvas paint resolver throws on it. ` +
+						`A bare custom property is not a colour; the canvas paint resolver throws on it. ` +
 						`Resolve it with usePlotColors/resolvePlotColor, or wrap it as var(${value}).`,
 				)
 			}

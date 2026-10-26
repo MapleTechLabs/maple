@@ -59,7 +59,11 @@ export const buildPlanetScaleMetric = (
 				scale: scaleLinear().domain(yDomain),
 				axis: {
 					line: false,
-					ticks: { size: 0, padding: 8, format: (v: number) => formatMetricValue(v, spec.metric) },
+					ticks: {
+						size: 0,
+						padding: 8,
+						format: (v: number) => (v === 0 ? "0" : formatMetricValue(v, spec.metric)),
+					},
 				},
 			},
 		},

@@ -365,7 +365,7 @@ describe("serviceApdexTimeseriesQuery", () => {
 		// The Apdex SELECT must contain the split-term form: each countIf is
 		// divided by count() before being summed, instead of summed first.
 		expect(sql).toContain(
-			"sum(service_windows.bApdexSatisfiedCount) / sum(service_windows.bSpanCount) + sum(service_windows.bApdexToleratingCount) * 0.5 / sum(service_windows.bSpanCount)",
+			"sum(service_windows.bApdexSatisfiedCount) / sum(service_windows.bSpanCount) + (sum(service_windows.bApdexToleratingCount) * 0.5 / sum(service_windows.bSpanCount))",
 		)
 		// And it must NOT contain the buggy summed-then-divided form.
 		expect(sql).not.toMatch(/sum\((\w+\.)?bApdexSatisfiedCount\) \+ sum\((\w+\.)?bApdexToleratingCount\)/)

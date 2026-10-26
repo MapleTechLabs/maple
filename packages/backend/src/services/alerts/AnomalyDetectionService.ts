@@ -62,6 +62,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { timestampMs } from "@maple/backend/platform/time"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import {
 	capBusiestLogSeries,
 	ERROR_SPIKE_MIN_COUNT,
@@ -248,10 +249,11 @@ export interface AnomalyDetectionServiceApi {
 const make: Effect.Effect<
 	AnomalyDetectionServiceApi,
 	never,
-	Database | WarehouseQueryService | EdgeCacheService
+	Database | WarehouseQueryService | OrgClickHouseSettingsService | EdgeCacheService
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const warehouse = yield* WarehouseQueryService
+	const orgChSettings = yield* OrgClickHouseSettingsService
 	const edgeCache = yield* EdgeCacheService
 	// Optional: present only inside a Worker isolate. Used to start the
 	// investigation agent when an incident opens (org opt-in).
@@ -2107,6 +2109,12 @@ const make: Effect.Effect<
 			const activeOrgs = yield* resolveActiveOrgs([...candidates], nowMs)
 			const orgsToProcess = [...candidates].filter((org) => activeOrgs.has(org) || mustProcess.has(org))
 
+			// One batched read warms the org warehouse-config memo before the fan-out
+			// below, so 4 concurrent fibers do not each miss it cold. Best-effort.
+			yield* orgChSettings
+				.primeRuntimeConfigs(orgsToProcess)
+				.pipe(Effect.ignore({ log: "Warn", message: "Failed to prime anomaly tick runtime configs" }))
+
 			const orgFailures = yield* Ref.make(0)
 			const emptyStats = {
 				seriesEvaluated: 0,
@@ -2210,5 +2218,7 @@ export class AnomalyDetectionService extends Context.Service<
 	AnomalyDetectionService,
 	AnomalyDetectionServiceApi
 >()("@maple/backend/services/AnomalyDetectionService", { make }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, OrgClickHouseSettingsService.layer)),
+	)
 }

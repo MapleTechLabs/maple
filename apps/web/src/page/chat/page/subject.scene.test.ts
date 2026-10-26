@@ -1,6 +1,15 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, Mount, placeholder, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	expect as expectView,
+	given,
+	Mount,
+	placeholder,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { AppRoute } from "../../../route"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -46,7 +55,10 @@ const entered = (search: Record<string, string>) =>
 	step(
 		init(AppRoute.Chat({ search }), context).model,
 		Message.CompletedLoadTabs({
-			state: { tabs: [{ id: "default", title: "New Chat", createdAt: NOW, updatedAt: NOW }], activeTabId: "default" },
+			state: {
+				tabs: [{ id: "default", title: "New Chat", createdAt: NOW, updatedAt: NOW }],
+				activeTabId: "default",
+			},
 			nowMs: NOW,
 			origin: "https://app.maple.dev",
 			referrerPath: "/traces",
@@ -58,7 +70,10 @@ const historyLoaded = (model: Model, tabId: string) =>
 		model,
 		Message.GotConversationMessage({
 			tabId,
-			message: ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor: 0, running: false }) }),
+			message: ConversationMessage.CompletedLoadHistory({
+				generation: 1,
+				result: Result.succeed({ messages: [], cursor: 0, running: false }),
+			}),
 		}),
 	)
 
@@ -74,21 +89,41 @@ describe("chat subjects", () => {
 		expect(result.model.tabs?.tabs[1]?.title).toBe("Checkout p95 latency over bu…")
 		expect(result.model.tabs?.activeTabId).toBe("alert-inc-0000-a1e7")
 		expect(result.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: `/chat?mode=alert&alert=${ALERT}&tab=alert-inc-0000-a1e7`, isReplace: true }),
+			PageOutMessage.RequestedNavigation({
+				url: `/chat?mode=alert&alert=${ALERT}&tab=alert-inc-0000-a1e7`,
+				isReplace: true,
+			}),
 		)
 	})
 
 	test("the alert's first message carries the alert block instead of the page context", () => {
-		const ready = historyLoaded(entered({ mode: "alert", alert: ALERT }).model, "alert-inc-0000-a1e7").model
+		const ready = historyLoaded(
+			entered({ mode: "alert", alert: ALERT }).model,
+			"alert-inc-0000-a1e7",
+		).model
 		const sent = postedText(
-			step(ready, Message.GotConversationMessage({ tabId: "alert-inc-0000-a1e7", message: ConversationMessage.ClickedSuggestion({ text: "Why?" }) })),
+			step(
+				ready,
+				Message.GotConversationMessage({
+					tabId: "alert-inc-0000-a1e7",
+					message: ConversationMessage.ClickedSuggestion({ text: "Why?" }),
+				}),
+			),
 		)
 		expect(sent).toContain("## Attached Alert")
-		expect(sent).toContain('observed: "1.84s vs 800.0ms"')
+		expect(sent).toContain('observed: "1.84s vs 800ms"')
 		expect(sent).not.toContain("## Current Page Context")
 		// Another tab on the same page still sends the page it was opened from.
 		const other = historyLoaded(ready, "default").model
-		const plain = postedText(step(other, Message.GotConversationMessage({ tabId: "default", message: ConversationMessage.ClickedSuggestion({ text: "Hi" }) })))
+		const plain = postedText(
+			step(
+				other,
+				Message.GotConversationMessage({
+					tabId: "default",
+					message: ConversationMessage.ClickedSuggestion({ text: "Hi" }),
+				}),
+			),
+		)
 		expect(plain).toContain("- view: traces explorer")
 	})
 
@@ -107,7 +142,13 @@ describe("chat subjects", () => {
 		const tabId = "widget-fix-dash-1-w-1"
 		const failed = step(
 			model,
-			Message.GotConversationMessage({ tabId, message: ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.fail("Service unavailable") }) }),
+			Message.GotConversationMessage({
+				tabId,
+				message: ConversationMessage.CompletedLoadHistory({
+					generation: 1,
+					result: Result.fail("Service unavailable"),
+				}),
+			}),
 		)
 		expect(postedText(failed)).toBe("")
 		scene(
@@ -118,13 +159,19 @@ describe("chat subjects", () => {
 			expectView(text("Couldn't load this conversation")).toExist(),
 			expectView(role("button", { name: "Try again" })).toExist(),
 		)
-		const retried = step(failed.model, Message.GotConversationMessage({ tabId, message: ConversationMessage.ClickedRetryHistory() }))
+		const retried = step(
+			failed.model,
+			Message.GotConversationMessage({ tabId, message: ConversationMessage.ClickedRetryHistory() }),
+		)
 		expect(postedText(retried)).toBe("")
 		const loaded = step(
 			retried.model,
 			Message.GotConversationMessage({
 				tabId,
-				message: ConversationMessage.CompletedLoadHistory({ generation: 2, result: Result.succeed({ messages: [], cursor: 0, running: false }) }),
+				message: ConversationMessage.CompletedLoadHistory({
+					generation: 2,
+					result: Result.succeed({ messages: [], cursor: 0, running: false }),
+				}),
 			}),
 		)
 		expect(postedText(loaded)).toContain("Fix this widget")
@@ -135,7 +182,10 @@ describe("chat subjects", () => {
 	})
 
 	test("the subject's card, suggestions and placeholder are drawn above its empty thread", () => {
-		const ready = historyLoaded(entered({ mode: "alert", alert: ALERT }).model, "alert-inc-0000-a1e7").model
+		const ready = historyLoaded(
+			entered({ mode: "alert", alert: ALERT }).model,
+			"alert-inc-0000-a1e7",
+		).model
 		scene(
 			{ update: step, view: withViewInputs(view, { context })() },
 			given(ready),

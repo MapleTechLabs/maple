@@ -199,10 +199,10 @@ export function lensSubhead(verdict: LensVerdict): string {
 		case "no-workload":
 			return "Its spans carry no k8s.deployment.name, so Maple can't tell which pods run it. Install the Helm chart's k8sattributes processor to link the two."
 		case "no-pods":
-			return "Its spans name a workload, but no pod reported CPU or memory in this window — so there is nothing here to correlate. Widen the window, or check the kubelet stats receiver."
+			return "Its spans name a workload, but no pod reported CPU or memory in this window, so there is nothing here to correlate. Widen the window, or check the kubelet stats receiver."
 		case "unbounded":
 			return verdict.spiked
-				? `p99 rose, and none of its ${verdict.podCount} pods has a CPU or memory limit set — so there is no ceiling for Maple to measure this against. Set limits, or read the raw cores below.`
+				? `p99 rose, and none of its ${verdict.podCount} pods has a CPU or memory limit set, so there is no ceiling for Maple to measure this against. Set limits, or read the raw cores below.`
 				: `None of its ${verdict.podCount} pods has a CPU or memory limit set, so saturation can't rank them. The raw usage below is all this page can say.`
 		case "healthy": {
 			// Sound even from a page: the worst pod is on it by construction.
@@ -216,13 +216,13 @@ export function lensSubhead(verdict: LensVerdict): string {
 			return `${verdict.saturated} of its ${verdict.podCount} pods hit a limit before p99 rose, peaking at ${formatWholePercent(verdict.worst)}.`
 		case "throttled":
 			return verdict.spiked
-				? `${verdict.saturated} pods peaked at ${formatWholePercent(verdict.worst)} of a limit. p99 also rose in this window, but not after the saturation — so the lens won't call one the cause of the other.`
+				? `${verdict.saturated} pods peaked at ${formatWholePercent(verdict.worst)} of a limit. p99 also rose in this window, but not after the saturation, so the lens won't call one the cause of the other.`
 				: // NOT "p99 held": the baseline is the window's own median, so a rise
 					// that occupies most of the window is invisible to it. What was
 					// actually established is the absence of a matching rise, which is a
 					// weaker and true thing to say.
-					`${verdict.saturated} pods peaked at or above ${formatWholePercent(SATURATED)} of a limit — ${formatWholePercent(verdict.worst)} at worst — with no matching rise in p99 over this window.`
+					`${verdict.saturated} pods peaked at or above ${formatWholePercent(SATURATED)} of a limit (${formatWholePercent(verdict.worst)} at worst) with no matching rise in p99 over this window.`
 		case "slow-not-throttled":
-			return `p99 rose while no pod among its ${verdict.podCount} came near a limit. Look upstream — a dependency, the database, or a change in the work itself.`
+			return `p99 rose while no pod among its ${verdict.podCount} came near a limit. Look upstream: a dependency, the database, or a change in the work itself.`
 	}
 }

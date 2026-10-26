@@ -8,7 +8,7 @@ import {
 	type ServiceNodeData,
 } from "@maple/ui/components/service-map/service-map-utils"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { EMPTY_VALUE, formatRate } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatDuration, formatRate } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { formatLatency } from "@maple/ui/lib/format"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
@@ -169,8 +169,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 	]
 }
 
-const formatLag = (seconds: number): string =>
-	seconds >= 1 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds * 1000)}ms`
+const formatLag = (seconds: number): string => formatDuration(seconds * 1000)
 
 const planetscaleRow = <M>(
 	h: HtmlBuilder<M>,
@@ -294,7 +293,7 @@ const namespaceAggregateNode = <M>(
 					"flex w-[220px] cursor-pointer overflow-hidden rounded-r-lg border border-dashed bg-card transition-[border-color,box-shadow] duration-150",
 				),
 				h.Style(tintedCard(color, 0.1, 0.55, selected)),
-				h.Title("Collapsed namespace — click to expand"),
+				h.Title("Collapsed namespace. Click to expand"),
 			],
 			[
 				h.div([h.Class("w-[3px] shrink-0"), h.Style({ "background-color": color })]),

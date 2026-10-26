@@ -82,6 +82,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const firstPage = model.firstPage.data
 	const window = model.window
 	const filterKey = window === null ? "" : filterKeyOf(filterInputs(model.search, window))
+	const tabSessions = Option.getOrUndefined(AsyncData.getData(model.tabSessions.data))
 	return dashboardPage(
 		h,
 		{
@@ -90,7 +91,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			tabs: agentSessionsTabs(h, {
 				active: "sessions",
 				counts: {
-					sessions: Option.getOrUndefined(AsyncData.getData(model.tabSessions.data)),
+					sessions: tabSessions,
 					tools: Option.getOrUndefined(AsyncData.getData(model.tabTools.data)),
 				},
 				className: "border-b border-border",
@@ -99,6 +100,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				sessionCount: AsyncData.hasData(firstPage)
 					? displayedRows(model, filterKey).length
 					: undefined,
+				totalCount: tabSessions,
 				isWaiting: AsyncData.isPending(firstPage) || AsyncData.isIdle(firstPage),
 			}),
 			scrollClassName: "pt-0",

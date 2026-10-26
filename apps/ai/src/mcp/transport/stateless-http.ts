@@ -173,7 +173,11 @@ export const layerStatelessMcpHttp = (options: {
 			): Effect.Effect<HttpServerResponse.HttpServerResponse, never, Scope.Scope> =>
 				Effect.gen(function* () {
 					const scope = yield* Scope.Scope
-					const requestHeaders = Object.entries(request.headers)
+					// No session id is ever issued, so a client's leftover one is dropped: the server
+					// would look the session up by that id instead of by this request's client.
+					const requestHeaders = Object.entries(request.headers).filter(
+						([name]) => name !== "mcp-session-id",
+					)
 					// A body that cannot be read is a request we can still answer as
 					// JSON-RPC — the same `-32700` an undecodable body gets below.
 					// `Effect.orDie` here made it a defect instead, which escaped every

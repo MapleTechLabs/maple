@@ -1,5 +1,5 @@
 import { resolve } from "node:path"
-import * as AWS from "alchemy/AWS"
+import * as AWS from "@alchemy.run/aws"
 import * as Effect from "effect/Effect"
 import { ecsSecrets, resolveAwsResourceName } from "@maple/infra/aws"
 import { resolveDeploymentEnvironment, type MapleStackContext } from "@maple/infra/cloudflare"

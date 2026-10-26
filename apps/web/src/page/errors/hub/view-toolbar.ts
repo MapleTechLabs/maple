@@ -123,7 +123,7 @@ const toolbarSearch = (h: H, draft: string): Html =>
 		id: "errors-search",
 		size: "sm",
 		className: cn("max-w-sm", "w-52"),
-		placeholder: "Search issues...",
+		placeholder: "Search issues…",
 		value: draft,
 		onInput: (value) => Message.ChangedSearchDraft({ value }),
 		onClear: Message.ChangedSearchDraft({ value: "" }),

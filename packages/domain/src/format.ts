@@ -5,8 +5,9 @@
 
 /**
  * Format a duration in milliseconds to a human-readable string.
- * ns, μs, ms, s, min, h, then d. Each tier is picked after rounding, so 999.96ms
- * reads "1.00s" rather than "1000.0ms". Negatives (clock skew, deltas) keep their
+ * ns, μs, ms, s, min, h, then d, at a fixed precision per magnitude so columns line up
+ * ("72.0ms", "426ms", "2.00s", "41.1s", "3.5min"). Each tier is picked after rounding,
+ * so 999.96ms reads "1.00s" rather than "1000ms". Negatives (clock skew, deltas) keep their
  * sign; NaN and Infinity read "—".
  */
 export function formatDuration(ms: number): string {
@@ -14,8 +15,11 @@ export function formatDuration(ms: number): string {
 	if (ms < 0) return `-${formatDuration(-ms)}`
 	if (ms > 0 && ms < 0.0005) return `${Math.max(1, Math.round(ms * 1_000_000))}ns`
 	if (Math.round(ms * 1000) < 1000) return `${(ms * 1000).toFixed(0)}μs`
-	if (Number(ms.toFixed(1)) < 1000) return `${ms.toFixed(1)}ms`
-	if (Number((ms / 1000).toFixed(2)) < 60) return `${(ms / 1000).toFixed(2)}s`
+	if (Number(ms.toFixed(1)) < 100) return `${ms.toFixed(1)}ms`
+	if (Number(ms.toFixed(0)) < 1000) return `${ms.toFixed(0)}ms`
+	const s = ms / 1000
+	if (Number(s.toFixed(2)) < 10) return `${s.toFixed(2)}s`
+	if (Number(s.toFixed(1)) < 60) return `${s.toFixed(1)}s`
 	if (Number((ms / 60_000).toFixed(1)) < 60) return `${(ms / 60_000).toFixed(1)}min`
 	if (Number((ms / 3_600_000).toFixed(1)) < 24) return `${(ms / 3_600_000).toFixed(1)}h`
 	return `${(ms / 86_400_000).toFixed(1)}d`
