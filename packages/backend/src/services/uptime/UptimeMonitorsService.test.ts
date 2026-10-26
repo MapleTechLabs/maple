@@ -337,6 +337,27 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("lists every other probe target when one monitor's stored config no longer decodes", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const healthy = yield* createHttp("healthy")
+			const corrupt = yield* createHttp("corrupt")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE uptime_monitors SET config_json = '{"_tag":"http","url":42}'::jsonb WHERE id = $1`,
+					[corrupt.id],
+				),
+			)
+			const targets = yield* service.listProbeTargets()
+			assert.deepStrictEqual(
+				targets.map((target) => target.id),
+				[healthy.id],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("drops results read before a pause and resume instead of overwriting the resumed state", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
