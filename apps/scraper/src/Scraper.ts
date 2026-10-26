@@ -1,14 +1,17 @@
-import { Cause, Clock, Context, Effect, Layer, Result } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Result, type Semaphore } from "effect"
 import { type InternalScrapeTarget, SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
 import {
 	convertFamiliesToOtlp,
 	countSamples,
+	mergeExportRequests,
+	type OtlpExportRequest,
 	parsePrometheusText,
 	type ScrapeOtlpContext,
 } from "@maple/prometheus-otlp"
 import { OtlpIngest } from "./OtlpIngest"
 import { ScrapeError, scrapeError, withScrapeSpan } from "./ScrapeError"
 import { TargetFetcher } from "./TargetFetcher"
+import type { TargetGroup } from "./TargetRegistry"
 
 export interface ScrapeSuccess {
 	/** Prometheus samples parsed from the exposition. */
@@ -17,9 +20,30 @@ export interface ScrapeSuccess {
 	readonly samplesExported: number
 }
 
+/** One sub-target's outcome within a cycle, reported to the API on its own. */
+export interface SubTargetScrape {
+	readonly target: InternalScrapeTarget
+	/** Epoch ms its fetch started. */
+	readonly scrapedAt: number
+	/** Fetch start to delivery end, or to its own failure. */
+	readonly durationMs: number
+	/** Its own fetch/convert failure, or the cycle's delivery failure, attributed to it. */
+	readonly result: Result.Result<ScrapeSuccess, ScrapeError>
+}
+
+export interface ScrapeCycle {
+	readonly scrapes: ReadonlyArray<SubTargetScrape>
+	/** The shared ingest failure. The ingest key is per parent, so a block applies to all of it. */
+	readonly deliveryFailure: ScrapeError | null
+}
+
 export interface ScraperApi {
-	/** Fetch, parse, convert and deliver one target's metrics as one root span. */
-	readonly scrape: (target: InternalScrapeTarget) => Effect.Effect<ScrapeSuccess, ScrapeError>
+	/**
+	 * Fetch every sub-target of one parent in parallel (one `permits` permit each),
+	 * convert each, and deliver the successful ones as one merged export. Never fails:
+	 * each sub-target carries its own result.
+	 */
+	readonly scrapeCycle: (targets: TargetGroup, permits: Semaphore.Semaphore) => Effect.Effect<ScrapeCycle>
 }
 
 export const hostFromUrl = (url: string): string =>
@@ -61,19 +85,29 @@ const attribute = (error: ScrapeError, target: InternalScrapeTarget, host: strin
 		targetHost: host,
 	})
 
+interface Collected {
+	readonly target: InternalScrapeTarget
+	readonly scrapedAt: number
+	readonly fetchedAt: number
+	readonly result: Result.Result<
+		{ readonly request: OtlpExportRequest | null; readonly success: ScrapeSuccess },
+		ScrapeError
+	>
+}
+
 export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scraper/Scraper", {
 	make: Effect.gen(function* () {
 		const fetcher = yield* TargetFetcher
 		const ingest = yield* OtlpIngest
 
-		const scrape = (target: InternalScrapeTarget) => {
+		// One span per sub-target, so dashboards and per-branch error issues keep their shape.
+		const collect = (target: InternalScrapeTarget) => {
 			const host = hostFromUrl(target.url)
 			return Effect.gen(function* () {
 				const scrapeTimeMs = yield* Clock.currentTimeMillis
 				const body = yield* fetcher.fetch(target)
 				const parsed = parsePrometheusText(body)
 				const converted = convertFamiliesToOtlp(parsed.families, otlpContext(target, scrapeTimeMs))
-				if (converted.request !== null) yield* ingest.send(target.ingestKey, converted.request)
 
 				const counts = converted.dataPointCounts
 				yield* Effect.annotateCurrentSpan({
@@ -84,9 +118,12 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 					"maple.scraper.skipped_lines": parsed.skippedLineCount,
 				})
 				return {
-					samplesScraped: countSamples(parsed.families),
-					samplesExported: counts.sum + counts.gauge + counts.histogram,
-				} satisfies ScrapeSuccess
+					request: converted.request,
+					success: {
+						samplesScraped: countSamples(parsed.families),
+						samplesExported: counts.sum + counts.gauge + counts.histogram,
+					} satisfies ScrapeSuccess,
+				}
 			}).pipe(
 				Effect.catchDefect((defect) =>
 					Effect.fail(
@@ -94,10 +131,7 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 					),
 				),
 				Effect.mapError((error) => attribute(error, target, host)),
-				// `root`: loops are forked inside `scraper.reconcile` and would otherwise
-				// parent every scrape, for hours, under that one trace.
 				withScrapeSpan("scraper.scrape_target", {
-					root: true,
 					attributes: {
 						orgId: target.orgId,
 						"maple.scraper.target_id": target.id,
@@ -115,7 +149,84 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 			)
 		}
 
-		return { scrape } satisfies ScraperApi
+		const timedCollect = (target: InternalScrapeTarget, permits: Semaphore.Semaphore) =>
+			permits.withPermits(1)(
+				Effect.gen(function* () {
+					const scrapedAt = yield* Clock.currentTimeMillis
+					const result = yield* Effect.result(collect(target))
+					const fetchedAt = yield* Clock.currentTimeMillis
+					return { target, scrapedAt, fetchedAt, result } satisfies Collected
+				}),
+			)
+
+		const scrapeCycle = (targets: TargetGroup, permits: Semaphore.Semaphore) => {
+			const [first] = targets
+			return Effect.gen(function* () {
+				const collected = yield* Effect.forEach(targets, (target) => timedCollect(target, permits), {
+					concurrency: "unbounded",
+				})
+				const requests = collected.flatMap((entry) =>
+					Result.isSuccess(entry.result) && entry.result.success.request !== null
+						? [entry.result.success.request]
+						: [],
+				)
+				// Sub-targets of one parent share its org and ingest key, so one export carries them all.
+				const delivery =
+					requests.length === 0
+						? Result.succeed(undefined)
+						: yield* Effect.result(
+								permits.withPermits(1)(
+									ingest.send(first.ingestKey, mergeExportRequests(requests)),
+								),
+							)
+				const deliveredAt = yield* Clock.currentTimeMillis
+				const deliveryFailure = Result.isFailure(delivery) ? delivery.failure : null
+
+				const scrapes = collected.map((entry): SubTargetScrape => {
+					const { target, scrapedAt, result } = entry
+					if (Result.isFailure(result) || result.success.request === null) {
+						return {
+							target,
+							scrapedAt,
+							durationMs: entry.fetchedAt - scrapedAt,
+							result: Result.map(result, (ok) => ok.success),
+						}
+					}
+					return {
+						target,
+						scrapedAt,
+						durationMs: deliveredAt - scrapedAt,
+						result:
+							deliveryFailure === null
+								? Result.succeed(result.success.success)
+								: Result.fail(attribute(deliveryFailure, target, hostFromUrl(target.url))),
+					}
+				})
+				yield* Effect.annotateCurrentSpan({
+					"maple.scraper.sub_targets": targets.length,
+					"maple.scraper.failed_sub_targets": scrapes.filter((scrape) =>
+						Result.isFailure(scrape.result),
+					).length,
+					"maple.scraper.merged_resources": requests.length,
+				})
+				return { scrapes, deliveryFailure } satisfies ScrapeCycle
+			}).pipe(
+				// `root`: loops are forked inside `scraper.reconcile` and would otherwise
+				// parent every cycle, for hours, under that one trace.
+				Effect.withSpan("scraper.scrape_cycle", {
+					root: true,
+					attributes: {
+						orgId: first.orgId,
+						"maple.scraper.target_id": first.id,
+						"maple.scraper.target_name": first.name,
+						"maple.scraper.interval_seconds": first.scrapeIntervalSeconds,
+						...(first.sourceId === undefined ? undefined : { "maple.source.id": first.sourceId }),
+					},
+				}),
+			)
+		}
+
+		return { scrapeCycle } satisfies ScraperApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

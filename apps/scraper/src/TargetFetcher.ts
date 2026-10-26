@@ -22,12 +22,12 @@ export interface TargetFetcherApi {
 }
 
 /**
- * Per-request ceiling. The scrape interval bounds it so one scrape can never
- * overlap the next; the 60s cap keeps a slow upstream (PlanetScale metrics
- * under load) from parking a permit for a whole 300s interval.
+ * Per-request ceiling: half the interval, so a parent's cycle (all sub-target
+ * fetches, then one delivery) fits inside it even when one branch stalls. The
+ * 60s cap keeps a slow upstream from parking a permit for a whole 300s interval.
  */
 export const scrapeTimeoutMs = (scrapeIntervalSeconds: number): number =>
-	Math.min(60_000, Math.max(1_000, (scrapeIntervalSeconds - 1) * 1000))
+	Math.min(60_000, Math.max(1_000, scrapeIntervalSeconds * 500))
 
 /** Parse a `Retry-After` header value, honoring only the delta-seconds form. */
 export const parseRetryAfterSeconds = (value: string | null): number | null => {

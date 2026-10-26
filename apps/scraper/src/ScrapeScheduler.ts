@@ -17,9 +17,8 @@ import { ScraperEnv } from "./Env"
 import { activeTargets, scrapeDurationMs, scrapesTotal } from "./Metrics"
 import { backoffLogMessage, nextScrapeDelayMs, shouldBackOff, startJitterMs } from "./policy"
 import { ResultReporter } from "./ResultReporter"
-import type { ScrapeError } from "./ScrapeError"
-import { Scraper, type ScrapeSuccess } from "./Scraper"
-import { TargetRegistry } from "./TargetRegistry"
+import { Scraper, type SubTargetScrape } from "./Scraper"
+import { type TargetGroup, TargetRegistry, targetKey } from "./TargetRegistry"
 
 export interface SchedulerStats {
 	/** `degraded` once the target list has not refreshed for {@link STALE_RECONCILES} intervals. */
@@ -43,25 +42,63 @@ export class StartJitter extends Context.Reference<(key: string, baseMs: number)
 	{ defaultValue: () => startJitterMs },
 ) {}
 
-const toReport = (
-	target: InternalScrapeTarget,
-	scrapedAt: number,
-	durationMs: number,
-	result: Result.Result<ScrapeSuccess, ScrapeError>,
-) =>
+const toReport = (scrape: SubTargetScrape) =>
 	new ScrapeResultReport({
-		targetId: target.id,
-		subTargetKey: target.subTargetKey,
-		scrapedAt,
-		durationMs,
-		...(Result.isSuccess(result)
+		targetId: scrape.target.id,
+		subTargetKey: scrape.target.subTargetKey,
+		scrapedAt: scrape.scrapedAt,
+		durationMs: scrape.durationMs,
+		...(Result.isSuccess(scrape.result)
 			? {
 					error: null,
-					samplesScraped: result.success.samplesScraped,
-					samplesPostMetricRelabeling: result.success.samplesExported,
+					samplesScraped: scrape.result.success.samplesScraped,
+					samplesPostMetricRelabeling: scrape.result.success.samplesExported,
 				}
-			: { error: result.failure.message }),
+			: { error: scrape.result.failure.message }),
 	})
+
+/** A sub-target in backoff: skipped by its parent's cycles until `notBefore`. */
+interface Backoff {
+	readonly consecutive: number
+	readonly notBefore: number
+}
+
+/** Per-parent loop state. Target-side backoff is per sub-target; an ingest block is per parent. */
+interface LoopState {
+	readonly backoffs: ReadonlyMap<string, Backoff>
+	readonly deliveryBackoffs: number
+}
+
+const subTargetLog = (target: InternalScrapeTarget) => ({
+	targetId: target.id,
+	orgId: target.orgId,
+	...(target.subTargetKey ? { subTargetKey: target.subTargetKey } : undefined),
+})
+
+/**
+ * Backoff for the sub-targets a cycle scraped. `delivery_blocked` only ever comes
+ * from ingest, so it parks the whole parent instead (see the loop).
+ */
+const nextBackoffs = (
+	current: ReadonlyMap<string, Backoff>,
+	group: TargetGroup,
+	scrapes: ReadonlyArray<SubTargetScrape>,
+	baseMs: number,
+	endedAt: number,
+): ReadonlyMap<string, Backoff> => {
+	const live = new Set(group.map(targetKey))
+	const kept = Array.from(current).filter(([key]) => live.has(key))
+	const scraped = new Set(scrapes.map((scrape) => targetKey(scrape.target)))
+	const updated = scrapes.flatMap((scrape): ReadonlyArray<readonly [string, Backoff]> => {
+		const failure = Result.isFailure(scrape.result) ? scrape.result.failure : null
+		if (failure === null || !shouldBackOff(failure) || failure.reason === "delivery_blocked") return []
+		const key = targetKey(scrape.target)
+		const consecutive = current.get(key)?.consecutive ?? 0
+		const delayMs = nextScrapeDelayMs({ baseMs, failure, consecutiveBackoffs: consecutive })
+		return [[key, { consecutive: consecutive + 1, notBefore: endedAt + delayMs }]]
+	})
+	return new Map([...kept.filter(([key]) => !scraped.has(key)), ...updated])
+}
 
 export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSchedulerApi>()(
 	"@maple/scraper/ScrapeScheduler",
@@ -77,73 +114,97 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 			const startedAt = yield* Clock.currentTimeMillis
 			const activeLoops = yield* Ref.make(0)
 
-			const scrapeOnce = (target: InternalScrapeTarget) =>
-				semaphore.withPermits(1)(
-					Effect.gen(function* () {
-						const scrapedAt = yield* Clock.currentTimeMillis
-						const result = yield* Effect.result(scraper.scrape(target))
-						const durationMs = (yield* Clock.currentTimeMillis) - scrapedAt
-						yield* Metric.update(scrapeDurationMs, durationMs)
-						yield* Metric.update(scrapesTotal, Result.isSuccess(result) ? "ok" : "error")
-						yield* reporter.record(toReport(target, scrapedAt, durationMs, result))
-						if (Result.isFailure(result)) {
-							yield* Effect.logWarning("Scrape failed").pipe(
-								Effect.annotateLogs({
-									targetId: target.id,
-									targetName: target.name,
-									orgId: target.orgId,
-									...(target.subTargetKey
-										? { subTargetKey: target.subTargetKey }
-										: undefined),
-									reason: result.failure.reason,
-									error: result.failure.message,
-								}),
-							)
-						}
-						return Result.isFailure(result) ? result.failure : null
-					}),
-				)
-
-			// Cadence is start-to-start on the happy path; a backoff runs its full
-			// delay from scrape end so Retry-After is honored. Ends once the target is gone.
-			const scrapeLoop = (key: string, consecutiveBackoffs: number): Effect.Effect<void> =>
+			const record = (scrape: SubTargetScrape) =>
 				Effect.gen(function* () {
-					const latest = yield* registry.get(key)
-					if (Option.isNone(latest)) return
-					const target = latest.value
-					const baseMs = target.scrapeIntervalSeconds * 1000
-
-					const loopStart = yield* Clock.currentTimeMillis
-					const failure = yield* scrapeOnce(target)
-					const elapsedMs = (yield* Clock.currentTimeMillis) - loopStart
-					const delayMs = nextScrapeDelayMs({ baseMs, failure, consecutiveBackoffs })
-
-					if (failure === null || !shouldBackOff(failure)) {
-						yield* Effect.sleep(Duration.millis(Math.max(0, delayMs - elapsedMs)))
-						return yield* scrapeLoop(key, 0)
+					yield* Metric.update(scrapeDurationMs, scrape.durationMs)
+					yield* Metric.update(scrapesTotal, Result.isSuccess(scrape.result) ? "ok" : "error")
+					yield* reporter.record(toReport(scrape))
+					if (Result.isFailure(scrape.result)) {
+						const failure = scrape.result.failure
+						yield* Effect.logWarning(
+							shouldBackOff(failure) ? backoffLogMessage(failure.reason) : "Scrape failed",
+						).pipe(
+							Effect.annotateLogs({
+								...subTargetLog(scrape.target),
+								targetName: scrape.target.name,
+								reason: failure.reason,
+								error: failure.message,
+								retryAfterMs: failure.retryAfterMs,
+							}),
+						)
 					}
-					yield* Effect.logWarning(backoffLogMessage(failure.reason)).pipe(
-						Effect.annotateLogs({
-							targetId: target.id,
-							orgId: target.orgId,
-							...(target.subTargetKey ? { subTargetKey: target.subTargetKey } : undefined),
-							reason: failure.reason,
-							delayMs,
-							retryAfterMs: failure.retryAfterMs,
-							consecutiveBackoffs: consecutiveBackoffs + 1,
-						}),
-					)
-					yield* Effect.sleep(Duration.millis(delayMs))
-					return yield* scrapeLoop(key, consecutiveBackoffs + 1)
 				})
 
-			const targetLoop = (key: string, initial: InternalScrapeTarget) =>
-				Effect.sleep(Duration.millis(startJitter(key, initial.scrapeIntervalSeconds * 1000))).pipe(
-					Effect.andThen(scrapeLoop(key, 0)),
-				)
+			// One cycle per parent: every due sub-target is fetched, and all of them go
+			// out as one export. Cadence is start-to-start; a sub-target in backoff sits
+			// out cycles until its delay (from cycle end, so Retry-After holds) passes.
+			const cycle = (id: string, state: Ref.Ref<LoopState>) =>
+				Effect.gen(function* () {
+					const latest = yield* registry.get(id)
+					if (Option.isNone(latest)) return Option.none<number>()
+					const group = latest.value
+					const baseMs = group[0].scrapeIntervalSeconds * 1000
+					const cycleStart = yield* Clock.currentTimeMillis
+					const before = yield* Ref.get(state)
 
-			// Loops are keyed by target alone and read their config each scrape, so
-			// reconcile only starts loops for new keys and stops loops for gone ones.
+					const notBefore = (target: InternalScrapeTarget) =>
+						before.backoffs.get(targetKey(target))?.notBefore ?? 0
+					const [firstDue, ...restDue] = group.filter((target) => notBefore(target) <= cycleStart)
+					const outcome =
+						firstDue === undefined
+							? { scrapes: [], deliveryFailure: null }
+							: yield* scraper.scrapeCycle([firstDue, ...restDue], semaphore)
+					yield* Effect.forEach(outcome.scrapes, record, { discard: true })
+					const endedAt = yield* Clock.currentTimeMillis
+
+					const backoffs = nextBackoffs(before.backoffs, group, outcome.scrapes, baseMs, endedAt)
+					const blocked =
+						outcome.deliveryFailure !== null && shouldBackOff(outcome.deliveryFailure)
+							? outcome.deliveryFailure
+							: null
+					yield* Ref.set(state, {
+						backoffs,
+						deliveryBackoffs: blocked === null ? 0 : before.deliveryBackoffs + 1,
+					})
+					if (blocked !== null) {
+						return Option.some(
+							endedAt +
+								nextScrapeDelayMs({
+									baseMs,
+									failure: blocked,
+									consecutiveBackoffs: before.deliveryBackoffs,
+								}),
+						)
+					}
+					// Next tick, or later when every sub-target is still backing off then.
+					const nextTick = cycleStart + baseMs
+					return Option.some(
+						Math.min(
+							...group.map((target) =>
+								Math.max(nextTick, backoffs.get(targetKey(target))?.notBefore ?? 0),
+							),
+						),
+					)
+				})
+
+			const parentLoop = (id: string, initial: TargetGroup) =>
+				Effect.gen(function* () {
+					const state = yield* Ref.make<LoopState>({ backoffs: new Map(), deliveryBackoffs: 0 })
+					yield* Effect.sleep(
+						Duration.millis(startJitter(id, initial[0].scrapeIntervalSeconds * 1000)),
+					)
+					const step: Effect.Effect<void> = Effect.flatMap(cycle(id, state), (wakeAt) =>
+						Option.isNone(wakeAt)
+							? Effect.void
+							: Effect.flatMap(Clock.currentTimeMillis, (now) =>
+									Effect.sleep(Duration.millis(Math.max(0, wakeAt.value - now))),
+								).pipe(Effect.andThen(Effect.suspend(() => step))),
+					)
+					yield* step
+				})
+
+			// One loop per parent target id, reading its sub-targets each cycle, so
+			// reconcile only starts loops for new parents and stops loops for gone ones.
 			const reconcile = (loops: FiberMap.FiberMap<string>) =>
 				Effect.gen(function* () {
 					const desired = yield* registry.refresh
@@ -156,20 +217,27 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 					// the run fiber's clock; the map interrupts on removal.
 					yield* Effect.forEach(
 						desired,
-						([key, target]) =>
+						([key, group]) =>
 							Effect.flatMap(FiberMap.has(loops, key), (running) =>
 								running
 									? Effect.void
-									: Effect.flatMap(Effect.forkChild(targetLoop(key, target)), (fiber) =>
+									: Effect.flatMap(Effect.forkChild(parentLoop(key, group)), (fiber) =>
 											FiberMap.set(loops, key, fiber),
 										),
 							),
 						{ discard: true },
 					)
 					const running = yield* FiberMap.size(loops)
-					yield* Ref.set(activeLoops, running)
-					yield* Metric.update(activeTargets, running)
-					yield* Effect.annotateCurrentSpan("maple.scraper.active_targets", running)
+					const subTargets = Array.from(desired.values()).reduce(
+						(total, group) => total + group.length,
+						0,
+					)
+					yield* Ref.set(activeLoops, subTargets)
+					yield* Metric.update(activeTargets, subTargets)
+					yield* Effect.annotateCurrentSpan({
+						"maple.scraper.active_targets": subTargets,
+						"maple.scraper.active_loops": running,
+					})
 				}).pipe(
 					Effect.withSpan("scraper.reconcile"),
 					// A failed list fetch keeps every current loop running untouched.
