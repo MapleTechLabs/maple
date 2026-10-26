@@ -119,10 +119,19 @@ const makeHarness = () => {
 	}
 }
 
+/** Runs `body` against a fresh harness, disposed however the body ends. */
+const withHarness = (body: (harness: ReturnType<typeof makeHarness>) => Promise<void>) =>
+	Effect.runPromise(
+		Effect.acquireUseRelease(
+			Effect.sync(makeHarness),
+			(harness) => Effect.promise(() => body(harness)),
+			(harness) => Effect.promise(() => harness.dispose()),
+		),
+	)
+
 describe("v2 uptime monitors", () => {
-	it("creates, lists, retrieves, pauses, resumes and deletes a monitor", async () => {
-		const harness = makeHarness()
-		try {
+	it("creates, lists, retrieves, pauses, resumes and deletes a monitor", () =>
+		withHarness(async (harness) => {
 			const { secret: token } = await harness.bootstrapKey()
 
 			const created = await harness.request("POST", "/v2/uptime_monitors", token, {
@@ -178,14 +187,10 @@ describe("v2 uptime monitors", () => {
 			const missing = await harness.request("GET", `/v2/uptime_monitors/${id}`, token)
 			expect(missing.status).toBe(404)
 			expect(missing.body.error._tag).toBe("@maple/http/errors/UptimeMonitorNotFoundError")
-		} finally {
-			await harness.dispose()
-		}
-	})
+		}))
 
-	it("gives a heartbeat monitor its ping URL", async () => {
-		const harness = makeHarness()
-		try {
+	it("gives a heartbeat monitor its ping URL", () =>
+		withHarness(async (harness) => {
 			const { secret: token } = await harness.bootstrapKey()
 			const created = await harness.request("POST", "/v2/uptime_monitors", token, {
 				name: "nightly backup",
@@ -212,14 +217,10 @@ describe("v2 uptime monitors", () => {
 			expect(memberList.body.data[0].heartbeat_url).toBeNull()
 			const adminRead = await harness.request("GET", `/v2/uptime_monitors/${created.body.id}`, token)
 			expect(adminRead.body.heartbeat_url).toBe(created.body.heartbeat_url)
-		} finally {
-			await harness.dispose()
-		}
-	})
+		}))
 
-	it("rejects invalid monitors and tests of non-HTTP checks", async () => {
-		const harness = makeHarness()
-		try {
+	it("rejects invalid monitors and tests of non-HTTP checks", () =>
+		withHarness(async (harness) => {
 			const { secret: token } = await harness.bootstrapKey()
 			const mismatch = await harness.request("POST", "/v2/uptime_monitors", token, {
 				name: "db",
@@ -244,14 +245,10 @@ describe("v2 uptime monitors", () => {
 
 			const listed = await harness.request("GET", "/v2/uptime_monitors", token)
 			expect(listed.body.data).toEqual([])
-		} finally {
-			await harness.dispose()
-		}
-	})
+		}))
 
-	it("shows header values to admins only and keeps redacted values on update", async () => {
-		const harness = makeHarness()
-		try {
+	it("shows header values to admins only and keeps redacted values on update", () =>
+		withHarness(async (harness) => {
 			const { secret: admin } = await harness.bootstrapKey()
 			const { secret: member } = await harness.bootstrapKey({
 				source: "maple_cli",
@@ -304,14 +301,10 @@ describe("v2 uptime monitors", () => {
 			expect(orphan.status).toBe(400)
 			const after = await harness.request("GET", `/v2/uptime_monitors/${id}`, admin)
 			expect(after.body.config.headers).toEqual({ Authorization: "Bearer s3cret", "X-Env": "staging" })
-		} finally {
-			await harness.dispose()
-		}
-	})
+		}))
 
-	it("refuses writes from non-admin members but lets them read", async () => {
-		const harness = makeHarness()
-		try {
+	it("refuses writes from non-admin members but lets them read", () =>
+		withHarness(async (harness) => {
 			const { secret: token } = await harness.bootstrapKey({
 				source: "maple_cli",
 				roles: ["org:member"],
@@ -329,8 +322,5 @@ describe("v2 uptime monitors", () => {
 			expect(test.status).toBe(403)
 			const listed = await harness.request("GET", "/v2/uptime_monitors", token)
 			expect(listed.status).toBe(200)
-		} finally {
-			await harness.dispose()
-		}
-	})
+		}))
 })

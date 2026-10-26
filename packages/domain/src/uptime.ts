@@ -227,6 +227,49 @@ export const firstFailedAssertion = (
 	return failures[0] ?? null
 }
 
+// --- HTTP check request ---
+
+export const UPTIME_USER_AGENT = "maple-uptime/1.0"
+
+/** A monitor without a status rule still expects success: a 503 must not read as up. */
+const IMPLICIT_STATUS: UptimeAssertion = { _tag: "status", op: "is", value: "2xx" }
+
+/** The assertions a check is judged by: the configured ones, plus `2xx` when none rules on status. */
+export const effectiveAssertions = (
+	assertions: ReadonlyArray<UptimeAssertion>,
+): ReadonlyArray<UptimeAssertion> =>
+	assertions.some((assertion) => assertion._tag === "status")
+		? assertions
+		: [IMPLICIT_STATUS, ...assertions]
+
+/** The request an HTTP check sends, as plain data each HTTP client builds from. */
+export interface UptimeCheckRequest {
+	readonly method: UptimeHttpMethod
+	readonly url: string
+	readonly headers: Readonly<Record<string, string>>
+	/** POST only; the content type is the configured `content-type`, else `text/plain`. */
+	readonly body: { readonly text: string; readonly contentType: string } | null
+}
+
+/** Our user-agent first so a configured one wins; `extraHeaders` (traceparent) last so they always apply. */
+export const uptimeHttpRequest = (
+	config: Schema.Schema.Type<typeof UptimeHttpConfig>,
+	extraHeaders: Readonly<Record<string, string>> = {},
+): UptimeCheckRequest => {
+	const contentType = Object.entries(config.headers).find(
+		([name]) => name.toLowerCase() === "content-type",
+	)?.[1]
+	return {
+		method: config.method,
+		url: config.url,
+		headers: { "user-agent": UPTIME_USER_AGENT, ...config.headers, ...extraHeaders },
+		body:
+			config.method === "POST" && config.body !== undefined
+				? { text: config.body, contentType: contentType ?? "text/plain" }
+				: null,
+	}
+}
+
 // --- Up/down machine ---
 
 export const UptimeMonitorStateSnapshot = Schema.Struct({
