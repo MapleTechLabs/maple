@@ -541,7 +541,9 @@ describe("UptimeMonitorsService", () => {
 				// A pause between the read and the write: the ping is not applied.
 				yield* racing.arm(
 					2,
-					Effect.asVoid(Effect.orDie(service.update(ORG, monitor.id, { enabled: false }))),
+					Effect.asVoid(
+						Effect.orDie(service.update(ORG, monitor.id, { enabled: false, updatedBy: USER })),
+					),
 				)
 				const refused = yield* Effect.flip(service.recordPing(token, false))
 				assert.strictEqual(refused._tag, "@maple/backend/uptime/HeartbeatNotFound")
@@ -564,7 +566,9 @@ describe("UptimeMonitorsService", () => {
 				yield* racing.arm(
 					2,
 					TestClock.adjust("5 seconds").pipe(
-						Effect.andThen(service.update(ORG, monitor.id, { failuresToDown: 1 })),
+						Effect.andThen(
+							service.update(ORG, monitor.id, { failuresToDown: 1, updatedBy: USER }),
+						),
 						Effect.orDie,
 						Effect.asVoid,
 					),
@@ -594,6 +598,7 @@ describe("UptimeMonitorsService", () => {
 			const redacted = { Authorization: "[redacted]" }
 			const moved = yield* Effect.flip(
 				service.update(ORG, monitor.id, {
+					updatedBy: USER,
 					config: { ...httpConfig("https://elsewhere.example.net/health"), headers: redacted },
 				}),
 			)
@@ -602,12 +607,14 @@ describe("UptimeMonitorsService", () => {
 
 			// Same origin keeps the stored value; a new origin with fresh values is fine.
 			const samePath = yield* service.update(ORG, monitor.id, {
+				updatedBy: USER,
 				config: { ...httpConfig("https://status.example.com/v2/health"), headers: redacted },
 			})
 			assert.deepStrictEqual(samePath.config._tag === "http" ? samePath.config.headers : null, {
 				Authorization: "Bearer secret",
 			})
 			const reentered = yield* service.update(ORG, monitor.id, {
+				updatedBy: USER,
 				config: {
 					...httpConfig("https://elsewhere.example.net/health"),
 					headers: { Authorization: "Bearer other" },
