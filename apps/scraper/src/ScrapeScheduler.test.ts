@@ -61,6 +61,7 @@ const testEnv: ScraperEnvConfig = {
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: 60,
 	SCRAPER_OTLP_MAX_DATA_POINTS: 10_000,
 	SCRAPER_OTLP_MAX_BODY_BYTES: 4 * 1024 * 1024,
+	UPTIME_CONCURRENCY: 20,
 	PORT: 0,
 }
 
@@ -98,6 +99,8 @@ const harnessLayer = (harness: Harness, options: { readonly realJitter?: boolean
 	const api: ApiClientApi = {
 		listTargets: () => Effect.suspend(() => harness.listImpl()),
 		reportResults: (results) => Effect.sync(() => void harness.reported.push(...results)),
+		listUptimeTargets: () => Effect.succeed([]),
+		reportUptimeResults: () => Effect.void,
 	}
 	const fetcher = Layer.succeed(TargetFetcher, {
 		fetch: (target) =>

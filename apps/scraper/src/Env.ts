@@ -22,6 +22,8 @@ export interface ScraperEnvConfig {
 	 * whole and loses the entire scrape.
 	 */
 	readonly SCRAPER_OTLP_MAX_DATA_POINTS: number
+	/** Max concurrent uptime checks across all monitors, separate from the scrape permits. */
+	readonly UPTIME_CONCURRENCY: number
 	/**
 	 * Max uncompressed OTLP/JSON bytes per POST. A parent target's whole cycle goes
 	 * out as one export, and attribute-heavy points can exceed the point budget's
@@ -62,6 +64,7 @@ const envConfig = Config.all({
 	SCRAPER_OTLP_MAX_DATA_POINTS: positiveInt("SCRAPER_OTLP_MAX_DATA_POINTS", 10_000_000).pipe(
 		Config.withDefault(10_000),
 	),
+	UPTIME_CONCURRENCY: positiveInt("UPTIME_CONCURRENCY", 10_000).pipe(Config.withDefault(20)),
 	// 4 MiB uncompressed: a 5x margin under the gateway's 20 MB limit even
 	// before gzip, and few enough chunks for the largest discovery cycles.
 	SCRAPER_OTLP_MAX_BODY_BYTES: positiveInt("SCRAPER_OTLP_MAX_BODY_BYTES", 16 * 1024 * 1024).pipe(
