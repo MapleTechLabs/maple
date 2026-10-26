@@ -143,6 +143,10 @@ export interface UptimeConfigFields {
 	readonly cron?: string | undefined
 	readonly timezone?: string | undefined
 	readonly grace_seconds?: number | undefined
+	/** Update only: drop the matching check or expected answer. */
+	readonly clear_max_response_ms?: boolean | undefined
+	readonly clear_body_contains?: boolean | undefined
+	readonly clear_expected?: boolean | undefined
 }
 
 const FIELD_KINDS: ReadonlyArray<readonly [keyof UptimeConfigFields, ReadonlyArray<UptimeMonitorKind>]> = [
@@ -159,7 +163,33 @@ const FIELD_KINDS: ReadonlyArray<readonly [keyof UptimeConfigFields, ReadonlyArr
 	["cron", ["heartbeat"]],
 	["timezone", ["heartbeat"]],
 	["grace_seconds", ["heartbeat"]],
+	["clear_max_response_ms", ["http"]],
+	["clear_body_contains", ["http"]],
+	["clear_expected", ["dns"]],
 ]
+
+const CLEAR_PAIRS: ReadonlyArray<readonly [keyof UptimeConfigFields, keyof UptimeConfigFields]> = [
+	["clear_max_response_ms", "max_response_ms"],
+	["clear_body_contains", "body_contains"],
+	["clear_expected", "expected"],
+]
+
+/** A clear flag and the value it clears cannot both be set. */
+const rejectClearConflicts = (fields: UptimeConfigFields) => {
+	const conflict = CLEAR_PAIRS.find(
+		([clear, field]) => fields[clear] === true && fields[field] !== undefined,
+	)
+	return conflict === undefined
+		? Effect.void
+		: invalid(
+				`Pass ${conflict[1]} to set it, or ${conflict[0]}=true to remove it, not both.`,
+				conflict[0],
+			)
+}
+
+const isLatency = (assertion: UptimeAssertion) => assertion._tag === "latency"
+const isBodyContains = (assertion: UptimeAssertion) =>
+	assertion._tag === "body" && assertion.op === "contains"
 
 const invalid = (message: string, parameter?: string) =>
 	Effect.fail(
@@ -212,12 +242,16 @@ const httpAssertions = (current: ReadonlyArray<UptimeAssertion>, fields: UptimeC
 			fields.max_response_ms === undefined
 				? undefined
 				: { _tag: "latency", underMs: fields.max_response_ms },
-			(assertion) => assertion._tag === "latency",
+			isLatency,
 		),
 		fields.body_contains === undefined
 			? undefined
 			: { _tag: "body", op: "contains", value: fields.body_contains },
-		(assertion) => assertion._tag === "body" && assertion.op === "contains",
+		isBodyContains,
+	).filter(
+		(assertion) =>
+			!(fields.clear_max_response_ms === true && isLatency(assertion)) &&
+			!(fields.clear_body_contains === true && isBodyContains(assertion)),
 	)
 
 type HeartbeatScheduleInput =
@@ -299,12 +333,19 @@ export const buildUptimeConfig = Effect.fnUntraced(function* (
 	}
 })
 
+const omitExpected = (config: UptimeMonitorConfig): UptimeMonitorConfig => {
+	if (config._tag !== "dns") return config
+	const { expected: _expected, ...rest } = config
+	return rest
+}
+
 /** An existing config with the given fields changed; undefined when none was given. */
 export const updateUptimeConfig = Effect.fnUntraced(function* (
 	current: UptimeMonitorConfig,
 	fields: UptimeConfigFields,
 ) {
 	yield* rejectMisplaced(current._tag, fields)
+	yield* rejectClearConflicts(fields)
 	if (!FIELD_KINDS.some(([field]) => fields[field] !== undefined)) return undefined
 	switch (current._tag) {
 		case "http":
@@ -326,7 +367,7 @@ export const updateUptimeConfig = Effect.fnUntraced(function* (
 				...(fields.host === undefined ? undefined : { hostname: fields.host }),
 				...(fields.record_type === undefined ? undefined : { recordType: fields.record_type }),
 				...(fields.expected === undefined ? undefined : { expected: fields.expected }),
-			})
+			}).pipe(Effect.map((config) => (fields.clear_expected === true ? omitExpected(config) : config)))
 		case "heartbeat": {
 			const currentZone =
 				current.schedule._tag === "cron" ? current.schedule.timezone : DEFAULT_HEARTBEAT_TIMEZONE

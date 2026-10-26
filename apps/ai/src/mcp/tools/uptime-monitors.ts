@@ -406,6 +406,13 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			name: P.optionalText("A new name"),
 			...configParameters,
 			clear_service: P.optionalFlag("true unlinks the monitor from its service; not with `service`"),
+			clear_max_response_ms: P.optionalFlag(
+				"http: true removes the response time check; not with `max_response_ms`",
+			),
+			clear_body_contains: P.optionalFlag(
+				"http: true removes the body contains check; not with `body_contains`",
+			),
+			clear_expected: P.optionalFlag("dns: true removes the expected answer; not with `expected`"),
 			destination_ids: P.optionalResourceIdList(
 				"alertDestination",
 				"Replaces the alert destinations notified when the monitor goes down; [] notifies none",
@@ -427,7 +434,12 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 				})
 			}
 			const serviceName = params.clear_service === true ? null : params.service
-			const config = yield* updateUptimeConfig(current.config, configFields(params))
+			const config = yield* updateUptimeConfig(current.config, {
+				...configFields(params),
+				clear_max_response_ms: params.clear_max_response_ms,
+				clear_body_contains: params.clear_body_contains,
+				clear_expected: params.clear_expected,
+			})
 			const intervalSeconds = yield* decodeInterval(params.interval_seconds)
 			const destinationIds: ReadonlyArray<AlertDestinationId> | undefined = yield* decodeDestinations(
 				params.destination_ids,

@@ -351,6 +351,39 @@ describe("uptime monitor config and errors", () => {
 		})
 	})
 
+	it("removes the body and response time checks when asked", async () => {
+		const current = await Effect.runPromise(
+			buildUptimeConfig("http", {
+				url: "https://api.acme.dev/health",
+				max_response_ms: 800,
+				body_contains: "ok",
+			}),
+		)
+		const next = await Effect.runPromise(
+			updateUptimeConfig(current, { clear_body_contains: true, clear_max_response_ms: true }),
+		)
+		expect(next).toMatchObject({ assertions: [{ _tag: "status", op: "is", value: "2xx" }] })
+	})
+
+	it("removes a dns expected answer when asked", async () => {
+		const current = await Effect.runPromise(
+			buildUptimeConfig("dns", { host: "acme.dev", record_type: "A", expected: "93.184.216.34" }),
+		)
+		const next = await Effect.runPromise(updateUptimeConfig(current, { clear_expected: true }))
+		expect(next).toMatchObject({ _tag: "dns", hostname: "acme.dev" })
+		expect(next !== undefined && next._tag === "dns" ? next.expected : "unset").toBeUndefined()
+	})
+
+	it("refuses a clear flag together with the value it clears", async () => {
+		const current = await Effect.runPromise(
+			buildUptimeConfig("http", { url: "https://api.acme.dev/health" }),
+		)
+		const exit = await Effect.runPromiseExit(
+			updateUptimeConfig(current, { body_contains: "ok", clear_body_contains: true }),
+		)
+		expect(exit._tag).toBe("Failure")
+	})
+
 	it("refuses a heartbeat with both an interval and a cron schedule", async () => {
 		const exit = await Effect.runPromiseExit(
 			buildUptimeConfig("heartbeat", { heartbeat_interval_seconds: 3600, cron: "0 * * * *" }),
