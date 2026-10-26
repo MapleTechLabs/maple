@@ -110,6 +110,24 @@ describe("UptimeScheduler", () => {
 		}),
 	)
 
+	it.effect("holds its cadence over hundreds of checks and still stops once removed", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness([mkUptimeTarget({ intervalSeconds: 30 })])
+			yield* startScheduler.pipe(Effect.provide(harnessLayer(harness)))
+			yield* TestClock.adjust(Duration.seconds(15_000))
+			const checks = checksOf(harness, MONITOR_A)
+			assert.strictEqual(checks.length, 501)
+			assert.isTrue(checks.every((at, index) => at === index * 30))
+
+			// The t=15060 reconcile drops it; no check runs after that.
+			harness.targets = []
+			yield* TestClock.adjust(Duration.seconds(300))
+			const after = checksOf(harness, MONITOR_A)
+			assert.isAtMost(after.length, 503)
+			assert.isTrue(after.every((at) => at <= 15_060))
+		}),
+	)
+
 	it.effect("applies interval and config edits on the next check, without a restart", () =>
 		Effect.gen(function* () {
 			const harness = makeHarness([mkUptimeTarget({ intervalSeconds: 30 })])

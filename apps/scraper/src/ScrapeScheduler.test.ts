@@ -233,6 +233,21 @@ describe("ScrapeScheduler", () => {
 				assert.strictEqual(scrapesOf(harness, TARGET_B), 4)
 			}),
 		)
+
+		it.effect("keeps its cadence and a fresh backoff ladder after a thousand scrapes", () =>
+			Effect.gen(function* () {
+				const harness = makeHarness([mkTarget(TARGET_A, 10)])
+				yield* startScheduler.pipe(Effect.provide(harnessLayer(harness)))
+				yield* TestClock.adjust(Duration.seconds(10_000))
+				// t=0, 10, ..., 10000.
+				assert.strictEqual(scrapesOf(harness, TARGET_A), 1001)
+
+				harness.scrapeImpl = () => Effect.fail(failure("rate_limited"))
+				yield* TestClock.adjust(Duration.seconds(60))
+				// 429@10010, 429@10020, then 10040: the ladder starts from the base interval.
+				assert.strictEqual(scrapesOf(harness, TARGET_A), 1004)
+			}),
+		)
 	})
 
 	describe("results", () => {
