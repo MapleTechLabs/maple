@@ -301,6 +301,16 @@ describe("update_uptime_monitor", () => {
 })
 
 describe("delete_uptime_monitor", () => {
+	it("refuses a member outright, without asking them to confirm first", async () => {
+		const result = await runToolDirect(member, "delete_uptime_monitor", {
+			monitor: "nightly-backup",
+			confirm: false,
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("only org admins")
+		expect(markdown(result)).not.toContain("confirm=true")
+	})
+
 	it("asks for confirmation before deleting", async () => {
 		const result = await runToolDirect(admin, "delete_uptime_monitor", {
 			monitor: "nightly-backup",

@@ -480,13 +480,14 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting an uptime monitor"],
 		handler: Effect.fn("McpTool.deleteUptimeMonitor")(function* (params) {
+			// A member is refused before being asked to confirm, as create and update are.
+			const tenant = yield* adminOnly("delete_uptime_monitor")
 			if (params.confirm !== true) {
 				return yield* new McpInvalidInputError({
 					message: `Deletion not confirmed. Re-call delete_uptime_monitor with confirm=true to delete "${params.monitor}", or pause it with update_uptime_monitor enabled=false.`,
 					parameter: "confirm",
 				})
 			}
-			const tenant = yield* adminOnly("delete_uptime_monitor")
 			const service = yield* UptimeMonitorsService
 			const monitor = yield* resolveMonitor("delete_uptime_monitor", tenant.orgId, params.monitor)
 			yield* service
