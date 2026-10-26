@@ -133,6 +133,7 @@ export const signalLabels: Record<AlertSignalType, string> = {
 	throughput: "Throughput",
 	builder_query: "Query builder",
 	raw_query: "Raw SQL",
+	uptime: "Uptime check",
 } satisfies Record<AlertSignalType, string>
 
 export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> = {
@@ -185,6 +186,9 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 		case "builder_query":
 		case "raw_query":
 			return formatNumber(value)
+		// An uptime rule observes 1 while its monitor is down, else 0.
+		case "uptime":
+			return value >= 1 ? "Down" : "Up"
 	}
 }
 

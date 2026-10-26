@@ -353,3 +353,87 @@ describe("pagerduty dedup keys across severity tiers", () => {
 		])
 	})
 })
+
+describe("transport render: uptime monitors", () => {
+	const uptime: DispatchContext = {
+		...context,
+		ruleName: "checkout-api",
+		groupKey: "checkout-api",
+		signalType: "uptime",
+		comparator: "gte",
+		threshold: 1,
+		windowMinutes: 1,
+		value: 1,
+		sampleCount: 1,
+		detail: "Status 503, expected 2xx",
+	}
+	const uptimeInput = <Config>(config: Config, overrides: Partial<DispatchContext> = {}) =>
+		inputFor(config, { context: { ...uptime, ...overrides } })
+	const discord = (overrides: Partial<DispatchContext> = {}) =>
+		Schema.decodeUnknownSync(
+			Schema.fromJsonString(
+				Schema.Struct({
+					content: Schema.String,
+					embeds: Schema.Array(
+						Schema.Struct({
+							title: Schema.String,
+							fields: Schema.Array(
+								Schema.Struct({ name: Schema.String, value: Schema.String }),
+							),
+						}),
+					),
+				}),
+			),
+		)(
+			discordTransport.render(
+				uptimeInput({ type: "discord", webhookUrl: "https://discord.com/api/w/1/tok" }, overrides),
+			).body,
+		)
+
+	it("leads with the monitor being down and says why, not a threshold", () => {
+		const body = discord()
+		assert.strictEqual(body.content, "**checkout-api is down**")
+		assert.strictEqual(body.embeds[0]?.title, "\u{1F6A8} checkout-api is down")
+		assert.deepStrictEqual(
+			body.embeds[0]?.fields.find((field) => field.name === "Observed"),
+			{ name: "Observed", value: "Status 503, expected 2xx" },
+		)
+	})
+
+	it("reads as back up on recovery and still down on a reminder", () => {
+		assert.strictEqual(
+			discord({ eventType: "resolve", value: 0, detail: "The check is passing" }).embeds[0]?.title,
+			"✅ checkout-api is back up",
+		)
+		assert.strictEqual(
+			discord({ eventType: "renotify" }).embeds[0]?.title,
+			"\u{1F514} checkout-api is still down",
+		)
+	})
+
+	it("puts the check's error in the PagerDuty summary and details", () => {
+		const body = Schema.decodeUnknownSync(
+			Schema.fromJsonString(
+				Schema.Struct({
+					payload: Schema.Struct({
+						summary: Schema.String,
+						custom_details: Schema.Struct({ detail: Schema.String }),
+					}),
+				}),
+			),
+		)(pagerDutyTransport.render(uptimeInput({ type: "pagerduty", integrationKey: "k" })).body)
+		assert.strictEqual(body.payload.summary, "checkout-api is down: Status 503, expected 2xx.")
+		assert.strictEqual(body.payload.custom_details.detail, "Status 503, expected 2xx")
+	})
+
+	it("writes the Telegram message from the check's error", () => {
+		const body = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ text: Schema.String })))(
+			telegramTransport.render(
+				uptimeInput({ type: "telegram", botToken: "123456789:AA-token", chatId: "-100123" }),
+			).body,
+		)
+		assert.isTrue(
+			body.text.startsWith("\u{1F6A8} <b>checkout-api is down</b>\n\nStatus 503, expected 2xx."),
+		)
+	})
+})

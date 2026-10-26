@@ -25,6 +25,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
+import { AlertDestinationPublicId } from "./resource-ids"
 
 /** `upm_…` public ID ⇄ internal `UptimeMonitorId` (raw UUID). */
 export const UptimeMonitorPublicId = PublicId(PublicIdPrefixes.uptimeMonitor, UptimeMonitorId)
@@ -387,6 +388,7 @@ const uptimeMonitorExample = {
 	failures_to_down: 2,
 	service_name: "api",
 	enabled: true,
+	destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"],
 	heartbeat_url: null,
 	state: {
 		status: "up",
@@ -407,6 +409,11 @@ const uptimeMonitorExample = {
 	updated_at: "2026-07-15T09:12:00.000Z",
 } as const
 
+const destinationIdsField = Schema.Array(AlertDestinationPublicId).annotate({
+	description:
+		"Alert destinations notified when the monitor goes down and when it recovers. Empty means the incident still opens, but nobody is notified.",
+})
+
 export const V2UptimeMonitor = Schema.Struct({
 	id: UptimeMonitorPublicId,
 	object: Schema.Literal("uptime_monitor").annotate({
@@ -426,6 +433,7 @@ export const V2UptimeMonitor = Schema.Struct({
 		description: "Whether the monitor runs. A disabled monitor is paused.",
 		examples: [true],
 	}),
+	destination_ids: destinationIdsField,
 	heartbeat_url: Schema.NullOr(Schema.String).annotate({
 		description:
 			"Heartbeats only: the URL your job sends `GET` or `POST` to on success (append `/fail` to report a failure). `null` for other kinds.",
@@ -457,6 +465,7 @@ export const V2UptimeMonitorCreateParams = Schema.Struct({
 	enabled: Schema.optionalKey(
 		Schema.Boolean.annotate({ description: "Whether the monitor starts running. Defaults to `true`." }),
 	),
+	destination_ids: Schema.optionalKey(destinationIdsField),
 }).annotate({
 	identifier: "UptimeMonitorCreateParams",
 	title: "Uptime monitor create parameters",
@@ -488,6 +497,7 @@ export const V2UptimeMonitorUpdateParams = Schema.Struct({
 				"`false` pauses the monitor; `true` resumes it, back to `pending` until the next result.",
 		}),
 	),
+	destination_ids: Schema.optionalKey(destinationIdsField),
 }).annotate({
 	identifier: "UptimeMonitorUpdateParams",
 	title: "Uptime monitor update parameters",

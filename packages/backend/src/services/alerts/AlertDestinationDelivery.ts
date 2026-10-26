@@ -178,6 +178,7 @@ export const makeAlertDestinationDelivery = (options: {
 				observed: {
 					value: context.value,
 					sampleCount: context.sampleCount,
+					...(context.detail == null ? undefined : { detail: context.detail }),
 				},
 				template: context.template ?? null,
 				// Snapshotted at queue time, not re-derived at delivery: a retry an

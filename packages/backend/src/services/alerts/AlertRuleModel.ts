@@ -229,6 +229,75 @@ const planGroupingTokens = (
 	return groupBy
 }
 
+/** Why the generic rule APIs refuse an `uptime` rule. */
+export const UPTIME_RULE_MANAGED_MESSAGE =
+	"uptime rules belong to an uptime monitor; create, edit or delete the monitor instead"
+
+/** The stored plan of every `uptime` rule: no query, the evaluator reads the monitor's state. */
+export const UPTIME_RULE_PLAN = new CompiledAlertQueryPlan({
+	kind: "spec",
+	query: null,
+	rawSql: null,
+	reducer: "identity",
+	sampleCountStrategy: null,
+	noDataBehavior: "skip",
+})
+
+/**
+ * The `alert_rules` columns of a monitor's backing rule: down (1) breaches, one check opens
+ * and one healthy check resolves. Scoped to the monitor's service so links follow it.
+ */
+export const uptimeRuleFields = (monitor: {
+	readonly name: string
+	readonly serviceName: string | null
+	readonly enabled: boolean
+	readonly destinationIds: ReadonlyArray<AlertDestinationId>
+}) => {
+	const thresholds: AlertThresholds = [
+		{
+			severity: "critical",
+			value: 1,
+			upper: null,
+			recoveryValue: null,
+			destinationIds: [...monitor.destinationIds],
+		},
+	]
+	return {
+		name: monitor.name,
+		notes: null,
+		notificationTemplateJson: null,
+		enabled: monitor.enabled,
+		severity: "critical",
+		serviceNamesJson: monitor.serviceName === null ? null : [monitor.serviceName],
+		excludeServiceNamesJson: null,
+		environmentsJson: null,
+		tagsJson: null,
+		groupBy: null,
+		signalType: "uptime",
+		comparator: "gte",
+		threshold: 1,
+		thresholdUpper: null,
+		thresholdsJson: thresholds,
+		windowMinutes: 1,
+		evaluationIntervalMinutes: 1,
+		slowedIntervalMinutes: null,
+		slowedAt: null,
+		minimumSampleCount: 0,
+		consecutiveBreachesRequired: 1,
+		breachesOutOf: null,
+		consecutiveHealthyRequired: 1,
+		renotifyIntervalMinutes: 30,
+		apdexThresholdMs: null,
+		queryBuilderDraftJson: null,
+		rawQuerySql: null,
+		destinationIdsJson: [...monitor.destinationIds],
+		querySpecJson: null,
+		reducer: UPTIME_RULE_PLAN.reducer,
+		sampleCountStrategy: null,
+		noDataBehavior: UPTIME_RULE_PLAN.noDataBehavior,
+	} as const
+}
+
 export const isGroupedPlan = (plan: Schema.Schema.Type<typeof CompiledAlertQueryPlan>): boolean =>
 	plan.kind === "raw_sql" || planGroupingTokens(plan) != null
 
@@ -472,6 +541,8 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			sampleCountStrategy: null,
 			noDataBehavior,
 		})
+	} else if (rule.signalType === "uptime") {
+		return yield* Effect.fail(makeAlertValidationError(UPTIME_RULE_MANAGED_MESSAGE))
 	} else {
 		return yield* Effect.fail(makeAlertValidationError(`Unsupported signal type: ${rule.signalType}`))
 	}
@@ -505,6 +576,8 @@ const parseCompiledPlan = (
 			component: "compiled_plan",
 			cause,
 		})
+	// An uptime rule reads its monitor's state, not the warehouse: no query to decode.
+	if (row.signalType === "uptime") return Effect.succeed(UPTIME_RULE_PLAN)
 	if (row.signalType === "raw_query") {
 		if (row.rawQuerySql == null) {
 			return Effect.fail(invalid("Stored raw alert is missing its SQL query", "rawQuerySql is null"))
@@ -795,6 +868,9 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		request: AlertRuleUpsertRequest,
 		options?: { readonly forPreview?: boolean },
 	): Effect.fn.Return<NormalizedRule, AlertValidationError> {
+		if (request.signalType === "uptime") {
+			return yield* Effect.fail(invalidRuleError([UPTIME_RULE_MANAGED_MESSAGE]))
+		}
 		const name = request.name.trim()
 		// A builder query's draft carries its own scope and never reads the
 		// service fields, so keeping them would only fan out identical queries.

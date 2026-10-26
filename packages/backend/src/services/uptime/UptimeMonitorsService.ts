@@ -3,6 +3,9 @@ import { randomBytes, randomUUID } from "node:crypto"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
+	AlertDestinations,
+	AlertRuleClaims,
+	AlertRules,
 	UptimeMonitorStates,
 	UptimeMonitors,
 	type UptimeMonitorRow,
@@ -15,6 +18,8 @@ import {
 	UptimeMonitorValidationError,
 } from "@maple/domain/http"
 import {
+	AlertDestinationId,
+	AlertRuleId,
 	UptimeIntervalSeconds,
 	UptimeMonitorId,
 	UptimeMonitorKind,
@@ -27,6 +32,7 @@ import {
 	applyUptimeCheck,
 	effectiveAssertions,
 	firstFailedAssertion,
+	heartbeatDeadline,
 	uptimeHttpRequest,
 	UPTIME_REDACTED_HEADER_VALUE,
 	UptimeCheckDetail,
@@ -51,6 +57,8 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import { ensureWithinLimit, UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
+import { uptimeRuleFields } from "@maple/backend/services/alerts/AlertRuleModel"
+import { deleteRuleRows } from "@maple/backend/services/alerts/AlertRulesService"
 
 /** The state changed between a ping's read and its write; the ping is read and applied again. */
 class UptimeHeartbeatPingConflict extends Schema.TaggedError<UptimeHeartbeatPingConflict>()(
@@ -87,6 +95,10 @@ export interface UptimeMonitorRecord {
 	readonly failuresToDown: number
 	readonly serviceName: string | null
 	readonly enabled: boolean
+	/** Where a down monitor notifies: the destinations of its backing alert rule. */
+	readonly destinationIds: ReadonlyArray<AlertDestinationId>
+	/** The hidden `uptime` alert rule that turns a down state into an incident. */
+	readonly alertRuleId: AlertRuleId | null
 	/** Heartbeats only: the full ping URL (`<api>/hb/<token>`). */
 	readonly heartbeatUrl: string | null
 	readonly state: UptimeMonitorStateView
@@ -102,6 +114,7 @@ export interface CreateUptimeMonitorInput {
 	readonly failuresToDown?: number
 	readonly serviceName?: string | null
 	readonly enabled?: boolean
+	readonly destinationIds?: ReadonlyArray<AlertDestinationId>
 	readonly createdBy: UserId
 }
 
@@ -112,6 +125,9 @@ export interface UpdateUptimeMonitorInput {
 	readonly failuresToDown?: number
 	readonly serviceName?: string | null
 	readonly enabled?: boolean
+	readonly destinationIds?: ReadonlyArray<AlertDestinationId>
+	/** Recorded on the backing alert rule. */
+	readonly updatedBy: UserId
 }
 
 /** A probe target as the scraper needs it, before the route adds the org's ingest key. */
@@ -243,6 +259,15 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 			yield* validateHost(config.hostname)
 			break
 		case "heartbeat":
+			// The alert evaluator computes deadlines from this schedule, so it must have a next run.
+			if (
+				config.schedule._tag === "cron" &&
+				Option.isNone(heartbeatDeadline(config, yield* Clock.currentTimeMillis))
+			) {
+				return yield* invalid(
+					`'${config.schedule.expression}' in ${config.schedule.timezone} is not a valid cron schedule, or never runs`,
+				)
+			}
 			break
 	}
 	return config
@@ -307,12 +332,12 @@ type MonitorWithStateRow = Pick<
 	| "intervalSeconds"
 	| "failuresToDown"
 	| "serviceName"
+	| "alertRuleId"
 	| "heartbeatToken"
 	| "enabled"
 	| "createdAt"
 	| "updatedAt"
-> &
-	Pick<
+> & { readonly destinationIdsJson: ReadonlyArray<string> | null } & Pick<
 		UptimeMonitorStateRow,
 		| "status"
 		| "consecutiveFailures"
@@ -327,6 +352,7 @@ type MonitorWithStateRow = Pick<
 const selectMonitors = () =>
 	PG.from(UptimeMonitors, "m")
 		.innerJoin(UptimeMonitorStates, "s", (m, s) => m.id.eq(s.monitorId).and(m.orgId.eq(s.orgId)))
+		.leftJoin(AlertRules, "r", (m, r) => m.alertRuleId.eq(r.id).and(m.orgId.eq(r.orgId)))
 		.select(($) => ({
 			id: $.id,
 			orgId: $.orgId,
@@ -336,6 +362,8 @@ const selectMonitors = () =>
 			intervalSeconds: $.intervalSeconds,
 			failuresToDown: $.failuresToDown,
 			serviceName: $.serviceName,
+			alertRuleId: $.alertRuleId,
+			destinationIdsJson: $.r.destinationIdsJson,
 			heartbeatToken: $.heartbeatToken,
 			enabled: $.enabled,
 			createdAt: $.createdAt,
@@ -351,6 +379,7 @@ const selectMonitors = () =>
 		}))
 
 const decodeInterval = Schema.decodeUnknownEffect(UptimeIntervalSeconds)
+const decodeDestinationIds = Schema.decodeUnknownEffect(Schema.Array(AlertDestinationId))
 
 const UpdatedStateRow = Schema.Struct({ monitor_id: Schema.String })
 
@@ -465,15 +494,18 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			const apiBaseUrl = env.MAPLE_API_BASE_URL.replace(/\/+$/u, "")
 
 			const toRecord = (row: MonitorWithStateRow) =>
-				decodeInterval(row.intervalSeconds).pipe(
+				Effect.all({
+					intervalSeconds: decodeInterval(row.intervalSeconds),
+					destinationIds: decodeDestinationIds(row.destinationIdsJson ?? []),
+				}).pipe(
 					Effect.mapError(
 						(error) =>
 							new UptimeMonitorPersistenceError({
-								message: `Stored interval of uptime monitor ${row.id} is invalid`,
+								message: `Stored interval or destinations of uptime monitor ${row.id} are invalid`,
 								cause: error,
 							}),
 					),
-					Effect.map((intervalSeconds): UptimeMonitorRecord => ({
+					Effect.map(({ intervalSeconds, destinationIds }): UptimeMonitorRecord => ({
 						id: row.id,
 						orgId: row.orgId,
 						name: row.name,
@@ -483,6 +515,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						failuresToDown: row.failuresToDown,
 						serviceName: row.serviceName,
 						enabled: row.enabled,
+						destinationIds,
+						alertRuleId: row.alertRuleId,
 						heartbeatUrl:
 							row.heartbeatToken === null ? null : `${apiBaseUrl}/hb/${row.heartbeatToken}`,
 						state: {
@@ -536,6 +570,39 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			})
 
 			/**
+			 * Checks a backing-rule write; the caller holds the org lock (`lockOrgMonitors`), which
+			 * rule writes and destination deletes also take: its destinations exist, its name is free.
+			 */
+			const claimRuleWrite = Effect.fnUntraced(function* (
+				db: MapleDb,
+				orgId: OrgId,
+				ruleId: AlertRuleId,
+				rule: { readonly name: string; readonly destinationIds: ReadonlyArray<AlertDestinationId> },
+			) {
+				if (rule.destinationIds.length > 0) {
+					const found = yield* db.run(
+						PG.from(AlertDestinations)
+							.select("id")
+							.where(($) => [$.orgId.eq(orgId), $.id.in_(...rule.destinationIds)]),
+					)
+					const known = new Set(found.map((row) => row.id))
+					const missing = rule.destinationIds.find((id) => !known.has(id))
+					if (missing !== undefined) return yield* invalid(`Unknown alert destination ${missing}`)
+				}
+				const sameName = yield* db.run(
+					PG.from(AlertRules)
+						.select("id")
+						.where(($) => [$.orgId.eq(orgId), $.name.eq(rule.name), $.id.neq(ruleId)])
+						.limit(1),
+				)
+				if (sameName.length > 0) {
+					return yield* invalid(
+						`An alert rule or monitor named '${rule.name}' already exists; pick another name`,
+					)
+				}
+			})
+
+			/**
 			 * The per-org lock monitor creates (and alert rule writes) take inside their transaction,
 			 * so two concurrent creates cannot both pass a full plan.
 			 */
@@ -566,12 +633,29 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 
 				const now = yield* Clock.currentTimeMillis
 				const id = UptimeMonitorId.make(randomUUID())
+				const ruleId = AlertRuleId.make(randomUUID())
 				const enabled = input.enabled !== false
+				const serviceName = input.serviceName ?? null
+				const destinationIds = Arr.dedupe(input.destinationIds ?? [])
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							// One lock for the count and the rule checks: concurrent creates cannot both pass a full plan.
 							yield* lockOrgMonitors(db, orgId)
 							yield* ensureWithinLimit(limit, yield* countMonitors(db, orgId))
+							yield* claimRuleWrite(db, orgId, ruleId, { name, destinationIds })
+							yield* db.run(
+								PG.insertInto(AlertRules).values({
+									id: ruleId,
+									orgId,
+									...uptimeRuleFields({ name, serviceName, enabled, destinationIds }),
+									lastScheduledAt: null,
+									createdAt: now,
+									updatedAt: now,
+									createdBy: input.createdBy,
+									updatedBy: input.createdBy,
+								}),
+							)
 							yield* db.run(
 								PG.insertInto(UptimeMonitors).values({
 									id,
@@ -581,8 +665,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									configJson: config,
 									intervalSeconds: input.intervalSeconds ?? DEFAULT_INTERVAL_SECONDS,
 									failuresToDown,
-									serviceName: input.serviceName ?? null,
-									alertRuleId: null,
+									serviceName,
+									alertRuleId: ruleId,
 									heartbeatToken: config._tag === "heartbeat" ? newHeartbeatToken() : null,
 									enabled,
 									createdBy: input.createdBy,
@@ -645,10 +729,6 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					input.failuresToDown === undefined
 						? undefined
 						: yield* validateFailuresToDown(input.failuresToDown)
-				const enabledChange =
-					input.enabled !== undefined && input.enabled !== current.enabled
-						? Option.some(input.enabled)
-						: Option.none<boolean>()
 				const now = yield* Clock.currentTimeMillis
 				const settingsChanged =
 					config !== undefined ||
@@ -658,9 +738,79 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							// Lock, then re-read: the rule comes from a row no other write changes before
+							// commit, and a concurrent delete either finished first or waits for this one.
+							yield* lockOrgMonitors(db, orgId)
+							const lockedRows = yield* db.run(
+								selectMonitors()
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)])
+									.limit(1),
+							)
+							const lockedRow = lockedRows[0]
+							if (lockedRow === undefined) return yield* notFound(monitorId)
+							const locked = yield* toRecord(lockedRow)
+							const rule = {
+								name: name ?? locked.name,
+								serviceName:
+									input.serviceName === undefined ? locked.serviceName : input.serviceName,
+								enabled: input.enabled ?? locked.enabled,
+								destinationIds:
+									input.destinationIds === undefined
+										? locked.destinationIds
+										: Arr.dedupe(input.destinationIds),
+							}
+							// The backing rule is written only when it changes: alert_rules is Electric-synced.
+							const ruleChanged =
+								locked.alertRuleId === null ||
+								rule.name !== locked.name ||
+								rule.serviceName !== locked.serviceName ||
+								rule.enabled !== locked.enabled ||
+								rule.destinationIds.length !== locked.destinationIds.length ||
+								rule.destinationIds.some((id, index) => id !== locked.destinationIds[index])
+							const ruleId = locked.alertRuleId ?? AlertRuleId.make(randomUUID())
+							const enabledChange =
+								input.enabled !== undefined && input.enabled !== locked.enabled
+									? Option.some(input.enabled)
+									: Option.none<boolean>()
+							if (ruleChanged) {
+								yield* claimRuleWrite(db, orgId, ruleId, rule)
+								yield* locked.alertRuleId === null
+									? db.run(
+											PG.insertInto(AlertRules).values({
+												id: ruleId,
+												orgId,
+												...uptimeRuleFields(rule),
+												lastScheduledAt: null,
+												createdAt: now,
+												updatedAt: now,
+												createdBy: input.updatedBy,
+												updatedBy: input.updatedBy,
+											}),
+										)
+									: Effect.andThen(
+											// Ends a tick's claim on the old config, as a rule edit does.
+											db.run(
+												PG.deleteFrom(AlertRuleClaims).where(($) => [
+													$.ruleId.eq(ruleId),
+												]),
+											),
+											db.run(
+												PG.update(AlertRules)
+													.set({
+														...uptimeRuleFields(rule),
+														updatedAt: now,
+														updatedBy: input.updatedBy,
+													})
+													.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)]),
+											),
+										)
+							}
 							yield* db.run(
 								PG.update(UptimeMonitors)
 									.set({
+										...(locked.alertRuleId === null
+											? { alertRuleId: ruleId }
+											: undefined),
 										...(name === undefined ? undefined : { name }),
 										...(config === undefined ? undefined : { configJson: config }),
 										...(input.intervalSeconds === undefined
@@ -711,11 +861,21 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				monitorId: UptimeMonitorId,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.uptime.monitor_id": monitorId })
+				// The backing rule goes with the monitor, through the rule delete's own cascade.
 				const deleted = yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(UptimeMonitors)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)])
-							.returning("id"),
+					db.transaction(
+						Effect.gen(function* () {
+							// The lock update and rule writes take, so neither recreates a rule for a gone monitor.
+							yield* lockOrgMonitors(db, orgId)
+							const removed = yield* db.run(
+								PG.deleteFrom(UptimeMonitors)
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)])
+									.returning("id", "alertRuleId"),
+							)
+							const ruleId = removed[0]?.alertRuleId ?? null
+							if (ruleId !== null) yield* deleteRuleRows(db, orgId, ruleId)
+							return removed
+						}),
 					),
 				)
 				if (deleted.length === 0) return yield* notFound(monitorId)

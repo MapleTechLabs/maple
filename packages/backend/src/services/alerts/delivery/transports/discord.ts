@@ -1,5 +1,5 @@
 import { buildDiscordEmbeds, buildDiscordEmbedsFromTemplate } from "../../AlertDeliveryDispatch"
-import { formatEventTypeLabel } from "../../alert-formatting"
+import { formatAlertHeadline, formatEventTypeLabel } from "../../alert-formatting"
 import type { HttpTransport, RenderInput, SecretConfigOf } from "../Transport"
 
 type Config = SecretConfigOf<"discord">
@@ -24,7 +24,10 @@ export const discordTransport: HttpTransport<Config> = {
 			body: JSON.stringify({
 				username: "Maple Alerts",
 				content:
-					templated?.title ?? `**${context.ruleName}**: ${formatEventTypeLabel(context.eventType)}`,
+					templated?.title ??
+					(context.signalType === "uptime"
+						? `**${formatAlertHeadline(context)}**`
+						: `**${context.ruleName}**: ${formatEventTypeLabel(context.eventType)}`),
 				embeds,
 			}),
 		}

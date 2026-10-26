@@ -58,7 +58,13 @@ const statusLine = (incident: AlertIncidentDocument, now: number, timeZone: stri
 }
 
 /** `IncidentHeader`'s title side. */
-export const headerTitle = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, rule: AlertRuleDocument | null, now: number, timeZone: string) => {
+export const headerTitle = <M>(
+	h: HtmlBuilder<M>,
+	incident: AlertIncidentDocument,
+	rule: AlertRuleDocument | null,
+	now: number,
+	timeZone: string,
+) => {
 	const group = incidentGroup(incident)
 	const title = `${signalTitle(incident.signalType)} ${formatSignalValue(incident.signalType, incident.lastObservedValue)}${group != null ? ` on ${group}` : ""}`
 	const subline = [
@@ -88,7 +94,11 @@ const headerAction = (h: H, model: Model, investigation: V2Investigation | null)
 	investigation !== null
 		? linkButton(
 				h,
-				{ variant: "outline", size: "sm", href: hrefOf(AppRoute.Investigation({ id: String(investigation.id), search: {} })) },
+				{
+					variant: "outline",
+					size: "sm",
+					href: hrefOf(AppRoute.Investigation({ id: String(investigation.id), search: {} })),
+				},
 				[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
 			)
 		: button(
@@ -96,7 +106,10 @@ const headerAction = (h: H, model: Model, investigation: V2Investigation | null)
 				{
 					variant: "outline",
 					size: "sm",
-					isDisabled: model.isStartingInvestigation || AsyncData.isLoading(model.investigation.data) || AsyncData.isIdle(model.investigation.data),
+					isDisabled:
+						model.isStartingInvestigation ||
+						AsyncData.isLoading(model.investigation.data) ||
+						AsyncData.isIdle(model.investigation.data),
 					attributes: [h.OnClick(Message.ClickedInvestigate())],
 				},
 				[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
@@ -140,28 +153,37 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 								signalTitle(incident.signalType),
 								...(group != null ? [` · ${group}`] : []),
 							]),
-							rule === null
+							incident.signalType === "uptime"
 								? h.p(
 										[h.Class("text-muted-foreground text-sm")],
-										["The rule behind this incident was deleted, so its signal cannot be replayed."],
+										[
+											"This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
+										],
 									)
-								: ruleChart(h, {
-										chartId: inputs.chartId,
-										chart: inputs.chart,
-										toChartMessage: inputs.toChartMessage,
-										colors: inputs.colors,
-										timeZone: inputs.timeZone,
-										preview: inputs.preview,
-										incidents: [incident],
-										threshold: incident.threshold,
-										thresholdUpper: incident.thresholdUpper,
-										comparator: incident.comparator,
-										signalType: incident.signalType,
-										window: { min: inputs.range.start, max: inputs.range.end },
-										source: "preview",
-										isLoading: inputs.isPreviewLoading,
-										error: inputs.previewError,
-									}),
+								: rule === null
+									? h.p(
+											[h.Class("text-muted-foreground text-sm")],
+											[
+												"The rule behind this incident was deleted, so its signal cannot be replayed.",
+											],
+										)
+									: ruleChart(h, {
+											chartId: inputs.chartId,
+											chart: inputs.chart,
+											toChartMessage: inputs.toChartMessage,
+											colors: inputs.colors,
+											timeZone: inputs.timeZone,
+											preview: inputs.preview,
+											incidents: [incident],
+											threshold: incident.threshold,
+											thresholdUpper: incident.thresholdUpper,
+											comparator: incident.comparator,
+											signalType: incident.signalType,
+											window: { min: inputs.range.start, max: inputs.range.end },
+											source: "preview",
+											isLoading: inputs.isPreviewLoading,
+											error: inputs.previewError,
+										}),
 						],
 					),
 					incidentTimeline(h, {
@@ -209,10 +231,12 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 			incident,
 			deliveries,
 			investigation,
-			renotifyIntervalMinutes: rule != null && rule.destinationIds.length > 0 ? rule.renotifyIntervalMinutes : null,
+			renotifyIntervalMinutes:
+				rule != null && rule.destinationIds.length > 0 ? rule.renotifyIntervalMinutes : null,
 			destinationTypeLabel: (type) => providerOf(type).label,
 		}),
-		isEntriesLoading: AsyncData.isLoading(model.deliveries.data) || AsyncData.isIdle(model.deliveries.data),
+		isEntriesLoading:
+			AsyncData.isLoading(model.deliveries.data) || AsyncData.isIdle(model.deliveries.data),
 		isEntriesFailed: AsyncData.isFailure(model.deliveries.data),
 		chartId: "alert-incident-chart",
 		chart: model.chart,
@@ -235,7 +259,9 @@ const loading = (h: H): Html =>
 
 const notFound = (h: H, model: Model): Html => {
 	const ruleId =
-		model.search.alert === undefined ? undefined : decodeAlertContextFromSearchParam(model.search.alert)?.ruleId
+		model.search.alert === undefined
+			? undefined
+			: decodeAlertContextFromSearchParam(model.search.alert)?.ruleId
 	return dashboardPage(h, {}, [
 		resourceNotFound(h, {
 			title: "Incident not found",
@@ -258,7 +284,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					titleContent: headerTitle(h, view.incident, view.rule, now, timeZone),
-					actions: headerAction(h, model, AsyncData.getOrElse(model.investigation.data, () => null)),
+					actions: headerAction(
+						h,
+						model,
+						AsyncData.getOrElse(model.investigation.data, () => null),
+					),
 				},
 				[body(h, model, view, timeZone, now)],
 			)

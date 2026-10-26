@@ -6937,7 +6937,8 @@
           "apdex",
           "throughput",
           "builder_query",
-          "raw_query"
+          "raw_query",
+          "uptime"
         ],
         "examples": [
           "error_rate"

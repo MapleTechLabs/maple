@@ -30,6 +30,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -161,6 +162,7 @@ const makeHarness = (
 				alertDestinationsLive,
 				alertReadModelsLive,
 				alertRulesLive,
+				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 			),
 		),
 	)
@@ -891,7 +893,8 @@ describe("v2 alerts over HTTP", () => {
 				name: "Heavy raw preview",
 				severity: "warning",
 				signal_type: "raw_query",
-				raw_query_sql: "SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				raw_query_sql:
+					"SELECT count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
 				comparator: "gt",
 				threshold: 10,
 				window_minutes: 5,

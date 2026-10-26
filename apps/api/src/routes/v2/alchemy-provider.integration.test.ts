@@ -43,6 +43,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -172,6 +173,7 @@ const makeHarness = () => {
 				alertDestinationsLive,
 				alertReadModelsLive,
 				alertRulesLive,
+				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 			),
 		),
 	)

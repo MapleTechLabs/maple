@@ -3,16 +3,23 @@ import { ConfigProvider, Effect, Exit, Layer, Option, Ref, Result, Schema } from
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { BillingCustomer, OrgId, UserId } from "@maple/domain/http"
-import { UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
+import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
 import { UPTIME_USER_AGENT, UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import {
 	UptimeMonitorAllowance,
 	uptimeMonitorLimit,
 	type UptimeMonitorAllowanceApi,
 } from "./UptimeMonitorAllowance"
+import { UptimeAlertSource } from "./UptimeAlertSource"
 import { UptimeMonitorsService } from "./UptimeMonitorsService"
 
 const trackedDbs: TestDb[] = []
@@ -166,11 +173,15 @@ describe("UptimeMonitorsService", () => {
 				["API health"],
 			)
 
-			const renamed = yield* service.update(ORG, created.id, { name: "API", failuresToDown: 3 })
+			const renamed = yield* service.update(ORG, created.id, {
+				name: "API",
+				failuresToDown: 3,
+				updatedBy: USER,
+			})
 			assert.strictEqual(renamed.name, "API")
 			assert.strictEqual(renamed.failuresToDown, 3)
 
-			const paused = yield* service.update(ORG, created.id, { enabled: false })
+			const paused = yield* service.update(ORG, created.id, { enabled: false, updatedBy: USER })
 			assert.isFalse(paused.enabled)
 			assert.strictEqual(paused.state.status, "paused")
 			// The scraper stops probing a paused monitor; other orgs' monitors are unaffected.
@@ -180,7 +191,7 @@ describe("UptimeMonitorsService", () => {
 				[other.id],
 			)
 
-			const resumed = yield* service.update(ORG, created.id, { enabled: true })
+			const resumed = yield* service.update(ORG, created.id, { enabled: true, updatedBy: USER })
 			assert.strictEqual(resumed.state.status, "pending")
 
 			assert.strictEqual(yield* service.delete(ORG, created.id), created.id)
@@ -334,7 +345,7 @@ describe("UptimeMonitorsService", () => {
 			assert.strictEqual(replayed.state.recent.length, 2)
 
 			// A paused monitor ignores results that were in flight when it was paused.
-			yield* service.update(ORG, second.id, { enabled: false })
+			yield* service.update(ORG, second.id, { enabled: false, updatedBy: USER })
 			assert.strictEqual(yield* service.recordChecks([report(second.id, 5_000, false)]), 0)
 			assert.strictEqual((yield* service.get(ORG, second.id)).state.status, "paused")
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -441,6 +452,122 @@ describe("UptimeMonitorsService", () => {
 		})
 	})
 
+	it.effect(
+		"an overdue heartbeat reports a failure ping that lands between the tick's read and write",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const racing = yield* racingDatabase(testDb)
+				const program = Effect.gen(function* () {
+					const service = yield* UptimeMonitorsService
+					const alerts = yield* UptimeAlertSource
+					const monitor = yield* service.create(ORG, {
+						name: "nightly backup",
+						kind: "heartbeat",
+						config: heartbeatConfig,
+						createdBy: USER,
+					})
+					const url = monitor.heartbeatUrl ?? ""
+					const token = url.slice(url.lastIndexOf("/") + 1)
+					yield* service.recordPing(token, true)
+					const ruleId = monitor.alertRuleId
+					if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
+					// The job reports a failure between the tick's read (call 1) and its fenced write (call 2).
+					yield* racing.arm(
+						2,
+						TestClock.adjust("1 second").pipe(
+							Effect.andThen(service.recordPing(token, false)),
+							Effect.orDie,
+						),
+					)
+					const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
+					assert.deepStrictEqual(
+						Option.map(observed, (value) => [value.down, value.detail]),
+						Option.some([true, "The job reported a failure"]),
+					)
+				})
+				yield* program.pipe(
+					Effect.provide(
+						Layer.merge(
+							makeLayer(testDb, { database: racing.layer }),
+							UptimeAlertSource.layer.pipe(Layer.provide(racing.layer)),
+						),
+					),
+				)
+			})
+		},
+	)
+
+	it.effect("an overdue heartbeat stays up when a ping lands between the tick's read and write", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			// Counts down per `Database.execute`; the call that sees 1 records a ping first.
+			const countdown = yield* Ref.make(0)
+			const target = yield* Ref.make("")
+			const database = Layer.effect(
+				Database,
+				Effect.gen(function* () {
+					const inner = yield* Database
+					return {
+						execute: (fn) =>
+							Ref.modify(countdown, (n) => [n, n > 0 ? n - 1 : n] as const).pipe(
+								Effect.flatMap((n) =>
+									n === 1
+										? Ref.get(target).pipe(
+												Effect.flatMap((id) =>
+													Effect.promise(() =>
+														executeSql(
+															testDb,
+															`UPDATE uptime_monitor_states SET status = 'up',
+																last_ping_at = '1970-01-01T00:16:00.000Z',
+																updated_at = '1970-01-01T00:16:00.000Z'
+															WHERE monitor_id = $1`,
+															[id],
+														),
+													),
+												),
+											)
+										: Effect.void,
+								),
+								Effect.andThen(inner.execute(fn)),
+							),
+					}
+				}),
+			).pipe(Layer.provide(testDb.layer))
+
+			const program = Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const alerts = yield* UptimeAlertSource
+				const monitor = yield* service.create(ORG, {
+					name: "nightly backup",
+					kind: "heartbeat",
+					config: heartbeatConfig,
+					createdBy: USER,
+				})
+				const url = monitor.heartbeatUrl ?? ""
+				yield* service.recordPing(url.slice(url.lastIndexOf("/") + 1), true)
+				yield* Ref.set(target, monitor.id)
+				// Pinged at 0 every 300 s with 60 s grace: overdue at 1000 s. The read runs at 2, the write at 1.
+				yield* Ref.set(countdown, 2)
+				const ruleId = monitor.alertRuleId
+				if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
+				const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
+				assert.isTrue(Option.isSome(observed) && !observed.value.down)
+				const after = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(after.state.status, "up")
+				assert.strictEqual(after.state.lastPingAt, 960_000)
+			})
+			yield* program.pipe(
+				Effect.provide(
+					Layer.merge(
+						makeLayer(testDb, { database }),
+						UptimeAlertSource.layer.pipe(Layer.provide(database)),
+					),
+				),
+			)
+		})
+	})
+
 	it.effect("applies both of two pings that race, and none to a monitor paused mid-ping", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -466,7 +593,9 @@ describe("UptimeMonitorsService", () => {
 				// A pause between the read and the write: the ping is not applied.
 				yield* racing.arm(
 					2,
-					Effect.asVoid(Effect.orDie(service.update(ORG, monitor.id, { enabled: false }))),
+					Effect.asVoid(
+						Effect.orDie(service.update(ORG, monitor.id, { enabled: false, updatedBy: USER })),
+					),
 				)
 				const refused = yield* Effect.flip(service.recordPing(token, false))
 				assert.strictEqual(refused._tag, "@maple/backend/uptime/HeartbeatNotFound")
@@ -489,7 +618,9 @@ describe("UptimeMonitorsService", () => {
 				yield* racing.arm(
 					2,
 					TestClock.adjust("5 seconds").pipe(
-						Effect.andThen(service.update(ORG, monitor.id, { failuresToDown: 1 })),
+						Effect.andThen(
+							service.update(ORG, monitor.id, { failuresToDown: 1, updatedBy: USER }),
+						),
 						Effect.orDie,
 						Effect.asVoid,
 					),
@@ -519,6 +650,7 @@ describe("UptimeMonitorsService", () => {
 			const redacted = { Authorization: "[redacted]" }
 			const moved = yield* Effect.flip(
 				service.update(ORG, monitor.id, {
+					updatedBy: USER,
 					config: httpConfig("https://elsewhere.example.net/health", { headers: redacted }),
 				}),
 			)
@@ -527,12 +659,14 @@ describe("UptimeMonitorsService", () => {
 
 			// Same origin keeps the stored value; a new origin with fresh values is fine.
 			const samePath = yield* service.update(ORG, monitor.id, {
+				updatedBy: USER,
 				config: httpConfig("https://status.example.com/v2/health", { headers: redacted }),
 			})
 			assert.deepStrictEqual(samePath.config._tag === "http" ? samePath.config.headers : null, {
 				Authorization: "Bearer secret",
 			})
 			const reentered = yield* service.update(ORG, monitor.id, {
+				updatedBy: USER,
 				config: httpConfig("https://elsewhere.example.net/health", {
 					headers: { Authorization: "Bearer other" },
 				}),
@@ -576,7 +710,7 @@ describe("UptimeMonitorsService", () => {
 			const unknown = yield* Effect.flip(service.recordPing("not-a-real-token-000000", true))
 			assert.strictEqual(unknown._tag, "@maple/backend/uptime/HeartbeatNotFound")
 
-			yield* service.update(ORG, monitor.id, { enabled: false })
+			yield* service.update(ORG, monitor.id, { enabled: false, updatedBy: USER })
 			const paused = yield* Effect.flip(service.recordPing(token, true))
 			assert.strictEqual(paused._tag, "@maple/backend/uptime/HeartbeatNotFound")
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -600,6 +734,15 @@ describe("UptimeMonitorsService", () => {
 					const refused = yield* Effect.flip(createHttp("two"))
 					assert.strictEqual(refused._tag, "@maple/http/errors/UptimeMonitorLimitReachedError")
 					assert.strictEqual((yield* service.list(ORG)).length, 1)
+					// The refused create rolled back its backing rule with it.
+					const rules = yield* Effect.promise(() =>
+						queryFirstRow<{ readonly n: number }>(
+							testDb,
+							"SELECT count(*)::int AS n FROM alert_rules WHERE org_id = $1",
+							[ORG],
+						),
+					)
+					assert.strictEqual(rules?.n, 1)
 					yield* service.delete(ORG, created.id)
 				})
 				yield* program.pipe(
@@ -706,5 +849,163 @@ describe("uptimeMonitorLimit", () => {
 			uptimeMonitorLimit(customer({ uptime_monitors: { granted: 10, overageAllowed: true } })),
 			Option.none(),
 		)
+	})
+})
+
+interface BackingRuleRow {
+	readonly name: string
+	readonly signal_type: string
+	readonly enabled: boolean
+	readonly severity: string
+	readonly comparator: string
+	readonly threshold: number
+	readonly consecutive_breaches_required: number
+	readonly consecutive_healthy_required: number
+	readonly destination_ids_json: ReadonlyArray<string>
+	readonly service_names_json: ReadonlyArray<string> | null
+}
+
+const backingRule = (testDb: TestDb, ruleId: string | null) =>
+	Effect.promise(() =>
+		queryFirstRow<BackingRuleRow>(
+			testDb,
+			`select name, signal_type, enabled, severity, comparator, threshold,
+				consecutive_breaches_required, consecutive_healthy_required,
+				destination_ids_json, service_names_json
+			from alert_rules where id = $1`,
+			[ruleId],
+		),
+	)
+
+const seedDestination = (testDb: TestDb, id: string, orgId: OrgId = ORG) =>
+	Effect.promise(() =>
+		executeSql(
+			testDb,
+			`insert into alert_destinations (id, org_id, name, type, config_json, secret_ciphertext,
+				secret_iv, secret_tag, created_at, updated_at, created_by, updated_by)
+			values ($1, $2, $1, 'webhook', '{}'::jsonb, 'c', 'i', 't', now(), now(), 'u', 'u')`,
+			[id, orgId],
+		),
+	)
+
+const DEST_A = AlertDestinationId.make("00000000-0000-4000-8000-00000000000a")
+const DEST_B = AlertDestinationId.make("00000000-0000-4000-8000-00000000000b")
+
+describe("UptimeMonitorsService backing alert rule", () => {
+	it.effect(
+		"creates the rule with the monitor and keeps it in step through update, pause and delete",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				yield* seedDestination(testDb, DEST_A)
+				yield* seedDestination(testDb, DEST_B)
+				const created = yield* service.create(ORG, {
+					name: "Checkout health",
+					kind: "http",
+					config: httpConfig(),
+					serviceName: "checkout-api",
+					destinationIds: [DEST_A],
+					createdBy: USER,
+				})
+				assert.deepStrictEqual(created.destinationIds, [DEST_A])
+				assert.deepStrictEqual(yield* backingRule(testDb, created.alertRuleId), {
+					name: "Checkout health",
+					signal_type: "uptime",
+					enabled: true,
+					severity: "critical",
+					comparator: "gte",
+					threshold: 1,
+					consecutive_breaches_required: 1,
+					consecutive_healthy_required: 1,
+					destination_ids_json: [DEST_A],
+					service_names_json: ["checkout-api"],
+				})
+
+				const updated = yield* service.update(ORG, created.id, {
+					name: "Checkout",
+					serviceName: "payments",
+					destinationIds: [DEST_B, DEST_A],
+					updatedBy: USER,
+				})
+				assert.deepStrictEqual(updated.destinationIds, [DEST_B, DEST_A])
+				const afterUpdate = yield* backingRule(testDb, created.alertRuleId)
+				assert.strictEqual(afterUpdate?.name, "Checkout")
+				assert.deepStrictEqual(afterUpdate?.service_names_json, ["payments"])
+				assert.deepStrictEqual(afterUpdate?.destination_ids_json, [DEST_B, DEST_A])
+
+				yield* service.update(ORG, created.id, { enabled: false, updatedBy: USER })
+				assert.isFalse((yield* backingRule(testDb, created.alertRuleId))?.enabled)
+				yield* service.update(ORG, created.id, { enabled: true, updatedBy: USER })
+				assert.isTrue((yield* backingRule(testDb, created.alertRuleId))?.enabled)
+
+				yield* service.delete(ORG, created.id)
+				assert.isUndefined(yield* backingRule(testDb, created.alertRuleId))
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
+	it.effect("refuses another org's destination and a name another rule already has", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			yield* seedDestination(testDb, DEST_A, OTHER_ORG)
+			const foreign = yield* Effect.flip(
+				service.create(ORG, {
+					name: "API",
+					kind: "http",
+					config: httpConfig(),
+					destinationIds: [DEST_A],
+					createdBy: USER,
+				}),
+			)
+			assert.strictEqual(foreign._tag, "@maple/http/errors/UptimeMonitorValidationError")
+			assert.lengthOf(yield* service.list(ORG), 0)
+
+			yield* createHttp("API")
+			const duplicate = yield* Effect.flip(createHttp("API"))
+			assert.strictEqual(duplicate._tag, "@maple/http/errors/UptimeMonitorValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("refuses a heartbeat cron schedule that does not parse", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const error = yield* Effect.flip(
+				service.create(ORG, {
+					name: "Nightly",
+					kind: "heartbeat",
+					config: {
+						_tag: "heartbeat",
+						schedule: { _tag: "cron", expression: "0 9 * * *", timezone: "Mars/Olympus" },
+						graceSeconds: 0,
+					},
+					createdBy: USER,
+				}),
+			)
+			assert.strictEqual(error._tag, "@maple/http/errors/UptimeMonitorValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("refuses a heartbeat cron schedule that never runs", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const error = yield* Effect.flip(
+				service.create(ORG, {
+					name: "Leap day",
+					kind: "heartbeat",
+					config: {
+						_tag: "heartbeat",
+						schedule: { _tag: "cron", expression: "0 0 30 2 *", timezone: "UTC" },
+						graceSeconds: 0,
+					},
+					createdBy: USER,
+				}),
+			)
+			assert.strictEqual(error._tag, "@maple/http/errors/UptimeMonitorValidationError")
+			assert.include(error.message, "never runs")
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

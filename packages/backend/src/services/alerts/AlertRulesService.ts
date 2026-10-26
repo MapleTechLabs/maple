@@ -27,6 +27,7 @@ import {
 	AlertRuleStates,
 } from "@maple/db/tables"
 import { Array as Arr, Context, Effect, HashSet, Layer, Option, Schema } from "effect"
+import type { MapleDb } from "@maple/db/client"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
@@ -38,6 +39,7 @@ import {
 	rowToRuleDocument,
 	selectStoredAlertRules,
 	storedRuleCondition,
+	UPTIME_RULE_MANAGED_MESSAGE,
 	type RuleEvaluationState,
 } from "./AlertRuleModel"
 import { tierConditionChanged } from "./alert-thresholds"
@@ -73,6 +75,25 @@ export interface AlertRulesServiceApi {
 		AlertForbiddenError | AlertPersistenceError | AlertRuleNotFoundError
 	>
 }
+
+/**
+ * Deletes a rule with its deliveries, incidents, states and claim. Run it inside a
+ * transaction; the uptime monitor delete reuses it for the monitor's backing rule.
+ */
+export const deleteRuleRows = (db: MapleDb, orgId: OrgId, ruleId: AlertRuleId) =>
+	Effect.gen(function* () {
+		yield* db.run(
+			PG.deleteFrom(AlertDeliveryEvents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
+		)
+		yield* db.run(PG.deleteFrom(AlertIncidents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
+		yield* db.run(PG.deleteFrom(AlertRuleStates).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
+		yield* db.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(ruleId)]))
+		return yield* db.run(
+			PG.deleteFrom(AlertRules)
+				.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
+				.returning(() => ({ txid: currentTxid })),
+		)
+	})
 
 export const makeAlertRulePersistence = (options: {
 	readonly database: DatabaseApi
@@ -226,7 +247,12 @@ export const makeAlertRulePersistence = (options: {
 						const activeRows = yield* db.run(
 							PG.from(AlertRules)
 								.select("id")
-								.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
+								// Monitors' backing rules are capped by the monitor allowance instead.
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.enabled.eq(true),
+									$.signalType.neq("uptime"),
+								]),
 						)
 						const alreadyActive =
 							existingId != null && activeRows.some((row) => row.id === existingId)
@@ -335,8 +361,9 @@ export const makeAlertRulePersistence = (options: {
 	const listRules = Effect.fn("AlertRulesService.listRules")(function* (orgId: OrgId) {
 		const rows = yield* dbExecute((db) =>
 			db.run(
+				// Monitors' backing rules are managed through the monitor, so the rule list hides them.
 				selectStoredAlertRules()
-					.where(($) => [$.orgId.eq(orgId)])
+					.where(($) => [$.orgId.eq(orgId), $.signalType.neq("uptime")])
 					.orderBy(["createdAt", "desc"], ["id", "desc"]),
 			),
 		)
@@ -385,31 +412,14 @@ export const makeAlertRulePersistence = (options: {
 		ruleId: AlertRuleDocument["id"],
 	) {
 		yield* requireAdmin(roles)
-		yield* requireRuleRow(orgId, ruleId)
-		const deleted = yield* dbExecute((db) =>
-			db.transaction(
-				Effect.gen(function* () {
-					yield* db.run(
-						PG.deleteFrom(AlertDeliveryEvents).where(($) => [
-							$.orgId.eq(orgId),
-							$.ruleId.eq(ruleId),
-						]),
-					)
-					yield* db.run(
-						PG.deleteFrom(AlertIncidents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
-					)
-					yield* db.run(
-						PG.deleteFrom(AlertRuleStates).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
-					)
-					yield* db.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(ruleId)]))
-					return yield* db.run(
-						PG.deleteFrom(AlertRules)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
-							.returning(() => ({ txid: currentTxid })),
-					)
-				}),
-			),
-		)
+		const row = yield* requireRuleRow(orgId, ruleId)
+		// Hidden from the generic rule APIs: a monitor's rule is deleted with its monitor.
+		if (row.signalType === "uptime") {
+			return yield* Effect.fail(
+				new AlertRuleNotFoundError({ message: UPTIME_RULE_MANAGED_MESSAGE, ruleId }),
+			)
+		}
+		const deleted = yield* dbExecute((db) => db.transaction(deleteRuleRows(db, orgId, ruleId)))
 		const txid = readTxid(deleted)
 		return new AlertRuleDeleteResponse({
 			id: ruleId,

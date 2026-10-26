@@ -4,7 +4,7 @@ import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import {
 	displayGroupKey,
 	eventTypeEmoji,
-	formatEventTypeLabel,
+	formatAlertHeadline,
 	formatSeverityLabel,
 	severityEmoji,
 	alertAccentColor,
@@ -62,7 +62,7 @@ export const buildChatAlertBlocks = (input: RenderInput<Config>): ReadonlyArray<
 	return [
 		{
 			...card,
-			title: `${eventTypeEmoji(context.eventType)} ${context.ruleName} — ${formatEventTypeLabel(context.eventType)}`,
+			title: `${eventTypeEmoji(context.eventType)} ${formatAlertHeadline(context)}`,
 			summary: buildSummaryLine(context, (value) => `**${value}**`),
 			fields: [
 				{

@@ -203,4 +203,19 @@ describe("deriveOverview", () => {
 		})
 		expect(overview.timelineRange).toEqual({ min: NOW - DAY_MS, max: NOW })
 	})
+
+	it("hides uptime monitors' backing rules but keeps their incidents in the inbox", () => {
+		const overview = deriveOverview({
+			rules: [
+				makeRule({ id: RULE_A }),
+				makeRule({ id: RULE_B, signalType: "uptime", name: "API health" }),
+			],
+			incidents: [makeIncident({ ruleId: RULE_B, ruleName: "API health", signalType: "uptime" })],
+			states: [],
+			deliveryEvents: [],
+			now: NOW,
+		})
+		expect(overview.rules.map((rule) => rule.id)).toEqual([RULE_A])
+		expect(overview.openIncidents.map((incident) => incident.ruleName)).toEqual(["API health"])
+	})
 })
