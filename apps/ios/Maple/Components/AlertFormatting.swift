@@ -44,6 +44,8 @@ struct SignalDisplay: Codable {
 		case .throughput: self.init(label: "Throughput", unit: .perMinute)
 		case .builderQuery: self.init(label: "Query", unit: .plain)
 		case .rawQuery: self.init(label: "Raw query", unit: .plain)
+		// A monitor's hidden rule: down is 1, up is 0, so the value reads as a plain number.
+		case .uptime: self.init(label: "Uptime check", unit: .plain)
 		}
 	}
 
