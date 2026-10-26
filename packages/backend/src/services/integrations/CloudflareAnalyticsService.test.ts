@@ -316,11 +316,19 @@ const mockCloudflareFetch =
 					options.hyperdriveStatus,
 				)
 			}
+			const page = Number(new URL(url).searchParams.get("page") ?? "1")
+			const configs = page === 1 ? (options.hyperdriveConfigs ?? []) : []
 			return jsonResponse({
 				success: true,
 				errors: [],
 				messages: [],
-				result: options.hyperdriveConfigs ?? [],
+				result: configs,
+				result_info: {
+					count: configs.length,
+					page,
+					per_page: 50,
+					total_count: options.hyperdriveConfigs?.length ?? 0,
+				},
 			})
 		}
 		if (url.includes("/workers/scripts")) {

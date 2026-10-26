@@ -1,4 +1,3 @@
-import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -27,14 +26,20 @@ const toolbarSearch = (h: H, model: Model): Html =>
 		onClear: Message.ChangedSearchInput({ value: "" }),
 	})
 
-/** `ToolbarStat`. */
-const stat = (h: H, value: number, label: string): Html =>
+/** `ToolbarStat`: "6 of 1,666" when the total is known and larger, else "6 shown". */
+const stat = (h: H, value: number, total: number | undefined): Html =>
 	h.span(
 		[h.Class("flex items-center gap-1.5 whitespace-nowrap text-sm")],
-		[
-			h.span([h.Class("font-medium tabular-nums")], [formatNumber(value)]),
-			h.span([h.Class("text-muted-foreground")], [label]),
-		],
+		total !== undefined && total > value
+			? [
+					h.span([h.Class("font-medium tabular-nums")], [value.toLocaleString()]),
+					h.span([h.Class("text-muted-foreground")], ["of"]),
+					h.span([h.Class("tabular-nums text-muted-foreground")], [total.toLocaleString()]),
+				]
+			: [
+					h.span([h.Class("font-medium tabular-nums")], [value.toLocaleString()]),
+					h.span([h.Class("text-muted-foreground")], ["shown"]),
+				],
 	)
 
 const tooltipTrigger = <M>(h: HtmlBuilder<M>, id: string) => [
@@ -46,7 +51,7 @@ const tooltipTrigger = <M>(h: HtmlBuilder<M>, id: string) => [
 export const toolbar = (
 	h: H,
 	model: Model,
-	options: Readonly<{ sessionCount: number | undefined; isWaiting: boolean }>,
+	options: Readonly<{ sessionCount: number | undefined; totalCount?: number; isWaiting: boolean }>,
 ): Html =>
 	h.div(
 		[h.Class("flex flex-wrap items-center justify-between gap-3")],
@@ -66,7 +71,7 @@ export const toolbar = (
 										h.Class("hidden sm:block"),
 										...tooltipTrigger(h, "agent-sessions-count"),
 									],
-									[stat(h, options.sessionCount, "sessions")],
+									[stat(h, options.sessionCount, options.totalCount)],
 								),
 							]),
 					h.label(

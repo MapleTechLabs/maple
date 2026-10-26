@@ -61,8 +61,9 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
+/** No `?item=` opens the dialog, so the bare gallery still shows an overlay; an unknown one opens none. */
 export const decodeItem = (raw: string | null): Option.Option<OverlayItem> =>
-	Schema.decodeUnknownOption(OverlayItem)(raw)
+	raw === null ? Option.some("dialog") : Schema.decodeUnknownOption(OverlayItem)(raw)
 
 /** The `toast-<type>` items' toast type. */
 export const toastTypeOf = (item: OverlayItem): Option.Option<Toast.ToastType> =>

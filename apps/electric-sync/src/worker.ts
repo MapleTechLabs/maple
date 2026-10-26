@@ -19,7 +19,7 @@ import {
 	selfObservabilityEnv,
 } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer, Scope } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { ELECTRIC_SYNC_CORS_OPTIONS } from "./routes/cors"

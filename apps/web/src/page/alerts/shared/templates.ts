@@ -37,7 +37,7 @@ export const ALERT_TEMPLATES: ReadonlyArray<AlertTemplate> = [
 		title: "Slow P95 latency",
 		description: "Page on tail-latency regressions for root spans.",
 		summary: "P95 > 1000ms / 5min",
-		icon: "ChartLineIcon",
+		icon: "ClockIcon",
 		apply: (base) => ({
 			...base,
 			name: base.name || "Slow P95 latency",
@@ -52,7 +52,7 @@ export const ALERT_TEMPLATES: ReadonlyArray<AlertTemplate> = [
 		title: "Slow P99 latency",
 		description: "Bound the very worst request you'll tolerate.",
 		summary: "P99 > 2000ms / 5min",
-		icon: "ChartLineIcon",
+		icon: "StopwatchIcon",
 		apply: (base) => ({
 			...base,
 			name: base.name || "Slow P99 latency",
@@ -65,8 +65,8 @@ export const ALERT_TEMPLATES: ReadonlyArray<AlertTemplate> = [
 	{
 		id: "low_apdex",
 		title: "Low Apdex score",
-		description: "User-satisfaction drop measured against a target.",
-		summary: "Apdex < 0.8 / 5min (target 500ms)",
+		description: "User-satisfaction drop against a 500ms response target.",
+		summary: "Apdex < 0.8 / 5min",
 		icon: "CirclePercentageIcon",
 		apply: (base) => ({
 			...base,

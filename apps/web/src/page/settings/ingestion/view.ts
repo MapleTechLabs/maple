@@ -11,7 +11,7 @@ import { confirmDialog } from "../../../ui/confirm-dialog"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
-import { settingsSection, settingsSections } from "../kit/section"
+import { INLINE_LINK_CLASS, settingsSection, settingsSections } from "../kit/section"
 import * as MappingDialogView from "./mapping-dialog-view"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -38,7 +38,19 @@ const connectionOf = (model: Model) => {
 	}
 }
 
+/** The status read failed with nothing shown yet: no claim either way about telemetry. */
+const unknownStatusBanner = (h: H): Html =>
+	panel(h, { className: "flex-row items-center gap-3 px-4 py-2.5" }, [
+		statusDot(h, { tone: "neutral", size: "lg" }),
+		h.span([h.Class("text-sm font-medium whitespace-nowrap")], ["Status unknown"]),
+		h.span(
+			[h.Class("truncate font-prose text-xs text-muted-foreground")],
+			["Couldn't check for incoming telemetry."],
+		),
+	])
+
 const statusBanner = (h: H, model: Model): Html => {
+	if (AsyncData.isFailure(model.overview)) return unknownStatusBanner(h)
 	const connection = connectionOf(model)
 	const spansPerMinute = Math.round(connection.spansPerMinute)
 	return panel(h, { className: "flex-row items-center gap-3 px-4 py-2.5" }, [
@@ -101,10 +113,10 @@ const endpointAndKeysSection = (h: H, model: Model): Html =>
 					h.Target("_blank"),
 					h.Rel("noopener noreferrer"),
 					h.Class(
-						"text-muted-foreground hover:text-foreground font-mono text-2xs whitespace-nowrap transition-colors",
+						cn("inline-flex items-center gap-1 text-xs whitespace-nowrap", INLINE_LINK_CLASS),
 					),
 				],
-				["Docs ↗"],
+				["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],
 			),
 		},
 		[
@@ -135,7 +147,7 @@ const manageSourcesRow = (h: H): Html =>
 		[h.Class("text-muted-foreground flex items-center gap-2 px-4 py-2.5 text-xs")],
 		[
 			icon(h, "ConnectionIcon", { size: 12, className: "shrink-0" }),
-			h.span([h.Class("grow")], ["Give each sender its own token, rules and pause switch."]),
+			h.span([h.Class("grow font-prose")], ["Give each sender its own token, rules and pause switch."]),
 			h.a(
 				[
 					h.Href("/sources"),

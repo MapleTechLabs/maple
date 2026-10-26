@@ -98,11 +98,11 @@ export const serviceMapLegend = <M>(
 		],
 		[
 			h.span([h.Class("font-medium max-sm:hidden")], ["Drag nodes to arrange"]),
-			h.span([h.Class("text-foreground/30 max-sm:hidden")], ["|"]),
+			h.span([h.Class("text-foreground/30 max-sm:hidden")], ["·"]),
 			h.span([h.Class("font-medium max-sm:hidden")], ["Scroll to zoom"]),
 			...(colorMode === "service" && services.length > 0
 				? [
-						h.span([h.Class("text-foreground/30 max-sm:hidden")], ["|"]),
+						h.span([h.Class("text-foreground/30 max-sm:hidden")], ["·"]),
 						...services
 							.slice(0, 3)
 							.map((service) => swatch(h, serviceSwatchColor(service), service)),
@@ -111,7 +111,7 @@ export const serviceMapLegend = <M>(
 				: []),
 			...(colorMode === "platform"
 				? [
-						h.span([h.Class("text-foreground/30")], ["|"]),
+						h.span([h.Class("text-foreground/30")], ["·"]),
 						...LEGEND_PLATFORMS.map(([platform, label]) =>
 							swatch(h, getPlatformColor(platform === "unknown" ? undefined : platform), label),
 						),

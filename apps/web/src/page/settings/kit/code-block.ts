@@ -41,10 +41,18 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 				],
 			),
 			h.div(
-				[h.Class(cn("overflow-x-auto bg-background/50 p-3", options.bodyClassName))],
+				[h.Class(cn("overflow-x-auto bg-background/50 py-3", options.bodyClassName))],
 				[
+					// The padding sits on a content-wide `pre`, so a long line scrolls clear of the edge.
 					h.pre(
-						[h.Class("text-xs leading-relaxed")],
+						[
+							h.Class(
+								cn(
+									"px-3 text-xs leading-relaxed",
+									options.isPlain !== true && "w-max min-w-full",
+								),
+							),
+						],
 						[
 							// Always markup, never a text child: tabs reuse this node across blocks, and
 							// switching between the two kinds makes the patch remove a child that is gone.

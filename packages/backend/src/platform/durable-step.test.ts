@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Cause, Effect, Exit, Schema } from "effect"
 import { durableStep } from "./durable-step"
 

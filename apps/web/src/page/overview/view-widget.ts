@@ -19,7 +19,7 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<FixedMetricSeri
 		h.div(
 			[
 				h.Class(
-					"ml-auto hidden min-w-0 flex-1 items-center justify-end gap-x-3 overflow-hidden @min-[380px]/widget:flex",
+					"ml-auto hidden min-w-0 flex-1 items-center justify-end gap-x-3 overflow-hidden font-sans @min-[380px]/widget:flex",
 				),
 			],
 			[
@@ -27,9 +27,7 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<FixedMetricSeri
 					h.span(
 						[
 							h.Key(item.key),
-							h.Class(
-								"flex min-w-0 shrink items-center gap-1.5 text-3xs text-muted-foreground",
-							),
+							h.Class("flex min-w-0 shrink items-center gap-1.5 text-xs text-foreground"),
 						],
 						[
 							h.span([
@@ -53,7 +51,7 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<FixedMetricSeri
 					? [
 							h.span(
 								[
-									h.Class("shrink-0 text-3xs text-muted-foreground"),
+									h.Class("shrink-0 text-xs text-muted-foreground"),
 									h.Title(items.map((item) => item.label).join(", ")),
 								],
 								[`+${overflow}`],

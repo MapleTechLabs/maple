@@ -32,7 +32,7 @@ const view = (_model: Model, h: HtmlBuilder<never>): Html =>
 			h.section(
 				[h.Class("flex flex-col gap-1")],
 				[
-					heading(h, "The tool row — running, then settled"),
+					heading(h, "The tool row: running, then settled"),
 					...["Searching Traces", "Reading spans", "Grouping by service"].map((line) =>
 						h.div(
 							[h.Key(line), h.Class("flex items-center gap-2 py-0.5 text-xs")],

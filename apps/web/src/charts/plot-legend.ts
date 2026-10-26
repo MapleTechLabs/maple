@@ -58,9 +58,10 @@ const legendItem = (h: HtmlBuilder<Message>, state: PlotLegendState, entry: Plot
 			h.OnFocus(Message.EnteredLegendItem({ key: entry.key })),
 			h.Class(
 				cn(
-					"flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-muted/50",
+					// Labels sit one step under the card title; the focused series reads full strength.
+					"flex items-center gap-1.5 rounded px-1 py-0.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground",
 					isMuted && "opacity-40",
-					(isActive || (!hovering && isHighlighted)) && "bg-muted/50",
+					(isActive || (!hovering && isHighlighted)) && "bg-muted/50 text-foreground",
 				),
 			),
 		],

@@ -50,8 +50,8 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 	if (key === null)
 		return [
 			resourceNotFound(h, {
-				title: "Log not found",
-				description: "The link could not be decoded. Check that it was copied in full.",
+				title: "Invalid log link",
+				description: "This link could not be read. Check that it was copied in full.",
 				back: BACK,
 			}),
 		]
@@ -85,7 +85,7 @@ export const breadcrumbsOf = (model: Model): ReadonlyArray<BreadcrumbEntry> => [
 	{
 		label:
 			model.key === null
-				? "Not found"
+				? "Invalid link"
 				: AsyncData.matchData(model.log.data, {
 						onEmpty: () => "Loading…",
 						onFailure: () => "Error",

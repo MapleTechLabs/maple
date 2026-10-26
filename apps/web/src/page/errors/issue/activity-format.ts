@@ -128,7 +128,7 @@ const severityChange = (p: Payload): string => {
 			: source === "detector"
 				? " from detector"
 				: ""
-	return `${payloadString(p.from) ?? "unset"} → ${payloadString(p.to) ?? "unset"}${suffix}${note ? ` — ${note}` : ""}`
+	return `${payloadString(p.from) ?? "unset"} → ${payloadString(p.to) ?? "unset"}${suffix}${note ? `: ${note}` : ""}`
 }
 
 const verificationStarted = (p: Payload): string => {
@@ -137,8 +137,8 @@ const verificationStarted = (p: Payload): string => {
 	if (!Number.isFinite(windowMs)) return "Watching for this error to come back."
 	const because =
 		Number.isFinite(rate) && rate > 0
-			? ` — it fired about ${formatRatePerHour(rate)} before the merge`
-			: " — this error fires too rarely to judge quickly"
+			? `. It fired about ${formatRatePerHour(rate)} before the merge`
+			: ". This error fires too rarely to judge quickly"
 	return `Watching for ${formatSpokenDuration(windowMs)}${because}.`
 }
 
@@ -166,7 +166,7 @@ export const renderPayload = (event: ErrorIssueEventDocument): string | null => 
 		case "fix_proposed": {
 			const summary = payloadString(p.patchSummary) ?? ""
 			const url = payloadString(p.prUrl)
-			return url ? `${summary} — ${url}` : summary
+			return url ? `${summary}: ${url}` : summary
 		}
 		case "claim": {
 			const expires = payloadString(p.leaseExpiresAt)

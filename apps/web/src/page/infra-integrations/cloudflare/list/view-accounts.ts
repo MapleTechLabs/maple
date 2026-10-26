@@ -1,5 +1,5 @@
 import type { AccountTone, CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
-import { formatPercent } from "@maple/ui/lib/format"
+import { formatPercentColumn } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heroFieldChipClass, heroFieldChipParts } from "../../../infra/kit/hero-chip"
@@ -115,7 +115,7 @@ export const accountsStrip = (
 							h.span([h.Class("truncate text-xs font-medium text-foreground")], [account.name]),
 							h.span(
 								[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
-								[formatPercent(fraction)],
+								[formatPercentColumn(fraction)],
 							),
 						],
 					),

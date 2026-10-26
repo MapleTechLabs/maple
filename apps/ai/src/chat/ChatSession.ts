@@ -33,7 +33,7 @@
  * arriving through a dynamic import inside the method that needs it, exactly as `worker.ts` does
  * for the route graph.
  */
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, FileSystem, Option, Path, Schema } from "effect"
 import {
 	ChatTurnOrigin as ChatTurnOriginSchema,

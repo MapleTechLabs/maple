@@ -29,6 +29,7 @@ const advancedFilterButton = (h: HtmlBuilder<Message>, model: Model): Html => {
 		h,
 		{
 			variant: isActive ? "secondary" : "outline",
+			size: "sm",
 			className: "gap-2",
 			attributes: [
 				h.DataAttribute("shortcut-focus", "search"),

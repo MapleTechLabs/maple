@@ -10,7 +10,7 @@ import type { Message } from "@cloudflare/workers-types"
 // The subpath, not the barrel: this module loads with the Worker.
 import { VcsSyncJob } from "@maple/domain/http/vcs"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Option, Schema, Stream } from "effect"
 import { HttpClient, HttpClientRequest, HttpIncomingMessage, HttpServerRequest } from "effect/http"
 

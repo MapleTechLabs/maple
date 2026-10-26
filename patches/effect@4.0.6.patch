@@ -128,10 +128,10 @@ index 2570165..413328e 100644
      // Queue for decoded parts and tool results
      const queue = yield* Queue.make();
 diff --git a/dist/http-api/HttpApiBuilder.js b/dist/http-api/HttpApiBuilder.js
-index f9fa473..b9bb293 100644
+index f6f1477..25ccf33 100644
 --- a/dist/http-api/HttpApiBuilder.js
 +++ b/dist/http-api/HttpApiBuilder.js
-@@ -373,7 +373,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
+@@ -463,7 +463,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
   */
  export function handlerToRoute(api, group, handler, context) {
    const endpoint = handler.endpoint;
@@ -143,6 +143,19 @@ index f9fa473..b9bb293 100644
      uninterruptible: handler.uninterruptible
    });
  }
+diff --git a/dist/http-api/HttpApiClient.d.ts b/dist/http-api/HttpApiClient.d.ts
+index 349c969..5118f94 100644
+--- a/dist/http-api/HttpApiClient.d.ts
++++ b/dist/http-api/HttpApiClient.d.ts
+@@ -118,7 +118,7 @@ export declare namespace Client {
+      * @category models
+      * @since 4.0.0
+      */
+-    type Method<Endpoint extends HttpApiEndpoint.ConstraintRequest, E, R> = <Mode extends ResponseMode = "decoded-only", PayloadR = never>(request: Simplify<HttpApiEndpoint.ClientRequest<Endpoint["~Params"], Endpoint["~Query"], Endpoint["~Payload"], Endpoint["~Headers"], Mode, PayloadR>>) => MethodReturn<Endpoint, E, R, Mode, PayloadR>;
++    type Method<Endpoint extends HttpApiEndpoint.ConstraintRequest, E, R> = <Mode extends ResponseMode = "decoded-only", PayloadR = never>(request: Simplify<HttpApiEndpoint.ClientRequest<Endpoint["~Params"], Endpoint["~Query"], Endpoint["~Payload"], Endpoint["~Headers"], Mode, PayloadR>>) => MethodReturn<Endpoint, E, R, Mode, NoInfer<PayloadR>>;
+     /**
+      * Extracts client methods for endpoints in top-level groups so they can be exposed
+      * directly on the generated client object.
 diff --git a/dist/internal/redacted.js b/dist/internal/redacted.js
 index b71c514..6192bda 100644
 --- a/dist/internal/redacted.js

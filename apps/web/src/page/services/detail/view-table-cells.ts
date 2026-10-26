@@ -36,7 +36,8 @@ const sortableHeader = (
 			h.OnClick(Message.ClickedSort({ table, key: sortKey })),
 			h.Class(
 				cn(
-					"inline-flex items-center gap-1 transition-colors",
+					// Buttons reset text-transform, so restate the eyebrow's uppercase.
+					"inline-flex items-center gap-1 whitespace-nowrap uppercase transition-colors",
 					isActive ? "text-foreground" : "hover:text-foreground",
 					className,
 				),
@@ -66,6 +67,7 @@ export const sortColumnHead = (
 		sort: SortState
 		align?: "left" | "right"
 		className?: string
+		title?: string
 	}>,
 ): Html => {
 	const isRight = (options.align ?? "right") === "right"
@@ -83,7 +85,12 @@ export const sortColumnHead = (
 			),
 		],
 		cn(isRight && "text-right", options.className),
-		isActive ? [h.Attribute("aria-sort", options.sort.dir === "asc" ? "ascending" : "descending")] : [],
+		[
+			...(isActive
+				? [h.Attribute("aria-sort", options.sort.dir === "asc" ? "ascending" : "descending")]
+				: []),
+			...(options.title === undefined ? [] : [h.Title(options.title)]),
+		],
 	)
 }
 

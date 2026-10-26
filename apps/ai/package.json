@@ -19,6 +19,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@alchemy.run/cloudflare": "catalog:alchemy",
 		"@effect/ai-openai-compat": "catalog:effect",
 		"@effect/ai-openrouter": "catalog:effect",
 		"@maple-dev/effect-sdk": "workspace:*",

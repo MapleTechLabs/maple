@@ -145,7 +145,7 @@ const spendSettingsDialog = (h: H, model: Model): Html => {
 		title: "Spend & models",
 		description: "Applies to every security audit in this organization.",
 		onSubmit: Message.Submitted(),
-		submitLabel: model.isPending ? "Saving..." : "Save changes",
+		submitLabel: model.isPending ? "Saving…" : "Save changes",
 		isSubmitDisabled: model.isPending,
 		panelClassName: "flex flex-col gap-5",
 		fields: [
