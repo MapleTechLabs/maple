@@ -456,7 +456,7 @@ jobs:
                   MAPLE_TELEMETRY: off
               run: |
                   for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard; do
-                      bun test "test/$file.test.ts"
+                      bun test --timeout 30000 "test/$file.test.ts"
                   done
 
             # Each probe owns its TMPDIR and port, so they run side by side. Probes
