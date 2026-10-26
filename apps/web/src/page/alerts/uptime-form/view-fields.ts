@@ -262,7 +262,7 @@ const assertionRow = (h: H, row: AssertionDraft, index: number): Html => {
 						id: row.id,
 						type: isAssertionType(value) ? value : "status",
 					}),
-				className: "w-32",
+				className: "w-40",
 			}),
 			...(needsTarget
 				? [
@@ -295,7 +295,7 @@ const assertionRow = (h: H, row: AssertionDraft, index: number): Html => {
 				value: row.op,
 				entries: ops,
 				onChange: (value) => Message.ChangedAssertion({ id: row.id, part: "op", value }),
-				className: "w-36",
+				className: "w-32",
 			}),
 			...(needsValue
 				? [
@@ -366,10 +366,10 @@ const inlineNumber = (h: H, field: TextField, labelText: string, value: string, 
 			label(h, { className: "text-sm text-muted-foreground", attributes: [h.For(`uptime-${field}`)] }, [
 				labelText,
 			]),
-			inputGroup(h, { className: "w-auto" }, [
+			inputGroup(h, { className: "w-36 shrink-0" }, [
 				inputGroupInput(h, {
 					id: `uptime-${field}`,
-					className: "w-16",
+					className: "min-w-0",
 					attributes: [
 						h.Value(value),
 						h.OnInput(changed(field)),
