@@ -55,12 +55,22 @@ export const DnsLookupService = Context.Reference<DnsLookup>("@maple/scraper/Dns
 	defaultValue: () => systemDnsLookup,
 })
 
-const NAME_TYPES: ReadonlySet<UptimeDnsRecordType> = new Set(["CNAME", "MX", "NS", "AAAA"])
+const NAME_TYPES: ReadonlySet<UptimeDnsRecordType> = new Set(["CNAME", "MX", "NS"])
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/u
 
-/** Names compare case-insensitively and without the root dot; A and TXT compare exactly. */
+/** `2001:DB8:0::1` and `2001:db8::1` are one address: compare the URL parser's canonical spelling. */
+const canonicalIpv6 = (value: string): string => {
+	const bare = value.replace(/^\[|\]$/gu, "")
+	return URL.canParse(`http://[${bare}]/`) ? new URL(`http://[${bare}]/`).hostname : bare.toLowerCase()
+}
+
+/** Addresses compare as addresses, names case-insensitively without the root dot, TXT exactly. */
 const normalize = (recordType: UptimeDnsRecordType, value: string): string => {
-	if (!NAME_TYPES.has(recordType)) return value.trim()
-	const lower = value.trim().toLowerCase()
+	const trimmed = value.trim()
+	if (recordType === "A") return IPV4.test(trimmed) ? trimmed.split(".").map(Number).join(".") : trimmed
+	if (recordType === "AAAA") return canonicalIpv6(trimmed)
+	if (!NAME_TYPES.has(recordType)) return trimmed
+	const lower = trimmed.toLowerCase()
 	return lower.endsWith(".") ? lower.slice(0, -1) : lower
 }
 
