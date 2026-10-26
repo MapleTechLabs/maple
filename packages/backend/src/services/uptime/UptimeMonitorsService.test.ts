@@ -104,13 +104,19 @@ const racingDatabase = (testDb: TestDb) =>
 		return { layer, arm }
 	})
 
-const httpConfig = (url = "https://status.example.com/health"): UptimeMonitorConfig => ({
+type HttpMonitorConfig = Extract<UptimeMonitorConfig, { readonly _tag: "http" }>
+
+const httpConfig = (
+	url = "https://status.example.com/health",
+	overrides: Partial<Omit<HttpMonitorConfig, "_tag" | "url">> = {},
+): HttpMonitorConfig => ({
 	_tag: "http",
 	url,
 	method: "GET",
 	headers: {},
 	assertions: [{ _tag: "status", op: "is", value: "2xx" }],
 	timeoutMs: 5000,
+	...overrides,
 })
 
 const heartbeatConfig: UptimeMonitorConfig = {
@@ -507,13 +513,13 @@ describe("UptimeMonitorsService", () => {
 			const monitor = yield* service.create(ORG, {
 				name: "API",
 				kind: "http",
-				config: { ...httpConfig(), headers: { Authorization: "Bearer secret" } },
+				config: httpConfig(undefined, { headers: { Authorization: "Bearer secret" } }),
 				createdBy: USER,
 			})
 			const redacted = { Authorization: "[redacted]" }
 			const moved = yield* Effect.flip(
 				service.update(ORG, monitor.id, {
-					config: { ...httpConfig("https://elsewhere.example.net/health"), headers: redacted },
+					config: httpConfig("https://elsewhere.example.net/health", { headers: redacted }),
 				}),
 			)
 			assert.strictEqual(moved._tag, "@maple/http/errors/UptimeMonitorValidationError")
@@ -521,16 +527,15 @@ describe("UptimeMonitorsService", () => {
 
 			// Same origin keeps the stored value; a new origin with fresh values is fine.
 			const samePath = yield* service.update(ORG, monitor.id, {
-				config: { ...httpConfig("https://status.example.com/v2/health"), headers: redacted },
+				config: httpConfig("https://status.example.com/v2/health", { headers: redacted }),
 			})
 			assert.deepStrictEqual(samePath.config._tag === "http" ? samePath.config.headers : null, {
 				Authorization: "Bearer secret",
 			})
 			const reentered = yield* service.update(ORG, monitor.id, {
-				config: {
-					...httpConfig("https://elsewhere.example.net/health"),
+				config: httpConfig("https://elsewhere.example.net/health", {
 					headers: { Authorization: "Bearer other" },
-				},
+				}),
 			})
 			assert.strictEqual(
 				reentered.config._tag === "http" ? reentered.config.url : null,
@@ -641,11 +646,12 @@ describe("UptimeMonitorsService", () => {
 				const service = yield* UptimeMonitorsService
 				// No status assertion at all: a 503 still fails, as it would in the probe.
 				const result = yield* service.testHttp({
-					...httpConfig(),
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: '{"ping":true}',
-					assertions: [],
+					...httpConfig(undefined, {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: '{"ping":true}',
+						assertions: [],
+					}),
 				})
 				assert.isFalse(result.ok)
 				assert.strictEqual(result.failedAssertion, "Status 503, expected 2xx")
