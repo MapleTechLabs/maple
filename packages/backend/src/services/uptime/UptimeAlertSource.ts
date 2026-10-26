@@ -60,6 +60,7 @@ export interface UptimeAlertSourceApi {
 const toPersistenceError = (error: unknown) =>
 	new UptimeMonitorPersistenceError({
 		message: error instanceof Error ? error.message : "Uptime monitor persistence failed",
+		cause: error,
 	})
 
 /**
@@ -96,6 +97,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 								lastCheckJson: $.s.lastCheckJson,
 								recentJson: $.s.recentJson,
 								lastPingAt: $.s.lastPingAt,
+								stateUpdatedAt: $.s.updatedAt,
 							}))
 							.where(($) => [$.orgId.eq(orgId), $.alertRuleId.eq(ruleId)])
 							.limit(1),
@@ -113,7 +115,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 						detail: down ? (row.lastCheckJson?.error ?? "The check is failing") : null,
 					})
 				}
-				// Fenced on the status read above: a ping landing in between wins.
+				// Fenced on the state read above: a ping or check landing in between wins.
 				const error = describeMissedHeartbeat(row.lastPingAt, nowMs)
 				const marked = yield* dbExecute((db) =>
 					db.run(
@@ -142,6 +144,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 								$.orgId.eq(orgId),
 								$.monitorId.eq(row.id),
 								$.status.eq(row.status),
+								$.updatedAt.eq(row.stateUpdatedAt),
 							])
 							.returning("monitorId"),
 					),

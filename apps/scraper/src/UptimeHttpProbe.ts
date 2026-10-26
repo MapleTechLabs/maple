@@ -1,6 +1,11 @@
 import { Clock, Context, Duration, Effect, Layer, Option, Result, type Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { firstFailedAssertion, type UptimeAssertion, type UptimeHttpConfig } from "@maple/domain/uptime"
+import {
+	effectiveAssertions,
+	firstFailedAssertion,
+	type UptimeHttpConfig,
+	uptimeHttpRequest,
+} from "@maple/domain/uptime"
 import { describeHttpClientError, guardPinned, readTextPrefix } from "@maple/safe-fetch"
 import { HostResolver } from "@maple/safe-fetch/dns"
 import {
@@ -18,17 +23,6 @@ export type HttpProbeConfig = Schema.Schema.Type<typeof UptimeHttpConfig>
 
 /** Body prefix the assertions see; reading stops (and the body is cancelled) past it. */
 export const MAX_ASSERTION_BODY_BYTES = 64 * 1024
-export const UPTIME_USER_AGENT = "maple-uptime/1.0"
-
-/** A monitor without a status rule still expects success: a 503 must not read as up. */
-const IMPLICIT_STATUS: UptimeAssertion = { _tag: "status", op: "is", value: "2xx" }
-
-export const effectiveAssertions = (
-	assertions: ReadonlyArray<UptimeAssertion>,
-): ReadonlyArray<UptimeAssertion> =>
-	assertions.some((assertion) => assertion._tag === "status")
-		? assertions
-		: [IMPLICIT_STATUS, ...assertions]
 
 const parseUrl = (raw: string): Option.Option<URL> => Option.liftThrowable(() => new URL(raw))()
 
@@ -39,9 +33,6 @@ export const endpointOf = (url: Option.Option<URL>, raw: string): string =>
 		onSome: (parsed) =>
 			`${parsed.hostname}:${parsed.port || (parsed.protocol === "https:" ? "443" : "80")}`,
 	})
-
-const headerValue = (headers: Readonly<Record<string, string>>, name: string): string | undefined =>
-	Object.entries(headers).find(([key]) => key.toLowerCase() === name)?.[1]
 
 export interface UptimeHttpProbeApi {
 	/**
@@ -61,22 +52,15 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 				strictRedirects: true,
 			})
 
+			// The shared request shaping (the test endpoint sends the same), plus our traceparent.
 			const buildRequest = (config: HttpProbeConfig, trace: CheckTraceContext) => {
-				// Ours first so a configured user-agent wins; traceparent last so it always matches the span.
-				const request = HttpClientRequest.make(config.method)(config.url, {
-					headers: {
-						"user-agent": UPTIME_USER_AGENT,
-						...config.headers,
-						traceparent: traceparentOf(trace),
-					},
+				const outgoing = uptimeHttpRequest(config, { traceparent: traceparentOf(trace) })
+				const request = HttpClientRequest.make(outgoing.method)(outgoing.url, {
+					headers: outgoing.headers,
 				})
-				return config.method === "POST" && config.body !== undefined
-					? HttpClientRequest.bodyText(
-							request,
-							config.body,
-							headerValue(config.headers, "content-type") ?? "text/plain",
-						)
-					: request
+				return outgoing.body === null
+					? request
+					: HttpClientRequest.bodyText(request, outgoing.body.text, outgoing.body.contentType)
 			}
 
 			const probe = (config: HttpProbeConfig, trace: CheckTraceContext) =>

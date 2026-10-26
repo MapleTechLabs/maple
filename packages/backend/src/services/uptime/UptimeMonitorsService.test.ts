@@ -1,9 +1,9 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Option, Ref, Result, Schema } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/http"
+import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { BillingCustomer, OrgId, UserId } from "@maple/domain/http"
 import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
-import { UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
+import { UPTIME_USER_AGENT, UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -18,6 +18,7 @@ import {
 	uptimeMonitorLimit,
 	type UptimeMonitorAllowanceApi,
 } from "./UptimeMonitorAllowance"
+import { UptimeAlertSource } from "./UptimeAlertSource"
 import { UptimeMonitorsService } from "./UptimeMonitorsService"
 
 const trackedDbs: TestDb[] = []
@@ -49,11 +50,11 @@ interface Respond {
 	readonly body: string
 }
 
-const fakeHttp = (respond: Respond) =>
+const fakeHttp = (respond: Respond, sent: Array<HttpClientRequest.HttpClientRequest> = []) =>
 	Layer.succeed(
 		HttpClient.HttpClient,
 		HttpClient.make((request) =>
-			Effect.succeed(
+			Effect.sync(() =>
 				HttpClientResponse.fromWeb(
 					request,
 					new Response(respond.body, {
@@ -61,7 +62,7 @@ const fakeHttp = (respond: Respond) =>
 						headers: { "content-type": "text/plain" },
 					}),
 				),
-			),
+			).pipe(Effect.tap(() => Effect.sync(() => void sent.push(request)))),
 		),
 	)
 
@@ -70,12 +71,14 @@ const makeLayer = (
 	options: {
 		readonly allowance?: Layer.Layer<UptimeMonitorAllowance>
 		readonly respond?: Respond
+		/** Collects every request the HTTP client is handed. */
+		readonly sent?: Array<HttpClientRequest.HttpClientRequest>
 		readonly database?: Layer.Layer<Database>
 	} = {},
 ) =>
 	Layer.effect(UptimeMonitorsService, UptimeMonitorsService.make).pipe(
 		Layer.provide(options.allowance ?? UptimeMonitorAllowance.unmetered),
-		Layer.provide(fakeHttp(options.respond ?? { status: 200, body: "ok" })),
+		Layer.provide(fakeHttp(options.respond ?? { status: 200, body: "ok" }, options.sent)),
 		Layer.provide(options.database ?? testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(config()),
@@ -416,6 +419,76 @@ describe("UptimeMonitorsService", () => {
 		})
 	})
 
+	it.effect("an overdue heartbeat stays up when a ping lands between the tick's read and write", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			// Counts down per `Database.execute`; the call that sees 1 records a ping first.
+			const countdown = yield* Ref.make(0)
+			const target = yield* Ref.make("")
+			const database = Layer.effect(
+				Database,
+				Effect.gen(function* () {
+					const inner = yield* Database
+					return {
+						execute: (fn) =>
+							Ref.modify(countdown, (n) => [n, n > 0 ? n - 1 : n] as const).pipe(
+								Effect.flatMap((n) =>
+									n === 1
+										? Ref.get(target).pipe(
+												Effect.flatMap((id) =>
+													Effect.promise(() =>
+														executeSql(
+															testDb,
+															`UPDATE uptime_monitor_states SET status = 'up',
+																last_ping_at = '1970-01-01T00:16:00.000Z',
+																updated_at = '1970-01-01T00:16:00.000Z'
+															WHERE monitor_id = $1`,
+															[id],
+														),
+													),
+												),
+											)
+										: Effect.void,
+								),
+								Effect.andThen(inner.execute(fn)),
+							),
+					}
+				}),
+			).pipe(Layer.provide(testDb.layer))
+
+			const program = Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const alerts = yield* UptimeAlertSource
+				const monitor = yield* service.create(ORG, {
+					name: "nightly backup",
+					kind: "heartbeat",
+					config: heartbeatConfig,
+					createdBy: USER,
+				})
+				const url = monitor.heartbeatUrl ?? ""
+				yield* service.recordPing(url.slice(url.lastIndexOf("/") + 1), true)
+				yield* Ref.set(target, monitor.id)
+				// Pinged at 0 every 300 s with 60 s grace: overdue at 1000 s. The read runs at 2, the write at 1.
+				yield* Ref.set(countdown, 2)
+				const ruleId = monitor.alertRuleId
+				if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
+				const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
+				assert.isTrue(Option.isSome(observed) && !observed.value.down)
+				const after = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(after.state.status, "up")
+				assert.strictEqual(after.state.lastPingAt, 960_000)
+			})
+			yield* program.pipe(
+				Effect.provide(
+					Layer.merge(
+						makeLayer(testDb, { database }),
+						UptimeAlertSource.layer.pipe(Layer.provide(database)),
+					),
+				),
+			)
+		})
+	})
+
 	it.effect("records heartbeat pings by token", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -534,6 +607,34 @@ describe("UptimeMonitorsService", () => {
 			assert.strictEqual(local._tag, "@maple/http/errors/UptimeMonitorValidationError")
 		}).pipe(Effect.provide(makeLayer(testDb, { respond: { status: 503, body: "x".repeat(5000) } })))
 	})
+
+	it.effect(
+		"tests as the probe checks: implicit 2xx, the configured content-type, the probe user-agent",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const sent: Array<HttpClientRequest.HttpClientRequest> = []
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				// No status assertion at all: a 503 still fails, as it would in the probe.
+				const result = yield* service.testHttp({
+					...httpConfig(),
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: '{"ping":true}',
+					assertions: [],
+				})
+				assert.isFalse(result.ok)
+				assert.strictEqual(result.failedAssertion, "Status 503, expected 2xx")
+				const [request] = sent
+				assert.strictEqual(request?.headers["content-type"], "application/json")
+				assert.strictEqual(
+					request?.body._tag === "Uint8Array" ? request.body.contentType : null,
+					"application/json",
+				)
+				assert.strictEqual(request?.headers["user-agent"], UPTIME_USER_AGENT)
+			}).pipe(Effect.provide(makeLayer(testDb, { respond: { status: 503, body: "down" }, sent })))
+		},
+	)
 })
 
 describe("uptimeMonitorLimit", () => {
