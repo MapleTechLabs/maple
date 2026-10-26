@@ -36,9 +36,27 @@ const FUSE_OPTIONS = {
 	threshold: 0.35,
 }
 
-/** `fuse.search(query)` over every entry (flagged rows included): the ids, best first. */
-const rankedIds = (entries: ReadonlyArray<PaletteEntry>, query: string): ReadonlyArray<string> =>
-	new Fuse(searchEntriesOf(entries), FUSE_OPTIONS).search(query).map(({ item }) => item.id)
+/** A title with a word starting with the query ("serv" in "Service Map", not in "Overview"). */
+const isWordStartMatch = (title: string, query: string): boolean => {
+	const needle = query.toLowerCase()
+	return (
+		title.toLowerCase().startsWith(needle) ||
+		title
+			.toLowerCase()
+			.split(/[\s\-_./:]+/)
+			.some((word) => word.startsWith(needle))
+	)
+}
+
+/**
+ * `fuse.search(query)` over every entry (flagged rows included), best first. When some titles have
+ * a word starting with the query, the fuzzy mid-word hits drop out; a typo still falls back to them.
+ */
+const rankedIds = (entries: ReadonlyArray<PaletteEntry>, query: string): ReadonlyArray<string> => {
+	const items = new Fuse(searchEntriesOf(entries), FUSE_OPTIONS).search(query).map(({ item }) => item)
+	const prefixed = items.filter((item) => isWordStartMatch(item.title, query))
+	return (prefixed.length > 0 ? prefixed : items).map((item) => item.id)
+}
 
 /** Browse mode for an empty query; otherwise fuse's top matches, ranked in render as cmdk does. */
 export const shownEntries = (
@@ -55,7 +73,9 @@ export const shownEntries = (
 	const query = model.list.inputValue.trim()
 	if (query === "") return { entries: browseEntries(entries), isSearch: false }
 	const byId = new Map(entries.map((entry) => [entry.id, entry]))
-	const ranked = rankedIds(all, query).flatMap((id) => byId.get(id) ?? []).slice(0, MAX_RESULTS)
+	const ranked = rankedIds(all, query)
+		.flatMap((id) => byId.get(id) ?? [])
+		.slice(0, MAX_RESULTS)
 	return { entries: ranked, isSearch: true }
 }
 

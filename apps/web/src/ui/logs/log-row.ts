@@ -48,13 +48,15 @@ export interface RowState {
 
 /** Left-edge rail (and, for errors, a tint) so a scan down the stream stops on what is wrong. */
 const SEVERITY_ROW = new Map([
-	["FATAL", "before:bg-severity-error bg-severity-error/[0.08]"],
-	["CRITICAL", "before:bg-severity-error bg-severity-error/[0.08]"],
+	["FATAL", "before:bg-severity-fatal bg-severity-fatal/[0.14]"],
+	["CRITICAL", "before:bg-severity-fatal bg-severity-fatal/[0.14]"],
 	["ERROR", "before:bg-severity-error bg-severity-error/[0.05]"],
 	["WARN", "before:bg-severity-warn"],
 	["WARNING", "before:bg-severity-warn"],
 ])
 const QUIET_SEVERITIES = new Set(["DEBUG", "TRACE"])
+// Fatal reads one step past error: a filled label, not just a red word.
+const FILLED_SEVERITIES = new Set(["FATAL", "CRITICAL"])
 const PINNED_COL_WIDTH = "150px"
 
 // Row and row action classes
@@ -219,9 +221,16 @@ export const logRow = <Message>(
 						[
 							rowClass(
 								h,
-								"shrink-0 w-11 truncate text-3xs leading-4 uppercase tabular-nums font-semibold tracking-wide",
+								cn(
+									"shrink-0 w-11 truncate text-3xs leading-4 uppercase tabular-nums font-semibold tracking-wide",
+									FILLED_SEVERITIES.has(row.severity) && "rounded-sm px-1 text-white",
+								),
 							),
-							h.Style({ color: row.severityColor }),
+							h.Style(
+								FILLED_SEVERITIES.has(row.severity)
+									? { "background-color": row.severityColor }
+									: { color: row.severityColor },
+							),
 							h.Title(row.severity),
 						],
 						[row.severity],

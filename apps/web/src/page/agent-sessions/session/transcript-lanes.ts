@@ -194,7 +194,7 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 						[
 							"spans below come from ",
 							note.serviceName ?? "",
-							" — it records ",
+							", which records ",
 							CAPTURES_LABEL[note.captures],
 						],
 					),
@@ -217,7 +217,7 @@ export const noteBlock = (h: H, note: Extract<TranscriptRow, { kind: "note" }>):
 					h.p(
 						[h.Class("text-muted-foreground text-xs leading-relaxed")],
 						[
-							"Prompts, replies and tool payloads are opt-in — the spans carry timing, models, tokens and tool names, but no text. The structure below is complete; only the words are missing.",
+							"Prompts, replies and tool payloads are opt-in. The spans carry timing, models, tokens and tool names, but no text. The structure below is complete; only the words are missing.",
 						],
 					),
 				],
@@ -244,7 +244,7 @@ export const dividerBlock = (
 						: [h.span([h.Class(CLOCK)], [clockOf(divider.startMs, timeZone)])]),
 					h.span(
 						[h.Class("min-w-0 truncate text-muted-foreground text-xs")],
-						["history replaced with a summary — the model no longer has the messages above"],
+						["history replaced with a summary: the model no longer has the messages above"],
 					),
 					h.span([h.AriaHidden(true), h.Class("h-px grow bg-chart-4/30")], []),
 				],
@@ -284,7 +284,7 @@ export const dividerBlock = (
 					),
 					h.p(
 						[h.Class("text-center text-ui text-muted-foreground")],
-						["The agent's later turns are still arriving — this is not where the session ended."],
+						["The agent's later turns are still arriving. This is not where the session ended."],
 					),
 				],
 	)

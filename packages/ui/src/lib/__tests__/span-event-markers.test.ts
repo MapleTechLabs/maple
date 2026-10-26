@@ -35,7 +35,7 @@ describe("spanEventMarkers", () => {
 		)
 		expect(markers.map((m) => m.atMs)).toEqual([1000, 1100])
 		expect(markers.map((m) => m.offsetMs)).toEqual([-3, 140])
-		expect(markers.map((m) => m.offsetLabel)).toEqual(["-3.0ms", "+140.0ms"])
+		expect(markers.map((m) => m.offsetLabel)).toEqual(["-3.0ms", "+140ms"])
 	})
 
 	it("puts every event at the start of a zero-duration span", () => {

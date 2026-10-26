@@ -6,7 +6,7 @@
  * name-pinned bucket, which GC then deletes. Colocation needs a new bucket.
  */
 import { resolveStorageJurisdiction, stageProps } from "@maple/infra/cloudflare"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 
 export const ReplayBlobs = Cloudflare.R2.Bucket(

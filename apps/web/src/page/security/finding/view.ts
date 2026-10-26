@@ -212,7 +212,7 @@ const triagePanel = (h: H, model: Model, finding: SecurityAuditFinding): Html =>
 						isDisabled: !isChange || model.isSaving,
 						className: "w-full",
 					},
-					[model.isSaving ? "Updating..." : "Update status"],
+					[model.isSaving ? "Updating…" : "Update status"],
 				),
 			],
 		),

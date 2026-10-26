@@ -11,6 +11,8 @@ import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
+import { configResolvingWarehouse, makeOrgConfigProbe } from "@maple/backend/testing/org-config-probe"
 import { AnomalyDetectionService } from "./AnomalyDetectionService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
@@ -51,8 +53,13 @@ const makeLayer = (testDb: TestDb) => {
 	return Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
-				testDb.layer,
 				Layer.succeed(WarehouseQueryService, warehouseStub),
+				OrgClickHouseSettingsService.layer,
+			),
+		),
+		Layer.provide(
+			Layer.mergeAll(
+				testDb.layer,
 				EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive)),
 				Env.layer.pipe(Layer.provide(configLive)),
 			),
@@ -229,8 +236,13 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 		const layer = Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
 			Layer.provide(
 				Layer.mergeAll(
-					testDb.layer,
 					Layer.succeed(WarehouseQueryService, warehouse),
+					OrgClickHouseSettingsService.layer,
+				),
+			),
+			Layer.provide(
+				Layer.mergeAll(
+					testDb.layer,
 					EdgeCacheService.layer.pipe(Layer.provide(slowBaselineBackend)),
 					Env.layer.pipe(Layer.provide(configLive)),
 				),
@@ -256,5 +268,69 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 			// ...and took all three 7-day baselines from the cache.
 			expect(contexts.filter((c) => c.endsWith("Baseline"))).toEqual([])
 		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("AnomalyDetectionService.runTick org config priming", () => {
+	it.effect("resolves every processed org's warehouse config in one batched read", () => {
+		const testDb = createTestDb(createdDbs)
+		const runId = Math.random().toString(36).slice(2, 10)
+		// More orgs than the tick's per-org concurrency (4).
+		const orgs = Array.from({ length: 6 }, (_, i) => asOrgId(`org_anomaly_prime_${runId}_${i}`))
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				Promise.all(
+					orgs.map((orgId) =>
+						executeSql(
+							testDb,
+							`INSERT INTO anomaly_detector_settings (org_id, enabled, sensitivity, muted_signals_json, created_at, updated_at)
+							 VALUES ($1, true, 'normal', '[]'::jsonb, now(), now())`,
+							[orgId],
+						),
+					),
+				),
+			)
+			const probe = yield* makeOrgConfigProbe
+			const configLive = makeConfig()
+			const warehouse = configResolvingWarehouse((resolveConfig) =>
+				makeWarehouseServiceStub({
+					crossOrgQuery: (tenant, compiled) =>
+						Effect.andThen(
+							resolveConfig(tenant.orgId),
+							compiledQueryOf(compiled)
+								.decodeRows(orgs.map((orgId) => ({ orgId })))
+								.pipe(Effect.orDie),
+						),
+					warmRoute: (tenant) => resolveConfig(tenant.orgId),
+					compiledQuery: (tenant, compiled) =>
+						Effect.andThen(
+							resolveConfig(tenant.orgId),
+							compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
+						),
+				}),
+			)
+			const layer = Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+				Layer.provide(warehouse),
+				Layer.provideMerge(probe.orgChSettingsLive),
+				Layer.provide(
+					Layer.mergeAll(
+						testDb.layer,
+						probe.edgeCacheLive,
+						Env.layer.pipe(Layer.provide(configLive)),
+					),
+				),
+				Layer.provide(configLive),
+			)
+
+			const result = yield* AnomalyDetectionService.pipe(
+				Effect.flatMap((service) => service.runTick()),
+				Effect.provide(layer),
+			)
+
+			expect(result.orgsProcessed).toBe(orgs.length)
+			// Only the active-org discovery route resolves cold, before the org set is
+			// known. Without the prime, every processed org does its own cold read.
+			expect(yield* probe.coldReads).toBe(1)
+		})
 	})
 })

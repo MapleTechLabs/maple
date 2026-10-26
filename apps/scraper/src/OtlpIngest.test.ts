@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib"
 import { assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Exit, Fiber, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
@@ -14,6 +15,7 @@ const testEnv: ScraperEnvConfig = {
 	SCRAPER_CONCURRENCY: 10,
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: 60,
 	SCRAPER_OTLP_MAX_DATA_POINTS: 10_000,
+	SCRAPER_OTLP_MAX_BODY_BYTES: 4 * 1024 * 1024,
 	UPTIME_CONCURRENCY: 20,
 	PORT: 0,
 }
@@ -67,7 +69,9 @@ interface RecordedRequest {
 	url: string
 	method: string
 	headers: Record<string, string>
+	/** Decompressed. */
 	body: string | null
+	wireBytes: number
 }
 
 const stubFetch = (recorded: Array<RecordedRequest>, respond: () => Response): typeof globalThis.fetch =>
@@ -84,8 +88,11 @@ const stubFetch = (recorded: Array<RecordedRequest>, respond: () => Response): t
 				typeof init?.body === "string"
 					? init.body
 					: init?.body instanceof Uint8Array
-						? new TextDecoder().decode(init.body)
+						? new TextDecoder().decode(
+								headers["content-encoding"] === "gzip" ? gunzipSync(init.body) : init.body,
+							)
 						: null,
+			wireBytes: init?.body instanceof Uint8Array ? init.body.byteLength : 0,
 		})
 		return respond()
 	}) as typeof globalThis.fetch
@@ -106,6 +113,7 @@ describe("OtlpIngest", () => {
 			assert.strictEqual(recorded[0]?.method, "POST")
 			assert.strictEqual(recorded[0]?.headers.authorization, "Bearer maple_pk_test_key")
 			assert.strictEqual(recorded[0]?.headers["content-type"], "application/json")
+			assert.strictEqual(recorded[0]?.headers["content-encoding"], "gzip")
 			assert.deepStrictEqual(JSON.parse(recorded[0]?.body ?? "{}"), SAMPLE_REQUEST)
 		}).pipe(Effect.provide(TestLayer)),
 	)
@@ -228,6 +236,15 @@ describe("OtlpIngest", () => {
 			),
 		)
 
+		const ByteCappedLayer = OtlpIngest.layer.pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					FetchHttpClient.layer,
+					Layer.succeed(ScraperEnv, { ...testEnv, SCRAPER_OTLP_MAX_BODY_BYTES: 600 }),
+				),
+			),
+		)
+
 		const LARGE_REQUEST: OtlpExportRequest = {
 			resourceMetrics: [
 				{
@@ -296,6 +313,30 @@ describe("OtlpIngest", () => {
 					assert.strictEqual(request.headers.authorization, "Bearer maple_pk_test_key")
 				}
 			}).pipe(Effect.provide(ChunkedLayer)),
+		)
+
+		// A whole discovery cycle is one export: attribute-heavy points can blow past
+		// the gateway limit well inside the point budget, so bytes cap chunks too.
+		it.effect("also splits by uncompressed body size, under the point budget", () =>
+			Effect.gen(function* () {
+				const recorded: Array<RecordedRequest> = []
+				const otlp = yield* OtlpIngest
+				yield* otlp.send("maple_pk_test_key", LARGE_REQUEST).pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch(recorded, () => Response.json({ partialSuccess: {} })),
+					),
+				)
+
+				assert.isAbove(recorded.length, 1)
+				for (const request of recorded) {
+					assert.isAtMost(new TextEncoder().encode(request.body ?? "").byteLength, 600)
+				}
+				assert.deepStrictEqual(
+					recorded.flatMap((request) => pointsIn(request.body).map((point) => point.asDouble)),
+					[0, 1, 2, 3, 4],
+				)
+			}).pipe(Effect.provide(ByteCappedLayer)),
 		)
 
 		it.effect("stops at the first rejected chunk and keeps the earlier ones delivered", () =>

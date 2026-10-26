@@ -1,7 +1,7 @@
 // oxlint-disable effecttsgo/strict-effect-provide -- Offline benchmark entry points.
 /** Offline probe of the real HTTP graph. No external I/O or production secrets. */
 import { Context, Effect, Layer, Scope } from "effect"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { IsolateAge } from "@maple/infra/isolate-age"
 import { buildApp, makeFetch } from "../../src/worker/http"
 import { offlinePorts } from "../../test/offline-http-ports"

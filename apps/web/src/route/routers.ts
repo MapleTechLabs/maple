@@ -388,6 +388,9 @@ const routers = {
 		search(Search.InfraKubernetesWorkloadSearch),
 		Route.mapTo(AppRoute.InfraKubernetesWorkload),
 	),
+	// Index paths with no page of their own; `routeRedirect` sends them to the closest live page.
+	AlertIncidentsIndex: pipe(path("alerts", "incidents"), Route.mapTo(AppRoute.AlertIncidentsIndex)),
+	RecommendationsIndex: pipe(path("recommendations"), Route.mapTo(AppRoute.RecommendationsIndex)),
 } as const
 
 // Literal routes come before the param routes that would also match them (`/infra/hosts`).

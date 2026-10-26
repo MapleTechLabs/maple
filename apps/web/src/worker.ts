@@ -12,7 +12,7 @@ import {
 	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import { plainFrom, selfObservabilityEnv } from "@maple/infra/env"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 import { API_PROXY_PREFIX } from "./api-proxy.ts"
 

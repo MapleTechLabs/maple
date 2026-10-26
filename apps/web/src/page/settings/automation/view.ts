@@ -24,7 +24,7 @@ import { adminOnlyNote, settingsSection, settingsSections } from "../kit/section
 import { Message, type Model, type PolicyDraft } from "./model"
 
 type H = HtmlBuilder<Message>
-type Inputs = Readonly<{ nowMs: number; timeZone: string }>
+type Inputs = Readonly<{ nowMs: number; timeZone: string; isKnownMember: boolean }>
 
 const IDLE: FieldState = {
 	isInvalid: false,
@@ -155,7 +155,7 @@ const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 	)
 }
 
-const policyForm = (h: H, model: Model, draft: PolicyDraft): Html =>
+const policyForm = (h: H, model: Model, draft: PolicyDraft, isKnownMember: boolean): Html =>
 	h.div(
 		[h.Class("space-y-4")],
 		[
@@ -199,13 +199,13 @@ const policyForm = (h: H, model: Model, draft: PolicyDraft): Html =>
 					],
 				),
 			]),
-			...(model.isAdmin
+			...(model.isAdmin || !isKnownMember
 				? []
 				: [adminOnlyNote(h, ["Only org admins can change the escalation policy."])]),
 		],
 	)
 
-const policySection = (h: H, model: Model): Html =>
+const policySection = (h: H, model: Model, isKnownMember: boolean): Html =>
 	settingsSection(
 		h,
 		{
@@ -218,7 +218,7 @@ const policySection = (h: H, model: Model): Html =>
 		},
 		[
 			model.draft !== null
-				? policyForm(h, model, model.draft)
+				? policyForm(h, model, model.draft, isKnownMember)
 				: h.div(
 						[],
 						[
@@ -256,10 +256,21 @@ const simulatorField = (h: H, name: string, label: string, control: Html): Html 
 	])
 
 const decisionText = (h: H, model: Model): ReadonlyArray<Html | string> => {
+	if (model.draft === null)
+		return [
+			h.span(
+				[h.Class("font-prose text-sm text-muted-foreground")],
+				[
+					AsyncData.isFailure(model.policy)
+						? "The simulator needs the escalation policy, which didn't load."
+						: "The simulator is available once the escalation policy loads.",
+				],
+			),
+		]
 	if (model.isDirty)
 		return [
 			h.span(
-				[h.Class("text-sm text-muted-foreground")],
+				[h.Class("font-prose text-sm text-muted-foreground")],
 				["Save the policy above to simulate it. The simulator evaluates the saved policy."],
 			),
 		]
@@ -270,7 +281,7 @@ const decisionText = (h: H, model: Model): ReadonlyArray<Html | string> => {
 	if (evaluated === null)
 		return [
 			h.span(
-				[h.Class("text-sm text-muted-foreground")],
+				[h.Class("font-prose text-sm text-muted-foreground")],
 				["Preview the worker's decision under the saved policy without sending a notification."],
 			),
 		]
@@ -341,7 +352,7 @@ const simulator = (h: H, model: Model): Html =>
 					nativeSelect(
 						h,
 						{
-							className: "w-full",
+							className: "w-full [&>select]:text-sm",
 							defaultValue: model.source,
 							attributes: [h.OnChange((value) => Message.ChangedSource({ value }))],
 						},
@@ -355,12 +366,16 @@ const simulator = (h: H, model: Model): Html =>
 					nativeSelect(
 						h,
 						{
-							className: "w-full",
+							className: "w-full [&>select]:text-sm",
 							defaultValue: model.confidence,
 							isDisabled: model.source === "manual",
 							attributes: [h.OnChange((value) => Message.ChangedConfidence({ value }))],
 						},
-						["high", "medium", "low"].map((value) => nativeOption(value, value)),
+						[
+							nativeOption("high", "High"),
+							nativeOption("medium", "Medium"),
+							nativeOption("low", "Low"),
+						],
 					),
 				),
 			],
@@ -374,7 +389,7 @@ const simulator = (h: H, model: Model): Html =>
 						variant: "outline",
 						size: "sm",
 						isLoading: model.isEvaluating,
-						isDisabled: model.isDirty,
+						isDisabled: model.isDirty || model.draft === null,
 						attributes: [h.OnClick(Message.ClickedEvaluate())],
 					},
 					["Evaluate policy"],
@@ -387,7 +402,13 @@ const simulator = (h: H, model: Model): Html =>
 const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 	settingsSection(
 		h,
-		{ id: "automation-recent-heading", title: "Recent escalation deliveries", padded: false },
+		{
+			id: "automation-recent-heading",
+			title: "Recent escalation deliveries",
+			padded: false,
+			// A failed read is the bare dashed row, like the policy's above.
+			framed: !AsyncData.isFailure(model.attempts),
+		},
 		[
 			AsyncData.matchData(model.attempts, {
 				onEmpty: () =>
@@ -402,9 +423,7 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 					errorState(h, {
 						failure,
 						title: "Couldn't load recent deliveries",
-						// The policy's row layout; the panel already draws the frame.
 						variant: "row",
-						className: "rounded-none border-0",
 						onRetry: Message.ClickedRetryAttempts(),
 					}),
 				onData: (response) =>
@@ -450,5 +469,9 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 	)
 
 export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, h) =>
-	settingsSections(h, [policySection(h, model), simulator(h, model), recentDeliveries(h, model, inputs)]),
+	settingsSections(h, [
+		policySection(h, model, inputs.isKnownMember),
+		simulator(h, model),
+		recentDeliveries(h, model, inputs),
+	]),
 )

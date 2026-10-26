@@ -24,6 +24,12 @@ export interface ScraperEnvConfig {
 	readonly SCRAPER_OTLP_MAX_DATA_POINTS: number
 	/** Max concurrent uptime checks across all monitors, separate from the scrape permits. */
 	readonly UPTIME_CONCURRENCY: number
+	/**
+	 * Max uncompressed OTLP/JSON bytes per POST. A parent target's whole cycle goes
+	 * out as one export, and attribute-heavy points can exceed the point budget's
+	 * size assumption, so chunks are also capped by measured size.
+	 */
+	readonly SCRAPER_OTLP_MAX_BODY_BYTES: number
 	/** Port for the `/health` endpoint. */
 	readonly PORT: number
 }
@@ -53,13 +59,17 @@ const envConfig = Config.all({
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: positiveInt("SCRAPER_RECONCILE_INTERVAL_SECONDS", 24 * 60 * 60).pipe(
 		Config.withDefault(60),
 	),
-	// 10k points is ~2 MB of OTLP/JSON at the attribute density Prometheus
-	// exporters produce — a 10x margin under the gateway's 20 MB limit, so
-	// even an unusually attribute-heavy exporter stays inside it.
+	// 10k points is ~2 MB of OTLP/JSON at typical attribute density, but ~11 MB
+	// for attribute-heavy exporters; the byte cap below bounds those.
 	SCRAPER_OTLP_MAX_DATA_POINTS: positiveInt("SCRAPER_OTLP_MAX_DATA_POINTS", 10_000_000).pipe(
 		Config.withDefault(10_000),
 	),
 	UPTIME_CONCURRENCY: positiveInt("UPTIME_CONCURRENCY", 10_000).pipe(Config.withDefault(20)),
+	// 4 MiB uncompressed: a 5x margin under the gateway's 20 MB limit even
+	// before gzip, and few enough chunks for the largest discovery cycles.
+	SCRAPER_OTLP_MAX_BODY_BYTES: positiveInt("SCRAPER_OTLP_MAX_BODY_BYTES", 16 * 1024 * 1024).pipe(
+		Config.withDefault(4 * 1024 * 1024),
+	),
 	PORT: positiveInt("PORT", 65_535).pipe(Config.withDefault(3475)),
 })
 

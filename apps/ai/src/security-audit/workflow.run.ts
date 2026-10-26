@@ -42,7 +42,7 @@ import {
 	type PriorRun,
 	runAudit,
 } from "@maple/security-audit"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import {
 	Cause,
 	Clock,

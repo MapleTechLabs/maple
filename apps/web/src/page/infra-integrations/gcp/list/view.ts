@@ -22,7 +22,7 @@ import {
 	gcpResourcesError,
 	type GcpView,
 } from "../../../../components/infra/gcp/tabs"
-import { formatPercent, pluralize } from "@maple/ui/lib/format"
+import { formatPercentColumn, pluralize } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -240,15 +240,18 @@ const regionChip = (h: H, region: string): Html => {
 const healthText = (health: GcpProjectHealth | undefined) =>
 	health?.tone === "crit" ? TONE_TEXT.crit : "text-muted-foreground"
 
-const healthDotOf = (h: H, health: GcpProjectHealth | undefined): ReadonlyArray<Html> =>
-	health === undefined
-		? []
-		: [
-				h.span([
-					h.AriaHidden(true),
-					h.Class(cn("size-1.5 shrink-0 rounded-full", TONE_FILL[health.tone])),
-				]),
-			]
+// A project with no connector health still gets a dot, neutral, so every name lines up.
+const healthDotOf = (h: H, health: GcpProjectHealth | undefined): ReadonlyArray<Html> => [
+	h.span([
+		h.AriaHidden(true),
+		h.Class(
+			cn(
+				"size-1.5 shrink-0 rounded-full",
+				health === undefined ? "bg-muted-foreground/50" : TONE_FILL[health.tone],
+			),
+		),
+	]),
+]
 
 /** `GcpProjectsStrip`: one cell per project, the biggest share first; a cell scopes to it. */
 const projectsStrip = (
@@ -285,7 +288,7 @@ const projectsStrip = (
 								),
 								h.span(
 									[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
-									[formatPercent(fraction)],
+									[formatPercentColumn(fraction)],
 								),
 							],
 						),

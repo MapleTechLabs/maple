@@ -1,6 +1,7 @@
 import { BillingCustomer } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
 import { V2McpConnection } from "@maple/domain/http/v2"
+import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
 import { Result, Schema } from "effect"
 import {
 	click,
@@ -120,6 +121,27 @@ describe("settings page", () => {
 			routeChanged(step.model, { _tag: "Settings", search: { outcome: "denied" } }, context).model.tab
 				?._tag,
 		).toBe("Ingestion")
+	})
+
+	test("a denied deep link keeps its note after the URL rewrite, until another tab is picked", () => {
+		const landed = routeChanged(
+			entered({ tab: "general" }).model,
+			{ _tag: "Settings", search: {} },
+			context,
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(landed),
+			indicatorMeasured(),
+			indicatorMeasured(),
+			expectView(text("General isn't available on this deployment.")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(toTab(landed, "mcp").model),
+			indicatorMeasured(),
+			expectView(text("General isn't available on this deployment.")).toBeAbsent(),
+		)
 	})
 
 	test("self-hosted lands on Ingestion and a nav click carries the audit filters", () => {
@@ -299,6 +321,50 @@ describe("settings page", () => {
 			{ update: pageUpdate, view },
 			given(answered),
 			expectView(text("Couldn't load keys")).not.toExist(),
+		)
+	})
+
+	test("a failed api_keys load gives Mobile devices its own error instead of dropping the section", () => {
+		const failed = [
+			Message.CompletedFetchSession({
+				result: Result.succeed({ isAdmin: true, userId: null, hasAiAutoTriage: true }),
+			}),
+			Message.FailedLoadApiKeys({ orgId: context.orgId }),
+		].reduce((model, message) => pageUpdate(model, message).model, entered({ tab: "keys" }).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Mobile devices")).toExist(),
+			expectView(text("Couldn't load devices")).toExist(),
+		)
+	})
+
+	test("usage that fails while the customer answers shows the account error with Try again, not skeletons", () => {
+		const billing: Model = {
+			...mcpLoaded(),
+			tab: { _tag: "Billing", model: Billing.init(true, false).model },
+		}
+		const failed = pageUpdate(
+			billing,
+			Message.GotBillingMessage({
+				message: BillingMessage.CompletedFetchUsage({
+					// Not retryable, so the row draws Try again without the network auto-retry probe.
+					result: Result.fail({ ...NetworkErrorBody, retryable: false }),
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Couldn't load your billing account")).toExist(),
+			expectView(role("button", { name: "Try again" })).toExist(),
+		)
+		const retried = pageUpdate(
+			failed,
+			Message.GotBillingMessage({ message: BillingMessage.ClickedRetryCustomer() }),
+		)
+		expect(names(retried.commands)).toEqual(
+			expect.arrayContaining(["FetchSettingsCustomer", "FetchBillingUsage"]),
 		)
 	})
 

@@ -197,15 +197,17 @@ const collapseNullableUnions = (node: unknown): unknown => {
 	if (node === null || typeof node !== "object") return node
 	const obj = node as Record<string, unknown>
 	const anyOf = obj.anyOf
-	if (Array.isArray(anyOf) && anyOf.length === 2) {
-		const nullIndex = anyOf.findIndex(
-			(member) => (member as Record<string, unknown> | null)?.type === "null",
-		)
-		if (nullIndex !== -1) {
+	if (Array.isArray(anyOf)) {
+		// Nested unions arrive flattened: `optional(Union([A, B]))` is `anyOf: [A, B, null]`.
+		const kept = anyOf.filter((member) => !isJsonObject(member) || member.type !== "null")
+		if (kept.length > 0 && kept.length < anyOf.length) {
 			const { anyOf: _replaced, ...siblings } = obj
-			const kept = anyOf[1 - nullIndex] as Record<string, unknown>
 			// Siblings last: a `description` on the property outranks one on the branch.
-			return collapseNullableUnions({ ...kept, ...siblings })
+			return collapseNullableUnions(
+				kept.length === 1 && isJsonObject(kept[0])
+					? { ...kept[0], ...siblings }
+					: { anyOf: kept, ...siblings },
+			)
 		}
 	}
 	return Object.fromEntries(Object.entries(obj).map(([key, value]) => [key, collapseNullableUnions(value)]))

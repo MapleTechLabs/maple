@@ -76,7 +76,7 @@ export const footer = (h: H, model: Model): Html =>
 const SHORTCUTS: ReadonlyArray<readonly [string, string]> = [
 	["W / S", "Zoom in / out at cursor (⇧ faster)"],
 	["A / D", "Pan left / right (⇧ faster)"],
-	["F", "Fit focused span — or whole trace"],
+	["F", "Fit focused span or whole trace"],
 	["E / ⇧E", "Expand / collapse one level"],
 	["Drag", "Zoom to selection"],
 	["⇧ Drag / middle-drag", "Pan"],

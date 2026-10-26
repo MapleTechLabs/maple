@@ -71,16 +71,17 @@ const componentName = (ref: JsonValue | undefined): string | undefined => {
  */
 const withoutNullBranch = (schema: JsonObject): JsonObject | undefined => {
 	const members = asArray(schema.anyOf)
-	if (members === undefined || members.length !== 2) return undefined
+	if (members === undefined) return undefined
 
-	const nullIndex = members.findIndex((member) => asObject(member)?.type === "null")
-	if (nullIndex === -1) return undefined
-
-	const kept = asObject(members[1 - nullIndex])
-	if (kept === undefined) return undefined
+	// The renderer flattens nested unions, so `optional(Union([A, B]))` arrives as
+	// `anyOf: [A, B, null]`, not `anyOf: [anyOf: [A, B], null]`.
+	const kept = members.filter((member) => asObject(member)?.type !== "null")
+	if (kept.length === members.length || kept.length === 0) return undefined
 
 	const { anyOf: _removed, ...siblings } = schema
-	return { ...kept, ...siblings }
+	if (kept.length > 1) return { anyOf: kept, ...siblings }
+	const only = asObject(kept[0])
+	return only === undefined ? undefined : { ...only, ...siblings }
 }
 
 /** Every component name reachable from `node`, following `$ref` transitively. */

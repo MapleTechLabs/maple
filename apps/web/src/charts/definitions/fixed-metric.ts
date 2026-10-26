@@ -278,7 +278,7 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 				visibleKeys: ["errorRate"],
 				softMin: 0,
 				softMax: errorRateCeiling(plotRows),
-				format: formatErrorRate,
+				unit: "percent",
 			}).y,
 		},
 		focus: "group-x",
@@ -321,7 +321,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 		],
 		scales: {
 			x: timeseriesXAxis(model.axisContext),
-			y: timeseriesYAxis({ rows: plotRows, visibleKeys: keys, format: formatLatency }).y,
+			y: timeseriesYAxis({ rows: plotRows, visibleKeys: keys, unit: "duration_ms" }).y,
 		},
 		focus: "group-x",
 		focusRing: false,

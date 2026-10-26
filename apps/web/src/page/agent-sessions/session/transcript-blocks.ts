@@ -17,10 +17,10 @@ type H = HtmlBuilder<Message>
 
 const missingResultNote = (tool: Extract<TranscriptRow, { kind: "tool" }>): string =>
 	tool.fromMessageOnly
-		? "not captured — this call is known only from the message that made it. Whether it ran is unknown."
+		? "not captured. This call is known only from the message that made it. Whether it ran is unknown."
 		: tool.failed
-			? "not captured — the span failed without recording a result or an error message."
-			: "not captured — the span carries no result attribute and no later message echoes this call id. Whether it succeeded is unknown."
+			? "not captured. The span failed without recording a result or an error message."
+			: "not captured. The span carries no result attribute and no later message echoes this call id. Whether it succeeded is unknown."
 
 const toolHeader = (
 	h: H,

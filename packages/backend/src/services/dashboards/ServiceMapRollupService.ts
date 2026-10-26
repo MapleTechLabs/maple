@@ -6,6 +6,7 @@ import { Clock, Cause, Context, Effect, Layer, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -75,6 +76,7 @@ export class ServiceMapRollupService extends Context.Service<
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
+		const orgChSettings = yield* OrgClickHouseSettingsService
 
 		const systemTenant = (orgId: OrgId): TenantContext => ({
 			orgId,
@@ -258,6 +260,15 @@ export class ServiceMapRollupService extends Context.Service<
 				"maple.service_map.active_org_discovery": active === undefined ? "failed" : "ok",
 			})
 
+			// One batched read warms the org warehouse-config memo before the fan-out
+			// below, so 4 concurrent fibers do not each miss it cold. Best-effort.
+			yield* orgChSettings.primeRuntimeConfigs(targetOrgs).pipe(
+				Effect.ignore({
+					log: "Warn",
+					message: "Failed to prime service map rollup runtime configs",
+				}),
+			)
+
 			const results = yield* Effect.forEach(
 				targetOrgs,
 				(orgId) =>
@@ -303,5 +314,7 @@ export class ServiceMapRollupService extends Context.Service<
 		return { runRollupTick }
 	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, OrgClickHouseSettingsService.layer)),
+	)
 }

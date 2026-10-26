@@ -87,7 +87,17 @@ export const update = (model: Model, message: Message): Return =>
 			const picker = { ...model, picker: next.model }
 			// `setRange`: a custom range is stored as picked, with no preset.
 			if (next.outMessage?._tag === "SelectedCustomRange")
-				return { model: { ...picker, range: { startTime: next.outMessage.startTime, endTime: next.outMessage.endTime, presetValue: null } }, commands }
+				return {
+					model: {
+						...picker,
+						range: {
+							startTime: next.outMessage.startTime,
+							endTime: next.outMessage.endTime,
+							presetValue: null,
+						},
+					},
+					commands,
+				}
 			return {
 				model: picker,
 				commands:

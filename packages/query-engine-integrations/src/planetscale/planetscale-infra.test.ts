@@ -76,7 +76,7 @@ describe("planetscaleInfraTimeseriesSQL", () => {
 		// sample must be excluded rather than read as zero bytes free.
 		expect(sql).toContain("availableSamples > 0")
 		// Phrased so SQL precedence yields a percentage, see planetscale-storage.test.ts.
-		expect(sql).toContain("100 - points.availableBytes / points.capacityBytes * 100")
+		expect(sql).toContain("100 - (points.availableBytes / points.capacityBytes * 100)")
 	})
 })
 

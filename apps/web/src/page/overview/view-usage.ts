@@ -1,4 +1,4 @@
-import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
+import { formatNumber } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "../../data/load-failure"
@@ -34,7 +34,8 @@ export const usageCards = <M>(
 				CARDS.map((card) =>
 					statRailItem(h, {
 						eyebrow: card.title,
-						value: EMPTY_VALUE,
+						// The muted table empty glyph, not a bold value-sized dash.
+						value: h.span([h.Class("font-normal text-muted-foreground")], ["–"]),
 						subline: isExplained(failure)
 							? h.span([h.Class("sr-only")], ["Couldn't load"])
 							: h.span([h.Class("font-prose")], ["Couldn't load"]),

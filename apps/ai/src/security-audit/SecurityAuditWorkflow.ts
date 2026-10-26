@@ -5,7 +5,7 @@
  */
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { MapleDb } from "@maple/infra/cloudflare"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 
 export default class SecurityAuditWorkflow extends Cloudflare.Workflow<SecurityAuditWorkflow>()(

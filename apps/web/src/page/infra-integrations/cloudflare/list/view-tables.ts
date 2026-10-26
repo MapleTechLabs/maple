@@ -15,7 +15,7 @@ import {
 	formatErrorRate,
 	formatLatency,
 	formatNumber,
-	formatPercent,
+	formatPercentColumn,
 } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -43,7 +43,8 @@ type H = HtmlBuilder<Message>
 
 // The server caps the list at 500 rows, so the row area scrolls rather than growing the page.
 const TABLE_MAX_HEIGHT = "560px"
-const NAME = "w-0 flex-1 min-w-[200px]"
+// Capped: a short zone name on a wide page otherwise opens a gulf before its numbers.
+const NAME = "w-0 flex-1 min-w-[200px] max-w-[360px]"
 const NUMBER = "text-right font-mono text-xs tabular-nums"
 
 export type SparkContext = Readonly<{ theme: ThemeColors | null; isChartReady: boolean }>
@@ -111,10 +112,7 @@ export const zoneTableLoading = (h: H): Html =>
 		{ ariaLabel: "Zones" },
 		zoneColumns(h, undefined, false, false),
 		skeletonRows(h, 4, () => [
-			h.div(
-				[h.Class("w-0 min-w-[200px] flex-1 space-y-1.5")],
-				[skeleton(h, "h-3.5 w-40"), skeleton(h, "h-2.5 w-24")],
-			),
+			h.div([h.Class(cn(NAME, "space-y-1.5"))], [skeleton(h, "h-3.5 w-40"), skeleton(h, "h-2.5 w-24")]),
 			skeleton(h, "h-4 w-[170px]"),
 			skeleton(h, "hidden h-1.5 w-[170px] md:block"),
 			skeleton(h, "h-3 w-[70px]"),
@@ -158,9 +156,9 @@ const requestSpark = (
 const statusMix = (h: H, zone: ZoneRow, rated: boolean): Html => {
 	const label =
 		zone.errorRate >= 0.01
-			? { text: `${formatPercent(zone.errorRate)} 5xx`, className: "text-severity-error" }
+			? { text: `${formatPercentColumn(zone.errorRate)} 5xx`, className: "text-severity-error" }
 			: {
-					text: `${formatPercent(zone.clientErrorRate)} 4xx`,
+					text: `${formatPercentColumn(zone.clientErrorRate)} 4xx`,
 					className:
 						zone.clientErrorRate >= CLIENT_ERROR_NOTABLE
 							? "text-severity-warn"
@@ -218,7 +216,7 @@ const zoneRow = (
 		],
 		[
 			h.div(
-				[h.Class("w-0 min-w-[200px] flex-1 space-y-0.5")],
+				[h.Class(cn(NAME, "space-y-0.5"))],
 				[
 					h.div(
 						[
@@ -272,14 +270,14 @@ const zoneRow = (
 				[
 					h.span(
 						[h.Class("font-mono text-xs tabular-nums text-foreground/80")],
-						[zone.cacheHitRate === null ? EMPTY_VALUE : formatPercent(zone.cacheHitRate)],
+						[zone.cacheHitRate === null ? EMPTY_VALUE : formatPercentColumn(zone.cacheHitRate)],
 					),
 					h.span(
 						[h.Class("font-mono text-3xs text-muted-foreground")],
 						[
 							zone.cacheHitRate === null
 								? "nothing cacheable"
-								: `of ${formatPercent(zone.requests > 0 ? zone.cacheableRequests / zone.requests : 0)} cacheable`,
+								: `of ${formatPercentColumn(zone.requests > 0 ? zone.cacheableRequests / zone.requests : 0)} cacheable`,
 						],
 					),
 				],

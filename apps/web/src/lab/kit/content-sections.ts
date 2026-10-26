@@ -38,7 +38,8 @@ export interface ContentInputs<M> {
 const pageLayoutSection = <M>(h: HtmlBuilder<M>): Html =>
 	kitSection(h, "Page layout header", [
 		h.div(
-			[h.Class("overflow-hidden rounded-md border")],
+			// Padded like the shell's page area, and a `page` container so the actions sit beside the title.
+			[h.Class("@container/page overflow-hidden rounded-md border p-4")],
 			[
 				pageLayoutRoot(h, [
 					pageHeader(

@@ -1,7 +1,10 @@
-import { Layer, type Exit, Tracer } from "effect"
+import { Layer, Option, type Exit, Tracer } from "effect"
 
 export interface EndedSpan {
 	readonly name: string
+	readonly spanId: string
+	/** `undefined` for a root span. */
+	readonly parentSpanId: string | undefined
 	readonly attributes: ReadonlyMap<string, unknown>
 	/** The exit the span closed with — `Failure` is what becomes OTLP `Error`. */
 	readonly exit: Exit.Exit<unknown, unknown>
@@ -32,7 +35,13 @@ export const makeCapturingTracer = () => {
 				status: { _tag: "Started", startTime: options.startTime },
 				attributes,
 				end(_endTime, exit) {
-					ended.push({ name: span.name, attributes, exit })
+					ended.push({
+						name: span.name,
+						spanId: span.spanId,
+						parentSpanId: Option.getOrUndefined(options.parent)?.spanId,
+						attributes,
+						exit,
+					})
 				},
 				attribute(key, value) {
 					attributes.set(key, value)

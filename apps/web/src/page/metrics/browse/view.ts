@@ -82,7 +82,7 @@ const toolbarSearch = (h: H, model: Model): Html =>
 		id: "metrics-search",
 		size: "default",
 		className: "max-w-sm w-64",
-		placeholder: "Search metrics...",
+		placeholder: "Search metrics…",
 		value: model.searchInput,
 		onInput: (value) => Message.ChangedSearchInput({ value }),
 		onClear: Message.ClickedClearSearch(),

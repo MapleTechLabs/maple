@@ -95,7 +95,13 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 				}),
 				h.div(
 					[h.Class("flex-1 overflow-auto p-4")],
-					[errorState(h, { failure, title: "Couldn't load trace details" })],
+					[
+						errorState(h, {
+							failure,
+							title: "Couldn't load trace details",
+							onRetry: Message.ClickedRetryHierarchy(),
+						}),
+					],
 				),
 			],
 			onData: (data) =>

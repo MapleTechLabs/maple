@@ -8,7 +8,7 @@ import {
 } from "@maple/ui/styles/ui/toggle-group"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
-import { togglePrimitive } from "./toggle"
+import { segmentItemHeight, togglePrimitive } from "./toggle"
 
 export type MultiSegmentedOption<T extends string> = Readonly<{
 	value: T
@@ -37,7 +37,14 @@ export const multiSegmentedSelect = <T extends string, M>(
 	return h.div(
 		[
 			...(config.ariaLabel === undefined ? [] : [h.AriaLabel(config.ariaLabel)]),
-			h.Class(cn(toggleGroupStyles, toggleGroupHorizontalStyles, toggleGroupStandaloneStyles, config.className)),
+			h.Class(
+				cn(
+					toggleGroupStyles,
+					toggleGroupHorizontalStyles,
+					toggleGroupStandaloneStyles,
+					config.className,
+				),
+			),
 			...(isDisabled ? [h.DataAttribute("disabled", "")] : []),
 			h.DataAttribute("multiple", ""),
 			h.DataAttribute("orientation", "horizontal"),
@@ -82,7 +89,9 @@ export const multiSegmentedSelect = <T extends string, M>(
 									[h.Class("flex size-3.5 shrink-0 items-center justify-center")],
 									[
 										isSelected
-											? icon(h, "CheckIcon", { className: "size-3.5 text-primary opacity-100" })
+											? icon(h, "CheckIcon", {
+													className: "size-3.5 text-primary opacity-100",
+												})
 											: (option.icon ?? h.empty),
 									],
 								),
@@ -118,7 +127,7 @@ export type SegmentedSelectConfig<T extends string, M> = Readonly<{
 	className?: string
 }>
 
-const XS_ITEM = "h-6 text-2xs sm:h-6 sm:text-2xs"
+const XS_ITEM = "text-2xs sm:text-2xs"
 
 export const segmentedSelect = <T extends string, M>(
 	h: HtmlBuilder<M>,
@@ -152,6 +161,7 @@ export const segmentedSelect = <T extends string, M>(
 							variant: "segment",
 							className: cn(
 								"relative",
+								segmentItemHeight[size],
 								size === "xs" && XS_ITEM,
 								"data-pressed:border-transparent data-pressed:bg-transparent data-pressed:shadow-none dark:data-pressed:bg-transparent",
 							),
