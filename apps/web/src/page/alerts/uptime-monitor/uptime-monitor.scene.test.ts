@@ -235,6 +235,55 @@ describe("uptime monitor page", () => {
 		)
 	})
 
+	test("a check far slower than the rest sits on the top edge and the legend says why", () => {
+		const model = opened(httpMonitor())
+		const at = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString()
+		const quick = Array.from({ length: 100 }, (_, index) => ({
+			at: at(100 - index),
+			durationMs: 120,
+			ok: true,
+			statusCode: 200,
+			traceId: `${index}`.padStart(32, "a"),
+		}))
+		const timeout = {
+			at: at(1),
+			durationMs: 10_000,
+			ok: false,
+			statusCode: null,
+			traceId: "f".repeat(32),
+		}
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [...quick, timeout],
+					samplesTruncated: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 101,
+					failures: 1,
+					p50Ms: 120,
+					p95Ms: 120,
+					p99Ms: 120,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			// The axis follows the bulk of the checks, so one timeout does not flatten them.
+			expectView(text("200 ms")).toExist(),
+			expectView(text("Slower than 200 ms")).toExist(),
+			expectView(selector(`a[href="${traceHref("f".repeat(32))}"]`)).toExist(),
+		)
+	})
+
 	test("switching windows keeps the old figures labelled with their own window until the new ones land", () => {
 		const model = opened(httpMonitor())
 		const loaded = pageUpdate(
