@@ -173,7 +173,7 @@ const body = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): Rea
 					...(monitor.heartbeat_url === null
 						? []
 						: [heartbeatPanel(h, model, monitor.heartbeat_url)]),
-					responseTimePanel(h, monitor),
+					...(monitor.kind === "heartbeat" ? [] : [responseTimePanel(h, monitor)]),
 					checksPanel(h, monitor, timeZone),
 				],
 			),

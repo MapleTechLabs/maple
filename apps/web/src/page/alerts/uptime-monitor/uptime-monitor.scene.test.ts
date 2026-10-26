@@ -101,6 +101,25 @@ describe("uptime monitor page", () => {
 		)
 	})
 
+	test("the last check shows the status code, with the error on its own line", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(opened(downMonitor())),
+			expectView(text("503")).toExist(),
+			expectView(text("503 Service Unavailable")).not.toExist(),
+			expectView(text("2 failed checks in a row")).toExist(),
+		)
+	})
+
+	test("a heartbeat has no response time and expects its schedule and grace", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(opened(heartbeatMonitor())),
+			expectView(text("Response time")).not.toExist(),
+			expectView(text("every 1d, 30m grace")).toExist(),
+		)
+	})
+
 	test("a heartbeat shows its ping URL, the failure variant, and no Check now", () => {
 		const monitor = heartbeatMonitor()
 		scene(

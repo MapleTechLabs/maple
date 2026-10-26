@@ -4,11 +4,19 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "../../../ui/copy-button"
 import { copyableField } from "../../../ui/copyable-field"
 import { eyebrow } from "../../../ui/eyebrow"
-import { panel, panelBody, panelHeader } from "../../../ui/panel"
+import { panel, panelHeader } from "../../../ui/panel"
 import { traceHref, uptimeTracesHref, UPTIME_SERVICE } from "../shared/uptime-commands"
-import { formatMs, formatShare, p95, type UptimeMonitor, uptimeShare } from "../shared/uptime-derive"
+import {
+	formatEvery,
+	formatMs,
+	formatShare,
+	p95,
+	type UptimeMonitor,
+	uptimeShare,
+} from "../shared/uptime-derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { uptimePanelBody } from "../shared/uptime-view"
 
 // The monitor page's panels: response time, the checks list and the side panels.
 
@@ -21,8 +29,8 @@ const fact = (h: H, label: string, value: Html | string, valueClass?: string): H
 	h.div(
 		[h.Class("flex items-baseline justify-between gap-3 px-4 py-2.5 text-sm")],
 		[
-			h.span([h.Class("text-muted-foreground")], [label]),
-			h.span([h.Class(cn("min-w-0 truncate text-right tabular-nums", valueClass))], [value]),
+			h.span([h.Class("shrink-0 whitespace-nowrap text-muted-foreground")], [label]),
+			h.span([h.Class(cn("min-w-0 break-words text-right tabular-nums", valueClass))], [value]),
 		],
 	)
 
@@ -38,7 +46,7 @@ export const responseTimePanel = (h: H, monitor: UptimeMonitor): Html => {
 				[`p95 over the last ${recent.length} checks: ${formatMs(p95(recent))}`],
 			),
 		}),
-		panelBody(h, [
+		uptimePanelBody(h, [
 			recent.length === 0
 				? h.p(
 						[h.Class("py-8 text-center text-sm text-muted-foreground")],
@@ -48,7 +56,7 @@ export const responseTimePanel = (h: H, monitor: UptimeMonitor): Html => {
 						[
 							h.Role("img"),
 							h.AriaLabel(`Response time of the last ${recent.length} checks`),
-							h.Class("flex h-36 items-end gap-px"),
+							h.Class("flex h-36 items-end justify-end gap-0.5"),
 						],
 						recent.map((check, index) =>
 							h.span(
@@ -57,7 +65,7 @@ export const responseTimePanel = (h: H, monitor: UptimeMonitor): Html => {
 									h.Title(`${formatMs(check.duration_ms)}${check.ok ? "" : ", failed"}`),
 									h.Class(
 										cn(
-											"min-w-0 flex-1 rounded-t-[1px]",
+											"min-w-0 max-w-4 flex-1 rounded-t-[1px]",
 											check.ok ? "bg-severity-info/80" : "bg-destructive",
 										),
 									),
@@ -185,28 +193,42 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 	])
 }
 
+/** "every 1d, 30m grace", or the cron line and its time zone. */
+const heartbeatExpectation = (config: Extract<UptimeMonitor["config"], { type: "heartbeat" }>): string => {
+	const schedule =
+		config.schedule.type === "interval"
+			? `every ${formatEvery(config.schedule.seconds)}`
+			: `cron ${config.schedule.expression} (${config.schedule.timezone})`
+	return `${schedule}, ${formatEvery(config.grace_seconds)} grace`
+}
+
 export const lastCheckPanel = (h: H, monitor: UptimeMonitor): Html => {
 	const last = monitor.state.last_check
 	const result =
 		last === null
 			? "No check yet"
-			: last.ok
-				? last.status_code === null
+			: last.status_code !== null
+				? String(last.status_code)
+				: last.ok
 					? "Passed"
-					: `${last.status_code} OK`
-				: last.status_code === null
-					? (last.error ?? "Failed")
-					: `${last.status_code} ${last.error ?? "Failed"}`
+					: "Failed"
+	const config = monitor.config
+	const isHeartbeat = config.type === "heartbeat"
 	return panel(h, { className: "divide-y" }, [
 		panelHeader(h, { title: "Last check" }),
 		fact(h, "Result", result, last !== null && !last.ok ? "text-destructive" : undefined),
-		fact(h, "Duration", formatMs(last?.duration_ms ?? null)),
-		fact(h, "Probe", monitor.kind === "heartbeat" ? "Your job" : "Ashburn, US"),
-		fact(
-			h,
-			"Down after",
-			`${monitor.failures_to_down} failed ${monitor.failures_to_down === 1 ? "check" : "checks in a row"}`,
-		),
+		...(isHeartbeat ? [] : [fact(h, "Duration", formatMs(last?.duration_ms ?? null))]),
+		fact(h, "Probe", isHeartbeat ? "Your job" : "Ashburn, US"),
+		config.type === "heartbeat"
+			? fact(h, "Expected", heartbeatExpectation(config))
+			: fact(
+					h,
+					"Down after",
+					`${monitor.failures_to_down} failed ${monitor.failures_to_down === 1 ? "check" : "checks in a row"}`,
+				),
+		...(last === null || last.ok || last.error === null
+			? []
+			: [h.p([h.Class("px-4 py-2.5 text-sm text-destructive")], [last.error])]),
 	])
 }
 
@@ -214,7 +236,7 @@ export const availabilityPanel = (h: H, monitor: UptimeMonitor): Html => {
 	const share = uptimeShare(monitor.state.recent)
 	return panel(h, {}, [
 		panelHeader(h, { title: "Availability" }),
-		panelBody(h, [
+		uptimePanelBody(h, [
 			h.p(
 				[
 					h.Class(
@@ -287,7 +309,7 @@ const snippet = (h: H, model: Model, id: string, label: string, value: string): 
 export const heartbeatPanel = (h: H, model: Model, pingUrl: string): Html =>
 	panel(h, {}, [
 		panelHeader(h, { title: "Ping URL" }),
-		panelBody(h, [
+		uptimePanelBody(h, [
 			h.p(
 				[h.Class("mb-3 text-sm text-muted-foreground")],
 				["Send a GET or POST here when the job succeeds. Add /fail to report a failure right away."],
