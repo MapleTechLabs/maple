@@ -92,6 +92,28 @@ describe("UptimeHttpProbe", () => {
 		}).pipe(Effect.provide(ProbeLive)),
 	)
 
+	it.effect("a body past the read budget settles only a contains found in the prefix", () =>
+		Effect.gen(function* () {
+			// "ok" up front, "error" only past 64 KB.
+			const respond = () => new Response(`ok ${"x".repeat(70 * 1024)} error`, { status: 200 })
+			const check = (assertion: Record<string, unknown>) =>
+				probeWith([], respond, { assertions: [assertion] })
+			const found = yield* check({ _tag: "body", op: "contains", value: "ok" })
+			const absent = yield* check({ _tag: "body", op: "not_contains", value: "error" })
+			const tail = yield* check({ _tag: "body", op: "contains", value: "error" })
+			assert.isTrue(found.ok)
+			assert.deepStrictEqual(
+				[absent.ok, absent.error, tail.ok, tail.error],
+				[
+					false,
+					"Response body is over 64 KB, more than body checks read",
+					false,
+					"Response body is over 64 KB, more than body checks read",
+				],
+			)
+		}).pipe(Effect.provide(ProbeLive)),
+	)
+
 	it.effect("POSTs the configured body; HEAD reads no body", () =>
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []
