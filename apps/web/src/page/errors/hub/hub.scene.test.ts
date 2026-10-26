@@ -1,7 +1,17 @@
 import { OrgId } from "@maple/domain"
 import { V2ErrorIssue } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
-import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	expect as expectView,
+	given,
+	hover,
+	label,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
 import { toLoadFailure } from "../../../data/load-failure"
@@ -9,6 +19,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import { FetchInvestigations, FetchPage, MountFilterRail, MountRowSelect } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { signalsOf } from "./derive"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -239,6 +250,35 @@ describe("errors hub", () => {
 			),
 			expectView(text("1 issue")).toExist(),
 		)
+	})
+
+	test("hovering moves the focus mark between rows and keeps the joined signals", () => {
+		const model = withPage(windowed(), [
+			issue(),
+			issue({
+				id: "iss_YoxMYDoXSr3tsBZyBLmNMw",
+				exception_type: "SlowQuery",
+				error_label: "SlowQuery",
+			}),
+		])
+		const timeout = role("link", { name: /ConnectionTimeout/ })
+		const slow = role("link", { name: /SlowQuery/ })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			measured,
+			railMounted,
+			Mount.resolve(MountRowSelect, Message.ClickedRowSelect({ id: "", isShift: false })),
+			hover(slow),
+			expectView(slow).toHaveAttr("data-focused", "true"),
+			expectView(timeout).not.toHaveAttr("data-focused"),
+			hover(timeout),
+			expectView(timeout).toHaveAttr("data-focused", "true"),
+			expectView(slow).not.toHaveAttr("data-focused"),
+		)
+		const signals = signalsOf(model)
+		const hovered = pageUpdate(model, Message.HoveredRow({ id: signals[1]?.id ?? "" })).model
+		expect(signalsOf(hovered)).toBe(signals)
 	})
 
 	test("ticking a service and removing its chip write the URL search", () => {

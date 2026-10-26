@@ -1,3 +1,4 @@
+import { cn } from "@maple/ui/lib/utils"
 import { mcpUrl } from "../../../lib/services/common/mcp-url"
 import {
 	claudeCodeCommand,
@@ -15,7 +16,7 @@ import { inlineCode } from "../../../ui/inline-code"
 import * as TabsView from "../../../ui/tabs-view"
 import * as CreateKeyView from "../keys/create-dialog-view"
 import { codeBlock } from "../kit/code-block"
-import { settingsSection, settingsSections } from "../kit/section"
+import { INLINE_LINK_CLASS, settingsSection, settingsSections } from "../kit/section"
 import { Message } from "./message"
 import { CLIENT_LABELS, type Model } from "./model"
 import { connectedClientsSection } from "./view-clients"
@@ -26,8 +27,7 @@ export type ViewInputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: s
 type H = HtmlBuilder<Message>
 
 const mcpEndpoint = `${mcpUrl}/mcp`
-const keysLinkClass = "text-foreground underline underline-offset-2 hover:no-underline"
-const keysLink = (h: H) => h.a([h.Href("/settings?tab=keys"), h.Class(keysLinkClass)], ["Keys"])
+const keysLink = (h: H) => h.a([h.Href("/settings?tab=keys"), h.Class(INLINE_LINK_CLASS)], ["Keys"])
 
 const snippet = (
 	h: H,
@@ -40,7 +40,7 @@ const snippet = (
 	h.div(
 		[h.Class("space-y-2")],
 		[
-			h.p([h.Class("text-xs text-muted-foreground")], hint),
+			h.p([h.Class("font-prose text-xs text-muted-foreground")], hint),
 			codeBlock(h, {
 				code,
 				language,
@@ -136,8 +136,7 @@ const oauthNote = (h: H, model: Model): Html =>
 						{
 							variant: "link",
 							size: "xs",
-							className:
-								"h-auto p-0 align-baseline text-xs underline underline-offset-2 hover:no-underline",
+							className: cn("h-auto p-0 align-baseline text-xs", INLINE_LINK_CLASS),
 							attributes: [h.OnClick(Message.ClickedCreateMcpKey())],
 						},
 						["Create an MCP key"],
@@ -187,7 +186,7 @@ const connectSection = (h: H, model: Model): Html =>
 						},
 					}),
 					h.div(
-						[h.Class("space-y-1 border-t pt-3 text-xs")],
+						[h.Class("space-y-1 border-t pt-3 font-prose text-xs")],
 						[
 							h.p(
 								[h.Class("text-muted-foreground")],

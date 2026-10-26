@@ -90,7 +90,7 @@ export const leftSheet = <Message>(
 								[
 									h.h2(
 										[
-											h.Class(cn(sheetTitleStyles)),
+											h.Class(cn(sheetTitleStyles, "font-display tracking-tight")),
 											h.DataAttribute("slot", "sheet-title"),
 											h.Id(`${options.id}-title`),
 										],
@@ -98,7 +98,7 @@ export const leftSheet = <Message>(
 									),
 									h.p(
 										[
-											h.Class(cn(sheetDescriptionStyles)),
+											h.Class(cn(sheetDescriptionStyles, "font-prose")),
 											h.DataAttribute("slot", "sheet-description"),
 											h.Id(`${options.id}-description`),
 										],

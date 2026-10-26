@@ -70,7 +70,7 @@ const sessionBadges = <M>(h: HtmlBuilder<M>, session: SessionRow): ReadonlyArray
 	...(session.errorCount > 0 ? [errorCountPill(h, session.errorCount)] : []),
 	...(session.traceCount > 0
 		? [
-				badge(h, { pill: true, size: "xs", mono: true, className: "bg-chart-1/12 text-chart-1" }, [
+				badge(h, { variant: "meta", pill: true, size: "xs", mono: true }, [
 					countLabel(session.traceCount, "trace"),
 				]),
 			]

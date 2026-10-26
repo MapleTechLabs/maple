@@ -61,7 +61,7 @@ const footer = (h: H, model: Model): Html =>
 							size: "sm",
 							attributes: [h.OnClick(Message.ClickedAddQuery())],
 						},
-						[icon(h, "PlusIcon"), "Add Query"],
+						[icon(h, "PlusIcon"), "Add query"],
 					),
 					button(
 						h,
@@ -70,20 +70,20 @@ const footer = (h: H, model: Model): Html =>
 							size: "sm",
 							attributes: [h.OnClick(Message.ClickedAddFormula())],
 						},
-						[icon(h, "PlusIcon"), "Add Formula"],
+						[icon(h, "PlusIcon"), "Add formula"],
 					),
 				],
 			),
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
-					h.span([h.Class(META)], [model.window.startTime, " -> ", model.window.endTime]),
+					h.span([h.Class(META)], [model.window.startTime, " → ", model.window.endTime]),
 					...(model.lastRunAt === null
 						? []
 						: [h.span([h.Class(META)], ["last run: ", model.lastRunAt])]),
 					button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedRun())] }, [
-						icon(h, "MagnifierIcon"),
-						"Run Query",
+						icon(h, "MediaPlayIcon"),
+						"Run query",
 					]),
 				],
 			),
@@ -192,7 +192,7 @@ const resultsCard = (h: H, model: Model): Html =>
 	card(
 		h,
 		[
-			cardHeader(h, [cardTitle(h, ["Execution Results"], "text-xs")], "pb-1"),
+			cardHeader(h, [cardTitle(h, ["Execution results"], "text-xs")], "pb-1"),
 			cardPanel(h, [resultsContent(h, model)], "space-y-2"),
 		],
 		"gap-2",

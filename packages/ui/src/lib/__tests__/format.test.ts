@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 
 import {
+	axisTickFormatter,
+	axisTickValues,
 	bucketIntervalLabel,
 	countLabel,
 	EMPTY_VALUE,
@@ -13,6 +15,7 @@ import {
 	formatLoad,
 	formatNumber,
 	formatPercent,
+	formatPercentColumn,
 	formatRate,
 	formatRatePerHour,
 	formatStorageBytes,
@@ -31,9 +34,13 @@ describe("formatDuration", () => {
 	it("walks the full μs → h ladder", () => {
 		expect(formatDuration(0.5)).toBe("500μs")
 		expect(formatDuration(1)).toBe("1.0ms")
-		expect(formatDuration(250)).toBe("250.0ms")
+		expect(formatDuration(250)).toBe("250ms")
+		expect(formatDuration(29.14)).toBe("29.1ms")
 		expect(formatDuration(1_000)).toBe("1.00s")
-		expect(formatDuration(59_000)).toBe("59.00s")
+		expect(formatDuration(2_240)).toBe("2.24s")
+		expect(formatDuration(59_000)).toBe("59.0s")
+		expect(formatDuration(41_060)).toBe("41.1s")
+		expect(formatDuration(72)).toBe("72.0ms")
 	})
 
 	it("keeps going past a minute instead of stopping at seconds", () => {
@@ -83,9 +90,10 @@ describe("byte formatting", () => {
 		expect(formatStorageBytes(1_000_000)).toBe("1.0 MB")
 	})
 
-	it("floors at zero rather than emitting a negative size", () => {
+	it("keeps the sign of a negative binary size and floors storage at zero", () => {
 		expect(formatBytes(0)).toBe("0 B")
-		expect(formatBytes(-5)).toBe("0 B")
+		expect(formatBytes(-4096)).toBe("-4.0 KB")
+		expect(formatBytes(Number.NaN)).toBe(EMPTY_VALUE)
 		expect(formatStorageBytes(-5)).toBe("0 B")
 	})
 
@@ -102,9 +110,12 @@ describe("byte formatting", () => {
 })
 
 describe("percent formatters stay separate", () => {
-	it("formatPercent floors small utilization to 0%", () => {
-		expect(formatPercent(0.0001)).toBe("0%")
+	it("formatPercent never rounds a tiny non-zero share to 0%", () => {
+		expect(formatPercent(0)).toBe("0%")
+		expect(formatPercent(0.0001)).toBe("0.01%")
+		expect(formatPercent(0.000_000_3)).toBe("<0.01%")
 		expect(formatPercent(0.052)).toBe("5.2%")
+		expect(formatPercent(0.06)).toBe("6.0%")
 		expect(formatPercent(0.87)).toBe("87%")
 		expect(formatPercent(Number.NaN)).toBe(EMPTY_VALUE)
 	})
@@ -115,10 +126,22 @@ describe("percent formatters stay separate", () => {
 		expect(formatPercent(0.052, { floor: 0.001 })).toBe("5.2%")
 	})
 
+	it("formatPercentColumn and formatErrorRate share one precision rule for a column", () => {
+		expect([0.88, 0.34, 0.01, 0, 1].map(formatPercentColumn)).toEqual([
+			"88.0%",
+			"34.0%",
+			"1.0%",
+			"0%",
+			"100%",
+		])
+		expect([0.255, 0.0016, 0].map((value) => formatErrorRate(value))).toEqual(["25.5%", "0.16%", "0%"])
+	})
+
 	it("formatErrorRate surfaces a rare failure instead of showing 0%", () => {
 		expect(formatErrorRate(0)).toBe("0%")
 		expect(formatErrorRate(0.00005)).toBe("<0.01%")
-		expect(formatErrorRate(0.005)).toBe("0.50%")
+		expect(formatErrorRate(0.0008)).toBe("0.08%")
+		expect(formatErrorRate(0.0016)).toBe("0.16%")
 		expect(formatErrorRate(0.087)).toBe("8.7%")
 	})
 })
@@ -233,5 +256,60 @@ describe("worst-case inputs", () => {
 
 	it("formatErrorRate guards non-finite input", () => {
 		expect(formatErrorRate(Number.NaN)).toBe(EMPTY_VALUE)
+	})
+})
+
+describe("axisTickFormatter", () => {
+	it("prints every duration tick in the largest tick's unit at one precision", () => {
+		const format = axisTickFormatter("duration_ms", [0, 1_600])
+		expect([0, 500, 1_500].map(format)).toEqual(["0", "0.5s", "1.5s"])
+	})
+
+	it("reads in milliseconds while the largest tick is under 1s, then in seconds", () => {
+		const under = [0, 800] as const
+		const underLabels = axisTickValues(under, 3).map(axisTickFormatter("duration_ms", under, 3))
+		expect(underLabels.every((label) => label === "0" || label.endsWith("ms"))).toBe(true)
+		const over = [0, 1_200] as const
+		expect(axisTickValues(over, 3).map(axisTickFormatter("duration_ms", over, 3))).toEqual([
+			"0",
+			"0.5s",
+			"1.0s",
+		])
+	})
+
+	it("prints whole-second steps without a decimal", () => {
+		const format = axisTickFormatter("duration_ms", [0, 4_000])
+		expect([0, 1_000, 2_000].map(format)).toEqual(["0", "1s", "2s"])
+	})
+
+	it("keeps small duration axes in milliseconds with a unitless zero", () => {
+		const format = axisTickFormatter("duration_ms", [0, 400])
+		expect([0, 100, 400].map(format)).toEqual(["0", "100ms", "400ms"])
+	})
+
+	it("drops decimals a percent axis does not need", () => {
+		const format = axisTickFormatter("percent", [0, 1])
+		expect([0, 0.2, 0.8].map(format)).toEqual(["0", "20%", "80%"])
+	})
+
+	it("adds decimals when the percent step needs them", () => {
+		const format = axisTickFormatter("percent", [0, 0.01])
+		expect([0, 0.002, 0.01].map(format)).toEqual(["0", "0.2%", "1.0%"])
+	})
+})
+
+describe("axisTickValues", () => {
+	it("steps evenly inside the domain and labels a 1s step without decimals", () => {
+		const domain = [0, 2_200] as const
+		expect(axisTickValues(domain, 3)).toEqual([0, 1_000, 2_000])
+		expect(axisTickValues(domain, 3).map(axisTickFormatter("duration_ms", domain, 3))).toEqual([
+			"0",
+			"1s",
+			"2s",
+		])
+	})
+
+	it("does not drift on fractional steps", () => {
+		expect(axisTickValues([0, 0.3], 3)).toEqual([0, 0.1, 0.2, 0.3])
 	})
 })

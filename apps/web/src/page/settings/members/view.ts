@@ -27,15 +27,25 @@ import { type InvitationRow, type MemberRow, Message, type Model } from "./model
 import { hasMore, roleSelectFor } from "./update"
 
 type H = HtmlBuilder<Message>
-type Inputs = Readonly<{ nowMs: number; timeZone: string }>
+type Inputs = Readonly<{ nowMs: number; timeZone: string; isKnownMember: boolean }>
 
 const ROLE_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
 	{ _tag: "Item", item: { value: "org:member", label: "Member" } },
 	{ _tag: "Item", item: { value: "org:admin", label: "Admin" } },
 ]
 
-const roleText = (h: H, role: string): Html =>
-	h.span([h.Class("px-2.5 text-xs text-foreground")], [orgRoleLabel(role)])
+/** `isInset`: the members column holds role selects, so both tables put values and headers at their text inset. */
+const roleText = (h: H, role: string, isInset: boolean): Html =>
+	h.span([h.Class(cn("text-xs text-foreground", isInset && "px-2.5"))], [orgRoleLabel(role)])
+
+const roleHead = (h: H, isInset: boolean): Html =>
+	tableHead(h, [h.span([h.Class(cn(isInset && "px-2.5"))], ["Role"])], COLUMN.role)
+
+/** One set of column widths for the members and invitations tables, on a fixed layout. */
+const COLUMN = { role: "w-36", date: "w-36", actions: "w-12" } as const
+
+/** Without the actions column the date column ends the row, so it sits flush right. */
+const dateAlign = (isAdmin: boolean): string | undefined => (isAdmin ? undefined : "text-right")
 
 const truncatedCell = (h: H, children: ReadonlyArray<Html>, className?: string): Html =>
 	tableCell(h, children, cn(truncatedCellStyles, className))
@@ -64,7 +74,7 @@ const skeletonRow = (h: H, isAdmin: boolean, index: number): Html =>
 				),
 			]),
 			tableCell(h, [skeleton(h, "h-3 w-16")]),
-			tableCell(h, [skeleton(h, "h-3 w-20")]),
+			tableCell(h, [skeleton(h, cn("h-3 w-20", !isAdmin && "ml-auto"))]),
 			...(isAdmin ? [tableCell(h, [])] : []),
 		],
 		undefined,
@@ -72,7 +82,7 @@ const skeletonRow = (h: H, isAdmin: boolean, index: number): Html =>
 	)
 
 const roleCell = (h: H, model: Model, member: MemberRow, canManage: boolean): Html => {
-	if (!canManage) return tableCell(h, [roleText(h, member.role)])
+	if (!canManage) return tableCell(h, [roleText(h, member.role, model.isAdmin)])
 	const isConfirming = model.pendingRole?.memberId === member.id
 	return tableCell(h, [
 		h.submodel({
@@ -135,7 +145,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 			tableCell(
 				h,
 				[formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone })],
-				"text-xs text-muted-foreground",
+				cn("text-xs text-muted-foreground", dateAlign(model.isAdmin)),
 			),
 			...(model.isAdmin
 				? [
@@ -265,13 +275,13 @@ const membersSection = (h: H, model: Model, inputs: Inputs): Html => {
 			padded: false,
 		},
 		[
-			table(h, {}, [
+			table(h, { className: "table-fixed" }, [
 				tableHeader(h, [
 					tableRow(h, [
 						tableHead(h, ["Member"]),
-						tableHead(h, ["Role"], "w-36"),
-						tableHead(h, ["Joined"], "w-36"),
-						...(model.isAdmin ? [tableHead(h, [], "w-12")] : []),
+						roleHead(h, model.isAdmin),
+						tableHead(h, ["Joined"], cn(COLUMN.date, dateAlign(model.isAdmin))),
+						...(model.isAdmin ? [tableHead(h, [], COLUMN.actions)] : []),
 					]),
 				]),
 				tableBody(h, [
@@ -301,11 +311,11 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 					],
 				),
 			]),
-			tableCell(h, [roleText(h, invitation.role)]),
+			tableCell(h, [roleText(h, invitation.role, model.isAdmin)]),
 			tableCell(
 				h,
 				[formatRelativeTime(invitation.createdAtMs, inputs.nowMs)],
-				"text-xs text-muted-foreground",
+				cn("text-xs text-muted-foreground", dateAlign(model.isAdmin)),
 			),
 			...(model.isAdmin
 				? [
@@ -357,13 +367,13 @@ const invitationsSection = (h: H, model: Model, inputs: Inputs): ReadonlyArray<H
 				padded: false,
 			},
 			[
-				table(h, {}, [
+				table(h, { className: "table-fixed" }, [
 					tableHeader(h, [
 						tableRow(h, [
 							tableHead(h, ["Email"]),
-							tableHead(h, ["Role"], "w-36"),
-							tableHead(h, ["Invited"], "w-36"),
-							...(model.isAdmin ? [tableHead(h, [], "w-12")] : []),
+							roleHead(h, model.isAdmin),
+							tableHead(h, ["Invited"], cn(COLUMN.date, dateAlign(model.isAdmin))),
+							...(model.isAdmin ? [tableHead(h, [], COLUMN.actions)] : []),
 						]),
 					]),
 					tableBody(
@@ -497,7 +507,11 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 	if (!model.hasOrganization)
 		return noOrganization(h, "Select or create an organization to manage members.")
 	return settingsSections(h, [
-		...adminOnlyNotice(h, { isAdmin: model.isAdmin, subject: "members", adminName: model.adminName }),
+		...adminOnlyNotice(h, {
+			isKnownMember: inputs.isKnownMember && !model.isAdmin,
+			subject: "members",
+			adminName: model.adminName,
+		}),
 		membersSection(h, model, inputs),
 		...invitationsSection(h, model, inputs),
 		...dialogs(h, model),

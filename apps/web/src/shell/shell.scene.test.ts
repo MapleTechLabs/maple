@@ -457,6 +457,17 @@ describe("app update banner", () => {
 			Command.resolve(ReloadPage, Message.CompletedReloadPage()),
 		)
 	})
+
+	test("a version check that finds the running build keeps the model, so nothing re-renders", () => {
+		const model = signedIn()
+		const checked = update(model, Message.CheckedDeployedCommit({ maybeCommit: Option.none() }))
+		expectVitest(checked.model).toBe(model)
+		const outdated = update(
+			model,
+			Message.CheckedDeployedCommit({ maybeCommit: Option.some("f00dfeed") }),
+		)
+		expectVitest(outdated.model.isAppOutdated).toBe(true)
+	})
 })
 
 describe("infrastructure section", () => {

@@ -21,7 +21,11 @@ type H = HtmlBuilder<Message>
 /** `IngestKeysUnavailableNote`: members cannot read the org's ingest keys. */
 const keysUnavailable = (h: H): Html =>
 	h.p(
-		[h.Class("rounded-md border border-dashed bg-muted/40 px-3 py-2 font-prose text-xs text-muted-foreground")],
+		[
+			h.Class(
+				"rounded-md border border-dashed bg-muted/40 px-3 py-2 font-prose text-xs text-muted-foreground",
+			),
+		],
 		[
 			"Ask an org admin for your ingest keys, or open ",
 			h.a(
@@ -53,15 +57,22 @@ const credentials = (h: H, model: Model): Html =>
 				: model.keys._tag === "Pending" || model.keys.privateKey === ""
 					? h.div(
 							[h.Class("space-y-1")],
-							[h.span([h.Class("text-xs text-muted-foreground")], ["Private ingest key"]), skeleton(h, "h-8 w-full")],
+							[
+								h.span([h.Class("text-xs text-muted-foreground")], ["Private ingest key"]),
+								skeleton(h, "h-8 w-full"),
+							],
 						)
 					: copyableField(h, {
 							id: "setup-private-key",
 							label: "Private ingest key",
 							value: model.keys.privateKey,
 							copy: model.copies.privateKey,
-							toCopyMessage: (message) => Message.GotCopyMessage({ field: "privateKey", message }),
-							masked: { isVisible: model.isPrivateKeyVisible, onToggle: Message.ClickedRevealPrivateKey() },
+							toCopyMessage: (message) =>
+								Message.GotCopyMessage({ field: "privateKey", message }),
+							masked: {
+								isVisible: model.isPrivateKeyVisible,
+								onToggle: Message.ClickedRevealPrivateKey(),
+							},
 						}),
 		],
 	)
@@ -89,7 +100,8 @@ const guidedSetup = (h: H, model: Model, framework: string): Html =>
 						snippetCopies: model.snippetCopies,
 						toSetupTabs: (message) => Message.GotSetupTabsMessage({ message }),
 						toPackageTabs: (message) => Message.GotPackageTabsMessage({ message }),
-						toSnippetCopy: (snippet, message) => Message.GotSnippetCopyMessage({ snippet, message }),
+						toSnippetCopy: (snippet, message) =>
+							Message.GotSnippetCopyMessage({ snippet, message }),
 						variant: "boxed",
 					}),
 				],
@@ -100,7 +112,11 @@ const guidedSetup = (h: H, model: Model, framework: string): Html =>
 /** "Watching for your first trace…" while the card waits for data. */
 const watchingStrip = (h: H): Html =>
 	h.div(
-		[h.Class("flex items-center gap-2.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-4 py-3")],
+		[
+			h.Class(
+				"flex items-center gap-2.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-4 py-3",
+			),
+		],
 		[
 			icon(h, "PulseIcon", { size: 14, className: "text-primary" }),
 			h.span([h.Class("font-prose text-xs text-muted-foreground")], ["Watching for your first trace…"]),
@@ -116,13 +132,20 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 				h,
 				[
 					h.div(
-						[h.Class("flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary")],
+						[
+							h.Class(
+								"flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary",
+							),
+						],
 						[icon(h, "CircleCheckIcon", { size: 20 })],
 					),
 					h.div(
 						[h.Class("min-w-0 flex-1 basis-40")],
 						[
-							h.p([h.Class("text-sm font-semibold tracking-tight")], ["First trace received — you're live"]),
+							h.p(
+								[h.Class("text-sm font-semibold tracking-tight")],
+								["First trace received. You're live"],
+							),
 							h.p(
 								[h.Class("mt-0.5 font-prose text-xs text-muted-foreground")],
 								[
@@ -148,7 +171,10 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 							variant: "ghost",
 							size: "sm",
 							className: "size-8 p-0 shrink-0",
-							attributes: [h.AriaLabel("Dismiss"), h.OnClick(Message.ClickedDismissCelebration())],
+							attributes: [
+								h.AriaLabel("Dismiss"),
+								h.OnClick(Message.ClickedDismissCelebration()),
+							],
 						},
 						[icon(h, "XmarkIcon", {})],
 					),
@@ -160,7 +186,13 @@ const celebration = (h: H, serviceName: string | undefined): Html =>
 	)
 
 /** `SetupChecklistCard` while waiting: the collapsible "Connect your app" card. */
-const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string, intents: Parameters<typeof getOnboardingSetupHint>[0]): Html =>
+const waitingCard = (
+	h: H,
+	model: Model,
+	isExpanded: boolean,
+	framework: string,
+	intents: Parameters<typeof getOnboardingSetupHint>[0],
+): Html =>
 	card(
 		h,
 		[
@@ -171,7 +203,11 @@ const waitingCard = (h: H, model: Model, isExpanded: boolean, framework: string,
 						onClick: Message.ClickedToggleExpanded(),
 						className: "flex-1 px-5 py-4 hover:bg-muted/30",
 						leading: h.span(
-							[h.Class("flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary")],
+							[
+								h.Class(
+									"flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary",
+								),
+							],
 							[icon(h, "CodeIcon", { size: 16 })],
 						),
 						title: "Connect your app to see real data",

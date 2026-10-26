@@ -127,14 +127,15 @@ const makeTickLayer = (database: string) => {
 		),
 	)
 	const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive))
+	const orgChSettingsLive = OrgClickHouseSettingsService.layer.pipe(
+		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
+	)
 	const warehouseLive = Layer.effect(WarehouseQueryService, WarehouseQueryService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(
 			Layer.mergeAll(
 				envLive,
-				OrgClickHouseSettingsService.layer.pipe(
-					Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
-				),
+				orgChSettingsLive,
 				TinybirdOrgTokenService.layer.pipe(Layer.provide(envLive)),
 			),
 		),
@@ -152,6 +153,7 @@ const makeTickLayer = (database: string) => {
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
 		Layer.provide(warehouseLive),
+		Layer.provide(orgChSettingsLive),
 		Layer.provide(edgeCacheLive),
 		Layer.provide(
 			Layer.succeed(NotificationDispatcher, {

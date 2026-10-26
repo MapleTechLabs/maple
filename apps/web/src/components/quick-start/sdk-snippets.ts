@@ -60,7 +60,7 @@ export function register() {
 				"@opentelemetry/exporter-logs-otlp-http",
 			],
 		},
-		instrument: `// tracing.ts — run with: node --import ./tracing.ts app.ts
+		instrument: `// tracing.ts (run with: node --import ./tracing.ts app.ts)
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
@@ -197,7 +197,7 @@ Effect.runPromise(
 		language: "otel",
 		lang: "bash",
 		label: "Custom / OpenTelemetry",
-		description: "Any language or runtime — just point your OTLP exporter at Maple",
+		description: "Any language or runtime. Point your OTLP exporter at Maple",
 		iconKey: "otel",
 		install: `# Use your language's OpenTelemetry SDK
 # See https://opentelemetry.io/docs/languages/ for installation`,

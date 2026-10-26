@@ -45,7 +45,8 @@ export const LANE = {
 	volume: "hidden w-[52px] shrink-0 items-center justify-end gap-2 @lg/page:flex @2xl/page:w-[148px]",
 	spark: "hidden min-w-0 flex-1 @2xl/page:block",
 	count: "w-[52px] shrink-0 text-right",
-	service: "hidden w-[104px] shrink-0 @xl/page:block",
+	// Inset so the right-aligned Events count and the left-aligned Service read as two columns.
+	service: "hidden w-[116px] shrink-0 pl-3 @xl/page:block",
 	state: "hidden w-[104px] shrink-0 @3xl/page:block",
 	actor: "w-5 shrink-0",
 	lastSeen: "w-[76px] shrink-0 whitespace-nowrap",
@@ -203,10 +204,16 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 						),
 						...(rowDetail
 							? [
-									truncatedText(h, {
-										text: rowDetail,
-										className: "hidden min-w-0 flex-1 text-muted-foreground @4xl/page:block",
-									}),
+									// A line clamp, not `truncate`: the ellipsis follows the last glyph, never a space.
+									h.span(
+										[
+											h.Class(
+												"hidden min-w-0 flex-1 break-all text-muted-foreground @4xl/page:line-clamp-1",
+											),
+											h.Title(rowDetail),
+										],
+										[rowDetail],
+									),
 								]
 							: []),
 						...(activity === null ? [] : [activity]),

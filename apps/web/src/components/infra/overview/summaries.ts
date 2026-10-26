@@ -7,7 +7,13 @@ import type { RailwayServiceRow } from "@maple/web-data/warehouse/railway-infra"
 import type { SupabaseProjectRow } from "@maple/web-data/warehouse/supabase-infra"
 import type { PlanetScaleDatabaseStat } from "@maple/web-data/warehouse/service-map"
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { countLabel, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import {
+	countLabel,
+	formatDuration,
+	formatErrorRate,
+	formatNumber,
+	formatPercent,
+} from "@maple/ui/lib/format"
 
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import {
@@ -244,7 +250,7 @@ export function summarizeCloudflare(zones: ReadonlyArray<CloudflareZoneRow>): So
 		tone: errorRateLevel(zone.errorRate) === "crit" ? "crit" : "warn",
 		subject: zone.zoneName,
 		title: `${zone.zoneName} returning ${formatErrorRate(zone.errorRate)} 5xx`,
-		detail: `${formatNumber(zone.requests)} requests, origin p99 ${Math.round(zone.originP99Ms)}ms`,
+		detail: `${formatNumber(zone.requests)} requests, origin p99 ${formatDuration(zone.originP99Ms)}`,
 		target: { kind: "zone", zoneName: zone.zoneName },
 	}))
 
