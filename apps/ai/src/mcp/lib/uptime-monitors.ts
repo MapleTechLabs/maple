@@ -20,7 +20,13 @@ export const DEFAULT_HEARTBEAT_TIMEZONE = "UTC"
 const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString())
 
 const seconds = (value: number): string =>
-	value % 3600 === 0 ? `${value / 3600}h` : value % 60 === 0 ? `${value / 60}m` : `${value}s`
+	value === 0
+		? "0s"
+		: value % 3600 === 0
+			? `${value / 3600}h`
+			: value % 60 === 0
+				? `${value / 60}m`
+				: `${value}s`
 
 /** What a monitor checks, in one line. Userinfo and query secrets never leave the URL. */
 export const targetSummary = (config: UptimeMonitorConfig): string => {

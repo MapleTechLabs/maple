@@ -10,7 +10,12 @@ import { RoleName } from "@maple/domain/primitives"
 import { executeSql } from "@maple/backend/platform/test-pglite"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
-import { buildUptimeConfig, toMcpUptimeError, updateUptimeConfig } from "../../lib/uptime-monitors"
+import {
+	buildUptimeConfig,
+	targetSummary,
+	toMcpUptimeError,
+	updateUptimeConfig,
+} from "../../lib/uptime-monitors"
 
 let member: EvalRuntime
 let admin: EvalRuntime
@@ -272,5 +277,17 @@ describe("uptime monitor config and errors", () => {
 			buildUptimeConfig("heartbeat", { heartbeat_interval_seconds: 3600, cron: "0 * * * *" }),
 		)
 		expect(exit._tag).toBe("Failure")
+	})
+})
+
+describe("targetSummary", () => {
+	it("reads a zero grace as seconds, not hours", () => {
+		expect(
+			targetSummary({
+				_tag: "heartbeat",
+				schedule: { _tag: "interval", seconds: 3600 },
+				graceSeconds: 0,
+			}),
+		).toBe("ping every 1h, 0s grace")
 	})
 })
