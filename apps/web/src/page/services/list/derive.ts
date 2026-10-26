@@ -1,7 +1,6 @@
 import type { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import {
 	baselineKey,
-	alertIncidentCauseLabel,
 	buildBaselineMap,
 	deriveServiceHealthFromCauses,
 	type LatencyBaselineSignal,
@@ -26,8 +25,6 @@ export const isServiceHealth = (value: string): value is ServiceHealth =>
 
 export type HealthSummary = Readonly<{
 	byRow: ReadonlyMap<string, ServiceHealth>
-	/** Why each row has its health, for the hover; empty for a healthy row. */
-	causesByRow: ReadonlyMap<string, ReadonlyArray<ServiceHealthCause>>
 	counts: Readonly<Record<ServiceHealth, number>>
 }>
 
@@ -60,10 +57,7 @@ export const healthSummary = (
 			const key = incident.groupKey ?? ""
 			alertCauses.set(key, [
 				...(alertCauses.get(key) ?? []),
-				{
-					severity: incident.severity,
-					label: alertIncidentCauseLabel(incident.signalType),
-				},
+				{ severity: incident.severity, label: "Alert firing" },
 			])
 		})
 	const anomalyCauses = new Map<string, Array<ServiceHealthCause>>()
@@ -77,17 +71,17 @@ export const healthSummary = (
 			])
 		})
 	const byRow = new Map<string, ServiceHealth>()
-	const causesByRow = new Map<string, ReadonlyArray<ServiceHealthCause>>()
 	const counts = { healthy: 0, degraded: 0, unhealthy: 0 }
 	overview.forEach((service) => {
 		const key = serviceHealthRowKey(service.serviceName, service.environment)
-		const causes = [...(alertCauses.get(service.serviceName) ?? []), ...(anomalyCauses.get(key) ?? [])]
-		const health = deriveServiceHealthFromCauses(causes)
+		const health = deriveServiceHealthFromCauses([
+			...(alertCauses.get(service.serviceName) ?? []),
+			...(anomalyCauses.get(key) ?? []),
+		])
 		byRow.set(key, health)
-		causesByRow.set(key, causes)
 		counts[health] += 1
 	})
-	return { byRow, causesByRow, counts }
+	return { byRow, counts }
 }
 
 export const healthOf = (
