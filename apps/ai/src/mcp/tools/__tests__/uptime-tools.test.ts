@@ -148,6 +148,32 @@ describe("list_uptime_monitors", () => {
 		expect(down.monitors.map((monitor) => monitor.name)).toEqual(["payments-db"])
 	})
 
+	it("hides a heartbeat's ping URL from members and shows it to admins", async () => {
+		const created = decode(
+			UptimeMonitorMutationOutput,
+			await runToolDirect(admin, "create_uptime_monitor", {
+				name: "weekly-report",
+				kind: "heartbeat",
+				heartbeat_interval_seconds: 604800,
+			}),
+		)
+		const pingUrl = created.monitor.heartbeatUrl
+		expect(pingUrl).toMatch(/\/hb\/[\w-]+$/u)
+
+		const memberResult = await runToolDirect(member, "list_uptime_monitors", {})
+		const memberRow = decode(ListUptimeMonitorsOutput, memberResult).monitors.find(
+			(row) => row.id === created.monitor.id,
+		)
+		expect(memberRow?.heartbeatUrl).toBeNull()
+		expect(JSON.stringify(memberResult)).not.toContain("/hb/")
+
+		const adminRow = decode(
+			ListUptimeMonitorsOutput,
+			await runToolDirect(admin, "list_uptime_monitors", {}),
+		).monitors.find((row) => row.id === created.monitor.id)
+		expect(adminRow?.heartbeatUrl).toBe(pingUrl)
+	})
+
 	it("filters by service", async () => {
 		const output = decode(
 			ListUptimeMonitorsOutput,

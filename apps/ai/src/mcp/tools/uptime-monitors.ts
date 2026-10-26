@@ -19,7 +19,7 @@ import {
 	type OrgId,
 } from "@maple/domain/primitives"
 import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import { isAdmin, requireAdmin } from "@maple/backend/services/auth/auth"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -235,7 +235,8 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			const monitors = yield* service
 				.list(tenant.orgId)
 				.pipe(Effect.mapError(toMcpUptimeError("list_uptime_monitors")))
-			const rows = monitors.map(toMonitorRow)
+			const canWrite = isAdmin(tenant.roles)
+			const rows = monitors.map((monitor) => toMonitorRow(monitor, canWrite))
 			const count = (status: keyof typeof STATUS_ORDER) =>
 				rows.filter((row) => row.status === status).length
 			const shown = rows
@@ -355,7 +356,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 				.pipe(Effect.mapError(toMcpUptimeError("create_uptime_monitor")))
 			return {
 				action: "created" as const,
-				monitor: toMonitorRow(created),
+				monitor: toMonitorRow(created, true),
 				pingCommand: pingCommand(created.heartbeatUrl),
 			}
 		}),
@@ -406,7 +407,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 				.pipe(Effect.mapError(toMcpUptimeError("update_uptime_monitor")))
 			return {
 				action: "updated" as const,
-				monitor: toMonitorRow(updated),
+				monitor: toMonitorRow(updated, true),
 				pingCommand: pingCommand(updated.heartbeatUrl),
 			}
 		}),

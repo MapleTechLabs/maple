@@ -45,7 +45,11 @@ export const targetSummary = (config: UptimeMonitorConfig): string => {
 export const uptimeRatio = (recent: ReadonlyArray<UptimeRecentCheck>): number | null =>
 	recent.length === 0 ? null : recent.filter((check) => check.ok).length / recent.length
 
-export const toMonitorRow = (monitor: UptimeMonitorRecord): typeof UptimeMonitorRow.Type => ({
+/** `canWrite`: the ping URL is a credential, so only org admins see it. */
+export const toMonitorRow = (
+	monitor: UptimeMonitorRecord,
+	canWrite: boolean,
+): typeof UptimeMonitorRow.Type => ({
 	id: monitor.id,
 	name: monitor.name,
 	kind: monitor.kind,
@@ -70,7 +74,7 @@ export const toMonitorRow = (monitor: UptimeMonitorRecord): typeof UptimeMonitor
 	uptimeRatio: uptimeRatio(monitor.state.recent),
 	recentChecks: monitor.state.recent.length,
 	lastPingAt: iso(monitor.state.lastPingAt),
-	heartbeatUrl: monitor.heartbeatUrl,
+	heartbeatUrl: canWrite ? monitor.heartbeatUrl : null,
 	destinationIds: [...monitor.destinationIds],
 })
 
