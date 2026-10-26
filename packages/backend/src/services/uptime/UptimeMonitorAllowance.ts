@@ -74,6 +74,7 @@ export class UptimeMonitorAllowance extends Context.Service<
 					(error) =>
 						new UptimeMonitorPersistenceError({
 							message: `Could not read the plan's uptime monitor allowance: ${error.message}`,
+							cause: error,
 						}),
 				),
 			)

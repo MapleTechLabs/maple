@@ -83,10 +83,14 @@ const targetAttributes = (
 ): Record<string, string | number | boolean> => {
 	switch (config._tag) {
 		case "http":
+			// The query and fragment may carry credentials, so the span keeps scheme, host and path.
 			return Option.match(parseUrl(config.url), {
-				onNone: () => ({ "url.full": config.url, "http.request.method": config.method }),
+				onNone: () => ({
+					"url.full": config.url.split(/[?#]/u)[0] ?? "",
+					"http.request.method": config.method,
+				}),
 				onSome: (url) => ({
-					"url.full": config.url,
+					"url.full": `${url.origin}${url.pathname}`,
 					"http.request.method": config.method,
 					"server.address": url.hostname,
 					"server.port": Number(url.port || (url.protocol === "https:" ? 443 : 80)),
