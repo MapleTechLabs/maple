@@ -5,6 +5,7 @@
 import { SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import { ListSourcesOutput } from "./sources"
+import { DeleteUptimeMonitorOutput, ListUptimeMonitorsOutput, UptimeMonitorMutationOutput } from "./uptime"
 import {
 	DeleteScrapeTargetOutput,
 	ListIntegrationsOutput,
@@ -119,9 +120,11 @@ export const McpToolOutputs = {
 	create_alert_rule: CreateAlertRuleOutput,
 	create_scrape_target: ScrapeTargetMutationOutput,
 	create_dashboard: CreateDashboardOutput,
+	create_uptime_monitor: UptimeMonitorMutationOutput,
 	db_query_volume: DbQueryVolumeOutput,
 	delete_scrape_target: DeleteScrapeTargetOutput,
 	delete_alert_rule: DeleteAlertRuleOutput,
+	delete_uptime_monitor: DeleteUptimeMonitorOutput,
 	describe_dashboard_schema: DescribeDashboardSchemaOutput,
 	describe_warehouse_tables: DescribeWarehouseTablesOutput,
 	diagnose_service: DiagnoseServiceOutput,
@@ -160,6 +163,7 @@ export const McpToolOutputs = {
 	list_infra: ListInfraOutput,
 	list_integrations: ListIntegrationsOutput,
 	list_sources: ListSourcesOutput,
+	list_uptime_monitors: ListUptimeMonitorsOutput,
 	list_metrics: ListMetricsOutput,
 	list_product_events: ListProductEventsOutput,
 	list_services: ListServicesOutput,
@@ -198,6 +202,7 @@ export const McpToolOutputs = {
 	update_dashboard: UpdateDashboardOutput,
 	update_dashboard_widget: UpdateDashboardWidgetOutput,
 	update_scrape_target: ScrapeTargetMutationOutput,
+	update_uptime_monitor: UptimeMonitorMutationOutput,
 	get_error_notification_policy: GetErrorNotificationPolicyOutput,
 	update_error_notification_policy: UpdateErrorNotificationPolicyOutput,
 } as const
