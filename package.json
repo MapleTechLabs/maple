@@ -89,7 +89,8 @@
 		"tsrs": "0.15.0-ts7.1.0-dev.20260929",
 		"turbo": "^2.11.7",
 		"typescript": "catalog:tooling",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"@alchemy.run/cloudflare-runtime": "catalog:alchemy"
 	},
 	"overrides": {
 		"@effect/platform-browser": "4.0.6",
@@ -114,7 +115,8 @@
 			"@alchemy.run/planetscale": "2.0.0-beta.84",
 			"@alchemy.run/gcp": "2.0.0-beta.84",
 			"@alchemy.run/domain": "2.0.0-beta.84",
-			"@alchemy.run/frontend-frameworks": "2.0.0-beta.84"
+			"@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+			"@alchemy.run/cloudflare-runtime": "2.0.0-beta.84"
 		},
 		"charts": {
 			"@tanstack/charts": "1.0.0",
