@@ -112,6 +112,28 @@ describe("UptimeDnsProbe", () => {
 		}),
 	)
 
+	it.effect("a private address never confirms an expected answer", () =>
+		Effect.gen(function* () {
+			const lookup: DnsLookup = (_, recordType) =>
+				Effect.succeed(recordType === "A" ? ["10.0.0.7", "93.184.216.34"] : ["fd12:3456:789a::1"])
+			const v4 = yield* probeWith(lookup, dnsConfig({ expected: "10.0.0.7" }))
+			assert.deepStrictEqual(
+				{ ok: v4.ok, error: v4.error, type: v4.errorType },
+				{
+					ok: false,
+					error: "A records for example.com are 93.184.216.34 and 1 more, expected 10.0.0.7",
+					type: "assertion",
+				},
+			)
+			const v6 = yield* probeWith(
+				lookup,
+				dnsConfig({ recordType: "AAAA", expected: "fd12:3456:789a::1" }),
+			)
+			assert.isFalse(v6.ok)
+			assert.isTrue((yield* probeWith(lookup, dnsConfig({ expected: "93.184.216.34" }))).ok)
+		}),
+	)
+
 	it.effect("NXDOMAIN and a missing record type are different sentences", () =>
 		Effect.gen(function* () {
 			const nx = yield* probeWith(zoneLookup, dnsConfig({ hostname: "nope.example.org" }))
