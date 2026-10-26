@@ -3,6 +3,7 @@
 import { describe, it } from "@effect/vitest"
 import { Effect, Option, Schema } from "effect"
 import { TracesListQuery } from "@maple/domain/query-engine"
+import { UptimeMonitorId } from "@maple/domain"
 import { strict as assert } from "node:assert"
 import { beforeEach, vi } from "vitest"
 import { mockedWarehouse } from "./testing"
@@ -26,6 +27,7 @@ vi.mock("./traces", () => ({
 import { getUptimeCheckStats } from "./uptime"
 
 const decodeListQuery = Schema.decodeUnknownOption(TracesListQuery)
+const MONITOR = Schema.decodeSync(UptimeMonitorId)("0199a009-0000-7000-8000-000000000001")
 
 // The window starts mid-bucket, so the chart drops the 00:00 bucket; the totals must not.
 const START = "2026-02-01 00:07:00"
@@ -69,7 +71,7 @@ describe("getUptimeCheckStats", () => {
 		Effect.gen(function* () {
 			answer([bucket("2026-02-01 00:00:00", 4, 0.25), bucket("2026-02-01 00:15:00", 6, 0)])
 			listTracesMock.mockReturnValue(page([], 0))
-			const stats = yield* getUptimeCheckStats({ monitorId: "mon_1", startTime: START, endTime: END })
+			const stats = yield* getUptimeCheckStats({ monitorId: MONITOR, startTime: START, endTime: END })
 			assert.deepStrictEqual(
 				{
 					checks: stats.checks,
@@ -87,7 +89,7 @@ describe("getUptimeCheckStats", () => {
 		Effect.gen(function* () {
 			answer([])
 			listTracesMock.mockReturnValue(page([], 0))
-			const stats = yield* getUptimeCheckStats({ monitorId: "mon_1", startTime: START, endTime: END })
+			const stats = yield* getUptimeCheckStats({ monitorId: MONITOR, startTime: START, endTime: END })
 			assert.deepStrictEqual(
 				[stats.checks, stats.p50Ms, stats.p95Ms, stats.p99Ms],
 				[0, null, null, null],
@@ -103,7 +105,7 @@ describe("getUptimeCheckStats", () => {
 				asked.push({ limit: data.limit, offset: data.offset })
 				return page([], 0)
 			})
-			yield* getUptimeCheckStats({ monitorId: "mon_1", startTime: START, endTime: END })
+			yield* getUptimeCheckStats({ monitorId: MONITOR, startTime: START, endTime: END })
 			const accepted = asked.map(({ limit, offset }) =>
 				Option.isSome(decodeListQuery({ kind: "list", source: "traces", limit, offset })),
 			)
@@ -159,7 +161,7 @@ describe("getUptimeCheckStats", () => {
 						)
 					: page([], 1000),
 			)
-			const stats = yield* getUptimeCheckStats({ monitorId: "mon_1", startTime: START, endTime: END })
+			const stats = yield* getUptimeCheckStats({ monitorId: MONITOR, startTime: START, endTime: END })
 			assert.deepStrictEqual(
 				stats.samples.map((sample) => [sample.at, sample.ok, sample.statusCode, sample.durationMs]),
 				[
