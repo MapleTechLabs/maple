@@ -1,13 +1,16 @@
 import { Array as Arr, Context, Duration, Effect, Layer, Metric, Queue, Ref, Schedule } from "effect"
 import type { ScrapeResultReport } from "@maple/domain/http"
-import type { UptimeCheckReport } from "@maple/domain/uptime"
+import { type UptimeCheckReport, UPTIME_CHECK_REPORT_BATCH_MAX } from "@maple/domain/uptime"
 import { ApiClient, type ApiRequestError } from "./ApiClient"
 import { bufferedResults, bufferedUptimeResults } from "./Metrics"
 
 /** Bounds memory while the API is unreachable: the oldest results are dropped first. */
 const MAX_BUFFERED_RESULTS = 10_000
-/** Max results per POST; one 10k-result body overwhelmed the API Worker (edge 503). */
-export const REPORT_BATCH_SIZE = 1_000
+/**
+ * Max results per POST; one 10k-result body overwhelmed the API Worker (edge 503). Also the
+ * API's cap on an uptime results POST, which refuses a larger batch with a 400.
+ */
+export const REPORT_BATCH_SIZE = UPTIME_CHECK_REPORT_BATCH_MAX
 /** Pause after a partial batch, so steady state is one POST per interval. */
 export const REPORT_INTERVAL = Duration.seconds(10)
 const RETRY = Schedule.min([Schedule.exponential(Duration.seconds(1)), Schedule.spaced(Duration.seconds(30))])

@@ -204,7 +204,7 @@ const assertionFromWire = (
 				type: "json_path",
 				op: assertion.op,
 				target: assertion.path,
-				value: assertion.value ?? "",
+				value: assertion.op === "exists" ? "" : assertion.value,
 			}
 		case "header":
 			return {
@@ -212,7 +212,7 @@ const assertionFromWire = (
 				type: "header",
 				op: assertion.op,
 				target: assertion.name,
-				value: assertion.value ?? "",
+				value: assertion.op === "exists" ? "" : assertion.value,
 			}
 	}
 }

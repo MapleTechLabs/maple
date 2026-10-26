@@ -97,9 +97,9 @@ import {
 import type { UptimeMonitorConfig } from "@maple/domain/uptime"
 import { uptimeRuleFields } from "./AlertRuleModel"
 
-type AlertRuleIdType = typeof AlertRuleIdSchema.Type
-type UptimeMonitorIdType = typeof UptimeMonitorIdSchema.Type
-type OrgIdType = typeof OrgId.Type
+type AlertRuleIdType = AlertRuleIdSchema
+type UptimeMonitorIdType = UptimeMonitorIdSchema
+type OrgIdType = OrgId
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"

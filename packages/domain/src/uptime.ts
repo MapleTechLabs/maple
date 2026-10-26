@@ -24,17 +24,13 @@ export const UptimeAssertion = Schema.Union([
 	Schema.TaggedStruct("status", { op: Schema.Literals(["is", "is_not"]), value: UptimeStatusMatcher }),
 	Schema.TaggedStruct("latency", { underMs: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)) }),
 	Schema.TaggedStruct("body", { op: Schema.Literals(["contains", "not_contains"]), value: NonEmpty }),
-	Schema.TaggedStruct("json_path", {
-		/** Dot path with `[n]` indexes, e.g. `checks[0].status`. */
-		path: NonEmpty,
-		op: Schema.Literals(["equals", "exists"]),
-		value: Schema.optionalKey(Schema.String),
-	}),
-	Schema.TaggedStruct("header", {
-		name: NonEmpty,
-		op: Schema.Literals(["equals", "contains", "exists"]),
-		value: Schema.optionalKey(Schema.String),
-	}),
+	// `path` is a dot path with `[n]` indexes, e.g. `checks[0].status`. `exists` takes no value;
+	// `equals` and `contains` always carry one.
+	Schema.TaggedStruct("json_path", { path: NonEmpty, op: Schema.Literal("exists") }),
+	Schema.TaggedStruct("json_path", { path: NonEmpty, op: Schema.Literal("equals"), value: Schema.String }),
+	Schema.TaggedStruct("header", { name: NonEmpty, op: Schema.Literal("exists") }),
+	Schema.TaggedStruct("header", { name: NonEmpty, op: Schema.Literal("equals"), value: Schema.String }),
+	Schema.TaggedStruct("header", { name: NonEmpty, op: Schema.Literal("contains"), value: NonEmpty }),
 ])
 export type UptimeAssertion = Schema.Schema.Type<typeof UptimeAssertion>
 
@@ -132,7 +128,11 @@ export class UptimeCheckReport extends Schema.Class<UptimeCheckReport>("UptimeCh
 	error: Schema.NullOr(Schema.String),
 	traceId: Schema.NullOr(Schema.String),
 }) {}
-export const UptimeCheckReportList = Schema.Array(UptimeCheckReport)
+/** Most reports one `/api/internal/uptime-results` POST may carry; the scraper batches to it. */
+export const UPTIME_CHECK_REPORT_BATCH_MAX = 1_000
+export const UptimeCheckReportList = Schema.Array(UptimeCheckReport).check(
+	Schema.isMaxLength(UPTIME_CHECK_REPORT_BATCH_MAX),
+)
 
 // --- Assertions ---
 
@@ -151,17 +151,22 @@ const PATH_TOKEN = /[^.[\]]+|\[(\d+)\]/gu
 const asJsonArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown))
 const asJsonObject = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))
 
-/** Reads `a.b[0].c` from parsed JSON; `None` when any step is missing. */
+/** Reads `a.b[0].c` from parsed JSON; `None` when a step is missing, `Some(null)` for a JSON null. */
 export const readJsonPath = (root: unknown, path: string): Option.Option<unknown> =>
 	Array.from(path.matchAll(PATH_TOKEN)).reduce<Option.Option<unknown>>(
 		(current, match) =>
 			Option.flatMap(current, (value) => {
 				const key = match[1] ?? match[0]
+				const index = Number(key)
 				return Option.orElse(
-					Option.flatMap(asJsonArray(value), (items) => Option.fromNullishOr(items[Number(key)])),
+					Option.flatMap(asJsonArray(value), (items) =>
+						Number.isInteger(index) && index >= 0 && index < items.length
+							? Option.some(items[index])
+							: Option.none(),
+					),
 					() =>
 						Option.flatMap(asJsonObject(value), (record) =>
-							Object.hasOwn(record, key) ? Option.fromNullishOr(record[key]) : Option.none(),
+							Object.hasOwn(record, key) ? Option.some(record[key]) : Option.none(),
 						),
 				)
 			}),
@@ -210,13 +215,13 @@ export const firstFailedAssertion = (
 				const actual = jsonText(read.value)
 				return actual === assertion.value
 					? []
-					: [`JSON path ${assertion.path} is ${actual}, expected ${assertion.value ?? ""}`]
+					: [`JSON path ${assertion.path} is ${actual}, expected ${assertion.value}`]
 			}
 			case "header": {
 				const actual = observed.headers[assertion.name.toLowerCase()]
 				if (actual === undefined) return [`Header ${assertion.name} missing`]
 				if (assertion.op === "exists") return []
-				const expected = assertion.value ?? ""
+				const expected = assertion.value
 				const ok = assertion.op === "equals" ? actual === expected : actual.includes(expected)
 				return ok
 					? []

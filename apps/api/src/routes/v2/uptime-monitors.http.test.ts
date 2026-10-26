@@ -101,11 +101,15 @@ const makeHarness = () => {
 		return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
 	}
 
-	const bootstrapKey = (metadataJson?: Record<string, unknown>) =>
+	const bootstrapKey = (metadataJson?: Record<string, unknown>, scopes?: ReadonlyArray<string>) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(ORG, USER, { name: "uptime-test", metadataJson })
+				return yield* service.create(ORG, USER, {
+					name: "uptime-test",
+					metadataJson,
+					...(scopes === undefined ? undefined : { scopes: [...scopes] }),
+				})
 			}),
 		)
 
@@ -238,6 +242,24 @@ describe("v2 uptime monitors", () => {
 			})
 			expect(privateHost.status).toBe(400)
 
+			// `equals` without a value would compare against nothing.
+			const assertion = (extra: Record<string, unknown>) =>
+				harness.request("POST", "/v2/uptime_monitors", token, {
+					name: "health",
+					kind: "http",
+					config: {
+						type: "http",
+						url: "https://api.example.com/health",
+						assertions: [
+							extra.op === "contains"
+								? { type: "header", name: "x-env", ...extra }
+								: { type: "json_path", path: "status", ...extra },
+						],
+					},
+				})
+			expect((await assertion({ op: "equals" })).status).toBe(400)
+			expect((await assertion({ op: "contains", value: "" })).status).toBe(400)
+
 			const tcpTest = await harness.request("POST", "/v2/uptime_monitors/test", token, {
 				config: { type: "tcp", host: "db.example.com", port: 5432 },
 			})
@@ -302,6 +324,42 @@ describe("v2 uptime monitors", () => {
 			expect(orphan.status).toBe(400)
 			const after = await harness.request("GET", `/v2/uptime_monitors/${id}`, admin)
 			expect(after.body.config.headers).toEqual({ Authorization: "Bearer s3cret", "X-Env": "staging" })
+		}))
+
+	it("enforces the uptime_monitors read and write scopes derived from the route", () =>
+		withHarness(async (harness) => {
+			const { secret: full } = await harness.bootstrapKey()
+			const created = await harness.request("POST", "/v2/uptime_monitors", full, {
+				name: "API health",
+				kind: "http",
+				config: { type: "http", url: "https://api.example.com/health" },
+			})
+			expect(created.status).toBe(200)
+			const path = `/v2/uptime_monitors/${created.body.id}`
+			const httpConfig = { type: "http", url: "https://api.example.com/health" }
+
+			const { secret: reader } = await harness.bootstrapKey(undefined, ["uptime_monitors:read"])
+			expect((await harness.request("GET", "/v2/uptime_monitors", reader)).status).toBe(200)
+			expect((await harness.request("GET", path, reader)).status).toBe(200)
+			const denied = [
+				await harness.request("POST", "/v2/uptime_monitors", reader, {
+					name: "Denied",
+					kind: "http",
+					config: httpConfig,
+				}),
+				await harness.request("POST", "/v2/uptime_monitors/test", reader, { config: httpConfig }),
+				await harness.request("PATCH", path, reader, { name: "Renamed" }),
+				await harness.request("DELETE", path, reader),
+			]
+			expect(denied.map((response) => [response.status, response.body.error.code])).toEqual(
+				denied.map(() => [403, "insufficient_scope"]),
+			)
+
+			const { secret: writer } = await harness.bootstrapKey(undefined, ["uptime_monitors:write"])
+			const renamed = await harness.request("PATCH", path, writer, { name: "Renamed" })
+			expect(renamed.status).toBe(200)
+			expect(renamed.body.name).toBe("Renamed")
+			expect((await harness.request("DELETE", path, writer)).status).toBe(200)
 		}))
 
 	it("refuses writes from non-admin members but lets them read", () =>
