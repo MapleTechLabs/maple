@@ -41,6 +41,23 @@ describe("uptime monitor form", () => {
 		)
 	})
 
+	test("Create stays disabled until the session confirms an admin", () => {
+		const beforeSession = pageUpdate(
+			init({ _tag: "AlertsUptimeNew", search: {} }, context).model,
+			Message.ChangedText({ field: "url", value: "https://api.acme.dev/health" }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(beforeSession),
+			expectView(role("button", { name: "Create monitor" })).toBeDisabled(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(asAdmin(beforeSession)),
+			expectView(role("button", { name: "Create monitor" })).not.toBeDisabled(),
+		)
+	})
+
 	test("the name follows the URL until it is typed", () => {
 		scene(
 			{ update: pageUpdate, view },
