@@ -44,6 +44,7 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		isTesting: false,
 		testResult: null,
 		testFailure: null,
+		testedConfig: null,
 		services: [],
 		timeZones: [],
 		destinations: null,
@@ -91,7 +92,7 @@ const test = (model: Model): Return =>
 	model.isTesting || model.form.kind !== "http"
 		? { model }
 		: {
-				model: { ...model, isTesting: true, testFailure: null },
+				model: { ...model, isTesting: true, testFailure: null, testedConfig: configKey(model.form) },
 				commands: [TestDraft({ config: wireConfig(model.form) })],
 			}
 
@@ -131,7 +132,19 @@ const updateDestinationMenu = (model: Model, message: Menu.Message): Return => {
 	})
 }
 
+/** The tested config as a comparable key; destinations and name are not part of it. */
+const configKey = (form: Form): string => JSON.stringify(wireConfig(form))
+
+/** A test result only stands while the form still has the config it ran on. */
+const dropStaleTest = (next: Return): Return =>
+	next.model.testedConfig === null || configKey(next.model.form) === next.model.testedConfig
+		? next
+		: { ...next, model: { ...next.model, testResult: null, testFailure: null, testedConfig: null } }
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	dropStaleTest(updateForm(model, message, context))
+
+const updateForm = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchExisting: ({ key, result }) => {
 			const existing = Keyed.accept(model.existing, key, result)
@@ -181,14 +194,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotDestinationMenuMessage: ({ message: child }) => updateDestinationMenu(model, child),
 		ClickedTest: () => test(model),
 		CompletedTest: ({ result }) =>
-			Result.match(result, {
-				onSuccess: (testResult): Return => ({
-					model: { ...model, isTesting: false, testResult, testFailure: null },
-				}),
-				onFailure: (testFailure): Return => ({
-					model: { ...model, isTesting: false, testResult: null, testFailure },
-				}),
-			}),
+			// An edit since the click made this result about another config: drop it.
+			model.testedConfig === null
+				? { model: { ...model, isTesting: false } }
+				: Result.match(result, {
+						onSuccess: (testResult): Return => ({
+							model: { ...model, isTesting: false, testResult, testFailure: null },
+						}),
+						onFailure: (testFailure): Return => ({
+							model: { ...model, isTesting: false, testResult: null, testFailure },
+						}),
+					}),
 		ClickedSave: () => save(model),
 		CompletedSave: ({ result }) =>
 			Result.match(result, {

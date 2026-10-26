@@ -23,6 +23,8 @@ export const Model = Schema.Struct({
 	isTesting: Schema.Boolean,
 	testResult: Schema.NullOr(V2UptimeMonitorTestResult),
 	testFailure: Schema.NullOr(LoadFailure),
+	/** The config the shown or in-flight test ran on; `null` once an edit makes it stale. */
+	testedConfig: Schema.NullOr(Schema.String),
 	/** The org's traced services of the last day, for the Service select. */
 	services: Schema.Array(Schema.String),
 	timeZones: Schema.Array(Schema.String),
