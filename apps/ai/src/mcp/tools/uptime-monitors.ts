@@ -62,6 +62,36 @@ const decodeInterval = (raw: number | undefined) =>
 				),
 			)
 
+/** `interval_seconds` and `failures_to_down` drive probes; a heartbeat has neither. */
+const refuseProbeSettingsForHeartbeat = (
+	kind: UptimeMonitorKind,
+	params: {
+		readonly interval_seconds?: number | undefined
+		readonly failures_to_down?: number | undefined
+	},
+) => {
+	if (kind !== "heartbeat") return Effect.void
+	if (params.interval_seconds !== undefined) {
+		return Effect.fail(
+			new McpInvalidInputError({
+				message:
+					"interval_seconds applies to http, tcp and dns monitors. A heartbeat's cadence is heartbeat_interval_seconds or cron, plus grace_seconds.",
+				parameter: "interval_seconds",
+			}),
+		)
+	}
+	if (params.failures_to_down !== undefined) {
+		return Effect.fail(
+			new McpInvalidInputError({
+				message:
+					"failures_to_down applies to http, tcp and dns monitors. A heartbeat goes down once a ping is later than its schedule plus grace_seconds.",
+				parameter: "failures_to_down",
+			}),
+		)
+	}
+	return Effect.void
+}
+
 const decodeDestinations = (raw: ReadonlyArray<string> | undefined) =>
 	raw === undefined
 		? Effect.succeed(undefined)
@@ -119,7 +149,7 @@ const downNext = (row: typeof UptimeMonitorRow.Type): ReadonlyArray<NextCall> =>
 		: [doc.next("diagnose_service", { service: row.serviceName }, `the health of ${row.serviceName}`)]),
 ]
 
-const renderMonitor = (title: string, row: typeof UptimeMonitorRow.Type, ping: string | null) => ({
+const renderMonitor = (title: string, row: typeof UptimeMonitorRow.Type) => ({
 	title,
 	notices: [
 		...(row.enabled
@@ -153,14 +183,15 @@ const renderMonitor = (title: string, row: typeof UptimeMonitorRow.Type, ping: s
 					: `${percent(row.uptimeRatio)} of ${row.recentChecks} checks`,
 			],
 		]),
-		...(row.heartbeatUrl === null || ping === null
-			? []
-			: [
+		// The ping URL is a credential and rendered text can be relayed to chat: it stays in
+		// the structured result (admins only) and the monitor's page in Maple.
+		...(row.kind === "heartbeat"
+			? [
 					doc.text(
-						`Ping ${row.heartbeatUrl} when the job succeeds (GET or POST), or ${row.heartbeatUrl}/fail to report a failure. Add this as the job's last step:`,
+						"Have the job ping its URL when it succeeds (GET or POST), or the URL plus `/fail` to report a failure. The ping URL and a curl line for the job's last step are in this result's structured output (`monitor.heartbeatUrl`, `pingCommand`) and on the monitor's page in Maple.",
 					),
-					doc.code("sh", ping),
-				]),
+				]
+			: []),
 	],
 	next: [
 		...(row.status === "down" ? downNext(row) : []),
@@ -334,6 +365,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		phrases: ["Adding an uptime monitor"],
 		handler: Effect.fn("McpTool.createUptimeMonitor")(function* (params) {
 			const tenant = yield* adminOnly("create_uptime_monitor")
+			yield* refuseProbeSettingsForHeartbeat(params.kind, params)
 			const service = yield* UptimeMonitorsService
 			const config = yield* buildUptimeConfig(params.kind, configFields(params))
 			const intervalSeconds = yield* decodeInterval(params.interval_seconds)
@@ -360,7 +392,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 				pingCommand: pingCommand(created.heartbeatUrl),
 			}
 		}),
-		render: (output) => renderMonitor("Uptime monitor created", output.monitor, output.pingCommand),
+		render: (output) => renderMonitor("Uptime monitor created", output.monitor),
 	})
 
 	server.define({
@@ -373,6 +405,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			enabled: P.optionalFlag("false pauses the monitor, true resumes it"),
 			name: P.optionalText("A new name"),
 			...configParameters,
+			clear_service: P.optionalFlag("true unlinks the monitor from its service; not with `service`"),
 			destination_ids: P.optionalResourceIdList(
 				"alertDestination",
 				"Replaces the alert destinations notified when the monitor goes down; [] notifies none",
@@ -386,6 +419,14 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			const tenant = yield* adminOnly("update_uptime_monitor")
 			const service = yield* UptimeMonitorsService
 			const current = yield* resolveMonitor("update_uptime_monitor", tenant.orgId, params.monitor)
+			yield* refuseProbeSettingsForHeartbeat(current.kind, params)
+			if (params.clear_service === true && params.service !== undefined) {
+				return yield* new McpInvalidInputError({
+					message: "Pass service to link a service, or clear_service=true to unlink it, not both.",
+					parameter: "clear_service",
+				})
+			}
+			const serviceName = params.clear_service === true ? null : params.service
 			const config = yield* updateUptimeConfig(current.config, configFields(params))
 			const intervalSeconds = yield* decodeInterval(params.interval_seconds)
 			const destinationIds: ReadonlyArray<AlertDestinationId> | undefined = yield* decodeDestinations(
@@ -399,7 +440,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 					...(params.failures_to_down === undefined
 						? undefined
 						: { failuresToDown: params.failures_to_down }),
-					...(params.service === undefined ? undefined : { serviceName: params.service }),
+					...(serviceName === undefined ? undefined : { serviceName }),
 					...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
 					...(destinationIds === undefined ? undefined : { destinationIds }),
 					updatedBy: tenant.userId,
@@ -411,7 +452,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 				pingCommand: pingCommand(updated.heartbeatUrl),
 			}
 		}),
-		render: (output) => renderMonitor("Uptime monitor updated", output.monitor, output.pingCommand),
+		render: (output) => renderMonitor("Uptime monitor updated", output.monitor),
 	})
 
 	server.define({

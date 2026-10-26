@@ -63,7 +63,7 @@ describe("create_uptime_monitor", () => {
 		expect(markdown(result)).toContain("list_uptime_monitors")
 	})
 
-	it("returns a heartbeat's ping URL and a curl line for the job", async () => {
+	it("returns a heartbeat's ping URL and curl line as data, never in the rendered text", async () => {
 		const result = await runToolDirect(admin, "create_uptime_monitor", {
 			name: "nightly-backup",
 			kind: "heartbeat",
@@ -73,7 +73,40 @@ describe("create_uptime_monitor", () => {
 		expect(output.monitor.heartbeatUrl).toMatch(/\/hb\/[\w-]+$/u)
 		expect(output.pingCommand).toBe(`curl -fsS -m 10 --retry 3 ${output.monitor.heartbeatUrl}`)
 		expect(output.monitor.target).toBe("ping every 24h, 5m grace")
-		expect(markdown(result)).toContain(`${output.monitor.heartbeatUrl}/fail`)
+		// Rendered text may be relayed to chat channels: the credential stays out of it.
+		expect(markdown(result)).not.toContain("/hb/")
+		expect(markdown(result)).toContain("structured output")
+	})
+
+	it("refuses probe-only settings for a heartbeat, naming the field", async () => {
+		const interval = await runToolDirect(admin, "create_uptime_monitor", {
+			name: "hb-interval",
+			kind: "heartbeat",
+			heartbeat_interval_seconds: 3600,
+			interval_seconds: 60,
+		})
+		expect(interval.isError).toBe(true)
+		expect(markdown(interval)).toContain("interval_seconds applies to http, tcp and dns monitors")
+		const failures = await runToolDirect(admin, "create_uptime_monitor", {
+			name: "hb-failures",
+			kind: "heartbeat",
+			heartbeat_interval_seconds: 3600,
+			failures_to_down: 3,
+		})
+		expect(failures.isError).toBe(true)
+		expect(markdown(failures)).toContain("failures_to_down applies to http, tcp and dns monitors")
+
+		await runToolDirect(admin, "create_uptime_monitor", {
+			name: "hb-update",
+			kind: "heartbeat",
+			heartbeat_interval_seconds: 3600,
+		})
+		const update = await runToolDirect(admin, "update_uptime_monitor", {
+			monitor: "hb-update",
+			interval_seconds: 120,
+		})
+		expect(update.isError).toBe(true)
+		expect(markdown(update)).toContain("interval_seconds applies to http, tcp and dns monitors")
 	})
 
 	it("names a field that belongs to another kind instead of dropping it", async () => {
@@ -206,6 +239,31 @@ describe("update_uptime_monitor", () => {
 			status: "pending",
 			intervalSeconds: 300,
 		})
+	})
+
+	it("unlinks a monitor's service with clear_service, and refuses it together with service", async () => {
+		await runToolDirect(admin, "create_uptime_monitor", {
+			name: "linked-api",
+			kind: "http",
+			url: "https://api.acme.dev/linked",
+			service: "billing",
+		})
+		const both = await runToolDirect(admin, "update_uptime_monitor", {
+			monitor: "linked-api",
+			service: "payments",
+			clear_service: true,
+		})
+		expect(both.isError).toBe(true)
+		expect(markdown(both)).toContain("not both")
+
+		const cleared = decode(
+			UptimeMonitorMutationOutput,
+			await runToolDirect(admin, "update_uptime_monitor", {
+				monitor: "linked-api",
+				clear_service: true,
+			}),
+		)
+		expect(cleared.monitor.serviceName).toBeNull()
 	})
 
 	it("says which monitors exist when the name matches none", async () => {
