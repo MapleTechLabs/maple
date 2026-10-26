@@ -208,7 +208,9 @@ describe("isMapleService", () => {
 				{ serviceName: "maple-uptime", serviceNamespace: "" },
 				{ serviceName: "checkout-api", serviceNamespace: "" },
 				{ serviceName: "checkout-api", serviceNamespace: "payments" },
+				// A user's own service that happens to share the name, in its own namespace.
+				{ serviceName: "maple-uptime", serviceNamespace: "payments" },
 			].map(isMapleService),
-		).toEqual([true, true, false, false])
+		).toEqual([true, true, false, false, false])
 	})
 })

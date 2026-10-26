@@ -244,9 +244,10 @@ export const UPTIME_MONITOR_ID_ATTRIBUTE = "maple.uptime.monitor_id"
 /** `service.namespace` of Maple's own synthetic services, so users can filter them out. */
 export const MAPLE_SERVICES_NAMESPACE = "maple-services"
 
-/** Maple's own synthetic services; checks recorded before the namespace existed match by name. */
+/** Maple's own synthetic services; checks recorded before the namespace existed have none and match by name. */
 export const isMapleService = (row: { readonly serviceName: string; readonly serviceNamespace: string }) =>
-	row.serviceNamespace === MAPLE_SERVICES_NAMESPACE || row.serviceName === UPTIME_SERVICE_NAME
+	row.serviceNamespace === MAPLE_SERVICES_NAMESPACE ||
+	(row.serviceNamespace === "" && row.serviceName === UPTIME_SERVICE_NAME)
 
 // --- HTTP check request ---
 

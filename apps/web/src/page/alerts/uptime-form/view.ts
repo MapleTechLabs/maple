@@ -1,4 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
+import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
@@ -198,7 +199,7 @@ const testPanel = (h: H, model: Model): Html =>
 		uptimePanelBody(h, [h.div([h.Class("flex flex-col gap-3")], testResultBody(h, model))]),
 	])
 
-/** What happens after saving, for the kinds without a test run. */
+/** What happens after creating, for the kinds without a test run; editing has nothing to announce. */
 const afterSaveNote = (kind: MonitorKind): string =>
 	kind === "heartbeat"
 		? "The ping URL appears after you create the monitor."
@@ -277,11 +278,23 @@ const actionBar = (h: H, model: Model, widthClass: string): Html => {
 	)
 }
 
+/**
+ * The edited monitor's saved headers or body open the disclosure. Read from the saved monitor, not
+ * the live fields, so clearing a header while typing never collapses it.
+ */
+const hasSavedRequestExtras = (model: Model): boolean =>
+	Option.match(AsyncData.getData(model.existing.data), {
+		onNone: () => false,
+		onSome: (monitor) =>
+			monitor.config.type === "http" &&
+			(Object.keys(monitor.config.headers ?? {}).length > 0 || (monitor.config.body ?? "") !== ""),
+	})
+
 const kindSections = (h: H, model: Model): ReadonlyArray<Html> => {
 	switch (model.form.kind) {
 		case "http":
 			return [
-				...requestSection(h, model, model.form.headers !== ""),
+				...requestSection(h, model, hasSavedRequestExtras(model)),
 				assertionsSection(h, model),
 				scheduleSection(h, model),
 			]
@@ -370,10 +383,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							[h.Class(cn("flex flex-col gap-2", widthClass))],
 							[
 								card,
-								h.p(
-									[h.Class("px-1 text-xs text-muted-foreground")],
-									[afterSaveNote(model.form.kind)],
-								),
+								...(isEdit
+									? []
+									: [
+											h.p(
+												[h.Class("px-1 text-xs text-muted-foreground")],
+												[afterSaveNote(model.form.kind)],
+											),
+										]),
 							],
 						),
 			],
