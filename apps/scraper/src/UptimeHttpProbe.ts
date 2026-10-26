@@ -47,10 +47,16 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 	"@maple/scraper/UptimeHttpProbe",
 	{
 		make: Effect.gen(function* () {
-			// Every header is user config: a cross-origin redirect drops them all and the body.
-			const client = guardPinned(yield* HttpClient.HttpClient, yield* HostResolver, {
-				strictRedirects: true,
-			})
+			// Scoped, so an unread body is cancelled when the check ends. A cross-origin redirect
+			// drops the configured headers and the body, keeping only the headers the probe owns.
+			const client = guardPinned(
+				HttpClient.withScope(yield* HttpClient.HttpClient),
+				yield* HostResolver,
+				{
+					strictRedirects: true,
+					ownHeaders: ["traceparent", "user-agent"],
+				},
+			)
 
 			// The shared request shaping (the test endpoint sends the same), plus our traceparent.
 			const buildRequest = (config: HttpProbeConfig, trace: CheckTraceContext) => {
@@ -67,40 +73,47 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 				Effect.gen(function* () {
 					const url = parseUrl(config.url)
 					const endpoint = endpointOf(url, config.url)
+					const assertions = effectiveAssertions(config.assertions)
+					// The body is read only when an assertion looks at it, and never for HEAD.
+					const readsBody =
+						config.method !== "HEAD" &&
+						assertions.some(
+							(assertion) => assertion._tag === "body" || assertion._tag === "json_path",
+						)
 					const startedAt = yield* Clock.currentTimeMillis
 					const result = yield* client.execute(buildRequest(config, trace)).pipe(
 						Effect.flatMap((response) =>
-							Effect.map(
-								config.method === "HEAD"
-									? Effect.succeed(null)
-									: Effect.map(
-											readTextPrefix(response, MAX_ASSERTION_BODY_BYTES),
-											(prefix) => prefix.text,
-										),
-								(body) => ({ response, body }),
-							),
+							Effect.gen(function* () {
+								// Latency is time to the response headers, not the body read after them.
+								const respondedInMs = (yield* Clock.currentTimeMillis) - startedAt
+								const body = readsBody
+									? (yield* readTextPrefix(response, MAX_ASSERTION_BODY_BYTES)).text
+									: null
+								return { response, body, respondedInMs }
+							}),
 						),
 						Effect.timeout(Duration.millis(config.timeoutMs)),
+						Effect.scoped,
 						Effect.result,
 					)
-					const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+					const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt
 
 					if (Result.isFailure(result)) {
 						const error = result.failure
 						switch (error._tag) {
 							case "TimeoutError":
 								return failed(
-									durationMs,
+									elapsedMs,
 									"timeout",
 									`Connection timed out after ${formatSeconds(config.timeoutMs)}`,
 								)
 							case "@maple/safe-fetch/HostResolutionError":
-								return failed(durationMs, "dns", `Couldn't resolve ${error.hostname}`)
+								return failed(elapsedMs, "dns", `Couldn't resolve ${error.hostname}`)
 							case "@maple/safe-fetch/UrlValidationError":
 								return error.message.startsWith("Too many redirects")
-									? failed(durationMs, "transport", error.message)
+									? failed(elapsedMs, "transport", error.message)
 									: failed(
-											durationMs,
+											elapsedMs,
 											"ssrf_refused",
 											`Refused to connect: ${error.message}`,
 										)
@@ -110,13 +123,13 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 									errorCodeOf(error.reason.cause),
 									describeHttpClientError(error),
 								)
-								return failed(durationMs, failure.errorType, failure.error)
+								return failed(elapsedMs, failure.errorType, failure.error)
 							}
 						}
 					}
 
-					const { response, body } = result.success
-					const failure = firstFailedAssertion(effectiveAssertions(config.assertions), {
+					const { response, body, respondedInMs: durationMs } = result.success
+					const failure = firstFailedAssertion(assertions, {
 						statusCode: response.status,
 						durationMs,
 						headers: { ...response.headers },

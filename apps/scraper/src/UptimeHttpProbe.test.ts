@@ -186,7 +186,33 @@ describe("UptimeHttpProbe", () => {
 			assert.isNull(hop?.body ?? null)
 			assert.isUndefined(hop?.headers.authorization)
 			assert.isUndefined(hop?.headers["x-api-key"])
+			// The probe's own headers survive, so the destination's spans still join the check's trace.
+			assert.strictEqual(hop?.headers.traceparent, `00-${TRACE.traceId}-${TRACE.spanId}-01`)
+			assert.strictEqual(hop?.headers["user-agent"], UPTIME_USER_AGENT)
 		}).pipe(Effect.provide(ProbeLive)),
+	)
+
+	it.effect(
+		"never reads a body no assertion needs, times to the headers, and releases the connection",
+		() =>
+			Effect.gen(function* () {
+				const signals: Array<AbortSignal | null> = []
+				// A body that never finishes: reading it would run into the timeout.
+				const endless = (signal: AbortSignal | null) => {
+					signals.push(signal)
+					return new Response(new ReadableStream({ start: () => undefined }), { status: 200 })
+				}
+				const get = yield* probeWith([], (_, signal) => endless(signal))
+				assert.deepStrictEqual({ ok: get.ok, error: get.error }, { ok: true, error: null })
+				assert.strictEqual(get.durationMs, 0)
+				const head = yield* probeWith([], (_, signal) => endless(signal), { method: "HEAD" })
+				assert.isTrue(head.ok)
+				// The scope ending aborts each request, cancelling the unread body.
+				assert.deepStrictEqual(
+					signals.map((signal) => signal?.aborted),
+					[true, true],
+				)
+			}).pipe(Effect.provide(ProbeLive)),
 	)
 
 	it.effect("keeps method, body and headers on a same-origin 307", () =>
