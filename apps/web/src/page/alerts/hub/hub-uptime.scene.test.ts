@@ -115,6 +115,22 @@ describe("alerts hub, Uptime tab", () => {
 		)
 	})
 
+	test("a member sees monitors but no way to create, edit, pause or delete them", () => {
+		const asMember = (model: Model) =>
+			pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, isAdmin: false })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(asMember(withMonitors([]))),
+			expectView(text("No uptime checks yet")).toExist(),
+			expectView(role("link", { name: "New uptime check" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(asMember(withMonitors(THREE))),
+			expectView(role("button", { name: `Actions for ${httpMonitor().name}` })).not.toExist(),
+		)
+	})
+
 	test("a failed list read says so with a retry that reads again", () => {
 		const model = onUptime()
 		const failed = pageUpdate(

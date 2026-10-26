@@ -1,16 +1,25 @@
+import { randomUUID } from "node:crypto"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { UptimeMonitorStates, UptimeMonitors } from "@maple/db/tables"
+import { AlertRules, UptimeMonitorStates, UptimeMonitors } from "@maple/db/tables"
 import { UNGROUPED_GROUP_KEY, UptimeMonitorPersistenceError } from "@maple/domain/http"
-import type { AlertRuleId, OrgId, UptimeMonitorStatus } from "@maple/domain/primitives"
+import {
+	AlertRuleId,
+	type OrgId,
+	type UptimeMonitorId,
+	type UptimeMonitorStatus,
+	type UserId,
+} from "@maple/domain/primitives"
 import {
 	appendRecentCheck,
 	describeMissedHeartbeat,
 	heartbeatDeadline,
 	type UptimeMonitorConfig,
 } from "@maple/domain/uptime"
-import { Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, Ref } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { uptimeRuleFields } from "@maple/backend/services/alerts/AlertRuleModel"
 
 /** What an `uptime` alert rule observes for its monitor on one tick. */
 export interface UptimeAlertObservation {
@@ -55,6 +64,22 @@ export interface UptimeAlertSourceApi {
 		ruleId: AlertRuleId,
 		nowMs: number,
 	) => Effect.Effect<Option.Option<UptimeAlertObservation>, UptimeMonitorPersistenceError>
+	/**
+	 * Gives enabled monitors created before backing rules existed their rule, at most
+	 * {@link MAX_RULE_BACKFILL} per call. Idempotent; once a pass finds none it is a no-op.
+	 */
+	readonly backfillRules: Effect.Effect<number, UptimeMonitorPersistenceError>
+}
+
+const MAX_RULE_BACKFILL = 100
+
+interface MonitorWithoutRule {
+	readonly id: UptimeMonitorId
+	readonly orgId: OrgId
+	readonly name: string
+	readonly serviceName: string | null
+	readonly enabled: boolean
+	readonly createdBy: UserId
 }
 
 const toPersistenceError = (error: unknown) =>
@@ -74,12 +99,8 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "UptimeAlertSource", toPersistenceError)
 
-			const observe = Effect.fn("UptimeAlertSource.observe")(function* (
-				orgId: OrgId,
-				ruleId: AlertRuleId,
-				nowMs: number,
-			) {
-				const rows = yield* dbExecute((db) =>
+			const readMonitor = (orgId: OrgId, ruleId: AlertRuleId) =>
+				dbExecute((db) =>
 					db.run(
 						PG.from(UptimeMonitors, "m")
 							.innerJoin(UptimeMonitorStates, "s", (m, s) =>
@@ -102,19 +123,33 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 							.where(($) => [$.orgId.eq(orgId), $.alertRuleId.eq(ruleId)])
 							.limit(1),
 					),
-				)
-				const row = rows[0]
-				if (row === undefined) return Option.none<UptimeAlertObservation>()
+				).pipe(Effect.map((rows) => Option.fromUndefinedOr(rows[0])))
+
+			/** The monitor as its state row says it is: down with the failing check's error, or not. */
+			const asStored = (row: {
+				readonly serviceName: string | null
+				readonly status: UptimeMonitorStatus
+				readonly lastCheckJson: { readonly error: string | null } | null
+			}): UptimeAlertObservation => {
+				const down = row.status === "down"
+				return {
+					groupKey: row.serviceName ?? UNGROUPED_GROUP_KEY,
+					down,
+					detail: down ? (row.lastCheckJson?.error ?? "The check is failing") : null,
+				}
+			}
+
+			const observe = Effect.fn("UptimeAlertSource.observe")(function* (
+				orgId: OrgId,
+				ruleId: AlertRuleId,
+				nowMs: number,
+			) {
+				const read = yield* readMonitor(orgId, ruleId)
+				if (Option.isNone(read)) return Option.none<UptimeAlertObservation>()
+				const row = read.value
 				const groupKey = row.serviceName ?? UNGROUPED_GROUP_KEY
 				const watch = { ...row, config: row.configJson }
-				if (!isHeartbeatOverdue(watch, nowMs)) {
-					const down = row.status === "down"
-					return Option.some({
-						groupKey,
-						down,
-						detail: down ? (row.lastCheckJson?.error ?? "The check is failing") : null,
-					})
-				}
+				if (!isHeartbeatOverdue(watch, nowMs)) return Option.some(asStored(row))
 				// Fenced on the state read above: a ping or check landing in between wins.
 				const error = describeMissedHeartbeat(row.lastPingAt, nowMs)
 				const marked = yield* dbExecute((db) =>
@@ -153,14 +188,80 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 					"maple.uptime.monitor_id": row.id,
 					"maple.uptime.heartbeat_overdue": marked.length > 0,
 				})
-				return Option.some({
-					groupKey,
-					down: marked.length > 0,
-					detail: marked.length > 0 ? error : null,
-				})
+				if (marked.length > 0) return Option.some({ groupKey, down: true, detail: error })
+				// A ping or failure landed between the read and the write: report what it left.
+				return Option.map(yield* readMonitor(orgId, ruleId), asStored)
 			})
 
-			return { observe } satisfies UptimeAlertSourceApi
+			// Monitors only lose the race to a rule at creation before this shipped: once none are
+			// missing, the check is skipped for the life of the process.
+			const backfillSettled = yield* Ref.make(false)
+
+			const backfillOne = (monitor: MonitorWithoutRule) =>
+				dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							// The org lock rule writes take; the re-read makes a repeat a no-op.
+							yield* db.execute(
+								Orm.sql`select pg_advisory_xact_lock(hashtext(${monitor.orgId}))`,
+							)
+							const still = yield* db.run(
+								PG.from(UptimeMonitors)
+									.select("id")
+									.where(($) => [
+										$.orgId.eq(monitor.orgId),
+										$.id.eq(monitor.id),
+										$.alertRuleId.isNull(),
+									])
+									.limit(1),
+							)
+							if (still.length === 0) return false
+							const ruleId = AlertRuleId.make(randomUUID())
+							const now = yield* Clock.currentTimeMillis
+							yield* db.run(
+								PG.insertInto(AlertRules).values({
+									id: ruleId,
+									orgId: monitor.orgId,
+									...uptimeRuleFields({ ...monitor, destinationIds: [] }),
+									lastScheduledAt: null,
+									createdAt: now,
+									updatedAt: now,
+									createdBy: monitor.createdBy,
+									updatedBy: monitor.createdBy,
+								}),
+							)
+							yield* db.run(
+								PG.update(UptimeMonitors)
+									.set({ alertRuleId: ruleId })
+									.where(($) => [$.orgId.eq(monitor.orgId), $.id.eq(monitor.id)]),
+							)
+							return true
+						}),
+					),
+				)
+
+			const backfillRules = Effect.gen(function* () {
+				if (yield* Ref.get(backfillSettled)) return 0
+				// System path across orgs: enabled monitors still missing their rule.
+				const missing = yield* dbExecute((db) =>
+					db.run(
+						PG.from(UptimeMonitors)
+							.select("id", "orgId", "name", "serviceName", "enabled", "createdBy")
+							.where(($) => [$.alertRuleId.isNull(), $.enabled.eq(true)])
+							.limit(MAX_RULE_BACKFILL),
+					),
+				)
+				if (missing.length === 0) {
+					yield* Ref.set(backfillSettled, true)
+					return 0
+				}
+				const created = yield* Effect.forEach(missing, backfillOne)
+				const count = created.filter((made) => made).length
+				yield* Effect.annotateCurrentSpan("maple.uptime.rules_backfilled", count)
+				return count
+			}).pipe(Effect.withSpan("UptimeAlertSource.backfillRules"))
+
+			return { observe, backfillRules } satisfies UptimeAlertSourceApi
 		}),
 	},
 ) {

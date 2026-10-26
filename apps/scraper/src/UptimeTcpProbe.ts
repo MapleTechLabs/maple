@@ -60,8 +60,10 @@ export class UptimeTcpProbe extends Context.Service<UptimeTcpProbe, UptimeTcpPro
 			const dial = yield* TcpDialer
 
 			// The same rules as an HTTP URL: blocked names, private literals, and every resolved answer.
-			const addressFor = (host: string) =>
+			const addressFor = (configured: string) =>
 				Effect.gen(function* () {
+					// `[2001:db8::1]` is an IPv6 literal written as a URL host, not a name to resolve.
+					const host = /^\[.*\]$/u.test(configured) ? configured.slice(1, -1) : configured
 					const refused = new TcpRefused({
 						message: `Refused to connect: ${host} is a loopback, private, or reserved address`,
 						kind: "ssrf_refused",

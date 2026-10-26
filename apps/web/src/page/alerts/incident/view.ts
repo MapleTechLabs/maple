@@ -162,30 +162,37 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 								signalTitle(incident.signalType),
 								...(group != null ? [` · ${group}`] : []),
 							]),
-							rule === null
+							incident.signalType === "uptime"
 								? h.p(
 										[h.Class("text-muted-foreground text-sm")],
 										[
-											"The rule behind this incident was deleted, so its signal cannot be replayed.",
+											"This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
 										],
 									)
-								: ruleChart(h, {
-										chartId: inputs.chartId,
-										chart: inputs.chart,
-										toChartMessage: inputs.toChartMessage,
-										colors: inputs.colors,
-										timeZone: inputs.timeZone,
-										preview: inputs.preview,
-										incidents: [incident],
-										threshold: incident.threshold,
-										thresholdUpper: incident.thresholdUpper,
-										comparator: incident.comparator,
-										signalType: incident.signalType,
-										window: { min: inputs.range.start, max: inputs.range.end },
-										source: "preview",
-										isLoading: inputs.isPreviewLoading,
-										error: inputs.previewError,
-									}),
+								: rule === null
+									? h.p(
+											[h.Class("text-muted-foreground text-sm")],
+											[
+												"The rule behind this incident was deleted, so its signal cannot be replayed.",
+											],
+										)
+									: ruleChart(h, {
+											chartId: inputs.chartId,
+											chart: inputs.chart,
+											toChartMessage: inputs.toChartMessage,
+											colors: inputs.colors,
+											timeZone: inputs.timeZone,
+											preview: inputs.preview,
+											incidents: [incident],
+											threshold: incident.threshold,
+											thresholdUpper: incident.thresholdUpper,
+											comparator: incident.comparator,
+											signalType: incident.signalType,
+											window: { min: inputs.range.start, max: inputs.range.end },
+											source: "preview",
+											isLoading: inputs.isPreviewLoading,
+											error: inputs.previewError,
+										}),
 						],
 					),
 					incidentTimeline(h, {

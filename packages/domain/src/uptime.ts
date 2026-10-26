@@ -151,9 +151,12 @@ const PATH_TOKEN = /[^.[\]]+|\[(\d+)\]/gu
 const asJsonArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown))
 const asJsonObject = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))
 
-/** Reads `a.b[0].c` from parsed JSON; `None` when a step is missing, `Some(null)` for a JSON null. */
+/**
+ * Reads `a.b[0].c` (or JSONPath-style `$.a.b[0].c`) from parsed JSON; `None` when a step is
+ * missing, `Some(null)` for a JSON null.
+ */
 export const readJsonPath = (root: unknown, path: string): Option.Option<unknown> =>
-	Array.from(path.matchAll(PATH_TOKEN)).reduce<Option.Option<unknown>>(
+	Array.from(path.replace(/^\$\.?/u, "").matchAll(PATH_TOKEN)).reduce<Option.Option<unknown>>(
 		(current, match) =>
 			Option.flatMap(current, (value) => {
 				const key = match[1] ?? match[0]

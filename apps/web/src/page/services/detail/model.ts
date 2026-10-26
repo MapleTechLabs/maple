@@ -127,6 +127,8 @@ export const Model = Schema.Struct({
 	usage: KeyedSchema(Usage, LoadFailure),
 	/** `uptimeMonitors.list`: the org's monitors; the Uptime card keeps this service's. */
 	uptimeMonitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
+	/** Whether the reader may create monitors (org admins); read with the monitors. */
+	canCreateUptimeMonitors: Schema.Boolean,
 	workloads: KeyedSchema(Schema.Array(Workload), LoadFailure),
 	dependencies: KeyedSchema(DependencyBundle, LoadFailure),
 	/** `commitQueryAtom(sha)`, shared by the deploy rows and the marker labels. */

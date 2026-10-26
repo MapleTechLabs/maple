@@ -456,6 +456,35 @@ describe("guard with strictRedirects", () => {
 		}),
 	)
 
+	it.effect("keeps the caller's own headers across origins while dropping the rest", () =>
+		Effect.gen(function* () {
+			const seen: Array<{ readonly trace: string | null; readonly apiKey: string | null }> = []
+			const fakeFetch: typeof fetch = async (_input, init) => {
+				const headers = new Headers(init?.headers)
+				seen.push({ trace: headers.get("traceparent"), apiKey: headers.get("x-api-key") })
+				return seen.length === 1
+					? new Response(null, {
+							status: 302,
+							headers: { location: "https://elsewhere.example/y" },
+						})
+					: new Response("ok", { status: 200 })
+			}
+			yield* Effect.flatMap(HttpClient.HttpClient, (client) =>
+				guard(client, { strictRedirects: true, ownHeaders: ["Traceparent"] }).get(
+					"https://api.example.com/x",
+					{ headers: { "X-Api-Key": "probe-secret", traceparent: "00-a-b-01" } },
+				),
+			).pipe(
+				Effect.provide(FetchHttpClient.layer),
+				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+			)
+			assert.deepStrictEqual(seen, [
+				{ trace: "00-a-b-01", apiKey: "probe-secret" },
+				{ trace: "00-a-b-01", apiKey: null },
+			])
+		}),
+	)
+
 	it.effect("replays a cross-origin 307 as a body-less GET without headers", () =>
 		Effect.gen(function* () {
 			const { seen, fakeFetch } = redirectOnce(307, "https://elsewhere.example/y")

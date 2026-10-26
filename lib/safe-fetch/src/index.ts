@@ -214,8 +214,10 @@ const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"] as
 const withoutCredentialHeaders = (request: HttpClientRequest.HttpClientRequest) =>
 	CREDENTIAL_HEADERS.reduce((next, name) => HttpClientRequest.removeHeader(next, name), request)
 
-const withoutHeaders = (request: HttpClientRequest.HttpClientRequest) =>
-	Object.keys(request.headers).reduce((next, name) => HttpClientRequest.removeHeader(next, name), request)
+const withoutHeaders = (request: HttpClientRequest.HttpClientRequest, keep: ReadonlySet<string>) =>
+	Object.keys(request.headers)
+		.filter((name) => !keep.has(name.toLowerCase()))
+		.reduce((next, name) => HttpClientRequest.removeHeader(next, name), request)
 
 /** How `guard` hands a request on to a redirect's destination. */
 export interface GuardOptions {
@@ -225,6 +227,8 @@ export interface GuardOptions {
 	 * within one origin. Without it, only credential headers are dropped cross-origin.
 	 */
 	readonly strictRedirects?: boolean
+	/** With `strictRedirects`: headers the caller sets itself (not user config), kept across origins. */
+	readonly ownHeaders?: ReadonlyArray<string>
 }
 
 const SEE_OTHER_STATUSES: ReadonlySet<number> = new Set([301, 302, 303])
@@ -304,6 +308,9 @@ const guardWith = <E, R, E2>(
 	options: GuardOptions,
 ): HttpClient.HttpClient.With<E | E2 | UrlValidationError, R> => {
 	const strict = options.strictRedirects === true
+	const ownHeaders: ReadonlySet<string> = new Set(
+		(options.ownHeaders ?? []).map((name) => name.toLowerCase()),
+	)
 	const send = ({ request, serverName }: Dial) =>
 		Effect.serviceOption(FetchHttpClient.RequestInit).pipe(
 			Effect.flatMap((init) =>
@@ -330,7 +337,7 @@ const guardWith = <E, R, E2>(
 			const outgoing =
 				previousOrigin !== null && validated.origin !== previousOrigin
 					? strict
-						? withoutHeaders(request)
+						? withoutHeaders(request, ownHeaders)
 						: withoutCredentialHeaders(request)
 					: request
 			const response = yield* send(yield* dial(outgoing, validated))

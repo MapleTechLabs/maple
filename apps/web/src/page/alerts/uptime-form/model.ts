@@ -18,8 +18,8 @@ export const Model = Schema.Struct({
 	existing: KeyedSchema(V2UptimeMonitor, LoadFailure),
 	form: Form,
 	isSaving: Schema.Boolean,
-	/** The plan's monitor allowance is used up (402 on create). */
-	isLimitReached: Schema.Boolean,
+	/** The last save's failure, shown beside the action bar: the plan's limit (402) or any other. */
+	saveFailure: Schema.NullOr(LoadFailure),
 	isTesting: Schema.Boolean,
 	testResult: Schema.NullOr(V2UptimeMonitorTestResult),
 	testFailure: Schema.NullOr(LoadFailure),
@@ -29,5 +29,7 @@ export const Model = Schema.Struct({
 	destinations: Schema.NullOr(Schema.Array(AlertDestinationRowSchema)),
 	destinationMenu: Menu.Model,
 	isAdmin: Schema.Boolean,
+	/** The session answered; until then a member is not yet told the form is admin-only. */
+	isSessionLoaded: Schema.Boolean,
 })
 export type Model = typeof Model.Type

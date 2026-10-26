@@ -137,6 +137,21 @@ describe("UptimeTcpProbe", () => {
 		}),
 	)
 
+	it.effect("treats a bracketed IPv6 host as an address: public is dialled, private refused", () =>
+		Effect.gen(function* () {
+			const dialled: Array<string> = []
+			const layer = probeLayer(recordingDialer(dialled))
+			const publicV6 = yield* probe(tcpConfig("[2606:4700::6810:84e5]", 443)).pipe(
+				Effect.provide(layer),
+			)
+			assert.isTrue(publicV6.ok)
+			assert.deepStrictEqual(dialled, ["2606:4700::6810:84e5:443"])
+			const privateV6 = yield* probe(tcpConfig("[fd12:3456:789a::1]", 443)).pipe(Effect.provide(layer))
+			assert.strictEqual(privateV6.errorType, "ssrf_refused")
+			assert.lengthOf(dialled, 1)
+		}),
+	)
+
 	it.effect("names an unresolvable host", () =>
 		Effect.gen(function* () {
 			const outcome = yield* probe(tcpConfig("gone.example.net", 22)).pipe(

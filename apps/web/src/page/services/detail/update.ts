@@ -545,6 +545,7 @@ export const init = (
 		issues: Keyed.idle(),
 		usage: Keyed.idle(),
 		uptimeMonitors: Keyed.idle(),
+		canCreateUptimeMonitors: false,
 		workloads: Keyed.idle(),
 		dependencies: Keyed.idle(),
 		commits: {},
@@ -779,8 +780,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),
-		CompletedFetchUptimeMonitors: ({ key, result }) => ({
-			model: { ...model, uptimeMonitors: Keyed.accept(model.uptimeMonitors, key, result) },
+		CompletedFetchUptimeMonitors: ({ key, result, isAdmin }) => ({
+			model: {
+				...model,
+				uptimeMonitors: Keyed.accept(model.uptimeMonitors, key, result),
+				canCreateUptimeMonitors: isAdmin,
+			},
 		}),
 		CompletedFetchWorkloads: ({ key, result }) => ({
 			model: { ...model, workloads: Keyed.accept(model.workloads, key, result) },

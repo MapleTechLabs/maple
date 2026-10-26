@@ -82,15 +82,19 @@ export const uptimePanel = (h: H, model: Model): Html => {
 					)
 				}),
 			),
-			h.a(
-				[
-					h.Href(newMonitorHref({ serviceName: model.serviceName })),
-					h.Class(
-						"mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground",
-					),
-				],
-				[icon(h, "PlusIcon", { size: 14 }), "Add uptime check for this service"],
-			),
+			...(model.canCreateUptimeMonitors
+				? [
+						h.a(
+							[
+								h.Href(newMonitorHref({ serviceName: model.serviceName })),
+								h.Class(
+									"mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground",
+								),
+							],
+							[icon(h, "PlusIcon", { size: 14 }), "Add uptime check for this service"],
+						),
+					]
+				: []),
 		]),
 	])
 }

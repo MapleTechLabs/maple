@@ -10,6 +10,7 @@ export const HttpMethod = Schema.Literals(["GET", "HEAD", "POST"])
 export const RecordType = Schema.Literals(["A", "AAAA", "CNAME", "MX", "TXT", "NS"])
 export const ScheduleMode = Schema.Literals(["interval", "cron"])
 export const EveryUnit = Schema.Literals(["seconds", "minutes", "hours"])
+export const GraceUnit = Schema.Literals(["seconds", "minutes"])
 export const AssertionType = Schema.Literals(["status", "latency", "body", "json_path", "header"])
 export type AssertionType = typeof AssertionType.Type
 
@@ -38,7 +39,7 @@ export const TextField = Schema.Literals([
 	"everyValue",
 	"cronExpression",
 	"cronTimezone",
-	"graceMinutes",
+	"graceValue",
 	"serviceName",
 ])
 export type TextField = typeof TextField.Type
@@ -68,7 +69,9 @@ export const Form = Schema.Struct({
 	everyUnit: EveryUnit,
 	cronExpression: Schema.String,
 	cronTimezone: Schema.String,
-	graceMinutes: Schema.String,
+	graceValue: Schema.String,
+	/** Seconds keep a grace that is not whole minutes exact, so an unrelated edit never rounds it. */
+	graceUnit: GraceUnit,
 	serviceName: Schema.String,
 	destinationIds: Schema.Array(AlertDestinationId),
 })
@@ -103,7 +106,8 @@ export const emptyForm = (fields: Partial<Form> = {}): Form => ({
 	everyUnit: "hours",
 	cronExpression: "0 2 * * *",
 	cronTimezone: "UTC",
-	graceMinutes: "30",
+	graceValue: "30",
+	graceUnit: "minutes",
 	serviceName: "",
 	destinationIds: [],
 	...fields,

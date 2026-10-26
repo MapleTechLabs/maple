@@ -6,7 +6,7 @@ import { requestKey } from "../../../data/request-key"
 import type { AppRoute } from "../../../route"
 import * as Menu from "../../../ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { LIMIT_REACHED_CODE, monitorHref, monitorIdFromUrl } from "../shared/uptime-commands"
+import { monitorHref, monitorIdFromUrl } from "../shared/uptime-commands"
 import {
 	FetchExistingMonitor,
 	FetchFormServices,
@@ -15,7 +15,7 @@ import {
 	SaveDraft,
 	TestDraft,
 } from "./command"
-import { formFromMonitor, formIssues, nameFromUrl, wireConfig, wirePayload } from "./derive"
+import { defaultName, formFromMonitor, formIssues, wireConfig, wirePayload } from "./derive"
 import { ASSERTION_OPS, type AssertionDraft, emptyForm, type Form, MonitorKind, type TextField } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -40,7 +40,7 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		existing: Keyed.idle(),
 		form: emptyForm({ kind: kindOf(route.search.kind), serviceName: route.search.serviceName ?? "" }),
 		isSaving: false,
-		isLimitReached: false,
+		saveFailure: null,
 		isTesting: false,
 		testResult: null,
 		testFailure: null,
@@ -49,6 +49,7 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		destinations: null,
 		destinationMenu: Menu.init(DESTINATION_MENU_ID),
 		isAdmin: false,
+		isSessionLoaded: false,
 	}
 	const common = [FetchFormServices(), ReadFormTimeZones(), FetchFormSession({ orgId: context.orgId })]
 	if (editingId === null) return { model, commands: common }
@@ -62,20 +63,17 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 	})
 }
 
+/** Until a name is typed it follows the target: the URL, `host:port`, or `<type> <hostname>`. */
+const named = (form: Form): Form => (form.isNameEdited ? form : { ...form, name: defaultName(form) })
+
 const withForm = (model: Model, patch: Partial<Form>): Return => ({
-	model: { ...model, form: { ...model.form, ...patch } },
+	model: { ...model, form: named({ ...model.form, ...patch }) },
 })
 
-const changedText = (model: Model, field: TextField, value: string): Return => {
-	const form = model.form
-	if (field === "name") return withForm(model, { name: value, isNameEdited: value !== "" })
-	if (field === "url")
-		return withForm(model, {
-			url: value,
-			...(form.isNameEdited ? undefined : { name: nameFromUrl(value) }),
-		})
-	return withForm(model, { [field]: value })
-}
+const changedText = (model: Model, field: TextField, value: string): Return =>
+	field === "name"
+		? { model: { ...model, form: { ...model.form, name: value, isNameEdited: value !== "" } } }
+		: withForm(model, { [field]: value })
 
 const mapAssertion = (model: Model, id: number, change: (row: AssertionDraft) => AssertionDraft): Return =>
 	withForm(model, { assertions: model.form.assertions.map((row) => (row.id === id ? change(row) : row)) })
@@ -89,9 +87,6 @@ const addAssertion = (model: Model): Return =>
 		nextAssertionId: model.form.nextAssertionId + 1,
 	})
 
-const toast = (type: "success" | "error", title: string, description = ""): PageOutMessage =>
-	PageOutMessage.RequestedToast({ type, title, description })
-
 const test = (model: Model): Return =>
 	model.isTesting || model.form.kind !== "http"
 		? { model }
@@ -101,10 +96,10 @@ const test = (model: Model): Return =>
 			}
 
 const save = (model: Model): Return =>
-	model.isSaving || formIssues(model.form).length > 0
+	model.isSaving || !model.isAdmin || formIssues(model.form).length > 0
 		? { model }
 		: {
-				model: { ...model, isSaving: true, isLimitReached: false },
+				model: { ...model, isSaving: true, saveFailure: null },
 				commands: [
 					SaveDraft({
 						editingId: model.editingId,
@@ -154,16 +149,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchServices: ({ services }) => ({ model: { ...model, services } }),
 		CompletedReadTimeZones: ({ zones }) => ({ model: { ...model, timeZones: zones } }),
 		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin } } : { model },
+			orgId === context.orgId ? { model: { ...model, isAdmin, isSessionLoaded: true } } : { model },
 		PickedKind: ({ kind }) =>
 			model.editingId !== null
 				? { model }
-				: { model: { ...model, form: { ...model.form, kind }, testResult: null } },
+				: { model: { ...model, form: named({ ...model.form, kind }), testResult: null } },
 		ChangedText: ({ field, value }) => changedText(model, field, value),
 		ChangedMethod: ({ method }) => withForm(model, { method }),
 		ChangedRecordType: ({ recordType }) => withForm(model, { recordType }),
 		ChangedScheduleMode: ({ mode }) => withForm(model, { scheduleMode: mode }),
 		ChangedEveryUnit: ({ unit }) => withForm(model, { everyUnit: unit }),
+		ChangedGraceUnit: ({ unit }) => withForm(model, { graceUnit: unit }),
 		PickedInterval: ({ seconds }) => withForm(model, { intervalSeconds: seconds }),
 		AddedAssertion: () => addAssertion(model),
 		RemovedAssertion: ({ id }) =>
@@ -208,12 +204,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						},
 					}),
 				}),
-				onFailure: (failure): Return =>
-					failure.code === LIMIT_REACHED_CODE
-						? { model: { ...model, isSaving: false, isLimitReached: true } }
-						: {
-								model: { ...model, isSaving: false },
-								outMessage: toast("error", "Couldn't save the monitor", failure.message),
-							},
+				// Inline beside the action bar, never a toast over its buttons.
+				onFailure: (saveFailure): Return => ({ model: { ...model, isSaving: false, saveFailure } }),
 			}),
 	})

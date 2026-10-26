@@ -4,7 +4,7 @@ import { iconButton } from "../../../ui/icon-button"
 import * as MenuView from "../../../ui/menu-view"
 import { panel } from "../../../ui/panel"
 import { segmentedSelect } from "../../../ui/segmented-select"
-import { EveryUnit, RecordType, ScheduleMode } from "./form"
+import { EveryUnit, GraceUnit, RecordType, ScheduleMode } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type H, section, selectField, textField } from "./view-fields"
@@ -15,6 +15,8 @@ const isRecordType = (value: string): value is typeof RecordType.Type =>
 	RecordType.literals.some((type) => type === value)
 const isUnit = (value: string): value is typeof EveryUnit.Type =>
 	EveryUnit.literals.some((unit) => unit === value)
+const isGraceUnit = (value: string): value is typeof GraceUnit.Type =>
+	GraceUnit.literals.some((unit) => unit === value)
 const isMode = (value: string): value is typeof ScheduleMode.Type =>
 	ScheduleMode.literals.some((mode) => mode === value)
 
@@ -141,15 +143,26 @@ export const heartbeatSection = (h: H, model: Model): Html => {
 						}),
 					],
 				),
-		textField(h, {
-			field: "graceMinutes",
-			label: "Grace period",
-			value: form.graceMinutes,
-			suffix: "minutes",
-			inputMode: "numeric",
-			hint: "How late a ping may be before the monitor goes down.",
-			className: "max-w-60",
-		}),
+		h.div(
+			[h.Class("grid gap-4 sm:grid-cols-[140px_160px]")],
+			[
+				textField(h, {
+					field: "graceValue",
+					label: "Grace period",
+					value: form.graceValue,
+					inputMode: "numeric",
+					hint: "How late a ping may be before the monitor goes down.",
+				}),
+				selectField(h, {
+					id: "uptime-grace-unit",
+					label: "Grace unit",
+					value: form.graceUnit,
+					entries: GraceUnit.literals.map((unit) => ({ value: unit, label: unit })),
+					onChange: (value) =>
+						Message.ChangedGraceUnit({ unit: isGraceUnit(value) ? value : "minutes" }),
+				}),
+			],
+		),
 	])
 }
 

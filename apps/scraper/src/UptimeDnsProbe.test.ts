@@ -50,6 +50,22 @@ describe("UptimeDnsProbe", () => {
 		}),
 	)
 
+	it.effect("compares A and AAAA answers as addresses, whatever their spelling", () =>
+		Effect.gen(function* () {
+			const lookup: DnsLookup = (_, recordType) =>
+				Effect.succeed(recordType === "AAAA" ? ["2001:db8::1"] : ["93.184.216.34"])
+			const v6 = yield* probeWith(
+				lookup,
+				dnsConfig({ recordType: "AAAA", expected: "2001:DB8:0:0::0001" }),
+			)
+			assert.isTrue(v6.ok)
+			const v4 = yield* probeWith(lookup, dnsConfig({ expected: "93.184.216.034" }))
+			assert.isTrue(v4.ok)
+			const other = yield* probeWith(lookup, dnsConfig({ recordType: "AAAA", expected: "2001:db8::2" }))
+			assert.isFalse(other.ok)
+		}),
+	)
+
 	it.effect("a mismatch lists what it found", () =>
 		Effect.gen(function* () {
 			const outcome = yield* probeWith(zoneLookup, dnsConfig({ expected: "203.0.113.9" }))

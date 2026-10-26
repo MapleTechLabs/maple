@@ -1,4 +1,5 @@
 import type { V2UptimeMonitorConfig } from "@maple/domain/http/v2"
+import { parseHeartbeatCron } from "@maple/domain/uptime"
 import { Option } from "effect"
 import type { UptimeMonitor } from "../shared/uptime-derive"
 import { type AssertionDraft, type Form, emptyForm } from "./form"
@@ -14,6 +15,65 @@ export const nameFromUrl = (url: string): string => {
 	const bare = url.trim().replace(/^https?:\/\//u, "")
 	return bare.replace(/[?#].*$/u, "").replace(/\/$/u, "")
 }
+
+/** The name a check takes until one is typed; a heartbeat has no target to name it after. */
+export const defaultName = (form: Form): string => {
+	switch (form.kind) {
+		case "http":
+			return nameFromUrl(form.url)
+		case "tcp":
+			return form.host.trim() === ""
+				? ""
+				: form.port.trim() === ""
+					? form.host.trim()
+					: `${form.host.trim()}:${form.port.trim()}`
+		case "dns":
+			return form.hostname.trim() === "" ? "" : `${form.recordType} ${form.hostname.trim()}`
+		case "heartbeat":
+			return form.name
+	}
+}
+
+// Obvious private targets, refused here with the server's sentences; the server stays authoritative.
+const BLOCKED_NAMES = new Set(["localhost", "localhost.localdomain", "metadata.google.internal"])
+const BLOCKED_SUFFIXES = [".localhost", ".local", ".internal"]
+const PRIVATE_V4 = [
+	/^0\./u,
+	/^10\./u,
+	/^127\./u,
+	/^169\.254\./u,
+	/^192\.168\./u,
+	/^172\.(1[6-9]|2\d|3[01])\./u,
+	/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./u,
+]
+const PRIVATE_V6 = [/^::1?$/u, /^f[cd][0-9a-f]{0,2}:/u, /^fe[89ab][0-9a-f]?:/u, /^::ffff:/u]
+
+const isIpLiteral = (host: string) => /^\d{1,3}(\.\d{1,3}){3}$/u.test(host) || host.includes(":")
+
+/** True for a loopback, private, link-local or metadata host, by name or literal address. */
+export const isPrivateHost = (raw: string): boolean => {
+	const host = raw
+		.trim()
+		.toLowerCase()
+		.replace(/^\[|\]$/gu, "")
+		.replace(/\.$/u, "")
+	if (BLOCKED_NAMES.has(host) || BLOCKED_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true
+	return host.includes(":")
+		? PRIVATE_V6.some((pattern) => pattern.test(host))
+		: PRIVATE_V4.some((pattern) => pattern.test(host))
+}
+
+const urlHostOf = (url: string): string | null =>
+	URL.canParse(url.trim()) ? new URL(url.trim()).hostname : null
+
+const hostIssue = (host: string): ReadonlyArray<string> =>
+	host.trim() !== "" && isPrivateHost(host)
+		? [
+				isIpLiteral(host.trim().replace(/^\[|\]$/gu, ""))
+					? `Host '${host.trim()}' is not allowed (loopback, private, or metadata range)`
+					: `URL host '${host.trim()}' is not allowed (loopback, private, or metadata range)`,
+			]
+		: []
 
 const STATUS_PATTERN = /^([1-5]xx|[1-5]\d\d)$/u
 
@@ -49,6 +109,11 @@ const EVERY_SECONDS = { seconds: 1, minutes: 60, hours: 3600 } as const
 export const everySeconds = (form: Form): number =>
 	isWhole(form.everyValue) ? whole(form.everyValue) * EVERY_SECONDS[form.everyUnit] : Number.NaN
 
+export const graceSeconds = (form: Form): number =>
+	isWhole(form.graceValue) ? whole(form.graceValue) * EVERY_SECONDS[form.graceUnit] : Number.NaN
+
+const MAX_GRACE_SECONDS = 86_400
+
 /** What still blocks the save, one plain sentence each. */
 export const formIssues = (form: Form): ReadonlyArray<string> => {
 	const add = (condition: boolean, issue: string): ReadonlyArray<string> => (condition ? [issue] : [])
@@ -61,6 +126,12 @@ export const formIssues = (form: Form): ReadonlyArray<string> => {
 						form.url.trim() !== "" && !isHttpUrl(form.url),
 						"The URL must start with http:// or https://.",
 					),
+					...(() => {
+						const host = urlHostOf(form.url)
+						return host !== null && isPrivateHost(host)
+							? [`URL host '${host}' is not allowed (loopback, private, or metadata range)`]
+							: []
+					})(),
 					...new Set(
 						form.assertions.flatMap((row) =>
 							Option.toArray(Option.fromNullishOr(assertionIssue(row))),
@@ -70,24 +141,35 @@ export const formIssues = (form: Form): ReadonlyArray<string> => {
 			case "tcp":
 				return [
 					...add(form.host.trim() === "", "Add the host to connect to."),
+					...hostIssue(form.host),
 					...add(
 						!isWhole(form.port) || whole(form.port) < 1 || whole(form.port) > 65535,
 						"The port must be a whole number from 1 to 65535.",
 					),
 				]
 			case "dns":
-				return add(form.hostname.trim() === "", "Add the hostname to resolve.")
+				return [
+					...add(form.hostname.trim() === "", "Add the hostname to resolve."),
+					...hostIssue(form.hostname),
+				]
 			case "heartbeat":
 				return form.scheduleMode === "interval"
 					? add(!(everySeconds(form) >= 60), "Heartbeats expect a ping at most once a minute.")
-					: add(form.cronExpression.trim() === "", "Add the cron expression of the job.")
+					: form.cronExpression.trim() === ""
+						? ["Add the cron expression of the job."]
+						: add(
+								Option.isNone(
+									parseHeartbeatCron(form.cronExpression.trim(), form.cronTimezone),
+								),
+								`'${form.cronExpression.trim()}' in ${form.cronTimezone} is not a valid cron schedule`,
+							)
 		}
 	})()
 	const checkIssues =
 		form.kind === "heartbeat"
 			? add(
-					!isWhole(form.graceMinutes) || whole(form.graceMinutes) > 1440,
-					"The grace period must be 0 to 1440 minutes.",
+					!(graceSeconds(form) >= 0 && graceSeconds(form) <= MAX_GRACE_SECONDS),
+					"The grace period must be 0 to 24 hours.",
 				)
 			: [
 					...add(
@@ -170,7 +252,7 @@ export const wireConfig = (form: Form): Readonly<Record<string, unknown>> => {
 								expression: form.cronExpression.trim(),
 								timezone: form.cronTimezone,
 							},
-				grace_seconds: whole(form.graceMinutes) * 60,
+				grace_seconds: graceSeconds(form),
 			}
 	}
 }
@@ -272,7 +354,9 @@ export const formFromMonitor = (monitor: UptimeMonitor): Form => {
 		case "heartbeat":
 			return {
 				...base,
-				graceMinutes: String(Math.round(config.grace_seconds / 60)),
+				...(config.grace_seconds % 60 === 0
+					? { graceValue: String(config.grace_seconds / 60), graceUnit: "minutes" }
+					: { graceValue: String(config.grace_seconds), graceUnit: "seconds" }),
 				...(config.schedule.type === "interval"
 					? { scheduleMode: "interval", ...everyOf(config.schedule.seconds) }
 					: {

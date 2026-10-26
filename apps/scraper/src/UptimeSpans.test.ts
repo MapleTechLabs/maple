@@ -3,6 +3,7 @@ import { Duration, Effect, Fiber, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { ScraperEnv } from "./Env"
+import { endedSpansNamed, makeCapturingTracer } from "./testing/capturing-tracer"
 import { type RecordedRequest, stubFetch } from "./testing/stub-fetch"
 import { httpConfig, MONITOR_A, MONITOR_B, mkUptimeTarget } from "./testing/uptime"
 import { failed, succeeded } from "./UptimeProbe"
@@ -153,6 +154,33 @@ describe("UptimeSpanExporter", () => {
 				assert.lengthOf(recorded, 3)
 				yield* Fiber.interrupt(fiber)
 			}).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch))
+		}).pipe(Effect.provide(exporterLayer)),
+	)
+
+	it.effect("counts a batch still posting as pending, and posts it under an ingest client span", () =>
+		Effect.gen(function* () {
+			const tracer = makeCapturingTracer()
+			// The ingest answer is held until the test releases it.
+			const answered = Promise.withResolvers<void>()
+			const fetch = stubFetch([], () =>
+				answered.promise.then(() => new Response("{}", { status: 200 })),
+			)
+			yield* Effect.gen(function* () {
+				const exporter = yield* UptimeSpanExporter
+				yield* exporter.record(check())
+				yield* exporter.record(check())
+				const fiber = yield* Effect.forkChild(exporter.run)
+				yield* TestClock.adjust(Duration.millis(0))
+				// The POST has not answered: both spans are still owed to ingest.
+				assert.strictEqual(yield* exporter.pending, 2)
+				answered.resolve()
+				yield* Effect.promise(() => answered.promise)
+				yield* Effect.repeat(Effect.yieldNow, { times: 10 })
+				assert.strictEqual(yield* exporter.pending, 0)
+				const [span] = endedSpansNamed(tracer.ended, "UptimeSpanExporter.post")
+				assert.strictEqual(span?.attributes.get("peer.service"), "ingest")
+				yield* Fiber.interrupt(fiber)
+			}).pipe(Effect.provideService(FetchHttpClient.Fetch, fetch), Effect.provide(tracer.layer))
 		}).pipe(Effect.provide(exporterLayer)),
 	)
 

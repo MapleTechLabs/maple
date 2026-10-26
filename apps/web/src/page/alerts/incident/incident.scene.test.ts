@@ -54,6 +54,26 @@ describe("alert incident", () => {
 		expect(again.commands ?? []).toHaveLength(0)
 	})
 
+	test("an uptime incident asks for no rule preview and says what its signal is", () => {
+		const entered = init(route(), context).model
+		const uptimeIncident = incidentRow({ signal_type: "uptime", rule_name: "Checkout health" })
+		const loaded = [
+			Message.ReadClock({ nowMs: NOW }),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [uptimeIncident] }),
+		].reduce((model, message) => step(model, message).model, entered)
+		const withRule = step(
+			loaded,
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { signal_type: "uptime" })] }),
+		)
+		expect(names(withRule.commands)).not.toContain("FetchAlertIncidentPreview")
+		scene(
+			{ update: pageUpdate, view },
+			given(withRule.model),
+			themeResolved(),
+			expectView(text("resolves when one passes again", { exact: false })).toExist(),
+		)
+	})
+
 	test("a failed delivery read is not refetched when the live rows change", () => {
 		const entered = init(route(), context).model
 		const loaded = [
