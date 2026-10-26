@@ -61,7 +61,7 @@ const createAlert = (h: H, model: Model): Html =>
 	h.a(
 		[
 			h.AriaLabel("Create alert"),
-			h.Class(buttonVariants({ variant: "outline" })),
+			h.Class(buttonVariants({ variant: "outline", size: "sm" })),
 			h.DataAttribute("slot", "button"),
 			h.Href(hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } }))),
 		],

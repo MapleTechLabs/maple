@@ -432,8 +432,8 @@ const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: b
 							missing.length > 0
 								? `Fill in ${missing.join(" and ")} first.`
 								: isReady
-									? "Creates a copy you own — edit or delete it freely."
-									: "Creating it now is fine — the widgets stay empty until the data shows up, then fill in on their own.",
+									? "Creates a copy you own. Edit or delete it freely."
+									: "Creating it now is fine. The widgets stay empty until the data shows up, then fill in on their own.",
 						],
 					),
 				],

@@ -53,7 +53,7 @@ const headline = (verification: ErrorIssueVerificationDocument, nowMs: number): 
 		case "verified":
 			return "No occurrences from builds that postdate the merge. The fix holds."
 		case "not_fixed":
-			return `This error fired ${verification.postMergeOccurrenceCount} more time(s) from builds that postdate the merge — the fix did not resolve it.`
+			return `This error fired ${verification.postMergeOccurrenceCount} more time(s) from builds that postdate the merge, so the fix did not resolve it.`
 		case "inconclusive":
 			return "There was not enough traffic after the merge to say either way."
 		case "abandoned":
@@ -100,7 +100,7 @@ export const verificationCard = <M>(
 					note(
 						h,
 						"mt-2 text-xs leading-relaxed text-foreground",
-						"Maple leaves high and critical issues for a human to close — this one stays open until you do.",
+						"Maple leaves high and critical issues for a human to close. This one stays open until you do.",
 					),
 				]
 			: []),
@@ -118,7 +118,7 @@ export const verificationCard = <M>(
 					note(
 						h,
 						"mt-2 text-xs text-muted-foreground/80",
-						"Occurrences from builds that predate the merge were ignored — those are older clients still running the broken version.",
+						"Occurrences from builds that predate the merge were ignored. Those are older clients still running the broken version.",
 					),
 				]
 			: []),

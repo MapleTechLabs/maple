@@ -122,14 +122,15 @@ fi
 pass "data survives a restart without recovery"
 
 # --- Killed mid-run (OOM, host crash): starts from its restore point instead of refusing.
-# The restart above may still be taking its own first checkpoint; wait out its lock.
+# The restart above may still be taking its own first checkpoint; wait out its lock, including
+# the moment between creating the lock and writing its owner record ("ownership is uncertain").
 checkpointed=0
 for _ in $(seq 1 60); do
 	if docker exec -u 10001 "$RUN_ID" maple checkpoint >"$BODY" 2>&1; then
 		checkpointed=1
 		break
 	fi
-	grep -q "maintenance operation is active" "$BODY" || break
+	grep -q -E "maintenance operation is active|ownership is uncertain" "$BODY" || break
 	sleep 0.5
 done
 [[ "$checkpointed" == 1 ]] || fail "maple checkpoint failed: $(cat "$BODY")"

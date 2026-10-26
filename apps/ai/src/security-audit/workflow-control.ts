@@ -8,7 +8,7 @@ import {
 	WorkflowStartError,
 } from "@maple/backend/platform/bindings"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
-import type * as Cloudflare from "alchemy/Cloudflare"
+import type * as Cloudflare from "@alchemy.run/cloudflare"
 import { Cause, Effect, Predicate } from "effect"
 
 /** Statuses after which an instance runs no more steps. */

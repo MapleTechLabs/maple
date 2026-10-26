@@ -174,7 +174,7 @@ const tipContent = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, triggerId: s
 			? ["Discard manual positions and auto-arrange"]
 			: triggerId === TIP_HIDE_REST
 				? ["Remove everything outside the neighborhood and re-layout, instead of fading it"]
-				: ["Below ", String(inputs.minTrafficPct), "% of the peak edge rate — click to show all"],
+				: ["Below ", String(inputs.minTrafficPct), "% of the peak edge rate. Click to show all"],
 	)
 
 const hiddenButton = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>, trigger: Trigger): Html =>

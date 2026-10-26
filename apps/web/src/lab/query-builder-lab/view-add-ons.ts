@@ -42,7 +42,7 @@ const groupBy = (h: H, model: Model, query: QueryDraft): Html =>
 			className: "h-8 text-xs",
 			isUnfiltered: true,
 			toView: ({ field, rest }) =>
-				h.div([h.Class("space-y-1")], [labelEyebrow(h, "Group By"), field, ...rest]),
+				h.div([h.Class("space-y-1")], [labelEyebrow(h, "Group by"), field, ...rest]),
 		},
 	})
 
@@ -83,7 +83,7 @@ const orderBy = (h: H, model: Model, query: QueryDraft): Html =>
 	h.div(
 		[h.Class("grid gap-2 md:grid-cols-[1fr_1fr]")],
 		[
-			textField(h, query, "Order By (UI-only)", "orderBy", "p95(duration)"),
+			textField(h, query, "Order by (UI-only)", "orderBy", "p95(duration)"),
 			labSelect(h, model, `orderDirection:${query.id}`, query.orderByDirection, DIRECTIONS, {
 				className: "w-full",
 				toView: (parts) => h.div([h.Class("space-y-1")], [labelEyebrow(h, "Direction"), ...parts]),
@@ -97,6 +97,6 @@ export const addOnSections = (h: H, model: Model, query: QueryDraft): ReadonlyAr
 	...(query.addOns.orderBy ? [orderBy(h, model, query)] : []),
 	...(query.addOns.limit ? [textField(h, query, "Limit (UI-only)", "limit", "10", "number")] : []),
 	...(query.addOns.legend
-		? [textField(h, query, "Legend Format (UI-only)", "legend", "{{service.name}} - {{status.code}}")]
+		? [textField(h, query, "Legend format (UI-only)", "legend", "{{service.name}} - {{status.code}}")]
 		: []),
 ]

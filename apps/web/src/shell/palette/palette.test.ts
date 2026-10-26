@@ -31,6 +31,32 @@ describe("command palette", () => {
 		expect(shown.entries[0]?.id).toBe("service:storefront")
 	})
 
+	test("word-start matches crowd out fuzzy mid-word ones; a typo still finds fuzzy hits", () => {
+		const titles = (query: string) =>
+			shownEntries(typed(loadedWith([]), query).model, context, ALL_FLAGGED).entries.map(
+				(entry) => entry.title,
+			)
+		expect(titles("serv")).toEqual(expect.arrayContaining(["Services", "Service Map"]))
+		expect(titles("serv")).not.toContain("Overview")
+		expect(titles("srevices")).toContain("Services")
+	})
+
+	test("a page reachable from two nav rows is listed once", () => {
+		const infra = paletteEntries({ ...context, serviceNames: [] }).filter(
+			(entry) => entry.target._tag === "Href" && entry.target.href === "/infra",
+		)
+		expect(infra).toHaveLength(1)
+	})
+
+	test("a shared page keeps its specific title and stays findable by its parent's", () => {
+		const tracesFor = (query: string) =>
+			shownEntries(typed(loadedWith([]), query).model, context, ALL_FLAGGED).entries.filter(
+				(entry) => entry.target._tag === "Href" && entry.target.href === "/traces",
+			)
+		expect(tracesFor("traces").map((entry) => entry.title)).toEqual(["Traces"])
+		expect(tracesFor("explore")).toHaveLength(1)
+	})
+
 	test("opening reads the services; typing sends nothing", () => {
 		expect(commandNames(open())).toEqual(["LoadPaletteServices"])
 		expect(commandNames(typed(open().model, "logs"))).toEqual([])

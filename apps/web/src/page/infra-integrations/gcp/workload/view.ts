@@ -127,16 +127,22 @@ const header = (h: H, model: Model, data: PageData) => {
 
 const GAP_COPY = {
 	cloudRun: {
-		counted: "5xx Cloud Run returned",
+		counted: (count: string) => `Cloud Run returned ${count} 5xx`,
 		platform: "Cloud Run",
-		why: (name: string) =>
-			`Cloud Run answered them before ${name}'s code ran: its own 503 when no instance was free, or a request timeout.`,
+		why: (name: Html) => [
+			"Cloud Run answered them before ",
+			name,
+			"'s code ran: its own 503 when no instance was free, or a request timeout.",
+		],
 	},
 	cloudFunctions: {
-		counted: "failed executions Cloud Functions counted",
+		counted: (count: string) => `Cloud Functions counted ${count} failed executions`,
 		platform: "Cloud Functions",
-		why: (name: string) =>
-			`They most likely failed before ${name} exported a span: a timeout, a crash, or memory running out.`,
+		why: (name: Html) => [
+			"They most likely failed before ",
+			name,
+			" exported a span: a timeout, a crash, or memory running out.",
+		],
 	},
 } as const
 
@@ -162,19 +168,16 @@ const traceGapCallout = (
 						[h.Class("flex-1 space-y-1 px-4 py-3")],
 						[
 							h.p(
-								[h.Class("text-sm font-medium text-foreground")],
+								[h.Class("font-prose text-sm font-medium text-foreground")],
 								[
-									formatNumber(gap.platformErrors),
-									" ",
-									copy.counted,
-									",",
-									" ",
+									copy.counted(formatNumber(gap.platformErrors)),
+									"; ",
 									gap.tracedErrors === 0 ? "none" : formatNumber(gap.tracedErrors),
-									" in your traces",
+									" reached your traces",
 								],
 							),
 							h.p(
-								[h.Class("max-w-prose text-xs text-muted-foreground")],
+								[h.Class("max-w-prose font-prose text-xs text-muted-foreground")],
 								[
 									"The other ",
 									formatNumber(gap.platformErrors - gap.tracedErrors),
@@ -187,7 +190,10 @@ const traceGapCallout = (
 										? ""
 										: ` while instances were at their peak of ${gap.peakInstances}`,
 									". ",
-									copy.why(tracedService),
+									// An identifier wraps whole, never at its hyphens.
+									...copy.why(
+										h.span([h.Class("whitespace-nowrap font-mono")], [tracedService]),
+									),
 								],
 							),
 						],
@@ -204,7 +210,7 @@ const traceGapCallout = (
 							h.a(
 								[
 									h.Class(
-										"ml-auto font-mono text-xs text-primary hover:text-primary/80 @2xl:ml-0",
+										"ml-auto font-prose text-xs text-primary hover:text-primary/80 @2xl:ml-0",
 									),
 									h.Href(
 										hrefOf(

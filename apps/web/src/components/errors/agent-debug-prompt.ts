@@ -45,7 +45,7 @@ export function formatAgentDebugPrompt(input: AgentDebugPromptInput): string {
 	} = input
 
 	const lines: string[] = [
-		"I'm debugging a production error captured by Maple. You have the Maple MCP server connected — use its tools to investigate the root cause and propose a fix.",
+		"I'm debugging a production error captured by Maple. You have the Maple MCP server connected. Use its tools to investigate the root cause and propose a fix.",
 		"",
 		`**Error:** ${label}${serviceName ? ` in ${serviceName}` : ""}`,
 		`**Maple fingerprint:** ${fingerprintHash}`,
@@ -90,7 +90,7 @@ export function formatAgentDebugPrompt(input: AgentDebugPromptInput): string {
 		// Only offered with an issue: the tool takes an issue id, and the legacy
 		// errors-by-type page has none.
 		steps.push(
-			`Read the issue's history with \`list_error_issue_events\` (issue_id "${issueId}") — it carries Maple's own AI diagnosis and any earlier attempt at this bug.`,
+			`Read the issue's history with \`list_error_issue_events\` (issue_id "${issueId}"). It carries Maple's own AI diagnosis and any earlier attempt at this bug.`,
 		)
 	}
 	steps.push(
@@ -99,7 +99,7 @@ export function formatAgentDebugPrompt(input: AgentDebugPromptInput): string {
 	)
 	if (issueId) {
 		steps.push(
-			`Once you have a patch, record it with \`propose_fix\` (issue_id "${issueId}"), passing \`pr_url\` if you opened a PR. When that PR merges Maple verifies the fix and closes the issue itself — don't mark it done by hand.`,
+			`Once you have a patch, record it with \`propose_fix\` (issue_id "${issueId}"), passing \`pr_url\` if you opened a PR. When that PR merges Maple verifies the fix and closes the issue itself, so don't mark it done by hand.`,
 		)
 	}
 

@@ -64,9 +64,16 @@ const externalLink = (h: H, href: string, name: IconName, text: string): Html =>
 		],
 	)
 
+/** Rail keys in sentence case; the signal modules keep lowercase keys for their own prose. */
+const railKey = (label: string): string => {
+	const [first = "", ...rest] = label.split(" ")
+	const lead = first === "cpu" ? "CPU" : first.charAt(0).toUpperCase() + first.slice(1)
+	return [lead, ...rest].join(" ")
+}
+
 const factRow = (h: H, fact: GcpRailFact): Html | null =>
 	detailRailMetaRow(h, {
-		label: fact.label,
+		label: railKey(fact.label),
 		value: fact.value,
 		valueClassName: fact.tone === undefined ? undefined : FACT_TONE[fact.tone],
 	})
@@ -101,10 +108,10 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 		[
 			detailRailGroup(h, RAIL_TITLE[options.service], [
 				...present([
-					detailRailMetaRow(h, { label: "location", value: options.location }),
-					detailRailMetaRow(h, { label: "project", value: options.project }),
+					detailRailMetaRow(h, { label: "Location", value: options.location }),
+					detailRailMetaRow(h, { label: "Project", value: options.project }),
 					detailRailMetaRow(h, {
-						label: "state",
+						label: "State",
 						value:
 							inventory === undefined || inventory.state === null
 								? null
@@ -115,7 +122,7 @@ export const workloadRail = (h: H, options: RailOptions): Html => {
 				...(labels.length === 0
 					? []
 					: [
-							detailRailField(h, { label: "labels" }, [
+							detailRailField(h, { label: "Labels" }, [
 								h.div(
 									[h.Class("flex flex-wrap gap-1")],
 									labels.map((text) =>

@@ -90,4 +90,13 @@ describe("autoRetryMessage", () => {
 			"Retry with a narrower time range. Retrying automatically…",
 		)
 	})
+
+	test("puts a note after the cause and before the retry line", () => {
+		expect(
+			autoRetryMessage(
+				"Maple's API is unreachable. Retry shortly.",
+				"Nothing you've built is affected.",
+			),
+		).toBe("Maple's API is unreachable. Nothing you've built is affected. Retrying automatically…")
+	})
 })

@@ -172,7 +172,7 @@ export const startRunAction = (h: H, model: Model): Html | undefined => {
 				...(isRunning ? [h.Title("One audit runs per target at a time")] : []),
 			],
 		},
-		[icon(h, "MediaPlayIcon"), model.startingTargetId === target.id ? "Starting..." : "Start run"],
+		[icon(h, "MediaPlayIcon"), model.startingTargetId === target.id ? "Starting…" : "Start run"],
 	)
 }
 
@@ -202,17 +202,20 @@ const noTargets = (h: H, model: Model): Html =>
 	)
 
 export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
+	// A failed load drops the table frame and draws the same error block as Overview and Findings.
+	if (model.runs.data._tag === "Failure")
+		return [
+			errorState(h, {
+				failure: model.runs.data.error,
+				title: "Couldn't load runs",
+				onRetry: Message.ClickedRetry(),
+			}),
+		]
 	const targets = targetsOf(model)
 	const { runs, isCapped } = runsForTab(model)
 	const content = AsyncData.matchData(model.runs.data, {
 		onEmpty: () => placeholderRows(h, 6),
-		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Couldn't load runs",
-				variant: "inline",
-				onRetry: Message.ClickedRetry(),
-			}),
+		onFailure: () => h.div([], []),
 		onData: () =>
 			runs.length === 0
 				? h.div(

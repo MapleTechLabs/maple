@@ -1,5 +1,18 @@
 # @maple/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- 1da4ff9: Load explicitly configured external projector modules in Maple Local with a versioned registration contract and repeatable `--projector-module` paths, including background starts.
+
+### Patch Changes
+
+- Updated dependencies [bf01691]
+- Updated dependencies [1da4ff9]
+    - @maple-dev/effect-sdk@0.12.1
+    - @maple/eventing-core@0.1.0
+
 ## 0.2.0
 
 ### Minor Changes

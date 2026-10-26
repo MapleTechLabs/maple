@@ -1,4 +1,4 @@
-import { formatValueByUnit, inferBucketSeconds, inferRangeMs, parseBucketMs } from "@maple/ui/lib/format"
+import { axisTickFormatter, inferBucketSeconds, inferRangeMs, parseBucketMs } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { DEFAULT_TOKEN_FALLBACK } from "@maple/ui/lib/colors"
 import { hasOnlyIntegerValues } from "@maple/ui/components/charts/_shared/sparse-series"
@@ -132,12 +132,18 @@ export interface YAxisOptions {
 	readonly stacked?: boolean
 	readonly softMin?: number
 	readonly softMax?: number
-	/** Tick labels; defaults to `formatValueByUnit(value, unit)`. */
+	/** Tick labels; defaults to `axisTickFormatter(unit, domain)`. */
 	readonly format?: (value: number) => string
 	readonly logScale?: boolean
 	readonly fitYAxisToData?: boolean
 	readonly thresholds?: ReadonlyArray<{ readonly value: number }>
 }
+
+/** The zero tick reads "0" on every axis, never "0/s" or "0.00". */
+const zeroTick =
+	(format: (value: number) => string) =>
+	(value: number): string =>
+		value === 0 ? "0" : format(value)
 
 /** `timeseriesYAxis`: the shared y axis, domain included (log axes pin their own floor at 1). */
 export const timeseriesYAxis = (options: YAxisOptions) => {
@@ -168,7 +174,9 @@ export const timeseriesYAxis = (options: YAxisOptions) => {
 					size: 0,
 					padding: 6,
 					values: integerOnly && !logScale ? integerTickValues(domain) : undefined,
-					format: options.format ?? ((value: number) => formatValueByUnit(value, options.unit)),
+					format: zeroTick(
+						options.format ?? axisTickFormatter(options.unit, domain, NICE_TICK_COUNT),
+					),
 				},
 			},
 		},

@@ -12,7 +12,7 @@ import { Command, Dom, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
-import { togglePrimitive } from "./toggle"
+import { segmentItemHeight, togglePrimitive } from "./toggle"
 
 /**
  * Base UI `ToggleGroup`: the pressed values and the roving tab stop (the composite's highlighted
@@ -151,7 +151,9 @@ export const view = <ParentMessage>(
 					isPressed: model.values.includes(item.value),
 					onClick: toParentMessage(Message.ClickedItem({ value: item.value, index })),
 					className: cn(
-						toggleVariants({ size, variant: itemVariant, className: item.className }),
+						toggleVariants({ size, variant: itemVariant }),
+						isSegmented && segmentItemHeight[size],
+						item.className,
 						config.itemClassName,
 					),
 					slot: "toggle",

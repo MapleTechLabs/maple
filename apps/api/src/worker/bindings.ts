@@ -7,7 +7,7 @@
  *
  */
 import { MapleDb } from "@maple/infra/cloudflare"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Effect, Layer, Option } from "effect"
 import {

@@ -29,18 +29,22 @@ type H = HtmlBuilder<Message>
 
 const TAB_LABELS = ["Open", "Resolved", "All"]
 
-const liveChip = (h: H, isLive: boolean): Html =>
+/** A failed read is never "Live": the chip goes neutral "Reconnecting" while the auto-retry runs. */
+const liveChip = (h: H, isLive: boolean, isFailing: boolean): Html =>
 	filterChip(
 		h,
 		{
 			isPressed: isLive,
 			onClick: Message.ToggledLive(),
-			tone: "ok",
+			tone: isFailing ? "neutral" : "ok",
 			hasDot: true,
 			slot: "tooltip-trigger",
-			attributes: [h.DataAttribute("base-ui-tooltip-trigger", "")],
+			attributes: [
+				h.DataAttribute("base-ui-tooltip-trigger", ""),
+				...(isFailing ? [h.Title("Updates are paused until anomalies load again")] : []),
+			],
 		},
-		[isLive ? "Live" : "Paused"],
+		[!isLive ? "Paused" : isFailing ? "Reconnecting" : "Live"],
 	)
 
 /** `ListToolbar`: the status tabs and the count readout. */
@@ -120,7 +124,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Anomalies",
 			filters: filtersRail(h, model, all, AsyncData.isLoading(data) || AsyncData.isIdle(data)),
-			actions: liveChip(h, isLiveOf(model.search)),
+			actions: liveChip(h, isLiveOf(model.search), AsyncData.hasError(data)),
 		},
 		[
 			h.div(

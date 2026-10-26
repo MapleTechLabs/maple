@@ -98,7 +98,12 @@ const hostList = (
 const body = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.hosts.data, {
 		onEmpty: () => loading(h),
-		onFailure: (failure) => errorState(h, { failure }),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load hosts",
+				onRetry: Message.GotFrameMessage({ message: Frame.Message.ClickedReload() }),
+			}),
 		onData: (hosts) => listOrEmpty(h, model, hosts, AsyncData.isRefreshing(model.hosts.data), inputs),
 	})
 

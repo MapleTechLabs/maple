@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 import {
 	convertFamiliesToOtlp,
 	countDataPoints,
+	encodeExportRequestChunks,
+	mergeExportRequests,
 	splitExportRequest,
 	toUnixNano,
 	type OtlpExportRequest,
@@ -316,9 +318,82 @@ describe("splitExportRequest", () => {
 		}
 	})
 
+	it("packs points from many resources into shared chunks, keeping each point's resource", () => {
+		const branch = (name: string) => ({
+			resource: { attributes: [{ key: "branch", value: { stringValue: name } }] },
+			scopeMetrics: [{ scope: { name: "test-scraper" }, metrics: [gaugeMetric(`${name}_up`, 3)] }],
+		})
+		const request = mergeExportRequests(
+			[1, 2, 3, 4, 5].map((n) => ({ resourceMetrics: [branch(`b${n}`)] })),
+		)
+		const chunks = splitExportRequest(request, 7)
+
+		// 15 points over 5 resources: one chunk per 7 points, not one per resource.
+		expect(chunks.map((chunk) => countDataPoints(chunk))).toEqual([7, 7, 1])
+		const pointsByBranch = (requests: ReadonlyArray<OtlpExportRequest>) =>
+			requests.flatMap((r) =>
+				r.resourceMetrics.flatMap((rm) =>
+					rm.scopeMetrics.flatMap((sm) =>
+						sm.metrics.flatMap((m) =>
+							m.gauge!.dataPoints.map(
+								(p) =>
+									`${rm.resource.attributes[0]!.value.stringValue}:${m.name}:${p.asDouble}`,
+							),
+						),
+					),
+				),
+			)
+		expect(pointsByBranch(chunks)).toEqual(pointsByBranch([request]))
+	})
+
 	it("treats a non-positive budget as no splitting rather than looping forever", () => {
 		const request = requestOf([gaugeMetric("up", 5)])
 		expect(splitExportRequest(request, 0)).toEqual([request])
 		expect(splitExportRequest(request, -1)).toEqual([request])
+	})
+})
+
+describe("encodeExportRequestChunks", () => {
+	const wideMetric = (count: number): OtlpMetric => ({
+		name: "planetscale_vtgate_queries",
+		description: "",
+		unit: "",
+		gauge: {
+			dataPoints: Array.from({ length: count }, (_, index) => ({
+				attributes: [{ key: "table", value: { stringValue: `table_${index}_${"x".repeat(200)}` } }],
+				startTimeUnixNano: "0",
+				timeUnixNano: "1750000000000000000",
+				asDouble: index,
+			})),
+		},
+	})
+	const requestOf = (count: number): OtlpExportRequest => ({
+		resourceMetrics: [
+			{
+				resource: { attributes: [{ key: "service.name", value: { stringValue: "db" } }] },
+				scopeMetrics: [{ scope: { name: "test-scraper" }, metrics: [wideMetric(count)] }],
+			},
+		],
+	})
+	const decode = (body: Uint8Array): OtlpExportRequest => JSON.parse(new TextDecoder().decode(body))
+
+	it("keeps every body under the byte budget when the point budget alone would not", () => {
+		const request = requestOf(500)
+		const bodies = encodeExportRequestChunks(request, { maxDataPoints: 10_000, maxBytes: 20_000 })
+
+		expect(bodies.length).toBeGreaterThan(1)
+		for (const body of bodies) expect(body.byteLength).toBeLessThanOrEqual(20_000)
+		expect(bodies.reduce((total, body) => total + countDataPoints(decode(body)), 0)).toBe(500)
+	})
+
+	it("sends one body when the request fits both budgets", () => {
+		const request = requestOf(5)
+		const bodies = encodeExportRequestChunks(request, { maxDataPoints: 10_000, maxBytes: 1_000_000 })
+		expect(bodies.map(decode)).toEqual([request])
+	})
+
+	it("emits a single point over the byte budget alone rather than dropping it", () => {
+		const bodies = encodeExportRequestChunks(requestOf(3), { maxDataPoints: 10_000, maxBytes: 10 })
+		expect(bodies.map((body) => countDataPoints(decode(body)))).toEqual([1, 1, 1])
 	})
 })

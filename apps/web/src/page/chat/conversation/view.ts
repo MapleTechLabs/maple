@@ -170,7 +170,8 @@ const historyFailure = <M>(h: HtmlBuilder<M>, options: ConversationViewOptions<M
 	errorState(h, {
 		failure: HISTORY_FAILURE,
 		onRetry: options.toMessage(Message.ClickedRetryHistory()),
-		className: "h-auto w-full max-w-md",
+		// Anchored where the first message would sit (the 3xl column less its padding), not centred.
+		className: "h-auto w-full max-w-[46rem] self-start",
 	})
 
 const emptyStateOf = <M>(h: HtmlBuilder<M>, model: Model, options: ConversationViewOptions<M>): Html => {

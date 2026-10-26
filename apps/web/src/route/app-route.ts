@@ -44,6 +44,8 @@ export const AppRoute = defineRouteUnion({
 	Dashboard: { dashboardId: DashboardId, search: Search.DashboardSearch },
 	DashboardsTemplates: { search: Search.DashboardsTemplatesSearch },
 	InfraLegacyHost: { hostName: Schema.String },
+	AlertIncidentsIndex: {},
+	RecommendationsIndex: {},
 	InfraDiscover: {},
 	Investigation: { id: Schema.String, search: Search.InvestigationSearch },
 	Log: { logId: Schema.String },

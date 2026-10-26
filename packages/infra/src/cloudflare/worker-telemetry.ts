@@ -5,7 +5,7 @@
 import { Telemetry, type TelemetrySdkOptions } from "@maple-dev/alchemy/telemetry"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
-import { WorkerEnvironment } from "alchemy/Cloudflare"
+import { WorkerEnvironment } from "@alchemy.run/cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { HttpClient, HttpMiddleware } from "effect/http"
 import * as Layer from "effect/Layer"

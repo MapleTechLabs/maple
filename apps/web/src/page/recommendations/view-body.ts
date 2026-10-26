@@ -15,8 +15,8 @@ type H = HtmlBuilder<Message>
 
 export const code = (h: H, value: string | null): Html => inlineCode(h, { variant: "plain" }, [value ?? ""])
 
-
-export const isApplyable = (issue: V2Recommendation) => issue.kind === "rename" && Boolean(issue.canonical_key)
+export const isApplyable = (issue: V2Recommendation) =>
+	issue.kind === "rename" && Boolean(issue.canonical_key)
 export const isLive = (issue: V2Recommendation) => issue.status === "applied" || issue.status === "resolved"
 
 const summary = (h: H, issue: V2Recommendation): Html =>
@@ -32,7 +32,7 @@ const summary = (h: H, issue: V2Recommendation): Html =>
 					". Standardize on",
 					" ",
 					code(h, issue.canonical_key),
-					" in your SDK — an ingest mapping can't merge them because the canonical key already exists on your spans.",
+					" in your SDK. An ingest mapping can't merge them because the canonical key already exists on your spans.",
 				]
 			: issue.kind === "naming"
 				? [
@@ -52,7 +52,7 @@ const summary = (h: H, issue: V2Recommendation): Html =>
 
 const LABELS = {
 	rename: { from: "Deprecated key on your spans today", to: "Canonical key Maple will write" },
-	"double-emission": { from: "Deprecated key — still emitted", to: "Canonical key — already present" },
+	"double-emission": { from: "Deprecated key, still emitted", to: "Canonical key, already present" },
 	naming: { from: "Non-conforming key", to: "" },
 } as const
 
@@ -60,9 +60,9 @@ const changeBreakdown = (h: H, issue: V2Recommendation): Html => {
 	const labels = LABELS[issue.kind]
 	const note =
 		issue.kind === "double-emission"
-			? "Both keys are already on your spans — an ingest mapping can't merge them. Standardize on the canonical key in your SDK."
+			? "Both keys are already on your spans, so an ingest mapping can't merge them. Standardize on the canonical key in your SDK."
 			: issue.kind === "naming"
-				? "No confident canonical target — rename this attribute at your SDK."
+				? "No confident canonical target. Rename this attribute in your SDK."
 				: null
 	return h.section(
 		[],
@@ -72,7 +72,10 @@ const changeBreakdown = (h: H, issue: V2Recommendation): Html => {
 				h.div(
 					[h.Class("flex items-start gap-3 px-4 py-3")],
 					[
-						icon(h, "CircleXmarkIcon", { size: 16, className: "mt-0.5 shrink-0 text-muted-foreground" }),
+						icon(h, "CircleXmarkIcon", {
+							size: 16,
+							className: "mt-0.5 shrink-0 text-muted-foreground",
+						}),
 						h.div(
 							[h.Class("min-w-0 flex-1")],
 							[
@@ -98,12 +101,18 @@ const changeBreakdown = (h: H, issue: V2Recommendation): Html => {
 							h.div(
 								[h.Class("flex items-start gap-3 border-t border-border/60 px-4 py-3")],
 								[
-									icon(h, "CircleCheckIcon", { size: 16, className: "mt-0.5 shrink-0 text-severity-info" }),
+									icon(h, "CircleCheckIcon", {
+										size: 16,
+										className: "mt-0.5 shrink-0 text-severity-info",
+									}),
 									h.div(
 										[h.Class("min-w-0 flex-1")],
 										[
 											h.p([h.Class("text-xs text-muted-foreground")], [labels.to]),
-											h.code([h.Class("font-mono text-sm break-all text-foreground")], [issue.canonical_key]),
+											h.code(
+												[h.Class("font-mono text-sm break-all text-foreground")],
+												[issue.canonical_key],
+											),
 										],
 									),
 								],
@@ -111,7 +120,9 @@ const changeBreakdown = (h: H, issue: V2Recommendation): Html => {
 						]
 					: []),
 			]),
-			...(note === null ? [] : [h.p([h.Class("mt-2 text-xs leading-relaxed text-muted-foreground")], [note])]),
+			...(note === null
+				? []
+				: [h.p([h.Class("mt-2 text-xs leading-relaxed text-muted-foreground")], [note])]),
 		],
 	)
 }
@@ -149,12 +160,18 @@ const mappingBlock = (h: H, model: Model, issue: V2Recommendation): Html => {
 	return h.section(
 		[],
 		[
-			sectionHeading(h, { title: live ? "Active ingest mapping" : "What Apply does", variant: "eyebrow" }),
+			sectionHeading(h, {
+				title: live ? "Active ingest mapping" : "What Apply does",
+				variant: "eyebrow",
+			}),
 			panel(h, { tone: "muted" }, [
 				h.div(
 					[h.Class("flex items-center justify-between border-b border-border/60 px-3 py-2")],
 					[
-						h.span([h.Class("text-xs text-muted-foreground")], [live ? "This mapping is live" : "Ingest attribute mapping"]),
+						h.span(
+							[h.Class("text-xs text-muted-foreground")],
+							[live ? "This mapping is live" : "Ingest attribute mapping"],
+						),
 						// TODO(tooltip): the "Copy" tooltip popup on hover.
 						CopyButton.view(h, {
 							model: model.copy,
@@ -176,7 +193,11 @@ const mappingBlock = (h: H, model: Model, issue: V2Recommendation): Html => {
 								h.span([h.Class("w-12 shrink-0 text-muted-foreground")], ["when"]),
 								h.span(
 									[h.Class("break-all")],
-									["span attribute ", h.span([h.Class("text-foreground")], [issue.source_key]), " is present"],
+									[
+										"span attribute ",
+										h.span([h.Class("text-foreground")], [issue.source_key]),
+										" is present",
+									],
 								),
 							],
 						),
@@ -212,7 +233,9 @@ const sdkFixBlock = (h: H, issue: V2Recommendation): Html =>
 					[
 						"Rename ",
 						code(h, issue.source_key),
-						...(issue.canonical_key ? [" ", "to ", code(h, issue.canonical_key)] : [" to a lowercase, dotted semantic-convention key"]),
+						...(issue.canonical_key
+							? [" ", "to ", code(h, issue.canonical_key)]
+							: [" to a lowercase, dotted semantic-convention key"]),
 						" ",
 						"where your spans are created (the instrumentation / SDK). Once the conforming key appears on incoming spans, this recommendation resolves automatically.",
 					],

@@ -130,7 +130,7 @@ export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 								},
 								[
 									icon(h, "MediaPlayIcon"),
-									model.busy === "start" ? "Starting..." : "Start run",
+									model.busy === "start" ? "Starting…" : "Start run",
 								],
 							),
 						]),

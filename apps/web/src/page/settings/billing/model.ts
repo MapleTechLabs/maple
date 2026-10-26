@@ -20,14 +20,20 @@ import * as Details from "./details/model"
 // The Billing tab: this cycle's spend, usage and caps, the plan, invoices and billing details. The customer
 // is the settings page's (one `billingCustomerAtom`).
 
-export const SpendFeatureId = Schema.Literals(["logs", "traces", "metrics", "browser_sessions", "product_events"])
+export const SpendFeatureId = Schema.Literals([
+	"logs",
+	"traces",
+	"metrics",
+	"browser_sessions",
+	"product_events",
+])
 export type SpendFeatureId = typeof SpendFeatureId.Type
 
 /** The open cap editor's input (`autoFocus`). */
 export const CAP_INPUT_ID = "billing-cap-input"
 
 /** A profile read that failed: a deployment without Stripe reads differently from an outage. */
-export const ProfileFailure = Schema.Struct({ isNotConfigured: Schema.Boolean })
+export const ProfileFailure = Schema.Struct({ isNotConfigured: Schema.Boolean, failure: LoadFailure })
 
 export const PlansData = AsyncData.Schema(Schema.Array(CatalogPlan), LoadFailure)
 export const UsageData = AsyncData.Schema(BillingUsage, LoadFailure)
@@ -72,6 +78,8 @@ export const Message = defineMessageUnion({
 	CompletedFetchProfile: { result: Schema.Result(BillingProfile, ProfileFailure) },
 	ClickedRetryCustomer: {},
 	ClickedRetryDaily: {},
+	ClickedRetryInvoices: {},
+	ClickedRetryProfile: {},
 	ClickedManageBilling: {},
 	CompletedOpenPortal: result(CustomerPortalResult),
 	CompletedRedirect: {},

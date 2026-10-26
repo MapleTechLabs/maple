@@ -29,6 +29,8 @@ export interface NavSubItem {
 		readonly title: string
 		readonly href: string
 		readonly paletteTitle?: string
+		/** The palette's glyph for a view whose parent's icon misnames it (Containers under Hosts). */
+		readonly paletteIcon?: IconName
 	}>
 	/** The command palette's title, when the row's own reads ambiguously there. */
 	readonly paletteTitle?: string
@@ -64,7 +66,14 @@ const infrastructureItem: NavItem = {
 			href: "/infra/hosts",
 			icon: "ServerIcon",
 			surfaces: ["hosts", "containers"],
-			views: [{ title: "Containers", href: "/infra/containers", paletteTitle: "Containers" }],
+			views: [
+				{
+					title: "Containers",
+					href: "/infra/containers",
+					paletteTitle: "Containers",
+					paletteIcon: "DockerIcon",
+				},
+			],
 		},
 		{
 			title: "Kubernetes",
