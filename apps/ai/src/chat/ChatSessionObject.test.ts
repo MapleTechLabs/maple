@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { encodeChatTurnTenant, type ChatTurnTenant } from "@maple/domain/chat-session"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer, Option } from "effect"
 import { applyChatSessionMigrations, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"

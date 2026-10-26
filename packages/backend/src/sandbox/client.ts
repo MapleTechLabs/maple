@@ -13,7 +13,7 @@ import {
 	SandboxExecResponse,
 	type SandboxExecResponse as SandboxExecResponseType,
 } from "@maple/domain/sandbox"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClientRequest } from "effect/http"
 import { SandboxFetcher } from "@maple/backend/platform/bindings"

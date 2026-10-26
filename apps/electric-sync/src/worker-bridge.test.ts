@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MapleHttpTracingLive, workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Exit, Layer, Schema, Scope } from "effect"
 import { HttpRouter } from "effect/http"
 import { ElectricSyncRouter } from "./routes/shape.http"

@@ -25,7 +25,7 @@ import { BoundChatSessions, type ChatSessionNamespace } from "@maple/backend/pla
 import type { ChatConversation, InboundEvent } from "@maple/chat-platform"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import * as Alchemy from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Context, Effect, Schema } from "effect"
 import { ConversationNotRecorded } from "./conversation.ts"
 import type { RelayTurnCheckpoint, SettleOutcome } from "./settle.ts"

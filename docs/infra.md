@@ -24,6 +24,14 @@ Two things a future change here needs to know:
 
 ## Layout
 
+Alchemy is pinned to `2.0.0-beta.84` across the workspace. Providers now come from
+`@alchemy.run/cloudflare`, `@alchemy.run/aws`, `@alchemy.run/neon` and
+`@alchemy.run/planetscale`; core APIs still come from `alchemy`. Direct Distilled
+dependencies use rc.17 to share credential services with those providers.
+The split Cloudflare and AWS patches retain Maple's unchanged observability-destination
+resume path and CloudTrail/Config propagation retries. Check both Bun source imports and
+Node compiled imports when rebasing these patches: declaration checks do not parse source.
+
 - `alchemy.run.ts`: the root stack. Provides `MapleStack` (stage, region, domains, public
   URLs, the `bun dev` blocks, the prd database branch) once, yields one module per app, and
   returns the deploy summary (also emitted as GitHub step outputs).
