@@ -3,6 +3,7 @@ import type { ScrapeResultReport } from "@maple/domain/http"
 import { type UptimeCheckReport, UPTIME_CHECK_REPORT_BATCH_MAX } from "@maple/domain/uptime"
 import { ApiClient, type ApiRequestError } from "./ApiClient"
 import { bufferedResults, bufferedUptimeResults } from "./Metrics"
+import { isTransientStatus } from "./retry"
 
 /** Bounds memory while the API is unreachable: the oldest results are dropped first. */
 const MAX_BUFFERED_RESULTS = 10_000
@@ -21,7 +22,7 @@ export interface BatchReporterApi<A> {
 	/** Results not yet acknowledged by the API: queued plus the batch in flight. */
 	readonly pending: Effect.Effect<number>
 	/**
-	 * Deliver results to the API in order, retrying a failed batch until it lands.
+	 * Deliver results to the API in order, retrying a transiently failed batch until it lands.
 	 * On interruption, one bounded best-effort flush of everything still held.
 	 */
 	readonly run: Effect.Effect<never>
@@ -69,10 +70,10 @@ export const makeBatchReporter = <A>(options: {
 						Effect.annotateLogs({ error: error.message, batchSize: batch.length }),
 					),
 				),
-				Effect.retry(RETRY),
-				// RETRY never ends; this only types the channel if it ever gains a limit.
+				// Transient failures retry until they land; a refusal (400, 401) would block every later batch.
+				Effect.retry({ schedule: RETRY, while: (error) => isTransientStatus(error.status) }),
 				Effect.catch((error) =>
-					Effect.logWarning(`Dropped ${noun} after retries`).pipe(
+					Effect.logWarning(`Dropped ${noun} the API refused`).pipe(
 						Effect.annotateLogs({ error: error.message, batchSize: batch.length }),
 					),
 				),

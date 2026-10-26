@@ -100,6 +100,27 @@ describe("ResultReporter", () => {
 		}),
 	)
 
+	it.effect("drops a batch the API refuses and delivers the next one", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness()
+			let calls = 0
+			harness.reportImpl = () =>
+				calls++ === 0
+					? Effect.fail(new ApiRequestError({ message: "bad request", status: 400 }))
+					: Effect.void
+			yield* Effect.gen(function* () {
+				const reporter = yield* ResultReporter
+				yield* reporter.record(report(1))
+				yield* Effect.forkChild(reporter.run)
+				yield* TestClock.adjust(Duration.millis(0))
+				yield* reporter.record(report(2))
+				yield* TestClock.adjust(REPORT_INTERVAL)
+				assert.deepStrictEqual(scrapedAts(harness), [2])
+				assert.strictEqual(yield* reporter.pending, 0)
+			}).pipe(Effect.provide(reporterLayer(harness)))
+		}),
+	)
+
 	it.effect("counts a batch stuck in delivery as pending", () =>
 		Effect.gen(function* () {
 			const harness = makeHarness()

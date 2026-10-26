@@ -255,7 +255,21 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 					yield* Ref.set(backfillSettled, true)
 					return 0
 				}
-				const created = yield* Effect.forEach(missing, backfillOne)
+				// One monitor's failure must not stop the rest; it is retried on the next pass.
+				const created = yield* Effect.forEach(missing, (monitor) =>
+					backfillOne(monitor).pipe(
+						Effect.catch((error) =>
+							Effect.logWarning("Uptime rule backfill skipped a monitor").pipe(
+								Effect.annotateLogs({
+									monitorId: monitor.id,
+									orgId: monitor.orgId,
+									error: error.message,
+								}),
+								Effect.as(false),
+							),
+						),
+					),
+				)
 				const count = created.filter((made) => made).length
 				yield* Effect.annotateCurrentSpan("maple.uptime.rules_backfilled", count)
 				return count
