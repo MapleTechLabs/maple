@@ -25,7 +25,9 @@ import {
 import {
 	appendRecentCheck,
 	applyUptimeCheck,
+	effectiveAssertions,
 	firstFailedAssertion,
+	uptimeHttpRequest,
 	UPTIME_REDACTED_HEADER_VALUE,
 	UptimeCheckDetail,
 	UptimeMonitorConfig,
@@ -860,13 +862,21 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const config = yield* validateConfig("http", raw)
 				if (config._tag !== "http")
 					return yield* invalid("Only HTTP checks can be tested before saving")
-				const request = HttpClientRequest.make(config.method)(config.url, { headers: config.headers })
+				// The same request and verdict as the scraper's probe, minus the trace header.
+				const outgoing = uptimeHttpRequest(config)
+				const request = HttpClientRequest.make(outgoing.method)(outgoing.url, {
+					headers: outgoing.headers,
+				})
 				const started = yield* Clock.currentTimeMillis
 				const outcome: TestOutcome = yield* testClient
 					.execute(
-						config.body === undefined
+						outgoing.body === null
 							? request
-							: HttpClientRequest.bodyText(request, config.body),
+							: HttpClientRequest.bodyText(
+									request,
+									outgoing.body.text,
+									outgoing.body.contentType,
+								),
 					)
 					.pipe(
 						Effect.flatMap((response) =>
@@ -924,7 +934,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						bodyTruncated: false,
 					} satisfies UptimeHttpTestResult
 				}
-				const failedAssertion = firstFailedAssertion(config.assertions, outcome)
+				const failedAssertion = firstFailedAssertion(effectiveAssertions(config.assertions), outcome)
 				return {
 					ok: failedAssertion === null,
 					statusCode: outcome.statusCode,

@@ -130,10 +130,19 @@ const getMonitor = (id: UptimeMonitorId) =>
 		return yield* service.get(ORG, id)
 	})
 
+/** Runs `body` against a fresh harness, disposed however the body ends. */
+const withHarness = (body: (harness: ReturnType<typeof makeHarness>) => Promise<void>) =>
+	Effect.runPromise(
+		Effect.acquireUseRelease(
+			Effect.sync(makeHarness),
+			(harness) => Effect.promise(() => body(harness)),
+			(harness) => Effect.promise(() => harness.dispose()),
+		),
+	)
+
 describe("uptime internal routes", () => {
-	it("refuses the scraper endpoints without the internal bearer", async () => {
-		const harness = makeHarness()
-		try {
+	it("refuses the scraper endpoints without the internal bearer", () =>
+		withHarness(async (harness) => {
 			expect((await harness.request("GET", "/api/internal/uptime-targets")).status).toBe(401)
 			expect(
 				(await harness.request("GET", "/api/internal/uptime-targets", { token: "wrong" })).status,
@@ -141,14 +150,10 @@ describe("uptime internal routes", () => {
 			expect((await harness.request("POST", "/api/internal/uptime-results", { body: [] })).status).toBe(
 				401,
 			)
-		} finally {
-			await harness.dispose()
-		}
-	})
+		}))
 
-	it("lists probe targets with the org's ingest key and applies reported results", async () => {
-		const harness = makeHarness()
-		try {
+	it("lists probe targets with the org's ingest key and applies reported results", () =>
+		withHarness(async (harness) => {
 			const { http } = await harness.run(createMonitors)
 
 			const listed = await harness.request("GET", "/api/internal/uptime-targets", { token: "sd-token" })
@@ -190,14 +195,10 @@ describe("uptime internal routes", () => {
 			const state = await harness.run(getMonitor(http.id))
 			expect(state.state.status).toBe("down")
 			expect(state.state.lastCheck?.traceId).toBe("0af7651916cd43dd8448eb211c80319c")
-		} finally {
-			await harness.dispose()
-		}
-	})
+		}))
 
-	it("records heartbeat pings and fails, and 404s unknown tokens", async () => {
-		const harness = makeHarness()
-		try {
+	it("records heartbeat pings and fails, and 404s unknown tokens", () =>
+		withHarness(async (harness) => {
 			const { heartbeat, token } = await harness.run(createMonitors)
 			const statusOf = () => harness.run(getMonitor(heartbeat.id))
 
@@ -211,8 +212,5 @@ describe("uptime internal routes", () => {
 
 			expect((await harness.request("POST", "/hb/unknown-token-0000000000")).status).toBe(404)
 			expect((await harness.request("GET", "/hb/bad!")).status).toBe(404)
-		} finally {
-			await harness.dispose()
-		}
-	})
+		}))
 })

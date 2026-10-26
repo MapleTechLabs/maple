@@ -1,9 +1,9 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Option, Ref, Schema } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/http"
+import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { BillingCustomer, OrgId, UptimeMonitorLimitReachedError, UserId } from "@maple/domain/http"
 import { UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
-import { UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
+import { UPTIME_USER_AGENT, UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -43,11 +43,11 @@ interface Respond {
 	readonly body: string
 }
 
-const fakeHttp = (respond: Respond) =>
+const fakeHttp = (respond: Respond, sent: Array<HttpClientRequest.HttpClientRequest> = []) =>
 	Layer.succeed(
 		HttpClient.HttpClient,
 		HttpClient.make((request) =>
-			Effect.succeed(
+			Effect.sync(() =>
 				HttpClientResponse.fromWeb(
 					request,
 					new Response(respond.body, {
@@ -55,7 +55,7 @@ const fakeHttp = (respond: Respond) =>
 						headers: { "content-type": "text/plain" },
 					}),
 				),
-			),
+			).pipe(Effect.tap(() => Effect.sync(() => void sent.push(request)))),
 		),
 	)
 
@@ -64,12 +64,14 @@ const makeLayer = (
 	options: {
 		readonly allowance?: Layer.Layer<UptimeMonitorAllowance>
 		readonly respond?: Respond
+		/** Collects every request the HTTP client is handed. */
+		readonly sent?: Array<HttpClientRequest.HttpClientRequest>
 		readonly database?: Layer.Layer<Database>
 	} = {},
 ) =>
 	Layer.effect(UptimeMonitorsService, UptimeMonitorsService.make).pipe(
 		Layer.provide(options.allowance ?? UptimeMonitorAllowance.unmetered),
-		Layer.provide(fakeHttp(options.respond ?? { status: 200, body: "ok" })),
+		Layer.provide(fakeHttp(options.respond ?? { status: 200, body: "ok" }, options.sent)),
 		Layer.provide(options.database ?? testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(config()),
@@ -498,6 +500,34 @@ describe("UptimeMonitorsService", () => {
 			assert.strictEqual(local._tag, "@maple/http/errors/UptimeMonitorValidationError")
 		}).pipe(Effect.provide(makeLayer(testDb, { respond: { status: 503, body: "x".repeat(5000) } })))
 	})
+
+	it.effect(
+		"tests as the probe checks: implicit 2xx, the configured content-type, the probe user-agent",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const sent: Array<HttpClientRequest.HttpClientRequest> = []
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				// No status assertion at all: a 503 still fails, as it would in the probe.
+				const result = yield* service.testHttp({
+					...httpConfig(),
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: '{"ping":true}',
+					assertions: [],
+				})
+				assert.isFalse(result.ok)
+				assert.strictEqual(result.failedAssertion, "Status 503, expected 2xx")
+				const [request] = sent
+				assert.strictEqual(request?.headers["content-type"], "application/json")
+				assert.strictEqual(
+					request?.body._tag === "Uint8Array" ? request.body.contentType : null,
+					"application/json",
+				)
+				assert.strictEqual(request?.headers["user-agent"], UPTIME_USER_AGENT)
+			}).pipe(Effect.provide(makeLayer(testDb, { respond: { status: 503, body: "down" }, sent })))
+		},
+	)
 })
 
 describe("uptimeMonitorLimit", () => {
