@@ -1,0 +1,254 @@
+import type { Html } from "foldkit/html"
+import { icon } from "../../../ui/icon"
+import { iconButton } from "../../../ui/icon-button"
+import * as MenuView from "../../../ui/menu-view"
+import { panel } from "../../../ui/panel"
+import { segmentedSelect } from "../../../ui/segmented-select"
+import { EveryUnit, RecordType, ScheduleMode } from "./form"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { type H, section, selectField, textField } from "./view-fields"
+
+// The TCP, DNS and heartbeat sections, and the Service and Notify sections every kind shares.
+
+const isRecordType = (value: string): value is typeof RecordType.Type =>
+	RecordType.literals.some((type) => type === value)
+const isUnit = (value: string): value is typeof EveryUnit.Type =>
+	EveryUnit.literals.some((unit) => unit === value)
+const isMode = (value: string): value is typeof ScheduleMode.Type =>
+	ScheduleMode.literals.some((mode) => mode === value)
+
+export const tcpSection = (h: H, model: Model): Html =>
+	section(h, "Connection", undefined, [
+		h.div(
+			[h.Class("grid gap-4 sm:grid-cols-[minmax(0,1fr)_140px]")],
+			[
+				textField(h, {
+					field: "host",
+					label: "Host",
+					value: model.form.host,
+					placeholder: "db.example.com",
+				}),
+				textField(h, {
+					field: "port",
+					label: "Port",
+					value: model.form.port,
+					placeholder: "5432",
+					inputMode: "numeric",
+				}),
+			],
+		),
+		textField(h, {
+			field: "name",
+			label: "Name",
+			value: model.form.name,
+			placeholder: "Postgres primary",
+		}),
+	])
+
+export const dnsSection = (h: H, model: Model): Html =>
+	section(h, "Record", undefined, [
+		h.div(
+			[h.Class("grid gap-4 sm:grid-cols-[minmax(0,1fr)_120px]")],
+			[
+				textField(h, {
+					field: "hostname",
+					label: "Hostname",
+					value: model.form.hostname,
+					placeholder: "example.com",
+				}),
+				selectField(h, {
+					id: "uptime-record-type",
+					label: "Record type",
+					value: model.form.recordType,
+					entries: RecordType.literals.map((type) => ({ value: type, label: type })),
+					onChange: (value) =>
+						Message.ChangedRecordType({ recordType: isRecordType(value) ? value : "A" }),
+				}),
+			],
+		),
+		textField(h, {
+			field: "expected",
+			label: "Expected value (optional)",
+			value: model.form.expected,
+			hint: "Leave empty to pass whenever the record resolves.",
+		}),
+		textField(h, { field: "name", label: "Name", value: model.form.name, placeholder: "example.com MX" }),
+	])
+
+export const heartbeatSection = (h: H, model: Model): Html => {
+	const form = model.form
+	const zones = model.timeZones.includes(form.cronTimezone)
+		? model.timeZones
+		: [form.cronTimezone, ...model.timeZones]
+	return section(h, "Heartbeat", undefined, [
+		textField(h, {
+			field: "name",
+			label: "Name",
+			value: form.name,
+			placeholder: "nightly-billing-export",
+		}),
+		h.div(
+			[h.Class("flex flex-col gap-1.5")],
+			[
+				h.span([h.Class("text-sm font-medium")], ["Expect a ping"]),
+				segmentedSelect(h, {
+					ariaLabel: "Schedule",
+					value: form.scheduleMode,
+					onChange: (value) =>
+						Message.ChangedScheduleMode({ mode: isMode(value) ? value : "interval" }),
+					options: [
+						{ value: "interval", label: "Every…" },
+						{ value: "cron", label: "Cron expression" },
+					],
+				}),
+			],
+		),
+		form.scheduleMode === "interval"
+			? h.div(
+					[h.Class("grid gap-4 sm:grid-cols-[140px_160px]")],
+					[
+						textField(h, {
+							field: "everyValue",
+							label: "Every",
+							value: form.everyValue,
+							inputMode: "numeric",
+						}),
+						selectField(h, {
+							id: "uptime-every-unit",
+							label: "Unit",
+							value: form.everyUnit,
+							entries: EveryUnit.literals.map((unit) => ({ value: unit, label: unit })),
+							onChange: (value) =>
+								Message.ChangedEveryUnit({ unit: isUnit(value) ? value : "hours" }),
+						}),
+					],
+				)
+			: h.div(
+					[h.Class("grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]")],
+					[
+						textField(h, {
+							field: "cronExpression",
+							label: "Cron expression",
+							value: form.cronExpression,
+						}),
+						selectField(h, {
+							id: "uptime-cron-timezone",
+							label: "Time zone",
+							value: form.cronTimezone,
+							entries: zones.map((zone) => ({ value: zone, label: zone })),
+							onChange: (value) => Message.ChangedText({ field: "cronTimezone", value }),
+						}),
+					],
+				),
+		textField(h, {
+			field: "graceMinutes",
+			label: "Grace period",
+			value: form.graceMinutes,
+			suffix: "minutes",
+			inputMode: "numeric",
+			hint: "How late a ping may be before the monitor goes down.",
+			className: "max-w-60",
+		}),
+	])
+}
+
+/** Optional service, from the services traced in the last day. */
+export const serviceSection = (h: H, model: Model): Html => {
+	const current = model.form.serviceName
+	const names =
+		current === "" || model.services.includes(current) ? model.services : [current, ...model.services]
+	return section(h, "Service", "optional", [
+		selectField(h, {
+			id: "uptime-service",
+			label: "Service",
+			isLabelHidden: true,
+			value: current,
+			entries: [
+				{ value: "", label: "No service" },
+				...names.map((name) => ({ value: name, label: name })),
+			],
+			onChange: (value) => Message.ChangedText({ field: "serviceName", value }),
+			className: "max-w-sm",
+		}),
+		h.p(
+			[h.Class("text-sm text-muted-foreground")],
+			["The service's health shows the check, and its page lists the monitor."],
+		),
+	])
+}
+
+/** Who hears about it: the chosen destinations and a menu of the rest. */
+export const notifySection = (h: H, model: Model): Html => {
+	const rows = model.destinations ?? []
+	const selected = model.form.destinationIds.map((id) => ({
+		id,
+		name: rows.find((row) => row.id === id)?.name ?? "Unavailable destination",
+	}))
+	const available = rows.filter((row) => !model.form.destinationIds.some((id) => id === row.id))
+	return section(h, "Notify", undefined, [
+		panel(h, { className: "divide-y" }, [
+			...selected.map((destination) =>
+				h.div(
+					[h.Key(destination.id), h.Class("flex items-center gap-2 px-3 py-2")],
+					[
+						icon(h, "BellIcon", { className: "text-muted-foreground" }),
+						h.span([h.Class("min-w-0 flex-1 truncate text-sm")], [destination.name]),
+						iconButton(
+							h,
+							{
+								label: `Stop notifying ${destination.name}`,
+								className: "text-muted-foreground",
+								attributes: [h.OnClick(Message.RemovedDestination({ id: destination.id }))],
+							},
+							[icon(h, "XmarkIcon")],
+						),
+					],
+				),
+			),
+			...(selected.length === 0
+				? [
+						h.p(
+							[h.Class("px-3 py-2.5 text-sm text-muted-foreground")],
+							["No one is notified yet. The incident still opens in the inbox."],
+						),
+					]
+				: []),
+			...(available.length === 0
+				? []
+				: [
+						h.submodel({
+							slotId: model.destinationMenu.id,
+							model: model.destinationMenu,
+							view: MenuView.view,
+							viewInputs: {
+								entries: available.map((row): MenuView.MenuEntry => ({
+									_tag: "Item",
+									value: row.id,
+									label: row.name,
+								})),
+								align: "start",
+								className: "w-72",
+								toView: ({ trigger, withTrigger }) =>
+									h.span(
+										[h.Class("contents")],
+										withTrigger(
+											h.button(
+												[
+													h.Type("button"),
+													h.Class(
+														"flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+													),
+													...trigger,
+												],
+												[icon(h, "PlusIcon", { size: 14 }), "Add destination"],
+											),
+										),
+									),
+							},
+							toParentMessage: (message) => Message.GotDestinationMenuMessage({ message }),
+						}),
+					]),
+		]),
+	])
+}
