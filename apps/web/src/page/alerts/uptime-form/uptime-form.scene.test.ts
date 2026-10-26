@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import { UptimeMonitorPublicId } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import { click, expect as expectView, given, role, scene, text, type, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -6,13 +7,15 @@ import { toLoadFailure } from "../../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { ORG } from "../shared/test-rows"
 import { LIMIT_REACHED_CODE, monitorHref } from "../shared/uptime-commands"
-import { httpMonitor } from "../shared/uptime-test-monitors"
+import { heartbeatMonitor, httpMonitor } from "../shared/uptime-test-monitors"
+import { wirePayload } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { LIMIT_MESSAGE, view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
+const publicId = Schema.encodeSync(UptimeMonitorPublicId)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
@@ -143,6 +146,90 @@ describe("uptime monitor form", () => {
 				isReplace: true,
 				toast: { type: "success", title: "Monitor created", description: "" },
 			}),
+		)
+	})
+
+	test("TCP and DNS checks are named after their target until a name is typed", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(fresh()),
+			click(role("radio", { name: /TCP port/u })),
+			type(role("textbox", { name: "Host" }), "db.acme.dev"),
+			type(role("textbox", { name: "Port" }), "5432"),
+			expectView(role("textbox", { name: "Name" })).toHaveValue("db.acme.dev:5432"),
+			expectView(text("Add a name.")).not.toExist(),
+		)
+		const dns = [
+			Message.PickedKind({ kind: "dns" }),
+			Message.ChangedText({ field: "hostname", value: "example.com" }),
+			Message.ChangedRecordType({ recordType: "MX" }),
+		].reduce((model, message) => pageUpdate(model, message).model, fresh())
+		expect(dns.form.name).toBe("MX example.com")
+		const typed = [
+			Message.ChangedText({ field: "name", value: "Mail" }),
+			Message.ChangedText({ field: "hostname", value: "example.org" }),
+		].reduce((model, message) => pageUpdate(model, message).model, dns)
+		expect(typed.form.name).toBe("Mail")
+	})
+
+	test("a heartbeat grace that is not whole minutes survives an unrelated edit", () => {
+		const monitor = heartbeatMonitor()
+		const entered = init(
+			{ _tag: "AlertsUptimeNew", search: { monitorId: publicId(monitor.id) } },
+			context,
+		).model
+		const edited = [
+			Message.CompletedFetchExisting({
+				key: entered.existing.key ?? "",
+				result: Result.succeed({
+					...monitor,
+					config: {
+						type: "heartbeat",
+						schedule: { type: "interval", seconds: 3600 },
+						grace_seconds: 90,
+					},
+				}),
+			}),
+			Message.ChangedText({ field: "name", value: "Renamed" }),
+		].reduce((model, message) => pageUpdate(model, message).model, entered)
+		expect(wirePayload(edited.form, true)).toMatchObject({
+			name: "Renamed",
+			config: { grace_seconds: 90 },
+		})
+	})
+
+	test("refuses private hosts and invalid cron schedules before saving, in the server's words", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withUrl("http://127.0.0.1:8080/health")),
+			expectView(
+				text("URL host '127.0.0.1' is not allowed (loopback, private, or metadata range)"),
+			).toExist(),
+			expectView(text("Ready to save")).not.toExist(),
+		)
+		const tcp = [
+			Message.PickedKind({ kind: "tcp" }),
+			Message.ChangedText({ field: "host", value: "10.0.0.5" }),
+			Message.ChangedText({ field: "port", value: "5432" }),
+		].reduce((model, message) => pageUpdate(model, message).model, fresh())
+		scene(
+			{ update: pageUpdate, view },
+			given(tcp),
+			expectView(
+				text("Host '10.0.0.5' is not allowed (loopback, private, or metadata range)"),
+			).toExist(),
+			expectView(role("button", { name: "Create monitor" })).toBeDisabled(),
+		)
+		const cron = [
+			Message.PickedKind({ kind: "heartbeat" }),
+			Message.ChangedText({ field: "name", value: "nightly" }),
+			Message.ChangedScheduleMode({ mode: "cron" }),
+			Message.ChangedText({ field: "cronExpression", value: "every night" }),
+		].reduce((model, message) => pageUpdate(model, message).model, fresh())
+		scene(
+			{ update: pageUpdate, view },
+			given(cron),
+			expectView(text("'every night' in UTC is not a valid cron schedule")).toExist(),
 		)
 	})
 

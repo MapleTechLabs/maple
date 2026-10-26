@@ -8,6 +8,7 @@ import * as Menu from "../../../ui/menu"
 import {
 	AssertionType,
 	EveryUnit,
+	GraceUnit,
 	HttpMethod,
 	MonitorKind,
 	RecordType,
@@ -32,6 +33,7 @@ export const Message = defineMessageUnion({
 	ChangedRecordType: { recordType: RecordType },
 	ChangedScheduleMode: { mode: ScheduleMode },
 	ChangedEveryUnit: { unit: EveryUnit },
+	ChangedGraceUnit: { unit: GraceUnit },
 	PickedInterval: { seconds: Schema.Number },
 	AddedAssertion: {},
 	RemovedAssertion: { id: Schema.Number },

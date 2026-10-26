@@ -15,7 +15,7 @@ import {
 	SaveDraft,
 	TestDraft,
 } from "./command"
-import { formFromMonitor, formIssues, nameFromUrl, wireConfig, wirePayload } from "./derive"
+import { defaultName, formFromMonitor, formIssues, wireConfig, wirePayload } from "./derive"
 import { ASSERTION_OPS, type AssertionDraft, emptyForm, type Form, MonitorKind, type TextField } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -62,20 +62,17 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 	})
 }
 
+/** Until a name is typed it follows the target: the URL, `host:port`, or `<type> <hostname>`. */
+const named = (form: Form): Form => (form.isNameEdited ? form : { ...form, name: defaultName(form) })
+
 const withForm = (model: Model, patch: Partial<Form>): Return => ({
-	model: { ...model, form: { ...model.form, ...patch } },
+	model: { ...model, form: named({ ...model.form, ...patch }) },
 })
 
-const changedText = (model: Model, field: TextField, value: string): Return => {
-	const form = model.form
-	if (field === "name") return withForm(model, { name: value, isNameEdited: value !== "" })
-	if (field === "url")
-		return withForm(model, {
-			url: value,
-			...(form.isNameEdited ? undefined : { name: nameFromUrl(value) }),
-		})
-	return withForm(model, { [field]: value })
-}
+const changedText = (model: Model, field: TextField, value: string): Return =>
+	field === "name"
+		? { model: { ...model, form: { ...model.form, name: value, isNameEdited: value !== "" } } }
+		: withForm(model, { [field]: value })
 
 const mapAssertion = (model: Model, id: number, change: (row: AssertionDraft) => AssertionDraft): Return =>
 	withForm(model, { assertions: model.form.assertions.map((row) => (row.id === id ? change(row) : row)) })
@@ -158,12 +155,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		PickedKind: ({ kind }) =>
 			model.editingId !== null
 				? { model }
-				: { model: { ...model, form: { ...model.form, kind }, testResult: null } },
+				: { model: { ...model, form: named({ ...model.form, kind }), testResult: null } },
 		ChangedText: ({ field, value }) => changedText(model, field, value),
 		ChangedMethod: ({ method }) => withForm(model, { method }),
 		ChangedRecordType: ({ recordType }) => withForm(model, { recordType }),
 		ChangedScheduleMode: ({ mode }) => withForm(model, { scheduleMode: mode }),
 		ChangedEveryUnit: ({ unit }) => withForm(model, { everyUnit: unit }),
+		ChangedGraceUnit: ({ unit }) => withForm(model, { graceUnit: unit }),
 		PickedInterval: ({ seconds }) => withForm(model, { intervalSeconds: seconds }),
 		AddedAssertion: () => addAssertion(model),
 		RemovedAssertion: ({ id }) =>
