@@ -164,7 +164,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 							isLoading: model.isSavingKey,
 							isDisabled: model.keyDraft.value.trim() === "",
 						},
-						[model.isSavingKey ? "Checking..." : "Save key"],
+						[model.isSavingKey ? "Checking…" : "Save key"],
 					),
 					...(isReplacing
 						? [

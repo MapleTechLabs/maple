@@ -56,5 +56,6 @@ export const Message = defineMessageUnion({
 	ClickedConfirmDelete: {},
 	CompletedDelete: { result: Schema.Result(Schema.Void, LoadFailure) },
 	ClickedRetryMappings: {},
+	ClickedRetryIngestKeys: {},
 })
 export type Message = typeof Message.Type

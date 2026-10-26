@@ -51,12 +51,12 @@ const DESCRIPTION =
 	"Deep code audits of your connected repositories. Findings are visible to org admins only."
 
 /** The title block: the page `<h1>` and its one line of context, like every other page header. */
-const securityTitle = <M>(h: HtmlBuilder<M>, description: string = DESCRIPTION): Html =>
+const securityTitle = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
 		[h.Class("min-w-0 space-y-0.5")],
 		[
 			h.h1([h.Class(cn(pageTitleStyles, "leading-8 text-foreground"))], ["Security"]),
-			h.p([h.Class("max-w-2xl font-prose text-sm text-muted-foreground")], [description]),
+			h.p([h.Class("max-w-2xl font-prose text-sm text-muted-foreground")], [DESCRIPTION]),
 		],
 	)
 
@@ -67,7 +67,6 @@ export const stack = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html
 type SecurityLayoutOptions = Readonly<{
 	active: Tab
 	actions?: Html
-	description?: string
 	/** Dialogs the tab owns, rendered after the content. */
 	overlay?: ReadonlyArray<Html>
 }>
@@ -80,7 +79,7 @@ export const securityLayout = <M>(
 	dashboardPage(
 		h,
 		{
-			titleContent: securityTitle(h, options.description),
+			titleContent: securityTitle(h),
 			actions: options.actions,
 			tabs: tabs(h, options.active),
 			scrollClassName: "pb-8",

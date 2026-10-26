@@ -25,6 +25,11 @@ interface Cell {
 }
 
 const LINE_WIDTH = 1.5
+/**
+ * Candidate tick spacing wide enough for a "Oct 20, 12:00 AM" label plus the thinning gap. At the
+ * shared 104px a 7-day plot gets 12h candidates that collide, and thinning drops them unevenly.
+ */
+const X_TICK_SPACING = 140
 
 const valueAt = (row: Row, key: string): number | null => {
 	const value = row[key]
@@ -79,7 +84,10 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 		definition: defineChart({
 			marks: [...marks, focusCrosshair(spec.chrome)],
 			scales: {
-				x: axis.x,
+				x: {
+					...axis.x,
+					axis: { ...axis.x.axis, ticks: { ...axis.x.axis.ticks, spacing: X_TICK_SPACING } },
+				},
 				y: {
 					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),

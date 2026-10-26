@@ -8,6 +8,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@alchemy.run/cloudflare": "catalog:alchemy",
 		"@cloudflare/sandbox": "1.0.0",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",

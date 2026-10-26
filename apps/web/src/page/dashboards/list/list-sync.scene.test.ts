@@ -108,7 +108,7 @@ describe("dashboards list write feedback", () => {
 	const listed = () =>
 		pageUpdate(waiting(), Message.UpdatedDashboards({ orgId, dashboards: [board] })).model
 
-	test("a failed create toasts as well as raising the banner", () => {
+	test("a failed create raises the banner without a second toast", () => {
 		const creating = pageUpdate(listed(), Message.ClickedCreate())
 		expect(names(creating.commands)).toEqual([CreateDashboard.name])
 		const failed = pageUpdate(
@@ -116,7 +116,24 @@ describe("dashboards list write feedback", () => {
 			Message.CompletedCreateDashboard({ result: Result.fail("Failed to create dashboard") }),
 		)
 		expect(failed.model.persistenceError).toBe("Failed to create dashboard")
-		expect(failed.outMessage?._tag).toBe("RequestedToast")
+		expect(failed.outMessage).toBeUndefined()
+	})
+
+	test("a failed write while the list is still loading reads the snapshot instead of waiting", () => {
+		const failed = pageUpdate(
+			waiting(),
+			Message.CompletedCreateDashboard({ result: Result.fail("Failed to fetch") }),
+		)
+		expect(names(failed.commands)).toEqual([FetchDashboardsFallback.name])
+		const unreachable = pageUpdate(
+			failed.model,
+			Message.CompletedFetchFallback({ orgId, result: Result.fail("Failed to fetch") }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(unreachable),
+			expectView(text("Couldn't load dashboards")).toExist(),
+		)
 	})
 
 	test("a delete whose sync-back timed out says the tab is behind", () => {

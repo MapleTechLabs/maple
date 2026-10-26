@@ -65,7 +65,7 @@ const FILTERS: ReadonlyArray<{
 		label: "State",
 		field: "stateSelect",
 		entries: entries(
-			"Any state",
+			"All states",
 			PrReviewFindingStatus.literals.map((value) => [value, FINDING_STATUS_LABELS[value]]),
 		),
 	},

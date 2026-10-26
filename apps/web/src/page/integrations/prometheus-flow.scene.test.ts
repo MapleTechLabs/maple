@@ -194,7 +194,7 @@ describe("prometheus connect flow", () => {
 			{ update: pageUpdate, view },
 			given(withCheck(live, true)),
 			expectView(role("listitem", { name: "Live" })).toExist(),
-			expectView(text("Last scrape read 1.3K samples in 200.0ms")).toExist(),
+			expectView(text("Last scrape read 1.3K samples in 200ms")).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },

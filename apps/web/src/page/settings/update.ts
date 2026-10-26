@@ -2,10 +2,10 @@ import { withoutCheckoutReturn } from "../../lib/billing/checkout-return"
 import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
 import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
 import { rowToV2ApiKey } from "@maple/web-data/collections/api-keys"
-import { Option } from "effect"
+import { Array, Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../route"
-import type { SettingsSearch as SettingsSearchSchema } from "../../route/search"
+import { type SettingsSearch as SettingsSearchSchema, settingsTabValues } from "../../route/search"
 
 type SettingsSearch = typeof SettingsSearchSchema.Type
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
@@ -55,6 +55,14 @@ export const visibilityOf = (model: Model): Visibility => {
 	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer, hasBringYourOwnCloudAddOn), () => false)
 	return { isClerk: isClerkAuthEnabled, isAdmin, canAccessDataPlatform: isAdmin && hasByoc }
 }
+
+/** The session read answered and says the viewer is a member, not an admin: only then do notices say so. */
+export const isKnownMember = (model: Model): boolean =>
+	isClerkAuthEnabled &&
+	AsyncData.getOrElse(
+		AsyncData.map(model.session, (session) => !session.isAdmin),
+		() => false,
+	)
 
 const isPending = <A, E>(data: AsyncData.AsyncData<A, E>) =>
 	AsyncData.isLoading(data) || AsyncData.isIdle(data)
@@ -376,7 +384,12 @@ const syncTab = (model: Model, context: PageContext): Return => {
 	if (model.search.tab !== undefined && model.search.tab !== tab) {
 		const { tab: _hidden, ...search } = model.search
 		return {
-			model: leaveTab(model),
+			model: {
+				...leaveTab(model),
+				deniedTab: Option.getOrNull(
+					Array.findFirst(settingsTabValues, (value) => value === model.search.tab),
+				),
+			},
 			outMessage: PageOutMessage.RequestedNavigation({
 				url: hrefOf(AppRoute.Settings({ search })),
 				isReplace: true,
@@ -441,6 +454,7 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 			customer: AsyncData.Loading(),
 			apiKeys: null,
 			isApiKeysLoadFailed: false,
+			deniedTab: null,
 			tab: null,
 			kept: [],
 		},
@@ -457,8 +471,16 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 	}
 }
 
+// Only the denied link's own rewrite (no `tab`) keeps its note; picking a tab clears it.
 export const routeChanged = (model: Model, route: SettingsRoute, context: PageContext): Return =>
-	enter({ ...model, search: route.search }, context)
+	enter(
+		{
+			...model,
+			search: route.search,
+			deniedTab: route.search.tab === undefined ? model.deniedTab : null,
+		},
+		context,
+	)
 
 const liftIngestion = (
 	model: Model,

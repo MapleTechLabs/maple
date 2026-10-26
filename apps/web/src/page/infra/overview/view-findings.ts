@@ -12,6 +12,10 @@ import type { Finding, SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
 
+/** The muted caption beside an overview section's title, set in the sans prose face. */
+export const sectionCaption = <M>(h: HtmlBuilder<M>, text: string): Html =>
+	h.span([h.Class("font-prose text-xs text-muted-foreground")], [text])
+
 // `NeedsAttention` and its rows.
 
 // A stale source is an outline, not a status fill.
@@ -160,7 +164,10 @@ export const needsAttention = <M>(
 	return h.section(
 		[h.Class("space-y-3")],
 		[
-			sectionHeading(h, { title: "Needs attention", hint: "across every source, worst first" }),
+			sectionHeading(h, {
+				title: "Needs attention",
+				badge: sectionCaption(h, "across every source, worst first"),
+			}),
 			!isSettled
 				? needsAttentionLoading(h)
 				: shared !== undefined

@@ -4406,7 +4406,7 @@ SELECT
           max(points.cpuMax) AS cpuMaxPercent,
           max(points.memMax) AS memMaxPercent,
           max(points.lagMax) AS replicaLagMaxSeconds,
-          maxIf(100 - points.availableBytes / points.capacityBytes * 100, (points.availableSamples > 0 AND points.capacityBytes > 0)) AS storageUsedPercent,
+          maxIf(100 - (points.availableBytes / points.capacityBytes * 100), (points.availableSamples > 0 AND points.capacityBytes > 0)) AS storageUsedPercent,
           sum(points.availableSamples) AS storageSamples
         FROM (SELECT
           metrics_gauge.TimeUnix AS t,
@@ -4437,7 +4437,7 @@ SELECT
           max(points.cpuMax) AS cpuMaxPercent,
           max(points.memMax) AS memMaxPercent,
           max(points.lagMax) AS replicaLagMaxSeconds,
-          maxIf(100 - points.availableBytes / points.capacityBytes * 100, (points.availableSamples > 0 AND points.capacityBytes > 0)) AS storageUsedPercent,
+          maxIf(100 - (points.availableBytes / points.capacityBytes * 100), (points.availableSamples > 0 AND points.capacityBytes > 0)) AS storageUsedPercent,
           sum(points.availableSamples) AS storageSamples
         FROM (SELECT
           metrics_gauge.TimeUnix AS t,
@@ -4503,7 +4503,7 @@ SELECT
 SELECT
           vol.database AS database,
           vol.branch AS branch,
-          if((vol.capacityBytes > 0 AND vol.samples > 0), 100 - vol.availableBytes / vol.capacityBytes * 100, 0) AS storageUsedPercent,
+          if((vol.capacityBytes > 0 AND vol.samples > 0), 100 - (vol.availableBytes / vol.capacityBytes * 100), 0) AS storageUsedPercent,
           vol.capacityBytes AS storageCapacityBytes,
           vol.availableBytes AS storageAvailableBytes,
           vol.samples AS storageSamples
@@ -4562,7 +4562,7 @@ SELECT
 -- builder:planetscale-map:planetscaleStorageSQL:default
 SELECT
           vol.database AS database,
-          max(if((vol.capacityBytes > 0 AND vol.samples > 0), 100 - vol.availableBytes / vol.capacityBytes * 100, 0)) AS storageUsedPercent,
+          max(if((vol.capacityBytes > 0 AND vol.samples > 0), 100 - (vol.availableBytes / vol.capacityBytes * 100), 0)) AS storageUsedPercent,
           sum(vol.samples) AS storageSamples
         FROM (SELECT
           coalesce(nullIf(metrics_gauge.Attributes['planetscale_database_name'], ''), metrics_gauge.Attributes['planetscale_database']) AS database,
@@ -4853,8 +4853,8 @@ SELECT
 -- builder:supabase-infra:supabaseProjectCpuSQL:default
 SELECT
           buckets.projectRef AS projectRef,
-          ifNull(ifNotFinite(greatest(1 - sum(buckets.idle) / sum(buckets.total), 0), 0), 0) AS cpuAvg,
-          ifNull(ifNotFinite(maxIf(1 - buckets.idle / buckets.total, buckets.total > 0), 0), 0) AS cpuMax
+          ifNull(ifNotFinite(greatest(1 - (sum(buckets.idle) / sum(buckets.total)), 0), 0), 0) AS cpuAvg,
+          ifNull(ifNotFinite(maxIf(1 - (buckets.idle / buckets.total), buckets.total > 0), 0), 0) AS cpuMax
         FROM (SELECT
           deltas.projectRef AS projectRef,
           toStartOfInterval(deltas.t, INTERVAL 300 SECOND) AS bucket,
@@ -4884,10 +4884,10 @@ SELECT
 -- builder:supabase-infra:supabaseProjectGaugeSeriesSQL:default
 SELECT
           toStartOfInterval(points.t, INTERVAL 300 SECOND) AS bucket,
-          ifNull(ifNotFinite(avgIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryAvg,
-          ifNull(ifNotFinite(maxIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryMax,
+          ifNull(ifNotFinite(avgIf(1 - (points.memAvailable / points.memTotal), (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryAvg,
+          ifNull(ifNotFinite(maxIf(1 - (points.memAvailable / points.memTotal), (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryMax,
           max(points.memTotal) AS memoryTotal,
-          ifNull(ifNotFinite(maxIf(1 - points.diskAvailable / points.diskSize, (points.diskSize > 0 AND points.diskAvailableSamples > 0)), 0), 0) AS diskUsed,
+          ifNull(ifNotFinite(maxIf(1 - (points.diskAvailable / points.diskSize), (points.diskSize > 0 AND points.diskAvailableSamples > 0)), 0), 0) AS diskUsed,
           max(points.diskSize) AS diskSize,
           maxIf(points.dbSize, points.dbSizeSamples > 0) AS dbSize,
           ifNull(ifNotFinite(avgIf(points.backends, points.backendSamples > 0), 0), 0) AS connectionsAvg,
@@ -4939,10 +4939,10 @@ SELECT
 -- builder:supabase-infra:supabaseProjectGaugesSQL:default
 SELECT
           points.projectRef AS projectRef,
-          ifNull(ifNotFinite(avgIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryAvg,
-          ifNull(ifNotFinite(maxIf(1 - points.memAvailable / points.memTotal, (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryMax,
+          ifNull(ifNotFinite(avgIf(1 - (points.memAvailable / points.memTotal), (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryAvg,
+          ifNull(ifNotFinite(maxIf(1 - (points.memAvailable / points.memTotal), (points.memTotal > 0 AND points.memAvailableSamples > 0)), 0), 0) AS memoryMax,
           max(points.memTotal) AS memoryTotal,
-          ifNull(ifNotFinite(maxIf(1 - points.diskAvailable / points.diskSize, (points.diskSize > 0 AND points.diskAvailableSamples > 0)), 0), 0) AS diskUsedMax,
+          ifNull(ifNotFinite(maxIf(1 - (points.diskAvailable / points.diskSize), (points.diskSize > 0 AND points.diskAvailableSamples > 0)), 0), 0) AS diskUsedMax,
           max(points.diskSize) AS diskSize,
           maxIf(points.dbSize, points.dbSizeSamples > 0) AS dbSize,
           ifNull(ifNotFinite(avgIf(points.backends, points.backendSamples > 0), 0), 0) AS connectionsAvg,
@@ -4989,7 +4989,7 @@ SELECT
 -- builder:supabase-infra:supabaseProjectRateSeriesSQL:default
 SELECT
           toStartOfInterval(deltas.t, INTERVAL 300 SECOND) AS bucket,
-          if(1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0) < 0, 0, 1 - sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0)) AS cpu,
+          if(1 - (sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0)) < 0, 0, 1 - (sumIf(deltas.delta, (deltas.metricName = 'node_cpu_seconds_total' AND deltas.mode = 'idle')) / nullIf(sumIf(deltas.delta, deltas.metricName = 'node_cpu_seconds_total'), 0))) AS cpu,
           sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_commit_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'pg_stat_database_xact_commit_total'), 1), 0), 0) AS commitsPerSecond,
           sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_xact_rollback_total') / nullIf(min(least(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)) + 300, toUnixTimestamp(toDateTime('2026-01-03 14:15:00'))) - greatest(toUnixTimestamp(toStartOfInterval(deltas.t, INTERVAL 300 SECOND)), toUnixTimestamp(toDateTime('2026-01-01 10:30:00')))) * greatest(1 - least(sumIf(deltas.isFirst, deltas.metricName = 'pg_stat_database_xact_rollback_total'), 1), 0), 0) AS rollbacksPerSecond,
           sumIf(deltas.delta, deltas.metricName = 'pg_stat_database_blks_hit_total') / nullIf(sumIf(deltas.delta, deltas.metricName IN ('pg_stat_database_blks_hit_total', 'pg_stat_database_blks_read_total')), 0) AS cacheHitRatio,

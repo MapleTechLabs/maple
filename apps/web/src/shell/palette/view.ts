@@ -52,7 +52,10 @@ const groupsOf = <M>(h: HtmlBuilder<M>, entries: ReadonlyArray<PaletteEntry>): R
 	}))
 
 const hint = <M>(h: HtmlBuilder<M>, key: string, text: string): Html =>
-	h.span([h.Class("flex items-center gap-1.5")], [kbd(h, undefined, [key]), text])
+	h.span(
+		[h.Class("flex items-center gap-1.5 text-muted-foreground")],
+		[kbd(h, "text-muted-foreground", [key]), text],
+	)
 
 /** `CommandEmpty`: `No results for “{query}”.`, the query its own text run. */
 const empty = <M>(h: HtmlBuilder<M>, query: string): Html =>

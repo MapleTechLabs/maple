@@ -77,7 +77,7 @@ export const shortcutsDialogView = <M>(
 						h,
 						"dialog",
 						dialog.id,
-						"Available across Maple — press ? anywhere to open this list.",
+						"Available across Maple. Press ? anywhere to open this list.",
 					),
 				]),
 				dialogPanel(

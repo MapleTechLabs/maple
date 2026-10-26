@@ -68,7 +68,7 @@ export const methodLabel = <M>(h: HtmlBuilder<M>, method: string, className = "w
 const COLLAPSED_COPY = {
 	unrouted: {
 		label: "Unrouted paths",
-		explainer: "URL paths rather than route templates — each distinct id counts as its own endpoint.",
+		explainer: "URL paths rather than route templates. Each distinct id counts as its own endpoint.",
 	},
 	probes: {
 		label: "Scanner probes",
@@ -107,7 +107,7 @@ const shareText = (h: H, share: number | null, tone: string): Html =>
 	)
 
 const rateText = (endpoint: Endpoint, seconds: number) =>
-	`${endpoint.estimatedSpanCount > endpoint.spanCount ? "~" : ""}${formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds))}`
+	formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds))
 
 /** The slowest endpoint's p50/p95 sit in a chip so the eye lands on them. */
 const latencyCell = (h: H, ms: number, scale: "p50" | "p95" | "p99", isChip: boolean, width: string) =>
@@ -246,6 +246,10 @@ const endpointRow = (
 											isQuiet ? "text-muted-foreground" : "text-foreground",
 										),
 									),
+									// A sampled endpoint's rate is scaled up from its traced spans.
+									...(endpoint.estimatedSpanCount > endpoint.spanCount
+										? [h.Title("Estimated from sampled traces")]
+										: []),
 								],
 								[rateText(endpoint, context.seconds)],
 							),

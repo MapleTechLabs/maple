@@ -6,6 +6,7 @@ import { view as traceFlowView } from "../../../service-map/trace-flow/view"
 import type * as TraceFlow from "../../../service-map/trace-flow/trace-flow"
 import { errorState } from "../../../ui/error-state"
 import { icon, type IconName } from "../../../ui/icon"
+import { pageTitle } from "../../../ui/page-layout"
 import type * as Dialog from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import * as Resizable from "../../../ui/resizable"
@@ -32,13 +33,13 @@ import * as Waterfall from "./waterfall"
 
 // The trace detail page on `ResultPage`.
 
-/** `ResultPage`'s crumb: the short id once loaded, else the state it is in. */
+/** `ResultPage`'s crumb: the short id once loaded or failed, else the state it is in. */
 export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => {
 	const crumb = Option.isNone(decodeTraceId(model.traceId))
 		? "Not found"
 		: AsyncData.matchData(model.hierarchy.data, {
 				onEmpty: () => "Loading…",
-				onFailure: () => "Error",
+				onFailure: () => shortId(model.traceId, "trace"),
 				onData: () =>
 					Option.isSome(loadedTrace(model)) ? shortId(model.traceId, "trace") : "Not found",
 			})
@@ -230,7 +231,12 @@ const pageBody = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs)
 		})
 	return AsyncData.matchData(model.hierarchy.data, {
 		onEmpty: () => detailLoading(h),
-		onFailure: (failure) => errorState(h, { failure, title: "Couldn't load trace details" }),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load trace details",
+				onRetry: Message.ClickedRetryHierarchy(),
+			}),
 		onData: () =>
 			Option.match(loadedTrace(model), {
 				onNone: () =>
@@ -257,7 +263,19 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
-			titleContent: trace === undefined ? undefined : titleContent(h, trace),
+			// A failed load still gets a header naming the trace, so the error sits under a title.
+			titleContent:
+				trace !== undefined
+					? titleContent(h, trace)
+					: AsyncData.isFailure(model.hierarchy.data)
+						? pageTitle(h, { title: model.traceId, className: "leading-8" }, [
+								"Trace ",
+								h.span(
+									[h.Class("font-mono text-xl font-normal text-muted-foreground")],
+									[shortId(model.traceId, "trace")],
+								),
+							])
+						: undefined,
 			actions: trace === undefined ? undefined : headerActions(h, model, trace),
 		},
 		[pageBody(h, model, inputs)],

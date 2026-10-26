@@ -1,3 +1,4 @@
+import { formatDuration } from "@maple/ui/lib/format"
 import { VALUE_TONE } from "../../../components/infra/severity-tokens"
 import type { Tone } from "@maple/ui/lib/tone"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
@@ -29,8 +30,7 @@ export const lagClass = (seconds: number): string | undefined => {
 	return tone === "neutral" ? undefined : VALUE_TONE[tone]
 }
 
-export const formatLag = (seconds: number): string =>
-	seconds >= 1 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds * 1000)}ms`
+export const formatLag = (seconds: number): string => formatDuration(seconds * 1000)
 
 export const formatStoragePercent = (percent: number): string =>
 	`${percent >= 99.5 || percent < 10 ? percent.toFixed(1) : percent.toFixed(0)}%`

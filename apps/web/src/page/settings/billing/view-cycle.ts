@@ -375,7 +375,12 @@ export const cyclePanel = (h: H, model: Model, inputs: CyclePanelInputs): Html =
 				figure(h, {
 					label: "Projected",
 					value: dollars(spend.projectedCents, spend.currency),
-					valueClassName: "text-primary",
+					// Neutral unless the cycle is heading past the plan's fixed fees or the overage caps.
+					valueClassName:
+						(spend.baseCents > 0 && spend.projectedCents > spend.baseCents) ||
+						(maximum !== null && spend.projectedCents > maximum)
+							? "text-warning"
+							: undefined,
 					note: ["At this cycle's daily rate"],
 				}),
 				figure(h, {

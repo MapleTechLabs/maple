@@ -170,7 +170,7 @@ export const metricBreakdown = (h: H, model: Model, draft: MetricsQueryDraft): H
 				toParentMessage: toBreakdownKey,
 				viewInputs: {
 					items: [SERVICE_KEY, ...attributeKeyNames(model)],
-					placeholder: "Break down by...",
+					placeholder: "Break down by…",
 					emptyText: "",
 					className: "h-7 w-52 text-xs",
 					toView: ({ field, rest }) => h.div([h.Class("contents")], [field, ...rest]),

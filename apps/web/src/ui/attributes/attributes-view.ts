@@ -269,7 +269,7 @@ const attributesSearch = (h: H, model: Model): Html =>
 	searchInput(h, {
 		id: `${model.id}-search`,
 		size: "sm",
-		placeholder: "Search attributes...",
+		placeholder: "Search attributes…",
 		value: model.search,
 		onInput: (text) => Message.ChangedSearch({ text }),
 		onClear: Message.ChangedSearch({ text: "" }),
@@ -278,7 +278,13 @@ const attributesSearch = (h: H, model: Model): Html =>
 const sectionOf = (h: H, model: Model, inputs: PanelInputs, source: AttributeSource, title: string) =>
 	attributesSection(
 		h,
-		{ model, source, canFilter: inputs.canFilter, idPrefix: source, hasCommitShaValues: inputs.hasCommitShaValues },
+		{
+			model,
+			source,
+			canFilter: inputs.canFilter,
+			idPrefix: source,
+			hasCommitShaValues: inputs.hasCommitShaValues,
+		},
 		{
 			attributes: source === "log" ? inputs.logAttributes : inputs.resourceAttributes,
 			title,

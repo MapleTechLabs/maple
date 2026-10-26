@@ -28,7 +28,13 @@ import { type TextField, toFormState } from "./form"
 
 type H = HtmlBuilder<Message>
 
-const IDLE: FieldState = { isInvalid: false, isDirty: false, isFilled: false, isFocused: false, isTouched: false }
+const IDLE: FieldState = {
+	isInvalid: false,
+	isDirty: false,
+	isFilled: false,
+	isFocused: false,
+	isTouched: false,
+}
 const TELEGRAM_CHAT_TYPE_LABELS = new Map([
 	["private", "Direct message"],
 	["group", "Group"],
@@ -50,7 +56,14 @@ const stateOf = (value: string): FieldState => ({ ...IDLE, isFilled: value !== "
 const textInput = (
 	h: H,
 	model: Model,
-	options: Readonly<{ name: string; field: TextField; placeholder: string; className?: string; type?: string; hasDescription?: boolean }>,
+	options: Readonly<{
+		name: string
+		field: TextField
+		placeholder: string
+		className?: string
+		type?: string
+		hasDescription?: boolean
+	}>,
 ) =>
 	input(h, {
 		ids: ids(options.name, options.hasDescription),
@@ -109,8 +122,15 @@ const providerTile = (
 		[
 			h.span([
 				h.AriaHidden(true),
-				h.Class(cn("pointer-events-none absolute inset-0 transition-opacity", options.isSelected ? "opacity-100" : "opacity-0")),
-				h.Style({ background: `radial-gradient(circle at 0% 0%, ${provider.accentBg}, transparent 60%)` }),
+				h.Class(
+					cn(
+						"pointer-events-none absolute inset-0 transition-opacity",
+						options.isSelected ? "opacity-100" : "opacity-0",
+					),
+				),
+				h.Style({
+					background: `radial-gradient(circle at 0% 0%, ${provider.accentBg}, transparent 60%)`,
+				}),
 			]),
 			h.div(
 				[h.Class("relative flex w-full items-center gap-2.5")],
@@ -120,7 +140,10 @@ const providerTile = (
 					...(options.isBusy === true ? [spinner(h, "ml-auto", 12)] : []),
 				],
 			),
-			h.p([h.Class("relative text-2xs leading-snug text-muted-foreground")], [options.description ?? provider.description]),
+			h.p(
+				[h.Class("relative text-2xs leading-snug text-muted-foreground")],
+				[options.description ?? provider.description],
+			),
 		],
 	)
 }
@@ -139,10 +162,17 @@ const providerPicker = (h: H, model: Model): Html => {
 							key: workspace.id,
 							type: "chat",
 							chatConnector: connector.id,
-							label: connector.workspaces.length > 1 ? `${connector.name} · ${workspace.name}` : connector.name,
+							label:
+								connector.workspaces.length > 1
+									? `${connector.name} · ${workspace.name}`
+									: connector.name,
 							description: `Post to a channel in ${workspace.name}.`,
-							isSelected: model.form.type === "chat" && model.form.chatWorkspaceId === workspace.id,
-							onSelect: Message.ClickedChatWorkspace({ connector: connector.id, workspaceId: workspace.id }),
+							isSelected:
+								model.form.type === "chat" && model.form.chatWorkspaceId === workspace.id,
+							onSelect: Message.ClickedChatWorkspace({
+								connector: connector.id,
+								workspaceId: workspace.id,
+							}),
 						}),
 					)
 				if (!connector.available || connector.id === "discord") return []
@@ -183,15 +213,22 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 	const { form } = model
 	switch (form.type) {
 		case "pagerduty": {
-			const isBadKey = form.integrationKey.trim().length > 0 && !isValidPagerDutyKey(form.integrationKey)
+			const isBadKey =
+				form.integrationKey.trim().length > 0 && !isValidPagerDutyKey(form.integrationKey)
 			const fieldIds = ids("integration", true)
 			return [
 				fieldBlock(h, [
-					fieldLabel(h, { ids: fieldIds, className: "text-xs", state: stateOf(form.integrationKey) }, "Integration key"),
+					fieldLabel(
+						h,
+						{ ids: fieldIds, className: "text-xs", state: stateOf(form.integrationKey) },
+						"Integration key",
+					),
 					textInput(h, model, {
 						name: "integration",
 						field: "integrationKey",
-						placeholder: isEditing ? "Leave blank to keep current key" : "e.g. R0XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+						placeholder: isEditing
+							? "Leave blank to keep current key"
+							: "e.g. R0XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
 						className: "font-mono text-xs",
 						hasDescription: true,
 					}),
@@ -199,26 +236,36 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 						? [
 								fieldError(
 									h,
-									{ ids: fieldIds, className: "text-2xs", state: stateOf(form.integrationKey) },
-									"That isn't a routing key (must be 32 characters). A ~20-character REST API token won't work — copy the Events API v2 integration key.",
+									{
+										ids: fieldIds,
+										className: "text-2xs",
+										state: stateOf(form.integrationKey),
+									},
+									"That isn't a routing key (must be 32 characters). A ~20-character REST API token won't work. Copy the Events API v2 integration key.",
 								),
 							]
 						: []),
-					fieldDescription(h, { ids: fieldIds, className: "text-2xs", state: stateOf(form.integrationKey) }, [
-						"In PagerDuty: open the service → Integrations → add or select an",
-						" ",
-						h.a(
-							[
-								h.Href("https://maple.dev/docs/alerting/notification-destinations#pagerduty"),
-								h.Target("_blank"),
-								h.Rel("noreferrer"),
-								h.Class("underline-offset-2 hover:text-foreground hover:underline"),
-							],
-							["Events API v2"],
-						),
-						" ",
-						"integration → copy its Integration Key (32 characters). A REST API token won't work.",
-					]),
+					fieldDescription(
+						h,
+						{ ids: fieldIds, className: "text-2xs", state: stateOf(form.integrationKey) },
+						[
+							"In PagerDuty: open the service → Integrations → add or select an",
+							" ",
+							h.a(
+								[
+									h.Href(
+										"https://maple.dev/docs/alerting/notification-destinations#pagerduty",
+									),
+									h.Target("_blank"),
+									h.Rel("noreferrer"),
+									h.Class("underline-offset-2 hover:text-foreground hover:underline"),
+								],
+								["Events API v2"],
+							),
+							" ",
+							"integration → copy its Integration Key (32 characters). A REST API token won't work.",
+						],
+					),
 				]),
 			]
 		}
@@ -226,11 +273,17 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 			const fieldIds = ids("discord-webhook", true)
 			return [
 				fieldBlock(h, [
-					fieldLabel(h, { ids: fieldIds, className: "text-xs", state: stateOf(form.webhookUrl) }, "Discord webhook URL"),
+					fieldLabel(
+						h,
+						{ ids: fieldIds, className: "text-xs", state: stateOf(form.webhookUrl) },
+						"Discord webhook URL",
+					),
 					textInput(h, model, {
 						name: "discord-webhook",
 						field: "webhookUrl",
-						placeholder: isEditing ? "Leave blank to keep current webhook" : "https://discord.com/api/webhooks/...",
+						placeholder: isEditing
+							? "Leave blank to keep current webhook"
+							: "https://discord.com/api/webhooks/...",
 						className: "font-mono text-xs",
 						hasDescription: true,
 					}),
@@ -247,27 +300,45 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 		case "webhook":
 			return [
 				fieldBlock(h, [
-					fieldLabel(h, { ids: ids("url"), className: "text-xs", state: stateOf(form.url) }, "Webhook URL"),
+					fieldLabel(
+						h,
+						{ ids: ids("url"), className: "text-xs", state: stateOf(form.url) },
+						"Webhook URL",
+					),
 					textInput(h, model, {
 						name: "url",
 						field: "url",
-						placeholder: isEditing ? "Leave blank to keep current URL" : "https://example.com/maple-alerts",
+						placeholder: isEditing
+							? "Leave blank to keep current URL"
+							: "https://example.com/maple-alerts",
 						className: "font-mono text-xs",
 					}),
 				]),
 				fieldBlock(h, [
-					fieldLabel(h, { ids: ids("secret"), className: "text-xs", state: stateOf(form.signingSecret) }, "Signing secret"),
+					fieldLabel(
+						h,
+						{ ids: ids("secret"), className: "text-xs", state: stateOf(form.signingSecret) },
+						"Signing secret",
+					),
 					textInput(h, model, {
 						name: "secret",
 						field: "signingSecret",
-						placeholder: isEditing ? "Leave blank to keep current secret" : "Optional HMAC secret",
+						placeholder: isEditing
+							? "Leave blank to keep current secret"
+							: "Optional HMAC secret",
 						className: "font-mono text-xs",
 					}),
 				]),
 			]
 		case "email":
 			return isClerkAuthEnabled
-				? [emailFields(h, { model: model.email, form, toMessage: (message) => Message.GotEmailFieldsMessage({ message }) })]
+				? [
+						emailFields(h, {
+							model: model.email,
+							form,
+							toMessage: (message) => Message.GotEmailFieldsMessage({ message }),
+						}),
+					]
 				: [
 						h.p(
 							[h.Class("text-2xs text-muted-foreground")],
@@ -306,7 +377,11 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 	const isTokenReady = isValidTelegramToken(form.telegramBotToken)
 	return [
 		fieldBlock(h, [
-			fieldLabel(h, { ids: tokenIds, className: "text-xs", state: stateOf(form.telegramBotToken) }, "Bot token"),
+			fieldLabel(
+				h,
+				{ ids: tokenIds, className: "text-xs", state: stateOf(form.telegramBotToken) },
+				"Bot token",
+			),
 			textInput(h, model, {
 				name: "telegram-token",
 				field: "telegramBotToken",
@@ -315,12 +390,16 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 				type: "password",
 				hasDescription: true,
 			}),
-			fieldDescription(h, { ids: tokenIds, className: "text-2xs", state: stateOf(form.telegramBotToken) }, [
-				"In Telegram: message @BotFather, send",
-				" ",
-				inlineCode(h, {}, ["/newbot"]),
-				", then copy the token it replies with.",
-			]),
+			fieldDescription(
+				h,
+				{ ids: tokenIds, className: "text-2xs", state: stateOf(form.telegramBotToken) },
+				[
+					"In Telegram: message @BotFather, send",
+					" ",
+					inlineCode(h, {}, ["/newbot"]),
+					", then copy the token it replies with.",
+				],
+			),
 		]),
 		h.div(
 			[h.Class("space-y-1.5")],
@@ -340,7 +419,13 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 									isLoading: model.isDetectingChats,
 									attributes: [
 										h.OnClick(Message.ClickedDetectChats()),
-										...(isTokenReady ? [] : [h.Title("Enter the bot token first — detection reads the bot's chats.")]),
+										...(isTokenReady
+											? []
+											: [
+													h.Title(
+														"Enter the bot token first. Detection reads the bot's chats.",
+													),
+												]),
 									],
 								},
 								["Detect chats"],
@@ -348,7 +433,13 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 						],
 					),
 					...(model.telegramError !== null
-						? [fieldError(h, { ids: chatIds, className: "text-2xs", state: IDLE }, model.telegramError)]
+						? [
+								fieldError(
+									h,
+									{ ids: chatIds, className: "text-2xs", state: IDLE },
+									model.telegramError,
+								),
+							]
 						: []),
 					...(model.telegramChats !== null && model.telegramChats.length === 0
 						? [
@@ -398,7 +489,7 @@ const telegramFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray<H
 					[
 						"Add the bot to the chat, then hit ",
 						h.strong([], ["Detect chats"]),
-						" — or enter the id by hand. Maple checks the bot can reach it when you save.",
+						", or enter the id by hand. Maple checks the bot can reach it when you save.",
 					],
 				),
 			],
@@ -416,7 +507,9 @@ const fieldHelper = (h: H, type: AlertDestinationType): ReadonlyArray<Html> => {
 						h.Href(provider.docsUrl),
 						h.Target("_blank"),
 						h.Rel("noreferrer"),
-						h.Class("text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"),
+						h.Class(
+							"text-2xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
+						),
 					],
 					[provider.docsLabel ?? "Docs", " ↗"],
 				),
@@ -444,7 +537,9 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 							h.Id(titleId(model.dialog.id)),
 						],
 						[
-							...(isEditing ? [logo(h, model, model.form.type, 28, model.form.chatConnector)] : []),
+							...(isEditing
+								? [logo(h, model, model.form.type, 28, model.form.chatConnector)]
+								: []),
 							isEditing ? `Edit ${provider.label} destination` : "Add destination",
 						],
 					),
@@ -466,24 +561,52 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 										[
 											eyebrow(h, { variant: "label", as: "div" }, ["Send to"]),
 											model.isProviderLocked
-												? panel(h, { className: "flex-row items-center justify-between gap-3 px-3 py-2" }, [
-														h.span(
-															[h.Class("flex min-w-0 items-center gap-2.5")],
-															[
-																logo(h, model, model.form.type, 28, model.form.chatConnector),
-																h.span([h.Class("truncate text-sm font-medium")], [provider.label]),
-															],
-														),
-														button(
-															h,
-															{
-																variant: "ghost",
-																size: "xs",
-																attributes: [h.OnClick(Message.ClickedUnlockProvider())],
-															},
-															["Change"],
-														),
-													])
+												? panel(
+														h,
+														{
+															className:
+																"flex-row items-center justify-between gap-3 px-3 py-2",
+														},
+														[
+															h.span(
+																[
+																	h.Class(
+																		"flex min-w-0 items-center gap-2.5",
+																	),
+																],
+																[
+																	logo(
+																		h,
+																		model,
+																		model.form.type,
+																		28,
+																		model.form.chatConnector,
+																	),
+																	h.span(
+																		[
+																			h.Class(
+																				"truncate text-sm font-medium",
+																			),
+																		],
+																		[provider.label],
+																	),
+																],
+															),
+															button(
+																h,
+																{
+																	variant: "ghost",
+																	size: "xs",
+																	attributes: [
+																		h.OnClick(
+																			Message.ClickedUnlockProvider(),
+																		),
+																	],
+																},
+																["Change"],
+															),
+														],
+													)
 												: providerPicker(h, model),
 										],
 									),
@@ -493,18 +616,42 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 							[
 								h.div(
 									[h.Class("flex items-center justify-between")],
-									[eyebrow(h, { variant: "label", as: "div" }, ["Connection"]), ...fieldHelper(h, model.form.type)],
+									[
+										eyebrow(h, { variant: "label", as: "div" }, ["Connection"]),
+										...fieldHelper(h, model.form.type),
+									],
 								),
 								panel(h, { padded: true, className: "space-y-3" }, [
 									fieldBlock(h, [
-										fieldLabel(h, { ids: nameIds, className: "text-xs", state: stateOf(model.form.name) }, [
-											"Name",
-											...(isEditing ? [] : [h.span([h.Class("font-normal text-muted-foreground")], ["optional"])]),
-										]),
+										fieldLabel(
+											h,
+											{
+												ids: nameIds,
+												className: "text-xs",
+												state: stateOf(model.form.name),
+											},
+											[
+												"Name",
+												...(isEditing
+													? []
+													: [
+															h.span(
+																[
+																	h.Class(
+																		"font-normal text-muted-foreground",
+																	),
+																],
+																["optional"],
+															),
+														]),
+											],
+										),
 										textInput(h, model, {
 											name: "name",
 											field: "name",
-											placeholder: suggestedDestinationName(toFormState(model.form)) || "Production paging",
+											placeholder:
+												suggestedDestinationName(toFormState(model.form)) ||
+												"Production paging",
 										}),
 									]),
 									...connectionFields(h, model, isEditing),
@@ -526,7 +673,8 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 												framed: true,
 												className: "border-border/60 bg-card px-4 py-3",
 												label: "Enabled",
-												description: "Disabled destinations stay attached to rules but won't receive notifications.",
+												description:
+													"Disabled destinations stay attached to rules but won't receive notifications.",
 												filled: model.form.enabled,
 												control: switchControl(h, {
 													id: "destination-enabled",
@@ -554,7 +702,9 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ id: string }>
 								h.Style({
 									background: providerOf(model.form.type).accent,
 									"border-color": providerOf(model.form.type).accent,
-									color: model.isSaving ? "transparent" : providerOf(model.form.type).accentOn,
+									color: model.isSaving
+										? "transparent"
+										: providerOf(model.form.type).accentOn,
 								}),
 							],
 						},

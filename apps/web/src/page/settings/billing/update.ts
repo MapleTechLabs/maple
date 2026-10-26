@@ -11,8 +11,14 @@ import {
 	CHECKOUT_CONFIRM_TIMEOUT_MS,
 } from "../../../lib/billing/checkout-return"
 import { hasSelectedPlan } from "../../../lib/billing/plan-gating"
-import { parseCapInput, spendLimitFor, uncappedFeatures, updateFeatureControls } from "../../../lib/billing/controls"
+import {
+	parseCapInput,
+	spendLimitFor,
+	uncappedFeatures,
+	updateFeatureControls,
+} from "../../../lib/billing/controls"
 import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "../../../lib/billing/spend"
+import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
 import { Cause, Duration, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command, Dom } from "foldkit"
 import * as Chart from "../../../charts/chart"
@@ -32,19 +38,36 @@ type Return = PageReturn<Model, Message>
  * and where a checkout return stands: a poll re-reads only the page's copy, a confirmed plan
  * refreshes the app's customer once, and a settled return drops `checkout=complete` (replace).
  */
-export type Step = Readonly<{ step: Return; isCustomerStale: boolean; checkout?: "Polled" | "Confirmed" | "TimedOut" }>
+export type Step = Readonly<{
+	step: Return
+	isCustomerStale: boolean
+	checkout?: "Polled" | "Confirmed" | "TimedOut"
+}>
 
 // READS
 
+// A defect settles the slot as a failure too; otherwise the message never arrives and it shimmers forever.
 const loaded =
 	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
 	<E, R>(effect: Effect.Effect<A, E, R>) =>
-		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
+		effect.pipe(
+			Effect.catchDefect((defect) => Effect.fail(defect)),
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map(toMessage),
+		)
+
+/** Usage and plans gate every spend view: still pending after this, they read as unreachable. */
+const READ_TIMEOUT = Duration.seconds(10)
+
+const withinDeadline = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+	Effect.timeoutOrElse(effect, { duration: READ_TIMEOUT, orElse: () => Effect.fail(NetworkErrorBody) })
 
 const FetchPlans = Command.define("FetchBillingPlans", {
 	messages: [Message.CompletedFetchPlans],
 	execute: Effect.flatMap(MapleApiClient, (client) => client.billingPublic.listPlans()).pipe(
 		Effect.map((response) => response.plans),
+		withinDeadline,
 		loaded((result) => Message.CompletedFetchPlans({ result })),
 	),
 })
@@ -54,7 +77,10 @@ const FetchUsage = Command.define("FetchBillingUsage", {
 	messages: [Message.CompletedFetchUsage],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
 		client.billing.getUsage({ query: { featureId: [...SPEND_FEATURES] } }),
-	).pipe(loaded((result) => Message.CompletedFetchUsage({ result }))),
+	).pipe(
+		withinDeadline,
+		loaded((result) => Message.CompletedFetchUsage({ result })),
+	),
 })
 
 /**
@@ -84,7 +110,12 @@ const isNotConfigured = Schema.is(BillingNotConfiguredError)
 const FetchProfile = Command.define("FetchBillingProfile", {
 	messages: [Message.CompletedFetchProfile],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getBillingProfile()).pipe(
-		Effect.mapError((error) => ({ isNotConfigured: isNotConfigured(error) })),
+		// Like `loaded`: a defect must still settle the read, or the details shimmer forever.
+		Effect.catchDefect((defect) => Effect.fail(defect)),
+		Effect.mapError((error) => ({
+			isNotConfigured: isNotConfigured(error),
+			failure: toLoadFailure(error),
+		})),
 		Effect.result,
 		Effect.map((result) => Message.CompletedFetchProfile({ result })),
 	),
@@ -96,7 +127,9 @@ const FetchProfile = Command.define("FetchBillingProfile", {
 const OpenPortal = Command.define("OpenBillingPortal", {
 	messages: [Message.CompletedOpenPortal],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
-		client.billing.openCustomerPortal({ payload: new CustomerPortalRequest({ returnUrl: window.location.href }) }),
+		client.billing.openCustomerPortal({
+			payload: new CustomerPortalRequest({ returnUrl: window.location.href }),
+		}),
 	).pipe(loaded((result) => Message.CompletedOpenPortal({ result }))),
 })
 
@@ -116,7 +149,9 @@ const SaveCap = Command.define("UpdateBillingControls", {
 	messages: [Message.CompletedSaveCap],
 	execute: ({ featureId, label, overageLimit }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
-			client.billing.updateBillingControls({ payload: updateFeatureControls({ featureId, overageLimit }) }),
+			client.billing.updateBillingControls({
+				payload: updateFeatureControls({ featureId, overageLimit }),
+			}),
 		).pipe(loaded((result) => Message.CompletedSaveCap({ featureId, label, result }))),
 })
 
@@ -126,7 +161,10 @@ const Attach = Command.define("AttachBillingPlan", {
 	execute: ({ planId }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.billing.attach({
-				payload: new AttachRequest({ planId, successUrl: buildCheckoutSuccessUrl(window.location.href) }),
+				payload: new AttachRequest({
+					planId,
+					successUrl: buildCheckoutSuccessUrl(window.location.href),
+				}),
 			}),
 		).pipe(loaded((result) => Message.CompletedAttach({ planId, result }))),
 })
@@ -134,7 +172,9 @@ const Attach = Command.define("AttachBillingPlan", {
 /** `CHECKOUT_CONFIRM_POLL_MS`: the customer is re-read this often while confirming. */
 const WaitCheckoutPoll = Command.define("WaitBillingCheckoutPoll", {
 	messages: [Message.ElapsedCheckoutPoll],
-	execute: Effect.sleep(Duration.millis(CHECKOUT_CONFIRM_POLL_MS)).pipe(Effect.as(Message.ElapsedCheckoutPoll())),
+	execute: Effect.sleep(Duration.millis(CHECKOUT_CONFIRM_POLL_MS)).pipe(
+		Effect.as(Message.ElapsedCheckoutPoll()),
+	),
 })
 
 /** `CHECKOUT_CONFIRM_TIMEOUT_MS`: then the wait gives up with the timed-out notice. */
@@ -152,7 +192,8 @@ const TrackCheckout = Command.define("TrackBillingCheckout", {
 		props: Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Boolean])),
 	},
 	messages: [Message.CompletedTrackProduct],
-	execute: ({ event, props }) => trackProduct(event, props).pipe(Effect.as(Message.CompletedTrackProduct())),
+	execute: ({ event, props }) =>
+		trackProduct(event, props).pipe(Effect.as(Message.CompletedTrackProduct())),
 })
 
 /** `usageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })`. */
@@ -178,11 +219,18 @@ const FocusCap = Command.define("FocusBillingCapInput", {
 // DERIVED
 
 /** One spend model feeds every figure, so no two numbers on the tab can disagree. */
-export const spendModelOf = (model: Model, customer: BillingCustomer | null, nowMs: number): SpendModel | null =>
+export const spendModelOf = (
+	model: Model,
+	customer: BillingCustomer | null,
+	nowMs: number,
+): SpendModel | null =>
 	buildSpendModel({
 		customer: customer ?? undefined,
 		plans: AsyncData.getOrElse(model.plans, () => undefined),
-		usage: AsyncData.getOrElse(AsyncData.map(model.usage, (usage) => usage.total), () => undefined),
+		usage: AsyncData.getOrElse(
+			AsyncData.map(model.usage, (usage) => usage.total),
+			() => undefined,
+		),
 		nowMs,
 	})
 
@@ -227,11 +275,14 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 const same = (step: Return): Step => ({ step, isCustomerStale: false })
 const staleCustomer = (step: Return): Step => ({ step, isCustomerStale: true })
 
-const revalidate = <A, E>(data: AsyncData.AsyncData<A, E>) => Option.getOrElse(AsyncData.revalidate(data), () => data)
+const revalidate = <A, E>(data: AsyncData.AsyncData<A, E>) =>
+	Option.getOrElse(AsyncData.revalidate(data), () => data)
 
 const liftCompare = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, compareDialog: step.model },
-	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotCompareDialogMessage({ message })),
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotCompareDialogMessage({ message }),
+	),
 })
 
 /** `CapEditor`'s draft starts from the cap on file. */
@@ -244,8 +295,13 @@ const saveCap = (model: Model, customer: BillingCustomer | null, nowMs: number):
 	const featureId = model.editingCap
 	const parsed = parseCapInput(model.capDraft)
 	if (featureId === null || !parsed.valid || model.isSavingCap) return { model }
-	const label = spendModelOf(model, customer, nowMs)?.features.find((feature) => feature.featureId === featureId)?.label ?? ""
-	return { model: { ...model, isSavingCap: true }, commands: [SaveCap({ featureId, label, overageLimit: parsed.cap })] }
+	const label =
+		spendModelOf(model, customer, nowMs)?.features.find((feature) => feature.featureId === featureId)
+			?.label ?? ""
+	return {
+		model: { ...model, isSavingCap: true },
+		commands: [SaveCap({ featureId, label, overageLimit: parsed.cap })],
+	}
 }
 
 /** Back on the tab: plans, usage, spend, invoices and details stay up while they load again. */
@@ -264,23 +320,56 @@ export const revisit = (model: Model): Return => {
 			invoices: invoices.data,
 			profile: profile.data,
 		},
-		commands: [...plans.commands, ...usage.commands, ...daily.commands, ...invoices.commands, ...profile.commands],
+		commands: [
+			...plans.commands,
+			...usage.commands,
+			...daily.commands,
+			...invoices.commands,
+			...profile.commands,
+		],
 	}
 }
 
-export const update = (model: Model, message: Message, customer: BillingCustomer | null, nowMs: number): Step =>
+export const update = (
+	model: Model,
+	message: Message,
+	customer: BillingCustomer | null,
+	nowMs: number,
+): Step =>
 	Message.match<Step>(message, {
-		CompletedFetchPlans: ({ result }) => same({ model: { ...model, plans: AsyncData.settle(model.plans, result) } }),
-		CompletedFetchUsage: ({ result }) => same({ model: { ...model, usage: AsyncData.settle(model.usage, result) } }),
-		CompletedFetchDaily: ({ result }) => same({ model: { ...model, daily: AsyncData.settle(model.daily, result) } }),
+		CompletedFetchPlans: ({ result }) =>
+			same({ model: { ...model, plans: AsyncData.settle(model.plans, result) } }),
+		CompletedFetchUsage: ({ result }) =>
+			same({ model: { ...model, usage: AsyncData.settle(model.usage, result) } }),
+		CompletedFetchDaily: ({ result }) =>
+			same({ model: { ...model, daily: AsyncData.settle(model.daily, result) } }),
 		CompletedFetchInvoices: ({ result }) =>
 			same({ model: { ...model, invoices: AsyncData.settle(model.invoices, result) } }),
 		CompletedFetchProfile: ({ result }) =>
 			same({ model: { ...model, profile: AsyncData.settle(model.profile, result) } }),
-		ClickedRetryCustomer: () => staleCustomer({ model }),
-		ClickedRetryDaily: () => same({ model: { ...model, daily: AsyncData.Loading() }, commands: [FetchDaily()] }),
+		// The account error also stands in for failed usage or plans reads, so Retry reloads those too.
+		ClickedRetryCustomer: () =>
+			staleCustomer({
+				model: {
+					...model,
+					...(AsyncData.isFailure(model.usage) && { usage: AsyncData.Loading() }),
+					...(AsyncData.isFailure(model.plans) && { plans: AsyncData.Loading() }),
+				},
+				commands: [
+					...(AsyncData.isFailure(model.usage) ? [FetchUsage()] : []),
+					...(AsyncData.isFailure(model.plans) ? [FetchPlans()] : []),
+				],
+			}),
+		ClickedRetryDaily: () =>
+			same({ model: { ...model, daily: AsyncData.Loading() }, commands: [FetchDaily()] }),
+		ClickedRetryInvoices: () =>
+			same({ model: { ...model, invoices: AsyncData.Loading() }, commands: [FetchInvoices()] }),
+		ClickedRetryProfile: () =>
+			same({ model: { ...model, profile: AsyncData.Loading() }, commands: [FetchProfile()] }),
 		ClickedManageBilling: () =>
-			model.isOpeningPortal ? same({ model }) : same({ model: { ...model, isOpeningPortal: true }, commands: [OpenPortal()] }),
+			model.isOpeningPortal
+				? same({ model })
+				: same({ model: { ...model, isOpeningPortal: true }, commands: [OpenPortal()] }),
 		CompletedOpenPortal: ({ result }) =>
 			Result.match(result, {
 				// The portal changes the customer, its eligibility and its invoices: read them again, then leave.
@@ -310,10 +399,14 @@ export const update = (model: Model, message: Message, customer: BillingCustomer
 				first === undefined
 					? { ...model, editingCap: null }
 					: openCap(model, Schema.decodeUnknownSync(SpendFeatureId)(first.featureId), customer)
-			return same({ model: opened, commands: [ScrollToUsage(), ...(opened.editingCap === null ? [] : [FocusCap()])] })
+			return same({
+				model: opened,
+				commands: [ScrollToUsage(), ...(opened.editingCap === null ? [] : [FocusCap()])],
+			})
 		},
 		CompletedScrollToUsage: () => same({ model }),
-		ClickedEditCap: ({ featureId }) => same({ model: openCap(model, featureId, customer), commands: [FocusCap()] }),
+		ClickedEditCap: ({ featureId }) =>
+			same({ model: openCap(model, featureId, customer), commands: [FocusCap()] }),
 		CompletedFocusCap: () => same({ model }),
 		ChangedCap: ({ value }) => same({ model: { ...model, capDraft: value } }),
 		PressedCapKey: ({ key }) =>
@@ -346,9 +439,12 @@ export const update = (model: Model, message: Message, customer: BillingCustomer
 			}),
 		ToggledBreakdown: () => same({ model: { ...model, isBreakdownOpen: !model.isBreakdownOpen } }),
 		ClickedCompare: () => same(liftCompare(model, Dialog.open(model.compareDialog))),
-		GotCompareDialogMessage: ({ message: child }) => same(liftCompare(model, Dialog.update(model.compareDialog, child))),
+		GotCompareDialogMessage: ({ message: child }) =>
+			same(liftCompare(model, Dialog.update(model.compareDialog, child))),
 		ClickedSubscribe: ({ planId }) =>
-			model.attaching !== null ? same({ model }) : same({ model: { ...model, attaching: planId }, commands: [Attach({ planId })] }),
+			model.attaching !== null
+				? same({ model })
+				: same({ model: { ...model, attaching: planId }, commands: [Attach({ planId })] }),
 		CompletedAttach: ({ planId, result }) =>
 			Result.match(result, {
 				onSuccess: ({ paymentUrl }) =>
@@ -357,7 +453,10 @@ export const update = (model: Model, message: Message, customer: BillingCustomer
 						? same({
 								model,
 								commands: [
-									TrackCheckout({ event: "plan_checkout_started", props: { plan_id: planId } }),
+									TrackCheckout({
+										event: "plan_checkout_started",
+										props: { plan_id: planId },
+									}),
 									Redirect({ url: paymentUrl }),
 								],
 							})
@@ -373,18 +472,30 @@ export const update = (model: Model, message: Message, customer: BillingCustomer
 								outMessage: toast("success", "Plan updated successfully"),
 							}),
 				onFailure: (error) =>
-					same({ model: { ...model, attaching: null }, outMessage: toast("error", "Failed to update your plan", error.message) }),
+					same({
+						model: { ...model, attaching: null },
+						outMessage: toast("error", "Failed to update your plan", error.message),
+					}),
 			}),
 		ElapsedCheckoutPoll: () =>
 			model.checkoutReturn === "Confirming"
-				? { step: { model, commands: [WaitCheckoutPoll()] }, isCustomerStale: true, checkout: "Polled" }
+				? {
+						step: { model, commands: [WaitCheckoutPoll()] },
+						isCustomerStale: true,
+						checkout: "Polled",
+					}
 				: same({ model }),
 		ElapsedCheckoutTimeout: () =>
 			model.checkoutReturn === "Confirming"
 				? {
 						step: {
 							model: { ...model, checkoutReturn: "TimedOut" },
-							commands: [TrackCheckout({ event: "plan_checkout_returned", props: { confirmed: false } })],
+							commands: [
+								TrackCheckout({
+									event: "plan_checkout_returned",
+									props: { confirmed: false },
+								}),
+							],
 						},
 						isCustomerStale: false,
 						checkout: "TimedOut",
@@ -401,7 +512,9 @@ export const update = (model: Model, message: Message, customer: BillingCustomer
 					...(isProfileStale && { profile: revalidate(model.profile) }),
 				},
 				commands: [
-					...Command.mapMessages(step.commands ?? [], (inner) => Message.GotDetailsMessage({ message: inner })),
+					...Command.mapMessages(step.commands ?? [], (inner) =>
+						Message.GotDetailsMessage({ message: inner }),
+					),
 					...(isProfileStale ? [FetchProfile()] : []),
 				],
 				outMessage: step.outMessage,
@@ -412,7 +525,9 @@ export const update = (model: Model, message: Message, customer: BillingCustomer
 			const step = Chart.update(model.chart, child)
 			return same({
 				model: { ...model, chart: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotChartMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotChartMessage({ message: inner }),
+				),
 			})
 		},
 	})
@@ -423,7 +538,9 @@ export const customerChanged = (model: Model, customer: BillingCustomer): Step |
 		? {
 				step: {
 					model: { ...model, checkoutReturn: "Idle" },
-					commands: [TrackCheckout({ event: "plan_checkout_returned", props: { confirmed: true } })],
+					commands: [
+						TrackCheckout({ event: "plan_checkout_returned", props: { confirmed: true } }),
+					],
 				},
 				isCustomerStale: false,
 				checkout: "Confirmed",
@@ -438,7 +555,9 @@ export const openDetails = (model: Model): Return =>
 			const step = Details.open(model.details, profile)
 			return {
 				model: { ...model, details: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) => Message.GotDetailsMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotDetailsMessage({ message: inner }),
+				),
 			}
 		},
 	})

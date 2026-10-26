@@ -67,8 +67,11 @@ export const settingsSections = <M>(h: HtmlBuilder<M>, children: Children): Html
 	h.div([h.Class("flex w-full flex-col gap-10")], children)
 
 export const adminOnlyNote = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
-	h.p([h.Class(cn("text-xs text-muted-foreground", className))], children)
+	h.p([h.Class(cn("font-prose text-xs text-muted-foreground", className))], children)
+
+/** The one inline link style across settings: primary text, underlined on hover. */
+export const INLINE_LINK_CLASS = "text-primary underline-offset-4 hover:underline"
 
 /** The centered one-line note a list section shows for empty or failed loads. */
 export const sectionNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
-	h.p([h.Class("px-4 py-6 text-center text-sm text-muted-foreground")], [text])
+	h.p([h.Class("px-4 py-6 text-center font-prose text-sm text-muted-foreground")], [text])
