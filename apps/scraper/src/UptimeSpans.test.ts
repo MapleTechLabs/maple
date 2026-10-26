@@ -70,6 +70,25 @@ describe("toOtlpSpan", () => {
 		assert.deepStrictEqual(attributes["maple.uptime.ok"], { boolValue: false })
 	})
 
+	it("puts an HTTP check's measured phases on the span and leaves out the ones that did not happen", () => {
+		const span = toOtlpSpan(
+			check({
+				outcome: {
+					...succeeded(48, 200),
+					timings: { dnsMs: 12.34, connectMs: 5, tlsMs: null, ttfbMs: 30.06, transferMs: null },
+				},
+			}),
+		)
+		const timing = Object.fromEntries(
+			Object.entries(attrs(span.attributes)).filter(([key]) => key.startsWith("maple.uptime.timing.")),
+		)
+		assert.deepStrictEqual(timing, {
+			"maple.uptime.timing.dns_ms": { doubleValue: 12.3 },
+			"maple.uptime.timing.connect_ms": { intValue: "5" },
+			"maple.uptime.timing.ttfb_ms": { doubleValue: 30.1 },
+		})
+	})
+
 	it("records url.full without the query or fragment, which may carry credentials", () => {
 		const monitor = mkUptimeTarget({
 			config: httpConfig({ url: "https://api.example.com:8443/health?token=s3cret&x=1#frag" }),

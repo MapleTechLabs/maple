@@ -280,6 +280,40 @@ describe("UptimeHttpProbe", () => {
 		}).pipe(Effect.provide(ProbeLive)),
 	)
 
+	it.live("sums each hop's lookup into DNS, and times the body read only when one is read", () =>
+		Effect.gen(function* () {
+			// Every lookup takes 20 ms, so two hops spend at least 40 ms resolving.
+			const slowDns = (hostname: string) =>
+				Effect.andThen(Effect.sleep(Duration.millis(20)), fixedResolver(DNS)(hostname))
+			const recorded: Array<RecordedRequest> = []
+			const respond = () =>
+				recorded.length === 1
+					? new Response(null, {
+							status: 302,
+							headers: { location: "https://moved.example.org/h" },
+						})
+					: new Response("ok", { status: 200 })
+			const run = (overrides: Record<string, unknown>) =>
+				probeWith(recorded, respond, overrides).pipe(
+					Effect.provide(
+						UptimeHttpProbe.layer.pipe(
+							Layer.provide(FetchHttpClient.layer),
+							Layer.provide(Layer.succeed(HostResolver, slowDns)),
+						),
+					),
+				)
+			const plain = yield* run({})
+			recorded.length = 0
+			const read = yield* run({ assertions: [{ _tag: "body", op: "contains", value: "ok" }] })
+			assert.isAtLeast(plain.timings?.dnsMs ?? 0, 40)
+			assert.isNull(plain.timings?.transferMs ?? null)
+			assert.isNotNull(read.timings?.transferMs ?? null)
+			// A lookup that failed measured nothing.
+			const missing = yield* run({ url: "https://gone.example.net/" })
+			assert.isUndefined(missing.timings)
+		}),
+	)
+
 	it.effect("reports a refused connection as a sentence about the endpoint", () =>
 		Effect.gen(function* () {
 			const refused = Object.assign(new TypeError("fetch failed"), {

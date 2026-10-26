@@ -1,4 +1,5 @@
 import { Option, Schema } from "effect"
+import type { PhaseTimings } from "./UptimePhases"
 
 /**
  * Why a check failed, the span's `error.type`. `assertion` is a target that answered but
@@ -21,6 +22,8 @@ export interface ProbeOutcome {
 	/** One sentence for the monitor page, e.g. `Status 503, expected 2xx`; null when ok. */
 	readonly error: string | null
 	readonly errorType: UptimeFailureType | null
+	/** HTTP only: where the check spent its time, absent when no phase was measured. */
+	readonly timings?: PhaseTimings
 }
 
 /** The W3C ids a check runs under; HTTP sends them so the target's server span joins the trace. */
