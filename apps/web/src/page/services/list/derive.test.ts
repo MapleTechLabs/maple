@@ -26,17 +26,19 @@ const incident = (groupKey: string, signalType: IncidentCause["signalType"]): In
 })
 
 describe("healthSummary", () => {
-	it("names an open uptime incident as a failing check and keeps the alert label for rules", () => {
+	it("marks a service unhealthy while its uptime check or an alert rule is firing", () => {
 		const summary = healthSummary(
-			[service("checkout-api"), service("payments")],
+			[service("checkout-api"), service("payments"), service("search")],
 			[incident("checkout-api", "uptime"), incident("payments", "error_rate")],
 			[],
 			Date.parse("2026-10-26T00:00:00Z"),
 		)
-		const causes = (name: string) =>
-			summary.causesByRow.get(serviceHealthRowKey(name, "production"))?.map((cause) => cause.label)
-		expect(causes("checkout-api")).toEqual(["Uptime check failing"])
-		expect(causes("payments")).toEqual(["Alert firing"])
-		expect(summary.counts.unhealthy).toBe(2)
+		const health = (name: string) => summary.byRow.get(serviceHealthRowKey(name, "production"))
+		expect([health("checkout-api"), health("payments"), health("search")]).toEqual([
+			"unhealthy",
+			"unhealthy",
+			"healthy",
+		])
+		expect(summary.counts).toEqual({ healthy: 1, degraded: 0, unhealthy: 2 })
 	})
 })
