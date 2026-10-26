@@ -670,24 +670,47 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(UptimeMonitors)
-							.select("id", "orgId", "name", "serviceName", "intervalSeconds", "configJson")
+							.select(($) => ({
+								id: $.id,
+								orgId: $.orgId,
+								name: $.name,
+								serviceName: $.serviceName,
+								intervalSeconds: $.intervalSeconds,
+								configJson: PG.undecoded($.configJson),
+							}))
 							.where(($) => [$.enabled.eq(true), $.kind.in_("http", "tcp", "dns")]),
 					),
 				)
-				return rows.flatMap((row): ReadonlyArray<UptimeProbeTargetRow> => {
-					const config = row.configJson
-					if (config._tag === "heartbeat") return []
-					return [
-						{
-							id: row.id,
-							orgId: row.orgId,
-							name: row.name,
-							serviceName: row.serviceName,
-							intervalSeconds: row.intervalSeconds,
-							config,
-						},
-					]
-				})
+				// A config that no longer decodes skips its monitor, never the scraper's whole list.
+				const targets = yield* Effect.forEach(rows, (row) =>
+					decodeConfig(row.configJson).pipe(
+						Effect.map((config): ReadonlyArray<UptimeProbeTargetRow> =>
+							config._tag === "heartbeat"
+								? []
+								: [
+										{
+											id: row.id,
+											orgId: row.orgId,
+											name: row.name,
+											serviceName: row.serviceName,
+											intervalSeconds: row.intervalSeconds,
+											config,
+										},
+									],
+						),
+						Effect.catchTag("SchemaError", (error) =>
+							Effect.logWarning("Skipping uptime monitor with an undecodable config").pipe(
+								Effect.annotateLogs({
+									monitorId: row.id,
+									orgId: row.orgId,
+									cause: error.message,
+								}),
+								Effect.as([]),
+							),
+						),
+					),
+				)
+				return Arr.flatten(targets)
 			})
 
 			const recordChecks = Effect.fn("UptimeMonitorsService.recordChecks")(function* (
