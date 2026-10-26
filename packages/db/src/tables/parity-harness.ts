@@ -24,7 +24,9 @@ const headEntities = async (): Promise<ReadonlyArray<S.PgSchemaEntity>> =>
 
 const LEDGER = new Set<string>(Object.values(Migrate.LEDGER_TABLES))
 
-const tableOf = (entity: S.PgSchemaEntity): string => (entity.kind === "table" ? entity.name : entity.table)
+/** The table an entity belongs to; an enum type belongs to none. */
+const tableOf = (entity: S.PgSchemaEntity): string | undefined =>
+	entity.kind === "table" ? entity.name : entity.kind === "enum" ? undefined : entity.table
 
 /** Every column, constraint and index of `tables`, as Postgres itself prints them. */
 const catalog = async (db: PGlite, tables: ReadonlyArray<string>) => {
