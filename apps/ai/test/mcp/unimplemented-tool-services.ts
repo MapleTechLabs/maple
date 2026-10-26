@@ -21,6 +21,7 @@ import { ScrapeTargetsService } from "@maple/backend/services/integrations/Scrap
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -46,6 +47,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(VcsCommitService)({}),
 	Layer.mock(VcsSourceService)({}),
 	Layer.mock(SetupAuditService)({}),
+	Layer.mock(UptimeMonitorsService)({}),
 	Layer.mock(RepoSandboxService)({}),
 	Layer.mock(QueryEngineService)({}),
 	WarehouseQueryService.layer,
