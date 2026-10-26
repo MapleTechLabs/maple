@@ -1,11 +1,12 @@
 import { UptimeMonitorId } from "@maple/domain"
 import {
 	UptimeMonitorPublicId,
+	type V2UptimeMonitor,
 	V2UptimeMonitorCreateParams,
 	V2UptimeMonitorTestParams,
 	V2UptimeMonitorUpdateParams,
 } from "@maple/domain/http/v2"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Ref, Schema } from "effect"
 import { toLoadFailure } from "../../../data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
@@ -15,11 +16,30 @@ import type { AlertsUptimeNewSearch } from "../../../route/search"
 
 export const UPTIME_LIST_LIMIT = 100
 
-/** `uptimeMonitors.list`: the org's monitors, newest first. */
+/** Pages read at most per list: 2000 monitors, far past any plan's allowance. */
+const MAX_LIST_PAGES = 20
+
+interface ListProgress {
+	readonly rows: ReadonlyArray<V2UptimeMonitor>
+	readonly cursor: string | null
+	readonly pages: number
+}
+
+/** `uptimeMonitors.list`: every one of the org's monitors, newest first, following `next_cursor`. */
 export const listMonitors = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
-	const response = yield* client.uptimeMonitors.list({ query: { limit: UPTIME_LIST_LIMIT } })
-	return response.data
+	const progress = yield* Ref.make<ListProgress>({ rows: [], cursor: null, pages: 0 })
+	const readPage = Effect.gen(function* () {
+		const { rows, cursor, pages } = yield* Ref.get(progress)
+		const response = yield* client.uptimeMonitors.list({
+			query: { limit: UPTIME_LIST_LIMIT, ...(cursor === null ? undefined : { cursor }) },
+		})
+		const next = response.has_more ? response.next_cursor : null
+		yield* Ref.set(progress, { rows: [...rows, ...response.data], cursor: next, pages: pages + 1 })
+		return next !== null && pages + 1 < MAX_LIST_PAGES
+	})
+	yield* readPage.pipe(Effect.repeat({ while: (hasMore) => hasMore }))
+	return (yield* Ref.get(progress)).rows
 }).pipe(Effect.mapError(toLoadFailure))
 
 export const retrieveMonitor = (id: UptimeMonitorId) =>
