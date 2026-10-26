@@ -70,7 +70,8 @@ export const responseTimePanel = (h: H, monitor: UptimeMonitor): Html => {
 										),
 									),
 									h.Style({
-										height: `${Math.max(4, ((check.duration_ms ?? max) / max) * 100)}%`,
+										// No recorded duration is the minimum sliver, never the tallest bar.
+										height: `${Math.max(4, ((check.duration_ms ?? 0) / max) * 100)}%`,
 									}),
 								],
 								[],

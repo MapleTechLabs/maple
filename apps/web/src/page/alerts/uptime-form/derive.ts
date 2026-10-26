@@ -87,7 +87,8 @@ const assertionIssue = (row: AssertionDraft): string | null => {
 				? null
 				: "A status check needs a class like 2xx or a code like 204."
 		case "latency":
-			return isWhole(row.value) && whole(row.value) > 0
+			// The wire value is an Int: a huge digit run would serialize as null and fail the save.
+			return isWhole(row.value) && whole(row.value) > 0 && Number.isSafeInteger(whole(row.value))
 				? null
 				: "A response time check needs a whole number of milliseconds."
 		case "body":

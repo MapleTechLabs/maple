@@ -1,7 +1,8 @@
-import { V2UptimeMonitorCreateParams } from "@maple/domain/http/v2"
+import { V2UptimeMonitorCreateParams, V2UptimeMonitorUpdateParams } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { formIssues, isPrivateHost, wirePayload } from "./derive"
+import { formFromMonitor, formIssues, isPrivateHost, wirePayload } from "./derive"
+import { heartbeatMonitor, httpMonitor } from "../shared/uptime-test-monitors"
 import { emptyForm } from "./form"
 
 const decodeCreate = Schema.decodeUnknownExit(V2UptimeMonitorCreateParams)
@@ -60,5 +61,50 @@ describe("formIssues", () => {
 		expect(issues).toEqual([
 			"Header line 'X-Api-Key secret' needs a name and a colon, like Authorization: Bearer token.",
 		])
+	})
+})
+
+describe("formFromMonitor and wirePayload", () => {
+	it("an untouched edit saves back the monitor it opened", () => {
+		const decodeUpdate = Schema.decodeUnknownExit(V2UptimeMonitorUpdateParams)
+		const full = httpMonitor({
+			config: {
+				type: "http",
+				url: "https://api.acme.dev/orders",
+				method: "POST",
+				headers: { "content-type": "application/json", "x-team": "checkout" },
+				body: '{"ping":true}',
+				assertions: [
+					{ type: "status", op: "is", value: "201" },
+					{ type: "latency", under_ms: 800 },
+					{ type: "body", op: "contains", value: "ok" },
+					{ type: "json_path", path: "$.status", op: "equals", value: "ok" },
+					{ type: "header", name: "content-type", op: "contains", value: "json" },
+				],
+				timeout_ms: 5000,
+			},
+			service_name: null,
+			destination_ids: [],
+		})
+		;[httpMonitor(), full, heartbeatMonitor()].forEach((monitor) => {
+			const payload = wirePayload(formFromMonitor(monitor), true)
+			expect(decodeUpdate(payload)._tag).toBe("Success")
+			expect(payload).toMatchObject({
+				name: monitor.name,
+				config: monitor.config,
+				service_name: monitor.service_name,
+				destination_ids: monitor.destination_ids,
+			})
+		})
+	})
+
+	it("refuses a response time too large to send", () => {
+		const form = emptyForm({
+			kind: "http",
+			name: "api",
+			url: "https://api.acme.dev/health",
+			assertions: [{ id: 1, type: "latency", op: "under", target: "", value: "9".repeat(20) }],
+		})
+		expect(formIssues(form)).toEqual(["A response time check needs a whole number of milliseconds."])
 	})
 })
