@@ -56,7 +56,10 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 	"@maple/scraper/UptimeHttpProbe",
 	{
 		make: Effect.gen(function* () {
-			const client = guardPinned(yield* HttpClient.HttpClient, yield* HostResolver)
+			// Every header is user config: a cross-origin redirect drops them all and the body.
+			const client = guardPinned(yield* HttpClient.HttpClient, yield* HostResolver, {
+				strictRedirects: true,
+			})
 
 			const buildRequest = (config: HttpProbeConfig, trace: CheckTraceContext) => {
 				// Ours first so a configured user-agent wins; traceparent last so it always matches the span.
