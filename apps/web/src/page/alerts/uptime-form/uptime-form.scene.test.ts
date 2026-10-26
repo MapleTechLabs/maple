@@ -119,6 +119,38 @@ describe("uptime monitor form", () => {
 		)
 	})
 
+	test("a test result is dropped once the URL changes, even one still in flight", () => {
+		const passed = Message.CompletedTest({
+			result: Result.succeed({
+				object: "uptime_monitor.test_result",
+				ok: true,
+				status_code: 200,
+				duration_ms: 96,
+				failed_assertion: null,
+				error: null,
+				headers: {},
+				body_prefix: null,
+				body_truncated: false,
+			}),
+		})
+		const editUrl = Message.ChangedText({ field: "url", value: "https://api.acme.dev/other" })
+		const tested = [Message.ClickedTest(), passed].reduce(
+			(model, message) => pageUpdate(model, message).model,
+			withUrl("https://api.acme.dev/health"),
+		)
+		expect(tested.testResult?.status_code).toBe(200)
+		expect(pageUpdate(tested, editUrl).model.testResult).toBeNull()
+
+		const inFlight = [Message.ClickedTest(), editUrl, passed].reduce(
+			(model, message) => pageUpdate(model, message).model,
+			withUrl("https://api.acme.dev/health"),
+		)
+		expect({ result: inFlight.testResult, isTesting: inFlight.isTesting }).toEqual({
+			result: null,
+			isTesting: false,
+		})
+	})
+
 	test("a failed test names the first failing check", () => {
 		const done = pageUpdate(
 			pageUpdate(withUrl("https://api.acme.dev/health"), Message.ClickedTest()).model,
