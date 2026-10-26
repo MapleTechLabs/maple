@@ -128,7 +128,11 @@ export class UptimeCheckReport extends Schema.Class<UptimeCheckReport>("UptimeCh
 	error: Schema.NullOr(Schema.String),
 	traceId: Schema.NullOr(Schema.String),
 }) {}
-export const UptimeCheckReportList = Schema.Array(UptimeCheckReport)
+/** Most reports one `/api/internal/uptime-results` POST may carry; the scraper batches to it. */
+export const UPTIME_CHECK_REPORT_BATCH_MAX = 1_000
+export const UptimeCheckReportList = Schema.Array(UptimeCheckReport).check(
+	Schema.isMaxLength(UPTIME_CHECK_REPORT_BATCH_MAX),
+)
 
 // --- Assertions ---
 
