@@ -113,9 +113,7 @@
 			"@alchemy.run/cloudflare": "2.0.0-beta.84",
 			"@alchemy.run/neon": "2.0.0-beta.84",
 			"@alchemy.run/planetscale": "2.0.0-beta.84",
-			"@alchemy.run/gcp": "2.0.0-beta.84",
 			"@alchemy.run/domain": "2.0.0-beta.84",
-			"@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
 			"@alchemy.run/cloudflare-runtime": "2.0.0-beta.84"
 		},
 		"charts": {
