@@ -4,6 +4,7 @@ import {
 	AI_CREDITS_MARKUP_PERCENT,
 	OPENROUTER_BYOK_ADDON_ID,
 	OPENROUTER_BYOK_FEATURE_ID,
+	UPTIME_MONITORS_FEATURE_ID,
 } from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
 
@@ -71,6 +72,15 @@ export const aiOutputTokens = feature({
 	name: "AI Output Tokens",
 	type: "metered",
 	consumable: true,
+})
+
+// Uptime monitors an org has: continuous use, tracked +1 on create and -1 on delete
+// (`UptimeMonitorAllowance` in packages/backend/src/services/uptime).
+export const uptimeMonitors = feature({
+	id: UPTIME_MONITORS_FEATURE_ID,
+	name: "Uptime Monitors",
+	type: "metered",
+	consumable: false,
 })
 
 export const bringYourOwnCloud = feature({
@@ -145,6 +155,11 @@ export const startup = plan({
 				billingMethod: "usage_based",
 				interval: "month",
 			},
+		},
+		{
+			// A hard allowance: no price, so the 11th monitor is refused rather than billed.
+			featureId: UPTIME_MONITORS_FEATURE_ID,
+			included: 10,
 		},
 		{
 			// One credit is one dollar of model spend after markup.
