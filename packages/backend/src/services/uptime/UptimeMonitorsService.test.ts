@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Option, Ref, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Ref, Result, Schema } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
-import { BillingCustomer, OrgId, UptimeMonitorLimitReachedError, UserId } from "@maple/domain/http"
+import { BillingCustomer, OrgId, UserId } from "@maple/domain/http"
 import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
 import { UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
@@ -315,6 +315,86 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("skips a monitor whose stored state no longer decodes and records the rest", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const healthy = yield* createHttp("healthy", { failuresToDown: 1 })
+			const corrupt = yield* createHttp("corrupt", { failuresToDown: 1 })
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE uptime_monitor_states SET recent_json = '{"not":"an array"}'::jsonb WHERE monitor_id = $1`,
+					[corrupt.id],
+				),
+			)
+			const applied = yield* service.recordChecks([
+				report(corrupt.id, 1_000, false),
+				report(healthy.id, 1_000, false),
+			])
+			assert.strictEqual(applied, 1)
+			assert.strictEqual((yield* service.get(ORG, healthy.id)).state.status, "down")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("drops results read before a pause and resume instead of overwriting the resumed state", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			// Counts down per `Database.execute`; the call that sees 1 pauses and resumes first.
+			const countdown = yield* Ref.make(0)
+			const target = yield* Ref.make("")
+			const database = Layer.effect(
+				Database,
+				Effect.gen(function* () {
+					const inner = yield* Database
+					return {
+						execute: (fn) =>
+							Ref.modify(countdown, (n) => [n, n > 0 ? n - 1 : n] as const).pipe(
+								Effect.flatMap((n) =>
+									n === 1
+										? Ref.get(target).pipe(
+												Effect.flatMap((id) =>
+													Effect.promise(() =>
+														executeSql(
+															testDb,
+															`UPDATE uptime_monitor_states SET status = 'pending', consecutive_failures = 0,
+																consecutive_successes = 0, updated_at = '1970-01-01T00:00:05.000Z'
+															WHERE monitor_id = $1`,
+															[id],
+														),
+													),
+												),
+											)
+										: Effect.void,
+								),
+								Effect.andThen(inner.execute(fn)),
+							),
+					}
+				}),
+			).pipe(Layer.provide(testDb.layer))
+
+			const program = Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("API", { failuresToDown: 2 })
+				yield* service.recordChecks([report(monitor.id, 1_000, false)])
+				yield* Ref.set(target, monitor.id)
+				// The read sees one failure; the resume lands before the write.
+				yield* Ref.set(countdown, 2)
+				assert.strictEqual(yield* service.recordChecks([report(monitor.id, 2_000, false)]), 0)
+				const resumed = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(resumed.state.status, "pending")
+				assert.strictEqual(resumed.state.consecutiveFailures, 0)
+
+				// The next batch reads the resumed state and applies normally.
+				assert.strictEqual(yield* service.recordChecks([report(monitor.id, 3_000, false)]), 1)
+				const after = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(after.state.status, "pending")
+				assert.strictEqual(after.state.consecutiveFailures, 1)
+			})
+			yield* program.pipe(Effect.provide(makeLayer(testDb, { database })))
+		})
+	})
+
 	it.effect("records heartbeat pings by token", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -353,39 +433,65 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("checks the allowance with the org's monitor count and meters creates and deletes", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const seen = yield* Ref.make<ReadonlyArray<string>>([])
-			const allowance: UptimeMonitorAllowanceApi = {
-				ensureCanCreate: (_orgId, existing) =>
-					Ref.update(seen, (calls) => [...calls, `check:${existing}`]).pipe(
-						Effect.andThen(
-							existing >= 1
-								? Effect.fail(
-										new UptimeMonitorLimitReachedError({ message: "limit", limit: 1 }),
-									)
-								: Effect.void,
+	it.effect(
+		"checks the plan's limit against the org's monitor count and meters creates and deletes",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const seen = yield* Ref.make<ReadonlyArray<string>>([])
+				const allowance: UptimeMonitorAllowanceApi = {
+					limit: () =>
+						Ref.update(seen, (calls) => [...calls, "limit"]).pipe(Effect.as(Option.some(1))),
+					track: (_orgId, _monitorId, delta) =>
+						Ref.update(seen, (calls) => [...calls, `track:${delta}`]),
+				}
+				const program = Effect.gen(function* () {
+					const service = yield* UptimeMonitorsService
+					const created = yield* createHttp("one")
+					const refused = yield* Effect.flip(createHttp("two"))
+					assert.strictEqual(refused._tag, "@maple/http/errors/UptimeMonitorLimitReachedError")
+					assert.strictEqual((yield* service.list(ORG)).length, 1)
+					// The refused create rolled back its backing rule with it.
+					const rules = yield* Effect.promise(() =>
+						queryFirstRow<{ readonly n: number }>(
+							testDb,
+							"SELECT count(*)::int AS n FROM alert_rules WHERE org_id = $1",
+							[ORG],
 						),
+					)
+					assert.strictEqual(rules?.n, 1)
+					yield* service.delete(ORG, created.id)
+				})
+				yield* program.pipe(
+					Effect.provide(
+						makeLayer(testDb, { allowance: Layer.succeed(UptimeMonitorAllowance, allowance) }),
 					),
-				track: (_orgId, _monitorId, delta) =>
-					Ref.update(seen, (calls) => [...calls, `track:${delta}`]),
-			}
-			const program = Effect.gen(function* () {
-				const service = yield* UptimeMonitorsService
-				const created = yield* createHttp("one")
-				const refused = yield* Effect.flip(createHttp("two"))
-				assert.strictEqual(refused._tag, "@maple/http/errors/UptimeMonitorLimitReachedError")
-				assert.strictEqual((yield* service.list(ORG)).length, 1)
-				yield* service.delete(ORG, created.id)
+				)
+				assert.deepStrictEqual(yield* Ref.get(seen), ["limit", "track:1", "limit", "track:-1"])
 			})
-			yield* program.pipe(
-				Effect.provide(
-					makeLayer(testDb, { allowance: Layer.succeed(UptimeMonitorAllowance, allowance) }),
-				),
-			)
-			assert.deepStrictEqual(yield* Ref.get(seen), ["check:0", "track:1", "check:1", "track:-1"])
+		},
+	)
+
+	it.effect("lets only one of two concurrent creates take the plan's last slot", () => {
+		const testDb = createTestDb(trackedDbs)
+		const allowance = Layer.succeed(UptimeMonitorAllowance, {
+			limit: () => Effect.succeed(Option.some(1)),
+			track: () => Effect.void,
 		})
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const results = yield* Effect.all(
+				[Effect.result(createHttp("first")), Effect.result(createHttp("second"))],
+				{ concurrency: 2 },
+			)
+			assert.strictEqual(results.filter(Result.isSuccess).length, 1)
+			const refused = results.find(Result.isFailure)
+			assert.strictEqual(
+				refused === undefined ? null : refused.failure._tag,
+				"@maple/http/errors/UptimeMonitorLimitReachedError",
+			)
+			assert.strictEqual((yield* service.list(ORG)).length, 1)
+		}).pipe(Effect.provide(makeLayer(testDb, { allowance })))
 	})
 
 	it.effect("tests an HTTP config against its assertions", () => {

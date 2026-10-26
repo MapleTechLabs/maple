@@ -64,13 +64,15 @@ const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
 	updated_at: isoTimestamp(monitor.updatedAt),
 })
 
-/** Header values may be credentials: callers who cannot write see the names only. */
+/** Header values and the heartbeat URL are credentials: callers who cannot write see neither. */
 const forReader = (monitor: V2UptimeMonitor, canWrite: boolean): V2UptimeMonitor => {
-	if (canWrite || monitor.config.type !== "http" || monitor.config.headers === undefined) return monitor
+	if (canWrite) return monitor
+	const readable = { ...monitor, heartbeat_url: null }
+	if (readable.config.type !== "http" || readable.config.headers === undefined) return readable
 	const headers = Object.fromEntries(
-		Object.keys(monitor.config.headers).map((name) => [name, UPTIME_REDACTED_HEADER_VALUE]),
+		Object.keys(readable.config.headers).map((name) => [name, UPTIME_REDACTED_HEADER_VALUE]),
 	)
-	return { ...monitor, config: { ...monitor.config, headers } }
+	return { ...readable, config: { ...readable.config, headers } }
 }
 
 const monitorAuditDiff = auditDiff({

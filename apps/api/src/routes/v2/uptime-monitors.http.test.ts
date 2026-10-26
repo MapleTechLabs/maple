@@ -199,6 +199,20 @@ describe("v2 uptime monitors", () => {
 			})
 			expect(created.status).toBe(200)
 			expect(created.body.heartbeat_url).toMatch(/^https:\/\/api\.maple\.test\/hb\/[A-Za-z0-9_-]{22,}$/)
+
+			// The ping URL is the credential: a member reads the monitor without it.
+			const { secret: member } = await harness.bootstrapKey({
+				source: "maple_cli",
+				roles: ["org:member"],
+				deviceName: "laptop",
+			})
+			const memberRead = await harness.request("GET", `/v2/uptime_monitors/${created.body.id}`, member)
+			expect(memberRead.status).toBe(200)
+			expect(memberRead.body.heartbeat_url).toBeNull()
+			const memberList = await harness.request("GET", "/v2/uptime_monitors", member)
+			expect(memberList.body.data[0].heartbeat_url).toBeNull()
+			const adminRead = await harness.request("GET", `/v2/uptime_monitors/${created.body.id}`, token)
+			expect(adminRead.body.heartbeat_url).toBe(created.body.heartbeat_url)
 		} finally {
 			await harness.dispose()
 		}
