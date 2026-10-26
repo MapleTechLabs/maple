@@ -34,6 +34,7 @@ import { PlanetScaleWebhookRouter } from "@/routes/webhooks/planetscale.http"
 import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
 import { HttpSessionReplaysInternalLive } from "@/routes/internal/session-replays.http"
 import { ScraperInternalRouter } from "@/routes/scraper-internal.http"
+import { UptimeHeartbeatRouter, UptimeInternalRouter } from "@/routes/uptime-internal.http"
 import { ChatCallbackRouter } from "@/routes/chat-integration.http"
 import { VcsWebhookRouter } from "@/routes/webhooks/vcs.http"
 import { AutumnWebhookRouter } from "@/routes/webhooks/autumn.http"
@@ -63,6 +64,7 @@ import { HttpV2InstrumentationRecommendationsLive } from "@/routes/v2/recommenda
 import { HttpV2AuditLogLive } from "@/routes/v2/audit-log.http"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { HttpV2ScrapeTargetsLive } from "@/routes/v2/scrape-targets.http"
+import { HttpV2UptimeMonitorsLive } from "@/routes/v2/uptime-monitors.http"
 import { HttpV2InstrumentationAuditLive } from "@/routes/v2/setup-audit.http"
 import { HttpV2OnboardingChecklistLive } from "@/routes/v2/onboarding-checklist.http"
 import { HttpV2SupportChannelLive } from "@/routes/v2/support-channel.http"
@@ -178,6 +180,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AttributeMappingsLive,
 			HttpV2AuditLogLive,
 			HttpV2ScrapeTargetsLive,
+			HttpV2UptimeMonitorsLive,
 			HttpV2InstrumentationRecommendationsLive,
 			HttpV2InstrumentationAuditLive,
 			HttpV2OnboardingChecklistLive,
@@ -239,6 +242,8 @@ const RawRoutes = rawRoutes(
 		OAuthDiscoveryRouter,
 		PlanetScaleWebhookRouter,
 		ScraperInternalRouter,
+		UptimeInternalRouter,
+		UptimeHeartbeatRouter,
 		VcsWebhookRouter,
 		ClerkWebhookRouter,
 		AutumnWebhookRouter,

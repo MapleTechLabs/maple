@@ -63,6 +63,8 @@ import {
 	ScrapeTargets,
 	Sources,
 	SupabaseConnections,
+	UptimeMonitorStates,
+	UptimeMonitors,
 	SupabaseProjectInsights,
 	SupabaseProjects,
 	VcsCommits,
@@ -131,6 +133,10 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	Sources,
 	OrgClickHouseSettings,
 	ScrapeTargets,
+	// A surviving monitor keeps Maple probing the org's endpoints, and its heartbeat token
+	// keeps accepting pings. The state rows also go with the monitor by foreign key.
+	UptimeMonitorStates,
+	UptimeMonitors,
 	OAuthConnections,
 	OAuthAuthStates,
 	// The binding that makes a chat workspace's members act as the org. Deleting

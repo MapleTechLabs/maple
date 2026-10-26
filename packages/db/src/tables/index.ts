@@ -74,6 +74,7 @@ import {
 } from "./security-audit"
 import { SupabaseConnections, SupabaseProjectInsights, SupabaseProjects } from "./supabase"
 import { OrgSupportChannels } from "./support-channels"
+import { UptimeMonitorStates, UptimeMonitors } from "./uptime"
 import {
 	VcsInstallations,
 	VcsRepositories,
@@ -130,6 +131,7 @@ export * from "./security-audit"
 export * from "./sources"
 export * from "./supabase"
 export * from "./support-channels"
+export * from "./uptime"
 export * from "./vcs"
 
 /** Every table the application database has, for schema checks and DDL. */
@@ -213,6 +215,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	SupabaseProjects,
 	SupabaseProjectInsights,
 	OrgSupportChannels,
+	UptimeMonitors,
+	UptimeMonitorStates,
 	VcsInstallations,
 	VcsRepositories,
 	VcsCommits,

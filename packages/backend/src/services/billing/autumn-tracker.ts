@@ -275,3 +275,29 @@ export const trackSecurityAuditCharge = Effect.fn("AutumnTracker.trackSecurityAu
 		},
 	])
 })
+
+export interface TrackFeatureUsageOptions {
+	readonly orgId: string
+	readonly featureId: string
+	/** Negative for continuous-use features giving a unit back, e.g. a deleted monitor. */
+	readonly value: number
+	readonly idempotencyKey: string
+}
+
+/** A plain track of `value` units on a metered feature. */
+export const trackFeatureUsage = Effect.fn("AutumnTracker.trackFeatureUsage")(function* ({
+	orgId,
+	featureId,
+	value,
+	idempotencyKey,
+}: TrackFeatureUsageOptions) {
+	if (value === 0) return
+	yield* postAll(orgId, [
+		{
+			path: AUTUMN_TRACK_PATH,
+			label: featureId,
+			idempotencyKey,
+			body: { customer_id: orgId, feature_id: featureId, value, idempotency_key: idempotencyKey },
+		},
+	])
+})

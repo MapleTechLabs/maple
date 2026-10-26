@@ -13994,6 +13994,10 @@
       "name": "Scrape Targets"
     },
     {
+      "description": "Checks Maple runs from outside your infrastructure (HTTP, TCP, DNS) and heartbeats your jobs send. Each check is a span in your traces; a monitor goes down after enough failures in a row.",
+      "name": "Uptime Monitors"
+    },
+    {
       "description": "Automatically detected instrumentation improvements — attribute renames toward canonical semantic conventions, double emissions, and naming violations. List them, and dismiss or reopen individual recommendations.",
       "name": "Instrumentation Recommendations"
     },

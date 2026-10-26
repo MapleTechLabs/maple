@@ -25,6 +25,7 @@ import { V2OrganizationApiGroup } from "./organization"
 import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
 import { V2SessionReplaysApiGroup } from "./session-replays"
+import { V2UptimeMonitorsApiGroup } from "./uptime-monitors"
 import { V2InstrumentationAuditApiGroup } from "./setup-audit"
 import { V2SupportChannelApiGroup } from "./support-channel"
 import { V2TelemetrySignalsApiGroup } from "./telemetry-signals"
@@ -109,6 +110,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AttributeMappingsApiGroup)
 	.add(V2AuditLogApiGroup)
 	.add(V2ScrapeTargetsApiGroup)
+	.add(V2UptimeMonitorsApiGroup)
 	.add(V2InstrumentationRecommendationsApiGroup)
 	.add(V2InstrumentationAuditApiGroup)
 	.add(V2TelemetrySignalsApiGroup)
