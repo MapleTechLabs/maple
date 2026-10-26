@@ -22,7 +22,7 @@ import {
 	coverageId,
 	type Finding,
 } from "@maple/security-audit"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import {
@@ -945,7 +945,7 @@ interface NativeStep {
  * computed specifier keeps the typecheck out of alchemy's sources.
  */
 const BRIDGE = new URL(
-	"../../../../node_modules/alchemy/src/Cloudflare/Workflows/WorkflowBridge.ts",
+	"../../../../node_modules/@alchemy.run/cloudflare/src/Workflows/WorkflowBridge.ts",
 	import.meta.url,
 ).href
 const loadBridge = Effect.promise(

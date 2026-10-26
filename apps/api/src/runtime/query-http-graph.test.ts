@@ -1,7 +1,7 @@
 import { makeLoginSelfHosted } from "@maple/auth"
 import { describe, expect, it } from "vitest"
 import { Context, Effect, Layer, Option, Redacted, Scope } from "effect"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
 import { buildApp, makeAppGraphs } from "../worker/http"
 import { offlinePorts } from "../../test/offline-http-ports"

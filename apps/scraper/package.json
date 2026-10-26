@@ -10,6 +10,7 @@
 		"bundle": "bun build src/main.ts --target=bun --outfile dist/scraper.js"
 	},
 	"dependencies": {
+		"@alchemy.run/aws": "catalog:alchemy",
 		"@effect/platform-bun": "catalog:effect",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/domain": "workspace:*",

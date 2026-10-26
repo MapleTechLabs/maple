@@ -9,6 +9,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@alchemy.run/cloudflare": "catalog:alchemy",
 		"@floating-ui/dom": "1.8.0",
 		"@foldkit/ui": "0.169.0",
 		"@fontsource-variable/geist": "^5.3.0",

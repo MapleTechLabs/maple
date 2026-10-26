@@ -3,7 +3,7 @@
  * Worker init (`ref` via raw `host.bind`, as alchemy has no `env` form for an external config);
  * `declared` and `preview` bind from props via `mapleDbEnv`.
  */
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Stage } from "alchemy/Stage"
 import * as Effect from "effect/Effect"
 import type * as Option from "effect/Option"

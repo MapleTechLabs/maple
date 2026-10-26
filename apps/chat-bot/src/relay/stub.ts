@@ -6,7 +6,7 @@
  * on every frame, while everything the relay does is behind the object's own dynamic import.
  */
 import type { InboundEvent } from "@maple/chat-platform"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { Effect } from "effect"
 
 /** The relay's RPC surface, as an alchemy Effect stub sees it. */

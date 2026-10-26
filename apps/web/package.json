@@ -11,6 +11,7 @@
 		"og:fonts": "bun scripts/build-og-fonts.ts"
 	},
 	"dependencies": {
+		"@alchemy.run/cloudflare": "catalog:alchemy",
 		"@clerk/themes": "^2.4.57",
 		"@effect/platform-browser": "4.0.5",
 		"@floating-ui/dom": "1.8.0",

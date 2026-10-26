@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { Effect } from "effect"
 
 /** Retries and timeout for one step, as Cloudflare's step API takes them. */
