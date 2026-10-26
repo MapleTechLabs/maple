@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Exit, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	appendRecentCheck,
@@ -7,6 +7,7 @@ import {
 	firstFailedAssertion,
 	readJsonPath,
 	UPTIME_RECENT_LIMIT,
+	UptimeAssertion,
 	type UptimeHttpObservation,
 	uptimeHttpRequest,
 } from "./uptime"
@@ -85,6 +86,40 @@ describe("readJsonPath", () => {
 	it("walks objects and array indexes", () => {
 		expect(readJsonPath({ a: [{ b: 3 }] }, "a[0].b")).toEqual(Option.some(3))
 		expect(readJsonPath({ a: [] }, "a[2]")).toEqual(Option.none())
+	})
+
+	it("reads a present JSON null as a value, not as missing", () => {
+		expect(readJsonPath({ status: null }, "status")).toEqual(Option.some(null))
+		expect(readJsonPath({ a: [null] }, "a[0]")).toEqual(Option.some(null))
+		expect(readJsonPath({ a: [null] }, "a[1]")).toEqual(Option.none())
+		const body = (text: string) => observed({ body: text })
+		expect(
+			firstFailedAssertion(
+				[{ _tag: "json_path", path: "status", op: "exists" }],
+				body('{"status":null}'),
+			),
+		).toBeNull()
+		expect(
+			firstFailedAssertion(
+				[{ _tag: "json_path", path: "status", op: "equals", value: "null" }],
+				body('{"status":null}'),
+			),
+		).toBeNull()
+	})
+})
+
+describe("UptimeAssertion", () => {
+	const decode = Schema.decodeUnknownExit(UptimeAssertion)
+
+	it("requires a value for equals and contains, and none for exists", () => {
+		expect(Exit.isFailure(decode({ _tag: "json_path", path: "status", op: "equals" }))).toBe(true)
+		expect(Exit.isFailure(decode({ _tag: "header", name: "x-env", op: "equals" }))).toBe(true)
+		expect(Exit.isFailure(decode({ _tag: "header", name: "x-env", op: "contains", value: "" }))).toBe(
+			true,
+		)
+		expect(decode({ _tag: "header", name: "x-env", op: "exists" })).toEqual(
+			Exit.succeed({ _tag: "header", name: "x-env", op: "exists" }),
+		)
 	})
 })
 

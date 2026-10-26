@@ -42,8 +42,7 @@ describe("UptimeProber", () => {
 				const prober = yield* UptimeProber
 				return yield* prober.check(mkUptimeTarget())
 			}).pipe(
-				Effect.provide(proberLayer(exported)),
-				Effect.provide(tracer.layer),
+				Effect.provide(Layer.merge(proberLayer(exported), tracer.layer)),
 				Effect.provideService(
 					FetchHttpClient.Fetch,
 					stubFetch(recorded, () => new Response("", { status: 503 })),

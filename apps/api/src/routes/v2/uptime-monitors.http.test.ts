@@ -238,6 +238,24 @@ describe("v2 uptime monitors", () => {
 			})
 			expect(privateHost.status).toBe(400)
 
+			// `equals` without a value would compare against nothing.
+			const assertion = (extra: Record<string, unknown>) =>
+				harness.request("POST", "/v2/uptime_monitors", token, {
+					name: "health",
+					kind: "http",
+					config: {
+						type: "http",
+						url: "https://api.example.com/health",
+						assertions: [
+							extra.op === "contains"
+								? { type: "header", name: "x-env", ...extra }
+								: { type: "json_path", path: "status", ...extra },
+						],
+					},
+				})
+			expect((await assertion({ op: "equals" })).status).toBe(400)
+			expect((await assertion({ op: "contains", value: "" })).status).toBe(400)
+
 			const tcpTest = await harness.request("POST", "/v2/uptime_monitors/test", token, {
 				config: { type: "tcp", host: "db.example.com", port: 5432 },
 			})

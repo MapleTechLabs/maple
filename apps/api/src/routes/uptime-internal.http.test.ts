@@ -3,6 +3,7 @@ import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { IngestKeysResponse, IsoDateTimeString, OrgId, UserId } from "@maple/domain/http"
 import type { UptimeMonitorId } from "@maple/domain/primitives"
+import { UPTIME_CHECK_REPORT_BATCH_MAX } from "@maple/domain/uptime"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
@@ -174,6 +175,23 @@ describe("uptime internal routes", () => {
 				body: [{ monitorId: "nope" }],
 			})
 			expect(malformed.status).toBe(400)
+
+			// One more report than a batch may hold is refused whole, nothing applied.
+			const report = {
+				monitorId: http.id,
+				checkedAt: 1_600_000_000_000,
+				ok: false,
+				durationMs: 10,
+				statusCode: 503,
+				error: "Status 503, expected 2xx",
+				traceId: null,
+			}
+			const oversized = await harness.request("POST", "/api/internal/uptime-results", {
+				token: "sd-token",
+				body: Array.from({ length: UPTIME_CHECK_REPORT_BATCH_MAX + 1 }, () => report),
+			})
+			expect(oversized.status).toBe(400)
+			expect((await harness.run(getMonitor(http.id))).state.lastCheck).toBeNull()
 
 			const recorded = await harness.request("POST", "/api/internal/uptime-results", {
 				token: "sd-token",
