@@ -141,21 +141,24 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 					}
 
 					const { response, body, isTruncated, respondedInMs: durationMs } = result.success
-					// Past the read budget only a `contains` found in the prefix is a sure verdict.
-					if (isTruncated && assertions.some((assertion) => needsUnreadBody(assertion, body))) {
-						return failed(
-							durationMs,
-							"assertion",
-							`Response body is over ${MAX_ASSERTION_BODY_BYTES / 1024} KB, more than body checks read`,
-							response.status,
-						)
-					}
-					const failure = firstFailedAssertion(assertions, {
-						statusCode: response.status,
-						durationMs,
-						headers: { ...response.headers },
-						body,
-					})
+					// Past the read budget only a `contains` found in the prefix is a sure verdict; the
+					// assertions it can settle (status first) still report their own failure.
+					const unsettled = isTruncated
+						? assertions.filter((assertion) => needsUnreadBody(assertion, body))
+						: []
+					const failure =
+						firstFailedAssertion(
+							assertions.filter((assertion) => !unsettled.includes(assertion)),
+							{
+								statusCode: response.status,
+								durationMs,
+								headers: { ...response.headers },
+								body,
+							},
+						) ??
+						(unsettled.length > 0
+							? `Response body is over ${MAX_ASSERTION_BODY_BYTES / 1024} KB, more than body checks read`
+							: null)
 					return failure === null
 						? succeeded(durationMs, response.status)
 						: failed(durationMs, "assertion", failure, response.status)
