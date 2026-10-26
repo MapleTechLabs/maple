@@ -345,6 +345,9 @@ const omitExpected = (config: UptimeMonitorConfig): UptimeMonitorConfig => {
 	return rest
 }
 
+/** `https://api.acme.dev` from a URL; the raw string when it does not parse, so it never matches. */
+const originOf = (url: string): string => (URL.canParse(url) ? new URL(url).origin : url)
+
 /** An existing config with the given fields changed; undefined when none was given. */
 export const updateUptimeConfig = Effect.fnUntraced(function* (
 	current: UptimeMonitorConfig,
@@ -355,6 +358,17 @@ export const updateUptimeConfig = Effect.fnUntraced(function* (
 	if (!FIELD_KINDS.some(([field]) => fields[field] !== undefined)) return undefined
 	switch (current._tag) {
 		case "http":
+			// Stored header values (an Authorization, say) must not follow the check to another host.
+			if (
+				fields.url !== undefined &&
+				Object.keys(current.headers).length > 0 &&
+				originOf(fields.url) !== originOf(current.url)
+			) {
+				return yield* invalid(
+					"This check sends custom headers, so its URL can only move to another origin from the dashboard, where the header values are re-entered.",
+					"url",
+				)
+			}
 			return yield* decodeConfig(current._tag, {
 				...current,
 				...(fields.url === undefined ? undefined : { url: fields.url }),

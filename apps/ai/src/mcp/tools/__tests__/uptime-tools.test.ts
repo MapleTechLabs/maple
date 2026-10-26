@@ -354,6 +354,29 @@ describe("uptime monitor config and errors", () => {
 		})
 	})
 
+	it("never carries stored headers to a URL on another origin", async () => {
+		const current = {
+			_tag: "http" as const,
+			url: "https://api.acme.dev/health",
+			method: "GET" as const,
+			headers: { authorization: "Bearer secret" },
+			timeoutMs: 10000,
+			assertions: [{ _tag: "status" as const, op: "is" as const, value: "2xx" }],
+		}
+		const moved = await Effect.runPromise(
+			Effect.flip(updateUptimeConfig(current, { url: "https://evil.example.net/health" })),
+		)
+		expect(moved.message).toContain("only move to another origin from the dashboard")
+		const samePlace = await Effect.runPromise(
+			updateUptimeConfig(current, { url: "https://api.acme.dev/ready" }),
+		)
+		expect(samePlace).toMatchObject({ url: "https://api.acme.dev/ready", headers: current.headers })
+		const noHeaders = await Effect.runPromise(
+			updateUptimeConfig({ ...current, headers: {} }, { url: "https://status.acme.io/health" }),
+		)
+		expect(noHeaders).toMatchObject({ url: "https://status.acme.io/health" })
+	})
+
 	it("replaces an is_not status rule instead of adding a second status rule beside it", async () => {
 		const current = {
 			_tag: "http" as const,
