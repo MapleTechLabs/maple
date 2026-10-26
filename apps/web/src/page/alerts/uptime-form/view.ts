@@ -4,6 +4,7 @@ import type { Html } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
 import { icon, type IconName } from "../../../ui/icon"
+import { alert, alertDescription, alertTitle } from "../../../ui/alert"
 import { panel, panelBody, panelHeader } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
@@ -291,8 +292,10 @@ const kindSections = (h: H, model: Model): ReadonlyArray<Html> => {
 }
 
 const limitNotice = (h: H): Html =>
-	panel(h, { className: "border-destructive/50" }, [
-		h.p([h.Role("alert"), h.Class("px-4 py-3 text-sm")], [LIMIT_MESSAGE]),
+	alert(h, { variant: "warn" }, [
+		icon(h, "CircleWarningIcon"),
+		alertTitle(h, ["Uptime monitor limit reached"]),
+		alertDescription(h, [LIMIT_MESSAGE]),
 	])
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
