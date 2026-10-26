@@ -104,6 +104,23 @@ describe("sidebar collapse", () => {
 		)
 	})
 
+	test("⌘B snaps the rail without its width transition, and a click animates again", () => {
+		scene(
+			{ update, view },
+			given(signedIn()),
+			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
+			Subscription.emit(Message.PressedSidebarShortcut()),
+			Command.expectExact(SaveSidebarState({ isOpen: false })),
+			Command.resolve(SaveSidebarState, Message.CompletedSaveSidebarState()),
+			expect(sidebar).toHaveAttr("data-state", "collapsed"),
+			expect(sidebar).toHaveAttr("data-instant", ""),
+			click(toggle),
+			Command.resolve(SaveSidebarState, Message.CompletedSaveSidebarState()),
+			expect(sidebar).toHaveAttr("data-state", "expanded"),
+			expect(sidebar).not.toHaveAttr("data-instant"),
+		)
+	})
+
 	test("on the collapsed rail a row shows its title as a tooltip after the open delay", () => {
 		const settings = role("link", { name: "Settings" })
 		scene(
