@@ -261,8 +261,20 @@ describe("worst-case inputs", () => {
 
 describe("axisTickFormatter", () => {
 	it("prints every duration tick in the largest tick's unit at one precision", () => {
-		const format = axisTickFormatter("duration_ms", [0, 1_000])
-		expect([0, 200, 1_000].map(format)).toEqual(["0", "0.2s", "1.0s"])
+		const format = axisTickFormatter("duration_ms", [0, 1_600])
+		expect([0, 500, 1_500].map(format)).toEqual(["0", "0.5s", "1.5s"])
+	})
+
+	it("reads in milliseconds while the largest tick is under 1s, then in seconds", () => {
+		const under = [0, 800] as const
+		const underLabels = axisTickValues(under, 3).map(axisTickFormatter("duration_ms", under, 3))
+		expect(underLabels.every((label) => label === "0" || label.endsWith("ms"))).toBe(true)
+		const over = [0, 1_200] as const
+		expect(axisTickValues(over, 3).map(axisTickFormatter("duration_ms", over, 3))).toEqual([
+			"0",
+			"0.5s",
+			"1.0s",
+		])
 	})
 
 	it("prints whole-second steps without a decimal", () => {

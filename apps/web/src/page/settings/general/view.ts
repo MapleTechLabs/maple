@@ -195,7 +195,8 @@ const dangerZone = (h: H, model: Model, org: OrgInfo): Html => {
 					button(
 						h,
 						{
-							variant: "destructive-outline",
+							// Disabled reads neutral, so dim red text never passes for an active action.
+							variant: leave === "allowed" ? "destructive-outline" : "outline",
 							size: "sm",
 							isDisabled: leave !== "allowed",
 							attributes: [h.OnClick(Message.ClickedLeave())],

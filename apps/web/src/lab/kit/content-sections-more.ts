@@ -31,7 +31,7 @@ const SCROLL_ROWS = Array.from(
 )
 
 /** The chat transcript's user bubble shape (page/chat/kit/view-transcript.ts). */
-const USER_BUBBLE = "rounded-lg px-3.5 py-2.5 text-sm"
+const USER_BUBBLE = "rounded-lg px-3.5 py-2.5 font-prose text-sm"
 
 const assistantMessage = <M>(h: HtmlBuilder<M>): Html =>
 	message(h, {}, [
@@ -40,7 +40,11 @@ const assistantMessage = <M>(h: HtmlBuilder<M>): Html =>
 			messageHeader(h, ["Maple"]),
 			bubbleGroup(h, [
 				bubble(h, { variant: "ghost" }, [
-					bubbleContent(h, ["payment-svc errors rose to 4.2% after the 11:40 deploy."], "text-sm"),
+					bubbleContent(
+						h,
+						["payment-svc errors rose to 4.2% after the 11:40 deploy."],
+						"font-prose text-sm",
+					),
 				]),
 			]),
 		]),

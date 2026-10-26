@@ -77,9 +77,10 @@ const tiles = (h: H): ReadonlyArray<Html> => [
 			h.div(
 				[h.Class("mt-auto flex min-w-0 items-center justify-between gap-2")],
 				[
+					// One line, so the chevron sits on the same row as the siblings' chips.
 					h.p(
-						[h.Class("font-prose text-muted-foreground text-xs")],
-						["Begin with the defaults and pick a signal yourself."],
+						[h.Class("min-w-0 truncate font-prose text-muted-foreground text-xs")],
+						["Start from defaults and choose a signal."],
 					),
 					chevron(h),
 				],
@@ -138,6 +139,8 @@ const overlay = (h: H, templates: Model["templates"]): Html =>
 							{
 								variant: "ghost",
 								size: "sm",
+								// The negative margin lines the label up with the tile grid's right edge.
+								className: "-mr-[calc(--spacing(2.5)-1px)]",
 								attributes: [h.OnClick(Message.ClickedSkipTemplates())],
 							},
 							["Skip and use defaults"],

@@ -431,7 +431,7 @@ export function axisTickValues(
 
 /**
  * Tick labels for a y axis: every tick in the largest tick's unit, at one shared precision
- * derived from the tick step, so an axis reads "0, 0.5s, 1.0s" or "0, 1s, 2s" instead of mixing "0μs",
+ * derived from the tick step, so an axis reads "0, 250ms, 500ms" or "0, 1s, 2s" instead of mixing "0μs",
  * "500.0ms" and "1.00s". Units without an axis rule fall back to `formatValueByUnit`.
  */
 export function axisTickFormatter(
@@ -447,7 +447,10 @@ export function axisTickFormatter(
 	const step = axisStep(domain, count, options?.max)
 	const toMs = unit === undefined ? undefined : DURATION_TO_MS.get(unit)
 	if (toMs !== undefined) {
-		const largest = Math.max(Math.abs(domain[0]), Math.abs(domain[1])) * toMs
+		// The unit follows the largest tick drawn, not the domain top, so an axis that stops
+		// under 1s reads in ms ("0, 250ms, 500ms").
+		const ticks = axisTickValues(domain, count, options)
+		const largest = Math.max(...ticks.map((t) => Math.abs(t))) * toMs
 		const axisUnit = DURATION_AXIS_UNITS.find((u) => largest < u.below) ?? DURATION_AXIS_UNITS[4]
 		const decimals = stepDecimals((step * toMs) / axisUnit.ms, 3)
 		return (value) =>

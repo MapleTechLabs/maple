@@ -31,15 +31,20 @@ const UNREACHABLE = /failed to fetch|networkerror|load failed|network request fa
 const writeFailureCause = (error: string): string =>
 	UNREACHABLE.test(error) ? "Couldn't reach Maple" : error.replace(/[.\s]+$/, "")
 
+/** Said on the list's failure card and on the disabled buttons when both are down. */
+const LIST_FAILED_READ_ONLY = "Creating and importing are off until Maple reconnects."
+
 /** Why writes are off, or `null` while they are on. */
 const readOnlyReason = (model: Model): string | null =>
-	model.persistenceError !== null
-		? UNREACHABLE.test(model.persistenceError)
-			? "Couldn't reach Maple. Editing is off until it reconnects."
-			: `${writeFailureCause(model.persistenceError)}. Editing is off until it recovers.`
-		: isDegraded(model)
-			? "Live sync is unavailable. Editing is off until it reconnects."
-			: null
+	model.persistenceError === null && !isDegraded(model)
+		? null
+		: isLoadFailed(model)
+			? LIST_FAILED_READ_ONLY
+			: model.persistenceError === null
+				? "Live sync is unavailable. Editing is off until it reconnects."
+				: UNREACHABLE.test(model.persistenceError)
+					? "Couldn't reach Maple. Editing is off until it reconnects."
+					: `${writeFailureCause(model.persistenceError)}. Editing is off until it recovers.`
 
 /** Browse templates, Import (the hidden file input) and Create dashboard. */
 const actions = (h: H, reason: string | null): Html =>
@@ -100,20 +105,15 @@ const actions = (h: H, reason: string | null): Html =>
 	)
 
 /** Pinned with the header: it explains the disabled buttons above it. When the list failed too,
- * its error state already says the dashboards are safe, so the banner does not repeat it. */
-/** The stored write error, or "Couldn't reach Maple" when the write never left the browser. */
+ * its error state already explains the outage, so the banner is dropped. */
 const persistenceBanner = (h: H, error: string | null, isListFailed: boolean): Html | undefined => {
-	if (error === null) return undefined
+	if (error === null || isListFailed) return undefined
 	const cause = UNREACHABLE.test(error)
 		? "Couldn't reach Maple, so editing, import and delete are off until it reconnects."
 		: `${writeFailureCause(error)}. Editing, import and delete are off until it recovers.`
 	return alert(h, { variant: "crit", size: "sm", className: "mb-3" }, [
 		icon(h, "CircleWarningIcon", { size: 14 }),
-		alertDescription(
-			h,
-			[isListFailed ? cause : `${cause} Your dashboards are safe and still readable.`],
-			TONE_TEXT.crit,
-		),
+		alertDescription(h, [`${cause} Your dashboards are safe and still readable.`], TONE_TEXT.crit),
 	])
 }
 
@@ -128,8 +128,13 @@ const LIST_LOAD_FAILURE: LoadFailure = {
 	recovery: "retry",
 }
 
-const listLoadError = (h: H): Html =>
-	errorState(h, { failure: LIST_LOAD_FAILURE, onRetry: Message.ClickedRetrySync(), className: "min-h-64" })
+const listLoadError = (h: H, isReadOnly: boolean): Html =>
+	errorState(h, {
+		failure: LIST_LOAD_FAILURE,
+		onRetry: Message.ClickedRetrySync(),
+		note: isReadOnly ? LIST_FAILED_READ_ONLY : undefined,
+		className: "min-h-64",
+	})
 
 /** `SyncDegradedBanner`: the rows are a frozen HTTP snapshot and writes are off. */
 const degradedBanner = (h: H): Html =>
@@ -172,16 +177,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					),
 				]
 			: []
+	const reason = readOnlyReason(model)
 	const title = h.div([], [h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], ["Dashboards"]), ...summary])
 	return dashboardPage(
 		h,
 		{
 			titleContent: title,
-			actions: actions(h, readOnlyReason(model)),
+			actions: actions(h, reason),
 			sticky: persistenceBanner(h, model.persistenceError, isLoadFailed(model)),
 		},
 		isLoadFailed(model)
-			? [listLoadError(h)]
+			? [listLoadError(h, reason !== null)]
 			: [
 					...(isDegraded(model) ? [degradedBanner(h)] : []),
 					isReady && listed !== null && model.nowMs !== null

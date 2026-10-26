@@ -361,6 +361,14 @@ const groupBlock = (
 	]
 }
 
+/** The tab's one-line explanation above the list. The gate and the failure card go without it,
+ * so the failure lines up with the other Security tabs. */
+const findingsIntro = (h: H): Html =>
+	h.p(
+		[h.Class("-mb-3 font-prose text-xs text-muted-foreground")],
+		["Each finding is tracked by its fingerprint from run to run."],
+	)
+
 export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 	const clock: Clock = { nowMs: model.nowMs, timeZone }
 	const state = findingsStateOf(model)
@@ -422,10 +430,7 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 							),
 						])
 	return [
-		h.p(
-			[h.Class("-mb-3 font-prose text-xs text-muted-foreground")],
-			["Each finding is tracked by its fingerprint from run to run."],
-		),
+		findingsIntro(h),
 		h.section(
 			[h.AriaLabel("Findings"), h.Class("overflow-hidden rounded-md border bg-card")],
 			[

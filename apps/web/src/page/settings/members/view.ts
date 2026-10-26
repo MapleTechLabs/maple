@@ -34,7 +34,7 @@ const ROLE_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = [
 	{ _tag: "Item", item: { value: "org:admin", label: "Admin" } },
 ]
 
-/** `isInset`: the column also holds role selects, so plain values and the header sit at their text inset. */
+/** `isInset`: the members column holds role selects, so both tables put values and headers at their text inset. */
 const roleText = (h: H, role: string, isInset: boolean): Html =>
 	h.span([h.Class(cn("text-xs text-foreground", isInset && "px-2.5"))], [orgRoleLabel(role)])
 
@@ -311,7 +311,7 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 					],
 				),
 			]),
-			tableCell(h, [roleText(h, invitation.role, false)]),
+			tableCell(h, [roleText(h, invitation.role, model.isAdmin)]),
 			tableCell(
 				h,
 				[formatRelativeTime(invitation.createdAtMs, inputs.nowMs)],
@@ -371,7 +371,7 @@ const invitationsSection = (h: H, model: Model, inputs: Inputs): ReadonlyArray<H
 					tableHeader(h, [
 						tableRow(h, [
 							tableHead(h, ["Email"]),
-							roleHead(h, false),
+							roleHead(h, model.isAdmin),
 							tableHead(h, ["Invited"], cn(COLUMN.date, dateAlign(model.isAdmin))),
 							...(model.isAdmin ? [tableHead(h, [], COLUMN.actions)] : []),
 						]),

@@ -59,11 +59,11 @@ const attr = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>>) =
 	Object.entries(entries).map(([name, value]) => h.Attribute(name, value))
 
 /** The shared 200x56 box: two faint rails the signal runs between. */
-const glyphFrame = <M>(h: HtmlBuilder<M>, isCompact: boolean, children: ReadonlyArray<Html>): Html =>
+const glyphFrame = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.svg(
 		attr(h, {
-			width: isCompact ? "64" : "176",
-			height: isCompact ? "18" : "50",
+			width: "176",
+			height: "50",
 			viewBox: "0 0 200 56",
 			fill: "none",
 			"aria-hidden": "true",
@@ -97,8 +97,8 @@ const glyphFrame = <M>(h: HtmlBuilder<M>, isCompact: boolean, children: Readonly
 	)
 
 /** `DroppedSignalGlyph`: a signal line that cuts out, the break, and a dashed trail. */
-const droppedSignalGlyph = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
-	glyphFrame(h, isCompact, [
+const droppedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
+	glyphFrame(h, [
 		h.polyline(
 			attr(h, {
 				points: "6,32 20,30 32,33 44,28 56,31 68,27 80,31 92,29 104,33 116,30",
@@ -128,8 +128,8 @@ const droppedSignalGlyph = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
 	])
 
 /** `NarrowedSignalGlyph`: scattered lines funnelled into one, the request needs narrowing. */
-const narrowedSignalGlyph = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
-	glyphFrame(h, isCompact, [
+const narrowedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
+	glyphFrame(h, [
 		...["17", "22.5", "28", "33.5", "39"].map((y) =>
 			h.line(
 				attr(h, {
@@ -172,8 +172,8 @@ const narrowedSignalGlyph = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
 	])
 
 /** `LockedSignalGlyph`: a signal line that stops at a lock, with no trail past it. */
-const lockedSignalGlyph = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
-	glyphFrame(h, isCompact, [
+const lockedSignalGlyph = <M>(h: HtmlBuilder<M>): Html =>
+	glyphFrame(h, [
 		h.polyline(
 			attr(h, {
 				points: "6,32 20,30 32,33 44,28 56,31 68,27 80,31",
@@ -219,16 +219,25 @@ const lockedSignalGlyph = <M>(h: HtmlBuilder<M>, isCompact: boolean): Html =>
 		),
 	])
 
-const glyphFor = <M>(h: HtmlBuilder<M>, kind: FailureKind, isCompact: boolean): Html =>
+const glyphFor = <M>(h: HtmlBuilder<M>, kind: FailureKind): Html =>
 	kind === "access"
-		? lockedSignalGlyph(h, isCompact)
+		? lockedSignalGlyph(h)
 		: kind === "fixable"
-			? narrowedSignalGlyph(h, isCompact)
-			: droppedSignalGlyph(h, isCompact)
+			? narrowedSignalGlyph(h)
+			: droppedSignalGlyph(h)
 
-/** The inline variant's 12px marks for `fixable` (a funnel) and `access` (a lock). */
-const funnelTick = <M>(h: HtmlBuilder<M>): Html =>
-	h.svg(attr(h, { width: "12", height: "12", viewBox: "0 0 12 12", fill: "none", "aria-hidden": "true" }), [
+const tickAttributes = <M>(h: HtmlBuilder<M>, size: number) =>
+	attr(h, {
+		width: `${size}`,
+		height: `${size}`,
+		viewBox: "0 0 12 12",
+		fill: "none",
+		"aria-hidden": "true",
+	})
+
+/** The inline and row variants' small marks for `fixable` (a funnel) and `access` (a lock). */
+const funnelTick = <M>(h: HtmlBuilder<M>, size: number): Html =>
+	h.svg(tickAttributes(h, size), [
 		h.path(
 			attr(h, {
 				d: "M1.5 2.5h9L7 6.5v3l-2 1v-4z",
@@ -239,8 +248,8 @@ const funnelTick = <M>(h: HtmlBuilder<M>): Html =>
 		),
 	])
 
-const lockTick = <M>(h: HtmlBuilder<M>): Html =>
-	h.svg(attr(h, { width: "12", height: "12", viewBox: "0 0 12 12", fill: "none", "aria-hidden": "true" }), [
+const lockTick = <M>(h: HtmlBuilder<M>, size: number): Html =>
+	h.svg(tickAttributes(h, size), [
 		h.path(attr(h, { d: "M4 5.5V4a2 2 0 0 1 4 0v1.5", stroke: "currentColor", "stroke-width": "1.25" })),
 		h.rect(
 			attr(h, {
@@ -261,9 +270,9 @@ const INLINE_TINT = {
 	access: "bg-muted text-muted-foreground",
 } satisfies Record<FailureKind, string>
 
-/** `SignalBreakTick`: the inline variant's glyph, a signal stub, a break and a dashed trail. */
-const signalBreakTick = <M>(h: HtmlBuilder<M>): Html =>
-	h.svg(attr(h, { width: "12", height: "12", viewBox: "0 0 12 12", fill: "none", "aria-hidden": "true" }), [
+/** `SignalBreakTick`: the outage mark, a signal stub, a break and a dashed trail. */
+const signalBreakTick = <M>(h: HtmlBuilder<M>, size: number): Html =>
+	h.svg(tickAttributes(h, size), [
 		h.polyline(
 			attr(h, {
 				points: "1,7 3,6 5,7.5 6.5,6",
@@ -289,6 +298,28 @@ const signalBreakTick = <M>(h: HtmlBuilder<M>): Html =>
 			}),
 		),
 	])
+
+/** The kind's mark on its tint: 12px in a 20px chip inline, 16px in a 28px chip in a row. */
+const kindChip = <M>(h: HtmlBuilder<M>, kind: FailureKind, isRow: boolean): Html =>
+	h.span(
+		[
+			h.Class(
+				cn(
+					"flex shrink-0 items-center justify-center rounded-md",
+					isRow ? "size-7" : "size-5",
+					INLINE_TINT[kind],
+				),
+			),
+			h.AriaHidden(true),
+		],
+		[
+			kind === "access"
+				? lockTick(h, isRow ? 16 : 12)
+				: kind === "fixable"
+					? funnelTick(h, isRow ? 16 : 12)
+					: signalBreakTick(h, isRow ? 16 : 12),
+		],
+	)
 
 const alertRegion = <M>(h: HtmlBuilder<M>) => [h.Role("alert"), h.AriaLive("polite"), h.AriaAtomic(true)]
 
@@ -453,24 +484,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 				h.div(
 					[h.Class("flex items-center gap-2")],
 					[
-						h.span(
-							[
-								h.Class(
-									cn(
-										"flex size-5 shrink-0 items-center justify-center rounded-md",
-										INLINE_TINT[kind],
-									),
-								),
-								h.AriaHidden(true),
-							],
-							[
-								kind === "access"
-									? lockTick(h)
-									: kind === "fixable"
-										? funnelTick(h)
-										: signalBreakTick(h),
-							],
-						),
+						kindChip(h, kind, false),
 						h.p([h.Class("font-prose text-xs font-medium text-foreground")], [heading]),
 					],
 				),
@@ -494,7 +508,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 				...autoRetry,
 			],
 			[
-				glyphFor(h, kind, true),
+				kindChip(h, kind, true),
 				h.div(
 					[h.Class("min-w-0 flex-1 basis-56 space-y-0.5")],
 					[
@@ -521,7 +535,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 			...autoRetry,
 		],
 		[
-			h.div([h.Class("rounded-md border bg-card/50 px-3 py-2.5")], [glyphFor(h, kind, false)]),
+			h.div([h.Class("rounded-md border bg-card/50 px-3 py-2.5")], [glyphFor(h, kind)]),
 			h.div(
 				[h.Class("max-w-md space-y-1")],
 				[

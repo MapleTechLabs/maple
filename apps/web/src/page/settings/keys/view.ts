@@ -199,33 +199,32 @@ const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
 			framed: false,
 		},
 		[
-			panel(h, {}, [
-				model.isLoadFailed && model.apiKeys === null
-					? errorState(h, {
-							variant: "row",
-							failure: SYNC_UNAVAILABLE,
-							title: "Couldn't load devices",
-							// The keys error above offers Try again; it reloads both lists.
-							onRetry: Message.ClickedRetryLoad(),
-							hidesRetryButton: true,
-						})
-					: model.apiKeys === null
-						? h.div(
-								[],
-								[
-									skeletonList(h, {
-										rows: 1,
-										rowClassName: "h-[44px]",
-										gap: "2",
-										className: "p-4",
-									}),
-									skeletonSlowNote(h, "px-4 pb-3"),
-								],
-							)
-						: rows.length === 0
-							? sectionNote(h, "No phones have Home Screen widgets for this organization.")
-							: devicesTable(h, model, rows, inputs),
-			]),
+			// The row error draws its own dashed frame, so it skips the solid panel.
+			model.isLoadFailed && model.apiKeys === null
+				? errorState(h, {
+						variant: "row",
+						failure: SYNC_UNAVAILABLE,
+						title: "Couldn't load devices",
+						onRetry: Message.ClickedRetryLoad(),
+					})
+				: panel(h, {}, [
+						model.apiKeys === null
+							? h.div(
+									[],
+									[
+										skeletonList(h, {
+											rows: 1,
+											rowClassName: "h-[44px]",
+											gap: "2",
+											className: "p-4",
+										}),
+										skeletonSlowNote(h, "px-4 pb-3"),
+									],
+								)
+							: rows.length === 0
+								? sectionNote(h, "No phones have Home Screen widgets for this organization.")
+								: devicesTable(h, model, rows, inputs),
+					]),
 		],
 	)
 }

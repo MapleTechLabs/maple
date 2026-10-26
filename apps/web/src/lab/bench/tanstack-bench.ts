@@ -122,9 +122,11 @@ const chartWithLegend = (h: HtmlBuilder<Message>, model: Model, entry: (typeof C
 	return h.div(
 		[h.Key(entry.id)],
 		[
-			...(series.length === 0
-				? []
-				: [h.div([h.Class("flex justify-end pb-1")], [fixedMetricLegend(h, series)])]),
+			// Single-series charts keep an empty legend row, so the gaps between charts match.
+			h.div(
+				[h.Class("flex min-h-8 justify-end pb-1")],
+				series.length === 0 ? [] : [fixedMetricLegend(h, series)],
+			),
 			chart(h, model, entry),
 		],
 	)

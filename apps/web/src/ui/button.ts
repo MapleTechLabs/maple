@@ -19,10 +19,10 @@ export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
 type Variant = NonNullable<VariantProps<typeof buttonVariants>["variant"]>
 type Size = NonNullable<VariantProps<typeof buttonVariants>["size"]>
 
-// Local deltas on the shared variants: links read as links, and the small sizes keep a visible
-// gap between the icon and its label.
-const variantOverride = (variant: Variant): string | undefined =>
-	variant === "link" ? "text-primary" : undefined
+// Local deltas on the shared variants: text links read as links (icon-only ones stay neutral), and
+// the small sizes keep a visible gap between the icon and its label.
+const variantOverride = (variant: Variant, size: Size): string | undefined =>
+	variant === "link" && !size.startsWith("icon") ? "text-primary" : undefined
 
 // Every variant dims to the same 50% when disabled; a loading button stays solid so its spinner shows.
 const STATE_CLASSES = "disabled:opacity-50 data-loading:disabled:opacity-100"
@@ -34,7 +34,7 @@ const buttonClasses = (options: VariantProps<typeof buttonVariants> & Readonly<{
 	cn(
 		buttonVariants({ size: options.size, variant: options.variant }),
 		STATE_CLASSES,
-		variantOverride(options.variant ?? "default"),
+		variantOverride(options.variant ?? "default", options.size ?? "default"),
 		sizeOverride(options.size ?? "default"),
 		options.className,
 	)
@@ -60,7 +60,12 @@ export const button = <Message>(
 			...(isLoading
 				? [
 						icon(h, "LoaderIcon", {
-							className: cn(spinnerStyles, buttonLoadingIndicatorStyles, "opacity-100"),
+							// The loader's graded spokes vanish on a solid fill; draw every spoke in the button's foreground.
+							className: cn(
+								spinnerStyles,
+								buttonLoadingIndicatorStyles,
+								"opacity-100 [&_[opacity]]:opacity-100",
+							),
 							attributes: [
 								h.AriaHidden(true),
 								h.AriaLabel("Loading"),

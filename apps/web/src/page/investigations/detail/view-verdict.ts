@@ -8,6 +8,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
+import { inlineCode } from "../../../ui/inline-code"
 import { statFigure } from "../../../ui/stat-figure"
 import { statusDot } from "../../../ui/status-dot"
 import { confidenceMeter } from "../kit"
@@ -113,6 +114,23 @@ const mechanism = <M>(h: HtmlBuilder<M>, heading: string | null, text: string): 
 				],
 			)
 
+// Identifiers: backticked spans, SCREAMING_SNAKE names, service-like kebab names (checkout-api)
+// and short commit shas (hex with a digit and a letter). The rest of an action is prose.
+const IDENTIFIER = new RegExp(
+	[
+		"(`[^`]+`",
+		"\\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\\b",
+		"\\b[a-z][a-z0-9]*(?:-[a-z0-9]+)*-(?:api|svc|service|worker|gateway|web|server|proxy|db|queue|consumer|producer)\\b",
+		"\\b(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{5,40}\\b)",
+	].join("|"),
+)
+
+const actionText = <M>(h: HtmlBuilder<M>, action: string): Children =>
+	action
+		.split(IDENTIFIER)
+		.filter((part) => part.length > 0)
+		.map((part) => (IDENTIFIER.test(part) ? inlineCode(h, {}, [part.replace(/^`|`$/g, "")]) : part))
+
 const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html | null =>
 	actions.length === 0
 		? null
@@ -125,17 +143,20 @@ const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html
 						actions.map((action, index) =>
 							h.keyed("li")(
 								String(index),
-								[h.Class("flex gap-3 text-sm leading-6 text-foreground")],
+								[
+									h.Class(
+										"flex items-baseline gap-3 font-prose text-sm leading-6 text-foreground",
+									),
+								],
 								[
 									h.span(
-										[
-											h.Class(
-												"mt-px shrink-0 text-xs tabular-nums text-muted-foreground",
-											),
-										],
+										[h.Class("shrink-0 text-xs tabular-nums text-muted-foreground")],
 										[String(index + 1)],
 									),
-									h.span([h.Class("min-w-0 [overflow-wrap:anywhere]")], [action]),
+									h.span(
+										[h.Class("min-w-0 [overflow-wrap:anywhere]")],
+										actionText(h, action),
+									),
 								],
 							),
 						),

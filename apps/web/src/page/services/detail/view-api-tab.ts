@@ -535,7 +535,7 @@ const endpointsTable = (
 		selected: model.search.endpoint,
 		slowest: slowestEndpoint(visible),
 	}
-	const column = (sortKey: string, label: string, className: string, align?: "left") =>
+	const column = (sortKey: string, label: string, className: string, align?: "left", title?: string) =>
 		sortColumnHead(h, {
 			table: "endpoints",
 			sortKey,
@@ -543,7 +543,10 @@ const endpointsTable = (
 			sort,
 			className: cn(className, "pr-0"),
 			align,
+			title,
 		})
+	// A sampled endpoint's rate is scaled up from its traced spans; the header says so.
+	const isEstimated = visible.some((endpoint) => endpoint.estimatedSpanCount > endpoint.spanCount)
 	return h.div(
 		[h.Class("flex w-full flex-col overflow-hidden rounded-lg border bg-card")],
 		[
@@ -554,7 +557,15 @@ const endpointsTable = (
 						h,
 						[
 							column("path", "Endpoint", "pl-4", "left"),
-							column("traffic", "Req/s", COLUMN.rate),
+							isEstimated
+								? column(
+										"traffic",
+										"Req/s est.",
+										COLUMN.rate,
+										undefined,
+										"Estimated from sampled traces",
+									)
+								: column("traffic", "Req/s", COLUMN.rate),
 							headLabel(
 								h,
 								[

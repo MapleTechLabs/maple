@@ -504,6 +504,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 							panelStyles,
 							panelToneStyles.default,
 							"@container",
+							// A failed first load reads like every other failure block: a dashed frame.
+							view === null && model.failure !== null && "border-dashed",
 							refreshingClass(isWaiting && view !== null),
 						),
 					),

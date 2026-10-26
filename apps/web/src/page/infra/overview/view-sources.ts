@@ -13,7 +13,7 @@ import { sourceHref } from "./links"
 import type { HealthSegment, SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
 import type { SourceState } from "./state"
-import { ROW_CLASS } from "./view-findings"
+import { ROW_CLASS, sectionCaption } from "./view-findings"
 
 // `SourcesTable`, `SourceRowBody` and `HealthBar`.
 
@@ -175,7 +175,10 @@ export const sourcesTable = <M>(
 	h.section(
 		[h.Class("space-y-3")],
 		[
-			sectionHeading(h, { title: "Sources", hint: "one row per source reporting to this org" }),
+			sectionHeading(h, {
+				title: "Sources",
+				badge: sectionCaption(h, "one row per source reporting to this org"),
+			}),
 			panel(
 				h,
 				{ tone: "background", className: "divide-y" },

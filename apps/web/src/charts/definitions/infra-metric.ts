@@ -118,9 +118,12 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 	const { data, series } = infraPoints(spec)
 	const axis = makeBucketAxis(spec.xDomain ?? data.map((point) => point.bucket), spec.timeZone)
 	const thresholds = spec.showThreshold && spec.unit === "percent" ? [{ value: THRESHOLD_FRACTION }] : []
-	const yDomain = niceLinearDomain(
+	const niceDomain = niceLinearDomain(
 		linearYDomain({ rows: data, keys: series, stacked: spec.stacked, thresholds }),
 	)
+	// A percent axis past 50% runs to 100%, so it draws "0, 50%, 100%" around the 80% line.
+	const yDomain: readonly [number, number] =
+		spec.unit === "percent" && niceDomain[1] > 0.5 && niceDomain[1] < 1 ? [niceDomain[0], 1] : niceDomain
 	const chrome = spec.chrome
 	const colorOf = (name: string) => spec.colors[name] ?? chrome.border
 	const at = (point: InfraPoint) => point.date
