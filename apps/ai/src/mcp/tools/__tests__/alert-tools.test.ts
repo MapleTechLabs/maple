@@ -223,7 +223,9 @@ const layer = (seen: Seen) =>
 									]
 								: [],
 						wouldFire: [],
-						...(seen.seriesFailure === undefined ? undefined : { seriesFailure: seen.seriesFailure }),
+						...(seen.seriesFailure === undefined
+							? undefined
+							: { seriesFailure: seen.seriesFailure }),
 						...(seen.queryTiming === undefined ? undefined : { queryTiming: seen.queryTiming }),
 					}),
 				)
@@ -426,6 +428,20 @@ describe("alert tools", () => {
 		expect(output.openCount).toBe(1)
 		expect(text(result)).toContain("Total: 1 (1 open, 0 resolved)")
 		expect(text(result)).toContain('`get_incident_timeline group_key="checkout"`')
+	})
+
+	it("both incident tools point at list_uptime_monitors only when an uptime incident is listed", async () => {
+		const uptime = incident({
+			id: "33333333-3333-4333-8444-555555555555",
+			signalType: "uptime",
+			groupKey: "__total__",
+		})
+		const hint = "`list_uptime_monitors`"
+		// A fresh Seen per call: the stub records into it.
+		expect(text(await ok("list_alert_incidents", {}, { extraIncidents: [uptime] }))).toContain(hint)
+		expect(text(await ok("get_incident_timeline", {}, { extraIncidents: [uptime] }))).toContain(hint)
+		expect(text(await ok("list_alert_incidents", {}))).not.toContain(hint)
+		expect(text(await ok("get_incident_timeline", {}))).not.toContain(hint)
 	})
 
 	it("get_incident_timeline filters by rule and rejects a malformed rule_id", async () => {
@@ -937,7 +953,11 @@ describe("alert tools", () => {
 		expect(text(unfinished)).toContain("It fits no check interval")
 		expect(text(unfinished)).not.toContain("evaluation_interval_minutes=")
 
-		const heavy = await ok("preview_alert_rule", { rule_id: RULE_ID }, { ...seen, seriesFailure: "query_too_much_memory" })
+		const heavy = await ok(
+			"preview_alert_rule",
+			{ rule_id: RULE_ID },
+			{ ...seen, seriesFailure: "query_too_much_memory" },
+		)
 		expect(text(heavy)).toContain("ran out of memory charting this whole range")
 		expect(text(heavy)).toContain("The range was too heavy to chart")
 		expect(text(heavy)).not.toContain("returned no series")
