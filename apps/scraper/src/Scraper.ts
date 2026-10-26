@@ -235,7 +235,6 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 					attributes: {
 						orgId: first.orgId,
 						"maple.scraper.target_id": first.id,
-						"maple.scraper.target_name": first.name,
 						"maple.scraper.interval_seconds": first.scrapeIntervalSeconds,
 						...(first.sourceId === undefined ? undefined : { "maple.source.id": first.sourceId }),
 					},
