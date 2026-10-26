@@ -391,9 +391,9 @@ What each kind of Worker keeps beside the module:
   without a runtime.
 - **The application database** (`api`, `ai`, `alerting`, `chat-bot`): on dev stages and the
   US prd, `yield* MapleDb(consumer)` in the init binds `MAPLE_DB`:
-  `Hyperdrive.Connect(ManagedMapleDb)` on dev stages, `host.bind` of the dashboard-managed
-  config by id on the US prd (alchemy has no `env` form for a Hyperdrive it did not create;
-  its own `ConnectBinding` attaches the same raw metadata). On the EU prd the props bind the
+  `Hyperdrive.Connect(ManagedMapleDb)` on dev stages, `Hyperdrive.Connect` of a
+  `Hyperdrive.lookup` of the dashboard-managed config by id on the US prd (a lookup has no
+  state row, so destroy and nuke never touch it). On the EU prd the props bind the
   declared config through `mapleDbEnv`, and so do previews (one shared config on their Neon
   branch). The api's Workflow yields it
   too, from its outer phase. The root yields `ManagedMapleDb` first on dev stages so its
@@ -558,10 +558,10 @@ the database rather than at the pool.
 `stg`. A new shared stage needs its own PlanetScale branch and per-consumer configs before
 it gets a `MAPLE_DB` binding at all.
 
-Binding a dashboard-managed config by id attaches raw `{ type: "hyperdrive", name, id }`
-metadata from the Worker's init (`host.bind` inside `MapleDb`,
-`packages/infra/src/cloudflare/maple-db.ts`); no cloud resource is created and the origin
-credentials stay in the dashboard.
+Binding a dashboard-managed config by id is a `Hyperdrive.lookup` read at plan time from the
+Worker's init (`MapleDb`, `packages/infra/src/cloudflare/maple-db.ts`); no cloud resource is
+created and the origin credentials stay in the dashboard. A config id that no longer exists
+fails the plan.
 
 ## Cost decisions
 
