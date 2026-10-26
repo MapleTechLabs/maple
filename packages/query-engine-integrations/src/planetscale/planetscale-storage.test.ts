@@ -35,11 +35,11 @@ describe("planetscaleStorageSQL", () => {
 
 	it("phrases the ratio so SQL precedence yields used-percent", () => {
 		const { sql } = compileUnsafe(planetscaleStorageSQL(), params)
-		// The builder's arithmetic helpers don't parenthesize, so the intuitive
+		// A chained `sub(...).div(...)` follows SQL precedence, so the intuitive
 		// `(capacity - available) / capacity * 100` would compile to
 		// `capacity - available / capacity * 100` — a byte count, not a percentage.
-		// Subtracting free space from 100 is correct without parens.
-		expect(sql).toContain("100 - vol.availableBytes / vol.capacityBytes * 100")
+		// Subtracting free space from 100 is correct either way.
+		expect(sql).toContain("100 - (vol.availableBytes / vol.capacityBytes * 100)")
 		expect(sql).not.toContain("capacityBytes - availableBytes / capacityBytes")
 	})
 
