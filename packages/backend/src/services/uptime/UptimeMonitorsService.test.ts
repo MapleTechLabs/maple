@@ -5,7 +5,8 @@ import { BillingCustomer, OrgId, UptimeMonitorLimitReachedError, UserId } from "
 import { UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
 import { UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import {
 	UptimeMonitorAllowance,
 	uptimeMonitorLimit,
@@ -60,12 +61,16 @@ const fakeHttp = (respond: Respond) =>
 
 const makeLayer = (
 	testDb: TestDb,
-	options: { readonly allowance?: Layer.Layer<UptimeMonitorAllowance>; readonly respond?: Respond } = {},
+	options: {
+		readonly allowance?: Layer.Layer<UptimeMonitorAllowance>
+		readonly respond?: Respond
+		readonly database?: Layer.Layer<Database>
+	} = {},
 ) =>
 	Layer.effect(UptimeMonitorsService, UptimeMonitorsService.make).pipe(
 		Layer.provide(options.allowance ?? UptimeMonitorAllowance.unmetered),
 		Layer.provide(fakeHttp(options.respond ?? { status: 200, body: "ok" })),
-		Layer.provide(testDb.layer),
+		Layer.provide(options.database ?? testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(config()),
 	)
@@ -212,6 +217,62 @@ describe("UptimeMonitorsService", () => {
 				],
 			)
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("records the rest of a batch when a monitor is deleted between the read and the write", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			// Counts down per `Database.execute`; the call that sees 1 deletes `doomed` first.
+			const countdown = yield* Ref.make(0)
+			const doomed = yield* Ref.make("")
+			const database = Layer.effect(
+				Database,
+				Effect.gen(function* () {
+					const inner = yield* Database
+					return {
+						execute: (fn) =>
+							Ref.modify(countdown, (n) => [n, n > 0 ? n - 1 : n] as const).pipe(
+								Effect.flatMap((n) =>
+									n === 1
+										? Ref.get(doomed).pipe(
+												Effect.flatMap((id) =>
+													Effect.promise(() =>
+														executeSql(
+															testDb,
+															"DELETE FROM uptime_monitors WHERE id = $1",
+															[id],
+														),
+													),
+												),
+											)
+										: Effect.void,
+								),
+								Effect.andThen(inner.execute(fn)),
+							),
+					}
+				}),
+			).pipe(Layer.provide(testDb.layer))
+
+			const program = Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const kept = yield* createHttp("kept", { failuresToDown: 1 })
+				const deleted = yield* createHttp("deleted", { failuresToDown: 1 })
+				yield* Ref.set(doomed, deleted.id)
+				// The read runs at 2, the write at 1: the monitor vanishes in between.
+				yield* Ref.set(countdown, 2)
+				const applied = yield* service.recordChecks([
+					report(kept.id, 1_000, false),
+					report(deleted.id, 1_000, false),
+				])
+				assert.strictEqual(applied, 1)
+				assert.strictEqual((yield* service.get(ORG, kept.id)).state.status, "down")
+				assert.deepStrictEqual(
+					(yield* service.list(ORG)).map((monitor) => monitor.id),
+					[kept.id],
+				)
+			})
+			yield* program.pipe(Effect.provide(makeLayer(testDb, { database })))
+		})
 	})
 
 	it.effect("applies a batch in time order, skipping unknown monitors and replayed reports", () => {

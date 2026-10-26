@@ -46,7 +46,11 @@ export const UptimeHttpConfig = Schema.TaggedStruct("http", {
 	assertions: Schema.Array(UptimeAssertion),
 	timeoutMs: TimeoutMs,
 })
-export const UptimeTcpConfig = Schema.TaggedStruct("tcp", { host: NonEmpty, port: Port, timeoutMs: TimeoutMs })
+export const UptimeTcpConfig = Schema.TaggedStruct("tcp", {
+	host: NonEmpty,
+	port: Port,
+	timeoutMs: TimeoutMs,
+})
 export const UptimeDnsRecordType = Schema.Literals(["A", "AAAA", "CNAME", "MX", "TXT", "NS"])
 export type UptimeDnsRecordType = Schema.Schema.Type<typeof UptimeDnsRecordType>
 export const UptimeDnsConfig = Schema.TaggedStruct("dns", {
@@ -57,7 +61,9 @@ export const UptimeDnsConfig = Schema.TaggedStruct("dns", {
 	timeoutMs: TimeoutMs,
 })
 export const UptimeHeartbeatSchedule = Schema.Union([
-	Schema.TaggedStruct("interval", { seconds: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(60)) }),
+	Schema.TaggedStruct("interval", {
+		seconds: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(60)),
+	}),
 	Schema.TaggedStruct("cron", { expression: NonEmpty, timezone: NonEmpty }),
 ])
 export type UptimeHeartbeatSchedule = Schema.Schema.Type<typeof UptimeHeartbeatSchedule>
@@ -66,8 +72,19 @@ export const UptimeHeartbeatConfig = Schema.TaggedStruct("heartbeat", {
 	graceSeconds: Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 86400 })),
 })
 
+/**
+ * What a caller without write access sees in place of an HTTP check's header value. Sent back
+ * on update, it keeps the stored value, so a round-tripped redacted config wipes nothing.
+ */
+export const UPTIME_REDACTED_HEADER_VALUE = "[redacted]"
+
 /** The stored config; `_tag` always equals the monitor's `kind`. */
-export const UptimeMonitorConfig = Schema.Union([UptimeHttpConfig, UptimeTcpConfig, UptimeDnsConfig, UptimeHeartbeatConfig])
+export const UptimeMonitorConfig = Schema.Union([
+	UptimeHttpConfig,
+	UptimeTcpConfig,
+	UptimeDnsConfig,
+	UptimeHeartbeatConfig,
+])
 export type UptimeMonitorConfig = Schema.Schema.Type<typeof UptimeMonitorConfig>
 export type UptimeProbeConfig = Exclude<UptimeMonitorConfig, { readonly _tag: "heartbeat" }>
 
@@ -161,23 +178,34 @@ export const firstFailedAssertion = (
 			case "status": {
 				const matches = statusMatches(assertion.value, observed.statusCode)
 				const ok = assertion.op === "is" ? matches : !matches
-				return ok ? [] : [`Status ${observed.statusCode}, expected ${assertion.op === "is" ? "" : "not "}${assertion.value}`]
+				return ok
+					? []
+					: [
+							`Status ${observed.statusCode}, expected ${assertion.op === "is" ? "" : "not "}${assertion.value}`,
+						]
 			}
 			case "latency":
 				return observed.durationMs < assertion.underMs
 					? []
-					: [`Responded in ${Math.round(observed.durationMs)} ms, expected under ${assertion.underMs} ms`]
+					: [
+							`Responded in ${Math.round(observed.durationMs)} ms, expected under ${assertion.underMs} ms`,
+						]
 			case "body": {
 				const found = observed.body !== null && observed.body.includes(assertion.value)
-				if (assertion.op === "contains") return found ? [] : [`Body does not contain "${assertion.value}"`]
+				if (assertion.op === "contains")
+					return found ? [] : [`Body does not contain "${assertion.value}"`]
 				return found ? [`Body contains "${assertion.value}"`] : []
 			}
 			case "json_path": {
-				const read = Option.flatMap(parseJson(observed.body), (json) => readJsonPath(json, assertion.path))
+				const read = Option.flatMap(parseJson(observed.body), (json) =>
+					readJsonPath(json, assertion.path),
+				)
 				if (Option.isNone(read)) return [`JSON path ${assertion.path} not found`]
 				if (assertion.op === "exists") return []
 				const actual = jsonText(read.value)
-				return actual === assertion.value ? [] : [`JSON path ${assertion.path} is ${actual}, expected ${assertion.value ?? ""}`]
+				return actual === assertion.value
+					? []
+					: [`JSON path ${assertion.path} is ${actual}, expected ${assertion.value ?? ""}`]
 			}
 			case "header": {
 				const actual = observed.headers[assertion.name.toLowerCase()]
@@ -185,7 +213,9 @@ export const firstFailedAssertion = (
 				if (assertion.op === "exists") return []
 				const expected = assertion.value ?? ""
 				const ok = assertion.op === "equals" ? actual === expected : actual.includes(expected)
-				return ok ? [] : [`Header ${assertion.name} is "${actual}", expected ${assertion.op} "${expected}"`]
+				return ok
+					? []
+					: [`Header ${assertion.name} is "${actual}", expected ${assertion.op} "${expected}"`]
 			}
 		}
 	})
@@ -211,7 +241,8 @@ export const applyUptimeCheck = (
 	failuresToDown: number,
 ): UptimeMonitorStateSnapshot => {
 	if (state.status === "paused") return state
-	if (ok) return { status: "up", consecutiveFailures: 0, consecutiveSuccesses: state.consecutiveSuccesses + 1 }
+	if (ok)
+		return { status: "up", consecutiveFailures: 0, consecutiveSuccesses: state.consecutiveSuccesses + 1 }
 	const consecutiveFailures = state.consecutiveFailures + 1
 	return {
 		status: consecutiveFailures >= failuresToDown ? "down" : state.status,

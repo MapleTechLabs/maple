@@ -11,9 +11,10 @@ import {
 } from "@maple/domain/http/v2"
 import type { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Effect } from "effect"
+import { UPTIME_REDACTED_HEADER_VALUE } from "@maple/domain/uptime"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import { isAdmin, requireAdmin } from "@maple/backend/services/auth/auth"
 import {
 	type UptimeMonitorRecord,
 	UptimeMonitorsService,
@@ -61,6 +62,15 @@ const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
 	updated_at: isoTimestamp(monitor.updatedAt),
 })
 
+/** Header values may be credentials: callers who cannot write see the names only. */
+const forReader = (monitor: V2UptimeMonitor, canWrite: boolean): V2UptimeMonitor => {
+	if (canWrite || monitor.config.type !== "http" || monitor.config.headers === undefined) return monitor
+	const headers = Object.fromEntries(
+		Object.keys(monitor.config.headers).map((name) => [name, UPTIME_REDACTED_HEADER_VALUE]),
+	)
+	return { ...monitor, config: { ...monitor.config, headers } }
+}
+
 const monitorAuditDiff = auditDiff({
 	fields: ["name", "config", "interval_seconds", "failures_to_down", "service_name", "enabled"],
 	// Request headers in an HTTP config may carry credentials.
@@ -76,14 +86,19 @@ export const HttpV2UptimeMonitorsLive = HttpApiBuilder.group(MapleApiV2, "uptime
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const monitors = yield* service.list(tenant.orgId)
-					const page = yield* paginateArray(monitors.map(toV2UptimeMonitor), query)
+					const canWrite = isAdmin(tenant.roles)
+					const page = yield* paginateArray(
+						monitors.map((monitor) => forReader(toV2UptimeMonitor(monitor), canWrite)),
+						query,
+					)
 					return { object: "list" as const, ...page }
 				}),
 			)
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					return toV2UptimeMonitor(yield* service.get(tenant.orgId, params.id))
+					const monitor = yield* service.get(tenant.orgId, params.id)
+					return forReader(toV2UptimeMonitor(monitor), isAdmin(tenant.roles))
 				}),
 			)
 			.handle("create", ({ payload }) =>

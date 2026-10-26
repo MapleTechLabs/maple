@@ -1,5 +1,6 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { randomBytes, randomUUID } from "node:crypto"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	UptimeMonitorStates,
@@ -25,6 +26,7 @@ import {
 	appendRecentCheck,
 	applyUptimeCheck,
 	firstFailedAssertion,
+	UPTIME_REDACTED_HEADER_VALUE,
 	UptimeMonitorConfig,
 	type UptimeCheckDetail,
 	type UptimeCheckReport,
@@ -43,6 +45,7 @@ import {
 } from "@maple/safe-fetch"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import { UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
 
@@ -244,6 +247,28 @@ const validateFailuresToDown = (value: number) =>
 
 const newHeartbeatToken = () => randomBytes(18).toString("base64url")
 
+/** An update's `[redacted]` header values take the stored value back; one with none stored is refused. */
+const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) => {
+	if (next._tag !== "http") return Effect.succeed(next)
+	const stored = current._tag === "http" ? current.headers : {}
+	const entries = Object.entries(next.headers)
+	const orphan = entries.find(
+		([name, value]) => value === UPTIME_REDACTED_HEADER_VALUE && stored[name] === undefined,
+	)
+	if (orphan !== undefined) {
+		return Effect.fail(invalid(`Header ${orphan[0]} has no stored value to keep; send its real value`))
+	}
+	return Effect.succeed({
+		...next,
+		headers: Object.fromEntries(
+			entries.map(([name, value]) => [
+				name,
+				value === UPTIME_REDACTED_HEADER_VALUE ? (stored[name] ?? value) : value,
+			]),
+		),
+	})
+}
+
 type MonitorWithStateRow = Pick<
 	UptimeMonitorRow,
 	| "id"
@@ -297,6 +322,8 @@ const selectMonitors = () =>
 		}))
 
 const decodeInterval = Schema.decodeUnknownEffect(UptimeIntervalSeconds)
+
+const UpdatedStateRow = Schema.Struct({ monitor_id: Schema.String })
 
 interface FoldedChecks {
 	readonly snapshot: UptimeMonitorStateSnapshot
@@ -518,7 +545,12 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					)
 				}
 				const config =
-					input.config === undefined ? undefined : yield* validateConfig(current.kind, input.config)
+					input.config === undefined
+						? undefined
+						: yield* validateConfig(
+								current.kind,
+								yield* keepRedactedHeaders(current.config, input.config),
+							)
 				const name = input.name === undefined ? undefined : yield* validateName(input.name)
 				const failuresToDown =
 					input.failuresToDown === undefined
@@ -656,29 +688,34 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						]
 					},
 				)
-				const [firstState, ...restStates] = states
-				if (firstState === undefined) return 0
-				// One upsert for the batch. A monitor paused since the read keeps its paused state.
-				yield* dbExecute((db) =>
-					db.run(
-						PG.insertInto(UptimeMonitorStates)
-							.values([firstState, ...restStates])
-							.onConflictDoUpdate({
-								target: ["monitorId"],
-								set: (_, excluded) => ({
-									status: excluded.status,
-									consecutiveFailures: excluded.consecutiveFailures,
-									consecutiveSuccesses: excluded.consecutiveSuccesses,
-									statusChangedAt: excluded.statusChangedAt,
-									lastCheckJson: excluded.lastCheckJson,
-									recentJson: excluded.recentJson,
-									updatedAt: excluded.updatedAt,
-								}),
-								where: ($) => $.status.neq("paused"),
-							}),
+				if (states.length === 0) return 0
+				const values = Orm.sql.join(
+					states.map(
+						(state) =>
+							Orm.sql`(${state.monitorId}::text, ${state.status}::text, ${state.consecutiveFailures}::int4, ${state.consecutiveSuccesses}::int4, ${state.statusChangedAt === null ? null : msToSqlTimestamp(state.statusChangedAt)}::timestamptz, ${JSON.stringify(state.lastCheckJson)}::jsonb, ${JSON.stringify(state.recentJson)}::jsonb, ${msToSqlTimestamp(state.updatedAt)}::timestamptz)`,
+					),
+					Orm.sql`, `,
+				)
+				// One UPDATE for the batch: a monitor deleted since the read has no state row and is
+				// simply not matched, and one paused since the read keeps its paused state.
+				const updated = yield* dbExecute((db) =>
+					db.query(
+						Orm.sql`
+							UPDATE uptime_monitor_states AS s SET
+								status = v.status,
+								consecutive_failures = v.consecutive_failures,
+								consecutive_successes = v.consecutive_successes,
+								status_changed_at = v.status_changed_at,
+								last_check_json = v.last_check_json,
+								recent_json = v.recent_json,
+								updated_at = v.updated_at
+							FROM (VALUES ${values}) AS v(monitor_id, status, consecutive_failures, consecutive_successes, status_changed_at, last_check_json, recent_json, updated_at)
+							WHERE s.monitor_id = v.monitor_id AND s.status <> 'paused'
+							RETURNING s.monitor_id`,
+						UpdatedStateRow,
 					),
 				)
-				return states.length
+				return updated.length
 			})
 
 			// Heartbeats are a public hot path: no spans of its own beyond the two queries.

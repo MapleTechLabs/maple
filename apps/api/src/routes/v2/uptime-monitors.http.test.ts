@@ -235,6 +235,66 @@ describe("v2 uptime monitors", () => {
 		}
 	})
 
+	it("shows header values to admins only and keeps redacted values on update", async () => {
+		const harness = makeHarness()
+		try {
+			const { secret: admin } = await harness.bootstrapKey()
+			const { secret: member } = await harness.bootstrapKey({
+				source: "maple_cli",
+				roles: ["org:member"],
+				deviceName: "laptop",
+			})
+			const created = await harness.request("POST", "/v2/uptime_monitors", admin, {
+				name: "API health",
+				kind: "http",
+				config: {
+					type: "http",
+					url: "https://api.example.com/health",
+					headers: { Authorization: "Bearer s3cret", "X-Env": "prod" },
+				},
+			})
+			expect(created.status).toBe(200)
+			const id: string = created.body.id
+
+			const adminRead = await harness.request("GET", `/v2/uptime_monitors/${id}`, admin)
+			expect(adminRead.body.config.headers).toEqual({ Authorization: "Bearer s3cret", "X-Env": "prod" })
+
+			const memberRead = await harness.request("GET", `/v2/uptime_monitors/${id}`, member)
+			expect(memberRead.body.config.headers).toEqual({
+				Authorization: "[redacted]",
+				"X-Env": "[redacted]",
+			})
+			const memberList = await harness.request("GET", "/v2/uptime_monitors", member)
+			expect(memberList.body.data[0].config.headers).toEqual({
+				Authorization: "[redacted]",
+				"X-Env": "[redacted]",
+			})
+
+			// Round-tripping a redacted config keeps the stored secret and applies the real change.
+			const updated = await harness.request("PATCH", `/v2/uptime_monitors/${id}`, admin, {
+				config: {
+					...memberRead.body.config,
+					headers: { Authorization: "[redacted]", "X-Env": "staging" },
+				},
+			})
+			expect(updated.status).toBe(200)
+			expect(updated.body.config.headers).toEqual({
+				Authorization: "Bearer s3cret",
+				"X-Env": "staging",
+			})
+
+			// A redacted value for a header that was never stored has nothing to keep.
+			const orphan = await harness.request("PATCH", `/v2/uptime_monitors/${id}`, admin, {
+				config: { ...memberRead.body.config, headers: { "X-New": "[redacted]" } },
+			})
+			expect(orphan.status).toBe(400)
+			const after = await harness.request("GET", `/v2/uptime_monitors/${id}`, admin)
+			expect(after.body.config.headers).toEqual({ Authorization: "Bearer s3cret", "X-Env": "staging" })
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("refuses writes from non-admin members but lets them read", async () => {
 		const harness = makeHarness()
 		try {
