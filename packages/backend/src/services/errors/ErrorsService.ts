@@ -59,6 +59,7 @@ import {
 	type NotificationRequest,
 } from "@maple/backend/services/alerts/NotificationDispatcher"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { EdgeCacheService } from "@maple/cache"
 import {
 	isOrgWarehouseQuarantined,
@@ -237,6 +238,7 @@ const make: Effect.Effect<
 	never,
 	| Database
 	| WarehouseQueryService
+	| OrgClickHouseSettingsService
 	| EdgeCacheService
 	| Env
 	| NotificationDispatcher
@@ -259,6 +261,7 @@ const make: Effect.Effect<
 	const defaultPolicy = policies.defaultNotificationPolicy
 	const parsePolicyDestinations = policies.parseNotificationDestinationIds
 	const warehouse = yield* WarehouseQueryService
+	const orgChSettings = yield* OrgClickHouseSettingsService
 	const edgeCache = yield* EdgeCacheService
 	const env = yield* Env
 	const dispatcher = yield* NotificationDispatcher
@@ -1759,6 +1762,12 @@ const make: Effect.Effect<
 			leasesExpired: 0,
 		}
 
+		// One batched read warms the org warehouse-config memo before the fan-out
+		// below, so 4 concurrent fibers do not each miss it cold. Best-effort.
+		yield* orgChSettings
+			.primeRuntimeConfigs(scanOrgs)
+			.pipe(Effect.ignore({ log: "Warn", message: "Failed to prime error tick runtime configs" }))
+
 		const orgFailures = yield* Ref.make(0)
 		const results = yield* Effect.forEach(
 			scanOrgs,
@@ -1871,6 +1880,7 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceA
 		Layer.provide(
 			Layer.mergeAll(
 				WarehouseQueryService.layer,
+				OrgClickHouseSettingsService.layer,
 				ErrorActorsService.layer,
 				ErrorIssueWorkflowService.layer,
 				ErrorPolicyService.layer,
