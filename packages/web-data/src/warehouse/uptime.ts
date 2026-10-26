@@ -5,8 +5,9 @@ import { Clock, Effect, Schema } from "effect"
 import { ServiceName } from "@maple/domain/http"
 import { buildServiceDetailPoints } from "./custom-charts"
 import { executeQueryEngine } from "./effect-utils"
+import { listTraces } from "./traces"
 import type { ServiceDetailTimeSeriesPoint } from "./services"
-import { computeBucketSeconds } from "./timeseries-utils"
+import { computeBucketSeconds, toIsoBucket } from "./timeseries-utils"
 
 // One uptime monitor's checks over a window, read from its check spans: the chart's buckets and
 // the window's own percentiles (bucket percentiles cannot be merged into a window's).
@@ -20,8 +21,29 @@ export interface UptimeCheckStatsInput {
 	readonly endTime: string
 }
 
+/** Checks one list page reads, and the pages read at once: 24 hours at a 30s interval fit. */
+const CHECK_PAGE = 1000
+const CHECK_PAGES = 3
+/** Most checks one window lists; past it the newest are kept. */
+export const UPTIME_CHECK_LIST_LIMIT = CHECK_PAGE * CHECK_PAGES
+
+/** One check, from its span. */
+export interface UptimeCheckSample {
+	readonly at: string
+	readonly durationMs: number
+	readonly ok: boolean
+	readonly statusCode: number | null
+	readonly traceId: string
+}
+
 export interface UptimeCheckStats {
 	readonly points: ReadonlyArray<ServiceDetailTimeSeriesPoint>
+	/** Every check in the window, oldest first, up to `UPTIME_CHECK_LIST_LIMIT`. */
+	readonly samples: ReadonlyArray<UptimeCheckSample>
+	/** The window held more checks than the list keeps. */
+	readonly samplesTruncated: boolean
+	readonly windowStartMs: number
+	readonly windowEndMs: number
 	readonly checks: number
 	readonly failures: number
 	readonly p50Ms: number | null
@@ -58,7 +80,28 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 			}),
 		).pipe(Effect.map(breakdownValue))
 
-	const [series, p50Ms, p95Ms, p99Ms] = yield* Effect.all(
+	// Span-level, so the check span itself is the row; the noise filter would drop lone Client spans.
+	const checkList = Effect.forEach(
+		Array.from({ length: CHECK_PAGES }, (_, page) => page * CHECK_PAGE),
+		(offset) =>
+			listTraces({
+				data: {
+					startTime: input.startTime,
+					endTime: input.endTime,
+					services: [serviceName],
+					resourceAttributeFilters: [{ key: UPTIME_MONITOR_ID_ATTRIBUTE, value: input.monitorId }],
+					rootOnly: false,
+					hideNoise: false,
+					sortBy: "timestamp",
+					sortDir: "desc",
+					limit: CHECK_PAGE,
+					offset,
+				},
+			}),
+		{ concurrency: "unbounded" },
+	)
+
+	const [series, p50Ms, p95Ms, p99Ms, list] = yield* Effect.all(
 		[
 			executeQueryEngine(
 				"queryEngine.uptimeCheckStats.series",
@@ -77,6 +120,7 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 			percentile("p50_duration"),
 			percentile("p95_duration"),
 			percentile("p99_duration"),
+			checkList,
 		],
 		{ concurrency: "unbounded" },
 	)
@@ -85,8 +129,22 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 	const points = buildServiceDetailPoints(series, input.startTime, input.endTime, bucketSeconds, nowMs)
 	const checks = points.reduce((sum, point) => sum + point.totalCount, 0)
 	const failures = points.reduce((sum, point) => sum + Math.round(point.errorRate * point.totalCount), 0)
+	const samples = list
+		.flatMap((page) => page.data)
+		.map((row): UptimeCheckSample => ({
+			at: toIsoBucket(row.startTime),
+			durationMs: row.durationMs,
+			ok: !row.hasError,
+			statusCode: row.rootSpan.http?.statusCode ?? null,
+			traceId: row.traceId,
+		}))
+		.reverse()
 	return {
 		points,
+		samples,
+		samplesTruncated: (list.at(-1)?.meta.scannedCount ?? 0) >= CHECK_PAGE,
+		windowStartMs: Date.parse(toIsoBucket(input.startTime)),
+		windowEndMs: Date.parse(toIsoBucket(input.endTime)),
 		checks,
 		failures,
 		p50Ms: checks === 0 ? null : p50Ms,

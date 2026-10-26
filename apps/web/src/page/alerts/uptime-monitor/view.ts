@@ -31,6 +31,7 @@ import {
 	CHART_TOKENS,
 	type ChartContext,
 	checksPanel,
+	checksScatterPanel,
 	heartbeatPanel,
 	kpiRail,
 	lastCheckPanel,
@@ -175,6 +176,9 @@ const body = (
 							? []
 							: [heartbeatPanel(h, model, monitor.heartbeat_url)]),
 						...(monitor.kind === "heartbeat" ? [] : [responseTimePanel(h, model, chartContext)]),
+						...[checksScatterPanel(h, model, timeZone)].flatMap((panel) =>
+							panel === null ? [] : [panel],
+						),
 						checksPanel(h, monitor, timeZone),
 					],
 				),

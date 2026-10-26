@@ -32,7 +32,7 @@ import {
 	uptimeShare,
 } from "../shared/uptime-derive"
 import { Message } from "./message"
-import type { CheckPoint, CheckStats, Model, UptimeWindow } from "./model"
+import type { CheckPoint, CheckSample, CheckStats, Model, UptimeWindow } from "./model"
 import { uptimePanelBody } from "../shared/uptime-view"
 
 // The monitor page's panels: response time, the checks list and the side panels.
@@ -301,6 +301,239 @@ export const responseTimePanel = (h: H, model: Model, context: ChartContext | nu
 		uptimePanelBody(h, [body]),
 	])
 }
+
+/** 1, 2 or 5 times a power of ten, at or above `value`. */
+const niceCeil = (value: number): number => {
+	const power = 10 ** Math.floor(Math.log10(Math.max(1, value)))
+	const step = [1, 2, 5, 10].find((candidate) => candidate * power >= value) ?? 10
+	return step * power
+}
+
+/** The y range: the checks' p99 with headroom, so one timeout does not flatten the rest; slower checks sit on the top edge. */
+const scatterMax = (samples: ReadonlyArray<CheckSample>): number => {
+	const sorted = samples.map((sample) => sample.durationMs).sort((a, b) => a - b)
+	const p99 = sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.99) - 1)] ?? 1
+	return niceCeil(p99 * 1.15)
+}
+
+type Domain = Readonly<{ startMs: number; endMs: number }>
+
+const SCATTER_LINES = [
+	{ key: "p95LatencyMs", label: "P95", color: "var(--chart-p95)" },
+	{ key: "p50LatencyMs", label: "P50", color: "var(--chart-p50)" },
+] as const
+
+/** A percentile line across the scatter, in a stretched SVG whose strokes keep their width. */
+const scatterLines = (h: H, stats: CheckStats, domain: Domain, yMax: number): Html => {
+	const span = Math.max(1, domain.endMs - domain.startMs)
+	const filled = stats.points.filter(
+		(point) => point.totalCount > 0 && isoMs(point.bucket) >= domain.startMs,
+	)
+	return h.svg(
+		[
+			h.AriaHidden(true),
+			h.Attribute("viewBox", "0 0 1000 100"),
+			h.Attribute("preserveAspectRatio", "none"),
+			h.Class("pointer-events-none absolute inset-0 h-full w-full overflow-visible"),
+		],
+		SCATTER_LINES.map((line) =>
+			h.polyline(
+				[
+					h.Key(line.key),
+					h.Attribute("fill", "none"),
+					h.Attribute("stroke", line.color),
+					h.Attribute("stroke-width", "1.5"),
+					h.Attribute("stroke-opacity", "0.9"),
+					h.Attribute("vector-effect", "non-scaling-stroke"),
+					h.Attribute(
+						"points",
+						filled
+							.map((point) => {
+								const x = ((isoMs(point.bucket) - domain.startMs) / span) * 1000
+								const y = 100 - Math.min(1, point[line.key] / yMax) * 100
+								return `${x.toFixed(1)},${y.toFixed(1)}`
+							})
+							.join(" "),
+					),
+				],
+				[],
+			),
+		),
+	)
+}
+
+/** One dot, a link to the check's trace, with its card on hover. */
+const scatterDot = (h: H, sample: CheckSample, domain: Domain, yMax: number, timeZone: string): Html => {
+	const span = Math.max(1, domain.endMs - domain.startMs)
+	const left = ((isoMs(sample.at) - domain.startMs) / span) * 100
+	const bottom = Math.min(1, sample.durationMs / yMax) * 100
+	const result = sample.statusCode === null ? (sample.ok ? "Passed" : "Failed") : String(sample.statusCode)
+	return h.a(
+		[
+			h.Key(`${sample.traceId}-${sample.at}`),
+			h.Href(traceHref(sample.traceId)),
+			h.AriaLabel(`${formatAlertTime(sample.at, timeZone)}, ${result}, ${formatMs(sample.durationMs)}`),
+			h.Class("group absolute z-10 -translate-x-1/2 translate-y-1/2 p-0.5 hover:z-30"),
+			h.Style({ left: `${left}%`, bottom: `${bottom}%` }),
+		],
+		[
+			h.span(
+				[
+					h.Class(
+						cn(
+							"block rounded-full transition-transform group-hover:scale-150",
+							sample.ok ? "size-1 bg-success/60" : "size-1.5 bg-destructive",
+						),
+					),
+				],
+				[],
+			),
+			h.span(
+				[
+					h.Class(
+						cn(
+							"pointer-events-none absolute bottom-full mb-1.5 hidden w-max flex-col gap-0.5 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md group-hover:flex",
+							left > 70 ? "right-0" : "left-0",
+						),
+					),
+				],
+				[
+					h.span([h.Class("text-muted-foreground")], [formatAlertTime(sample.at, timeZone)]),
+					h.span(
+						[h.Class("flex items-center gap-2 font-mono tabular-nums")],
+						[
+							h.span([h.Class(sample.ok ? "text-success" : "text-destructive")], [result]),
+							formatMs(sample.durationMs),
+						],
+					),
+					h.span([h.Class("text-primary")], ["Open trace"]),
+				],
+			),
+		],
+	)
+}
+
+/** Every check in the window as a dot (time by duration), the P50 and P95 lines over them. */
+export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html | null =>
+	Option.match(statsOf(model), {
+		onNone: () => null,
+		onSome: (stats) => {
+			if (stats.samples.length === 0) return null
+			const yMax = scatterMax(stats.samples)
+			const failed = stats.samples.filter((sample) => !sample.ok).length
+			// Past the list's limit the axis starts at the oldest check shown, not the window's start.
+			const oldest = stats.samples[0]
+			const domain: Domain = {
+				startMs:
+					stats.samplesTruncated && oldest !== undefined ? isoMs(oldest.at) : stats.windowStartMs,
+				endMs: stats.windowEndMs,
+			}
+			const ticks = [0, 0.25, 0.5, 0.75, 1].map(
+				(share) => domain.startMs + (domain.endMs - domain.startMs) * share,
+			)
+			return panel(h, {}, [
+				panelHeader(h, {
+					title: "Every check",
+					action: h.span(
+						[h.Class("text-xs text-muted-foreground tabular-nums")],
+						[
+							stats.samplesTruncated
+								? `Newest ${stats.samples.length.toLocaleString()} checks`
+								: `${stats.samples.length.toLocaleString()} checks`,
+							failed === 0 ? "" : `, ${failed} failed`,
+						],
+					),
+				}),
+				uptimePanelBody(h, [
+					h.div(
+						[h.Class("flex flex-col gap-2")],
+						[
+							h.div(
+								[h.Class("flex h-56")],
+								[
+									h.div(
+										[
+											h.AriaHidden(true),
+											h.Class(
+												"flex w-16 shrink-0 flex-col justify-between pr-2 text-right font-mono text-[11px] text-muted-foreground tabular-nums",
+											),
+										],
+										[`≥ ${formatMs(yMax)}`, formatMs(yMax / 2), "0 ms"].map((label) =>
+											h.span([h.Key(label), h.Class("-my-1.5")], [label]),
+										),
+									),
+									h.div(
+										[
+											h.Role("group"),
+											h.AriaLabel(
+												`Each check's response time over the ${WINDOW_LABEL[model.window]}`,
+											),
+											h.Class(
+												"relative min-w-0 flex-1 border-b border-l border-border/60 bg-[linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] bg-[length:100%_50%] bg-repeat-y",
+											),
+										],
+										[
+											scatterLines(h, stats, domain, yMax),
+											...stats.samples.map((sample) =>
+												scatterDot(h, sample, domain, yMax, timeZone),
+											),
+										],
+									),
+								],
+							),
+							h.div(
+								[
+									h.AriaHidden(true),
+									h.Class(
+										"flex justify-between pl-16 font-mono text-[11px] text-muted-foreground",
+									),
+								],
+								ticks.map((ms) =>
+									h.span(
+										[h.Key(String(ms))],
+										[formatAlertTime(new Date(ms).toISOString(), timeZone)],
+									),
+								),
+							),
+							h.div(
+								[
+									h.Class(
+										"flex flex-wrap items-center gap-x-4 gap-y-1 pl-16 text-xs text-muted-foreground",
+									),
+								],
+								[
+									legendDot(h, "bg-success/80", "Passed"),
+									legendDot(h, "bg-destructive", "Failed"),
+									...SCATTER_LINES.map((line) =>
+										h.span(
+											[h.Key(line.key), h.Class("flex items-center gap-1.5")],
+											[
+												h.span(
+													[
+														h.Class("inline-block h-0.5 w-3 rounded-full"),
+														h.Style({ background: line.color }),
+													],
+													[],
+												),
+												line.label,
+											],
+										),
+									),
+									h.span([], ["Click a dot to open its trace"]),
+								],
+							),
+						],
+					),
+				]),
+			])
+		},
+	})
+
+const legendDot = (h: H, color: string, label: string): Html =>
+	h.span(
+		[h.Key(label), h.Class("flex items-center gap-1.5")],
+		[h.span([h.Class(cn("inline-block size-2 rounded-full", color))], []), label],
+	)
 
 type CheckRow = Readonly<{
 	at: string

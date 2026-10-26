@@ -19,6 +19,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import { destinationRow, incidentRow, NOW, ORG } from "../shared/test-rows"
 import type { UptimeMonitor } from "../shared/uptime-derive"
 import { downMonitor, heartbeatMonitor, httpMonitor, MONITOR_RULE } from "../shared/uptime-test-monitors"
+import { traceHref } from "../shared/uptime-commands"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -155,6 +156,10 @@ describe("uptime monitor page", () => {
 				key: model.stats.key ?? "",
 				result: Result.succeed({
 					points: [],
+					samples: [],
+					samplesTruncated: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
 					checks: 96,
 					failures: 2,
 					p50Ms: 121,
@@ -172,6 +177,43 @@ describe("uptime monitor page", () => {
 			expectView(text("121 ms")).toExist(),
 			expectView(text("310 ms")).toExist(),
 			expectView(text("884 ms")).toExist(),
+		)
+	})
+
+	test("every check in the window is a dot linking its trace, and the panel counts the failures", () => {
+		const model = opened(httpMonitor())
+		const sample = (minutesAgo: number, ok: boolean, traceId: string) => ({
+			at: new Date(NOW - minutesAgo * 60_000).toISOString(),
+			durationMs: ok ? 120 : 10_000,
+			ok,
+			statusCode: ok ? 200 : null,
+			traceId,
+		})
+		const withStats = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					points: [],
+					samples: [sample(30, true, "a".repeat(32)), sample(10, false, "b".repeat(32))],
+					samplesTruncated: false,
+					windowStartMs: NOW - 3_600_000,
+					windowEndMs: NOW,
+					checks: 2,
+					failures: 1,
+					p50Ms: 120,
+					p95Ms: 10_000,
+					p99Ms: 10_000,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withStats),
+			themeResolved(),
+			expectView(text("2 checks, 1 failed")).toExist(),
+			expectView(role("link", { name: /200, 120 ms/u })).toHaveAttr("href", traceHref("a".repeat(32))),
+			expectView(role("link", { name: /Failed, 10.00 s/u })).toHaveAttr("href", traceHref("b".repeat(32))),
 		)
 	})
 

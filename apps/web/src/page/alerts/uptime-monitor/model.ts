@@ -27,9 +27,23 @@ export const CheckPoint = Schema.Struct({
 })
 export type CheckPoint = typeof CheckPoint.Type
 
+/** `UptimeCheckSample`: one check, from its span. */
+export const CheckSample = Schema.Struct({
+	at: Schema.String,
+	durationMs: Schema.Number,
+	ok: Schema.Boolean,
+	statusCode: Schema.NullOr(Schema.Number),
+	traceId: Schema.String,
+})
+export type CheckSample = typeof CheckSample.Type
+
 /** `UptimeCheckStats` (@maple/web-data/warehouse/uptime): the window's checks from their spans. */
 export const CheckStats = Schema.Struct({
 	points: Schema.Array(CheckPoint),
+	samples: Schema.Array(CheckSample),
+	samplesTruncated: Schema.Boolean,
+	windowStartMs: Schema.Number,
+	windowEndMs: Schema.Number,
 	checks: Schema.Number,
 	failures: Schema.Number,
 	p50Ms: Schema.NullOr(Schema.Number),
