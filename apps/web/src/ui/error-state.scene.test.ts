@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { describe, expect, test } from "vitest"
 import { type LoadFailure, toLoadFailure } from "../data/load-failure"
-import { autoRetryMessage, errorState, failureKind } from "./error-state"
+import { autoRetryMessage, errorState, FAILURE_SENTENCE, failureKind, failureSentence } from "./error-state"
 
 const Message = defineMessageUnion({ ClickedRetry: {} })
 type Message = typeof Message.Type
@@ -98,5 +98,54 @@ describe("autoRetryMessage", () => {
 				"Nothing you've built is affected.",
 			),
 		).toBe("Maple's API is unreachable. Nothing you've built is affected. Retrying automatically…")
+	})
+})
+
+describe("failureSentence", () => {
+	const base = toLoadFailure("boom")
+
+	test("a dropped, timed-out or failing backend reads as one outage sentence", () => {
+		const outage = { ...base, type: "api_error" as const, recovery: "retry" as const, retryable: true }
+		expect(
+			failureSentence({
+				...outage,
+				code: "network_unreachable",
+				message: "Maple's API is unreachable.",
+			}),
+		).toBe(FAILURE_SENTENCE.backend)
+		expect(
+			failureSentence({ ...outage, code: "request_timeout", message: "The API did not respond." }),
+		).toBe(FAILURE_SENTENCE.backend)
+	})
+
+	test("an unrecognised failure reads as the unknown sentence, without 'or reload'", () => {
+		expect(failureSentence(base)).toBe(FAILURE_SENTENCE.unknown)
+	})
+
+	test("a fixable failure keeps its own guidance", () => {
+		const fixable = {
+			...base,
+			code: "range_too_wide",
+			type: "invalid_request_error" as const,
+			recovery: "fix_request" as const,
+			retryable: false,
+			message: "Pick a shorter range.",
+		}
+		expect(failureSentence(fixable)).toBe("Pick a shorter range.")
+	})
+})
+
+describe("one retry affordance", () => {
+	const panel = (h: HtmlBuilder<Message>): Html =>
+		errorState(h, { failure, message: "Saved. Try again or reload.", onRetry: Message.ClickedRetry() })
+
+	test("a drawn Try again button replaces the message's own retry advice", () => {
+		scene(
+			{ update, view: (_model: Model, h: HtmlBuilder<Message>) => panel(h) },
+			given<Model>({ hidesRetryButton: false }),
+			expectView(role("button", { name: "Try again" })).toExist(),
+			expectView(role("alert")).toContainText("Saved."),
+			expectView(role("alert")).not.toContainText("reload"),
+		)
 	})
 })

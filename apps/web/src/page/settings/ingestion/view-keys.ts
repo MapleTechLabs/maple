@@ -96,7 +96,7 @@ export const credentialRow = (h: H, options: CredentialRowOptions): Html => {
 					...(options.description
 						? [
 								h.span(
-									[h.Class("text-muted-foreground/70 text-2xs leading-3.5")],
+									[h.Class("font-prose text-muted-foreground/70 text-2xs leading-3.5")],
 									[options.description],
 								),
 							]
@@ -190,6 +190,18 @@ export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 			isDisabled: isBusy,
 		})
 	const failure = keys === null && isFailed ? AsyncData.getError(model.ingest) : Option.none()
+	// One error row stands in for the pair, so a failed read never looks like two blank keys.
+	if (Option.isSome(failure))
+		return [
+			errorState(h, {
+				variant: "row",
+				failure: failure.value,
+				title: "Couldn't load the ingest keys",
+				onRetry: Message.ClickedRetryIngestKeys(),
+				// A row of the keys card: the card draws the frame, not the dashed border.
+				className: "rounded-none border-0 px-4 py-3",
+			}),
+		]
 	return [
 		row("public", "Public key", "Client", "text-info", "For browser and client-side telemetry SDKs"),
 		row(
@@ -199,19 +211,5 @@ export const ingestKeyRows = (h: H, model: Model): ReadonlyArray<Html> => {
 			"text-warning",
 			"For server-side ingestion and backend services",
 		),
-		// One error for the pair, not one per row.
-		...Option.match(failure, {
-			onNone: () => [],
-			onSome: (error) => [
-				errorState(h, {
-					variant: "row",
-					failure: error,
-					title: "Couldn't load the ingest keys",
-					onRetry: Message.ClickedRetryIngestKeys(),
-					// A row of the keys card: the card draws the frame, not the dashed border.
-					className: "rounded-none border-0 px-4 py-3",
-				}),
-			],
-		}),
 	]
 }

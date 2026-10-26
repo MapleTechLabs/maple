@@ -153,13 +153,13 @@ const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html
 			searchToolbar(h, {
 				id: "aws-search",
 				value: model.search.q ?? "",
-				placeholder: `Filter ${countLabel(views.length, noun)}`,
+				placeholder: `Filter ${pluralize(2, noun)}`,
 				onInput: (value) => Message.ChangedSearch({ value }),
 				onClear: Message.ClickedClearSearch(),
 				children: regionButtons(h, model, regionsOf(views)),
 				trailing:
 					shown.length === views.length
-						? `${countLabel(views.length, noun)} · problems first`
+						? "problems first"
 						: `${shown.length} of ${countLabel(views.length, noun)}`,
 			}),
 			shown.length === 0
@@ -292,29 +292,36 @@ const statusView = (h: H, model: Model): Html =>
 		onRefreshing: (data) => fleet(h, model, data),
 	})
 
-/** "4417-2213-9045 · us-east-1, eu-central-1 · metrics every minute", once connected. */
-const description = (status: AwsStatus | null): string => {
+/** "4417-2213-9045 · us-east-1, eu-central-1 · metrics every minute", ids and regions in mono. */
+const description = (h: H, status: AwsStatus | null): Html | string => {
 	if (status === null || status.connections.length === 0)
 		return "CloudWatch metrics for every ECS service, instance, load balancer, database, function and queue."
 	const regions = [
 		...new Set(status.connections.flatMap((connection) => connection.metric_stream?.regions ?? [])),
 	]
-	return [
-		status.connections.map((connection) => connection.account_id).join(" · "),
-		...(regions.length === 0 ? [] : [regions.join(", ")]),
-		"metrics every minute",
-	].join(" · ")
+	const mono = (text: string) => h.span([h.Class("font-mono text-xs text-foreground/80")], [text])
+	return h.span(
+		[],
+		[
+			mono(status.connections.map((connection) => connection.account_id).join(" · ")),
+			...(regions.length === 0 ? [] : [" · ", mono(regions.join(", "))]),
+			" · metrics every minute",
+		],
+	)
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const status = AsyncData.isSuccess(model.status.data) ? model.status.data.data : null
 	const accounts = status?.connections.length ?? 0
 	const heroActions: ReadonlyArray<Html> = [
-		linkButton(h, { size: "sm", variant: "outline", href: MANAGE_HREF }, ["Manage accounts"]),
+		linkButton(h, { size: "sm", variant: "outline", href: MANAGE_HREF }, [
+			icon(h, "GearIcon"),
+			"Manage accounts",
+		]),
 	]
 	const hero = pageHeroParts(h, {
 		title: "AWS",
-		description: description(status),
+		description: description(h, status),
 		trailing:
 			accounts === 0
 				? []
@@ -345,6 +352,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						onReset: Message.ClickedResetTimeRange(),
 						onReload: Message.ClickedReload(),
 						isReloading: model.isReloading,
+						isReloadHidden: AsyncData.isFailure(model.status.data),
 					}),
 				],
 			),

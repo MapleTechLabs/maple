@@ -4763,6 +4763,73 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	CalendarIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"line",
+				[
+					["x1", "2"],
+					["y1", "9"],
+					["x2", "22"],
+					["y2", "9"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+				],
+				[],
+			],
+			[
+				"line",
+				[
+					["x1", "7"],
+					["y1", "1"],
+					["x2", "7"],
+					["y2", "4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"line",
+				[
+					["x1", "17"],
+					["y1", "1"],
+					["x2", "17"],
+					["y2", "4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"rect",
+				[
+					["x", "2"],
+					["y", "4"],
+					["width", "20"],
+					["height", "16"],
+					["rx", "2"],
+					["ry", "2"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 	ClockIcon: [
 		"svg",
 		[
@@ -5512,6 +5579,52 @@ export const ICON_TREES = {
 				"path",
 				[
 					["d", "M19 20V4"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
+	MonitorIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M12 17V21"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					["d", "M7 21H17"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					[
+						"d",
+						"M2 6L2 15C2 16.1046 2.89543 17 4 17L20 17C21.1046 17 22 16.1046 22 15L22 6C22 4.89543 21.1046 4 20 4L4 4C2.89543 4 2 4.89543 2 6Z",
+					],
 					["stroke", "currentColor"],
 					["stroke-width", "2"],
 					["stroke-linecap", "square"],

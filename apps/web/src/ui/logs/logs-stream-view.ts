@@ -36,6 +36,16 @@ export interface ViewInputs {
 
 const PINNED_COL_WIDTH = "150px"
 
+const GENERIC_SEGMENTS = new Set(["name", "id", "value", "type"])
+
+/** Short header for a pinned key: the last segment that is not generic, so `deployment.environment.name` reads "environment". The full key is the tooltip. */
+export const pinnedColumnLabel = (key: string): string => {
+	const segments = key.split(".").filter((segment) => segment !== "")
+	return (
+		segments.findLast((segment) => !GENERIC_SEGMENTS.has(segment.toLowerCase())) ?? segments.at(-1) ?? key
+	)
+}
+
 const ROW_EVENTS: RowEvents<Message> = {
 	clickedRow: (index) => Message.ClickedRow({ index }),
 	clickedExpand: (index) => Message.ClickedExpand({ index }),
@@ -69,7 +79,7 @@ const columnHeader = (
 			h.span([h.AriaHidden(true), h.Class("-mr-1.5 shrink-0 w-4")]),
 			h.span([h.Class("shrink-0 w-[92px]"), h.Title(`Times in ${timeZone}`)], ["Time"]),
 			h.span([h.Class("shrink-0 w-11")], ["Level"]),
-			h.span([h.Class("shrink-0 w-[128px] hidden md:inline-block")], ["Service"]),
+			h.span([h.Class("shrink-0 w-40 hidden md:inline-block")], ["Service"]),
 			...pinnedColumns.map((key) =>
 				h.span(
 					[
@@ -77,7 +87,7 @@ const columnHeader = (
 						h.Style({ width: PINNED_COL_WIDTH }),
 						h.Title(key),
 					],
-					[key],
+					[pinnedColumnLabel(key)],
 				),
 			),
 			h.span([h.Class("min-w-0 flex-1")], ["Message"]),

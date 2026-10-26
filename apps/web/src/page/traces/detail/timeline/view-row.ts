@@ -35,6 +35,23 @@ export type RowState = Readonly<{
 
 type H = HtmlBuilder<Message>
 
+/**
+ * The bar width a span name needs inside its bar (11px mono, about 6.6px a glyph, plus padding and
+ * the border), rounded up to a static container step: under it the name draws after the bar instead.
+ */
+const LABEL_FIT = [
+	{ upTo: 56, inside: "@min-[56px]/bar:inline", outside: "@max-[56px]/bar:block" },
+	{ upTo: 100, inside: "@min-[100px]/bar:inline", outside: "@max-[100px]/bar:block" },
+	{ upTo: 140, inside: "@min-[140px]/bar:inline", outside: "@max-[140px]/bar:block" },
+	{ upTo: 200, inside: "@min-[200px]/bar:inline", outside: "@max-[200px]/bar:block" },
+	{ upTo: 280, inside: "@min-[280px]/bar:inline", outside: "@max-[280px]/bar:block" },
+	{ upTo: 400, inside: "@min-[400px]/bar:inline", outside: "@max-[400px]/bar:block" },
+] as const
+const labelFit = (name: string) => {
+	const needed = name.length * 6.6 + 16
+	return LABEL_FIT.find((step) => needed <= step.upTo) ?? LABEL_FIT[LABEL_FIT.length - 1]
+}
+
 const attr = (h: H, value: string) => h.Attribute("class", value)
 
 const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html => {
@@ -164,12 +181,15 @@ const labelCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html
 					]
 				: []),
 			h.span(
-				[attr(h, "ml-auto shrink-0 pl-1 font-mono text-3xs tabular-nums text-muted-foreground")],
+				[attr(h, "ml-auto shrink-0 pl-2 font-mono text-3xs tabular-nums text-muted-foreground")],
 				[durationLabel],
 			),
 		],
 	)
 }
+
+const eventLabel = (marker: Readonly<{ name: string; offsetLabel: string; isException: boolean }>) =>
+	`${marker.isException ? "Exception" : "Event"}: ${marker.name === "" ? "(unnamed event)" : marker.name} at ${marker.offsetLabel}`
 
 const eventMarkers = (h: H, bar: Bar, state: RowState, events: ReadonlyArray<TimelineSpanEvent>): Html =>
 	h.div(
@@ -180,9 +200,9 @@ const eventMarkers = (h: H, bar: Bar, state: RowState, events: ReadonlyArray<Tim
 		spanEventMarkers(events, bar.offsetStartMs, bar.span.durationMs).map((marker, index) =>
 			h.span(
 				[
-					h.AriaLabel(
-						`${marker.name === "" ? "(unnamed event)" : marker.name} at ${marker.offsetLabel}`,
-					),
+					h.AriaLabel(eventLabel(marker)),
+					// A native hover label until the marker tooltip is ported.
+					h.Title(eventLabel(marker)),
 					attr(
 						h,
 						"pointer-events-auto absolute -top-0.5 -bottom-0.5 z-[1] flex w-2 -translate-x-1/2 justify-center",
@@ -233,6 +253,7 @@ const clipChevron = (h: H, bar: Bar, side: "left" | "right", isShown: boolean): 
 const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html => {
 	const isOffscreen = state.leftPct > 100 || state.rightPct < 0
 	const isLabelLeft = state.rightPct >= 70 && state.leftPct > 30
+	const fit = labelFit(bar.span.spanName)
 	return h.div(
 		[attr(h, "group/cell relative flex-1 min-w-0 overflow-hidden")],
 		[
@@ -259,7 +280,7 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 						[attr(h, "flex min-w-0 flex-1 items-center overflow-hidden")],
 						[
 							h.span(
-								[attr(h, "hidden truncate px-1.5 text-foreground/90 @min-[56px]/bar:inline")],
+								[attr(h, cn("hidden truncate px-1.5 text-foreground/90", fit.inside))],
 								[bar.span.spanName],
 							),
 							h.span(
@@ -277,7 +298,10 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 						[
 							attr(
 								h,
-								"pointer-events-none absolute top-1/2 hidden -translate-y-1/2 whitespace-nowrap font-mono text-3xs text-muted-foreground/80 @max-[56px]/bar:block left-full ml-[5px] data-[side=left]:left-auto data-[side=left]:right-full data-[side=left]:ml-0 data-[side=left]:mr-[5px]",
+								cn(
+									"pointer-events-none absolute top-1/2 hidden -translate-y-1/2 whitespace-nowrap font-mono text-3xs text-muted-foreground/80 left-full ml-[5px] data-[side=left]:left-auto data-[side=left]:right-full data-[side=left]:ml-0 data-[side=left]:mr-[5px]",
+									fit.outside,
+								),
 							),
 							h.DataAttribute("outside-label", ""),
 							...(isLabelLeft ? [h.DataAttribute("side", "left")] : []),

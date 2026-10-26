@@ -269,7 +269,7 @@ const inputGroups = (h: HtmlBuilder<Message>): Html =>
 				),
 			]),
 		]),
-		inputGroup(h, { className: "w-72" }, [
+		inputGroup(h, { className: "w-96" }, [
 			inputGroupAddon(h, {}, [inputGroupText(h, {}, ["https://"])]),
 			inputGroupInput(h, {
 				id: "base-ui-_r_a_",

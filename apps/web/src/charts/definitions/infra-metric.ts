@@ -122,8 +122,14 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		linearYDomain({ rows: data, keys: series, stacked: spec.stacked, thresholds }),
 	)
 	// A percent axis past 50% runs to 100%, so it draws "0, 50%, 100%" around the 80% line.
+	// Stacked shares never pass 100%: a bucket whose parts sum higher is scaled down to fit.
+	const isShare = spec.stacked && spec.unit === "percent"
 	const yDomain: readonly [number, number] =
-		spec.unit === "percent" && niceDomain[1] > 0.5 && niceDomain[1] < 1 ? [niceDomain[0], 1] : niceDomain
+		isShare && niceDomain[1] > 1
+			? [niceDomain[0], 1]
+			: spec.unit === "percent" && niceDomain[1] > 0.5 && niceDomain[1] < 1
+				? [niceDomain[0], 1]
+				: niceDomain
 	const chrome = spec.chrome
 	const colorOf = (name: string) => spec.colors[name] ?? chrome.border
 	const at = (point: InfraPoint) => point.date
@@ -133,8 +139,18 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 	}
 	const gradientFor = (name: string) => `${spec.gradientPrefix}-${name.replace(/\W+/g, "_")}`
 	const curve = d3Curve(curveMonotoneX)
+	const shareScale = (point: InfraPoint) => {
+		const sum = series.reduce((total, name) => total + (valueOf(name)(point) ?? 0), 0)
+		return isShare && sum > 1 ? 1 / sum : 1
+	}
 	const cells: ReadonlyArray<InfraCell> = spec.stacked
-		? data.flatMap((point) => series.map((name) => ({ point, name, value: valueOf(name)(point) })))
+		? data.flatMap((point) => {
+				const scale = shareScale(point)
+				return series.map((name) => {
+					const value = valueOf(name)(point)
+					return { point, name, value: value === null ? null : value * scale }
+				})
+			})
 		: []
 	const bands = spec.stacked
 		? [

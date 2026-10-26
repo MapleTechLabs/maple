@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { icon, type IconName } from "../../../ui/icon"
-import { severityIcon, SEVERITY_TEXT } from "../../errors/kit/severity"
+import { severityIcon } from "../../errors/kit/severity"
 import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LABEL } from "./format"
 
 // Marks and states the Security Center's pages share.
@@ -32,22 +32,39 @@ export const severityMark = <M>(
 			)
 		: severityIcon(h, issueSeverityOf(severity), size)
 
-export const severityLabel = <M>(
+type RankedSeverity = Exclude<SecurityAuditSeverity, "informational">
+
+/** Security's own ramp: four hues far apart, so a dot reads without its label. */
+export const SECURITY_SEVERITY_FILL = {
+	critical: "bg-severity-fatal",
+	high: "bg-severity-warn",
+	medium: "bg-severity-debug",
+	low: "bg-severity-trace",
+} satisfies Record<RankedSeverity, string>
+
+const SECURITY_SEVERITY_TINT = {
+	critical: "border-transparent bg-severity-fatal text-white",
+	high: "bg-severity-warn/12 text-severity-warn",
+	medium: "bg-severity-debug/12 text-severity-debug",
+	low: "bg-severity-trace/12 text-severity-trace",
+} satisfies Record<RankedSeverity, string>
+
+/** The severity badge: critical is filled so it never reads as one more tinted label. */
+export const securitySeverityBadge = <M>(
 	h: HtmlBuilder<M>,
 	severity: SecurityAuditSeverity,
 	className?: string,
 ): Html => {
 	const level = issueSeverityOf(severity)
-	return h.span(
-		[
-			h.Class(
-				cn(
-					"text-xs font-medium",
-					level === null ? "text-muted-foreground" : SEVERITY_TEXT[level],
-					className,
-				),
+	return badge(
+		h,
+		{
+			variant: "outline",
+			className: cn(
+				level === null ? "text-muted-foreground" : SECURITY_SEVERITY_TINT[level],
+				className,
 			),
-		],
+		},
 		[SECURITY_SEVERITY_LABEL[severity]],
 	)
 }

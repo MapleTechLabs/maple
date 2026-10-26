@@ -2,6 +2,7 @@ import { NARROW_TWO_COLUMNS } from "../kit/layout"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import { formatNumber } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button } from "../../../ui/button"
@@ -13,7 +14,6 @@ import { panel, panelHeader } from "../../../ui/panel"
 import { statusDot } from "../../../ui/status-dot"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { SEVERITY_FILL } from "../../errors/kit/severity"
 import {
 	formatElapsed,
 	formatUsd,
@@ -25,9 +25,10 @@ import {
 	modelLabel,
 	PROFILE_LABEL,
 	RUN_KIND_LABEL,
+	SECURITY_SEVERITY_LABEL,
 	runToneOf,
 	refLabel,
-	targetLine,
+	targetParts,
 } from "../kit/format"
 import {
 	gateState,
@@ -35,7 +36,8 @@ import {
 	placeholderRows,
 	repositoryName,
 	runStatusBadge,
-	severityLabel,
+	SECURITY_SEVERITY_FILL,
+	securitySeverityBadge,
 } from "../kit/parts"
 import {
 	countBySeverity,
@@ -235,10 +237,14 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 					[
 						h.Key(severity),
 						h.Class("inline-flex items-center gap-1.5"),
-						h.Title(`${counts[severity]} ${severity}`),
+						h.Title(`${counts[severity]} ${SECURITY_SEVERITY_LABEL[severity].toLowerCase()}`),
 					],
 					[
-						statusDot(h, { tone: "custom", size: "lg", className: SEVERITY_FILL[severity] }),
+						statusDot(h, {
+							tone: "custom",
+							size: "lg",
+							className: SECURITY_SEVERITY_FILL[severity],
+						}),
 						String(counts[severity]),
 					],
 				),
@@ -257,6 +263,21 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 		],
 	)
 }
+
+/** Names the open-findings dots once, in the panel header, so each row stays four numbers. */
+const severityLegend = (h: H): Html =>
+	h.span(
+		[h.Class("flex items-center gap-2.5"), h.AriaHidden(true)],
+		(["critical", "high", "medium", "low"] as const).map((severity) =>
+			h.span(
+				[h.Key(severity), h.Class("inline-flex items-center gap-1.5")],
+				[
+					statusDot(h, { tone: "custom", className: SECURITY_SEVERITY_FILL[severity] }),
+					SECURITY_SEVERITY_LABEL[severity],
+				],
+			),
+		),
+	)
 
 const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Html => {
 	if (run === undefined) return h.span([h.Class("text-xs text-muted-foreground")], ["No run yet"])
@@ -302,6 +323,26 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
 	)
 }
 
+/**
+ * One span per part, so the ellipsis lands inside a word (the last part's) rather than after a
+ * separator's space.
+ */
+const metaLine = (h: H, parts: ReadonlyArray<string>, title: string): Html =>
+	h.span(
+		[h.Class("flex max-w-72 min-w-0 overflow-hidden text-xs text-muted-foreground"), h.Title(title)],
+		parts.map((part, index) =>
+			h.span(
+				[
+					h.Key(String(index)),
+					h.Class(
+						cn("whitespace-pre", index === parts.length - 1 ? "min-w-0 truncate" : "shrink-0"),
+					),
+				],
+				[index === 0 ? part : ` · ${part}`],
+			),
+		),
+	)
+
 /** The model a target hunts with: its own pick, else the org's. */
 const targetModelOf = (model: Model, target: SecurityAuditTarget): string | null => {
 	const id = target.discoveryModel ?? settingsOf(model)?.discoveryModel ?? null
@@ -314,9 +355,8 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 	const href = run === undefined ? targetRunsHref(target) : runHref(run)
 	const isFindingsKnown = typeof findings === "object" && findings !== null
 	// Model first so a long scope path is what truncates.
-	const meta = [targetModelOf(model, target), targetLine(target)]
-		.filter((part) => part !== null)
-		.join(" · ")
+	const parts = [targetModelOf(model, target), ...targetParts(target)].filter((part) => part !== null)
+	const meta = parts.join(" · ")
 	return tableRow(
 		h,
 		[
@@ -329,13 +369,7 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 							[h.Class("flex min-w-0 flex-col")],
 							[
 								repositoryName(h, target.repository, "text-sm font-medium"),
-								h.span(
-									[
-										h.Class("max-w-64 truncate text-xs text-muted-foreground"),
-										h.Title(meta),
-									],
-									[meta],
-								),
+								metaLine(h, parts, meta),
 							],
 						),
 					],
@@ -385,8 +419,8 @@ const targetsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTa
 		panelHeader(h, {
 			title: "Targets",
 			action: h.span(
-				[h.Class("text-xs text-muted-foreground")],
-				["One audit runs per target at a time"],
+				[h.Class("flex items-center gap-4 text-xs text-muted-foreground")],
+				[severityLegend(h), "One audit runs per target at a time"],
 			),
 		}),
 		table(h, { variant: "bare", ariaLabel: "Audit targets" }, [
@@ -432,13 +466,13 @@ const findingItem = (h: H, finding: SecurityAuditFinding, repository: string): H
 		findingHref(finding),
 		[
 			h.span(
-				[h.Class("w-16 shrink-0 text-xs uppercase")],
+				[h.Class("w-16 shrink-0")],
 				[
 					finding.verdict === "needs_validation"
 						? h.span([h.Class("text-xs text-muted-foreground normal-case")], ["To validate"])
 						: finding.overallSeverity === null
 							? ""
-							: severityLabel(h, finding.overallSeverity),
+							: securitySeverityBadge(h, finding.overallSeverity),
 				],
 			),
 			h.span(

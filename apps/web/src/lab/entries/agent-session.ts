@@ -12,7 +12,7 @@ import { Model as SessionModel } from "../../page/agent-sessions/session/model"
 import type { Resources } from "../../platform/resources"
 import { ViewerFlags, viewerFlags } from "../../ui/logs/viewer"
 import * as Toast from "../../ui/toast"
-import { toggle } from "../../ui/toggle"
+import { switchControl } from "../../ui/switch"
 import { defineLabWithFlags } from "../define"
 import {
 	enterSession,
@@ -26,7 +26,7 @@ import {
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 
 // `/lab/agent-session`: the session page's header and four
-// views over the package's fixture, with the Clean and Capture off toggles. No warehouse reads.
+// views over the package's fixture, with Clean session and Content capture switches. No warehouse reads.
 
 const SESSION_ID = "lab-session-0f3c9a1e2b7d"
 
@@ -94,8 +94,27 @@ const update = (model: Model, message: Message): Return =>
 		GotToastMessage: ({ message: inner }) => foldToasts(model, inner),
 	})
 
-const labToggle = (h: HtmlBuilder<Message>, label: string, isPressed: boolean, onClick: Message): Html =>
-	toggle(h, { variant: "outline", size: "sm", isPressed, onClick, className: "text-xs" }, [label])
+/** A labelled switch, so a fixture control reads as a setting rather than a status chip. */
+const labSwitch = (
+	h: HtmlBuilder<Message>,
+	id: string,
+	label: string,
+	isChecked: boolean,
+	onToggle: Message,
+): Html =>
+	h.label(
+		[h.Class("inline-flex cursor-pointer items-center gap-2 text-xs font-medium")],
+		[
+			...switchControl(h, {
+				id: `${id}-switch`,
+				inputId: `${id}-input`,
+				isChecked,
+				ariaLabel: label,
+				onToggle,
+			}),
+			label,
+		],
+	)
 
 const page = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const selected = model.session.search.span
@@ -129,8 +148,14 @@ const page = (model: Model, h: HtmlBuilder<Message>): Html => {
 					h.div(
 						[h.Class("ml-auto flex shrink-0 items-center gap-2")],
 						[
-							labToggle(h, "Clean", model.isClean, Message.ToggledClean()),
-							labToggle(h, "Capture off", model.isCaptureOff, Message.ToggledCaptureOff()),
+							labSwitch(h, "lab-clean", "Clean session", model.isClean, Message.ToggledClean()),
+							labSwitch(
+								h,
+								"lab-capture",
+								"Content capture",
+								!model.isCaptureOff,
+								Message.ToggledCaptureOff(),
+							),
 						],
 					),
 				],

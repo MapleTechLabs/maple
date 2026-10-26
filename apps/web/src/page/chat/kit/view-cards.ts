@@ -71,7 +71,8 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 				{ layout: "grid", className: "gap-x-2 gap-y-1" },
 				entries.map(([key, value]) => {
 					const formatted = formatValue(value, timeZone)
-					return keyValue(h, { label: argumentLabel(key) }, [
+					const label = argumentLabel(key)
+					return keyValue(h, { label, labelContent: h.span([h.Class("font-prose")], [label]) }, [
 						formatted.kind === "scalar"
 							? h.span([h.Class("font-medium")], [formatted.text])
 							: h.span(
@@ -83,6 +84,13 @@ const approvalSummary = <M>(h: HtmlBuilder<M>, input: unknown, timeZone: string)
 			)
 		},
 	})
+
+/** "Update Alert Rule" reads "Update alert rule"; acronyms like "SQL" keep their case. */
+const sentenceCase = (label: string): string =>
+	label
+		.split(" ")
+		.map((word, index) => (index > 0 && /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word))
+		.join(" ")
 
 export type ApprovalCardOptions<M> = Readonly<{
 	toolName: string
@@ -104,7 +112,14 @@ export const approvalCard = <M>(h: HtmlBuilder<M>, options: ApprovalCardOptions<
 				itemMedia(h, { variant: "icon" }, [
 					icon(h, "CircleWarningIcon", { className: cn("size-3.5", TONE_TEXT.warn) }),
 				]),
-				itemContent(h, [itemTitle(h, ["Approval required: ", toolLabel(options.toolName)])]),
+				itemContent(h, [
+					itemTitle(h, [
+						h.span(
+							[h.Class("font-prose")],
+							["Approval required: ", sentenceCase(toolLabel(options.toolName))],
+						),
+					]),
+				]),
 			]),
 			h.div(
 				[h.Class("border-t border-severity-warn/20 bg-background/50 p-3")],

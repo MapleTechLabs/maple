@@ -20,6 +20,7 @@ import {
 	GCP_RESOURCES_TAB,
 	GCP_VIEW_SERVICES,
 	gcpResourcesError,
+	type GcpServiceView,
 	type GcpView,
 } from "../../../../components/infra/gcp/tabs"
 import { formatPercentColumn, pluralize } from "@maple/ui/lib/format"
@@ -180,12 +181,12 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 		searchToolbar(h, {
 			id: "gcp-search",
 			value: query,
-			placeholder: `Filter ${rows.length} ${options.noun}`,
+			placeholder: `Filter ${options.noun}`,
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
 			trailing:
 				shown.length === rows.length
-					? `${rows.length} ${options.noun} · ${options.order ?? "problems first"}`
+					? (options.order ?? "problems first")
 					: `${shown.length} of ${rows.length} ${options.noun}`,
 			children: options.region === undefined ? [] : [regionChip(h, options.region)],
 		}),
@@ -253,6 +254,16 @@ const healthDotOf = (h: H, health: GcpProjectHealth | undefined): ReadonlyArray<
 	]),
 ]
 
+/** What a project's share counts, matching `gcpProjectShares`. */
+const SHARE_UNIT = {
+	services: "of requests",
+	pubsub: "of messages",
+	cloudSql: "of instances",
+	gke: "of workloads",
+	computeEngine: "of instances",
+	loadBalancing: "of load balancers",
+} as const satisfies Record<GcpServiceView, string>
+
 /** `GcpProjectsStrip`: one cell per project, the biggest share first; a cell scopes to it. */
 const projectsStrip = (
 	h: H,
@@ -260,6 +271,7 @@ const projectsStrip = (
 	share: ReadonlyMap<string, number>,
 	counts: (project: string) => string,
 	health: ReadonlyMap<string, GcpProjectHealth>,
+	shareUnit: string,
 ): Html =>
 	h.div(
 		[h.Class("flex flex-col overflow-hidden rounded-md border md:flex-row")],
@@ -287,8 +299,14 @@ const projectsStrip = (
 									[project],
 								),
 								h.span(
-									[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
-									[formatPercentColumn(fraction)],
+									[h.Class("ml-auto flex items-baseline gap-1 whitespace-nowrap")],
+									[
+										h.span(
+											[h.Class("font-mono text-2xs tabular-nums text-foreground")],
+											[formatPercentColumn(fraction)],
+										),
+										h.span([h.Class("text-3xs text-muted-foreground")], [shareUnit]),
+									],
 								),
 							],
 						),
@@ -576,6 +594,7 @@ export const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 									gcpProjectShares(inRegion, view),
 									projectCounts,
 									health,
+									SHARE_UNIT[view],
 								),
 							]
 						: []),

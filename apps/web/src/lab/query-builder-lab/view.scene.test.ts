@@ -33,7 +33,10 @@ describe("query builder lab view", () => {
 			expectView(role("textbox", { name: "Where clause for query A" })).toExist(),
 			expectView(role("textbox", { name: "Where clause for query B" })).toExist(),
 			expectView(text("Formula F1 (executed after query runs)")).toExist(),
-			expectView(text("2026-10-01 11:00:00 → 2026-10-01 12:00:00")).toExist(),
+			expectView(role("button", { name: "Run query" })).toHaveAttr(
+				"title",
+				"2026-10-01 11:00:00 → 2026-10-01 12:00:00",
+			),
 		)
 	})
 

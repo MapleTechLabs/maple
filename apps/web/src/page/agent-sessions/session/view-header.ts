@@ -8,6 +8,7 @@ import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { keyValue, keyValueList } from "../../../ui/key-value"
 import { pageTitle } from "../../../ui/page-layout"
+import { moreChip } from "../kit/more-chip"
 import { sessionIdentity } from "../kit/session-name"
 import { vendorColor, vendorIcon } from "../kit/vendor"
 import { relativeTime } from "../../kit/relative-time"
@@ -20,11 +21,16 @@ type H = HtmlBuilder<Message>
 
 const ID_PREFIX_LENGTH = 32
 
-/** "claude-sonnet-5 +1": the first name, the rest as a count. */
-const firstPlusRest = (names: ReadonlyArray<string>): string => {
+/** "agent-runner +9": the first name, the rest as a chip that names them on hover. */
+const firstPlusRest = (h: H, names: ReadonlyArray<string>): Html => {
 	const [first, ...rest] = names
-	if (first === undefined) return ""
-	return rest.length > 0 ? `${first} +${rest.length}` : first
+	return h.span(
+		[h.Class("inline-flex min-w-0 items-baseline gap-1.5")],
+		[
+			h.span([h.Class("min-w-0 truncate")], [first ?? ""]),
+			...(rest.length > 0 ? [moreChip(h, { count: rest.length, names: rest })] : []),
+		],
+	)
 }
 
 /** `CopyableValue`: the id that copies itself, tinted by the copy's outcome. */
@@ -89,11 +95,9 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 				]),
 				...(summary.serviceNames.length > 0
 					? [
-							keyValue(
-								h,
-								{ label: "Service", title: summary.serviceNames.join(", "), mono: true },
-								[firstPlusRest(summary.serviceNames)],
-							),
+							keyValue(h, { label: "Service", mono: true }, [
+								firstPlusRest(h, summary.serviceNames),
+							]),
 						]
 					: []),
 				keyValue(h, { label: idLabel, title: id }, [

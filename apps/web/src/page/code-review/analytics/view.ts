@@ -100,8 +100,20 @@ const authorsOf = (model: Model): ReadonlyArray<string> =>
 		onSome: (analytics) => analytics.authors.map((row) => row.author),
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	h.div(
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const filters = filtersView(h, {
+		frame: model.frame,
+		search: model.search,
+		reviewedOnly: true,
+		kind: "author",
+		options: authorsOf(model),
+		selected: model.search.author,
+		defaultPreset: DEFAULT_PRESET,
+		presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
+		toMessage: (message) => Message.GotFrameMessage({ message }),
+		isFailed: AsyncData.isFailure(model.analytics.data),
+	})
+	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
 			codeReviewLayout(
@@ -109,20 +121,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					h,
 					active: "analytics",
 					search: model.search,
-					toolbar: filtersView(h, {
-						frame: model.frame,
-						search: model.search,
-						reviewedOnly: true,
-						kind: "author",
-						options: authorsOf(model),
-						selected: model.search.author,
-						defaultPreset: DEFAULT_PRESET,
-						presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
-						toMessage: (message) => Message.GotFrameMessage({ message }),
-					}),
+					toolbar: filters.actions,
+					filters: filters.filters,
 				},
 				[content(h, model, inputs.context.timeZone)],
 			),
 		],
-	),
-)
+	)
+})

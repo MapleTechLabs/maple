@@ -9,8 +9,9 @@ import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 
 // The service usage cards.
 
-/** Overview rails share the chart cards' corner radius. */
+/** Overview rails share the chart cards' corner radius and their 24px inner inset. */
 export const OVERVIEW_RAIL_CLASS = "rounded-2xl"
+const OVERVIEW_TILE_CLASS = "px-6"
 
 const CARDS: ReadonlyArray<{ title: string; key: keyof UsageTotals; format: (value: number) => string }> = [
 	{ title: "Total Logs", key: "logs", format: formatNumber },
@@ -41,6 +42,7 @@ export const usageCards = <M>(
 							: h.span([h.Class("font-prose")], ["Couldn't load"]),
 						compact: true,
 						isCardTitle: true,
+						className: OVERVIEW_TILE_CLASS,
 					}),
 				),
 			),
@@ -54,6 +56,7 @@ export const usageCards = <M>(
 						value: card.format(totals[card.key]),
 						compact: true,
 						isCardTitle: true,
+						className: OVERVIEW_TILE_CLASS,
 						delta:
 							previous === null
 								? skeleton(h, "h-3 w-16")

@@ -82,7 +82,12 @@ export const signalHeader = (h: H, selection: HeaderSelection | null): Html =>
 		),
 		h.span([h.Class(LANE.service)], ["Service"]),
 		h.span([h.Class(LANE.state)], ["Status"]),
-		h.span([h.Class(LANE.actor)], []),
+		// The avatar lane is narrower than its label: the label runs left into Status's spare width,
+		// so it only shows where that lane does.
+		h.span(
+			[h.Class(cn(LANE.actor, "flex justify-end whitespace-nowrap"))],
+			[h.span([h.Class("hidden @3xl/page:inline")], ["Assignee"])],
+		),
 		h.span([h.Class(cn(LANE.lastSeen, "text-right"))], ["Last seen"]),
 	])
 
@@ -216,7 +221,7 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 									),
 								]
 							: []),
-						...(activity === null ? [] : [activity]),
+						activity,
 					],
 				),
 				volumeLane(h, signal, dense, isSurging, label),
@@ -273,7 +278,7 @@ const volumeLane = (
 					h.Title(
 						signal.windowCount === null
 							? `None in the last 24 hours · ${signal.totalCount.toLocaleString("en-US")} all time`
-							: `${signal.windowCount.toLocaleString("en-US")} in the last 24 hours · ${signal.totalCount.toLocaleString("en-US")} all time`,
+							: `${signal.windowCount.toLocaleString("en-US")} in the last 24 hours${isSurging ? ", surging" : ""} · ${signal.totalCount.toLocaleString("en-US")} all time`,
 					),
 				],
 				[

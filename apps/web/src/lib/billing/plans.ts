@@ -21,7 +21,7 @@ const PLAN_FEATURES: Record<string, PlanFeature[]> = {
 		{ icon: "grid", label: "Dashboards", value: "Unlimited" },
 		{ icon: "bell", label: "Alerting", value: "Advanced" },
 		{ icon: "code", label: "API access", value: "Full" },
-		{ icon: "shield", label: "Support", value: "Private Channel" },
+		{ icon: "shield", label: "Support", value: "Private channel" },
 	],
 	enterprise: [
 		{ icon: "clock", label: "Data retention", value: "Custom" },

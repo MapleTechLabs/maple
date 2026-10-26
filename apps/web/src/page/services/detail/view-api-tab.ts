@@ -18,6 +18,7 @@ import { errorState } from "../../../ui/error-state"
 import { panel } from "../../../ui/panel"
 import { searchInput } from "../../../ui/search-input"
 import { skeleton } from "../../../ui/skeleton"
+import { statFigure } from "../../../ui/stat-figure"
 import { table, tableBody, tableHeader, tableRow } from "../../../ui/table"
 import { docsLink } from "../../kit/signal-empty-state"
 import { windowSeconds } from "./derive"
@@ -60,6 +61,10 @@ const toChart = (chartId: string) => (message: Chart.Message) => Message.GotChar
 /** The tab's charts and sparklines share one bucket size (`operationsBucketSeconds`). */
 export type ApiTabInputs = Readonly<{ bucketSeconds: number; timeZone: string; window: WindowMs }>
 
+// Deploy labels sit in a gutter above the plot (18px label, 10px gap), off the plotted lines.
+const MARKER_LABEL_GAP = 10
+const MARKER_GUTTER = 32
+
 // KPI STRIP
 
 type Tile = Readonly<{
@@ -74,12 +79,13 @@ type Tile = Readonly<{
 	token: string
 }>
 
+// Same anatomy as the shared `statRailItem`: sentence-case label, figure with its unit, caption.
 const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
 	h.div(
 		[
 			h.Key(tile.label),
 			h.Class(
-				"flex min-w-0 flex-col gap-2 border-b p-4 odd:border-r last:col-span-2 last:border-b-0 last:border-r-0 md:border-r md:border-b-0 md:last:col-span-1 md:last:border-r-0",
+				"flex min-w-0 flex-col border-b px-5 py-4 odd:border-r last:col-span-2 last:border-b-0 last:border-r-0 md:border-r md:border-b-0 md:last:col-span-1 md:last:border-r-0",
 			),
 		],
 		[
@@ -89,41 +95,31 @@ const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
 					...(tile.dot === undefined
 						? []
 						: [h.span([h.Class(cn("size-1.5 rounded-full", tile.dot))])]),
-					h.span(
-						[h.Class("text-2xs uppercase tracking-wider text-muted-foreground")],
-						[tile.label],
-					),
+					h.span([h.Class("truncate text-2xs font-medium text-muted-foreground")], [tile.label]),
 				],
 			),
+			statFigure(h, {
+				value: tile.value,
+				unit: tile.unit,
+				size: "lg",
+				className: "mt-2",
+				valueClassName: tile.valueClassName,
+			}),
 			h.div(
-				[h.Class("flex min-w-0 items-baseline gap-2")],
 				[
-					h.span(
-						[h.Class(cn("text-[22px] font-medium leading-7 tabular-nums", tile.valueClassName))],
-						[tile.value],
-					),
-					...(tile.unit === undefined
-						? []
-						: [h.span([h.Class("text-ui text-muted-foreground")], [tile.unit])]),
-					h.span(
-						[
-							h.Class(
-								cn("ml-auto truncate text-2xs text-muted-foreground", tile.asideClassName),
-							),
-							h.Title(tile.aside),
-						],
-						[tile.aside],
-					),
+					h.Class(cn("mt-2 truncate text-2xs text-muted-foreground", tile.asideClassName)),
+					h.Title(tile.aside),
 				],
+				[tile.aside],
 			),
 			theme === null || tile.values.length < 2
-				? h.div([h.Class("h-7 w-full")])
+				? h.div([h.Class("mt-2 h-7 w-full")])
 				: sparkline(h, {
 						chartId: `kpi-${tile.label}`,
 						values: tile.values,
 						token: tile.token,
 						theme,
-						className: "h-7 w-full",
+						className: "mt-2 h-7 w-full",
 						toMessage: toChart("sparkline"),
 					}),
 		],
@@ -231,7 +227,7 @@ const kpiSkeleton = (h: H): Html =>
 				[
 					h.Key(String(index)),
 					h.Class(
-						"flex flex-col gap-2.5 border-b p-4 md:border-r md:border-b-0 md:last:border-r-0",
+						"flex flex-col gap-2.5 border-b px-5 py-4 md:border-r md:border-b-0 md:last:border-r-0",
 					),
 				],
 				[skeleton(h, "h-2.5 w-20"), skeleton(h, "h-6 w-24"), skeleton(h, "h-7 w-full")],
@@ -270,7 +266,7 @@ const responsesChart = (
 			? undefined
 			: Option.match(chartModel.plot, {
 					onNone: () => undefined,
-					onSome: (plot) => markersOverlay(h, markerLayout(markers, plot), plot),
+					onSome: (plot) => markersOverlay(h, markerLayout(markers, plot), plot, MARKER_LABEL_GAP),
 				})
 	const context: ChartContext | null =
 		theme === null ? null : { theme, timeZone: inputs.timeZone, nowMs: model.nowMs ?? 0 }
@@ -335,6 +331,7 @@ const responsesChart = (
 						window: inputs.window,
 						context,
 						className: "h-[200px] w-full",
+						marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
 						overlay,
 						reportPlot: markers.length > 0,
 						toMessage: toChart("api-responses"),
@@ -412,8 +409,13 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 						? []
 						: [
 								h.span(
-									[h.Class("text-2xs text-muted-foreground tabular-nums")],
-									[`${formatNumber(Math.round(total))} · whole hours`],
+									[
+										h.Class("text-2xs text-muted-foreground tabular-nums"),
+										h.Title(
+											"Counted over complete hours, so the total can reach past the window's edges",
+										),
+									],
+									[`${formatNumber(Math.round(total))} in complete hours`],
 								),
 							]),
 				],

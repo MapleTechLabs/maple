@@ -6,6 +6,7 @@ import {
 	formatLatency,
 	formatRate,
 	HEALTH_COLOR,
+	HEALTH_LABEL,
 } from "../../components/service-map/three/spatial-layout"
 import type { Edge3D, Topology3D } from "../../components/service-map/three/types"
 import { Option } from "effect"
@@ -122,23 +123,28 @@ const perspectiveBar = <M>(
 				[h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block")],
 				[VIEW_COPY[model.perspective].encoding],
 			),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "ghost",
-					className: "ml-auto text-xs",
-					isDisabled: reducedMotion,
-					attributes: [
-						h.AriaPressed(String(flowing)),
-						h.OnClick(toMessage(Message.ClickedTraffic())),
-					],
-				},
-				[
-					icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
-					reducedMotion ? "Reduced motion" : flowing ? "Pause traffic" : "Resume traffic",
-				],
-			),
+			// Under the system's reduced-motion setting there is nothing to toggle, so it is a note.
+			reducedMotion
+				? h.span(
+						[h.Class("ml-auto text-2xs text-muted-foreground")],
+						["Traffic animation off (reduced motion)"],
+					)
+				: button(
+						h,
+						{
+							size: "sm",
+							variant: "ghost",
+							className: "ml-auto text-xs",
+							attributes: [
+								h.AriaPressed(String(flowing)),
+								h.OnClick(toMessage(Message.ClickedTraffic())),
+							],
+						},
+						[
+							icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
+							flowing ? "Pause traffic" : "Resume traffic",
+						],
+					),
 		],
 	)
 }
@@ -324,12 +330,12 @@ const overlays = <M>(
 			[
 				h.Attribute(LABEL, "overlay:legend"),
 				h.Class(
-					`pointer-events-none absolute bottom-14 left-4 flex flex-wrap gap-3 px-3 py-2 text-3xs sm:bottom-4 ${PANEL_CLASS}`,
+					`pointer-events-none absolute right-4 bottom-4 flex flex-wrap gap-3 px-3 py-2 text-3xs ${PANEL_CLASS}`,
 				),
 			],
 			(["healthy", "elevated", "degraded"] as const).map((status) =>
 				h.span(
-					[h.Class("flex items-center gap-1.5 capitalize")],
+					[h.Class("flex items-center gap-1.5")],
 					[
 						h.span(
 							[
@@ -338,7 +344,7 @@ const overlays = <M>(
 							],
 							[],
 						),
-						status,
+						HEALTH_LABEL[status],
 					],
 				),
 			),
@@ -346,12 +352,13 @@ const overlays = <M>(
 		h.fieldset(
 			[
 				h.Attribute(LABEL, "overlay:controls"),
-				h.Class(`absolute right-4 bottom-4 flex gap-1 p-1 ${PANEL_CLASS}`),
+				// The 2D canvases' control stack: bottom left, zoom in, zoom out, then fit.
+				h.Class(`absolute bottom-4 left-4 flex flex-col gap-1 p-1 ${PANEL_CLASS}`),
 				h.AriaLabel("Camera controls"),
 			],
 			[
-				iconButton(h, { size: "icon-xs", label: "Zoom out", attributes: [camera("out")] }, ["−"]),
 				iconButton(h, { size: "icon-xs", label: "Zoom in", attributes: [camera("in")] }, ["+"]),
+				iconButton(h, { size: "icon-xs", label: "Zoom out", attributes: [camera("out")] }, ["−"]),
 				iconButton(h, { size: "icon-xs", label: "Reset camera", attributes: [camera("reset")] }, [
 					icon(h, "ArrowRotateAnticlockwiseIcon"),
 				]),

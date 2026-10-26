@@ -19,9 +19,11 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
+import { linkButton } from "../../../../ui/button"
 import { chartLoading } from "../../../../ui/chart-state"
 import { emptyMessage } from "../../../../ui/empty"
 import { errorState } from "../../../../ui/error-state"
+import { icon } from "../../../../ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { CHART_HEIGHT } from "../../kit/chart-card"
@@ -44,14 +46,15 @@ import { queryPeekSheet } from "./view-sql-peek"
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
+// Product display names, cased as the breadcrumb, rail and list tables write them.
 const SERVICE_KIND = {
-	cloudRun: "cloud run",
-	cloudFunctions: "function 1st gen",
-	gke: "gke container",
-	computeEngine: "vm instance",
-	cloudSql: "cloud sql",
-	pubsub: "pub/sub subscription",
-	loadBalancing: "load balancer",
+	cloudRun: "Cloud Run",
+	cloudFunctions: "Function 1st gen",
+	gke: "GKE container",
+	computeEngine: "VM instance",
+	cloudSql: "Cloud SQL",
+	pubsub: "Pub/Sub subscription",
+	loadBalancing: "Load balancer",
 } as const satisfies Record<GcpInfraServiceId, string>
 
 const HEALTH_DOT = {
@@ -76,7 +79,7 @@ const header = (h: H, model: Model, data: PageData) => {
 	].filter((part): part is string => part !== undefined)
 	const meta = data.isCloudSql
 		? [
-				heroChip(h, engine?.toLowerCase() ?? SERVICE_KIND.cloudSql),
+				heroChip(h, engine ?? SERVICE_KIND.cloudSql),
 				...(services === undefined || services === 0
 					? []
 					: [heroChip(h, `queried by ${services} ${services === 1 ? "service" : "services"}`)]),
@@ -118,7 +121,7 @@ const header = (h: H, model: Model, data: PageData) => {
 								]),
 					],
 				),
-				h.span([h.Class("font-mono")], [gcpWorkloadName(service, keys)]),
+				h.span([], [gcpWorkloadName(service, keys)]),
 			],
 		),
 		meta,
@@ -207,24 +210,23 @@ const traceGapCallout = (
 						[
 							figure(h, formatNumber(gap.platformErrors), copy.platform, "text-severity-error"),
 							figure(h, formatNumber(gap.tracedErrors), "traces"),
-							h.a(
-								[
-									h.Class(
-										"ml-auto font-prose text-xs text-primary hover:text-primary/80 @2xl:ml-0",
+							linkButton(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									className: "ml-auto @2xl:ml-0",
+									href: hrefOf(
+										AppRoute.Logs({
+											search: {
+												services: [logsService],
+												startTime: formatWarehouseDateTime(gap.fromMs),
+												endTime: formatWarehouseDateTime(gap.untilMs),
+											},
+										}),
 									),
-									h.Href(
-										hrefOf(
-											AppRoute.Logs({
-												search: {
-													services: [logsService],
-													startTime: formatWarehouseDateTime(gap.fromMs),
-													endTime: formatWarehouseDateTime(gap.untilMs),
-												},
-											}),
-										),
-									),
-								],
-								["Logs at those times"],
+								},
+								["Logs at those times", icon(h, "ArrowRightIcon")],
 							),
 						],
 					),

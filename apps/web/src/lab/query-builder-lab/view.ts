@@ -12,7 +12,7 @@ import { MeasureScrollArea } from "./command"
 import { scrollOverflowOf } from "./derive"
 import { type FormulaDraft, Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
-import { fieldEyebrow, nameBadge } from "./view-controls"
+import { fieldEyebrow } from "./view-controls"
 import { queryRow } from "./view-query"
 import { resultsContent } from "./view-results"
 
@@ -77,14 +77,21 @@ const footer = (h: H, model: Model): Html =>
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
-					h.span([h.Class(META)], [model.window.startTime, " → ", model.window.endTime]),
 					...(model.lastRunAt === null
 						? []
 						: [h.span([h.Class(META)], ["last run: ", model.lastRunAt])]),
-					button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedRun())] }, [
-						icon(h, "MediaPlayIcon"),
-						"Run query",
-					]),
+					// The header names the range; the exact window is the button's tooltip.
+					button(
+						h,
+						{
+							size: "sm",
+							attributes: [
+								h.OnClick(Message.ClickedRun()),
+								h.Title(`${model.window.startTime} → ${model.window.endTime}`),
+							],
+						},
+						[icon(h, "MediaPlayIcon"), "Run query"],
+					),
 				],
 			),
 		],
@@ -95,9 +102,8 @@ const formulaRow = (h: H, formula: FormulaDraft): Html => {
 	const text = (field: "expression" | "legend") => (value: string) =>
 		Message.ChangedFormulaText({ formulaId: formula.id, field, value })
 	return h.div(
-		[h.Key(formula.id), h.Class("grid grid-cols-[44px_1fr] gap-2")],
+		[h.Key(formula.id)],
 		[
-			nameBadge(h, formula.name),
 			card(
 				h,
 				[
@@ -227,7 +233,7 @@ export const view = (model: Model, h: H): Html =>
 						cardPanel(
 							h,
 							[
-								resultsCard(h, model),
+								// Inputs first: the results answer them, so they follow.
 								h.div(
 									[h.Class("space-y-2")],
 									[
@@ -235,6 +241,7 @@ export const view = (model: Model, h: H): Html =>
 										...model.formulas.map((formula) => formulaRow(h, formula)),
 									],
 								),
+								resultsCard(h, model),
 								separator(h, "horizontal", undefined),
 								statePreview(h, model),
 							],

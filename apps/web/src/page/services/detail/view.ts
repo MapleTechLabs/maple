@@ -111,9 +111,14 @@ const headerActions = (h: H, model: Model): Html => {
 }
 
 const titleContent = (h: H, model: Model): Html =>
-	pageTitle(h, { title: model.serviceName, className: "flex items-center gap-2.5" }, [
-		serviceDot(h, { serviceName: model.serviceName, className: "size-3" }),
-		h.span([h.Class("truncate")], [model.serviceName]),
+	// A block title like every other page's, so the baseline matches; the swatch sits inline on the
+	// cap height (middle is the x-height, so it is lifted a further 1px).
+	pageTitle(h, { title: model.serviceName }, [
+		serviceDot(h, {
+			serviceName: model.serviceName,
+			className: "relative -top-px mr-2.5 inline-block size-3 align-middle",
+		}),
+		model.serviceName,
 	])
 
 /** `UnderlineTabStrip navigation`: route links; TanStack marks a link whose search the URL contains `active`. */

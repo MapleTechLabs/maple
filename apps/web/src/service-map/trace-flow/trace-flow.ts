@@ -55,8 +55,13 @@ export const buildFlowGraph = (input: TraceInput): FlowGraph => {
 	}
 }
 
-/** `fitView({ padding: 0.2, maxZoom: 1.5 })` with the canvas's `minZoom={0.1}`. */
-export const FLOW_FIT: Canvas.FitRequest = { padding: 0.2, minZoom: 0.1, maxZoom: 1.5 }
+/** `fitView({ padding: 0.2, maxZoom: 1.5 })`, held at a legible zoom; a larger flow pans. */
+export const FLOW_FIT: Canvas.FitRequest = {
+	padding: 0.2,
+	minZoom: 0.1,
+	maxZoom: 1.5,
+	readableZoom: Canvas.READABLE_FIT_ZOOM,
+}
 
 export const Model = Schema.Struct({
 	canvas: Canvas.Model,
@@ -88,13 +93,16 @@ export const isNodeSelected = (node: FlowNode, selectedSpanId: Option.Option<str
 			node.id === spanId || node.data.combinedSpans.some((span) => span.spanId === spanId),
 	})
 
-const refit = (model: Model, graph: FlowGraph): Model =>
+/** The Fit view control frames every node, with no legibility floor. */
+const FIT_ALL: Canvas.FitRequest = { padding: 0.2, minZoom: 0.1, maxZoom: 1.5 }
+
+const refit = (model: Model, graph: FlowGraph, request: Canvas.FitRequest = FLOW_FIT): Model =>
 	modifyFields(model, {
 		canvas: () =>
 			Canvas.requestFit(
 				modifyFields(model.canvas, { movedByUser: () => false }),
 				Canvas.placed(model.canvas, graph.nodes),
-				FLOW_FIT,
+				request,
 			),
 	})
 
@@ -127,5 +135,5 @@ export const update =
 				Option.contains(model.hoveredEdgeId, edgeId)
 					? modifyFields(model, { hoveredEdgeId: () => Option.none() })
 					: model,
-			ClickedFitView: () => refit(model, graph),
+			ClickedFitView: () => refit(model, graph, FIT_ALL),
 		})

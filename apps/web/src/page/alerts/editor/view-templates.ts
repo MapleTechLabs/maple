@@ -16,7 +16,8 @@ type H = HtmlBuilder<Message>
 const TILE_CLASS = cn(
 	"group flex h-full flex-col gap-3 rounded-md border bg-card p-4 text-left transition-colors",
 	"hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-none",
-	"focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50",
+	// Focus reads like hover (the primary tint), not a neutral ring that looks like a selection.
+	"focus-visible:border-primary/60 focus-visible:bg-primary/[0.03] focus-visible:ring-2 focus-visible:ring-primary/20",
 )
 
 const tileHead = (h: H, iconName: IconName, title: string, subtitle: string): Html =>
@@ -80,7 +81,7 @@ const tiles = (h: H): ReadonlyArray<Html> => [
 					// One line, so the chevron sits on the same row as the siblings' chips.
 					h.p(
 						[h.Class("min-w-0 truncate font-prose text-muted-foreground text-xs")],
-						["Start from defaults and choose a signal."],
+						["Choose a signal"],
 					),
 					chevron(h),
 				],
@@ -120,7 +121,7 @@ const overlay = (h: H, templates: Model["templates"]): Html =>
 			hasDescription: true,
 			className: "w-[860px] max-w-[92vw]",
 			toView: ({ portal }) => portal,
-			toContent: () => [
+			toContent: (close) => [
 				DialogView.dialogHeader(h, "dialog", [
 					DialogView.dialogTitle(h, "dialog", templates.id, "Start with a template"),
 					DialogView.dialogDescription(
@@ -130,23 +131,10 @@ const overlay = (h: H, templates: Model["templates"]): Html =>
 						"These cover the most common alerts. Every field stays editable after you pick one.",
 					),
 				]),
-				h.div([h.Class("grid gap-3 px-6 pb-2 md:grid-cols-3")], tiles(h)),
-				h.div(
-					[h.Class("flex items-center justify-end px-6 py-4")],
-					[
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "sm",
-								// The negative margin lines the label up with the tile grid's right edge.
-								className: "-mr-[calc(--spacing(2.5)-1px)]",
-								attributes: [h.OnClick(Message.ClickedSkipTemplates())],
-							},
-							["Skip and use defaults"],
-						),
-					],
-				),
+				h.div([h.Class("grid gap-3 px-6 pb-6 md:grid-cols-3")], tiles(h)),
+				DialogView.dialogFooter(h, "dialog", [
+					button(h, { variant: "outline", attributes: [...close] }, ["Cancel"]),
+				]),
 			],
 		},
 		toParentMessage: (message) => Message.GotTemplatesMessage({ message }),

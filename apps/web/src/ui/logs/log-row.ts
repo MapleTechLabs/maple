@@ -58,6 +58,8 @@ const QUIET_SEVERITIES = new Set(["DEBUG", "TRACE"])
 // Fatal reads one step past error: a filled label, not just a red word.
 const FILLED_SEVERITIES = new Set(["FATAL", "CRITICAL"])
 const PINNED_COL_WIDTH = "150px"
+/** Chips past this would only squeeze the ones before them; the expanded row lists every one. */
+const ROW_CHIP_LIMIT = 3
 
 // Row and row action classes
 const ROW_CLASS =
@@ -124,7 +126,7 @@ const chipButton = <Message>(
 		[
 			h.Type("button"),
 			h.AriaLabel(`Copy ${chip.key}=${chip.value}`),
-			rowClass(h, cn(CHIP_CLASS, CHIP_TONE_CLASSES[chip.tone], "max-w-full")),
+			rowClass(h, cn(CHIP_CLASS, CHIP_TONE_CLASSES[chip.tone], "min-w-0 shrink")),
 			h.OnMouseEnter(events.enteredChip(index, chip.key)),
 			h.OnMouseLeave(events.leftChip(index, chip.key)),
 			h.OnFocus(events.focusedChip(index, chip.key)),
@@ -239,7 +241,7 @@ export const logRow = <Message>(
 						[
 							rowClass(
 								h,
-								"shrink-0 w-[128px] hidden md:flex h-4 items-center gap-1.5 min-w-0 text-muted-foreground",
+								"shrink-0 w-40 hidden md:flex h-4 items-center gap-1.5 min-w-0 text-muted-foreground",
 							),
 						],
 						[
@@ -344,7 +346,7 @@ const messageLane = <Message>(
 					rowClass(
 						h,
 						cn(
-							// The message keeps most of the row; chips past the lane's 40% wrap out of view.
+							// The message keeps most of the row; the chips shrink to fit the lane's 40%.
 							"relative flex min-w-[55%] flex-1 gap-2",
 							state.wrap ? "items-start" : "items-center",
 						),
@@ -360,7 +362,10 @@ const messageLane = <Message>(
 									QUIET_SEVERITIES.has(row.severity)
 										? "text-muted-foreground"
 										: "text-foreground",
-									state.wrap ? "whitespace-pre-wrap break-words" : "truncate",
+									// A one-line clamp ends on a word, so the ellipsis never trails a space.
+									state.wrap
+										? "whitespace-pre-wrap break-words"
+										: "line-clamp-1 break-words",
 								),
 							),
 						],
@@ -389,10 +394,13 @@ const messageLane = <Message>(
 							[
 								rowClass(
 									h,
-									"ml-auto hidden h-[18px] min-w-0 max-w-[40%] flex-wrap justify-end gap-1 overflow-hidden pl-2 @3xl/log:flex",
+									"ml-auto hidden h-[18px] min-w-0 max-w-[40%] justify-end gap-1 overflow-hidden pl-2 @3xl/log:flex",
 								),
 							],
-							row.chips.map((chip) => chipButton(h, events, index, chip)),
+							// The lane is as wide as its chips, so the message gets the rest of the row.
+							row.chips
+								.slice(0, ROW_CHIP_LIMIT)
+								.map((chip) => chipButton(h, events, index, chip)),
 						),
 					]
 				: []),

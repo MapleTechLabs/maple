@@ -24,7 +24,7 @@ import { awsCard } from "./view-aws"
 import { supabaseCard } from "./view-supabase"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
-import { integrationCatalog, integrationsSummary } from "./view-hub"
+import { hubTitle, integrationCatalog, integrationsSummary } from "./view-hub"
 
 // `IntegrationsPage`.
 
@@ -115,7 +115,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		? dashboardPage(
 				h,
 				{
-					title: "Integrations",
+					titleContent: hubTitle(h),
 					filters: settingsNav(h, model),
 					actions: integrationsSummary(h, model) ?? h.empty,
 					width: "settings",

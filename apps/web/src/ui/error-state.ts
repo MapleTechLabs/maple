@@ -384,9 +384,24 @@ export const MountNetworkAutoRetry = Mount.defineStream("MountNetworkAutoRetry",
 		),
 })
 
-/** A "retry soon" ending ("Retry in a few seconds.", "Try again shortly.") the auto-retry note replaces. */
+/** A "retry soon" ending ("Retry in a few seconds.", "Try again or reload.") the retry affordance replaces. */
 const RETRY_SOON_ENDING =
-	/\s*(?:Retry|Try again)(?: in a few seconds| in a moment| shortly| when you're ready)?(?:, or reload if the problem continues)?\.$/
+	/\s*(?:Retry|Try again)(?: in a few seconds| in a moment| shortly| when you're ready| or reload)?(?:, or reload if the problem continues)?\.$/
+
+/** The fixed failure sentences: one per class, so the same outage reads the same on every page. */
+export const FAILURE_SENTENCE = {
+	backend: "Maple's backend is unavailable.",
+	sync: "Live sync is unavailable.",
+	unknown: "Maple hit an unexpected error.",
+} as const
+
+/** A failure's one sentence: a dropped or timed-out backend and an unknown error read as their class. */
+export const failureSentence = (failure: LoadFailure): string => {
+	if (failure.code === "unexpected_error") return FAILURE_SENTENCE.unknown
+	if (failure.retryable && failure.recovery === "retry" && failure.type === "api_error")
+		return FAILURE_SENTENCE.backend
+	return failureMessage(failure)
+}
 
 /** An auto-retrying failure's message: its own cause, an optional note, then "Retrying automatically…". */
 export const autoRetryMessage = (message: string, note?: string): string =>
@@ -414,16 +429,19 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					),
 				]
 			: []
-	const ownMessage = options.message ?? failureMessage(failure)
+	const ownMessage = options.message ?? failureSentence(failure)
+	const showsRetryButton = onRetry !== undefined && canRetry && options.hidesRetryButton !== true
+	// One retry affordance: the Try again button when drawn, else the "Retrying automatically" note.
 	const message =
-		autoRetry.length > 0
+		autoRetry.length > 0 && !showsRetryButton
 			? autoRetryMessage(ownMessage, options.note)
-			: options.note === undefined
-				? ownMessage
-				: `${ownMessage} ${options.note}`
+			: [
+					canRetry ? ownMessage.replace(RETRY_SOON_ENDING, "") : ownMessage,
+					...(options.note === undefined ? [] : [options.note]),
+				].join(" ")
 	// `className` styles the Try again button itself; `retry`'s styles the button row.
 	const retryButtons = (variant: "ghost" | "outline", className?: string) =>
-		options.onRetry === undefined || !canRetry || options.hidesRetryButton === true
+		options.onRetry === undefined || !showsRetryButton
 			? []
 			: [
 					button(h, { size: "sm", variant, className, attributes: [h.OnClick(options.onRetry)] }, [

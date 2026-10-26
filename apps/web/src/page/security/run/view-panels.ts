@@ -13,17 +13,8 @@ import { filterChip } from "../../../ui/filter-chip"
 import { errorState } from "../../../ui/error-state"
 import { panel, panelHeader } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import {
-	formatClock,
-	formatUsd,
-	gateOf,
-	isLive,
-	isoOf,
-	locationOf,
-	SECURITY_SEVERITY_LABEL,
-} from "../kit/format"
-import { gateState, placeholderRows } from "../kit/parts"
-import { SEVERITY_TONE } from "../../errors/kit/severity"
+import { formatClock, formatUsd, gateOf, isLive, isoOf, locationOf } from "../kit/format"
+import { gateState, placeholderRows, securitySeverityBadge } from "../kit/parts"
 import {
 	countOf,
 	filteredUnits,
@@ -232,9 +223,7 @@ const resultMark = (h: H, finding: SecurityAuditFinding): Html =>
 			? badge(h, { variant: "muted", className: "line-through" }, ["Rejected"])
 			: finding.overallSeverity === null || finding.overallSeverity === "informational"
 				? badge(h, { variant: "muted" }, ["Info"])
-				: badge(h, { variant: "outline", className: SEVERITY_TONE[finding.overallSeverity] }, [
-						SECURITY_SEVERITY_LABEL[finding.overallSeverity],
-					])
+				: securitySeverityBadge(h, finding.overallSeverity)
 
 export const resultsPanel = (
 	h: H,

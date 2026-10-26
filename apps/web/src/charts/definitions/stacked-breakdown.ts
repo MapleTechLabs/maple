@@ -71,7 +71,7 @@ export const buildStackedBreakdown = (
 				},
 			},
 		},
-		margin: { top: 12, right: 12, left: 60 },
+		margin: { top: spec.marginTop ?? 12, right: 12, left: 60 },
 		focus: "group-x",
 		focusRing: false,
 		tooltip: cursorTooltip<BreakdownCell>(focus.anchor),

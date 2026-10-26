@@ -73,10 +73,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Errors",
 			filters: filtersRail(h, model),
+			// The toolbar sits one header gap under the title, as tabs do on tabbed pages.
+			scrollClassName: "pt-0",
 			actions: refreshButton(h, {
 				onRefresh: Message.ClickedReload(),
 				isPending: model.isReloading,
 				label: "Reload",
+				// The failure card's Try again is the one retry while the list is failed.
+				isHidden: listStatusOf(model) === "failed",
 			}),
 		},
 		[

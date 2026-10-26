@@ -4,6 +4,7 @@ import {
 	deriveHostStatus,
 	formatBytesOfAllocatable,
 	formatCoresOfAllocatable,
+	formatUtilizationPercent,
 	severityLevel,
 } from "./format"
 
@@ -65,5 +66,22 @@ describe("node capacity", () => {
 	it("formats memory against allocatable", () => {
 		expect(formatBytesOfAllocatable(3 * 1024 ** 3, 16 * 1024 ** 3)).toBe("3.0 GB / 16.0 GB")
 		expect(formatBytesOfAllocatable(3 * 1024 ** 3, 0)).toBe("3.0 GB")
+	})
+})
+
+describe("formatUtilizationPercent", () => {
+	it("keeps one decimal under 10% and drops trailing zeros", () => {
+		expect([0.017, 0.008, 0.06, 0.2, 0.0004, 0].map(formatUtilizationPercent)).toEqual([
+			"1.7%",
+			"0.8%",
+			"6%",
+			"20%",
+			"<0.1%",
+			"0%",
+		])
+	})
+
+	it("rounds a value that reaches 10% to a whole number", () => {
+		expect(formatUtilizationPercent(0.0996)).toBe("10%")
 	})
 })

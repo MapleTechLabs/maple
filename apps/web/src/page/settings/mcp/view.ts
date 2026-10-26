@@ -68,7 +68,7 @@ const clientSnippets = (h: H, model: Model, client: McpClient): ReadonlyArray<Ht
 							"claude-code:0",
 							["Run in your terminal"],
 							claudeCodeCommand(mcpEndpoint, apiKey),
-							"bash",
+							"shell",
 						),
 						snippet(
 							h,
@@ -164,14 +164,26 @@ const connectSection = (h: H, model: Model): Html =>
 			h.div(
 				[h.Class("space-y-4")],
 				[
-					copyableField(h, {
-						id: "mcp-server-url",
-						value: mcpEndpoint,
-						label: "Server URL",
-						copyLabel: "Server URL",
-						copy: model.serverUrlCopy,
-						toCopyMessage: (message) => Message.GotServerUrlCopyMessage({ message }),
-					}),
+					h.div(
+						[h.Class("space-y-1.5")],
+						[
+							// A sans field label: mono is for the value, not its name.
+							h.label(
+								[
+									h.For("mcp-server-url"),
+									h.Class("block font-prose text-xs text-muted-foreground"),
+								],
+								["Server URL"],
+							),
+							copyableField(h, {
+								id: "mcp-server-url",
+								value: mcpEndpoint,
+								copyLabel: "Server URL",
+								copy: model.serverUrlCopy,
+								toCopyMessage: (message) => Message.GotServerUrlCopyMessage({ message }),
+							}),
+						],
+					),
 					h.submodel({
 						slotId: "mcp-client-tabs",
 						model: model.client,

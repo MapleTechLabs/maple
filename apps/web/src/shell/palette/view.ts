@@ -22,6 +22,13 @@ import { MeasurePaletteList } from "./command"
 import { Message, type Model } from "./model"
 import { type Context, shownEntries } from "./update"
 
+/**
+ * Layout-free wrapper: group labels take the sidebar's uppercase tracked style, and a short scroll
+ * fade keeps the last visible row from reading as disabled.
+ */
+const PALETTE_LIST_CLASS =
+	"contents [&_[data-slot=command-group-label]]:text-2xs [&_[data-slot=command-group-label]]:font-semibold [&_[data-slot=command-group-label]]:uppercase [&_[data-slot=command-group-label]]:tracking-widest [&_[data-slot=scroll-area-viewport]]:[--fade-size:0.5rem]"
+
 // `CommandPalette`'s popup: the input, the grouped entries (or "No results"), the footer hints.
 
 export type ViewInputs = Readonly<{ context: Context; visibleFlagged: ReadonlyArray<string> }>
@@ -101,14 +108,21 @@ export const paletteView = <M>(
 					{ placeholder: PLACEHOLDER, groups, hasDismissButton: true, isUnfiltered: true },
 					toList,
 				),
-				commandList(h, model.list, groups, toList, {
-					isUnfiltered: true,
-					itemClassName: "flex items-center gap-2",
-					onClickItem: (id) => toMessage(Message.ClickedEntry({ id })),
-					empty: shown.isSearch ? empty(h, model.list.inputValue) : undefined,
-					viewportAttributes: [h.OnMount(Mount.mapMessage(MeasurePaletteList(), toMessage))],
-					hasMeasuredScrollbar: true,
-				}),
+				h.div(
+					[h.Class(PALETTE_LIST_CLASS)],
+					[
+						commandList(h, model.list, groups, toList, {
+							isUnfiltered: true,
+							itemClassName: "flex items-center gap-2",
+							onClickItem: (id) => toMessage(Message.ClickedEntry({ id })),
+							empty: shown.isSearch ? empty(h, model.list.inputValue) : undefined,
+							viewportAttributes: [
+								h.OnMount(Mount.mapMessage(MeasurePaletteList(), toMessage)),
+							],
+							hasMeasuredScrollbar: true,
+						}),
+					],
+				),
 				commandFooter(h, [hint(h, "↵", " to open"), hint(h, "Esc", " to close")]),
 				commandHiddenInput(h, model.list),
 			],

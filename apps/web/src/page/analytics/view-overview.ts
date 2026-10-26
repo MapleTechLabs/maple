@@ -463,7 +463,7 @@ const breakdownSection = (h: H, model: Model, timeZone: string): Html =>
 	})
 
 /** Summary and breakdowns failing the same way read as one page failure, with one Try again. */
-const sharedPageFailure = (model: Model) => {
+export const sharedPageFailure = (model: Model) => {
 	const summary = Option.getOrUndefined(AsyncData.getError(model.summary.data))
 	const breakdowns = Option.getOrUndefined(AsyncData.getError(model.breakdowns.data))
 	return summary !== undefined && breakdowns !== undefined && isSameFailure(summary, breakdowns)

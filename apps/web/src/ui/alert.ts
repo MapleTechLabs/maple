@@ -10,9 +10,14 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 
 // Port of packages/ui/src/components/ui/alert.tsx.
 
-// The shared `info` variant reuses the green severity hue of `ok`; info reads blue here.
+// The shared `info` variant reuses the green severity hue of `ok`; info reads blue here. `done`
+// keeps its blue mark on a neutral surface, so a finished notice never reads as an info one.
 const variantOverride = (variant: AlertOptions["variant"]): string | undefined =>
-	variant === "info" ? "border-info/32 bg-info/4 [&>svg]:text-info" : undefined
+	variant === "info"
+		? "border-info/32 bg-info/4 [&>svg]:text-info"
+		: variant === "done"
+			? "border-border bg-muted/40 [&>svg]:text-severity-debug"
+			: undefined
 
 type Children = ReadonlyArray<Html | string>
 

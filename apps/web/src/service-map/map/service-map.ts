@@ -133,8 +133,13 @@ export const reducedMotionChanges: Stream.Stream<Message> = Dom.streamFromMediaQ
 	mapMatches: (reduced) => Message.ChangedReducedMotion({ reduced }),
 })
 
-/** Default `fitView()` of the map: padding 0.1 inside the canvas's zoom range. */
-export const MAP_FIT: Canvas.FitRequest = { padding: 0.1, minZoom: 0.05, maxZoom: 2 }
+/** Default `fitView()` of the map: padding 0.1, never smaller than legible cards (then it pans). */
+export const MAP_FIT: Canvas.FitRequest = {
+	padding: 0.1,
+	minZoom: 0.05,
+	maxZoom: 2,
+	readableZoom: Canvas.READABLE_FIT_ZOOM,
+}
 
 /** ELK in its worker (`layoutServiceMapWithElk`); the module and elkjs load on first use. */
 export const RunElkLayout = Command.define("RunElkLayout", {

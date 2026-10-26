@@ -46,7 +46,8 @@ const sidebarRegions = (
 	sidebarContent(
 		h,
 		[...navGroupSections(h, model, currentPath, tip, clerk), ...pinnedGroup(h, model, currentPath)],
-		[h.OnMount(MeasureSidebarOverflow())],
+		// A fade taller than one row, so a row cut by the footer reads as "more below", not a broken row.
+		[h.OnMount(MeasureSidebarOverflow()), h.Style({ "--fade-size": "3rem" })],
 	),
 	shellSidebarFooter(h, model, currentPath, clerk, tip),
 ]

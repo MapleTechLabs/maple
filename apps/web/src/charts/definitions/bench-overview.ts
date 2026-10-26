@@ -195,6 +195,7 @@ export const buildBenchOverview = (spec: BenchSpec): BuiltChart<Row, ChartValue,
 			gradients: isArea && lead !== undefined ? [verticalGradient(spec.gradientId, lead.color)] : [],
 			marks,
 			scales: { x: xScale(axisContext), y: yOf(spec, rows, rateLabel) },
+			margin: spec.marginLeft === undefined ? undefined : { left: spec.marginLeft },
 			focus: "group-x",
 			focusRing: false,
 			// TODO(tooltip-anchor): anchor the card on the focus store; it follows the pointer.

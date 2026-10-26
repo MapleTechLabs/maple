@@ -23,6 +23,7 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
+import { icon } from "../../../ui/icon"
 import { severityBadge } from "../shared/badges"
 import { incidentHref, ROW_STRETCHED_LINK_CLASS, ruleHref } from "../shared/links"
 import { sortIncidents } from "../shared/sort"
@@ -342,9 +343,9 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 const BLIND_SPOT_META = new Map<BlindSpotKind, { label: string; action: string; className: string }>([
 	["error", { label: "Error", action: "Fix", className: "text-severity-error" }],
 	["stale", { label: "Stale", action: "Check", className: "text-severity-warn" }],
-	["no-data", { label: "No data", action: "Tune", className: "text-muted-foreground" }],
+	["no-data", { label: "No data", action: "Tune", className: "text-severity-warn" }],
 	["slowed", { label: "Slowed down", action: "Fix query", className: "text-severity-warn" }],
-	["unrouted", { label: "Unrouted", action: "Route", className: "text-muted-foreground" }],
+	["unrouted", { label: "Unrouted", action: "Route", className: "text-severity-error" }],
 	["delivery", { label: "Delivery", action: "Check", className: "text-severity-warn" }],
 ])
 
@@ -357,8 +358,8 @@ const blindSpotsList = <M>(h: HtmlBuilder<M>, spots: ReadonlyArray<BlindSpot>): 
 				[
 					eyebrow(h, { as: "h3", className: "shrink-0 whitespace-nowrap" }, ["Blind spots"]),
 					h.span(
-						[h.Class("min-w-0 truncate font-mono text-xs text-muted-foreground")],
-						["rules that can't fire, notify or keep up"],
+						[h.Class("min-w-0 truncate font-prose text-xs text-muted-foreground")],
+						["Rules that can't fire, notify or keep up"],
 					),
 				],
 			),
@@ -380,7 +381,7 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 		[
 			h.Key(spot.rule.id),
 			h.Class(
-				"relative grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-4 py-2.5 hover:bg-muted/40",
+				"group relative grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-4 py-2.5 hover:bg-muted/40",
 			),
 		],
 		[
@@ -390,7 +391,7 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 				[
 					h.p([h.Class("truncate text-sm")], [spot.rule.name]),
 					h.p(
-						[h.Class("truncate text-xs text-muted-foreground"), h.Title(spot.detail)],
+						[h.Class("truncate font-prose text-xs text-muted-foreground"), h.Title(spot.detail)],
 						[spot.detail],
 					),
 				],
@@ -399,13 +400,13 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 				[
 					h.Class(
 						cn(
-							"text-xs font-medium text-foreground underline-offset-4 hover:underline",
+							"inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-foreground group-hover:bg-accent",
 							ROW_STRETCHED_LINK_CLASS,
 						),
 					),
 					h.Href(ruleHref(spot.rule.id)),
 				],
-				[meta.action],
+				[meta.action, icon(h, "ArrowRightIcon", { className: "size-3 text-muted-foreground" })],
 			),
 		],
 	)

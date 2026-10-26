@@ -23,6 +23,9 @@ type H = HtmlBuilder<Message>
 
 const MCP_ENDPOINT = `${mcpUrl}/mcp`
 
+/** The endpoint field's input-group glyph size, so every copy button in the panel matches it. */
+const COPY_CLASS = "shrink-0 [&_svg:not([class*='size-'])]:size-4"
+
 const toCopy = (field: CopyField) => (message: CopyButton.Message) =>
 	Message.GotCopyMessage({ field, message })
 
@@ -189,40 +192,49 @@ const mcpCard = (h: H, model: Model): Html =>
 					toParentMessage: toCopy("mcp"),
 					value: MCP_ENDPOINT,
 					label: "MCP endpoint",
-					className: "shrink-0",
+					className: COPY_CLASS,
 				}),
 			],
 		),
 	])
 
-/** The onboarding command on one line: it scrolls sideways rather than breaking inside a token. */
+/** The command split before its first flag: each half stays on one line, so a wrap breaks only there. */
+const commandParts = (command: string): ReadonlyArray<string> => {
+	const flag = command.indexOf(" --")
+	return flag === -1 ? [command] : [command.slice(0, flag), command.slice(flag + 1)]
+}
+
+/** The onboarding command, wrapping before `--skill` so no part hides under the copy button. */
 const commandBlock = (h: H, model: Model): Html =>
 	h.div(
 		[
 			h.Class(
-				"flex items-center gap-2 rounded-lg border border-input bg-background py-1.5 pl-3 pr-1.5 dark:bg-input/32",
+				"flex items-start gap-2 rounded-lg border border-input bg-background py-1.5 pl-3 pr-1.5 dark:bg-input/32",
 			),
 		],
 		[
 			h.code(
 				[
 					h.Id("connect-skill-command"),
-					h.Class(
-						// A fixed 3rem fade: the default caps at 12% of the row, too short to read as overflow.
-						"min-w-0 flex-1 select-all overflow-x-auto whitespace-nowrap py-0.5 font-mono text-xs leading-5 scroll-fade-x [--scroll-fade-size:3rem] [scrollbar-width:none]",
-					),
+					h.Class("min-w-0 flex-1 select-all py-0.5 font-mono text-xs leading-5 break-words"),
 				],
-				[ONBOARD_SKILL_COMMAND],
+				commandParts(ONBOARD_SKILL_COMMAND).flatMap((part, index) => [
+					...(index > 0 ? [" "] : []),
+					h.span([h.Class("inline-block whitespace-nowrap")], [part]),
+				]),
 			),
 			CopyButton.view(h, {
 				model: model.copies.skill,
 				toParentMessage: toCopy("skill"),
 				value: ONBOARD_SKILL_COMMAND,
 				label: "Command",
-				className: "shrink-0",
+				className: COPY_CLASS,
 			}),
 		],
 	)
+
+/** The footer's two links share one style. */
+const LINK_CLASS = "font-prose text-muted-foreground underline underline-offset-2 hover:text-foreground"
 
 /** `ConnectPanel`. */
 const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
@@ -268,21 +280,13 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 			h.div(
 				[h.Class("flex items-center justify-between text-xs")],
 				[
-					h.a(
-						[
-							h.Href(settingsHref("ingestion")),
-							h.Class(
-								"inline-flex items-center gap-1 font-medium text-foreground hover:underline",
-							),
-						],
-						["Open setup guide", icon(h, "ArrowRightIcon", { size: 12 })],
-					),
+					h.a([h.Href(settingsHref("ingestion")), h.Class(LINK_CLASS)], ["Open setup guide"]),
 					h.a(
 						[
 							h.Href("https://maple.dev/docs"),
 							h.Target("_blank"),
 							h.Rel("noopener noreferrer"),
-							h.Class("text-muted-foreground underline underline-offset-2 hover:no-underline"),
+							h.Class(LINK_CLASS),
 						],
 						["Documentation"],
 					),
@@ -299,7 +303,8 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 		model: model.popover,
 		view: PopoverView.view,
 		viewInputs: {
-			className: "w-[26rem] max-w-[calc(100vw-1rem)]",
+			// Wide enough to cover the page header actions under it, not leave a sliver of one showing.
+			className: "w-[27.5rem] max-w-[calc(100vw-1rem)]",
 			toContent: () => (model.popover.isOpen ? connectPanel(h, model) : []),
 			toView: ({ trigger, withTrigger }) =>
 				h.div(
