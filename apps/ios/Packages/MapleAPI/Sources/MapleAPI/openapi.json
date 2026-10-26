@@ -12688,7 +12688,7 @@
             "name": "bucket_seconds",
             "required": false,
             "schema": {
-              "pattern": "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$",
+              "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$",
               "type": "string"
             }
           }
