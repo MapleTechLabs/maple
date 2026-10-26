@@ -115,6 +115,7 @@ export const AuditResources = {
 	 */
 	organization: { verbs: ["deleted", "region_chosen"] },
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
+	uptime_monitor: { prefix: PublicIdPrefixes.uptimeMonitor, verbs: ["created", "updated", "deleted"] },
 	/** A person's triage of a security audit finding; target, fingerprint, status and reason in `metadata`. */
 	security_audit_finding: { verbs: ["triaged"] },
 	/** An admin stopping an in-progress security audit run; target and run id in `metadata`. */
@@ -180,6 +181,7 @@ export const AuditResourceLabels = {
 	member: "Member",
 	organization: "Organization",
 	scrape_target: "Scrape target",
+	uptime_monitor: "Uptime monitor",
 	security_audit_finding: "Security audit finding",
 	security_audit_run: "Security audit run",
 	security_audit_settings: "Security audit settings",
@@ -278,6 +280,9 @@ export const AuditActionLabels = {
 	"scrape_target.created": "Created scrape target",
 	"scrape_target.updated": "Updated scrape target",
 	"scrape_target.deleted": "Deleted scrape target",
+	"uptime_monitor.created": "Created uptime monitor",
+	"uptime_monitor.updated": "Updated uptime monitor",
+	"uptime_monitor.deleted": "Deleted uptime monitor",
 	"security_audit_finding.triaged": "Triaged security audit finding",
 	"security_audit_run.cancelled": "Cancelled security audit run",
 	"security_audit_settings.updated": "Updated security audit spend limit and models",

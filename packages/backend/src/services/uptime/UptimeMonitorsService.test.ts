@@ -6,7 +6,11 @@ import { UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives
 import { UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { UptimeMonitorAllowance, uptimeMonitorLimit, type UptimeMonitorAllowanceApi } from "./UptimeMonitorAllowance"
+import {
+	UptimeMonitorAllowance,
+	uptimeMonitorLimit,
+	type UptimeMonitorAllowanceApi,
+} from "./UptimeMonitorAllowance"
 import { UptimeMonitorsService } from "./UptimeMonitorsService"
 
 const trackedDbs: TestDb[] = []
@@ -45,7 +49,10 @@ const fakeHttp = (respond: Respond) =>
 			Effect.succeed(
 				HttpClientResponse.fromWeb(
 					request,
-					new Response(respond.body, { status: respond.status, headers: { "content-type": "text/plain" } }),
+					new Response(respond.body, {
+						status: respond.status,
+						headers: { "content-type": "text/plain" },
+					}),
 				),
 			),
 		),
@@ -155,7 +162,12 @@ describe("UptimeMonitorsService", () => {
 			assert.strictEqual(mismatch._tag, "@maple/http/errors/UptimeMonitorValidationError")
 			const privateUrl = yield* attempt("http", httpConfig("http://169.254.169.254/latest"))
 			assert.strictEqual(privateUrl._tag, "@maple/http/errors/UptimeMonitorValidationError")
-			const privateTcp = yield* attempt("tcp", { _tag: "tcp", host: "10.0.0.5", port: 5432, timeoutMs: 5000 })
+			const privateTcp = yield* attempt("tcp", {
+				_tag: "tcp",
+				host: "10.0.0.5",
+				port: 5432,
+				timeoutMs: 5000,
+			})
 			assert.strictEqual(privateTcp._tag, "@maple/http/errors/UptimeMonitorValidationError")
 			const localDns = yield* attempt("dns", {
 				_tag: "dns",
@@ -279,11 +291,14 @@ describe("UptimeMonitorsService", () => {
 					Ref.update(seen, (calls) => [...calls, `check:${existing}`]).pipe(
 						Effect.andThen(
 							existing >= 1
-								? Effect.fail(new UptimeMonitorLimitReachedError({ message: "limit", limit: 1 }))
+								? Effect.fail(
+										new UptimeMonitorLimitReachedError({ message: "limit", limit: 1 }),
+									)
 								: Effect.void,
 						),
 					),
-				track: (_orgId, _monitorId, delta) => Ref.update(seen, (calls) => [...calls, `track:${delta}`]),
+				track: (_orgId, _monitorId, delta) =>
+					Ref.update(seen, (calls) => [...calls, `track:${delta}`]),
 			}
 			const program = Effect.gen(function* () {
 				const service = yield* UptimeMonitorsService
@@ -294,7 +309,9 @@ describe("UptimeMonitorsService", () => {
 				yield* service.delete(ORG, created.id)
 			})
 			yield* program.pipe(
-				Effect.provide(makeLayer(testDb, { allowance: Layer.succeed(UptimeMonitorAllowance, allowance) })),
+				Effect.provide(
+					makeLayer(testDb, { allowance: Layer.succeed(UptimeMonitorAllowance, allowance) }),
+				),
 			)
 			assert.deepStrictEqual(yield* Ref.get(seen), ["check:0", "track:1", "check:1", "track:-1"])
 		})
@@ -322,13 +339,23 @@ describe("UptimeMonitorsService", () => {
 })
 
 describe("uptimeMonitorLimit", () => {
-	const customer = (balances: unknown) =>
-		Schema.decodeUnknownSync(BillingCustomer)({ id: ORG, subscriptions: [], ...(balances === undefined ? {} : { balances }) })
+	const customer = (balances?: Record<string, unknown>) =>
+		Schema.decodeUnknownSync(BillingCustomer)(
+			balances === undefined
+				? { id: ORG, subscriptions: [] }
+				: { id: ORG, subscriptions: [], balances },
+		)
 
 	it("reads the plan's allowance, treating a missing feature as none and overage as uncapped", () => {
-		assert.deepStrictEqual(uptimeMonitorLimit(customer(undefined)), Option.some(0))
-		assert.deepStrictEqual(uptimeMonitorLimit(customer({ uptime_monitors: { granted: 10 } })), Option.some(10))
-		assert.deepStrictEqual(uptimeMonitorLimit(customer({ uptime_monitors: { unlimited: true } })), Option.none())
+		assert.deepStrictEqual(uptimeMonitorLimit(customer()), Option.some(0))
+		assert.deepStrictEqual(
+			uptimeMonitorLimit(customer({ uptime_monitors: { granted: 10 } })),
+			Option.some(10),
+		)
+		assert.deepStrictEqual(
+			uptimeMonitorLimit(customer({ uptime_monitors: { unlimited: true } })),
+			Option.none(),
+		)
 		assert.deepStrictEqual(
 			uptimeMonitorLimit(customer({ uptime_monitors: { granted: 10, overageAllowed: true } })),
 			Option.none(),

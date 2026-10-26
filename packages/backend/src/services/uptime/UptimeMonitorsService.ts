@@ -1,7 +1,12 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { UptimeMonitorStates, UptimeMonitors, type UptimeMonitorRow, type UptimeMonitorStateRow } from "@maple/db/tables"
+import {
+	UptimeMonitorStates,
+	UptimeMonitors,
+	type UptimeMonitorRow,
+	type UptimeMonitorStateRow,
+} from "@maple/db/tables"
 import {
 	UptimeMonitorLimitReachedError,
 	UptimeMonitorNotFoundError,
@@ -29,7 +34,13 @@ import {
 } from "@maple/domain/uptime"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { describeHttpClientError, guard, isPrivateAddress, readTextPrefix, validateExternalUrl } from "@maple/safe-fetch"
+import {
+	describeHttpClientError,
+	guard,
+	isPrivateAddress,
+	readTextPrefix,
+	validateExternalUrl,
+} from "@maple/safe-fetch"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -110,7 +121,9 @@ export interface UptimeHttpTestResult {
 }
 
 export interface UptimeMonitorsServiceApi {
-	readonly list: (orgId: OrgId) => Effect.Effect<ReadonlyArray<UptimeMonitorRecord>, UptimeMonitorPersistenceError>
+	readonly list: (
+		orgId: OrgId,
+	) => Effect.Effect<ReadonlyArray<UptimeMonitorRecord>, UptimeMonitorPersistenceError>
 	readonly get: (
 		orgId: OrgId,
 		monitorId: UptimeMonitorId,
@@ -135,7 +148,10 @@ export interface UptimeMonitorsServiceApi {
 		monitorId: UptimeMonitorId,
 	) => Effect.Effect<UptimeMonitorId, UptimeMonitorNotFoundError | UptimeMonitorPersistenceError>
 	/** Every enabled http/tcp/dns monitor across orgs, for the scraper. */
-	readonly listProbeTargets: () => Effect.Effect<ReadonlyArray<UptimeProbeTargetRow>, UptimeMonitorPersistenceError>
+	readonly listProbeTargets: () => Effect.Effect<
+		ReadonlyArray<UptimeProbeTargetRow>,
+		UptimeMonitorPersistenceError
+	>
 	/** Applies a batch of scraper results; returns how many monitors changed. */
 	readonly recordChecks: (
 		reports: ReadonlyArray<UptimeCheckReport>,
@@ -171,12 +187,16 @@ const notFound = (monitorId: UptimeMonitorId) =>
 	new UptimeMonitorNotFoundError({ monitorId, message: "Uptime monitor not found" })
 
 const validateUrl = (url: string) =>
-	validateExternalUrl(url).pipe(Effect.asVoid, Effect.mapError((error) => invalid(error.message)))
+	validateExternalUrl(url).pipe(
+		Effect.asVoid,
+		Effect.mapError((error) => invalid(error.message)),
+	)
 
 /** A TCP/DNS host: a public name or IP, judged like a URL host. */
 const validateHost = (host: string) => {
 	const bare = host.trim().replace(/^\[|\]$/gu, "")
-	if (!HOST_PATTERN.test(bare)) return Effect.fail(invalid(`'${host}' is not a valid hostname or IP address`))
+	if (!HOST_PATTERN.test(bare))
+		return Effect.fail(invalid(`'${host}' is not a valid hostname or IP address`))
 	const isIp = bare.includes(":") || IPV4_PATTERN.test(bare)
 	if (isIp && isPrivateAddress(bare)) {
 		return Effect.fail(invalid(`Host '${host}' is not allowed (loopback, private, or metadata range)`))
@@ -188,8 +208,11 @@ const decodeConfig = Schema.decodeUnknownEffect(UptimeMonitorConfig)
 
 /** The config as stored: schema checks, the kind it belongs to, and hosts Maple may reach. */
 const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw: UptimeMonitorConfig) {
-	const config = yield* decodeConfig(raw).pipe(Effect.mapError((error) => invalid(`Invalid config: ${error.message}`)))
-	if (config._tag !== kind) return yield* invalid(`config.type '${config._tag}' does not match kind '${kind}'`)
+	const config = yield* decodeConfig(raw).pipe(
+		Effect.mapError((error) => invalid(`Invalid config: ${error.message}`)),
+	)
+	if (config._tag !== kind)
+		return yield* invalid(`config.type '${config._tag}' does not match kind '${kind}'`)
 	switch (config._tag) {
 		case "http":
 			if (config.body !== undefined && config.method !== "POST") {
@@ -282,16 +305,14 @@ interface FoldedChecks {
 }
 
 /** Applies one monitor's reports in time order, as one write per report would have. */
-const foldReports = (
-	row: MonitorWithStateRow,
-	reports: ReadonlyArray<UptimeCheckReport>,
-): FoldedChecks =>
+const foldReports = (row: MonitorWithStateRow, reports: ReadonlyArray<UptimeCheckReport>): FoldedChecks =>
 	reports.reduce<FoldedChecks>(
 		(acc, report) => {
 			const snapshot = applyUptimeCheck(acc.snapshot, report.ok, row.failuresToDown)
 			return {
 				snapshot,
-				statusChangedAt: snapshot.status === acc.snapshot.status ? acc.statusChangedAt : report.checkedAt,
+				statusChangedAt:
+					snapshot.status === acc.snapshot.status ? acc.statusChangedAt : report.checkedAt,
 				recent: appendRecentCheck(acc.recent, {
 					at: report.checkedAt,
 					ok: report.ok,
@@ -350,32 +371,30 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								message: `Stored interval of uptime monitor ${row.id} is invalid`,
 							}),
 					),
-					Effect.map(
-						(intervalSeconds): UptimeMonitorRecord => ({
-							id: row.id,
-							orgId: row.orgId,
-							name: row.name,
-							kind: row.kind,
-							config: row.configJson,
-							intervalSeconds,
-							failuresToDown: row.failuresToDown,
-							serviceName: row.serviceName,
-							enabled: row.enabled,
-							heartbeatUrl:
-								row.heartbeatToken === null ? null : `${apiBaseUrl}/hb/${row.heartbeatToken}`,
-							state: {
-								status: row.status,
-								consecutiveFailures: row.consecutiveFailures,
-								consecutiveSuccesses: row.consecutiveSuccesses,
-								statusChangedAt: row.statusChangedAt,
-								lastCheck: row.lastCheckJson,
-								recent: row.recentJson,
-								lastPingAt: row.lastPingAt,
-							},
-							createdAt: row.createdAt,
-							updatedAt: row.updatedAt,
-						}),
-					),
+					Effect.map((intervalSeconds): UptimeMonitorRecord => ({
+						id: row.id,
+						orgId: row.orgId,
+						name: row.name,
+						kind: row.kind,
+						config: row.configJson,
+						intervalSeconds,
+						failuresToDown: row.failuresToDown,
+						serviceName: row.serviceName,
+						enabled: row.enabled,
+						heartbeatUrl:
+							row.heartbeatToken === null ? null : `${apiBaseUrl}/hb/${row.heartbeatToken}`,
+						state: {
+							status: row.status,
+							consecutiveFailures: row.consecutiveFailures,
+							consecutiveSuccesses: row.consecutiveSuccesses,
+							statusChangedAt: row.statusChangedAt,
+							lastCheck: row.lastCheckJson,
+							recent: row.recentJson,
+							lastPingAt: row.lastPingAt,
+						},
+						createdAt: row.createdAt,
+						updatedAt: row.updatedAt,
+					})),
 				)
 
 			const requireMonitor = Effect.fn("UptimeMonitorsService.requireMonitor")(function* (
@@ -383,7 +402,11 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				monitorId: UptimeMonitorId,
 			) {
 				const rows = yield* dbExecute((db) =>
-					db.run(selectMonitors().where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)]).limit(1)),
+					db.run(
+						selectMonitors()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)])
+							.limit(1),
+					),
 				)
 				const row = rows[0]
 				if (row === undefined) return yield* notFound(monitorId)
@@ -421,7 +444,11 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					input.failuresToDown ?? DEFAULT_FAILURES_TO_DOWN,
 				)
 				const existing = yield* dbExecute((db) =>
-					db.run(PG.from(UptimeMonitors).select("id").where(($) => [$.orgId.eq(orgId)])),
+					db.run(
+						PG.from(UptimeMonitors)
+							.select("id")
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
 				)
 				yield* allowance.ensureCanCreate(orgId, existing.length)
 
@@ -469,7 +496,11 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				yield* allowance.track(orgId, id, 1)
 				return yield* requireMonitor(orgId, id).pipe(
 					Effect.catchTag("@maple/http/errors/UptimeMonitorNotFoundError", () =>
-						Effect.fail(new UptimeMonitorPersistenceError({ message: "Created uptime monitor not found" })),
+						Effect.fail(
+							new UptimeMonitorPersistenceError({
+								message: "Created uptime monitor not found",
+							}),
+						),
 					),
 				)
 			})
@@ -514,7 +545,9 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 										...(input.serviceName === undefined
 											? undefined
 											: { serviceName: input.serviceName }),
-										...(input.enabled === undefined ? undefined : { enabled: input.enabled }),
+										...(input.enabled === undefined
+											? undefined
+											: { enabled: input.enabled }),
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)]),
@@ -587,37 +620,42 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				yield* Effect.annotateCurrentSpan({ "maple.uptime.report_count": reports.length })
 				// System path: the batch spans orgs, so the read is by id only.
 				const rows = yield* dbExecute((db) =>
-					db.run(selectMonitors().where(($) => [$.id.in_(firstId, ...restIds), $.enabled.eq(true)])),
+					db.run(
+						selectMonitors().where(($) => [$.id.in_(firstId, ...restIds), $.enabled.eq(true)]),
+					),
 				)
 				const rowsById = new Map(rows.map((row) => [row.id, row]))
 				const now = yield* Clock.currentTimeMillis
-				const states = Object.values(Arr.groupBy(reports, (report) => report.monitorId)).flatMap((group) => {
-					const row = rowsById.get(Arr.headNonEmpty(group).monitorId)
-					if (row === undefined || row.kind === "heartbeat") return []
-					// A report at or before the stored last check is a retry of one already applied.
-					const after = row.lastCheckJson === null ? Number.NEGATIVE_INFINITY : row.lastCheckJson.at
-					const fresh = Arr.sort(
-						group.filter((report) => report.checkedAt > after),
-						Order.mapInput(Order.Number, (report: UptimeCheckReport) => report.checkedAt),
-					)
-					const last = Arr.last(fresh)
-					if (Option.isNone(last)) return []
-					const folded = foldReports(row, fresh)
-					return [
-						{
-							monitorId: row.id,
-							orgId: row.orgId,
-							status: folded.snapshot.status,
-							consecutiveFailures: folded.snapshot.consecutiveFailures,
-							consecutiveSuccesses: folded.snapshot.consecutiveSuccesses,
-							statusChangedAt: folded.statusChangedAt,
-							lastCheckJson: toCheckDetail(last.value),
-							recentJson: folded.recent,
-							lastPingAt: row.lastPingAt,
-							updatedAt: now,
-						},
-					]
-				})
+				const states = Object.values(Arr.groupBy(reports, (report) => report.monitorId)).flatMap(
+					(group) => {
+						const row = rowsById.get(Arr.headNonEmpty(group).monitorId)
+						if (row === undefined || row.kind === "heartbeat") return []
+						// A report at or before the stored last check is a retry of one already applied.
+						const after =
+							row.lastCheckJson === null ? Number.NEGATIVE_INFINITY : row.lastCheckJson.at
+						const fresh = Arr.sort(
+							group.filter((report) => report.checkedAt > after),
+							Order.mapInput(Order.Number, (report: UptimeCheckReport) => report.checkedAt),
+						)
+						const last = Arr.last(fresh)
+						if (Option.isNone(last)) return []
+						const folded = foldReports(row, fresh)
+						return [
+							{
+								monitorId: row.id,
+								orgId: row.orgId,
+								status: folded.snapshot.status,
+								consecutiveFailures: folded.snapshot.consecutiveFailures,
+								consecutiveSuccesses: folded.snapshot.consecutiveSuccesses,
+								statusChangedAt: folded.statusChangedAt,
+								lastCheckJson: toCheckDetail(last.value),
+								recentJson: folded.recent,
+								lastPingAt: row.lastPingAt,
+								updatedAt: now,
+							},
+						]
+					},
+				)
 				const [firstState, ...restStates] = states
 				if (firstState === undefined) return 0
 				// One upsert for the batch. A monitor paused since the read keeps its paused state.
@@ -646,7 +684,11 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			// Heartbeats are a public hot path: no spans of its own beyond the two queries.
 			const recordPing = Effect.fnUntraced(function* (token: string, ok: boolean) {
 				const rows = yield* dbExecute((db) =>
-					db.run(selectMonitors().where(($) => [$.heartbeatToken.eq(token)]).limit(1)),
+					db.run(
+						selectMonitors()
+							.where(($) => [$.heartbeatToken.eq(token)])
+							.limit(1),
+					),
 				)
 				const row = rows[0]
 				if (row === undefined || !row.enabled || row.kind !== "heartbeat") {
@@ -670,7 +712,11 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									error: ok ? null : "The job reported a failure",
 									traceId: null,
 								},
-								recentJson: appendRecentCheck(row.recentJson, { at: now, ok, durationMs: null }),
+								recentJson: appendRecentCheck(row.recentJson, {
+									at: now,
+									ok,
+									durationMs: null,
+								}),
 								lastPingAt: now,
 								updatedAt: now,
 							})
@@ -679,33 +725,49 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				)
 			})
 
-			const testHttp = Effect.fn("UptimeMonitorsService.testHttp")(function* (raw: UptimeMonitorConfig) {
+			const testHttp = Effect.fn("UptimeMonitorsService.testHttp")(function* (
+				raw: UptimeMonitorConfig,
+			) {
 				if (raw._tag !== "http") {
 					return yield* invalid(
 						`Only HTTP checks can be tested before saving; a ${raw._tag} monitor runs after it is created`,
 					)
 				}
 				const config = yield* validateConfig("http", raw)
-				if (config._tag !== "http") return yield* invalid("Only HTTP checks can be tested before saving")
+				if (config._tag !== "http")
+					return yield* invalid("Only HTTP checks can be tested before saving")
 				const request = HttpClientRequest.make(config.method)(config.url, { headers: config.headers })
 				const started = yield* Clock.currentTimeMillis
 				const outcome: TestOutcome = yield* testClient
-					.execute(config.body === undefined ? request : HttpClientRequest.bodyText(request, config.body))
+					.execute(
+						config.body === undefined
+							? request
+							: HttpClientRequest.bodyText(request, config.body),
+					)
 					.pipe(
 						Effect.flatMap((response) =>
 							Effect.gen(function* () {
 								const durationMs = (yield* Clock.currentTimeMillis) - started
 								const body =
 									config.method === "HEAD"
-										? Option.none<{ readonly text: string; readonly truncated: boolean }>()
+										? Option.none<{
+												readonly text: string
+												readonly truncated: boolean
+											}>()
 										: Option.some(yield* readTextPrefix(response, TEST_BODY_READ_BYTES))
 								return {
 									_tag: "response" as const,
 									statusCode: response.status,
 									durationMs,
 									headers: Object.fromEntries(Object.entries(response.headers)),
-									body: Option.match(body, { onNone: () => null, onSome: (read) => read.text }),
-									truncated: Option.match(body, { onNone: () => false, onSome: (read) => read.truncated }),
+									body: Option.match(body, {
+										onNone: () => null,
+										onSome: (read) => read.text,
+									}),
+									truncated: Option.match(body, {
+										onNone: () => false,
+										onSome: (read) => read.truncated,
+									}),
 								}
 							}),
 						),
@@ -715,7 +777,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							"@maple/safe-fetch/UrlValidationError": (error) =>
 								Effect.succeed({ _tag: "failed" as const, error: error.message }),
 							HttpClientError: (error) =>
-								Effect.succeed({ _tag: "failed" as const, error: describeHttpClientError(error) }),
+								Effect.succeed({
+									_tag: "failed" as const,
+									error: describeHttpClientError(error),
+								}),
 							TimeoutError: () =>
 								Effect.succeed({
 									_tag: "failed" as const,
@@ -745,7 +810,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					headers: outcome.headers,
 					bodyPrefix: outcome.body === null ? null : outcome.body.slice(0, TEST_BODY_PREFIX_CHARS),
 					bodyTruncated:
-						outcome.truncated || (outcome.body !== null && outcome.body.length > TEST_BODY_PREFIX_CHARS),
+						outcome.truncated ||
+						(outcome.body !== null && outcome.body.length > TEST_BODY_PREFIX_CHARS),
 				} satisfies UptimeHttpTestResult
 			})
 

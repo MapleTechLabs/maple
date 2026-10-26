@@ -44,57 +44,57 @@ export interface UptimeMonitorAllowanceApi {
 	readonly track: (orgId: OrgId, monitorId: UptimeMonitorId, delta: 1 | -1) => Effect.Effect<void>
 }
 
-export class UptimeMonitorAllowance extends Context.Service<UptimeMonitorAllowance, UptimeMonitorAllowanceApi>()(
-	"@maple/backend/services/uptime/UptimeMonitorAllowance",
-	{
-		make: Effect.gen(function* () {
-			const env = yield* Env
-			const edgeCache = yield* EdgeCacheService
-			const autumn = yield* AutumnClient
-			const httpClient = yield* HttpClient.HttpClient
-			// Maple's own org and deployments without billing (self-hosted, local dev) are uncapped.
-			const unmetered = (orgId: OrgId) =>
-				orgId === env.MAPLE_DEFAULT_ORG_ID || Option.isNone(env.AUTUMN_SECRET_KEY)
+export class UptimeMonitorAllowance extends Context.Service<
+	UptimeMonitorAllowance,
+	UptimeMonitorAllowanceApi
+>()("@maple/backend/services/uptime/UptimeMonitorAllowance", {
+	make: Effect.gen(function* () {
+		const env = yield* Env
+		const edgeCache = yield* EdgeCacheService
+		const autumn = yield* AutumnClient
+		const httpClient = yield* HttpClient.HttpClient
+		// Maple's own org and deployments without billing (self-hosted, local dev) are uncapped.
+		const unmetered = (orgId: OrgId) =>
+			orgId === env.MAPLE_DEFAULT_ORG_ID || Option.isNone(env.AUTUMN_SECRET_KEY)
 
-			const ensureCanCreate: UptimeMonitorAllowanceApi["ensureCanCreate"] = Effect.fn(
-				"UptimeMonitorAllowance.ensureCanCreate",
-			)(function* (orgId, existing) {
-				if (unmetered(orgId)) return
-				const limit = yield* readCustomerCached(
-					edgeCache,
-					orgId,
-					autumn.getOrCreateCustomer(orgId, { expand: ["subscriptions.plan"] }),
-				).pipe(
-					Effect.flatMap(({ result }) => ensureOk(result)),
-					Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
-					Effect.map(uptimeMonitorLimit),
-					// With a key configured, billing being down is an outage, not a free plan.
-					Effect.mapError(
-						(error) =>
-							new UptimeMonitorPersistenceError({
-								message: `Could not read the plan's uptime monitor allowance: ${error.message}`,
-							}),
-					),
-				)
-				yield* Effect.annotateCurrentSpan({
-					"maple.uptime.monitor_limit": Option.getOrElse(limit, () => -1),
-					"maple.uptime.monitor_count": existing,
-				})
-				if (Option.isSome(limit) && existing >= limit.value) return yield* limitReached(limit.value)
+		const ensureCanCreate: UptimeMonitorAllowanceApi["ensureCanCreate"] = Effect.fn(
+			"UptimeMonitorAllowance.ensureCanCreate",
+		)(function* (orgId, existing) {
+			if (unmetered(orgId)) return
+			const limit = yield* readCustomerCached(
+				edgeCache,
+				orgId,
+				autumn.getOrCreateCustomer(orgId, { expand: ["subscriptions.plan"] }),
+			).pipe(
+				Effect.flatMap(({ result }) => ensureOk(result)),
+				Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
+				Effect.map(uptimeMonitorLimit),
+				// With a key configured, billing being down is an outage, not a free plan.
+				Effect.mapError(
+					(error) =>
+						new UptimeMonitorPersistenceError({
+							message: `Could not read the plan's uptime monitor allowance: ${error.message}`,
+						}),
+				),
+			)
+			yield* Effect.annotateCurrentSpan({
+				"maple.uptime.monitor_limit": Option.getOrElse(limit, () => -1),
+				"maple.uptime.monitor_count": existing,
 			})
+			if (Option.isSome(limit) && existing >= limit.value) return yield* limitReached(limit.value)
+		})
 
-			const track: UptimeMonitorAllowanceApi["track"] = (orgId, monitorId, delta) =>
-				trackFeatureUsage({
-					orgId,
-					featureId: UPTIME_MONITORS_FEATURE_ID,
-					value: delta,
-					idempotencyKey: `uptime_monitor:${monitorId}:${delta > 0 ? "created" : "deleted"}`,
-				}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+		const track: UptimeMonitorAllowanceApi["track"] = (orgId, monitorId, delta) =>
+			trackFeatureUsage({
+				orgId,
+				featureId: UPTIME_MONITORS_FEATURE_ID,
+				value: delta,
+				idempotencyKey: `uptime_monitor:${monitorId}:${delta > 0 ? "created" : "deleted"}`,
+			}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 
-			return { ensureCanCreate, track } satisfies UptimeMonitorAllowanceApi
-		}),
-	},
-) {
+		return { ensureCanCreate, track } satisfies UptimeMonitorAllowanceApi
+	}),
+}) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(Layer.mergeAll(AutumnClient.layer, FetchHttpClient.layer)),
 	)

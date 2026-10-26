@@ -1,6 +1,11 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { UptimeIntervalSeconds, UptimeMonitorId, UptimeMonitorKind, UptimeMonitorStatus } from "../../primitives"
+import {
+	UptimeIntervalSeconds,
+	UptimeMonitorId,
+	UptimeMonitorKind,
+	UptimeMonitorStatus,
+} from "../../primitives"
 import {
 	UptimeDnsRecordType,
 	UptimeHttpMethod,
@@ -32,7 +37,8 @@ export const UPTIME_DEFAULT_TIMEOUT_MS = 10_000
 
 const timeoutField = Schema.optionalKey(
 	Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1000, maximum: 30000 })).annotate({
-		description: "How long one check may take before it counts as failed, in milliseconds (1000 to 30000). Defaults to 10000.",
+		description:
+			"How long one check may take before it counts as failed, in milliseconds (1000 to 30000). Defaults to 10000.",
 		examples: [10000],
 	}),
 )
@@ -43,7 +49,9 @@ export const V2UptimeAssertion = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("status"),
 		op: Schema.Literals(["is", "is_not"]),
-		value: UptimeStatusMatcher.annotate({ description: "A class like `2xx` or an exact code like `204`." }),
+		value: UptimeStatusMatcher.annotate({
+			description: "A class like `2xx` or an exact code like `204`.",
+		}),
 	}),
 	Schema.Struct({
 		type: Schema.Literal("latency"),
@@ -58,7 +66,9 @@ export const V2UptimeAssertion = Schema.Union([
 	}),
 	Schema.Struct({
 		type: Schema.Literal("json_path"),
-		path: NonEmptyString.annotate({ description: "Dot path with `[n]` indexes, e.g. `checks[0].status`." }),
+		path: NonEmptyString.annotate({
+			description: "Dot path with `[n]` indexes, e.g. `checks[0].status`.",
+		}),
 		op: Schema.Literals(["equals", "exists"]),
 		value: Schema.optionalKey(Schema.String),
 	}),
@@ -81,7 +91,9 @@ export const V2UptimeHttpConfig = Schema.Struct({
 		description: "The public http(s) URL to request. Private, loopback and metadata hosts are refused.",
 		examples: ["https://api.example.com/health"],
 	}),
-	method: Schema.optionalKey(UptimeHttpMethod.annotate({ description: "Request method. Defaults to `GET`." })),
+	method: Schema.optionalKey(
+		UptimeHttpMethod.annotate({ description: "Request method. Defaults to `GET`." }),
+	),
 	headers: Schema.optionalKey(
 		Schema.Record(Schema.String, Schema.String).annotate({ description: "Extra request headers." }),
 	),
@@ -96,7 +108,10 @@ export const V2UptimeHttpConfig = Schema.Struct({
 
 export const V2UptimeTcpConfig = Schema.Struct({
 	type: Schema.Literal("tcp"),
-	host: NonEmptyString.annotate({ description: "Public hostname or IP to connect to.", examples: ["db.example.com"] }),
+	host: NonEmptyString.annotate({
+		description: "Public hostname or IP to connect to.",
+		examples: ["db.example.com"],
+	}),
 	port: Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 65535 })).annotate({
 		description: "TCP port.",
 		examples: [5432],
@@ -109,7 +124,9 @@ export const V2UptimeDnsConfig = Schema.Struct({
 	hostname: NonEmptyString.annotate({ description: "The name to resolve.", examples: ["example.com"] }),
 	record_type: UptimeDnsRecordType.annotate({ description: "Record type to query." }),
 	expected: Schema.optionalKey(
-		NonEmptyString.annotate({ description: "Up when any answer equals this; omitted means it resolves at all." }),
+		NonEmptyString.annotate({
+			description: "Up when any answer equals this; omitted means it resolves at all.",
+		}),
 	),
 	timeout_ms: timeoutField,
 }).annotate({ identifier: "UptimeDnsConfig", title: "DNS check" })
@@ -124,14 +141,20 @@ export const V2UptimeHeartbeatSchedule = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("cron"),
 		expression: NonEmptyString.annotate({ description: "Cron expression of the expected pings." }),
-		timezone: NonEmptyString.annotate({ description: "IANA timezone the expression runs in.", examples: ["UTC"] }),
+		timezone: NonEmptyString.annotate({
+			description: "IANA timezone the expression runs in.",
+			examples: ["UTC"],
+		}),
 	}),
 ]).annotate({ identifier: "UptimeHeartbeatSchedule", title: "Heartbeat schedule" })
 
 export const V2UptimeHeartbeatConfig = Schema.Struct({
 	type: Schema.Literal("heartbeat"),
 	schedule: V2UptimeHeartbeatSchedule,
-	grace_seconds: Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 86400 })).annotate({
+	grace_seconds: Schema.Number.check(
+		Schema.isInt(),
+		Schema.isBetween({ minimum: 0, maximum: 86400 }),
+	).annotate({
 		description: "How late a ping may be before the monitor goes down.",
 		examples: [300],
 	}),
@@ -208,7 +231,9 @@ const scheduleFromWire = (
 		? { _tag: "interval", seconds: schedule.seconds }
 		: { _tag: "cron", expression: schedule.expression, timezone: schedule.timezone }
 
-const scheduleToWire = (schedule: UptimeHeartbeatSchedule): Schema.Schema.Type<typeof V2UptimeHeartbeatSchedule> =>
+const scheduleToWire = (
+	schedule: UptimeHeartbeatSchedule,
+): Schema.Schema.Type<typeof V2UptimeHeartbeatSchedule> =>
 	schedule._tag === "interval"
 		? { type: "interval", seconds: schedule.seconds }
 		: { type: "cron", expression: schedule.expression, timezone: schedule.timezone }
@@ -224,7 +249,9 @@ export const uptimeConfigFromWire = (config: V2UptimeMonitorConfig): UptimeMonit
 				headers: config.headers ?? {},
 				...(config.body === undefined ? undefined : { body: config.body }),
 				assertions:
-					config.assertions === undefined ? DEFAULT_ASSERTIONS : config.assertions.map(assertionFromWire),
+					config.assertions === undefined
+						? DEFAULT_ASSERTIONS
+						: config.assertions.map(assertionFromWire),
 				timeoutMs: config.timeout_ms ?? UPTIME_DEFAULT_TIMEOUT_MS,
 			}
 		case "tcp":
@@ -412,7 +439,10 @@ export const V2UptimeMonitor = Schema.Struct({
 export type V2UptimeMonitor = Schema.Schema.Type<typeof V2UptimeMonitor>
 
 export const V2UptimeMonitorCreateParams = Schema.Struct({
-	name: NonEmptyString.annotate({ description: "Human-readable label. Required, non-empty.", examples: ["API health"] }),
+	name: NonEmptyString.annotate({
+		description: "Human-readable label. Required, non-empty.",
+		examples: ["API health"],
+	}),
 	kind: kindField,
 	config: V2UptimeMonitorConfig,
 	interval_seconds: Schema.optionalKey(intervalField),
@@ -441,14 +471,17 @@ export type V2UptimeMonitorCreateParams = Schema.Schema.Type<typeof V2UptimeMoni
 export const V2UptimeMonitorUpdateParams = Schema.Struct({
 	name: Schema.optionalKey(NonEmptyString),
 	config: Schema.optionalKey(
-		V2UptimeMonitorConfig.annotate({ description: "A new config of the same kind; the kind cannot change." }),
+		V2UptimeMonitorConfig.annotate({
+			description: "A new config of the same kind; the kind cannot change.",
+		}),
 	),
 	interval_seconds: Schema.optionalKey(intervalField),
 	failures_to_down: Schema.optionalKey(failuresToDownField),
 	service_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	enabled: Schema.optionalKey(
 		Schema.Boolean.annotate({
-			description: "`false` pauses the monitor; `true` resumes it, back to `pending` until the next result.",
+			description:
+				"`false` pauses the monitor; `true` resumes it, back to `pending` until the next result.",
 		}),
 	),
 }).annotate({
@@ -551,7 +584,12 @@ export class V2UptimeMonitorsApiGroup extends HttpApiGroup.make("uptimeMonitors"
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2UptimeMonitorCreateParams,
 			success: V2UptimeMonitor,
-			error: [V2InsufficientPermissions.schema, uptimeValidation, uptimePersistence, uptimeLimitReached],
+			error: [
+				V2InsufficientPermissions.schema,
+				uptimeValidation,
+				uptimePersistence,
+				uptimeLimitReached,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createUptimeMonitor",
