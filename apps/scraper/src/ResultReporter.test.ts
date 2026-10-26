@@ -21,6 +21,8 @@ const reporterLayer = (harness: Harness) =>
 		Layer.provide(
 			Layer.succeed(ApiClient, {
 				listTargets: () => Effect.succeed([]),
+				listUptimeTargets: () => Effect.succeed([]),
+				reportUptimeResults: () => Effect.void,
 				reportResults: (results) =>
 					Effect.suspend(() => harness.reportImpl()).pipe(
 						Effect.tap(() => Effect.sync(() => harness.delivered.push(results))),

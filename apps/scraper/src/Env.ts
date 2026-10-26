@@ -22,6 +22,8 @@ export interface ScraperEnvConfig {
 	 * whole and loses the entire scrape.
 	 */
 	readonly SCRAPER_OTLP_MAX_DATA_POINTS: number
+	/** Max concurrent uptime checks across all monitors, separate from the scrape permits. */
+	readonly UPTIME_CONCURRENCY: number
 	/** Port for the `/health` endpoint. */
 	readonly PORT: number
 }
@@ -57,6 +59,7 @@ const envConfig = Config.all({
 	SCRAPER_OTLP_MAX_DATA_POINTS: positiveInt("SCRAPER_OTLP_MAX_DATA_POINTS", 10_000_000).pipe(
 		Config.withDefault(10_000),
 	),
+	UPTIME_CONCURRENCY: positiveInt("UPTIME_CONCURRENCY", 10_000).pipe(Config.withDefault(20)),
 	PORT: positiveInt("PORT", 65_535).pipe(Config.withDefault(3475)),
 })
 
