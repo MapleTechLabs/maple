@@ -92,13 +92,14 @@ describe("toOtlpSpan", () => {
 })
 
 describe("encodeTraceExport", () => {
-	it("groups spans under one maple-uptime resource per monitor", () => {
+	it("groups spans under one maple-uptime resource per monitor, in the maple-services namespace", () => {
 		const unnamed = mkUptimeTarget({ id: MONITOR_B, name: "Status page", serviceName: null })
 		const request = encodeTraceExport([check(), check({ monitor: unnamed }), check()])
 		assert.lengthOf(request.resourceSpans, 2)
 		const [first, second] = request.resourceSpans
 		assert.deepStrictEqual(attrs(first!.resource.attributes), {
 			"service.name": { stringValue: "maple-uptime" },
+			"service.namespace": { stringValue: "maple-services" },
 			"maple.uptime.monitor_id": { stringValue: MONITOR_A },
 			"maple.uptime.monitor_name": { stringValue: "Checkout health" },
 			"maple.uptime.service_name": { stringValue: "checkout" },

@@ -391,6 +391,30 @@ describe("serviceMapEdgeJoinQuery", () => {
 		// the full Client/Producer scan rather than filtering after the join.
 		expect(sql.indexOf("ServiceName = 'web'")).toBeLessThan(sql.indexOf("INNER JOIN"))
 	})
+
+	it("drops uptime check spans from the parent side, so the rollup never seals their edges", () => {
+		const { sql } = compiledRollup()
+		const exclusion = sql.indexOf("service_map_spans.ServiceName NOT IN ('maple-uptime')")
+		expect(exclusion).toBeGreaterThan(-1)
+		expect(exclusion).toBeLessThan(sql.indexOf("INNER JOIN"))
+	})
+})
+
+describe("service map uptime exclusion", () => {
+	it("drops maple-uptime edges from both the sealed hours and the live join", () => {
+		const { sql } = Effect.runSync(serviceDependenciesSQL({}, baseParams))
+		expect(sql).toContain("service_map_edges_hourly.SourceService NOT IN ('maple-uptime')")
+		expect(sql).toContain("service_map_spans.ServiceName NOT IN ('maple-uptime')")
+	})
+
+	it("drops them from the per-service variant too", () => {
+		const { sql } = compileUnsafe(
+			serviceDependenciesForServiceQuery({ serviceName: "artifacts-api" }),
+			baseParams,
+		)
+		expect(sql).toContain("service_map_edges_hourly.SourceService NOT IN ('maple-uptime')")
+		expect(sql).toContain("service_map_spans.ServiceName NOT IN ('maple-uptime')")
+	})
 })
 
 describe("serviceDependenciesForServiceQuery", () => {

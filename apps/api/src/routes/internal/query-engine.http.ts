@@ -152,6 +152,7 @@ import {
 	workloadMetricSpec,
 } from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
+import { SERVICE_MAP_EXCLUDED_SERVICES } from "@maple/query-engine/ch"
 import { productEventsFunnelOpts, productEventsPathsOpts } from "@maple/query-engine/registry"
 import {
 	makeDashboardReads,
@@ -1318,7 +1319,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const tenant = yield* CurrentTenant.Context
 						// Resolve warehouse routing once before the fan-out.
 						yield* warehouse.warmRoute(tenant)
-						const [dependencyRows, overviewRows, dbEdges, platformRows] = yield* Effect.all(
+						const [dependencyRows, allOverviewRows, dbEdges, platformRows] = yield* Effect.all(
 							[
 								runQuery(Queries.serviceDependencies, tenant, payload),
 								runQuery(Queries.serviceOverview, tenant, payload),
@@ -1331,6 +1332,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								runQuery(Queries.servicePlatforms, tenant, payload),
 							],
 							{ concurrency: 4 },
+						)
+						// The edges already drop synthetic callers; overview rows would still draw them as nodes.
+						const overviewRows = allOverviewRows.filter(
+							(row) => !SERVICE_MAP_EXCLUDED_SERVICES.includes(row.serviceName),
 						)
 
 						const services = new Set<string>()

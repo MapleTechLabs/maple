@@ -5035,7 +5035,7 @@ SELECT
         GROUP BY hourTs
         FORMAT JSON
 
--- builder:service-map-rollup:serviceMapEdgesRollupSQL:default  [f4240642]
+-- builder:service-map-rollup:serviceMapEdgesRollupSQL:default  [639f3369]
 SELECT
           p.OrgId AS OrgId,
           toStartOfHour(p.Timestamp) AS Hour,
@@ -5060,7 +5060,8 @@ SELECT
         WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
-          AND service_map_spans.OrgId = 'org_sql_catalog') AS p
+          AND service_map_spans.OrgId = 'org_sql_catalog'
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -5807,7 +5808,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesForServiceQuery:default  [e832e6b5]
+-- builder:service-map:serviceDependenciesForServiceQuery:default  [211f518c]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -5828,6 +5829,7 @@ SELECT
         FROM service_map_edges_hourly
         WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
           AND service_map_edges_hourly.SourceService = 'web'
+          AND service_map_edges_hourly.SourceService NOT IN ('maple-uptime')
           AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
         GROUP BY sourceService, targetService
@@ -5853,7 +5855,8 @@ SELECT
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
-          AND service_map_spans.ServiceName = 'web') AS p
+          AND service_map_spans.ServiceName = 'web'
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -5874,7 +5877,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesInvolvingServiceQuery:default  [010fb51f]
+-- builder:service-map:serviceDependenciesInvolvingServiceQuery:default  [cc329604]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -5894,6 +5897,7 @@ SELECT
           sum(if(service_map_edges_hourly.SampleRateSum > 0, service_map_edges_hourly.SampleRateSum, toFloat64(service_map_edges_hourly.CallCount))) AS bucketEstimatedSpanCount
         FROM service_map_edges_hourly
         WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_edges_hourly.SourceService NOT IN ('maple-uptime')
           AND (service_map_edges_hourly.SourceService = 'web' OR service_map_edges_hourly.TargetService = 'web')
           AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
@@ -5919,7 +5923,8 @@ SELECT
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS p
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -5941,7 +5946,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesSQL:default  [2aa810d6]
+-- builder:service-map:serviceDependenciesSQL:default  [5467ed65]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -5961,6 +5966,7 @@ SELECT
           sum(if(service_map_edges_hourly.SampleRateSum > 0, service_map_edges_hourly.SampleRateSum, toFloat64(service_map_edges_hourly.CallCount))) AS bucketEstimatedSpanCount
         FROM service_map_edges_hourly
         WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_edges_hourly.SourceService NOT IN ('maple-uptime')
           AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
         GROUP BY sourceService, targetService
@@ -5985,7 +5991,8 @@ SELECT
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS p
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -6006,7 +6013,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesSQL:env-scoped  [3f463d3e]
+-- builder:service-map:serviceDependenciesSQL:env-scoped  [1fd187fd]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -6026,6 +6033,7 @@ SELECT
           sum(if(service_map_edges_hourly.SampleRateSum > 0, service_map_edges_hourly.SampleRateSum, toFloat64(service_map_edges_hourly.CallCount))) AS bucketEstimatedSpanCount
         FROM service_map_edges_hourly
         WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_edges_hourly.SourceService NOT IN ('maple-uptime')
           AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND service_map_edges_hourly.DeploymentEnv = 'production'
@@ -6052,7 +6060,8 @@ SELECT
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
           AND service_map_spans.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS p
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -6215,7 +6224,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceMapEdgeJoinQuery:rollup-hour  [f4240642]
+-- builder:service-map:serviceMapEdgeJoinQuery:rollup-hour  [639f3369]
 SELECT
           p.OrgId AS OrgId,
           toStartOfHour(p.Timestamp) AS Hour,
@@ -6240,7 +6249,8 @@ SELECT
         WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
-          AND service_map_spans.OrgId = 'org_sql_catalog') AS p
+          AND service_map_spans.OrgId = 'org_sql_catalog'
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -6256,7 +6266,7 @@ SELECT
         GROUP BY OrgId, Hour, SourceService, TargetService, DeploymentEnv
         FORMAT JSON
 
--- builder:service-map:serviceMapEdgeJoinQuery:scoped-to-service  [f0f11d97]
+-- builder:service-map:serviceMapEdgeJoinQuery:scoped-to-service  [ebdcfe82]
 SELECT
           p.OrgId AS OrgId,
           toStartOfHour(p.Timestamp) AS Hour,
@@ -6283,7 +6293,8 @@ SELECT
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
           AND service_map_spans.DeploymentEnv = 'production'
-          AND service_map_spans.ServiceName = 'web') AS p
+          AND service_map_spans.ServiceName = 'web'
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -10715,7 +10726,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- pipe:custom_traces_breakdown:all-root-only:baseline  [d7c66bec]
+-- pipe:custom_traces_breakdown:all-root-only:baseline  [7f1ac5f3]
 SELECT
           'all' AS name,
           sum(service_overview_spans.SampleRate) AS count,
@@ -10727,7 +10738,7 @@ SELECT
           if(sum(service_overview_spans.SampleRate) > 0, sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') / sum(service_overview_spans.SampleRate), 0) AS errorRate,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + (countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore
+          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore
         FROM service_overview_spans
         WHERE service_overview_spans.OrgId = 'org_sql_catalog'
           AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
@@ -10737,7 +10748,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- pipe:custom_traces_breakdown:all-scoped:baseline  [7ebf02cc]
+-- pipe:custom_traces_breakdown:all-scoped:baseline  [7415aa0d]
 SELECT
           'all' AS name,
           sum(service_overview_spans.SampleRate) AS count,
@@ -10749,7 +10760,7 @@ SELECT
           if(sum(service_overview_spans.SampleRate) > 0, sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') / sum(service_overview_spans.SampleRate), 0) AS errorRate,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + (countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore
+          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore
         FROM service_overview_spans
         WHERE service_overview_spans.OrgId = 'org_sql_catalog'
           AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
@@ -10761,7 +10772,7 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- pipe:custom_traces_breakdown:by-attribute:baseline  [1e6bbbca]
+-- pipe:custom_traces_breakdown:by-attribute:baseline  [be0963d3]
 SELECT
           traces.SpanAttributes['http.route'] AS name,
           sum(traces.SampleRate) AS count,
@@ -10773,7 +10784,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10783,7 +10794,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- pipe:custom_traces_breakdown:by-attribute:bloom  [1e6bbbca]
+-- pipe:custom_traces_breakdown:by-attribute:bloom  [be0963d3]
 SELECT
           traces.SpanAttributes['http.route'] AS name,
           sum(traces.SampleRate) AS count,
@@ -10795,7 +10806,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10805,7 +10816,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- pipe:custom_traces_breakdown:by-attribute:text  [1e6bbbca]
+-- pipe:custom_traces_breakdown:by-attribute:text  [be0963d3]
 SELECT
           traces.SpanAttributes['http.route'] AS name,
           sum(traces.SampleRate) AS count,
@@ -10817,7 +10828,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10827,7 +10838,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- pipe:custom_traces_breakdown:by-environment:baseline  [1ff7c69c]
+-- pipe:custom_traces_breakdown:by-environment:baseline  [cf11be63]
 SELECT
           service_overview_spans.DeploymentEnv AS name,
           sum(service_overview_spans.SampleRate) AS count,
@@ -10839,7 +10850,7 @@ SELECT
           if(sum(service_overview_spans.SampleRate) > 0, sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') / sum(service_overview_spans.SampleRate), 0) AS errorRate,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + (countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore
+          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore
         FROM service_overview_spans
         WHERE service_overview_spans.OrgId = 'org_sql_catalog'
           AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
@@ -10849,7 +10860,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- pipe:custom_traces_breakdown:by-namespace:baseline  [f0905eb0]
+-- pipe:custom_traces_breakdown:by-namespace:baseline  [6a34e437]
 SELECT
           service_overview_spans.ServiceNamespace AS name,
           sum(service_overview_spans.SampleRate) AS count,
@@ -10861,7 +10872,7 @@ SELECT
           if(sum(service_overview_spans.SampleRate) > 0, sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') / sum(service_overview_spans.SampleRate), 0) AS errorRate,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + (countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore
+          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore
         FROM service_overview_spans
         WHERE service_overview_spans.OrgId = 'org_sql_catalog'
           AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
@@ -10871,7 +10882,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- pipe:custom_traces_breakdown:by-service:baseline  [08a9d47a]
+-- pipe:custom_traces_breakdown:by-service:baseline  [82decd03]
 SELECT
           traces.ServiceName AS name,
           sum(traces.SampleRate) AS count,
@@ -10883,7 +10894,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -10893,7 +10904,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- pipe:custom_traces_timeseries:errors-only:baseline  [dba698c6]
+-- pipe:custom_traces_timeseries:errors-only:baseline  [9b79a0d9]
 SELECT
           toStartOfInterval(service_overview_spans.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           'all' AS groupName,
@@ -10906,7 +10917,7 @@ SELECT
           if(sum(service_overview_spans.SampleRate) > 0, sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') / sum(service_overview_spans.SampleRate), 0) AS errorRate,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + (countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(service_overview_spans.SampleRate) AS estimatedSpanCount
         FROM service_overview_spans
         WHERE service_overview_spans.OrgId = 'org_sql_catalog'
@@ -10917,7 +10928,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:custom_traces_timeseries:grouped-by-attribute:baseline  [95d59b18]
+-- pipe:custom_traces_timeseries:grouped-by-attribute:baseline  [30103eb5]
 SELECT
           toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND) AS bucket,
           coalesce(nullIf(arrayStringConcat([toString(traces.SpanAttributes['http.route']), toString(traces.SpanAttributes['http.method'])], ' · '), ''), 'all') AS groupName,
@@ -10930,7 +10941,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(traces.SampleRate) AS estimatedSpanCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -10940,7 +10951,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:custom_traces_timeseries:grouped-by-attribute:bloom  [95d59b18]
+-- pipe:custom_traces_timeseries:grouped-by-attribute:bloom  [30103eb5]
 SELECT
           toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND) AS bucket,
           coalesce(nullIf(arrayStringConcat([toString(traces.SpanAttributes['http.route']), toString(traces.SpanAttributes['http.method'])], ' · '), ''), 'all') AS groupName,
@@ -10953,7 +10964,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(traces.SampleRate) AS estimatedSpanCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -10963,7 +10974,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:custom_traces_timeseries:grouped-by-attribute:text  [95d59b18]
+-- pipe:custom_traces_timeseries:grouped-by-attribute:text  [30103eb5]
 SELECT
           toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND) AS bucket,
           coalesce(nullIf(arrayStringConcat([toString(traces.SpanAttributes['http.route']), toString(traces.SpanAttributes['http.method'])], ' · '), ''), 'all') AS groupName,
@@ -10976,7 +10987,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(traces.SampleRate) AS estimatedSpanCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -10986,7 +10997,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:custom_traces_timeseries:grouped-by-service:baseline  [171430ab]
+-- pipe:custom_traces_timeseries:grouped-by-service:baseline  [2bca0cde]
 SELECT
           toStartOfInterval(traces.Timestamp, INTERVAL 60 SECOND) AS bucket,
           coalesce(nullIf(toString(traces.ServiceName), ''), 'all') AS groupName,
@@ -10999,7 +11010,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(traces.SampleRate) AS estimatedSpanCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -11009,7 +11020,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:custom_traces_timeseries:grouped-by-service:bloom  [171430ab]
+-- pipe:custom_traces_timeseries:grouped-by-service:bloom  [2bca0cde]
 SELECT
           toStartOfInterval(traces.Timestamp, INTERVAL 60 SECOND) AS bucket,
           coalesce(nullIf(toString(traces.ServiceName), ''), 'all') AS groupName,
@@ -11022,7 +11033,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(traces.SampleRate) AS estimatedSpanCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -11032,7 +11043,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:custom_traces_timeseries:grouped-by-service:text  [171430ab]
+-- pipe:custom_traces_timeseries:grouped-by-service:text  [2bca0cde]
 SELECT
           toStartOfInterval(traces.Timestamp, INTERVAL 60 SECOND) AS bucket,
           coalesce(nullIf(toString(traces.ServiceName), ''), 'all') AS groupName,
@@ -11045,7 +11056,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(traces.SampleRate) AS estimatedSpanCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -11055,7 +11066,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:custom_traces_timeseries:root-only:baseline  [1d590a8b]
+-- pipe:custom_traces_timeseries:root-only:baseline  [73156e58]
 SELECT
           toStartOfInterval(service_overview_spans.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           'all' AS groupName,
@@ -11068,7 +11079,7 @@ SELECT
           if(sum(service_overview_spans.SampleRate) > 0, sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') / sum(service_overview_spans.SampleRate), 0) AS errorRate,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + (countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(service_overview_spans.SampleRate) AS estimatedSpanCount
         FROM service_overview_spans
         WHERE service_overview_spans.OrgId = 'org_sql_catalog'
@@ -11078,7 +11089,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:custom_traces_timeseries:ungrouped:baseline  [3dacb72a]
+-- pipe:custom_traces_timeseries:ungrouped:baseline  [bf7e8cb7]
 SELECT
           toStartOfInterval(traces.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           'all' AS groupName,
@@ -11091,7 +11102,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(traces.SampleRate) AS estimatedSpanCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -12668,13 +12679,13 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:service_apdex_time_series:custom-threshold:baseline  [26e7d977]
+-- pipe:service_apdex_time_series:custom-threshold:baseline  [50ac037a]
 SELECT
           toStartOfInterval(service_overview_spans.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           count() AS totalCount,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 250)) AS satisfiedCount,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 250 AND service_overview_spans.Duration / 1000000 < 1000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 250)) / count() + (countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 250 AND service_overview_spans.Duration / 1000000 < 1000))) * 0.5 / count()), 4), 0) AS apdexScore
+          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 250)) / count() + countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 250 AND service_overview_spans.Duration / 1000000 < 1000))) * 0.5 / count(), 4), 0) AS apdexScore
         FROM service_overview_spans
         WHERE service_overview_spans.OrgId = 'org_sql_catalog'
           AND service_overview_spans.Timestamp >= '2026-01-01 10:30:00'
@@ -12684,13 +12695,13 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- pipe:service_apdex_time_series:default:baseline  [e16c3bde]
+-- pipe:service_apdex_time_series:default:baseline  [c8ecb321]
 SELECT
           toStartOfInterval(service_windows.bBucket, INTERVAL 60 SECOND) AS bucket,
           sum(service_windows.bSpanCount) AS totalCount,
           sum(service_windows.bApdexSatisfiedCount) AS satisfiedCount,
           sum(service_windows.bApdexToleratingCount) AS toleratingCount,
-          if(sum(service_windows.bSpanCount) > 0, round(sum(service_windows.bApdexSatisfiedCount) / sum(service_windows.bSpanCount) + (sum(service_windows.bApdexToleratingCount) * 0.5 / sum(service_windows.bSpanCount)), 4), 0) AS apdexScore
+          if(sum(service_windows.bSpanCount) > 0, round(sum(service_windows.bApdexSatisfiedCount) / sum(service_windows.bSpanCount) + sum(service_windows.bApdexToleratingCount) * 0.5 / sum(service_windows.bSpanCount), 4), 0) AS apdexScore
         FROM (
 SELECT
           toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
@@ -12741,7 +12752,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- pipe:service_dependencies:default:baseline  [3f463d3e]
+-- pipe:service_dependencies:default:baseline  [1fd187fd]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -12761,6 +12772,7 @@ SELECT
           sum(if(service_map_edges_hourly.SampleRateSum > 0, service_map_edges_hourly.SampleRateSum, toFloat64(service_map_edges_hourly.CallCount))) AS bucketEstimatedSpanCount
         FROM service_map_edges_hourly
         WHERE service_map_edges_hourly.OrgId = 'org_sql_catalog'
+          AND service_map_edges_hourly.SourceService NOT IN ('maple-uptime')
           AND service_map_edges_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
           AND service_map_edges_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND service_map_edges_hourly.DeploymentEnv = 'production'
@@ -12787,7 +12799,8 @@ SELECT
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
           AND service_map_spans.DeploymentEnv = 'production'
-          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))) AS p
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND service_map_spans.ServiceName NOT IN ('maple-uptime')) AS p
         INNER JOIN (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -17397,7 +17410,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:traces-timeseries-all-metrics-grouped:baseline  [5f99e0ee]
+-- spec:traces-timeseries-all-metrics-grouped:baseline  [48780583]
 SELECT
           toStartOfInterval(traces.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           coalesce(nullIf(toString(traces.ServiceName), ''), 'all') AS groupName,
@@ -17410,7 +17423,7 @@ SELECT
           if(sum(traces.SampleRate) > 0, sumIf(traces.SampleRate, traces.StatusCode = 'Error') / sum(traces.SampleRate), 0) AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 500)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 500 AND traces.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(traces.SampleRate) AS estimatedSpanCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
@@ -17422,7 +17435,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:traces-timeseries-annual-daily-buckets:baseline  [fec798dd]
+-- spec:traces-timeseries-annual-daily-buckets:baseline  [92f96f42]
 SELECT
           service_metric_windows.bucket AS bucket,
           service_metric_windows.groupName AS groupName,
@@ -17435,7 +17448,7 @@ SELECT
           if(sum(bCount) > 0, sum(bErrorCount) / sum(bCount), 0) AS errorRate,
           sum(service_metric_windows.bSatisfiedCount) AS satisfiedCount,
           sum(service_metric_windows.bToleratingCount) AS toleratingCount,
-          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + (sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount)), 4), 0) AS apdexScore,
+          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount), 4), 0) AS apdexScore,
           if(sum(bEstimatedSpanCount) > 0, sum(bEstimatedSpanCount), toFloat64(sum(bCount))) AS estimatedSpanCount
         FROM (
 SELECT
@@ -17492,7 +17505,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:traces-timeseries-annual-grouped-all-tiers:baseline  [d6ee5d23]
+-- spec:traces-timeseries-annual-grouped-all-tiers:baseline  [2bc13fb6]
 SELECT
           service_metric_windows.bucket AS bucket,
           service_metric_windows.groupName AS groupName,
@@ -17505,7 +17518,7 @@ SELECT
           if(sum(bCount) > 0, sum(bErrorCount) / sum(bCount), 0) AS errorRate,
           sum(service_metric_windows.bSatisfiedCount) AS satisfiedCount,
           sum(service_metric_windows.bToleratingCount) AS toleratingCount,
-          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + (sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount)), 4), 0) AS apdexScore,
+          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount), 4), 0) AS apdexScore,
           if(sum(bEstimatedSpanCount) > 0, sum(bEstimatedSpanCount), toFloat64(sum(bCount))) AS estimatedSpanCount
         FROM (
 SELECT
@@ -17562,7 +17575,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:traces-timeseries-annual-grouped-series-cap:baseline  [c332838a]
+-- spec:traces-timeseries-annual-grouped-series-cap:baseline  [c422e4bd]
 SELECT
           bucket AS bucket,
           groupName AS groupName,
@@ -17619,7 +17632,7 @@ SELECT
           if(sum(bCount) > 0, sum(bErrorCount) / sum(bCount), 0) AS errorRate,
           sum(service_metric_windows.bSatisfiedCount) AS satisfiedCount,
           sum(service_metric_windows.bToleratingCount) AS toleratingCount,
-          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + (sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount)), 4), 0) AS apdexScore,
+          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount), 4), 0) AS apdexScore,
           if(sum(bEstimatedSpanCount) > 0, sum(bEstimatedSpanCount), toFloat64(sum(bCount))) AS estimatedSpanCount
         FROM (
 SELECT
@@ -17660,7 +17673,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:traces-timeseries-annual-minutely-grouped:baseline  [6027bde9]
+-- spec:traces-timeseries-annual-minutely-grouped:baseline  [4d383a1a]
 SELECT
           service_metric_windows.bucket AS bucket,
           service_metric_windows.groupName AS groupName,
@@ -17673,7 +17686,7 @@ SELECT
           if(sum(bCount) > 0, sum(bErrorCount) / sum(bCount), 0) AS errorRate,
           sum(service_metric_windows.bSatisfiedCount) AS satisfiedCount,
           sum(service_metric_windows.bToleratingCount) AS toleratingCount,
-          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + (sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount)), 4), 0) AS apdexScore,
+          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount), 4), 0) AS apdexScore,
           if(sum(bEstimatedSpanCount) > 0, sum(bEstimatedSpanCount), toFloat64(sum(bCount))) AS estimatedSpanCount
         FROM (
 SELECT
@@ -17717,7 +17730,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:traces-timeseries-annual-rejected-status-code:baseline  [7a7a0728]
+-- spec:traces-timeseries-annual-rejected-status-code:baseline  [3b434eaf]
 SELECT
           toStartOfInterval(service_overview_spans.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           coalesce(nullIf(toString(service_overview_spans.StatusCode), ''), 'all') AS groupName,
@@ -17730,7 +17743,7 @@ SELECT
           if(sum(service_overview_spans.SampleRate) > 0, sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode = 'Error') / sum(service_overview_spans.SampleRate), 0) AS errorRate,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) AS satisfiedCount,
           countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + (countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (service_overview_spans.StatusCode = 'Error') AND service_overview_spans.Duration / 1000000 < 500)) / count() + countIf((NOT (service_overview_spans.StatusCode = 'Error') AND (service_overview_spans.Duration / 1000000 >= 500 AND service_overview_spans.Duration / 1000000 < 2000))) * 0.5 / count(), 4), 0) AS apdexScore,
           sum(service_overview_spans.SampleRate) AS estimatedSpanCount
         FROM service_overview_spans
         WHERE service_overview_spans.OrgId = 'org_sql_catalog'
@@ -17740,7 +17753,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:traces-timeseries-annual-single-apdex:baseline  [8b146a6c]
+-- spec:traces-timeseries-annual-single-apdex:baseline  [06c5a15d]
 SELECT
           service_metric_windows.bucket AS bucket,
           service_metric_windows.groupName AS groupName,
@@ -17753,7 +17766,7 @@ SELECT
           0 AS errorRate,
           sum(service_metric_windows.bSatisfiedCount) AS satisfiedCount,
           sum(service_metric_windows.bToleratingCount) AS toleratingCount,
-          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + (sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount)), 4), 0) AS apdexScore,
+          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount), 4), 0) AS apdexScore,
           if(sum(bEstimatedSpanCount) > 0, sum(bEstimatedSpanCount), toFloat64(sum(bCount))) AS estimatedSpanCount
         FROM (
 SELECT
@@ -18111,7 +18124,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:traces-timeseries-annual:baseline  [272757bc]
+-- spec:traces-timeseries-annual:baseline  [dfac70e9]
 SELECT
           service_metric_windows.bucket AS bucket,
           service_metric_windows.groupName AS groupName,
@@ -18124,7 +18137,7 @@ SELECT
           if(sum(bCount) > 0, sum(bErrorCount) / sum(bCount), 0) AS errorRate,
           sum(service_metric_windows.bSatisfiedCount) AS satisfiedCount,
           sum(service_metric_windows.bToleratingCount) AS toleratingCount,
-          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + (sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount)), 4), 0) AS apdexScore,
+          if(sum(service_metric_windows.bCount) > 0, round(sum(service_metric_windows.bSatisfiedCount) / sum(service_metric_windows.bCount) + sum(service_metric_windows.bToleratingCount) * 0.5 / sum(service_metric_windows.bCount), 4), 0) AS apdexScore,
           if(sum(bEstimatedSpanCount) > 0, sum(bEstimatedSpanCount), toFloat64(sum(bCount))) AS estimatedSpanCount
         FROM (
 SELECT
@@ -18187,7 +18200,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:traces-timeseries-apdex:baseline  [31414d4c]
+-- spec:traces-timeseries-apdex:baseline  [e3f8ef8f]
 SELECT
           toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND) AS bucket,
           'all' AS groupName,
@@ -18200,7 +18213,7 @@ SELECT
           0 AS errorRate,
           countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 250)) AS satisfiedCount,
           countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 250 AND traces.Duration / 1000000 < 1000))) AS toleratingCount,
-          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 250)) / count() + (countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 250 AND traces.Duration / 1000000 < 1000))) * 0.5 / count()), 4), 0) AS apdexScore,
+          if(count() > 0, round(countIf((NOT (traces.StatusCode = 'Error') AND traces.Duration / 1000000 < 250)) / count() + countIf((NOT (traces.StatusCode = 'Error') AND (traces.Duration / 1000000 >= 250 AND traces.Duration / 1000000 < 1000))) * 0.5 / count(), 4), 0) AS apdexScore,
           0 AS estimatedSpanCount
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'

@@ -235,6 +235,13 @@ export const firstFailedAssertion = (
 	return failures[0] ?? null
 }
 
+// --- Check spans ---
+
+/** `service.name` of the spans the scraper exports per check; the service map drops it. */
+export const UPTIME_SERVICE_NAME = "maple-uptime"
+/** `service.namespace` of Maple's own synthetic services, so users can filter them out. */
+export const MAPLE_SERVICES_NAMESPACE = "maple-services"
+
 // --- HTTP check request ---
 
 export const UPTIME_USER_AGENT = "maple-uptime/1.0"

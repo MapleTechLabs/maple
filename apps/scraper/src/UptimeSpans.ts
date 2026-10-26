@@ -1,5 +1,5 @@
 import { Array as Arr, Option } from "effect"
-import type { UptimeProbeTarget } from "@maple/domain/uptime"
+import { MAPLE_SERVICES_NAMESPACE, UPTIME_SERVICE_NAME, type UptimeProbeTarget } from "@maple/domain/uptime"
 import type { CheckTraceContext, ProbeOutcome } from "./UptimeProbe"
 
 /** Everything one check span needs; buffered until the org's next flush. */
@@ -46,8 +46,7 @@ export interface OtlpTraceExportRequest {
 	}>
 }
 
-export const UPTIME_SERVICE_NAME = "maple-uptime"
-const SCOPE = { name: "maple-uptime", version: "1.0" } as const
+const SCOPE = { name: UPTIME_SERVICE_NAME, version: "1.0" } as const
 
 const anyValue = (value: string | number | boolean): OtlpAnyValue => {
 	if (typeof value === "string") return { stringValue: value }
@@ -135,6 +134,7 @@ export const toOtlpSpan = (check: UptimeCheckSpan): OtlpSpan => {
 const resourceAttributes = (monitor: UptimeCheckSpan["monitor"]) =>
 	keyValues({
 		"service.name": UPTIME_SERVICE_NAME,
+		"service.namespace": MAPLE_SERVICES_NAMESPACE,
 		"maple.uptime.monitor_id": monitor.id,
 		"maple.uptime.monitor_name": monitor.name,
 		...(monitor.serviceName === null ? undefined : { "maple.uptime.service_name": monitor.serviceName }),

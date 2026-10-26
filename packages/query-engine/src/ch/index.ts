@@ -455,6 +455,7 @@ export {
 	type DbQueryVolumeOutput,
 	servicePlatformsSQL,
 	serviceMapEdgeJoinQuery,
+	SERVICE_MAP_EXCLUDED_SERVICES,
 	type ServiceDependenciesOpts,
 	type ServiceDependenciesForServiceOpts,
 	type ServiceDependenciesOutput,
