@@ -119,6 +119,28 @@ describe("alert incident", () => {
 		)
 	})
 
+	test("an uptime incident's header names the monitor and never the ungrouped key", () => {
+		const uptime = incidentRow({
+			rule_name: "checkout-api",
+			signal_type: "uptime",
+			comparator: "gte",
+			threshold: 1,
+			last_observed_value: 1,
+			group_key: "__total__",
+		})
+		const loaded = [
+			Message.ReadClock({ nowMs: NOW }),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [uptime] }),
+		].reduce((model, message) => step(model, message).model, init(route(), context).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(role("heading", { name: "checkout-api is down" })).toExist(),
+			expectView(text(/__total__/u)).not.toExist(),
+		)
+	})
+
 	test("an unknown incident says so and links back to alerts", () => {
 		const model = [
 			Message.ReadClock({ nowMs: NOW }),

@@ -1,4 +1,6 @@
+import { UptimeMonitorId } from "@maple/domain"
 import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
+import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -17,6 +19,10 @@ import * as DestinationDialog from "../destination/dialog"
 
 /** `useAlertDestinationsList` / the overview collections: `null` until the first live snapshot. */
 const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
+
+export const UptimeStatusFilter = Schema.Literals(["all", "down", "degraded", "paused"])
+export const UptimeKindFilter = Schema.Literals(["all", "http", "tcp", "dns", "heartbeat"])
+export type UptimeKindFilter = typeof UptimeKindFilter.Type
 
 export const TestOutcome = Schema.Struct({ message: Schema.String, success: Schema.Boolean })
 
@@ -52,5 +58,17 @@ export const Model = Schema.Struct({
 	/** Row action menus by menu id, created on first use. */
 	menus: Schema.Record(Schema.String, Menu.Model),
 	destinationDialog: DestinationDialog.Model,
+	/** The header's "New rule" chevron menu (Telemetry rule, Uptime check). */
+	newRuleMenu: Menu.Model,
+	/** Uptime tab: `uptimeMonitors.list`, read only while the tab is open. */
+	monitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
+	uptimeQuery: Schema.String,
+	uptimeStatus: UptimeStatusFilter,
+	uptimeKind: UptimeKindFilter,
+	/** Pause/resume PATCHes and the delete in flight, and the monitor awaiting delete confirmation. */
+	togglingMonitorIds: Schema.Array(UptimeMonitorId),
+	deletingMonitorId: Schema.NullOr(UptimeMonitorId),
+	confirmDeleteMonitorId: Schema.NullOr(UptimeMonitorId),
+	deleteMonitorDialog: Dialog.Model,
 })
 export type Model = typeof Model.Type

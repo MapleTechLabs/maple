@@ -1,3 +1,4 @@
+import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import * as Chart from "../../../charts/chart"
@@ -124,6 +125,10 @@ export const Model = Schema.Struct({
 	endpointPeek: EndpointPeek.Model,
 	issues: KeyedSchema(Schema.Array(Issue), LoadFailure),
 	usage: KeyedSchema(Usage, LoadFailure),
+	/** `uptimeMonitors.list`: the org's monitors; the Uptime card keeps this service's. */
+	uptimeMonitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
+	/** Whether the reader may create monitors (org admins); read with the monitors. */
+	canCreateUptimeMonitors: Schema.Boolean,
 	workloads: KeyedSchema(Schema.Array(Workload), LoadFailure),
 	dependencies: KeyedSchema(DependencyBundle, LoadFailure),
 	/** `commitQueryAtom(sha)`, shared by the deploy rows and the marker labels. */

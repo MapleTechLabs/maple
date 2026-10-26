@@ -76,6 +76,17 @@ const routers = {
 		search(Search.AlertsCreateSearch),
 		Route.mapTo(AppRoute.AlertsCreate),
 	),
+	AlertsUptimeNew: pipe(
+		path("alerts", "uptime", "new"),
+		search(Search.AlertsUptimeNewSearch),
+		Route.mapTo(AppRoute.AlertsUptimeNew),
+	),
+	AlertsUptimeMonitor: pipe(
+		path("alerts", "uptime"),
+		slash(segment("monitorId")),
+		search(Search.AlertsUptimeMonitorSearch),
+		Route.mapTo(AppRoute.AlertsUptimeMonitor),
+	),
 	Anomaly: pipe(
 		path("anomalies"),
 		slash(schemaSegment("incidentId", AnomalyIncidentId)),
@@ -386,6 +397,8 @@ const routers = {
 export const urlToAppRoute = Route.parseUrlWithFallback(
 	Route.oneOf(
 		routers.AlertsCreate,
+		routers.AlertsUptimeNew,
+		routers.AlertsUptimeMonitor,
 		routers.DashboardsTemplates,
 		routers.SourcesNew,
 		routers.InfraDiscover,

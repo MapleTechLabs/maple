@@ -24,6 +24,8 @@ import * as AnomaliesList from "./anomalies/list"
 import * as AnomalyDetail from "./anomalies/detail"
 import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
+import * as AlertsUptimeMonitor from "./alerts/uptime-monitor"
+import * as AlertsUptimeNew from "./alerts/uptime-form"
 import * as DashboardsList from "./dashboards/list"
 import * as DashboardTemplates from "./dashboards/templates"
 import * as DashboardView from "./dashboards/view"
@@ -106,6 +108,8 @@ export const pages = [
 	AlertsHub.page,
 	AlertIncident.page,
 	AlertRule.page,
+	AlertsUptimeMonitor.page,
+	AlertsUptimeNew.page,
 	AlertEditor.page,
 	ServiceMap.page,
 	InfraHosts.page,

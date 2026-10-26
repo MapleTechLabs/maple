@@ -1,3 +1,4 @@
+import { UPTIME_LIST_LIMIT } from "../../alerts/shared/uptime-commands"
 import { ENDPOINTS_LIMIT } from "../../../components/services/service-endpoints"
 import { buildServiceOpenIssuesQuery } from "../../../lib/services/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
@@ -28,6 +29,7 @@ import {
 	FetchOperations,
 	FetchOverview,
 	FetchRefinement,
+	FetchUptimeMonitors,
 	FetchUsage,
 	FetchWorkloads,
 } from "./command"
@@ -282,6 +284,15 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 				)
 	},
 	commitsStep(context),
+	// Not windowed: a Reload revalidates it, a window change leaves it alone.
+	(model) =>
+		keyed(
+			model.uptimeMonitors,
+			requestKey(context.orgId, "uptimeMonitors.list", { query: { limit: UPTIME_LIST_LIMIT } }),
+			mode,
+			(uptimeMonitors) => ({ uptimeMonitors }),
+			(key) => FetchUptimeMonitors({ key }),
+		),
 ]
 
 const tabSteps = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Steps => {
@@ -533,6 +544,8 @@ export const init = (
 		endpointPeek: EndpointPeek.init("service-endpoint-peek"),
 		issues: Keyed.idle(),
 		usage: Keyed.idle(),
+		uptimeMonitors: Keyed.idle(),
+		canCreateUptimeMonitors: false,
 		workloads: Keyed.idle(),
 		dependencies: Keyed.idle(),
 		commits: {},
@@ -766,6 +779,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
+		}),
+		CompletedFetchUptimeMonitors: ({ key, result, isAdmin }) => ({
+			model: {
+				...model,
+				uptimeMonitors: Keyed.accept(model.uptimeMonitors, key, result),
+				canCreateUptimeMonitors: isAdmin,
+			},
 		}),
 		CompletedFetchWorkloads: ({ key, result }) => ({
 			model: { ...model, workloads: Keyed.accept(model.workloads, key, result) },

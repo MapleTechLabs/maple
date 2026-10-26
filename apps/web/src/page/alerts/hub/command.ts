@@ -1,3 +1,4 @@
+import { UptimeMonitorId } from "@maple/domain"
 import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
 import { V2AlertDestinationUpdateParams } from "@maple/domain/http/v2"
 import { Cause, Clock, Effect, Schema } from "effect"
@@ -12,6 +13,7 @@ import {
 	testDestination,
 	updateDestination,
 } from "../shared/commands"
+import { deleteMonitor, listMonitors, setMonitorEnabled } from "../shared/uptime-commands"
 import { Message } from "./message"
 
 export const ReadHubClock = Command.define("ReadAlertsHubClock", {
@@ -47,7 +49,8 @@ export const FetchRoutingDeliveries = Command.define("FetchAlertsRoutingDeliveri
 export const FetchHubSession = Command.define("FetchAlertsHubSession", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) => Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
+	execute: ({ orgId }) =>
+		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
 })
 
 export const ToggleRule = Command.define("ToggleAlertRule", {
@@ -88,5 +91,35 @@ export const DeleteDestination = Command.define("DeleteAlertDestination", {
 		deleteDestination(destinationId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedDeleteDestination({ destinationId, result })),
+		),
+})
+
+export const FetchHubMonitors = Command.define("FetchAlertsHubMonitors", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchMonitors],
+	execute: ({ key }) =>
+		listMonitors.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchMonitors({ key, result })),
+		),
+})
+
+export const ToggleMonitor = Command.define("ToggleUptimeMonitor", {
+	args: { monitorId: UptimeMonitorId, enabled: Schema.Boolean },
+	messages: [Message.CompletedToggleMonitor],
+	execute: ({ monitorId, enabled }) =>
+		setMonitorEnabled(monitorId, enabled).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedToggleMonitor({ monitorId, result })),
+		),
+})
+
+export const DeleteMonitor = Command.define("DeleteUptimeMonitor", {
+	args: { monitorId: UptimeMonitorId },
+	messages: [Message.CompletedDeleteMonitor],
+	execute: ({ monitorId }) =>
+		deleteMonitor(monitorId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedDeleteMonitor({ monitorId, result })),
 		),
 })

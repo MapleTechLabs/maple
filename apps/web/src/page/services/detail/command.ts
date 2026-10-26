@@ -18,6 +18,8 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "../../../data/load-failure"
 import { readCommitDetail } from "../../kit/commit-card"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { readIsAdmin } from "../../alerts/shared/commands"
+import { listMonitors } from "../../alerts/shared/uptime-commands"
 import { Message, RequestMode } from "./message"
 
 const Names = Schema.optional(Schema.Array(Schema.String))
@@ -288,10 +290,22 @@ export const FetchStatusBreakdown = Command.define("FetchServiceEndpointStatusBr
 	args: { key: Schema.String, input: DetailInput },
 	messages: [Message.CompletedFetchStatusBreakdown],
 	execute: ({ key, input }) =>
-		getServiceEndpointStatusBreakdown({ data: { ...input, environments: mutable(input.environments) } }).pipe(
+		getServiceEndpointStatusBreakdown({
+			data: { ...input, environments: mutable(input.environments) },
+		}).pipe(
 			Effect.map((response) => response.rows),
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchStatusBreakdown({ key, result })),
+		),
+})
+
+/** The org's uptime monitors; the Overview's Uptime card keeps the ones on this service. */
+export const FetchUptimeMonitors = Command.define("FetchServiceDetailUptimeMonitors", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchUptimeMonitors],
+	execute: ({ key }) =>
+		Effect.all([Effect.result(listMonitors), readIsAdmin]).pipe(
+			Effect.map(([result, isAdmin]) => Message.CompletedFetchUptimeMonitors({ key, result, isAdmin })),
 		),
 })

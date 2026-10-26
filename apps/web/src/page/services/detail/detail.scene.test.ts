@@ -23,6 +23,7 @@ import {
 	FetchIssues,
 	FetchOperations,
 	FetchOverview,
+	FetchUptimeMonitors,
 	FetchUsage,
 	FetchWorkloads,
 } from "./command"
@@ -89,6 +90,7 @@ describe("service detail", () => {
 			FetchUsage.name,
 			FetchWorkloads.name,
 			FetchDependencies.name,
+			FetchUptimeMonitors.name,
 		])
 		expect(resolved.model.window).toEqual({
 			startTime: "2026-10-01 00:00:00",

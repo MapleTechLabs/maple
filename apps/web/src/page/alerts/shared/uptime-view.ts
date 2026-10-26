@@ -1,0 +1,91 @@
+import { TONE_BORDER, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
+import { cn } from "@maple/ui/lib/utils"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { badge } from "../../../ui/display"
+import { panelBody } from "../../../ui/panel"
+import {
+	displayStatus,
+	type RecentCheck,
+	STATUS_TONE,
+	statusLabel,
+	type UptimeMonitor,
+} from "./uptime-derive"
+
+// The uptime marks: the status chip, the status square and the recent-checks strip.
+
+/** Title-chip status badge: rounded, tinted, sentence case ("Down 6m", "Paused"). */
+export const uptimeStatusChip = <M>(h: HtmlBuilder<M>, monitor: UptimeMonitor, nowMs: number): Html => {
+	const tone = STATUS_TONE[displayStatus(monitor)]
+	return badge(
+		h,
+		{ variant: "outline", className: cn("rounded-full font-normal", TONE_BORDER[tone], TONE_SOFT[tone]) },
+		[statusLabel(monitor, nowMs)],
+	)
+}
+
+/** The small square leading a monitor row; static, never animated. */
+export const uptimeStatusSquare = <M>(h: HtmlBuilder<M>, monitor: UptimeMonitor): Html =>
+	h.span(
+		[
+			h.AriaHidden(true),
+			h.Class(
+				cn(
+					"inline-block size-2 shrink-0 rounded-[2px]",
+					TONE_FILL[STATUS_TONE[displayStatus(monitor)]],
+				),
+			),
+		],
+		[],
+	)
+
+/** One bar per check, oldest first: passed, failed, or an empty slot muted. */
+export const recentChecksStrip = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		recent: ReadonlyArray<RecentCheck>
+		slots?: number
+		isMuted?: boolean
+		className?: string
+	}>,
+): Html => {
+	const slots = options.slots ?? 40
+	const recent = options.recent.slice(-slots)
+	const padding = Math.max(0, slots - recent.length)
+	const passed = recent.filter((check) => check.ok).length
+	const label = recent.length === 0 ? "No checks yet" : `${passed} of ${recent.length} recent checks passed`
+	return h.div(
+		[
+			h.Role("img"),
+			h.AriaLabel(label),
+			h.Title(label),
+			h.Class(cn("flex h-5 items-stretch gap-px", options.className)),
+		],
+		[
+			...Array.from({ length: padding }, (_, index) =>
+				h.span([h.Key(`pad-${index}`), h.Class("w-1 min-w-0 flex-1 rounded-[1px] bg-muted")], []),
+			),
+			...recent.map((check, index) =>
+				h.span(
+					[
+						h.Key(`${check.at}-${index}`),
+						h.Class(
+							cn(
+								"w-1 min-w-0 flex-1 rounded-[1px]",
+								options.isMuted === true
+									? "bg-muted"
+									: check.ok
+										? "bg-success"
+										: "bg-destructive",
+							),
+						),
+					],
+					[],
+				),
+			),
+		],
+	)
+}
+
+/** `panelBody` with the inset the uptime panels' rows use. */
+export const uptimePanelBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+	panelBody(h, children, "px-4 py-3")
