@@ -97,6 +97,24 @@ describe("getUptimeCheckStats", () => {
 		}).pipe(mockedWarehouse),
 	)
 
+	it.effect("a failed phase read flags the breakdown and keeps the rest of the stats", () =>
+		Effect.gen(function* () {
+			answer([bucket("2026-02-01 00:15:00", 4, 0)])
+			listTracesMock.mockImplementation(() => page([], 0))
+			// The harness's internal API client fails every request, the phase read included.
+			const stats = yield* getUptimeCheckStats({
+				monitorId: MONITOR,
+				startTime: START,
+				endTime: END,
+				withPhases: true,
+			})
+			assert.deepStrictEqual(
+				{ checks: stats.checks, phases: stats.phases, phasesFailed: stats.phasesFailed },
+				{ checks: 4, phases: [], phasesFailed: true },
+			)
+		}).pipe(mockedWarehouse),
+	)
+
 	it.effect("asks the traces list only for pages it accepts", () =>
 		Effect.gen(function* () {
 			answer([])

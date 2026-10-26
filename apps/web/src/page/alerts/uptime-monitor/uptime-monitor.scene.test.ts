@@ -35,6 +35,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	(commands ?? []).map(({ name }) => name)
 const publicId = Schema.encodeSync(UptimeMonitorPublicId)
 const incidentAlert = selector('[data-slot="alert"]')
+const breakdown = role("region", { name: "Response time breakdown" })
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
@@ -169,6 +170,7 @@ describe("uptime monitor page", () => {
 					p95Ms: 310,
 					p99Ms: 884,
 					phases: [],
+					phasesFailed: false,
 				}),
 			}),
 		).model
@@ -210,6 +212,7 @@ describe("uptime monitor page", () => {
 					p95Ms: 10_000,
 					p99Ms: 10_000,
 					phases: [],
+					phasesFailed: false,
 				}),
 			}),
 		).model
@@ -251,6 +254,7 @@ describe("uptime monitor page", () => {
 					p95Ms: 310,
 					p99Ms: 884,
 					phases: [],
+					phasesFailed: false,
 				}),
 			}),
 		).model
@@ -260,6 +264,12 @@ describe("uptime monitor page", () => {
 			themeResolved(),
 			expectView(text("last 24 hours")).toExist(),
 			expectView(text("last 7 days")).not.toExist(),
+			expectView(
+				within(
+					breakdown,
+					text("No timed checks in the last 24 hours. Newer checks record each phase."),
+				),
+			).toExist(),
 		)
 	})
 
@@ -282,6 +292,7 @@ describe("uptime monitor page", () => {
 					p95Ms: 100,
 					p99Ms: 100,
 					phases: [],
+					phasesFailed: false,
 				}),
 			}),
 		].reduce((current, message) => pageUpdate(current, message).model, model)
@@ -312,6 +323,7 @@ describe("uptime monitor page", () => {
 					p95Ms: 120,
 					p99Ms: 130,
 					phases: [],
+					phasesFailed: false,
 				}),
 			}),
 		).model
@@ -349,6 +361,7 @@ describe("uptime monitor page", () => {
 						{ bucket: "2026-10-26T10:00:00.000Z", ...phase },
 						{ bucket: "2026-10-26T11:00:00.000Z", ...phase },
 					],
+					phasesFailed: false,
 				}),
 			}),
 		).model
@@ -363,6 +376,83 @@ describe("uptime monitor page", () => {
 			...["DNS", "Connect", "TLS", "TTFB", "Transfer"].map((label) =>
 				expectView(text(label)).toExist(),
 			),
+		)
+	})
+
+	test("a failed phase read says so in the breakdown and leaves the other figures standing", () => {
+		const model = opened(httpMonitor())
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 4,
+					failures: 0,
+					p50Ms: 90,
+					p95Ms: 120,
+					p99Ms: 130,
+					phases: [],
+					phasesFailed: true,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(
+				within(breakdown, text("Couldn't load the breakdown. The other figures are unaffected.")),
+			).toExist(),
+			expectView(text("4 checks, 0 failed")).toExist(),
+		)
+	})
+
+	test("a chart runtime that fails to load says so in the breakdown too", () => {
+		const model = opened(httpMonitor(), [Message.FailedLoadChartRuntime({ reason: "network" })])
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 4,
+					failures: 0,
+					p50Ms: 90,
+					p95Ms: 120,
+					p99Ms: 130,
+					phases: [
+						{
+							bucket: "2026-10-26T10:00:00.000Z",
+							timedChecks: 2,
+							dnsMs: 4,
+							connectMs: 11,
+							tlsMs: 18,
+							ttfbMs: 60,
+							transferMs: 0,
+						},
+					],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(
+				within(breakdown, text("The chart couldn't load. Reload the page to try again.")),
+			).toExist(),
 		)
 	})
 

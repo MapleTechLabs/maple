@@ -6,20 +6,15 @@
 import { type DateTime, Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import { UPTIME_SERVICE_NAME } from "@maple/domain/uptime"
+import {
+	UPTIME_MONITOR_ID_ATTRIBUTE,
+	UPTIME_SERVICE_NAME,
+	UPTIME_TIMING_ATTRIBUTES,
+} from "@maple/domain/uptime"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
 import { CHNumber } from "../schema"
 import { orgIdParam, Traces } from "../tables"
 import { avgWhere } from "./format"
-
-/** The span attribute of each phase the scraper measures, in ms. */
-export const UPTIME_TIMING_ATTRIBUTES = {
-	dnsMs: "maple.uptime.timing.dns_ms",
-	connectMs: "maple.uptime.timing.connect_ms",
-	tlsMs: "maple.uptime.timing.tls_ms",
-	ttfbMs: "maple.uptime.timing.ttfb_ms",
-	transferMs: "maple.uptime.timing.transfer_ms",
-} as const
 
 export interface UptimePhaseTimingsOutput {
 	readonly bucket: DateTime.Utc
@@ -66,7 +61,7 @@ export function uptimePhaseTimingsQuery() {
 			$.OrgId.eq(orgIdParam),
 			$.ServiceName.eq(UPTIME_SERVICE_NAME),
 			$.ParentSpanId.eq(""),
-			$.ResourceAttributes.get("maple.uptime.monitor_id").eq(param.string("monitorId")),
+			$.ResourceAttributes.get(UPTIME_MONITOR_ID_ATTRIBUTE).eq(param.string("monitorId")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 		])

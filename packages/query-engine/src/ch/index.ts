@@ -768,7 +768,6 @@ export {
 	type CiScopeOpts,
 } from "./queries/ci-runs"
 export {
-	UPTIME_TIMING_ATTRIBUTES,
 	uptimePhaseTimingsQuery,
 	uptimePhaseTimingsRowSchema,
 	type UptimePhaseTimingsOutput,

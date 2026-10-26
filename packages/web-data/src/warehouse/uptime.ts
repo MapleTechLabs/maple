@@ -55,6 +55,8 @@ export interface UptimeCheckStats {
 	readonly p99Ms: number | null
 	/** Buckets with at least one timed check; empty without `withPhases` or before phases were recorded. */
 	readonly phases: ReadonlyArray<UptimePhaseTimingsPoint>
+	/** The phase read failed; the rest of the stats still stand. */
+	readonly phasesFailed: boolean
 }
 
 const breakdownValue = (response: QueryEngineExecuteResponse): number | null => {
@@ -141,8 +143,17 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 							}),
 						})
 					}),
-				).pipe(Effect.map((response) => response.points))
-			: Effect.succeed([])
+				).pipe(
+					Effect.map((response) => ({ points: response.points, failed: false })),
+					// The breakdown is extra detail: its failure must not take the KPIs and charts with it.
+					Effect.catch((error) =>
+						Effect.as(Effect.logWarning("uptime phase timings failed", error), {
+							points: [],
+							failed: true,
+						}),
+					),
+				)
+			: Effect.succeed({ points: [], failed: false })
 
 	const [series, p50Ms, p95Ms, p99Ms, list, phasePoints] = yield* Effect.all(
 		[
@@ -199,6 +210,7 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 		p50Ms: checks === 0 ? null : p50Ms,
 		p95Ms: checks === 0 ? null : p95Ms,
 		p99Ms: checks === 0 ? null : p99Ms,
-		phases: phasePoints,
+		phases: phasePoints.points,
+		phasesFailed: phasePoints.failed,
 	} satisfies UptimeCheckStats
 })

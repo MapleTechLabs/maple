@@ -3,6 +3,7 @@ import {
 	MAPLE_SERVICES_NAMESPACE,
 	UPTIME_MONITOR_ID_ATTRIBUTE,
 	UPTIME_SERVICE_NAME,
+	UPTIME_TIMING_ATTRIBUTES,
 	type UptimeProbeTarget,
 } from "@maple/domain/uptime"
 import type { PhaseTimings } from "./UptimePhases"
@@ -113,20 +114,16 @@ const targetAttributes = (
 	}
 }
 
-const TIMING_ATTRIBUTES: ReadonlyArray<readonly [keyof PhaseTimings, string]> = [
-	["dnsMs", "maple.uptime.timing.dns_ms"],
-	["connectMs", "maple.uptime.timing.connect_ms"],
-	["tlsMs", "maple.uptime.timing.tls_ms"],
-	["ttfbMs", "maple.uptime.timing.ttfb_ms"],
-	["transferMs", "maple.uptime.timing.transfer_ms"],
-]
+const PHASE_FIELDS = ["dnsMs", "connectMs", "tlsMs", "ttfbMs", "transferMs"] as const satisfies ReadonlyArray<
+	keyof PhaseTimings
+>
 
 /** An HTTP check's phases in ms to 0.1 ms; a phase that did not happen has no attribute. */
 export const timingAttributes = (timings: PhaseTimings | undefined): Record<string, number> =>
 	Object.fromEntries(
-		TIMING_ATTRIBUTES.flatMap(([field, key]) => {
+		PHASE_FIELDS.flatMap((field) => {
 			const value = timings?.[field] ?? null
-			return value === null ? [] : [[key, Math.round(value * 10) / 10]]
+			return value === null ? [] : [[UPTIME_TIMING_ATTRIBUTES[field], Math.round(value * 10) / 10]]
 		}),
 	)
 

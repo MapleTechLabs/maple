@@ -63,6 +63,7 @@ export const CheckStats = Schema.Struct({
 	p95Ms: Schema.NullOr(Schema.Number),
 	p99Ms: Schema.NullOr(Schema.Number),
 	phases: Schema.Array(PhasePoint),
+	phasesFailed: Schema.Boolean,
 })
 export type CheckStats = typeof CheckStats.Type
 

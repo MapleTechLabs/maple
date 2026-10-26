@@ -694,18 +694,31 @@ export const phaseBreakdownPanel = (h: H, model: Model, context: ChartContext | 
 		: Option.match(statsOf(model), {
 				onNone: () => h.div([h.Class("h-56")], [chartSkeleton(h, "area")]),
 				onSome: (stats) =>
-					stats.phases.length === 0
+					stats.phasesFailed
 						? h.p(
 								[h.Class("py-16 text-center text-sm text-muted-foreground")],
-								[
-									`No timed checks in the ${WINDOW_LABEL[model.window]}. Newer checks record each phase.`,
-								],
+								["Couldn't load the breakdown. The other figures are unaffected."],
 							)
-						: context === null
-							? h.div([h.Class("h-56")], [chartSkeleton(h, "area")])
-							: phaseChart(h, model, stats.phases, context),
+						: stats.phases.length === 0
+							? h.p(
+									[h.Class("py-16 text-center text-sm text-muted-foreground")],
+									[
+										`No timed checks in the ${WINDOW_LABEL[stats.window]}. Newer checks record each phase.`,
+									],
+								)
+							: model.chartRuntime._tag === "Failed"
+								? h.p(
+										[h.Class("py-16 text-center text-sm text-muted-foreground")],
+										["The chart couldn't load. Reload the page to try again."],
+									)
+								: context === null
+									? h.div([h.Class("h-56")], [chartSkeleton(h, "area")])
+									: phaseChart(h, model, stats.phases, context),
 			})
-	return panel(h, {}, [panelHeader(h, { title: "Response time breakdown" }), uptimePanelBody(h, [body])])
+	return panel(h, { attributes: [h.AriaLabel("Response time breakdown")] }, [
+		panelHeader(h, { title: "Response time breakdown" }),
+		uptimePanelBody(h, [body]),
+	])
 }
 
 type CheckRow = Readonly<{
