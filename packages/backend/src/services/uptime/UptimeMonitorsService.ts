@@ -45,11 +45,12 @@ import {
 	readTextPrefix,
 	validateExternalUrl,
 } from "@maple/safe-fetch"
+import type { MapleDb } from "@maple/db/client"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
-import { UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
+import { ensureWithinLimit, UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
 
 /** The state changed between a ping's read and its write; the ping is read and applied again. */
 class UptimeHeartbeatPingConflict extends Schema.TaggedError<UptimeHeartbeatPingConflict>()(
@@ -534,6 +535,22 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				return yield* requireMonitor(orgId, monitorId)
 			})
 
+			/**
+			 * The per-org lock monitor creates (and alert rule writes) take inside their transaction,
+			 * so two concurrent creates cannot both pass a full plan.
+			 */
+			const lockOrgMonitors = (db: MapleDb, orgId: OrgId) =>
+				db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+
+			const countMonitors = (db: MapleDb, orgId: OrgId) =>
+				db
+					.run(
+						PG.from(UptimeMonitors)
+							.select(() => ({ count: PG.count() }))
+							.where(($) => [$.orgId.eq(orgId)]),
+					)
+					.pipe(Effect.map((rows) => Number(rows[0]?.count ?? 0)))
+
 			const create = Effect.fn("UptimeMonitorsService.create")(function* (
 				orgId: OrgId,
 				input: CreateUptimeMonitorInput,
@@ -544,14 +561,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const failuresToDown = yield* validateFailuresToDown(
 					input.failuresToDown ?? DEFAULT_FAILURES_TO_DOWN,
 				)
-				const existing = yield* dbExecute((db) =>
-					db.run(
-						PG.from(UptimeMonitors)
-							.select("id")
-							.where(($) => [$.orgId.eq(orgId)]),
-					),
-				)
-				yield* allowance.ensureCanCreate(orgId, existing.length)
+				// Read before the transaction; the count is checked against it under the org lock.
+				const limit = yield* allowance.limit(orgId)
 
 				const now = yield* Clock.currentTimeMillis
 				const id = UptimeMonitorId.make(randomUUID())
@@ -559,6 +570,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							yield* lockOrgMonitors(db, orgId)
+							yield* ensureWithinLimit(limit, yield* countMonitors(db, orgId))
 							yield* db.run(
 								PG.insertInto(UptimeMonitors).values({
 									id,

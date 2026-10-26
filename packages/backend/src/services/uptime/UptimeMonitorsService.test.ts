@@ -1,8 +1,8 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Option, Ref, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Option, Ref, Result, Schema } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
-import { BillingCustomer, OrgId, UptimeMonitorLimitReachedError, UserId } from "@maple/domain/http"
+import { BillingCustomer, OrgId, UserId } from "@maple/domain/http"
 import { UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
 import { UPTIME_USER_AGENT, UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
@@ -582,39 +582,56 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("checks the allowance with the org's monitor count and meters creates and deletes", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const seen = yield* Ref.make<ReadonlyArray<string>>([])
-			const allowance: UptimeMonitorAllowanceApi = {
-				ensureCanCreate: (_orgId, existing) =>
-					Ref.update(seen, (calls) => [...calls, `check:${existing}`]).pipe(
-						Effect.andThen(
-							existing >= 1
-								? Effect.fail(
-										new UptimeMonitorLimitReachedError({ message: "limit", limit: 1 }),
-									)
-								: Effect.void,
-						),
+	it.effect(
+		"checks the plan's limit against the org's monitor count and meters creates and deletes",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const seen = yield* Ref.make<ReadonlyArray<string>>([])
+				const allowance: UptimeMonitorAllowanceApi = {
+					limit: () =>
+						Ref.update(seen, (calls) => [...calls, "limit"]).pipe(Effect.as(Option.some(1))),
+					track: (_orgId, _monitorId, delta) =>
+						Ref.update(seen, (calls) => [...calls, `track:${delta}`]),
+				}
+				const program = Effect.gen(function* () {
+					const service = yield* UptimeMonitorsService
+					const created = yield* createHttp("one")
+					const refused = yield* Effect.flip(createHttp("two"))
+					assert.strictEqual(refused._tag, "@maple/http/errors/UptimeMonitorLimitReachedError")
+					assert.strictEqual((yield* service.list(ORG)).length, 1)
+					yield* service.delete(ORG, created.id)
+				})
+				yield* program.pipe(
+					Effect.provide(
+						makeLayer(testDb, { allowance: Layer.succeed(UptimeMonitorAllowance, allowance) }),
 					),
-				track: (_orgId, _monitorId, delta) =>
-					Ref.update(seen, (calls) => [...calls, `track:${delta}`]),
-			}
-			const program = Effect.gen(function* () {
-				const service = yield* UptimeMonitorsService
-				const created = yield* createHttp("one")
-				const refused = yield* Effect.flip(createHttp("two"))
-				assert.strictEqual(refused._tag, "@maple/http/errors/UptimeMonitorLimitReachedError")
-				assert.strictEqual((yield* service.list(ORG)).length, 1)
-				yield* service.delete(ORG, created.id)
+				)
+				assert.deepStrictEqual(yield* Ref.get(seen), ["limit", "track:1", "limit", "track:-1"])
 			})
-			yield* program.pipe(
-				Effect.provide(
-					makeLayer(testDb, { allowance: Layer.succeed(UptimeMonitorAllowance, allowance) }),
-				),
-			)
-			assert.deepStrictEqual(yield* Ref.get(seen), ["check:0", "track:1", "check:1", "track:-1"])
+		},
+	)
+
+	it.effect("lets only one of two concurrent creates take the plan's last slot", () => {
+		const testDb = createTestDb(trackedDbs)
+		const allowance = Layer.succeed(UptimeMonitorAllowance, {
+			limit: () => Effect.succeed(Option.some(1)),
+			track: () => Effect.void,
 		})
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const results = yield* Effect.all(
+				[Effect.result(createHttp("first")), Effect.result(createHttp("second"))],
+				{ concurrency: 2 },
+			)
+			assert.strictEqual(results.filter(Result.isSuccess).length, 1)
+			const refused = results.find(Result.isFailure)
+			assert.strictEqual(
+				refused === undefined ? null : refused.failure._tag,
+				"@maple/http/errors/UptimeMonitorLimitReachedError",
+			)
+			assert.strictEqual((yield* service.list(ORG)).length, 1)
+		}).pipe(Effect.provide(makeLayer(testDb, { allowance })))
 	})
 
 	it.effect("tests an HTTP config against its assertions", () => {
