@@ -428,8 +428,11 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			const dbExecute = makeDbExecute(database, "UptimeMonitorsService", toPersistenceError)
 			const env = yield* Env
 			const allowance = yield* UptimeMonitorAllowance
-			// Scoped per hop, so an unread body is cancelled on exit.
-			const testClient = guard(HttpClient.withScope(yield* HttpClient.HttpClient))
+			// Scoped per hop, so an unread body is cancelled on exit. The headers are user config,
+			// so a cross-origin redirect drops them all.
+			const testClient = guard(HttpClient.withScope(yield* HttpClient.HttpClient), {
+				strictRedirects: true,
+			})
 			const apiBaseUrl = env.MAPLE_API_BASE_URL.replace(/\/+$/u, "")
 
 			const toRecord = (row: MonitorWithStateRow) =>
