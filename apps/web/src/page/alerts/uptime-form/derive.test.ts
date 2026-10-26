@@ -1,7 +1,7 @@
 import { V2UptimeMonitorCreateParams } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { wirePayload } from "./derive"
+import { formIssues, isPrivateHost, wirePayload } from "./derive"
 import { emptyForm } from "./form"
 
 const decodeCreate = Schema.decodeUnknownExit(V2UptimeMonitorCreateParams)
@@ -27,5 +27,24 @@ describe("wirePayload", () => {
 				],
 			},
 		})
+	})
+})
+
+describe("isPrivateHost", () => {
+	it("refuses private literals and internal names, not public names that start with a digit label", () => {
+		expect(
+			["10.0.0.1", "127.0.0.1", "[::1]", "db.internal", "localhost"].filter(isPrivateHost),
+		).toHaveLength(5)
+		expect(
+			["10.example.com", "0.pool.ntp.org", "127.example.com", "93.184.216.34"].some(isPrivateHost),
+		).toBe(false)
+	})
+})
+
+describe("formIssues", () => {
+	it("flags an http URL the browser cannot parse", () => {
+		const issues = (url: string) => formIssues(emptyForm({ kind: "http", name: "api", url }))
+		expect(issues("https://:80")).not.toEqual([])
+		expect(issues("https://api.acme.dev/health")).toEqual([])
 	})
 })

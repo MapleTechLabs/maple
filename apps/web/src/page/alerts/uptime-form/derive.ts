@@ -8,7 +8,10 @@ import { type AssertionDraft, type Form, emptyForm } from "./form"
 
 const isWhole = (value: string) => /^\d+$/u.test(value.trim())
 const whole = (value: string) => Number.parseInt(value.trim(), 10)
-const isHttpUrl = (value: string) => /^https?:\/\/\S+$/u.test(value.trim())
+const isHttpUrl = (value: string) => {
+	const trimmed = value.trim()
+	return /^https?:\/\/\S+$/u.test(trimmed) && URL.canParse(trimmed)
+}
 
 /** `api.acme.dev/health` from a URL, the default name of an HTTP check. */
 export const nameFromUrl = (url: string): string => {
@@ -58,9 +61,9 @@ export const isPrivateHost = (raw: string): boolean => {
 		.replace(/^\[|\]$/gu, "")
 		.replace(/\.$/u, "")
 	if (BLOCKED_NAMES.has(host) || BLOCKED_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true
-	return host.includes(":")
-		? PRIVATE_V6.some((pattern) => pattern.test(host))
-		: PRIVATE_V4.some((pattern) => pattern.test(host))
+	if (host.includes(":")) return PRIVATE_V6.some((pattern) => pattern.test(host))
+	// Only a literal address: `10.example.com` is a public name.
+	return isIpLiteral(host) && PRIVATE_V4.some((pattern) => pattern.test(host))
 }
 
 const urlHostOf = (url: string): string | null =>

@@ -162,6 +162,8 @@ const toolbar = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>): Ht
 					className: "w-36",
 					defaultValue: model.uptimeKind,
 					attributes: [
+						// Keyed on the filter: the select is uncontrolled, so a reset must rebuild it.
+						h.Key(`uptime-kind-${model.uptimeKind}`),
 						h.AriaLabel("Monitor type"),
 						h.OnChange((value) =>
 							Message.ChangedUptimeKind({ kind: isKindFilter(value) ? value : "all" }),
@@ -302,8 +304,8 @@ const loaded = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>, nowM
 				? filteredEmpty(h, {
 						noun: "monitors",
 						description: "No monitor matches the filter, status and type.",
-						onClear: Message.ClickedUptimeStatus({ filter: "all" }),
-						clearLabel: "Show all statuses",
+						onClear: Message.ClickedClearUptimeFilters(),
+						clearLabel: "Clear filters",
 					})
 				: table(h, model, rows, nowMs),
 		],
