@@ -9,7 +9,6 @@ import { label } from "../../../ui/label"
 import { nativeOption, nativeSelect } from "../../../ui/native-select"
 import { segmentedSelect } from "../../../ui/segmented-select"
 import { textarea } from "../../../ui/textarea"
-import { sectionHeading } from "../../kit/section-heading"
 import {
 	ASSERTION_OPS,
 	ASSERTION_TYPES,
@@ -40,6 +39,8 @@ export const textField = (
 		hint?: string
 		inputMode?: "numeric" | "text"
 		className?: string
+		/** The row already names it; the label stays for screen readers. */
+		isLabelHidden?: boolean
 	}>,
 ): Html => {
 	const id = `uptime-${options.field}`
@@ -52,7 +53,14 @@ export const textField = (
 	return h.div(
 		[h.Class(cn("flex flex-col gap-1.5", options.className))],
 		[
-			label(h, { attributes: [h.For(id)] }, [options.label]),
+			label(
+				h,
+				{
+					className: options.isLabelHidden === true ? "sr-only" : "text-xs text-muted-foreground",
+					attributes: [h.For(id)],
+				},
+				[options.label],
+			),
 			options.suffix === undefined
 				? input(h, { id, attributes })
 				: inputGroup(h, {}, [
@@ -87,7 +95,7 @@ export const selectField = (
 			label(
 				h,
 				{
-					className: options.isLabelHidden === true ? "sr-only" : undefined,
+					className: options.isLabelHidden === true ? "sr-only" : "text-xs text-muted-foreground",
 					attributes: [h.For(options.id)],
 				},
 				[options.label],
@@ -100,87 +108,139 @@ export const selectField = (
 		],
 	)
 
+/** One row of the form card: what it is on the left, its controls on the right. */
 const section = (h: H, title: string, hint: string | undefined, children: ReadonlyArray<Html>): Html =>
 	h.section(
-		[h.Class("flex flex-col gap-4 border-t pt-6")],
-		[sectionHeading(h, { title, ...(hint === undefined ? undefined : { hint }) }), ...children],
+		[h.AriaLabel(title), h.Class("grid gap-x-8 gap-y-2 px-4 py-4 sm:grid-cols-[136px_minmax(0,1fr)]")],
+		[
+			h.div(
+				[h.Class("flex flex-col gap-0.5 sm:pt-2")],
+				[
+					h.h3([h.Class("text-sm font-medium")], [title]),
+					...(hint === undefined ? [] : [h.p([h.Class("text-xs text-muted-foreground")], [hint])]),
+				],
+			),
+			h.div([h.Class("flex min-w-0 flex-col gap-3")], children),
+		],
 	)
+
+/** The monitor's name, its own row so every kind places it the same way. */
+export const nameSection = (h: H, model: Model, placeholder: string): Html =>
+	section(h, "Name", undefined, [
+		textField(h, {
+			field: "name",
+			label: "Name",
+			value: model.form.name,
+			placeholder,
+			isLabelHidden: true,
+		}),
+	])
 
 const isMethod = (value: string): value is typeof HttpMethod.Type =>
 	HttpMethod.literals.some((method) => method === value)
 const isAssertionType = (value: string): value is AssertionType =>
 	AssertionType.literals.some((type) => type === value)
 
-/** Method and URL, the name, and the collapsible headers and body editor. */
-export const requestSection = (h: H, model: Model, isAdvancedOpen: boolean): Html => {
+/** Method and URL with the collapsible headers and body editor, then the name. */
+export const requestSection = (h: H, model: Model, isAdvancedOpen: boolean): ReadonlyArray<Html> => {
 	const form = model.form
-	return section(h, "Request", undefined, [
-		h.div(
-			[h.Class("flex items-end gap-2")],
-			[
-				selectField(h, {
-					id: "uptime-method",
-					label: "Method",
-					value: form.method,
-					entries: HttpMethod.literals.map((method) => ({ value: method, label: method })),
-					onChange: (value) => Message.ChangedMethod({ method: isMethod(value) ? value : "GET" }),
-					className: "w-28",
-				}),
-				textField(h, {
-					field: "url",
-					label: "URL",
-					value: form.url,
-					placeholder: "https://api.example.com/health",
-					className: "min-w-0 flex-1",
-				}),
-			],
-		),
-		textField(h, { field: "name", label: "Name", value: form.name, placeholder: "Defaults to the URL" }),
-		h.details(
-			[h.Class("rounded-md border px-3 py-2"), ...(isAdvancedOpen ? [h.Attribute("open", "")] : [])],
-			[
-				h.summary(
-					[h.Class("cursor-pointer text-sm text-muted-foreground")],
-					["Headers, body and auth"],
-				),
-				h.div(
-					[h.Class("mt-3 flex flex-col gap-3")],
-					[
-						h.div(
-							[h.Class("flex flex-col gap-1.5")],
-							[
-								label(h, { attributes: [h.For("uptime-headers")] }, [
-									"Headers, one per line",
-								]),
-								textarea(h, {
-									id: "uptime-headers",
-									attributes: [
-										h.Value(form.headers),
-										h.OnInput(changed("headers")),
-										h.Placeholder("Authorization: Bearer …"),
-									],
-								}),
-							],
-						),
-						...(form.method === "POST"
-							? [
-									h.div(
-										[h.Class("flex flex-col gap-1.5")],
-										[
-											label(h, { attributes: [h.For("uptime-body")] }, ["Body"]),
-											textarea(h, {
-												id: "uptime-body",
-												attributes: [h.Value(form.body), h.OnInput(changed("body"))],
-											}),
-										],
+	return [
+		section(h, "Request", undefined, [
+			h.div(
+				[h.Class("flex items-end gap-2")],
+				[
+					selectField(h, {
+						id: "uptime-method",
+						label: "Method",
+						isLabelHidden: true,
+						value: form.method,
+						entries: HttpMethod.literals.map((method) => ({ value: method, label: method })),
+						onChange: (value) =>
+							Message.ChangedMethod({ method: isMethod(value) ? value : "GET" }),
+						className: "w-24 shrink-0",
+					}),
+					textField(h, {
+						field: "url",
+						label: "URL",
+						value: form.url,
+						placeholder: "https://api.example.com/health",
+						className: "min-w-0 flex-1",
+						isLabelHidden: true,
+					}),
+				],
+			),
+			h.details(
+				[h.Class("group"), ...(isAdvancedOpen ? [h.Attribute("open", "")] : [])],
+				[
+					h.summary(
+						[
+							h.Class(
+								"flex w-fit cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden",
+							),
+						],
+						[
+							icon(h, "ChevronRightIcon", {
+								size: 12,
+								className: "transition-transform group-open:rotate-90",
+							}),
+							"Headers, body and auth",
+						],
+					),
+					h.div(
+						[h.Class("mt-2 flex flex-col gap-3")],
+						[
+							h.div(
+								[h.Class("flex flex-col gap-1.5")],
+								[
+									label(
+										h,
+										{
+											className: "text-xs text-muted-foreground",
+											attributes: [h.For("uptime-headers")],
+										},
+										["Headers, one per line"],
 									),
-								]
-							: []),
-					],
-				),
-			],
-		),
-	])
+									textarea(h, {
+										id: "uptime-headers",
+										attributes: [
+											h.Value(form.headers),
+											h.OnInput(changed("headers")),
+											h.Placeholder("Authorization: Bearer …"),
+										],
+									}),
+								],
+							),
+							...(form.method === "POST"
+								? [
+										h.div(
+											[h.Class("flex flex-col gap-1.5")],
+											[
+												label(
+													h,
+													{
+														className: "text-xs text-muted-foreground",
+														attributes: [h.For("uptime-body")],
+													},
+													["Body"],
+												),
+												textarea(h, {
+													id: "uptime-body",
+													attributes: [
+														h.Value(form.body),
+														h.OnInput(changed("body")),
+													],
+												}),
+											],
+										),
+									]
+								: []),
+						],
+					),
+				],
+			),
+		]),
+		nameSection(h, model, "Defaults to the URL"),
+	]
 }
 
 const assertionRow = (h: H, row: AssertionDraft, index: number): Html => {
@@ -189,7 +249,7 @@ const assertionRow = (h: H, row: AssertionDraft, index: number): Html => {
 	const needsValue = row.op !== "exists"
 	const valueLabel = `Check ${index + 1} value`
 	return h.li(
-		[h.Key(String(row.id)), h.Class("flex flex-wrap items-end gap-2 px-3 py-2")],
+		[h.Key(String(row.id)), h.Class("flex flex-wrap items-center gap-2")],
 		[
 			selectField(h, {
 				id: `uptime-assertion-${row.id}-type`,
@@ -202,7 +262,7 @@ const assertionRow = (h: H, row: AssertionDraft, index: number): Html => {
 						id: row.id,
 						type: isAssertionType(value) ? value : "status",
 					}),
-				className: "w-36",
+				className: "w-32",
 			}),
 			...(needsTarget
 				? [
@@ -272,67 +332,74 @@ const assertionRow = (h: H, row: AssertionDraft, index: number): Html => {
 
 /** "Up when": every row must pass. */
 export const assertionsSection = (h: H, model: Model): Html =>
-	section(h, "Up when", "every check below passes", [
+	section(h, "Up when", "every check passes", [
+		...(model.form.assertions.length === 0
+			? []
+			: [
+					h.ul(
+						[h.Class("flex flex-col gap-2")],
+						model.form.assertions.map((row, index) => assertionRow(h, row, index)),
+					),
+				]),
 		h.div(
-			[h.Class("rounded-md border")],
+			[],
 			[
-				h.ul(
-					[h.Class("divide-y")],
-					model.form.assertions.map((row, index) => assertionRow(h, row, index)),
-				),
-				h.div(
-					[h.Class(cn("px-3 py-2", model.form.assertions.length > 0 && "border-t"))],
-					[
-						button(
-							h,
-							{
-								variant: "ghost",
-								size: "sm",
-								attributes: [h.OnClick(Message.AddedAssertion())],
-							},
-							[icon(h, "PlusIcon"), "Add check: keyword, JSON path or header"],
-						),
-					],
+				button(
+					h,
+					{
+						variant: "ghost",
+						size: "xs",
+						className: "-ml-2 text-muted-foreground",
+						attributes: [h.OnClick(Message.AddedAssertion())],
+					},
+					[icon(h, "PlusIcon"), "Add check"],
 				),
 			],
 		),
 	])
 
-/** Cadence, failures in a row and the timeout. */
-export const scheduleSection = (h: H, model: Model): Html =>
-	section(h, "Schedule", undefined, [
-		h.div(
-			[h.Class("grid gap-4 sm:grid-cols-3")],
-			[
-				h.div(
-					[h.Class("flex flex-col gap-1.5")],
-					[
-						h.span([h.Class("text-sm font-medium")], ["Check every"]),
-						segmentedSelect(h, {
-							ariaLabel: "Check every",
-							value: String(model.form.intervalSeconds),
-							onChange: (value) => Message.PickedInterval({ seconds: Number(value) }),
-							options: INTERVALS.map((interval) => ({
-								value: String(interval.seconds),
-								label: interval.label,
-							})),
-						}),
+/** A short numeric input with its unit, inline in a sentence. */
+const inlineNumber = (h: H, field: TextField, labelText: string, value: string, unit: string): Html =>
+	h.div(
+		[h.Class("flex items-center gap-2")],
+		[
+			label(h, { className: "text-sm text-muted-foreground", attributes: [h.For(`uptime-${field}`)] }, [
+				labelText,
+			]),
+			inputGroup(h, { className: "w-auto" }, [
+				inputGroupInput(h, {
+					id: `uptime-${field}`,
+					className: "w-16",
+					attributes: [
+						h.Value(value),
+						h.OnInput(changed(field)),
+						h.Attribute("inputmode", "numeric"),
 					],
-				),
-				textField(h, {
-					field: "failuresToDown",
-					label: "Down after",
-					value: model.form.failuresToDown,
-					suffix: "failures in a row",
-					inputMode: "numeric",
 				}),
-				textField(h, {
-					field: "timeoutMs",
-					label: "Timeout",
-					value: model.form.timeoutMs,
-					suffix: "ms",
-					inputMode: "numeric",
-				}),
+				inputGroupAddon(h, { align: "inline-end" }, [inputGroupText(h, {}, [unit])]),
+			]),
+		],
+	)
+
+/** Cadence, then failures in a row and the timeout on one line. */
+export const scheduleSection = (h: H, model: Model): Html =>
+	section(h, "Check every", undefined, [
+		segmentedSelect(h, {
+			ariaLabel: "Check every",
+			size: "sm",
+			className: "w-fit",
+			value: String(model.form.intervalSeconds),
+			onChange: (value) => Message.PickedInterval({ seconds: Number(value) }),
+			options: INTERVALS.map((interval) => ({
+				value: String(interval.seconds),
+				label: interval.label,
+			})),
+		}),
+		h.div(
+			[h.Class("flex flex-wrap items-center gap-x-5 gap-y-2")],
+			[
+				inlineNumber(h, "failuresToDown", "Down after", model.form.failuresToDown, "failures"),
+				inlineNumber(h, "timeoutMs", "Timeout", model.form.timeoutMs, "ms"),
 			],
 		),
 	])

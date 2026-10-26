@@ -27,68 +27,82 @@ const KINDS: ReadonlyArray<{ kind: MonitorKind; label: string; icon: IconName; d
 		kind: "http",
 		label: "HTTP",
 		icon: "GlobeIcon",
-		description: "Status, response time, keyword or JSON in the body.",
+		description: "Checks the status, response time, a keyword or JSON in the body.",
 	},
 	{
 		kind: "tcp",
 		label: "TCP port",
 		icon: "ServerIcon",
-		description: "A host and port accept connections.",
+		description: "Checks that a host and port accept connections.",
 	},
 	{
 		kind: "dns",
 		label: "DNS record",
 		icon: "NetworkNodesIcon",
-		description: "A record resolves to the value you expect.",
+		description: "Checks that a record resolves to the value you expect.",
 	},
 	{
 		kind: "heartbeat",
 		label: "Heartbeat",
 		icon: "PulseIcon",
-		description: "Your job pings Maple. Alert when it stops.",
+		description: "Your job pings Maple, and Maple alerts when the pings stop.",
 	},
 ]
 
+/** The kind as one row of radios; the picked kind's sentence sits under it. */
 const kindPicker = (h: H, model: Model): Html =>
-	h.div(
+	h.section(
+		[h.AriaLabel("Type"), h.Class("grid gap-x-8 gap-y-2 px-4 py-4 sm:grid-cols-[136px_minmax(0,1fr)]")],
 		[
-			h.Role("radiogroup"),
-			h.AriaLabel("Monitor type"),
-			h.Class("grid gap-3 sm:grid-cols-2 lg:grid-cols-4"),
-		],
-		KINDS.map((option) => {
-			const isSelected = model.form.kind === option.kind
-			const isDisabled = model.editingId !== null && !isSelected
-			return h.button(
+			h.h3([h.Class("text-sm font-medium sm:pt-1.5")], ["Type"]),
+			h.div(
+				[h.Class("flex min-w-0 flex-col gap-2")],
 				[
-					h.Key(option.kind),
-					h.Type("button"),
-					h.Role("radio"),
-					h.AriaChecked(isSelected),
-					...(isDisabled ? [h.Disabled(true)] : []),
-					h.OnClick(Message.PickedKind({ kind: option.kind })),
-					h.Class(
-						cn(
-							"flex flex-col gap-1.5 rounded-md border p-4 text-left transition-colors",
-							isSelected ? "border-primary bg-primary/10" : "bg-card hover:bg-muted/30",
-							isDisabled && "cursor-not-allowed opacity-50",
-						),
-					),
-				],
-				[
-					h.span(
-						[h.Class("flex items-center gap-2 text-sm font-medium")],
+					h.div(
 						[
-							icon(h, option.icon, {
-								className: isSelected ? "text-primary" : "text-muted-foreground",
-							}),
-							option.label,
+							h.Role("radiogroup"),
+							h.AriaLabel("Monitor type"),
+							h.Class("flex w-fit flex-wrap gap-1 rounded-md border bg-muted/30 p-0.5"),
 						],
+						KINDS.map((option) => {
+							const isSelected = model.form.kind === option.kind
+							const isDisabled = model.editingId !== null && !isSelected
+							return h.button(
+								[
+									h.Key(option.kind),
+									h.Type("button"),
+									h.Role("radio"),
+									h.AriaChecked(isSelected),
+									...(isDisabled ? [h.Disabled(true)] : []),
+									h.OnClick(Message.PickedKind({ kind: option.kind })),
+									h.Class(
+										cn(
+											"flex h-7 items-center gap-1.5 rounded-[5px] px-2.5 text-sm transition-colors",
+											isSelected
+												? "bg-background text-foreground shadow-xs ring-1 ring-border"
+												: "text-muted-foreground hover:text-foreground",
+											isDisabled &&
+												"cursor-not-allowed opacity-50 hover:text-muted-foreground",
+										),
+									),
+								],
+								[
+									icon(h, option.icon, {
+										size: 14,
+										className: isSelected ? "text-primary" : undefined,
+									}),
+									option.label,
+								],
+							)
+						}),
 					),
-					h.span([h.Class("text-xs text-muted-foreground")], [option.description]),
+					h.p(
+						[h.Class("text-xs text-muted-foreground")],
+						[KINDS.find((option) => option.kind === model.form.kind)?.description ?? ""],
+					),
 				],
-			)
-		}),
+			),
+		],
 	)
 
 const describeAssertion = (row: AssertionDraft): string => {
@@ -165,80 +179,68 @@ const testResultBody = (h: H, model: Model): ReadonlyArray<Html> => {
 	]
 }
 
-const sidePanel = (h: H, model: Model): Html =>
-	model.form.kind === "http"
-		? panel(h, {}, [
-				panelHeader(h, {
-					title: "Test check",
-					action: button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isLoading: model.isTesting,
-							isDisabled: model.form.url.trim() === "",
-							attributes: [h.OnClick(Message.ClickedTest())],
-						},
-						[
-							icon(h, "ArrowRotateClockwiseIcon"),
-							model.testResult === null ? "Run test" : "Run again",
-						],
-					),
-				}),
-				uptimePanelBody(h, [h.div([h.Class("flex flex-col gap-3")], testResultBody(h, model))]),
-			])
-		: model.form.kind === "heartbeat"
-			? panel(h, {}, [
-					panelHeader(h, { title: "Ping URL" }),
-					uptimePanelBody(h, [
-						h.p(
-							[h.Class("text-sm text-muted-foreground")],
-							["The ping URL appears after you create the monitor."],
-						),
-					]),
-				])
-			: panel(h, {}, [
-					panelHeader(h, { title: "First check" }),
-					uptimePanelBody(h, [
-						h.p(
-							[h.Class("text-sm text-muted-foreground")],
-							["The first check runs from Ashburn, US right after you create the monitor."],
-						),
-					]),
-				])
+const testPanel = (h: H, model: Model): Html =>
+	panel(h, {}, [
+		panelHeader(h, {
+			title: "Test check",
+			action: button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					isLoading: model.isTesting,
+					isDisabled: model.form.url.trim() === "",
+					attributes: [h.OnClick(Message.ClickedTest())],
+				},
+				[icon(h, "ArrowRotateClockwiseIcon"), model.testResult === null ? "Run test" : "Run again"],
+			),
+		}),
+		uptimePanelBody(h, [h.div([h.Class("flex flex-col gap-3")], testResultBody(h, model))]),
+	])
 
-const actionBar = (h: H, model: Model): Html => {
+/** What happens after saving, for the kinds without a test run. */
+const afterSaveNote = (kind: MonitorKind): string =>
+	kind === "heartbeat"
+		? "The ping URL appears after you create the monitor."
+		: "The first check runs from Ashburn, US right after you create the monitor."
+
+/** Pinned under the scroller, outside it, so it never floats over the form. */
+const actionBar = (h: H, model: Model, widthClass: string): Html => {
 	const issues = formIssues(model.form)
 	const isEdit = model.editingId !== null
 	return h.div(
-		[h.Class("sticky bottom-0 z-20 -mx-4 -mb-4 mt-6 border-t bg-background/95 px-4 py-3 backdrop-blur")],
+		[h.Class("shrink-0 border-t bg-background px-4 py-3")],
 		[
-			...(model.saveFailure === null ? [] : [saveFailureNotice(h, model.saveFailure)]),
+			...(model.saveFailure === null ? [] : [saveFailureNotice(h, model.saveFailure, widthClass)]),
 			h.div(
-				[h.Class("flex items-center justify-between gap-4")],
+				[h.Class(cn("flex items-center justify-between gap-4", widthClass))],
 				[
 					issues.length === 0
 						? h.span(
 								[h.Class("flex items-center gap-1.5 text-xs text-severity-info")],
 								[icon(h, "CheckIcon", { size: 14 }), "Ready to save"],
 							)
-						: h.div(
-								[h.Class("flex min-w-0 items-start gap-1.5 text-xs text-muted-foreground")],
+						: h.p(
+								[
+									h.AriaLabel("Fix before saving"),
+									h.Title(issues.join(" ")),
+									h.Class(
+										"flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground",
+									),
+								],
 								[
 									icon(h, "CircleWarningIcon", {
 										size: 14,
-										className: "mt-px shrink-0 text-severity-warn",
+										className: "shrink-0 text-severity-warn",
 									}),
-									h.div(
-										[],
+									h.span(
+										[h.Class("truncate")],
 										[
-											h.span([], ["Fix before saving:"]),
-											h.ul(
-												[h.AriaLabel("Fix before saving")],
-												issues.map((issue) =>
-													h.li([h.Key(issue), h.Class("text-foreground")], [issue]),
-												),
-											),
+											"Fix before saving: ",
+											...issues.flatMap((issue, index) => [
+												...(index === 0 ? [] : [" "]),
+												h.span([h.Key(issue), h.Class("text-foreground")], [issue]),
+											]),
 										],
 									),
 								],
@@ -279,28 +281,28 @@ const kindSections = (h: H, model: Model): ReadonlyArray<Html> => {
 	switch (model.form.kind) {
 		case "http":
 			return [
-				requestSection(h, model, model.form.headers !== ""),
+				...requestSection(h, model, model.form.headers !== ""),
 				assertionsSection(h, model),
 				scheduleSection(h, model),
 			]
 		case "tcp":
-			return [tcpSection(h, model), scheduleSection(h, model)]
+			return [...tcpSection(h, model), scheduleSection(h, model)]
 		case "dns":
-			return [dnsSection(h, model), scheduleSection(h, model)]
+			return [...dnsSection(h, model), scheduleSection(h, model)]
 		case "heartbeat":
-			return [heartbeatSection(h, model)]
+			return heartbeatSection(h, model)
 	}
 }
 
 /** The last save's failure, in the server's words: the plan's limit, or why it was refused. */
-const saveFailureNotice = (h: H, failure: LoadFailure): Html =>
+const saveFailureNotice = (h: H, failure: LoadFailure, widthClass: string): Html =>
 	failure.code === LIMIT_REACHED_CODE
-		? alert(h, { variant: "warn", size: "sm", className: "mb-3" }, [
+		? alert(h, { variant: "warn", size: "sm", className: cn("mb-3", widthClass) }, [
 				icon(h, "CircleWarningIcon"),
 				alertTitle(h, ["Uptime monitor limit reached"]),
 				alertDescription(h, [failure.message]),
 			])
-		: alert(h, { variant: "crit", size: "sm", className: "mb-3" }, [
+		: alert(h, { variant: "crit", size: "sm", className: cn("mb-3", widthClass) }, [
 				icon(h, "CircleXmarkIcon"),
 				alertTitle(h, ["Couldn't save the monitor"]),
 				alertDescription(h, [failureMessage(failure)]),
@@ -346,18 +348,36 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		])
 	if (isEdit && !AsyncData.isSuccess(model.existing.data) && !AsyncData.isRefreshing(model.existing.data))
 		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
-	return dashboardPage(h, { ...header, gap: "lg" }, [
-		kindPicker(h, model),
+	const isHttp = model.form.kind === "http"
+	const widthClass = isHttp ? "max-w-6xl" : "max-w-3xl"
+	const card = h.div(
+		[h.Class("divide-y rounded-lg border bg-card")],
+		[kindPicker(h, model), ...kindSections(h, model), serviceSection(h, model), notifySection(h, model)],
+	)
+	return dashboardPage(h, { ...header, fill: true }, [
 		h.div(
-			[h.Class("grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]")],
+			[h.DataAttribute("slot", "page-scroll-area"), h.Class("min-h-0 flex-1 overflow-auto p-4")],
 			[
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-6")],
-					[...kindSections(h, model), serviceSection(h, model), notifySection(h, model)],
-				),
-				h.div([h.Class("lg:sticky lg:top-4 lg:self-start")], [sidePanel(h, model)]),
+				isHttp
+					? h.div(
+							[h.Class(cn("grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]", widthClass))],
+							[
+								card,
+								h.div([h.Class("lg:sticky lg:top-0 lg:self-start")], [testPanel(h, model)]),
+							],
+						)
+					: h.div(
+							[h.Class(cn("flex flex-col gap-2", widthClass))],
+							[
+								card,
+								h.p(
+									[h.Class("px-1 text-xs text-muted-foreground")],
+									[afterSaveNote(model.form.kind)],
+								),
+							],
+						),
 			],
 		),
-		actionBar(h, model),
+		actionBar(h, model, widthClass),
 	])
 })
