@@ -65,7 +65,10 @@ export const buildStackedBreakdown = (
 			y: {
 				grid: DASHED_Y_GRID,
 				scale: scaleLinear().domain(yDomain),
-				axis: { line: false, ticks: { size: 0, padding: 8, format: (v: number) => format(v) } },
+				axis: {
+					line: false,
+					ticks: { size: 0, padding: 8, format: (v: number) => (v === 0 ? "0" : format(v)) },
+				},
 			},
 		},
 		margin: { top: 12, right: 12, left: 60 },
