@@ -5010,6 +5010,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					{ concurrency: 4, discard: true },
 				).pipe(Effect.withSpan("AlertsService.notifyIncidentDigests"))
 
+				// Monitors created before backing rules existed get theirs; evaluated from the next tick.
+				const backfillUptimeRules = uptimeAlerts.backfillRules.pipe(
+					Effect.catch((error) =>
+						Effect.logWarning("Uptime rule backfill failed").pipe(
+							Effect.annotateLogs({ error: error.message }),
+						),
+					),
+				)
+
 				// Resolve stale incidents for disabled rules
 				const sweepDisabledRules = Effect.gen(function* () {
 					const disabledRulesWithOpenIncidents = yield* dbExecute((db) =>
@@ -5076,7 +5085,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const tail = yield* Effect.all(
 					Arr.map(
 						laneName === "standard"
-							? [housekeeping, digests, sweepDisabledRules, ingestChecks]
+							? [housekeeping, digests, sweepDisabledRules, backfillUptimeRules, ingestChecks]
 							: [housekeeping, digests, ingestChecks],
 						Effect.exit,
 					),
