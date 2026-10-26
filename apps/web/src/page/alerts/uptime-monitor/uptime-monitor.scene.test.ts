@@ -1,7 +1,17 @@
 import { OrgId } from "@maple/domain"
 import { UptimeMonitorPublicId } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
-import { displayValue, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	displayValue,
+	expect as expectView,
+	given,
+	role,
+	scene,
+	selector,
+	text,
+	within,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { destinationRow, incidentRow, NOW, ORG } from "../shared/test-rows"
@@ -19,6 +29,7 @@ const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
 const publicId = Schema.encodeSync(UptimeMonitorPublicId)
+const incidentAlert = selector('[data-slot="alert"]')
 
 const opened = (monitor: UptimeMonitor, extra: ReadonlyArray<Message> = []): Model => {
 	const entered = init(
@@ -68,13 +79,14 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(monitor, [Message.UpdatedIncidents({ orgId: ORG, rows: [otherRule, incident] })])),
-			expectView(text("Returning 503 since 11:54:00 AM")).toExist(),
-			expectView(text("Service Unavailable")).toExist(),
-			expectView(role("link", { name: "Open failing trace" })).toHaveAttr(
+			// All of it sits in one alert block, not a panel that collapses in the page column.
+			expectView(within(incidentAlert, text("Returning 503 since 11:54:00 AM"))).toExist(),
+			expectView(within(incidentAlert, text("Service Unavailable"))).toExist(),
+			expectView(within(incidentAlert, role("link", { name: "Open failing trace" }))).toHaveAttr(
 				"href",
 				"/traces/7f3c000000000000000000000000a91e",
 			),
-			expectView(role("link", { name: "Open incident" })).toHaveAttr(
+			expectView(within(incidentAlert, role("link", { name: "Open incident" }))).toHaveAttr(
 				"href",
 				`/alerts/incidents/${incident.id}`,
 			),
@@ -92,6 +104,7 @@ describe("uptime monitor page", () => {
 					}),
 				]),
 			),
+			expectView(incidentAlert).not.toExist(),
 			expectView(text("Open failing trace")).not.toExist(),
 			expectView(text("PagerDuty oncall")).toExist(),
 			expectView(role("link", { name: "View all checks in Traces" })).toHaveAttr(
