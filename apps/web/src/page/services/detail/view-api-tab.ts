@@ -180,7 +180,7 @@ const kpiStrip = (
 			aside: client === null ? "no status codes" : leadingCode(summaries, false),
 			asideClassName: client !== null && client > 0 ? "text-warning-foreground" : undefined,
 			values: sparks.client,
-			token: SPARK_TOKENS.client,
+			token: client !== null && client > 0 ? SPARK_TOKENS.client : SPARK_TOKENS.quiet,
 		},
 		{
 			label: "5xx responses",
@@ -190,7 +190,7 @@ const kpiStrip = (
 			aside: server === null ? "no status codes" : leadingCode(summaries, true),
 			asideClassName: server !== null && server > 0 ? "text-destructive-foreground" : undefined,
 			values: sparks.server,
-			token: SPARK_TOKENS.server,
+			token: server !== null && server > 0 ? SPARK_TOKENS.server : SPARK_TOKENS.quiet,
 		},
 		{
 			label: "p95 latency",

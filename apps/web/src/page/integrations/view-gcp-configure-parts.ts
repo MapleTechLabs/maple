@@ -50,64 +50,40 @@ export const footerNote = (h: H, children: Children): Html =>
 
 export type StepIndex = 0 | 1 | 2 | 3
 
-/** Where the flow is: done steps are checked, the current one is filled, later ones are outlined. */
+/** Where the flow is, as a text trail like `/sources/new`: done steps checked, the current one underlined. */
 const stepper = (h: H, current: StepIndex): Html =>
 	h.ol(
-		[h.Class("flex items-center gap-3 text-sm")],
-		STEPS.map((label, index) => {
+		[h.AriaLabel("Setup progress"), h.Class("flex flex-wrap items-center gap-2 font-mono text-xs")],
+		STEPS.flatMap((label, index) => {
 			const done = index < current
 			const active = index === current
-			return h.li(
+			const step = h.li(
 				[
 					...(active ? [h.AriaCurrent("step")] : []),
-					h.Class(cn("flex items-center gap-3", index > 0 && "flex-1")),
-				],
-				[
-					...(index === 0
-						? []
-						: [
-								h.span([
-									h.AriaHidden(true),
-									h.Class(
-										cn("h-px flex-1", done || active ? "bg-foreground/24" : "bg-border"),
-									),
-								]),
-							]),
-					h.span(
-						[h.Class("flex shrink-0 items-center gap-2")],
-						[
-							h.span(
-								[
-									h.AriaHidden(true),
-									h.Class(
-										cn(
-											"flex size-5 items-center justify-center rounded-full text-2xs font-medium tabular-nums",
-											done
-												? "bg-severity-info/16 text-severity-info"
-												: active
-													? "bg-primary text-primary-foreground"
-													: "border border-input text-muted-foreground",
-										),
-									),
-								],
-								[done ? icon(h, "CheckIcon", { size: 12 }) : String(index + 1)],
-							),
-							h.span(
-								[
-									h.Class(
-										active
-											? "font-medium text-foreground"
-											: done
-												? "text-foreground"
-												: "text-muted-foreground",
-									),
-								],
-								[label, ...(done ? [h.span([h.Class("sr-only")], [" (done)"])] : [])],
-							),
-						],
+					h.Class(
+						cn(
+							"inline-flex items-center gap-1.5",
+							active
+								? "border-b border-primary pb-0.5 font-medium text-foreground"
+								: "text-muted-foreground",
+						),
 					),
 				],
+				[
+					...(done ? [icon(h, "CheckIcon", { size: 12, className: "text-success" })] : []),
+					label,
+					...(done ? [h.span([h.Class("sr-only")], [" (done)"])] : []),
+				],
 			)
+			return index === 0
+				? [step]
+				: [
+						h.li(
+							[h.AriaHidden(true), h.Class("inline-flex text-muted-foreground/60")],
+							[icon(h, "ArrowRightIcon", { size: 12 })],
+						),
+						step,
+					]
 		}),
 	)
 

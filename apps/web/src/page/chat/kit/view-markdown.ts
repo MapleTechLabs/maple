@@ -171,7 +171,8 @@ const panelClass = (tone: "default" | "muted", className: string): string =>
 const chartFrame = <M>(h: HtmlBuilder<M>, title: string | null, children: ReadonlyArray<Html>): Html =>
 	h.figure(
 		[
-			h.Class(panelClass("default", "my-3 block space-y-2 overflow-visible")),
+			// Mono like every other chart; the prose around it is sans.
+			h.Class(panelClass("default", "my-3 block space-y-2 overflow-visible font-mono")),
 			h.DataAttribute("slot", "panel"),
 		],
 		[

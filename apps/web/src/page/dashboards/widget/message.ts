@@ -102,7 +102,7 @@ export const Message = defineMessageUnion({
 	GotWhereFieldMessage: { message: WhereFieldMessage },
 	ToggledProductPanel: {},
 	BlurredListField: {},
-	/** The key typed under `BreakdownPicker`'s "Attribute..." mode. */
+	/** The key typed under `BreakdownPicker`'s "Attribute…" mode. */
 	ChangedBreakdownAttribute: { value: Schema.String },
 	CompletedFetchSuggestions: {
 		key: Schema.String,

@@ -52,7 +52,9 @@ const DECIMAL_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const
 
 /** Binary (1024-based) byte size — memory, disk, page weight. */
 export function formatBytes(bytes: number): string {
-	if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
+	if (!Number.isFinite(bytes)) return EMPTY_VALUE
+	if (bytes < 0) return `-${formatBytes(-bytes)}`
+	if (bytes === 0) return "0 B"
 	let value = bytes
 	let unit = 0
 	while (value >= 1024 && unit < BINARY_UNITS.length - 1) {
@@ -88,20 +90,41 @@ export function formatBytesPerSecond(bytes: number): string {
 }
 
 /**
- * Format a 0–1 fraction as a utilization percentage. Distinct from
- * `formatErrorRate`: this floors to "0%" below 0.05% and drops to whole numbers
- * past 10%, which suits gauges and resource bars. Error rates want the opposite
- * (a visible "<0.01%" so a rare failure never reads as zero).
+ * A percentage on the table rule: exact zero is "0%", a non-zero share under 0.01% is
+ * "<0.01%", two decimals under 1% (a low error rate's second digit matters), one decimal under
+ * 100, whole numbers from 100 up, so a column stays scannable ("88.0%" above "1.0%").
+ */
+const tablePercentText = (pct: number): string => {
+	if (pct === 0) return "0%"
+	if (pct < 0.01) return "<0.01%"
+	if (Number(pct.toFixed(2)) < 1) return `${pct.toFixed(2)}%`
+	if (Number(pct.toFixed(1)) < 100) return `${pct.toFixed(1)}%`
+	return `${pct.toFixed(0)}%`
+}
+
+/**
+ * Format a 0–1 fraction as a utilization percentage for gauges and prose: two decimals under
+ * 0.1%, one under 10%, whole numbers past that. A table column uses `formatPercentColumn`.
  */
 export function formatPercent(fraction: number, options?: { readonly floor?: number }): string {
 	if (!Number.isFinite(fraction)) return EMPTY_VALUE
 	// `floor` (a fraction) renders a non-zero value under it as "<0.1%" instead of "0%".
 	const floor = options?.floor
 	if (floor !== undefined && fraction > 0 && fraction < floor) return `<${+(floor * 100).toFixed(4)}%`
+	if (fraction < 0) return `-${formatPercent(-fraction, options)}`
 	const pct = fraction * 100
-	if (pct < 0.05) return "0%"
-	if (pct < 10) return `${pct.toFixed(1)}%`
-	return `${pct.toFixed(0)}%`
+	if (pct >= 0.01 && Number(pct.toFixed(1)) >= 10) return `${pct.toFixed(0)}%`
+	return tablePercentText(pct)
+}
+
+/**
+ * A 0–1 fraction in a table column, on the same rule as `formatErrorRate` so a column reads
+ * "88.0%" above "1.0%" and "0%", never "88%" above "1.0%".
+ */
+export function formatPercentColumn(fraction: number): string {
+	if (!Number.isFinite(fraction)) return EMPTY_VALUE
+	if (fraction < 0) return `-${formatPercentColumn(-fraction)}`
+	return tablePercentText(fraction * 100)
 }
 
 /** Two-decimal load average. */
@@ -130,19 +153,13 @@ export function formatLatency(ms: number): string {
 }
 
 /**
- * Format an error rate (0–1 ratio) as a percentage string.
+ * Format an error rate (0–1 ratio) as a percentage string. A rare failure reads "<0.01%",
+ * never a flat zero.
  */
 export function formatErrorRate(rate: number): string {
 	if (!Number.isFinite(rate)) return EMPTY_VALUE
-	const pct = rate * 100
-	if (pct === 0) {
-		return "0%"
-	}
-	if (pct > 0 && pct < 0.01) return "<0.01%"
-	if (pct < 1) {
-		return `${pct.toFixed(2)}%`
-	}
-	return `${pct.toFixed(1)}%`
+	if (rate < 0) return `-${formatErrorRate(-rate)}`
+	return tablePercentText(rate * 100)
 }
 
 /**
@@ -340,6 +357,118 @@ export const formatValueByUnit: (num: number, unit?: string) => string = (num, u
 		Match.when("bytes", () => formatStorageBytes(num)),
 		Match.orElse(() => formatNumber(num)),
 	)
+
+const DURATION_TO_MS = new Map([
+	["duration_ms", 1],
+	["duration_us", 0.001],
+	["duration_s", 1000],
+	["duration_ns", 0.000_001],
+])
+
+/** d3's tick step for about `count` ticks across `span`: 1, 2 or 5 times a power of ten. */
+const tickStep = (span: number, count: number): number => {
+	const raw = span / Math.max(1, count)
+	const power = 10 ** Math.floor(Math.log10(raw))
+	const error = raw / power
+	return (error >= 7.07 ? 10 : error >= 3.16 ? 5 : error >= 1.41 ? 2 : 1) * power
+}
+
+/** Decimals that keep two ticks one `step` apart distinct; the epsilon absorbs log10 float noise. */
+const stepDecimals = (step: number, cap: number): number =>
+	Math.min(cap, Math.max(0, -Math.floor(Math.log10(step) + 1e-9)))
+
+const DURATION_AXIS_UNITS = [
+	{ suffix: "μs", ms: 0.001, below: 1 },
+	{ suffix: "ms", ms: 1, below: 1000 },
+	{ suffix: "s", ms: 1000, below: 60_000 },
+	{ suffix: "min", ms: 60_000, below: 3_600_000 },
+	{ suffix: "h", ms: 3_600_000, below: Number.POSITIVE_INFINITY },
+] as const
+
+/** The next nice step up: 1 to 2, 2 to 5, 5 to 10, at any power of ten. */
+const nextNiceStep = (step: number): number => {
+	const power = 10 ** Math.floor(Math.log10(step) + 1e-9)
+	const multiple = step / power
+	return (multiple < 1.5 ? 2 : multiple < 3.5 ? 5 : 10) * power
+}
+
+const ticksBetween = (lo: number, hi: number, step: number): number =>
+	Math.floor(hi / step + 1e-9) - Math.ceil(lo / step - 1e-9) + 1
+
+/**
+ * The tick step for `domain`. With `max`, the step grows to the next nice one until at most
+ * `max` ticks fit, so a short chart reads "0, 1s, 2s" instead of five crammed labels.
+ */
+const axisStep = (domain: readonly [number, number], count: number, max: number | undefined): number => {
+	const lo = Math.min(domain[0], domain[1])
+	const hi = Math.max(domain[0], domain[1])
+	const base = tickStep(hi - lo, count)
+	if (max === undefined) return base
+	const steps = [base, nextNiceStep(base), nextNiceStep(nextNiceStep(base))]
+	return steps.find((step) => ticksBetween(lo, hi, step) <= max) ?? nextNiceStep(steps[2])
+}
+
+export interface AxisTickOptions {
+	/** The most ticks the axis may draw; the step coarsens to stay under it. */
+	readonly max?: number
+}
+
+/** Tick values one step apart inside `domain`, so labels from `axisTickFormatter` match the ticks drawn. */
+export function axisTickValues(
+	domain: readonly [number, number],
+	count = 5,
+	options?: AxisTickOptions,
+): ReadonlyArray<number> {
+	const lo = Math.min(domain[0], domain[1])
+	const hi = Math.max(domain[0], domain[1])
+	if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi === lo) return [lo]
+	const step = axisStep(domain, count, options?.max)
+	const first = Math.ceil(lo / step - 1e-9)
+	const last = Math.floor(hi / step + 1e-9)
+	// Multiply rather than accumulate, so 0.1 steps never drift to 0.30000000000000004.
+	return Array.from({ length: last - first + 1 }, (_, i) => Number(((first + i) * step).toPrecision(12)))
+}
+
+/**
+ * Tick labels for a y axis: every tick in the largest tick's unit, at one shared precision
+ * derived from the tick step, so an axis reads "0, 0.5s, 1.0s" or "0, 1s, 2s" instead of mixing "0μs",
+ * "500.0ms" and "1.00s". Units without an axis rule fall back to `formatValueByUnit`.
+ */
+export function axisTickFormatter(
+	unit: string | undefined,
+	domain: readonly [number, number],
+	count = 5,
+	options?: AxisTickOptions,
+): (value: number) => string {
+	// The zero tick reads "0" on every axis, never "0/s", "0.00" or "0μs".
+	const byUnit = (value: number) => (value === 0 ? "0" : formatValueByUnit(value, unit))
+	const span = Math.abs(domain[1] - domain[0])
+	if (!Number.isFinite(span) || span === 0) return byUnit
+	const step = axisStep(domain, count, options?.max)
+	const toMs = unit === undefined ? undefined : DURATION_TO_MS.get(unit)
+	if (toMs !== undefined) {
+		const largest = Math.max(Math.abs(domain[0]), Math.abs(domain[1])) * toMs
+		const axisUnit = DURATION_AXIS_UNITS.find((u) => largest < u.below) ?? DURATION_AXIS_UNITS[4]
+		const decimals = stepDecimals((step * toMs) / axisUnit.ms, 3)
+		return (value) =>
+			!Number.isFinite(value)
+				? EMPTY_VALUE
+				: value === 0
+					? "0"
+					: `${((value * toMs) / axisUnit.ms).toFixed(decimals)}${axisUnit.suffix}`
+	}
+	if (unit === "percent" || unit === "percent_100") {
+		const scale = unit === "percent" ? 100 : 1
+		const decimals = stepDecimals(step * scale, PERCENT_MAX_DIGITS)
+		return (value) =>
+			!Number.isFinite(value)
+				? EMPTY_VALUE
+				: value === 0
+					? "0"
+					: `${(value * scale).toFixed(decimals)}%`
+	}
+	return byUnit
+}
 
 /**
  * The noun for a count: `pluralize(1, "host")` is "host", `pluralize(3, "host")` is "hosts".

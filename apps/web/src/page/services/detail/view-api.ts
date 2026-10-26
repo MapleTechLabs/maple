@@ -68,7 +68,7 @@ export const methodLabel = <M>(h: HtmlBuilder<M>, method: string, className = "w
 const COLLAPSED_COPY = {
 	unrouted: {
 		label: "Unrouted paths",
-		explainer: "URL paths rather than route templates — each distinct id counts as its own endpoint.",
+		explainer: "URL paths rather than route templates. Each distinct id counts as its own endpoint.",
 	},
 	probes: {
 		label: "Scanner probes",

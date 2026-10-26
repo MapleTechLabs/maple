@@ -7,7 +7,7 @@ import { confirmDialog } from "../../../ui/confirm-dialog"
 import { warmAvatarTone } from "../../../ui/avatar-tone"
 import { avatarFallback, badge } from "../../../ui/display"
 import { input } from "../../../ui/input"
-import { label } from "../../../ui/label"
+import { settingRow } from "../../../ui/setting-row"
 import { panel } from "../../../ui/panel"
 import { accountSectionSkeleton, noOrganization } from "../kit/account-skeleton"
 import { imageDropzone, typeToConfirmField } from "../kit/image-dropzone"
@@ -70,6 +70,16 @@ const orgAvatar = (h: H, name: string): Html =>
 		initialsFrom(name),
 	)
 
+/** Every General row: label and hint on the left, the value or control on the right. */
+const row = (h: H, id: string, label: string, hint: string, control: ReadonlyArray<Html>): Html =>
+	settingRow(h, {
+		ids: { control: id, label: `${id}-label`, description: `${id}-hint` },
+		label,
+		description: hint,
+		control,
+		className: "p-4",
+	})
+
 const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 	settingsSection(
 		h,
@@ -83,15 +93,17 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 			h.div(
 				[h.Class("divide-y")],
 				[
-					h.div(
-						[h.Class("p-4")],
+					row(
+						h,
+						LOGO_INPUT_ID,
+						"Logo",
+						model.isAdmin
+							? "Saved as soon as you upload. PNG, JPG, WEBP or GIF, up to 10 MB."
+							: "Shown beside the name in the organization switcher.",
 						[
 							imageDropzone(h, {
 								inputId: LOGO_INPUT_ID,
-								title: "Logo",
-								hint: model.isAdmin
-									? "Saved as soon as you upload. PNG, JPG, WEBP or GIF, up to 10 MB."
-									: null,
+								hint: null,
 								preview: orgAvatar(h, org.name),
 								isUploading: model.isSavingLogo,
 								isDragging: model.isDragging,
@@ -106,44 +118,21 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 							}),
 						],
 					),
-					h.div(
-						[h.Class("flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:gap-4")],
-						[
-							h.div(
-								[h.Class("flex shrink-0 flex-col gap-1 sm:w-60 sm:pt-1.5")],
-								[
-									label(
-										h,
-										{ className: "text-sm font-medium", attributes: [h.For("org-name")] },
-										["Name"],
-									),
-									h.p(
-										[h.Class("font-prose text-xs text-muted-foreground")],
-										["Shown in the organization switcher."],
-									),
-								],
-							),
-							model.isAdmin
-								? input(h, {
-										id: "org-name",
-										className: "flex-1",
-										isDisabled: model.isSavingName,
-										attributes: [
-											h.Value(nameDraftOf(model)),
-											h.OnInput((value) => Message.ChangedName({ value })),
-											h.Maxlength(100),
-											h.Placeholder("Organization name"),
-										],
-									})
-								: h.p(
-										[
-											h.Id("org-name"),
-											h.Class("flex-1 text-sm text-foreground sm:pt-1.5"),
-										],
-										[org.name],
-									),
-						],
-					),
+					row(h, "org-name", "Name", "Shown in the organization switcher.", [
+						model.isAdmin
+							? input(h, {
+									id: "org-name",
+									className: "w-72",
+									isDisabled: model.isSavingName,
+									attributes: [
+										h.Value(nameDraftOf(model)),
+										h.OnInput((value) => Message.ChangedName({ value })),
+										h.Maxlength(100),
+										h.Placeholder("Organization name"),
+									],
+								})
+							: h.p([h.Id("org-name"), h.Class("text-sm text-foreground")], [org.name]),
+					]),
 				],
 			),
 		],
@@ -157,33 +146,27 @@ const dataRegionSection = (h: H, org: OrgInfo): Html => {
 			id: "settings-general-region",
 			title: "Data region",
 			description: ["Where this organization's telemetry is stored and processed."],
+			padded: false,
 		},
 		[
-			h.div(
-				[h.Class("flex items-center justify-between gap-4")],
-				[
-					h.div(
-						[h.Class("flex items-center gap-2 text-sm")],
-						[
-							badge(
-								h,
-								{
-									variant: "meta",
-									size: "xs",
-									mono: true,
-									attributes: [h.Title(`Data region: ${region.name}`)],
-								},
-								[region.short],
-							),
-							h.span([], [region.name]),
-						],
-					),
-					h.p(
-						[h.Class("font-prose text-xs text-muted-foreground")],
-						["Set when the organization was created. It cannot be changed."],
-					),
-				],
-			),
+			row(h, "org-region", "Region", "Set when the organization was created. It cannot be changed.", [
+				h.div(
+					[h.Id("org-region"), h.Class("flex items-center gap-2 text-sm")],
+					[
+						badge(
+							h,
+							{
+								variant: "meta",
+								size: "xs",
+								mono: true,
+								attributes: [h.Title(`Data region: ${region.name}`)],
+							},
+							[region.short],
+						),
+						h.span([], [region.name]),
+					],
+				),
+			]),
 		],
 	)
 }
@@ -212,7 +195,7 @@ const dangerZone = (h: H, model: Model, org: OrgInfo): Html => {
 					button(
 						h,
 						{
-							variant: "outline",
+							variant: "destructive-outline",
 							size: "sm",
 							isDisabled: leave !== "allowed",
 							attributes: [h.OnClick(Message.ClickedLeave())],
@@ -300,10 +283,10 @@ const dialogs = (h: H, model: Model, org: OrgInfo): ReadonlyArray<Html> => [
 	}),
 ]
 
-const loaded = (h: H, model: Model, org: OrgInfo): Html =>
+const loaded = (h: H, model: Model, org: OrgInfo, isKnownMember: boolean): Html =>
 	settingsSections(h, [
 		...adminOnlyNotice(h, {
-			isAdmin: model.isAdmin,
+			isKnownMember: isKnownMember && !model.isAdmin,
 			subject: "organization settings",
 			adminName: AsyncData.getOrElse(
 				AsyncData.map(model.admins, (admins) => admins.firstAdminName),
@@ -323,11 +306,13 @@ const loaded = (h: H, model: Model, org: OrgInfo): Html =>
 		...dialogs(h, model, org),
 	])
 
-export const view = Submodel.defineView<Model, Message, Readonly<Record<never, never>>>((model, _inputs, h) =>
-	AsyncData.matchDataSplitEmpty(model.org, {
-		onIdle: () => accountSectionSkeleton(h),
-		onLoading: () => accountSectionSkeleton(h),
-		onFailure: () => noOrganization(h, NO_ORG),
-		onData: (org) => (org === null ? noOrganization(h, NO_ORG) : loaded(h, model, org)),
-	}),
+export const view = Submodel.defineView<Model, Message, Readonly<{ isKnownMember: boolean }>>(
+	(model, inputs, h) =>
+		AsyncData.matchDataSplitEmpty(model.org, {
+			onIdle: () => accountSectionSkeleton(h),
+			onLoading: () => accountSectionSkeleton(h),
+			onFailure: () => noOrganization(h, NO_ORG),
+			onData: (org) =>
+				org === null ? noOrganization(h, NO_ORG) : loaded(h, model, org, inputs.isKnownMember),
+		}),
 )

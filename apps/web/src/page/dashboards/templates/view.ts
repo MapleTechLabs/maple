@@ -3,10 +3,10 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
 import { ResolveThemeColors } from "../../../charts/theme-colors"
-import { button } from "../../../ui/button"
-import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
-import { icon } from "../../../ui/icon"
-import { refreshButton } from "../../../ui/refresh-button"
+import { cn } from "@maple/ui/lib/utils"
+import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
+import type { LoadFailure } from "../../../data/load-failure"
+import { errorState } from "../../../ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { BLANK_TEMPLATE_ID, computeReadiness } from "./derive"
@@ -32,40 +32,21 @@ const summary = (h: H, readyCount: number, catalogueCount: number): Html =>
 		],
 	)
 
-const failed = (h: H, model: Model): Html =>
-	empty(
-		h,
+const failed = (h: H, failure: LoadFailure): Html =>
+	h.div(
+		[h.Class("p-4")],
 		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "CircleWarningIcon", { size: 18 })]),
-				emptyTitle(h, ["Couldn't load the templates"]),
-				emptyDescription(h, [
-					"The template catalogue didn't answer. Nothing you've built is affected — this page only reads.",
-				]),
-			]),
-			h.div(
-				[h.Class("flex items-center gap-2")],
-				[
-					refreshButton(h, {
-						onRefresh: Message.ClickedRetry(),
-						isPending: AsyncData.isLoading(model.templates.data),
-						variant: "default",
-						size: "sm",
-						label: "Try again",
-					}),
-					button(
-						h,
-						{
-							variant: "outline",
-							size: "sm",
-							attributes: [h.OnClick(Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID }))],
-						},
-						["Start blank instead"],
-					),
-				],
-			),
+			errorState(h, {
+				failure,
+				title: "Couldn't load the templates",
+				note: "Nothing you've built is affected.",
+				onRetry: Message.ClickedRetry(),
+				secondaryAction: {
+					label: "Start blank instead",
+					onClick: Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID }),
+				},
+			}),
 		],
-		"h-full",
 	)
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
@@ -75,34 +56,35 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const listed = templates.filter((template) => template.id !== BLANK_TEMPLATE_ID)
 	const readyCount = listed.filter((template) => readiness.get(template.id)?.ready !== false).length
 	const isLoaded = AsyncData.isSuccess(model.templates.data) || AsyncData.isRefreshing(model.templates.data)
-	const isFailed = AsyncData.isFailure(model.templates.data)
+	const failure = model.templates.data._tag === "Failure" ? model.templates.data.error : null
 	const selected = selectedOf(model)
 	const isSheet = inputs.isBelowLg === true
 	const panel = (template: NonNullable<typeof selected>) =>
-		detailPanel(h, model, template, metrics === null ? undefined : readiness.get(template.id), inputs.context.timeZone)
+		detailPanel(
+			h,
+			model,
+			template,
+			metrics === null ? undefined : readiness.get(template.id),
+			inputs.context.timeZone,
+		)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))],
 		[
 			dashboardPage(
 				h,
 				{
-					titleContent:
-						isLoaded && metrics !== null ? summary(h, readyCount, listed.length) : undefined,
-					actions: button(
-						h,
-						{ variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedBack())] },
+					titleContent: h.div(
+						[h.Class("flex flex-col gap-1")],
 						[
-							icon(h, "ArrowLeftIcon", {
-								attributes: [h.DataAttribute("icon", "inline-start")],
-							}),
-							"Back to dashboards",
+							h.h1([h.Class(cn(pageTitleStyles, "leading-8"))], ["Templates"]),
+							...(isLoaded && metrics !== null ? [summary(h, readyCount, listed.length)] : []),
 						],
 					),
 					fill: true,
 				},
 				[
-					isFailed
-						? failed(h, model)
+					failure !== null
+						? failed(h, failure)
 						: h.div(
 								[h.Class("flex h-full min-h-0")],
 								[
@@ -114,23 +96,23 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 										],
 										[templateList(h, model, readiness)],
 									),
-									...(isSheet ? [] : [h.div(
-										[
-											h.Class(
-												"bg-background min-w-0 grow overflow-y-auto [--panel-surface:var(--background)]",
-											),
-										],
-										[
-											selected === null ? panelRestState(h) : panel(selected),
-										],
-									)]),
+									...(isSheet
+										? []
+										: [
+												h.div(
+													[
+														h.Class(
+															"bg-background min-w-0 grow overflow-y-auto [--panel-surface:var(--background)]",
+														),
+													],
+													[selected === null ? panelRestState(h) : panel(selected)],
+												),
+											]),
 								],
 							),
 				],
 			),
-			...(isSheet && selected !== null
-				? [panelSheet(h, model, panel(selected))]
-				: []),
+			...(isSheet && selected !== null ? [panelSheet(h, model, panel(selected))] : []),
 		],
 	)
 })
@@ -151,8 +133,18 @@ const panelSheet = (h: H, model: Model, content: Html): Html =>
 					h,
 					"sheet",
 					[
-						DialogView.dialogTitle(h, "sheet", PANEL_SHEET_ID, selectedOf(model)?.name ?? "Template"),
-						DialogView.dialogDescription(h, "sheet", PANEL_SHEET_ID, "What this template builds and what it needs."),
+						DialogView.dialogTitle(
+							h,
+							"sheet",
+							PANEL_SHEET_ID,
+							selectedOf(model)?.name ?? "Template",
+						),
+						DialogView.dialogDescription(
+							h,
+							"sheet",
+							PANEL_SHEET_ID,
+							"What this template builds and what it needs.",
+						),
 					],
 					"sr-only",
 				),

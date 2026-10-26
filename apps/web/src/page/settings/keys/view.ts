@@ -35,9 +35,18 @@ type H = HtmlBuilder<Message>
 const TYPE_FILTER_LABELS = { all: "All", api: "API", mcp: "MCP" } as const
 const STATUS_LABELS = { active: "Active", expired: "Expired", revoked: "Revoked" } as const
 
-/** Members may create MCP keys only. */
-const createKeyButton = (h: H, model: Model): Html => {
+/** Shown on the disabled create button when the session read failed. */
+const ROLE_UNKNOWN_REASON =
+	"Couldn't confirm your role, so creating keys is off. Reload the page to try again."
+
+/** Members may create MCP keys only; an unconfirmed role creates none. */
+const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 	const plus = icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] })
+	if (isRoleUnknown)
+		return h.span(
+			[h.Class("inline-flex"), h.Title(ROLE_UNKNOWN_REASON)],
+			[button(h, { size: "sm", isDisabled: true }, [plus, "Create MCP key"])],
+		)
 	if (!model.isAdmin)
 		return button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedCreateKey())] }, [
 			plus,
@@ -100,7 +109,11 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 				onChange: (type) => Message.ClickedTypeFilter({ type }),
 				options: (["all", "api", "mcp"] as const).map((type) => ({
 					value: type,
-					label: `${TYPE_FILTER_LABELS[type]} · ${counts.typeCounts[type]}`,
+					// Counts only once the keys are in: a loading "· 0" reads as an empty org.
+					label:
+						model.apiKeys === null
+							? TYPE_FILTER_LABELS[type]
+							: `${TYPE_FILTER_LABELS[type]} · ${counts.typeCounts[type]}`,
 				})),
 			}),
 			h.submodel({
@@ -117,14 +130,18 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 					size: "sm",
 					className: "w-36",
 					renderValue: () => [STATUS_LABELS[model.statusFilter]],
-					renderItem: (option) => [
-						option.label,
-						" · ",
-						String(
-							new Map<string, number>(Object.entries(counts.statusCounts)).get(option.value) ??
-								0,
-						),
-					],
+					renderItem: (option) =>
+						model.apiKeys === null
+							? [option.label]
+							: [
+									option.label,
+									" · ",
+									String(
+										new Map<string, number>(Object.entries(counts.statusCounts)).get(
+											option.value,
+										) ?? 0,
+									),
+								],
 					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
 			}),
@@ -183,22 +200,31 @@ const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
 		},
 		[
 			panel(h, {}, [
-				model.apiKeys === null
-					? h.div(
-							[],
-							[
-								skeletonList(h, {
-									rows: 1,
-									rowClassName: "h-[44px]",
-									gap: "2",
-									className: "p-4",
-								}),
-								skeletonSlowNote(h, "px-4 pb-3"),
-							],
-						)
-					: rows.length === 0
-						? sectionNote(h, "No phones have Home Screen widgets for this organization.")
-						: devicesTable(h, model, rows, inputs),
+				model.isLoadFailed && model.apiKeys === null
+					? errorState(h, {
+							variant: "row",
+							failure: SYNC_UNAVAILABLE,
+							title: "Couldn't load devices",
+							// The keys error above offers Try again; it reloads both lists.
+							onRetry: Message.ClickedRetryLoad(),
+							hidesRetryButton: true,
+						})
+					: model.apiKeys === null
+						? h.div(
+								[],
+								[
+									skeletonList(h, {
+										rows: 1,
+										rowClassName: "h-[44px]",
+										gap: "2",
+										className: "p-4",
+									}),
+									skeletonSlowNote(h, "px-4 pb-3"),
+								],
+							)
+						: rows.length === 0
+							? sectionNote(h, "No phones have Home Screen widgets for this organization.")
+							: devicesTable(h, model, rows, inputs),
 			]),
 		],
 	)
@@ -207,8 +233,8 @@ const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
 export const description = "Keys for the Maple API and MCP clients. Ingest keys live in Ingestion."
 
 /** The tab's primary action, drawn in the settings page header beside the `<h1>`. */
-export const headerActions = Submodel.defineView<Model, Message, Readonly<{}>>((model, _inputs, h) =>
-	createKeyButton(h, model),
+export const headerActions = Submodel.defineView<Model, Message, Readonly<{ isRoleUnknown: boolean }>>(
+	(model, inputs, h) => createKeyButton(h, model, inputs.isRoleUnknown),
 )
 
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
@@ -258,7 +284,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				]),
 			],
 		),
-		...(model.isLoadFailed && model.apiKeys === null ? [] : [mobileDevicesSection(h, model, inputs)]),
+		mobileDevicesSection(h, model, inputs),
 		oauthPointer(h),
 		apiReference(h, model),
 		h.submodel({

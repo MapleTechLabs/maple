@@ -33,7 +33,7 @@ import {
 	formatErrorRate,
 	formatLatency,
 	formatNumber,
-	formatPercent,
+	formatPercentColumn,
 } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
@@ -110,11 +110,11 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 	const label =
 		row.failed > 0 && (rated || clientShare === 0)
 			? {
-					text: `${formatPercent(failedShare)} ${failedWord}`,
+					text: `${formatPercentColumn(failedShare)} ${failedWord}`,
 					className: rated ? TONE_TEXT.crit : undefined,
 				}
 			: clientShare > 0
-				? { text: `${formatPercent(clientShare)} 4xx`, className: undefined }
+				? { text: `${formatPercentColumn(clientShare)} 4xx`, className: undefined }
 				: { text: row.service === "cloudRun" ? "no errors" : "all ok", className: undefined }
 	const ok = row.requests - row.clientErrors - row.failed
 	return h.div(
@@ -244,7 +244,7 @@ export const servicesTable = (
 						),
 						h.div(
 							[h.Class(cn("hidden w-[64px] md:block", NUMBER, BAR_VALUE_TONE[cpuLevel]))],
-							[row.cpuP95 === undefined ? EMPTY_VALUE : formatPercent(row.cpuP95)],
+							[row.cpuP95 === undefined ? EMPTY_VALUE : formatPercentColumn(row.cpuP95)],
 						),
 					],
 				)
@@ -410,7 +410,7 @@ const quotaCell = (h: H, value: number | undefined, hidden?: string): Html =>
 		[
 			h.span(
 				[h.Class(cn("font-mono text-xs tabular-nums", quotaText(value)))],
-				[value === undefined ? EMPTY_VALUE : formatPercent(value)],
+				[value === undefined ? EMPTY_VALUE : formatPercentColumn(value)],
 			),
 			meter(h, { value: value ?? 0, tone: quotaTone(value ?? 0), className: "w-14" }),
 		],

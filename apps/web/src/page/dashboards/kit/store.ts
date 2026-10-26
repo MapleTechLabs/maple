@@ -64,7 +64,7 @@ export const readDocument = (orgId: string, id: string) =>
 			onNone: () =>
 				Effect.fail(
 					new DashboardUnreadableError({
-						message: "This dashboard hasn’t finished loading — try again in a moment",
+						message: "This dashboard hasn’t finished loading. Try again in a moment",
 						rawId: id,
 					}),
 				),

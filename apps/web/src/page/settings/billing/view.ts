@@ -21,6 +21,8 @@ export type ViewInputs = Readonly<{
 	/** The settings page's `billingCustomerAtom`. */
 	customer: AsyncData.AsyncData<BillingCustomer, LoadFailure>
 	adminName: string | null
+	/** The session says the viewer is a member; the admin-only notice shows only then. */
+	isKnownMember: boolean
 	nowMs: number
 	timeZone: string
 }>
@@ -28,26 +30,20 @@ export type ViewInputs = Readonly<{
 /** Billing, spend-first: this cycle, its usage and caps, the plan, invoices and details. */
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const notice = adminOnlyNotice(h, {
-		isAdmin: model.isAdmin,
+		isKnownMember: inputs.isKnownMember && !model.isAdmin,
 		subject: "billing",
 		adminName: inputs.adminName,
 	})
 	// Every spend view derives from the customer; details and invoices load on their own.
-	if (AsyncData.isFailure(inputs.customer))
+	const accountFailure = accountFailureOf(model, inputs.customer)
+	if (accountFailure !== null)
 		return settingsSections(h, [
 			...notice,
-			...AsyncData.matchDataSplitEmpty(inputs.customer, {
-				onIdle: () => [],
-				onLoading: () => [],
-				onData: () => [],
-				onFailure: (failure) => [
-					errorState(h, {
-						variant: "row",
-						failure,
-						title: "Couldn't load your billing account",
-						onRetry: Message.ClickedRetryCustomer(),
-					}),
-				],
+			errorState(h, {
+				variant: "row",
+				failure: accountFailure,
+				title: "Couldn't load your billing account",
+				onRetry: Message.ClickedRetryCustomer(),
 			}),
 			detailsSection(h, model),
 			invoicesSection(h, model, inputs.timeZone),
@@ -129,6 +125,17 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 })
 
 type H = HtmlBuilder<Message>
+
+/** The customer, usage or plans failed: every spend view derives from all three, so none can resolve. */
+const accountFailureOf = (
+	model: Model,
+	customer: AsyncData.AsyncData<BillingCustomer, LoadFailure>,
+): LoadFailure | null => {
+	if (AsyncData.isFailure(customer)) return customer.error
+	if (AsyncData.isFailure(model.usage)) return model.usage.error
+	if (AsyncData.isFailure(model.plans)) return model.plans.error
+	return null
+}
 
 /** `CheckoutConfirmingPanel layout="row"` and `CheckoutTimedOutNotice` above the tab. */
 const checkoutReturnPanel = (h: H, model: Model): ReadonlyArray<Html> => {

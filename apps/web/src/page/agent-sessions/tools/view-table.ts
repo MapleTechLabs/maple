@@ -1,4 +1,3 @@
-import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { formatErrorRate } from "@maple/ui/lib/error-rate"
 import { cn } from "@maple/ui/lib/utils"
 import {
@@ -178,7 +177,8 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 				h.Class(
 					cn(
 						"hidden w-[76px] shrink-0 text-right font-mono text-xs tabular-nums @min-[640px]/panel:block",
-						row.errors > 0 ? TONE_TEXT.crit : "text-muted-foreground/60",
+						// The count takes the rate's tone, so one threshold colours both.
+						row.errors > 0 ? errorTone(row.errorRate).text : "text-muted-foreground/60",
 					),
 				),
 			],

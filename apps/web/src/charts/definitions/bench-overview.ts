@@ -1,5 +1,7 @@
 import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
+import { niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
 import {
+	axisTickFormatter,
 	formatBucketLabel,
 	formatErrorRate,
 	formatLatency,
@@ -56,7 +58,10 @@ const yScale = (domain: readonly [number, number], format: (value: number) => st
 	scale: scaleLinear().domain(domain),
 	nice,
 	grid: true,
-	axis: { line: false, ticks: { size: 0, padding: 6, format } },
+	axis: {
+		line: false,
+		ticks: { size: 0, padding: 6, format: (value: number) => (value === 0 ? "0" : format(value)) },
+	},
 })
 
 /** The series a chart draws, in paint order, with the per-second rows throughput reads. */
@@ -84,7 +89,7 @@ const seriesOf = (spec: BenchSpec, rateLabel: string): ReadonlyArray<Series> => 
 		case "ErrorRate":
 			return [
 				{
-					label: "Error Rate",
+					label: "Error rate",
 					key: "errorRate",
 					color: color("error"),
 					dashed: false,
@@ -133,10 +138,14 @@ const yOf = (spec: BenchSpec, rows: ReadonlyArray<Row>, rateLabel: string) => {
 	switch (spec.chart) {
 		case "Throughput":
 			return yScale([0, peak("throughput")], (value) => formatThroughput(value, rateLabel), true)
-		case "ErrorRate":
-			return yScale([0, Math.min(1, Math.max(peak("errorRate") * 1.2, 0.01))], formatErrorRate, false)
-		case "Latency":
-			return yScale([0, peak("p99LatencyMs")], formatLatency, true)
+		case "ErrorRate": {
+			const domain = [0, Math.min(1, Math.max(peak("errorRate") * 1.2, 0.01))] as const
+			return yScale(domain, axisTickFormatter("percent", domain), false)
+		}
+		case "Latency": {
+			const domain = niceLinearDomain([0, peak("p99LatencyMs")])
+			return yScale(domain, axisTickFormatter("duration_ms", domain), true)
+		}
 	}
 }
 

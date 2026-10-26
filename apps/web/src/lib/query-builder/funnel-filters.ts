@@ -200,7 +200,7 @@ export function parseProductEventsFilterClause(text: string): FunnelFilterParse<
 		const field = productEventsFilterField(clause.key)
 		if (field === undefined) {
 			const known = FUNNEL_POPULATION_FILTER_FIELDS.map(productEventsFilterKey).join(", ")
-			return { ok: false, error: `"${clause.key}" is not a filter key — use one of ${known}` }
+			return { ok: false, error: `"${clause.key}" is not a filter key. Use one of ${known}` }
 		}
 		if (field in filters) return { ok: false, error: `"${productEventsFilterKey(field)}" appears twice` }
 		filters[field] = clause.value

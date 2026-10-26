@@ -29,6 +29,10 @@ export type ErrorStateOptions<M> = Readonly<{
 	variant?: "panel" | "row" | "inline" | "quiet"
 	/** Overrides the glyph `failureKind` derives from the failure. */
 	kind?: FailureKind
+	/** A sentence after the message, e.g. what the failure leaves untouched. */
+	note?: string
+	/** A way forward that does not need the load, drawn beside Try again. */
+	secondaryAction?: Readonly<{ label: string; onClick: M }>
 	className?: string
 }>
 
@@ -353,9 +357,13 @@ export const MountNetworkAutoRetry = Mount.defineStream("MountNetworkAutoRetry",
 const RETRY_SOON_ENDING =
 	/\s*(?:Retry|Try again)(?: in a few seconds| in a moment| shortly| when you're ready)?(?:, or reload if the problem continues)?\.$/
 
-/** An auto-retrying failure's message: its own cause, then one shared "Retrying automatically…". */
-export const autoRetryMessage = (message: string): string =>
-	`${message.replace(RETRY_SOON_ENDING, "")} Retrying automatically…`
+/** An auto-retrying failure's message: its own cause, an optional note, then "Retrying automatically…". */
+export const autoRetryMessage = (message: string, note?: string): string =>
+	[
+		message.replace(RETRY_SOON_ENDING, ""),
+		...(note === undefined ? [] : [note]),
+		"Retrying automatically…",
+	].join(" ")
 
 export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>): Html => {
 	const { failure } = options
@@ -376,8 +384,14 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 				]
 			: []
 	const ownMessage = options.message ?? failureMessage(failure)
-	const message = autoRetry.length > 0 ? autoRetryMessage(ownMessage) : ownMessage
-	const retry = (variant: "ghost" | "outline", className?: string) =>
+	const message =
+		autoRetry.length > 0
+			? autoRetryMessage(ownMessage, options.note)
+			: options.note === undefined
+				? ownMessage
+				: `${ownMessage} ${options.note}`
+	// `className` styles the Try again button itself; `retry`'s styles the button row.
+	const retryButtons = (variant: "ghost" | "outline", className?: string) =>
 		options.onRetry === undefined || !canRetry || options.hidesRetryButton === true
 			? []
 			: [
@@ -385,6 +399,22 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 						"Try again",
 					]),
 				]
+	const { secondaryAction } = options
+	// Drawn in the row's own variant, so it reads as a peer button beside Try again.
+	const secondary = (variant: "ghost" | "outline") =>
+		secondaryAction === undefined
+			? []
+			: [
+					button(h, { size: "sm", variant, attributes: [h.OnClick(secondaryAction.onClick)] }, [
+						secondaryAction.label,
+					]),
+				]
+	const retry = (variant: "ghost" | "outline", className?: string) => {
+		const buttons = [...retryButtons(variant), ...secondary(variant)]
+		return buttons.length === 0
+			? []
+			: [h.div([h.Class(cn("flex flex-wrap items-center gap-2", className))], buttons)]
+	}
 	const variant = options.variant ?? "panel"
 	const kind = options.kind ?? failureKind(failure)
 	const kindAttribute = h.DataAttribute("failure-kind", kind)
@@ -403,7 +433,7 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 					[h.Class("font-prose text-xs text-muted-foreground")],
 					[heading, h.span([h.Class("sr-only")], [`. ${message}`])],
 				),
-				...retry(
+				...retryButtons(
 					"ghost",
 					"h-6 px-2 font-prose text-xs text-muted-foreground hover:text-foreground sm:text-xs",
 				),

@@ -7,7 +7,7 @@ import { copyableField } from "../../../ui/copyable-field"
 import { badge } from "../../../ui/display"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
-import { settingsSection } from "../kit/section"
+import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -191,7 +191,7 @@ export const apiReference = (h: H, model: Model): Html =>
 					[
 						h.span([h.Class("text-muted-foreground w-20 shrink-0 text-xs")], ["Base URL"]),
 						h.div(
-							[h.Class("min-w-0 max-w-md flex-1")],
+							[h.Class("min-w-0 flex-1")],
 							[
 								copyableField(h, {
 									id: "keys-base-url",
@@ -211,16 +211,18 @@ export const apiReference = (h: H, model: Model): Html =>
 
 export const oauthPointer = (h: H): Html =>
 	h.p(
-		[h.Class("text-muted-foreground w-full rounded-md border border-dashed px-4 py-3 text-sm")],
+		[
+			h.Class(
+				"w-full rounded-md border border-dashed px-4 py-3 font-prose text-sm text-muted-foreground",
+			),
+		],
 		[
 			"Clients signed in with OAuth don't use keys. See and revoke them in",
 			" ",
 			h.a(
 				[
 					h.Href("/settings?tab=mcp"),
-					h.Class(
-						"text-foreground inline-flex items-center gap-1 underline-offset-2 hover:underline",
-					),
+					h.Class(cn("inline-flex items-center gap-1", INLINE_LINK_CLASS)),
 				],
 				["MCP", icon(h, "ArrowRightIcon", { size: 12 }), "Connected clients"],
 			),

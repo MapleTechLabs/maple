@@ -14,7 +14,7 @@ import * as Menu from "../../../ui/menu"
 import * as Select from "../../../ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
-import { memberDisplayName } from "../kit/members"
+import { memberDisplayName, otherAdminName } from "../kit/members"
 import { type InvitationRow, type MemberRow, Message, type Model, OrgRole } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -43,9 +43,9 @@ const FetchAdminName = Command.define("FetchMembersAdminName", {
 	messages: [Message.CompletedFetchAdminName],
 	execute: currentClerkOrganization.pipe(
 		Effect.flatMap((organization) =>
-			clerkTry("", () => organization.getMemberships({ role: ["org:admin"], pageSize: 1 })),
+			clerkTry("", () => organization.getMemberships({ role: ["org:admin"], pageSize: 2 })),
 		),
-		Effect.map((page) => memberDisplayName(page.data[0]?.publicUserData) ?? null),
+		Effect.map((page) => otherAdminName(page.data, window.Clerk?.user?.id)),
 		Effect.orElseSucceed(() => null),
 		Effect.map((name) => Message.CompletedFetchAdminName({ name })),
 	),

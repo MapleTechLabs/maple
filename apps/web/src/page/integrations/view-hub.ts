@@ -1,6 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import type { LoadFailure } from "../../data/load-failure"
 import { button } from "../../ui/button"
+import { errorState } from "../../ui/error-state"
 import { badge } from "../../ui/display"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
@@ -19,6 +21,7 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { STATUS_NAMES } from "./update-status"
 import { entryPlate } from "./view-entry"
 
 // `IntegrationsSummary` and `IntegrationCatalog`.
@@ -82,23 +85,18 @@ const connectedRow = (
 					),
 				],
 				[
-					statusDot(h, {
-						tone:
-							connected !== null
-								? HEALTH_TONE[connected.health]
-								: overview.kind === "unavailable" && overview.reason === "not-configured"
-									? "neutral"
-									: HEALTH_TONE.unavailable,
-					}),
-					h.span(
-						[h.Class("truncate text-xs")],
-						[
-							connected?.stateLabel ??
-								(overview.kind === "unavailable" && overview.reason === "not-configured"
-									? "Not configured"
-									: "Couldn't check status"),
-						],
-					),
+					// A failed read says so once above the list; the row keeps a muted "Unknown".
+					...(connected === null && overview.kind === "unavailable" && overview.reason === "failed"
+						? [h.span([h.Class("text-xs text-muted-foreground")], ["Unknown"])]
+						: [
+								statusDot(h, {
+									tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
+								}),
+								h.span(
+									[h.Class("truncate text-xs")],
+									[connected?.stateLabel ?? "Not configured"],
+								),
+							]),
 				],
 			),
 			...(connected?.stat
@@ -203,6 +201,13 @@ const skeletonRow = (h: H): Html =>
 		],
 	)
 
+/** The first failed status read, for the one error line above the connected list. */
+const firstStatusFailure = (model: Model): LoadFailure | null =>
+	STATUS_NAMES.reduce<LoadFailure | null>((found, name) => {
+		const { data } = model.statuses[name]
+		return found ?? (data._tag === "Failure" || data._tag === "Stale" ? data.error : null)
+	}, null)
+
 export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html => {
 	const rows = HUB_CATALOG.map((entry) => ({
 		entry,
@@ -217,6 +222,10 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 		overview !== null && overview.kind === "available" ? [{ entry, overview }] : [],
 	)
 	const loading = rows.filter(({ overview }) => overview === null)
+	const hasFailedRow = connected.some(
+		({ overview }) => overview.kind === "unavailable" && overview.reason === "failed",
+	)
+	const statusFailure = hasFailedRow ? firstStatusFailure(model) : null
 	const shelves = INTEGRATION_CATEGORIES.map((category) => ({
 		...category,
 		entries: available
@@ -233,7 +242,7 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 			h.p(
 				[h.Class("font-prose text-muted-foreground text-sm")],
 				[
-					"Cloudflare, Prometheus, GitHub and the other integrations that bring data in are under ",
+					"Where Maple sends alerts and chat: notification and chat destinations. Integrations that bring data in, like Cloudflare, Prometheus and GitHub, are under ",
 					h.a(
 						[
 							h.Href(hrefOf(AppRoute.Sources())),
@@ -249,21 +258,28 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 						h.section(
 							[h.Class("flex flex-col gap-2")],
 							[
-								h.div(
-									[h.Class("flex min-h-7 items-center justify-between gap-3")],
-									[
-										eyebrow(h, { variant: "label" }, ["Connected"]),
-										...(connected.some(
-											({ overview }) =>
-												overview.kind === "unavailable" &&
-												overview.reason === "failed",
-										)
-											? [
+								// Unknown status must not read as healthy, so the header goes neutral.
+								eyebrow(h, { variant: "label" }, [
+									statusFailure === null ? "Connected" : "Integrations",
+								]),
+								...(statusFailure === null
+									? []
+									: [
+											h.div(
+												[h.Class("flex items-center gap-3")],
+												[
+													errorState(h, {
+														failure: statusFailure,
+														title: "Couldn't check integration status",
+														variant: "quiet",
+														hidesRetryButton: true,
+														onRetry: Message.ClickedRetryFailedStatuses(),
+													}),
 													button(
 														h,
 														{
-															size: "xs",
 															variant: "outline",
+															size: "sm",
 															attributes: [
 																h.OnClick(
 																	Message.ClickedRetryFailedStatuses(),
@@ -272,10 +288,9 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 														},
 														["Try again"],
 													),
-												]
-											: []),
-									],
-								),
+												],
+											),
+										]),
 								panel(h, { className: "divide-y divide-border/60 border-border/60" }, [
 									...connected.map(({ entry, overview }) =>
 										connectedRow(h, entry, overview, onSelect),

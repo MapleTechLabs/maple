@@ -163,7 +163,16 @@ const sortableHeader = (h: H, column: Column, sort: Sort): Html => {
 			column.header,
 			...(column.subLabel === undefined
 				? []
-				: [h.span([h.Class("text-[10px] font-normal text-muted-foreground/70")], [column.subLabel])]),
+				: [
+						h.span(
+							[
+								h.Class(
+									"ml-0.5 whitespace-nowrap text-[10px] font-normal text-muted-foreground/70",
+								),
+							],
+							[column.subLabel],
+						),
+					]),
 			icon(h, "ArrowUpDownIcon", {
 				size: 10,
 				className: cn(
@@ -398,7 +407,7 @@ const TOOL_CHIP = "border-severity-warn/40 bg-severity-warn/10 text-severity-war
 
 /** Tool failures apart from turn failures; an unclassified failure only when it is all there is. */
 const errorChips = (h: H, row: DisplayRow): Html => {
-	if (row.errorSpanCount === 0) return h.span([h.Class("text-xs text-muted-foreground/50")], [EMPTY_VALUE])
+	if (row.errorSpanCount === 0) return emptyCell(h)
 	const classified = row.toolErrorCount + row.turnErrorCount
 	const other = row.errorSpanCount - classified
 	return h.div(
@@ -433,9 +442,31 @@ const errorChips = (h: H, row: DisplayRow): Html => {
 
 const CELL_CLASS = "p-2 whitespace-normal leading-normal"
 
+/** The first service and a "+N" for the rest, like the Model column, so rows keep one height. */
+const servicesCell = (h: H, services: ReadonlyArray<string>): Html | null => {
+	const first = servicePills(h, services.slice(0, 1))
+	return first === null
+		? null
+		: h.div(
+				[
+					h.Class("flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"),
+					h.Title(services.join(", ")),
+				],
+				[
+					first,
+					...(services.length > 1
+						? [h.span([h.Class("shrink-0 tabular-nums")], ["+", String(services.length - 1)])]
+						: []),
+				],
+			)
+}
+
+/** A cell with nothing to report reads as a muted dash, never blank. */
+const emptyCell = (h: H): Html => h.span([h.Class("text-xs text-muted-foreground/50")], [EMPTY_VALUE])
+
 const cellsOf = (h: H, row: DisplayRow, context: RowContext): ReadonlyArray<Html | null> => [
 	sessionCell(h, row, context),
-	row.serviceNames.length === 0 ? null : servicePills(h, row.serviceNames),
+	servicesCell(h, row.serviceNames),
 	modelCell(h, row, context),
 	hint(h, "font-mono text-xs tabular-nums", [formatSessionDuration(row.durationMs)]),
 	workCount(h, "PixelSparkleIcon", "text-chart-ai-inference", row.llmCalls),
@@ -450,7 +481,7 @@ const sessionRow = (h: H, row: DisplayRow, index: number, context: RowContext): 
 	return tableRow(
 		h,
 		cellsOf(h, row, context).map((cell, column) =>
-			tableCell(h, cell === null ? [] : [cell], cn(CELL_CLASS, COLUMNS[column]?.responsive)),
+			tableCell(h, [cell ?? emptyCell(h)], cn(CELL_CLASS, COLUMNS[column]?.responsive)),
 		),
 		cn("cursor-pointer hover:bg-muted/50", ROW_LIFT_TOOLTIPS),
 		[

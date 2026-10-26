@@ -195,10 +195,14 @@ const IRREGULAR_PARTICIPLE = new Map([
 const participle = (verb: string): string =>
 	IRREGULAR_PARTICIPLE.get(verb) ?? (verb.endsWith("e") ? `${verb.slice(0, -1)}ing` : `${verb}ing`)
 
-/** What a running call is doing: `Searching Traces`, `Checking System Health`. */
+/** A title-cased word lowered for sentence case; acronyms (`SQL`, `CI`) keep their capitals. */
+const lowerWord = (word: string): string =>
+	word.length > 1 && word === word.toUpperCase() ? word : word.toLowerCase()
+
+/** What a running call is doing, in sentence case: `Searching traces`, `Checking system health`. */
 export const toolActivity = (toolName: string): string => {
 	const label = toolLabel(toolName)
 	const [first = "", ...rest] = label.split(" ")
-	if (!LABEL_VERBS.has(first)) return `Checking ${label}`
-	return [participle(first), ...rest].join(" ")
+	if (!LABEL_VERBS.has(first)) return ["Checking", ...label.split(" ").map(lowerWord)].join(" ")
+	return [participle(first), ...rest.map(lowerWord)].join(" ")
 }
