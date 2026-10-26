@@ -2,11 +2,41 @@ import { UptimeMonitorId } from "@maple/domain"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { AlertDestinationRowSchema, AlertIncidentRowSchema } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
+import * as Chart from "../../../charts/chart"
+import { ChartRuntime } from "../../../charts/chart-runtime"
+import { ThemeColors } from "../../../charts/theme-colors"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 import * as CopyButton from "../../../ui/copy-button"
 
 // `/alerts/uptime/$monitorId`: one monitor, its recent checks and setup.
+
+/** The response-time chart's window. */
+export const UptimeWindow = Schema.Literals(["1h", "24h", "7d"])
+export type UptimeWindow = typeof UptimeWindow.Type
+
+/** `ServiceDetailTimeSeriesPoint`, the fields the latency chart and the KPIs read. */
+export const CheckPoint = Schema.Struct({
+	bucket: Schema.String,
+	errorRate: Schema.Number,
+	p50LatencyMs: Schema.Number,
+	p95LatencyMs: Schema.Number,
+	p99LatencyMs: Schema.Number,
+	totalCount: Schema.Number,
+	partial: Schema.Boolean,
+})
+export type CheckPoint = typeof CheckPoint.Type
+
+/** `UptimeCheckStats` (@maple/web-data/warehouse/uptime): the window's checks from their spans. */
+export const CheckStats = Schema.Struct({
+	points: Schema.Array(CheckPoint),
+	checks: Schema.Number,
+	failures: Schema.Number,
+	p50Ms: Schema.NullOr(Schema.Number),
+	p95Ms: Schema.NullOr(Schema.Number),
+	p99Ms: Schema.NullOr(Schema.Number),
+})
+export type CheckStats = typeof CheckStats.Type
 
 const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 
@@ -24,5 +54,10 @@ export const Model = Schema.Struct({
 	isChecking: Schema.Boolean,
 	/** The heartbeat's copy buttons, by snippet id. */
 	copies: Schema.Record(Schema.String, CopyButton.Model),
+	window: UptimeWindow,
+	stats: KeyedSchema(CheckStats, LoadFailure),
+	chart: Chart.Model,
+	chartRuntime: ChartRuntime,
+	themeColors: Schema.NullOr(ThemeColors),
 })
 export type Model = typeof Model.Type

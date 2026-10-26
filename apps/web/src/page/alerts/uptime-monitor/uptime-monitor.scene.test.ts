@@ -5,6 +5,7 @@ import {
 	displayValue,
 	expect as expectView,
 	given,
+	Mount,
 	role,
 	scene,
 	selector,
@@ -13,6 +14,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { destinationRow, incidentRow, NOW, ORG } from "../shared/test-rows"
 import type { UptimeMonitor } from "../shared/uptime-derive"
@@ -30,6 +32,8 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	(commands ?? []).map(({ name }) => name)
 const publicId = Schema.encodeSync(UptimeMonitorPublicId)
 const incidentAlert = selector('[data-slot="alert"]')
+const themeResolved = () =>
+	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
 const opened = (monitor: UptimeMonitor, extra: ReadonlyArray<Message> = []): Model => {
 	const entered = init(
@@ -59,6 +63,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(entry.model),
+			themeResolved(),
 			expectView(text("Monitor not found")).toExist(),
 		)
 	})
@@ -79,6 +84,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(monitor, [Message.UpdatedIncidents({ orgId: ORG, rows: [otherRule, incident] })])),
+			themeResolved(),
 			// All of it sits in one alert block, not a panel that collapses in the page column.
 			expectView(within(incidentAlert, text("Returning 503 since 11:54:00 AM"))).toExist(),
 			expectView(within(incidentAlert, text("Service Unavailable"))).toExist(),
@@ -104,6 +110,7 @@ describe("uptime monitor page", () => {
 					}),
 				]),
 			),
+			themeResolved(),
 			expectView(incidentAlert).not.toExist(),
 			expectView(text("Open failing trace")).not.toExist(),
 			expectView(text("PagerDuty oncall")).toExist(),
@@ -114,10 +121,65 @@ describe("uptime monitor page", () => {
 		)
 	})
 
+	test("a probed monitor reads its last 24 hours of checks once it loads; a heartbeat reads none", () => {
+		const loadedAs = (monitor: UptimeMonitor) => {
+			const entered = init(
+				{ _tag: "AlertsUptimeMonitor", monitorId: publicId(monitor.id), search: {} },
+				context,
+			).model
+			return pageUpdate(
+				entered,
+				Message.CompletedFetchMonitor({
+					key: entered.monitor.key ?? "",
+					result: Result.succeed(monitor),
+				}),
+			)
+		}
+		const http = loadedAs(httpMonitor())
+		expect(names(http.commands)).toEqual(["FetchUptimeCheckStats"])
+		expect(http.model.window).toBe("24h")
+		expect(names(loadedAs(heartbeatMonitor()).commands)).toEqual([])
+	})
+
+	test("picking another window reads it; picking the same one again reads nothing", () => {
+		const picked = pageUpdate(opened(httpMonitor()), Message.PickedWindow({ window: "7d" }))
+		expect(names(picked.commands)).toEqual(["FetchUptimeCheckStats"])
+		expect(names(pageUpdate(picked.model, Message.PickedWindow({ window: "7d" })).commands)).toEqual([])
+	})
+
+	test("the figures read the window's checks: uptime, how many failed, and P50, P95 and P99", () => {
+		const model = opened(httpMonitor())
+		const withStats = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					points: [],
+					checks: 96,
+					failures: 2,
+					p50Ms: 121,
+					p95Ms: 310,
+					p99Ms: 884,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withStats),
+			themeResolved(),
+			expectView(text("97.92%")).toExist(),
+			expectView(text("96 checks, 2 failed")).toExist(),
+			expectView(text("121 ms")).toExist(),
+			expectView(text("310 ms")).toExist(),
+			expectView(text("884 ms")).toExist(),
+		)
+	})
+
 	test("before destinations sync, the setup counts them instead of calling them unavailable", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(httpMonitor())),
+			themeResolved(),
 			expectView(text("1 destination")).toExist(),
 			expectView(text(/Unavailable destination/u)).not.toExist(),
 		)
@@ -127,6 +189,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(downMonitor())),
+			themeResolved(),
 			expectView(text("503")).toExist(),
 			expectView(text("503 Service Unavailable")).not.toExist(),
 			expectView(text("2 failed checks in a row")).toExist(),
@@ -137,6 +200,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(heartbeatMonitor())),
+			themeResolved(),
 			expectView(text("Response time")).not.toExist(),
 			expectView(text("every 1d, 30m grace")).toExist(),
 		)
@@ -147,6 +211,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(monitor)),
+			themeResolved(),
 			expectView(displayValue("https://ingest.maple.dev/uptime/hb/abc123")).toExist(),
 			expectView(
 				displayValue("curl -fsS -m 10 --retry 3 https://ingest.maple.dev/uptime/hb/abc123/fail"),
@@ -188,6 +253,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(monitor)),
+			themeResolved(),
 			expectView(role("button", { name: "Pause" })).toExist(),
 		)
 		const pausing = pageUpdate(opened(monitor), Message.ClickedToggle())

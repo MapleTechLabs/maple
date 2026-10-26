@@ -1,21 +1,38 @@
+import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import { cn } from "@maple/ui/lib/utils"
 import { formatAlertTime } from "@maple/web-data/alerts/form-utils"
+import { Option } from "effect"
+import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import * as Chart from "../../../charts/chart"
+import { ChartSpec } from "../../../charts/chart-spec"
+import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
+import { fixedMetricLegend, latencySeries } from "../../../charts/fixed-metric-legend"
+import { LATENCY_SERIES } from "../../../charts/fixed-metric-series"
+import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
+import { chartSkeleton } from "../../../ui/chart-skeleton"
+import { errorState } from "../../../ui/error-state"
+import { segmentedSelect } from "../../../ui/segmented-select"
+import { statRail, statRailItem } from "../../kit/stat-rail"
+import { isoMs } from "../shared/time"
 import * as CopyButton from "../../../ui/copy-button"
 import { copyableField } from "../../../ui/copyable-field"
 import { eyebrow } from "../../../ui/eyebrow"
 import { panel, panelHeader } from "../../../ui/panel"
 import { traceHref, uptimeTracesHref, UPTIME_SERVICE } from "../shared/uptime-commands"
 import {
+	displayStatus,
 	formatEvery,
 	formatMs,
 	formatShare,
-	p95,
+	formatSpan,
+	latencyPercentiles,
+	STATUS_TONE,
 	type UptimeMonitor,
 	uptimeShare,
 } from "../shared/uptime-derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { CheckPoint, CheckStats, Model, UptimeWindow } from "./model"
 import { uptimePanelBody } from "../shared/uptime-view"
 
 // The monitor page's panels: response time, the checks list and the side panels.
@@ -34,51 +51,254 @@ const fact = (h: H, label: string, value: Html | string, valueClass?: string): H
 		],
 	)
 
-/** One bar per recent check, height by duration; failed checks in the destructive colour. */
-export const responseTimePanel = (h: H, monitor: UptimeMonitor): Html => {
-	const recent = monitor.state.recent
-	const max = Math.max(1, ...recent.map((check) => check.duration_ms ?? 0))
+export const CHART_TOKENS = [...LATENCY_SERIES.map((entry) => entry.token), "--border", "--background"]
+
+const WINDOWS: ReadonlyArray<{ value: UptimeWindow; label: string }> = [
+	{ value: "1h", label: "1h" },
+	{ value: "24h", label: "24h" },
+	{ value: "7d", label: "7d" },
+]
+
+const WINDOW_LABEL = { "1h": "last hour", "24h": "last 24 hours", "7d": "last 7 days" } as const
+
+const STATUS_WORD = {
+	up: "Up",
+	down: "Down",
+	degraded: "Degraded",
+	pending: "Pending",
+	paused: "Paused",
+} as const
+
+export type ChartContext = Readonly<{ theme: ThemeColors; timeZone: string; nowMs: number }>
+
+const statsOf = (model: Model): Option.Option<CheckStats> => AsyncData.getData(model.stats.data)
+
+/** `3m ago`. */
+const ago = (nowMs: number, atMs: number): string => `${formatSpan(nowMs - atMs)} ago`
+
+/** The figures over the page: status, the last check, uptime and the window's percentiles. */
+export const kpiRail = (
+	h: H,
+	model: Model,
+	monitor: UptimeMonitor,
+	nowMs: number,
+	timeZone: string,
+): Html => {
+	const status = displayStatus(monitor)
+	const changed = monitor.state.status_changed_at
+	const last = monitor.state.last_check
+	const isHeartbeat = monitor.kind === "heartbeat"
+	const statusItem = statRailItem(h, {
+		eyebrow: "Status",
+		value: STATUS_WORD[status],
+		tone: STATUS_TONE[status],
+		compact: true,
+		subline:
+			changed === null || status === "paused" || status === "pending"
+				? `Every ${formatEvery(monitor.interval_seconds)}`
+				: `for ${formatSpan(nowMs - isoMs(changed))}`,
+	})
+	const lastItem = isHeartbeat
+		? statRailItem(h, {
+				eyebrow: "Last ping",
+				value:
+					monitor.state.last_ping_at === null
+						? "None yet"
+						: ago(nowMs, isoMs(monitor.state.last_ping_at)),
+				compact: true,
+				subline:
+					monitor.state.last_ping_at === null
+						? "Waiting for the first ping"
+						: formatAlertTime(monitor.state.last_ping_at, timeZone),
+			})
+		: statRailItem(h, {
+				eyebrow: "Last checked",
+				value: last === null ? "Not yet" : ago(nowMs, isoMs(last.at)),
+				tone: last !== null && !last.ok ? "crit" : "neutral",
+				compact: true,
+				subline:
+					last === null
+						? "The first check runs shortly"
+						: [
+								last.status_code === null
+									? last.ok
+										? "Passed"
+										: "Failed"
+									: String(last.status_code),
+								last.duration_ms === null ? "" : ` in ${formatMs(last.duration_ms)}`,
+							].join(""),
+			})
+	if (isHeartbeat) {
+		const share = uptimeShare(monitor.state.recent)
+		return statRail(h, { columns: 3 }, [
+			statusItem,
+			lastItem,
+			statRailItem(h, {
+				eyebrow: "Uptime",
+				value: formatShare(share),
+				tone: share !== null && share < 1 ? "warn" : "neutral",
+				compact: true,
+				subline: `Over the last ${monitor.state.recent.length} checks`,
+			}),
+		])
+	}
+	// The window's figures from the check spans; the recent ring until they arrive.
+	const stats = statsOf(model)
+	const recent = latencyPercentiles(monitor.state.recent)
+	const figures = Option.match(stats, {
+		onNone: () => ({
+			share: uptimeShare(monitor.state.recent),
+			p50: recent.p50,
+			p95: recent.p95,
+			p99: recent.p99,
+			scope: `last ${monitor.state.recent.length} checks`,
+			subline: `last ${monitor.state.recent.length} checks`,
+		}),
+		onSome: (data) => ({
+			share: data.checks === 0 ? null : (data.checks - data.failures) / data.checks,
+			p50: data.p50Ms,
+			p95: data.p95Ms,
+			p99: data.p99Ms,
+			scope: WINDOW_LABEL[model.window],
+			subline:
+				data.checks === 0
+					? `No checks in the ${WINDOW_LABEL[model.window]}`
+					: `${data.checks.toLocaleString()} checks, ${data.failures.toLocaleString()} failed`,
+		}),
+	})
+	const percentile = (label: string, value: number | null) =>
+		statRailItem(h, {
+			eyebrow: label,
+			value: formatMs(value),
+			compact: true,
+			subline: figures.scope,
+		})
+	return statRail(h, { columns: 3, className: "lg:grid-cols-6 lg:divide-y-0" }, [
+		statusItem,
+		lastItem,
+		statRailItem(h, {
+			eyebrow: "Uptime",
+			value: formatShare(figures.share),
+			tone: figures.share !== null && figures.share < 1 ? "warn" : "neutral",
+			compact: true,
+			subline: figures.subline,
+		}),
+		percentile("P50", figures.p50),
+		percentile("P95", figures.p95),
+		percentile("P99", figures.p99),
+	])
+}
+
+const chartRows = (points: ReadonlyArray<CheckPoint>) =>
+	points.map((point) => ({
+		bucket: point.bucket,
+		p50LatencyMs: point.p50LatencyMs,
+		p95LatencyMs: point.p95LatencyMs,
+		p99LatencyMs: point.p99LatencyMs,
+		partial: point.partial,
+	}))
+
+const latencyChart = (h: H, model: Model, points: ReadonlyArray<CheckPoint>, context: ChartContext): Html =>
+	h.submodel({
+		slotId: "uptime-latency-chart",
+		model: model.chart,
+		view: FixedMetricChart.view,
+		viewInputs: {
+			chartId: "uptime-latency",
+			ariaLabel: "Response time percentiles",
+			spec: ChartSpec.FixedMetric({
+				chart: "Latency",
+				marginLeft: 64,
+				rows: chartRows(points),
+				colors: {
+					border: resolveColor(context.theme, "--border"),
+					background: resolveColor(context.theme, "--background"),
+					...Object.fromEntries(
+						LATENCY_SERIES.map((entry) => [entry.key, resolveColor(context.theme, entry.token)]),
+					),
+				},
+				perSecond: false,
+				timeZone: context.timeZone,
+				nowMs: context.nowMs,
+				gradientPrefix: "uptime-latency",
+				showTooltip: true,
+			}),
+			className: "h-full w-full aspect-auto",
+			legend: fixedMetricLegend(h, latencySeries(context.theme)),
+		},
+		toParentMessage: (message: Chart.Message) => Message.GotChartMessage({ message }),
+	})
+
+/** One segment per bucket under the chart: green when every check passed, red with any failure. */
+const availabilityStrip = (h: H, points: ReadonlyArray<CheckPoint>, timeZone: string): Html =>
+	h.div(
+		[h.Class("flex h-2 gap-px pl-16"), h.AriaHidden(true)],
+		points.map((point) => {
+			const failed = Math.round(point.errorRate * point.totalCount)
+			const label =
+				point.totalCount === 0
+					? `${formatAlertTime(point.bucket, timeZone)}: no checks`
+					: `${formatAlertTime(point.bucket, timeZone)}: ${point.totalCount} checks, ${failed} failed`
+			return h.span(
+				[
+					h.Key(point.bucket),
+					h.Title(label),
+					h.Class(
+						cn(
+							"min-w-0 flex-1 rounded-[1px]",
+							point.totalCount === 0
+								? "bg-muted"
+								: failed > 0
+									? "bg-destructive"
+									: "bg-success/70",
+						),
+					),
+				],
+				[],
+			)
+		}),
+	)
+
+/** P50, P95 and P99 over the picked window, from the monitor's check spans. */
+export const responseTimePanel = (h: H, model: Model, context: ChartContext | null): Html => {
+	const data = model.stats.data
+	const body = AsyncData.isFailure(data)
+		? errorState(h, { failure: data.error, title: "Couldn't load response times", className: "py-8" })
+		: Option.match(statsOf(model), {
+				onNone: () => h.div([h.Class("h-56")], [chartSkeleton(h, "line")]),
+				onSome: (stats) =>
+					stats.checks === 0
+						? h.p(
+								[h.Class("py-16 text-center text-sm text-muted-foreground")],
+								[
+									`No checks in the ${WINDOW_LABEL[model.window]}. The next one runs shortly.`,
+								],
+							)
+						: context === null
+							? h.div([h.Class("h-56")], [chartSkeleton(h, "line")])
+							: h.div(
+									[h.Class("flex flex-col gap-2")],
+									[
+										h.div(
+											[h.Class("h-56")],
+											[latencyChart(h, model, stats.points, context)],
+										),
+										availabilityStrip(h, stats.points, context.timeZone),
+									],
+								),
+			})
 	return panel(h, {}, [
 		panelHeader(h, {
 			title: "Response time",
-			action: h.span(
-				[h.Class("text-xs text-muted-foreground tabular-nums")],
-				[`p95 over the last ${recent.length} checks: ${formatMs(p95(recent))}`],
-			),
+			action: segmentedSelect(h, {
+				ariaLabel: "Window",
+				size: "xs",
+				value: model.window,
+				onChange: (window) => Message.PickedWindow({ window }),
+				options: WINDOWS,
+			}),
 		}),
-		uptimePanelBody(h, [
-			recent.length === 0
-				? h.p(
-						[h.Class("py-8 text-center text-sm text-muted-foreground")],
-						["No checks yet. The first one runs shortly."],
-					)
-				: h.div(
-						[
-							h.Role("img"),
-							h.AriaLabel(`Response time of the last ${recent.length} checks`),
-							h.Class("flex h-36 items-end justify-end gap-0.5"),
-						],
-						recent.map((check, index) =>
-							h.span(
-								[
-									h.Key(`${check.at}-${index}`),
-									h.Title(`${formatMs(check.duration_ms)}${check.ok ? "" : ", failed"}`),
-									h.Class(
-										cn(
-											"min-w-0 max-w-4 flex-1 rounded-t-[1px]",
-											check.ok ? "bg-severity-info/80" : "bg-destructive",
-										),
-									),
-									h.Style({
-										// No recorded duration is the minimum sliver, never the tallest bar.
-										height: `${Math.max(4, ((check.duration_ms ?? 0) / max) * 100)}%`,
-									}),
-								],
-								[],
-							),
-						),
-					),
-		]),
+		uptimePanelBody(h, [body]),
 	])
 }
 
@@ -130,7 +350,7 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 		}),
 		h.p(
 			[h.Class("px-4 pb-2 text-xs text-muted-foreground")],
-			[`Each check is a span in the ${UPTIME_SERVICE} service.`],
+			[`Each check is a span in the ${UPTIME_SERVICE} service, namespace ${MAPLE_SERVICES_NAMESPACE}.`],
 		),
 		h.div(
 			[h.Class(cn(CHECK_GRID, "border-y px-4 py-2"))],
@@ -230,30 +450,6 @@ export const lastCheckPanel = (h: H, monitor: UptimeMonitor): Html => {
 		...(last === null || last.ok || last.error === null
 			? []
 			: [h.p([h.Class("px-4 py-2.5 text-sm text-destructive")], [last.error])]),
-	])
-}
-
-export const availabilityPanel = (h: H, monitor: UptimeMonitor): Html => {
-	const share = uptimeShare(monitor.state.recent)
-	return panel(h, {}, [
-		panelHeader(h, { title: "Availability" }),
-		uptimePanelBody(h, [
-			h.p(
-				[
-					h.Class(
-						cn(
-							"font-mono text-2xl tabular-nums",
-							share !== null && share < 1 ? "text-severity-warn" : undefined,
-						),
-					),
-				],
-				[formatShare(share)],
-			),
-			h.p(
-				[h.Class("mt-1 text-xs text-muted-foreground")],
-				[`Over the last ${monitor.state.recent.length} checks`],
-			),
-		]),
 	])
 }
 
