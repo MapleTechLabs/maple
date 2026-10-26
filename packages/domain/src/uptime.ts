@@ -242,6 +242,10 @@ export const UPTIME_SERVICE_NAME = "maple-uptime"
 /** `service.namespace` of Maple's own synthetic services, so users can filter them out. */
 export const MAPLE_SERVICES_NAMESPACE = "maple-services"
 
+/** Maple's own synthetic services; checks recorded before the namespace existed match by name. */
+export const isMapleService = (row: { readonly serviceName: string; readonly serviceNamespace: string }) =>
+	row.serviceNamespace === MAPLE_SERVICES_NAMESPACE || row.serviceName === UPTIME_SERVICE_NAME
+
 // --- HTTP check request ---
 
 export const UPTIME_USER_AGENT = "maple-uptime/1.0"

@@ -61,7 +61,7 @@ const _matchRegex = defineCondFn<[CH.Expr<string>, string]>("match")
  * Synthetic callers kept off the service map. Uptime checks are Client spans into the
  * user's services, so without this the map grows a `maple-uptime` node and its edges.
  */
-export const SERVICE_MAP_EXCLUDED_SERVICES: ReadonlyArray<string> = [UPTIME_SERVICE_NAME]
+const SERVICE_MAP_EXCLUDED_SERVICES: ReadonlyArray<string> = [UPTIME_SERVICE_NAME]
 
 // Service dependencies
 

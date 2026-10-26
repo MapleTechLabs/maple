@@ -5,6 +5,7 @@ import {
 	applyUptimeCheck,
 	effectiveAssertions,
 	firstFailedAssertion,
+	isMapleService,
 	readJsonPath,
 	UPTIME_RECENT_LIMIT,
 	UptimeAssertion,
@@ -196,5 +197,18 @@ describe("effectiveAssertions", () => {
 		)
 		const own = [{ _tag: "status" as const, op: "is" as const, value: "503" }]
 		expect(firstFailedAssertion(effectiveAssertions(own), observed({ statusCode: 503 }))).toBeNull()
+	})
+})
+
+describe("isMapleService", () => {
+	it("matches the maple-services namespace, and uptime checks recorded before it by name", () => {
+		expect(
+			[
+				{ serviceName: "anything", serviceNamespace: "maple-services" },
+				{ serviceName: "maple-uptime", serviceNamespace: "" },
+				{ serviceName: "checkout-api", serviceNamespace: "" },
+				{ serviceName: "checkout-api", serviceNamespace: "payments" },
+			].map(isMapleService),
+		).toEqual([true, true, false, false])
 	})
 })

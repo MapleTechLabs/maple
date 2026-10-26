@@ -152,7 +152,7 @@ import {
 	workloadMetricSpec,
 } from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
-import { SERVICE_MAP_EXCLUDED_SERVICES } from "@maple/query-engine/ch"
+import { isMapleService } from "@maple/domain/uptime"
 import { productEventsFunnelOpts, productEventsPathsOpts } from "@maple/query-engine/registry"
 import {
 	makeDashboardReads,
@@ -1333,10 +1333,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							],
 							{ concurrency: 4 },
 						)
-						// The edges already drop synthetic callers; overview rows would still draw them as nodes.
-						const overviewRows = allOverviewRows.filter(
-							(row) => !SERVICE_MAP_EXCLUDED_SERVICES.includes(row.serviceName),
-						)
+						// The edges already drop Maple's own callers; overview rows would still draw them as nodes.
+						const overviewRows = allOverviewRows.filter((row) => !isMapleService(row))
 
 						const services = new Set<string>()
 						for (const row of dependencyRows) {
