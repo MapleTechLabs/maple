@@ -32,7 +32,7 @@ import {
 	applyUptimeCheck,
 	effectiveAssertions,
 	firstFailedAssertion,
-	parseHeartbeatCron,
+	heartbeatDeadline,
 	uptimeHttpRequest,
 	UPTIME_REDACTED_HEADER_VALUE,
 	UptimeCheckDetail,
@@ -259,13 +259,13 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 			yield* validateHost(config.hostname)
 			break
 		case "heartbeat":
-			// The alert evaluator computes deadlines from this schedule, so it must parse.
+			// The alert evaluator computes deadlines from this schedule, so it must have a next run.
 			if (
 				config.schedule._tag === "cron" &&
-				Option.isNone(parseHeartbeatCron(config.schedule.expression, config.schedule.timezone))
+				Option.isNone(heartbeatDeadline(config, yield* Clock.currentTimeMillis))
 			) {
 				return yield* invalid(
-					`'${config.schedule.expression}' in ${config.schedule.timezone} is not a valid cron schedule`,
+					`'${config.schedule.expression}' in ${config.schedule.timezone} is not a valid cron schedule, or never runs`,
 				)
 			}
 			break
