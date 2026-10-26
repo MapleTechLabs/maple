@@ -570,8 +570,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			})
 
 			/**
-			 * Checks a backing-rule write under the org lock that rule writes and destination
-			 * deletes take: its destinations exist in the org, and no other rule has its name.
+			 * Checks a backing-rule write; the caller holds the org lock (`lockOrgMonitors`), which
+			 * rule writes and destination deletes also take: its destinations exist, its name is free.
 			 */
 			const claimRuleWrite = Effect.fnUntraced(function* (
 				db: MapleDb,
@@ -579,7 +579,6 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				ruleId: AlertRuleId,
 				rule: { readonly name: string; readonly destinationIds: ReadonlyArray<AlertDestinationId> },
 			) {
-				yield* db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
 				if (rule.destinationIds.length > 0) {
 					const found = yield* db.run(
 						PG.from(AlertDestinations)
@@ -603,6 +602,22 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				}
 			})
 
+			/**
+			 * The per-org lock monitor creates (and alert rule writes) take inside their transaction,
+			 * so two concurrent creates cannot both pass a full plan.
+			 */
+			const lockOrgMonitors = (db: MapleDb, orgId: OrgId) =>
+				db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+
+			const countMonitors = (db: MapleDb, orgId: OrgId) =>
+				db
+					.run(
+						PG.from(UptimeMonitors)
+							.select(() => ({ count: PG.count() }))
+							.where(($) => [$.orgId.eq(orgId)]),
+					)
+					.pipe(Effect.map((rows) => Number(rows[0]?.count ?? 0)))
+
 			const create = Effect.fn("UptimeMonitorsService.create")(function* (
 				orgId: OrgId,
 				input: CreateUptimeMonitorInput,
@@ -625,15 +640,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							// One lock for the count and the rule checks: concurrent creates cannot both pass a full plan.
+							yield* lockOrgMonitors(db, orgId)
+							yield* ensureWithinLimit(limit, yield* countMonitors(db, orgId))
 							yield* claimRuleWrite(db, orgId, ruleId, { name, destinationIds })
-							// Under the lock, so two concurrent creates cannot both pass a full plan.
-							const existing = yield* db.run(
-								PG.from(UptimeMonitors)
-									.select("id")
-									.where(($) => [$.orgId.eq(orgId)]),
-							)
-							yield* Effect.annotateCurrentSpan("maple.uptime.monitor_count", existing.length)
-							yield* ensureWithinLimit(limit, existing.length)
 							yield* db.run(
 								PG.insertInto(AlertRules).values({
 									id: ruleId,
@@ -751,6 +761,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					db.transaction(
 						Effect.gen(function* () {
 							if (ruleChanged) {
+								yield* lockOrgMonitors(db, orgId)
 								yield* claimRuleWrite(db, orgId, ruleId, rule)
 								yield* current.alertRuleId === null
 									? db.run(
