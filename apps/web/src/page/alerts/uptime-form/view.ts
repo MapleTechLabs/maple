@@ -260,7 +260,8 @@ const actionBar = (h: H, model: Model): Html => {
 							button(
 								h,
 								{
-									isDisabled: issues.length > 0,
+									// Until the session says this is an admin, a click would be dropped by `save`.
+									isDisabled: issues.length > 0 || !model.isAdmin,
 									isLoading: model.isSaving,
 									attributes: [h.OnClick(Message.ClickedSave())],
 								},
