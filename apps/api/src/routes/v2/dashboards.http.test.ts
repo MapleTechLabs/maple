@@ -169,6 +169,39 @@ const makeHarness = () => {
 }
 
 describe("v2 dashboards over HTTP", () => {
+	it("preserves independent client edits through rename CAS retries and returns confirmed persisted state", async () => {
+		const harness = makeHarness()
+		try {
+			const key = await harness.bootstrapKey(["dashboards:write"])
+			const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+				name: "Operations",
+				widgets: [],
+			})
+			expect(created.status).toBe(200)
+			const path = `/v2/dashboards/${created.body.id}`
+			const results = await Promise.all([
+				harness.request("PATCH", path, key.secret, { name: "Production" }),
+				harness.request("PATCH", path, key.secret, { description: "From a second client" }),
+			])
+			expect(results.map((result) => result.status)).toEqual([200, 200])
+			for (const result of results) expect(result.body.txid).toMatch(/^\d+$/)
+			const stored = await harness.request("GET", path, key.secret)
+			expect(stored.body).toMatchObject({
+				name: "Production",
+				description: "From a second client",
+				widgets: [],
+			})
+			const rejected = await harness.request("PATCH", path, key.secret, { name: "" })
+			expect(rejected.status).toBe(400)
+			const deleted = await harness.request("DELETE", path, key.secret)
+			expect(deleted.status).toBe(200)
+			const afterDelete = await harness.request("PATCH", path, key.secret, { name: "Resurrected" })
+			expect(afterDelete.status).toBe(404)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("supports headless CRUD and version restore with v2 wire conventions", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["dashboards:write"])

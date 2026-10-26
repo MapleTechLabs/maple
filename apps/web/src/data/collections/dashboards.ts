@@ -1,8 +1,8 @@
 import { createEffectCollection } from "@maple/effect-db/electric"
 import { DashboardDocument, DashboardId, migrateToLatest } from "@maple/domain/http"
-import type { V2DashboardUpdateParams } from "@maple/domain/http/v2"
 import { DashboardRowSchema, type DashboardRow } from "@maple/web-data/collections/dashboards"
 import { Effect, type ManagedRuntime, Option, Schema } from "effect"
+import { dashboardUpdateRequest } from "./dashboard-update"
 import type { MapleApiV2Client } from "../../platform/api-clients"
 
 // The per-org `dashboards` collection, whose writes
@@ -19,18 +19,6 @@ export const rowToDocument = (row: DashboardRow): Option.Option<DashboardDocumen
 		)(row.payload_json),
 		decodeDocument,
 	)
-
-/** `rowToUpdateRequest`: the full PATCH body from the row's optimistic payload. */
-const toUpdateRequest = (document: DashboardDocument): V2DashboardUpdateParams => ({
-	name: document.name,
-	description: document.description ?? null,
-	tags: document.tags ?? [],
-	timeRange: document.timeRange,
-	widgets: document.widgets,
-	sections: document.sections ?? [],
-	variables: document.variables ?? [],
-	refreshIntervalSeconds: document.refreshIntervalSeconds ?? null,
-})
 
 /** The write landed but carried no txid to confirm it on the shape stream (`requireTxid`). */
 export class MissingWriteTxidError extends Schema.TaggedError<MissingWriteTxidError>()(
@@ -74,7 +62,7 @@ export const makeDashboardsCollection = (config: {
 		},
 		onUpdate: ({ transaction }) =>
 			Effect.gen(function* () {
-				const { modified } = transaction.mutations[0]
+				const { original, modified } = transaction.mutations[0]
 				const document = yield* Option.match(rowToDocument(modified), {
 					onNone: () =>
 						Effect.fail(
@@ -85,10 +73,20 @@ export const makeDashboardsCollection = (config: {
 						),
 					onSome: Effect.succeed,
 				})
+				const before = yield* Option.match(rowToDocument(original), {
+					onNone: () =>
+						Effect.fail(
+							new UndecodableDashboardError({
+								message: "This dashboard's saved layout couldn't be read",
+								rawId: original.id,
+							}),
+						),
+					onSome: Effect.succeed,
+				})
 				const id = yield* decodeDashboardId(modified.id)
 				const result = yield* config.client.dashboards.update({
 					params: { id },
-					payload: toUpdateRequest(document),
+					payload: dashboardUpdateRequest(before, document),
 				})
 				return { txid: yield* requireTxid(result.txid) }
 			}),
