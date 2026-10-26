@@ -303,6 +303,33 @@ export const ScrapeTargetType = Schema.Literals(["prometheus", "planetscale", "s
 })
 export type ScrapeTargetType = Schema.Schema.Type<typeof ScrapeTargetType>
 
+export const UptimeMonitorId = MapleUuidId("@maple/UptimeMonitorId", "Uptime Monitor ID")
+export type UptimeMonitorId = Schema.Schema.Type<typeof UptimeMonitorId>
+
+export const UptimeMonitorKind = Schema.Literals(["http", "tcp", "dns", "heartbeat"]).annotate({
+	identifier: "@maple/UptimeMonitorKind",
+	title: "Uptime Monitor Kind",
+})
+export type UptimeMonitorKind = Schema.Schema.Type<typeof UptimeMonitorKind>
+
+/** `pending` until the first result, `paused` while disabled. */
+export const UptimeMonitorStatus = Schema.Literals(["pending", "up", "down", "paused"]).annotate({
+	identifier: "@maple/UptimeMonitorStatus",
+	title: "Uptime Monitor Status",
+})
+export type UptimeMonitorStatus = Schema.Schema.Type<typeof UptimeMonitorStatus>
+
+/** Probe cadence for http/tcp/dns monitors: 30s to 1h. */
+export const UptimeIntervalSeconds = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isGreaterThanOrEqualTo(30),
+	Schema.isLessThanOrEqualTo(3600),
+).pipe(
+	Schema.brand("@maple/UptimeIntervalSeconds"),
+	Schema.annotate({ identifier: "@maple/UptimeIntervalSeconds", title: "Uptime Interval Seconds" }),
+)
+export type UptimeIntervalSeconds = Schema.Schema.Type<typeof UptimeIntervalSeconds>
+
 export const IngestAttributeMappingId = MapleUuidId(
 	"@maple/IngestAttributeMappingId",
 	"Ingest Attribute Mapping ID",

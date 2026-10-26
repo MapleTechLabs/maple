@@ -1,0 +1,229 @@
+import { Option, Schema } from "effect"
+import {
+	OrgId,
+	UptimeIntervalSeconds,
+	UptimeMonitorId,
+	UptimeMonitorKind,
+	UptimeMonitorStatus,
+} from "./primitives"
+
+// Uptime monitors: the stored config per kind, the probe contract between the API and
+// `apps/scraper`, and the pure rules both sides share (assertions, the up/down machine).
+
+const NonEmpty = Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())
+const Port = Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 65535 }))
+const TimeoutMs = Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1000, maximum: 30000 }))
+
+export const UptimeHttpMethod = Schema.Literals(["GET", "HEAD", "POST"])
+export type UptimeHttpMethod = Schema.Schema.Type<typeof UptimeHttpMethod>
+
+/** `2xx`-style class or an exact code such as `204`. */
+export const UptimeStatusMatcher = Schema.String.check(Schema.isPattern(/^([1-5]xx|[1-5]\d\d)$/u))
+
+export const UptimeAssertion = Schema.Union([
+	Schema.TaggedStruct("status", { op: Schema.Literals(["is", "is_not"]), value: UptimeStatusMatcher }),
+	Schema.TaggedStruct("latency", { underMs: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)) }),
+	Schema.TaggedStruct("body", { op: Schema.Literals(["contains", "not_contains"]), value: NonEmpty }),
+	Schema.TaggedStruct("json_path", {
+		/** Dot path with `[n]` indexes, e.g. `checks[0].status`. */
+		path: NonEmpty,
+		op: Schema.Literals(["equals", "exists"]),
+		value: Schema.optionalKey(Schema.String),
+	}),
+	Schema.TaggedStruct("header", {
+		name: NonEmpty,
+		op: Schema.Literals(["equals", "contains", "exists"]),
+		value: Schema.optionalKey(Schema.String),
+	}),
+])
+export type UptimeAssertion = Schema.Schema.Type<typeof UptimeAssertion>
+
+export const UptimeHttpConfig = Schema.TaggedStruct("http", {
+	url: NonEmpty,
+	method: UptimeHttpMethod,
+	headers: Schema.Record(Schema.String, Schema.String),
+	body: Schema.optionalKey(Schema.String),
+	assertions: Schema.Array(UptimeAssertion),
+	timeoutMs: TimeoutMs,
+})
+export const UptimeTcpConfig = Schema.TaggedStruct("tcp", { host: NonEmpty, port: Port, timeoutMs: TimeoutMs })
+export const UptimeDnsRecordType = Schema.Literals(["A", "AAAA", "CNAME", "MX", "TXT", "NS"])
+export type UptimeDnsRecordType = Schema.Schema.Type<typeof UptimeDnsRecordType>
+export const UptimeDnsConfig = Schema.TaggedStruct("dns", {
+	hostname: NonEmpty,
+	recordType: UptimeDnsRecordType,
+	/** Up when any answer equals this; omitted means "resolves at all". */
+	expected: Schema.optionalKey(NonEmpty),
+	timeoutMs: TimeoutMs,
+})
+export const UptimeHeartbeatSchedule = Schema.Union([
+	Schema.TaggedStruct("interval", { seconds: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(60)) }),
+	Schema.TaggedStruct("cron", { expression: NonEmpty, timezone: NonEmpty }),
+])
+export type UptimeHeartbeatSchedule = Schema.Schema.Type<typeof UptimeHeartbeatSchedule>
+export const UptimeHeartbeatConfig = Schema.TaggedStruct("heartbeat", {
+	schedule: UptimeHeartbeatSchedule,
+	graceSeconds: Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 86400 })),
+})
+
+/** The stored config; `_tag` always equals the monitor's `kind`. */
+export const UptimeMonitorConfig = Schema.Union([UptimeHttpConfig, UptimeTcpConfig, UptimeDnsConfig, UptimeHeartbeatConfig])
+export type UptimeMonitorConfig = Schema.Schema.Type<typeof UptimeMonitorConfig>
+export type UptimeProbeConfig = Exclude<UptimeMonitorConfig, { readonly _tag: "heartbeat" }>
+
+/** One check in the per-monitor recent ring (newest last). */
+export const UptimeRecentCheck = Schema.Struct({
+	at: Schema.Number,
+	ok: Schema.Boolean,
+	durationMs: Schema.NullOr(Schema.Number),
+})
+export type UptimeRecentCheck = Schema.Schema.Type<typeof UptimeRecentCheck>
+export const UPTIME_RECENT_LIMIT = 60
+
+/** The latest check's detail, kept on the monitor state for the detail page. */
+export const UptimeCheckDetail = Schema.Struct({
+	at: Schema.Number,
+	ok: Schema.Boolean,
+	durationMs: Schema.NullOr(Schema.Number),
+	statusCode: Schema.NullOr(Schema.Number),
+	/** One sentence, e.g. `Status 503, expected 2xx`; null when ok. */
+	error: Schema.NullOr(Schema.String),
+	traceId: Schema.NullOr(Schema.String),
+})
+export type UptimeCheckDetail = Schema.Schema.Type<typeof UptimeCheckDetail>
+
+// --- Probe contract (`/api/internal/uptime-*`, SD_INTERNAL_TOKEN bearer) ---
+
+export class UptimeProbeTarget extends Schema.Class<UptimeProbeTarget>("UptimeProbeTarget")({
+	id: UptimeMonitorId,
+	orgId: OrgId,
+	name: Schema.String,
+	serviceName: Schema.NullOr(Schema.String),
+	intervalSeconds: UptimeIntervalSeconds,
+	config: Schema.Union([UptimeHttpConfig, UptimeTcpConfig, UptimeDnsConfig]),
+	/** The org's public ingest key: check spans go into the org's own traces. */
+	ingestKey: Schema.String,
+}) {}
+export const UptimeProbeTargetList = Schema.Array(UptimeProbeTarget)
+
+export class UptimeCheckReport extends Schema.Class<UptimeCheckReport>("UptimeCheckReport")({
+	monitorId: UptimeMonitorId,
+	checkedAt: Schema.Number,
+	ok: Schema.Boolean,
+	durationMs: Schema.NullOr(Schema.Number),
+	statusCode: Schema.NullOr(Schema.Number),
+	error: Schema.NullOr(Schema.String),
+	traceId: Schema.NullOr(Schema.String),
+}) {}
+export const UptimeCheckReportList = Schema.Array(UptimeCheckReport)
+
+// --- Assertions ---
+
+export interface UptimeHttpObservation {
+	readonly statusCode: number
+	readonly durationMs: number
+	readonly headers: Readonly<Record<string, string>>
+	/** Body prefix as text; `null` when not read (HEAD, binary, too large). */
+	readonly body: string | null
+}
+
+const statusMatches = (matcher: string, code: number): boolean =>
+	matcher.endsWith("xx") ? Math.floor(code / 100) === Number(matcher[0]) : code === Number(matcher)
+
+const PATH_TOKEN = /[^.[\]]+|\[(\d+)\]/gu
+
+/** Reads `a.b[0].c` from parsed JSON; `None` when any step is missing. */
+export const readJsonPath = (root: unknown, path: string): Option.Option<unknown> =>
+	Array.from(path.matchAll(PATH_TOKEN)).reduce<Option.Option<unknown>>(
+		(current, match) =>
+			Option.flatMap(current, (value) => {
+				const key = match[1] ?? match[0]
+				if (Array.isArray(value)) return Option.fromNullishOr(value[Number(key)])
+				if (typeof value === "object" && value !== null && Object.hasOwn(value, key))
+					return Option.some(Reflect.get(value, key))
+				return Option.none()
+			}),
+		Option.some(root),
+	)
+
+const jsonText = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value))
+
+const parseJson = (body: string | null): Option.Option<unknown> =>
+	body === null ? Option.none() : Option.liftThrowable(JSON.parse)(body)
+
+/** The first failing assertion as one sentence, or `null` when every assertion passes. */
+export const firstFailedAssertion = (
+	assertions: ReadonlyArray<UptimeAssertion>,
+	observed: UptimeHttpObservation,
+): string | null => {
+	const failures = assertions.flatMap((assertion): ReadonlyArray<string> => {
+		switch (assertion._tag) {
+			case "status": {
+				const matches = statusMatches(assertion.value, observed.statusCode)
+				const ok = assertion.op === "is" ? matches : !matches
+				return ok ? [] : [`Status ${observed.statusCode}, expected ${assertion.op === "is" ? "" : "not "}${assertion.value}`]
+			}
+			case "latency":
+				return observed.durationMs < assertion.underMs
+					? []
+					: [`Responded in ${Math.round(observed.durationMs)} ms, expected under ${assertion.underMs} ms`]
+			case "body": {
+				const found = observed.body !== null && observed.body.includes(assertion.value)
+				if (assertion.op === "contains") return found ? [] : [`Body does not contain "${assertion.value}"`]
+				return found ? [`Body contains "${assertion.value}"`] : []
+			}
+			case "json_path": {
+				const read = Option.flatMap(parseJson(observed.body), (json) => readJsonPath(json, assertion.path))
+				if (Option.isNone(read)) return [`JSON path ${assertion.path} not found`]
+				if (assertion.op === "exists") return []
+				const actual = jsonText(read.value)
+				return actual === assertion.value ? [] : [`JSON path ${assertion.path} is ${actual}, expected ${assertion.value ?? ""}`]
+			}
+			case "header": {
+				const actual = observed.headers[assertion.name.toLowerCase()]
+				if (actual === undefined) return [`Header ${assertion.name} missing`]
+				if (assertion.op === "exists") return []
+				const expected = assertion.value ?? ""
+				const ok = assertion.op === "equals" ? actual === expected : actual.includes(expected)
+				return ok ? [] : [`Header ${assertion.name} is "${actual}", expected ${assertion.op} "${expected}"`]
+			}
+		}
+	})
+	return failures[0] ?? null
+}
+
+// --- Up/down machine ---
+
+export const UptimeMonitorStateSnapshot = Schema.Struct({
+	status: UptimeMonitorStatus,
+	consecutiveFailures: Schema.Number,
+	consecutiveSuccesses: Schema.Number,
+})
+export type UptimeMonitorStateSnapshot = Schema.Schema.Type<typeof UptimeMonitorStateSnapshot>
+
+/**
+ * Applies one check: down after `failuresToDown` failures in a row, back up on the first
+ * success. A paused monitor never changes here (pausing is a config change, not a check).
+ */
+export const applyUptimeCheck = (
+	state: UptimeMonitorStateSnapshot,
+	ok: boolean,
+	failuresToDown: number,
+): UptimeMonitorStateSnapshot => {
+	if (state.status === "paused") return state
+	if (ok) return { status: "up", consecutiveFailures: 0, consecutiveSuccesses: state.consecutiveSuccesses + 1 }
+	const consecutiveFailures = state.consecutiveFailures + 1
+	return {
+		status: consecutiveFailures >= failuresToDown ? "down" : state.status,
+		consecutiveFailures,
+		consecutiveSuccesses: 0,
+	}
+}
+
+/** Appends to the recent ring, keeping the newest `UPTIME_RECENT_LIMIT`. */
+export const appendRecentCheck = (
+	recent: ReadonlyArray<UptimeRecentCheck>,
+	check: UptimeRecentCheck,
+): ReadonlyArray<UptimeRecentCheck> => [...recent, check].slice(-UPTIME_RECENT_LIMIT)
+
+export const uptimeKindOf = (config: UptimeMonitorConfig): UptimeMonitorKind => config._tag
