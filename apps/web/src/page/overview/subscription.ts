@@ -32,6 +32,7 @@ const incidents = (orgId: string) =>
 						status: incident.status,
 						groupKey: incident.groupKey,
 						severity: incident.severity,
+						signalType: incident.signalType,
 					})),
 				}),
 		),
@@ -111,7 +112,9 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ isPolling }) =>
 					isPolling
 						? backoffPollTicks("15 seconds", SETUP_FAST_POLLS, "1 minute").pipe(
-								Stream.map(() => Message.GotSetupMessage({ message: SetupMessage.TickedPoll() })),
+								Stream.map(() =>
+									Message.GotSetupMessage({ message: SetupMessage.TickedPoll() }),
+								),
 							)
 						: Stream.empty,
 			},

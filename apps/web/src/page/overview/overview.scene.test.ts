@@ -53,7 +53,7 @@ const loaded = (rows: ReadonlyArray<HealthSnapshot>): Model => {
 		Message.CompletedFetchAnomalies({ key: facets.anomalies.key ?? "", result: Result.succeed([]) }),
 		Message.UpdatedIncidents({
 			orgId,
-			incidents: [{ status: "open", groupKey: null, severity: "critical" }],
+			incidents: [{ status: "open", groupKey: null, severity: "critical", signalType: "error_rate" }],
 		}),
 		Message.UpdatedRules({ orgId, enabled: [true, false] }),
 	]
@@ -146,7 +146,10 @@ describe("overview", () => {
 		const model = withFacets(entered().model, []).model
 		const failed = pageUpdate(
 			model,
-			Message.CompletedFetchAnomalies({ key: model.anomalies.key ?? "", result: Result.fail(toLoadFailure("boom")) }),
+			Message.CompletedFetchAnomalies({
+				key: model.anomalies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
 		)
 		const retried = pageUpdate(failed.model, Message.ClickedRetryPage())
 		expect(names(retried.commands)).toContain("FetchOverviewAnomalyCounts")
@@ -156,7 +159,10 @@ describe("overview", () => {
 		const model = withFacets(entered().model, []).model
 		const failed = pageUpdate(
 			model,
-			Message.CompletedFetchSnapshot({ key: model.snapshot.key ?? "", result: Result.fail(toLoadFailure("boom")) }),
+			Message.CompletedFetchSnapshot({
+				key: model.snapshot.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
 		)
 		const retried = pageUpdate(failed.model, Message.ClickedRetryPage())
 		expect(names(retried.commands)).toContain("FetchServiceHealthSnapshot")
