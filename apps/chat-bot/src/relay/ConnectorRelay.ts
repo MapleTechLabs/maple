@@ -26,7 +26,7 @@ import type { ChatConversation, InboundEvent } from "@maple/chat-platform"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import * as Alchemy from "alchemy"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Context, Effect, Schema } from "effect"
+import { Clock, Context, Effect, Schema } from "effect"
 import { ConversationNotRecorded } from "./conversation.ts"
 import type { RelayTurnCheckpoint, SettleOutcome } from "./settle.ts"
 import { connectorConversationRelayName, connectorRelayByName } from "./stub.ts"
@@ -421,6 +421,12 @@ const durableLedger = (
 	const inContext = <A, E>(operation: string, effect: Effect.Effect<A, E, Alchemy.RuntimeContext>) =>
 		effect.pipe(Effect.mapError(storageFailed(operation)), Effect.provideContext(runtime))
 	const again = { after: KEEP_ALIVE_MS }
+	// A re-arm from inside a job inherits its retry budget, so without a rising `progress` cursor
+	// alchemy backs every successful re-arm off and parks the job after eight.
+	const rearm = <P>(job: Alchemy.Callback<P>, id: string, payload: P) =>
+		Effect.flatMap(Clock.currentTimeMillis, (progress) =>
+			job.schedule(id, { ...again, payload, progress }),
+		)
 	return {
 		record: (key, checkpoint) =>
 			inContext(
@@ -447,14 +453,12 @@ const durableLedger = (
 						.get(key)
 						.pipe(
 							Effect.flatMap((stored) =>
-								stored === undefined
-									? Effect.void
-									: turnJob.schedule(key, { ...again, payload: key }),
+								stored === undefined ? Effect.void : rearm(turnJob, key, key),
 							),
 						),
 				),
 			),
-		keepAlive: inContext("keepAlive", keepAliveJob.schedule("keep-alive", { ...again, payload: null })),
+		keepAlive: inContext("keepAlive", rearm(keepAliveJob, "keep-alive", null)),
 	}
 }
 

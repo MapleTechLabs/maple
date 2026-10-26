@@ -1,7 +1,7 @@
 /**
  * The `MAPLE_DB` Hyperdrive binding per the profile's database mode: `managed` and `ref` bind from the
- * Worker init (`ref` via raw `host.bind`, as alchemy has no `env` form for an external config);
- * `declared` and `preview` bind from props via `mapleDbEnv`.
+ * Worker init (`ref` through `Hyperdrive.lookup` of the dashboard-managed config); `declared` and
+ * `preview` bind from props via `mapleDbEnv`.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Stage } from "alchemy/Stage"
@@ -93,12 +93,12 @@ export const MapleDb = (consumer: MapleDbConsumer) =>
 				return
 			}
 			case "ref": {
-				const id = resolveHyperdriveRefId(stage, consumer)
-				if (id === undefined) return
-				const host = yield* Cloudflare.Worker
-				yield* host.bind(MAPLE_DB_BINDING, {
-					bindings: [{ type: "hyperdrive", name: MAPLE_DB_BINDING, id }],
-				})
+				const hyperdriveId = resolveHyperdriveRefId(stage, consumer)
+				if (hyperdriveId === undefined) return
+				// Read-only: no state row, so destroy and nuke never touch the dashboard config.
+				yield* Cloudflare.Hyperdrive.Connect(
+					Cloudflare.Hyperdrive.lookup(MAPLE_DB_BINDING, { hyperdriveId }),
+				)
 				return
 			}
 			// Bound from the Worker's props (`mapleDbEnv`).
