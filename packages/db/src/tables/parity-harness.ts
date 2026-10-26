@@ -92,7 +92,10 @@ export const describeParity = (
 		it(
 			"match the head snapshot entity for entity, so generate has nothing to write",
 			async () => {
-				const head = (await headEntities()).filter((entity) => ormTables.has(tableOf(entity)))
+				const head = (await headEntities()).filter((entity) => {
+					const table = tableOf(entity)
+					return table !== undefined && ormTables.has(table)
+				})
 				const diff = S.diffPgSchemas(head, ormEntities)
 				expect(diff.ops).toEqual([])
 				expect(diff.missingHints).toEqual([])
