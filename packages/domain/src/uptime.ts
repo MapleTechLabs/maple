@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Cron, Option, Result, Schema } from "effect"
 import {
 	OrgId,
 	UptimeIntervalSeconds,
@@ -263,3 +263,39 @@ export const appendRecentCheck = (
 ): ReadonlyArray<UptimeRecentCheck> => [...recent, check].slice(-UPTIME_RECENT_LIMIT)
 
 export const uptimeKindOf = (config: UptimeMonitorConfig): UptimeMonitorKind => config._tag
+
+// --- Heartbeat deadlines ---
+
+export type UptimeHeartbeatConfig = Schema.Schema.Type<typeof UptimeHeartbeatConfig>
+
+/** Parses a heartbeat's cron schedule in its own time zone; `None` when either is invalid. */
+export const parseHeartbeatCron = (expression: string, timezone: string): Option.Option<Cron.Cron> =>
+	Result.getSuccess(Cron.parse(expression, timezone))
+
+/**
+ * When a heartbeat becomes overdue: the next ping expected after `anchorMs` (the last ping,
+ * or when the monitor started waiting), plus the grace. `None` for an unparsable cron.
+ */
+export const heartbeatDeadline = (config: UptimeHeartbeatConfig, anchorMs: number): Option.Option<number> => {
+	const graceMs = config.graceSeconds * 1000
+	const schedule = config.schedule
+	if (schedule._tag === "interval") return Option.some(anchorMs + schedule.seconds * 1000 + graceMs)
+	return Option.map(
+		parseHeartbeatCron(schedule.expression, schedule.timezone),
+		(cron) => Cron.next(cron, anchorMs).getTime() + graceMs,
+	)
+}
+
+const relativeAge = (ms: number): string => {
+	const minutes = Math.max(1, Math.round(ms / 60_000))
+	if (minutes < 120) return `${minutes} min ago`
+	const hours = Math.round(minutes / 60)
+	return hours < 48 ? `${hours} h ago` : `${Math.round(hours / 24)} days ago`
+}
+
+/** The error an overdue heartbeat records, e.g. `No ping since 2026-10-26 14:03 UTC (3 h ago)`. */
+export const describeMissedHeartbeat = (lastPingAt: number | null, nowMs: number): string => {
+	if (lastPingAt === null) return "No ping received yet"
+	const at = new Date(lastPingAt).toISOString().slice(0, 16).replace("T", " ")
+	return `No ping since ${at} UTC (${relativeAge(nowMs - lastPingAt)})`
+}

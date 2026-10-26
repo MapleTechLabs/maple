@@ -35,6 +35,7 @@ const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
 	failures_to_down: monitor.failuresToDown,
 	service_name: monitor.serviceName,
 	enabled: monitor.enabled,
+	destination_ids: monitor.destinationIds,
 	heartbeat_url: monitor.heartbeatUrl,
 	state: {
 		status: monitor.state.status,
@@ -72,7 +73,15 @@ const forReader = (monitor: V2UptimeMonitor, canWrite: boolean): V2UptimeMonitor
 }
 
 const monitorAuditDiff = auditDiff({
-	fields: ["name", "config", "interval_seconds", "failures_to_down", "service_name", "enabled"],
+	fields: [
+		"name",
+		"config",
+		"interval_seconds",
+		"failures_to_down",
+		"service_name",
+		"enabled",
+		"destination_ids",
+	],
 	// Request headers in an HTTP config may carry credentials.
 	summarize: { config: "<updated>" },
 })
@@ -119,6 +128,9 @@ export const HttpV2UptimeMonitorsLive = HttpApiBuilder.group(MapleApiV2, "uptime
 							? undefined
 							: { serviceName: payload.service_name }),
 						...(payload.enabled === undefined ? undefined : { enabled: payload.enabled }),
+						...(payload.destination_ids === undefined
+							? undefined
+							: { destinationIds: payload.destination_ids }),
 						createdBy: tenant.userId,
 					})
 					yield* recordHttpAudit("uptime_monitor.created", {
@@ -166,6 +178,10 @@ export const HttpV2UptimeMonitorsLive = HttpApiBuilder.group(MapleApiV2, "uptime
 							? undefined
 							: { serviceName: payload.service_name }),
 						...(payload.enabled === undefined ? undefined : { enabled: payload.enabled }),
+						...(payload.destination_ids === undefined
+							? undefined
+							: { destinationIds: payload.destination_ids }),
+						updatedBy: tenant.userId,
 					})
 					yield* recordHttpAudit("uptime_monitor.updated", {
 						resourceId: updated.id,
