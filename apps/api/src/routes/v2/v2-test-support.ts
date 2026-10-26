@@ -68,6 +68,8 @@ import { HttpV2AuditLogLive } from "./audit-log.http"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { HttpV2ScrapeTargetsLive } from "./scrape-targets.http"
+import { HttpV2UptimeMonitorsLive } from "./uptime-monitors.http"
+import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { HttpV2SessionReplaysLive } from "./session-replays.http"
 import { HttpV2InstrumentationAuditLive } from "./setup-audit.http"
 import { HttpV2TelemetrySignalsLive } from "./telemetry-signals.http"
@@ -111,6 +113,19 @@ export const OnboardingChecklistServiceStubLayer = Layer.succeed(OnboardingCheck
 
 const die = () => Effect.die(new Error("This service is not available in this test harness"))
 
+/** Inert UptimeMonitorsService; the uptime route test passes the real one instead. */
+export const UptimeMonitorsServiceStubLayer = Layer.succeed(UptimeMonitorsService, {
+	list: die,
+	get: die,
+	create: die,
+	update: die,
+	delete: die,
+	listProbeTargets: die,
+	recordChecks: die,
+	recordPing: die,
+	testHttp: die,
+})
+
 /** Inert ChatWorkspaceService — see the chat group's entry in the bundle below. */
 const ChatWorkspaceServiceStubLayer = Layer.succeed(
 	ChatWorkspaceService,
@@ -141,6 +156,7 @@ const ChatWorkspaceServiceStubLayer = Layer.succeed(
 const v2GroupLayersExceptOnboardingChecklist = (
 	chatWorkspace: Layer.Layer<ChatWorkspaceService>,
 	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
+	uptimeMonitors: Layer.Layer<UptimeMonitorsService> = UptimeMonitorsServiceStubLayer,
 ) =>
 	Layer.mergeAll(
 		HttpV2ApiKeysLive,
@@ -163,6 +179,7 @@ const v2GroupLayersExceptOnboardingChecklist = (
 		// names, and every harness would otherwise reach for Clerk.
 		HttpV2AuditLogLive.pipe(Layer.provide(Layer.merge(auditLog, OrgMembersServiceStubLayer))),
 		HttpV2ScrapeTargetsLive,
+		HttpV2UptimeMonitorsLive.pipe(Layer.provide(uptimeMonitors)),
 		HttpV2InstrumentationRecommendationsLive,
 		HttpV2InstrumentationAuditLive,
 		HttpV2TelemetrySignalsLive,
@@ -270,9 +287,10 @@ export const V2GroupLayersExceptOnboardingChecklist = v2GroupLayersExceptOnboard
 export const allV2GroupLayersWithChat = (
 	chatWorkspace: Layer.Layer<ChatWorkspaceService>,
 	auditLog: Layer.Layer<AuditLogService> = AuditLogService.layerMemory,
+	uptimeMonitors: Layer.Layer<UptimeMonitorsService> = UptimeMonitorsServiceStubLayer,
 ) =>
 	Layer.mergeAll(
-		v2GroupLayersExceptOnboardingChecklist(chatWorkspace, auditLog),
+		v2GroupLayersExceptOnboardingChecklist(chatWorkspace, auditLog, uptimeMonitors),
 		HttpV2OnboardingChecklistLive.pipe(Layer.provide(OnboardingChecklistServiceStubLayer)),
 	).pipe(
 		// Mutation handlers across the groups record audit entries; the real service
@@ -281,6 +299,10 @@ export const allV2GroupLayersWithChat = (
 	)
 
 export const AllV2GroupLayersLive = allV2GroupLayersWithChat(ChatWorkspaceServiceStubLayer)
+
+/** Every v2 group, with the uptime group served by the given service. */
+export const allV2GroupLayersWithUptime = (uptimeMonitors: Layer.Layer<UptimeMonitorsService>) =>
+	allV2GroupLayersWithChat(ChatWorkspaceServiceStubLayer, AuditLogService.layerMemory, uptimeMonitors)
 
 /** Every v2 group, recording audit entries into the given log so a test can read them. */
 export const allV2GroupLayersWithAudit = (auditLog: Layer.Layer<AuditLogService>) =>
