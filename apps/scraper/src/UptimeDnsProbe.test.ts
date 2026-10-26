@@ -64,6 +64,38 @@ describe("UptimeDnsProbe", () => {
 		}),
 	)
 
+	it.effect("a mismatch never quotes private addresses or internal names", () =>
+		Effect.gen(function* () {
+			const lookup: DnsLookup = (_, recordType) =>
+				Effect.succeed(
+					recordType === "A"
+						? ["10.0.0.7", "93.184.216.34", "169.254.169.254"]
+						: recordType === "CNAME"
+							? ["db.internal."]
+							: ["fd12:3456:789a::1"],
+				)
+			const mixed = yield* probeWith(lookup, dnsConfig({ expected: "203.0.113.9" }))
+			assert.strictEqual(
+				mixed.error,
+				"A records for example.com are 93.184.216.34 and 2 more, expected 203.0.113.9",
+			)
+			const internal = yield* probeWith(
+				lookup,
+				dnsConfig({ recordType: "CNAME", expected: "edge.example.net" }),
+			)
+			assert.strictEqual(
+				internal.error,
+				"example.com resolved to 1 CNAME record, none matched edge.example.net",
+			)
+			const privateV6 = yield* probeWith(
+				lookup,
+				dnsConfig({ recordType: "AAAA", expected: "2001:db8::1" }),
+			)
+			assert.notInclude(privateV6.error ?? "", "fd12")
+			assert.strictEqual(privateV6.errorType, "assertion")
+		}),
+	)
+
 	it.effect("NXDOMAIN and a missing record type are different sentences", () =>
 		Effect.gen(function* () {
 			const nx = yield* probeWith(zoneLookup, dnsConfig({ hostname: "nope.example.org" }))
