@@ -3,6 +3,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	effectiveAssertions,
 	firstFailedAssertion,
+	type UptimeAssertion,
 	type UptimeHttpConfig,
 	uptimeHttpRequest,
 } from "@maple/domain/uptime"
@@ -42,6 +43,12 @@ export interface UptimeHttpProbeApi {
 	 */
 	readonly probe: (config: HttpProbeConfig, trace: CheckTraceContext) => Effect.Effect<ProbeOutcome>
 }
+
+/** An assertion a body prefix cannot settle: anything but a `contains` already found in it. */
+const needsUnreadBody = (assertion: UptimeAssertion, prefix: string | null): boolean =>
+	assertion._tag === "json_path" ||
+	(assertion._tag === "body" &&
+		(assertion.op === "not_contains" || prefix === null || !prefix.includes(assertion.value)))
 
 export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttpProbeApi>()(
 	"@maple/scraper/UptimeHttpProbe",
@@ -86,10 +93,15 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 							Effect.gen(function* () {
 								// Latency is time to the response headers, not the body read after them.
 								const respondedInMs = (yield* Clock.currentTimeMillis) - startedAt
-								const body = readsBody
-									? (yield* readTextPrefix(response, MAX_ASSERTION_BODY_BYTES)).text
+								const read = readsBody
+									? yield* readTextPrefix(response, MAX_ASSERTION_BODY_BYTES)
 									: null
-								return { response, body, respondedInMs }
+								return {
+									response,
+									body: read === null ? null : read.text,
+									isTruncated: read !== null && read.truncated,
+									respondedInMs,
+								}
 							}),
 						),
 						Effect.timeout(Duration.millis(config.timeoutMs)),
@@ -128,7 +140,16 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 						}
 					}
 
-					const { response, body, respondedInMs: durationMs } = result.success
+					const { response, body, isTruncated, respondedInMs: durationMs } = result.success
+					// Past the read budget only a `contains` found in the prefix is a sure verdict.
+					if (isTruncated && assertions.some((assertion) => needsUnreadBody(assertion, body))) {
+						return failed(
+							durationMs,
+							"assertion",
+							`Response body is over ${MAX_ASSERTION_BODY_BYTES / 1024} KB, more than body checks read`,
+							response.status,
+						)
+					}
 					const failure = firstFailedAssertion(assertions, {
 						statusCode: response.status,
 						durationMs,
