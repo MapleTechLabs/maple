@@ -54,7 +54,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
-import { UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
+import { ensureWithinLimit, UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
 import { uptimeRuleFields } from "@maple/backend/services/alerts/AlertRuleModel"
 import { deleteRuleRows } from "@maple/backend/services/alerts/AlertRulesService"
 
@@ -585,14 +585,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const failuresToDown = yield* validateFailuresToDown(
 					input.failuresToDown ?? DEFAULT_FAILURES_TO_DOWN,
 				)
-				const existing = yield* dbExecute((db) =>
-					db.run(
-						PG.from(UptimeMonitors)
-							.select("id")
-							.where(($) => [$.orgId.eq(orgId)]),
-					),
-				)
-				yield* allowance.ensureCanCreate(orgId, existing.length)
+				// Read before the transaction; the count is checked against it under the org lock.
+				const limit = yield* allowance.limit(orgId)
 
 				const now = yield* Clock.currentTimeMillis
 				const id = UptimeMonitorId.make(randomUUID())
@@ -604,6 +598,14 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					db.transaction(
 						Effect.gen(function* () {
 							yield* claimRuleWrite(db, orgId, ruleId, { name, destinationIds })
+							// Under the lock, so two concurrent creates cannot both pass a full plan.
+							const existing = yield* db.run(
+								PG.from(UptimeMonitors)
+									.select("id")
+									.where(($) => [$.orgId.eq(orgId)]),
+							)
+							yield* Effect.annotateCurrentSpan("maple.uptime.monitor_count", existing.length)
+							yield* ensureWithinLimit(limit, existing.length)
 							yield* db.run(
 								PG.insertInto(AlertRules).values({
 									id: ruleId,
