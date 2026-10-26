@@ -1,4 +1,4 @@
-import { Cause, Clock, Context, Effect, Layer, Result, type Semaphore } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Layer, Result, type Semaphore } from "effect"
 import { type InternalScrapeTarget, SOURCE_ID_ATTRIBUTE } from "@maple/domain/http"
 import {
 	convertFamiliesToOtlp,
@@ -10,7 +10,7 @@ import {
 } from "@maple/prometheus-otlp"
 import { OtlpIngest } from "./OtlpIngest"
 import { ScrapeError, scrapeError, withScrapeSpan } from "./ScrapeError"
-import { TargetFetcher } from "./TargetFetcher"
+import { scrapeTimeoutMs, TargetFetcher } from "./TargetFetcher"
 import type { TargetGroup } from "./TargetRegistry"
 
 export interface ScrapeSuccess {
@@ -25,7 +25,7 @@ export interface SubTargetScrape {
 	readonly target: InternalScrapeTarget
 	/** Epoch ms its fetch started. */
 	readonly scrapedAt: number
-	/** Fetch start to delivery end, or to its own failure. */
+	/** Its own fetch and convert time; the shared delivery is timed on the cycle span. */
 	readonly durationMs: number
 	/** Its own fetch/convert failure, or the cycle's delivery failure, attributed to it. */
 	readonly result: Result.Result<ScrapeSuccess, ScrapeError>
@@ -45,6 +45,14 @@ export interface ScraperApi {
 	 */
 	readonly scrapeCycle: (targets: TargetGroup, permits: Semaphore.Semaphore) => Effect.Effect<ScrapeCycle>
 }
+
+/**
+ * Fetch ceiling for a sub-target sharing a cycle: half the interval, so one
+ * stalled branch cannot hold the others' delivery past the next tick. A lone
+ * target keeps the fetcher's own interval-wide ceiling.
+ */
+export const sharedCycleFetchTimeoutMs = (scrapeIntervalSeconds: number): number =>
+	Math.min(scrapeTimeoutMs(scrapeIntervalSeconds), Math.max(1_000, scrapeIntervalSeconds * 500))
 
 export const hostFromUrl = (url: string): string =>
 	Result.getOrElse(
@@ -101,11 +109,23 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 		const ingest = yield* OtlpIngest
 
 		// One span per sub-target, so dashboards and per-branch error issues keep their shape.
-		const collect = (target: InternalScrapeTarget) => {
+		const collect = (target: InternalScrapeTarget, shared: boolean) => {
 			const host = hostFromUrl(target.url)
 			return Effect.gen(function* () {
 				const scrapeTimeMs = yield* Clock.currentTimeMillis
-				const body = yield* fetcher.fetch(target)
+				const body = yield* shared
+					? fetcher.fetch(target).pipe(
+							Effect.timeoutOrElse({
+								duration: Duration.millis(
+									sharedCycleFetchTimeoutMs(target.scrapeIntervalSeconds),
+								),
+								orElse: () =>
+									Effect.fail(
+										scrapeError({ message: "request timed out", reason: "target_error" }),
+									),
+							}),
+						)
+					: fetcher.fetch(target)
 				const parsed = parsePrometheusText(body)
 				const converted = convertFamiliesToOtlp(parsed.families, otlpContext(target, scrapeTimeMs))
 
@@ -149,11 +169,11 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 			)
 		}
 
-		const timedCollect = (target: InternalScrapeTarget, permits: Semaphore.Semaphore) =>
+		const timedCollect = (target: InternalScrapeTarget, shared: boolean, permits: Semaphore.Semaphore) =>
 			permits.withPermits(1)(
 				Effect.gen(function* () {
 					const scrapedAt = yield* Clock.currentTimeMillis
-					const result = yield* Effect.result(collect(target))
+					const result = yield* Effect.result(collect(target, shared))
 					const fetchedAt = yield* Clock.currentTimeMillis
 					return { target, scrapedAt, fetchedAt, result } satisfies Collected
 				}),
@@ -162,9 +182,13 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 		const scrapeCycle = (targets: TargetGroup, permits: Semaphore.Semaphore) => {
 			const [first] = targets
 			return Effect.gen(function* () {
-				const collected = yield* Effect.forEach(targets, (target) => timedCollect(target, permits), {
-					concurrency: "unbounded",
-				})
+				const collected = yield* Effect.forEach(
+					targets,
+					(target) => timedCollect(target, targets.length > 1, permits),
+					{
+						concurrency: "unbounded",
+					},
+				)
 				const requests = collected.flatMap((entry) =>
 					Result.isSuccess(entry.result) && entry.result.success.request !== null
 						? [entry.result.success.request]
@@ -179,29 +203,22 @@ export class Scraper extends Context.Service<Scraper, ScraperApi>()("@maple/scra
 									ingest.send(first.ingestKey, mergeExportRequests(requests)),
 								),
 							)
-				const deliveredAt = yield* Clock.currentTimeMillis
 				const deliveryFailure = Result.isFailure(delivery) ? delivery.failure : null
 
-				const scrapes = collected.map((entry): SubTargetScrape => {
-					const { target, scrapedAt, result } = entry
-					if (Result.isFailure(result) || result.success.request === null) {
-						return {
-							target,
-							scrapedAt,
-							durationMs: entry.fetchedAt - scrapedAt,
-							result: Result.map(result, (ok) => ok.success),
-						}
-					}
-					return {
+				// Duration is the sub-target's own fetch and convert; the shared send is on the cycle span.
+				const scrapes = collected.map(
+					({ target, scrapedAt, fetchedAt, result }): SubTargetScrape => ({
 						target,
 						scrapedAt,
-						durationMs: deliveredAt - scrapedAt,
+						durationMs: fetchedAt - scrapedAt,
 						result:
-							deliveryFailure === null
-								? Result.succeed(result.success.success)
-								: Result.fail(attribute(deliveryFailure, target, hostFromUrl(target.url))),
-					}
-				})
+							Result.isSuccess(result) &&
+							result.success.request !== null &&
+							deliveryFailure !== null
+								? Result.fail(attribute(deliveryFailure, target, hostFromUrl(target.url)))
+								: Result.map(result, (ok) => ok.success),
+					}),
+				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.scraper.sub_targets": targets.length,
 					"maple.scraper.failed_sub_targets": scrapes.filter((scrape) =>

@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Result, Schema, Semaphore } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer, Result, Schema, Semaphore } from "effect"
+import { TestClock } from "effect/testing"
 import { InternalScrapeTarget } from "@maple/domain/http"
 import { convertFamiliesToOtlp, parsePrometheusText, type OtlpExportRequest } from "@maple/prometheus-otlp"
 import { OtlpIngest } from "./OtlpIngest"
@@ -239,6 +240,31 @@ describe("Scraper", () => {
 			const broken = byKey.get("broken")!
 			assert.isTrue(Result.isFailure(broken))
 			if (Result.isFailure(broken)) assert.include(broken.failure.message, "broken.example.com")
+		}),
+	)
+
+	// TARGET is a 15s target: a lone one may take 14s, a shared one gets 7.5s.
+	it.effect("caps a stalled branch at half the interval only when it shares a cycle", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness()
+			harness.fetch = (target) =>
+				target.subTargetKey === "dev"
+					? Effect.as(Effect.sleep(Duration.seconds(10)), "up 1\n")
+					: Effect.succeed("up 1\n")
+			const shared = yield* Effect.forkChild(cycle(harness, [branch("main"), branch("dev")]))
+			yield* TestClock.adjust(Duration.seconds(8))
+			const outcome = yield* Fiber.join(shared)
+			const dev = outcome.scrapes.find((scrape) => scrape.target.subTargetKey === "dev")!
+			assert.isTrue(Result.isFailure(dev.result))
+			if (Result.isFailure(dev.result)) assert.include(dev.result.failure.message, "request timed out")
+			assert.strictEqual(dev.durationMs, 7_500)
+			assert.lengthOf(harness.sent, 1)
+
+			const lone = yield* Effect.forkChild(cycle(harness, [branch("dev")]))
+			yield* TestClock.adjust(Duration.seconds(10))
+			const loneOutcome = yield* Fiber.join(lone)
+			assert.isTrue(Result.isSuccess(loneOutcome.scrapes[0]!.result))
+			assert.strictEqual(loneOutcome.scrapes[0]!.durationMs, 10_000)
 		}),
 	)
 

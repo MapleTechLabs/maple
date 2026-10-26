@@ -176,14 +176,18 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 								}),
 						)
 					}
-					// Next tick, or later when every sub-target is still backing off then.
+					// A healthy sub-target holds the tick. When all are backing off, wake at the
+					// earlier of the tick and the first backoff end, so a branch discovered
+					// meanwhile still runs within one interval.
 					const nextTick = cycleStart + baseMs
+					const healthy = group.some((target) => !backoffs.has(targetKey(target)))
 					return Option.some(
-						Math.min(
-							...group.map((target) =>
-								Math.max(nextTick, backoffs.get(targetKey(target))?.notBefore ?? 0),
-							),
-						),
+						healthy
+							? nextTick
+							: Math.min(
+									nextTick,
+									...Array.from(backoffs.values(), (backoff) => backoff.notBefore),
+								),
 					)
 				})
 

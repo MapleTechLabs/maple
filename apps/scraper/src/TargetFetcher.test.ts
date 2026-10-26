@@ -306,8 +306,8 @@ describe("TargetFetcher", () => {
 				Effect.forkChild,
 			)
 
-			// 30s interval → 15s ceiling: nothing at 14s, failure at 15s.
-			yield* TestClock.adjust(Duration.seconds(14))
+			// 30s interval → 29s ceiling: nothing at 28s, failure at 29s.
+			yield* TestClock.adjust(Duration.seconds(28))
 			assert.isFalse(aborted)
 			yield* TestClock.adjust(Duration.seconds(1))
 			const exit = yield* Fiber.join(fiber)
@@ -377,8 +377,8 @@ describe("TargetFetcher", () => {
 })
 
 describe("scrapeTimeoutMs", () => {
-	it("leaves half the interval for delivery, floored at 1s and capped at 60s", () => {
-		assert.strictEqual(scrapeTimeoutMs(30), 15_000)
+	it("stays one second under the interval, floored at 1s and capped at 60s", () => {
+		assert.strictEqual(scrapeTimeoutMs(5), 4_000)
 		assert.strictEqual(scrapeTimeoutMs(1), 1_000)
 		assert.strictEqual(scrapeTimeoutMs(300), 60_000)
 	})

@@ -277,6 +277,22 @@ describe("ScrapeScheduler", () => {
 			}),
 		)
 
+		it.effect("scrapes a branch discovered while every other branch backs off within one interval", () =>
+			Effect.gen(function* () {
+				const harness = makeHarness([branch("down")])
+				harness.scrapeImpl = (target) =>
+					target.subTargetKey === "down"
+						? Effect.fail(failure("rate_limited", 300_000))
+						: Effect.succeed(OK_BODY)
+				yield* startScheduler.pipe(Effect.provide(harnessLayer(harness)))
+				harness.targets = [branch("down"), branch("new")]
+				// Reconcile at t=60 picks it up; the loop wakes on its next 10s tick.
+				yield* TestClock.adjust(Duration.seconds(70))
+				assert.isAtLeast(scrapesOf(harness, TARGET_A, "new"), 1)
+				assert.strictEqual(scrapesOf(harness, TARGET_A, "down"), 1)
+			}),
+		)
+
 		it.effect("parks every sub-target of a parent when ingest blocks its key", () =>
 			Effect.gen(function* () {
 				const harness = makeHarness([branch("a"), branch("b")])
