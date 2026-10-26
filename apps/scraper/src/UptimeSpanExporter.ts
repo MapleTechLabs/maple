@@ -75,7 +75,11 @@ export class UptimeSpanExporter extends Context.Service<UptimeSpanExporter, Upti
 								}),
 						),
 					)
-					if (response.status >= 200 && response.status < 300) return
+					// Drained either way, so the connection goes back to the pool.
+					if (response.status >= 200 && response.status < 300) {
+						yield* response.text.pipe(Effect.timeout(REQUEST_TIMEOUT), Effect.ignore)
+						return
+					}
 					const text = yield* response.text.pipe(
 						Effect.timeout(REQUEST_TIMEOUT),
 						Effect.orElseSucceed(() => ""),
