@@ -6,7 +6,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
 import { icon } from "../../../ui/icon"
-import { panel } from "../../../ui/panel"
+import { alert, alertAction, alertDescription, alertTitle } from "../../../ui/alert"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -116,44 +116,29 @@ const incidentBlock = (h: H, model: Model, monitor: UptimeMonitor, timeZone: str
 			? `Failing${since}`
 			: `Returning ${last.status_code}${since}`
 	const incidentId = openIncidentId(model, monitor)
-	return panel(h, { className: "border-destructive/50" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-start justify-between gap-3 px-4 py-3")],
-			[
-				h.div(
-					[h.Class("min-w-0")],
-					[
-						h.p([h.Class("text-sm font-medium")], [headline]),
-						...(last?.error === null || last === null
-							? []
-							: [h.p([h.Class("mt-0.5 text-sm text-muted-foreground")], [last.error])]),
-					],
-				),
-				h.div(
-					[h.Class("flex items-center gap-2")],
-					[
-						...(incidentId === null
-							? []
-							: [
-									linkButton(
-										h,
-										{ size: "sm", variant: "outline", href: incidentHref(incidentId) },
-										["Open incident"],
-									),
-								]),
-						...(last?.trace_id === null || last === null
-							? []
-							: [
-									linkButton(
-										h,
-										{ size: "sm", variant: "outline", href: traceHref(last.trace_id) },
-										["Open failing trace", icon(h, "ArrowRightIcon")],
-									),
-								]),
-					],
-				),
-			],
-		),
+	const actions = [
+		...(incidentId === null
+			? []
+			: [
+					linkButton(h, { size: "sm", variant: "outline", href: incidentHref(incidentId) }, [
+						"Open incident",
+					]),
+				]),
+		...(last?.trace_id === null || last === null
+			? []
+			: [
+					linkButton(h, { size: "sm", variant: "outline", href: traceHref(last.trace_id) }, [
+						"Open failing trace",
+						icon(h, "ArrowRightIcon"),
+					]),
+				]),
+	]
+	// An alert, not a panel: an overflow-hidden panel in the page column shrinks to its border.
+	return alert(h, { variant: "crit" }, [
+		icon(h, "CircleXmarkIcon"),
+		alertTitle(h, [headline]),
+		...(last?.error === null || last === null ? [] : [alertDescription(h, [last.error])]),
+		...(actions.length === 0 ? [] : [alertAction(h, actions)]),
 	])
 }
 
@@ -173,7 +158,7 @@ const body = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): Rea
 					...(monitor.heartbeat_url === null
 						? []
 						: [heartbeatPanel(h, model, monitor.heartbeat_url)]),
-					responseTimePanel(h, monitor),
+					...(monitor.kind === "heartbeat" ? [] : [responseTimePanel(h, monitor)]),
 					checksPanel(h, monitor, timeZone),
 				],
 			),

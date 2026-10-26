@@ -1,6 +1,7 @@
 import { Resolver } from "node:dns/promises"
 import { Clock, Context, Duration, Effect, Layer, Result, Schema } from "effect"
 import type { UptimeDnsConfig, UptimeDnsRecordType } from "@maple/domain/uptime"
+import { isPrivateAddress, parseExternalUrl } from "@maple/safe-fetch"
 import { errorCodeOf, failed, formatSeconds, type ProbeOutcome, succeeded } from "./UptimeProbe"
 
 export type DnsProbeConfig = Schema.Schema.Type<typeof UptimeDnsConfig>
@@ -78,6 +79,38 @@ const describeQueryFailure = (config: DnsProbeConfig, error: DnsQueryError): str
 
 const MAX_LISTED_ANSWERS = 3
 
+/** An answer a failure sentence may quote: no private or reserved address, no internal-only name. */
+const isQuotable = (recordType: UptimeDnsRecordType, answer: string): boolean => {
+	switch (recordType) {
+		case "A":
+		case "AAAA":
+			return !isPrivateAddress(answer)
+		case "TXT":
+			return true
+		case "CNAME":
+		case "MX":
+		case "NS":
+			return Result.isSuccess(parseExternalUrl(`http://${answer.trim().replace(/\.$/u, "")}/`))
+	}
+}
+
+/** The mismatch sentence, quoting only public answers. */
+const describeMismatch = (
+	config: DnsProbeConfig,
+	expected: string,
+	answers: ReadonlyArray<string>,
+): string => {
+	const quotable = answers.filter((answer) => isQuotable(config.recordType, answer))
+	if (quotable.length === 0) {
+		const records = answers.length === 1 ? "record" : "records"
+		return `${config.hostname} resolved to ${answers.length} ${config.recordType} ${records}, none matched ${expected}`
+	}
+	const listed = quotable.slice(0, MAX_LISTED_ANSWERS)
+	const unlisted = answers.length - listed.length
+	const more = unlisted > 0 ? ` and ${unlisted} more` : ""
+	return `${config.recordType} records for ${config.hostname} are ${listed.join(", ")}${more}, expected ${expected}`
+}
+
 export interface UptimeDnsProbeApi {
 	/** Query one record type. Up when it resolves and, with `expected`, any answer equals it. */
 	readonly probe: (config: DnsProbeConfig) => Effect.Effect<ProbeOutcome>
@@ -120,16 +153,7 @@ export class UptimeDnsProbe extends Context.Service<UptimeDnsProbe, UptimeDnsPro
 					if (answers.some((answer) => normalize(config.recordType, answer) === expected)) {
 						return succeeded(durationMs)
 					}
-					const listed = answers.slice(0, MAX_LISTED_ANSWERS).join(", ")
-					const more =
-						answers.length > MAX_LISTED_ANSWERS
-							? ` and ${answers.length - MAX_LISTED_ANSWERS} more`
-							: ""
-					return failed(
-						durationMs,
-						"assertion",
-						`${config.recordType} records for ${config.hostname} are ${listed}${more}, expected ${config.expected}`,
-					)
+					return failed(durationMs, "assertion", describeMismatch(config, config.expected, answers))
 				})
 
 			return { probe } satisfies UptimeDnsProbeApi

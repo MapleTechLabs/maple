@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { ScraperEnv } from "./Env"
 import { type RecordedRequest, stubFetch } from "./testing/stub-fetch"
-import { MONITOR_A, MONITOR_B, mkUptimeTarget } from "./testing/uptime"
+import { httpConfig, MONITOR_A, MONITOR_B, mkUptimeTarget } from "./testing/uptime"
 import { failed, succeeded } from "./UptimeProbe"
 import { SPAN_FLUSH_INTERVAL, UptimeSpanExporter } from "./UptimeSpanExporter"
 import { encodeTraceExport, type OtlpKeyValue, toOtlpSpan, type UptimeCheckSpan } from "./UptimeSpans"
@@ -67,6 +67,15 @@ describe("toOtlpSpan", () => {
 			stringValue: "Status 503, expected 2xx",
 		})
 		assert.deepStrictEqual(attributes["maple.uptime.ok"], { boolValue: false })
+	})
+
+	it("records url.full without the query or fragment, which may carry credentials", () => {
+		const monitor = mkUptimeTarget({
+			config: httpConfig({ url: "https://api.example.com:8443/health?token=s3cret&x=1#frag" }),
+		})
+		const attributes = attrs(toOtlpSpan(check({ monitor })).attributes)
+		assert.deepStrictEqual(attributes["url.full"], { stringValue: "https://api.example.com:8443/health" })
+		assert.deepStrictEqual(attributes["server.port"], { intValue: "8443" })
 	})
 
 	it("names TCP and DNS checks by target", () => {

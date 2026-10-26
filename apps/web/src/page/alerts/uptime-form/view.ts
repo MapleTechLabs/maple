@@ -4,12 +4,14 @@ import type { Html } from "foldkit/html"
 import { button, linkButton } from "../../../ui/button"
 import { errorState } from "../../../ui/error-state"
 import { icon, type IconName } from "../../../ui/icon"
-import { panel, panelBody, panelHeader } from "../../../ui/panel"
+import { alert, alertDescription, alertTitle } from "../../../ui/alert"
+import { panel, panelHeader } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { monitorHref, uptimeTabHref } from "../shared/uptime-commands"
 import { formatMs } from "../shared/uptime-derive"
+import { uptimePanelBody } from "../shared/uptime-view"
 import { formIssues } from "./derive"
 import { ASSERTION_OPS, type AssertionDraft, type MonitorKind } from "./form"
 import { Message } from "./message"
@@ -185,12 +187,12 @@ const sidePanel = (h: H, model: Model): Html =>
 						],
 					),
 				}),
-				panelBody(h, [h.div([h.Class("flex flex-col gap-3")], testResultBody(h, model))]),
+				uptimePanelBody(h, [h.div([h.Class("flex flex-col gap-3")], testResultBody(h, model))]),
 			])
 		: model.form.kind === "heartbeat"
 			? panel(h, {}, [
 					panelHeader(h, { title: "Ping URL" }),
-					panelBody(h, [
+					uptimePanelBody(h, [
 						h.p(
 							[h.Class("text-sm text-muted-foreground")],
 							["The ping URL appears after you create the monitor."],
@@ -199,7 +201,7 @@ const sidePanel = (h: H, model: Model): Html =>
 				])
 			: panel(h, {}, [
 					panelHeader(h, { title: "First check" }),
-					panelBody(h, [
+					uptimePanelBody(h, [
 						h.p(
 							[h.Class("text-sm text-muted-foreground")],
 							["The first check runs from Ashburn, US right after you create the monitor."],
@@ -291,8 +293,10 @@ const kindSections = (h: H, model: Model): ReadonlyArray<Html> => {
 }
 
 const limitNotice = (h: H): Html =>
-	panel(h, { className: "border-destructive/50" }, [
-		h.p([h.Role("alert"), h.Class("px-4 py-3 text-sm")], [LIMIT_MESSAGE]),
+	alert(h, { variant: "warn" }, [
+		icon(h, "CircleWarningIcon"),
+		alertTitle(h, ["Uptime monitor limit reached"]),
+		alertDescription(h, [LIMIT_MESSAGE]),
 	])
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {

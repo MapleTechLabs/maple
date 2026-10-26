@@ -52,12 +52,11 @@ export class UptimeScheduler extends Context.Service<UptimeScheduler, UptimeSche
 			const startedAt = yield* Clock.currentTimeMillis
 			const activeLoops = yield* Ref.make(0)
 
-			// Start-to-start at the latest interval, whatever the outcome: a down target keeps
-			// its cadence, there is no backoff. Ends once the monitor is gone.
-			const checkLoop = (id: string): Effect.Effect<void> =>
+			// One check and its wait, at the latest interval; false once the monitor is gone.
+			const checkStep = (id: string): Effect.Effect<boolean> =>
 				Effect.gen(function* () {
 					const latest = yield* registry.get(id)
-					if (Option.isNone(latest)) return
+					if (Option.isNone(latest)) return false
 					const target = latest.value
 					const loopStart = yield* Clock.currentTimeMillis
 					const report = yield* semaphore.withPermits(1)(prober.check(target))
@@ -66,8 +65,13 @@ export class UptimeScheduler extends Context.Service<UptimeScheduler, UptimeSche
 					yield* Effect.sleep(
 						Duration.millis(Math.max(0, target.intervalSeconds * 1000 - elapsedMs)),
 					)
-					return yield* checkLoop(id)
+					return true
 				})
+
+			// Start-to-start whatever the outcome: a down target keeps its cadence, there is no
+			// backoff. Repeated rather than recursive, so a long-lived loop holds no growing stack.
+			const checkLoop = (id: string): Effect.Effect<void> =>
+				checkStep(id).pipe(Effect.repeat({ while: (more) => more }), Effect.asVoid)
 
 			const monitorLoop = (target: UptimeProbeTarget) =>
 				Effect.sleep(

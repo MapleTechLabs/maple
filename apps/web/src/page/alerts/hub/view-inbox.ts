@@ -16,7 +16,9 @@ import {
 	blindSpots as deriveBlindSpots,
 	type FireLane,
 	fireLanes,
+	incidentScope,
 	incidentTitle,
+	incidentValues,
 } from "@maple/web-data/alerts/overview-derive"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
@@ -190,7 +192,7 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 						[h.Class("truncate text-xs text-muted-foreground")],
 						[
 							incident.ruleName,
-							...(incident.groupKey !== null ? [` · ${incident.groupKey}`] : []),
+							...(incidentScope(incident) !== null ? [` · ${incidentScope(incident)}`] : []),
 						],
 					),
 				],
@@ -200,14 +202,8 @@ const openIncidentRow = <M>(h: HtmlBuilder<M>, incident: AlertIncidentDocument, 
 				[
 					isHeld
 						? h.span([h.Class("text-muted-foreground")], ["no data"])
-						: h.span(
-								[h.Class(tone)],
-								[formatSignalValue(incident.signalType, incident.lastObservedValue)],
-							),
-					h.span(
-						[h.Class("text-muted-foreground")],
-						[" / ", formatSignalValue(incident.signalType, incident.threshold)],
-					),
+						: h.span([h.Class(tone)], [incidentValues(incident).now]),
+					h.span([h.Class("text-muted-foreground")], [" / ", incidentValues(incident).threshold]),
 				],
 			),
 			h.span(

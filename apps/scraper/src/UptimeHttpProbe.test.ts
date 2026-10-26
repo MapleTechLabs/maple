@@ -161,6 +161,52 @@ describe("UptimeHttpProbe", () => {
 		}).pipe(Effect.provide(ProbeLive)),
 	)
 
+	it.effect("sends no configured header or body across origins on a redirect", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const outcome = yield* probeWith(
+				recorded,
+				() =>
+					recorded.length === 1
+						? new Response(null, {
+								status: 302,
+								headers: { location: "https://moved.example.org/h" },
+							})
+						: new Response("ok", { status: 200 }),
+				{
+					method: "POST",
+					body: '{"secret":true}',
+					headers: { Authorization: "Bearer probe-secret", "X-Api-Key": "key-secret" },
+				},
+			)
+			assert.isTrue(outcome.ok)
+			const hop = recorded[1]
+			assert.strictEqual(hop?.url, "https://93.184.216.35/h")
+			assert.strictEqual(hop?.method, "GET")
+			assert.isNull(hop?.body ?? null)
+			assert.isUndefined(hop?.headers.authorization)
+			assert.isUndefined(hop?.headers["x-api-key"])
+		}).pipe(Effect.provide(ProbeLive)),
+	)
+
+	it.effect("keeps method, body and headers on a same-origin 307", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			yield* probeWith(
+				recorded,
+				() =>
+					recorded.length === 1
+						? new Response(null, { status: 307, headers: { location: "/v2/health" } })
+						: new Response("ok", { status: 200 }),
+				{ method: "POST", body: "ping", headers: { "X-Api-Key": "key-secret" } },
+			)
+			const hop = recorded[1]
+			assert.strictEqual(hop?.method, "POST")
+			assert.strictEqual(hop?.body, "ping")
+			assert.strictEqual(hop?.headers["x-api-key"], "key-secret")
+		}).pipe(Effect.provide(ProbeLive)),
+	)
+
 	it.effect("names the host it could not resolve, and refuses a private literal without a request", () =>
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []

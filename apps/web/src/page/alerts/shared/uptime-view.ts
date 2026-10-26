@@ -2,6 +2,7 @@ import { TONE_BORDER, TONE_FILL, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
+import { panelBody } from "../../../ui/panel"
 import {
 	displayStatus,
 	type RecentCheck,
@@ -84,3 +85,7 @@ export const recentChecksStrip = <M>(
 		],
 	)
 }
+
+/** `panelBody` with the inset the uptime panels' rows use. */
+export const uptimePanelBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
+	panelBody(h, children, "px-4 py-3")

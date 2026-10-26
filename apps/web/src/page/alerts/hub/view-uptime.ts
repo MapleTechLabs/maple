@@ -18,11 +18,13 @@ import { skeleton } from "../../../ui/skeleton"
 import { emptyActions, filteredEmpty } from "../../kit/signal-empty-state"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
 import { ROW_LINK_LIFT, ROW_STRETCHED_LINK_CLASS } from "../shared/links"
+import { isoMs } from "../shared/time"
 import { monitorHref, newMonitorHref } from "../shared/uptime-commands"
 import {
 	displayStatus,
 	formatMs,
 	formatShare,
+	formatSpan,
 	KIND_LABEL,
 	matchesQuery,
 	matchesStatus,
@@ -97,9 +99,11 @@ const kpis = (h: H, monitors: ReadonlyArray<UptimeMonitor>, nowMs: number): Html
 			subline:
 				firstDown === undefined
 					? "Every active check passes"
-					: down.length === 1
-						? `${firstDown.name}, ${targetLine(firstDown, nowMs)}`
-						: `${firstDown.name} and ${down.length - 1} more`,
+					: down.length > 1
+						? `${firstDown.name} and ${down.length - 1} more`
+						: firstDown.state.status_changed_at === null
+							? firstDown.name
+							: `${firstDown.name} for ${formatSpan(nowMs - isoMs(firstDown.state.status_changed_at))}`,
 		}),
 		statRailItem(h, {
 			eyebrow: "Uptime, recent checks",

@@ -1,10 +1,10 @@
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "../../../ui/icon"
-import { panel, panelBody, panelHeader } from "../../../ui/panel"
+import { panel, panelHeader } from "../../../ui/panel"
 import { monitorHref, newMonitorHref, uptimeTabHref } from "../../alerts/shared/uptime-commands"
 import { displayStatus, formatShare, targetLine, uptimeShare } from "../../alerts/shared/uptime-derive"
-import { recentChecksStrip, uptimeStatusChip } from "../../alerts/shared/uptime-view"
+import { recentChecksStrip, uptimePanelBody, uptimeStatusChip } from "../../alerts/shared/uptime-view"
 import type { Message } from "./message"
 import type { Model } from "./model"
 
@@ -33,7 +33,7 @@ export const uptimePanel = (h: H, model: Model): Html => {
 				["Open in Alerts"],
 			),
 		}),
-		panelBody(h, [
+		uptimePanelBody(h, [
 			h.ul(
 				[h.Class("flex flex-col gap-3")],
 				monitors.map((monitor) => {

@@ -17,7 +17,7 @@ import { toLoadFailure } from "../../../data/load-failure"
 import * as Menu from "../../../ui/menu"
 import { MountMenu } from "../../../ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { NOW, ORG } from "../shared/test-rows"
+import { incidentRow, NOW, ORG } from "../shared/test-rows"
 import { monitorHref } from "../shared/uptime-commands"
 import type { UptimeMonitor } from "../shared/uptime-derive"
 import { downMonitor, httpMonitor, pausedMonitor } from "../shared/uptime-test-monitors"
@@ -51,6 +51,36 @@ const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>): Model => {
 
 const THREE = [httpMonitor(), downMonitor(), pausedMonitor()]
 
+describe("alerts hub inbox, uptime incidents", () => {
+	test("an uptime incident reads as its monitor being down, without the ungrouped key", () => {
+		const entered = init({ _tag: "Alerts", search: {} }, context).model
+		const model = [
+			Message.ReadClock({ nowMs: NOW }),
+			Message.UpdatedRules({ orgId: ORG, rows: [] }),
+			Message.UpdatedIncidents({
+				orgId: ORG,
+				rows: [
+					incidentRow({
+						rule_name: "checkout-api",
+						signal_type: "uptime",
+						comparator: "gte",
+						threshold: 1,
+						last_observed_value: 1,
+						group_key: "__total__",
+					}),
+				],
+			}),
+		].reduce((current, message) => pageUpdate(current, message).model, entered)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("link", { name: "checkout-api is down" })).toExist(),
+			expectView(text(/__total__/u)).not.toExist(),
+			expectView(text("Down / Down")).not.toExist(),
+		)
+	})
+})
+
 describe("alerts hub, Uptime tab", () => {
 	test("the monitors are read only when the Uptime tab is open", () => {
 		expect(names(init({ _tag: "Alerts", search: {} }, context).commands)).not.toContain(
@@ -66,6 +96,7 @@ describe("alerts hub, Uptime tab", () => {
 			{ update: pageUpdate, view },
 			given(withMonitors(THREE)),
 			expectView(text("1 up · 1 down · 1 paused")).toExist(),
+			expectView(text("payments-api for 6m")).toExist(),
 			expectView(text("Down 6m")).toExist(),
 			expectView(text("Paused")).toExist(),
 			expectView(role("link", { name: "payments-api" })).toHaveAttr(

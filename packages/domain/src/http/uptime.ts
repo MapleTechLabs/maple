@@ -39,6 +39,7 @@ export class UptimeMonitorPersistenceError extends HttpTaggedError<UptimeMonitor
 	"@maple/http/errors/UptimeMonitorPersistenceError",
 	{
 		message: Schema.String,
+		cause: Schema.optionalKey(Schema.Defect()),
 	},
 	{
 		status: 503,

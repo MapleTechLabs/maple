@@ -104,13 +104,14 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 					}),
 				)
 
-			// Cadence is start-to-start on the happy path; a backoff runs its full
-			// delay from scrape end so Retry-After is honored. Ends once the target is gone.
-			const scrapeLoop = (key: string, consecutiveBackoffs: number): Effect.Effect<void> =>
+			// One scrape and its wait; false once the target is gone. `backoffs` counts the
+			// backoffs in a row, reset by any scrape that does not back off.
+			const scrapeStep = (key: string, backoffs: Ref.Ref<number>): Effect.Effect<boolean> =>
 				Effect.gen(function* () {
 					const latest = yield* registry.get(key)
-					if (Option.isNone(latest)) return
+					if (Option.isNone(latest)) return false
 					const target = latest.value
+					const consecutiveBackoffs = yield* Ref.get(backoffs)
 					const baseMs = target.scrapeIntervalSeconds * 1000
 
 					const loopStart = yield* Clock.currentTimeMillis
@@ -119,8 +120,9 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 					const delayMs = nextScrapeDelayMs({ baseMs, failure, consecutiveBackoffs })
 
 					if (failure === null || !shouldBackOff(failure)) {
+						yield* Ref.set(backoffs, 0)
 						yield* Effect.sleep(Duration.millis(Math.max(0, delayMs - elapsedMs)))
-						return yield* scrapeLoop(key, 0)
+						return true
 					}
 					yield* Effect.logWarning(backoffLogMessage(failure.reason)).pipe(
 						Effect.annotateLogs({
@@ -133,13 +135,25 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 							consecutiveBackoffs: consecutiveBackoffs + 1,
 						}),
 					)
+					yield* Ref.set(backoffs, consecutiveBackoffs + 1)
 					yield* Effect.sleep(Duration.millis(delayMs))
-					return yield* scrapeLoop(key, consecutiveBackoffs + 1)
+					return true
 				})
+
+			// Cadence is start-to-start on the happy path; a backoff runs its full delay from
+			// scrape end so Retry-After is honored. Repeated rather than recursive, so a
+			// long-lived loop holds no growing stack.
+			const scrapeLoop = (key: string): Effect.Effect<void> =>
+				Ref.make(0).pipe(
+					Effect.flatMap((backoffs) =>
+						scrapeStep(key, backoffs).pipe(Effect.repeat({ while: (more) => more })),
+					),
+					Effect.asVoid,
+				)
 
 			const targetLoop = (key: string, initial: InternalScrapeTarget) =>
 				Effect.sleep(Duration.millis(startJitter(key, initial.scrapeIntervalSeconds * 1000))).pipe(
-					Effect.andThen(scrapeLoop(key, 0)),
+					Effect.andThen(scrapeLoop(key)),
 				)
 
 			// Loops are keyed by target alone and read their config each scrape, so
