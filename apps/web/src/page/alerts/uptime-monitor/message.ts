@@ -29,5 +29,6 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	GotChartMessage: { message: Chart.Message },
+	GotPhaseChartMessage: { message: Chart.Message },
 })
 export type Message = typeof Message.Type

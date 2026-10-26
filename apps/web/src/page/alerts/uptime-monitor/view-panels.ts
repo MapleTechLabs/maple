@@ -2,7 +2,7 @@ import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import { cn } from "@maple/ui/lib/utils"
 import { formatAlertDateTime, formatAlertTime } from "@maple/web-data/alerts/form-utils"
 import { Option } from "effect"
-import { AsyncData } from "foldkit"
+import { AsyncData, Submodel } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import * as Chart from "../../../charts/chart"
@@ -10,6 +10,9 @@ import { ChartSpec } from "../../../charts/chart-spec"
 import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
 import { fixedMetricLegend, latencySeries } from "../../../charts/fixed-metric-legend"
 import { LATENCY_SERIES } from "../../../charts/fixed-metric-series"
+import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
+import { plotFrame } from "../../../charts/plot-frame"
+import { stackedBreakdown } from "../../../charts/stacked-breakdown-chart"
 import { resolveColor, type ThemeColors } from "../../../charts/theme-colors"
 import { chartSkeleton } from "../../../ui/chart-skeleton"
 import { errorState } from "../../../ui/error-state"
@@ -33,7 +36,7 @@ import {
 	uptimeShare,
 } from "../shared/uptime-derive"
 import { Message } from "./message"
-import type { CheckPoint, CheckSample, CheckStats, Model, UptimeWindow } from "./model"
+import type { CheckPoint, CheckSample, CheckStats, Model, PhasePoint, UptimeWindow } from "./model"
 import { uptimePanelBody } from "../shared/uptime-view"
 
 // The monitor page's panels: response time, the checks list and the side panels.
@@ -52,7 +55,21 @@ const fact = (h: H, label: string, value: Html | string, valueClass?: string): H
 		],
 	)
 
-export const CHART_TOKENS = [...LATENCY_SERIES.map((entry) => entry.token), "--border", "--background"]
+/** An HTTP check's phases in the order they happen, which is also the stack order from the axis up. */
+const PHASES = [
+	{ key: "dnsMs", label: "DNS", token: "--chart-1" },
+	{ key: "connectMs", label: "Connect", token: "--chart-2" },
+	{ key: "tlsMs", label: "TLS", token: "--chart-3" },
+	{ key: "ttfbMs", label: "TTFB", token: "--chart-4" },
+	{ key: "transferMs", label: "Transfer", token: "--chart-5" },
+] as const satisfies ReadonlyArray<{ key: keyof PhasePoint; label: string; token: string }>
+
+export const CHART_TOKENS = [
+	...LATENCY_SERIES.map((entry) => entry.token),
+	...PHASES.map((phase) => phase.token),
+	"--border",
+	"--background",
+]
 
 const WINDOWS: ReadonlyArray<{ value: UptimeWindow; label: string }> = [
 	{ value: "1h", label: "1h" },
@@ -603,6 +620,93 @@ const legendDot = (h: H, color: string, label: string): Html =>
 		[h.Key(label), h.Class("flex items-center gap-1.5")],
 		[h.span([h.Class(cn("inline-block size-2 rounded-full", color))], []), label],
 	)
+
+/** Long rows, one per (bucket, phase), labelled so the tooltip and legend read the phase names. */
+const phaseRows = (points: ReadonlyArray<PhasePoint>) =>
+	points.flatMap((point) =>
+		PHASES.map((phase) => ({
+			bucket: point.bucket,
+			attributeValue: phase.label,
+			value: point[phase.key],
+		})),
+	)
+
+const phaseChart = (h: H, model: Model, points: ReadonlyArray<PhasePoint>, context: ChartContext): Html => {
+	const built = stackedBreakdown({
+		rows: phaseRows(points),
+		colors: Object.fromEntries(PHASES.map((phase) => [phase.label, `var(${phase.token})`])),
+		order: PHASES.map((phase) => phase.label),
+		theme: context.theme,
+		timeZone: context.timeZone,
+		gradientPrefix: "uptime-phases",
+		unit: "duration_ms",
+		showTotal: true,
+	})
+	return h.div(
+		[h.Class("h-56")],
+		[
+			h.submodel({
+				slotId: "uptime-phase-chart",
+				model: model.phaseChart,
+				view: PhaseChartView,
+				viewInputs: {
+					spec: built.spec,
+					legend: fixedMetricLegend(
+						h,
+						PHASES.map((phase) => ({
+							key: phase.key,
+							label: phase.label,
+							color: resolveColor(context.theme, phase.token),
+						})),
+					),
+				},
+				toParentMessage: (message: Chart.Message) => Message.GotPhaseChartMessage({ message }),
+			}),
+		],
+	)
+}
+
+const PhaseChartView = Submodel.defineView<
+	Chart.Model,
+	Chart.Message,
+	Readonly<{ spec: ChartSpec; legend: Html }>
+>((model, inputs, h) =>
+	plotFrame(h, {
+		chartId: "uptime-phases",
+		spec: inputs.spec,
+		ariaLabel: "Response time breakdown by phase",
+		className: "h-full w-full aspect-auto",
+		legend: inputs.legend,
+		tooltipBody: (portal) =>
+			Option.flatMap(model.tooltip, (tooltip) =>
+				tooltip._tag === "Bucket"
+					? Option.some(bucketTooltipBody(h, tooltip, portal))
+					: Option.none(),
+			),
+	}),
+)
+
+/** HTTP monitors: where each check's time went, averaged per bucket over the picked window. */
+export const phaseBreakdownPanel = (h: H, model: Model, context: ChartContext | null): Html => {
+	const data = model.stats.data
+	const body = AsyncData.isFailure(data)
+		? errorState(h, { failure: data.error, title: "Couldn't load the breakdown", className: "py-8" })
+		: Option.match(statsOf(model), {
+				onNone: () => h.div([h.Class("h-56")], [chartSkeleton(h, "area")]),
+				onSome: (stats) =>
+					stats.phases.length === 0
+						? h.p(
+								[h.Class("py-16 text-center text-sm text-muted-foreground")],
+								[
+									`No timed checks in the ${WINDOW_LABEL[model.window]}. Newer checks record each phase.`,
+								],
+							)
+						: context === null
+							? h.div([h.Class("h-56")], [chartSkeleton(h, "area")])
+							: phaseChart(h, model, stats.phases, context),
+			})
+	return panel(h, {}, [panelHeader(h, { title: "Response time breakdown" }), uptimePanelBody(h, [body])])
+}
 
 type CheckRow = Readonly<{
 	at: string

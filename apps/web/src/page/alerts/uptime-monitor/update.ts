@@ -32,16 +32,21 @@ const statsKey = (context: PageContext, monitorId: string, window: UptimeWindow)
 /** Reads the window's checks once the monitor is known to probe; heartbeats record no check spans. */
 const requestStats = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	const id = model.monitorId
-	const isProbed = Option.match(monitorOf(model), {
-		onNone: () => false,
-		onSome: (monitor) => monitor.kind !== "heartbeat",
-	})
-	if (id === null || !isProbed) return { model }
+	const monitor = Option.getOrNull(monitorOf(model))
+	if (id === null || monitor === null || monitor.kind === "heartbeat") return { model }
 	return Option.match(Keyed.requestFor(model.stats, statsKey(context, id, model.window), mode), {
 		onNone: () => ({ model }),
 		onSome: (stats) => ({
 			model: { ...model, stats },
-			commands: [FetchCheckStats({ key: stats.key, monitorId: id, window: model.window })],
+			commands: [
+				FetchCheckStats({
+					key: stats.key,
+					monitorId: id,
+					window: model.window,
+					// Only HTTP checks time their phases.
+					withPhases: monitor.config.type === "http",
+				}),
+			],
 		}),
 	})
 }
@@ -76,6 +81,7 @@ export const init = (route: MonitorRoute, context: PageContext): Return => {
 		stats: Keyed.idle(),
 		hoveredCheck: null,
 		chart: Chart.init(),
+		phaseChart: Chart.init(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 	}
@@ -203,6 +209,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model: { ...model, chart: next.model },
 				commands: FoldkitCommand.mapMessages(next.commands ?? [], (message) =>
 					Message.GotChartMessage({ message }),
+				),
+			}
+		},
+		GotPhaseChartMessage: ({ message: child }) => {
+			const next = Chart.update(model.phaseChart, child)
+			return {
+				model: { ...model, phaseChart: next.model },
+				commands: FoldkitCommand.mapMessages(next.commands ?? [], (message) =>
+					Message.GotPhaseChartMessage({ message }),
 				),
 			}
 		},

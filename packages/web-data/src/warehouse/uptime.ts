@@ -2,10 +2,12 @@ import { QueryEngineExecuteRequest, type QueryEngineExecuteResponse } from "@map
 import type { TracesFilters } from "@maple/domain/query-engine"
 import { UPTIME_MONITOR_ID_ATTRIBUTE, UPTIME_SERVICE_NAME } from "@maple/domain/uptime"
 import { Clock, Effect, Schema } from "effect"
-import { ServiceName } from "@maple/domain/http"
+import { ServiceName, UptimePhaseTimingsRequest, type UptimePhaseTimingsPoint } from "@maple/domain/http"
+import type { UptimeMonitorId } from "@maple/domain"
 import { buildServiceDetailPoints } from "./custom-charts"
-import { executeQueryEngine } from "./effect-utils"
 import { listTraces } from "./traces"
+import { executeQueryEngine, runWarehouseQuery } from "./effect-utils"
+import { MapleInternalHttp } from "./warehouse-services"
 import type { ServiceDetailTimeSeriesPoint } from "./services"
 import { computeBucketSeconds, toIsoBucket } from "./timeseries-utils"
 
@@ -13,9 +15,11 @@ import { computeBucketSeconds, toIsoBucket } from "./timeseries-utils"
 // the window's own percentiles (bucket percentiles cannot be merged into a window's).
 
 export interface UptimeCheckStatsInput {
-	readonly monitorId: string
+	readonly monitorId: UptimeMonitorId
 	readonly startTime: string
 	readonly endTime: string
+	/** HTTP monitors: also read the per-bucket phase averages (DNS, connect, TLS, TTFB, transfer). */
+	readonly withPhases?: boolean
 }
 
 /** Checks one list page reads (the traces list caps `limit` at 200), and the pages read. */
@@ -49,6 +53,8 @@ export interface UptimeCheckStats {
 	readonly p50Ms: number | null
 	readonly p95Ms: number | null
 	readonly p99Ms: number | null
+	/** Buckets with at least one timed check; empty without `withPhases` or before phases were recorded. */
+	readonly phases: ReadonlyArray<UptimePhaseTimingsPoint>
 }
 
 const breakdownValue = (response: QueryEngineExecuteResponse): number | null => {
@@ -122,7 +128,23 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 	}
 	const checkList = readFrom(0)
 
-	const [series, p50Ms, p95Ms, p99Ms, list] = yield* Effect.all(
+	const phases =
+		input.withPhases === true
+			? runWarehouseQuery("queryEngine.uptimePhaseTimings", () =>
+					Effect.gen(function* () {
+						const client = yield* MapleInternalHttp
+						return yield* client.queryEngine.uptimePhaseTimings({
+							payload: new UptimePhaseTimingsRequest({
+								monitorId: input.monitorId,
+								...window,
+								bucketSeconds,
+							}),
+						})
+					}),
+				).pipe(Effect.map((response) => response.points))
+			: Effect.succeed([])
+
+	const [series, p50Ms, p95Ms, p99Ms, list, phasePoints] = yield* Effect.all(
 		[
 			executeQueryEngine(
 				"queryEngine.uptimeCheckStats.series",
@@ -142,6 +164,7 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 			percentile("p95_duration"),
 			percentile("p99_duration"),
 			checkList,
+			phases,
 		],
 		{ concurrency: "unbounded" },
 	)
@@ -176,5 +199,6 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 		p50Ms: checks === 0 ? null : p50Ms,
 		p95Ms: checks === 0 ? null : p95Ms,
 		p99Ms: checks === 0 ? null : p99Ms,
+		phases: phasePoints,
 	} satisfies UptimeCheckStats
 })

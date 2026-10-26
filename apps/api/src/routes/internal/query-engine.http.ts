@@ -53,6 +53,7 @@ import {
 	ServiceDbQuerySummaryResponse,
 	ServiceDetailOverviewResponse,
 	ReleasesListResponse,
+	UptimePhaseTimingsResponse,
 	ReleaseDetailResponse,
 	type ReleaseRow,
 	ServiceDependenciesBundleResponse,
@@ -1253,6 +1254,17 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							releases: rows.map(toReleaseRow),
 							timeline: timelineRows.map(toReleaseTimelinePoint),
 							truncated: rows.length >= CH.RELEASES_LIST_CAP,
+						})
+					}),
+				)
+				.handle("uptimePhaseTimings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.uptimePhaseTimings, tenant, payload)
+						return new UptimePhaseTimingsResponse({
+							points: rows
+								.filter((row) => row.timedChecks > 0)
+								.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
 						})
 					}),
 				)

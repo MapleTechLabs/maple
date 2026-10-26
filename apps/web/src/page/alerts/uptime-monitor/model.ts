@@ -36,6 +36,17 @@ export const CheckSample = Schema.Struct({
 	traceId: Schema.String,
 })
 export type CheckSample = typeof CheckSample.Type
+/** `UptimePhaseTimingsPoint`: a bucket's mean phases (ms) over its checks that got a response. */
+export const PhasePoint = Schema.Struct({
+	bucket: Schema.String,
+	timedChecks: Schema.Number,
+	dnsMs: Schema.Number,
+	connectMs: Schema.Number,
+	tlsMs: Schema.Number,
+	ttfbMs: Schema.Number,
+	transferMs: Schema.Number,
+})
+export type PhasePoint = typeof PhasePoint.Type
 
 /** `UptimeCheckStats` (@maple/web-data/warehouse/uptime): the window's checks from their spans. */
 export const CheckStats = Schema.Struct({
@@ -51,6 +62,7 @@ export const CheckStats = Schema.Struct({
 	p50Ms: Schema.NullOr(Schema.Number),
 	p95Ms: Schema.NullOr(Schema.Number),
 	p99Ms: Schema.NullOr(Schema.Number),
+	phases: Schema.Array(PhasePoint),
 })
 export type CheckStats = typeof CheckStats.Type
 
@@ -75,6 +87,7 @@ export const Model = Schema.Struct({
 	/** The scatter's hovered check, by its index in `samples`. */
 	hoveredCheck: Schema.NullOr(Schema.Number),
 	chart: Chart.Model,
+	phaseChart: Chart.Model,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
 })

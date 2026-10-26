@@ -14,6 +14,8 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Chart from "../../../charts/chart"
+import { MountChart } from "../../../charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { destinationRow, incidentRow, NOW, ORG } from "../shared/test-rows"
@@ -166,6 +168,7 @@ describe("uptime monitor page", () => {
 					p50Ms: 121,
 					p95Ms: 310,
 					p99Ms: 884,
+					phases: [],
 				}),
 			}),
 		).model
@@ -206,6 +209,7 @@ describe("uptime monitor page", () => {
 					p50Ms: 120,
 					p95Ms: 10_000,
 					p99Ms: 10_000,
+					phases: [],
 				}),
 			}),
 		).model
@@ -246,6 +250,7 @@ describe("uptime monitor page", () => {
 					p50Ms: 121,
 					p95Ms: 310,
 					p99Ms: 884,
+					phases: [],
 				}),
 			}),
 		).model
@@ -276,6 +281,7 @@ describe("uptime monitor page", () => {
 					p50Ms: 100,
 					p95Ms: 100,
 					p99Ms: 100,
+					phases: [],
 				}),
 			}),
 		].reduce((current, message) => pageUpdate(current, message).model, model)
@@ -284,6 +290,93 @@ describe("uptime monitor page", () => {
 			given(failed),
 			themeResolved(),
 			expectView(text("The chart couldn't load. Reload the page to try again.")).toExist(),
+		)
+	})
+
+	test("an HTTP monitor's breakdown says when no check in the window has phase timings yet", () => {
+		const model = opened(httpMonitor())
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 4,
+					failures: 0,
+					p50Ms: 90,
+					p95Ms: 120,
+					p99Ms: 130,
+					phases: [],
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(text("Response time breakdown")).toExist(),
+			expectView(
+				text("No timed checks in the last 24 hours. Newer checks record each phase."),
+			).toExist(),
+		)
+	})
+
+	test("an HTTP monitor's breakdown charts each phase once its checks carry timings", () => {
+		const model = opened(httpMonitor(), [Message.CompletedLoadChartRuntime()])
+		const phase = { timedChecks: 2, dnsMs: 4, connectMs: 11, tlsMs: 18, ttfbMs: 60, transferMs: 0 }
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 4,
+					failures: 0,
+					p50Ms: 90,
+					p95Ms: 120,
+					p99Ms: 130,
+					phases: [
+						{ bucket: "2026-10-26T10:00:00.000Z", ...phase },
+						{ bucket: "2026-10-26T11:00:00.000Z", ...phase },
+					],
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			// The latency chart and the breakdown each mount a canvas.
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(selector('[data-chart-label="Response time breakdown by phase"]')).toExist(),
+			...["DNS", "Connect", "TLS", "TTFB", "Transfer"].map((label) =>
+				expectView(text(label)).toExist(),
+			),
+		)
+	})
+
+	test("a TCP monitor has response times but no phase breakdown", () => {
+		const tcp = httpMonitor({
+			kind: "tcp",
+			config: { type: "tcp", host: "db.acme.dev", port: 5432, timeout_ms: 5000 },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(opened(tcp)),
+			themeResolved(),
+			expectView(text("Response time")).toExist(),
+			expectView(text("Response time breakdown")).not.toExist(),
 		)
 	})
 

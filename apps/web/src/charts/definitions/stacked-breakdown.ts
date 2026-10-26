@@ -4,7 +4,7 @@ import { makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
-import { formatNumber } from "@maple/ui/lib/format"
+import { formatValueByUnit } from "@maple/ui/lib/format"
 import { curveMonotoneX } from "d3-shape"
 import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
@@ -43,6 +43,7 @@ export const buildStackedBreakdown = (
 	const cells: ReadonlyArray<BreakdownCell> = data.flatMap((row) =>
 		series.map((name) => ({ row, name, value: cellValue(row[name]) })),
 	)
+	const format = (value: number) => formatValueByUnit(value, spec.unit)
 	const focus = tooltipFocusCapture()
 	const definition = defineChart({
 		gradients: series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.4, 0.05)),
@@ -64,7 +65,7 @@ export const buildStackedBreakdown = (
 			y: {
 				grid: DASHED_Y_GRID,
 				scale: scaleLinear().domain(yDomain),
-				axis: { line: false, ticks: { size: 0, padding: 8, format: (v: number) => formatNumber(v) } },
+				axis: { line: false, ticks: { size: 0, padding: 8, format: (v: number) => format(v) } },
 			},
 		},
 		margin: { top: 12, right: 12, left: 60 },
@@ -92,15 +93,17 @@ export const buildStackedBreakdown = (
 									label: spec.labels[name] ?? name,
 									color: colorOf(name),
 									dashed: false,
-									value: formatNumber(value),
+									value: format(value),
 								},
 							]
 						: []
 				}),
 			}
+			const total = series.reduce((sum, name) => sum + cellValue(datum.row[name]), 0)
+			const withTotal = spec.showTotal === true ? { ...base, total: format(total) } : base
 			return highlighted === undefined
-				? ChartTooltip.Bucket(base)
-				: ChartTooltip.Bucket({ ...base, highlighted })
+				? ChartTooltip.Bucket(withTotal)
+				: ChartTooltip.Bucket({ ...withTotal, highlighted })
 		})
 	return { definition, focusKeyOf: (point) => point.datum.row.bucket, tooltipOf }
 }

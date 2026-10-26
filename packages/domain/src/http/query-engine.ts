@@ -15,6 +15,7 @@ import {
 	StatusCode,
 	SupabaseProjectRef,
 	TraceId,
+	UptimeMonitorId,
 } from "../primitives"
 import {
 	AttributeFilter,
@@ -1252,6 +1253,33 @@ export class ReleasesListResponse extends Schema.Class<ReleasesListResponse>("Re
 	timeline: Schema.Array(ReleaseTimelinePoint),
 	/** True when the row cap cut older releases off the end. */
 	truncated: Schema.Boolean,
+}) {}
+
+export class UptimePhaseTimingsRequest extends Schema.Class<UptimePhaseTimingsRequest>(
+	"UptimePhaseTimingsRequest",
+)({
+	monitorId: UptimeMonitorId,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+}) {}
+
+/** A bucket's mean phases (ms) over its checks that got a response; buckets with none are absent. */
+const UptimePhaseTimingsPoint = Schema.Struct({
+	bucket: Schema.String,
+	timedChecks: Schema.Number,
+	dnsMs: Schema.Number,
+	connectMs: Schema.Number,
+	tlsMs: Schema.Number,
+	ttfbMs: Schema.Number,
+	transferMs: Schema.Number,
+})
+export type UptimePhaseTimingsPoint = Schema.Schema.Type<typeof UptimePhaseTimingsPoint>
+
+export class UptimePhaseTimingsResponse extends Schema.Class<UptimePhaseTimingsResponse>(
+	"UptimePhaseTimingsResponse",
+)({
+	points: Schema.Array(UptimePhaseTimingsPoint),
 }) {}
 
 export class ReleaseDetailRequest extends Schema.Class<ReleaseDetailRequest>("ReleaseDetailRequest")({
@@ -3486,6 +3514,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("releasesList", "/releases", {
 			payload: ReleasesListRequest,
 			success: ReleasesListResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("uptimePhaseTimings", "/uptime-phase-timings", {
+			payload: UptimePhaseTimingsRequest,
+			success: UptimePhaseTimingsResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

@@ -57,15 +57,21 @@ const WINDOW_MS = { "1h": 3_600_000, "24h": 86_400_000, "7d": 604_800_000 } as c
 
 /** The monitor's checks over the window, read from its check spans. */
 export const FetchCheckStats = Command.define("FetchUptimeCheckStats", {
-	args: { key: Schema.String, monitorId: UptimeMonitorId, window: UptimeWindow },
+	args: {
+		key: Schema.String,
+		monitorId: UptimeMonitorId,
+		window: UptimeWindow,
+		withPhases: Schema.Boolean,
+	},
 	messages: [Message.CompletedFetchStats],
-	execute: ({ key, monitorId, window }) =>
+	execute: ({ key, monitorId, window, withPhases }) =>
 		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
 			return yield* getUptimeCheckStats({
 				monitorId,
 				startTime: formatWarehouseDateTime(nowMs - WINDOW_MS[window]),
 				endTime: formatWarehouseDateTime(nowMs),
+				withPhases,
 			}).pipe(Effect.map((stats) => ({ ...stats, window })))
 		}).pipe(
 			Effect.mapError(toLoadFailure),
