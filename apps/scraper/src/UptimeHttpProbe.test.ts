@@ -102,6 +102,13 @@ describe("UptimeHttpProbe", () => {
 			const absent = yield* check({ _tag: "body", op: "not_contains", value: "error" })
 			const tail = yield* check({ _tag: "body", op: "contains", value: "error" })
 			assert.isTrue(found.ok)
+			const down = yield* probeWith(
+				[],
+				() => new Response(`${"x".repeat(70 * 1024)} error`, { status: 503 }),
+				{ assertions: [{ _tag: "body", op: "not_contains", value: "error" }] },
+			)
+			// A definite status failure is reported over the unread body.
+			assert.strictEqual(down.error, "Status 503, expected 2xx")
 			assert.deepStrictEqual(
 				[absent.ok, absent.error, tail.ok, tail.error],
 				[
