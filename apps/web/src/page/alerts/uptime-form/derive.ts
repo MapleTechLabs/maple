@@ -118,6 +118,14 @@ export const graceSeconds = (form: Form): number =>
 const MAX_GRACE_SECONDS = 86_400
 
 /** What still blocks the save, one plain sentence each. */
+/** A header line `parseHeaders` would skip, said out loud so the monitor is not saved without it. */
+const headerLineIssues = (text: string): ReadonlyArray<string> =>
+	text
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line !== "" && line.slice(0, Math.max(0, line.indexOf(":"))).trim() === "")
+		.map((line) => `Header line '${line}' needs a name and a colon, like Authorization: Bearer token.`)
+
 export const formIssues = (form: Form): ReadonlyArray<string> => {
 	const add = (condition: boolean, issue: string): ReadonlyArray<string> => (condition ? [issue] : [])
 	const kindIssues: ReadonlyArray<string> = (() => {
@@ -135,6 +143,7 @@ export const formIssues = (form: Form): ReadonlyArray<string> => {
 							? [`URL host '${host}' is not allowed (loopback, private, or metadata range)`]
 							: []
 					})(),
+					...headerLineIssues(form.headers),
 					...new Set(
 						form.assertions.flatMap((row) =>
 							Option.toArray(Option.fromNullishOr(assertionIssue(row))),

@@ -257,24 +257,25 @@ export const availabilityPanel = (h: H, monitor: UptimeMonitor): Html => {
 }
 
 export const setupPanel = (h: H, model: Model, monitor: UptimeMonitor, serviceHref: string | null): Html => {
-	const names = monitor.destination_ids.map(
-		(id) => (model.destinations ?? []).find((row) => row.id === id)?.name ?? "Unavailable destination",
-	)
+	const count = monitor.destination_ids.length
+	// `null` until destinations sync: the count, rather than calling every one unavailable.
+	const destinations = model.destinations
+	const notifies =
+		count === 0
+			? "Nobody yet. The incident still opens in the inbox."
+			: destinations === null
+				? `${count} ${count === 1 ? "destination" : "destinations"}`
+				: monitor.destination_ids
+						.map(
+							(id) =>
+								destinations.find((row) => row.id === id)?.name ?? "Unavailable destination",
+						)
+						.join(", ")
 	return panel(h, { className: "divide-y" }, [
 		panelHeader(h, { title: "Setup" }),
 		h.div(
 			[h.Class("px-4 py-3")],
-			[
-				eyebrow(h, {}, ["Notifies"]),
-				h.p(
-					[h.Class("mt-1 text-sm")],
-					[
-						names.length === 0
-							? "Nobody yet. The incident still opens in the inbox."
-							: names.join(", "),
-					],
-				),
-			],
+			[eyebrow(h, {}, ["Notifies"]), h.p([h.Class("mt-1 text-sm")], [notifies])],
 		),
 		h.div(
 			[h.Class("px-4 py-3")],
