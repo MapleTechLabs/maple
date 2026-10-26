@@ -205,7 +205,7 @@ const assertionToWire = (row: AssertionDraft) => {
 		case "latency":
 			return { type: "latency", under_ms: whole(row.value) }
 		case "body":
-			return { type: "body", op: row.op, value: row.value }
+			return { type: "body", op: row.op, value: row.value.trim() }
 		case "json_path":
 			return row.op === "exists"
 				? { type: "json_path", path: row.target.trim(), op: "exists" }
@@ -213,7 +213,12 @@ const assertionToWire = (row: AssertionDraft) => {
 		case "header":
 			return row.op === "exists"
 				? { type: "header", name: row.target.trim(), op: "exists" }
-				: { type: "header", name: row.target.trim(), op: row.op, value: row.value }
+				: {
+						type: "header",
+						name: row.target.trim(),
+						op: row.op,
+						value: row.op === "contains" ? row.value.trim() : row.value,
+					}
 	}
 }
 
