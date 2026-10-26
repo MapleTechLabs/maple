@@ -2,11 +2,11 @@ import { assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Fiber, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { UptimeHttpConfig } from "@maple/domain/uptime"
+import { UPTIME_USER_AGENT, UptimeHttpConfig } from "@maple/domain/uptime"
 import { HostResolver } from "@maple/safe-fetch/dns"
 import { hang, type RecordedRequest, stubFetch } from "./testing/stub-fetch"
 import { fixedResolver, httpConfig } from "./testing/uptime"
-import { UPTIME_USER_AGENT, UptimeHttpProbe } from "./UptimeHttpProbe"
+import { UptimeHttpProbe } from "./UptimeHttpProbe"
 
 const DNS = new Map([
 	["api.example.com", ["93.184.216.34"]],
