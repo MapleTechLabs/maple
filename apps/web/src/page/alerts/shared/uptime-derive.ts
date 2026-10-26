@@ -127,12 +127,18 @@ export const formatShare = (share: number | null): string => {
 	return Number.isInteger(percent) ? `${percent}%` : `${percent.toFixed(2)}%`
 }
 
-/** Nearest-rank p95 of the recent durations, or `null` with none. */
-export const p95 = (recent: ReadonlyArray<RecentCheck>): number | null => {
-	const durations = recent.flatMap((check) => (check.duration_ms === null ? [] : [check.duration_ms]))
-	if (durations.length === 0) return null
-	const sorted = [...durations].sort((a, b) => a - b)
-	return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] ?? null
+export type LatencyPercentiles = Readonly<{ p50: number | null; p95: number | null; p99: number | null }>
+
+/** Nearest-rank p50, p95 and p99 of the recent durations, each `null` with none. */
+export const latencyPercentiles = (recent: ReadonlyArray<RecentCheck>): LatencyPercentiles => {
+	const sorted = recent
+		.flatMap((check) => (check.duration_ms === null ? [] : [check.duration_ms]))
+		.sort((a, b) => a - b)
+	const at = (q: number) =>
+		sorted.length === 0
+			? null
+			: (sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * q) - 1)] ?? null)
+	return { p50: at(0.5), p95: at(0.95), p99: at(0.99) }
 }
 
 export const formatMs = (ms: number | null): string =>

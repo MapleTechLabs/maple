@@ -106,6 +106,17 @@ describe("alerts hub, Uptime tab", () => {
 		)
 	})
 
+	test("each row reads P50, P95 and P99 off its recent checks", () => {
+		// Recent durations 100 to 139 ms: nearest rank lands on 119, 137 and 139.
+		scene(
+			{ update: pageUpdate, view },
+			given(withMonitors([httpMonitor()])),
+			expectView(text("119 ms")).toExist(),
+			expectView(text("137 ms")).toExist(),
+			expectView(text("139 ms")).toExist(),
+		)
+	})
+
 	test("an org without monitors is told what uptime checks are and offered the first one", () => {
 		scene(
 			{ update: pageUpdate, view },

@@ -27,8 +27,8 @@ import {
 	formatSpan,
 	KIND_LABEL,
 	matchesQuery,
+	latencyPercentiles,
 	matchesStatus,
-	p95,
 	type StatusFilter,
 	summarize,
 	targetLine,
@@ -44,7 +44,8 @@ import { monitorMenuId } from "./update"
 
 type H = HtmlBuilder<Message>
 
-const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_80px_minmax(120px,240px)_72px_72px_32px] items-center gap-4"
+const ROW_GRID =
+	"grid grid-cols-[minmax(0,1fr)_72px_minmax(120px,220px)_64px_64px_64px_64px_32px] items-center gap-4"
 const RECENT_SLOTS = 40
 
 const KIND_FILTERS: ReadonlyArray<{ value: UptimeKindFilter; label: string }> = [
@@ -199,6 +200,31 @@ const rowMenu = (h: H, model: Model, monitor: UptimeMonitor): Html => {
 	})
 }
 
+const PERCENTILE_COLUMNS = [
+	{ key: "p50", label: "P50" },
+	{ key: "p95", label: "P95" },
+	{ key: "p99", label: "P99" },
+] as const
+const PERCENTILE_TITLE = "Response time over the monitor's recent checks"
+
+/** P50, P95 and P99 of the recent checks; heartbeats have no response time. */
+const latencyCells = (h: H, monitor: UptimeMonitor): ReadonlyArray<Html> => {
+	const percentiles = latencyPercentiles(monitor.state.recent)
+	return PERCENTILE_COLUMNS.map((column) =>
+		h.span(
+			[
+				h.Class(
+					cn(
+						"text-right font-mono text-xs tabular-nums",
+						column.key === "p50" ? "text-foreground" : "text-muted-foreground",
+					),
+				),
+			],
+			[monitor.kind === "heartbeat" ? "–" : formatMs(percentiles[column.key])],
+		),
+	)
+}
+
 const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): Html => {
 	const isPaused = displayStatus(monitor) === "paused"
 	const recent = monitor.state.recent
@@ -249,10 +275,7 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 						[h.Class("text-right font-mono text-xs tabular-nums")],
 						[isPaused ? "–" : formatShare(uptimeShare(recent))],
 					),
-					h.span(
-						[h.Class("text-right font-mono text-xs tabular-nums text-muted-foreground")],
-						[monitor.kind === "heartbeat" ? "–" : formatMs(p95(recent))],
-					),
+					...latencyCells(h, monitor),
 					...(model.isAdmin ? [rowMenu(h, model, monitor)] : [h.span([], [])]),
 				],
 			),
@@ -265,7 +288,7 @@ const table = (h: H, model: Model, rows: ReadonlyArray<UptimeMonitor>, nowMs: nu
 		[h.Class("overflow-x-auto rounded-md border")],
 		[
 			h.div(
-				[h.Class("min-w-[860px]")],
+				[h.Class("min-w-[920px]")],
 				[
 					h.div(
 						[h.Class(cn(ROW_GRID, "border-b px-4 py-2"))],
@@ -274,7 +297,13 @@ const table = (h: H, model: Model, rows: ReadonlyArray<UptimeMonitor>, nowMs: nu
 							eyebrow(h, {}, ["Type"]),
 							eyebrow(h, {}, ["Recent checks"]),
 							eyebrow(h, { className: "text-right" }, ["Uptime"]),
-							eyebrow(h, { className: "text-right" }, ["P95"]),
+							...PERCENTILE_COLUMNS.map((column) =>
+								eyebrow(
+									h,
+									{ className: "text-right", attributes: [h.Title(PERCENTILE_TITLE)] },
+									[column.label],
+								),
+							),
 							h.span([], []),
 						],
 					),

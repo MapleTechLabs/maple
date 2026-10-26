@@ -1,4 +1,5 @@
 import { getCustomChartServiceSparklines } from "@maple/web-data/warehouse/custom-charts"
+import { isMapleService, MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import {
 	getServiceHealthBaseline,
 	getServiceOverview,
@@ -73,7 +74,10 @@ export const FetchOverview = Command.define("FetchServiceOverview", {
 	execute: ({ key, refresh, input }) =>
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.serviceOverview, schema: Schema.Array(ServiceRow) },
-			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) => response.data),
+			// Maple's own services (uptime checks) stay off the list.
+			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) =>
+				response.data.filter((row) => !isMapleService(row)),
+			),
 		).pipe(
 			Effect.mapError(toLoadFailure),
 			Effect.result,
@@ -113,7 +117,7 @@ export const FetchFacets = Command.define("FetchServicesFacets", {
 		loadServicesFacets(window, { refresh, key }).pipe(
 			Effect.map(({ data }) => ({
 				environments: data.environments,
-				namespaces: data.namespaces,
+				namespaces: data.namespaces.filter((facet) => facet.name !== MAPLE_SERVICES_NAMESPACE),
 				commitShas: data.commitShas,
 			})),
 			Effect.mapError(toLoadFailure),

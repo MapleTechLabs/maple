@@ -25,10 +25,15 @@ import { uptimeStatusChip } from "../shared/uptime-view"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { monitorOf } from "./update"
+import { isChartRuntimeReady } from "../../../charts/chart-runtime"
+import { ResolveThemeColors } from "../../../charts/theme-colors"
 import {
-	availabilityPanel,
+	CHART_TOKENS,
+	type ChartContext,
 	checksPanel,
+	checksScatterPanel,
 	heartbeatPanel,
+	kpiRail,
 	lastCheckPanel,
 	responseTimePanel,
 	setupPanel,
@@ -147,32 +152,44 @@ const serviceHrefOf = (monitor: UptimeMonitor): string | null =>
 		? null
 		: hrefOf(AppRoute.Service({ serviceName: monitor.service_name, search: {} }))
 
-const body = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): ReadonlyArray<Html> => [
-	...(displayStatus(monitor) === "down" ? [incidentBlock(h, model, monitor, timeZone)] : []),
-	h.div(
-		[h.Class("grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]")],
-		[
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-4")],
-				[
-					...(monitor.heartbeat_url === null
-						? []
-						: [heartbeatPanel(h, model, monitor.heartbeat_url)]),
-					...(monitor.kind === "heartbeat" ? [] : [responseTimePanel(h, monitor)]),
-					checksPanel(h, monitor, timeZone),
-				],
-			),
-			h.div(
-				[h.Class("flex flex-col gap-4")],
-				[
-					lastCheckPanel(h, monitor),
-					availabilityPanel(h, monitor),
-					setupPanel(h, model, monitor, serviceHrefOf(monitor)),
-				],
-			),
-		],
-	),
-]
+const body = (
+	h: H,
+	model: Model,
+	monitor: UptimeMonitor,
+	timeZone: string,
+	nowMs: number,
+): ReadonlyArray<Html> => {
+	const chartContext: ChartContext | null =
+		model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
+			? { theme: model.themeColors, timeZone, nowMs }
+			: null
+	return [
+		...(displayStatus(monitor) === "down" ? [incidentBlock(h, model, monitor, timeZone)] : []),
+		kpiRail(h, model, monitor, nowMs, timeZone),
+		h.div(
+			[h.Class("grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]")],
+			[
+				h.div(
+					[h.Class("flex min-w-0 flex-col gap-4")],
+					[
+						...(monitor.heartbeat_url === null
+							? []
+							: [heartbeatPanel(h, model, monitor.heartbeat_url)]),
+						...(monitor.kind === "heartbeat" ? [] : [responseTimePanel(h, model, chartContext)]),
+						...[checksScatterPanel(h, model, timeZone)].flatMap((panel) =>
+							panel === null ? [] : [panel],
+						),
+						checksPanel(h, monitor, timeZone),
+					],
+				),
+				h.div(
+					[h.Class("flex flex-col gap-4")],
+					[lastCheckPanel(h, monitor), setupPanel(h, model, monitor, serviceHrefOf(monitor))],
+				),
+			],
+		),
+	]
+}
 
 const loadingPage = (h: H): Html =>
 	dashboardPage(h, { titleContent: detailTitleSkeleton(h) }, [
@@ -193,7 +210,14 @@ const notFound = (h: H, model: Model): Html =>
 		}),
 	])
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
+	h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: CHART_TOKENS }))],
+		[page(h, model, inputs)],
+	),
+)
+
+const page = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	if (model.monitorId === null) return notFound(h, model)
 	const data = model.monitor.data
 	if (AsyncData.isFailure(data))
@@ -229,11 +253,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					actions: headerActions(h, model, monitor),
 					gap: "md",
 				},
-				body(h, model, monitor, timeZone),
+				body(h, model, monitor, timeZone, nowMs),
 			)
 		},
 	})
-})
+}
 
 /** The H1 names the monitor, so the trail stops at the tab. */
 export const breadcrumbsOf = () => [
