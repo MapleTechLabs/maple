@@ -129,7 +129,7 @@ Effect.gen(function* () {
 - `signal_type`: `error_rate`, `p95_latency`, `p99_latency`, `apdex`, `throughput`, `builder_query`, `raw_query`
 - `comparator`: `gt`, `gte`, `lt`, `lte`, `eq`, `neq`, `between`, `not_between`
 
-Signal-specific fields are validated by the API against `signal_type`, so a mismatch fails the deploy with a `400`. See [Alert rules](/docs/alerting/alert-rules) for what each signal measures.
+The props type refuses the combinations the API rejects, so they fail to type-check instead of failing the deploy: `group_by` and `exclude_service_names` only without `service_names`, and `exclude_service_names` only with `group_by: ["service.name"]`; `query_builder_draft` on `builder_query` only, which requires it; `raw_query_sql` and `raw_query_reducer` on `raw_query` only, which requires the SQL and reads no named services and no `group_by`; `threshold_upper` with `between` and `not_between` only, which require it; and no `alert_on_no_data` on a grouped rule. The API checks the rest, such as the SQL itself, and a failure there fails the deploy with a `400`. See [Alert rules](/docs/alerting/alert-rules) for what each signal measures.
 
 Outputs: `ruleId` (`alrt_…`), `name`, `enabled`.
 

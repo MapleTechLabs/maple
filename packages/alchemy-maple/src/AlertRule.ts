@@ -7,6 +7,7 @@ import { Resource } from "alchemy/Resource"
 import { listAll, MapleApi } from "./MapleApi"
 import { MapleErrorTags } from "./errors"
 import type { Providers } from "./Providers"
+import type { ExclusiveVariant } from "./variants"
 import {
 	canAdoptRule,
 	ownershipError,
@@ -27,18 +28,11 @@ export type AlertSignalType =
 
 export type AlertComparator = "gt" | "gte" | "lt" | "lte" | "eq" | "neq" | "between" | "not_between"
 
-/**
- * Alert rule props, authored in the v2 wire shape — mirrors
- * `POST /v2/alerts/rules`. Signal-specific fields (`apdex_threshold_ms`,
- * `query_builder_draft`, `raw_query_*`) are validated
- * server-side against `signal_type`.
- */
-export interface AlertRuleProps {
+/** Fields every alert rule takes, whatever it measures and wherever it looks. */
+interface RuleBaseProps {
 	/** Rule name — unique per organization. */
 	name: string
 	severity: "warning" | "critical"
-	signal_type: AlertSignalType
-	comparator: AlertComparator
 	/** Error rates are 0–1 ratios. */
 	threshold: number
 	window_minutes: number
@@ -46,25 +40,91 @@ export interface AlertRuleProps {
 	destination_ids: string[]
 	notes?: string | null
 	enabled?: boolean
-	service_names?: string[]
-	exclude_service_names?: string[]
 	/** Up to 19 user tags; `alchemy:` tags are reserved for stack ownership. */
 	tags?: string[]
-	group_by?: string[] | null
-	threshold_upper?: number | null
 	minimum_sample_count?: number
 	consecutive_breaches_required?: number
 	consecutive_healthy_required?: number
 	renotify_interval_minutes?: number
 	apdex_threshold_ms?: number | null
-	/** Opaque query-builder draft for `builder_query` rules (verbatim passthrough). */
-	query_builder_draft?: Record<string, unknown> | null
-	raw_query_sql?: string | null
-	raw_query_reducer?: "identity" | "sum" | "avg" | "min" | "max" | null
 	/** Count a window with no data as a breach instead of skipping it. */
 	alert_on_no_data?: boolean
 	notification_template?: Record<string, unknown> | null
 }
+
+/**
+ * The comparison: `between` and `not_between` need `threshold_upper`, which no
+ * other comparator takes.
+ */
+type Comparison =
+	| { comparator: "between" | "not_between"; threshold_upper: number }
+	| {
+			comparator: Exclude<AlertComparator, "between" | "not_between">
+			threshold_upper?: null
+	  }
+
+/**
+ * Which services a signal other than `builder_query` and `raw_query` reads:
+ * the named ones; all of them, grouped (each group its own incident); all of
+ * them grouped by `service.name` minus some; or all of them, ungrouped. A
+ * grouped rule cannot alert on no data. `null` and `[]` clear a field set on
+ * an earlier deploy.
+ */
+type Scope =
+	| { service_names: string[]; group_by?: null; exclude_service_names?: [] }
+	| {
+			group_by: string[]
+			service_names?: []
+			exclude_service_names?: []
+			alert_on_no_data?: false
+	  }
+	| {
+			group_by: ["service.name"]
+			exclude_service_names: string[]
+			service_names?: []
+			alert_on_no_data?: false
+	  }
+	| { service_names?: []; group_by?: null; exclude_service_names?: [] }
+
+/**
+ * What the rule measures. `builder_query` takes its draft, which carries its
+ * own scope, so the API drops `service_names` and `exclude_service_names`.
+ * `raw_query` takes its SQL, which returns its own groups, so it reads no
+ * services and groups by none. Every other signal takes neither.
+ */
+type Measure =
+	| ({
+			signal_type: Exclude<AlertSignalType, "builder_query" | "raw_query">
+			query_builder_draft?: null
+			raw_query_sql?: null
+			raw_query_reducer?: null
+	  } & Scope)
+	| {
+			signal_type: "builder_query"
+			/** Opaque query-builder draft (verbatim passthrough). */
+			query_builder_draft: Record<string, unknown>
+			group_by?: string[] | null
+			raw_query_sql?: null
+			raw_query_reducer?: null
+	  }
+	| {
+			signal_type: "raw_query"
+			raw_query_sql: string
+			raw_query_reducer?: "identity" | "sum" | "avg" | "min" | "max" | null
+			query_builder_draft?: null
+			service_names?: []
+			group_by?: null
+			exclude_service_names?: []
+	  }
+
+/**
+ * Alert rule props, authored in the v2 wire shape — mirrors
+ * `POST /v2/alerts/rules`. Discriminated so that a combination the API
+ * rejects fails to type-check instead of failing the deploy: by `signal_type`
+ * for the query fields, by scope for `service_names`, `group_by` and
+ * `exclude_service_names`, and by `comparator` for `threshold_upper`.
+ */
+export type AlertRuleProps = ExclusiveVariant<RuleBaseProps & Comparison & Measure>
 
 export type AlertRule = Resource<
 	"Maple.AlertRule",
