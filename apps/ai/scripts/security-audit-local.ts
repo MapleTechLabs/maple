@@ -169,6 +169,18 @@ const localSource = (dir: string, sha: string): SourceReaderApi => ({
 				),
 			),
 		),
+	nearby: (path, basename) =>
+		Effect.succeed(
+			bounded(
+				git(dir, ["ls-tree", "-r", "--name-only", sha])
+					.stdout.split("\n")
+					.filter(
+						(file) =>
+							file.startsWith(`${path}/`) || file === basename || file.endsWith(`/${basename}`),
+					)
+					.join("\n"),
+			),
+		),
 	log: (path) =>
 		Effect.flatMap(safePath(path), (safe) =>
 			Effect.succeed(

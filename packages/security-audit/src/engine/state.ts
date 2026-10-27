@@ -36,6 +36,8 @@ export interface AuditRunInput {
 	/** The run-level label: which ecosystems and dependencies kept it from executing target code. */
 	readonly executionProfile?: ExecutionProfile
 	readonly toolGuidance: string
+	/** The repository's directories, for hunters and critics to start from instead of guessing paths. */
+	readonly repoTree?: string
 	readonly prior: PriorRun | null
 	/** Whether any of these paths changed between the prior run's source and this one. */
 	readonly changedSincePrior: (paths: ReadonlyArray<string>) => boolean
@@ -103,6 +105,33 @@ export const discardSummary = (paths: ReadonlyArray<string>): string =>
 	paths.length === 0
 		? "result is not exactly one JSON object for its contract"
 		: `result broke its contract at: ${paths.slice(0, 8).join(", ")}${paths.length > 8 ? ` (+${paths.length - 8} more)` : ""}`
+
+type Attempt<A> =
+	| { readonly _tag: "Decoded"; readonly value: A }
+	| { readonly _tag: "Discarded"; readonly issuePaths: ReadonlyArray<string> }
+	| { readonly _tag: "None" }
+
+const NO_RESULT: Attempt<never> = { _tag: "None" }
+const discarded = (issuePaths: ReadonlyArray<string>): Attempt<never> => ({ _tag: "Discarded", issuePaths })
+const decodedResult = <A>(value: A): Attempt<A> => ({ _tag: "Decoded", value })
+
+/** A free-text answer. `Unread`: the agent answered without one tool call. */
+export type TextAnswer =
+	| { readonly _tag: "Answered"; readonly text: string }
+	| { readonly _tag: "Unread" }
+	| { readonly _tag: "None" }
+
+const NO_TEXT: TextAnswer = { _tag: "None" }
+const UNREAD: TextAnswer = { _tag: "Unread" }
+const answered = (text: string): TextAnswer => ({ _tag: "Answered", text })
+
+/** The assignment again for a fresh agent, after one answered it without reading the repository. */
+export const rereadPrompt = (prompt: string): string =>
+	`${prompt}\n\n## Read before you answer\n\nA previous agent answered this assignment without reading the repository, and its answer was discarded. Use your tools to read the repository first, then answer from what you read.`
+
+/** The assignment again for a fresh agent, after one's result broke its contract at `issuePaths`. */
+export const repairPrompt = (prompt: string, issuePaths: ReadonlyArray<string>): string =>
+	`${prompt}\n\n## Your result must match its contract\n\nA previous answer to this assignment was discarded: ${discardSummary(issuePaths)}. Return exactly one JSON object that matches the contract above, with no surrounding prose.`
 
 export const makeEngine = (input: AuditRunInput) =>
 	Effect.gen(function* () {
@@ -212,14 +241,11 @@ export const makeEngine = (input: AuditRunInput) =>
 				return answer.success
 			})
 
-		/**
-		 * One fresh agent whose result is decoded against `schema`. A failed call or a result that breaks
-		 * its contract is recorded and answered with `undefined`, never repaired. Store errors propagate.
-		 */
-		const invoke = <S extends Schema.Top>(role: AuditRole, agentId: string, prompt: string, schema: S) =>
+		/** One fresh agent's result decoded against `schema`, or why there is none. Store errors propagate. */
+		const attempt = <S extends Schema.Top>(role: AuditRole, agentId: string, prompt: string, schema: S) =>
 			Effect.gen(function* () {
 				const answer = yield* call(role, agentId, prompt)
-				if (answer === undefined) return undefined
+				if (answer === undefined) return NO_RESULT
 				const usage = answer.usage
 				const decoded = yield* Effect.result(decodeAgentJson(role, schema, answer.text))
 				if (decoded._tag === "Failure") {
@@ -232,30 +258,60 @@ export const makeEngine = (input: AuditRunInput) =>
 						message: discardSummary(decoded.failure.issuePaths),
 						usage,
 					})
-					return undefined
+					return discarded(decoded.failure.issuePaths)
 				}
 				yield* event({ _tag: "Agent", role, agentId, outcome: "ok", usage })
-				return decoded.success
+				return decodedResult<S["Type"]>(decoded.success)
 			})
 
-		/** Free text, for reconnaissance facts. */
+		/**
+		 * One fresh agent whose result is decoded against `schema`. A failed call or a result that breaks
+		 * its contract is recorded and answered with `undefined`, never repaired. Store errors propagate.
+		 */
+		const invoke = <S extends Schema.Top>(role: AuditRole, agentId: string, prompt: string, schema: S) =>
+			Effect.map(attempt(role, agentId, prompt, schema), (result) =>
+				result._tag === "Decoded" ? result.value : undefined,
+			)
+
+		/**
+		 * `invoke` with one repair turn: a result that breaks its contract goes to a fresh `-r1` agent
+		 * told where it broke (the decoder's paths only, never its message, which can quote output).
+		 */
+		const invokeRepairing = <S extends Schema.Top>(
+			role: AuditRole,
+			agentId: string,
+			prompt: string,
+			schema: S,
+		) =>
+			Effect.gen(function* () {
+				const first = yield* attempt(role, agentId, prompt, schema)
+				if (first._tag === "Decoded") return first.value
+				if (first._tag === "None") return undefined
+				return yield* invoke(role, `${agentId}-r1`, repairPrompt(prompt, first.issuePaths), schema)
+			})
+
+		/**
+		 * Free text, for reconnaissance facts. An answer from an agent that made no tool call is
+		 * `Unread`: it describes what the agent meant to do, not the repository.
+		 */
 		const invokeText = (role: AuditRole, agentId: string, prompt: string) =>
 			Effect.gen(function* () {
 				const answer = yield* call(role, agentId, prompt)
-				if (answer === undefined) return undefined
-				if (answer.text.trim() === "") {
+				if (answer === undefined) return NO_TEXT
+				const unread = answer.toolCalls === 0
+				if (answer.text.trim() === "" || unread) {
 					yield* event({
 						_tag: "Agent",
 						role,
 						agentId,
 						outcome: "discarded",
-						message: "empty answer",
+						message: unread ? "answered without a single tool call" : "empty answer",
 						usage: answer.usage,
 					})
-					return undefined
+					return unread ? UNREAD : NO_TEXT
 				}
 				yield* event({ _tag: "Agent", role, agentId, outcome: "ok", usage: answer.usage })
-				return answer.text
+				return answered(answer.text)
 			})
 
 		const gap = (reason: string) =>
@@ -274,6 +330,7 @@ export const makeEngine = (input: AuditRunInput) =>
 			remaining,
 			context,
 			invoke,
+			invokeRepairing,
 			invokeText,
 			gap,
 			fail,

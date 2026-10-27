@@ -166,12 +166,10 @@ const runHunter = (
 				units,
 				carriedExclusions,
 				peerCoverageIds: peers.slice(0, PEER_ID_LIMIT),
+				repoTree: engine.input.repoTree,
 				scratchPath: `agents/${agentId}/scratch/`,
 				artifactsPath: `agents/${agentId}/artifacts/`,
-				promotionAllowlist:
-					engine.input.execution._tag === "Available"
-						? "declared per check"
-						: "none: execution is unavailable in this run",
+				promotionAllowlist: "declared per check",
 			},
 			engine.context(agentId),
 		)
@@ -214,6 +212,7 @@ const runCritic = (
 			{
 				kind: kind === "post-wave" ? "post-wave" : "final-clean",
 				architectureMd: s.architectureMd,
+				repoTree: engine.input.repoTree,
 				ledger: criticLedger(s.ledger),
 				// Sorted, not hunter-completion order, so a replay sends the critic the same prompt.
 				candidateStates: [...s.candidates.keys()].sort().map((fingerprint) => ({
@@ -231,7 +230,8 @@ const runCritic = (
 			},
 			engine.context(agentId),
 		)
-		const result = yield* engine.invoke("critic", agentId, prompt, CriticResult)
+		// One repair turn before the run loses its planning: a critic's JSON is long and easy to break.
+		const result = yield* engine.invokeRepairing("critic", agentId, prompt, CriticResult)
 		if (result === undefined) return undefined
 		const refusals = result.missing_units.flatMap((unit) => {
 			const reason = unitRefusal(unit)

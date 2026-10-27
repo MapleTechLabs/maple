@@ -23,7 +23,7 @@ import {
 	type Finding,
 } from "@maple/security-audit"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Logger, Option, Schema } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import {
 	SecurityAuditCredits,
@@ -121,6 +121,10 @@ const sandbox = (
 		prepare: () => Effect.void,
 		exec: (_org, _target, options) =>
 			Effect.suspend(() => {
+				if (options.command === "bash" && options.args.some((arg) => arg.includes("awk -F/"))) {
+					commands.push("list directories")
+					return ok("src\nsrc/routes\n")
+				}
 				if (options.command === "bash") {
 					commands.push("measure size")
 					return ok(size)
@@ -200,6 +204,40 @@ const Charge = Schema.Struct({
 const decodeCharge = Schema.decodeUnknownSync(Schema.fromJsonString(Charge))
 
 describe("auditWithAgents", () => {
+	it.effect("warns and still audits when the repository's directories cannot be listed", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const base = sandbox([])
+			const unlistable: RepoSandboxServiceApi = {
+				...base,
+				exec: (org, repo, options) =>
+					options.command === "bash" && options.args.some((arg) => arg.includes("awk -F/"))
+						? Effect.succeed({
+								exitCode: 128,
+								stdout: "",
+								stderr: "fatal: not a git repository",
+								wallTimeMs: 1,
+								truncated: false,
+							})
+						: base.exec(org, repo, options),
+			}
+			const warnings: Array<unknown> = []
+			const calls: Array<string> = []
+			yield* auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
+				Effect.provideService(RepoSandboxService, unlistable),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				Effect.provide(Logger.layer([Logger.make(({ message }) => void warnings.push(message))])),
+			)
+			assert.isTrue(calls.length > 0)
+			assert.isTrue(
+				warnings.some((message) =>
+					String(message).includes("Could not list the repository's directories"),
+				),
+			)
+		}).pipe(Effect.provide(testLayer())),
+	)
+
 	it.effect("pins the commit, records it on the run, runs the engine and finishes the run", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
@@ -223,7 +261,36 @@ describe("auditWithAgents", () => {
 				// The row records the pinned commit, which the next run diffs against.
 				["complete", Option.some(["complete", SHA]), ["covered"]],
 			)
-			assert.deepStrictEqual(commands, ["git rev-parse HEAD", "measure size", "list manifests"])
+			assert.deepStrictEqual(commands, [
+				"git rev-parse HEAD",
+				"measure size",
+				"list manifests",
+				"list directories",
+			])
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("gives hunters the repository's directories, listed once per run", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const prompts: Array<AgentInvocation> = []
+			const agents = scriptedAgents([])
+			const recording: AuditAgentsApi = {
+				run: (invocation) =>
+					Effect.andThen(
+						Effect.sync(() => prompts.push(invocation)),
+						agents.run(invocation),
+					),
+			}
+			const commands: Array<string> = []
+			yield* auditWithAgents(payloadFor(run.id), () => Effect.succeed(recording)).pipe(
+				Effect.provideService(RepoSandboxService, sandbox(commands)),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const hunter = prompts.find((i) => i.role === "hunter")?.prompt ?? ""
+			assert.include(hunter, "src/\n  routes/")
+			assert.strictEqual(commands.filter((c) => c === "list directories").length, 1)
 		}).pipe(Effect.provide(testLayer())),
 	)
 
@@ -696,6 +763,7 @@ describe("auditWithAgents", () => {
 						"git rev-parse HEAD",
 						"measure size",
 						"list manifests",
+						"list directories",
 						`git --no-optional-locks -c core.quotePath=false diff --name-only --no-renames ${SHA} HEAD --`,
 					],
 					["prior_covered_changed_source"],
@@ -727,7 +795,7 @@ describe("auditWithAgents, prior runs", () => {
 			const units = yield* store.listUnits(run.id)
 			assert.deepStrictEqual(
 				[commands, units.map((u) => u.unit.prior_status)],
-				[["git rev-parse HEAD", "measure size", "list manifests"], ["none"]],
+				[["git rev-parse HEAD", "measure size", "list manifests", "list directories"], ["none"]],
 			)
 		}).pipe(Effect.provide(testLayer())),
 	)
