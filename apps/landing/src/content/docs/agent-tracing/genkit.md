@@ -18,17 +18,19 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for Genkit in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-genkit -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-genkit -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the packages
 
 ```bash
-npm install genkit @opentelemetry/sdk-node @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto
+npm install genkit @opentelemetry/sdk-node @opentelemetry/sdk-trace-base \
+  @opentelemetry/exporter-trace-otlp-proto
 ```
 
 ## Point the exporter at Maple
@@ -63,16 +65,25 @@ function toPart({ text, reasoning, toolRequest, toolResponse }: Part) {
 	if (text !== undefined) return { type: "text", content: text }
 	if (reasoning !== undefined) return { type: "reasoning", content: reasoning }
 	if (toolRequest) {
-		return { type: "tool_call", id: toolRequest.ref, name: toolRequest.name, arguments: toolRequest.input }
+		return {
+			type: "tool_call",
+			id: toolRequest.ref,
+			name: toolRequest.name,
+			arguments: toolRequest.input,
+		}
 	}
-	if (toolResponse) return { type: "tool_call_response", id: toolResponse.ref, response: toolResponse.output }
+	if (toolResponse)
+		return { type: "tool_call_response", id: toolResponse.ref, response: toolResponse.output }
 	return undefined
 }
 
 const toParts = (content: Part[]) => content.map(toPart).filter((part) => part !== undefined)
 
 function toMessages(messages: Message[]) {
-	return messages.map((m) => ({ role: m.role === "model" ? "assistant" : m.role, parts: toParts(m.content) }))
+	return messages.map((m) => ({
+		role: m.role === "model" ? "assistant" : m.role,
+		parts: toParts(m.content),
+	}))
 }
 
 /** Adds the gen_ai.* attributes Maple reads to Genkit's flow, model and tool spans. */
@@ -95,7 +106,8 @@ export class GenkitForMaple implements SpanProcessor {
 					"gen_ai.agent.name": name,
 				})
 				// Set in your flow, or by Genkit for defineAgent() chats
-				const conversationId = attrs["genkit:metadata:conversationId"] ?? attrs["genkit:metadata:agent:sessionId"]
+				const conversationId =
+					attrs["genkit:metadata:conversationId"] ?? attrs["genkit:metadata:agent:sessionId"]
 				if (conversationId !== undefined) attrs["gen_ai.conversation.id"] = conversationId
 				break
 			}
@@ -109,17 +121,24 @@ export class GenkitForMaple implements SpanProcessor {
 					"gen_ai.operation.name": "chat",
 					"gen_ai.provider.name": provider,
 					"gen_ai.request.model": model.join("/") || name,
-					"gen_ai.input.messages": JSON.stringify(toMessages(messages.filter((m) => m.role !== "system"))),
+					"gen_ai.input.messages": JSON.stringify(
+						toMessages(messages.filter((m) => m.role !== "system")),
+					),
 				})
 				if (system.length > 0) attrs["gen_ai.system_instructions"] = JSON.stringify(system)
 				if (output?.message) {
 					attrs["gen_ai.output.messages"] = JSON.stringify(
-						toMessages([output.message]).map((m) => ({ ...m, finish_reason: output.finishReason })),
+						toMessages([output.message]).map((m) => ({
+							...m,
+							finish_reason: output.finishReason,
+						})),
 					)
 				}
 				if (output?.finishReason) attrs["gen_ai.response.finish_reasons"] = [output.finishReason]
-				if (output?.usage?.inputTokens !== undefined) attrs["gen_ai.usage.input_tokens"] = output.usage.inputTokens
-				if (output?.usage?.outputTokens !== undefined) attrs["gen_ai.usage.output_tokens"] = output.usage.outputTokens
+				if (output?.usage?.inputTokens !== undefined)
+					attrs["gen_ai.usage.input_tokens"] = output.usage.inputTokens
+				if (output?.usage?.outputTokens !== undefined)
+					attrs["gen_ai.usage.output_tokens"] = output.usage.outputTokens
 				break
 			}
 			case "tool": {
@@ -130,7 +149,8 @@ export class GenkitForMaple implements SpanProcessor {
 				})
 				const result = json("genkit:output")
 				if (result !== undefined) {
-					attrs["gen_ai.tool.call.result"] = typeof result === "string" ? result : JSON.stringify(result)
+					attrs["gen_ai.tool.call.result"] =
+						typeof result === "string" ? result : JSON.stringify(result)
 				}
 				break
 			}
@@ -191,11 +211,19 @@ const ai = genkit({ plugins: [/* your model plugin */], model: "googleai/gemini-
 const histories = new Map<string, MessageData[]>()
 
 export const supportChat = ai.defineFlow(
-	{ name: "supportChat", inputSchema: z.object({ chatId: z.string(), text: z.string() }), outputSchema: z.string() },
+	{
+		name: "supportChat",
+		inputSchema: z.object({ chatId: z.string(), text: z.string() }),
+		outputSchema: z.string(),
+	},
 	async ({ chatId, text }) => {
 		setCustomMetadataAttribute("conversationId", chatId)
 
-		const response = await ai.generate({ messages: histories.get(chatId) ?? [], prompt: text, tools: [getWeather] })
+		const response = await ai.generate({
+			messages: histories.get(chatId) ?? [],
+			prompt: text,
+			tools: [getWeather],
+		})
 		histories.set(chatId, response.messages)
 		return response.text
 	},
@@ -210,7 +238,7 @@ Chats with an agent from `ai.defineAgent()` (in `genkit/beta`) already carry Gen
 
 `BatchSpanProcessor` exports every few seconds, so a short-lived process can exit before its last spans are sent. In a script, call `await sdk.shutdown()` in a `finally` block before exiting. In a serverless handler, call `await spanProcessor.forceFlush()` after the flow returns. In a long-running server, call `sdk.shutdown()` on `SIGTERM`.
 
-## Check that it works
+## Verify
 
 Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session named after your conversation id, one turn per flow run, and a transcript with the prompts, replies and tool calls. Each model call shows its token counts.
 
@@ -223,7 +251,7 @@ The framework shows as **Genkit**. Cost shows as unpriced because Genkit doesn't
 - **Every message is its own session.** The flow doesn't call `setCustomMetadataAttribute("conversationId", ...)`, or `ai.generate()` runs outside a flow.
 - **The Developer UI shows no traces.** `disableGenkitOTelInitialization()` ran under `genkit start`. Keep the `GENKIT_ENV` check around it.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [Genkit observability](https://genkit.dev/docs/observability/getting-started/)

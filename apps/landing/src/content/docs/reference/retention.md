@@ -2,10 +2,10 @@
 title: "Retention"
 description: "How long hosted Maple keeps each kind of data: traces, logs, metrics, session replays, product events, error issues, alert history and the audit log."
 group: "Reference"
-order: 9
+order: 10
 ---
 
-Hosted Maple deletes data automatically once it passes its retention period. The periods are the same in both [regions](/docs/reference/regions). Age is measured from the data's own timestamp (for example a span's start time), not from when Maple received it.
+Hosted Maple deletes data automatically once it passes its retention period. The periods are the same in both [regions](/docs/reference/regions). Age is measured from the data's own timestamp (for example a span's start time), except session replay recordings, which age from when Maple received them.
 
 ## Telemetry
 
@@ -24,7 +24,7 @@ Individual spans, log lines and data points cannot be read once they pass these 
 
 ## Error issues
 
-[Error issues](/docs/errors/overview) are not deleted by age while they are open, however old the underlying errors are. These rules clean them up:
+[Error issues](/docs/errors/overview) are not deleted by age while they are open, no matter how old their errors are. These rules clean them up:
 
 | Issue state                                                                              | What happens                                                         |
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
