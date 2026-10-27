@@ -27,7 +27,10 @@ provider "maple" {
 
 func TestDashboardLifecycle(t *testing.T) {
 	api := newFakeAPI(t)
-	config := func(name, description string) string {
+	widgets := `widgets = jsonencode([
+    { id = "w1", visualization = "chart", layout = { x = 0, y = 0, w = 6, h = 4 } },
+  ])`
+	configWith := func(name, description, widgets string) string {
 		desc := ""
 		if description != "" {
 			desc = fmt.Sprintf("description = %q", description)
@@ -37,12 +40,11 @@ resource "maple_dashboard" "ops" {
   name = %q
   %s
   tags = ["production"]
-  widgets = jsonencode([
-    { id = "w1", visualization = "chart", layout = { x = 0, y = 0, w = 6, h = 4 } },
-  ])
+  %s
 }
-`, name, desc)
+`, name, desc, widgets)
 	}
+	config := func(name, description string) string { return configWith(name, description, widgets) }
 	var firstID string
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories,
@@ -83,6 +85,20 @@ resource "maple_dashboard" "ops" {
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction("maple_dashboard.ops", plancheck.ResourceActionUpdate)},
 				},
+			},
+			{
+				// Removing widgets empties the list with [], which the API accepts.
+				Config: configWith("Operations v2", "", ""),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckNoResourceAttr("maple_dashboard.ops", "widgets"),
+					func(*terraform.State) error {
+						body := api.lastBody("PATCH", "/v2/dashboards/")
+						if w, ok := body["widgets"].([]any); !ok || len(w) != 0 {
+							return fmt.Errorf("PATCH should send widgets = [], got %v", body)
+						}
+						return nil
+					},
+				),
 			},
 			{
 				ResourceName: "maple_dashboard.ops",

@@ -182,6 +182,15 @@ func (api *fakeAPI) handle(w http.ResponseWriter, r *http.Request) {
 			case http.MethodGet:
 				writeJSON(w, obj)
 			case http.MethodPatch:
+				// Like the real API: dashboard lists take [], never null.
+				if base == "/v2/dashboards" {
+					for _, k := range []string{"widgets", "sections", "variables", "tags"} {
+						if v, ok := body[k]; ok && v == nil {
+							writeError(w, http.StatusBadRequest, "invalid_request_error", k+" must be an array")
+							return
+						}
+					}
+				}
 				for k, v := range body {
 					obj[k] = v
 				}

@@ -24,9 +24,9 @@ func dashboardDef() resourceDef {
 		collection: "/v2/dashboards",
 		fields: map[string]field{
 			"time_range": {json: true},
-			"widgets":    {json: true},
-			"sections":   {json: true},
-			"variables":  {json: true},
+			"widgets":    {json: true, jsonList: true},
+			"sections":   {json: true, jsonList: true},
+			"variables":  {json: true, jsonList: true},
 		},
 		schema: schema.Schema{
 			Description: "A Maple dashboard. Widget, section and variable documents use the v2 wire shape: build the dashboard in the UI and copy them from `GET /v2/dashboards/{id}`, or import it.",
@@ -80,7 +80,7 @@ func alertDestinationDef() resourceDef {
 				"name":            schema.StringAttribute{Required: true, Description: "Display name."},
 				"enabled":         schema.BoolAttribute{Optional: true, Computed: true, Description: "Whether deliveries are sent. Defaults to `true`."},
 				"integration_key": secret("`pagerduty`: the Events API v2 integration key."),
-				"url":             schema.StringAttribute{Optional: true, Description: "`webhook`: the URL Maple POSTs to."},
+				"url":             schema.StringAttribute{Optional: true, Sensitive: true, Description: "`webhook`: the URL Maple POSTs to. Sensitive, since webhook URLs often carry a token."},
 				"signing_secret":  secret("`webhook`: secret used to sign each request (optional)."),
 				"webhook_url":     secret("`discord`: the channel webhook URL."),
 				"bot_token":       secret("`telegram`: the bot token."),

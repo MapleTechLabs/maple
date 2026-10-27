@@ -19,6 +19,9 @@ import (
 type field struct {
 	// json marks a string attribute holding a JSON document (use jsonencode).
 	json bool
+	// jsonList marks a JSON attribute whose document is a list: the API takes
+	// [] to clear it, not null.
+	jsonList bool
 	// writeOnly values are never returned by the API (secrets, some URLs), so
 	// state keeps the configured value and drift cannot be detected.
 	writeOnly bool
@@ -192,7 +195,7 @@ func (r *genericResource) body(plan, prior map[string]tftypes.Value, create bool
 		}
 		if value.IsNull() {
 			if !create && !f.writeOnly && !attr.IsComputed() && prior[name].IsKnown() && !prior[name].IsNull() {
-				if value.Type().Is(tftypes.List{}) || value.Type().Is(tftypes.Set{}) {
+				if f.jsonList || value.Type().Is(tftypes.List{}) || value.Type().Is(tftypes.Set{}) {
 					body[name] = []any{}
 				} else {
 					body[name] = nil

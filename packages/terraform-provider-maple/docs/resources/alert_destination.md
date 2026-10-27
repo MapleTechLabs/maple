@@ -50,7 +50,7 @@ resource "maple_alert_destination" "team_email" {
 - `integration_key` (String, Sensitive) `pagerduty`: the Events API v2 integration key.
 - `member_user_ids` (List of String) `email`: the organization members to email.
 - `signing_secret` (String, Sensitive) `webhook`: secret used to sign each request (optional).
-- `url` (String) `webhook`: the URL Maple POSTs to.
+- `url` (String, Sensitive) `webhook`: the URL Maple POSTs to. Sensitive, since webhook URLs often carry a token.
 - `webhook_url` (String, Sensitive) `discord`: the channel webhook URL.
 - `workspace_id` (String) `chat`: the linked chat workspace. Changing it replaces the destination.
 
