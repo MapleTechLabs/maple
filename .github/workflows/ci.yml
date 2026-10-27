@@ -391,10 +391,6 @@ jobs:
 
             - uses: ./.github/actions/setup
 
-            # The bundles import these packages' dist.
-            - name: Build Worker dependencies
-              run: bun turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy
-
             - name: api → maple-ai over the service binding
               env:
                   MAPLE_PG_URL: postgres://maple:maple@127.0.0.1:5499/maple
