@@ -21,7 +21,7 @@ import { FetchHttpClient } from "effect/http"
 import { runSecurityAuditWorkflow } from "./workflow.run"
 
 // Its own service name: hour-long background runs would skew maple-ai's request percentiles.
-const auditTelemetry = eventTelemetry({ serviceName: "maple-security-audit" })
+const auditTelemetry = eventTelemetry({ serviceName: "maple-security-audit", flushEvery: "30 seconds" })
 
 /** The run's services over the host Worker's env: database, store, credits and the repository sandbox. */
 const runServices = (env: Record<string, unknown>) => {

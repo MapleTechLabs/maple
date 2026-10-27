@@ -107,6 +107,12 @@ export const toSandboxStepError =
 /** Sandbox reads time out and fail transiently; the parent retries rather than losing a step. */
 const STEP_RETRY = { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } } as const
 
+/**
+ * The spend check before each agent reads the billing provider, and a refusal stops the whole run.
+ * A billing outage of a few minutes is waited out (about 16 minutes in all) rather than ending it.
+ */
+const ADMISSION_RETRY = { retries: { limit: 6, delay: "15 seconds", backoff: "exponential" } } as const
+
 /** An agent may run 20 minutes; its step allows that plus a margin, and retries once. */
 const AGENT_STEP = {
 	retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
@@ -155,7 +161,7 @@ const durableAgents = (
 		const admitted: Effect.Effect<Admission, AuditBudgetExhaustedError> = durableStep(
 			`org-budget:${invocation.agentId}`,
 			admit(invocation.agentId),
-			STEP_RETRY,
+			ADMISSION_RETRY,
 		).pipe(
 			Effect.provide(step),
 			// A budget that cannot be read is not a budget with room: the run stops rather than overspend.

@@ -1,7 +1,9 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Tracer } from "effect"
+import { WorkerEnvironment } from "@alchemy.run/cloudflare"
+import { afterEach } from "vitest"
+import { Effect, Exit, Layer, Scope, Tracer } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { MapleHttpTracingLive } from "./worker-telemetry.ts"
+import { eventTelemetry, MapleHttpTracingLive } from "./worker-telemetry.ts"
 
 describe("MapleHttpTracingLive", () => {
 	it.effect("records the allowlisted headers and never a credential", () =>
@@ -41,7 +43,10 @@ describe("MapleHttpTracingLive", () => {
 								FetchHttpClient.Fetch,
 								async () =>
 									new Response("ok", {
-										headers: { "x-ratelimit-remaining": "9", "set-cookie": "session=secret" },
+										headers: {
+											"x-ratelimit-remaining": "9",
+											"set-cookie": "session=secret",
+										},
 									}),
 							),
 						),
@@ -50,5 +55,35 @@ describe("MapleHttpTracingLive", () => {
 				),
 			),
 		),
+	)
+})
+
+describe("eventTelemetry", () => {
+	const original = globalThis.fetch
+	afterEach(() => {
+		globalThis.fetch = original
+	})
+
+	it.live("with a cadence, exports spans while the event is still running", () =>
+		Effect.gen(function* () {
+			const exported: Array<string> = []
+			globalThis.fetch = (async (input: RequestInfo | URL) => {
+				exported.push(String(input))
+				return new Response(null, { status: 200 })
+			}) as typeof fetch
+			const env = { MAPLE_ENDPOINT: "https://collector.test", MAPLE_INGEST_KEY: "secret" }
+			const scope = yield* Scope.make()
+			const services = yield* Layer.buildWithScope(
+				eventTelemetry({ serviceName: "unit-test", flushEvery: "20 millis" }).pipe(
+					Layer.provide(Layer.succeed(WorkerEnvironment, env)),
+				),
+				scope,
+			)
+			yield* Effect.void.pipe(Effect.withSpan("agent-1"), Effect.provide(services))
+			yield* Effect.sleep("100 millis")
+			const whileRunning = exported.filter((url) => url.endsWith("/v1/traces")).length
+			yield* Scope.close(scope, Exit.void)
+			assert.isAbove(whileRunning, 0)
+		}),
 	)
 })

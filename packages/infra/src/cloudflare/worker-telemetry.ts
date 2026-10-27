@@ -8,6 +8,8 @@ import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
 import { WorkerEnvironment } from "@alchemy.run/cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { HttpClient, HttpMiddleware } from "effect/http"
+import * as Duration from "effect/Duration"
+import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
 export const MAPLE_REPOSITORY_URL = "https://github.com/MapleTechLabs/maple"
@@ -97,20 +99,45 @@ export const WorkerTelemetry = (options: WorkerTelemetryOptions): Layer.Layer<ne
 		AlchemyTelemetry.layer(MapleHttpTracingLive),
 	)
 
+export interface EventTelemetryOptions extends WorkerTelemetryOptions {
+	/**
+	 * Also export on this cadence while the event runs. An hour-long event otherwise holds every
+	 * span until it ends, past the buffer's 10,000 (the rest are dropped) and out of sight meanwhile.
+	 */
+	readonly flushEvery?: Duration.Input | undefined
+}
+
 /**
  * The SDK under another service name, for background work (queue, cron) whose spans must not
  * skew the request service's percentiles. Call once at module scope: buffers are per isolate.
  */
 export const eventTelemetry = (
-	options: WorkerTelemetryOptions,
-): Layer.Layer<never, never, WorkerEnvironment> =>
-	Layer.mergeAll(
-		MapleCloudflareSDK.make(workerTelemetryConfig(options)).requestLayer.pipe(
+	options: EventTelemetryOptions,
+): Layer.Layer<never, never, WorkerEnvironment> => {
+	const telemetry = MapleCloudflareSDK.make(workerTelemetryConfig(options))
+	const { flushEvery } = options
+	const periodic =
+		flushEvery === undefined
+			? Layer.empty
+			: Layer.effectDiscard(
+					Effect.gen(function* () {
+						const env = yield* WorkerEnvironment
+						yield* Effect.promise(() => telemetry.flush(env)).pipe(
+							Effect.delay(flushEvery),
+							Effect.forever,
+							Effect.forkScoped,
+						)
+					}),
+				)
+	return Layer.mergeAll(
+		telemetry.requestLayer.pipe(
 			// Same key as alchemy's tag; a type bridge only.
 			Layer.provide(Layer.effect(MapleCloudflareSDK.WorkerEnvironment, WorkerEnvironment)),
 		),
+		periodic,
 		MapleHttpTracingLive,
 	)
+}
 
 /**
  * The SDK for a runtime the Worker bridge does not wrap (a Durable Object's own
