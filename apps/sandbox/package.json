@@ -5,6 +5,7 @@
 	"scripts": {
 		"test": "vitest run",
 		"verify:image": "bun scripts/verify-image.ts",
+		"verify:executor-probe": "bun scripts/verify-executor-probe.ts",
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {

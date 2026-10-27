@@ -13,7 +13,7 @@ import {
 import { requireSecretEntry } from "@maple/infra/env"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
-import type { Sandbox } from "./src/worker.ts"
+import type { Executor, Sandbox } from "./src/worker.ts"
 
 /**
  * The container image, built here and pushed to the account registry on a content change. Its
@@ -61,6 +61,8 @@ const props = Effect.gen(function* () {
 		...mapleWorkerProps("sandbox", stack),
 		// Reached only over a service binding: no route, no hostname.
 		workersDev: false,
+		// Hourly, and a no-op once the current probe version has reported.
+		crons: ["23 * * * *"],
 		observability: assetWorkerObservability(destinations),
 		env: {
 			// Fleet scheduling on purpose: `durable_object` has no `maxInstances` cap, and
@@ -72,6 +74,14 @@ const props = Effect.gen(function* () {
 				instanceType: production ? ("standard-2" as const) : ("standard-1" as const),
 				// One container per repository per org: the cap on concurrent repositories.
 				maxInstances: production ? 40 : 5,
+				observability: { logs: { enabled: true } },
+			}),
+			// The execution sandbox: started with internet off, one per probe or run. Today it only
+			// runs the platform probe (`src/executor-probe.ts`) on the cron below.
+			Executor: Cloudflare.Container<Executor>("Executor", {
+				context: SANDBOX_IMAGE_CONTEXT,
+				instanceType: "standard-2" as const,
+				maxInstances: 2,
 				observability: { logs: { enabled: true } },
 			}),
 			// Never the shared `INTERNAL_SERVICE_TOKEN` (acts as any org; this runs model-chosen
