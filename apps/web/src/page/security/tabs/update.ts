@@ -224,7 +224,8 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		searchGeneration: 0,
 		targetSelect: Select.init("security-target", { value: "all", selectedIndex: 0 }),
 		runsTargetSelect: Select.init("security-runs-target", { value: "all", selectedIndex: 0 }),
-		collapsed: ["rejected"],
+		// Disproved findings start folded, unless the URL asked to show them.
+		collapsed: searches.findingsSearch.rejected === true ? [] : ["rejected"],
 	})
 	const loaded = chainAll(model, [
 		(next) => readTargets(next, context, "Load"),
@@ -251,6 +252,11 @@ export const routeChanged = (model: Model, route: SecurityTabsRoute, _context: P
 			...model,
 			tab: tabOfRoute(route),
 			...searches,
+			// Turning rejected on shows them, not a folded header.
+			collapsed:
+				searches.findingsSearch.rejected === true && model.findingsSearch.rejected !== true
+					? model.collapsed.filter((held) => held !== "rejected")
+					: model.collapsed,
 			// Leaving Findings drops a pending debounce, so it cannot navigate back there.
 			searchGeneration: isFindings ? model.searchGeneration : model.searchGeneration + 1,
 			// The draft follows the URL unless it already says the same thing (trailing spaces).
@@ -560,13 +566,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		ToggledShowRejected: () => {
 			const { rejected: _rejected, ...rest } = searchWithDraft(model)
-			const isShowing = model.findingsSearch.rejected !== true
-			// Turning them on shows them, not a folded header.
 			return navigate(
-				isShowing
-					? { ...model, collapsed: model.collapsed.filter((held) => held !== "rejected") }
-					: model,
-				findingsUrl(isShowing ? { ...rest, rejected: true } : rest),
+				model,
+				findingsUrl(model.findingsSearch.rejected === true ? rest : { ...rest, rejected: true }),
 			)
 		},
 		ClickedClearFilters: () => {

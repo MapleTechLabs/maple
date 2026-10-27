@@ -466,11 +466,18 @@ describe("security tabs", () => {
 		)
 	})
 
-	test("turning on Show rejected unfolds the rejected section it adds", () => {
+	test("rejected findings show unfolded whether the URL or the switch asked for them", () => {
 		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
-		const shown = pageUpdate(findings, Message.ToggledShowRejected())
-		expect(shown.model.collapsed).not.toContain("rejected")
-		expect(shown.outMessage).toMatchObject({ url: expect.stringContaining("rejected=true") })
+		expect(pageUpdate(findings, Message.ToggledShowRejected()).outMessage).toMatchObject({
+			url: expect.stringContaining("rejected=true"),
+		})
+		const shown = routeChanged(
+			findings,
+			AppRoute.SecurityFindings({ search: { rejected: true } }),
+			context,
+		).model
+		const entered = init(AppRoute.SecurityFindings({ search: { rejected: true } }), context).model
+		expect([findings.collapsed, shown.collapsed, entered.collapsed]).toEqual([["rejected"], [], []])
 	})
 
 	test("a severity tile picked within the search debounce keeps what was typed", () => {
