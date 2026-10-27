@@ -54,8 +54,10 @@ const FAIL_B = DOTS - 1;
 
 		<div class="ut-row" role="row">
 			<span role="cell" class="ut-pills">
-				<span class="ut-pill ut-pill--up ut-anim">UP</span>
-				<span class="ut-pill ut-pill--down ut-anim">DOWN</span>
+				<!-- One stable status for assistive tech; the animated pair is visual only. -->
+				<span class="sr-only">DOWN</span>
+				<span class="ut-pill ut-pill--up ut-anim" aria-hidden="true">UP</span>
+				<span class="ut-pill ut-pill--down ut-anim" aria-hidden="true">DOWN</span>
 			</span>
 			<span role="cell" class="ut-name">
 				<span class="ut-name__title">{DOWN.name}</span>
@@ -122,14 +124,15 @@ const FAIL_B = DOTS - 1;
 	>
 		<span>
 			failed checks
-			<span class="ut-count">
+			<span class="sr-only">2/2</span>
+			<span class="ut-count" aria-hidden="true">
 				<span class="ut-count__n ut-count__n--0 ut-anim">0/2</span>
 				<span class="ut-count__n ut-count__n--1 ut-anim">1/2</span>
 				<span class="ut-count__n ut-count__n--2 ut-anim">2/2</span>
 			</span>
 			· closes when it passes again
 		</span>
-		<span class="hidden sm:inline">every check is a trace</span>
+		<span class="hidden sm:inline">http checks carry a trace id</span>
 	</div>
 </div>
 
