@@ -108,6 +108,13 @@ export const userBlock = (
 const chevron = (h: H, isOpen: boolean, className: string): Html =>
 	icon(h, isOpen ? "ChevronDownIcon" : "ChevronRightIcon", { size: 11, className })
 
+const systemCoverage = (calls: number, turnCalls: number): string =>
+	calls >= turnCalls
+		? calls === 1
+			? "sent on 1 call"
+			: `sent on all ${calls} calls`
+		: `sent on ${calls} of ${turnCalls} calls`
+
 /** System instructions collapse to one line: emitters re-send them on every call. */
 export const systemBlock = (h: H, model: Model, system: Extract<TranscriptRow, { kind: "system" }>): Html => {
 	const isOpen = disclosed(model.openRows, system.key, false)
@@ -133,18 +140,11 @@ export const systemBlock = (h: H, model: Model, system: Extract<TranscriptRow, {
 							),
 						]),
 				h.span([h.Class("grow")], []),
-				...(system.callCount > 1
-					? [
-							h.span(
-								[h.Class(cn(META, "shrink-0"))],
-								[
-									system.callCount >= system.turnCallCount
-										? `sent on all ${system.callCount} calls`
-										: `sent on ${system.callCount} of ${system.turnCallCount} calls`,
-								],
-							),
-						]
-					: []),
+				// Every prompt row says its call coverage, so two variants in a turn read side by side.
+				h.span(
+					[h.Class(cn(META, "shrink-0"))],
+					[systemCoverage(system.callCount, system.turnCallCount)],
+				),
 			],
 		),
 		...(isOpen

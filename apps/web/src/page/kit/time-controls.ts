@@ -59,6 +59,8 @@ export type TimeControlsOptions<M> = Readonly<{
 	isReloading: boolean
 	/** Replaces the plain Reload button (`reloadControls`: a `RefreshControls` with a cadence). */
 	reloadControls?: Html
+	/** Drops Reload while the page's failure card offers Try again, so there is one retry. */
+	isReloadHidden?: boolean
 }>
 
 /** The header's time cluster. */
@@ -95,12 +97,16 @@ export const timeControls = <M>(h: HtmlBuilder<M>, options: TimeControlsOptions<
 						: []),
 				],
 			),
-			options.reloadControls ??
-				refreshButton(h, {
-					onRefresh: options.onReload,
-					isPending: options.isReloading,
-					label: "Reload",
-				}),
+			...(options.isReloadHidden === true
+				? []
+				: [
+						options.reloadControls ??
+							refreshButton(h, {
+								onRefresh: options.onReload,
+								isPending: options.isReloading,
+								label: "Reload",
+							}),
+					]),
 		],
 	)
 }

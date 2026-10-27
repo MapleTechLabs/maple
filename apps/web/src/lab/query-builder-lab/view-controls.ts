@@ -1,7 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { badge } from "../../ui/display"
 import { eyebrow } from "../../ui/eyebrow"
 import * as Select from "../../ui/select"
 import { type SelectOption, view as selectView } from "../../ui/select-view"
@@ -24,12 +23,6 @@ export const labelEyebrow = (h: H, text: string): Html =>
 		],
 		[text],
 	)
-
-/** The `A` / `F1` badge in the row's 44px gutter. */
-export const nameBadge = (h: H, name: string): Html =>
-	badge(h, { variant: "outline", className: "h-7 w-11 justify-center self-start font-mono text-2xs" }, [
-		name,
-	])
 
 export type LabSelectOptions = Readonly<{
 	className: string

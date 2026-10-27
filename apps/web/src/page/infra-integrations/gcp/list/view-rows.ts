@@ -111,26 +111,33 @@ export const spark = (
 ): Html =>
 	values === undefined || values.length < 2 || ctx.theme === null || !ctx.isChartReady
 		? h.div([h.Class("h-5 min-w-0 flex-1")])
-		: h.div(
-				[h.Class("h-5 min-w-0 flex-1")],
-				[
-					h.submodel({
-						slotId,
-						model: CHART_MODEL,
-						view: Sparkline.view,
-						toParentMessage: (message: Chart.Message) => Message.GotSparklineMessage({ message }),
-						viewInputs: {
-							chartId: slotId,
-							values,
-							color: resolveColor(ctx.theme, color),
-							className: "h-full w-full",
-							revision: 0,
-							curve: "monotone",
-							fillOpacity: [0.35, 0],
-						},
-					}),
-				],
-			)
+		: values.every((value) => value === 0)
+			? // All zeros is no traffic, not a flat line of data: a muted dash keeps the slot.
+				h.div(
+					[h.Class("flex h-5 min-w-0 flex-1 items-center")],
+					[h.span([h.AriaHidden(true), h.Class("h-px w-3 bg-muted-foreground/50")])],
+				)
+			: h.div(
+					[h.Class("h-5 min-w-0 flex-1")],
+					[
+						h.submodel({
+							slotId,
+							model: CHART_MODEL,
+							view: Sparkline.view,
+							toParentMessage: (message: Chart.Message) =>
+								Message.GotSparklineMessage({ message }),
+							viewInputs: {
+								chartId: slotId,
+								values,
+								color: resolveColor(ctx.theme, color),
+								className: "h-full w-full",
+								revision: 0,
+								curve: "monotone",
+								fillOpacity: [0.35, 0],
+							},
+						}),
+					],
+				)
 
 /** `VolumeCell`: a count and its sparkline. */
 /** "880K" over "880.0K": a trailing ".0" carries nothing, so the column drops it. */

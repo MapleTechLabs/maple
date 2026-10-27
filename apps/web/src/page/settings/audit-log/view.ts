@@ -465,6 +465,12 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 						[
 							dateRange(h, model, filters.range, inputs.timeZone),
 							personFilter(h, model, filters.actorId, inputs.apiKeys),
+							// The labelled Reload every page header uses, beside the range it re-reads.
+							refreshButton(h, {
+								label: "Reload",
+								isPending: isWaiting,
+								onRefresh: Message.ClickedRefresh(),
+							}),
 						],
 					),
 					h.div(
@@ -483,14 +489,6 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								value: filters.outcome ?? "all",
 								onChange: (value) => Message.ClickedOutcome({ value }),
 								options: OUTCOME_FILTERS,
-							}),
-							h.div([h.Class("flex-1")], []),
-							refreshButton(h, {
-								isIconOnly: true,
-								variant: "ghost",
-								label: "Refresh audit log",
-								isPending: isWaiting,
-								onRefresh: Message.ClickedRefresh(),
 							}),
 						],
 					),

@@ -7,6 +7,7 @@ import type * as TraceFlow from "../../../service-map/trace-flow/trace-flow"
 import { errorState } from "../../../ui/error-state"
 import { icon, type IconName } from "../../../ui/icon"
 import { pageTitle } from "../../../ui/page-layout"
+import { traceIdBadge } from "../../../ui/trace-badges"
 import type * as Dialog from "../../../ui/dialog"
 import * as DialogView from "../../../ui/dialog-view"
 import * as Resizable from "../../../ui/resizable"
@@ -258,6 +259,14 @@ const pageBody = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs)
 	})
 }
 
+/** A failed load shows the full id once, as a copy chip; the failure card owns the retry. */
+const failedHeaderActions = (h: HtmlBuilder<Message>, model: Model): Html =>
+	traceIdBadge(h, model.traceId, {
+		size: "sm",
+		className: "max-w-[260px]",
+		onCopy: Message.ClickedCopyTraceId(),
+	})
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const trace = Option.getOrUndefined(loadedTrace(model))
 	return dashboardPage(
@@ -268,15 +277,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				trace !== undefined
 					? titleContent(h, trace)
 					: AsyncData.isFailure(model.hierarchy.data)
-						? pageTitle(h, { title: model.traceId, className: "leading-8" }, [
-								"Trace ",
-								h.span(
-									[h.Class("font-mono text-xl font-normal text-muted-foreground")],
-									[shortId(model.traceId, "trace")],
-								),
-							])
+						? pageTitle(h, { title: model.traceId, className: "leading-8" }, ["Trace"])
 						: undefined,
-			actions: trace === undefined ? undefined : headerActions(h, model, trace),
+			actions:
+				trace !== undefined
+					? headerActions(h, model, trace)
+					: AsyncData.isFailure(model.hierarchy.data)
+						? failedHeaderActions(h, model)
+						: undefined,
 		},
 		[pageBody(h, model, inputs)],
 	)

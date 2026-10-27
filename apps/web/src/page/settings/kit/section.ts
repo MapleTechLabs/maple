@@ -13,6 +13,8 @@ export type SettingsSectionOptions = Readonly<{
 	title: string
 	description?: Children
 	actions?: Html
+	/** A tag set right after the title (`Coming soon`), not pushed to the far edge like `actions`. */
+	badge?: Html
 	framed?: boolean
 	padded?: boolean
 	className?: string
@@ -51,6 +53,7 @@ export const settingsSection = <M>(
 							sectionHeading(h, {
 								id: options.id,
 								title: options.title,
+								badge: options.badge,
 								actions: options.actions,
 							}),
 							...descriptionOf(h, options.description),

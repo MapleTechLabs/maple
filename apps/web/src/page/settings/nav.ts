@@ -95,12 +95,15 @@ export type Visibility = Readonly<{
 	isClerk: boolean
 	isAdmin: boolean
 	canAccessDataPlatform: boolean
+	/** An admin without the add-on: the row shows and opens a locked page naming the add-on. */
+	isDataPlatformLocked?: boolean
 }>
 
 const isVisible = (id: string, visibility: Visibility): boolean => {
 	if (id === "general" || id === "members" || id === "billing") return visibility.isClerk
 	if (!visibility.isClerk) return true
-	if (id === "data-platform") return visibility.canAccessDataPlatform
+	if (id === "data-platform")
+		return visibility.canAccessDataPlatform || visibility.isDataPlatformLocked === true
 	if (id === "audit-log" || id === "ai") return visibility.isAdmin
 	return true
 }

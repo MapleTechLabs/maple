@@ -144,7 +144,12 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 			roleCell(h, model, member, canManage),
 			tableCell(
 				h,
-				[formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone })],
+				[
+					h.span(
+						[h.Title(formatRelativeTime(member.createdAtMs, inputs.nowMs))],
+						[formatDateInTimezone(member.createdAtMs, { timeZone: inputs.timeZone })],
+					),
+				],
 				cn("text-xs text-muted-foreground", dateAlign(model.isAdmin)),
 			),
 			...(model.isAdmin
@@ -314,7 +319,13 @@ const invitationRow = (h: H, model: Model, invitation: InvitationRow, inputs: In
 			tableCell(h, [roleText(h, invitation.role, model.isAdmin)]),
 			tableCell(
 				h,
-				[formatRelativeTime(invitation.createdAtMs, inputs.nowMs)],
+				// The absolute date, as on Joined above; the age is the tooltip.
+				[
+					h.span(
+						[h.Title(formatRelativeTime(invitation.createdAtMs, inputs.nowMs))],
+						[formatDateInTimezone(invitation.createdAtMs, { timeZone: inputs.timeZone })],
+					),
+				],
 				cn("text-xs text-muted-foreground", dateAlign(model.isAdmin)),
 			),
 			...(model.isAdmin

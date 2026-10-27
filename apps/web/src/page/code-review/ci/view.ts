@@ -173,8 +173,20 @@ const pipelinesOf = (model: Model): ReadonlyArray<string> =>
 		onSome: (analytics) => [...new Set(analytics.pipelines.map((row) => row.pipeline))].toSorted(),
 	})
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
-	h.div(
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	const filters = filtersView(h, {
+		frame: model.frame,
+		search: model.search,
+		reviewedOnly: false,
+		kind: "workflow",
+		options: pipelinesOf(model),
+		selected: model.search.pipeline,
+		defaultPreset: DEFAULT_PRESET,
+		presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
+		toMessage: (message) => Message.GotFrameMessage({ message }),
+		isFailed: AsyncData.isFailure(model.analytics.data),
+	})
+	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 		[
 			codeReviewLayout(
@@ -182,20 +194,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					h,
 					active: "ci",
 					search: model.search,
-					toolbar: filtersView(h, {
-						frame: model.frame,
-						search: model.search,
-						reviewedOnly: false,
-						kind: "workflow",
-						options: pipelinesOf(model),
-						selected: model.search.pipeline,
-						defaultPreset: DEFAULT_PRESET,
-						presets: TimeRangePicker.LONG_RANGE_PRESET_VALUES,
-						toMessage: (message) => Message.GotFrameMessage({ message }),
-					}),
+					toolbar: filters.actions,
+					filters: filters.filters,
 				},
 				[content(h, model, inputs.context.timeZone)],
 			),
 		],
-	),
-)
+	)
+})

@@ -31,10 +31,13 @@ export const heroChip = <M>(
 
 const FIELD_CLASS = "min-w-0 gap-1 font-normal text-muted-foreground"
 
-/** The title row's label-and-value chip frame; a picker trigger adds hover and its caret. */
+/**
+ * The title row's label-and-value chip frame. A picker is bordered with hover and a caret; a
+ * static chip is a borderless tint, so a scope you cannot switch never reads as a control.
+ */
 export const heroFieldChipClass = (isPicker: boolean): string =>
 	cn(
-		badgeVariants({ variant: "meta", size: "xs", mono: true }),
+		badgeVariants({ variant: isPicker ? "meta" : "muted", size: "xs", mono: true }),
 		FIELD_CLASS,
 		isPicker && "cursor-pointer transition-colors hover:text-foreground",
 	)

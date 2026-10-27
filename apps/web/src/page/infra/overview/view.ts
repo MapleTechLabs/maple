@@ -87,7 +87,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			sources === null
 				? "Checking which sources report. What needs a look comes first."
 				: sources.length > 0
-					? `${countLabel(sources.length, "source")} connected. What needs a look comes first.`
+					? isFailureExplained
+						? `${countLabel(sources.length, "source")} configured. Status unavailable right now.`
+						: `${countLabel(sources.length, "source")} connected. What needs a look comes first.`
 					: "Nothing is reporting yet. Install a collector or connect a provider to get started.",
 	})
 	return h.div(

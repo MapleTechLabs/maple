@@ -109,22 +109,9 @@ const shareText = (h: H, share: number | null, tone: string): Html =>
 const rateText = (endpoint: Endpoint, seconds: number) =>
 	formatRate(callsPerSecond(endpoint.estimatedSpanCount, seconds))
 
-/** The slowest endpoint's p50/p95 sit in a chip so the eye lands on them. */
-const latencyCell = (h: H, ms: number, scale: "p50" | "p95" | "p99", isChip: boolean, width: string) =>
-	tableCell(
-		h,
-		[
-			latencyValue(h, {
-				ms,
-				scale,
-				className: cn(
-					"text-ui",
-					isChip && "rounded-sm bg-muted px-1.5 py-0.5 text-warning-foreground",
-				),
-			}),
-		],
-		cn(numeric, "py-0 pr-0", width),
-	)
+// The "slowest" tag on the route carries the highlight; the latency cells stay plain.
+const latencyCell = (h: H, ms: number, scale: "p50" | "p95" | "p99", width: string) =>
+	tableCell(h, [latencyValue(h, { ms, scale, className: "text-ui" })], cn(numeric, "py-0 pr-0", width))
 
 const endpointRow = (
 	h: H,
@@ -279,9 +266,9 @@ const endpointRow = (
 				[shareText(h, serverShare(endpoint), "text-destructive-foreground")],
 				cn(numeric, "py-0 pr-0", COLUMN.err),
 			),
-			latencyCell(h, endpoint.p50DurationMs, "p50", isSlowest, COLUMN.p50),
-			latencyCell(h, endpoint.p95DurationMs, "p95", isSlowest, COLUMN.p95),
-			latencyCell(h, endpoint.p99DurationMs, "p99", false, COLUMN.p99),
+			latencyCell(h, endpoint.p50DurationMs, "p50", COLUMN.p50),
+			latencyCell(h, endpoint.p95DurationMs, "p95", COLUMN.p95),
+			latencyCell(h, endpoint.p99DurationMs, "p99", COLUMN.p99),
 			tableCell(
 				h,
 				[

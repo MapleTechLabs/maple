@@ -176,7 +176,7 @@ export const fieldError = <Message>(
 			h.Id(options.ids.error),
 			h.DataAttribute("slot", "field-error"),
 			...(options.attributes ?? []),
-			h.Class(cn(fieldErrorStyles, options.className)),
+			h.Class(cn(fieldErrorStyles, "font-prose", options.className)),
 			...fieldStateAttributes(h, options.state),
 		],
 		typeof text === "string" ? [text] : text,

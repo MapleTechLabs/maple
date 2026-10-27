@@ -570,7 +570,7 @@ const triageTeaser = (h: H): Html =>
 			id: "ai-triage-heading",
 			title: "Auto-triage",
 			description: [TRIAGE_DESCRIPTION],
-			actions: badge(h, { variant: "muted" }, ["Coming soon"]),
+			badge: badge(h, { variant: "muted" }, ["Coming soon"]),
 			framed: false,
 		},
 		[
@@ -581,7 +581,7 @@ const triageTeaser = (h: H): Html =>
 					description: "Not yet available for your organization.",
 					isChecked: false,
 					isDisabled: true,
-					className: "p-4 opacity-60",
+					className: "p-4",
 				}),
 				settingRow(h, {
 					ids: {
@@ -591,14 +591,16 @@ const triageTeaser = (h: H): Html =>
 					},
 					label: "Investigations per day",
 					description: "Per UTC day. Investigations you start or retry yourself are never blocked.",
-					className: "p-4 opacity-60",
+					className: "p-4",
+					disabled: true,
 					control: [
 						plainInput(h, {
 							id: "ai-triage-teaser-runs",
 							className: "w-48",
 							isDisabled: true,
 							attributes: [
-								h.Value(""),
+								// The server's default (`DEFAULT_MAX_RUNS_PER_DAY`), shown greyed so the box is not blank.
+								h.Value("250"),
 								h.Readonly(true),
 								h.AriaLabel("Investigations per day"),
 							],
@@ -647,7 +649,7 @@ const escalationCard = (h: H): Html =>
 						[
 							h.span([h.Class("text-sm font-medium text-foreground")], ["Escalation routing"]),
 							h.span(
-								[h.Class("text-xs leading-relaxed text-muted-foreground")],
+								[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
 								[
 									"Route triaged issues by severity and confidence to your alert destinations.",
 								],

@@ -56,7 +56,7 @@ export type StepIndex = 0 | 1 | 2 | 3
 /** Where the flow is, as a text trail like `/sources/new`: done steps checked, the current one underlined. */
 const stepper = (h: H, current: StepIndex): Html =>
 	h.ol(
-		[h.AriaLabel("Setup progress"), h.Class("flex flex-wrap items-center gap-2 font-sans text-xs")],
+		[h.AriaLabel("Setup progress"), h.Class("flex flex-wrap items-center gap-2 font-prose text-xs")],
 		STEPS.flatMap((label, index) => {
 			const done = index < current
 			const active = index === current

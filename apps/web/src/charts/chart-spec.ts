@@ -241,6 +241,8 @@ export const ChartSpec = defineTaggedUnion({
 		/** Resolved series colours by series key; `border`/`background` are the chrome. */
 		colors: Schema.Record(Schema.String, Schema.String),
 		gradientId: Schema.String,
+		/** A fixed y-axis gutter, so charts stacked on one time axis start their plots at one x. */
+		marginLeft: Schema.optionalKey(Schema.Number),
 	},
 	/** `ThroughputAreaChart`, `ErrorRateAreaChart`, `ApdexAreaChart`, `LatencyLineChart` (charts/area, charts/line). */
 	FixedMetric: {
@@ -334,6 +336,8 @@ export const ChartSpec = defineTaggedUnion({
 		marginLeft: Schema.optionalKey(Schema.Number),
 		/** Buckets where nothing was measured: the bands and their edges break there instead of bridging. */
 		breaks: Schema.optionalKey(Schema.Array(Schema.String)),
+		/** Room above the plot, for marker labels that sit in a header gutter. */
+		marginTop: Schema.optionalKey(Schema.Number),
 	},
 	/**
 	 * The analytics traffic chart: the selected metric

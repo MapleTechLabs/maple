@@ -22,6 +22,8 @@ export type FiltersOptions<M> = Readonly<{
 	defaultPreset: string
 	presets: ReadonlyArray<string>
 	toMessage: (message: FrameMessage) => M
+	/** True while the tab's failure card shows, so its Try again is the only retry. */
+	isFailed?: boolean
 }>
 
 /** `CODE_REVIEW_MAX_RANGE_SECONDS`: a year, which the CI tab's `ci_runs` keeps too. */
@@ -29,7 +31,10 @@ const MAX_RANGE_SECONDS = 365 * 24 * 60 * 60
 
 const item = (value: string, label: string): SelectEntry => ({ _tag: "Item", item: { value, label } })
 
-export const filtersView = <M>(h: HtmlBuilder<M>, options: FiltersOptions<M>): Html => {
+/** The header keeps the window and reload; repository and author or workflow join the tab's filter row. */
+export type CodeReviewFilters = Readonly<{ actions: Html; filters: ReadonlyArray<Html> }>
+
+export const filtersView = <M>(h: HtmlBuilder<M>, options: FiltersOptions<M>): CodeReviewFilters => {
 	const { frame, toMessage } = options
 	const repositories = repositoriesOf(frame, options.reviewedOnly)
 	const repoEntries = [
@@ -48,9 +53,8 @@ export const filtersView = <M>(h: HtmlBuilder<M>, options: FiltersOptions<M>): H
 	const preset =
 		options.search.timePreset ??
 		(options.search.startTime === undefined ? options.defaultPreset : undefined)
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-2")],
-		[
+	return {
+		filters: [
 			h.submodel({
 				slotId: frame.repoSelect.id,
 				model: frame.repoSelect,
@@ -61,7 +65,7 @@ export const filtersView = <M>(h: HtmlBuilder<M>, options: FiltersOptions<M>): H
 					entries: repoEntries,
 					size: "sm",
 					ariaLabel: "Repository",
-					className: "w-full min-w-0 @2xl/page:w-48",
+					className: "w-48 min-w-0",
 					toView: (parts) => h.div([h.Class("contents")], parts),
 				},
 			}),
@@ -75,37 +79,38 @@ export const filtersView = <M>(h: HtmlBuilder<M>, options: FiltersOptions<M>): H
 					entries: optionEntries,
 					size: "sm",
 					ariaLabel: isAuthor ? "Author" : "Workflow",
-					// Sized to its label: the floor fits "All workflows", the cap keeps long authors in check.
-					className: "w-full min-w-0 @2xl/page:w-auto @2xl/page:min-w-40 @2xl/page:max-w-56",
+					// One width on every tab, so switching between authors and workflows moves nothing.
+					className: "w-48 min-w-0",
 					toView: (parts) => h.div([h.Class("contents")], parts),
 					renderItem: (option: SelectOption) =>
 						!isAuthor || option.value === ALL ? [option.label] : [authorLabel(h, option.value)],
 				},
 			}),
-			timeControls(h, {
-				search: options.search,
-				defaultPreset: options.defaultPreset,
-				window: frame.window,
-				onReset: toMessage(FrameMessage.ClickedResetTimeRange()),
-				onReload: toMessage(FrameMessage.ClickedReload()),
-				isReloading: frame.isReloading,
-				trigger: (label) =>
-					h.submodel({
-						slotId: frame.timePicker.popover.id,
-						model: frame.timePicker,
-						view: TimeRangePicker.view,
-						toParentMessage: (message: TimeRangePicker.Message) =>
-							toMessage(FrameMessage.GotTimePickerMessage({ message })),
-						viewInputs: {
-							label,
-							selectedPreset: preset,
-							presets: options.presets,
-							maxRangeSeconds: MAX_RANGE_SECONDS,
-							startTime: frame.window?.startTime,
-							endTime: frame.window?.endTime,
-						},
-					}),
-			}),
 		],
-	)
+		actions: timeControls(h, {
+			search: options.search,
+			defaultPreset: options.defaultPreset,
+			window: frame.window,
+			onReset: toMessage(FrameMessage.ClickedResetTimeRange()),
+			onReload: toMessage(FrameMessage.ClickedReload()),
+			isReloading: frame.isReloading,
+			isReloadHidden: options.isFailed,
+			trigger: (label) =>
+				h.submodel({
+					slotId: frame.timePicker.popover.id,
+					model: frame.timePicker,
+					view: TimeRangePicker.view,
+					toParentMessage: (message: TimeRangePicker.Message) =>
+						toMessage(FrameMessage.GotTimePickerMessage({ message })),
+					viewInputs: {
+						label,
+						selectedPreset: preset,
+						presets: options.presets,
+						maxRangeSeconds: MAX_RANGE_SECONDS,
+						startTime: frame.window?.startTime,
+						endTime: frame.window?.endTime,
+					},
+				}),
+		}),
+	}
 }

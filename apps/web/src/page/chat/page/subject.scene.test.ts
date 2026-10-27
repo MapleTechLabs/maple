@@ -56,7 +56,7 @@ const entered = (search: Record<string, string>) =>
 		init(AppRoute.Chat({ search }), context).model,
 		Message.CompletedLoadTabs({
 			state: {
-				tabs: [{ id: "default", title: "New Chat", createdAt: NOW, updatedAt: NOW }],
+				tabs: [{ id: "default", title: "New chat", createdAt: NOW, updatedAt: NOW }],
 				activeTabId: "default",
 			},
 			nowMs: NOW,

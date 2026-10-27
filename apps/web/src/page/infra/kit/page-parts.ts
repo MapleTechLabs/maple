@@ -80,7 +80,8 @@ export const pageHeroParts = <M>(
 		[h.Class("min-w-0 space-y-0.5")],
 		[
 			h.div(
-				[h.Class("flex min-w-0 flex-wrap items-baseline gap-3")],
+				// Centred, not baseline: a small chip on a baseline rides high beside the large title.
+				[h.Class("flex min-w-0 flex-wrap items-center gap-3")],
 				[
 					h.h1([h.Class(cn(pageTitleStyles, "leading-8 text-foreground"))], [options.title]),
 					...trailingOf(options.trailing),
@@ -104,7 +105,9 @@ export const pageHeroParts = <M>(
 
 /** The header's right side: a page's own actions before its time controls. */
 export const headerActions = <M>(h: HtmlBuilder<M>, extra: ReadonlyArray<Html>, controls: Html): Html =>
-	extra.length === 0 ? controls : h.div([h.Class("flex flex-wrap items-center gap-2")], [...extra, controls])
+	extra.length === 0
+		? controls
+		: h.div([h.Class("flex flex-wrap items-center gap-2")], [...extra, controls])
 
 export type SearchToolbarOptions<M> = Readonly<{
 	id: string

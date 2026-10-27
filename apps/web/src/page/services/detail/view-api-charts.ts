@@ -60,6 +60,8 @@ export const statusChart = <M>(
 		context: ChartContext
 		className: string
 		overlay?: Html
+		/** Room above the plot for marker labels. */
+		marginTop?: number | undefined
 		/** The chart reports its plot so the caller can lay markers over it. */
 		reportPlot?: boolean
 		toMessage: (message: Chart.Message) => M
@@ -73,6 +75,7 @@ export const statusChart = <M>(
 		theme: options.context.theme,
 		timeZone: options.context.timeZone,
 		gradientPrefix: options.chartId,
+		marginTop: options.marginTop,
 	})
 	const model = options.chart ?? Chart.init()
 	return h.submodel({

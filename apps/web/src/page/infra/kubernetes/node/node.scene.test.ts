@@ -4,6 +4,7 @@ import { expect as expectView, given, label, Mount, scene, text, withViewInputs 
 import { describe, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "../../../../charts/theme-colors"
 import { toLoadFailure } from "../../../../data/load-failure"
+import { failureSentence } from "../../../../ui/error-state"
 import type { PageContext } from "../../../contract"
 import * as Frame from "../../kit/frame"
 import { Message } from "./message"
@@ -53,7 +54,7 @@ describe("kubernetes node", () => {
 			given(failed),
 			themed(),
 			expectView(text("Couldn't load pods on this node")).toExist(),
-			expectView(text(PODS_FAILURE.message)).toExist(),
+			expectView(text(failureSentence(PODS_FAILURE))).toExist(),
 		)
 	})
 })

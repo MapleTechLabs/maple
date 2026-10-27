@@ -210,7 +210,7 @@ describe("integrations on the sources list", () => {
 			given(withUsage),
 			expectView(role("columnheader", { name: "Last 24h" })).toExist(),
 			expectView(text("1.2K spans · 300 logs")).toExist(),
-			expectView(text("4.0K metric points")).toExist(),
+			expectView(text("4K metric points")).toExist(),
 			expectView(text("2.6 MB")).toExist(),
 		)
 	})
