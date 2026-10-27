@@ -249,6 +249,15 @@ export const ChartSpec = defineTaggedUnion({
 		marginLeft: Schema.optionalKey(Schema.Number),
 		/** A right-margin lock, else sized to the end tick label. */
 		marginRight: Schema.optionalKey(Schema.Number),
+		/** `Latency`: the percentile lines to draw and their labels, else P99, P95 and P50. */
+		latencySeries: Schema.optionalKey(
+			Schema.Array(
+				Schema.Struct({
+					key: Schema.Literals(["p99LatencyMs", "p95LatencyMs", "p50LatencyMs"]),
+					label: Schema.String,
+				}),
+			),
+		),
 		/** `[start, end]` epoch ms the x axis spans, so charts over one window line up; else the rows' extent. */
 		xDomainMs: Schema.optionalKey(Schema.Tuple([Schema.Number, Schema.Number])),
 		rows: Schema.Array(FixedMetricRow),

@@ -309,7 +309,10 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	const focus = tooltipFocusCapture()
 	const { plotRows } = model
 	const chrome = chromeOf(spec)
-	const series = LATENCY_SERIES.map((entry) => ({ ...entry, color: colorOf(spec, entry.key) }))
+	const series = (spec.latencySeries ?? LATENCY_SERIES).map((entry) => ({
+		...entry,
+		color: colorOf(spec, entry.key),
+	}))
 	const keys = series.map((entry) => entry.key)
 	const { solid, dashed } = splitAtFirstPartial(plotRows, keys, model.trimOptions)
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)

@@ -10,7 +10,7 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import * as Chart from "../../../charts/chart"
 import { ChartSpec } from "../../../charts/chart-spec"
 import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
-import { fixedMetricLegend, latencySeries } from "../../../charts/fixed-metric-legend"
+import { fixedMetricLegend } from "../../../charts/fixed-metric-legend"
 import { LATENCY_SERIES } from "../../../charts/fixed-metric-series"
 import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
 import { plotFrame } from "../../../charts/plot-frame"
@@ -224,14 +224,17 @@ export const kpiRail = (
 	)
 }
 
+/** Buckets that ran a check: an empty one is no check, not a 0 ms one, and the strip below shows it. */
 const chartRows = (points: ReadonlyArray<CheckPoint>) =>
-	points.map((point) => ({
-		bucket: point.bucket,
-		p50LatencyMs: point.p50LatencyMs,
-		p95LatencyMs: point.p95LatencyMs,
-		p99LatencyMs: point.p99LatencyMs,
-		partial: point.partial,
-	}))
+	points
+		.filter((point) => point.totalCount > 0)
+		.map((point) => ({
+			bucket: point.bucket,
+			p50LatencyMs: point.p50LatencyMs,
+			p95LatencyMs: point.p95LatencyMs,
+			p99LatencyMs: point.p99LatencyMs,
+			partial: point.partial,
+		}))
 
 /** The plot's insets in px, shared by every chart on the page so one instant sits at one x (`pl-16`, `pr-3`). */
 const PLOT_LEFT = 64
@@ -243,8 +246,30 @@ const windowDomain = (stats: CheckStats): readonly [number, number] => [
 	stats.windowEndMs,
 ]
 
-const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartContext): Html =>
-	h.submodel({
+/** The median count of checks in a bucket that holds any. */
+const checksPerBucket = (points: ReadonlyArray<CheckPoint>): number => {
+	const counts = points
+		.map((point) => point.totalCount)
+		.filter((count) => count > 0)
+		.toSorted((a, b) => a - b)
+	return counts[Math.floor(counts.length / 2)] ?? 0
+}
+
+/**
+ * The percentiles a bucket holds enough checks to tell apart: one check is just its duration, and
+ * P99 of a few dozen checks is their slowest one, the same line as P95.
+ */
+export const percentileSeries = (points: ReadonlyArray<CheckPoint>) => {
+	const perBucket = checksPerBucket(points)
+	const shown = LATENCY_SERIES.filter((entry) =>
+		perBucket <= 1 ? entry.key === "p50LatencyMs" : perBucket < 50 ? entry.key !== "p99LatencyMs" : true,
+	)
+	return shown.map((entry) => ({ ...entry, label: perBucket <= 1 ? "Response time" : entry.label }))
+}
+
+const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartContext): Html => {
+	const series = percentileSeries(stats.points)
+	return h.submodel({
 		slotId: "uptime-latency-chart",
 		model: model.chart,
 		view: FixedMetricChart.view,
@@ -256,6 +281,7 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 				marginLeft: PLOT_LEFT,
 				marginRight: PLOT_RIGHT,
 				xDomainMs: [...windowDomain(stats)],
+				latencySeries: series.map(({ key, label }) => ({ key, label })),
 				rows: chartRows(stats.points),
 				colors: {
 					border: resolveColor(context.theme, "--border"),
@@ -271,10 +297,18 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 				showTooltip: true,
 			}),
 			className: "h-full w-full aspect-auto",
-			legend: fixedMetricLegend(h, latencySeries(context.theme)),
+			legend: fixedMetricLegend(
+				h,
+				series.map((entry) => ({
+					key: entry.key,
+					label: entry.label,
+					color: resolveColor(context.theme, entry.token),
+				})),
+			),
 		},
 		toParentMessage: (message: Chart.Message) => Message.GotChartMessage({ message }),
 	})
+}
 
 /** One segment per bucket under the chart: green when every check passed, red with any failure. */
 const availabilityStrip = (
