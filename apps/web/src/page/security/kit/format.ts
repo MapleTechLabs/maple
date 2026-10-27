@@ -167,10 +167,6 @@ export const incompleteReasonLabel = (reason: string | null): string =>
 				.map((part) => INCOMPLETE_REASON_LABEL.get(part) ?? part.replaceAll("_", " "))
 				.join("; ")
 
-/** The org's limit stopped the run: an admin can raise it and run again. */
-export const isSpendLimitStop = (run: Pick<SecurityAuditRun, "incompleteReason">): boolean =>
-	run.incompleteReason?.split("; ").includes(ORG_SPEND_LIMIT_REACHED) === true
-
 /** `1h 12m`, `3h 41m`, `48s`: how long a run has taken (or took). */
 export const formatElapsed = (ms: number): string => {
 	const seconds = Math.max(0, Math.round(ms / 1000))

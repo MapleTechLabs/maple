@@ -30,6 +30,9 @@ export const UnitFilter = Schema.Literals([
 ])
 export type UnitFilter = typeof UnitFilter.Type
 
+/** The events panel's chip: every event, only what went wrong, or only what concerns leads. */
+export const EventFilter = Schema.Literals(["all", "problems", "leads"])
+
 const ReportDoc = Schema.Literals(["report", "findingsDetail", "needsValidation"])
 
 export const Model = Schema.Struct({
@@ -57,6 +60,7 @@ export const Model = Schema.Struct({
 	targets: KeyedSchema(SecurityAuditTargetsResponse, LoadFailure),
 	findings: KeyedSchema(SecurityAuditFindingsResponse, LoadFailure),
 	unitFilter: UnitFilter,
+	eventFilter: EventFilter,
 	isLedgerOpen: Schema.Boolean,
 	busy: Schema.NullOr(Schema.Literals(["start", "cancel"])),
 	cancelDialog: Dialog.Model,
@@ -85,6 +89,7 @@ export const Message = defineMessageUnion({
 	ClickedRetry: {},
 	ClickedLoadOlder: {},
 	PickedUnitFilter: { filter: UnitFilter },
+	PickedEventFilter: { filter: EventFilter },
 	ToggledLedger: {},
 	ClickedStartRun: {},
 	CompletedStartRun: { result: Schema.Result(SecurityAuditRun, LoadFailure) },

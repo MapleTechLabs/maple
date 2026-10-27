@@ -15,10 +15,8 @@ import {
 	formatElapsed,
 	formatUsd,
 	runTotalUsd,
-	incompleteReasonLabel,
 	isCancelled,
 	isLive,
-	isSpendLimitStop,
 	modelLabel,
 	PROFILE_LABEL,
 	RUN_KIND_LABEL,
@@ -26,7 +24,9 @@ import {
 	scopeLabel,
 	refLabel,
 } from "../kit/format"
-import { iconTile, metaItem, runStatusBadge } from "../kit/parts"
+import { leadsLine, type StopAction, stopNoteOf } from "../kit/outcome"
+import { iconTile, metaItem, placeholder, runStatusBadge } from "../kit/parts"
+import { meter } from "../../../ui/meter"
 import { countOf, gapCount, type Phase, type PhaseState, type Verdicts } from "./derive"
 import { Message, type Model } from "./model"
 
@@ -71,7 +71,13 @@ export const runTitle = (
 					metaItem(h, null, [PROFILE_LABEL[run.profile]]),
 					...(run.discoveryModel === null
 						? []
-						: [metaItem(h, null, [modelLabel(run.discoveryModel)])]),
+						: [
+								metaItem(h, null, [
+									run.validationModel === null
+										? modelLabel(run.discoveryModel)
+										: `${modelLabel(run.discoveryModel)}, verified by ${modelLabel(run.validationModel)}`,
+								]),
+							]),
 					metaItem(h, "ClockIcon", [time]),
 				],
 			),
@@ -137,7 +143,30 @@ export const runActions = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 		],
 	)
 
-/** Why a finished run stopped short, and what the next run does about it. */
+const startRunButton = (h: H, model: Model): Html =>
+	button(
+		h,
+		{
+			size: "sm",
+			variant: "outline",
+			isDisabled: model.busy !== null,
+			attributes: [h.OnClick(Message.ClickedStartRun())],
+		},
+		[model.busy === "start" ? "Starting…" : "Start run"],
+	)
+
+const stopAction = (h: H, model: Model, action: StopAction): ReadonlyArray<Html> => {
+	if (!model.isAdmin || action === null) return []
+	const control =
+		action === "start"
+			? startRunButton(h, model)
+			: linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Security()) }, [
+					action === "limit" ? "Raise the limit" : "Spend & models",
+				])
+	return [alertAction(h, [control])]
+}
+
+/** Why a finished run stopped short, in one sentence, and what to do next. */
 export const stopBanner = (h: H, model: Model, run: SecurityAuditRunDetail): Html | null => {
 	if (isLive(run)) return null
 	if (run.status === "failed")
@@ -147,6 +176,7 @@ export const stopBanner = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 			alertDescription(h, [
 				run.error ?? "The run failed before it wrote its results. Start it again to retry.",
 			]),
+			...stopAction(h, model, "start"),
 		])
 	if (isCancelled(run))
 		return alert(h, {}, [
@@ -157,31 +187,12 @@ export const stopBanner = (h: H, model: Model, run: SecurityAuditRunDetail): Htm
 			]),
 		])
 	if (run.status !== "incomplete") return null
-	const gaps = gapCount(run)
-	const isLimit = isSpendLimitStop(run)
-	return alert(h, { variant: "warn" }, [
-		icon(h, "AlertWarningIcon"),
-		alertTitle(h, [
-			isLimit ? "Stopped at the org's monthly spend limit" : "Stopped before it covered everything",
-		]),
-		alertDescription(h, [
-			[
-				gaps > 0
-					? `${gaps} of ${run.unitTotal} units were not audited. They are listed as gaps below and are not counted as covered.`
-					: `The run ended early: ${incompleteReasonLabel(run.incompleteReason)}.`,
-				"The next run carries forward the closed units and starts with these gaps.",
-				...(isLimit ? ["The limit resets on the 1st of the month (UTC)."] : []),
-			].join(" "),
-		]),
-		...(model.isAdmin && isLimit
-			? [
-					alertAction(h, [
-						linkButton(h, { size: "sm", variant: "outline", href: hrefOf(AppRoute.Security()) }, [
-							"Raise the limit",
-						]),
-					]),
-				]
-			: []),
+	const note = stopNoteOf(run.incompleteReason, gapCount(run))
+	return alert(h, { variant: note.tone }, [
+		icon(h, note.tone === "crit" ? "CircleWarningIcon" : "AlertWarningIcon"),
+		alertTitle(h, [note.title]),
+		alertDescription(h, [note.body]),
+		...stopAction(h, model, note.action),
 	])
 }
 
@@ -284,49 +295,80 @@ export const phaseStrip = (h: H, phases: ReadonlyArray<Phase>): Html =>
 		),
 	)
 
-export const runStats = (h: H, run: SecurityAuditRunDetail, verdicts: Verdicts | null): Html => {
-	const tokens = run.inputTokens + run.outputTokens
+export const runStats = (
+	h: H,
+	run: SecurityAuditRunDetail,
+	verdicts: Verdicts | null,
+	areas: number | null,
+	nowMs: number,
+): Html => {
 	const live = isLive(run)
+	const gaps = gapCount(run)
+	const closed = run.unitTotal - gaps
+	const tokens = `${formatNumber(run.inputTokens)} input · ${formatNumber(run.outputTokens)} output tokens`
+	const leads = verdicts === null ? null : verdicts.confirmed + verdicts.needsValidation
+	const waiting = countOf(run, "candidate")
 	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
-			eyebrow: "Models",
-			value: run.discoveryModel === null ? "Not recorded" : modelLabel(run.discoveryModel),
-			valueClassName: "text-base",
+			eyebrow: "Leads",
+			value: leads === null ? placeholder(h, "h-7 w-10") : String(leads),
 			compact: true,
 			subline:
-				run.validationModel === null
-					? "runs from before models were recorded"
-					: `verified by ${modelLabel(run.validationModel)}`,
+				verdicts === null
+					? undefined
+					: live
+						? `${leadsLine(verdicts.confirmed, verdicts.needsValidation)} · ${waiting} ${waiting === 1 ? "candidate" : "candidates"} waiting`
+						: [
+								leadsLine(verdicts.confirmed, verdicts.needsValidation),
+								...(verdicts.rejected === 0 ? [] : [`${verdicts.rejected} disproved`]),
+							].join(" · "),
 		}),
 		statRailItem(h, {
-			eyebrow: "Tokens",
-			value: formatNumber(tokens),
+			eyebrow: "Coverage",
+			value: run.unitTotal === 0 ? "Not mapped" : `${closed} / ${run.unitTotal}`,
+			hint: run.unitTotal === 0 ? undefined : "units",
 			compact: true,
-			subline: `${formatNumber(run.inputTokens)} input · ${formatNumber(run.outputTokens)} output`,
+			subline:
+				run.unitTotal === 0
+					? live
+						? "mapping the code"
+						: "no units were planned"
+					: h.span(
+							[h.Class("flex flex-col gap-1.5")],
+							[
+								meter(h, {
+									value: closed,
+									max: run.unitTotal,
+									tone: gaps > 0 && !live ? "warn" : undefined,
+									label: `${closed} of ${run.unitTotal} units closed`,
+								}),
+								[
+									...(areas === null || areas === 0
+										? []
+										: [`${areas} ${areas === 1 ? "area" : "areas"}`]),
+									gaps === 0
+										? "no gaps"
+										: `${gaps} ${live ? "still open" : gaps === 1 ? "gap" : "gaps"}`,
+								].join(" · "),
+							],
+						),
 		}),
 		statRailItem(h, {
 			eyebrow: live ? "Cost so far" : "Cost",
-			value: formatUsd(runTotalUsd(run)),
+			value: h.span([h.Title(tokens)], [formatUsd(runTotalUsd(run))]),
 			compact: true,
 			subline:
 				run.costUsd === null
 					? live
 						? `models priced when the run settles · ${formatUsd(run.sandboxUsd)} sandbox`
 						: "not reported by the provider"
-					: `${formatUsd(run.costUsd)} models · ${formatUsd(run.sandboxUsd)} sandbox, in AI credits`,
+					: `${formatUsd(run.costUsd)} models · ${formatUsd(run.sandboxUsd)} sandbox`,
 		}),
-		live || verdicts === null
-			? statRailItem(h, {
-					eyebrow: "Candidates",
-					value: String(countOf(run, "candidate")),
-					compact: true,
-					subline: "not findings until a second model fails to disprove them",
-				})
-			: statRailItem(h, {
-					eyebrow: "Verdicts",
-					value: `${verdicts.confirmed} confirmed`,
-					compact: true,
-					subline: `${verdicts.needsValidation} needs validation · ${verdicts.rejected} rejected`,
-				}),
+		statRailItem(h, {
+			eyebrow: live ? "Running for" : "Duration",
+			value: formatElapsed(runElapsed(run, nowMs)),
+			compact: true,
+			subline: `${formatNumber(run.invocationsSpent)} ${run.invocationsSpent === 1 ? "agent" : "agents"} run`,
+		}),
 	])
 }

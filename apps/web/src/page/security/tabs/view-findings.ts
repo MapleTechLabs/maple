@@ -43,7 +43,7 @@ type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
 const GROUP_HINT = {
 	confirmed: "Sorted by severity, then last seen",
-	needs_validation: "No severity until proven. Each needs code execution, which audits cannot run yet.",
+	needs_validation: "Read from source, not run. Each has a check you can run.",
 	rejected: "A second model disproved these. Kept for the record.",
 } satisfies Record<FindingGroup, string>
 
