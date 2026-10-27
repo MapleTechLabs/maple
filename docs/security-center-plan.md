@@ -209,18 +209,24 @@ the `Container` binding (`workers-types` 5.x):
   `url.insteadOf`), so there is no TLS interception and no CA to trust.
 - The **registry gateway** behind that host: an allowlist of public registries plus the org's
   configured private hosts, GET/HEAD only, bounded responses, the org's read-only credential added
-  per request. The token never enters the container, so target code cannot read or leak it.
+  per request. The token never enters the container, so target code cannot read or leak it. Git
+  fetches need one POST: smart HTTP posts to `/git-upload-pack`. The gateway allows exactly that
+  path on allowlisted git hosts, with request and response size caps and a deadline, and never
+  `git-receive-pack`, so a git dependency can be fetched but nothing can be pushed.
 - Dependency cache: `DirectoryBackup` to R2 keyed by `(lockfile hash, toolchain)`, already proven by
   the mirror backups. `snapshotContainer()` is the faster path if the scheduling policy allows it.
 
 A run has two container starts:
 
-1. **Prepare** (trusted step, before any agent): internet off, only the gateway intercepted.
-   Lockfile installs with install scripts off: `npm ci` / `pnpm install --frozen-lockfile` /
-   `bun install --frozen-lockfile`, each `--ignore-scripts`; `uv sync --frozen --no-build`;
-   `go mod download`; `cargo fetch --locked`. Gradle and Maven resolution runs the target's build
-   scripts, so JVM prepare is already untrusted code and leans on the gateway being read-only.
-   Toolchain versions the repository pins (`.nvmrc`, `go.mod`'s `go`, `rust-toolchain.toml`,
+1. **Prepare** (parent-run, before any agent): internet off, only the gateway intercepted. The
+   package manager reads target-controlled lockfiles and configs, so it runs under the same
+   controls as Execute (unprivileged uid, `prlimit` bounds, writes only to the cache directory),
+   never as root. Lockfile installs with install scripts off: `npm ci` /
+   `pnpm install --frozen-lockfile` / `bun install --frozen-lockfile`, each `--ignore-scripts`;
+   `uv sync --frozen --no-build`; `go mod download`; `cargo fetch --locked`. Gradle and Maven
+   resolution runs the target's build scripts, so JVM prepare is target code outright: JVM stays
+   source-only until those controls are verified on prepare, not only on execute. Toolchain
+   versions the repository pins (`.nvmrc`, `go.mod`'s `go`, `rust-toolchain.toml`,
    `.java-version`) install through the gateway too, and the result is cached.
 2. **Execute**: the cache restored read-only, internet off, no intercepts at all; loopback only.
    Each agent gets its own uid and a size-bounded tmpfs scratch; `prlimit` bounds address space,
