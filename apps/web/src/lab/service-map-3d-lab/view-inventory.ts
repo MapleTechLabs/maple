@@ -129,7 +129,7 @@ export const inventory = (h: H, model: Model): Html => {
 			),
 			h.p(
 				[h.Class("border-t px-4 py-3 text-3xs leading-relaxed text-muted-foreground")],
-				["Sample health thresholds", h.br([]), "Degraded over 1% errors · Error over 5%"],
+				["Sample health thresholds", h.br([]), "Degraded > 1% · Error > 5% errors"],
 			),
 		],
 	)

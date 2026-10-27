@@ -97,7 +97,7 @@ const perspectiveBar = <M>(
 	h: HtmlBuilder<M>,
 	{ model, reducedMotion, toMessage }: ViewportOptions<M>,
 ): Html => {
-	const flowing = model.traffic && !reducedMotion
+	const flowing = model.traffic ?? !reducedMotion
 	return h.div(
 		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2")],
 		[
@@ -123,28 +123,26 @@ const perspectiveBar = <M>(
 				[h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block")],
 				[VIEW_COPY[model.perspective].encoding],
 			),
-			// Under the system's reduced-motion setting there is nothing to toggle, so it is a note.
-			reducedMotion
-				? h.span(
-						[h.Class("ml-auto text-2xs text-muted-foreground")],
-						["Traffic animation off (reduced motion)"],
-					)
-				: button(
-						h,
-						{
-							size: "sm",
-							variant: "ghost",
-							className: "ml-auto text-xs",
-							attributes: [
-								h.AriaPressed(String(flowing)),
-								h.OnClick(toMessage(Message.ClickedTraffic())),
-							],
-						},
-						[
-							icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
-							flowing ? "Pause traffic" : "Resume traffic",
-						],
-					),
+			// Reduced motion starts the traffic paused; the button still turns it on.
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					className: "ml-auto text-xs",
+					attributes: [
+						h.AriaPressed(String(flowing)),
+						h.OnClick(toMessage(Message.ClickedTraffic({ isFlowing: flowing }))),
+						...(reducedMotion && !flowing
+							? [h.Title("Paused for your reduced-motion setting")]
+							: []),
+					],
+				},
+				[
+					icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
+					flowing ? "Pause traffic" : "Play traffic",
+				],
+			),
 		],
 	)
 }
@@ -382,7 +380,7 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 	const { model, topology, selectedId, toMessage } = options
 	const isDark = model.isDark ?? true
 	const palette = mapPalette(isDark)
-	const flowing = model.traffic && !options.reducedMotion
+	const flowing = model.traffic ?? !options.reducedMotion
 	const layout = spatialLayoutOf(topology, model.perspective)
 	const related = connectedIds(topology, selectedId)
 	const background = paperBackground(palette)

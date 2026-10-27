@@ -16,6 +16,8 @@ export const FitRequest = Schema.Struct({
 	maxZoom: Schema.Number,
 	/** A graph too large to fit legibly opens near this zoom at its leading edge instead. */
 	readableZoom: Schema.optionalKey(Schema.Number),
+	/** The node that fit centres on when it pans; absent, the bulk of the nodes. */
+	focusNodeId: Schema.optionalKey(Schema.String),
 	/** `fitView({ duration })`: animated by d3 in the Mount; 0 or absent snaps. */
 	duration: Schema.optionalKey(Schema.Number),
 })

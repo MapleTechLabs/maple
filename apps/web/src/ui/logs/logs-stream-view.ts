@@ -38,12 +38,21 @@ const PINNED_COL_WIDTH = "150px"
 
 const GENERIC_SEGMENTS = new Set(["name", "id", "value", "type"])
 
-/** Short header for a pinned key: the last segment that is not generic, so `deployment.environment.name` reads "environment". The full key is the tooltip. */
-export const pinnedColumnLabel = (key: string): string => {
+/** A pinned key split around its naming segment: the last one that is not generic, so `deployment.environment.name` names "environment". */
+export const pinnedColumnParts = (
+	key: string,
+): Readonly<{ prefix: string; label: string; suffix: string }> => {
 	const segments = key.split(".").filter((segment) => segment !== "")
-	return (
-		segments.findLast((segment) => !GENERIC_SEGMENTS.has(segment.toLowerCase())) ?? segments.at(-1) ?? key
-	)
+	const found = segments.findLastIndex((segment) => !GENERIC_SEGMENTS.has(segment.toLowerCase()))
+	const at = found === -1 ? segments.length - 1 : found
+	if (at < 0) return { prefix: "", label: key, suffix: "" }
+	const prefix = segments.slice(0, at).join(".")
+	const suffix = segments.slice(at + 1).join(".")
+	return {
+		prefix: prefix === "" ? "" : `${prefix}.`,
+		label: segments[at] ?? key,
+		suffix: suffix === "" ? "" : `.${suffix}`,
+	}
 }
 
 const ROW_EVENTS: RowEvents<Message> = {
@@ -80,16 +89,26 @@ const columnHeader = (
 			h.span([h.Class("shrink-0 w-[92px]"), h.Title(`Times in ${timeZone}`)], ["Time"]),
 			h.span([h.Class("shrink-0 w-11")], ["Level"]),
 			h.span([h.Class("shrink-0 w-40 hidden md:inline-block")], ["Service"]),
-			...pinnedColumns.map((key) =>
-				h.span(
+			...pinnedColumns.map((key) => {
+				// The whole key stays readable; only its muted leading segments give way to the naming one.
+				const parts = pinnedColumnParts(key)
+				return h.span(
 					[
-						h.Class(cn("block min-w-0 truncate", "shrink-0 text-foreground/60 hidden md:block")),
+						h.Class("shrink-0 min-w-0 hidden md:flex text-foreground/60 whitespace-nowrap"),
 						h.Style({ width: PINNED_COL_WIDTH }),
 						h.Title(key),
 					],
-					[pinnedColumnLabel(key)],
-				),
-			),
+					[
+						...(parts.prefix === ""
+							? []
+							: [h.span([h.Class("min-w-0 truncate opacity-50")], [parts.prefix])]),
+						h.span([h.Class("shrink-0")], [parts.label]),
+						...(parts.suffix === ""
+							? []
+							: [h.span([h.Class("shrink-0 opacity-50")], [parts.suffix])]),
+					],
+				)
+			}),
 			h.span([h.Class("min-w-0 flex-1")], ["Message"]),
 		],
 	)

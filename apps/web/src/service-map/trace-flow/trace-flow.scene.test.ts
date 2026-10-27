@@ -72,8 +72,8 @@ describe("trace flow view", () => {
 			expect(selectedSpan).toHaveText("none"),
 			click(within(testId("rf__node-pricing"), selector(".font-mono"))),
 			expect(selectedSpan).toHaveText("PricingEngine.calculateTotals"),
-			click(within(testId("rf__node-auth"), selector(".font-mono"))),
-			expect(selectedSpan).toHaveText("SessionAuthn.verify"),
+			click(within(testId("rf__node-root"), selector(".font-mono"))),
+			expect(selectedSpan).toHaveText("POST /api/checkout"),
 		)
 	})
 

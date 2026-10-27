@@ -345,7 +345,7 @@ const BLIND_SPOT_META = new Map<BlindSpotKind, { label: string; action: string; 
 	["stale", { label: "Stale", action: "Check", className: "text-severity-warn" }],
 	["no-data", { label: "No data", action: "Tune", className: "text-severity-warn" }],
 	["slowed", { label: "Slowed down", action: "Fix query", className: "text-severity-warn" }],
-	["unrouted", { label: "Unrouted", action: "Route", className: "text-severity-error" }],
+	["unrouted", { label: "Unrouted", action: "Route", className: "text-severity-warn" }],
 	["delivery", { label: "Delivery", action: "Check", className: "text-severity-warn" }],
 ])
 

@@ -43,13 +43,14 @@ export const SECURITY_SEVERITY_FILL = {
 } satisfies Record<RankedSeverity, string>
 
 const SECURITY_SEVERITY_TINT = {
-	critical: "border-transparent bg-severity-fatal text-white",
+	critical: "bg-severity-fatal text-white",
 	high: "bg-severity-warn/12 text-severity-warn",
 	medium: "bg-severity-debug/12 text-severity-debug",
 	low: "bg-severity-trace/12 text-severity-trace",
 } satisfies Record<RankedSeverity, string>
 
-/** The severity badge: critical is filled so it never reads as one more tinted label. */
+/** The severity badge: critical is filled so it never reads as one more tinted label. The muted
+ * variant carries no dark-mode background, so the tint is the one that renders. */
 export const securitySeverityBadge = <M>(
 	h: HtmlBuilder<M>,
 	severity: SecurityAuditSeverity,
@@ -59,7 +60,7 @@ export const securitySeverityBadge = <M>(
 	return badge(
 		h,
 		{
-			variant: "outline",
+			variant: "muted",
 			className: cn(
 				level === null ? "text-muted-foreground" : SECURITY_SEVERITY_TINT[level],
 				className,

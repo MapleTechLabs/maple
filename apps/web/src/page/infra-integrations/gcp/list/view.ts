@@ -135,7 +135,13 @@ const loadedDescription = (
 }
 
 /** `tabs` goes to the header's `tabs` slot, pinned under the title row. */
-export type PageParts = Readonly<{ header: HeaderParts; tabs?: Html; body: ReadonlyArray<Html> }>
+export type PageParts = Readonly<{
+	header: HeaderParts
+	tabs?: Html
+	body: ReadonlyArray<Html>
+	/** The body is a failure card with Try again, so the header drops Reload. */
+	isFailed?: boolean
+}>
 
 /** `ListBody`: one view's band, search and table; the band counts every row, the table what is left. */
 const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends string>(
@@ -186,7 +192,7 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 			onClear: Message.ClickedClearSearch(),
 			trailing:
 				shown.length === rows.length
-					? (options.order ?? "problems first")
+					? `${rows.length} ${options.noun} · ${options.order ?? "problems first"}`
 					: `${shown.length} of ${rows.length} ${options.noun}`,
 			children: options.region === undefined ? [] : [regionChip(h, options.region)],
 		}),
@@ -354,6 +360,7 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 	if (failures.length > 0) {
 		return {
 			header: intro,
+			isFailed: true,
 			body: failures.map((failure) =>
 				errorState(h, {
 					failure,
@@ -433,6 +440,7 @@ export const titleRow = (
 	h: H,
 	header: HeaderParts,
 	time: TitleRowTime,
+	isFailed = false,
 ): Readonly<{ titleContent: Html; actions: Html }> => ({
 	titleContent: pageHeroParts(h, {
 		title: TITLE,
@@ -451,6 +459,7 @@ export const titleRow = (
 			onReset: Message.ClickedResetTimeRange(),
 			onReload: Message.ClickedReload(),
 			isReloading: time.isReloading,
+			isReloadHidden: isFailed,
 		}),
 	),
 })
@@ -611,6 +620,7 @@ const content = (h: H, model: Model): PageParts =>
 		onLoading: () => ({ header: intro, body: [skeleton(h, "h-64 w-full")] }),
 		onFailure: (failure) => ({
 			header: intro,
+			isFailed: true,
 			body: [
 				errorState(h, {
 					failure,
@@ -621,6 +631,7 @@ const content = (h: H, model: Model): PageParts =>
 		}),
 		onStale: ({ error }) => ({
 			header: intro,
+			isFailed: true,
 			body: [
 				errorState(h, {
 					failure: error,
@@ -694,7 +705,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					scrollClassName: "gap-6",
-					...titleRow(h, page.header, model),
+					...titleRow(h, page.header, model, page.isFailed),
 					tabs: page.tabs,
 				},
 				page.body,

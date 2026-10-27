@@ -86,15 +86,12 @@ export const signalSpark = (
 }
 
 /** `SignalActivity`: a live investigation, then comment and PR marks; nothing on an untouched row. */
-// On wide rows the slot keeps one width, chips or not, so every message gets the same room.
-const ACTIVITY_SLOT = "shrink-0 @4xl/page:w-40"
-
-export const signalActivity = (h: H, signal: ErrorSignal): Html => {
+// The message takes the free width; the chips follow it at their natural size.
+export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 	const prCount = signal.openPullRequestCount + signal.mergedPullRequestCount
-	if (signal.investigation === null && signal.commentCount === 0 && prCount === 0)
-		return h.span([h.Class(cn(ACTIVITY_SLOT, "hidden @4xl/page:block"))], [])
+	if (signal.investigation === null && signal.commentCount === 0 && prCount === 0) return null
 	return h.span(
-		[h.Class(cn(ACTIVITY_SLOT, "ml-auto flex items-center gap-2 pl-3"))],
+		[h.Class("ml-auto flex shrink-0 items-center gap-2 pl-3")],
 		[
 			...(signal.investigation === null
 				? []

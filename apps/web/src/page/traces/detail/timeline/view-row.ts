@@ -36,15 +36,32 @@ export type RowState = Readonly<{
 type H = HtmlBuilder<Message>
 
 /**
- * The bar width a span name needs inside its bar (11px mono, about 6.6px a glyph, plus padding and
- * the border), rounded up to a static container step: under it the name draws after the bar instead.
+ * The bar width a span name needs inside its bar (11px mono, 6.6px a glyph, plus padding and the
+ * border), rounded up to a 16px container step: under it the name draws beside the bar instead.
  */
 const LABEL_FIT = [
-	{ upTo: 56, inside: "@min-[56px]/bar:inline", outside: "@max-[56px]/bar:block" },
-	{ upTo: 100, inside: "@min-[100px]/bar:inline", outside: "@max-[100px]/bar:block" },
-	{ upTo: 140, inside: "@min-[140px]/bar:inline", outside: "@max-[140px]/bar:block" },
-	{ upTo: 200, inside: "@min-[200px]/bar:inline", outside: "@max-[200px]/bar:block" },
-	{ upTo: 280, inside: "@min-[280px]/bar:inline", outside: "@max-[280px]/bar:block" },
+	{ upTo: 48, inside: "@min-[48px]/bar:inline", outside: "@max-[48px]/bar:block" },
+	{ upTo: 64, inside: "@min-[64px]/bar:inline", outside: "@max-[64px]/bar:block" },
+	{ upTo: 80, inside: "@min-[80px]/bar:inline", outside: "@max-[80px]/bar:block" },
+	{ upTo: 96, inside: "@min-[96px]/bar:inline", outside: "@max-[96px]/bar:block" },
+	{ upTo: 112, inside: "@min-[112px]/bar:inline", outside: "@max-[112px]/bar:block" },
+	{ upTo: 128, inside: "@min-[128px]/bar:inline", outside: "@max-[128px]/bar:block" },
+	{ upTo: 144, inside: "@min-[144px]/bar:inline", outside: "@max-[144px]/bar:block" },
+	{ upTo: 160, inside: "@min-[160px]/bar:inline", outside: "@max-[160px]/bar:block" },
+	{ upTo: 176, inside: "@min-[176px]/bar:inline", outside: "@max-[176px]/bar:block" },
+	{ upTo: 192, inside: "@min-[192px]/bar:inline", outside: "@max-[192px]/bar:block" },
+	{ upTo: 208, inside: "@min-[208px]/bar:inline", outside: "@max-[208px]/bar:block" },
+	{ upTo: 224, inside: "@min-[224px]/bar:inline", outside: "@max-[224px]/bar:block" },
+	{ upTo: 240, inside: "@min-[240px]/bar:inline", outside: "@max-[240px]/bar:block" },
+	{ upTo: 256, inside: "@min-[256px]/bar:inline", outside: "@max-[256px]/bar:block" },
+	{ upTo: 272, inside: "@min-[272px]/bar:inline", outside: "@max-[272px]/bar:block" },
+	{ upTo: 288, inside: "@min-[288px]/bar:inline", outside: "@max-[288px]/bar:block" },
+	{ upTo: 304, inside: "@min-[304px]/bar:inline", outside: "@max-[304px]/bar:block" },
+	{ upTo: 320, inside: "@min-[320px]/bar:inline", outside: "@max-[320px]/bar:block" },
+	{ upTo: 336, inside: "@min-[336px]/bar:inline", outside: "@max-[336px]/bar:block" },
+	{ upTo: 352, inside: "@min-[352px]/bar:inline", outside: "@max-[352px]/bar:block" },
+	{ upTo: 368, inside: "@min-[368px]/bar:inline", outside: "@max-[368px]/bar:block" },
+	{ upTo: 384, inside: "@min-[384px]/bar:inline", outside: "@max-[384px]/bar:block" },
 	{ upTo: 400, inside: "@min-[400px]/bar:inline", outside: "@max-[400px]/bar:block" },
 ] as const
 const labelFit = (name: string) => {
@@ -252,7 +269,8 @@ const clipChevron = (h: H, bar: Bar, side: "left" | "right", isShown: boolean): 
 
 const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): Html => {
 	const isOffscreen = state.leftPct > 100 || state.rightPct < 0
-	const isLabelLeft = state.rightPct >= 70 && state.leftPct > 30
+	// An outside label takes whichever side of the bar has more of the lane left.
+	const isLabelLeft = state.leftPct > 100 - state.rightPct
 	const fit = labelFit(bar.span.spanName)
 	return h.div(
 		[attr(h, "group/cell relative flex-1 min-w-0 overflow-hidden")],
@@ -299,7 +317,7 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 							attr(
 								h,
 								cn(
-									"pointer-events-none absolute top-1/2 hidden -translate-y-1/2 whitespace-nowrap font-mono text-3xs text-muted-foreground/80 left-full ml-[5px] data-[side=left]:left-auto data-[side=left]:right-full data-[side=left]:ml-0 data-[side=left]:mr-[5px]",
+									"pointer-events-none absolute top-1/2 hidden -translate-y-1/2 whitespace-nowrap font-mono text-3xs text-muted-foreground left-full ml-[5px] data-[side=left]:left-auto data-[side=left]:right-full data-[side=left]:ml-0 data-[side=left]:mr-[5px]",
 									fit.outside,
 								),
 							),
@@ -307,7 +325,7 @@ const timelineCell = (h: H, bar: Bar, state: RowState, durationLabel: string): H
 							...(isLabelLeft ? [h.DataAttribute("side", "left")] : []),
 							...(isOffscreen ? [h.Style({ visibility: "hidden" })] : []),
 						],
-						[bar.span.spanName, " · ", durationLabel],
+						[h.span([attr(h, "text-foreground/90")], [bar.span.spanName]), " · ", durationLabel],
 					),
 				],
 			),

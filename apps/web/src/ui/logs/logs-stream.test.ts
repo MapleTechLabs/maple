@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest"
 import { logTimeFormat, toLogRowView } from "./log-row-view"
 import { init, update } from "./logs-stream"
 import { Message } from "./logs-stream-message"
-import { pinnedColumnLabel } from "./logs-stream-view"
+import { pinnedColumnParts } from "./logs-stream-view"
 
 const ROWS = LOGS_TABLE_BENCH_ROWS.slice(0, 30).map((log) => toLogRowView(log, [], logTimeFormat("UTC")))
 
@@ -40,15 +40,24 @@ describe("logs stream: chip delays", () => {
 })
 
 describe("logs stream: pinned column labels", () => {
-	test("skips trailing generic segments so the header names the attribute", () => {
-		expect(pinnedColumnLabel("deployment.environment.name")).toBe("environment")
-		expect(pinnedColumnLabel("service.name")).toBe("service")
-		expect(pinnedColumnLabel("k8s.pod.id")).toBe("pod")
+	const label = (key: string) => pinnedColumnParts(key).label
+	const whole = (key: string) => {
+		const parts = pinnedColumnParts(key)
+		return `${parts.prefix}${parts.label}${parts.suffix}`
+	}
+
+	test("names the attribute by its last specific segment", () => {
+		expect(label("deployment.environment.name")).toBe("environment")
+		expect(label("service.name")).toBe("service")
+		expect(label("k8s.pod.id")).toBe("pod")
+		expect(label("cloud.region")).toBe("region")
+		expect(label("name")).toBe("name")
+		expect(label("http.response.status_code")).toBe("status_code")
 	})
 
-	test("keeps the last segment when it is specific, or when every segment is generic", () => {
-		expect(pinnedColumnLabel("cloud.region")).toBe("region")
-		expect(pinnedColumnLabel("name")).toBe("name")
-		expect(pinnedColumnLabel("http.response.status_code")).toBe("status_code")
+	test("the parts still spell the full key", () => {
+		for (const key of ["deployment.environment.name", "cloud.region", "name", "k8s.pod.id"]) {
+			expect(whole(key)).toBe(key)
+		}
 	})
 })

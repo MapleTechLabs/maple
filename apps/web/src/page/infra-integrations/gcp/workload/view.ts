@@ -242,6 +242,10 @@ const loadingGrid = (h: H, service: GcpInfraServiceId): Html =>
 		GCP_INFRA_CHARTS[service].map(() => chartLoading(h, { variant: "line", height: CHART_HEIGHT })),
 	)
 
+/** The metrics read failed with nothing to show: the body's Try again is the page's one retry. */
+const isMetricsFailed = (model: Model, data: PageData): boolean =>
+	AsyncData.getError(model.timeseries.data)._tag === "Some" && data.points.length === 0
+
 const body = (h: H, model: Model, data: PageData, timeSearch: TimeSearch, ctx: ChartsContext): Html => {
 	const window = model.window
 	const slot = model.timeseries.data
@@ -439,6 +443,7 @@ export const workloadPageView = (
 						onReset: Message.ClickedResetTimeRange(),
 						onReload: Message.ClickedReload(),
 						isReloading: model.isReloading,
+						isReloadHidden: isMetricsFailed(model, data),
 					}),
 					rightPanel: workloadRail(h, {
 						service,

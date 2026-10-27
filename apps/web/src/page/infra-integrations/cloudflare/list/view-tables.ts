@@ -8,7 +8,7 @@ import {
 	type WorkerListRow,
 	workerRowKey,
 } from "../../../../components/infra/cloudflare/list-model"
-import { errorRateClass } from "@maple/ui/lib/error-rate"
+import { ERROR_RATE_WARN, errorRateClass } from "@maple/ui/lib/error-rate"
 import {
 	EMPTY_VALUE,
 	formatBytes,
@@ -153,15 +153,28 @@ const requestSpark = (
 			)
 
 /**
- * One bar per zone: 2xx/3xx/4xx/5xx shares, captioned with the 4xx share (5xx has its own column).
- * The caption turns amber at the "Mostly 4xx" threshold, the same rule as the band above.
+ * One bar per zone: 2xx/3xx/4xx/5xx shares, captioned with the 5xx share when the zone is serving
+ * 5xx (the "Serving 5xx" rule), else the 4xx share, amber at the "Mostly 4xx" threshold.
  */
 const statusMix = (h: H, zone: ZoneRow, rated: boolean): Html => {
-	const isNotable = zone.clientErrorRate >= CLIENT_ERROR_NOTABLE
-	const label = {
-		text: `${formatPercentColumn(zone.clientErrorRate)} 4xx`,
-		className: isNotable ? "text-severity-warn" : "text-muted-foreground",
-	}
+	const label =
+		zone.errorRate >= ERROR_RATE_WARN
+			? {
+					text: `${formatPercentColumn(zone.errorRate)} 5xx`,
+					className: "text-severity-error",
+					title: "1% or more of requests are 5xx",
+				}
+			: zone.clientErrorRate >= CLIENT_ERROR_NOTABLE
+				? {
+						text: `${formatPercentColumn(zone.clientErrorRate)} 4xx`,
+						className: "text-severity-warn",
+						title: "Half or more of requests are 4xx",
+					}
+				: {
+						text: `${formatPercentColumn(zone.clientErrorRate)} 4xx`,
+						className: "text-muted-foreground",
+						title: undefined,
+					}
 	return h.div(
 		[h.Class("hidden w-[200px] items-center gap-2.5 md:flex")],
 		[
@@ -184,7 +197,7 @@ const statusMix = (h: H, zone: ZoneRow, rated: boolean): Html => {
 							rated ? label.className : "text-muted-foreground",
 						),
 					),
-					...(rated && isNotable ? [h.Title("Half or more of requests are 4xx")] : []),
+					...(rated && label.title !== undefined ? [h.Title(label.title)] : []),
 				],
 				[rated ? label.text : EMPTY_VALUE],
 			),

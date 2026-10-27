@@ -3,7 +3,13 @@ import { Clock, Effect, Queue, Random, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { failureMessage, type LoadFailure } from "../data/load-failure"
+import {
+	FAILURE_SENTENCE,
+	failureMessage,
+	isTransientOutage,
+	isWarehouseFailure,
+	type LoadFailure,
+} from "../data/load-failure"
 import {
 	isExhausted,
 	postponed,
@@ -388,18 +394,13 @@ export const MountNetworkAutoRetry = Mount.defineStream("MountNetworkAutoRetry",
 const RETRY_SOON_ENDING =
 	/\s*(?:Retry|Try again)(?: in a few seconds| in a moment| shortly| when you're ready| or reload)?(?:, or reload if the problem continues)?\.$/
 
-/** The fixed failure sentences: one per class, so the same outage reads the same on every page. */
-export const FAILURE_SENTENCE = {
-	backend: "Maple's backend is unavailable.",
-	sync: "Live sync is unavailable.",
-	unknown: "Maple hit an unexpected error.",
-} as const
+export { FAILURE_SENTENCE }
 
-/** A failure's one sentence: a dropped or timed-out backend and an unknown error read as their class. */
+/** A failure's one sentence: a failing warehouse, a dropped backend and an unknown error read as their class. */
 export const failureSentence = (failure: LoadFailure): string => {
 	if (failure.code === "unexpected_error") return FAILURE_SENTENCE.unknown
-	if (failure.retryable && failure.recovery === "retry" && failure.type === "api_error")
-		return FAILURE_SENTENCE.backend
+	if (isTransientOutage(failure))
+		return isWarehouseFailure(failure) ? FAILURE_SENTENCE.warehouse : FAILURE_SENTENCE.backend
 	return failureMessage(failure)
 }
 
@@ -431,9 +432,9 @@ export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>):
 			: []
 	const ownMessage = options.message ?? failureSentence(failure)
 	const showsRetryButton = onRetry !== undefined && canRetry && options.hidesRetryButton !== true
-	// One retry affordance: the Try again button when drawn, else the "Retrying automatically" note.
+	// An auto-retrying failure always says so, quietly, even beside a Try again button.
 	const message =
-		autoRetry.length > 0 && !showsRetryButton
+		autoRetry.length > 0
 			? autoRetryMessage(ownMessage, options.note)
 			: [
 					canRetry ? ownMessage.replace(RETRY_SOON_ENDING, "") : ownMessage,

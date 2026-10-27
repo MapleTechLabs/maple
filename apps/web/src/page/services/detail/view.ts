@@ -68,6 +68,10 @@ const createAlert = (h: H, model: Model): Html =>
 		[icon(h, "BellIcon"), h.span([h.Class("hidden sm:inline")], ["Create alert"])],
 	)
 
+/** The Overview tab's failure card offers Try again, so Reload steps aside; other tabs have no retry. */
+const isTabFailed = (model: Model): boolean =>
+	tabOf(model.search) === "overview" && AsyncData.isFailure(model.overview.data)
+
 const headerActions = (h: H, model: Model): Html => {
 	const controls = timeControls(h, {
 		search: model.search,
@@ -76,6 +80,7 @@ const headerActions = (h: H, model: Model): Html => {
 		onReset: Message.ClickedResetTimeRange(),
 		onReload: Message.ClickedReload(),
 		isReloading: model.isReloading,
+		isReloadHidden: isTabFailed(model),
 		trigger: (label) =>
 			h.submodel({
 				slotId: "time-range-picker",

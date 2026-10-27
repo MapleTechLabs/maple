@@ -28,17 +28,42 @@ describe("fitViewport with a readable floor", () => {
 		})
 	})
 
-	it("opens a wide graph at its left edge without cutting a card at the right edge", () => {
-		const nodes = row(20, 80)
+	const cutAtRightEdge = (nodes: ReadonlyArray<PlacedNode>, viewport: Viewport) =>
+		nodes.filter((node) => {
+			const left = screenX(node, viewport)
+			return left < pane.width && left + 270 * viewport.zoom > pane.width
+		})
+	const isOnScreen = (node: PlacedNode, viewport: Viewport) =>
+		screenX(node, viewport) >= 0 && screenX(node, viewport) + 270 * viewport.zoom <= pane.width
+
+	it("opens a wide graph on the bulk of its nodes, not a corner", () => {
+		const nodes = row(21, 80)
 		const viewport = fitViewport(nodes, pane, options)
 		expect(viewport).toBeDefined()
 		if (viewport === undefined) return
 		expect(viewport.zoom).toBeGreaterThanOrEqual(0.5)
-		expect(screenX(nodes[0] ?? card("x", 0, 0), viewport)).toBeGreaterThan(0)
-		const cut = nodes.filter((node) => {
-			const left = screenX(node, viewport)
-			return left < pane.width && left + 270 * viewport.zoom > pane.width
-		})
-		expect(cut).toEqual([])
+		expect(isOnScreen(nodes[10] ?? card("x", 0, 0), viewport)).toBe(true)
+		expect(isOnScreen(nodes[0] ?? card("x", 0, 0), viewport)).toBe(false)
+		expect(cutAtRightEdge(nodes, viewport)).toEqual([])
+	})
+
+	it("keeps the focus node on screen, and never pans past the graph's first card", () => {
+		const nodes = row(20, 80)
+		const nearStart = fitViewport(nodes, pane, { ...options, focusNodeId: "n1" })
+		const nearEnd = fitViewport(nodes, pane, { ...options, focusNodeId: "n16" })
+		expect(nearStart).toBeDefined()
+		expect(nearEnd).toBeDefined()
+		if (nearStart === undefined || nearEnd === undefined) return
+		expect(isOnScreen(nodes[1] ?? card("x", 0, 0), nearStart)).toBe(true)
+		expect(screenX(nodes[0] ?? card("x", 0, 0), nearStart)).toBeGreaterThan(0)
+		expect(isOnScreen(nodes[16] ?? card("x", 0, 0), nearEnd)).toBe(true)
+	})
+
+	it("frames every node when no readable floor is asked for", () => {
+		const nodes = row(20, 80)
+		const viewport = fitViewport(nodes, pane, { padding: 0.2, minZoom: 0.1, maxZoom: 1.5 })
+		expect(viewport).toBeDefined()
+		if (viewport === undefined) return
+		nodes.forEach((node) => expect(isOnScreen(node, viewport)).toBe(true))
 	})
 })

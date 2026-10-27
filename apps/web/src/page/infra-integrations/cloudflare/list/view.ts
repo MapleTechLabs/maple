@@ -195,7 +195,7 @@ const zonesView = (
 			onClear: Message.ClickedClearSearch(),
 			trailing:
 				filtered.length === zones.length
-					? "by requests"
+					? `${zones.length} zones · by requests`
 					: `${filtered.length} of ${zones.length} zones`,
 		}),
 		zoneTable(h, {
@@ -238,7 +238,7 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 			onClear: Message.ClickedClearSearch(),
 			trailing:
 				filtered.length === rows.length
-					? "problems first"
+					? `${rows.length} Workers · problems first`
 					: `${filtered.length} of ${rows.length} · problems first`,
 			children:
 				previews > 0

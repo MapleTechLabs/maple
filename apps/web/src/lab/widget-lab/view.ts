@@ -247,23 +247,30 @@ const pageContent = (h: H, model: Model): Html =>
 						h.nav(
 							[
 								h.Class(
-									"sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-1 border-b bg-background/80 px-4 py-2 backdrop-blur",
+									"sticky top-0 z-10 -mx-4 flex items-center gap-3 border-b bg-background/80 px-4 py-2 backdrop-blur",
 								),
 							],
-							// The anchors, then the View/Edit toggle at the row's right end rather than a row of its own.
+							// One row: the anchors scroll sideways when tight, so the View/Edit toggle never wraps below them.
 							[
-								...NAV_ITEMS.map(([id, label]) =>
-									h.a(
-										[
-											h.Href(`#${id}`),
-											h.Class(
-												"rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
-											),
-										],
-										[label],
+								h.div(
+									[
+										h.Class(
+											"flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]",
+										),
+									],
+									NAV_ITEMS.map(([id, label]) =>
+										h.a(
+											[
+												h.Href(`#${id}`),
+												h.Class(
+													"shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
+												),
+											],
+											[label],
+										),
 									),
 								),
-								h.div([h.Class("ml-auto")], [modeToggle(h, model)]),
+								h.div([h.Class("shrink-0")], [modeToggle(h, model)]),
 							],
 						),
 						section(

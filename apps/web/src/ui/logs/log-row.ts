@@ -58,8 +58,8 @@ const QUIET_SEVERITIES = new Set(["DEBUG", "TRACE"])
 // Fatal reads one step past error: a filled label, not just a red word.
 const FILLED_SEVERITIES = new Set(["FATAL", "CRITICAL"])
 const PINNED_COL_WIDTH = "150px"
-/** Chips past this would only squeeze the ones before them; the expanded row lists every one. */
-const ROW_CHIP_LIMIT = 3
+/** Chips past this would only squeeze the ones before them; a "+N" mark counts the rest. */
+const ROW_CHIP_LIMIT = 2
 
 // Row and row action classes
 const ROW_CLASS =
@@ -126,7 +126,7 @@ const chipButton = <Message>(
 		[
 			h.Type("button"),
 			h.AriaLabel(`Copy ${chip.key}=${chip.value}`),
-			rowClass(h, cn(CHIP_CLASS, CHIP_TONE_CLASSES[chip.tone], "min-w-0 shrink")),
+			rowClass(h, cn(CHIP_CLASS, CHIP_TONE_CLASSES[chip.tone], "min-w-min shrink")),
 			h.OnMouseEnter(events.enteredChip(index, chip.key)),
 			h.OnMouseLeave(events.leftChip(index, chip.key)),
 			h.OnFocus(events.focusedChip(index, chip.key)),
@@ -137,9 +137,13 @@ const chipButton = <Message>(
 			),
 		],
 		[
-			h.span([rowClass(h, cn("shrink-0", CHIP_KEY_TONE_CLASSES[chip.tone]))], [chip.displayKey]),
+			// The key gives way first; the value always keeps a few characters.
+			h.span(
+				[rowClass(h, cn("min-w-[3ch] shrink-[4] truncate", CHIP_KEY_TONE_CLASSES[chip.tone]))],
+				[chip.displayKey],
+			),
 			h.span([rowClass(h, "shrink-0 opacity-40")], [":"]),
-			h.span([rowClass(h, "min-w-0 max-w-[18ch] truncate")], [chip.displayValue]),
+			h.span([rowClass(h, "min-w-[6ch] max-w-[18ch] truncate")], [chip.displayValue]),
 		],
 	)
 
@@ -362,10 +366,8 @@ const messageLane = <Message>(
 									QUIET_SEVERITIES.has(row.severity)
 										? "text-muted-foreground"
 										: "text-foreground",
-									// A one-line clamp ends on a word, so the ellipsis never trails a space.
-									state.wrap
-										? "whitespace-pre-wrap break-words"
-										: "line-clamp-1 break-words",
+									// A one-line clamp that breaks anywhere: the ellipsis follows the last glyph that fits.
+									state.wrap ? "whitespace-pre-wrap break-words" : "line-clamp-1 break-all",
 								),
 							),
 						],
@@ -398,9 +400,34 @@ const messageLane = <Message>(
 								),
 							],
 							// The lane is as wide as its chips, so the message gets the rest of the row.
-							row.chips
-								.slice(0, ROW_CHIP_LIMIT)
-								.map((chip) => chipButton(h, events, index, chip)),
+							[
+								...row.chips
+									.slice(0, ROW_CHIP_LIMIT)
+									.map((chip) => chipButton(h, events, index, chip)),
+								...(row.chips.length > ROW_CHIP_LIMIT
+									? [
+											h.span(
+												[
+													rowClass(
+														h,
+														cn(
+															CHIP_CLASS,
+															CHIP_TONE_CLASSES.muted,
+															"cursor-default",
+														),
+													),
+													h.Title(
+														row.chips
+															.slice(ROW_CHIP_LIMIT)
+															.map((chip) => `${chip.key}=${chip.value}`)
+															.join("\n"),
+													),
+												],
+												[`+${row.chips.length - ROW_CHIP_LIMIT}`],
+											),
+										]
+									: []),
+							],
 						),
 					]
 				: []),

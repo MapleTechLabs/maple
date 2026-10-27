@@ -96,15 +96,25 @@ export const isNodeSelected = (node: FlowNode, selectedSpanId: Option.Option<str
 /** The Fit view control frames every node, with no legibility floor. */
 const FIT_ALL: Canvas.FitRequest = { padding: 0.2, minZoom: 0.1, maxZoom: 1.5 }
 
-const refit = (model: Model, graph: FlowGraph, request: Canvas.FitRequest = FLOW_FIT): Model =>
-	modifyFields(model, {
+/** The first real root: the node no edge points at, skipping missing-span placeholders. */
+const rootNodeId = (graph: FlowGraph): string | undefined => {
+	const targets = new Set(graph.edges.map((edge) => edge.target))
+	return graph.nodes.find((node) => !targets.has(node.id) && node.data.span.isMissing !== true)?.id
+}
+
+const refit = (model: Model, graph: FlowGraph, request: Canvas.FitRequest = FLOW_FIT): Model => {
+	const root = rootNodeId(graph)
+	return modifyFields(model, {
 		canvas: () =>
 			Canvas.requestFit(
 				modifyFields(model.canvas, { movedByUser: () => false }),
 				Canvas.placed(model.canvas, graph.nodes),
-				request,
+				root === undefined || request.readableZoom === undefined
+					? request
+					: { ...request, focusNodeId: root },
 			),
 	})
+}
 
 export const update =
 	(graph: FlowGraph) =>

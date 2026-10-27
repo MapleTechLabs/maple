@@ -68,6 +68,9 @@ const runScript = (h: H, connector: V2GcpConnector, label: string): Html =>
 		[label],
 	)
 
+/** Info issues are pending states (setup, first data), so their dot stays neutral, never healthy green. */
+const dotTone = (tone: Issue["tone"] | "ok"): Tone => (tone === "info" ? "neutral" : tone)
+
 /** `hasDot`: only a list of issues dots each one; a single issue's tone is the name row's dot. */
 const issueNote = (h: H, issue: Issue, hasDot: boolean): Html =>
 	h.div(
@@ -75,7 +78,7 @@ const issueNote = (h: H, issue: Issue, hasDot: boolean): Html =>
 		[
 			h.span(
 				[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
-				hasDot ? [statusDot(h, { tone: issue.tone, size: "lg" })] : [],
+				hasDot ? [statusDot(h, { tone: dotTone(issue.tone), size: "lg" })] : [],
 			),
 			h.div(
 				[h.Class("flex min-w-0 flex-col gap-1.5")],
@@ -374,7 +377,7 @@ export const gcpConnection = (h: H, model: Model, connector: V2GcpConnector, tim
 			[
 				h.span(
 					[h.Class("flex h-5 w-3.5 shrink-0 items-center justify-center")],
-					[statusDot(h, { tone, size: "lg" })],
+					[statusDot(h, { tone: dotTone(tone), size: "lg" })],
 				),
 				h.div(
 					[h.Class("flex min-w-0 flex-col gap-0.5")],

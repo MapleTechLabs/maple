@@ -77,21 +77,15 @@ const footer = (h: H, model: Model): Html =>
 			h.div(
 				[h.Class("flex items-center gap-2")],
 				[
+					// The window Run query will use, beside the button that runs it.
+					h.span([h.Class(META)], [model.window.startTime, " → ", model.window.endTime]),
 					...(model.lastRunAt === null
 						? []
 						: [h.span([h.Class(META)], ["last run: ", model.lastRunAt])]),
-					// The header names the range; the exact window is the button's tooltip.
-					button(
-						h,
-						{
-							size: "sm",
-							attributes: [
-								h.OnClick(Message.ClickedRun()),
-								h.Title(`${model.window.startTime} → ${model.window.endTime}`),
-							],
-						},
-						[icon(h, "MediaPlayIcon"), "Run query"],
-					),
+					button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedRun())] }, [
+						icon(h, "MediaPlayIcon"),
+						"Run query",
+					]),
 				],
 			),
 		],

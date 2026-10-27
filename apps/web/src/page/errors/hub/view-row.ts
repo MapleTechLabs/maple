@@ -221,7 +221,7 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 									),
 								]
 							: []),
-						activity,
+						...(activity === null ? [] : [activity]),
 					],
 				),
 				volumeLane(h, signal, dense, isSurging, label),

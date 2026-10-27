@@ -159,7 +159,7 @@ const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html
 				children: regionButtons(h, model, regionsOf(views)),
 				trailing:
 					shown.length === views.length
-						? "problems first"
+						? `${countLabel(views.length, noun)} · problems first`
 						: `${shown.length} of ${countLabel(views.length, noun)}`,
 			}),
 			shown.length === 0

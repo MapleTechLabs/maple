@@ -75,11 +75,11 @@ export const notFoundContent = <Message>(h: HtmlBuilder<Message>): Html =>
 					[
 						h.h2(
 							[h.Class("font-prose text-sm font-medium text-foreground")],
-							["Nothing at this address"],
+							["The link may be out of date"],
 						),
 						h.p(
 							[h.Class("font-prose text-ui text-balance text-muted-foreground")],
-							["This page doesn't exist or was moved."],
+							["This page moved or never existed. Search with ⌘K, or start from Overview."],
 						),
 					],
 				),

@@ -61,7 +61,11 @@ const listView = Submodel.defineView<Model, GcpList.Message>((model, h) => {
 		[
 			dashboardPage(
 				h,
-				{ scrollClassName: "gap-6", ...titleRow(h, page.header, time), tabs: page.tabs },
+				{
+					scrollClassName: "gap-6",
+					...titleRow(h, page.header, time, page.isFailed),
+					tabs: page.tabs,
+				},
 				page.body,
 			),
 		],
