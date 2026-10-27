@@ -10,7 +10,7 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import * as Chart from "../../../charts/chart"
 import { ChartSpec } from "../../../charts/chart-spec"
 import * as FixedMetricChart from "../../../charts/fixed-metric-chart"
-import { fixedMetricLegend, latencySeries } from "../../../charts/fixed-metric-legend"
+import { fixedMetricLegend } from "../../../charts/fixed-metric-legend"
 import { LATENCY_SERIES } from "../../../charts/fixed-metric-series"
 import { bucketTooltipBody } from "../../../charts/bucket-tooltip"
 import { plotFrame } from "../../../charts/plot-frame"
@@ -224,17 +224,89 @@ export const kpiRail = (
 	)
 }
 
-const chartRows = (points: ReadonlyArray<CheckPoint>) =>
-	points.map((point) => ({
-		bucket: point.bucket,
-		p50LatencyMs: point.p50LatencyMs,
-		p95LatencyMs: point.p95LatencyMs,
-		p99LatencyMs: point.p99LatencyMs,
-		partial: point.partial,
-	}))
+/**
+ * The latency rows: buckets that ran a check, with a null row where checks stopped for longer than
+ * two check intervals, so the line breaks there instead of drawing latency nobody measured. A shorter
+ * empty bucket (a check every 5 minutes on 1-minute buckets) stays joined: a null there would leave
+ * each check a lone point the line never draws.
+ */
+/** The monitor's check interval, 0 until it loads (the bucket width then sets the gap). */
+const checkIntervalMs = (model: Model): number =>
+	(Option.getOrNull(AsyncData.getData(model.monitor.data))?.interval_seconds ?? 0) * 1000
 
-const latencyChart = (h: H, model: Model, points: ReadonlyArray<CheckPoint>, context: ChartContext): Html =>
-	h.submodel({
+/** Where the response time line breaks: the buckets the breakdown leaves a gap at too. */
+const breakBuckets = (stats: CheckStats, intervalMs: number): ReadonlyArray<string> =>
+	chartRows(stats, intervalMs).flatMap((row) =>
+		row.p50LatencyMs === null && typeof row.bucket === "string" ? [row.bucket] : [],
+	)
+
+export const chartRows = (stats: CheckStats, intervalMs: number) => {
+	const stepMs = bucketStepMs(stats.points, stats.windowEndMs)
+	const gapAfterMs = 2 * Math.max(intervalMs, stepMs)
+	return stats.points.reduce<{
+		rows: ReadonlyArray<Record<string, string | number | boolean | null>>
+		emptySinceMs: number | null
+	}>(
+		(acc, point) => {
+			const atMs = isoMs(point.bucket)
+			if (point.totalCount === 0) return { rows: acc.rows, emptySinceMs: acc.emptySinceMs ?? atMs }
+			const broken =
+				acc.rows.length > 0 && acc.emptySinceMs !== null && atMs - acc.emptySinceMs > gapAfterMs
+			const gap = {
+				bucket: new Date(acc.emptySinceMs ?? atMs).toISOString(),
+				p50LatencyMs: null,
+				p95LatencyMs: null,
+				p99LatencyMs: null,
+				partial: false,
+			}
+			const row = {
+				bucket: point.bucket,
+				p50LatencyMs: point.p50LatencyMs,
+				p95LatencyMs: point.p95LatencyMs,
+				p99LatencyMs: point.p99LatencyMs,
+				partial: point.partial,
+			}
+			return { rows: [...acc.rows, ...(broken ? [gap] : []), row], emptySinceMs: null }
+		},
+		{ rows: [], emptySinceMs: null },
+	).rows
+}
+
+/** The plot's insets in px, shared by every chart on the page so one instant sits at one x (`pl-16`, `pr-3`). */
+const PLOT_LEFT = 64
+const PLOT_RIGHT = 12
+
+/** Every chart spans the picked window, not just the buckets that hold data. */
+const windowDomain = (stats: CheckStats): readonly [number, number] => [
+	stats.windowStartMs,
+	stats.windowEndMs,
+]
+
+/** The median count of checks in a bucket that holds any. */
+const checksPerBucket = (points: ReadonlyArray<CheckPoint>): number => {
+	const counts = points
+		.map((point) => point.totalCount)
+		.filter((count) => count > 0)
+		.toSorted((a, b) => a - b)
+	return counts[Math.floor(counts.length / 2)] ?? 0
+}
+
+/**
+ * The percentiles a bucket holds enough checks to tell apart: one check is just its duration, and
+ * P99 of a few dozen checks is their slowest one, the same line as P95.
+ */
+export const percentileSeries = (points: ReadonlyArray<CheckPoint>) => {
+	const perBucket = checksPerBucket(points)
+	const shown = LATENCY_SERIES.filter((entry) =>
+		perBucket <= 1 ? entry.key === "p50LatencyMs" : perBucket < 50 ? entry.key !== "p99LatencyMs" : true,
+	)
+	return shown.map((entry) => ({ ...entry, label: perBucket <= 1 ? "Response time" : entry.label }))
+}
+
+const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartContext): Html => {
+	const series = percentileSeries(stats.points)
+	const intervalMs = checkIntervalMs(model)
+	return h.submodel({
 		slotId: "uptime-latency-chart",
 		model: model.chart,
 		view: FixedMetricChart.view,
@@ -243,8 +315,11 @@ const latencyChart = (h: H, model: Model, points: ReadonlyArray<CheckPoint>, con
 			ariaLabel: "Response time percentiles",
 			spec: ChartSpec.FixedMetric({
 				chart: "Latency",
-				marginLeft: 64,
-				rows: chartRows(points),
+				marginLeft: PLOT_LEFT,
+				marginRight: PLOT_RIGHT,
+				xDomainMs: [...windowDomain(stats)],
+				latencySeries: series.map(({ key, label }) => ({ key, label })),
+				rows: chartRows(stats, intervalMs),
 				colors: {
 					border: resolveColor(context.theme, "--border"),
 					background: resolveColor(context.theme, "--background"),
@@ -259,45 +334,77 @@ const latencyChart = (h: H, model: Model, points: ReadonlyArray<CheckPoint>, con
 				showTooltip: true,
 			}),
 			className: "h-full w-full aspect-auto",
-			legend: fixedMetricLegend(h, latencySeries(context.theme)),
+			legend: fixedMetricLegend(
+				h,
+				series.map((entry) => ({
+					key: entry.key,
+					label: entry.label,
+					color: resolveColor(context.theme, entry.token),
+				})),
+			),
 		},
 		toParentMessage: (message: Chart.Message) => Message.GotChartMessage({ message }),
 	})
+}
 
-/** One segment per bucket under the chart: green when every check passed, red with any failure. */
-const availabilityStrip = (
-	h: H,
-	points: ReadonlyArray<CheckPoint>,
-	window: UptimeWindow,
-	timeZone: string,
-): Html =>
-	h.div(
-		[h.Class("flex h-2 gap-px pl-16"), h.AriaHidden(true)],
-		points.map((point) => {
-			const failed = Math.round(point.errorRate * point.totalCount)
-			const label =
-				point.totalCount === 0
-					? `${timeLabel(window, point.bucket, timeZone)}: no checks`
-					: `${timeLabel(window, point.bucket, timeZone)}: ${point.totalCount} checks, ${failed} failed`
-			return h.span(
-				[
-					h.Key(point.bucket),
-					h.Title(label),
-					h.Class(
-						cn(
-							"min-w-0 flex-1 rounded-[1px]",
-							point.totalCount === 0
-								? "bg-muted"
-								: failed > 0
-									? "bg-destructive"
-									: "bg-success/70",
-						),
-					),
-				],
-				[],
-			)
-		}),
+/** The bucket width: the smallest gap between buckets, else the span from the only one to the window's end. */
+const bucketStepMs = (points: ReadonlyArray<CheckPoint>, endMs: number): number => {
+	const starts = points.map((point) => isoMs(point.bucket))
+	const gaps = starts.slice(1).flatMap((start, index) => {
+		const gap = start - (starts[index] ?? start)
+		return gap > 0 ? [gap] : []
+	})
+	return gaps.length > 0 ? Math.min(...gaps) : Math.max(1, endMs - (starts[0] ?? endMs))
+}
+
+/**
+ * One segment per bucket under the chart, placed by its time on the same window as the chart: the
+ * warehouse trims empty leading buckets, so counting segments would stretch them across the window.
+ * Green when every check passed, red with any failure.
+ */
+const availabilityStrip = (h: H, stats: CheckStats, window: UptimeWindow, timeZone: string): Html => {
+	const domain: Domain = { startMs: stats.windowStartMs, endMs: stats.windowEndMs }
+	const stepMs = bucketStepMs(stats.points, domain.endMs)
+	return h.div(
+		[h.Class("h-2 pr-3 pl-16"), h.AriaHidden(true)],
+		[
+			h.div(
+				[h.Class("relative h-full")],
+				stats.points.map((point) => {
+					const startMs = isoMs(point.bucket)
+					const left = Math.max(0, xShare(startMs, domain))
+					const right = Math.min(1, xShare(startMs + stepMs, domain))
+					const failed = Math.round(point.errorRate * point.totalCount)
+					const label =
+						point.totalCount === 0
+							? `${timeLabel(window, point.bucket, timeZone)}: no checks`
+							: `${timeLabel(window, point.bucket, timeZone)}: ${point.totalCount} checks, ${failed} failed`
+					return h.span(
+						[
+							h.Key(point.bucket),
+							h.Title(label),
+							h.Class(
+								cn(
+									"absolute inset-y-0 rounded-[1px]",
+									point.totalCount === 0
+										? "bg-muted"
+										: failed > 0
+											? "bg-destructive"
+											: "bg-success/70",
+								),
+							),
+							h.Style({
+								left: `${left * 100}%`,
+								width: `max(1px, calc(${((right - left) * 100).toFixed(4)}% - 1px))`,
+							}),
+						],
+						[],
+					)
+				}),
+			),
+		],
 	)
+}
 
 /** P50, P95 and P99 over the picked window, from the monitor's check spans. */
 export const responseTimePanel = (h: H, model: Model, context: ChartContext | null): Html => {
@@ -334,14 +441,9 @@ export const responseTimePanel = (h: H, model: Model, context: ChartContext | nu
 										[
 											h.div(
 												[h.Class("h-56")],
-												[latencyChart(h, model, stats.points, context)],
+												[latencyChart(h, model, stats, context)],
 											),
-											availabilityStrip(
-												h,
-												stats.points,
-												stats.window,
-												context.timeZone,
-											),
+											availabilityStrip(h, stats, stats.window, context.timeZone),
 										],
 									),
 			})
@@ -415,7 +517,7 @@ const checkBars = (
 	yMax: number,
 ): Html => {
 	const domain: Domain = { startMs, endMs }
-	// Bars thin out as checks pile up, never under a pixel or over 6.
+	// Bars thin out as checks pile up, never under a pixel or over 6; the width keeps a 30% gap, so no inset.
 	const width = `max(1px, min(6px, ${(70 / Math.max(1, samples.length)).toFixed(3)}%))`
 	const bar = (sample: CheckSample, index: number) => {
 		const clipped = sample.durationMs > yMax
@@ -425,7 +527,7 @@ const checkBars = (
 				h.Href(traceHref(sample.traceId)),
 				h.Attribute("tabindex", "-1"),
 				h.OnMouseEnter(Message.HoveredCheck({ index })),
-				h.Class("group absolute inset-y-0 -translate-x-1/2 px-px hover:bg-foreground/5"),
+				h.Class("group absolute inset-y-0 -translate-x-1/2 hover:bg-foreground/5"),
 				h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
 			],
 			[
@@ -433,7 +535,7 @@ const checkBars = (
 					[
 						h.Class(
 							cn(
-								"absolute inset-x-px bottom-0 flex flex-col-reverse overflow-hidden rounded-t-[1px] group-hover:brightness-125",
+								"absolute inset-x-0 bottom-0 flex flex-col-reverse overflow-hidden rounded-t-[1px] group-hover:brightness-125",
 								!sample.ok && "bg-destructive",
 							),
 						),
@@ -554,7 +656,7 @@ const barsLegend = (h: H, samples: ReadonlyArray<CheckSample>, yMax: number): Ht
 	const failed = samples.some((sample) => !sample.ok)
 	const clipped = samples.some((sample) => sample.durationMs > yMax)
 	return h.div(
-		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 pl-14 text-xs text-muted-foreground")],
+		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 pr-3 pl-16 text-xs text-muted-foreground")],
 		[
 			...(timed
 				? PHASES.map((phase) =>
@@ -640,13 +742,13 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 						],
 						[
 							h.div(
-								[h.Class("flex h-56 pt-2")],
+								[h.Class("flex h-56 pt-2 pr-3")],
 								[
 									h.div(
 										[
 											h.AriaHidden(true),
 											h.Class(
-												"relative w-14 shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums",
+												"relative w-16 shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums",
 											),
 										],
 										yTicks.map((share) =>
@@ -705,7 +807,9 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 							h.div(
 								[
 									h.AriaHidden(true),
-									h.Class("relative ml-14 h-4 font-mono text-[11px] text-muted-foreground"),
+									h.Class(
+										"relative mr-3 ml-16 h-4 font-mono text-[11px] text-muted-foreground",
+									),
 								],
 								scatterTimeTicks(domain, stats.window, timeZone).map((tick) =>
 									h.span(
@@ -731,19 +835,33 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 		},
 	})
 
-/** Long rows, one per (bucket, phase), labelled so the tooltip and legend read the phase names. */
-const phaseRows = (points: ReadonlyArray<PhasePoint>) =>
-	points.flatMap((point) =>
-		PHASES.map((phase) => ({
-			bucket: point.bucket,
-			attributeValue: phase.label,
-			value: point[phase.key],
-		})),
-	)
+/** Buckets whose checks got no response to time (all failed early, or predate phases): zeros, not phases. */
+const untimed = (point: PhasePoint): boolean => point.timedChecks === 0
 
-const phaseChart = (h: H, model: Model, points: ReadonlyArray<PhasePoint>, context: ChartContext): Html => {
+/**
+ * The breakdown's long rows (one per bucket and phase, labelled for the tooltip and legend) and its
+ * breaks: where checks stopped, and where checks ran but none was timed.
+ */
+export const phaseSeries = (stats: CheckStats, intervalMs: number) => ({
+	rows: stats.phases
+		.filter((point) => !untimed(point))
+		.flatMap((point) =>
+			PHASES.map((phase) => ({
+				bucket: point.bucket,
+				attributeValue: phase.label,
+				value: point[phase.key],
+			})),
+		),
+	breaks: [
+		...breakBuckets(stats, intervalMs),
+		...stats.phases.filter(untimed).map((point) => point.bucket),
+	],
+})
+
+const phaseChart = (h: H, model: Model, stats: CheckStats, context: ChartContext): Html => {
+	const series = phaseSeries(stats, checkIntervalMs(model))
 	const built = stackedBreakdown({
-		rows: phaseRows(points),
+		rows: series.rows,
 		colors: Object.fromEntries(PHASES.map((phase) => [phase.label, `var(${phase.token})`])),
 		order: PHASES.map((phase) => phase.label),
 		theme: context.theme,
@@ -751,6 +869,9 @@ const phaseChart = (h: H, model: Model, points: ReadonlyArray<PhasePoint>, conte
 		gradientPrefix: "uptime-phases",
 		unit: "duration_ms",
 		showTotal: true,
+		xDomainMs: windowDomain(stats),
+		marginLeft: PLOT_LEFT,
+		breaks: series.breaks,
 	})
 	return h.div(
 		[h.Class("h-56")],
@@ -809,7 +930,7 @@ export const phaseBreakdownPanel = (h: H, model: Model, context: ChartContext | 
 								[h.Class("py-16 text-center text-sm text-muted-foreground")],
 								["Couldn't load the breakdown. The other figures are unaffected."],
 							)
-						: stats.phases.length === 0
+						: stats.phases.every(untimed)
 							? h.p(
 									[h.Class("py-16 text-center text-sm text-muted-foreground")],
 									[
@@ -823,7 +944,7 @@ export const phaseBreakdownPanel = (h: H, model: Model, context: ChartContext | 
 									)
 								: context === null
 									? h.div([h.Class("h-56")], [chartSkeleton(h, "area")])
-									: phaseChart(h, model, stats.phases, context),
+									: phaseChart(h, model, stats, context),
 			})
 	return panel(h, { attributes: [h.AriaLabel("Response time breakdown")] }, [
 		panelHeader(h, { title: "Response time breakdown" }),

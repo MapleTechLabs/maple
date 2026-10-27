@@ -13,6 +13,7 @@ import {
 	throughputPlot,
 	TRACED_KEY,
 } from "../fixed-metric-series"
+import { pinnedTimeXAxis } from "@maple/ui/components/plot/bucket-axis"
 import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
 import { timeseriesYAxis } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
@@ -48,9 +49,19 @@ const read = (key: string) => (row: TimeseriesRow) => {
 }
 
 const colorOf = (spec: FixedMetricSpec, key: string): string => spec.colors[key] ?? ""
-/** `margin: yAxisWidth == null ? undefined : { left: yAxisWidth }`. */
+/** `margin: yAxisWidth == null ? undefined : { left: yAxisWidth }`, plus an optional right lock. */
 const marginOf = (spec: FixedMetricSpec) =>
-	spec.marginLeft === undefined ? undefined : { left: spec.marginLeft }
+	spec.marginLeft === undefined && spec.marginRight === undefined
+		? undefined
+		: {
+				...(spec.marginLeft === undefined ? undefined : { left: spec.marginLeft }),
+				...(spec.marginRight === undefined ? undefined : { right: spec.marginRight }),
+			}
+/** The x axis: pinned to the spec's window when it sets one, else over the drawn rows. */
+const xAxisOf = (spec: FixedMetricSpec, model: FixedMetricModel) =>
+	spec.xDomainMs === undefined
+		? timeseriesXAxis(model.axisContext)
+		: pinnedTimeXAxis(model.axisContext, spec.xDomainMs)
 const chromeOf = (spec: FixedMetricSpec) => ({
 	border: colorOf(spec, "border"),
 	background: colorOf(spec, "background"),
@@ -164,7 +175,7 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 			focusCrosshair(chrome),
 		],
 		scales: {
-			x: timeseriesXAxis(model.axisContext),
+			x: xAxisOf(spec, model),
 			y: timeseriesYAxis({
 				rows,
 				visibleKeys: [THROUGHPUT_KEY, ERROR_KEY, TRACED_KEY],
@@ -272,7 +283,7 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 			focusCrosshair(chrome),
 		],
 		scales: {
-			x: timeseriesXAxis(model.axisContext),
+			x: xAxisOf(spec, model),
 			y: timeseriesYAxis({
 				rows: plotRows,
 				visibleKeys: ["errorRate"],
@@ -298,7 +309,10 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	const focus = tooltipFocusCapture()
 	const { plotRows } = model
 	const chrome = chromeOf(spec)
-	const series = LATENCY_SERIES.map((entry) => ({ ...entry, color: colorOf(spec, entry.key) }))
+	const series = (spec.latencySeries ?? LATENCY_SERIES).map((entry) => ({
+		...entry,
+		color: colorOf(spec, entry.key),
+	}))
 	const keys = series.map((entry) => entry.key)
 	const { solid, dashed } = splitAtFirstPartial(plotRows, keys, model.trimOptions)
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
@@ -320,7 +334,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 			focusCrosshair(chrome),
 		],
 		scales: {
-			x: timeseriesXAxis(model.axisContext),
+			x: xAxisOf(spec, model),
 			y: timeseriesYAxis({ rows: plotRows, visibleKeys: keys, unit: "duration_ms" }).y,
 		},
 		focus: "group-x",
@@ -387,7 +401,7 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 			focusCrosshair(chrome),
 		],
 		scales: {
-			x: timeseriesXAxis(model.axisContext),
+			x: xAxisOf(spec, model),
 			y: timeseriesYAxis({ rows: plotRows, visibleKeys: ["apdexScore"], softMin: 0, softMax: 1 }).y,
 		},
 		focus: "group-x",
