@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest"
 import { apiProxyPath } from "./api-proxy"
 import { handleRequest } from "./handler"
 import type { WebWorkerEnv } from "./worker-env"
+import { chartRequestFromPath } from "./og/chart-image"
+import { ogIdFromPath } from "./og/share-links"
+import { WORKER_FIRST_PATHS } from "./worker-first"
 
 const assets = {
 	fetch: async () => new Response("<html></html>", { headers: { "content-type": "text/html" } }),
@@ -140,5 +143,39 @@ describe("document security headers", () => {
 			referrer: "no-referrer",
 			sniff: "nosniff",
 		})
+	})
+})
+
+describe("WORKER_FIRST_PATHS", () => {
+	// Cloudflare's `run_worker_first` globs: `*` spans any characters, `/` included.
+	const routedToWorker = (pathname: string) =>
+		WORKER_FIRST_PATHS.some((pattern) =>
+			new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`).test(
+				pathname,
+			),
+		)
+
+	it("reaches the Worker for every path the handler answers itself", () => {
+		const paths = [
+			"/_api",
+			"/_api/v2/traces",
+			"/share/og/abc123.png",
+			"/alerts/chart/eyJ.sig.png",
+			"/chat/chart/eyJ.sig.png",
+		]
+		const handledByWorker = (path: string) =>
+			apiProxyPath(path) !== undefined ||
+			ogIdFromPath(path) !== undefined ||
+			chartRequestFromPath(path) !== undefined
+		expect(paths.filter((path) => !handledByWorker(path))).toEqual([])
+		expect(paths.filter((path) => !routedToWorker(path))).toEqual([])
+	})
+
+	it("leaves app routes and hashed assets to the assets layer", () => {
+		expect(
+			["/", "/alerts", "/alerts/chart", "/share/tok_123", "/assets/index-abc.js", "/chat"].filter(
+				routedToWorker,
+			),
+		).toEqual([])
 	})
 })
