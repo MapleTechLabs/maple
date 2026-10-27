@@ -399,9 +399,10 @@ jobs:
                   MAPLE_PG_URL: postgres://maple:maple@127.0.0.1:5499/maple
                   TINYBIRD_HOST: http://127.0.0.1:7181
                   TINYBIRD_TOKEN: placeholder
-                  MAPLE_INGEST_KEY_ENCRYPTION_KEY: placeholder
-                  MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: placeholder
-                  MAPLE_SHARE_TOKEN_HMAC_KEY: placeholder
+                  # Keys are checked as base64 for 32 bytes when maple-ai's graph builds.
+                  MAPLE_INGEST_KEY_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_SHARE_TOKEN_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
                   MAPLE_ROOT_PASSWORD: placeholder
               run: bun run test:alchemy
 
