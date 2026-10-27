@@ -51,6 +51,39 @@ const clerkEarlyLoad = (publishableKey: string): Plugin => ({
 	},
 })
 
+/**
+ * `src/boot.ts` as its own module script ahead of the app's: Vite folds every script in
+ * index.html into one graph, which would make Clerk's start wait for the whole app bundle.
+ */
+const earlyBoot = (): Plugin => ({
+	name: "maple-early-boot",
+	config: (config) => ({
+		build: {
+			rolldownOptions: {
+				input: {
+					index: path.resolve(config.root ?? import.meta.dirname, "index.html"),
+					boot: path.resolve(config.root ?? import.meta.dirname, "src/boot.ts"),
+				},
+			},
+		},
+	}),
+	transformIndexHtml: {
+		order: "post",
+		handler: (_html, context) => {
+			const chunk = Object.values(context.bundle ?? {}).find(
+				(output) => output.type === "chunk" && output.isEntry && output.name === "boot",
+			)
+			return [
+				{
+					tag: "script",
+					attrs: { type: "module", crossorigin: true, src: `/${chunk?.fileName ?? "src/boot.ts"}` },
+					injectTo: "head-prepend",
+				},
+			]
+		},
+	},
+})
+
 export default defineConfig(({ mode, command }) => {
 	const env = loadEnv(mode, envDir, "")
 
@@ -83,6 +116,7 @@ export default defineConfig(({ mode, command }) => {
 			foldkit(command === "serve" ? {} : { devToolsMcpPort: false }),
 			// `/version.json`, which open tabs poll to offer a reload after a deploy (shell/version.ts).
 			versionManifest(process.env.VITE_COMMIT_SHA?.trim() || ""),
+			earlyBoot(),
 			...(process.env.VITE_MAPLE_AUTH_MODE?.trim().toLowerCase() === "clerk" && clerkKey
 				? [clerkEarlyLoad(clerkKey)]
 				: []),
