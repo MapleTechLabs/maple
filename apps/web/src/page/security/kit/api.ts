@@ -124,7 +124,10 @@ export const toStartFailure = (error: unknown): LoadFailure => {
 			message: `${error.message} It resets on ${resetDay(error.resetsAt)}, or an admin can raise it under Spend & models.`,
 		}
 	if (isNotInPlan(error))
-		return { ...failure, message: `${error.message} Change the plan under Settings, Billing.` }
+		return {
+			...failure,
+			message: `${error.message} Change the plan under Settings, Billing, or add an OpenRouter key under Settings, AI.`,
+		}
 	if (isCreditsUsedUp(error))
 		return {
 			...failure,

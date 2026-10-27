@@ -349,6 +349,57 @@ describe("auditWithAgents", () => {
 		)
 	})
 
+	it.effect("bills nothing on the org's own OpenRouter key, with no AI credits to spend", () => {
+		const charges: Array<string> = []
+		const recording = HttpClient.make((request) =>
+			Effect.sync(() => {
+				charges.push(request.url)
+				return HttpClientResponse.fromWeb(request, new Response(null, { status: 200 }))
+			}),
+		)
+		const noCredits = Layer.succeed(SecurityAuditCredits, {
+			ensure: () => Effect.fail(new SecurityAuditNoCredits({ message: "no credits", resetsAt: null })),
+		})
+		return Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const calls: Array<string> = []
+			const result = yield* auditWithAgents(
+				payloadFor(run.id),
+				() => Effect.succeed(scriptedAgents(calls, 0.25)),
+				{ ownKey: true },
+			).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.isTrue(calls.length >= 8)
+			assert.deepStrictEqual(
+				{
+					status: result.status,
+					charges: charges.length,
+					runSandboxUsd: Option.map(row, (r) => r.sandboxUsd),
+					modelUsd: Math.round((yield* store.orgSpendUsd(0)) * 100) / 100 > 0,
+				},
+				{ status: "complete", charges: 0, runSandboxUsd: Option.some(0), modelUsd: true },
+			)
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+					noCredits,
+					Layer.succeed(HttpClient.HttpClient, recording),
+					ConfigProvider.layer(
+						ConfigProvider.fromUnknown({
+							AUTUMN_SECRET_KEY: "am_sk_test",
+							SECURITY_AUDIT_SANDBOX_FEE_USD: "0.05",
+						}),
+					),
+				),
+			),
+		)
+	})
+
 	it.effect(
 		"stops launching agents once the org's spend reaches its monthly limit, ending incomplete",
 		() =>

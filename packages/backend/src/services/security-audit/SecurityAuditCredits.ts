@@ -1,6 +1,7 @@
 /**
- * Whether an org can pay for a security audit. Audits are paid in AI credits (model cost marked up,
- * plus a sandbox fee per agent), so a start needs a plan that includes them and credits to spend.
+ * Whether an org can pay for a security audit. An org on its own OpenRouter key pays OpenRouter
+ * directly; otherwise audits are paid in AI credits (model cost marked up, plus a sandbox fee per
+ * agent), so a start needs a plan that includes them and credits to spend.
  */
 import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { BillingCustomer } from "@maple/domain/http"
@@ -10,6 +11,7 @@ import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { decodeUpstream, ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 
 /** Billing could not say what the org's plan includes; a start refuses rather than guess. */
 export class SecurityAuditCreditsUnavailable extends Schema.TaggedError<SecurityAuditCreditsUnavailable>()(
@@ -47,7 +49,7 @@ export const missingCredits = (
 		return Option.some(
 			new SecurityAuditNoCredits({
 				message:
-					"Security audits are paid in AI credits, and this organization's plan doesn't include them.",
+					"Security audits run on AI credits or the organization's own OpenRouter key, and this organization has neither.",
 				resetsAt: null,
 			}),
 		)
@@ -63,7 +65,10 @@ export const missingCredits = (
 }
 
 export interface SecurityAuditCreditsApi {
-	/** Succeeds when the org may start an audit; Maple's own org and unbilled deployments always may. */
+	/**
+	 * Succeeds when the org may start an audit; Maple's own org, unbilled deployments and orgs on
+	 * their own OpenRouter key always may.
+	 */
 	readonly ensure: (
 		orgId: OrgId,
 	) => Effect.Effect<void, SecurityAuditNoCredits | SecurityAuditCreditsUnavailable>
@@ -76,12 +81,16 @@ export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, 
 			const env = yield* Env
 			const edgeCache = yield* EdgeCacheService
 			const autumn = yield* AutumnClient
+			const orgKeys = yield* OrgOpenRouterKeyService
 
 			const ensure: SecurityAuditCreditsApi["ensure"] = Effect.fn("SecurityAuditCredits.ensure")(
 				function* (orgId) {
 					// Maple's own org is never metered, as with AI usage, nor is a deployment without
 					// billing (self-hosted, local dev). Unmetered is decided here, never from an error.
 					if (orgId === env.MAPLE_DEFAULT_ORG_ID || Option.isNone(env.AUTUMN_SECRET_KEY)) return
+					const ownKey = Option.isSome(yield* orgKeys.resolveForRun(orgId))
+					yield* Effect.annotateCurrentSpan("maple.llm.byok", ownKey)
+					if (ownKey) return
 					const nowMs = yield* Clock.currentTimeMillis
 					const missing = yield* readCustomerCached(
 						edgeCache,
@@ -111,7 +120,9 @@ export class SecurityAuditCredits extends Context.Service<SecurityAuditCredits, 
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(AutumnClient.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(AutumnClient.layer, OrgOpenRouterKeyService.layer)),
+	)
 
 	/** Every org may start, for tests and harnesses. */
 	static readonly unmetered = Layer.succeed(this, { ensure: () => Effect.void })
