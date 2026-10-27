@@ -35,6 +35,7 @@ import {
 	heartbeatPanel,
 	kpiRail,
 	lastCheckPanel,
+	phaseBreakdownPanel,
 	responseTimePanel,
 	setupPanel,
 } from "./view-panels"
@@ -176,6 +177,9 @@ const body = (
 							? []
 							: [heartbeatPanel(h, model, monitor.heartbeat_url)]),
 						...(monitor.kind === "heartbeat" ? [] : [responseTimePanel(h, model, chartContext)]),
+						...(monitor.config.type === "http"
+							? [phaseBreakdownPanel(h, model, chartContext)]
+							: []),
 						...[checksScatterPanel(h, model, timeZone)].flatMap((panel) =>
 							panel === null ? [] : [panel],
 						),

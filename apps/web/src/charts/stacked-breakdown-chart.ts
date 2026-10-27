@@ -52,6 +52,8 @@ export type StackedBreakdownOptions = Readonly<{
 	theme: ThemeColors
 	timeZone: string
 	gradientPrefix: string
+	unit?: StackedBreakdownSpec["unit"]
+	showTotal?: boolean
 }>
 
 export type StackedBreakdown = Readonly<{
@@ -90,6 +92,8 @@ export const stackedBreakdown = (options: StackedBreakdownOptions): StackedBreak
 			]),
 			timeZone: options.timeZone,
 			gradientPrefix: options.gradientPrefix,
+			...(options.unit === undefined ? undefined : { unit: options.unit }),
+			...(options.showTotal === undefined ? undefined : { showTotal: options.showTotal }),
 		},
 	}
 }

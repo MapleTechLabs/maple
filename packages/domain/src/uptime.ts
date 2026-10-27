@@ -241,6 +241,14 @@ export const firstFailedAssertion = (
 export const UPTIME_SERVICE_NAME = "maple-uptime"
 /** The resource attribute naming the monitor a check span belongs to. */
 export const UPTIME_MONITOR_ID_ATTRIBUTE = "maple.uptime.monitor_id"
+/** The check span attribute of each HTTP phase, in ms; written by the scraper, read by the breakdown. */
+export const UPTIME_TIMING_ATTRIBUTES = {
+	dnsMs: "maple.uptime.timing.dns_ms",
+	connectMs: "maple.uptime.timing.connect_ms",
+	tlsMs: "maple.uptime.timing.tls_ms",
+	ttfbMs: "maple.uptime.timing.ttfb_ms",
+	transferMs: "maple.uptime.timing.transfer_ms",
+} as const
 /** `service.namespace` of Maple's own synthetic services, so users can filter them out. */
 export const MAPLE_SERVICES_NAMESPACE = "maple-services"
 
