@@ -21,6 +21,7 @@ import {
 	DeleteDestination,
 	DeleteMonitor,
 	FetchHubMonitors,
+	FetchServiceNamespaces,
 	ToggleMonitor,
 	FetchHubDeliveries,
 	FetchHubSession,
@@ -87,14 +88,28 @@ const requestRoutingDeliveries = (model: Model, context: PageContext, mode: Keye
 const monitorsKey = (context: PageContext) =>
 	requestKey(context.orgId, "uptimeMonitors.list", { query: { limit: UPTIME_LIST_LIMIT } })
 
-/** The Uptime tab reads the monitors only while it is open. */
+const serviceNamespacesKey = (context: PageContext) =>
+	requestKey(context.orgId, "serviceOverview.namespaces", { window: "24h" })
+
+/** Read once per visit: a namespace changes far less often than the monitors refresh. */
+const requestServiceNamespaces = (model: Model, context: PageContext): Requested =>
+	Option.match(Keyed.requestFor(model.serviceNamespaces, serviceNamespacesKey(context), "Load"), {
+		onNone: () => ({ model, commands: [] }),
+		onSome: (serviceNamespaces) => ({
+			model: { ...model, serviceNamespaces },
+			commands: [FetchServiceNamespaces({ key: serviceNamespaces.key })],
+		}),
+	})
+
+/** The Uptime tab reads the monitors, and the namespaces they group by, only while it is open. */
 const requestMonitors = (model: Model, context: PageContext, mode: Keyed.ReadMode): Requested => {
 	if (resolveTab(model.search.tab) !== "uptime") return { model, commands: [] }
-	return Option.match(Keyed.requestFor(model.monitors, monitorsKey(context), mode), {
-		onNone: () => ({ model, commands: [] }),
+	const namespaces = requestServiceNamespaces(model, context)
+	return Option.match(Keyed.requestFor(namespaces.model.monitors, monitorsKey(context), mode), {
+		onNone: () => namespaces,
 		onSome: (monitors) => ({
-			model: { ...model, monitors },
-			commands: [FetchHubMonitors({ key: monitors.key })],
+			model: { ...namespaces.model, monitors },
+			commands: [...namespaces.commands, FetchHubMonitors({ key: monitors.key })],
 		}),
 	})
 }
@@ -131,6 +146,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		destinationDialog: DestinationDialog.init("alerts-destination"),
 		newRuleMenu: Menu.init(NEW_RULE_MENU_ID),
 		monitors: Keyed.idle(),
+		serviceNamespaces: Keyed.idle(),
 		uptimeQuery: "",
 		uptimeStatus: "all",
 		uptimeKind: "all",
@@ -495,6 +511,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
 		}),
 		ClickedRetryMonitors: () => refreshMonitors(model, context),
+		CompletedFetchServiceNamespaces: ({ key, result }) => ({
+			model: { ...model, serviceNamespaces: Keyed.accept(model.serviceNamespaces, key, result) },
+		}),
 		ChangedUptimeQuery: ({ value }) => ({ model: { ...model, uptimeQuery: value } }),
 		ClickedUptimeStatus: ({ filter }) => ({ model: { ...model, uptimeStatus: filter } }),
 		ChangedUptimeKind: ({ kind }) => ({ model: { ...model, uptimeKind: kind } }),

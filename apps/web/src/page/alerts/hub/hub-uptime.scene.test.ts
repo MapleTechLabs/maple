@@ -51,6 +51,22 @@ const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>): Model => {
 
 const THREE = [httpMonitor(), downMonitor(), pausedMonitor()]
 
+const withNamespaces = (model: Model, namespaces: Record<string, string>): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedFetchServiceNamespaces({
+			key: model.serviceNamespaces.key ?? "",
+			result: Result.succeed(namespaces),
+		}),
+	).model
+
+const GROUPED = [
+	httpMonitor(),
+	downMonitor({ service_name: "payments-api" }),
+	httpMonitor({ id: monitorId(4), name: "cron-heartbeat", service_name: null }),
+]
+const NAMESPACES = { "checkout-api": "shop", "payments-api": "billing" }
+
 describe("alerts hub inbox, uptime incidents", () => {
 	test("an uptime incident reads as its monitor being down, without the ungrouped key", () => {
 		const entered = init({ _tag: "Alerts", search: {} }, context).model
@@ -103,6 +119,45 @@ describe("alerts hub, Uptime tab", () => {
 		)
 		expect(names(init({ _tag: "Alerts", search: { tab: "uptime" } }, context).commands)).toContain(
 			"FetchAlertsHubMonitors",
+		)
+	})
+
+	test("opening the tab also reads which namespace each service reports under", () => {
+		expect(names(init({ _tag: "Alerts", search: { tab: "uptime" } }, context).commands)).toContain(
+			"FetchAlertsHubServiceNamespaces",
+		)
+	})
+
+	test("monitors sit under their service's namespace, unlinked ones under No namespace", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withNamespaces(withMonitors(GROUPED), NAMESPACES)),
+			expectView(text("shop")).toExist(),
+			expectView(text("billing")).toExist(),
+			expectView(text("No namespace")).toExist(),
+			expectView(role("link", { name: "cron-heartbeat" })).toExist(),
+		)
+	})
+
+	test("without namespaces the list has no group headers", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withNamespaces(withMonitors(GROUPED), {})),
+			expectView(text("No namespace")).not.toExist(),
+			expectView(role("link", { name: "checkout-api" })).toExist(),
+		)
+	})
+
+	test("a pinned namespace lists only its own monitors, without a header", () => {
+		const pinned: PageContext = { ...context, pinnedNamespace: "billing" }
+		const pinnedUpdate = (model: Model, message: Message) => update(model, message, pinned)
+		scene(
+			{ update: pinnedUpdate, view: withViewInputs(pageView, { context: pinned })() },
+			given(withNamespaces(withMonitors(GROUPED), NAMESPACES)),
+			expectView(role("link", { name: "payments-api" })).toExist(),
+			expectView(role("link", { name: "checkout-api" })).not.toExist(),
+			expectView(role("link", { name: "cron-heartbeat" })).not.toExist(),
+			expectView(text("No namespace")).not.toExist(),
 		)
 	})
 

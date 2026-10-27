@@ -292,7 +292,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								nowMs: model.nowMs ?? 0,
 							})
 						: tab === "uptime"
-							? uptimeTab(h, model, model.nowMs ?? 0)
+							? uptimeTab(h, model, model.nowMs ?? 0, inputs.context.pinnedNamespace)
 							: hubBody(h, model, overview, tab),
 				],
 			),
