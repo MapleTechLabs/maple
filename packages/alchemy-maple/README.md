@@ -107,49 +107,61 @@ seam when constructing the API client without the Alchemy provider collection.
 | `Maple.ApiKey`           | Create / roll / revoke (the API has no key update). Changing props replaces the key; bumping the `rotate` prop rolls it in place (same name/scopes, new secret). `secret` is captured once and preserved in Alchemy state — it can never be re-read from the API.            |
 | `Maple.IngestKeys`       | Read-only per-org singleton. Surfaces `publicKey` / `privateKey` as `Redacted` outputs; delete only stops tracking it.                                                                                                                                                       |
 
-## Reusable dashboard data
+## Typed dashboard data
 
-`DashboardData`, `DashboardWidget`, `DashboardVariable`, `DashboardSection` and
-`DashboardTimeRange` are Effect schemas and corresponding data types for the native
-v2 wire representation. Their `.make` constructors validate trusted definitions;
-use Effect Schema's decoders for external data. Layout, display and data-source
-discriminants are typed; query-builder query/formula bags retain the native wire
-contract's open records. These schemas ship inside this package, without private
-Maple workspace dependencies.
+`Maple.Dashboard` props are typed against the API's own dashboard schemas, in
+the v2 wire shape (`snake_case`, as `/v2/docs` documents it). A widget with an
+unknown `visualization`, a `raw_sql` source without `sql`, or a refresh interval
+the API doesn't offer fails type checking instead of deployment.
+
+To share panels and dashboards across stacks, build them as values.
+`DashboardData`, `DashboardWidget`, `DashboardSection`, `DashboardVariable` and
+`DashboardTimeRange` are Effect schemas whose `.make` validates a definition
+where you write it; decode external data with Effect Schema's decoders. The
+schemas ship inside this package, so it depends on no private Maple package.
 
 ```typescript
-const data = Maple.DashboardData.make({
+const requests = Maple.DashboardWidget.make({
+	id: "requests",
+	visualization: "stat",
+	data_source: {
+		kind: "raw_sql",
+		sql: "SELECT count() AS value FROM traces WHERE $__orgFilter",
+		transform: { reduce_to_value: { field: "value", aggregate: "first" } },
+	},
+	display: { title: "Requests" },
+	layout: { x: 0, y: 0, w: 3, h: 4 },
+})
+
+const health = Maple.DashboardData.make({
 	name: "Service health",
 	refresh_interval_seconds: 60,
 	time_range: { type: "relative", value: "24h" },
-	widgets: [
-		Maple.DashboardWidget.make({
-			id: "requests",
-			visualization: "stat",
-			data_source: {
-				kind: "raw_sql",
-				sql: "SELECT count() AS value FROM traces WHERE $__orgFilter",
-				transform: { reduce_to_value: { field: "value", aggregate: "first" } },
-			},
-			display: { title: "Requests" },
-			layout: { x: 0, y: 0, w: 3, h: 4 },
-		}),
-	],
+	widgets: [requests],
 })
 
-yield *
-	Maple.Dashboard("service-health", {
-		...data,
-		dashboardId: "dash_existing",
-	})
+export const program = Effect.gen(function* () {
+	yield* Maple.Dashboard("service-health", health)
+})
 ```
 
-`dashboardId` pins an existing dashboard: a missing or invalid ID fails deployment
-instead of creating a substitute. Alchemy adopts it on the first deployment and
-manages subsequent updates and deletion. The ID cannot be changed after deployment;
-removing the prop keeps the remembered identity. Omit it initially to create a new
-dashboard. Refresh accepts `0`, `5`, `10`, `30`, `60`, `300`, `900`, or `null`; `0`
-and `null` disable automatic refresh.
+`refresh_interval_seconds` takes `0`, `5`, `10`, `30`, `60`, `300`, `900` or
+`null`; `0` and `null` turn automatic refresh off.
+
+## Adopting an existing dashboard
+
+A dashboard made in the UI has no tag or name Alchemy could find it by, so name
+it by its ID:
+
+```typescript
+Maple.Dashboard("service-health", { ...health, dashboardId: "dash_…" })
+```
+
+- The first deploy takes that dashboard over and updates it in place. A missing
+  or mistyped ID fails the deploy; it never creates a new dashboard in its place.
+- From then on the resource owns it: destroying the resource deletes it.
+- The ID can't change once deployed, and changing it fails the deploy. Removing
+  the prop keeps the adopted dashboard.
 
 ## Worker telemetry
 

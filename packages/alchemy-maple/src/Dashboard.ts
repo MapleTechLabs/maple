@@ -10,8 +10,8 @@ import type { Providers } from "./Providers"
 
 /**
  * Dashboard props, authored in the v2 wire shape (snake_case, exactly as
- * documented at `/v2/docs`). `widgets`, `sections`, `variables`, and
- * `time_range` are passed through verbatim.
+ * documented at `/v2/docs`) and typed by the API's own dashboard schemas
+ * (see `DashboardData`).
  */
 export interface DashboardProps extends DashboardData {
 	/**
