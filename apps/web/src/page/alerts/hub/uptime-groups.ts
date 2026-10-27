@@ -36,8 +36,11 @@ export const serviceNamespaces = (rows: ReadonlyArray<OverviewRow>): ServiceName
 	return Object.fromEntries([...busiest].map(([service, entry]) => [service, entry.namespace]))
 }
 
+/** Own keys only: a service named `constructor` must not read `Object.prototype`. */
 export const monitorNamespace = (monitor: UptimeMonitor, namespaces: ServiceNamespaces): string =>
-	monitor.service_name === null ? NO_NAMESPACE : (namespaces[monitor.service_name] ?? NO_NAMESPACE)
+	monitor.service_name !== null && Object.hasOwn(namespaces, monitor.service_name)
+		? (namespaces[monitor.service_name] ?? NO_NAMESPACE)
+		: NO_NAMESPACE
 
 export type MonitorGroup = readonly [namespace: string, monitors: ReadonlyArray<UptimeMonitor>]
 

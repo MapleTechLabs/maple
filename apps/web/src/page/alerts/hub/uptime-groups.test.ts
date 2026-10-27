@@ -45,6 +45,14 @@ describe("monitor groups", () => {
 		])
 	})
 
+	test("a service named like an object built-in groups under No namespace", () => {
+		const builtIn = httpMonitor({ id: monitorId(6), name: "ctor", service_name: "constructor" })
+		expect(groupMonitors([builtIn, shop], namespaces).map(([namespace]) => namespace)).toEqual([
+			"shop",
+			NO_NAMESPACE,
+		])
+	})
+
 	test("without any namespace the list stays one group in its own order", () => {
 		expect(groupMonitors([unseen, unlinked], {})).toEqual([[NO_NAMESPACE, [unseen, unlinked]]])
 	})
