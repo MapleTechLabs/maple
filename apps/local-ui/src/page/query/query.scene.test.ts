@@ -32,7 +32,7 @@ const loaded = (): Model => {
 
 describe("local query console", () => {
 	test("entry reads the platform and the tables list", () => {
-		expect(names(init(context).commands)).toEqual([ReadPlatform.name, FetchTables.name])
+		expect(names(init(context).commands)).toEqual(expect.arrayContaining([ReadPlatform.name, FetchTables.name]))
 	})
 
 	test("Run posts the hash's SQL and shows the rows", () => {

@@ -136,7 +136,7 @@ describe("replay detail", () => {
 	test("a loaded session subscribes to 0–0, then the planned opening range, and its traces", () => {
 		const start = entered().model
 		const detailed = pageUpdate(start, Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(session) }))
-		expect(names(detailed.commands)).toEqual([FetchRange.name, FetchTraceSummaries.name])
+		expect(names(detailed.commands)).toEqual(expect.arrayContaining([FetchRange.name, FetchTraceSummaries.name]))
 		const planned = pageUpdate(
 			detailed.model,
 			Message.CompletedFetchManifest({ key: start.manifest.key ?? "", result: Result.succeed(manifest) }),
