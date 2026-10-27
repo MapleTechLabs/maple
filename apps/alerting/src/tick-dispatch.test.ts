@@ -156,7 +156,7 @@ describe("dispatchTick", () => {
 	it.effect("names what killed the placed invocation, from the answer it left", () =>
 		Effect.gen(function* () {
 			const binding = fakeBinding(500, {
-				body: `  Worker exceeded resource limits ${"x".repeat(1000)}`,
+				body: `  Worker exceeded resource limits ${"x".repeat(1_000_000)}`,
 				headers: { "cf-ray": "8f00aa11bb22cc33-IAD" },
 			}).binding
 			const error = yield* dispatchFailure({ ...ENV, [SELF_BINDING]: binding })

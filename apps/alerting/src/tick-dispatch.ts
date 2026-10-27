@@ -6,7 +6,7 @@
 import { internalTokenFor, selfFetcher } from "@maple/backend/platform/self-binding"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Stream } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { isLaneOf, type TickLane } from "./schedule.ts"
 
@@ -98,9 +98,22 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 	// The placed handler leaves no telemetry when the runtime kills it; its answer is all there is.
 	// On the span, not in the message, so the error keeps one fingerprint.
 	const ray = response.headers["cf-ray"]
-	const body = (yield* response.text.pipe(Effect.orElseSucceed(() => "")))
-		.trim()
-		.slice(0, MAX_FAILURE_BODY_CHARS)
+	// Reads only until the cap: an error page can be large, and every failed lane holds one at once.
+	const body = yield* response.stream.pipe(
+		Stream.decodeText(),
+		Stream.scan(
+			() => "",
+			(head: string, text: string) => head + text,
+		),
+		Stream.takeUntil((head) => head.length >= MAX_FAILURE_BODY_CHARS),
+		Stream.runLast,
+		Effect.map((head) =>
+			Option.getOrElse(head, () => "")
+				.trim()
+				.slice(0, MAX_FAILURE_BODY_CHARS),
+		),
+		Effect.orElseSucceed(() => ""),
+	)
 	yield* Effect.annotateCurrentSpan({
 		"http.response.status_code": response.status,
 		...(ray === undefined ? undefined : { "maple.alerting.tick_ray": ray }),
