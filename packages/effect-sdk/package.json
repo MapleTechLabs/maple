@@ -66,7 +66,6 @@
 		"std-env": "^4.0.0"
 	},
 	"devDependencies": {
-		"@effect/language-service": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
 		"@maple/browser-session": "workspace:*",
 		"@types/node": "catalog:tooling",

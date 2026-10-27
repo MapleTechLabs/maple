@@ -3,6 +3,8 @@
 	"ignoreWorkspaces": ["apps/ingest", "apps/ios", "examples/*"],
 	"ignore": ["**/*.type-test.ts"],
 	"ignoreExportsUsedInFile": true,
+	// The tsconfig plugin name @effect/tsgo reads its options from; no package is loaded.
+	"ignoreDependencies": ["@effect/language-service"],
 	"workspaces": {
 		".": {
 			"entry": ["alchemy.run.ts", "scripts/**/*.ts", "scripts/oxlint-plugins/*.mjs"],
