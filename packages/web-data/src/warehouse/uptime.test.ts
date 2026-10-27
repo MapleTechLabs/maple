@@ -115,6 +115,36 @@ describe("getUptimeCheckStats", () => {
 		}).pipe(mockedWarehouse),
 	)
 
+	it.effect(
+		"reads one page for a monitor with few checks, and every page only while they come back full",
+		() =>
+			Effect.gen(function* () {
+				answer([])
+				const asked: Array<number> = []
+				const reading = (full: boolean) =>
+					listTracesMock.mockImplementation(({ data }: { data: { offset: number } }) => {
+						asked.push(data.offset)
+						return page([], full ? 200 : 3)
+					})
+				reading(false)
+				yield* getUptimeCheckStats({ monitorId: "mon_1", startTime: START, endTime: END })
+				const few = [...asked]
+				asked.length = 0
+				reading(true)
+				const busy = yield* getUptimeCheckStats({
+					monitorId: "mon_1",
+					startTime: START,
+					endTime: END,
+				})
+				assert.deepStrictEqual(few, [0])
+				assert.deepStrictEqual(
+					[...asked].sort((a, b) => a - b),
+					Array.from({ length: 11 }, (_, index) => index * 200),
+				)
+				assert.strictEqual(busy.samplesTruncated, true)
+			}).pipe(mockedWarehouse),
+	)
+
 	it.effect("lists the checks oldest first with their status, and says when the list is cut short", () =>
 		Effect.gen(function* () {
 			answer([bucket("2026-02-01 00:15:00", 2, 0.5)])

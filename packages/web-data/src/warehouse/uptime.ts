@@ -22,6 +22,8 @@ export interface UptimeCheckStatsInput {
 const CHECK_PAGE = 200
 /** Offsets 0 to 2000, the list's offset cap: 24 hours at a 1m interval fit. */
 const CHECK_PAGES = 11
+/** Pages read at once after the first. */
+const CHECK_WAVE = 4
 /** Most checks one window lists; past it the newest are kept. */
 export const UPTIME_CHECK_LIST_LIMIT = CHECK_PAGE * CHECK_PAGES
 
@@ -79,25 +81,46 @@ export const getUptimeCheckStats = Effect.fn("QueryEngine.getUptimeCheckStats")(
 		).pipe(Effect.map(breakdownValue))
 
 	// Span-level, so the check span itself is the row; the noise filter would drop lone Client spans.
-	const checkList = Effect.forEach(
-		Array.from({ length: CHECK_PAGES }, (_, page) => page * CHECK_PAGE),
-		(offset) =>
-			listTraces({
-				data: {
-					startTime: input.startTime,
-					endTime: input.endTime,
-					services: [serviceName],
-					resourceAttributeFilters: [{ key: UPTIME_MONITOR_ID_ATTRIBUTE, value: input.monitorId }],
-					rootOnly: false,
-					hideNoise: false,
-					sortBy: "timestamp",
-					sortDir: "desc",
-					limit: CHECK_PAGE,
-					offset,
-				},
+	const readPage = (offset: number) =>
+		listTraces({
+			data: {
+				startTime: input.startTime,
+				endTime: input.endTime,
+				services: [serviceName],
+				resourceAttributeFilters: [{ key: UPTIME_MONITOR_ID_ATTRIBUTE, value: input.monitorId }],
+				rootOnly: false,
+				hideNoise: false,
+				sortBy: "timestamp",
+				sortDir: "desc",
+				limit: CHECK_PAGE,
+				offset,
+			},
+		})
+	type Page = Effect.Success<ReturnType<typeof readPage>>
+	// The first page alone, then the rest a few at a time, stopping after a short page: a monitor
+	// with a few checks reads one page, not all of them.
+	const readFrom = (
+		page: number,
+	): Effect.Effect<
+		ReadonlyArray<Page>,
+		Effect.Error<ReturnType<typeof readPage>>,
+		Effect.Services<ReturnType<typeof readPage>>
+	> => {
+		const wave = Array.from(
+			{ length: Math.min(page === 0 ? 1 : CHECK_WAVE, CHECK_PAGES - page) },
+			(_, index) => (page + index) * CHECK_PAGE,
+		)
+		return Effect.forEach(wave, readPage, { concurrency: CHECK_WAVE }).pipe(
+			Effect.flatMap((pages) => {
+				const next = page + pages.length
+				const exhausted = pages.some((read) => read.meta.scannedCount < CHECK_PAGE)
+				return exhausted || next >= CHECK_PAGES
+					? Effect.succeed(pages)
+					: Effect.map(readFrom(next), (rest) => [...pages, ...rest])
 			}),
-		{ concurrency: 4 },
-	)
+		)
+	}
+	const checkList = readFrom(0)
 
 	const [series, p50Ms, p95Ms, p99Ms, list] = yield* Effect.all(
 		[
