@@ -1,46 +1,87 @@
 ---
 import { getRelativeLocaleUrl } from "astro:i18n";
+import { buttonVariants } from "@maple/ui/components/ui/button";
 import Layout from "../layouts/Layout.astro";
 import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
+import MapleLeaves from "../components/MapleLeaves.astro";
 
 const locale = Astro.currentLocale ?? "en";
 const l = (path: string) => getRelativeLocaleUrl(locale, path);
+
+const destinations = [
+    { href: "/docs", title: "Docs", body: "Send OpenTelemetry data and query it." },
+    { href: l("/pricing"), title: "Pricing", body: "Plans, usage and the bill estimator." },
+    { href: "/changelog", title: "Changelog", body: "What shipped recently." },
+    { href: l("/local"), title: "Maple Local", body: "One binary, no account." },
+];
 ---
 
 <Layout title="Page not found | Maple" description="The page you're looking for doesn't exist or has been moved.">
     <Nav />
-    <section class="relative pt-[19px] min-h-[70vh] flex items-center justify-center">
-        <div class="mx-auto max-w-6xl px-6 text-center">
-            <p class="text-7xl font-bold text-fg-muted/20 mb-6">404</p>
-            <h1 class="text-2xl sm:text-3xl font-bold text-fg mb-3">Page not found</h1>
-            <p class="text-sm text-fg-muted max-w-md mx-auto mb-8">
-                The page you're looking for doesn't exist or has been moved.
-            </p>
-            <div class="flex flex-wrap items-center justify-center gap-4">
-                <a href={l("/")} class="bg-primary text-primary-foreground px-6 py-2.5 text-sm font-medium hover:opacity-90 transition-opacity">
-                    Back to home
-                </a>
-                <a href={`${l("/")}#features`} class="border border-border px-6 py-2.5 text-sm font-medium text-fg hover:opacity-90 transition-opacity">
-                    View features
-                </a>
+    <main id="main-content">
+        <section class="grove relative isolate overflow-hidden" aria-labelledby="not-found-title">
+            <MapleLeaves spawnFrom={0.45} />
+            <div class="shell pt-16 pb-36 md:pt-20 md:pb-40">
+                <div class="max-w-[560px]">
+                    <h1 id="not-found-title" class="grove__title text-fg">
+                        <span class="block text-8xl md:text-[9rem]">404</span>
+                        <span class="mt-3 block text-2xl md:text-3xl tracking-[-0.03em]">Page not found</span>
+                    </h1>
+                    <p class="mt-5 max-w-[44ch] text-base md:text-lg leading-relaxed text-fg-muted">
+                        Nothing lives at
+                        <code class="rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[0.85em] text-fg" data-missing-path>this address</code>
+                        anymore. It may have moved, or the link was mistyped.
+                    </p>
+                    <div class="mt-8 flex flex-wrap gap-2.5">
+                        <a href={l("/")} class={buttonVariants({ size: "xl" })}>Back to home</a>
+                        <a href="/docs" class={buttonVariants({ size: "xl", variant: "outline" })}>Read the docs</a>
+                    </div>
+                </div>
+
+                <div class="max-w-[880px]">
+                    <div class="mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-xl border border-border bg-border">
+                        {destinations.map((d) => (
+                            <a href={d.href} class="bg-bg p-4 transition-colors hover:bg-bg-elevated">
+                                <span class="block text-sm font-medium text-fg">{d.title}</span>
+                                <span class="mt-1 block text-sm text-fg-muted">{d.body}</span>
+                            </a>
+                        ))}
+                    </div>
+
+                    <!-- Same recovery links the markdown 404 (src/worker.ts) gives agents. -->
+                    <p class="mt-6 text-xs text-fg-muted">
+                        Still lost?
+                        <a href="/contact" class="text-fg underline underline-offset-4 hover:text-primary transition-colors">Contact us</a>,
+                        or browse the
+                        <a href="/sitemap-index.xml" class="text-fg underline underline-offset-4 hover:text-primary transition-colors">sitemap</a>
+                        and
+                        <a href="/llms.txt" class="text-fg underline underline-offset-4 hover:text-primary transition-colors">llms.txt</a>.
+                    </p>
+                </div>
             </div>
-            <!-- Same recovery links the markdown 404 (src/worker.ts) gives agents. -->
-            <p class="mt-10 text-xs text-fg-muted">
-                Looking for something specific?
-                <a href="/docs" class="text-fg underline underline-offset-4 hover:text-primary transition-colors">Docs</a>
-                ·
-                <a href={l("/pricing")} class="text-fg underline underline-offset-4 hover:text-primary transition-colors">Pricing</a>
-                ·
-                <a href="/changelog" class="text-fg underline underline-offset-4 hover:text-primary transition-colors">Changelog</a>
-                ·
-                <a href="/contact" class="text-fg underline underline-offset-4 hover:text-primary transition-colors">Contact</a>
-                ·
-                <a href="/sitemap-index.xml" class="text-fg underline underline-offset-4 hover:text-primary transition-colors">Sitemap</a>
-                ·
-                <a href="/llms.txt" class="text-fg underline underline-offset-4 hover:text-primary transition-colors">llms.txt</a>
-            </p>
-        </div>
-    </section>
+        </section>
+    </main>
     <Footer />
 </Layout>
+
+<style>
+    .grove {
+        /* Starts under the fixed nav, like the home hero. */
+        min-height: min(100svh, 1080px);
+        padding-top: 76px;
+        font-family: "Geist Variable", sans-serif;
+    }
+    /* The home hero's heavy grotesk. */
+    .grove__title {
+        font-weight: 700;
+        line-height: 1.04;
+        letter-spacing: -0.04em;
+        text-wrap: balance;
+    }
+</style>
+
+<script>
+    const path = document.querySelector("[data-missing-path]");
+    if (path) path.textContent = window.location.pathname;
+</script>
