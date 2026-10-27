@@ -95,7 +95,13 @@ const tileMenu = (h: H, model: Model, slot: string): Html | null =>
 						{ _tag: "Item", value: "edit", label: "Edit", icon: "PencilIcon" },
 						{ _tag: "Item", value: "clone", label: "Clone", icon: "CopyIcon" },
 						{ _tag: "Separator" },
-						{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive" },
+						{
+							_tag: "Item",
+							value: "delete",
+							label: "Delete",
+							icon: "TrashIcon",
+							variant: "destructive",
+						},
 					],
 					align: "end",
 					className: "w-max",
@@ -105,7 +111,11 @@ const tileMenu = (h: H, model: Model, slot: string): Html | null =>
 							withTrigger(
 								button(
 									h,
-									{ variant: "ghost", size: "icon-xs", attributes: [h.AriaLabel("Widget actions"), ...trigger] },
+									{
+										variant: "ghost",
+										size: "icon-xs",
+										attributes: [h.AriaLabel("Widget actions"), ...trigger],
+									},
 									[icon(h, "DotsVerticalIcon")],
 								),
 							),
@@ -157,7 +167,9 @@ const tileSection = (h: H, model: Model, entry: Section): Html =>
 		entry.title,
 		entry.description,
 		entry.minColWidth,
-		entry.cells.map((cell) => scenarioCell(h, cell.label, cell.height, widgetTile(h, tileContext(h, model, cell), cell.widget))),
+		entry.cells.map((cell) =>
+			scenarioCell(h, cell.label, cell.height, widgetTile(h, tileContext(h, model, cell), cell.widget)),
+		),
 	)
 
 /** `StatSparkline` alone in a card, per sample. */
@@ -188,11 +200,16 @@ const sparklineSection = (h: H, model: Model): Html =>
 											slotId: sample.id,
 											model: model.charts[sample.id] ?? Chart.init(),
 											view: Sparkline.view,
-											toParentMessage: (message) => Message.GotChartMessage({ slot: sample.id, message }),
+											toParentMessage: (message) =>
+												Message.GotChartMessage({ slot: sample.id, message }),
 											viewInputs: {
 												chartId: sample.id,
 												values,
-												color: resolveColor(theme, validateCssColor(sample.color ?? "var(--chart-1)") ?? "var(--chart-1)"),
+												color: resolveColor(
+													theme,
+													validateCssColor(sample.color ?? "var(--chart-1)") ??
+														"var(--chart-1)",
+												),
 												className: "h-full w-full",
 												revision: values.length,
 												curve: "monotone",
@@ -220,43 +237,54 @@ const modeToggle = (h: H, model: Model): Html =>
 	})
 
 const pageContent = (h: H, model: Model): Html =>
-	dashboardPage(h, { actions: modeToggle(h, model) }, [
+	dashboardPage(h, {}, [
 		h.div(
 			[h.Class("flex flex-col gap-8 pb-12"), h.OnMount(ResolveThemeColors({ tokens: THEME_TOKENS }))],
 			// Painted in one go once the theme, the chart runtime and the clock are in (S3).
 			model.themeColors === null || !isChartRuntimeReady(model.chartRuntime) || model.nowMs === null
 				? []
 				: [
-				h.nav(
-					[
-						h.Class(
-							"sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-1 border-b bg-background/80 px-4 py-2 backdrop-blur",
-						),
-					],
-					NAV_ITEMS.map(([id, label]) =>
-						h.a(
+						h.nav(
 							[
-								h.Href(`#${id}`),
 								h.Class(
-									"rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
+									"sticky top-0 z-10 -mx-4 flex items-center gap-3 border-b bg-background/80 px-4 py-2 backdrop-blur",
 								),
 							],
-							[label],
+							// One row: the anchors scroll sideways when tight, so the View/Edit toggle never wraps below them.
+							[
+								h.div(
+									[
+										h.Class(
+											"flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]",
+										),
+									],
+									NAV_ITEMS.map(([id, label]) =>
+										h.a(
+											[
+												h.Href(`#${id}`),
+												h.Class(
+													"shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground",
+												),
+											],
+											[label],
+										),
+									),
+								),
+								h.div([h.Class("shrink-0")], [modeToggle(h, model)]),
+							],
 						),
-					),
-				),
-				section(
-					h,
-					"copy",
-					"Copy",
-					"The shared CopyButton. Polish: the check draws rather than pops, the label crossfade never changes the button width, and the error branch reads as a failure.",
-					240,
-					copyScenarios(h, model),
-				),
-				...SECTIONS.map((entry) => tileSection(h, model, entry)),
-				sparklineSection(h, model),
-				...LATER_SECTIONS.map((entry) => tileSection(h, model, entry)),
-			],
+						section(
+							h,
+							"copy",
+							"Copy",
+							"The shared CopyButton. Polish: the check draws rather than pops, the label crossfade never changes the button width, and the error branch reads as a failure.",
+							240,
+							copyScenarios(h, model),
+						),
+						...SECTIONS.map((entry) => tileSection(h, model, entry)),
+						sparklineSection(h, model),
+						...LATER_SECTIONS.map((entry) => tileSection(h, model, entry)),
+					],
 		),
 	])
 

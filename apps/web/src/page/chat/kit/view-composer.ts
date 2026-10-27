@@ -1,4 +1,8 @@
-import { autoContextDisplay, autoContextLabel, type AutoContext } from "../../../components/chat/auto-contexts"
+import {
+	autoContextDisplay,
+	autoContextLabel,
+	type AutoContext,
+} from "../../../components/chat/auto-contexts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { alertDescriptionStyles } from "@maple/ui/styles/ui/alert"
@@ -93,7 +97,8 @@ export const composer = <M>(h: HtmlBuilder<M>, options: ComposerOptions<M>): Htm
 				textarea(h, {
 					id: options.textareaId,
 					isUnstyled: true,
-					className: "field-sizing-content max-h-48 min-h-16",
+					// Sans, like the messages it sends.
+					className: "field-sizing-content max-h-48 min-h-16 font-prose",
 					attributes: [
 						h.Name("message"),
 						h.Placeholder(options.placeholder),
@@ -108,7 +113,9 @@ export const composer = <M>(h: HtmlBuilder<M>, options: ComposerOptions<M>): Htm
 						),
 					],
 				}),
-				inputGroupAddon(h, { align: "block-end", className: "justify-end gap-1" }, [submitButton(h, options)]),
+				inputGroupAddon(h, { align: "block-end", className: "justify-end gap-1" }, [
+					submitButton(h, options),
+				]),
 			]),
 		],
 	)
@@ -133,59 +140,62 @@ export const contextChips = <M>(
 	h: HtmlBuilder<M>,
 	contexts: ReadonlyArray<AutoContext>,
 	onDismiss: (id: string) => M,
-): ReadonlyArray<Html> =>
-	contexts.length === 0
-		? []
-		: [
-				inputGroupAddon(
-					h,
-					{ align: "block-start", className: "flex-wrap gap-1 border-b" },
-					contexts.map((context) => {
-						const { kind, subject } = autoContextDisplay(context)
-						return h.span(
+): ReadonlyArray<Html> => {
+	if (contexts.length === 0) return []
+	return [
+		inputGroupAddon(h, { align: "block-start", className: "flex-wrap gap-1 border-b" }, [
+			...contexts.map((context) => {
+				const { kind, subject } = autoContextDisplay(context)
+				return h.span(
+					[
+						h.Class(
+							cn(
+								"group/chip inline-flex h-6 max-w-64 min-w-0 items-center gap-1",
+								"rounded-md border border-border/60 bg-muted/40 py-0 pr-0.5 pl-1.5",
+								"font-normal text-xs transition-colors hover:bg-muted/70",
+							),
+						),
+					],
+					[
+						icon(h, CONTEXT_ICONS.get(context.kind) ?? "ServerIcon", {
+							className: "size-3.5 shrink-0 text-muted-foreground",
+						}),
+						h.span(
+							[h.Class("min-w-0 truncate")],
 							[
-								h.Class(
-									cn(
-										"group/chip inline-flex h-6 max-w-64 min-w-0 items-center gap-1.5",
-										"rounded-md border border-border/60 bg-muted/40 py-0 pr-0.5 pl-1.5",
-										"font-normal text-xs transition-colors hover:bg-muted/70",
-									),
-								),
+								h.span([h.Class("text-muted-foreground")], [kind]),
+								...(subject === undefined || subject === ""
+									? []
+									: [h.span([h.Class("ml-1 text-foreground")], [subject])]),
 							],
-							[
-								icon(h, CONTEXT_ICONS.get(context.kind) ?? "ServerIcon", {
-									className: "size-3.5 shrink-0 text-muted-foreground",
-								}),
-								h.span(
-									[h.Class("min-w-0 truncate")],
-									[
-										h.span([h.Class("text-muted-foreground")], [kind]),
-										...(subject === undefined || subject === ""
-											? []
-											: [h.span([h.Class("ml-1 text-foreground")], [subject])]),
-									],
-								),
-								iconButton(
-									h,
-									{
-										size: "icon-2xs",
-										label: `Remove ${autoContextLabel(context)}`,
-										hasTooltip: false,
-										className: "text-muted-foreground/70 hover:text-foreground",
-										attributes: [h.OnClick(onDismiss(context.id))],
-									},
-									[icon(h, "XmarkIcon")],
-								),
-							],
-						)
-					}),
-				),
-			]
+						),
+						iconButton(
+							h,
+							{
+								size: "icon-2xs",
+								label: `Remove ${autoContextLabel(context)}`,
+								hasTooltip: false,
+								className: "text-muted-foreground/60 hover:text-foreground",
+								attributes: [h.OnClick(onDismiss(context.id))],
+							},
+							[icon(h, "XmarkIcon", { className: "size-2.5" })],
+						),
+					],
+				)
+			}),
+		]),
+	]
+}
 
 /** `ChatFailureNotice`: what failed, and one way to try again. */
 export const failureNotice = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ text: ReadonlyArray<string>; actionLabel: string; onAction: M; truncateTitle?: string }>,
+	options: Readonly<{
+		text: ReadonlyArray<string>
+		actionLabel: string
+		onAction: M
+		truncateTitle?: string
+	}>,
 ): Html =>
 	alert(h, { variant: "crit", size: "sm", className: "mb-3 text-sm" }, [
 		h.div(
@@ -199,6 +209,8 @@ export const failureNotice = <M>(
 				: [h.span([h.Class("line-clamp-2 [overflow-wrap:anywhere]")], options.text)],
 		),
 		alertAction(h, [
-			button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(options.onAction)] }, [options.actionLabel]),
+			button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(options.onAction)] }, [
+				options.actionLabel,
+			]),
 		]),
 	])

@@ -32,14 +32,14 @@ export const GCP_SERVICE_BAND: GcpBandSpec<GcpServiceScope> = {
 	cells: {
 		serving5xx: {
 			label: "Serving 5xx",
-			hint: "≥1% of ≥100 requests",
+			hint: "1% or more of at least 100 requests",
 			tone: "crit",
 			segment: "serving 5xx",
 		},
-		slow: { label: "Slow", hint: "latency p95 ≥1s", tone: "warn", segment: "slow" },
+		slow: { label: "Slow", hint: "p95 latency of 1s or more", tone: "warn", segment: "slow" },
 		idle: {
 			label: "Idle, still billed",
-			hint: "0 requests, instance time > 0",
+			hint: "no requests but billed instance time",
 			tone: "neutral",
 			segment: "idle",
 		},
@@ -56,7 +56,12 @@ export const GCP_SUBSCRIPTION_BAND: GcpBandSpec<GcpSubscriptionScope> = {
 			tone: "crit",
 			segment: "backlog growing",
 		},
-		stale: { label: "Stale", hint: "oldest unacked ≥10m", tone: "warn", segment: "stale" },
+		stale: {
+			label: "Stale",
+			hint: "oldest unacked message 10m or older",
+			tone: "warn",
+			segment: "stale",
+		},
 		deadLettering: {
 			label: "Dead-lettering",
 			hint: "messages moved to a DLQ",
@@ -72,26 +77,26 @@ export const GCP_DATABASE_BAND: GcpBandSpec<GcpDatabaseScope> = {
 	cells: {
 		atLimit: {
 			label: "At a limit",
-			hint: "connections, CPU or disk ≥90%",
+			hint: "connections, CPU or disk at 90% or more",
 			tone: "crit",
 			segment: "at a limit",
 		},
-		slow: { label: "Slow", hint: "query p95 ≥1s", tone: "warn", segment: "slow" },
+		slow: { label: "Slow", hint: "query p95 of 1s or more", tone: "warn", segment: "slow" },
 		wraparound: {
 			label: "Wraparound risk",
-			hint: "transaction IDs ≥50% used",
+			hint: "half or more of transaction IDs used",
 			tone: "warn",
 			segment: "wraparound risk",
 		},
 		fillingUp: {
 			label: "Filling up",
-			hint: "connections, CPU or disk ≥80%",
+			hint: "connections, CPU or disk at 80% or more",
 			tone: "warn",
 			segment: "filling up",
 		},
 		replicaLag: {
 			label: "Replica lag",
-			hint: "a replica ≥10s behind",
+			hint: "a replica 10s or more behind",
 			tone: "warn",
 			segment: "replica lag",
 		},
@@ -104,12 +109,17 @@ export const gcpWorkloadBand = (noun: string): GcpBandSpec<GcpWorkloadScope> => 
 	cells: {
 		atLimit: {
 			label: "At a limit",
-			hint: "a share of a limit ≥90%",
+			hint: "90% or more of a limit",
 			tone: "crit",
 			segment: "at a limit",
 		},
-		hot: { label: "Hot", hint: "a share of a limit ≥60%", tone: "warn", segment: "hot" },
-		erroring: { label: "Erroring", hint: "≥5% of ≥100 requests", tone: "crit", segment: "erroring" },
+		hot: { label: "Hot", hint: "60% or more of a limit", tone: "warn", segment: "hot" },
+		erroring: {
+			label: "Erroring",
+			hint: "5% or more of at least 100 requests",
+			tone: "crit",
+			segment: "erroring",
+		},
 	},
 })
 

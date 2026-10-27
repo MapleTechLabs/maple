@@ -141,12 +141,11 @@ export const scopeLabel = (scopePaths: ReadonlyArray<string>): string =>
 			: `${scopePaths.length} scope paths`
 
 /** Branch, profile and scope; a whole-repo scope is the default and says nothing, so it is left off. */
-export const targetLine = (target: SecurityAuditTarget): string =>
-	[
-		target.branch,
-		PROFILE_LABEL[target.profile],
-		...(target.scopePaths.length === 0 ? [] : [scopeLabel(target.scopePaths)]),
-	].join(" · ")
+export const targetParts = (target: SecurityAuditTarget): ReadonlyArray<string> => [
+	target.branch,
+	PROFILE_LABEL[target.profile],
+	...(target.scopePaths.length === 0 ? [] : [scopeLabel(target.scopePaths)]),
+]
 
 /** A model's name from the catalogue; an id it no longer lists reads as the id. */
 export const modelLabel = (id: string): string => securityAuditModelOption(id)?.label ?? id

@@ -9,6 +9,7 @@ import {
 	pluralize,
 } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
+import { formatUtilizationPercent } from "../../../../components/infra/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
@@ -98,7 +99,7 @@ const usageCell = (h: H, label: string, fraction: number | null): Html => {
 				[
 					numberCell(
 						h,
-						fraction === null ? null : formatPercent(fraction),
+						fraction === null ? null : formatUtilizationPercent(fraction),
 						tone === "warn" ? "warn" : undefined,
 					),
 				],

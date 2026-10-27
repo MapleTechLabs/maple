@@ -54,6 +54,7 @@ export type StackedBreakdownOptions = Readonly<{
 	gradientPrefix: string
 	unit?: StackedBreakdownSpec["unit"]
 	showTotal?: boolean
+	marginTop?: number | undefined
 }>
 
 export type StackedBreakdown = Readonly<{
@@ -94,6 +95,7 @@ export const stackedBreakdown = (options: StackedBreakdownOptions): StackedBreak
 			gradientPrefix: options.gradientPrefix,
 			...(options.unit === undefined ? undefined : { unit: options.unit }),
 			...(options.showTotal === undefined ? undefined : { showTotal: options.showTotal }),
+			...(options.marginTop === undefined ? undefined : { marginTop: options.marginTop }),
 		},
 	}
 }

@@ -139,8 +139,8 @@ const buttonStates = (h: HtmlBuilder<Message>): Html =>
 		button(h, { variant: "outline" }, ["Cancel edit"]),
 		button(h, { isDisabled: true }, ["Disabled"]),
 		button(h, { variant: "outline", isDisabled: true }, ["Disabled outline"]),
-		button(h, { isLoading: true }, ["Loading"]),
-		button(h, { variant: "outline", isLoading: true }, ["Loading outline"]),
+		button(h, { isLoading: true }, ["Save changes"]),
+		button(h, { variant: "outline", isLoading: true }, ["Save changes"]),
 		button(h, { variant: "outline" }, [icon(h, "PlusIcon"), " With icon"]),
 	])
 

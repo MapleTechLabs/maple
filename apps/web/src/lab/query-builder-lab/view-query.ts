@@ -16,9 +16,10 @@ import { card, cardHeader, cardPanel } from "../../ui/card"
 import * as Checkbox from "../../ui/checkbox"
 import { icon } from "../../ui/icon"
 import { label } from "../../ui/label"
+import { toggle } from "../../ui/toggle"
 import { metricOptionsOf } from "./derive"
 import { Message, type Model } from "./model"
-import { fieldEyebrow, labSelect, nameBadge } from "./view-controls"
+import { fieldEyebrow, labSelect } from "./view-controls"
 import { addOnSections } from "./view-add-ons"
 
 // One query card of `QueryBuilderLabInner`.
@@ -237,29 +238,30 @@ const addOnToggles = (h: H, query: QueryDraft): Html =>
 			fieldEyebrow(h, "Add-ons"),
 			h.div(
 				[h.Class("flex flex-wrap gap-1.5")],
-				ADD_ONS.map((addOn) =>
-					button(
+				ADD_ONS.map((addOn) => {
+					const isOn = query.addOns[addOn.key]
+					// A pressed toggle with a check, so an add-on in use reads as on at a glance.
+					return toggle(
 						h,
 						{
-							variant: query.addOns[addOn.key] ? "secondary" : "outline",
+							variant: "outline",
 							size: "xs",
-							attributes: [
-								h.OnClick(changed(query, QueryChange.ToggledAddOn({ key: addOn.key }))),
-							],
+							isPressed: isOn,
+							onClick: changed(query, QueryChange.ToggledAddOn({ key: addOn.key })),
+							className: isOn ? "border-primary/40 text-foreground" : "text-muted-foreground",
 						},
-						[addOn.label],
-					),
-				),
+						[...(isOn ? [icon(h, "CheckIcon", { size: 12 })] : []), addOn.label],
+					)
+				}),
 			),
 		],
 	)
 
-/** One query row: its name badge and its card. */
+/** One query row: its card, named in its own header. */
 export const queryRow = (h: H, model: Model, query: QueryDraft): Html =>
 	h.div(
-		[h.Key(query.id), h.Class("grid grid-cols-[44px_1fr] gap-2")],
+		[h.Key(query.id)],
 		[
-			nameBadge(h, query.name),
 			card(
 				h,
 				[

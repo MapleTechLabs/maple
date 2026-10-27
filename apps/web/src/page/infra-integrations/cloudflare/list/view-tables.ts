@@ -8,7 +8,7 @@ import {
 	type WorkerListRow,
 	workerRowKey,
 } from "../../../../components/infra/cloudflare/list-model"
-import { errorRateClass } from "@maple/ui/lib/error-rate"
+import { ERROR_RATE_WARN, errorRateClass } from "@maple/ui/lib/error-rate"
 import {
 	EMPTY_VALUE,
 	formatBytes,
@@ -84,9 +84,9 @@ const zoneColumns = (
 ): ReadonlyArray<Html> => [
 	zoneHead(h, "Zone", NAME, { key: "zoneName", sort }),
 	...(showAccount ? [zoneHead(h, "Account", "w-[120px]", { hidden: "hidden lg:flex" })] : []),
-	zoneHead(h, "Requests", "w-[170px]", { key: "requests", sort }),
-	zoneHead(h, "Status mix", "w-[170px]", { key: "clientErrorRate", sort, hidden: "hidden md:flex" }),
-	zoneHead(h, "5xx", "w-[70px]", { key: "errorRate", sort, align: "right" }),
+	zoneHead(h, "Requests", "w-[190px]", { key: "requests", sort }),
+	zoneHead(h, "Status mix", "w-[200px]", { key: "clientErrorRate", sort, hidden: "hidden md:flex" }),
+	zoneHead(h, "5xx", "w-[80px]", { key: "errorRate", sort, align: "right" }),
 	zoneHead(h, "Cache hit", "w-[120px]", {
 		key: "cacheHitRate",
 		sort,
@@ -103,7 +103,7 @@ const zoneColumns = (
 				}),
 			]
 		: []),
-	zoneHead(h, "Bandwidth", "w-[80px]", { key: "bytes", sort, align: "right", hidden: "hidden md:flex" }),
+	zoneHead(h, "Bandwidth", "w-[100px]", { key: "bytes", sort, align: "right", hidden: "hidden md:flex" }),
 ]
 
 export const zoneTableLoading = (h: H): Html =>
@@ -113,11 +113,11 @@ export const zoneTableLoading = (h: H): Html =>
 		zoneColumns(h, undefined, false, false),
 		skeletonRows(h, 4, () => [
 			h.div([h.Class(cn(NAME, "space-y-1.5"))], [skeleton(h, "h-3.5 w-40"), skeleton(h, "h-2.5 w-24")]),
-			skeleton(h, "h-4 w-[170px]"),
-			skeleton(h, "hidden h-1.5 w-[170px] md:block"),
-			skeleton(h, "h-3 w-[70px]"),
+			skeleton(h, "h-4 w-[190px]"),
+			skeleton(h, "hidden h-1.5 w-[200px] md:block"),
+			skeleton(h, "h-3 w-[80px]"),
 			skeleton(h, "hidden h-3 w-[120px] lg:block"),
-			skeleton(h, "hidden h-3 w-[80px] md:block"),
+			skeleton(h, "hidden h-3 w-[100px] md:block"),
 		]),
 	)
 
@@ -152,20 +152,31 @@ const requestSpark = (
 				],
 			)
 
-/** One bar per zone: 2xx/3xx/4xx/5xx shares, labelled with whichever error class dominates. */
+/**
+ * One bar per zone: 2xx/3xx/4xx/5xx shares, captioned with the 5xx share when the zone is serving
+ * 5xx (the "Serving 5xx" rule), else the 4xx share, amber at the "Mostly 4xx" threshold.
+ */
 const statusMix = (h: H, zone: ZoneRow, rated: boolean): Html => {
 	const label =
-		zone.errorRate >= 0.01
-			? { text: `${formatPercentColumn(zone.errorRate)} 5xx`, className: "text-severity-error" }
-			: {
-					text: `${formatPercentColumn(zone.clientErrorRate)} 4xx`,
-					className:
-						zone.clientErrorRate >= CLIENT_ERROR_NOTABLE
-							? "text-severity-warn"
-							: "text-muted-foreground",
+		zone.errorRate >= ERROR_RATE_WARN
+			? {
+					text: `${formatPercentColumn(zone.errorRate)} 5xx`,
+					className: "text-severity-error",
+					title: "1% or more of requests are 5xx",
 				}
+			: zone.clientErrorRate >= CLIENT_ERROR_NOTABLE
+				? {
+						text: `${formatPercentColumn(zone.clientErrorRate)} 4xx`,
+						className: "text-severity-warn",
+						title: "Half or more of requests are 4xx",
+					}
+				: {
+						text: `${formatPercentColumn(zone.clientErrorRate)} 4xx`,
+						className: "text-muted-foreground",
+						title: undefined,
+					}
 	return h.div(
-		[h.Class("hidden w-[170px] items-center gap-2.5 md:flex")],
+		[h.Class("hidden w-[200px] items-center gap-2.5 md:flex")],
 		[
 			segmentedBar(h, {
 				className: "w-[100px] shrink-0 gap-px bg-transparent",
@@ -186,6 +197,7 @@ const statusMix = (h: H, zone: ZoneRow, rated: boolean): Html => {
 							rated ? label.className : "text-muted-foreground",
 						),
 					),
+					...(rated && label.title !== undefined ? [h.Title(label.title)] : []),
 				],
 				[rated ? label.text : EMPTY_VALUE],
 			),
@@ -243,7 +255,7 @@ const zoneRow = (
 						),
 					]),
 			h.div(
-				[h.Class("flex w-[170px] items-center gap-3")],
+				[h.Class("flex w-[190px] items-center gap-3")],
 				[
 					h.span(
 						[h.Class("w-[56px] shrink-0 font-mono text-xs tabular-nums text-foreground/80")],
@@ -257,7 +269,7 @@ const zoneRow = (
 				[
 					h.Class(
 						cn(
-							"w-[70px]",
+							"w-[80px]",
 							NUMBER,
 							rated ? errorRateClass(zone.errorRate) : "text-muted-foreground",
 						),
@@ -291,7 +303,7 @@ const zoneRow = (
 					]
 				: []),
 			h.div(
-				[h.Class(cn("hidden w-[80px] text-foreground/80 md:block", NUMBER))],
+				[h.Class(cn("hidden w-[100px] text-foreground/80 md:block", NUMBER))],
 				[formatBytes(zone.bytes)],
 			),
 		],

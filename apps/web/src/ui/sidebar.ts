@@ -129,9 +129,13 @@ export const sidebarHeader = <Message>(
 ): Html => h.div([h.Class(cn(sidebarHeaderStyles, className)), ...slot(h, "header")], children)
 
 export const sidebarFooter = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
-	h.div([h.Class(cn(sidebarFooterStyles)), ...slot(h, "footer")], children)
+	// Opaque, so nav rows scrolled under its edge never show through.
+	h.div([h.Class(cn(sidebarFooterStyles, "relative bg-sidebar")), ...slot(h, "footer")], children)
 
-/** `<SidebarContent>`: a fading `ScrollArea` around the scrolling nav (`viewportAttributes`: its measuring Mount). */
+/**
+ * `<SidebarContent>`: a fading `ScrollArea` around the scrolling nav (`viewportAttributes`: its measuring Mount).
+ * The viewport is the only scroller; its fade runs taller than a row so a cut row reads as "more below".
+ */
 export const sidebarContent = <Message>(
 	h: HtmlBuilder<Message>,
 	children: Children,
@@ -140,12 +144,15 @@ export const sidebarContent = <Message>(
 	scrollArea(
 		h,
 		{
-			className: sidebarContentScrollAreaStyles,
+			className: cn(
+				sidebarContentScrollAreaStyles,
+				"*:data-[slot=scroll-area-viewport]:[--fade-size:3rem]",
+			),
 			scrollFade: true,
 			idPrefix: "sidebar-content",
 			viewportAttributes,
 		},
-		[h.div([h.Class(cn(sidebarContentStyles)), ...slot(h, "content")], children)],
+		[h.div([h.Class(cn(sidebarContentStyles, "overflow-visible")), ...slot(h, "content")], children)],
 	)
 
 export const sidebarGroup = <Message>(

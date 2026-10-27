@@ -29,28 +29,24 @@ type H = HtmlBuilder<Message>
 
 const TAB_LABELS = ["Open", "Resolved", "All"]
 
-/** A failed read is never "Live": the chip goes neutral "Reconnecting" while the auto-retry runs. */
-const liveChip = (h: H, isLive: boolean, isFailing: boolean): Html =>
+const liveChip = (h: H, isLive: boolean): Html =>
 	filterChip(
 		h,
 		{
 			isPressed: isLive,
 			onClick: Message.ToggledLive(),
-			tone: isFailing ? "neutral" : "ok",
+			tone: "ok",
 			hasDot: true,
 			slot: "tooltip-trigger",
-			attributes: [
-				h.DataAttribute("base-ui-tooltip-trigger", ""),
-				...(isFailing ? [h.Title("Updates are paused until anomalies load again")] : []),
-			],
+			attributes: [h.DataAttribute("base-ui-tooltip-trigger", "")],
 		},
-		[!isLive ? "Paused" : isFailing ? "Reconnecting" : "Live"],
+		[isLive ? "Live" : "Paused"],
 	)
 
 /** `ListToolbar`: the status tabs and the count readout. */
 const toolbar = (h: H, model: Model, count: number | null): Html =>
 	h.div(
-		[h.Class("flex flex-wrap items-center gap-2 gap-y-1.5 border-b border-border/60 px-2 py-1.5")],
+		[h.Class("flex flex-wrap items-center gap-2 gap-y-1.5 pb-3")],
 		[
 			h.submodel({
 				slotId: "anomalies-status-tabs",
@@ -124,7 +120,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		{
 			title: "Anomalies",
 			filters: filtersRail(h, model, all, AsyncData.isLoading(data) || AsyncData.isIdle(data)),
-			actions: liveChip(h, isLiveOf(model.search), AsyncData.hasError(data)),
+			// The live toggle is an action; while reads fail the error block owns the retry status.
+			actions: AsyncData.hasError(data) ? undefined : liveChip(h, isLiveOf(model.search)),
+			// The toolbar sits one header gap under the title, as tabs do on tabbed pages.
+			scrollClassName: "pt-0",
 		},
 		[
 			h.div(

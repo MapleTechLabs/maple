@@ -303,8 +303,10 @@ const decisionText = (h: H, model: Model): ReadonlyArray<Html | string> => {
 	]
 }
 
-const simulator = (h: H, model: Model): Html =>
-	settingsSection(h, { id: "automation-simulator-heading", title: "Policy simulator" }, [
+const simulator = (h: H, model: Model): Html => {
+	// Without a loaded policy nothing can be evaluated, so the inputs wait with the button.
+	const isWaiting = model.draft === null
+	return settingsSection(h, { id: "automation-simulator-heading", title: "Policy simulator" }, [
 		h.div(
 			[h.Class("grid gap-4 md:grid-cols-3")],
 			[
@@ -320,6 +322,7 @@ const simulator = (h: H, model: Model): Html =>
 						})),
 						ariaLabel: "Severity",
 						className: "h-8 w-full",
+						isDisabled: isWaiting,
 						renderValue: (value) => {
 							const severity = SEVERITY_ORDER.find((entry) => entry === value) ?? null
 							return [
@@ -354,6 +357,7 @@ const simulator = (h: H, model: Model): Html =>
 						{
 							className: "w-full [&>select]:text-sm",
 							defaultValue: model.source,
+							isDisabled: isWaiting,
 							attributes: [h.OnChange((value) => Message.ChangedSource({ value }))],
 						},
 						[nativeOption("ai", "AI diagnosis"), nativeOption("manual", "Manual change")],
@@ -368,7 +372,7 @@ const simulator = (h: H, model: Model): Html =>
 						{
 							className: "w-full [&>select]:text-sm",
 							defaultValue: model.confidence,
-							isDisabled: model.source === "manual",
+							isDisabled: isWaiting || model.source === "manual",
 							attributes: [h.OnChange((value) => Message.ChangedConfidence({ value }))],
 						},
 						[
@@ -398,6 +402,7 @@ const simulator = (h: H, model: Model): Html =>
 			],
 		),
 	])
+}
 
 const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 	settingsSection(

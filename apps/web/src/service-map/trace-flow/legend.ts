@@ -53,45 +53,41 @@ export const flowLegend = <M>(
 						),
 					]
 				: []),
-			...(categories.length > 0
-				? [
+			// The error swatch closes the span-kind group, so it never strands at the far right.
+			h.div(
+				[h.Class("flex flex-wrap items-center gap-x-3 gap-y-2")],
+				[
+					...categories.map((category) =>
 						h.div(
-							[h.Class("flex items-center gap-3")],
+							[h.Class("flex items-center gap-1.5")],
 							[
-								...categories.map((category) =>
-									h.div(
-										[h.Class("flex items-center gap-1.5")],
-										[
-											h.span(
-												[
-													h.Class(
-														cn(
-															"flex size-3.5 items-center justify-center rounded-sm",
-															category.accent.soft,
-															category.accent.text,
-														),
-													),
-												],
-												[icon(h, category.icon, { size: 9 })],
+								h.span(
+									[
+										h.Class(
+											cn(
+												"flex size-3.5 items-center justify-center rounded-sm",
+												category.accent.soft,
+												category.accent.text,
 											),
-											h.span([h.Class("font-medium")], [category.label]),
-										],
-									),
+										),
+									],
+									[icon(h, category.icon, { size: 9 })],
 								),
+								h.span([h.Class("font-medium")], [category.label]),
 							],
 						),
-					]
-				: []),
-			h.span([h.Class("flex-1")]),
-			h.div(
-				[h.Class("flex items-center gap-1.5")],
-				[
-					h.span([
-						h.Class(
-							"size-3.5 rounded-sm bg-severity-error/15 ring-1 ring-inset ring-severity-error/40",
-						),
-					]),
-					h.span([h.Class("font-medium")], ["Error"]),
+					),
+					h.div(
+						[h.Class("flex items-center gap-1.5")],
+						[
+							h.span([
+								h.Class(
+									"size-3.5 rounded-sm bg-severity-error/15 ring-1 ring-inset ring-severity-error/40",
+								),
+							]),
+							h.span([h.Class("font-medium")], ["Error"]),
+						],
+					),
 				],
 			),
 		],

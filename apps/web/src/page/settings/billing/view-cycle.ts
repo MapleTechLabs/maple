@@ -24,6 +24,7 @@ import { resolveColor, ResolveThemeColors, type ThemeColors } from "../../../cha
 import { chartEmpty, chartLoading } from "../../../ui/chart-state"
 import { badge } from "../../../ui/display"
 import { errorState } from "../../../ui/error-state"
+import { eyebrow } from "../../../ui/eyebrow"
 import { icon } from "../../../ui/icon"
 import { panel } from "../../../ui/panel"
 import { skeleton } from "../../../ui/skeleton"
@@ -63,9 +64,10 @@ const figure = (
 	h.div(
 		[h.Class("flex min-w-0 flex-col gap-2 p-4")],
 		[
-			h.span([h.Class("text-2xs font-medium text-muted-foreground")], [options.label]),
+			// The uppercase overline every KPI tile uses (Overview's usage cards, the Stat widget).
+			eyebrow(h, {}, [options.label]),
 			statFigure(h, { size: "lg", value: options.value, valueClassName: options.valueClassName }),
-			h.span([h.Class("text-2xs text-muted-foreground")], options.note),
+			h.span([h.Class("font-prose text-2xs text-muted-foreground")], options.note),
 		],
 	)
 
@@ -197,18 +199,14 @@ const chartSlot = (h: H, model: Model, spend: SpendModel): Html => {
 		case "Loading":
 			return chartLoading(h, { variant: "area", height: SPEND_CHART_HEIGHT })
 		case "Failure":
-			return h.div(
-				// At least the chart's height; the error grows past it rather than spilling over the rules.
-				[h.Style({ "min-height": `${SPEND_CHART_HEIGHT}px` }), h.Class("flex py-4")],
-				[
-					errorState(h, {
-						failure: daily.error,
-						title: "Couldn't load daily spend",
-						onRetry: Message.ClickedRetryDaily(),
-						className: "flex-1 border-0",
-					}),
-				],
-			)
+			// A section of the cycle panel: the compact row, so the breakdown stays above the fold.
+			return errorState(h, {
+				failure: daily.error,
+				title: "Couldn't load daily spend",
+				variant: "row",
+				onRetry: Message.ClickedRetryDaily(),
+				className: "rounded-none border-0 px-4 py-3",
+			})
 		case "Success":
 		case "Refreshing":
 		case "Stale":
@@ -244,7 +242,7 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 					}),
 					h.span([h.Class("text-xs font-medium")], ["Cost breakdown"]),
 					h.span(
-						[h.Class("truncate text-2xs text-muted-foreground")],
+						[h.Class("truncate font-prose text-2xs text-muted-foreground")],
 						["What makes up the amount spent so far"],
 					),
 				],
@@ -278,7 +276,11 @@ const costBreakdownView = (h: H, model: Model, spend: SpendModel): Html => {
 													[
 														h.p([h.Class("text-sm")], [line.label]),
 														h.p(
-															[h.Class("text-2xs text-muted-foreground")],
+															[
+																h.Class(
+																	"font-prose text-2xs text-muted-foreground",
+																),
+															],
 															[line.detail],
 														),
 													],

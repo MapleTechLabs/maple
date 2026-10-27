@@ -57,7 +57,10 @@ const hrefFor = (tab: CodeReviewTab, search: Readonly<Record<string, string | un
 export type LayoutOptions<M> = Readonly<{
 	active: CodeReviewTab
 	search: CarriedSearch & Readonly<Record<string, unknown>>
+	/** Header actions: the window, reload and create. */
 	toolbar?: Html
+	/** Every filter of the tab, on one row under the tabs. */
+	filters?: ReadonlyArray<Html>
 	/** The page's own sheet or dialog, rendered after the content. */
 	overlay?: Html
 	h: HtmlBuilder<M>
@@ -99,7 +102,12 @@ export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: Readonl
 			tabs: tabs(options),
 			scrollClassName: "gap-6 pb-8",
 		},
-		children,
+		options.filters === undefined || options.filters.length === 0
+			? children
+			: [
+					options.h.div([options.h.Class("flex flex-wrap items-center gap-2")], options.filters),
+					...children,
+				],
 	)
 	return options.overlay === undefined
 		? page

@@ -180,11 +180,12 @@ const newRuleButton = (h: H, model: Model): Html =>
 		],
 	)
 
-const headerActions = (h: H, model: Model): Html =>
+// Destinations are a Routing concern, so "New destination" only shows on that tab.
+const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2")],
 		[
-			...(model.isAdmin
+			...(model.isAdmin && tab === "routing"
 				? [
 						button(
 							h,
@@ -278,7 +279,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		[
 			dashboardPage(
 				h,
-				{ title: "Alerts", actions: headerActions(h, model), tabs: tabBar(h, model, overview, tab) },
+				{
+					title: "Alerts",
+					actions: headerActions(h, model, tab),
+					tabs: tabBar(h, model, overview, tab),
+				},
 				[
 					tab === "routing"
 						? routingTab(h, model, {

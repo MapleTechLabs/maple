@@ -310,10 +310,9 @@ const cardContent = (
 			return chartSkeleton(h, item.skeleton)
 		case "Failed": {
 			const { failure: cardFailure, retry } = item.body
-			// The page strip already names this failure and retries it: the card keeps its frame, a flat
-			// baseline and a one-line caption in the strip's failure class.
+			// The page strip already names this failure and retries it: the card keeps its frame and a
+			// one-line caption in the strip's failure class, centred in the plot area. No axis, no data.
 			if (pageFailureKeys.split(FAILURE_KEY_SEPARATOR).includes(failureKey(cardFailure)))
-				// The caption centres in the plot area; the baseline sits where the axis would.
 				return h.div(
 					[h.Class("flex h-full flex-col px-6 pb-6")],
 					[
@@ -325,7 +324,6 @@ const cardContent = (
 							],
 							[STRIPPED_CAPTION[failureKind(cardFailure)]],
 						),
-						h.div([h.Class("h-px w-full bg-border"), h.AriaHidden(true)], []),
 					],
 				)
 			return errorState(h, {

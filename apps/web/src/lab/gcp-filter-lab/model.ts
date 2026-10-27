@@ -23,7 +23,7 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
 	},
 	{
 		title: "New connection, OpenTelemetry ruled out",
-		description: "After “Can't forward via OpenTelemetry”, with Cloud Run ticked.",
+		description: "After “Forward application output instead”, with Cloud Run ticked.",
 		sinkExists: false,
 		initial: { keep: null, runtimes: ["cloud_run"] },
 	},

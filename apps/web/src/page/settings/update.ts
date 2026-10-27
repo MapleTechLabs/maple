@@ -53,7 +53,12 @@ export const visibilityOf = (model: Model): Visibility => {
 			)
 		: true
 	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer, hasBringYourOwnCloudAddOn), () => false)
-	return { isClerk: isClerkAuthEnabled, isAdmin, canAccessDataPlatform: isAdmin && hasByoc }
+	return {
+		isClerk: isClerkAuthEnabled,
+		isAdmin,
+		canAccessDataPlatform: isAdmin && hasByoc,
+		isDataPlatformLocked: isClerkAuthEnabled && isAdmin && !hasByoc,
+	}
 }
 
 /** The session read answered and says the viewer is a member, not an admin: only then do notices say so. */
@@ -396,6 +401,9 @@ const syncTab = (model: Model, context: PageContext): Return => {
 			}),
 		}
 	}
+	// The locked page reads nothing; the tab mounts once the customer shows the add-on.
+	if (tab === "data-platform" && visibilityOf(model).isDataPlatformLocked === true)
+		return { model: leaveTab(model) }
 	if (!isTabCurrent(model.tab, tab)) return enterTab(model, tab, context)
 	// The audit log's filters live in the search: a change restarts its list.
 	if (model.tab !== null && model.tab._tag === "AuditLog") {

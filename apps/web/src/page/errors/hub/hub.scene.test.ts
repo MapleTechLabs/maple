@@ -15,6 +15,7 @@ import {
 import { describe, expect, test } from "vitest"
 import { MeasureTabIndicator, Message as TabsMessage } from "../../../ui/tabs"
 import { toLoadFailure } from "../../../data/load-failure"
+import { failureSentence } from "../../../ui/error-state"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { FetchInvestigations, FetchPage, MountFilterRail, MountRowSelect } from "./command"
 import { Message } from "./message"
@@ -178,7 +179,7 @@ describe("errors hub", () => {
 			measured,
 			railMounted,
 			expectView(text("Couldn't load errors")).toExist(),
-			expectView(text(RANKING_FAILURE.message)).toExist(),
+			expectView(text(failureSentence(RANKING_FAILURE))).toExist(),
 			expectView(text(toLoadFailure("The errors list couldn't be loaded.").message)).not.toExist(),
 		)
 		const retried = pageUpdate(failed.model, Message.ClickedRetry())

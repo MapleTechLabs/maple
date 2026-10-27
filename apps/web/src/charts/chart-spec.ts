@@ -241,6 +241,8 @@ export const ChartSpec = defineTaggedUnion({
 		/** Resolved series colours by series key; `border`/`background` are the chrome. */
 		colors: Schema.Record(Schema.String, Schema.String),
 		gradientId: Schema.String,
+		/** A fixed y-axis gutter, so charts stacked on one time axis start their plots at one x. */
+		marginLeft: Schema.optionalKey(Schema.Number),
 	},
 	/** `ThroughputAreaChart`, `ErrorRateAreaChart`, `ApdexAreaChart`, `LatencyLineChart` (charts/area, charts/line). */
 	FixedMetric: {
@@ -315,6 +317,8 @@ export const ChartSpec = defineTaggedUnion({
 		unit: Schema.optionalKey(Schema.Literal("duration_ms")),
 		/** The tooltip closes with the bucket's sum across the series. */
 		showTotal: Schema.optionalKey(Schema.Boolean),
+		/** Room above the plot, for marker labels that sit in a header gutter. */
+		marginTop: Schema.optionalKey(Schema.Number),
 	},
 	/**
 	 * The analytics traffic chart: the selected metric
