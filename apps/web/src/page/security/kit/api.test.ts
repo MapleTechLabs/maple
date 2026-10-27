@@ -11,13 +11,13 @@ import { describe, expect, it } from "vitest"
 import { toStartFailure } from "./api"
 
 describe("toStartFailure", () => {
-	it("points a plan without AI credits at its billing settings", () => {
+	it("points a plan without AI credits at billing, or at bringing an OpenRouter key", () => {
 		const failure = toStartFailure(
 			new SecurityAuditNotInPlanError({ message: "This plan has no AI credits." }),
 		)
 		expect([failure.code, failure.message]).toEqual([
 			"security_audit_not_in_plan",
-			"This plan has no AI credits. Change the plan under Settings, Billing.",
+			"This plan has no AI credits. Change the plan under Settings, Billing, or add an OpenRouter key under Settings, AI.",
 		])
 	})
 
