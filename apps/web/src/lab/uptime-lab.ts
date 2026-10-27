@@ -94,18 +94,24 @@ const fixtureStats = (window: LabWindow): CheckStats => {
 			const at = isoMs(sample.at)
 			return at >= bucketMs && at < bucketMs + stepMs
 		})
-	const points = buckets.map((bucketMs): CheckPoint => {
+	// Like the warehouse (`trimSparseLeadingBuckets`), the points start at the first bucket with a check.
+	const firstCheckMs = samples[0] === undefined ? startMs : isoMs(samples[0].at)
+	const points = buckets.flatMap((bucketMs): ReadonlyArray<CheckPoint> => {
 		const checks = inBucket(bucketMs)
 		const sorted = checks.map((sample) => sample.durationMs).toSorted((a, b) => a - b)
-		return {
-			bucket: new Date(bucketMs).toISOString(),
-			errorRate: checks.length === 0 ? 0 : checks.filter((sample) => !sample.ok).length / checks.length,
-			p50LatencyMs: quantile(sorted, 0.5),
-			p95LatencyMs: quantile(sorted, 0.95),
-			p99LatencyMs: quantile(sorted, 0.99),
-			totalCount: checks.length,
-			partial: bucketMs + stepMs > NOW_MS,
-		}
+		if (bucketMs + stepMs <= firstCheckMs) return []
+		return [
+			{
+				bucket: new Date(bucketMs).toISOString(),
+				errorRate:
+					checks.length === 0 ? 0 : checks.filter((sample) => !sample.ok).length / checks.length,
+				p50LatencyMs: quantile(sorted, 0.5),
+				p95LatencyMs: quantile(sorted, 0.95),
+				p99LatencyMs: quantile(sorted, 0.99),
+				totalCount: checks.length,
+				partial: bucketMs + stepMs > NOW_MS,
+			},
+		]
 	})
 	const phases = buckets.flatMap((bucketMs): ReadonlyArray<PhasePoint> => {
 		const timed = inBucket(bucketMs).flatMap((sample) => (sample.phases === null ? [] : [sample.phases]))
