@@ -12,15 +12,15 @@ import { toLoadFailure } from "../../../data/load-failure"
 import {
 	DEEP_RUN_IDS,
 	eventsOf,
-	findingsOf,
 	labTargetsOf,
 	RUN_IDS,
 	runDetailOf,
+	runFindingsOf,
 	unitsOf,
 } from "../../../lab/security-fixture"
 import { AppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
-import { eventsOf as eventLogOf, phasesOf } from "./derive"
+import { eventsOf as eventLogOf, openFindingOf, phasesOf } from "./derive"
 import { subscriptions } from "./index"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
@@ -57,15 +57,17 @@ const loaded = (runId: string): Model => {
 			result: Result.succeed(labTargetsOf(NOW)),
 		}),
 	].reduce((model, message) => pageUpdate(model, message).model, entered)
-	const target = runDetailOf(NOW, runId).targetId
 	return pageUpdate(
 		withRun,
 		Message.CompletedFetchFindings({
 			key: withRun.findings.key ?? "",
-			result: Result.succeed(findingsOf(NOW, target)),
+			result: Result.succeed(runFindingsOf(NOW, runId)),
 		}),
 	).model
 }
+
+/** A finished run with "How the run ran" unfolded: phases, totals, ledger and events. */
+const unfolded = (runId: string): Model => pageUpdate(loaded(runId), Message.ToggledDetails()).model
 
 const note = (index: number): SecurityAuditEvent => ({
 	id: `n${String(index).padStart(5, "0")}`,
@@ -83,24 +85,78 @@ const note = (index: number): SecurityAuditEvent => ({
 })
 
 describe("security run", () => {
-	test("entry reads the run, its events, its ledger and the targets; the findings follow the run", () => {
+	test("entry reads the run, its events, its ledger, the targets and the run's own findings at once", () => {
 		expect(names(init(routeOf(RUN_IDS.dashboard), context).commands)).toEqual(
 			expect.arrayContaining([
 				"SecurityApiGetRun",
 				"SecurityApiListRunEvents",
 				"SecurityApiListRunUnits",
 				"SecurityApiListRunTargets",
+				"SecurityApiListRunFindings",
 			]),
 		)
-		const entered = init(routeOf(RUN_IDS.dashboard), context).model
-		const run = pageUpdate(
-			entered,
-			Message.CompletedFetchRun({
-				key: entered.run.key ?? "",
-				result: Result.succeed(runDetailOf(NOW, RUN_IDS.dashboard)),
-			}),
+	})
+
+	test("a finished run leads with its findings by severity and folds how it ran", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(RUN_IDS.billing)),
+			expectView(role("group", { name: "Findings by severity" })).toExist(),
+			expectView(role("button", { name: "Critical: 1" })).toExist(),
+			expectView(text("Refund endpoint skips the invoice ownership check")).toExist(),
+			expectView(role("button", { name: /^How the run ran/ })).toHaveAttr("aria-expanded", "false"),
+			expectView(text("Gaps")).not.toExist(),
 		)
-		expect(names(run.commands)).toEqual(["SecurityApiListRunFindings"])
+	})
+
+	test("an earlier run still lists a finding a later run saw again", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(RUN_IDS.billingCancelled)),
+			expectView(text("Refund endpoint skips the invoice ownership check")).toExist(),
+			expectView(text("New")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(RUN_IDS.billing)),
+			expectView(text("Seen before")).toExist(),
+		)
+	})
+
+	test("a severity tile narrows the list to its section, and picking it again shows all", () => {
+		const picked = pageUpdate(loaded(RUN_IDS.billing), Message.PickedSeverity({ bucket: "high" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(picked),
+			expectView(text("Webhook replay accepted after signature window")).toExist(),
+			expectView(text("Refund endpoint skips the invoice ownership check")).not.toExist(),
+		)
+		expect(pageUpdate(picked, Message.PickedSeverity({ bucket: "high" })).model.severity).toBeNull()
+	})
+
+	test("disproved findings start folded and open on their header", () => {
+		const model = loaded(RUN_IDS.billing)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Admin export reachable without role check")).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(model, Message.ToggledSection({ bucket: "rejected" })).model),
+			expectView(text("Admin export reachable without role check")).toExist(),
+		)
+	})
+
+	test("a finding opens in the side sheet with its record", () => {
+		const opened = pageUpdate(
+			loaded(RUN_IDS.billing),
+			Message.ClickedFinding({ fingerprint: "webhook-replay-77aa" }),
+		)
+		expect([opened.model.findingDialog.isOpen, openFindingOf(opened.model)?.record.title]).toEqual([
+			true,
+			"Webhook replay accepted after signature window",
+		])
 	})
 
 	test("a live run shows hunting as the active phase", () => {
@@ -126,7 +182,7 @@ describe("security run", () => {
 		expect(phases.map((phase) => phase.state)).toEqual(["done", "warn", "done", "skipped", "done"])
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(RUN_IDS.billing)),
+			given(unfolded(RUN_IDS.billing)),
 			expectView(text("Stopped at the org's monthly spend limit")).toExist(),
 			expectView(role("link", { name: "Raise the limit" })).toExist(),
 			expectView(text("Gaps")).toExist(),
@@ -136,7 +192,7 @@ describe("security run", () => {
 	test("a run that stopped for several reasons says each, how many units it left, and offers a new run", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(DEEP_RUN_IDS.incomplete)),
+			given(unfolded(DEEP_RUN_IDS.incomplete)),
 			expectView(text("Stopped adding units after wave 2")).toExist(),
 			expectView(
 				text(
@@ -152,7 +208,7 @@ describe("security run", () => {
 
 	test("the Problems chip narrows the events to what went wrong", () => {
 		const model = pageUpdate(
-			loaded(DEEP_RUN_IDS.incomplete),
+			unfolded(DEEP_RUN_IDS.incomplete),
 			Message.PickedEventFilter({ filter: "problems" }),
 		).model
 		scene(
@@ -169,7 +225,7 @@ describe("security run", () => {
 	test("ledger units read as the surface they audit, not the skill's anchors", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(pageUpdate(loaded(DEEP_RUN_IDS.incomplete), Message.ToggledLedger()).model),
+			given(pageUpdate(unfolded(DEEP_RUN_IDS.incomplete), Message.ToggledLedger()).model),
 			expectView(text("GET /share/:token")).toExist(),
 			expectView(text("share links · Broken Access Control")).toExist(),
 			expectView(text(/ATTACK-CLASSES\.md/)).not.toExist(),
@@ -205,7 +261,7 @@ describe("security run", () => {
 		)
 	})
 
-	test("Retry re-reads the findings when the Results panel failed to load them", () => {
+	test("Retry re-reads the findings when the list failed to load them", () => {
 		const entered = loaded(RUN_IDS.dashboard)
 		const failed = pageUpdate(
 			entered,
@@ -448,6 +504,12 @@ describe("security run", () => {
 				"SecurityApiListRunUnits",
 				"SecurityApiListRunFindings",
 			]),
+		)
+		// Watched to the end, its details stay open rather than folding under the reader.
+		scene(
+			{ update: pageUpdate, view },
+			given(answered.model),
+			expectView(role("button", { name: /^How the run ran/ })).toHaveAttr("aria-expanded", "true"),
 		)
 	})
 

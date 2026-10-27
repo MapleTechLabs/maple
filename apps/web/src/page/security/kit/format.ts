@@ -96,7 +96,7 @@ export const VERDICT_LABEL = {
 	rejected: "Rejected",
 } satisfies Record<SecurityAuditVerdict, string>
 
-export const SECURITY_SEVERITY_ORDER: ReadonlyArray<SecurityAuditSeverity> = [
+const SECURITY_SEVERITY_ORDER: ReadonlyArray<SecurityAuditSeverity> = [
 	"critical",
 	"high",
 	"medium",

@@ -12,7 +12,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { chain, chainAll, slotStep } from "../../kit/keyed-step"
 import * as AddTarget from "../kit/add-target"
 import * as SpendSettings from "../kit/spend-settings"
-import { isLive, SECURITY_SEVERITY_ORDER } from "../kit/format"
+import { isLive } from "../kit/format"
 import {
 	FetchFindings,
 	FetchGithubStatus,
@@ -52,19 +52,9 @@ const tabOfRoute = (route: SecurityTabsRoute): Tab =>
 
 // SELECTS
 
-const SEVERITY_VALUES: ReadonlyArray<string> = ["all", ...SECURITY_SEVERITY_ORDER]
-const VERDICT_VALUES: ReadonlyArray<string> = ["all", "confirmed", "needs_validation"]
-
-const selectFor = (id: string, values: ReadonlyArray<string>, value: string): Select.Model => {
-	const index = values.indexOf(value)
-	return Select.init(id, { value, selectedIndex: index === -1 ? null : index })
-}
-
 /** Keeps the selects' closed value on the URL's, without closing an open one. */
 const withSelectValues = (model: Model): Model => ({
 	...model,
-	severitySelect: { ...model.severitySelect, value: model.findingsSearch.severity ?? "all" },
-	verdictSelect: { ...model.verdictSelect, value: model.findingsSearch.verdict ?? "all" },
 	targetSelect: { ...model.targetSelect, value: model.findingsSearch.target ?? "all" },
 	runsTargetSelect: { ...model.runsTargetSelect, value: model.runsSearch.target ?? "all" },
 })
@@ -232,11 +222,9 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		startingTargetId: null,
 		searchDraft: searches.findingsSearch.q ?? "",
 		searchGeneration: 0,
-		severitySelect: selectFor("security-severity", SEVERITY_VALUES, "all"),
-		verdictSelect: selectFor("security-verdict", VERDICT_VALUES, "all"),
 		targetSelect: Select.init("security-target", { value: "all", selectedIndex: 0 }),
 		runsTargetSelect: Select.init("security-runs-target", { value: "all", selectedIndex: 0 }),
-		expanded: [],
+		collapsed: ["rejected"],
 	})
 	const loaded = chainAll(model, [
 		(next) => readTargets(next, context, "Load"),
@@ -293,7 +281,7 @@ const searchWithDraft = (model: Model): SecurityFindingsSearch => {
 }
 
 /** `all` clears the param, so the URL only carries what narrows the list. */
-const withParam = <K extends "severity" | "verdict" | "target">(
+const withParam = <K extends "target">(
 	search: SecurityFindingsSearch,
 	key: K,
 	value: string,
@@ -301,9 +289,6 @@ const withParam = <K extends "severity" | "verdict" | "target">(
 	const { [key]: _dropped, ...rest } = search
 	return value === "all" ? rest : { ...rest, [key]: value }
 }
-
-const isSeverity = (value: string): value is NonNullable<SecurityFindingsSearch["severity"]> =>
-	SECURITY_SEVERITY_ORDER.some((severity) => severity === value)
 
 const selectStep = (
 	model: Model,
@@ -320,26 +305,6 @@ const selectStep = (
 	const step = onChange(updated, next.outMessage.value)
 	return { ...step, commands: [...commands, ...(step.commands ?? [])] }
 }
-
-const severityChanged = (model: Model, value: string): Return =>
-	navigate(
-		model,
-		findingsUrl(
-			value === "all" || !isSeverity(value)
-				? withParam(searchWithDraft(model), "severity", "all")
-				: { ...searchWithDraft(model), severity: value },
-		),
-	)
-
-const verdictChanged = (model: Model, value: string): Return =>
-	navigate(
-		model,
-		findingsUrl(
-			value === "confirmed" || value === "needs_validation"
-				? { ...searchWithDraft(model), verdict: value }
-				: withParam(searchWithDraft(model), "verdict", "all"),
-		),
-	)
 
 const runsTargetChanged = (model: Model, value: string): Return => {
 	const search: SecurityRunsSearch = value === "all" ? {} : { target: value }
@@ -574,24 +539,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const { q: _q, ...rest } = model.findingsSearch
 			return navigate(model, findingsUrl(q === undefined ? rest : { ...rest, q }), true)
 		},
-		GotSeveritySelectMessage: ({ message: inner }) =>
-			selectStep(
-				model,
-				model.severitySelect,
-				inner,
-				(severitySelect) => ({ severitySelect }),
-				(next) => Message.GotSeveritySelectMessage({ message: next }),
-				severityChanged,
-			),
-		GotVerdictSelectMessage: ({ message: inner }) =>
-			selectStep(
-				model,
-				model.verdictSelect,
-				inner,
-				(verdictSelect) => ({ verdictSelect }),
-				(next) => Message.GotVerdictSelectMessage({ message: next }),
-				verdictChanged,
-			),
 		GotTargetSelectMessage: ({ message: inner }) =>
 			selectStep(
 				model,
@@ -613,9 +560,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		ToggledShowRejected: () => {
 			const { rejected: _rejected, ...rest } = searchWithDraft(model)
+			const isShowing = model.findingsSearch.rejected !== true
+			// Turning them on shows them, not a folded header.
 			return navigate(
-				model,
-				findingsUrl(model.findingsSearch.rejected === true ? rest : { ...rest, rejected: true }),
+				isShowing
+					? { ...model, collapsed: model.collapsed.filter((held) => held !== "rejected") }
+					: model,
+				findingsUrl(isShowing ? { ...rest, rejected: true } : rest),
 			)
 		},
 		ClickedClearFilters: () => {
@@ -625,10 +576,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				findingsUrl(status === undefined ? {} : { status }),
 			)
 		},
-		ClickedShowAll: ({ group }) => ({
+		PickedSeverity: ({ bucket }) => {
+			if (bucket === "rejected") return { model }
+			const { severity, ...rest } = searchWithDraft(model)
+			return navigate(
+				{ ...model, collapsed: model.collapsed.filter((held) => held !== bucket) },
+				findingsUrl(severity === bucket ? rest : { ...rest, severity: bucket }),
+			)
+		},
+		ToggledSection: ({ bucket }) => ({
 			model: {
 				...model,
-				expanded: model.expanded.includes(group) ? model.expanded : [...model.expanded, group],
+				collapsed: model.collapsed.includes(bucket)
+					? model.collapsed.filter((held) => held !== bucket)
+					: [...model.collapsed, bucket],
 			},
 		}),
 	})
