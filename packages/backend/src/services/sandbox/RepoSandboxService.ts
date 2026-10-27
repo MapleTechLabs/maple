@@ -77,13 +77,13 @@ const READ_FILE_PROGRAM = `NR>=s && NR<=e { printf "%d: %s\\n", NR, $0 } END { p
 
 /**
  * `read_file` as one sandbox command over positional arguments: $1 path, $2 and $3 the line
- * bounds, $4 the awk program. The index entry must name exactly this path (a directory lists many),
- * and its mode must be a regular file's: a committed symlink is tracked too, and `awk` would follow
- * it out of the checkout. The `./` anchor keeps a leading `-` from parsing as an awk option.
+ * bounds, $4 the awk program. A directory is refused by `-d`, not by comparing git's printed path,
+ * which git quotes for names with `"` or `\`. The mode must be a regular file's: a committed
+ * symlink is tracked too, and `awk` would follow it out. The `./` anchor stops a leading `-`.
  */
 const READ_FILE_SCRIPT = [
 	`entry=$(git ${GIT_COMMON.join(" ")} ls-files --stage -- ":(literal)$1") || exit 2`,
-	`if [ -z "$entry" ] || [ "\${entry#*\t}" != "$1" ]; then printf "'%s' is not a tracked file at this commit\\n" "$1" >&2; exit 1; fi`,
+	`if [ -z "$entry" ] || [ -d "./$1" ]; then printf "'%s' is not a tracked file at this commit\\n" "$1" >&2; exit 1; fi`,
 	`case "\${entry%% *}" in`,
 	`100644|100755) exec awk -v s="$2" -v e="$3" "$4" "./$1" ;;`,
 	`*) printf "'%s' is not a regular file in the repository\\n" "$1" >&2; exit 3 ;;`,
