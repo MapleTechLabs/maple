@@ -8,7 +8,7 @@ import * as Provider from "alchemy/Provider"
 import * as State from "alchemy/State"
 import * as Drift from "alchemy/Drift"
 import { ApiKey, ApiKeyProvider } from "../src/ApiKey"
-import { Dashboard, DashboardProvider } from "../src/Dashboard"
+import { Dashboard, DashboardProvider, type DashboardProps } from "../src/Dashboard"
 import { AlertRule, AlertRuleProvider, type AlertRuleProps } from "../src/AlertRule"
 import { AlertDestination, AlertDestinationProvider } from "../src/AlertDestination"
 import { Providers } from "../src/Providers"
@@ -51,6 +51,7 @@ const makeHarness = () => {
 			widgets: [],
 			sections: [],
 			variables: [],
+			refresh_interval_seconds: null,
 			enabled: true,
 			channel_label: null,
 			key_prefix: `maple_ak_${id}`,
@@ -224,10 +225,18 @@ describe("Alchemy engine lifecycle", () => {
 	it.live("repairs declared dashboard content while ignoring timestamps and unmanaged fields", () => {
 		const h = makeHarness()
 		const stack = h.stack("dashboard")
-		const props = {
+		const props: DashboardProps = {
 			name: "Health",
 			tags: ["golden"],
-			widgets: [{ id: "w1", display: { title: "Latency" } }],
+			widgets: [
+				{
+					id: "w1",
+					visualization: "markdown",
+					data_source: { kind: "static" },
+					display: { title: "Latency" },
+					layout: { x: 0, y: 0, w: 6, h: 4 },
+				},
+			],
 			sections: [],
 		}
 		return h.run(
@@ -247,6 +256,54 @@ describe("Alchemy engine lifecycle", () => {
 				fresh.updated_at = "2026-09-08T00:00:00Z"
 				delete fresh.sections // API versions before sections should still converge.
 				expect((yield* h.sync(stack)).resources.health.action).toBe("unchanged")
+			}),
+		)
+	})
+
+	it.live("adopts an explicit dashboard ID and converges content and refresh in place", () => {
+		const h = makeHarness()
+		const stack = h.stack("dashboard-adoption")
+		const existing = h.insert("/v2/dashboards", { name: "Manual health" })
+		const props: DashboardProps = {
+			dashboardId: existing.id,
+			name: "Health",
+			refresh_interval_seconds: 60,
+		}
+		return h.run(
+			Effect.gen(function* () {
+				const first = yield* stack.deploy(Dashboard("health", props))
+				expect(first.dashboardId).toBe(existing.id)
+				expect(first.configuration).toEqual({ name: "Health", refresh_interval_seconds: 60 })
+				expect(h.documents.size).toBe(1)
+				expect(h.documents.get(`/v2/dashboards/${existing.id}`)).toMatchObject({
+					name: "Health",
+					refresh_interval_seconds: 60,
+				})
+				const updated: DashboardProps = { ...props, refresh_interval_seconds: 300 }
+				const second = yield* stack.deploy(Dashboard("health", updated))
+				expect(second.dashboardId).toBe(existing.id)
+				expect(second.configuration).toEqual({ name: "Health", refresh_interval_seconds: 300 })
+				expect((yield* stack.plan(Dashboard("health", updated))).resources.health.action).toBe("noop")
+				expect((yield* h.sync(stack)).resources.health.action).toBe("unchanged")
+				expect(h.calls.filter((call) => call.method === "POST" || call.method === "DELETE")).toEqual(
+					[],
+				)
+			}),
+		)
+	})
+
+	it.live("fails adoption of a missing dashboard instead of creating a substitute", () => {
+		const h = makeHarness()
+		return h.run(
+			Effect.gen(function* () {
+				const exit = yield* Effect.exit(
+					h
+						.stack("missing-dashboard")
+						.deploy(Dashboard("health", { dashboardId: "dash_missing", name: "Health" })),
+				)
+				expect(Exit.isFailure(exit)).toBe(true)
+				expect(h.documents.size).toBe(0)
+				expect(h.calls).toEqual([{ method: "GET", path: "/v2/dashboards/dash_missing" }])
 			}),
 		)
 	})

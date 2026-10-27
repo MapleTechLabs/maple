@@ -24,6 +24,7 @@ import { _alertDestinationCreateBody } from "../src/AlertDestination"
 import { _alertRuleCreateBody } from "../src/AlertRule"
 import { _apiKeyCreateBody } from "../src/ApiKey"
 import { _dashboardCreateBody } from "../src/Dashboard"
+import { DashboardData, DashboardWidget } from "../src/DashboardData"
 import { MapleErrorTags, MaplePublicErrorBodySchema, type MaplePublicErrorBody } from "../src/errors"
 
 const _clientErrorBodySatisfiesDomain = (body: MaplePublicErrorBody): AnyPublicHttpErrorBody => body
@@ -43,6 +44,71 @@ const decodes = <S extends Schema.Codec<unknown, unknown, never, never>>(schema:
 	Effect.runSync(Schema.decodeUnknownEffect(schema)(wire).pipe(Effect.asVoid))
 
 describe("provider request bodies decode against the real v2 create-param schemas", () => {
+	it("exposes native dashboard data and rejects malformed widget discriminants", () => {
+		const data: DashboardData = {
+			name: "Native dashboard",
+			refresh_interval_seconds: 300,
+			widgets: [
+				{
+					id: "sql",
+					visualization: "table",
+					data_source: {
+						kind: "raw_sql",
+						sql: "SELECT 1 WHERE $__orgFilter",
+					},
+					display: {},
+					layout: { x: 0, y: 0, w: 6, h: 4 },
+				},
+				{
+					id: "query",
+					visualization: "chart",
+					data_source: {
+						kind: "query",
+						result_shape: "timeseries",
+						queries: [{ id: "a", name: "Requests", aggregation: "count", data_source: "traces" }],
+					},
+					display: {},
+					layout: { x: 6, y: 0, w: 6, h: 4 },
+				},
+				{
+					id: "static",
+					visualization: "markdown",
+					data_source: { kind: "static" },
+					display: { markdown: { content: "Health" } },
+					layout: { x: 0, y: 4, w: 6, h: 4 },
+				},
+				{
+					id: "route",
+					visualization: "stat",
+					data_source: {
+						kind: "route",
+						endpoint: "service_overview",
+						params: { service_name: "api" },
+					},
+					display: {},
+					layout: { x: 6, y: 4, w: 6, h: 4 },
+				},
+			],
+			variables: [{ name: "service", type: "query", source: { kind: "facet", facet: "service" } }],
+		}
+		expect(Schema.decodeUnknownSync(DashboardData)(data)).toEqual(data)
+		expect(
+			Schema.encodeSync(V2DashboardCreateParams)(
+				Schema.decodeUnknownSync(V2DashboardCreateParams)(data),
+			),
+		).toEqual(data)
+		expect(Schema.is(DashboardWidget)({ ...data.widgets?.[0], visualization: "timeseries" })).toBe(false)
+		expect(
+			Schema.is(DashboardWidget)({
+				...data.widgets?.[1],
+				data_source: { kind: "query", result_shape: "timeseries", queries: [{ garbage: true }] },
+			}),
+		).toBe(false)
+		expect(Schema.is(DashboardWidget)({ ...data.widgets?.[0], data_source: { kind: "raw_sql" } })).toBe(
+			false,
+		)
+	})
+
 	it("public error body", () => {
 		const body = V2InvalidRequest.make().error
 		expect(() => decodes(PublicHttpErrorBodySchema, body)).not.toThrow()
@@ -55,6 +121,7 @@ describe("provider request bodies decode against the real v2 create-param schema
 			description: "Golden signals",
 			tags: ["golden"],
 			time_range: { type: "relative", value: "12h" },
+			refresh_interval_seconds: 60,
 			widgets: [
 				{
 					id: "w1",
@@ -62,11 +129,7 @@ describe("provider request bodies decode against the real v2 create-param schema
 					// never a real `visualization`, it just went unnoticed while the
 					// field was an open string.
 					visualization: "chart",
-					// Schema v3: a data source is a discriminated union on `kind`, not an
-					// `{ endpoint, params }` bag. The provider passes `widgets` straight
-					// through as `Record<string, unknown>`, so this fixture is the only
-					// thing standing between an IaC config and a 400 — which is exactly
-					// what it caught when `/v2` moved to the union.
+					// Schema v3's native discriminated data-source representation.
 					data_source: { kind: "query", result_shape: "timeseries", queries: [] },
 					display: { title: "Throughput" },
 					layout: { x: 0, y: 0, w: 6, h: 4 },
