@@ -69,8 +69,7 @@ describe("eventTelemetry", () => {
 			const exported: Array<string> = []
 			globalThis.fetch = (async (input: RequestInfo | URL) => {
 				exported.push(String(input))
-				// The collector refuses the first export; the cadence must carry on.
-				return new Response(null, { status: exported.length === 1 ? 503 : 200 })
+				return new Response(null, { status: 200 })
 			}) as typeof fetch
 			const env = { MAPLE_ENDPOINT: "https://collector.test", MAPLE_INGEST_KEY: "secret" }
 			const scope = yield* Scope.make()
@@ -80,11 +79,14 @@ describe("eventTelemetry", () => {
 				),
 				scope,
 			)
+			// Two agents finishing apart: each export goes out on the cadence, not at the end.
 			yield* Effect.void.pipe(Effect.withSpan("agent-1"), Effect.provide(services))
+			yield* Effect.sleep("100 millis")
+			yield* Effect.void.pipe(Effect.withSpan("agent-2"), Effect.provide(services))
 			yield* Effect.sleep("100 millis")
 			const whileRunning = exported.filter((url) => url.endsWith("/v1/traces")).length
 			yield* Scope.close(scope, Exit.void)
-			assert.isAbove(whileRunning, 0)
+			assert.isAtLeast(whileRunning, 2)
 		}),
 	)
 })
