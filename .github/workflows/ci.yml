@@ -738,6 +738,7 @@ jobs:
             - typescript
             - tests
             - postgres-connection-e2e
+            - workers-e2e
             - clickhouse-schema-e2e
             - local-checkpoint-native
             - local-archive-native
