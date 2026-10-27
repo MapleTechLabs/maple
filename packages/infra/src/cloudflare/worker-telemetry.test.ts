@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { WorkerEnvironment } from "@alchemy.run/cloudflare"
 import { afterEach } from "vitest"
-import { Effect, Exit, Fiber, Layer, Scope, Tracer } from "effect"
+import { Effect, Exit, Fiber, Layer, Schedule, Scope, Tracer } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { eventTelemetry, flushOnCadence, MapleHttpTracingLive } from "./worker-telemetry.ts"
 
@@ -79,12 +79,19 @@ describe("eventTelemetry", () => {
 				),
 				scope,
 			)
+			const traceExports = () => exported.filter((url) => url.endsWith("/v1/traces")).length
+			// Polls until `n` trace exports went out, giving up after two seconds.
+			const exportsReach = (n: number) =>
+				Effect.sync(traceExports).pipe(
+					Effect.repeat({ until: (count) => count >= n, schedule: Schedule.spaced("5 millis") }),
+					Effect.timeout("2 seconds"),
+				)
 			// Two agents finishing apart: each export goes out on the cadence, not at the end.
 			yield* Effect.void.pipe(Effect.withSpan("agent-1"), Effect.provide(services))
-			yield* Effect.sleep("100 millis")
+			yield* exportsReach(1)
 			yield* Effect.void.pipe(Effect.withSpan("agent-2"), Effect.provide(services))
-			yield* Effect.sleep("100 millis")
-			const whileRunning = exported.filter((url) => url.endsWith("/v1/traces")).length
+			yield* exportsReach(2)
+			const whileRunning = traceExports()
 			yield* Scope.close(scope, Exit.void)
 			assert.isAtLeast(whileRunning, 2)
 		}),
@@ -100,9 +107,12 @@ describe("flushOnCadence", () => {
 				return attempts.length === 1 ? Promise.reject(new Error("collector down")) : Promise.resolve()
 			}
 			const fiber = yield* Effect.forkChild(flushOnCadence(flush, "10 millis"))
-			yield* Effect.sleep("80 millis")
+			const reached = yield* Effect.sync(() => attempts.length).pipe(
+				Effect.repeat({ until: (count) => count >= 3, schedule: Schedule.spaced("5 millis") }),
+				Effect.timeout("2 seconds"),
+			)
 			yield* Fiber.interrupt(fiber)
-			assert.isAtLeast(attempts.length, 3)
+			assert.isAtLeast(reached, 3)
 		}),
 	)
 })
