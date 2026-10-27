@@ -182,14 +182,17 @@ const ACTIVE_STATUSES: ReadonlyArray<PrReviewStatus> = ["queued", "running"]
 /** Automation authors whose pull requests are dependency bumps, not features. */
 const BOT_AUTHOR = /\[bot\]$|^(dependabot|renovate|github-actions)/i
 
-/** GitHub associations trusted with what the reviewer reads and posts; on a public repository anyone else is not. */
 /** Who started a review: the webhook, the webhook vouched for by a CI approval, or someone by name. */
 type TriggerMode = "automatic" | "approved" | "requested"
 
+/** GitHub associations trusted with what the reviewer reads and posts; on a public repository anyone else is not. */
 const TRUSTED_ASSOCIATIONS: ReadonlySet<string> = new Set(["OWNER", "MEMBER", "COLLABORATOR"])
 
 export const isTrustedAuthorAssociation = (association: string | undefined): boolean =>
 	association !== undefined && TRUSTED_ASSOCIATIONS.has(association.toUpperCase())
+
+/** Repository permissions that make a person a maintainer, whatever the webhook's association says. */
+export const PUSH_PERMISSIONS: ReadonlySet<string> = new Set(["admin", "maintain", "write"])
 
 export interface PrReviewTriggerOutcome {
 	readonly reviewId: PrReviewId | null
@@ -1248,6 +1251,22 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				})
 			})
 
+			/** Whether a person can push to the repository; an unreadable permission is no. */
+			const canPush = Effect.fn("PrReviewService.canPush")(function* (
+				orgId: OrgId,
+				repo: VcsRepo,
+				login: string | null,
+			) {
+				if (login === null) return false
+				const target = yield* providerFor(orgId, repo)
+				if (Option.isNone(target)) return false
+				const { provider, installation, ref } = target.value
+				const permission = yield* provider
+					.fetchCommenterPermission(installation, ref, login)
+					.pipe(Effect.orElseSucceed(() => "none"))
+				return PUSH_PERMISSIONS.has(permission)
+			})
+
 			/**
 			 * The diff read against the organization's telemetry, for the kickoff and the report. Best
 			 * effort, like the rules: a review that cannot read it reviews the diff alone.
@@ -1998,10 +2017,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// The automatic review reads org telemetry and posts to the pull request, so on a public
 				// repository it runs only for a trusted author. GitHub reports private org members as
 				// CONTRIBUTOR in webhooks, and only people with access can open a pull request on a private one.
+				// Webhooks also report them as CONTRIBUTOR on public repositories, so their push access is asked.
 				if (
 					mode === "automatic" &&
 					!repo.isPrivate &&
-					!isTrustedAuthorAssociation(job.authorAssociation)
+					!isTrustedAuthorAssociation(job.authorAssociation) &&
+					!(yield* canPush(orgId, repo, job.authorLogin))
 				) {
 					yield* annotate("skipped", {
 						"maple.pr_review.skip_reason": "external_author",

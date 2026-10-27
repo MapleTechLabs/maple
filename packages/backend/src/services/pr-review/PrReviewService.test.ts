@@ -131,6 +131,8 @@ const layerFor = (
 		readonly replyFailures?: { remaining: number }
 		/** Present and true: reading the pull request's files fails. */
 		readonly filesUnreadable?: { value: boolean }
+		/** The author's permission on the repository; `read` when absent. */
+		readonly permission?: string
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -172,7 +174,7 @@ const layerFor = (
 							return { url: "https://github.com/acme/shop/pull/1#reply" }
 						}),
 		reactToComment: unused,
-		fetchCommenterPermission: unused,
+		fetchCommenterPermission: () => Effect.succeed(options.permission ?? "read"),
 		commitFiles: unused,
 		searchCode: (_installation, _repo, query) =>
 			options.searchSnippets !== undefined
@@ -615,6 +617,24 @@ describe("PrReviewService.onPullRequestEvent", () => {
 				assert.equal(again.skipReason, "duplicate")
 				assert.equal(begun.length, 1)
 			}).pipe(Effect.provide(layerFor(testDb, { begun })))
+		},
+	)
+
+	it.effect(
+		"reviews a public repository's pull request by an author who can push, whatever association the webhook reports",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			return Effect.gen(function* () {
+				yield* seed(true, false)
+				const reviews = yield* PrReviewService
+				const member = yield* reviews.onPullRequestEvent(
+					orgId,
+					job({ authorAssociation: "CONTRIBUTOR" }),
+				)
+				assert.equal(member.outcome, "started")
+				assert.equal(begun.length, 1)
+			}).pipe(Effect.provide(layerFor(testDb, { begun, permission: "write" })))
 		},
 	)
 

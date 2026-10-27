@@ -44,15 +44,12 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
-import { isTrustedAuthorAssociation, PrReviewService } from "./PrReviewService"
+import { isTrustedAuthorAssociation, PrReviewService, PUSH_PERMISSIONS } from "./PrReviewService"
 
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
 
 /** Answers an organization may start per UTC day, across its pull requests. */
 export const PR_REPLY_DAILY_CEILING = 100
-
-/** Repository permissions that may have Maple commit to their pull request. */
-const WRITE_PERMISSIONS: ReadonlySet<string> = new Set(["admin", "maintain", "write"])
 
 const ACTIVE: ReadonlyArray<PrReviewReplyStatus> = ["queued", "running"]
 const KICKOFF_TEXT_CHARS = 4_000
@@ -266,6 +263,21 @@ export class PrReviewConversationService extends Context.Service<
 			})
 		})
 
+		/** Whether a person can push to the repository; an unreadable permission is no. */
+		const canPush = Effect.fn("PrReviewConversationService.canPush")(function* (
+			orgId: OrgId,
+			repo: VcsRepo,
+			login: string,
+		) {
+			const upstream = yield* upstreamFor(orgId, repo)
+			if (Option.isNone(upstream)) return false
+			const { provider, installation, ref } = upstream.value
+			const permission = yield* provider
+				.fetchCommenterPermission(installation, ref, login)
+				.pipe(Effect.orElseSucceed(() => "none"))
+			return PUSH_PERMISSIONS.has(permission)
+		})
+
 		const updateReply = (
 			orgId: OrgId,
 			replyId: PrReviewReplyId,
@@ -353,8 +365,13 @@ export class PrReviewConversationService extends Context.Service<
 				return skip("disabled")
 			}
 			const repo = repository.value
-			// Webhooks report private org members as CONTRIBUTOR, so the association only gates public repositories.
-			if (!repo.isPrivate && !isTrustedAuthorAssociation(job.authorAssociation)) {
+			// Webhooks report private org members as CONTRIBUTOR, so on a public repository an untrusted
+			// association is checked against the commenter's push access.
+			if (
+				!repo.isPrivate &&
+				!isTrustedAuthorAssociation(job.authorAssociation) &&
+				!(yield* canPush(orgId, repo, job.authorLogin))
+			) {
 				yield* annotate("skipped", {
 					"maple.pr_reply.skip_reason": "not_collaborator",
 					"vcs.pull_request.author_association": job.authorAssociation,
@@ -460,7 +477,7 @@ export class PrReviewConversationService extends Context.Service<
 				const permission = yield* provider
 					.fetchCommenterPermission(installation, ref, job.authorLogin)
 					.pipe(Effect.orElseSucceed(() => "none"))
-				if (!WRITE_PERMISSIONS.has(permission))
+				if (!PUSH_PERMISSIONS.has(permission))
 					return yield* fail(
 						"fix_not_permitted",
 						`@${job.authorLogin} I only push fixes for people with write access to this repository.`,
@@ -599,7 +616,7 @@ export class PrReviewConversationService extends Context.Service<
 			const permission = yield* provider
 				.fetchCommenterPermission(installation, ref, job.approverLogin)
 				.pipe(Effect.orElseSucceed(() => "none"))
-			if (!WRITE_PERMISSIONS.has(permission))
+			if (!PUSH_PERMISSIONS.has(permission))
 				return yield* annotate("not_permitted", { "vcs.repository.permission": permission })
 			// Fork runs carry no pull request number: the open one from the run's branch is it.
 			const numbers =
