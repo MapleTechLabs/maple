@@ -292,8 +292,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		PickedSeverity: ({ bucket }) => ({
 			model: {
 				...model,
-				severity: model.severity === bucket ? null : bucket,
-				collapsed: model.collapsed.filter((held) => held !== bucket),
+				severity: bucket,
+				collapsed:
+					bucket === null ? model.collapsed : model.collapsed.filter((held) => held !== bucket),
 			},
 		}),
 		ToggledSection: ({ bucket }) => ({

@@ -33,6 +33,7 @@ import {
 	runningRuns,
 	runsOf,
 	settingsOf,
+	STATUS_TABS,
 	targetsOf,
 } from "./derive"
 import { Message, type Model, type Tab } from "./model"
@@ -55,6 +56,7 @@ const tabOfRoute = (route: SecurityTabsRoute): Tab =>
 /** Keeps the selects' closed value on the URL's, without closing an open one. */
 const withSelectValues = (model: Model): Model => ({
 	...model,
+	statusSelect: { ...model.statusSelect, value: model.findingsSearch.status ?? "open" },
 	targetSelect: { ...model.targetSelect, value: model.findingsSearch.target ?? "all" },
 	runsTargetSelect: { ...model.runsTargetSelect, value: model.runsSearch.target ?? "all" },
 })
@@ -222,6 +224,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		startingTargetId: null,
 		searchDraft: searches.findingsSearch.q ?? "",
 		searchGeneration: 0,
+		statusSelect: Select.init("security-status", { value: "open", selectedIndex: 0 }),
 		targetSelect: Select.init("security-target", { value: "all", selectedIndex: 0 }),
 		runsTargetSelect: Select.init("security-runs-target", { value: "all", selectedIndex: 0 }),
 		// Disproved findings start folded, unless the URL asked to show them.
@@ -545,6 +548,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const { q: _q, ...rest } = model.findingsSearch
 			return navigate(model, findingsUrl(q === undefined ? rest : { ...rest, q }), true)
 		},
+		GotStatusSelectMessage: ({ message: inner }) =>
+			selectStep(
+				model,
+				model.statusSelect,
+				inner,
+				(statusSelect) => ({ statusSelect }),
+				(next) => Message.GotStatusSelectMessage({ message: next }),
+				(updated, value) => {
+					const { status: _status, ...rest } = searchWithDraft(updated)
+					const status = STATUS_TABS.find((tab) => tab === value)
+					// Open is the default, so the URL only carries another status.
+					return navigate(
+						updated,
+						findingsUrl(status === undefined || status === "open" ? rest : { ...rest, status }),
+					)
+				},
+			),
 		GotTargetSelectMessage: ({ message: inner }) =>
 			selectStep(
 				model,
@@ -580,10 +600,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		PickedSeverity: ({ bucket }) => {
 			if (bucket === "rejected") return { model }
-			const { severity, ...rest } = searchWithDraft(model)
+			const { severity: _severity, ...rest } = searchWithDraft(model)
 			return navigate(
-				{ ...model, collapsed: model.collapsed.filter((held) => held !== bucket) },
-				findingsUrl(severity === bucket ? rest : { ...rest, severity: bucket }),
+				bucket === null
+					? model
+					: { ...model, collapsed: model.collapsed.filter((held) => held !== bucket) },
+				findingsUrl(bucket === null ? rest : { ...rest, severity: bucket }),
 			)
 		},
 		ToggledSection: ({ bucket }) => ({

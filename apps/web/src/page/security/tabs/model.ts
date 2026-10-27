@@ -48,6 +48,7 @@ export const Model = Schema.Struct({
 	searchDraft: Schema.String,
 	/** Bumped per keystroke; only the last one's debounce commits the search to the URL. */
 	searchGeneration: Schema.Finite,
+	statusSelect: Select.Model,
 	targetSelect: Select.Model,
 	runsTargetSelect: Select.Model,
 	/** Severity sections folded to their header. */
@@ -83,11 +84,12 @@ export const Message = defineMessageUnion({
 	},
 	ChangedSearchDraft: { value: Schema.String },
 	ElapsedSearchDebounce: { generation: Schema.Finite },
+	GotStatusSelectMessage: { message: Select.Message },
 	GotTargetSelectMessage: { message: Select.Message },
 	GotRunsTargetSelectMessage: { message: Select.Message },
 	ToggledShowRejected: {},
 	ClickedClearFilters: {},
-	PickedSeverity: { bucket: SeverityBucket },
+	PickedSeverity: { bucket: Schema.NullOr(SeverityBucket) },
 	ToggledSection: { bucket: SeverityBucket },
 })
 export type Message = typeof Message.Type

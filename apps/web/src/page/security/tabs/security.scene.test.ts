@@ -480,7 +480,7 @@ describe("security tabs", () => {
 		expect([findings.collapsed, shown.collapsed, entered.collapsed]).toEqual([["rejected"], [], []])
 	})
 
-	test("a severity tile picked within the search debounce keeps what was typed", () => {
+	test("a severity tab picked within the search debounce keeps what was typed", () => {
 		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
 		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
 		const picked = pageUpdate(typed, Message.PickedSeverity({ bucket: "critical" }))
@@ -517,17 +517,18 @@ describe("security tabs", () => {
 		).toBeUndefined()
 	})
 
-	test("a status tab picked within the search debounce keeps what was typed", () => {
+	test("a status picked within the search debounce keeps what was typed", () => {
 		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
 		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
-		scene(
-			{ update: pageUpdate, view },
-			given(typed),
-			expectView(role("link", { name: /^Fixed/ })).toHaveAttr(
-				"href",
-				hrefOf(AppRoute.SecurityFindings({ search: { q: "exports", status: "fixed" } })),
-			),
+		const picked = pageUpdate(
+			typed,
+			Message.GotStatusSelectMessage({
+				message: Select.Message.SelectedItem({ index: 1, value: "fixed" }),
+			}),
 		)
+		expect(picked.outMessage).toMatchObject({
+			url: hrefOf(AppRoute.SecurityFindings({ search: { q: "exports", status: "fixed" } })),
+		})
 	})
 
 	test("an empty status tab offers Clear filters only when a filter besides the status is set", () => {

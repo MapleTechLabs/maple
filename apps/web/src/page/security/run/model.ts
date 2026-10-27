@@ -98,7 +98,7 @@ export const Message = defineMessageUnion({
 	TickedPoll: { nowMs: Schema.Finite },
 	ClickedRetry: {},
 	ClickedLoadOlder: {},
-	PickedSeverity: { bucket: SeverityBucket },
+	PickedSeverity: { bucket: Schema.NullOr(SeverityBucket) },
 	ToggledSection: { bucket: SeverityBucket },
 	ClickedFinding: { fingerprint: Schema.String },
 	GotFindingDialogMessage: { message: Dialog.Message },

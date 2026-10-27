@@ -62,7 +62,7 @@ export const countsFromRun = (counts: SecurityAuditRunFindingCounts): BucketCoun
 	rejected: counts.rejected,
 })
 
-type FindingSection = Readonly<{
+export type FindingSection = Readonly<{
 	bucket: SeverityBucket
 	rows: ReadonlyArray<SecurityAuditFinding>
 }>

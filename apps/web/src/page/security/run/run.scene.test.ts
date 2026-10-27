@@ -101,8 +101,8 @@ describe("security run", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(RUN_IDS.billing)),
-			expectView(role("group", { name: "Findings by severity" })).toExist(),
-			expectView(role("button", { name: "Critical: 1" })).toExist(),
+			expectView(role("tablist", { name: "Severity" })).toExist(),
+			expectView(role("tab", { name: /^Critical/ })).toHaveAttr("aria-selected", "false"),
 			expectView(text("Refund endpoint skips the invoice ownership check")).toExist(),
 			expectView(role("button", { name: /^How the run ran/ })).toHaveAttr("aria-expanded", "false"),
 			expectView(text("Gaps")).not.toExist(),
@@ -123,7 +123,7 @@ describe("security run", () => {
 		)
 	})
 
-	test("a severity tile narrows the list to its section, and picking it again shows all", () => {
+	test("a severity tab narrows the list to its group, and All shows every group again", () => {
 		const picked = pageUpdate(loaded(RUN_IDS.billing), Message.PickedSeverity({ bucket: "high" })).model
 		scene(
 			{ update: pageUpdate, view },
@@ -131,7 +131,7 @@ describe("security run", () => {
 			expectView(text("Webhook replay accepted after signature window")).toExist(),
 			expectView(text("Refund endpoint skips the invoice ownership check")).not.toExist(),
 		)
-		expect(pageUpdate(picked, Message.PickedSeverity({ bucket: "high" })).model.severity).toBeNull()
+		expect(pageUpdate(picked, Message.PickedSeverity({ bucket: null })).model.severity).toBeNull()
 	})
 
 	test("disproved findings start folded and open on their header", () => {
