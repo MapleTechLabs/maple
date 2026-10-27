@@ -162,6 +162,7 @@ describe("uptime monitor page", () => {
 					points: [],
 					samples: [],
 					samplesTruncated: false,
+					samplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 96,
@@ -194,6 +195,7 @@ describe("uptime monitor page", () => {
 			ok,
 			statusCode: ok ? 200 : null,
 			traceId,
+			phases: null,
 		})
 		const withStats = pageUpdate(
 			model,
@@ -204,6 +206,7 @@ describe("uptime monitor page", () => {
 					points: [],
 					samples: [sample(30, true, "a".repeat(32)), sample(10, false, "b".repeat(32))],
 					samplesTruncated: false,
+					samplesFailed: false,
 					windowStartMs: NOW - 3_600_000,
 					windowEndMs: NOW,
 					checks: 2,
@@ -235,6 +238,81 @@ describe("uptime monitor page", () => {
 		)
 	})
 
+	test("hovering a timed check lists where its time went", () => {
+		const model = opened(httpMonitor())
+		const timed = {
+			at: new Date(NOW - 10 * 60_000).toISOString(),
+			durationMs: 66,
+			ok: true,
+			statusCode: 200,
+			traceId: "c".repeat(32),
+			phases: { dnsMs: 1.2, connectMs: 9, tlsMs: 16, ttfbMs: 40, transferMs: 0 },
+		}
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "1h",
+					points: [],
+					samples: [timed],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 3_600_000,
+					windowEndMs: NOW,
+					checks: 1,
+					failures: 0,
+					p50Ms: 66,
+					p95Ms: 66,
+					p99Ms: 66,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(loaded, Message.HoveredCheck({ index: 0 })).model),
+			themeResolved(),
+			expectView(text("1.2 ms")).toExist(),
+			expectView(text("40 ms")).toExist(),
+			expectView(text("TTFB")).toExist(),
+			expectView(selector(`a[href="${traceHref("c".repeat(32))}"]`)).toExist(),
+		)
+	})
+
+	test("a check list that failed to load says so instead of hiding the panel", () => {
+		const model = opened(httpMonitor())
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "1h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					samplesFailed: true,
+					windowStartMs: NOW - 3_600_000,
+					windowEndMs: NOW,
+					checks: 1,
+					failures: 0,
+					p50Ms: 66,
+					p95Ms: 66,
+					p99Ms: 66,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(text("Couldn't load the checks. The other figures are unaffected.")).toExist(),
+		)
+	})
+
 	test("a check far slower than the rest sits on the top edge and the legend says why", () => {
 		const model = opened(httpMonitor())
 		const at = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString()
@@ -244,6 +322,7 @@ describe("uptime monitor page", () => {
 			ok: true,
 			statusCode: 200,
 			traceId: `${index}`.padStart(32, "a"),
+			phases: null,
 		}))
 		const timeout = {
 			at: at(1),
@@ -251,6 +330,7 @@ describe("uptime monitor page", () => {
 			ok: false,
 			statusCode: null,
 			traceId: "f".repeat(32),
+			phases: null,
 		}
 		const loaded = pageUpdate(
 			model,
@@ -261,6 +341,7 @@ describe("uptime monitor page", () => {
 					points: [],
 					samples: [...quick, timeout],
 					samplesTruncated: false,
+					samplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 101,
@@ -295,6 +376,7 @@ describe("uptime monitor page", () => {
 					points: [],
 					samples: [],
 					samplesTruncated: false,
+					samplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 96,
@@ -333,6 +415,7 @@ describe("uptime monitor page", () => {
 					points: [],
 					samples: [],
 					samplesTruncated: false,
+					samplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 4,
@@ -364,6 +447,7 @@ describe("uptime monitor page", () => {
 					points: [],
 					samples: [],
 					samplesTruncated: false,
+					samplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 4,
@@ -399,6 +483,7 @@ describe("uptime monitor page", () => {
 					points: [],
 					samples: [],
 					samplesTruncated: false,
+					samplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 4,
@@ -439,6 +524,7 @@ describe("uptime monitor page", () => {
 					points: [],
 					samples: [],
 					samplesTruncated: false,
+					samplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 4,
@@ -473,6 +559,7 @@ describe("uptime monitor page", () => {
 					points: [],
 					samples: [],
 					samplesTruncated: false,
+					samplesFailed: false,
 					windowStartMs: NOW - 86_400_000,
 					windowEndMs: NOW,
 					checks: 4,

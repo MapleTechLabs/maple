@@ -38,6 +38,7 @@ import type {
 	ServiceHealthSnapshotRequest,
 	ServiceOverviewRequest,
 	ReleasesListRequest,
+	UptimeChecksRequest,
 	UptimePhaseTimingsRequest,
 	ReleaseDetailRequest,
 	WorkloadDetailSummaryRequest,
@@ -572,6 +573,19 @@ export const uptimePhaseTimings = defineQuery({
 				bucketSeconds: payload.bucketSeconds,
 			},
 			{ rowSchema: CH.uptimePhaseTimingsRowSchema },
+		),
+})
+
+// One uptime monitor's checks with their phases, for the monitor page's per-check chart.
+export const uptimeChecks = defineQuery({
+	id: "uptimeChecks",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: UptimeChecksRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.uptimeChecksQuery({ limit: payload.limit }),
+			{ orgId, monitorId: payload.monitorId, startTime: payload.startTime, endTime: payload.endTime },
+			{ rowSchema: CH.uptimeChecksRowSchema },
 		),
 })
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import { uptimePhaseTimingsQuery } from "./uptime"
+import { uptimeChecksQuery, uptimePhaseTimingsQuery } from "./uptime"
 
 const compiled = () =>
 	compileUnsafe(uptimePhaseTimingsQuery(), {
@@ -31,5 +31,21 @@ describe("uptimePhaseTimingsQuery", () => {
 			)
 		}
 		expect(sql).toContain(`countIf(${answered}) AS timedChecks`)
+	})
+})
+
+describe("uptimeChecksQuery", () => {
+	it("lists only the org's root check spans of the one monitor, newest first and capped", () => {
+		const { sql } = compileUnsafe(uptimeChecksQuery({ limit: 3000 }), {
+			orgId: OrgId.make("org_1"),
+			monitorId: "mon_1",
+			startTime: "2026-10-26 00:00:00",
+			endTime: "2026-10-27 00:00:00",
+		})
+		expect(sql).toContain("traces.OrgId = 'org_1'")
+		expect(sql).toContain("traces.ParentSpanId = ''")
+		expect(sql).toContain("traces.ResourceAttributes['maple.uptime.monitor_id'] = 'mon_1'")
+		expect(sql).toContain("ORDER BY at DESC")
+		expect(sql).toContain("LIMIT 3000")
 	})
 })

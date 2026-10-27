@@ -768,7 +768,10 @@ export {
 	type CiScopeOpts,
 } from "./queries/ci-runs"
 export {
+	uptimeChecksQuery,
+	uptimeChecksRowSchema,
 	uptimePhaseTimingsQuery,
 	uptimePhaseTimingsRowSchema,
+	type UptimeChecksOutput,
 	type UptimePhaseTimingsOutput,
 } from "./queries/uptime"

@@ -2,7 +2,6 @@ import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
 import { formatBucketLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { area, curveMonotoneX, line } from "d3-shape"
 import { formatAlertDateTime, formatAlertTime } from "@maple/web-data/alerts/form-utils"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -382,55 +381,6 @@ const xShare = (ms: number, domain: Domain): number =>
 	(ms - domain.startMs) / Math.max(1, domain.endMs - domain.startMs)
 const yShare = (ms: number, yMax: number): number => Math.min(1, ms / yMax)
 
-const TREND = { p50: "var(--chart-p50)", band: "var(--chart-p95)" } as const
-
-/** Under the dots: the smoothed P50 line and the P50 to P95 band, the typical check and its slow tail. */
-const scatterTrend = (h: H, stats: CheckStats, domain: Domain, yMax: number): Html => {
-	const filled = stats.points.filter(
-		(point) => point.totalCount > 0 && isoMs(point.bucket) >= domain.startMs,
-	)
-	const x = (point: CheckPoint) => xShare(isoMs(point.bucket), domain) * 1000
-	const y = (ms: number) => 100 - yShare(ms, yMax) * 100
-	const band = area<CheckPoint>()
-		.x(x)
-		.y0((point) => y(point.p50LatencyMs))
-		.y1((point) => y(point.p95LatencyMs))
-		.curve(curveMonotoneX)(filled)
-	const median = line<CheckPoint>()
-		.x(x)
-		.y((point) => y(point.p50LatencyMs))
-		.curve(curveMonotoneX)(filled)
-	return h.svg(
-		[
-			h.AriaHidden(true),
-			h.Attribute("viewBox", "0 0 1000 100"),
-			h.Attribute("preserveAspectRatio", "none"),
-			h.Class("pointer-events-none absolute inset-0 h-full w-full overflow-visible"),
-		],
-		[
-			h.path(
-				[
-					h.Attribute("d", band ?? ""),
-					h.Attribute("fill", TREND.band),
-					h.Attribute("fill-opacity", "0.16"),
-				],
-				[],
-			),
-			h.path(
-				[
-					h.Attribute("d", median ?? ""),
-					h.Attribute("fill", "none"),
-					h.Attribute("stroke", TREND.p50),
-					h.Attribute("stroke-width", "1.5"),
-					h.Attribute("stroke-linejoin", "round"),
-					h.Attribute("vector-effect", "non-scaling-stroke"),
-				],
-				[],
-			),
-		],
-	)
-}
-
 /** Round clock ticks in the viewer's zone, short labels; the end ones kept inside the plot. */
 const scatterTimeTicks = (domain: Domain, window: UptimeWindow, timeZone: string) => {
 	const context = { rangeMs: domain.endMs - domain.startMs, bucketSeconds: undefined, timeZone }
@@ -446,25 +396,18 @@ const scatterTimeTicks = (domain: Domain, window: UptimeWindow, timeZone: string
 const tickAnchor = (share: number): string =>
 	share < 0.06 ? "translate-x-0" : share > 0.94 ? "-translate-x-full" : "-translate-x-1/2"
 
-/** The dot's classes: failures larger and ringed; a check past the axis is a caret on the top edge. */
-const dotClass = (sample: CheckSample, clipped: boolean): string =>
-	cn(
-		"absolute -translate-x-1/2 after:absolute after:-inset-1.5 after:content-['']",
-		clipped
-			? cn(
-					"top-0 size-0 border-x-[4px] border-t-[6px] border-x-transparent",
-					sample.ok ? "border-t-success/80" : "z-10 border-t-destructive",
-				)
-			: cn(
-					"translate-y-1/2 rounded-full transition-transform hover:scale-150",
-					sample.ok
-						? "size-1.5 bg-success/55 hover:bg-success"
-						: "z-10 size-2 bg-destructive ring-2 ring-background",
-				),
-	)
+/** A check's bar segments bottom up: its phases when it recorded them, else one bar of its total. */
+const barSegments = (sample: CheckSample): ReadonlyArray<{ key: string; ms: number; color: string }> =>
+	sample.phases === null
+		? [{ key: "total", ms: sample.durationMs, color: "var(--muted-foreground)" }]
+		: PHASES.map((phase) => ({
+				key: phase.key,
+				ms: sample.phases?.[phase.key] ?? 0,
+				color: `var(${phase.token})`,
+			})).filter((segment) => segment.ms > 0)
 
-/** One link per check, to its trace, reporting hover; failures drawn last so they sit on top. Out of the tab order (thousands). */
-const scatterDots = (
+/** One column per check, its full height a link to its trace; failures red, a check past the axis capped with a caret. */
+const checkBars = (
 	h: H,
 	samples: ReadonlyArray<CheckSample>,
 	startMs: number,
@@ -472,126 +415,164 @@ const scatterDots = (
 	yMax: number,
 ): Html => {
 	const domain: Domain = { startMs, endMs }
-	const dot = (sample: CheckSample, index: number) => {
+	// Bars thin out as checks pile up, never under a pixel or over 6.
+	const width = `max(1px, min(6px, ${(70 / Math.max(1, samples.length)).toFixed(3)}%))`
+	const bar = (sample: CheckSample, index: number) => {
 		const clipped = sample.durationMs > yMax
-		const left = `${xShare(isoMs(sample.at), domain) * 100}%`
 		return h.a(
 			[
 				h.Key(`${sample.traceId}-${index}`),
 				h.Href(traceHref(sample.traceId)),
 				h.Attribute("tabindex", "-1"),
 				h.OnMouseEnter(Message.HoveredCheck({ index })),
-				h.Class(dotClass(sample, clipped)),
-				h.Style(clipped ? { left } : { left, bottom: `${yShare(sample.durationMs, yMax) * 100}%` }),
+				h.Class("group absolute inset-y-0 -translate-x-1/2 px-px hover:bg-foreground/5"),
+				h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
 			],
-			[],
+			[
+				h.span(
+					[
+						h.Class(
+							cn(
+								"absolute inset-x-px bottom-0 flex flex-col-reverse overflow-hidden rounded-t-[1px] group-hover:brightness-125",
+								!sample.ok && "bg-destructive",
+							),
+						),
+						h.Style({ height: `${yShare(sample.durationMs, yMax) * 100}%` }),
+					],
+					sample.ok
+						? barSegments(sample).map((segment) =>
+								h.span(
+									[
+										h.Key(segment.key),
+										h.Class("block w-full"),
+										h.Style({ flexGrow: String(segment.ms), background: segment.color }),
+									],
+									[],
+								),
+							)
+						: [],
+				),
+				...(clipped
+					? [
+							h.span(
+								[
+									h.Class(
+										cn(
+											"absolute -top-1.5 left-1/2 size-0 -translate-x-1/2 border-x-[3px] border-t-[5px] border-x-transparent",
+											sample.ok ? "border-t-foreground/60" : "border-t-destructive",
+										),
+									),
+								],
+								[],
+							),
+						]
+					: []),
+			],
 		)
 	}
-	const indexed = samples.map((sample, index) => ({ sample, index }))
 	return h.div(
 		[
 			h.AriaHidden(true),
 			h.Class("absolute inset-0"),
 			h.OnMouseLeave(Message.HoveredCheck({ index: null })),
 		],
+		samples.map(bar),
+	)
+}
+
+const barsSlot = createLazy()
+
+const cardRow = (h: H, key: string, color: string, label: string, value: string): Html =>
+	h.span(
+		[h.Key(key), h.Class("flex items-center justify-between gap-4")],
 		[
-			...indexed.filter(({ sample }) => sample.ok).map(({ sample, index }) => dot(sample, index)),
-			...indexed.filter(({ sample }) => !sample.ok).map(({ sample, index }) => dot(sample, index)),
+			h.span(
+				[h.Class("flex items-center gap-1.5 text-muted-foreground")],
+				[
+					h.span(
+						[h.Class("inline-block size-2 rounded-[2px]"), h.Style({ background: color })],
+						[],
+					),
+					label,
+				],
+			),
+			h.span([h.Class("font-mono tabular-nums")], [value]),
+		],
+	)
+
+/** The hovered check's card: when, what it returned, and where its time went. */
+const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string): Html => {
+	const left = xShare(isoMs(sample.at), domain) * 100
+	const result = sample.statusCode === null ? (sample.ok ? "Passed" : "Failed") : String(sample.statusCode)
+	return h.div(
+		[
+			h.Class(
+				cn(
+					"pointer-events-none absolute top-1 z-30 flex w-48 flex-col gap-1 rounded-md border bg-popover px-2.5 py-2 text-xs shadow-md",
+					left > 60 ? "-translate-x-full -ml-2" : "ml-2",
+				),
+			),
+			h.Style({ left: `${left}%` }),
+		],
+		[
+			h.span([h.Class("text-muted-foreground")], [formatAlertDateTime(sample.at, timeZone)]),
+			h.span(
+				[h.Class("flex items-center justify-between gap-4 font-medium")],
+				[
+					h.span([h.Class(sample.ok ? "text-success" : "text-destructive")], [result]),
+					h.span([h.Class("font-mono tabular-nums")], [formatMs(sample.durationMs)]),
+				],
+			),
+			...(sample.phases === null
+				? []
+				: PHASES.map((phase) =>
+						cardRow(
+							h,
+							phase.key,
+							`var(${phase.token})`,
+							phase.label,
+							formatPhaseMs(sample.phases?.[phase.key] ?? 0),
+						),
+					)),
+			h.span([h.Class("pt-0.5 text-primary")], ["Click to open the trace"]),
 		],
 	)
 }
 
-const dotsSlot = createLazy()
-
-/** The hovered check: a ring on its dot and its card, flipped to stay inside the plot. */
-const hoverCard = (
-	h: H,
-	sample: CheckSample,
-	domain: Domain,
-	yMax: number,
-	timeZone: string,
-): ReadonlyArray<Html> => {
-	const left = xShare(isoMs(sample.at), domain) * 100
-	const bottom = yShare(sample.durationMs, yMax) * 100
-	const result = sample.statusCode === null ? (sample.ok ? "Passed" : "Failed") : String(sample.statusCode)
-	return [
-		h.span(
-			[
-				h.AriaHidden(true),
-				h.Class(
-					"pointer-events-none absolute z-20 size-3.5 -translate-x-1/2 translate-y-1/2 rounded-full ring-2 ring-foreground/70",
-				),
-				h.Style({ left: `${left}%`, bottom: `${bottom}%` }),
-			],
-			[],
-		),
-		h.div(
-			[
-				h.Class(
-					cn(
-						"pointer-events-none absolute z-30 flex w-max flex-col gap-0.5 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md",
-						left > 70 ? "-translate-x-full -ml-3" : "ml-3",
-						bottom > 60 ? "translate-y-full" : "-translate-y-1/2",
-					),
-				),
-				h.Style({ left: `${left}%`, bottom: `${bottom}%` }),
-			],
-			[
-				h.span([h.Class("text-muted-foreground")], [formatAlertDateTime(sample.at, timeZone)]),
-				h.span(
-					[h.Class("flex items-center gap-2 font-mono tabular-nums")],
-					[
-						h.span([h.Class(sample.ok ? "text-success" : "text-destructive")], [result]),
-						formatMs(sample.durationMs),
-					],
-				),
-				h.span([h.Class("text-primary")], ["Click to open the trace"]),
-			],
-		),
-	]
-}
+/** Phases are often under a millisecond, which whole-ms rounding would show as 0. */
+const formatPhaseMs = (ms: number): string => (ms < 10 ? `${ms.toFixed(1)} ms` : formatMs(ms))
 
 const legendItem = (h: H, key: string, swatch: Html, label: string): Html =>
 	h.span([h.Key(key), h.Class("flex items-center gap-1.5")], [swatch, label])
 
-const scatterLegend = (h: H, yMax: number, hasClipped: boolean): Html =>
-	h.div(
+const swatch = (h: H, color: string): Html =>
+	h.span([h.Class("inline-block size-2 rounded-[2px]"), h.Style({ background: color })], [])
+
+const barsLegend = (h: H, samples: ReadonlyArray<CheckSample>, yMax: number): Html => {
+	const timed = samples.some((sample) => sample.ok && sample.phases !== null)
+	const untimed = samples.some((sample) => sample.ok && sample.phases === null)
+	const failed = samples.some((sample) => !sample.ok)
+	const clipped = samples.some((sample) => sample.durationMs > yMax)
+	return h.div(
 		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 pl-14 text-xs text-muted-foreground")],
 		[
-			legendItem(
-				h,
-				"passed",
-				h.span([h.Class("inline-block size-2 rounded-full bg-success/70")], []),
-				"Passed",
-			),
-			legendItem(
-				h,
-				"failed",
-				h.span([h.Class("inline-block size-2 rounded-full bg-destructive")], []),
-				"Failed",
-			),
-			legendItem(
-				h,
-				"p50",
-				h.span(
-					[h.Class("inline-block h-0.5 w-3 rounded-full"), h.Style({ background: TREND.p50 })],
-					[],
-				),
-				"P50",
-			),
-			legendItem(
-				h,
-				"band",
-				h.span(
-					[
-						h.Class("inline-block h-2 w-3 rounded-[2px] opacity-40"),
-						h.Style({ background: TREND.band }),
-					],
-					[],
-				),
-				"P50 to P95",
-			),
-			...(hasClipped
+			...(timed
+				? PHASES.map((phase) =>
+						legendItem(h, phase.key, swatch(h, `var(${phase.token})`), phase.label),
+					)
+				: []),
+			...(untimed
+				? [
+						legendItem(
+							h,
+							"untimed",
+							swatch(h, "var(--muted-foreground)"),
+							timed ? "No phases recorded" : "Passed",
+						),
+					]
+				: []),
+			...(failed ? [legendItem(h, "failed", swatch(h, "var(--destructive)"), "Failed")] : []),
+			...(clipped
 				? [
 						legendItem(
 							h,
@@ -599,7 +580,7 @@ const scatterLegend = (h: H, yMax: number, hasClipped: boolean): Html =>
 							h.span(
 								[
 									h.Class(
-										"inline-block size-0 border-x-[4px] border-t-[6px] border-x-transparent border-t-muted-foreground",
+										"inline-block size-0 border-x-[4px] border-t-[6px] border-x-transparent border-t-foreground/60",
 									),
 								],
 								[],
@@ -608,19 +589,29 @@ const scatterLegend = (h: H, yMax: number, hasClipped: boolean): Html =>
 						),
 					]
 				: []),
-			h.span([h.Key("hint"), h.Class("ml-auto")], ["Click a dot to open its trace"]),
+			h.span([h.Key("hint"), h.Class("ml-auto")], ["Click a bar to open its trace"]),
 		],
 	)
+}
 
-/** Every check in the window as a dot (time by duration) over the P50 line and the P50 to P95 band. */
+/** Every check in the window as a bar, its height its duration and its stack its phases. */
 export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html | null =>
 	Option.match(statsOf(model), {
 		onNone: () => null,
 		onSome: (stats) => {
+			if (stats.samplesFailed)
+				return panel(h, {}, [
+					panelHeader(h, { title: "Every check" }),
+					uptimePanelBody(h, [
+						h.p(
+							[h.Class("py-10 text-center text-sm text-muted-foreground")],
+							["Couldn't load the checks. The other figures are unaffected."],
+						),
+					]),
+				])
 			if (stats.samples.length === 0) return null
 			const yMax = scatterMax(stats.samples)
 			const failed = stats.samples.filter((sample) => !sample.ok).length
-			const hasClipped = stats.samples.some((sample) => sample.durationMs > yMax)
 			// Past the list's limit the axis starts at the oldest check shown, not the window's start.
 			const oldest = stats.samples[0]
 			const startMs =
@@ -696,9 +687,8 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 													[],
 												),
 											),
-											scatterTrend(h, stats, domain, yMax),
-											// Memoized: hover and other page messages do not rebuild thousands of dots.
-											dotsSlot(scatterDots, [
+											// Memoized: hover and other page messages do not rebuild thousands of bars.
+											barsSlot(checkBars, [
 												h,
 												stats.samples,
 												startMs,
@@ -707,7 +697,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 											]),
 											...(hovered === undefined
 												? []
-												: hoverCard(h, hovered, domain, yMax, timeZone)),
+												: [hoverCard(h, hovered, domain, timeZone)]),
 										],
 									),
 								],
@@ -733,7 +723,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 									),
 								),
 							),
-							scatterLegend(h, yMax, hasClipped),
+							barsLegend(h, stats.samples, yMax),
 						],
 					),
 				]),

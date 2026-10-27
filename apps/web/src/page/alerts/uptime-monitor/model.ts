@@ -28,12 +28,23 @@ export const CheckPoint = Schema.Struct({
 export type CheckPoint = typeof CheckPoint.Type
 
 /** `UptimeCheckSample`: one check, from its span. */
+/** An HTTP check's phases in ms; null on a check that recorded none (TCP, DNS, older checks). */
+export const CheckPhases = Schema.Struct({
+	dnsMs: Schema.Number,
+	connectMs: Schema.Number,
+	tlsMs: Schema.Number,
+	ttfbMs: Schema.Number,
+	transferMs: Schema.Number,
+})
+export type CheckPhases = typeof CheckPhases.Type
+
 export const CheckSample = Schema.Struct({
 	at: Schema.String,
 	durationMs: Schema.Number,
 	ok: Schema.Boolean,
 	statusCode: Schema.NullOr(Schema.Number),
 	traceId: Schema.String,
+	phases: Schema.NullOr(CheckPhases),
 })
 export type CheckSample = typeof CheckSample.Type
 /** `UptimePhaseTimingsPoint`: a bucket's mean phases (ms) over its checks that got a response. */
@@ -55,6 +66,7 @@ export const CheckStats = Schema.Struct({
 	points: Schema.Array(CheckPoint),
 	samples: Schema.Array(CheckSample),
 	samplesTruncated: Schema.Boolean,
+	samplesFailed: Schema.Boolean,
 	windowStartMs: Schema.Number,
 	windowEndMs: Schema.Number,
 	checks: Schema.Number,

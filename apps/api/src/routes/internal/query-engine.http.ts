@@ -53,6 +53,7 @@ import {
 	ServiceDbQuerySummaryResponse,
 	ServiceDetailOverviewResponse,
 	ReleasesListResponse,
+	UptimeChecksResponse,
 	UptimePhaseTimingsResponse,
 	ReleaseDetailResponse,
 	type ReleaseRow,
@@ -1265,6 +1266,31 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							points: rows
 								.filter((row) => row.timedChecks > 0)
 								.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("uptimeChecks", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.uptimeChecks, tenant, payload)
+						return new UptimeChecksResponse({
+							checks: rows.map((row) => ({
+								at: DateTime.formatIso(row.at),
+								traceId: decodeTraceId(row.traceId),
+								durationMs: row.durationMs,
+								ok: row.status !== "Error",
+								statusCode: row.httpStatus > 0 ? row.httpStatus : null,
+								phases:
+									row.timed === 1
+										? {
+												dnsMs: row.dnsMs,
+												connectMs: row.connectMs,
+												tlsMs: row.tlsMs,
+												ttfbMs: row.ttfbMs,
+												transferMs: row.transferMs,
+											}
+										: null,
+							})),
 						})
 					}),
 				)
