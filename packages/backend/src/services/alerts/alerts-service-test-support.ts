@@ -35,7 +35,12 @@ import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngin
 import { executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
-import { compiledQueryOf } from "@maple/query-engine/execution"
+import {
+	type CapabilityCompile,
+	type CompiledQueryInput,
+	compiledQueryOf,
+} from "@maple/query-engine/execution"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
 
 export const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
@@ -120,31 +125,33 @@ export function makeWarehouseStub(state: {
 		return succeedRows(emptyWarehouseRows)
 	}
 
-	return {
-		query: (_tenant, payload) => Effect.die(new Error(`Unexpected pipe ${payload.pipeName}`)),
-		sqlQuery: sqlQueryStub,
+	// Both compiled-query forms decode the stubbed rows; the capability-aware form
+	// compiles against baseline capabilities, as the real executor does without a probe.
+	const resolve = <T>(compiled: CompiledQueryInput<T> | CapabilityCompile<T>) =>
+		typeof compiled === "function"
+			? Effect.runSync(Effect.orDie(compiled(baselineWarehouseCapabilities())))
+			: compiledQueryOf(compiled)
+
+	// `compiledQuery` is overloaded, so it takes the executor's own shape: one generic
+	// implementation over both inputs, typed as the overload set.
+	const compiledQuery = (<T>(_tenant: unknown, compiled: CompiledQueryInput<T> | CapabilityCompile<T>) =>
+		sqlQueryStub().pipe(
+			Effect.flatMap((rows) => resolve(compiled).decodeRows(rows).pipe(Effect.orDie)),
+		)) as WarehouseQueryServiceApi["compiledQuery"]
+
+	return makeWarehouseServiceStub({
 		rawSqlQuery: sqlQueryStub,
-		compiledQuery: (_tenant, compiled) =>
-			sqlQueryStub().pipe(
-				Effect.flatMap((rows) => compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)),
-			),
+		compiledQuery,
 		compiledQueryWithCapabilities: (_tenant, compile) =>
 			sqlQueryStub().pipe(
-				Effect.flatMap((rows) =>
-					Effect.runSync(compile(baselineWarehouseCapabilities()))
-						.decodeRows(rows)
-						.pipe(Effect.orDie),
-				),
+				Effect.flatMap((rows) => resolve(compile).decodeRows(rows).pipe(Effect.orDie)),
 			),
 		compiledQueryFirst: (_tenant, compiled) =>
 			sqlQueryStub().pipe(
-				Effect.flatMap((rows) => compiledQueryOf(compiled).decodeFirstRow(rows).pipe(Effect.orDie)),
+				Effect.flatMap((rows) => resolve(compiled).decodeFirstRow(rows).pipe(Effect.orDie)),
 			),
 		ingest: () => Effect.void,
-		asExecutor: () => {
-			throw new Error("asExecutor is not supported by this test stub")
-		},
-	}
+	})
 }
 
 export const defaultTestRuntime: AlertRuntimeApi = {
@@ -183,14 +190,16 @@ export const stubEmailService = (
 
 /** Fixed workspace-member directory the OrgMembersService stub resolves against. */
 export const TEST_ORG_MEMBERS: ReadonlyArray<OrgMember> = [
-	{ userId: "user_ops", email: "ops@acme.test", name: "Ops Team" },
-	{ userId: "user_oncall", email: "oncall@acme.test", name: null },
-	{ userId: "user_lead", email: "lead@acme.test", name: "Lead" },
+	{ userId: "user_ops", email: "ops@acme.test", name: "Ops Team", imageUrl: null },
+	{ userId: "user_oncall", email: "oncall@acme.test", name: null, imageUrl: null },
+	{ userId: "user_lead", email: "lead@acme.test", name: "Lead", imageUrl: null },
 ]
 
 export const stubOrgMembersService = (
 	members: ReadonlyArray<OrgMember> = TEST_ORG_MEMBERS,
 ): (typeof OrgMembersService)["Service"] => ({
+	listMembers: () => Effect.succeed(members),
+	listOrganizationsOf: () => Effect.succeed([]),
 	resolveMembers: (_orgId, userIds) => {
 		const byId = new Map(members.map((member) => [member.userId, member]))
 		const resolved: Array<OrgMember> = []
