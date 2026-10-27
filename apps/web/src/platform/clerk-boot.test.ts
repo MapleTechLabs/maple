@@ -47,21 +47,25 @@ describe("clerk boot", () => {
 		expect(load).toHaveBeenCalledTimes(1)
 	})
 
-	test("a load that never settles fails LoadClerk 20s after the app asks for it", async () => {
+	test("a load that never settles fails LoadClerk 20s after the app asks, with its boot timing", async () => {
 		stubClerk("/", false)
 		const { loadClerk } = await loadModules()
-		const error = await Effect.runPromise(
+		const { error, attributes } = await Effect.runPromise(
 			Effect.gen(function* () {
+				const span = yield* Effect.currentSpan
 				const fiber = yield* Effect.forkChild(loadClerk)
 				yield* TestClock.adjust("19 seconds")
 				expect(fiber.pollUnsafe()).toBeUndefined()
 				yield* TestClock.adjust("1 second")
-				return yield* Effect.flip(Fiber.join(fiber))
-			}).pipe(Effect.provide(TestClock.layer())),
+				return { error: yield* Effect.flip(Fiber.join(fiber)), attributes: span.attributes }
+			}).pipe(Effect.withSpan("LoadClerk"), Effect.provide(TestClock.layer())),
 		)
 		expect(error).toMatchObject({
 			_tag: "@maple/web/ClerkLoadError",
 			message: "Clerk did not load in time",
 		})
+		expect(attributes.get("maple.clerk.booted_early")).toBe(true)
+		expect(attributes.get("maple.clerk.load_start_ms")).toEqual(expect.any(Number))
+		expect(attributes.get("maple.clerk.load_end_ms")).toEqual(expect.any(Number))
 	})
 })

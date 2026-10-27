@@ -285,16 +285,8 @@ const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 		),
 	}))
 
-/** The Clerk load index.html started (`clerk-boot.ts`), as the session it settled on. */
-export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.gen(function* () {
-	const { clerk, startedAtMs, readyAtMs } = yield* bootedClerk
-	// Boot timing for the `LoadClerk` span: ms since navigation start.
-	yield* Effect.annotateCurrentSpan({
-		"maple.clerk.load_start_ms": startedAtMs,
-		"maple.clerk.load_end_ms": readyAtMs,
-	})
-	return yield* toSnapshot(clerk)
-})
+/** The Clerk load `boot.ts` started (`clerk-boot.ts`), as the session it settled on. */
+export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.flatMap(bootedClerk, toSnapshot)
 
 /** Every Clerk emit (session touch, org switch, sign-out), as snapshots. */
 export const clerkSnapshots: Stream.Stream<ClerkSnapshot> = Stream.callback<ClerkResources>((queue) =>

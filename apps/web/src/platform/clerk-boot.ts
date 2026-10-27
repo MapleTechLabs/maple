@@ -11,10 +11,9 @@ export class ClerkLoadError extends Schema.TaggedError<ClerkLoadError>()("@maple
 	cause: Schema.Defect(),
 }) {}
 
-/** A loaded clerk-js, and when its load started and ended (ms since navigation start). */
-export interface BootedClerk {
+/** A loaded clerk-js, and when its load finished (ms since navigation start). */
+interface LoadedClerk {
 	readonly clerk: ClerkGlobal
-	readonly startedAtMs: number
 	readonly readyAtMs: number
 }
 
@@ -52,8 +51,7 @@ const CLERK_LOAD_TIMEOUT = Duration.seconds(20)
 const sinceNavigationStart = Effect.sync(() => Math.round(performance.now()))
 
 /** Loads clerk-js the way `<ClerkProvider>` does (unless a stub already sits on `window`). */
-const loadClerkJs: Effect.Effect<BootedClerk, ClerkLoadError> = Effect.gen(function* () {
-	const startedAtMs = yield* sinceNavigationStart
+const loadClerkJs: Effect.Effect<LoadedClerk, ClerkLoadError> = Effect.gen(function* () {
 	yield* Effect.promise(() => purgeForeignClerkCookies(publishableKey))
 	if (window.Clerk === undefined) {
 		yield* injectClerkJs
@@ -72,12 +70,17 @@ const loadClerkJs: Effect.Effect<BootedClerk, ClerkLoadError> = Effect.gen(funct
 			}),
 		catch: (cause) => new ClerkLoadError({ message: "Clerk failed to load", cause }),
 	})
-	return { clerk, startedAtMs, readyAtMs: yield* sinceNavigationStart }
+	return { clerk, readyAtMs: yield* sinceNavigationStart }
 })
 
 const timedOut = new ClerkLoadError({ message: "Clerk did not load in time", cause: undefined })
 
-const bootFiber = Ref.makeUnsafe(Option.none<Fiber.Fiber<BootedClerk, ClerkLoadError>>())
+interface Boot {
+	readonly fiber: Fiber.Fiber<LoadedClerk, ClerkLoadError>
+	readonly startedAtMs: number
+}
+
+const boot = Ref.makeUnsafe(Option.none<Boot>())
 
 /**
  * Called by `boot.ts`, index.html's first script: it runs before the app's own bundle has
@@ -85,7 +88,8 @@ const bootFiber = Ref.makeUnsafe(Option.none<Fiber.Fiber<BootedClerk, ClerkLoadE
  */
 export const startClerkBoot = (): void => {
 	if (!isClerkAuthEnabled || (labEnabled && labPathOf(location.pathname) !== undefined)) return
-	Effect.runSync(Ref.set(bootFiber, Option.some(Effect.runFork(loadClerkJs))))
+	const startedAtMs = Math.round(performance.now())
+	Effect.runSync(Ref.set(boot, Option.some({ fiber: Effect.runFork(loadClerkJs), startedAtMs })))
 }
 
 const withDeadline = <A>(
@@ -97,16 +101,39 @@ const withDeadline = <A>(
 		orElse: () => Effect.andThen(onTimeout, Effect.fail(timedOut)),
 	})
 
+/** Boot timing on the current span (`LoadClerk`), whether the load succeeded or not. */
+const annotated = (
+	load: Effect.Effect<LoadedClerk, ClerkLoadError>,
+	startedAtMs: number,
+	bootedEarly: boolean,
+): Effect.Effect<ClerkGlobal, ClerkLoadError> => {
+	const annotate = (endMs: number) =>
+		Effect.annotateCurrentSpan({
+			"maple.clerk.load_start_ms": startedAtMs,
+			"maple.clerk.load_end_ms": endMs,
+			"maple.clerk.booted_early": bootedEarly,
+		})
+	return load.pipe(
+		Effect.tap(({ readyAtMs }) => annotate(readyAtMs)),
+		Effect.tapError(() => Effect.flatMap(sinceNavigationStart, annotate)),
+		Effect.map(({ clerk }) => clerk),
+	)
+}
+
 /**
  * The load `startClerkBoot` started, or a fresh one where it did not (lab pages, self-hosted).
  * The deadline counts from when the app asks, so a slow bundle download does not use it up.
  * Without one, a stalled script or `clerk.load` keeps the boot splash up forever.
  */
-export const bootedClerk: Effect.Effect<BootedClerk, ClerkLoadError> = Effect.flatMap(
-	Ref.get(bootFiber),
+export const bootedClerk: Effect.Effect<ClerkGlobal, ClerkLoadError> = Effect.flatMap(
+	Ref.get(boot),
 	Option.match({
-		onNone: () => withDeadline(loadClerkJs, Effect.void),
+		onNone: () =>
+			Effect.flatMap(sinceNavigationStart, (startedAtMs) =>
+				annotated(withDeadline(loadClerkJs, Effect.void), startedAtMs, false),
+			),
 		// Interrupting the boot removes its script tag, as the old in-command deadline did.
-		onSome: (fiber) => withDeadline(Fiber.join(fiber), Fiber.interrupt(fiber)),
+		onSome: ({ fiber, startedAtMs }) =>
+			annotated(withDeadline(Fiber.join(fiber), Fiber.interrupt(fiber)), startedAtMs, true),
 	}),
 )
