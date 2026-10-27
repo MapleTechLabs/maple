@@ -57,6 +57,7 @@ jobs:
                       ts:
                         - *base
                         - 'alchemy.run.ts'
+                        - 'test/**'
                         - 'apps/**'
                         - 'examples/**'
                         - 'packages/**'
