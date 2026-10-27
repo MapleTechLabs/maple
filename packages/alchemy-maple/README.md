@@ -101,11 +101,55 @@ seam when constructing the API client without the Alchemy provider collection.
 
 | Resource                 | Semantics                                                                                                                                                                                                                                                                    |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Maple.Dashboard`        | Full CRUD. Props are the v2 wire shape (`snake_case`, see `/v2/docs`); widget/variable documents pass through verbatim. Updates PATCH in place.                                                                                                                              |
+| `Maple.Dashboard`        | Full CRUD over typed native v2 dashboard data (`snake_case`, see `/v2/docs`). Updates PATCH in place. Set `dashboardId` to adopt an existing dashboard, and `refresh_interval_seconds` to manage its refresh cadence.                                                        |
 | `Maple.AlertDestination` | Full CRUD for declaratively provisionable types (PagerDuty, webhook, Discord, Telegram, email). Channel secrets are write-only — accept `Redacted` values. Chat-connector and Hazel destinations use integrations linked in Maple. Changing `type` replaces the destination. |
 | `Maple.AlertRule`        | Full CRUD. `destination_ids` accepts outputs from `Maple.AlertDestination`. Lost state is recovered only when the rule's ownership tag matches the stack, stage, and logical resource. Other rules require explicit adoption.                                                |
 | `Maple.ApiKey`           | Create / roll / revoke (the API has no key update). Changing props replaces the key; bumping the `rotate` prop rolls it in place (same name/scopes, new secret). `secret` is captured once and preserved in Alchemy state — it can never be re-read from the API.            |
 | `Maple.IngestKeys`       | Read-only per-org singleton. Surfaces `publicKey` / `privateKey` as `Redacted` outputs; delete only stops tracking it.                                                                                                                                                       |
+
+## Reusable dashboard data
+
+`DashboardData`, `DashboardWidget`, `DashboardVariable`, `DashboardSection` and
+`DashboardTimeRange` are Effect schemas and corresponding data types for the native
+v2 wire representation. Their `.make` constructors validate trusted definitions;
+use Effect Schema's decoders for external data. Layout, display and data-source
+discriminants are typed; query-builder query/formula bags retain the native wire
+contract's open records. These schemas ship inside this package, without private
+Maple workspace dependencies.
+
+```typescript
+const data = Maple.DashboardData.make({
+	name: "Service health",
+	refresh_interval_seconds: 60,
+	time_range: { type: "relative", value: "24h" },
+	widgets: [
+		Maple.DashboardWidget.make({
+			id: "requests",
+			visualization: "stat",
+			data_source: {
+				kind: "raw_sql",
+				sql: "SELECT count() AS value FROM traces WHERE $__orgFilter",
+				transform: { reduce_to_value: { field: "value", aggregate: "first" } },
+			},
+			display: { title: "Requests" },
+			layout: { x: 0, y: 0, w: 3, h: 4 },
+		}),
+	],
+})
+
+yield *
+	Maple.Dashboard("service-health", {
+		...data,
+		dashboardId: "dash_existing",
+	})
+```
+
+`dashboardId` pins an existing dashboard: a missing or invalid ID fails deployment
+instead of creating a substitute. Alchemy adopts it on the first deployment and
+manages subsequent updates and deletion. The ID cannot be changed after deployment;
+removing the prop keeps the remembered identity. Omit it initially to create a new
+dashboard. Refresh accepts `0`, `5`, `10`, `30`, `60`, `300`, `900`, or `null`; `0`
+and `null` disable automatic refresh.
 
 ## Worker telemetry
 
