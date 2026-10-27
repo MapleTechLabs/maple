@@ -118,16 +118,16 @@ jobs:
                         - 'apps/api/test/integration/**'
                         - 'apps/api/vitest.integration.config.ts'
                         - 'packages/db/**'
-                      # Whatever the api and maple-ai bundles are built from.
+                      # Whatever the api and maple-ai bundles are built from: their workspace
+                      # dependencies span nearly all of packages/ and lib/, so both are listed whole.
                       workers:
                         - *base
                         - 'alchemy.run.ts'
                         - 'test/alchemy/**'
-                        - 'apps/api/src/**'
-                        - 'apps/ai/src/**'
-                        - 'packages/infra/**'
-                        - 'packages/backend/**'
-                        - 'packages/alchemy-maple/**'
+                        - 'apps/api/**'
+                        - 'apps/ai/**'
+                        - 'packages/**'
+                        - 'lib/**'
                       shell:
                         - *base
                         - 'scripts/*.sh'
