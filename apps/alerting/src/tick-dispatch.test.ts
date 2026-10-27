@@ -22,12 +22,12 @@ const tickRequest = (init: {
 }
 
 /** A service binding that answers with `status` and records what it was sent. */
-const fakeBinding = (status: number) => {
+const fakeBinding = (status: number, answer: { body?: string; headers?: HeadersInit } = {}) => {
 	const seen: Array<Request> = []
 	const binding = {
 		fetch: (input: RequestInfo, init?: RequestInit) => {
 			seen.push(new Request(input, init))
-			return Promise.resolve(new Response(null, { status }))
+			return Promise.resolve(new Response(answer.body ?? null, { status, headers: answer.headers }))
 		},
 	}
 	return { binding, seen }
@@ -150,6 +150,20 @@ describe("dispatchTick", () => {
 			const error = yield* dispatchFailure({ ...ENV, [SELF_BINDING]: fakeBinding(500).binding })
 			expect(error._tag).toBe("@maple/alerting/errors/TickDispatchError")
 			expect(error.status).toBe(500)
+		}),
+	)
+
+	it.effect("names what killed the placed invocation, from the answer it left", () =>
+		Effect.gen(function* () {
+			const binding = fakeBinding(500, {
+				body: `  Worker exceeded resource limits ${"x".repeat(1000)}`,
+				headers: { "cf-ray": "8f00aa11bb22cc33-IAD" },
+			}).binding
+			const error = yield* dispatchFailure({ ...ENV, [SELF_BINDING]: binding })
+			expect(error.ray).toBe("8f00aa11bb22cc33-IAD")
+			expect(error.body?.startsWith("Worker exceeded resource limits")).toBe(true)
+			expect(error.body?.length).toBe(300)
+			expect(error.message).toBe("Placed tick answered 500")
 		}),
 	)
 })

@@ -21,9 +21,16 @@ export class TickDispatchError extends Schema.TaggedError<TickDispatchError>()(
 	{
 		message: Schema.String,
 		status: Schema.optionalKey(Schema.Number),
+		/** Cloudflare's id for the placed invocation, to find it in the Worker's own logs. */
+		ray: Schema.optionalKey(Schema.String),
+		/** The start of the answer's body: a runtime error page names what killed the invocation. */
+		body: Schema.optionalKey(Schema.String),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
+
+/** Enough of a failed answer's body to name the failure, not enough to flood a log line. */
+const MAX_FAILURE_BODY_CHARS = 300
 
 /** The tick did not run in the placed handler, so the caller runs it inline. */
 export class TickDispatchUnavailable extends Schema.TaggedError<TickDispatchUnavailable>()(
@@ -76,6 +83,8 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 	)
 	const response = yield* HttpClient.execute(request).pipe(
 		Effect.provideService(HttpClient.HttpClient, client),
+		// A callee the runtime killed usually surfaces here, as a thrown fetch, not as an answer.
+		Effect.tapError((cause) => Effect.annotateCurrentSpan("maple.alerting.tick_failure", cause.message)),
 		Effect.mapError((cause) => new TickDispatchError({ message: "Placed tick request failed", cause })),
 	)
 	if (response.status === 204) return
@@ -86,9 +95,22 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 			reason: response.status === 401 ? "refused-401" : "refused-404",
 		})
 	}
+	// The placed handler leaves no telemetry when the runtime kills it; its answer is all there is.
+	// On the span, not in the message, so the error keeps one fingerprint.
+	const ray = response.headers["cf-ray"]
+	const body = (yield* response.text.pipe(Effect.orElseSucceed(() => "")))
+		.trim()
+		.slice(0, MAX_FAILURE_BODY_CHARS)
+	yield* Effect.annotateCurrentSpan({
+		"http.response.status_code": response.status,
+		...(ray === undefined ? undefined : { "maple.alerting.tick_ray": ray }),
+		...(body === "" ? undefined : { "maple.alerting.tick_body": body }),
+	})
 	return yield* new TickDispatchError({
 		message: `Placed tick answered ${response.status}`,
 		status: response.status,
+		...(ray === undefined ? undefined : { ray }),
+		...(body === "" ? undefined : { body }),
 	})
 })
 
