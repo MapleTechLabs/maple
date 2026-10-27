@@ -280,6 +280,15 @@ describe("security tabs", () => {
 		])
 	})
 
+	test("coverage reads as unknown, not unmapped, until the latest runs are in", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			expectView(text("Not mapped")).toBeAbsent(),
+			expectView(text("no run has mapped a repository yet")).toBeAbsent(),
+		)
+	})
+
 	test("the latest run's coverage is read for the targets table", () => {
 		const model = loaded()
 		const key = model.latestRuns[RUN_IDS.gateway]?.key ?? ""

@@ -40,6 +40,7 @@ import {
 import {
 	countBySeverity,
 	coverageAcross,
+	coverageSettled,
 	coverageOf,
 	findingsStateOf,
 	latestDetailOf,
@@ -171,6 +172,8 @@ const kpis = (h: H, model: Model): Html => {
 		state._tag === "Ready" ? null : state._tag === "Gated" ? "Admins only" : placeholder(h, "h-7 w-10")
 	const running = runningRuns(model).length
 	const coverage = coverageAcross(model)
+	// Until its reads land, an empty sum is unknown, not "not mapped".
+	const coverageUnknown = coverage === null && !coverageSettled(model)
 	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Open leads",
@@ -180,13 +183,19 @@ const kpis = (h: H, model: Model): Html => {
 		}),
 		statRailItem(h, {
 			eyebrow: "Covered",
-			value: coverage === null ? "Not mapped" : `${coverage.closed} / ${coverage.total}`,
+			value: coverageUnknown
+				? placeholder(h, "h-7 w-10")
+				: coverage === null
+					? "Not mapped"
+					: `${coverage.closed} / ${coverage.total}`,
 			hint: coverage === null ? undefined : "units",
-			valueClassName: coverage === null ? "text-base" : undefined,
+			valueClassName: coverage === null && !coverageUnknown ? "text-base" : undefined,
 			compact: true,
 			subline:
 				coverage === null
-					? "no run has mapped a repository yet"
+					? coverageUnknown
+						? undefined
+						: "no run has mapped a repository yet"
 					: h.span(
 							[h.Class("flex flex-col gap-1.5")],
 							[

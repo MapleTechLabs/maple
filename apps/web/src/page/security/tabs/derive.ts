@@ -145,6 +145,15 @@ export const coverageAcross = (
 			)
 }
 
+/** Whether every read `coverageAcross` sums has landed: before that, "not mapped" would be a guess. */
+export const coverageSettled = (model: Model): boolean =>
+	Option.isSome(AsyncData.getData(model.targets.data)) &&
+	Option.isSome(AsyncData.getData(model.runs.data)) &&
+	targetsOf(model).every((target) => {
+		const run = latestRunFor(model, target.id)
+		return run === undefined || latestDetailOf(model, run.id) !== null
+	})
+
 /** The API lists at most this many runs per request, newest first. */
 export const RUN_LIST_CAP = 50
 

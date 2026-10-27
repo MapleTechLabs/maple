@@ -58,6 +58,15 @@ describe("stopNoteOf", () => {
 		expect(note.action).toBe("start")
 	})
 
+	it("keeps an engine detail that is itself a list inside its own reason", () => {
+		const note = stopNoteOf(
+			"findings_failed_validation: records[0].trace is empty; records[2].title is empty; org_budget_unavailable",
+			0,
+		)
+		expect(note.body).not.toContain("records[2].title is empty.")
+		expect(note.body).toContain("Also: billing could not be reached.")
+	})
+
 	it("reads a failure under the run louder than a limit the run followed", () => {
 		expect([
 			stopNoteOf("org_budget_unavailable", 0).tone,

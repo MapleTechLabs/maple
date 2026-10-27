@@ -181,7 +181,15 @@ export const stopReasonsOf = (incompleteReason: string | null): ReadonlyArray<St
 		? [reasonOf("stopped_early")]
 		: incompleteReason
 				.split("; ")
-				.filter((code) => code.trim() !== "")
+				.reduce<ReadonlyArray<string>>((reasons, part) => {
+					const last = reasons.at(-1)
+					if (part.trim() === "") return reasons
+					// An engine detail is itself a `; ` list, so only a segment that starts with a code
+					// starts a new reason.
+					return last !== undefined && !/^[a-z_]+(?::|$)/u.test(part.trim())
+						? [...reasons.slice(0, -1), `${last}; ${part}`]
+						: [...reasons, part]
+				}, [])
 				.map(reasonOf)
 
 export type StopNote = Readonly<{
