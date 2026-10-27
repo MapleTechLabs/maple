@@ -2,22 +2,21 @@
 title: "Limits"
 description: "Every limit in one place: ingest request size and concurrency, query time ranges, raw SQL, alert rules, event fields, and API and MCP rate limits."
 group: "Reference"
-order: 10
+order: 9
 ---
-
-The limits Maple enforces, grouped by where you would hit them. Each links to the page that explains the behavior in full.
 
 ## Ingest
 
 See [Ingest API](/docs/reference/ingest) for status codes and retry guidance.
 
-| Limit               | Value                                    | Over the limit               |
-| ------------------- | ---------------------------------------- | ---------------------------- |
-| Request body        | 20 MiB, measured compressed              | `413`                        |
-| Request duration    | 30 seconds                               | `503`, retry after 5 s       |
-| Concurrent requests | 1,000 in flight per organization         | `429`, retry after 1 s       |
-| Compression         | gzip only                                | `415`                        |
-| Session replay      | 1 GiB of uncompressed data per recording | Recording stops at the limit |
+| Limit               | Value                                                                                        | Over the limit               |
+| ------------------- | -------------------------------------------------------------------------------------------- | ---------------------------- |
+| Request body        | 20 MiB compressed, 160 MiB decompressed                                                      | `413`                        |
+| Request duration    | 30 seconds                                                                                   | `503`, retry after 5 s       |
+| Concurrent requests | 1,000 in flight per organization                                                             | `429`, retry after 1 s       |
+| Source token rate   | Set per [source token](/docs/reference/authentication#source-tokens), in requests per second | `429`, retry after 1 s       |
+| Compression         | gzip only                                                                                    | `415`                        |
+| Session replay      | 1 GiB of uncompressed data per recording                                                     | Recording stops at the limit |
 
 ## Product events and session events
 
@@ -52,24 +51,24 @@ A time series returns at most **1,500 points**. Bucket width is chosen from the 
 
 See [SQL reference](/docs/reference/sql).
 
-| Limit          | Value                                      |
-| -------------- | ------------------------------------------ |
-| Query text     | 32,768 characters                          |
-| Rows returned  | 1,000 (more is an error)                   |
-| Result size    | 5 MB of JSON; 64,000 characters per cell   |
-| Execution time | 10 seconds; 5 seconds inside an alert rule |
+| Limit          | Value                                                                                                                       |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Query text     | 32,768 characters                                                                                                           |
+| Rows returned  | 1,000 (more is an error)                                                                                                    |
+| Result size    | 5 MB of JSON; 64,000 characters per cell                                                                                    |
+| Execution time | 10 seconds; 5 to 25 seconds inside an alert rule, by its [check interval](/docs/alerting/rule-evaluation#query-time-limits) |
 
 ## Alert rules
 
-| Limit                     | Value                                           |
-| ------------------------- | ----------------------------------------------- |
-| Evaluation window         | 1 minute to 24 hours                            |
-| Check interval            | Every minute                                    |
-| Groups per raw-SQL alert  | 100                                             |
-| Tags per rule             | 20, up to 32 characters each                    |
-| Notification template     | 4,000 characters for the title and for the body |
-| Webhook response time     | 15 seconds                                      |
-| Webhook delivery attempts | 5                                               |
+| Limit                     | Value                                                               |
+| ------------------------- | ------------------------------------------------------------------- |
+| Evaluation window         | 1 minute to 24 hours                                                |
+| Check interval            | 1 to 60 minutes. Auto is a fifth of the window, from 1 to 5 minutes |
+| Groups per raw-SQL alert  | 100                                                                 |
+| Tags per rule             | 20, up to 32 characters each                                        |
+| Notification template     | 4,000 characters for the title and for the body                     |
+| Webhook response time     | 15 seconds                                                          |
+| Webhook delivery attempts | 5                                                                   |
 
 ## API and MCP rate limits
 

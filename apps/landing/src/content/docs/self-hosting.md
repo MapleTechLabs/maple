@@ -18,10 +18,10 @@ It is built for one team's telemetry on one machine: a single tenant, a single r
 
 ## The two secrets
 
-| Variable                   | Guards                                          | Who uses it                                                         |
-| -------------------------- | ----------------------------------------------- | ------------------------------------------------------------------- |
-| `MAPLE_LOCAL_INGEST_KEY`   | OTLP ingest (`/v1/traces`, `/logs`, `/metrics`) | Your applications' exporters. It can write telemetry, never read it |
-| `MAPLE_LOCAL_ACCESS_TOKEN` | The dashboard and the query API                 | People signing in, scripts, and `maple` CLI commands                |
+| Variable                   | Guards                                                | Who uses it                                                         |
+| -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------- |
+| `MAPLE_LOCAL_INGEST_KEY`   | OTLP ingest (`/v1/traces`, `/v1/logs`, `/v1/metrics`) | Your applications' exporters. It can write telemetry, never read it |
+| `MAPLE_LOCAL_ACCESS_TOKEN` | The dashboard and the query API                       | People signing in, scripts, and `maple` CLI commands                |
 
 Each must be at least 16 characters. Keeping them separate means the ingest key, which ends up in every service's config, cannot be used to read your telemetry.
 
@@ -57,5 +57,6 @@ This serves plain HTTP on every interface, which is fine on a private network. O
 
 - [Deploy](/docs/self-hosting/deploy): Docker Compose, container platforms, and TLS with a reverse proxy.
 - [Render](/docs/self-hosting/platforms/render): one-click deploy from a blueprint.
+- [Railway](/docs/self-hosting/platforms/railway): one-click deploy from a template.
 - [Connect](/docs/self-hosting/connect): send telemetry, sign in, and query from the CLI.
 - [Operations](/docs/self-hosting/operations): backups, upgrades, crash recovery and rotating secrets.

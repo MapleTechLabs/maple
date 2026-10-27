@@ -20,17 +20,19 @@ Copy this prompt into a coding agent that can run shell commands, such as Claude
 ```text
 Set up Maple agent tracing for Mastra in this project.
 
-Install the skill with `npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-mastra -y`, then follow it.
+Install the skill, then follow it:
+npx skills add MapleTechLabs/maple/skills --skill maple-agent-tracing-mastra -y
 
 My Maple ingest key is maple_pk_... and my organization is in the US region.
 ```
 
-Your ingest key is in **Settings → Ingestion**. If your organization is in the EU region, change `US` to `EU` in the prompt.
+Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**. The agent may write the key into your source code, and a public key can only send telemetry, so it is safe to commit. If your organization is in the EU region, change `US` to `EU` in the prompt.
 
 ## Install the observability packages
 
 ```bash
-npm install @mastra/core@latest @mastra/observability@latest @mastra/otel-exporter@latest
+npm install @mastra/core@latest @mastra/observability@latest \
+  @mastra/otel-exporter@latest
 ```
 
 Keep `@mastra/core`, `@mastra/observability` and `@mastra/otel-exporter` on releases from the same week, or the exporter can pick the wrong span as the model call.
@@ -53,7 +55,11 @@ export const mapleSpanProcessor: SpanOutputProcessor = {
 		const threadId = root.metadata?.threadId
 		if (threadId) span.metadata = { ...span.metadata, threadId }
 		// The model call span is created without its prompt: take the step's messages.
-		if (span.type === SpanType.MODEL_INFERENCE && span.input === undefined && span.parent?.input !== undefined) {
+		if (
+			span.type === SpanType.MODEL_INFERENCE &&
+			span.input === undefined &&
+			span.parent?.input !== undefined
+		) {
 			span.input = { messages: span.parent.input }
 		}
 		// Step spans carry the raw provider response (headers, cookies, full body) as metadata.
@@ -152,7 +158,7 @@ Give every `Agent` a distinct `name`, or sub-agents share one lane. When a workf
 
 A short-lived process can exit before its spans are sent. In a script, call `await mastra.shutdown()` in a `finally` block before exiting. In a serverless handler, call `await mastra.observability.flush()` at the end of each request, after any streamed response has finished.
 
-## Check that it works
+## Verify
 
 Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session named after your thread id with framework **Mastra**, one turn per `generate()` or `stream()` call, and a transcript with the prompts, replies and tool calls.
 
@@ -166,7 +172,7 @@ Cost shows as unpriced because Mastra doesn't report it. If nothing arrives, set
 - **The transcript has no user messages, or sub-agents land in a session named `<thread id>-<uuid>`.** Add `mapleSpanProcessor` to `spanOutputProcessors`.
 - **A failed tool shows as successful.** The tool returned an error value. Throw an `Error` instead.
 
-## Related
+## Next steps
 
 - [Agent Sessions overview](/docs/agent-sessions/overview)
 - [Mastra: OpenTelemetry exporter](https://mastra.ai/docs/observability/tracing/exporters/otel)

@@ -12,8 +12,8 @@ The file carries no secret, so you can commit it: Pub/Sub signs each push as a p
 
 ## Get the file
 
-1. In Maple, open **Integrations → Google Cloud**, click **Connect Google Cloud**, choose the scope and what to collect, and click **Continue**.
-2. In **Method**, choose **Infrastructure as code**, then **Terraform** or **Alchemy**, and click **Continue**.
+1. In Maple, open **Sources**, click **Connect source** and pick **Google Cloud**. Enter the scope, choose what to collect and click **Create connection**.
+2. Under **How do you want to apply the setup?**, choose **Terraform** or **Alchemy**.
 3. Click **Copy**, or **Copy prompt for coding agent** (see [below](#with-a-coding-agent)).
 
 Without a script there is no sink filter to keep: the file sets the recommended filter, or the one chosen under **Log filter**.
@@ -43,7 +43,7 @@ Alchemy's IAM resource grants roles on projects only. For a folder or organizati
 
 **Copy prompt for coding agent** copies the file with instructions for an agent working in your repository: where to put the file, to show you the plan and apply only after you approve it, the `gcloud` commands that check the result, and how Maple confirms it. Paste it into the agent from the repository that holds your infrastructure code.
 
-## Confirm the connection
+## Verify
 
 Nothing in Terraform or Alchemy reports to Maple. Maple confirms each part by its first data:
 

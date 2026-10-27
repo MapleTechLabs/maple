@@ -250,7 +250,7 @@ Errors thrown by browser extensions and the harmless `ResizeObserver loop` notic
 
 ### Failed HTTP requests
 
-`fetch` and `XMLHttpRequest` spans follow the OpenTelemetry HTTP conventions for client requests: a response with a 4xx or 5xx status marks the span as an error, with `error.type` set to the status code (`"404"`, `"503"`), so it opens an issue. Issues group by status code.
+`fetch` and `XMLHttpRequest` spans follow the OpenTelemetry HTTP conventions for client requests: a response with a 4xx or 5xx status marks the span as an error, with `error.type` set to the status code (`"404"`, `"503"`). A 5xx opens an issue, grouped by status code. A 4xx with no exception attached is marked `Error` on the trace but does not open an issue.
 
 To count fewer statuses, narrow the list (the default is `[[400, 599]]`). A status left out is not an error:
 
@@ -340,7 +340,7 @@ Content Security Policy violations are sent as `maple.browser.csp_violation` war
 
 ## Navigation and data-loading spans
 
-Three calls turn one click into one trace: a navigation span, the data-loading spans under it, the `fetch()` spans those make, and the backend spans behind them. Call them from your router's hooks. The [frontend guides](/docs/frontend) show where for each framework.
+Three calls turn one click into one trace: a navigation span, the data-loading spans under it, the `fetch()` spans those make, and the backend spans behind them. Call them from your router's hooks. The [framework examples](#framework-examples) show where for React and Next.js.
 
 ```ts
 // the router starts a navigation
@@ -355,7 +355,7 @@ const project = await MapleBrowser.traced("loader /projects/:id", () => fetchPro
 MapleBrowser.endNavigation("/projects/:id")
 ```
 
-- `startNavigation(path)` opens a `pageload` span on the first call and a `navigate` span on every later one, with the path as `url.path`. A navigation still open is ended with `app.navigation.interrupted: true`. The page load joins the server render's trace when the document response has a `Server-Timing: traceparent;desc="…"` entry or the page a `<meta name="traceparent">` tag.
+- `startNavigation(path)` opens a `pageload` span on the first call and a `navigate` span on every later one, with the path as `url.path`. A navigation still open is ended with `maple.navigation.interrupted: true`. The page load joins the server render's trace when the document response has a `Server-Timing: traceparent;desc="…"` entry or the page a `<meta name="traceparent">` tag.
 - The page load starts at the browser's navigation start, and once the page has loaded it gets child spans for fetching the HTML (`documentFetch`, with `dns`, `connect`, `request` and `response` under it), `domProcessing` and `loadEvent`.
 - `endNavigation(route?)` renames the span to `navigate <route>` (or `pageload <route>`) and ends it. It does nothing when no navigation is open.
 - `traced(name, fn, options?)` runs `fn` in a span under the open navigation and returns its result unchanged. A throw is recorded on the span, marks it `Error`, and is rethrown; `isFailure` returning `false` leaves the span `Ok`. An error `traced` recorded isn't reported again by `captureException` or the global handlers.

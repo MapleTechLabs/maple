@@ -44,6 +44,8 @@ export MAPLE_LOCAL_ACCESS_TOKEN=<access token>
 maple services
 ```
 
+If you are signed in to Maple Cloud and have pinned `maple use remote`, the CLI ignores `MAPLE_LOCAL_URL` and queries Maple Cloud. Add `--local`, or run `maple use auto`.
+
 The CLI sends the token only to the host in `MAPLE_LOCAL_URL` (over the same scheme, so an `https` URL never gets it over plain `http`) and to this machine's own addresses.
 
 Scripts can call the query API directly with the same token:
