@@ -851,7 +851,7 @@ const checkRows = (monitor: UptimeMonitor): ReadonlyArray<CheckRow> => {
 					ok: last.ok,
 					statusCode: last.status_code,
 					durationMs: last.duration_ms,
-					result: last.ok ? "OK" : (last.error ?? "Failed"),
+					result: last.ok ? "" : (last.error ?? ""),
 					traceId: last.trace_id,
 				}
 			: {
@@ -859,7 +859,7 @@ const checkRows = (monitor: UptimeMonitor): ReadonlyArray<CheckRow> => {
 					ok: check.ok,
 					statusCode: null,
 					durationMs: check.duration_ms,
-					result: check.ok ? "OK" : "Failed",
+					result: "",
 					traceId: null,
 				},
 	)
@@ -873,21 +873,23 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 		panelHeader(h, {
 			title: "Checks",
 			action: h.a(
-				[h.Href(uptimeTracesHref()), h.Class("text-xs text-primary hover:underline")],
+				[
+					h.Href(uptimeTracesHref()),
+					h.Title(
+						`Each check is a span in the ${UPTIME_SERVICE} service, namespace ${MAPLE_SERVICES_NAMESPACE}.`,
+					),
+					h.Class("text-xs text-primary hover:underline"),
+				],
 				["View all checks in Traces"],
 			),
 		}),
-		h.p(
-			[h.Class("px-4 pb-2 text-xs text-muted-foreground")],
-			[`Each check is a span in the ${UPTIME_SERVICE} service, namespace ${MAPLE_SERVICES_NAMESPACE}.`],
-		),
 		h.div(
 			[h.Class(cn(CHECK_GRID, "border-y px-4 py-2"))],
 			[
 				eyebrow(h, {}, ["Time"]),
 				eyebrow(h, {}, ["Status"]),
 				eyebrow(h, {}, ["Duration"]),
-				eyebrow(h, {}, ["Result"]),
+				eyebrow(h, {}, ["Error"]),
 				eyebrow(h, { className: "text-right" }, ["Trace"]),
 			],
 		),
@@ -924,7 +926,10 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 									[h.Class("font-mono text-xs tabular-nums")],
 									[formatMs(row.durationMs)],
 								),
-								h.span([h.Class("truncate text-xs text-muted-foreground")], [row.result]),
+								h.span(
+									[h.Class("truncate text-xs text-destructive"), h.Title(row.result)],
+									[row.result],
+								),
 								row.traceId === null
 									? h.span([h.Class("text-right text-xs text-muted-foreground")], ["–"])
 									: h.a(
@@ -974,7 +979,9 @@ export const lastCheckPanel = (h: H, monitor: UptimeMonitor): Html => {
 			: fact(
 					h,
 					"Down after",
-					`${monitor.failures_to_down} failed ${monitor.failures_to_down === 1 ? "check" : "checks in a row"}`,
+					monitor.failures_to_down === 1
+						? "1 failure"
+						: `${monitor.failures_to_down} failures in a row`,
 				),
 		...(last === null || last.ok || last.error === null
 			? []
@@ -988,7 +995,7 @@ export const setupPanel = (h: H, model: Model, monitor: UptimeMonitor, serviceHr
 	const destinations = model.destinations
 	const notifies =
 		count === 0
-			? "Nobody yet. The incident still opens in the inbox."
+			? "Nobody yet"
 			: destinations === null
 				? `${count} ${count === 1 ? "destination" : "destinations"}`
 				: monitor.destination_ids
@@ -999,27 +1006,17 @@ export const setupPanel = (h: H, model: Model, monitor: UptimeMonitor, serviceHr
 						.join(", ")
 	return panel(h, { className: "divide-y" }, [
 		panelHeader(h, { title: "Setup" }),
-		h.div(
-			[h.Class("px-4 py-3")],
-			[eyebrow(h, {}, ["Notifies"]), h.p([h.Class("mt-1 text-sm")], [notifies])],
-		),
-		h.div(
-			[h.Class("px-4 py-3")],
-			[
-				eyebrow(h, {}, ["Service"]),
-				h.p(
-					[h.Class("mt-1 text-sm")],
-					[
-						serviceHref === null || monitor.service_name === null
-							? "Not linked to a service"
-							: h.a(
-									[h.Href(serviceHref), h.Class("text-primary hover:underline")],
-									[monitor.service_name],
-								),
-					],
+		fact(h, "Notifies", notifies, count === 0 ? "text-muted-foreground" : undefined),
+		serviceHref === null || monitor.service_name === null
+			? fact(h, "Service", "None", "text-muted-foreground")
+			: fact(
+					h,
+					"Service",
+					h.a(
+						[h.Href(serviceHref), h.Class("text-primary hover:underline")],
+						[monitor.service_name],
+					),
 				),
-			],
-		),
 	])
 }
 

@@ -623,7 +623,7 @@ describe("uptime monitor page", () => {
 			themeResolved(),
 			expectView(text("503")).toExist(),
 			expectView(text("503 Service Unavailable")).not.toExist(),
-			expectView(text("2 failed checks in a row")).toExist(),
+			expectView(text("2 failures in a row")).toExist(),
 		)
 	})
 
