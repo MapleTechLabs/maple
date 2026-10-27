@@ -12,7 +12,9 @@ import {
 	type SecurityAuditFindingStatus,
 	type SecurityAuditRunKind,
 	type SecurityAuditRunStatus,
+	type SecurityAuditSeverity,
 	SecurityAuditTargetId,
+	type SecurityAuditVerdict,
 } from "@maple/domain/security-audit"
 import {
 	SecurityAuditEventDetail,
@@ -167,6 +169,17 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly countUnits: (runId: string) => Effect.Effect<Record<string, number>, AuditStoreError>
 	/** One run's final records, the input a later run carries forward. */
 	readonly listRunFindings: (runId: string) => Effect.Effect<ReadonlyArray<Finding>, AuditStoreError>
+	/**
+	 * Every finding the run holds, rejected included, as this run reported it, with the target's
+	 * lifecycle; one the target does not track yet reads as open and first seen here. Most severe first.
+	 */
+	readonly listRunFindingViews: (
+		runId: string,
+	) => Effect.Effect<ReadonlyArray<SecurityAuditRunFindingView>, AuditStoreError>
+	/** What each run reported, per severity and verdict, counted in SQL; a run with none counts zeros. */
+	readonly countRunFindings: (
+		runIds: ReadonlyArray<SecurityAuditRunId>,
+	) => Effect.Effect<Record<string, SecurityAuditRunFindingCounts>, AuditStoreError>
 	/** Oldest first; with a `limit`, the newest page strictly before `beforeAt`. */
 	readonly listEvents: (
 		runId: string,
@@ -224,6 +237,19 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 		reason: string,
 		actor: UserId,
 	) => Effect.Effect<Option.Option<SecurityAuditTriage>, AuditStoreError>
+}
+
+/** A run's finding: its record, verdict and severity from the run, its lifecycle from the target. */
+export type SecurityAuditRunFindingView = Omit<SecurityAuditFindingRow, "id">
+
+export interface SecurityAuditRunFindingCounts {
+	readonly critical: number
+	readonly high: number
+	readonly medium: number
+	readonly low: number
+	readonly informational: number
+	readonly needsValidation: number
+	readonly rejected: number
 }
 
 /** What a triage write changed; built from the write itself, so an old stored record cannot hide it. */
@@ -435,6 +461,35 @@ const runNotFound = (runId: string) =>
 
 const overallSeverity = (finding: Finding) =>
 	finding.verdict === "confirmed" ? finding.severity.overall_severity : null
+
+/** Confirmed by severity (a confirmed row without one as informational), then needs_validation, then rejected. */
+const findingRank = (verdict: SecurityAuditVerdict, severity: SecurityAuditSeverity | null) =>
+	verdict === "rejected"
+		? 6
+		: verdict === "needs_validation"
+			? 5
+			: { critical: 0, high: 1, medium: 2, low: 3, informational: 4 }[severity ?? "informational"]
+
+const NO_RUN_FINDINGS: SecurityAuditRunFindingCounts = {
+	critical: 0,
+	high: 0,
+	medium: 0,
+	low: 0,
+	informational: 0,
+	needsValidation: 0,
+	rejected: 0,
+}
+
+/** The counts key a stored (verdict, severity) row adds to. */
+const countKey = (
+	verdict: SecurityAuditVerdict,
+	severity: SecurityAuditSeverity | null,
+): keyof SecurityAuditRunFindingCounts =>
+	verdict === "rejected"
+		? "rejected"
+		: verdict === "needs_validation"
+			? "needsValidation"
+			: (severity ?? "informational")
 
 /** The stored row for one engine event; its id makes a replayed insert a no-op. */
 const eventRow = (orgId: OrgId, runId: SecurityAuditRunId, event: AuditEvent) =>
@@ -1309,6 +1364,120 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					return yield* keepDecodable(rows, (row) => decodeFinding(row.record), "run findings")
 				})
 
+				const listRunFindingViews: SecurityAuditOrgStore["listRunFindingViews"] = Effect.fn(
+					"SecurityAuditStore.listRunFindingViews",
+				)(function* (rawRunId) {
+					const runId = yield* decodeRunId(rawRunId)
+					const runs = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditRuns)
+								.select(($) => ({
+									targetId: $.targetId,
+									sourceRef: $.sourceRef,
+									startedAt: $.startedAt,
+								}))
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(runId)])
+								.limit(1),
+						),
+					)
+					const run = runs[0]
+					if (run === undefined) return []
+					const stored = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditRunFindings)
+								.select(($) => ({
+									fingerprint: $.fingerprint,
+									verdict: $.verdict,
+									overallSeverity: $.overallSeverity,
+									record: PG.undecoded($.record),
+								}))
+								.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)]),
+						),
+					)
+					const reported = yield* keepDecodable(
+						stored,
+						(row) => Option.map(decodeFinding(row.record), (record) => ({ ...row, record })),
+						"run findings",
+					)
+					const fingerprints = reported.map((row) => row.fingerprint)
+					// The lifecycle columns only: the target's record is the latest run's, not this one's.
+					const tracked = Arr.isReadonlyArrayNonEmpty(fingerprints)
+						? yield* dbExecute((db) =>
+								db.run(
+									PG.from(SecurityAuditFindings)
+										.select(($) => ({
+											fingerprint: $.fingerprint,
+											status: $.status,
+											statusReason: $.statusReason,
+											statusChangedBy: $.statusChangedBy,
+											statusChangedAt: $.statusChangedAt,
+											firstSeenRunId: $.firstSeenRunId,
+											lastSeenRunId: $.lastSeenRunId,
+											firstSeenRef: $.firstSeenRef,
+											lastSeenRef: $.lastSeenRef,
+											fixedRunId: $.fixedRunId,
+											createdAt: $.createdAt,
+											updatedAt: $.updatedAt,
+										}))
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.targetId.eq(run.targetId),
+											$.fingerprint.in_(...fingerprints),
+										]),
+								),
+							)
+						: []
+					const byFingerprint = new Map(tracked.map((row) => [row.fingerprint, row]))
+					return reported
+						.map((row): SecurityAuditRunFindingView => {
+							const lifecycle = byFingerprint.get(row.fingerprint) ?? {
+								status: "open" as const,
+								statusReason: null,
+								statusChangedBy: null,
+								statusChangedAt: null,
+								firstSeenRunId: runId,
+								lastSeenRunId: runId,
+								firstSeenRef: run.sourceRef,
+								lastSeenRef: run.sourceRef,
+								fixedRunId: null,
+								createdAt: run.startedAt,
+								updatedAt: run.startedAt,
+							}
+							return { ...lifecycle, ...row, orgId, targetId: run.targetId }
+						})
+						.toSorted(
+							(a, b) =>
+								findingRank(a.verdict, a.overallSeverity) -
+									findingRank(b.verdict, b.overallSeverity) ||
+								(a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0),
+						)
+				})
+
+				const countRunFindings: SecurityAuditOrgStore["countRunFindings"] = Effect.fn(
+					"SecurityAuditStore.countRunFindings",
+				)(function* (runIds) {
+					const zeros = Object.fromEntries(runIds.map((id) => [id, NO_RUN_FINDINGS]))
+					if (!Arr.isReadonlyArrayNonEmpty(runIds)) return zeros
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditRunFindings)
+								.select(($) => ({
+									runId: $.runId,
+									verdict: $.verdict,
+									overallSeverity: $.overallSeverity,
+									count: PG.count(),
+								}))
+								.where(($) => [$.orgId.eq(orgId), $.runId.in_(...runIds)])
+								.groupBy("runId", "verdict", "overallSeverity"),
+						),
+					)
+					return rows.reduce<Record<string, SecurityAuditRunFindingCounts>>((counts, row) => {
+						const key = countKey(row.verdict, row.overallSeverity)
+						const current = counts[row.runId] ?? NO_RUN_FINDINGS
+						return { ...counts, [row.runId]: { ...current, [key]: current[key] + row.count } }
+					}, zeros)
+				})
+
 				const listEvents: SecurityAuditOrgStore["listEvents"] = Effect.fn(
 					"SecurityAuditStore.listEvents",
 				)(function* (rawRunId, options) {
@@ -1614,6 +1783,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					listUnits,
 					listUnitSummaries,
 					listRunFindings,
+					listRunFindingViews,
+					countRunFindings,
 					listEvents,
 					listFindings,
 					markFixed,

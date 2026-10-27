@@ -265,7 +265,23 @@ export const SecurityAuditUnit = Schema.Struct({
 export type SecurityAuditUnit = typeof SecurityAuditUnit.Type
 
 export const SecurityAuditTargetsResponse = Schema.Struct({ targets: Schema.Array(SecurityAuditTarget) })
-export const SecurityAuditRunsResponse = Schema.Struct({ runs: Schema.Array(SecurityAuditRun) })
+/** What one run reported: confirmed findings per severity, then the two unscored verdicts. */
+export const SecurityAuditRunFindingCounts = Schema.Struct({
+	critical: Schema.Number,
+	high: Schema.Number,
+	medium: Schema.Number,
+	low: Schema.Number,
+	informational: Schema.Number,
+	needsValidation: Schema.Number,
+	rejected: Schema.Number,
+})
+export type SecurityAuditRunFindingCounts = typeof SecurityAuditRunFindingCounts.Type
+
+export const SecurityAuditRunsResponse = Schema.Struct({
+	runs: Schema.Array(SecurityAuditRun),
+	/** Per run id; admins only, since members may list runs but not read findings. */
+	findingCounts: Schema.optionalKey(Schema.Record(Schema.String, SecurityAuditRunFindingCounts)),
+})
 export const SecurityAuditEventsResponse = Schema.Struct({ events: Schema.Array(SecurityAuditEvent) })
 export const SecurityAuditFindingsResponse = Schema.Struct({ findings: Schema.Array(SecurityAuditFinding) })
 export const SecurityAuditUnitsResponse = Schema.Struct({ units: Schema.Array(SecurityAuditUnit) })
@@ -608,6 +624,13 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			params: { runId: SecurityAuditRunId },
 			query: SecurityAuditListEventsQuery,
 			success: SecurityAuditEventsResponse,
+			error: [...adminErrors, SecurityAuditRunNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("listRunFindings", "/runs/:runId/findings", {
+			params: { runId: SecurityAuditRunId },
+			success: SecurityAuditFindingsResponse,
 			error: [...adminErrors, SecurityAuditRunNotFoundError],
 		}),
 	)

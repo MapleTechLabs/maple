@@ -250,6 +250,148 @@ describe("SecurityAuditStore findings lifecycle", () => {
 	)
 })
 
+describe("SecurityAuditStore run findings", () => {
+	it.effect("lists each run's own record and severity with the target's shared triage", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const first = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(first.runId, [
+					rejected("a-claim"),
+					confirmed("b-low", "low"),
+					confirmed("c-shared", "high"),
+				])
+				const second = yield* seedRun(store, orgA, "sha-2", first.targetId)
+				yield* scoped.saveFindings(second.runId, [confirmed("c-shared", "low")])
+				yield* scoped.setFindingStatus(first.targetId, "c-shared", "dismissed", "test fixture", user)
+
+				const view = (runId: SecurityAuditRunId) =>
+					scoped
+						.listRunFindingViews(runId)
+						.pipe(
+							Effect.map((rows) =>
+								rows.map((f) => [
+									f.fingerprint,
+									f.verdict,
+									f.overallSeverity,
+									f.record.verdict === "confirmed"
+										? f.record.severity.overall_severity
+										: null,
+									f.status,
+									f.firstSeenRunId,
+									f.lastSeenRunId,
+								]),
+							),
+						)
+				assert.deepStrictEqual(
+					[yield* view(first.runId), yield* view(second.runId)],
+					[
+						[
+							["c-shared", "confirmed", "high", "high", "dismissed", first.runId, second.runId],
+							["b-low", "confirmed", "low", "low", "open", first.runId, first.runId],
+							["a-claim", "rejected", null, null, "open", first.runId, first.runId],
+						],
+						[["c-shared", "confirmed", "low", "low", "dismissed", first.runId, second.runId]],
+					],
+				)
+				assert.deepStrictEqual(yield* store.forOrg(orgB).listRunFindingViews(first.runId), [])
+			}),
+		),
+	)
+
+	it.effect("reads a finding the target does not track as open and first seen in the run", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(runId, [confirmed("f1")])
+				yield* rawSql(`DELETE FROM security_audit_findings WHERE fingerprint = 'f1'`)
+				const run = yield* scoped.getRun(runId)
+				const startedAt = Option.getOrThrow(run).startedAt
+
+				const [f1] = yield* scoped.listRunFindingViews(runId)
+				assert.deepStrictEqual(
+					[
+						f1?.targetId,
+						f1?.status,
+						f1?.statusReason,
+						f1?.statusChangedBy,
+						f1?.statusChangedAt,
+						f1?.firstSeenRunId,
+						f1?.lastSeenRunId,
+						f1?.firstSeenRef,
+						f1?.lastSeenRef,
+						f1?.fixedRunId,
+						f1?.createdAt,
+						f1?.updatedAt,
+					],
+					[
+						targetId,
+						"open",
+						null,
+						null,
+						null,
+						runId,
+						runId,
+						"sha-1",
+						"sha-1",
+						null,
+						startedAt,
+						startedAt,
+					],
+				)
+			}),
+		),
+	)
+
+	it.effect("counts each run's findings by severity and verdict, zeros for a run with none", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const first = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(first.runId, [
+					confirmed("h1", "high"),
+					confirmed("h2", "high"),
+					confirmed("l1", "low"),
+					rejected("r1"),
+				])
+				// Rows an engine wrote directly: a confirmed one without a severity, and an unverified one.
+				yield* rawSql(
+					`INSERT INTO security_audit_run_findings (run_id, fingerprint, org_id, verdict, overall_severity, record)
+					 VALUES ($1, 'n1', $2, 'confirmed', null, '{}'::jsonb), ($1, 'v1', $2, 'needs_validation', null, '{}'::jsonb)`,
+					[first.runId, orgA],
+				)
+				const empty = yield* seedRun(store, orgA, "sha-2", first.targetId)
+				const zeros = {
+					critical: 0,
+					high: 0,
+					medium: 0,
+					low: 0,
+					informational: 0,
+					needsValidation: 0,
+					rejected: 0,
+				}
+
+				assert.deepStrictEqual(yield* scoped.countRunFindings([first.runId, empty.runId]), {
+					[first.runId]: {
+						...zeros,
+						high: 2,
+						low: 1,
+						informational: 1,
+						needsValidation: 1,
+						rejected: 1,
+					},
+					[empty.runId]: zeros,
+				})
+				assert.deepStrictEqual(yield* store.forOrg(orgB).countRunFindings([first.runId]), {
+					[first.runId]: zeros,
+				})
+				assert.deepStrictEqual(yield* scoped.countRunFindings([]), {})
+			}),
+		),
+	)
+})
+
 describe("SecurityAuditStore triage survives a resave", () => {
 	it.effect("a resave that drops a finding this run opened keeps it once a person triaged it", () =>
 		withStore((store) =>
