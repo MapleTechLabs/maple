@@ -292,6 +292,27 @@ describe("Alchemy engine lifecycle", () => {
 		)
 	})
 
+	it.live("refuses to move a deployed dashboard to another ID", () => {
+		const h = makeHarness()
+		const stack = h.stack("dashboard-identity")
+		const first = h.insert("/v2/dashboards", { name: "First" })
+		const second = h.insert("/v2/dashboards", { name: "Second" })
+		return h.run(
+			Effect.gen(function* () {
+				yield* stack.deploy(Dashboard("health", { dashboardId: first.id, name: "Health" }))
+				const exit = yield* Effect.exit(
+					stack.deploy(Dashboard("health", { dashboardId: second.id, name: "Health" })),
+				)
+				expect(Exit.isFailure(exit)).toBe(true)
+				expect(h.documents.get(`/v2/dashboards/${first.id}`)).toMatchObject({ name: "Health" })
+				expect(h.documents.get(`/v2/dashboards/${second.id}`)).toMatchObject({ name: "Second" })
+				expect(h.calls.filter((call) => call.method === "POST" || call.method === "DELETE")).toEqual(
+					[],
+				)
+			}),
+		)
+	})
+
 	it.live("fails adoption of a missing dashboard instead of creating a substitute", () => {
 		const h = makeHarness()
 		return h.run(
