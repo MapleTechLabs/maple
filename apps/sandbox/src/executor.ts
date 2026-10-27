@@ -43,6 +43,8 @@ export interface ExecutorProbeReport {
 	readonly start: ProbeStep
 	readonly interceptHttp: ProbeStep
 	readonly interceptHttps: ProbeStep
+	/** The check script itself: a failure here leaves every check `missing`. */
+	readonly script: ProbeStep
 	readonly checks: ReadonlyArray<AssessedCheck>
 	/** `snapshotContainer()`: the dependency cache's fast path, if the scheduling policy allows it. */
 	readonly containerSnapshot: ProbeStep
@@ -57,9 +59,9 @@ const decoder = new TextDecoder()
 
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)).slice(0, 500)
 
-/** Runs `run`, timing it; a rejection becomes a failed step instead of failing the probe. */
-const step = <A>(run: () => Promise<A>, detail?: (value: A) => string) =>
-	Effect.tryPromise({ try: run, catch: message }).pipe(
+/** Runs `effect`, timing it; a failure becomes a failed step instead of failing the probe. */
+const step = <A>(effect: Effect.Effect<A, string>, detail?: (value: A) => string) =>
+	effect.pipe(
 		Effect.timed,
 		Effect.map(([elapsed, value]): ProbeStep => {
 			const done = { ok: true, ms: Duration.toMillis(elapsed) }
@@ -68,134 +70,145 @@ const step = <A>(run: () => Promise<A>, detail?: (value: A) => string) =>
 		Effect.catch((error) => Effect.succeed<ProbeStep>({ ok: false, ms: 0, error })),
 	)
 
+const attempt = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: message })
+
 const notRun: ProbeStep = { ok: false, ms: 0, error: "not run: the container did not start" }
 
 export interface ExecutorEnv {
 	readonly Executor: DurableObjectNamespace<Executor>
 }
 
+/** A report that answers every check; anything less is retried on the next tick, not stored. */
+const isComplete = (report: ExecutorProbeReport) =>
+	report.start.ok && report.script.ok && report.checks.every((check) => check.verdict !== "missing")
+
+/** The report as log lines: a summary, then one per check. */
+const logReport = (report: ExecutorProbeReport): Effect.Effect<void> => {
+	const failed = report.checks.filter((check) => check.verdict === "fail" || check.verdict === "missing")
+	const summary = Effect.logInfo("executor probe finished").pipe(
+		Effect.annotateLogs({
+			"maple.executor.probe.version": report.version,
+			"maple.executor.probe.start": JSON.stringify(report.start),
+			"maple.executor.probe.intercept_http": JSON.stringify(report.interceptHttp),
+			"maple.executor.probe.intercept_https": JSON.stringify(report.interceptHttps),
+			"maple.executor.probe.script": JSON.stringify(report.script),
+			"maple.executor.probe.container_snapshot": JSON.stringify(report.containerSnapshot),
+			"maple.executor.probe.failed": failed.map((check) => check.id).join(","),
+		}),
+	)
+	const lines = Effect.forEach(
+		report.checks,
+		(check) =>
+			Effect.logInfo("executor probe check").pipe(
+				Effect.annotateLogs({
+					"maple.executor.probe.version": report.version,
+					"maple.executor.probe.check": check.id,
+					"maple.executor.probe.verdict": check.verdict,
+					"maple.executor.probe.exit_code": check.exitCode ?? -1,
+					"maple.executor.probe.output": check.output ?? "",
+				}),
+			),
+		{ discard: true },
+	)
+	return Effect.andThen(summary, lines)
+}
+
 export class Executor extends DurableObject<ExecutorEnv> {
 	/**
-	 * The stored report for this probe version, or a fresh run. `fresh` says whether this call ran
-	 * it, so the caller logs each report once.
+	 * Runs the probe unless this version already has a complete report. The report is logged here,
+	 * before it is stored, so a stored report has always been logged.
 	 */
-	async probe(): Promise<{ readonly report: ExecutorProbeReport; readonly fresh: boolean }> {
+	async probe(): Promise<void> {
 		const stored = await this.ctx.storage.get<ExecutorProbeReport>(REPORT_KEY)
-		if (stored !== undefined) return { report: stored, fresh: false }
+		if (stored !== undefined) return
 		const report = await Effect.runPromise(this.runProbe())
-		// A run whose container never answered says nothing about the platform: try again next tick.
-		if (report.start.ok) await this.ctx.storage.put(REPORT_KEY, report)
-		return { report, fresh: true }
+		await Effect.runPromise(logReport(report))
+		if (isComplete(report)) await this.ctx.storage.put(REPORT_KEY, report)
 	}
 
 	private runProbe(): Effect.Effect<ExecutorProbeReport> {
 		const ctx = this.ctx
-		return Effect.gen(function* () {
-			const ranAt = Date.now()
-			const container = ctx.container
-			if (container === undefined)
-				return {
-					version: EXECUTOR_PROBE_VERSION,
-					ranAt,
-					start: { ok: false, ms: 0, error: "no container is bound to this Durable Object" },
-					interceptHttp: notRun,
-					interceptHttps: notRun,
-					checks: [],
-					containerSnapshot: notRun,
-				}
-			const exec = async (command: string, timeoutMs: number) => {
+		const ranAt = Date.now()
+		const unstarted = (start: ProbeStep): ExecutorProbeReport => ({
+			version: EXECUTOR_PROBE_VERSION,
+			ranAt,
+			start,
+			interceptHttp: notRun,
+			interceptHttps: notRun,
+			script: notRun,
+			checks: [],
+			containerSnapshot: notRun,
+		})
+		const container = ctx.container
+		if (container === undefined)
+			return Effect.succeed(
+				unstarted({ ok: false, ms: 0, error: "no container is bound to this Durable Object" }),
+			)
+		const exec = (command: string, timeoutMs: number) =>
+			attempt(async () => {
 				const process = await container.exec(["bash", "-c", command], {
 					env: { HOME: "/root", LANG: "C.UTF-8" },
 					signal: AbortSignal.timeout(timeoutMs),
 				})
 				const output = await process.output()
 				return { exitCode: output.exitCode, stdout: decoder.decode(output.stdout) }
-			}
-			const destroy = Effect.tryPromise(() => container.destroy()).pipe(Effect.ignore)
+			})
+		const destroy = attempt(() => container.destroy()).pipe(Effect.ignore)
+		return Effect.gen(function* () {
 			if (container.running) yield* destroy
 			const start = yield* step(
-				async () => {
+				attempt(async () => {
 					container.start({ enableInternet: false })
 					await container.setInactivityTimeout(5 * 60 * 1000)
-					return exec("id -u", 60_000)
-				},
-				(answer) => `exit ${answer.exitCode}`,
+				}).pipe(
+					Effect.andThen(exec("id -u", 60_000)),
+					Effect.filterOrFail(
+						(answer) => answer.exitCode === 0,
+						(answer) => `the first command exited ${answer.exitCode}`,
+					),
+				),
 			)
-			if (!start.ok)
-				return {
-					version: EXECUTOR_PROBE_VERSION,
-					ranAt,
-					start,
-					interceptHttp: notRun,
-					interceptHttps: notRun,
-					checks: [],
-					containerSnapshot: notRun,
-				}
+			if (!start.ok) return unstarted(start)
 			const gateway = ctx.exports.RegistryGateway({ props: {} })
-			const interceptHttp = yield* step(() => container.interceptOutboundHttp(GATEWAY_HOST, gateway))
-			const interceptHttps = yield* step(() =>
-				container.interceptOutboundHttps(GATEWAY_TLS_HOST, gateway),
+			const interceptHttp = yield* step(
+				attempt(() => container.interceptOutboundHttp(GATEWAY_HOST, gateway)),
 			)
-			const run = yield* Effect.tryPromise({
-				try: () => exec(probeScript(), PROBE_TIMEOUT_MS),
-				catch: message,
-			}).pipe(Effect.option)
-			const checks = assessProbe(run._tag === "Some" ? parseProbe(run.value.stdout) : [])
+			const interceptHttps = yield* step(
+				attempt(() => container.interceptOutboundHttps(GATEWAY_TLS_HOST, gateway)),
+			)
+			const run = yield* exec(probeScript(), PROBE_TIMEOUT_MS).pipe(Effect.timed, Effect.result)
+			const results = run._tag === "Success" ? parseProbe(run.success[1].stdout) : []
+			const script: ProbeStep =
+				run._tag === "Success"
+					? {
+							ok: true,
+							ms: Duration.toMillis(run.success[0]),
+							detail: `exit ${run.success[1].exitCode}, ${results.length} results`,
+						}
+					: { ok: false, ms: 0, error: run.failure }
 			const containerSnapshot = yield* step(
-				() => container.snapshotContainer({ name: `executor-probe-v${EXECUTOR_PROBE_VERSION}` }),
+				attempt(() =>
+					container.snapshotContainer({ name: `executor-probe-v${EXECUTOR_PROBE_VERSION}` }),
+				),
 				(snapshot) => `size ${snapshot.size}`,
 			)
-			yield* destroy
 			return {
 				version: EXECUTOR_PROBE_VERSION,
 				ranAt,
 				start,
 				interceptHttp,
 				interceptHttps,
-				checks,
+				script,
+				checks: assessProbe(results),
 				containerSnapshot,
 			}
-		})
+		}).pipe(Effect.ensuring(destroy))
 	}
 }
 
-/** Runs the probe if this version has no report yet, and logs a fresh report one line per check. */
+/** Runs the probe once per probe version; the Durable Object logs the report. */
 export const runExecutorProbe = (env: ExecutorEnv): Effect.Effect<void> =>
-	Effect.tryPromise({
-		try: () => env.Executor.getByName(`probe-v${EXECUTOR_PROBE_VERSION}`).probe(),
-		catch: message,
-	}).pipe(
-		Effect.flatMap(({ report, fresh }) => {
-			if (!fresh) return Effect.void
-			const failed = report.checks.filter(
-				(check) => check.verdict === "fail" || check.verdict === "missing",
-			)
-			const summary = Effect.logInfo("executor probe finished").pipe(
-				Effect.annotateLogs({
-					"maple.executor.probe.version": report.version,
-					"maple.executor.probe.start": JSON.stringify(report.start),
-					"maple.executor.probe.intercept_http": JSON.stringify(report.interceptHttp),
-					"maple.executor.probe.intercept_https": JSON.stringify(report.interceptHttps),
-					"maple.executor.probe.container_snapshot": JSON.stringify(report.containerSnapshot),
-					"maple.executor.probe.failed": failed.map((check) => check.id).join(","),
-				}),
-			)
-			const lines = Effect.forEach(
-				report.checks,
-				(check) =>
-					Effect.logInfo("executor probe check").pipe(
-						Effect.annotateLogs({
-							"maple.executor.probe.version": report.version,
-							"maple.executor.probe.check": check.id,
-							"maple.executor.probe.verdict": check.verdict,
-							"maple.executor.probe.exit_code": check.exitCode ?? -1,
-							"maple.executor.probe.output": check.output ?? "",
-						}),
-					),
-				{ discard: true },
-			)
-			return Effect.andThen(summary, lines)
-		}),
+	attempt(() => env.Executor.getByName(`probe-v${EXECUTOR_PROBE_VERSION}`).probe()).pipe(
 		Effect.catch((error) =>
 			Effect.logWarning("executor probe failed").pipe(Effect.annotateLogs({ "error.message": error })),
 		),

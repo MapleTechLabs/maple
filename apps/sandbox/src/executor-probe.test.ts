@@ -14,8 +14,8 @@ const line = (id: string, exitCode: number, output: string) =>
 
 const CHECKS: ReadonlyArray<ProbeCheck> = [
 	{ id: "egress", question: "blocked?", expect: "fails", command: "exit 7" },
-	{ id: "gateway", question: "reached?", expect: "succeeds", contains: "marker", command: "echo marker" },
-	{ id: "kernel", question: "which?", expect: "observe", command: "uname" },
+	{ id: "gateway", question: "reached?", expect: "succeeds", contains: ["marker"], command: "echo marker" },
+	{ id: "kernel", question: "which?", expect: "observe", command: "uname -s" },
 ]
 
 describe("parseProbe", () => {
@@ -66,7 +66,7 @@ describe("assessProbe", () => {
 			id: "limit",
 			question: "",
 			expect: "fails",
-			contains: "started",
+			contains: ["started"],
 			command: "",
 		}
 		const verdicts = assessProbe(
@@ -108,7 +108,7 @@ describe.skipIf(!hasTimeout)("probeScript in bash", () => {
 		assert.deepStrictEqual(results, [
 			{ id: "egress", exitCode: 7, output: "" },
 			{ id: "gateway", exitCode: 0, output: "marker" },
-			{ id: "kernel", exitCode: 0, output: results[2]?.output ?? "" },
+			{ id: "kernel", exitCode: 0, output: "Linux" },
 			{ id: "quoted", exitCode: 3, output: `it's "here"` },
 		])
 	})

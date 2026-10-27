@@ -23,9 +23,9 @@ export const GATEWAY_MARKER = "maple-executor-gateway"
 const NOBODY = "setpriv --reuid=65534 --regid=65534 --clear-groups"
 
 /**
- * `succeeds`: exit 0. `fails`: any other exit. With `contains`, the output must also hold that text,
- * so a failure for the wrong reason (the program never started) does not pass. `observe`: recorded
- * for a human to read; it gates nothing.
+ * `succeeds`: exit 0. `fails`: any other exit. With `contains`, the output must also hold one of
+ * those texts, so a failure for the wrong reason (a missing binary, a timeout) does not pass.
+ * `observe`: recorded for a human to read; it gates nothing.
  */
 export type ProbeExpectation = "succeeds" | "fails" | "observe"
 
@@ -33,7 +33,7 @@ export interface ProbeCheck {
 	readonly id: string
 	readonly question: string
 	readonly expect: ProbeExpectation
-	readonly contains?: string
+	readonly contains?: ReadonlyArray<string>
 	readonly command: string
 }
 
@@ -65,25 +65,30 @@ export const PROBE_CHECKS: ReadonlyArray<ProbeCheck> = [
 		id: "egress-dns",
 		question: "Is public DNS unreachable?",
 		expect: "fails",
-		command: "getent hosts registry.npmjs.org",
+		contains: ["not found"],
+		// getent exits 2 for a name that did not resolve, and prints nothing.
+		command: "getent hosts registry.npmjs.org; rc=$?; [ $rc -eq 2 ] && echo 'not found'; exit $rc",
 	},
 	{
 		id: "egress-tcp",
 		question: "Is a raw TCP connection to a public IP refused?",
 		expect: "fails",
-		command: "bash -c 'exec 3<>/dev/tcp/1.1.1.1/443'",
+		contains: ["unreachable", "refused", "timed out"],
+		command:
+			"timeout 8 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443'; rc=$?; [ $rc -eq 124 ] && echo 'connect timed out'; exit $rc",
 	},
 	{
 		id: "egress-https",
 		question: "Is a public HTTPS registry unreachable?",
 		expect: "fails",
+		contains: ["EAI_AGAIN", "ENOTFOUND", "ECONNREFUSED", "ENETUNREACH", "ETIMEDOUT", "TimeoutError"],
 		command: nodeFetch("https://registry.npmjs.org/-/ping"),
 	},
 	{
 		id: "loopback",
 		question: "Does loopback still work?",
 		expect: "succeeds",
-		contains: "loopback-ok",
+		contains: ["loopback-ok"],
 		command: LOOPBACK,
 	},
 	{
@@ -96,7 +101,7 @@ export const PROBE_CHECKS: ReadonlyArray<ProbeCheck> = [
 		id: "gateway-http",
 		question: "Does an intercepted plain-HTTP host reach the gateway Worker with internet off?",
 		expect: "succeeds",
-		contains: GATEWAY_MARKER,
+		contains: [GATEWAY_MARKER],
 		command: nodeFetch(`http://${GATEWAY_HOST}/probe`),
 	},
 	{
@@ -121,7 +126,7 @@ export const PROBE_CHECKS: ReadonlyArray<ProbeCheck> = [
 		id: "privilege-drop",
 		question: "Can root drop to an unprivileged uid?",
 		expect: "succeeds",
-		contains: "65534",
+		contains: ["65534"],
 		command: `${NOBODY} id -u`,
 	},
 	{
@@ -134,22 +139,25 @@ export const PROBE_CHECKS: ReadonlyArray<ProbeCheck> = [
 		id: "limit-address-space",
 		question: "Does an address-space limit stop a large allocation in a process that started?",
 		expect: "fails",
-		contains: "started",
+		contains: ["cannot allocate"],
 		command: `prlimit --as=134217728 -- bash -c 'echo started; x=$(head -c 300000000 /dev/zero | tr "\\0" a); echo "allocated \${#x}"'`,
 	},
 	{
 		id: "limit-file-size",
 		question: "Does a file-size limit stop a large write?",
 		expect: "fails",
-		contains: "File size limit exceeded",
+		// SIGXFSZ kills `dd`, or, where an ignored signal is inherited, the write fails with EFBIG.
+		contains: ["File size limit exceeded", "File too large"],
 		command:
 			'f=$(mktemp); prlimit --fsize=1048576 -- dd if=/dev/zero of="$f" bs=1M count=4 2>&1; rc=$?; rm -f "$f"; exit $rc',
 	},
 	{
 		id: "limit-processes",
 		question: "Does a process limit stop an unprivileged fork loop?",
-		expect: "observe",
-		command: `${NOBODY} prlimit --nproc=8 -- bash -c 'n=0; for i in $(seq 1 20); do (sleep 3) 2>/dev/null & n=$((n+1)); done; echo started=$n; echo running=$(find /proc -maxdepth 1 -user 65534 | wc -l)'`,
+		expect: "fails",
+		contains: ["Cannot fork"],
+		// `sh` (dash) gives up on a failed fork at once; bash retries for longer than a check may run.
+		command: `${NOBODY} prlimit --nproc=8 -- sh -c 'n=0; for i in $(seq 1 20); do sleep 3 & n=$((n+1)); done; echo started=$n'`,
 	},
 	{
 		id: "cgroup",
@@ -226,7 +234,8 @@ export interface AssessedCheck {
 const verdictOf = (check: ProbeCheck, result: ProbeResult): ProbeVerdict => {
 	if (check.expect === "observe") return "observed"
 	const exitAsExpected = (result.exitCode === 0) === (check.expect === "succeeds")
-	const outputAsExpected = check.contains === undefined || result.output.includes(check.contains)
+	const outputAsExpected =
+		check.contains === undefined || check.contains.some((text) => result.output.includes(text))
 	return exitAsExpected && outputAsExpected ? "pass" : "fail"
 }
 
