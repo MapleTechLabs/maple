@@ -100,6 +100,18 @@ export const WorkerTelemetry = (options: WorkerTelemetryOptions): Layer.Layer<ne
 		AlchemyTelemetry.layer(MapleHttpTracingLive),
 	)
 
+/** Runs `flush` every `every` until interrupted. One failed export must not end the cadence. */
+export const flushOnCadence = (flush: () => Promise<void>, every: Duration.Input): Effect.Effect<never> =>
+	Effect.promise(flush).pipe(
+		Effect.delay(every),
+		Effect.catchCause((cause) =>
+			Effect.logWarning("Periodic telemetry flush failed").pipe(
+				Effect.annotateLogs({ cause: Cause.pretty(cause) }),
+			),
+		),
+		Effect.forever,
+	)
+
 export interface EventTelemetryOptions extends WorkerTelemetryOptions {
 	/**
 	 * Also export on this cadence while the event runs. An hour-long event otherwise holds every
@@ -123,17 +135,7 @@ export const eventTelemetry = (
 			: Layer.effectDiscard(
 					Effect.gen(function* () {
 						const env = yield* WorkerEnvironment
-						yield* Effect.promise(() => telemetry.flush(env)).pipe(
-							Effect.delay(flushEvery),
-							// One failed export must not end the cadence for the rest of the event.
-							Effect.catchCause((cause) =>
-								Effect.logWarning("Periodic telemetry flush failed").pipe(
-									Effect.annotateLogs({ cause: Cause.pretty(cause) }),
-								),
-							),
-							Effect.forever,
-							Effect.forkScoped,
-						)
+						yield* Effect.forkScoped(flushOnCadence(() => telemetry.flush(env), flushEvery))
 					}),
 				)
 	return Layer.mergeAll(

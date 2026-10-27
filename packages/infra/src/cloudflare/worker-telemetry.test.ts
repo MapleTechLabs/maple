@@ -1,9 +1,9 @@
 import { assert, describe, it } from "@effect/vitest"
 import { WorkerEnvironment } from "@alchemy.run/cloudflare"
 import { afterEach } from "vitest"
-import { Effect, Exit, Layer, Scope, Tracer } from "effect"
+import { Effect, Exit, Fiber, Layer, Scope, Tracer } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { eventTelemetry, MapleHttpTracingLive } from "./worker-telemetry.ts"
+import { eventTelemetry, flushOnCadence, MapleHttpTracingLive } from "./worker-telemetry.ts"
 
 describe("MapleHttpTracingLive", () => {
 	it.effect("records the allowlisted headers and never a credential", () =>
@@ -87,6 +87,22 @@ describe("eventTelemetry", () => {
 			const whileRunning = exported.filter((url) => url.endsWith("/v1/traces")).length
 			yield* Scope.close(scope, Exit.void)
 			assert.isAtLeast(whileRunning, 2)
+		}),
+	)
+})
+
+describe("flushOnCadence", () => {
+	it.live("keeps exporting after an export fails", () =>
+		Effect.gen(function* () {
+			const attempts: Array<number> = []
+			const flush = () => {
+				attempts.push(attempts.length)
+				return attempts.length === 1 ? Promise.reject(new Error("collector down")) : Promise.resolve()
+			}
+			const fiber = yield* Effect.forkChild(flushOnCadence(flush, "10 millis"))
+			yield* Effect.sleep("80 millis")
+			yield* Fiber.interrupt(fiber)
+			assert.isAtLeast(attempts.length, 3)
 		}),
 	)
 })
