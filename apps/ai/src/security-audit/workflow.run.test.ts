@@ -27,6 +27,7 @@ import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } 
 import { HttpClient, HttpClientResponse } from "effect/http"
 import {
 	SecurityAuditCredits,
+	SecurityAuditCreditsUnavailable,
 	SecurityAuditNoCredits,
 } from "@maple/backend/services/security-audit/SecurityAuditCredits"
 import { auditWithAgents, toSandboxStepError } from "./workflow.run"
@@ -389,6 +390,54 @@ describe("auditWithAgents", () => {
 				Layer.mergeAll(
 					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
 					runningOut,
+					Layer.succeed(
+						HttpClient.HttpClient,
+						HttpClient.make(() => Effect.die("no network in tests")),
+					),
+				),
+			),
+		)
+	})
+
+	it.effect("waits out a billing outage before an agent instead of ending the run", () => {
+		// Five failed reads in a row: one agent's spend check retried through them.
+		const outage = { left: 5 }
+		const flaky = Layer.succeed(SecurityAuditCredits, {
+			ensure: () =>
+				Effect.suspend(() => {
+					outage.left -= 1
+					return outage.left >= 0
+						? Effect.fail(new SecurityAuditCreditsUnavailable({ message: "Transport error" }))
+						: Effect.void
+				}),
+		})
+		return Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const calls: Array<string> = []
+			const attempts: Array<string> = []
+			yield* auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideServiceEffect(Cloudflare.WorkflowStep, nativeStep(attempts)),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				{
+					// One spend check per agent, plus the five that met the outage.
+					extraChecks:
+						attempts.filter((name) => name.startsWith("org-budget:")).length - calls.length,
+					unavailable: Option.map(row, (r) =>
+						(r.incompleteReason ?? "").includes("org_budget_unavailable"),
+					),
+					ran: calls.length > 1,
+				},
+				{ extraChecks: 5, unavailable: Option.some(false), ran: true },
+			)
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+					flaky,
 					Layer.succeed(
 						HttpClient.HttpClient,
 						HttpClient.make(() => Effect.die("no network in tests")),

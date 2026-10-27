@@ -85,8 +85,9 @@ const props = Effect.gen(function* () {
 		// Same as api: keeps DB graph init off the first Postgres dial (docs/infra.md).
 		build: { output: { strictExecutionOrder: false } },
 		// A security-audit Workflow step is one agent run that parses up to 20 minutes of streamed
-		// model output; the paid-plan ceiling keeps it inside one step's CPU budget.
-		limits: { cpuMs: 300_000 },
+		// model output; the paid-plan ceiling keeps it inside one step's CPU budget. One Workflow
+		// invocation runs many agents, and the default 10,000 outbound requests cut a run short.
+		limits: { cpuMs: 300_000, subrequests: 100_000 },
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...mapleDbEnv(db, "ai"),

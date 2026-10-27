@@ -36,7 +36,7 @@ import {
 	type SandboxEvent,
 	type SandboxRequest,
 } from "@maple/backend/sandbox/contract"
-import { Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
+import { Cache, Duration, Effect, Exit, Layer, Option, Schedule, Schema, Stream } from "effect"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import {
 	VcsSourceService,
@@ -327,6 +327,34 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 		),
 })
 
+/**
+ * How long one resolved checkout of a commit is reused. Its clone token lives an hour; without
+ * reuse every command mints one, which spent a third of an audit's outbound requests.
+ */
+export const CHECKOUT_REUSE = Duration.minutes(30)
+
+const isCommitSha = (ref: string | undefined): ref is string =>
+	ref !== undefined && /^[0-9a-f]{40}$/.test(ref)
+
+/**
+ * `resolveCheckout` with a commit's checkout kept for {@link CHECKOUT_REUSE}. A branch is never
+ * kept (its head moves), and a failure is never kept, so the next command asks again.
+ */
+export const reusedCheckouts = (
+	resolveCheckout: CloudflareRepoSandboxDeps["resolveCheckout"],
+): Effect.Effect<CloudflareRepoSandboxDeps["resolveCheckout"]> =>
+	Effect.map(
+		Cache.makeWith(
+			(key: { readonly orgId: OrgId; readonly repository: string; readonly ref: string }) =>
+				resolveCheckout(key.orgId, key.repository, key.ref),
+			{ capacity: 64, timeToLive: (exit) => (Exit.isSuccess(exit) ? CHECKOUT_REUSE : Duration.zero) },
+		),
+		(cache) => (orgId, repository, ref) =>
+			isCommitSha(ref)
+				? Cache.get(cache, { orgId, repository, ref })
+				: resolveCheckout(orgId, repository, ref),
+	)
+
 /** The port over the sandbox service binding and the org's connected repositories. */
 export const CloudflareRepoSandboxLive: Layer.Layer<Sandbox, never, VcsSourceService | SandboxClient> =
 	Layer.effect(
@@ -334,6 +362,7 @@ export const CloudflareRepoSandboxLive: Layer.Layer<Sandbox, never, VcsSourceSer
 		Effect.gen(function* () {
 			const source = yield* VcsSourceService
 			const client = yield* SandboxClient
-			return makeCloudflareRepoSandbox({ resolveCheckout: source.resolveCheckout, exec: client.exec })
+			const resolveCheckout = yield* reusedCheckouts(source.resolveCheckout)
+			return makeCloudflareRepoSandbox({ resolveCheckout, exec: client.exec })
 		}),
 	)
