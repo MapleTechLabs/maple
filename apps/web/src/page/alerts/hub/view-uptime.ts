@@ -1,9 +1,11 @@
+import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "../../../ui/button"
 import { confirmDialog } from "../../../ui/confirm-dialog"
+import { badge } from "../../../ui/display"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "../../../ui/empty"
 import { errorState } from "../../../ui/error-state"
 import { eyebrow } from "../../../ui/eyebrow"
@@ -39,6 +41,13 @@ import { recentChecksStrip, uptimeStatusChip, uptimeStatusSquare } from "../shar
 import { Message } from "./message"
 import type { Model, UptimeKindFilter } from "./model"
 import { monitorMenuId } from "./update"
+import {
+	groupMonitors,
+	type MonitorGroup,
+	monitorNamespace,
+	NO_NAMESPACE,
+	type ServiceNamespaces,
+} from "./uptime-groups"
 
 // The hub's Uptime tab: the KPI rail, the filters and the monitor table.
 
@@ -292,7 +301,21 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 	)
 }
 
-const table = (h: H, model: Model, rows: ReadonlyArray<UptimeMonitor>, nowMs: number): Html =>
+const namespaceLabel = (h: H, namespace: string): Html =>
+	namespace === NO_NAMESPACE
+		? badge(h, { variant: "secondary", className: "text-muted-foreground" }, ["No namespace"])
+		: badge(h, { variant: "secondary" }, [namespace])
+
+const groupHeader = (h: H, [namespace, monitors]: MonitorGroup): Html =>
+	h.li(
+		[h.Key(`ns-${namespace}`), h.Class("flex items-center gap-2 bg-muted/50 py-2 pr-2 pl-4")],
+		[
+			namespaceLabel(h, namespace),
+			h.span([h.Class("text-xs text-muted-foreground")], [countLabel(monitors.length, "monitor")]),
+		],
+	)
+
+const table = (h: H, model: Model, groups: ReadonlyArray<MonitorGroup>, nowMs: number): Html =>
 	h.div(
 		[h.Class("overflow-x-auto rounded-md border")],
 		[
@@ -317,15 +340,51 @@ const table = (h: H, model: Model, rows: ReadonlyArray<UptimeMonitor>, nowMs: nu
 					),
 					h.ul(
 						[h.Class("divide-y")],
-						rows.map((monitor) => monitorRow(h, model, monitor, nowMs)),
+						groups.flatMap((group) => [
+							// One unnamed group is the plain list, no header.
+							...(groups.length > 1 || group[0] !== NO_NAMESPACE
+								? [groupHeader(h, group)]
+								: []),
+							...group[1].map((monitor) => monitorRow(h, model, monitor, nowMs)),
+						]),
 					),
 				],
 			),
 		],
 	)
 
-const loaded = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>, nowMs: number): Html => {
-	if (monitors.length === 0) return uptimeEmptyState(h, model.search.serviceName, model.isAdmin)
+/**
+ * The monitors in view: a pinned namespace keeps only its own, as the services list does, once the
+ * namespaces are known. Unknown namespaces (still loading, or the read failed) leave the list whole.
+ */
+const scoped = (
+	monitors: ReadonlyArray<UptimeMonitor>,
+	namespaces: Option.Option<ServiceNamespaces>,
+	pinnedNamespace: string | null,
+): ReadonlyArray<UptimeMonitor> =>
+	pinnedNamespace === null
+		? monitors
+		: Option.match(namespaces, {
+				onNone: () => monitors,
+				onSome: (known) =>
+					monitors.filter((monitor) => monitorNamespace(monitor, known) === pinnedNamespace),
+			})
+
+const loaded = (
+	h: H,
+	model: Model,
+	all: ReadonlyArray<UptimeMonitor>,
+	nowMs: number,
+	pinnedNamespace: string | null,
+): Html => {
+	if (all.length === 0) return uptimeEmptyState(h, model.search.serviceName, model.isAdmin)
+	const namespaces = AsyncData.getData(model.serviceNamespaces.data)
+	const monitors = scoped(all, namespaces, pinnedNamespace)
+	if (monitors.length === 0)
+		return filteredEmpty(h, {
+			noun: "monitors",
+			description: `No monitor checks a service in the ${pinnedNamespace ?? ""} namespace. Clear the namespace pin to see every monitor.`,
+		})
 	const rows = monitors.filter(
 		(monitor) =>
 			matchesStatus(monitor, model.uptimeStatus) &&
@@ -344,12 +403,23 @@ const loaded = (h: H, model: Model, monitors: ReadonlyArray<UptimeMonitor>, nowM
 						onClear: Message.ClickedClearUptimeFilters(),
 						clearLabel: "Clear filters",
 					})
-				: table(h, model, rows, nowMs),
+				: table(
+						h,
+						model,
+						// Pinned to one namespace, the groups would be one header over the whole list.
+						pinnedNamespace === null
+							? groupMonitors(
+									rows,
+									Option.getOrElse(namespaces, () => ({})),
+								)
+							: [[NO_NAMESPACE, rows]],
+						nowMs,
+					),
 		],
 	)
 }
 
-export const uptimeTab = (h: H, model: Model, nowMs: number): Html => {
+export const uptimeTab = (h: H, model: Model, nowMs: number, pinnedNamespace: string | null): Html => {
 	const data = model.monitors.data
 	if (AsyncData.isFailure(data))
 		return errorState(h, {
@@ -360,7 +430,7 @@ export const uptimeTab = (h: H, model: Model, nowMs: number): Html => {
 		})
 	return Option.match(AsyncData.getData(data), {
 		onNone: () => loadingState(h),
-		onSome: (monitors) => loaded(h, model, monitors, nowMs),
+		onSome: (monitors) => loaded(h, model, monitors, nowMs, pinnedNamespace),
 	})
 }
 
