@@ -370,7 +370,7 @@ describe("ChatAlertPoster", () => {
 			footer: [],
 			sentAtMs: null,
 		})
-		// Slack refuses a message whose attachment image it cannot fetch.
+		// A platform refuses a message whose image it cannot fetch.
 		const hasImage = (blocks: ReadonlyArray<ChatBlock>) =>
 			blocks.some((block) => block.kind === "alert" && block.imageUrl !== null)
 		const postCard = (card: ChatBlock) =>
