@@ -17,12 +17,13 @@ const fake = (options: {
 	readonly firstExit?: number
 	readonly script?: "answers" | "fails" | "partial"
 	readonly alreadyStored?: boolean
+	readonly running?: boolean
 }): Fake => {
 	const calls: Array<string> = []
 	const stored: Array<ExecutorProbeReport> = []
 	const record = (name: string) => Effect.sync(() => void calls.push(name))
 	const container: ExecutorContainer = {
-		isRunning: () => false,
+		isRunning: () => options.running === true,
 		start: record("start"),
 		exec: (command) => {
 			if (command === "id -u")
@@ -120,6 +121,18 @@ describe("probeOnce", () => {
 				"log executor probe finished",
 			])
 			assert.deepStrictEqual(subject.stored, [])
+		}),
+	)
+
+	it.effect("destroys a container left running before starting a fresh one", () =>
+		Effect.gen(function* () {
+			const subject = fake({ script: "answers", running: true })
+			yield* run(subject)
+			assert.deepStrictEqual(withoutCheckLogs(subject.calls).slice(0, 3), [
+				"destroy",
+				"start",
+				"exec id",
+			])
 		}),
 	)
 
