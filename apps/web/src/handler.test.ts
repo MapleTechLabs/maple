@@ -1,10 +1,10 @@
 import { Effect, Layer, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
-import { apiProxyPath } from "./api-proxy"
+import { API_PROXY_PREFIX, apiProxyPath } from "./api-proxy"
 import { handleRequest } from "./handler"
 import type { WebWorkerEnv } from "./worker-env"
-import { chartRequestFromPath } from "./og/chart-image"
-import { ogIdFromPath } from "./og/share-links"
+import { CHART_KINDS, chartRequestFromPath } from "./og/chart-image"
+import { OG_IMAGE_PREFIX, ogIdFromPath } from "./og/share-links"
 import { WORKER_FIRST_PATHS } from "./worker-first"
 
 const assets = {
@@ -156,12 +156,12 @@ describe("WORKER_FIRST_PATHS", () => {
 		)
 
 	it("reaches the Worker for every path the handler answers itself", () => {
+		// Built from the routes' own prefixes, so a new image route is checked without editing this.
 		const paths = [
-			"/_api",
-			"/_api/v2/traces",
-			"/share/og/abc123.png",
-			"/alerts/chart/eyJ.sig.png",
-			"/chat/chart/eyJ.sig.png",
+			API_PROXY_PREFIX,
+			`${API_PROXY_PREFIX}/v2/traces`,
+			`${OG_IMAGE_PREFIX}abc123.png`,
+			...CHART_KINDS.map((kind) => `${kind.pathPrefix}eyJ.sig.png`),
 		]
 		const handledByWorker = (path: string) =>
 			apiProxyPath(path) !== undefined ||

@@ -8,7 +8,7 @@
  */
 
 const SHARE_PATH_PREFIX = "/share/"
-const OG_IMAGE_PREFIX = "/share/og/"
+export const OG_IMAGE_PREFIX = "/share/og/"
 const OG_IMAGE_SUFFIX = ".png"
 
 export const OG_IMAGE_WIDTH = 1200
