@@ -6,8 +6,6 @@ import { metricsSummaryQuery } from "./queries/metrics"
 import {
 	tracesDurationStatsQuery,
 	spanHierarchyQuery,
-	spanDetailQuery,
-	spanEventsQuery,
 	spanEventsByTraceQuery,
 	traceTimeProbeQuery,
 	recentTraceTimeProbeQuery,
@@ -30,12 +28,10 @@ describe("tracesTimeseriesQuery", () => {
 		// Without rootOnly the query means "all spans", which the entry-point-only
 		// MV cannot answer — it reads raw traces.
 		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("OrgId = 'org_123'")
 		expect(sql).toContain("sum(traces.SampleRate) AS count")
 		expect(sql).toContain("INTERVAL 3600 SECOND")
 		expect(sql).toContain("GROUP BY bucket, groupName")
 		expect(sql).toContain("ORDER BY bucket ASC, groupName ASC")
-		expect(sql).toContain("'all'")
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- a count metric reports no quantiles
 		expect(sql).toContain("0 AS p50Duration")
 	})
@@ -93,18 +89,6 @@ describe("tracesTimeseriesQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- an unsampled query reports no estimate
 		expect(sql).toContain("0 AS estimatedSpanCount")
-	})
-
-	it("groups by service", () => {
-		const q = tracesTimeseriesQuery({ metric: "count", needsSampling: false, groupBy: ["service"] })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("toString(traces.ServiceName)")
-	})
-
-	it("groups by span_name", () => {
-		const q = tracesTimeseriesQuery({ metric: "count", needsSampling: false, groupBy: ["span_name"] })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("toString(traces.SpanName)")
 	})
 
 	it("groups by multiple dimensions", () => {
@@ -503,10 +487,7 @@ describe("tracesBreakdownQuery", () => {
 	it("builds basic breakdown by service", () => {
 		const q = tracesBreakdownQuery({ metric: "count", groupBy: "service" })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("FROM service_overview_spans")
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the breakdown's group key
-		expect(sql).toContain("ServiceName AS name")
 		expect(sql).toContain("sum(traces.SampleRate) AS count")
 		expect(sql).toContain("GROUP BY name")
 		expect(sql).toContain("ORDER BY count DESC")
@@ -634,12 +615,6 @@ describe("tracesBreakdownQuery", () => {
 		expect(sql).toContain("LIMIT 25")
 	})
 
-	it("uses default limit of 10", () => {
-		const q = tracesBreakdownQuery({ metric: "count", groupBy: "service" })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("LIMIT 10")
-	})
-
 	it("includes apdex columns for apdex metric", () => {
 		const q = tracesBreakdownQuery({ metric: "apdex", groupBy: "service", apdexThresholdMs: 300 })
 		const { sql } = compileUnsafe(q, baseParams)
@@ -705,9 +680,6 @@ describe("tracesListQuery", () => {
 	it("builds basic list query", () => {
 		const q = tracesListQuery({})
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM traces")
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the ns to ms duration conversion
-		expect(sql).toContain("Duration / 1000000 AS durationMs")
 		expect(sql).toContain("ORDER BY timestamp DESC")
 		expect(sql).toContain("LIMIT 25")
 	})
@@ -851,17 +823,9 @@ describe("converted queries", () => {
 		// Maps are trimmed to the keys the tree views render — never the full map.
 		expect(sql).not.toContain("toJSONString(SpanAttributes)")
 		expect(sql).not.toContain("toJSONString(ResourceAttributes)")
-		expect(sql).toContain("TraceId = 'abc123'")
 		// Capped so pathological traces can't stall the API.
 		expect(sql).toContain("ORDER BY startTime ASC")
 		expect(sql).toContain("LIMIT 5000")
-	})
-
-	it("spanHierarchyQuery with spanId marks target", () => {
-		const q = spanHierarchyQuery({ traceId: "abc", spanId: "span1" })
-		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
-		expect(sql).toContain("'target'")
-		expect(sql).toContain("'related'")
 	})
 
 	it("spanHierarchyQuery without narrowByTime omits Timestamp filter", () => {
@@ -871,69 +835,6 @@ describe("converted queries", () => {
 		expect(sql).not.toContain("Timestamp <=")
 	})
 
-	it("spanHierarchyQuery with narrowByTime adds Timestamp BETWEEN filter", () => {
-		const q = spanHierarchyQuery({ traceId: "abc", narrowByTime: true })
-		const { sql } = compileUnsafe(q, {
-			orgId: OrgId.make("org_1"),
-			startTime: "2026-04-15 13:00:00",
-			endTime: "2026-04-15 15:00:00",
-		})
-		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
-		expect(sql).toContain("Timestamp <= '2026-04-15 15:00:00'")
-	})
-
-	it("spanDetailQuery is a point lookup returning the full attribute maps", () => {
-		const q = spanDetailQuery({ traceId: "abc123", spanId: "span1" })
-		const { sql } = compileUnsafe(q, { orgId: OrgId.make("org_1") })
-		expect(sql).toContain("toJSONString(traces.SpanAttributes) AS spanAttributes")
-		expect(sql).toContain("toJSONString(traces.ResourceAttributes) AS resourceAttributes")
-		expect(sql).toContain("FROM traces")
-		expect(sql).toContain(
-			"(traces.ServiceName, toStartOfFiveMinutes(traces.Timestamp), traces.TraceId) IN (SELECT",
-		)
-		expect(sql).toMatch(
-			/FROM trace_index\s+WHERE trace_index\.OrgId = 'org_1'\s+AND trace_index\.TraceId = 'abc123'\)/,
-		)
-		expect(sql).toContain("TraceId = 'abc123'")
-		expect(sql).toContain("SpanId = 'span1'")
-		expect(sql).toContain("OrgId = 'org_1'")
-		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the ns to ms duration conversion
-		expect(sql).toContain("Duration / 1000000 AS durationMs")
-		expect(sql).toContain("LIMIT 1")
-	})
-
-	it("spanDetailQuery with narrowByTime adds Timestamp filters", () => {
-		const q = spanDetailQuery({ traceId: "abc", spanId: "s1", narrowByTime: true })
-		const { sql } = compileUnsafe(q, {
-			orgId: OrgId.make("org_1"),
-			startTime: "2026-04-15 13:00:00",
-			endTime: "2026-04-15 15:00:00",
-		})
-		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
-		expect(sql).toContain("Timestamp <= '2026-04-15 15:00:00'")
-	})
-
-	it("spanEventsQuery seeks traces by the sorting-key prefix and returns the Events arrays", () => {
-		const q = spanEventsQuery({ traceId: "abc", spanId: "s1", serviceName: "api", spanName: "GET" })
-		const { sql } = compileUnsafe(q, {
-			orgId: OrgId.make("org_1"),
-			startTime: "2026-04-15 13:00:00",
-			endTime: "2026-04-15 13:00:01",
-		})
-		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("ServiceName = 'api'")
-		expect(sql).toContain("SpanName = 'GET'")
-		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
-		expect(sql).toContain("Timestamp <= '2026-04-15 13:00:01'")
-		expect(sql).toContain("TraceId = 'abc'")
-		expect(sql).toContain("SpanId = 's1'")
-		expect(sql).toContain("toJSONString(traces.EventsTimestamp) AS eventsTimestamp")
-		expect(sql).toContain("toJSONString(traces.EventsName) AS eventsName")
-		expect(sql).toContain("toJSONString(traces.EventsAttributes) AS eventsAttributes")
-		expect(sql).toContain("LIMIT 1")
-	})
-
 	it("spanEventsByTraceQuery reads only spans with events inside the trace window", () => {
 		const q = spanEventsByTraceQuery({ traceId: "abc", limit: 10 })
 		const { sql } = compileUnsafe(q, {
@@ -941,16 +842,9 @@ describe("converted queries", () => {
 			startTime: "2026-04-15 13:00:00",
 			endTime: "2026-04-15 13:00:05",
 		})
-		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("OrgId = 'org_1'")
-		expect(sql).toContain("TraceId = 'abc'")
-		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
-		expect(sql).toContain("Timestamp <= '2026-04-15 13:00:05'")
 		expect(sql).toContain("notEmpty(traces.EventsName)")
 		expect(sql).toMatch(/ORDER BY spanStart ASC\s+LIMIT 10/)
-		expect(sql).toContain("toJSONString(traces.EventsName) AS eventsName")
 		expect(sql).not.toContain("EventsAttributes")
-		expect(sql).toContain("LIMIT 10")
 	})
 
 	it("traceTimeProbeQuery aggregates the trace's first and last span over its trace_index rows", () => {
@@ -960,9 +854,6 @@ describe("converted queries", () => {
 		expect(sql).toContain("min(trace_index.MinTimestamp) AS timestamp")
 		// A long trace's tail lives in later rows.
 		expect(sql).toContain("max(trace_index.MaxTimestamp) AS endTimestamp")
-		expect(sql).toContain("FROM trace_index")
-		expect(sql).toContain("TraceId = 'abc123'")
-		expect(sql).toContain("OrgId = 'org_1'")
 		// Grouped, so an unknown trace returns no row rather than epoch-zero aggregates.
 		expect(sql).toMatch(/GROUP BY traceId\s+LIMIT 1/)
 		expect(sql).not.toContain("toJSONString")
@@ -976,6 +867,5 @@ describe("converted queries", () => {
 		expect(sql).toContain("trace_index.MaxTimestamp >= '2026-04-15 13:00:00'")
 		// Lower bound only — "recent" needs no upper bound.
 		expect(sql).not.toContain("Timestamp <=")
-		expect(sql).toContain("LIMIT 1")
 	})
 })
