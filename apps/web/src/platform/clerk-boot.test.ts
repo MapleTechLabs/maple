@@ -1,4 +1,5 @@
-import { Effect } from "effect"
+import { Effect, Fiber } from "effect"
+import { TestClock } from "effect/testing"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
 afterEach(() => {
@@ -7,8 +8,8 @@ afterEach(() => {
 })
 
 /** A signed-out clerk-js already on `window`, so no script tag is injected. */
-const stubClerk = (pathname: string) => {
-	const load = vi.fn(() => Promise.resolve())
+const stubClerk = (pathname: string, settles = true) => {
+	const load = vi.fn(() => (settles ? Promise.resolve() : new Promise<void>(() => {})))
 	vi.stubEnv("VITE_MAPLE_AUTH_MODE", "clerk")
 	vi.stubGlobal("location", { pathname })
 	vi.stubGlobal("window", { Clerk: { load, user: null, session: null, organization: null } })
@@ -42,5 +43,23 @@ describe("clerk boot", () => {
 
 		await Effect.runPromise(loadClerk)
 		expect(load).toHaveBeenCalledTimes(1)
+	})
+
+	test("a load that never settles fails LoadClerk 20s after the app asks for it", async () => {
+		stubClerk("/", false)
+		const { loadClerk } = await loadModules()
+		const error = await Effect.runPromise(
+			Effect.gen(function* () {
+				const fiber = yield* Effect.forkChild(loadClerk)
+				yield* TestClock.adjust("19 seconds")
+				expect(fiber.pollUnsafe()).toBeUndefined()
+				yield* TestClock.adjust("1 second")
+				return yield* Effect.flip(Fiber.join(fiber))
+			}).pipe(Effect.provide(TestClock.layer())),
+		)
+		expect(error).toMatchObject({
+			_tag: "@maple/web/ClerkLoadError",
+			message: "Clerk did not load in time",
+		})
 	})
 })

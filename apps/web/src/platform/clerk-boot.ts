@@ -73,14 +73,9 @@ const loadClerkJs: Effect.Effect<BootedClerk, ClerkLoadError> = Effect.gen(funct
 		catch: (cause) => new ClerkLoadError({ message: "Clerk failed to load", cause }),
 	})
 	return { clerk, startedAtMs, readyAtMs: yield* sinceNavigationStart }
-}).pipe(
-	// Without a deadline a stalled script or `clerk.load` keeps the boot splash up forever.
-	Effect.timeoutOrElse({
-		duration: CLERK_LOAD_TIMEOUT,
-		orElse: () =>
-			Effect.fail(new ClerkLoadError({ message: "Clerk did not load in time", cause: undefined })),
-	}),
-)
+})
+
+const timedOut = new ClerkLoadError({ message: "Clerk did not load in time", cause: undefined })
 
 // index.html runs this module before the app's own bundle has downloaded and evaluated, so
 // Clerk's script and Frontend API round trip overlap that work instead of following it.
@@ -88,8 +83,22 @@ const started = isClerkAuthEnabled && !(labEnabled && labPathOf(location.pathnam
 
 const boot = started ? Option.some(Effect.runFork(loadClerkJs)) : Option.none()
 
-/** The load index.html started, or a fresh one where it did not start (lab pages, self-hosted). */
+/**
+ * The load index.html started, or a fresh one where it did not (lab pages, self-hosted).
+ * The deadline counts from when the app asks, so a slow bundle download does not use it up.
+ * Without one, a stalled script or `clerk.load` keeps the boot splash up forever.
+ */
 export const bootedClerk: Effect.Effect<BootedClerk, ClerkLoadError> = Option.match(boot, {
-	onNone: () => loadClerkJs,
-	onSome: Fiber.join,
+	onNone: () =>
+		loadClerkJs.pipe(
+			Effect.timeoutOrElse({ duration: CLERK_LOAD_TIMEOUT, orElse: () => Effect.fail(timedOut) }),
+		),
+	onSome: (fiber) =>
+		Fiber.join(fiber).pipe(
+			Effect.timeoutOrElse({
+				duration: CLERK_LOAD_TIMEOUT,
+				// Interrupting the boot removes its script tag, as the old in-command deadline did.
+				orElse: () => Effect.andThen(Fiber.interrupt(fiber), Effect.fail(timedOut)),
+			}),
+		),
 })
