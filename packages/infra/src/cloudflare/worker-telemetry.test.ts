@@ -69,7 +69,8 @@ describe("eventTelemetry", () => {
 			const exported: Array<string> = []
 			globalThis.fetch = (async (input: RequestInfo | URL) => {
 				exported.push(String(input))
-				return new Response(null, { status: 200 })
+				// The collector refuses the first export; the cadence must carry on.
+				return new Response(null, { status: exported.length === 1 ? 503 : 200 })
 			}) as typeof fetch
 			const env = { MAPLE_ENDPOINT: "https://collector.test", MAPLE_INGEST_KEY: "secret" }
 			const scope = yield* Scope.make()

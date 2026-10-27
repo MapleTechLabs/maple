@@ -8,6 +8,7 @@ import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
 import { WorkerEnvironment } from "@alchemy.run/cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { HttpClient, HttpMiddleware } from "effect/http"
+import * as Cause from "effect/Cause"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -124,6 +125,12 @@ export const eventTelemetry = (
 						const env = yield* WorkerEnvironment
 						yield* Effect.promise(() => telemetry.flush(env)).pipe(
 							Effect.delay(flushEvery),
+							// One failed export must not end the cadence for the rest of the event.
+							Effect.catchCause((cause) =>
+								Effect.logWarning("Periodic telemetry flush failed").pipe(
+									Effect.annotateLogs({ cause: Cause.pretty(cause) }),
+								),
+							),
 							Effect.forever,
 							Effect.forkScoped,
 						)
