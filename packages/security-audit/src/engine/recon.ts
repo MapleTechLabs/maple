@@ -7,7 +7,7 @@ import { focusedReconPrompt, RECON_AGENTS, reconPrompt, synthesisPrompt } from "
 import { SynthesisResult } from "../results"
 import type { CoverageUnit, Finding } from "../schema"
 import { admitUnits, type LedgerUnit, scoped, seedUnit, unitRefusal } from "./ledger"
-import type { CarriedRecord, Engine, PriorRun } from "./state"
+import { type CarriedRecord, type Engine, type PriorRun, rereadPrompt, type TextAnswer } from "./state"
 
 /** The calls the skill reserves before any reconnaissance agent may launch. */
 export const minimumInvocations = (profile: "quick" | "standard" | "deep"): number =>
@@ -145,37 +145,62 @@ export const runReconnaissance = (engine: Engine) =>
 			detail: prior?.summary ?? "No prior ledger exists.",
 		})
 
-		const baseline = yield* Effect.forEach(
+		// After the baseline, one more reconnaissance agent must leave a hunter, critics and a verifier funded.
+		const funded = Effect.map(
+			engine.remaining,
+			(left) => left - 1 >= minimumInvocations(input.profile) - 4,
+		)
+		/**
+		 * One retry for an agent that answered without reading the repository; a second such answer
+		 * is a disclosed gap. The facts, or undefined.
+		 */
+		const facts = (id: string, prompt: string, first: TextAnswer) =>
+			Effect.gen(function* () {
+				if (first._tag === "Answered") return first.text
+				if (first._tag === "None") return undefined
+				if (!(yield* funded)) {
+					yield* engine.gap(`${id} answered without reading the repository and no retry was funded`)
+					return undefined
+				}
+				const retry = yield* engine.invokeText("recon", `${id}-r1`, rereadPrompt(prompt))
+				if (retry._tag === "Unread")
+					yield* engine.gap(`${id} answered twice without reading the repository`)
+				return retry._tag === "Answered" ? retry.text : undefined
+			})
+
+		const answers = yield* Effect.forEach(
 			RECON_AGENTS,
 			(agent) =>
-				engine
-					.invokeText(
-						"recon",
-						`recon-${agent}`,
-						reconPrompt(agent, input.target, engine.context(`recon-${agent}`)),
-					)
-					.pipe(Effect.map((facts) => ({ agent, facts }))),
+				Effect.gen(function* () {
+					const id = `recon-${agent}`
+					const prompt = reconPrompt(agent, input.target, engine.context(id))
+					return { agent, id, prompt, answer: yield* engine.invokeText("recon", id, prompt) }
+				}),
 			{ concurrency: 4 },
+		)
+		// Retries after all four answered, sequential under a finite budget, so which one is funded
+		// does not depend on completion order.
+		const baseline = yield* Effect.forEach(
+			answers,
+			({ agent, id, prompt, answer }) =>
+				Effect.map(facts(id, prompt, answer), (text) => ({ agent, facts: text })),
+			{ concurrency: input.budget === null ? 4 : 1 },
 		)
 		const focused = yield* Effect.forEach(
 			input.focusedRecon ?? [],
 			(area, index) =>
 				Effect.gen(function* () {
 					// Each focused agent passes the gate again: a hunter, critics and a verifier stay reserved.
-					const left = yield* engine.remaining
-					if (left - 1 < minimumInvocations(input.profile) - 4) {
+					if (!(yield* funded)) {
 						yield* engine.gap(
 							`focused reconnaissance for ${area.subsystem} not funded by the budget`,
 						)
 						return { agent: `focused ${area.subsystem}`, facts: undefined }
 					}
 					const id = `recon-focus-${index + 1}`
-					const facts = yield* engine.invokeText(
-						"recon",
-						id,
-						focusedReconPrompt(area.subsystem, area.paths, engine.context(id)),
-					)
-					return { agent: `focused ${area.subsystem}`, facts }
+					const prompt = focusedReconPrompt(area.subsystem, area.paths, engine.context(id))
+					const answer = yield* engine.invokeText("recon", id, prompt)
+					return { agent: `focused ${area.subsystem}`, facts: yield* facts(id, prompt, answer) }
 				}),
 			// Sequential under a finite budget: which focused agent passes the gate must not depend on
 			// completion order, or a replay would spend differently.

@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { Findings, Ledger } from "../schema"
 import { ledgerErrors } from "../validators"
 import {
+	agentFailure,
 	baseInput,
 	confirmed,
 	emptyCritic,
@@ -707,5 +708,93 @@ describe("runAudit, fifth review regressions", () => {
 		expect(recorded.findings.map((f) => f.fingerprint)).toEqual([FINGERPRINT])
 		expect(result.status).toBe("incomplete")
 		expect(result.gaps.some((gap) => gap.includes("search/old"))).toBe(true)
+	})
+})
+
+describe("runAudit, record verifier failures", () => {
+	it("keeps a record whose final re-check failed and marks it not re-checked", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "record-1-0"
+				? agentFailure(i)
+				: i.agentId === "record-1-0-r1"
+					? "I could not finish the review."
+					: happy()(i),
+		)
+		expect(result.findings.map((f) => [f.fingerprint, f.verdict])).toEqual([[FINGERPRINT, "confirmed"]])
+		expect(recorded.findings.map((f) => f.fingerprint)).toEqual([FINGERPRINT])
+		const keys = result.ledger.find((u) => u.coverage_id === idOf(KEYS))
+		expect(keys?.not_rechecked).toEqual([FINGERPRINT])
+		expect(ledgerErrors(result.ledger)).toEqual([])
+		expect(Schema.decodeUnknownSync(Ledger)(Schema.encodeSync(Ledger)(result.ledger))).toEqual(
+			result.ledger,
+		)
+		expect(result.incompleteReasons).toEqual(["record_verification_incomplete"])
+		expect(
+			result.gaps.some((gap) =>
+				gap.includes(`${FINGERPRINT} kept as confirmed without its final re-check`),
+			),
+		).toBe(true)
+	})
+})
+
+describe("runAudit, answers without a tool call", () => {
+	const unread = { text: "I'll start by mapping the repository structure.", toolCalls: 0 }
+
+	it("retries a reconnaissance agent that answered without reading, and uses the retry's facts", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "recon-1c"
+				? unread
+				: i.agentId === "recon-1c-r1"
+					? { text: "entry surfaces: POST /keys", toolCalls: 7 }
+					: happy()(i),
+		)
+		const retry = recorded.invocations.find((i) => i.agentId === "recon-1c-r1")
+		expect(retry?.prompt).toContain("without reading the repository")
+		const synthesis = recorded.invocations.find((i) => i.role === "synthesis")?.prompt ?? ""
+		expect(synthesis).toContain("entry surfaces: POST /keys")
+		expect(synthesis).not.toContain(unread.text)
+		expect(result.gaps).toEqual([])
+	})
+
+	it("records a gap when the retry also answers without reading", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId.startsWith("recon-1c") ? unread : happy()(i),
+		)
+		expect(
+			recorded.invocations.filter((i) => i.agentId.startsWith("recon-1c")).map((i) => i.agentId),
+		).toEqual(["recon-1c", "recon-1c-r1"])
+		expect(recorded.invocations.find((i) => i.role === "synthesis")?.prompt).not.toContain(unread.text)
+		expect(result.gaps).toContain("recon-1c answered twice without reading the repository")
+	})
+})
+
+describe("runAudit, critic repair", () => {
+	const broken = json({ ...emptyCritic, missing_units: "secret-XYZ789" })
+
+	it("gives a critic whose JSON breaks its contract one repair turn naming where it broke", async () => {
+		const { result, recorded } = await runScripted(baseInput(), (i) =>
+			i.agentId === "critic-w1-post" ? broken : happy()(i),
+		)
+		const repair = recorded.invocations.find((i) => i.agentId === "critic-w1-post-r1")
+		expect(repair?.prompt).toContain("broke its contract at: missing_units")
+		expect(repair?.prompt).not.toContain("XYZ789")
+		expect(result.status).toBe("complete")
+	})
+
+	it("ends the run incomplete only when the repair breaks its contract too", async () => {
+		const { result } = await runScripted(baseInput(), (i) =>
+			i.agentId.startsWith("critic-w1-post") ? broken : happy()(i),
+		)
+		expect(result.incompleteReasons).toContain("critic_unavailable: post-wave critic after wave 1")
+	})
+})
+
+describe("runAudit, repository layout", () => {
+	it("gives hunters and critics the run's directory tree", async () => {
+		const tree = "src/\n  routes/\n  services/"
+		const { recorded } = await runScripted(baseInput({ repoTree: tree }), happy())
+		const prompts = recorded.invocations.filter((i) => i.role === "hunter" || i.role === "critic")
+		expect(prompts.length).toBeGreaterThan(0)
+		expect(prompts.every((i) => i.prompt.includes(tree))).toBe(true)
 	})
 })

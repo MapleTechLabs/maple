@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { OrgId } from "@maple/domain/http"
 import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "@maple/backend/sandbox/contract"
@@ -243,6 +243,42 @@ describe("the git commands the tools build, against a real repository", () => {
 			)
 			assert.notStrictEqual(result.exitCode, 0)
 			assert.notInclude(result.stdout, SENTINEL_BODY.trim())
+		}).pipe(Effect.provide(overRepo())),
+	)
+
+	it.effect("reads a file with one sandbox command, never running the path as shell", () => {
+		const seen: string[][] = []
+		const repo = makeRepo()
+		return Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const result = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "src/checkout.ts", startLine: 1, endLine: 1 },
+			)
+			assert.strictEqual(result.exitCode, 0, result.stderr)
+			assert.include(result.stdout, "1: export const checkout = 1")
+			assert.strictEqual(seen.length, 1)
+			const hostile = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "src/$(touch pwned).ts", startLine: 1, endLine: 1 },
+			)
+			assert.strictEqual(hostile.exitCode, 1)
+			assert.isFalse(existsSync(`${repo}/pwned`))
+		}).pipe(Effect.provide(RepoSandboxService.layer.pipe(Layer.provide(localSandbox(repo, seen)))))
+	})
+
+	it.effect("refuses a directory, which matches many index entries, instead of reading one", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const result = yield* service.readFile(
+				ORG,
+				{ repository: "octo/shop" },
+				{ path: "src", startLine: 1, endLine: 10 },
+			)
+			assert.strictEqual(result.exitCode, 1)
+			assert.notInclude(result.stdout, "export const checkout")
 		}).pipe(Effect.provide(overRepo())),
 	)
 

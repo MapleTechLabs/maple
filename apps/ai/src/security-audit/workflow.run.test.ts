@@ -27,6 +27,7 @@ import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } 
 import { HttpClient, HttpClientResponse } from "effect/http"
 import {
 	SecurityAuditCredits,
+	SecurityAuditCreditsUnavailable,
 	SecurityAuditNoCredits,
 } from "@maple/backend/services/security-audit/SecurityAuditCredits"
 import { auditWithAgents, toSandboxStepError } from "./workflow.run"
@@ -120,6 +121,10 @@ const sandbox = (
 		prepare: () => Effect.void,
 		exec: (_org, _target, options) =>
 			Effect.suspend(() => {
+				if (options.command === "bash" && options.args.some((arg) => arg.includes("awk -F/"))) {
+					commands.push("list directories")
+					return ok("src\nsrc/routes\n")
+				}
 				if (options.command === "bash") {
 					commands.push("measure size")
 					return ok(size)
@@ -222,7 +227,36 @@ describe("auditWithAgents", () => {
 				// The row records the pinned commit, which the next run diffs against.
 				["complete", Option.some(["complete", SHA]), ["covered"]],
 			)
-			assert.deepStrictEqual(commands, ["git rev-parse HEAD", "measure size", "list manifests"])
+			assert.deepStrictEqual(commands, [
+				"git rev-parse HEAD",
+				"measure size",
+				"list manifests",
+				"list directories",
+			])
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("gives hunters the repository's directories, listed once per run", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const prompts: Array<AgentInvocation> = []
+			const agents = scriptedAgents([])
+			const recording: AuditAgentsApi = {
+				run: (invocation) =>
+					Effect.andThen(
+						Effect.sync(() => prompts.push(invocation)),
+						agents.run(invocation),
+					),
+			}
+			const commands: Array<string> = []
+			yield* auditWithAgents(payloadFor(run.id), () => Effect.succeed(recording)).pipe(
+				Effect.provideService(RepoSandboxService, sandbox(commands)),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const hunter = prompts.find((i) => i.role === "hunter")?.prompt ?? ""
+			assert.include(hunter, "src/\n  routes/")
+			assert.strictEqual(commands.filter((c) => c === "list directories").length, 1)
 		}).pipe(Effect.provide(testLayer())),
 	)
 
@@ -356,6 +390,54 @@ describe("auditWithAgents", () => {
 				Layer.mergeAll(
 					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
 					runningOut,
+					Layer.succeed(
+						HttpClient.HttpClient,
+						HttpClient.make(() => Effect.die("no network in tests")),
+					),
+				),
+			),
+		)
+	})
+
+	it.effect("waits out a billing outage before an agent instead of ending the run", () => {
+		// Five failed reads in a row: one agent's spend check retried through them.
+		const outage = { left: 5 }
+		const flaky = Layer.succeed(SecurityAuditCredits, {
+			ensure: () =>
+				Effect.suspend(() => {
+					outage.left -= 1
+					return outage.left >= 0
+						? Effect.fail(new SecurityAuditCreditsUnavailable({ message: "Transport error" }))
+						: Effect.void
+				}),
+		})
+		return Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const calls: Array<string> = []
+			const attempts: Array<string> = []
+			yield* auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
+				Effect.provideService(RepoSandboxService, sandbox([])),
+				Effect.provideServiceEffect(Cloudflare.WorkflowStep, nativeStep(attempts)),
+			)
+			const row = yield* store.getRun(run.id)
+			assert.deepStrictEqual(
+				{
+					// One spend check per agent, plus the five that met the outage.
+					extraChecks:
+						attempts.filter((name) => name.startsWith("org-budget:")).length - calls.length,
+					unavailable: Option.map(row, (r) =>
+						(r.incompleteReason ?? "").includes("org_budget_unavailable"),
+					),
+					ran: calls.length > 1,
+				},
+				{ extraChecks: 5, unavailable: Option.some(false), ran: true },
+			)
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
+					flaky,
 					Layer.succeed(
 						HttpClient.HttpClient,
 						HttpClient.make(() => Effect.die("no network in tests")),
@@ -647,6 +729,7 @@ describe("auditWithAgents", () => {
 						"git rev-parse HEAD",
 						"measure size",
 						"list manifests",
+						"list directories",
 						`git --no-optional-locks -c core.quotePath=false diff --name-only --no-renames ${SHA} HEAD --`,
 					],
 					["prior_covered_changed_source"],
@@ -678,7 +761,7 @@ describe("auditWithAgents, prior runs", () => {
 			const units = yield* store.listUnits(run.id)
 			assert.deepStrictEqual(
 				[commands, units.map((u) => u.unit.prior_status)],
-				[["git rev-parse HEAD", "measure size", "list manifests"], ["none"]],
+				[["git rev-parse HEAD", "measure size", "list manifests", "list directories"], ["none"]],
 			)
 		}).pipe(Effect.provide(testLayer())),
 	)

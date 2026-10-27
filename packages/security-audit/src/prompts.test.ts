@@ -95,6 +95,28 @@ describe("hunterPrompt", () => {
 		expect([...positions].sort((a, b) => a - b)).toEqual(positions)
 	})
 
+	it("leaves execution scaffolding out when execution is unavailable and asks for a validation plan", () => {
+		const available = hunterPrompt(
+			{
+				architectureMd: "ARCHITECTURE-SUMMARY",
+				units: [plannedUnit],
+				carriedExclusions: [],
+				peerCoverageIds: [],
+				scratchPath: "agents/hunter-1/scratch",
+				artifactsPath: "agents/hunter-1/artifacts",
+				promotionAllowlist: "declared per check",
+			},
+			{ ...context, execution: { _tag: "Available", limits: "60s, 512 MiB" } },
+		)
+		const confirmedBranch = '"const": "confirmed"'
+		for (const scaffold of ["agents/hunter-1/scratch", "agents/hunter-1/artifacts", confirmedBranch]) {
+			expect(available).toContain(scaffold)
+			expect(prompt).not.toContain(scaffold)
+		}
+		expect(prompt).toContain("Propose every lead as needs_validation")
+		expect(prompt).toContain("concrete validation_plan")
+	})
+
 	it("tells the hunter not to execute when the sandbox is unavailable", () => {
 		expect(prompt).toContain(
 			"No target-controlled execution is available in this run: no OS-enforced sandbox",

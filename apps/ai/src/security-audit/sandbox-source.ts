@@ -57,6 +57,26 @@ export const sandboxSource = (
 				Effect.mapError(failure("cannot list files")),
 				Effect.flatMap(output("cannot list files", zero)),
 			),
+	nearby: (path, basename) =>
+		sandbox
+			.exec(orgId, target, {
+				command: "git",
+				args: [
+					"--no-optional-locks",
+					"-c",
+					"core.quotePath=false",
+					"ls-files",
+					"--cached",
+					"--",
+					`:(literal)${path}`,
+					// Git ORs pathspecs: everything under the path, and the name anywhere.
+					`:(glob)**/${basename.replace(/[*?[\]\\]/g, "\\$&")}`,
+				],
+			})
+			.pipe(
+				Effect.mapError(failure("cannot list files")),
+				Effect.flatMap(output("cannot list files", zero)),
+			),
 	log: (path) =>
 		sandbox
 			.exec(orgId, target, {

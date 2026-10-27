@@ -23,8 +23,11 @@ import {
 } from "@maple/backend/sandbox/contract"
 import { Duration, Effect, Exit, Fiber, Option, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
-import type { RepositoryCheckout } from "@maple/backend/services/integrations/vcs/VcsSourceService"
-import { admit, makeCloudflareRepoSandbox } from "./CloudflareRepoSandbox"
+import {
+	type RepositoryCheckout,
+	VcsSourceRefNotFoundError,
+} from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { admit, CHECKOUT_REUSE, makeCloudflareRepoSandbox, reusedCheckouts } from "./CloudflareRepoSandbox"
 import { NETWORK_DISABLED, REPO_SANDBOX_RUNTIME, repoMount } from "./repo-mount"
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_sandbox_test")
@@ -345,6 +348,46 @@ describe("the Cloudflare repository sandbox", () => {
 				),
 			)
 			assert.strictEqual(failureTag(exit), "@maple/backend/sandbox/SandboxUnsupportedRequestError")
+		}),
+	)
+})
+
+describe("reused checkouts", () => {
+	const counting = (calls: string[], fail = false) =>
+		reusedCheckouts((orgId, repository, ref) => {
+			calls.push(`${repository}@${ref}`)
+			return fail
+				? Effect.fail(new VcsSourceRefNotFoundError({ repository, ref: ref ?? "", message: "gone" }))
+				: Effect.succeed(checkout)
+		})
+
+	it.effect("resolves a commit once while its token is fresh, then again once it is not", () =>
+		Effect.gen(function* () {
+			const calls: string[] = []
+			const resolve = yield* counting(calls)
+			yield* resolve(ORG, "octo/shop", SHA)
+			yield* resolve(ORG, "octo/shop", SHA)
+			assert.deepStrictEqual(calls, [`octo/shop@${SHA}`])
+			yield* TestClock.adjust(Duration.sum(CHECKOUT_REUSE, Duration.seconds(1)))
+			yield* resolve(ORG, "octo/shop", SHA)
+			assert.deepStrictEqual(calls, [`octo/shop@${SHA}`, `octo/shop@${SHA}`])
+		}),
+	)
+
+	it.effect("asks again for a branch, another repository, and after a failure", () =>
+		Effect.gen(function* () {
+			const calls: string[] = []
+			const resolve = yield* counting(calls)
+			yield* resolve(ORG, "octo/shop", "main")
+			yield* resolve(ORG, "octo/shop", "main")
+			yield* resolve(ORG, "octo/other", SHA)
+			assert.deepStrictEqual(calls, ["octo/shop@main", "octo/shop@main", `octo/other@${SHA}`])
+
+			const failed: string[] = []
+			const failing = yield* counting(failed, true)
+			yield* Effect.exit(failing(ORG, "octo/shop", SHA))
+			yield* Effect.exit(failing(ORG, "octo/shop", SHA))
+			assert.strictEqual(failed.length, 2)
 		}),
 	)
 })

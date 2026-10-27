@@ -67,6 +67,7 @@ import {
 	refusalReason,
 	repoLimitViolations,
 } from "./repo-size"
+import { formatRepoTree, REPO_TREE_COMMAND } from "./repo-tree"
 import { sandboxSource } from "./sandbox-source"
 import { AUDIT_TOOL_GUIDANCE, type SourceReaderApi } from "./source"
 
@@ -106,6 +107,12 @@ export const toSandboxStepError =
 
 /** Sandbox reads time out and fail transiently; the parent retries rather than losing a step. */
 const STEP_RETRY = { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } } as const
+
+/**
+ * The spend check before each agent reads the billing provider, and a refusal stops the whole run.
+ * A billing outage of a few minutes is waited out (about 16 minutes in all) rather than ending it.
+ */
+const ADMISSION_RETRY = { retries: { limit: 6, delay: "15 seconds", backoff: "exponential" } } as const
 
 /** An agent may run 20 minutes; its step allows that plus a margin, and retries once. */
 const AGENT_STEP = {
@@ -155,7 +162,7 @@ const durableAgents = (
 		const admitted: Effect.Effect<Admission, AuditBudgetExhaustedError> = durableStep(
 			`org-budget:${invocation.agentId}`,
 			admit(invocation.agentId),
-			STEP_RETRY,
+			ADMISSION_RETRY,
 		).pipe(
 			Effect.provide(step),
 			// A budget that cannot be read is not a budget with room: the run stops rather than overspend.
@@ -345,6 +352,18 @@ export const auditWithAgents = <E, R>(
 			store.setExecutionProfile(payload.runId, executionProfile),
 			STEP_RETRY,
 		)
+		// The repository's directories for hunter and critic prompts, once per run. Without it agents
+		// only guess more, so a sandbox that cannot list them costs the run nothing else.
+		const repoTree = yield* durableStep(
+			"repo-tree",
+			sandbox.exec(orgId, pinned, REPO_TREE_COMMAND).pipe(
+				Effect.mapError(toSandboxStepError("repo-tree")),
+				Effect.map((result) =>
+					result.exitCode === 0 ? formatRepoTree(result.stdout, result.truncated) : "",
+				),
+			),
+			STEP_RETRY,
+		).pipe(Effect.orElseSucceed(() => ""))
 
 		// Prior records are read, not stepped: a finished run never changes, so a replay reads the same.
 		// Only a finished run of the same repository counts; anything else would make replays disagree.
@@ -437,6 +456,7 @@ export const auditWithAgents = <E, R>(
 			},
 			executionProfile,
 			toolGuidance: AUDIT_TOOL_GUIDANCE,
+			repoTree,
 			prior,
 			changedSincePrior,
 		}).pipe(
