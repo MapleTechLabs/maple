@@ -31,6 +31,7 @@ jobs:
             archive: ${{ steps.filter.outputs.archive == 'true' }}
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
+            workers: ${{ steps.filter.outputs.workers == 'true' }}
             ingest: ${{ steps.filter.outputs.ingest == 'true' }}
             collector: ${{ steps.filter.outputs.collector == 'true' }}
         steps:
@@ -56,6 +57,7 @@ jobs:
                       ts:
                         - *base
                         - 'alchemy.run.ts'
+                        - 'test/**'
                         - 'apps/**'
                         - 'examples/**'
                         - 'packages/**'
@@ -117,6 +119,16 @@ jobs:
                         - 'apps/api/test/integration/**'
                         - 'apps/api/vitest.integration.config.ts'
                         - 'packages/db/**'
+                      # Whatever the api and maple-ai bundles are built from: their workspace
+                      # dependencies span nearly all of packages/ and lib/, so both are listed whole.
+                      workers:
+                        - *base
+                        - 'alchemy.run.ts'
+                        - 'test/alchemy/**'
+                        - 'apps/api/**'
+                        - 'apps/ai/**'
+                        - 'packages/**'
+                        - 'lib/**'
                       shell:
                         - *base
                         - 'scripts/*.sh'
@@ -364,6 +376,32 @@ jobs:
               env:
                   MAPLE_TEST_PG_URL: postgres://maple:maple@127.0.0.1:5499/maple
               run: bun run --cwd apps/api test:integration
+
+    # api and maple-ai bundled and booted in local workerd by alchemy's test harness, joined by
+    # the real service binding. Nothing is deployed; the placeholders only satisfy plan-time
+    # config, and no test reaches Postgres or the warehouse.
+    workers-e2e:
+        name: Workers in workerd (alchemy test harness)
+        needs: changes
+        if: ${{ needs.changes.outputs.workers == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - uses: ./.github/actions/setup
+
+            - name: api → maple-ai over the service binding
+              env:
+                  MAPLE_PG_URL: postgres://maple:maple@127.0.0.1:5499/maple
+                  TINYBIRD_HOST: http://127.0.0.1:7181
+                  TINYBIRD_TOKEN: placeholder
+                  # Keys are checked as base64 for 32 bytes when maple-ai's graph builds.
+                  MAPLE_INGEST_KEY_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_SHARE_TOKEN_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_ROOT_PASSWORD: placeholder
+              run: bun run test:alchemy
 
     # One server version, pinned to docker-compose.development.yml's tag.
     clickhouse-schema-e2e:
@@ -697,6 +735,7 @@ jobs:
             - typescript
             - tests
             - postgres-connection-e2e
+            - workers-e2e
             - clickhouse-schema-e2e
             - local-checkpoint-native
             - local-archive-native
