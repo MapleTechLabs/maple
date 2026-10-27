@@ -9,6 +9,7 @@ import type { Tone } from "@maple/ui/lib/tone"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import { isLive } from "../kit/format"
+import { type EventFilter, eventLineOf, matchesEventFilter } from "../kit/outcome"
 import type { Model, UnitFilter } from "./model"
 
 // Pure readings of the run page: the phase strip, the ledger, the gaps and the run's results.
@@ -22,6 +23,13 @@ export const targetOf = (model: Model, run: SecurityAuditRunDetail): SecurityAud
 	) ?? null
 
 export const eventsOf = (model: Model): ReadonlyArray<SecurityAuditEvent> => model.eventLog
+
+/** The log narrowed by the events panel's chip. */
+export const filteredEvents = (
+	events: ReadonlyArray<SecurityAuditEvent>,
+	filter: EventFilter,
+): ReadonlyArray<SecurityAuditEvent> =>
+	filter === "all" ? events : events.filter((event) => matchesEventFilter(eventLineOf(event), filter))
 
 /** Newest first; the id breaks a tie in the same millisecond, as the API pages them. */
 const byNewest = (a: SecurityAuditEvent, b: SecurityAuditEvent): number =>
@@ -90,14 +98,9 @@ export const filteredUnits = (
 export const gapUnits = (units: ReadonlyArray<SecurityAuditUnit>): ReadonlyArray<SecurityAuditUnit> =>
 	units.filter((unit) => GAP_STATUSES.includes(unit.status))
 
-/** `subsystem · attack class`; a unit that did not decode shows its coverage id. */
-export const unitTitle = (unit: SecurityAuditUnit): string =>
-	unit.subsystem === null && unit.attackClass === null
-		? unit.coverageId
-		: [unit.subsystem, unit.attackClass].filter((part) => part !== null).join(" · ")
-
-export const unitPath = (unit: SecurityAuditUnit): string =>
-	[unit.surface, unit.boundary].filter((part) => part !== null).join(" → ")
+/** Distinct subsystems the ledger planned: the areas of the repository it reached. */
+export const areasOf = (units: ReadonlyArray<SecurityAuditUnit>): number =>
+	new Set(units.flatMap((unit) => (unit.subsystem === null ? [] : [unit.subsystem]))).size
 
 // PHASES
 

@@ -22,9 +22,12 @@ import * as Field from "../../ui/field"
 import * as Select from "../../ui/select"
 import * as ToggleGroup from "../../ui/toggle-group"
 import {
+	DEEP_RUN_IDS,
+	DEEP_TARGET_ID,
 	eventsOf,
 	findingsOf,
 	githubStatusOf,
+	labTargetsOf,
 	RUN_IDS,
 	runDetailOf,
 	runsOf,
@@ -52,9 +55,12 @@ export const SCENARIOS = [
 	"run-incomplete",
 	"run-failed",
 	"run-cancelled",
+	"run-deep-incomplete",
+	"run-deep-live",
 	"finding",
 	"finding-triage",
 	"finding-member",
+	"finding-lead",
 ] as const
 export const Scenario = Schema.Literals(SCENARIOS)
 export type Scenario = typeof Scenario.Type
@@ -213,12 +219,12 @@ const run = (id: string, nowMs: number): RunStep => {
 			(model) =>
 				R.CompletedFetchUnits({
 					key: model.units.key ?? "",
-					result: Result.succeed(detail.unitTotal === 0 ? { units: [] } : unitsOf()),
+					result: Result.succeed(detail.unitTotal === 0 ? { units: [] } : unitsOf(id)),
 				}),
 			(model) =>
 				R.CompletedFetchTargets({
 					key: model.targets.key ?? "",
-					result: Result.succeed(targetsOf(nowMs)),
+					result: Result.succeed(labTargetsOf(nowMs)),
 				}),
 			(model) =>
 				R.CompletedFetchFindings({
@@ -236,12 +242,14 @@ const F = FindingPage.Message
 
 const finding = (
 	nowMs: number,
-	options: Readonly<{ member?: boolean; triage?: boolean }> = {},
+	options: Readonly<{ member?: boolean; triage?: boolean; lead?: boolean }> = {},
 ): FindingStep => {
+	// The lead is one the deep run left to validate; the default is a confirmed critical.
+	const owner = options.lead === true ? DEEP_TARGET_ID : TARGET_IDS.gateway
 	const entered = FindingUpdate.init(
 		AppRoute.SecurityFinding({
-			targetId: targetId(TARGET_IDS.gateway),
-			fingerprint: "exports-tenant-body-8b9e",
+			targetId: targetId(owner),
+			fingerprint: options.lead === true ? "export-retry-c3d2" : "exports-tenant-body-8b9e",
 		}),
 		context,
 	)
@@ -261,12 +269,12 @@ const finding = (
 										new SecurityAuditForbiddenError({ message: "Admins only" }),
 									),
 								)
-							: Result.succeed(findingsOf(nowMs, TARGET_IDS.gateway)),
+							: Result.succeed(findingsOf(nowMs, owner)),
 				}),
 			(model) =>
 				F.CompletedFetchTargets({
 					key: model.targets.key ?? "",
-					result: Result.succeed(targetsOf(nowMs)),
+					result: Result.succeed(labTargetsOf(nowMs)),
 				}),
 			...(options.triage === true
 				? [
@@ -385,11 +393,17 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 			return { _tag: "Run", step: run(RUN_IDS.terraform, nowMs) }
 		case "run-cancelled":
 			return { _tag: "Run", step: run(RUN_IDS.billingCancelled, nowMs) }
+		case "run-deep-incomplete":
+			return { _tag: "Run", step: run(DEEP_RUN_IDS.incomplete, nowMs) }
+		case "run-deep-live":
+			return { _tag: "Run", step: run(DEEP_RUN_IDS.live, nowMs) }
 		case "finding":
 			return { _tag: "Finding", step: finding(nowMs) }
 		case "finding-triage":
 			return { _tag: "Finding", step: finding(nowMs, { triage: true }) }
 		case "finding-member":
 			return { _tag: "Finding", step: finding(nowMs, { member: true }) }
+		case "finding-lead":
+			return { _tag: "Finding", step: finding(nowMs, { lead: true }) }
 	}
 }

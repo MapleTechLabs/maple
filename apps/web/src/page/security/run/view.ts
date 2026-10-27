@@ -1,4 +1,5 @@
 import type { SecurityAuditRunDetail } from "@maple/domain/http"
+import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -14,7 +15,7 @@ import { resourceNotFound } from "../../kit/resource-not-found"
 import { gateOf, isLive, REPORT_TITLE, type ReportDoc, shortId } from "../kit/format"
 import { stack } from "../kit/layout"
 import { gateState, placeholder } from "../kit/parts"
-import { eventsOf, gapCount, phasesOf, resultsOf, runOf, targetOf, verdictsOf } from "./derive"
+import { areasOf, eventsOf, gapCount, phasesOf, resultsOf, runOf, targetOf, verdictsOf } from "./derive"
 import { Message, type Model } from "./model"
 import { phaseStrip, runActions, runStats, runTitle, stopBanner } from "./view-header"
 import { eventsPanel, gapsPanel, ledgerPanel, resultsPanel } from "./view-panels"
@@ -77,7 +78,16 @@ const loaded = (h: H, model: Model, run: SecurityAuditRunDetail, timeZone: strin
 	const body: ReadonlyArray<Html> = [
 		...(banner === null ? [] : [banner]),
 		phaseStrip(h, phasesOf(run, events)),
-		runStats(h, run, AsyncData.hasData(model.findings.data) ? verdictsOf(results) : null),
+		runStats(
+			h,
+			run,
+			AsyncData.hasData(model.findings.data) ? verdictsOf(results) : null,
+			Option.match(AsyncData.getData(model.units.data), {
+				onNone: () => null,
+				onSome: (response) => areasOf(response.units),
+			}),
+			model.nowMs,
+		),
 		live
 			? h.div(
 					[h.Class("grid items-start gap-6 xl:grid-cols-[3fr_2fr]")],

@@ -9,7 +9,15 @@ import { Result, Schema } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
-import { eventsOf, findingsOf, RUN_IDS, runDetailOf, targetsOf, unitsOf } from "../../../lab/security-fixture"
+import {
+	DEEP_RUN_IDS,
+	eventsOf,
+	findingsOf,
+	labTargetsOf,
+	RUN_IDS,
+	runDetailOf,
+	unitsOf,
+} from "../../../lab/security-fixture"
 import { AppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
 import { eventsOf as eventLogOf, phasesOf } from "./derive"
@@ -43,10 +51,10 @@ const loaded = (runId: string): Model => {
 			key: entered.events.key ?? "",
 			result: Result.succeed(eventsOf(NOW, runId)),
 		}),
-		Message.CompletedFetchUnits({ key: entered.units.key ?? "", result: Result.succeed(unitsOf()) }),
+		Message.CompletedFetchUnits({ key: entered.units.key ?? "", result: Result.succeed(unitsOf(runId)) }),
 		Message.CompletedFetchTargets({
 			key: entered.targets.key ?? "",
-			result: Result.succeed(targetsOf(NOW)),
+			result: Result.succeed(labTargetsOf(NOW)),
 		}),
 	].reduce((model, message) => pageUpdate(model, message).model, entered)
 	const target = runDetailOf(NOW, runId).targetId
@@ -122,6 +130,49 @@ describe("security run", () => {
 			expectView(text("Stopped at the org's monthly spend limit")).toExist(),
 			expectView(role("link", { name: "Raise the limit" })).toExist(),
 			expectView(text("Gaps")).toExist(),
+		)
+	})
+
+	test("a run that stopped for several reasons says each, how many units it left, and offers a new run", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(DEEP_RUN_IDS.incomplete)),
+			expectView(text("Stopped adding units after wave 2")).toExist(),
+			expectView(
+				text(
+					/Also: a lead was not re-checked; billing could not be reached\. 28 units were not audited/,
+				),
+			).toExist(),
+			expectView(role("button", { name: "Start run" })).toExist(),
+			expectView(text(/^Hunter finished: Attachment names/)).toExist(),
+			// Leads count what is left to validate, not confirmed findings only.
+			expectView(text("6 to validate · 2 disproved")).toExist(),
+		)
+	})
+
+	test("the Problems chip narrows the events to what went wrong", () => {
+		const model = pageUpdate(
+			loaded(DEEP_RUN_IDS.incomplete),
+			Message.PickedEventFilter({ filter: "problems" }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Hunter failed: the agent did not answer within its time limit")).toExist(),
+			expectView(
+				text(/^Coverage review answer discarded: its answer did not match the format/),
+			).toExist(),
+			expectView(text(/^Hunter finished: Attachment names/)).not.toExist(),
+		)
+	})
+
+	test("ledger units read as the surface they audit, not the skill's anchors", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(loaded(DEEP_RUN_IDS.incomplete), Message.ToggledLedger()).model),
+			expectView(text("GET /share/:token")).toExist(),
+			expectView(text("share links · Broken Access Control")).toExist(),
+			expectView(text(/ATTACK-CLASSES\.md/)).not.toExist(),
 		)
 	})
 

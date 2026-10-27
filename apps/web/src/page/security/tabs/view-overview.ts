@@ -20,7 +20,6 @@ import {
 	runTotalUsd,
 	type Gate,
 	gateOf,
-	incompleteReasonLabel,
 	isLive,
 	locationOf,
 	modelLabel,
@@ -39,8 +38,8 @@ import {
 	severityLabel,
 } from "../kit/parts"
 import {
-	bySeverity,
 	countBySeverity,
+	coverageAcross,
 	coverageOf,
 	findingsStateOf,
 	latestDetailOf,
@@ -48,6 +47,7 @@ import {
 	RUN_LIST_CAP,
 	type Spend,
 	openConfirmed,
+	openLeads,
 	openNeedsValidation,
 	runningRuns,
 	runsOf,
@@ -57,8 +57,9 @@ import {
 } from "./derive"
 import { Message, type Model } from "./model"
 import { auditSteps, emptyOnRamp } from "./view-empty"
+import { leadsLine, stopSummaryOf } from "../kit/outcome"
 
-// The Overview tab: totals, the targets table, new confirmed findings and recent runs.
+// The Overview tab: totals, the targets table, open leads and recent runs.
 
 type H = HtmlBuilder<Message>
 
@@ -160,40 +161,43 @@ const spendTile = (h: H, model: Model): Html => {
 	})
 }
 
-const SEVERITY_SHORT = { critical: "crit", high: "high", medium: "med", low: "low" } as const
-
 const kpis = (h: H, model: Model): Html => {
 	const state = findingsStateOf(model)
 	const findings = state._tag === "Ready" ? state.findings : []
-	const confirmed = openConfirmed(findings)
-	const counts = countBySeverity(confirmed)
+	const confirmed = openConfirmed(findings).length
+	const toValidate = openNeedsValidation(findings).length
 	// Gated reads as words; still loading is the same still block as every other placeholder.
 	const unknown: Html | string | null =
 		state._tag === "Ready" ? null : state._tag === "Gated" ? "Admins only" : placeholder(h, "h-7 w-10")
 	const running = runningRuns(model).length
+	const coverage = coverageAcross(model)
 	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
-			eyebrow: "Open findings",
-			value: unknown ?? String(confirmed.length),
+			eyebrow: "Open leads",
+			value: unknown ?? String(confirmed + toValidate),
 			compact: true,
-			subline:
-				unknown === null
-					? // Short words keep it on one line; a narrow tile still wraps rather than cuts the low count.
-						h.span(
-							[h.Class("whitespace-normal")],
-							[
-								(["critical", "high", "medium", "low"] as const)
-									.map((severity) => `${counts[severity]} ${SEVERITY_SHORT[severity]}`)
-									.join(" · "),
-							],
-						)
-					: undefined,
+			subline: unknown === null ? leadsLine(confirmed, toValidate) : undefined,
 		}),
 		statRailItem(h, {
-			eyebrow: "Needs validation",
-			value: unknown ?? String(openNeedsValidation(findings).length),
+			eyebrow: "Covered",
+			value: coverage === null ? "Not mapped" : `${coverage.closed} / ${coverage.total}`,
+			hint: coverage === null ? undefined : "units",
+			valueClassName: coverage === null ? "text-base" : undefined,
 			compact: true,
-			subline: unknown === null ? "need code execution to confirm" : undefined,
+			subline:
+				coverage === null
+					? "no run has mapped a repository yet"
+					: h.span(
+							[h.Class("flex flex-col gap-1.5")],
+							[
+								meter(h, {
+									value: coverage.closed,
+									max: coverage.total,
+									label: `${coverage.closed} of ${coverage.total} units closed`,
+								}),
+								`latest run of ${coverage.targets} ${coverage.targets === 1 ? "target" : "targets"}`,
+							],
+						),
 		}),
 		statRailItem(h, {
 			eyebrow: "Targets",
@@ -210,23 +214,38 @@ const kpis = (h: H, model: Model): Html => {
 
 // TARGETS TABLE
 
-const severityCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html => {
+/** Confirmed by severity as dots, then the leads still to validate. */
+const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html => {
 	const counts = countBySeverity(openConfirmed(findings))
+	const toValidate = openNeedsValidation(findings).length
 	return h.span(
 		[h.Class("flex items-center gap-2.5 font-mono text-xs tabular-nums")],
-		(["critical", "high", "medium", "low"] as const).map((severity) =>
-			h.span(
-				[
-					h.Key(severity),
-					h.Class("inline-flex items-center gap-1.5"),
-					h.Title(`${counts[severity]} ${severity}`),
-				],
-				[
-					statusDot(h, { tone: "custom", size: "lg", className: SEVERITY_FILL[severity] }),
-					String(counts[severity]),
-				],
+		[
+			...(["critical", "high", "medium", "low"] as const).map((severity) =>
+				h.span(
+					[
+						h.Key(severity),
+						h.Class("inline-flex items-center gap-1.5"),
+						h.Title(`${counts[severity]} ${severity}`),
+					],
+					[
+						statusDot(h, { tone: "custom", size: "lg", className: SEVERITY_FILL[severity] }),
+						String(counts[severity]),
+					],
+				),
 			),
-		),
+			...(toValidate === 0
+				? []
+				: [
+						h.span(
+							[
+								h.Key("to-validate"),
+								h.Class("whitespace-nowrap font-sans text-muted-foreground"),
+							],
+							[`+${toValidate} to validate`],
+						),
+					]),
+		],
 	)
 }
 
@@ -237,7 +256,7 @@ const lastRunCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Htm
 		: run.status === "failed"
 			? (run.error ?? "the audit could not start")
 			: run.status === "incomplete"
-				? incompleteReasonLabel(run.incompleteReason)
+				? stopSummaryOf(run.incompleteReason)
 				: `${formatElapsed((run.finishedAt ?? run.startedAt) - run.startedAt)} · ${refLabel(run.sourceRef)}`
 	return h.div(
 		[h.Class("flex min-w-0 flex-col items-start gap-1")],
@@ -319,18 +338,13 @@ const targetRow = (h: H, model: Model, target: SecurityAuditTarget): Html => {
 					? run === undefined || run.status === "failed"
 						? findings.length === 0
 							? h.span([h.Class("text-xs text-muted-foreground")], ["No completed run"])
-							: severityCounts(h, findings)
-						: severityCounts(h, findings)
+							: leadCounts(h, findings)
+						: leadCounts(h, findings)
 					: h.span(
 							[h.Class("text-xs text-muted-foreground")],
 							[findings === "forbidden" ? "Admins only" : ""],
 						),
 			]),
-			tableCell(
-				h,
-				[isFindingsKnown ? String(openNeedsValidation(findings).length) : ""],
-				"text-right font-mono tabular-nums",
-			),
 			tableCell(h, [coverageCell(h, model, run)], "text-right"),
 			tableCell(
 				h,
@@ -371,8 +385,7 @@ const targetsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTa
 				tableRow(h, [
 					tableHead(h, ["Repository"]),
 					tableHead(h, ["Last run"]),
-					tableHead(h, ["Open findings"]),
-					tableHead(h, ["Needs val."], "text-right"),
+					tableHead(h, ["Open leads"]),
 					tableHead(h, ["Coverage"], "text-right"),
 					tableHead(h, ["Run cost"], "text-right"),
 					tableHead(h, [h.span([h.Class("sr-only")], ["Open"])], "w-8"),
@@ -411,7 +424,13 @@ const findingItem = (h: H, finding: SecurityAuditFinding, repository: string): H
 		[
 			h.span(
 				[h.Class("w-16 shrink-0 text-xs uppercase")],
-				[finding.overallSeverity === null ? "" : severityLabel(h, finding.overallSeverity)],
+				[
+					finding.verdict === "needs_validation"
+						? h.span([h.Class("text-xs text-muted-foreground normal-case")], ["To validate"])
+						: finding.overallSeverity === null
+							? ""
+							: severityLabel(h, finding.overallSeverity),
+				],
 			),
 			h.span(
 				[h.Class("flex min-w-0 flex-col")],
@@ -433,12 +452,21 @@ const findingItem = (h: H, finding: SecurityAuditFinding, repository: string): H
 
 const topFindingsList = (
 	h: H,
+	model: Model,
 	findings: ReadonlyArray<SecurityAuditFinding>,
 	targets: ReadonlyArray<SecurityAuditTarget>,
 ): Html => {
-	const rows = [...openConfirmed(findings)].sort(bySeverity).slice(0, 4)
+	const rows = openLeads(findings).slice(0, 5)
+	const coverage = coverageAcross(model)
 	return rows.length === 0
-		? h.p([h.Class("px-4 py-6 text-sm text-muted-foreground")], ["No open confirmed findings."])
+		? h.p(
+				[h.Class("px-4 py-6 text-sm text-muted-foreground")],
+				[
+					coverage === null
+						? "No open leads yet."
+						: `No open leads. The latest runs closed ${coverage.closed} of ${coverage.total} units.`,
+				],
+			)
 		: h.ul(
 				[h.Class("divide-y")],
 				rows.map((finding) =>
@@ -451,7 +479,7 @@ const topFindingsList = (
 			)
 }
 
-/** The worst open confirmed findings: severity first, then the most recently seen. */
+/** Open leads: confirmed by severity, then the ones to validate. */
 const topFindingsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTarget>): Html => {
 	const state = findingsStateOf(model)
 	const body =
@@ -466,10 +494,10 @@ const topFindingsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAud
 					})
 				: state._tag === "Loading"
 					? placeholderRows(h, 4)
-					: topFindingsList(h, state.findings, targets)
+					: topFindingsList(h, model, state.findings, targets)
 	return panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
-			title: "Most severe open findings",
+			title: "Open leads",
 			action: h.a(
 				[
 					h.Href(hrefOf(AppRoute.SecurityFindings({ search: {} }))),
@@ -501,10 +529,12 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 							targets.find((target) => target.id === run.targetId)?.repository ??
 							"Removed target"
 						const note = isLive(run)
-							? `${formatNumber(run.inputTokens + run.outputTokens)} tokens so far`
+							? `running for ${formatElapsed(model.nowMs - run.startedAt)}`
 							: run.status === "failed"
 								? "could not finish"
-								: `${formatElapsed((run.finishedAt ?? run.startedAt) - run.startedAt)} · ${formatNumber(run.inputTokens + run.outputTokens)} tokens`
+								: run.status === "incomplete"
+									? stopSummaryOf(run.incompleteReason)
+									: formatElapsed((run.finishedAt ?? run.startedAt) - run.startedAt)
 						return listLink(
 							h,
 							runHref(run),

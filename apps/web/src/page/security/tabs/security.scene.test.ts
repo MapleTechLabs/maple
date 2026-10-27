@@ -36,6 +36,8 @@ import {
 	findingsStateOf,
 	groupFindings,
 	latestRunFor,
+	openLeads,
+	runLeadsOf,
 	runningRuns,
 	spendThisMonth,
 } from "./derive"
@@ -589,6 +591,54 @@ describe("spend and models", () => {
 				message: Select.Message.SelectedItem({ index: 0, value }),
 			}),
 		).model
+
+	test("the Overview counts leads to validate with the confirmed ones, worst confirmed first", () => {
+		const model = loaded()
+		const state = findingsStateOf(model)
+		const leads = state._tag === "Ready" ? openLeads(state.findings) : []
+		expect(
+			leads.map((finding) =>
+				finding.verdict === "confirmed" ? finding.overallSeverity : "to validate",
+			),
+		).toEqual([
+			"critical",
+			"high",
+			"high",
+			"high",
+			"medium",
+			"medium",
+			"low",
+			"to validate",
+			"to validate",
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("7 confirmed · 2 to validate")).toExist(),
+		)
+	})
+
+	test("a run's leads are told only for a target's newest finished run, which last saw them", () => {
+		const model = loaded(AppRoute.SecurityRuns({ search: {} }))
+		const runOf = (id: string) => runsOf(NOW).runs.find((run) => run.id === id)
+		const leadsOf = (id: string) => {
+			const run = runOf(id)
+			return run === undefined ? undefined : runLeadsOf(model, run)
+		}
+		expect([
+			leadsOf(RUN_IDS.billing),
+			leadsOf(RUN_IDS.billingCancelled),
+			leadsOf(RUN_IDS.dashboard),
+			leadsOf(RUN_IDS.terraform),
+		]).toEqual([{ confirmed: 3, toValidate: 1 }, null, null, null])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("reached the monthly spend limit")).toExist(),
+			expectView(role("columnheader", { name: "Leads" })).toExist(),
+			expectView(role("columnheader", { name: "Tokens" })).not.toExist(),
+		)
+	})
 
 	test("the Overview shows this month's spend against the org's limit", () => {
 		scene(
