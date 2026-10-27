@@ -20,7 +20,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import { incidentRow, NOW, ORG } from "../shared/test-rows"
 import { monitorHref } from "../shared/uptime-commands"
 import type { UptimeMonitor } from "../shared/uptime-derive"
-import { downMonitor, httpMonitor, pausedMonitor } from "../shared/uptime-test-monitors"
+import { downMonitor, httpMonitor, monitorId, pausedMonitor } from "../shared/uptime-test-monitors"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, monitorMenuId, update } from "./update"
@@ -82,6 +82,21 @@ describe("alerts hub inbox, uptime incidents", () => {
 })
 
 describe("alerts hub, Uptime tab", () => {
+	test("a row's subline names the type and the target, and drops a target the name repeats", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				withMonitors([
+					httpMonitor(),
+					httpMonitor({ id: monitorId(5), name: "api.acme.dev/checkout/health" }),
+				]),
+			),
+			expectView(text("HTTP · api.acme.dev/checkout/health")).toExist(),
+			// The second row's subline is the type alone; there is no Type column to match instead.
+			expectView(text("HTTP")).toExist(),
+		)
+	})
+
 	test("the monitors are read only when the Uptime tab is open", () => {
 		expect(names(init({ _tag: "Alerts", search: {} }, context).commands)).not.toContain(
 			"FetchAlertsHubMonitors",

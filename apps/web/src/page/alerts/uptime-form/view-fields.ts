@@ -102,7 +102,12 @@ export const selectField = (
 			),
 			nativeSelect(
 				h,
-				{ defaultValue: options.value, attributes: [h.Id(options.id), h.OnChange(options.onChange)] },
+				{
+					defaultValue: options.value,
+					// Fills its slot, so stacked rows line their controls up.
+					className: "w-full",
+					attributes: [h.Id(options.id), h.OnChange(options.onChange)],
+				},
 				options.entries.map((entry) => nativeOption(entry.value, entry.label)),
 			),
 		],

@@ -44,8 +44,9 @@ import { monitorMenuId } from "./update"
 
 type H = HtmlBuilder<Message>
 
+// The checks strip shares the slack with the name, so no column floats in dead space.
 const ROW_GRID =
-	"grid grid-cols-[minmax(0,1fr)_72px_minmax(120px,220px)_64px_64px_64px_64px_32px] items-center gap-4"
+	"grid grid-cols-[minmax(220px,1.25fr)_minmax(160px,1fr)_56px_64px_64px_64px_28px] items-center gap-x-5"
 const RECENT_SLOTS = 40
 
 const KIND_FILTERS: ReadonlyArray<{ value: UptimeKindFilter; label: string }> = [
@@ -225,11 +226,17 @@ const latencyCells = (h: H, monitor: UptimeMonitor): ReadonlyArray<Html> => {
 	)
 }
 
+/** Type, then the target unless the name already says it: `HTTP · api.maple.dev/health`. */
+const subline = (monitor: UptimeMonitor, nowMs: number): string => {
+	const target = targetLine(monitor, nowMs)
+	return target === monitor.name ? KIND_LABEL[monitor.kind] : `${KIND_LABEL[monitor.kind]} · ${target}`
+}
+
 const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): Html => {
 	const isPaused = displayStatus(monitor) === "paused"
 	const recent = monitor.state.recent
 	return h.li(
-		[h.Key(monitor.id), h.Class("relative px-4 py-3 hover:bg-muted/25")],
+		[h.Key(monitor.id), h.Class("relative py-3 pr-2 pl-4 hover:bg-muted/25")],
 		[
 			h.div(
 				[h.Class(ROW_GRID)],
@@ -237,7 +244,10 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 					h.div(
 						[h.Class("flex min-w-0 items-start gap-3")],
 						[
-							h.span([h.Class("mt-1.5")], [uptimeStatusSquare(h, monitor)]),
+							h.span(
+								[h.Class("flex h-5 shrink-0 items-center")],
+								[uptimeStatusSquare(h, monitor)],
+							),
 							h.div(
 								[h.Class("min-w-0")],
 								[
@@ -263,13 +273,12 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 									),
 									h.p(
 										[h.Class("truncate font-mono text-xs text-muted-foreground")],
-										[targetLine(monitor, nowMs)],
+										[subline(monitor, nowMs)],
 									),
 								],
 							),
 						],
 					),
-					h.span([h.Class("text-xs text-muted-foreground")], [KIND_LABEL[monitor.kind]]),
 					recentChecksStrip(h, { recent, slots: RECENT_SLOTS, isMuted: isPaused }),
 					h.span(
 						[h.Class("text-right font-mono text-xs tabular-nums")],
@@ -288,13 +297,12 @@ const table = (h: H, model: Model, rows: ReadonlyArray<UptimeMonitor>, nowMs: nu
 		[h.Class("overflow-x-auto rounded-md border")],
 		[
 			h.div(
-				[h.Class("min-w-[920px]")],
+				[h.Class("min-w-[860px]")],
 				[
 					h.div(
-						[h.Class(cn(ROW_GRID, "border-b px-4 py-2"))],
+						[h.Class(cn(ROW_GRID, "border-b py-2 pr-2 pl-4"))],
 						[
 							eyebrow(h, {}, ["Monitor"]),
-							eyebrow(h, {}, ["Type"]),
 							eyebrow(h, {}, ["Recent checks"]),
 							eyebrow(h, { className: "text-right" }, ["Uptime"]),
 							...PERCENTILE_COLUMNS.map((column) =>
