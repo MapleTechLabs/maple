@@ -7,7 +7,7 @@ import { internalTokenFor, selfFetcher } from "@maple/backend/platform/self-bind
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Option, Schema, Stream } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import { HttpClient, type HttpClientError, HttpClientRequest } from "effect/http"
 import { isLaneOf, type TickLane } from "./schedule.ts"
 
 /** The service binding to this Worker itself, declared in the Worker's props. */
@@ -25,12 +25,22 @@ export class TickDispatchError extends Schema.TaggedError<TickDispatchError>()(
 		ray: Schema.optionalKey(Schema.String),
 		/** The start of the answer's body: a runtime error page names what killed the invocation. */
 		body: Schema.optionalKey(Schema.String),
+		/** What the thrown fetch said, for a hop that never answered. */
+		failure: Schema.optionalKey(Schema.String),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
 
 /** Enough of a failed answer's body to name the failure, not enough to flood a log line. */
 const MAX_FAILURE_BODY_CHARS = 300
+
+/** The rejected fetch's own words: the client error's message is only its fixed transport text. */
+const thrownMessage = (error: HttpClientError.HttpClientError): string =>
+	error.cause instanceof Error
+		? error.cause.message
+		: error.cause === undefined
+			? error.message
+			: String(error.cause)
 
 /** The tick did not run in the placed handler, so the caller runs it inline. */
 export class TickDispatchUnavailable extends Schema.TaggedError<TickDispatchUnavailable>()(
@@ -84,8 +94,17 @@ export const dispatchTick = Effect.fn("alerting.dispatch_tick")(function* (
 	const response = yield* HttpClient.execute(request).pipe(
 		Effect.provideService(HttpClient.HttpClient, client),
 		// A callee the runtime killed usually surfaces here, as a thrown fetch, not as an answer.
-		Effect.tapError((cause) => Effect.annotateCurrentSpan("maple.alerting.tick_failure", cause.message)),
-		Effect.mapError((cause) => new TickDispatchError({ message: "Placed tick request failed", cause })),
+		Effect.mapError(
+			(cause) =>
+				new TickDispatchError({
+					message: "Placed tick request failed",
+					failure: thrownMessage(cause),
+					cause,
+				}),
+		),
+		Effect.tapError((error) =>
+			Effect.annotateCurrentSpan("maple.alerting.tick_failure", error.failure ?? error.message),
+		),
 	)
 	if (response.status === 204) return
 	// The handler did not run the tick: a token mismatch or a version without the route.

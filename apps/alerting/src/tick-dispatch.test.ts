@@ -166,4 +166,15 @@ describe("dispatchTick", () => {
 			expect(error.message).toBe("Placed tick answered 500")
 		}),
 	)
+
+	it.effect("keeps what the fetch threw when the hop never answered", () =>
+		Effect.gen(function* () {
+			const binding = {
+				fetch: () => Promise.reject(new Error("Worker exceeded CPU time limit.")),
+			}
+			const error = yield* dispatchFailure({ ...ENV, [SELF_BINDING]: binding })
+			expect(error.message).toBe("Placed tick request failed")
+			expect(error.failure).toBe("Worker exceeded CPU time limit.")
+		}),
+	)
 })
