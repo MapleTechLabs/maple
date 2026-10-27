@@ -34,6 +34,8 @@ const makeRepo = () => {
 	writeFileSync(`${dir}/src/spaced.ts`, "const before = 1\n\n\nconst after = 2\n")
 	writeFileSync(`${dir}/other.txt`, "card declined outside src\n")
 	writeFileSync(`${dir}/README.md`, "# shop\n")
+	// git prints this name quoted in its index listing.
+	writeFileSync(`${dir}/src/a"b.ts`, "export const quoted = 1\n")
 	// A committed symlink out of the checkout: tracked, so `--error-unmatch` alone
 	// would let `awk` follow it.
 	symlinkSync(SENTINEL, `${dir}/escape.txt`)
@@ -279,6 +281,20 @@ describe("the git commands the tools build, against a real repository", () => {
 			)
 			assert.strictEqual(result.exitCode, 1)
 			assert.notInclude(result.stdout, "export const checkout")
+		}).pipe(Effect.provide(overRepo())),
+	)
+
+	it.effect("reads a file whose name git quotes, and refuses a directory holding one file", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const read = (path: string) =>
+				service.readFile(ORG, { repository: "octo/shop" }, { path, startLine: 1, endLine: 10 })
+			const quoted = yield* read('src/a"b.ts')
+			assert.strictEqual(quoted.exitCode, 0, quoted.stderr)
+			assert.include(quoted.stdout, "1: export const quoted = 1")
+			const single = yield* read("src/deep")
+			assert.strictEqual(single.exitCode, 1)
+			assert.notInclude(single.stdout, "card declined")
 		}).pipe(Effect.provide(overRepo())),
 	)
 

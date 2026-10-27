@@ -358,12 +358,28 @@ export const auditWithAgents = <E, R>(
 			"repo-tree",
 			sandbox.exec(orgId, pinned, REPO_TREE_COMMAND).pipe(
 				Effect.mapError(toSandboxStepError("repo-tree")),
-				Effect.map((result) =>
-					result.exitCode === 0 ? formatRepoTree(result.stdout, result.truncated) : "",
+				Effect.flatMap((result) =>
+					result.exitCode === 0
+						? Effect.succeed(formatRepoTree(result.stdout, result.truncated))
+						: Effect.logWarning("Could not list the repository's directories").pipe(
+								Effect.annotateLogs({
+									runId: payload.runId,
+									exitCode: result.exitCode,
+									stderr: result.stderr.slice(0, 500),
+								}),
+								Effect.as(""),
+							),
 				),
 			),
 			STEP_RETRY,
-		).pipe(Effect.orElseSucceed(() => ""))
+		).pipe(
+			Effect.catch((error) =>
+				Effect.logWarning("Could not list the repository's directories").pipe(
+					Effect.annotateLogs({ runId: payload.runId, error: messageOf(error) }),
+					Effect.as(""),
+				),
+			),
+		)
 
 		// Prior records are read, not stepped: a finished run never changes, so a replay reads the same.
 		// Only a finished run of the same repository counts; anything else would make replays disagree.

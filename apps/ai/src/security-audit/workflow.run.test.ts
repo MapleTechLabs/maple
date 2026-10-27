@@ -23,7 +23,7 @@ import {
 	type Finding,
 } from "@maple/security-audit"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, ConfigProvider, Duration, Effect, Exit, Layer, Logger, Option, Schema } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import {
 	SecurityAuditCredits,
@@ -204,6 +204,40 @@ const Charge = Schema.Struct({
 const decodeCharge = Schema.decodeUnknownSync(Schema.fromJsonString(Charge))
 
 describe("auditWithAgents", () => {
+	it.effect("warns and still audits when the repository's directories cannot be listed", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const base = sandbox([])
+			const unlistable: RepoSandboxServiceApi = {
+				...base,
+				exec: (org, repo, options) =>
+					options.command === "bash" && options.args.some((arg) => arg.includes("awk -F/"))
+						? Effect.succeed({
+								exitCode: 128,
+								stdout: "",
+								stderr: "fatal: not a git repository",
+								wallTimeMs: 1,
+								truncated: false,
+							})
+						: base.exec(org, repo, options),
+			}
+			const warnings: Array<unknown> = []
+			const calls: Array<string> = []
+			yield* auditWithAgents(payloadFor(run.id), () => Effect.succeed(scriptedAgents(calls))).pipe(
+				Effect.provideService(RepoSandboxService, unlistable),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+				Effect.provide(Logger.layer([Logger.make(({ message }) => void warnings.push(message))])),
+			)
+			assert.isTrue(calls.length > 0)
+			assert.isTrue(
+				warnings.some((message) =>
+					String(message).includes("Could not list the repository's directories"),
+				),
+			)
+		}).pipe(Effect.provide(testLayer())),
+	)
+
 	it.effect("pins the commit, records it on the run, runs the engine and finishes the run", () =>
 		Effect.gen(function* () {
 			const { store, target } = yield* setup
