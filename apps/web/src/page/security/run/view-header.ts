@@ -307,6 +307,7 @@ export const runStats = (
 	const closed = run.unitTotal - gaps
 	const tokens = `${formatNumber(run.inputTokens)} input · ${formatNumber(run.outputTokens)} output tokens`
 	const leads = verdicts === null ? null : verdicts.confirmed + verdicts.needsValidation
+	const waiting = countOf(run, "candidate")
 	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Leads",
@@ -316,7 +317,7 @@ export const runStats = (
 				verdicts === null
 					? undefined
 					: live
-						? `${leadsLine(verdicts.confirmed, verdicts.needsValidation)} · ${countOf(run, "candidate")} candidates waiting`
+						? `${leadsLine(verdicts.confirmed, verdicts.needsValidation)} · ${waiting} ${waiting === 1 ? "candidate" : "candidates"} waiting`
 						: [
 								leadsLine(verdicts.confirmed, verdicts.needsValidation),
 								...(verdicts.rejected === 0 ? [] : [`${verdicts.rejected} disproved`]),

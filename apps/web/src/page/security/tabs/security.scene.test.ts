@@ -289,6 +289,39 @@ describe("security tabs", () => {
 		)
 	})
 
+	test("Covered sums every target's latest run, and says not mapped only once no run has", () => {
+		const answered = Object.values(TARGET_IDS).reduce((model, targetId) => {
+			const run = latestRunFor(model, targetId)
+			if (run === undefined) return model
+			return pageUpdate(
+				model,
+				Message.CompletedFetchLatestRun({
+					runId: run.id,
+					key: model.latestRuns[run.id]?.key ?? "",
+					result: Result.succeed(runDetailOf(NOW, run.id)),
+				}),
+			).model
+		}, loaded())
+		scene(
+			{ update: pageUpdate, view },
+			given(answered),
+			// gateway 212 of 212, dashboard 64 of 148, billing 38 of 54.
+			expectView(text("314 / 414")).toExist(),
+			expectView(text("Not mapped")).toBeAbsent(),
+		)
+
+		const entered = init(overview, context).model
+		const noRuns = [
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchTargets({
+				key: entered.targets.key ?? "",
+				result: Result.succeed(targetsOf(NOW)),
+			}),
+			Message.CompletedFetchRuns({ key: entered.runs.key ?? "", result: Result.succeed({ runs: [] }) }),
+		].reduce((model, message) => pageUpdate(model, message).model, entered)
+		scene({ update: pageUpdate, view }, given(noRuns), expectView(text("Not mapped")).toExist())
+	})
+
 	test("the latest run's coverage is read for the targets table", () => {
 		const model = loaded()
 		const key = model.latestRuns[RUN_IDS.gateway]?.key ?? ""
