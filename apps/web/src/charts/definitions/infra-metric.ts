@@ -143,6 +143,11 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		const sum = series.reduce((total, name) => total + (valueOf(name)(point) ?? 0), 0)
 		return isShare && sum > 1 ? 1 / sum : 1
 	}
+	// Dots read the same scaled values the stacked bands draw.
+	const plottedOf = (name: string) => (point: InfraPoint) => {
+		const value = valueOf(name)(point)
+		return value === null || !spec.stacked ? value : value * shareScale(point)
+	}
 	const cells: ReadonlyArray<InfraCell> = spec.stacked
 		? data.flatMap((point) => {
 				const scale = shareScale(point)
@@ -179,7 +184,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		point === undefined || value(point) === null
 	const lone = spec.gaps
 		? series.map((name) => {
-				const value = valueOf(name)
+				const value = plottedOf(name)
 				return dot(
 					data.filter(
 						(point, index) =>
@@ -232,7 +237,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 			...thresholdMarks,
 			...bands,
 			...lone,
-			...series.map((name) => focusDot(data, at, valueOf(name), colorOf(name), chrome)),
+			...series.map((name) => focusDot(data, at, plottedOf(name), colorOf(name), chrome)),
 			focusCrosshair(chrome),
 		],
 		scales: {
