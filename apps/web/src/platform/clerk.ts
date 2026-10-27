@@ -323,8 +323,11 @@ const currentClerk = Effect.suspend(() =>
 
 const CLERK_LOAD_TIMEOUT = Duration.seconds(20)
 
+const sinceNavigationStart = Effect.sync(() => Math.round(performance.now()))
+
 /** Loads clerk-js the way `<ClerkProvider>` does (unless a stub already sits on `window`). */
 export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.gen(function* () {
+	const startedAtMs = yield* sinceNavigationStart
 	yield* Effect.promise(() => purgeForeignClerkCookies(publishableKey))
 	if (window.Clerk === undefined) {
 		yield* injectClerkJs
@@ -342,6 +345,11 @@ export const loadClerk: Effect.Effect<ClerkSnapshot, ClerkLoadError> = Effect.ge
 				localization: clerkLocalization,
 			}),
 		catch: (cause) => new ClerkLoadError({ message: "Clerk failed to load", cause }),
+	})
+	// Boot timing for the `LoadClerk` span: ms since navigation start.
+	yield* Effect.annotateCurrentSpan({
+		"maple.clerk.load_start_ms": startedAtMs,
+		"maple.clerk.load_end_ms": yield* sinceNavigationStart,
 	})
 	return yield* toSnapshot(clerk)
 }).pipe(

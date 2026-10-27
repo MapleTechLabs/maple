@@ -161,6 +161,27 @@ const makeNavigationMarks = () => {
 	}
 }
 
+// Not `instanceof`: test DOMs and older engines have no `PerformanceNavigationTiming` global.
+const isNavigationTiming = (entry: PerformanceEntry | undefined): entry is PerformanceNavigationTiming =>
+	entry?.entryType === "navigation"
+
+/**
+ * Where the page load's time went before `init`, in ms since navigation start: the document's
+ * first and last byte, then `init` itself (the app's scripts downloaded and evaluated).
+ */
+const bootTiming = (): Record<string, number> => {
+	if (typeof performance === "undefined" || typeof performance.getEntriesByType !== "function") return {}
+	const entry = performance.getEntriesByType("navigation")[0]
+	const document =
+		isNavigationTiming(entry) && entry.responseEnd > 0
+			? {
+					"maple.pageload.response_start_ms": Math.round(entry.responseStart),
+					"maple.pageload.response_end_ms": Math.round(entry.responseEnd),
+				}
+			: undefined
+	return { ...document, "maple.pageload.init_ms": Math.round(performance.now()) }
+}
+
 const isUpdateReturn = (value: unknown): value is FoldkitUpdateReturn => Predicate.hasProperty(value, "model")
 
 /**
@@ -252,6 +273,7 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 							path: scrubUrl(url.pathname),
 							// The page load began at navigation start, not when the app's JS got here.
 							startTime: BigInt(Math.round(performance.timeOrigin * 1_000_000)),
+							attributes: bootTiming(),
 						})
 			return withCommands(init(flags, url), "init", navigationId)
 		}
