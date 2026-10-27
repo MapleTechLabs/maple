@@ -1,7 +1,8 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
+import { TracesListQuery } from "@maple/domain/query-engine"
 import { strict as assert } from "node:assert"
 import { beforeEach, vi } from "vitest"
 import { mockedWarehouse } from "./testing"
@@ -23,6 +24,8 @@ vi.mock("./traces", () => ({
 }))
 
 import { getUptimeCheckStats } from "./uptime"
+
+const decodeListQuery = Schema.decodeUnknownOption(TracesListQuery)
 
 // The window starts mid-bucket, so the chart drops the 00:00 bucket; the totals must not.
 const START = "2026-02-01 00:07:00"
@@ -90,6 +93,56 @@ describe("getUptimeCheckStats", () => {
 				[0, null, null, null],
 			)
 		}).pipe(mockedWarehouse),
+	)
+
+	it.effect("asks the traces list only for pages it accepts", () =>
+		Effect.gen(function* () {
+			answer([])
+			const asked: Array<{ limit: number; offset: number }> = []
+			listTracesMock.mockImplementation(({ data }: { data: { limit: number; offset: number } }) => {
+				asked.push({ limit: data.limit, offset: data.offset })
+				return page([], 0)
+			})
+			yield* getUptimeCheckStats({ monitorId: "mon_1", startTime: START, endTime: END })
+			const accepted = asked.map(({ limit, offset }) =>
+				Option.isSome(decodeListQuery({ kind: "list", source: "traces", limit, offset })),
+			)
+			assert.ok(asked.length > 0)
+			assert.deepStrictEqual(
+				accepted,
+				asked.map(() => true),
+			)
+		}).pipe(mockedWarehouse),
+	)
+
+	it.effect(
+		"reads one page for a monitor with few checks, and every page only while they come back full",
+		() =>
+			Effect.gen(function* () {
+				answer([])
+				const asked: Array<number> = []
+				const reading = (full: boolean) =>
+					listTracesMock.mockImplementation(({ data }: { data: { offset: number } }) => {
+						asked.push(data.offset)
+						return page([], full ? 200 : 3)
+					})
+				reading(false)
+				yield* getUptimeCheckStats({ monitorId: "mon_1", startTime: START, endTime: END })
+				const few = [...asked]
+				asked.length = 0
+				reading(true)
+				const busy = yield* getUptimeCheckStats({
+					monitorId: "mon_1",
+					startTime: START,
+					endTime: END,
+				})
+				assert.deepStrictEqual(few, [0])
+				assert.deepStrictEqual(
+					[...asked].sort((a, b) => a - b),
+					Array.from({ length: 11 }, (_, index) => index * 200),
+				)
+				assert.strictEqual(busy.samplesTruncated, true)
+			}).pipe(mockedWarehouse),
 	)
 
 	it.effect("lists the checks oldest first with their status, and says when the list is cut short", () =>
