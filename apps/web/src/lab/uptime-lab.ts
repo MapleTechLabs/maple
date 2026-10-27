@@ -26,7 +26,7 @@ import {
 import type { Resources } from "../platform/resources"
 
 // `/lab/uptime`: the HTTP monitor page's three charts over a fixture shaped like production checks
-// (no phases for the window's first 10 hours, TTFB carrying the time, transfer near 0, one failure).
+// (checks from 14 hours ago, TTFB carrying the time, transfer near 0, one failure).
 
 export { Message, Model }
 
@@ -37,11 +37,15 @@ const LAB_CONTEXT: PageContext = {
 }
 
 const NOW_MS = Date.UTC(2026, 9, 27, 13, 30)
-const WINDOW_MS = 86_400_000
-const BUCKET_MS = 900_000
+/** The page's bucket width per window: 24 hours read as 15-minute buckets, an hour as 1-minute ones. */
+const WINDOWS = {
+	"1h": { windowMs: 3_600_000, bucketMs: 60_000 },
+	"24h": { windowMs: 86_400_000, bucketMs: 900_000 },
+} as const
+type LabWindow = keyof typeof WINDOWS
 const CHECK_EVERY_MS = 100_000
 /** Checks only started recording phases (and, here, running) 10 hours into the window. */
-const FIRST_CHECK_MS = NOW_MS - WINDOW_MS + 10 * 3_600_000
+const FIRST_CHECK_MS = NOW_MS - 14 * 3_600_000
 const FAILED_AT_MS = FIRST_CHECK_MS + 50 * 60_000
 
 /** A seeded generator, so the lab draws the same checks on every load. */
@@ -77,17 +81,18 @@ const quantile = (sorted: ReadonlyArray<number>, q: number): number =>
 const mean = (values: ReadonlyArray<number>): number =>
 	values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
 
-const fixtureStats = (): CheckStats => {
-	const startMs = NOW_MS - WINDOW_MS
+const fixtureStats = (window: LabWindow): CheckStats => {
+	const { windowMs, bucketMs: stepMs } = WINDOWS[window]
+	const startMs = NOW_MS - windowMs
 	const checkCount = Math.floor((NOW_MS - FIRST_CHECK_MS) / CHECK_EVERY_MS)
 	const samples = Array.from({ length: checkCount }, (_, index) =>
 		sampleAt(FIRST_CHECK_MS + index * CHECK_EVERY_MS, index),
-	)
-	const buckets = Array.from({ length: WINDOW_MS / BUCKET_MS }, (_, index) => startMs + index * BUCKET_MS)
+	).filter((sample) => isoMs(sample.at) >= startMs)
+	const buckets = Array.from({ length: windowMs / stepMs }, (_, index) => startMs + index * stepMs)
 	const inBucket = (bucketMs: number) =>
 		samples.filter((sample) => {
 			const at = isoMs(sample.at)
-			return at >= bucketMs && at < bucketMs + BUCKET_MS
+			return at >= bucketMs && at < bucketMs + stepMs
 		})
 	const points = buckets.map((bucketMs): CheckPoint => {
 		const checks = inBucket(bucketMs)
@@ -99,7 +104,7 @@ const fixtureStats = (): CheckStats => {
 			p95LatencyMs: quantile(sorted, 0.95),
 			p99LatencyMs: quantile(sorted, 0.99),
 			totalCount: checks.length,
-			partial: bucketMs + BUCKET_MS > NOW_MS,
+			partial: bucketMs + stepMs > NOW_MS,
 		}
 	})
 	const phases = buckets.flatMap((bucketMs): ReadonlyArray<PhasePoint> => {
@@ -120,7 +125,7 @@ const fixtureStats = (): CheckStats => {
 	})
 	const sorted = samples.map((sample) => sample.durationMs).toSorted((a, b) => a - b)
 	return {
-		window: "24h",
+		window,
 		points,
 		samples,
 		samplesTruncated: false,
@@ -163,7 +168,7 @@ export const init = (_flags: Flags): Return => ({
 		isChecking: false,
 		copies: {},
 		window: "24h",
-		stats: { key: null, data: AsyncData.Success({ data: fixtureStats() }) },
+		stats: { key: null, data: AsyncData.Success({ data: fixtureStats("24h") }) },
 		hoveredCheck: null,
 		chart: Chart.init(),
 		phaseChart: Chart.init(),
@@ -180,8 +185,18 @@ export const init = (_flags: Flags): Return => ({
 })
 
 export const update = (model: Model, message: Message): Return => {
-	// The window switch would re-read; the fixture only covers 24 hours.
-	if (message._tag === "PickedWindow") return { model }
+	// The window switch swaps the fixture instead of re-reading; it covers an hour and a day.
+	if (message._tag === "PickedWindow")
+		return message.window === "7d"
+			? { model }
+			: {
+					model: {
+						...model,
+						window: message.window,
+						hoveredCheck: null,
+						stats: { key: null, data: AsyncData.Success({ data: fixtureStats(message.window) }) },
+					},
+				}
 	const next = pageUpdate(model, message, LAB_CONTEXT)
 	return { model: next.model, commands: withoutReads(next.commands) }
 }
