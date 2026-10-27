@@ -16,9 +16,11 @@ const stubClerk = (pathname: string, settles = true) => {
 	return load
 }
 
-/** `clerk.ts` and `clerk-boot.ts` as a fresh page load evaluates them. */
+/** A fresh page load: `boot.ts` starts the boot, then the app's `clerk.ts` loads. */
 const loadModules = async () => {
 	vi.resetModules()
+	const { startClerkBoot } = await import("./clerk-boot")
+	startClerkBoot()
 	const clerk = await import("./clerk")
 	// The boot's first step (the cookie purge) is async: let it reach `clerk.load`.
 	await new Promise((resolve) => setTimeout(resolve, 0))
@@ -26,7 +28,7 @@ const loadModules = async () => {
 }
 
 describe("clerk boot", () => {
-	test("Clerk starts loading when the module loads, and LoadClerk joins that load", async () => {
+	test("the boot starts Clerk loading before the app asks, and LoadClerk joins that load", async () => {
 		const load = stubClerk("/")
 		const { loadClerk } = await loadModules()
 		expect(load).toHaveBeenCalledTimes(1)

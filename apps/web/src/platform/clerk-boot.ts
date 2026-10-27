@@ -1,4 +1,4 @@
-import { Duration, Effect, Fiber, Option, Schema } from "effect"
+import { Duration, Effect, Fiber, Option, Ref, Schema } from "effect"
 import { labEnabled, labPathOf } from "../lab/boot"
 import { clerkAppearance, clerkLocalization } from "../lib/clerk-appearance"
 import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
@@ -77,28 +77,36 @@ const loadClerkJs: Effect.Effect<BootedClerk, ClerkLoadError> = Effect.gen(funct
 
 const timedOut = new ClerkLoadError({ message: "Clerk did not load in time", cause: undefined })
 
-// index.html runs this module before the app's own bundle has downloaded and evaluated, so
-// Clerk's script and Frontend API round trip overlap that work instead of following it.
-const started = isClerkAuthEnabled && !(labEnabled && labPathOf(location.pathname) !== undefined)
-
-const boot = started ? Option.some(Effect.runFork(loadClerkJs)) : Option.none()
+const bootFiber = Ref.makeUnsafe(Option.none<Fiber.Fiber<BootedClerk, ClerkLoadError>>())
 
 /**
- * The load index.html started, or a fresh one where it did not (lab pages, self-hosted).
+ * Called by `boot.ts`, index.html's first script: it runs before the app's own bundle has
+ * downloaded and evaluated, so Clerk's script and Frontend API call overlap that work.
+ */
+export const startClerkBoot = (): void => {
+	if (!isClerkAuthEnabled || (labEnabled && labPathOf(location.pathname) !== undefined)) return
+	Effect.runSync(Ref.set(bootFiber, Option.some(Effect.runFork(loadClerkJs))))
+}
+
+const withDeadline = <A>(
+	effect: Effect.Effect<A, ClerkLoadError>,
+	onTimeout: Effect.Effect<void>,
+): Effect.Effect<A, ClerkLoadError> =>
+	Effect.timeoutOrElse(effect, {
+		duration: CLERK_LOAD_TIMEOUT,
+		orElse: () => Effect.andThen(onTimeout, Effect.fail(timedOut)),
+	})
+
+/**
+ * The load `startClerkBoot` started, or a fresh one where it did not (lab pages, self-hosted).
  * The deadline counts from when the app asks, so a slow bundle download does not use it up.
  * Without one, a stalled script or `clerk.load` keeps the boot splash up forever.
  */
-export const bootedClerk: Effect.Effect<BootedClerk, ClerkLoadError> = Option.match(boot, {
-	onNone: () =>
-		loadClerkJs.pipe(
-			Effect.timeoutOrElse({ duration: CLERK_LOAD_TIMEOUT, orElse: () => Effect.fail(timedOut) }),
-		),
-	onSome: (fiber) =>
-		Fiber.join(fiber).pipe(
-			Effect.timeoutOrElse({
-				duration: CLERK_LOAD_TIMEOUT,
-				// Interrupting the boot removes its script tag, as the old in-command deadline did.
-				orElse: () => Effect.andThen(Fiber.interrupt(fiber), Effect.fail(timedOut)),
-			}),
-		),
-})
+export const bootedClerk: Effect.Effect<BootedClerk, ClerkLoadError> = Effect.flatMap(
+	Ref.get(bootFiber),
+	Option.match({
+		onNone: () => withDeadline(loadClerkJs, Effect.void),
+		// Interrupting the boot removes its script tag, as the old in-command deadline did.
+		onSome: (fiber) => withDeadline(Fiber.join(fiber), Fiber.interrupt(fiber)),
+	}),
+)

@@ -53,8 +53,9 @@
 		},
 		// Run by path: the browser e2e suite (`e2e run`, `test:e2e`).
 		"apps/web": {
-			// `src/worker-entry.ts` is named by string in `src/worker.ts`.
-			"entry": ["src/worker-entry.ts", "e2e/e2e.config.ts", "e2e/tests/**/*.e2e.ts"]
+			// `src/worker-entry.ts` is named by string in `src/worker.ts`; `src/boot.ts` is a build
+			// input added by `vite.config.ts`.
+			"entry": ["src/worker-entry.ts", "src/boot.ts", "e2e/e2e.config.ts", "e2e/tests/**/*.e2e.ts"]
 		},
 		// local-ui renders apps/web's source modules (ui, charts), so their runtime packages
 		// must resolve from this app too.
