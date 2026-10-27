@@ -23,10 +23,7 @@ const sections = await getDocSections(currentSlug);
 const section = sections.find((s) => s.active) ?? sections[0];
 const ordered = (await getNavTree()).filter(({ group }) => sectionForGroup(group).id === section.id);
 
-// Brand marks for rows whose frontmatter has no `icon`, so a top-level row never
-// sits indented like a nested child.
-const ICON_FALLBACK: Record<string, BrandMarkId> = { "guides/instrumentation-cloudflare-workers": "cloudflare" };
-const markOf = (doc: Doc): BrandMarkId | undefined => doc.data.icon ?? ICON_FALLBACK[doc.id];
+const markOf = (doc: Doc): BrandMarkId | undefined => doc.data.icon;
 const hasIcon = (doc: Doc) => Boolean(doc.data.sdk ?? markOf(doc));
 const label = (doc: Doc) => doc.data.navLabel ?? doc.data.title;
 const headingId = (group: string) => `${idPrefix}-${group.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
