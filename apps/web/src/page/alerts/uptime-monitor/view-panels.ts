@@ -310,40 +310,64 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 	})
 }
 
-/** One segment per bucket under the chart: green when every check passed, red with any failure. */
-const availabilityStrip = (
-	h: H,
-	points: ReadonlyArray<CheckPoint>,
-	window: UptimeWindow,
-	timeZone: string,
-): Html =>
-	h.div(
-		[h.Class("flex h-2 gap-px pr-3 pl-16"), h.AriaHidden(true)],
-		points.map((point) => {
-			const failed = Math.round(point.errorRate * point.totalCount)
-			const label =
-				point.totalCount === 0
-					? `${timeLabel(window, point.bucket, timeZone)}: no checks`
-					: `${timeLabel(window, point.bucket, timeZone)}: ${point.totalCount} checks, ${failed} failed`
-			return h.span(
-				[
-					h.Key(point.bucket),
-					h.Title(label),
-					h.Class(
-						cn(
-							"min-w-0 flex-1 rounded-[1px]",
-							point.totalCount === 0
-								? "bg-muted"
-								: failed > 0
-									? "bg-destructive"
-									: "bg-success/70",
-						),
-					),
-				],
-				[],
-			)
-		}),
+/** The bucket width: the smallest gap between buckets, else the span from the only one to the window's end. */
+const bucketStepMs = (points: ReadonlyArray<CheckPoint>, endMs: number): number => {
+	const starts = points.map((point) => isoMs(point.bucket))
+	const gaps = starts.slice(1).flatMap((start, index) => {
+		const gap = start - (starts[index] ?? start)
+		return gap > 0 ? [gap] : []
+	})
+	return gaps.length > 0 ? Math.min(...gaps) : Math.max(1, endMs - (starts[0] ?? endMs))
+}
+
+/**
+ * One segment per bucket under the chart, placed by its time on the same window as the chart: the
+ * warehouse trims empty leading buckets, so counting segments would stretch them across the window.
+ * Green when every check passed, red with any failure.
+ */
+const availabilityStrip = (h: H, stats: CheckStats, window: UptimeWindow, timeZone: string): Html => {
+	const domain: Domain = { startMs: stats.windowStartMs, endMs: stats.windowEndMs }
+	const stepMs = bucketStepMs(stats.points, domain.endMs)
+	return h.div(
+		[h.Class("h-2 pr-3 pl-16"), h.AriaHidden(true)],
+		[
+			h.div(
+				[h.Class("relative h-full")],
+				stats.points.map((point) => {
+					const startMs = isoMs(point.bucket)
+					const left = Math.max(0, xShare(startMs, domain))
+					const right = Math.min(1, xShare(startMs + stepMs, domain))
+					const failed = Math.round(point.errorRate * point.totalCount)
+					const label =
+						point.totalCount === 0
+							? `${timeLabel(window, point.bucket, timeZone)}: no checks`
+							: `${timeLabel(window, point.bucket, timeZone)}: ${point.totalCount} checks, ${failed} failed`
+					return h.span(
+						[
+							h.Key(point.bucket),
+							h.Title(label),
+							h.Class(
+								cn(
+									"absolute inset-y-0 rounded-[1px]",
+									point.totalCount === 0
+										? "bg-muted"
+										: failed > 0
+											? "bg-destructive"
+											: "bg-success/70",
+								),
+							),
+							h.Style({
+								left: `${left * 100}%`,
+								width: `max(1px, calc(${((right - left) * 100).toFixed(4)}% - 1px))`,
+							}),
+						],
+						[],
+					)
+				}),
+			),
+		],
 	)
+}
 
 /** P50, P95 and P99 over the picked window, from the monitor's check spans. */
 export const responseTimePanel = (h: H, model: Model, context: ChartContext | null): Html => {
@@ -382,12 +406,7 @@ export const responseTimePanel = (h: H, model: Model, context: ChartContext | nu
 												[h.Class("h-56")],
 												[latencyChart(h, model, stats, context)],
 											),
-											availabilityStrip(
-												h,
-												stats.points,
-												stats.window,
-												context.timeZone,
-											),
+											availabilityStrip(h, stats, stats.window, context.timeZone),
 										],
 									),
 			})
