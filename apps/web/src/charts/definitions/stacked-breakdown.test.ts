@@ -29,7 +29,7 @@ const hover = (built: ReturnType<typeof buildStackedBreakdown>) => {
 				markId: "area",
 				group: "DNS",
 				groupLabel: "DNS",
-				datum: { row, name: "DNS", value: 4 },
+				datum: { row, name: "DNS", value: 4, bottom: 0, top: 4 },
 				datumIndex: 0,
 				xValue: row.date,
 				yValue: 4,

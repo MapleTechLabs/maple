@@ -233,7 +233,17 @@ const chartRows = (points: ReadonlyArray<CheckPoint>) =>
 		partial: point.partial,
 	}))
 
-const latencyChart = (h: H, model: Model, points: ReadonlyArray<CheckPoint>, context: ChartContext): Html =>
+/** The plot's insets in px, shared by every chart on the page so one instant sits at one x (`pl-16`, `pr-3`). */
+const PLOT_LEFT = 64
+const PLOT_RIGHT = 12
+
+/** Every chart spans the picked window, not just the buckets that hold data. */
+const windowDomain = (stats: CheckStats): readonly [number, number] => [
+	stats.windowStartMs,
+	stats.windowEndMs,
+]
+
+const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartContext): Html =>
 	h.submodel({
 		slotId: "uptime-latency-chart",
 		model: model.chart,
@@ -243,8 +253,10 @@ const latencyChart = (h: H, model: Model, points: ReadonlyArray<CheckPoint>, con
 			ariaLabel: "Response time percentiles",
 			spec: ChartSpec.FixedMetric({
 				chart: "Latency",
-				marginLeft: 64,
-				rows: chartRows(points),
+				marginLeft: PLOT_LEFT,
+				marginRight: PLOT_RIGHT,
+				xDomainMs: [...windowDomain(stats)],
+				rows: chartRows(stats.points),
 				colors: {
 					border: resolveColor(context.theme, "--border"),
 					background: resolveColor(context.theme, "--background"),
@@ -272,7 +284,7 @@ const availabilityStrip = (
 	timeZone: string,
 ): Html =>
 	h.div(
-		[h.Class("flex h-2 gap-px pl-16"), h.AriaHidden(true)],
+		[h.Class("flex h-2 gap-px pr-3 pl-16"), h.AriaHidden(true)],
 		points.map((point) => {
 			const failed = Math.round(point.errorRate * point.totalCount)
 			const label =
@@ -334,7 +346,7 @@ export const responseTimePanel = (h: H, model: Model, context: ChartContext | nu
 										[
 											h.div(
 												[h.Class("h-56")],
-												[latencyChart(h, model, stats.points, context)],
+												[latencyChart(h, model, stats, context)],
 											),
 											availabilityStrip(
 												h,
@@ -415,7 +427,7 @@ const checkBars = (
 	yMax: number,
 ): Html => {
 	const domain: Domain = { startMs, endMs }
-	// Bars thin out as checks pile up, never under a pixel or over 6.
+	// Bars thin out as checks pile up, never under a pixel or over 6; the width keeps a 30% gap, so no inset.
 	const width = `max(1px, min(6px, ${(70 / Math.max(1, samples.length)).toFixed(3)}%))`
 	const bar = (sample: CheckSample, index: number) => {
 		const clipped = sample.durationMs > yMax
@@ -425,7 +437,7 @@ const checkBars = (
 				h.Href(traceHref(sample.traceId)),
 				h.Attribute("tabindex", "-1"),
 				h.OnMouseEnter(Message.HoveredCheck({ index })),
-				h.Class("group absolute inset-y-0 -translate-x-1/2 px-px hover:bg-foreground/5"),
+				h.Class("group absolute inset-y-0 -translate-x-1/2 hover:bg-foreground/5"),
 				h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
 			],
 			[
@@ -433,7 +445,7 @@ const checkBars = (
 					[
 						h.Class(
 							cn(
-								"absolute inset-x-px bottom-0 flex flex-col-reverse overflow-hidden rounded-t-[1px] group-hover:brightness-125",
+								"absolute inset-x-0 bottom-0 flex flex-col-reverse overflow-hidden rounded-t-[1px] group-hover:brightness-125",
 								!sample.ok && "bg-destructive",
 							),
 						),
@@ -554,7 +566,7 @@ const barsLegend = (h: H, samples: ReadonlyArray<CheckSample>, yMax: number): Ht
 	const failed = samples.some((sample) => !sample.ok)
 	const clipped = samples.some((sample) => sample.durationMs > yMax)
 	return h.div(
-		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 pl-14 text-xs text-muted-foreground")],
+		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 pr-3 pl-16 text-xs text-muted-foreground")],
 		[
 			...(timed
 				? PHASES.map((phase) =>
@@ -640,13 +652,13 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 						],
 						[
 							h.div(
-								[h.Class("flex h-56 pt-2")],
+								[h.Class("flex h-56 pt-2 pr-3")],
 								[
 									h.div(
 										[
 											h.AriaHidden(true),
 											h.Class(
-												"relative w-14 shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums",
+												"relative w-16 shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums",
 											),
 										],
 										yTicks.map((share) =>
@@ -705,7 +717,9 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 							h.div(
 								[
 									h.AriaHidden(true),
-									h.Class("relative ml-14 h-4 font-mono text-[11px] text-muted-foreground"),
+									h.Class(
+										"relative mr-3 ml-16 h-4 font-mono text-[11px] text-muted-foreground",
+									),
 								],
 								scatterTimeTicks(domain, stats.window, timeZone).map((tick) =>
 									h.span(
@@ -741,9 +755,9 @@ const phaseRows = (points: ReadonlyArray<PhasePoint>) =>
 		})),
 	)
 
-const phaseChart = (h: H, model: Model, points: ReadonlyArray<PhasePoint>, context: ChartContext): Html => {
+const phaseChart = (h: H, model: Model, stats: CheckStats, context: ChartContext): Html => {
 	const built = stackedBreakdown({
-		rows: phaseRows(points),
+		rows: phaseRows(stats.phases),
 		colors: Object.fromEntries(PHASES.map((phase) => [phase.label, `var(${phase.token})`])),
 		order: PHASES.map((phase) => phase.label),
 		theme: context.theme,
@@ -751,6 +765,8 @@ const phaseChart = (h: H, model: Model, points: ReadonlyArray<PhasePoint>, conte
 		gradientPrefix: "uptime-phases",
 		unit: "duration_ms",
 		showTotal: true,
+		xDomainMs: windowDomain(stats),
+		marginLeft: PLOT_LEFT,
 	})
 	return h.div(
 		[h.Class("h-56")],
@@ -823,7 +839,7 @@ export const phaseBreakdownPanel = (h: H, model: Model, context: ChartContext | 
 									)
 								: context === null
 									? h.div([h.Class("h-56")], [chartSkeleton(h, "area")])
-									: phaseChart(h, model, stats.phases, context),
+									: phaseChart(h, model, stats, context),
 			})
 	return panel(h, { attributes: [h.AriaLabel("Response time breakdown")] }, [
 		panelHeader(h, { title: "Response time breakdown" }),

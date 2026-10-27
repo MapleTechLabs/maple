@@ -1,6 +1,6 @@
-import { areaY, d3Curve, defineChart, stack, type ChartPoint, type ChartValue } from "@tanstack/charts"
+import { areaY, d3Curve, defineChart, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
+import { makeBucketAxis, pinnedTimeXAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
@@ -17,11 +17,13 @@ import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
 type StackedBreakdownSpec = Extract<ChartSpec, { readonly _tag: "StackedBreakdown" }>
 
-/** One band segment: a bucket row, the series it belongs to, and its value. */
+/** One band segment: a bucket row, the series it belongs to, its value and where it sits in the stack. */
 interface BreakdownCell {
 	readonly row: InfraPoint
 	readonly name: string
 	readonly value: number
+	readonly bottom: number
+	readonly top: number
 }
 
 /** A key absent from a bucket row is a zero count: `stack()` would tear the band at a null. */
@@ -41,27 +43,46 @@ export const buildStackedBreakdown = (
 	const colorOf = (name: string) => spec.colors[name] ?? chrome.border
 	const gradientFor = (name: string) => `${spec.gradientPrefix}-${name.replace(/\W+/g, "_")}`
 	const cells: ReadonlyArray<BreakdownCell> = data.flatMap((row) =>
-		series.map((name) => ({ row, name, value: cellValue(row[name]) })),
+		series.reduce<ReadonlyArray<BreakdownCell>>((stacked, name) => {
+			const bottom = stacked.at(-1)?.top ?? 0
+			const value = cellValue(row[name])
+			return [...stacked, { row, name, value, bottom, top: bottom + value }]
+		}, []),
 	)
+	const curve = d3Curve(curveMonotoneX)
 	const format = (value: number) => formatValueByUnit(value, spec.unit)
 	const focus = tooltipFocusCapture()
 	const definition = defineChart({
 		gradients: series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.4, 0.05)),
 		marks: [
+			// Fills without an outline: a stroked area also draws its sides and its floor.
 			areaY(cells, {
 				x: (cell: BreakdownCell) => cell.row.date,
-				y: (cell: BreakdownCell) => cell.value,
+				y: (cell: BreakdownCell) => cell.top,
+				y1: (cell: BreakdownCell) => cell.bottom,
 				z: (cell: BreakdownCell) => cell.name,
 				fill: (cell: BreakdownCell) => `url(#${gradientFor(cell.name)})`,
-				stroke: (cell: BreakdownCell) => colorOf(cell.name),
-				strokeWidth: 1.25,
-				curve: d3Curve(curveMonotoneX),
-				layout: stack({ order: [...series] }),
+				stroke: "none",
+				curve,
 			}),
+			// Each band's top edge, the top band first: a band at 0 leaves the one under it visible.
+			...series.toReversed().map((name) =>
+				lineY(
+					cells.filter((cell) => cell.name === name),
+					{
+						id: `edge-${name}`,
+						x: (cell: BreakdownCell) => cell.row.date,
+						y: (cell: BreakdownCell) => cell.top,
+						stroke: colorOf(name),
+						strokeWidth: 1.25,
+						curve,
+					},
+				),
+			),
 			focusCrosshair(chrome),
 		],
 		scales: {
-			x: axis.x,
+			x: spec.xDomainMs === undefined ? axis.x : pinnedTimeXAxis(axis.context, spec.xDomainMs),
 			y: {
 				grid: DASHED_Y_GRID,
 				scale: scaleLinear().domain(yDomain),
@@ -71,7 +92,7 @@ export const buildStackedBreakdown = (
 				},
 			},
 		},
-		margin: { top: 12, right: 12, left: 60 },
+		margin: { top: 12, right: 12, left: spec.marginLeft ?? 60 },
 		focus: "group-x",
 		focusRing: false,
 		tooltip: cursorTooltip<BreakdownCell>(focus.anchor),
