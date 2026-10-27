@@ -256,16 +256,29 @@ export const isMaterial = (before: Finding, after: Finding): boolean =>
 	JSON.stringify(tracePath(before)) !== JSON.stringify(tracePath(after)) ||
 	JSON.stringify(materialView(before)) !== JSON.stringify(materialView(after))
 
+/**
+ * The final record, or why there is none: `verifier` when a verifier failed or its answer was
+ * unusable twice, `unfunded` for the budget, `unsettled` when replacements never converged.
+ */
+type RecordCheck =
+	| { readonly _tag: "Final"; readonly record: Finding }
+	| { readonly _tag: "Unchecked"; readonly reason: "verifier" | "unfunded" | "unsettled" }
+
+const unchecked = (reason: "verifier" | "unfunded" | "unsettled"): RecordCheck => ({
+	_tag: "Unchecked",
+	reason,
+})
+
 const verifyRecord = (engine: Engine, record: Finding, index: number) =>
 	Effect.gen(function* () {
 		const step = (
 			current: Finding,
-			pendingMaterial: boolean,
 			depth: number,
 			retried: boolean,
-		): Effect.Effect<Finding | undefined, AuditStoreError> =>
+		): Effect.Effect<RecordCheck, AuditStoreError> =>
 			Effect.gen(function* () {
-				if ((yield* engine.remaining) < 1 || depth > MAX_MATERIAL_CHAIN) return undefined
+				if ((yield* engine.remaining) < 1) return unchecked("unfunded")
+				if (depth > MAX_MATERIAL_CHAIN) return unchecked("unsettled")
 				const agentId = `record-${index + 1}-${depth}${retried ? "-r1" : ""}`
 				const verdict = yield* engine.invoke(
 					"record-verifier",
@@ -279,13 +292,13 @@ const verifyRecord = (engine: Engine, record: Finding, index: number) =>
 						? verdict.fingerprint === current.fingerprint
 						: verdict.record.fingerprint === current.fingerprint &&
 							findingsErrors([verdict.record]).length === 0)
-				if (!usable) return retried ? undefined : yield* step(current, pendingMaterial, depth, true)
-				if (verdict.decision === "verified") return current
+				if (!usable) return retried ? unchecked("verifier") : yield* step(current, depth, true)
+				if (verdict.decision === "verified") return { _tag: "Final", record: current } as const
 				return isMaterial(current, verdict.record)
-					? yield* step(verdict.record, true, depth + 1, false)
-					: verdict.record
+					? yield* step(verdict.record, depth + 1, false)
+					: ({ _tag: "Final", record: verdict.record } as const)
 			})
-		return yield* step(record, false, 0, false)
+		return yield* step(record, 0, false)
 	})
 
 /** Phase 5; skipped by `quick`, whose Phase 3 verifier already did these checks. */
@@ -305,8 +318,37 @@ export const runRecordVerification = (engine: Engine) =>
 			records,
 			(record, index) =>
 				Effect.gen(function* () {
-					const final = yield* verifyRecord(engine, record, index)
-					if (final === undefined) {
+					const checked = yield* verifyRecord(engine, record, index)
+					if (checked._tag === "Unchecked" && checked.reason === "verifier") {
+						// A failed verifier says nothing about the record: it stays as candidate validation
+						// decided it, marked on its units as not re-checked, and the run is incomplete.
+						yield* engine.mutate((c) => [
+							undefined,
+							{
+								...c,
+								ledger: c.ledger.map((unit) =>
+									unit.result_fingerprints.includes(record.fingerprint) ||
+									unit.carried_fingerprint === record.fingerprint
+										? {
+												...unit,
+												not_rechecked: [
+													...new Set([
+														...(unit.not_rechecked ?? []),
+														record.fingerprint,
+													]),
+												],
+											}
+										: unit,
+								),
+							},
+						])
+						yield* engine.gap(
+							`record ${record.fingerprint} kept as ${record.verdict} without its final re-check: the record verifier failed`,
+						)
+						yield* engine.fail("record_verification_incomplete")
+						return
+					}
+					if (checked._tag === "Unchecked") {
 						// No independent final review: the record leaves findings.json and the run is incomplete.
 						yield* engine.mutate((c) => {
 							const findings = new Map(c.findings)
@@ -316,6 +358,7 @@ export const runRecordVerification = (engine: Engine) =>
 						yield* engine.fail("record_verification_incomplete")
 						return
 					}
+					const final = checked.record
 					yield* engine.mutate((c) => [
 						undefined,
 						{

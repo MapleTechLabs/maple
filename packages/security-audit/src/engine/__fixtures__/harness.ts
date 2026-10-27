@@ -6,7 +6,15 @@ import { Effect, Layer } from "effect"
 import type { HunterResult, SeedUnit } from "../../results"
 import type { CoverageUnit, Finding } from "../../schema"
 import { coverageId } from "../../validators"
-import { type AgentInvocation, AuditAgents, type AuditEvent, type AuditReports, AuditStore } from "../ports"
+import {
+	type AgentAnswer,
+	type AgentInvocation,
+	AuditAgentError,
+	AuditAgents,
+	type AuditEvent,
+	type AuditReports,
+	AuditStore,
+} from "../ports"
 import { runAudit } from "../run"
 import type { AuditRunInput } from "../state"
 
@@ -158,14 +166,33 @@ export const baseInput = (overrides: Partial<AuditRunInput> = {}): AuditRunInput
 	...overrides,
 })
 
-/** Runs the engine against a scripted answer function and records what it did. */
-export const runScripted = (input: AuditRunInput, answer: (invocation: AgentInvocation) => string) => {
+/** An agent that failed outright (a transport error, a dead step), not one that answered badly. */
+export const agentFailure = (invocation: AgentInvocation) =>
+	new AuditAgentError({
+		message: "upstream closed the stream",
+		role: invocation.role,
+		agentId: invocation.agentId,
+	})
+
+/**
+ * Runs the engine against a scripted answer function and records what it did. A string is the
+ * answer's text; an `AgentAnswer` adds its tool-call count; an `AuditAgentError` fails the agent.
+ */
+export const runScripted = (
+	input: AuditRunInput,
+	answer: (invocation: AgentInvocation) => string | AgentAnswer | AuditAgentError,
+) => {
 	const recorded: Recorded = { invocations: [], events: [], ledger: [], findings: [], reports: undefined }
 	const agents = Layer.succeed(AuditAgents, {
 		run: (invocation) =>
-			Effect.sync(() => {
+			Effect.suspend((): Effect.Effect<AgentAnswer, AuditAgentError> => {
 				recorded.invocations.push(invocation)
-				return { text: answer(invocation) }
+				const scripted = answer(invocation)
+				return typeof scripted === "string"
+					? Effect.succeed({ text: scripted })
+					: scripted instanceof AuditAgentError
+						? Effect.fail(scripted)
+						: Effect.succeed(scripted)
 			}),
 	})
 	const store = Layer.succeed(AuditStore, {

@@ -67,6 +67,7 @@ import {
 	refusalReason,
 	repoLimitViolations,
 } from "./repo-size"
+import { formatRepoTree, REPO_TREE_COMMAND } from "./repo-tree"
 import { sandboxSource } from "./sandbox-source"
 import { AUDIT_TOOL_GUIDANCE, type SourceReaderApi } from "./source"
 
@@ -345,6 +346,18 @@ export const auditWithAgents = <E, R>(
 			store.setExecutionProfile(payload.runId, executionProfile),
 			STEP_RETRY,
 		)
+		// The repository's directories for hunter and critic prompts, once per run. Without it agents
+		// only guess more, so a sandbox that cannot list them costs the run nothing else.
+		const repoTree = yield* durableStep(
+			"repo-tree",
+			sandbox.exec(orgId, pinned, REPO_TREE_COMMAND).pipe(
+				Effect.mapError(toSandboxStepError("repo-tree")),
+				Effect.map((result) =>
+					result.exitCode === 0 ? formatRepoTree(result.stdout, result.truncated) : "",
+				),
+			),
+			STEP_RETRY,
+		).pipe(Effect.orElseSucceed(() => ""))
 
 		// Prior records are read, not stepped: a finished run never changes, so a replay reads the same.
 		// Only a finished run of the same repository counts; anything else would make replays disagree.
@@ -437,6 +450,7 @@ export const auditWithAgents = <E, R>(
 			},
 			executionProfile,
 			toolGuidance: AUDIT_TOOL_GUIDANCE,
+			repoTree,
 			prior,
 			changedSincePrior,
 		}).pipe(

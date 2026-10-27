@@ -159,6 +159,8 @@ export const CoverageUnit = Schema.Struct({
 	carried_fingerprint: Schema.optionalKey(Schema.String),
 	decisions: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	resolved_prior_leads: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Fingerprints kept without their final re-check because the record verifier failed. */
+	not_rechecked: Schema.optionalKey(Schema.Array(Schema.String)),
 	coverage_id: Schema.String,
 	canonical_refs: CanonicalRefs,
 	surface: Schema.String,

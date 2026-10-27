@@ -120,6 +120,10 @@ const sandbox = (
 		prepare: () => Effect.void,
 		exec: (_org, _target, options) =>
 			Effect.suspend(() => {
+				if (options.command === "bash" && options.args.some((arg) => arg.includes("awk -F/"))) {
+					commands.push("list directories")
+					return ok("src\nsrc/routes\n")
+				}
 				if (options.command === "bash") {
 					commands.push("measure size")
 					return ok(size)
@@ -222,7 +226,36 @@ describe("auditWithAgents", () => {
 				// The row records the pinned commit, which the next run diffs against.
 				["complete", Option.some(["complete", SHA]), ["covered"]],
 			)
-			assert.deepStrictEqual(commands, ["git rev-parse HEAD", "measure size", "list manifests"])
+			assert.deepStrictEqual(commands, [
+				"git rev-parse HEAD",
+				"measure size",
+				"list manifests",
+				"list directories",
+			])
+		}).pipe(Effect.provide(testLayer())),
+	)
+
+	it.effect("gives hunters the repository's directories, listed once per run", () =>
+		Effect.gen(function* () {
+			const { store, target } = yield* setup
+			const run = yield* store.startRun({ targetId: target.id, kind: "manual", sourceRef: "main" })
+			const prompts: Array<AgentInvocation> = []
+			const agents = scriptedAgents([])
+			const recording: AuditAgentsApi = {
+				run: (invocation) =>
+					Effect.andThen(
+						Effect.sync(() => prompts.push(invocation)),
+						agents.run(invocation),
+					),
+			}
+			const commands: Array<string> = []
+			yield* auditWithAgents(payloadFor(run.id), () => Effect.succeed(recording)).pipe(
+				Effect.provideService(RepoSandboxService, sandbox(commands)),
+				Effect.provideService(Cloudflare.WorkflowStep, replayingStep(new Map())),
+			)
+			const hunter = prompts.find((i) => i.role === "hunter")?.prompt ?? ""
+			assert.include(hunter, "src/\n  routes/")
+			assert.strictEqual(commands.filter((c) => c === "list directories").length, 1)
 		}).pipe(Effect.provide(testLayer())),
 	)
 
@@ -647,6 +680,7 @@ describe("auditWithAgents", () => {
 						"git rev-parse HEAD",
 						"measure size",
 						"list manifests",
+						"list directories",
 						`git --no-optional-locks -c core.quotePath=false diff --name-only --no-renames ${SHA} HEAD --`,
 					],
 					["prior_covered_changed_source"],
@@ -678,7 +712,7 @@ describe("auditWithAgents, prior runs", () => {
 			const units = yield* store.listUnits(run.id)
 			assert.deepStrictEqual(
 				[commands, units.map((u) => u.unit.prior_status)],
-				[["git rev-parse HEAD", "measure size", "list manifests"], ["none"]],
+				[["git rev-parse HEAD", "measure size", "list manifests", "list directories"], ["none"]],
 			)
 		}).pipe(Effect.provide(testLayer())),
 	)
