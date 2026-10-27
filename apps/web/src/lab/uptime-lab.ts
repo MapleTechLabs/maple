@@ -41,6 +41,7 @@ const NOW_MS = Date.UTC(2026, 9, 27, 13, 30)
 const WINDOWS = {
 	"1h": { windowMs: 3_600_000, bucketMs: 60_000 },
 	"24h": { windowMs: 86_400_000, bucketMs: 900_000 },
+	"7d": { windowMs: 604_800_000, bucketMs: 3_600_000 },
 } as const
 type LabWindow = keyof typeof WINDOWS
 const CHECK_EVERY_MS = 100_000
@@ -53,6 +54,9 @@ const jitter = (seed: number): number => {
 	const x = Math.sin(seed * 12.9898) * 43758.5453
 	return x - Math.floor(x)
 }
+
+/** The checker stopped for 90 minutes four hours ago: the chart breaks its line there. */
+const inOutage = (atMs: number): boolean => atMs >= NOW_MS - 4 * 3_600_000 && atMs < NOW_MS - 2.5 * 3_600_000
 
 const sampleAt = (atMs: number, index: number): CheckSample => {
 	const failed = atMs === FAILED_AT_MS
@@ -87,7 +91,7 @@ const fixtureStats = (window: LabWindow): CheckStats => {
 	const checkCount = Math.floor((NOW_MS - FIRST_CHECK_MS) / CHECK_EVERY_MS)
 	const samples = Array.from({ length: checkCount }, (_, index) =>
 		sampleAt(FIRST_CHECK_MS + index * CHECK_EVERY_MS, index),
-	).filter((sample) => isoMs(sample.at) >= startMs)
+	).filter((sample) => isoMs(sample.at) >= startMs && !inOutage(isoMs(sample.at)))
 	const buckets = Array.from({ length: windowMs / stepMs }, (_, index) => startMs + index * stepMs)
 	const inBucket = (bucketMs: number) =>
 		samples.filter((sample) => {
@@ -191,18 +195,16 @@ export const init = (_flags: Flags): Return => ({
 })
 
 export const update = (model: Model, message: Message): Return => {
-	// The window switch swaps the fixture instead of re-reading; it covers an hour and a day.
+	// The window switch swaps the fixture instead of re-reading.
 	if (message._tag === "PickedWindow")
-		return message.window === "7d"
-			? { model }
-			: {
-					model: {
-						...model,
-						window: message.window,
-						hoveredCheck: null,
-						stats: { key: null, data: AsyncData.Success({ data: fixtureStats(message.window) }) },
-					},
-				}
+		return {
+			model: {
+				...model,
+				window: message.window,
+				hoveredCheck: null,
+				stats: { key: null, data: AsyncData.Success({ data: fixtureStats(message.window) }) },
+			},
+		}
 	const next = pageUpdate(model, message, LAB_CONTEXT)
 	return { model: next.model, commands: withoutReads(next.commands) }
 }
