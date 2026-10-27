@@ -150,14 +150,22 @@ describe("image paths", () => {
 	it("answers an image path whose id will not parse with a 404, not the app shell", async () => {
 		const { env } = recordingEnv()
 		const statuses = await Promise.all(
-			["/share/og/%.png", "/alerts/chart/%E0%A4%A.png", "/chat/chart/a/b.png"].map(async (path) => {
+			[
+				"/share/og/%.png",
+				"/share/og/abc",
+				"/alerts/chart/%E0%A4%A.png",
+				"/alerts/chart/id.png/extra",
+				"/chat/chart/a/b.png",
+			].map(async (path) => {
 				const response = await handleRequest(new Request(`https://app.maple.test${path}`), env)
 				return [path, response.status, response.headers.get("content-type")]
 			}),
 		)
 		expect(statuses).toEqual([
 			["/share/og/%.png", 404, null],
+			["/share/og/abc", 404, null],
 			["/alerts/chart/%E0%A4%A.png", 404, null],
+			["/alerts/chart/id.png/extra", 404, null],
 			["/chat/chart/a/b.png", 404, null],
 		])
 	})

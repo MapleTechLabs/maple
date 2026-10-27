@@ -86,8 +86,9 @@ const applyShareOgMeta = async (
 
 const IMAGE_PREFIXES = [OG_IMAGE_PREFIX, ...CHART_KINDS.map((kind) => kind.pathPrefix)]
 
+// Reserved for images: no app route lives under these, so nothing there is the shell.
 const isImagePath = (pathname: string): boolean =>
-	pathname.endsWith(".png") && IMAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+	IMAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix))
 
 /** One request against the built SPA: OG images, the share preview, security headers, the shell fallback. */
 export const handleRequest = async (
@@ -124,7 +125,7 @@ export const handleRequest = async (
 			: renderChartImage(api, chart, env.ASSETS)
 	}
 
-	// An image path whose id did not parse (a lone `%`, a nested segment) is still an image path.
+	// An image path whose id did not parse (a lone `%`, a nested segment, no `.png`) is still one.
 	if (isImagePath(url.pathname)) return new Response(null, { status: 404 })
 
 	const assetResponse = await env.ASSETS.fetch(request)
