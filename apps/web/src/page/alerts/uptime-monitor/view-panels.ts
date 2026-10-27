@@ -835,19 +835,33 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 		},
 	})
 
-/** Long rows, one per (bucket, phase), labelled so the tooltip and legend read the phase names. */
-const phaseRows = (points: ReadonlyArray<PhasePoint>) =>
-	points.flatMap((point) =>
-		PHASES.map((phase) => ({
-			bucket: point.bucket,
-			attributeValue: phase.label,
-			value: point[phase.key],
-		})),
-	)
+/** Buckets whose checks got no response to time (all failed early, or predate phases): zeros, not phases. */
+const untimed = (point: PhasePoint): boolean => point.timedChecks === 0
+
+/**
+ * The breakdown's long rows (one per bucket and phase, labelled for the tooltip and legend) and its
+ * breaks: where checks stopped, and where checks ran but none was timed.
+ */
+export const phaseSeries = (stats: CheckStats, intervalMs: number) => ({
+	rows: stats.phases
+		.filter((point) => !untimed(point))
+		.flatMap((point) =>
+			PHASES.map((phase) => ({
+				bucket: point.bucket,
+				attributeValue: phase.label,
+				value: point[phase.key],
+			})),
+		),
+	breaks: [
+		...breakBuckets(stats, intervalMs),
+		...stats.phases.filter(untimed).map((point) => point.bucket),
+	],
+})
 
 const phaseChart = (h: H, model: Model, stats: CheckStats, context: ChartContext): Html => {
+	const series = phaseSeries(stats, checkIntervalMs(model))
 	const built = stackedBreakdown({
-		rows: phaseRows(stats.phases),
+		rows: series.rows,
 		colors: Object.fromEntries(PHASES.map((phase) => [phase.label, `var(${phase.token})`])),
 		order: PHASES.map((phase) => phase.label),
 		theme: context.theme,
@@ -857,7 +871,7 @@ const phaseChart = (h: H, model: Model, stats: CheckStats, context: ChartContext
 		showTotal: true,
 		xDomainMs: windowDomain(stats),
 		marginLeft: PLOT_LEFT,
-		breaks: breakBuckets(stats, checkIntervalMs(model)),
+		breaks: series.breaks,
 	})
 	return h.div(
 		[h.Class("h-56")],
@@ -916,7 +930,7 @@ export const phaseBreakdownPanel = (h: H, model: Model, context: ChartContext | 
 								[h.Class("py-16 text-center text-sm text-muted-foreground")],
 								["Couldn't load the breakdown. The other figures are unaffected."],
 							)
-						: stats.phases.length === 0
+						: stats.phases.every(untimed)
 							? h.p(
 									[h.Class("py-16 text-center text-sm text-muted-foreground")],
 									[
