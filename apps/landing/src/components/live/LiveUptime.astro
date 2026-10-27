@@ -1,0 +1,457 @@
+---
+/**
+ * LiveUptime: five monitors, one dot per check, and `checkout-api` going down.
+ *
+ * Pure CSS on one shared 14s loop, like LiveAlertFiring. The base (unanimated) state is
+ * the final frame (two failed checks, DOWN, incident opened), which is what
+ * `prefers-reduced-motion` shows. Every string mirrors the product: span names, the
+ * failure sentence, down after N in a row and back up on the first success.
+ */
+
+interface Monitor {
+	name: string;
+	target: string;
+	kind: string;
+	every: string;
+	p95: string;
+	uptime: string;
+	/** Indexes of failed checks in the 28-dot strip. */
+	fails: number[];
+}
+
+const DOTS = 28;
+
+const MONITORS: Monitor[] = [
+	{ name: "auth", target: "GET /v1/session", kind: "http", every: "60s", p95: "84 ms", uptime: "99.98%", fails: [9] },
+	{ name: "postgres-primary", target: "TCP db.internal:5432", kind: "tcp", every: "30s", p95: "3 ms", uptime: "100%", fails: [] },
+	{ name: "acme.com MX", target: "DNS MX acme.com", kind: "dns", every: "5m", p95: "21 ms", uptime: "100%", fails: [] },
+	{ name: "nightly-backup", target: "cron 0 3 * * * · grace 15m", kind: "heartbeat", every: "cron", p95: "n/a", uptime: "100%", fails: [] },
+];
+
+/** The monitor the loop takes down: its last two checks fail. */
+const DOWN = { name: "checkout-api", target: "GET /health", kind: "http", every: "30s", p95: "212 ms", uptime: "99.71%" };
+const FAIL_A = DOTS - 2;
+const FAIL_B = DOTS - 1;
+---
+
+<div class="live-frame">
+	<div class="live-frame__head">
+		<span>uptime · 5 monitors</span>
+		<span class="live-frame__live">
+			<span class="live-frame__live-dot"></span>
+			LIVE
+		</span>
+	</div>
+
+	<div class="ut-table" role="table" aria-label="Uptime monitors with their recent checks">
+		<div class="ut-row ut-row--head" role="row">
+			<span role="columnheader">status</span>
+			<span role="columnheader">monitor</span>
+			<span role="columnheader" class="ut-col-dots">checks</span>
+			<span role="columnheader" class="ut-num">p95</span>
+			<span role="columnheader" class="ut-num ut-col-uptime">30d</span>
+		</div>
+
+		<div class="ut-row" role="row">
+			<span role="cell" class="ut-pills">
+				<!-- One stable status for assistive tech; the animated pair is visual only. -->
+				<span class="sr-only">DOWN</span>
+				<span class="ut-pill ut-pill--up ut-anim" aria-hidden="true">UP</span>
+				<span class="ut-pill ut-pill--down ut-anim" aria-hidden="true">DOWN</span>
+			</span>
+			<span role="cell" class="ut-name">
+				<span class="ut-name__title">{DOWN.name}</span>
+				<span class="ut-name__target">{DOWN.target} · every {DOWN.every}</span>
+			</span>
+			<span role="cell" class="ut-dots ut-col-dots">
+				{
+					Array.from({ length: DOTS }, (_, i) => (
+						<span
+							class:list={[
+								"ut-dot",
+								i === FAIL_A && "ut-dot--fail ut-anim ut-dot--fail-a",
+								i === FAIL_B && "ut-dot--fail ut-anim ut-dot--fail-b",
+							]}
+						/>
+					))
+				}
+			</span>
+			<span role="cell" class="ut-num">{DOWN.p95}</span>
+			<span role="cell" class="ut-num ut-col-uptime">{DOWN.uptime}</span>
+		</div>
+
+		{
+			MONITORS.map((monitor) => (
+				<div class="ut-row" role="row">
+					<span role="cell" class="ut-pills">
+						<span class="ut-pill ut-pill--up ut-pill--static">UP</span>
+					</span>
+					<span role="cell" class="ut-name">
+						<span class="ut-name__title">{monitor.name}</span>
+						<span class="ut-name__target">
+							{monitor.target}
+							{monitor.kind !== "heartbeat" && ` · every ${monitor.every}`}
+						</span>
+					</span>
+					<span role="cell" class="ut-dots ut-col-dots">
+						{Array.from({ length: DOTS }, (_, i) => (
+							<span class:list={["ut-dot", monitor.fails.includes(i) && "ut-dot--fail"]} />
+						))}
+					</span>
+					<span role="cell" class="ut-num">{monitor.p95}</span>
+					<span role="cell" class="ut-num ut-col-uptime">{monitor.uptime}</span>
+				</div>
+			))
+		}
+	</div>
+
+	<div class="ut-incident ut-anim">
+		<div class="ut-incident__head">
+			<span class="ut-incident__tag">incident opened</span>
+			<span class="ut-incident__time">14:32:07</span>
+		</div>
+		<div class="ut-incident__title">checkout-api is down</div>
+		<div class="ut-incident__line">Status 503, expected 2xx · failed 2 checks in a row</div>
+		<div class="ut-incident__meta">
+			<span>trace 7c1e40a9…e21f</span>
+			<span>service checkout</span>
+			<span>sent to #oncall</span>
+		</div>
+	</div>
+
+	<div
+		class="flex justify-between gap-4 border-t border-border bg-bg-elevated px-3.5 py-2.5 text-[10px] uppercase tracking-wider text-fg-muted"
+	>
+		<span>
+			failed checks
+			<span class="sr-only">2/2</span>
+			<span class="ut-count" aria-hidden="true">
+				<span class="ut-count__n ut-count__n--0 ut-anim">0/2</span>
+				<span class="ut-count__n ut-count__n--1 ut-anim">1/2</span>
+				<span class="ut-count__n ut-count__n--2 ut-anim">2/2</span>
+			</span>
+			· closes when it passes again
+		</span>
+		<span class="hidden sm:inline">http checks carry a trace id</span>
+	</div>
+</div>
+
+<style>
+	.ut-table {
+		display: flex;
+		flex-direction: column;
+	}
+	.ut-row {
+		display: grid;
+		grid-template-columns: 52px minmax(0, 1fr) auto 52px;
+		align-items: center;
+		gap: 14px;
+		padding: 10px 14px;
+		border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+		font-size: 11px;
+		color: var(--foreground);
+	}
+	@media (min-width: 640px) {
+		.ut-row {
+			grid-template-columns: 52px minmax(0, 1fr) auto 52px 52px;
+		}
+	}
+	.ut-row--head {
+		padding-top: 8px;
+		padding-bottom: 8px;
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.ut-num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+		white-space: nowrap;
+	}
+	.ut-col-uptime {
+		display: none;
+	}
+	@media (min-width: 640px) {
+		.ut-col-uptime {
+			display: block;
+		}
+	}
+	.ut-col-dots {
+		display: flex;
+	}
+	/* Narrow screens keep the newest 10 checks, so the strip still tells the story. */
+	@media (max-width: 559px) {
+		.ut-dot:nth-child(-n + 18) {
+			display: none;
+		}
+	}
+
+	.ut-name {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+	.ut-name__title,
+	.ut-name__target {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.ut-name__target {
+		font-size: 10px;
+		color: var(--muted-foreground);
+	}
+
+	/* ── Status pill ──────────────────────────────────────────────── */
+	.ut-pills {
+		display: grid;
+	}
+	.ut-pills > * {
+		grid-area: 1 / 1;
+	}
+	.ut-pill {
+		width: fit-content;
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		padding: 2px 7px;
+		border-radius: 999px;
+		border: 1px solid;
+	}
+	.ut-pill--up {
+		color: var(--severity-info);
+		border-color: color-mix(in oklab, var(--severity-info) 40%, transparent);
+		background: color-mix(in oklab, var(--severity-info) 8%, transparent);
+	}
+	.ut-pill--up:not(.ut-pill--static) {
+		opacity: 0;
+	}
+	.ut-pill--down {
+		color: var(--severity-error);
+		border-color: color-mix(in oklab, var(--severity-error) 45%, transparent);
+		background: color-mix(in oklab, var(--severity-error) 10%, transparent);
+	}
+
+	/* ── One dot per check ────────────────────────────────────────── */
+	.ut-dots {
+		gap: 3px;
+		align-items: center;
+	}
+	.ut-dot {
+		width: 5px;
+		height: 14px;
+		border-radius: 2px;
+		background: color-mix(in oklab, var(--severity-info) 70%, transparent);
+	}
+	.ut-dot--fail {
+		background: var(--severity-error);
+	}
+
+	/* ── Incident ─────────────────────────────────────────────────── */
+	.ut-incident {
+		margin: 12px 14px 14px;
+		padding: 10px 12px;
+		border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+		border-left: 2px solid var(--severity-error);
+		border-radius: 6px;
+		background: color-mix(in oklab, var(--bg-elevated) 70%, transparent);
+	}
+	.ut-incident__head {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.ut-incident__tag {
+		color: var(--severity-error);
+	}
+	.ut-incident__title {
+		margin-top: 6px;
+		font-size: 11.5px;
+		color: var(--foreground);
+	}
+	.ut-incident__line {
+		margin-top: 3px;
+		font-size: 10.5px;
+		color: var(--muted-foreground);
+	}
+	.ut-incident__meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 14px;
+		margin-top: 8px;
+		font-size: 10px;
+		color: var(--muted-foreground);
+	}
+
+	.ut-count {
+		display: inline-grid;
+		color: var(--foreground);
+	}
+	.ut-count > * {
+		grid-area: 1 / 1;
+	}
+	.ut-count__n--0,
+	.ut-count__n--1 {
+		opacity: 0;
+	}
+
+	/* ── Choreography, one shared 14s loop ────────────────────────────
+	   0–14%   all checks pass, 0/2, UP
+	   16–18%  first failed check lands, 1/2
+	   30–32%  second failed check lands, 2/2, UP flips to DOWN
+	   38–44%  the incident slides in
+	   94–100% everything rewinds for the next loop                    */
+	.ut-anim {
+		animation-duration: 14s;
+		animation-timing-function: linear;
+		animation-iteration-count: infinite;
+	}
+	.ut-dot--fail-a {
+		animation-name: ut-fail-a;
+	}
+	.ut-dot--fail-b {
+		animation-name: ut-fail-b;
+	}
+	@keyframes ut-fail-a {
+		0%,
+		16% {
+			background: color-mix(in oklab, var(--severity-info) 70%, transparent);
+		}
+		17%,
+		94% {
+			background: var(--severity-error);
+		}
+		100% {
+			background: color-mix(in oklab, var(--severity-info) 70%, transparent);
+		}
+	}
+	@keyframes ut-fail-b {
+		0%,
+		30% {
+			background: color-mix(in oklab, var(--severity-info) 70%, transparent);
+		}
+		31%,
+		94% {
+			background: var(--severity-error);
+		}
+		100% {
+			background: color-mix(in oklab, var(--severity-info) 70%, transparent);
+		}
+	}
+
+	.ut-pill--up.ut-anim {
+		animation-name: ut-up;
+	}
+	.ut-pill--down {
+		animation-name: ut-down;
+	}
+	@keyframes ut-up {
+		0%,
+		31% {
+			opacity: 1;
+		}
+		32%,
+		96% {
+			opacity: 0;
+		}
+		100% {
+			opacity: 1;
+		}
+	}
+	@keyframes ut-down {
+		0%,
+		31% {
+			opacity: 0;
+		}
+		32%,
+		96% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+
+	.ut-count__n--0 {
+		animation-name: ut-count-0;
+	}
+	.ut-count__n--1 {
+		animation-name: ut-count-1;
+	}
+	.ut-count__n--2 {
+		animation-name: ut-count-2;
+	}
+	@keyframes ut-count-0 {
+		0%,
+		16% {
+			opacity: 1;
+		}
+		17%,
+		96% {
+			opacity: 0;
+		}
+		100% {
+			opacity: 1;
+		}
+	}
+	@keyframes ut-count-1 {
+		0%,
+		16% {
+			opacity: 0;
+		}
+		17%,
+		30% {
+			opacity: 1;
+		}
+		31%,
+		100% {
+			opacity: 0;
+		}
+	}
+	@keyframes ut-count-2 {
+		0%,
+		30% {
+			opacity: 0;
+		}
+		31%,
+		96% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+
+	.ut-incident {
+		animation-name: ut-incident-in;
+	}
+	@keyframes ut-incident-in {
+		0%,
+		38% {
+			opacity: 0;
+			transform: translateY(5px);
+		}
+		44%,
+		96% {
+			opacity: 1;
+			transform: translateY(0);
+		}
+		100% {
+			opacity: 0;
+			transform: translateY(5px);
+		}
+	}
+
+	/* Reduced motion: the base state is the final frame (failed, DOWN, incident open). */
+	@media (prefers-reduced-motion: reduce) {
+		.ut-anim {
+			animation: none !important;
+		}
+	}
+</style>
