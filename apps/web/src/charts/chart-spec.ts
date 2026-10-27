@@ -332,6 +332,8 @@ export const ChartSpec = defineTaggedUnion({
 		xDomainMs: Schema.optionalKey(Schema.Tuple([Schema.Number, Schema.Number])),
 		/** A left-margin lock that aligns the plot with its siblings. */
 		marginLeft: Schema.optionalKey(Schema.Number),
+		/** Buckets where nothing was measured: the bands and their edges break there instead of bridging. */
+		breaks: Schema.optionalKey(Schema.Array(Schema.String)),
 	},
 	/**
 	 * The analytics traffic chart: the selected metric

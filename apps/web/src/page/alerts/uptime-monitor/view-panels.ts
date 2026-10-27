@@ -224,17 +224,53 @@ export const kpiRail = (
 	)
 }
 
-/** Buckets that ran a check: an empty one is no check, not a 0 ms one, and the strip below shows it. */
-const chartRows = (points: ReadonlyArray<CheckPoint>) =>
-	points
-		.filter((point) => point.totalCount > 0)
-		.map((point) => ({
-			bucket: point.bucket,
-			p50LatencyMs: point.p50LatencyMs,
-			p95LatencyMs: point.p95LatencyMs,
-			p99LatencyMs: point.p99LatencyMs,
-			partial: point.partial,
-		}))
+/**
+ * The latency rows: buckets that ran a check, with a null row where checks stopped for longer than
+ * two check intervals, so the line breaks there instead of drawing latency nobody measured. A shorter
+ * empty bucket (a check every 5 minutes on 1-minute buckets) stays joined: a null there would leave
+ * each check a lone point the line never draws.
+ */
+/** The monitor's check interval, 0 until it loads (the bucket width then sets the gap). */
+const checkIntervalMs = (model: Model): number =>
+	(Option.getOrNull(AsyncData.getData(model.monitor.data))?.interval_seconds ?? 0) * 1000
+
+/** Where the response time line breaks: the buckets the breakdown leaves a gap at too. */
+const breakBuckets = (stats: CheckStats, intervalMs: number): ReadonlyArray<string> =>
+	chartRows(stats, intervalMs).flatMap((row) =>
+		row.p50LatencyMs === null && typeof row.bucket === "string" ? [row.bucket] : [],
+	)
+
+export const chartRows = (stats: CheckStats, intervalMs: number) => {
+	const stepMs = bucketStepMs(stats.points, stats.windowEndMs)
+	const gapAfterMs = 2 * Math.max(intervalMs, stepMs)
+	return stats.points.reduce<{
+		rows: ReadonlyArray<Record<string, string | number | boolean | null>>
+		emptySinceMs: number | null
+	}>(
+		(acc, point) => {
+			const atMs = isoMs(point.bucket)
+			if (point.totalCount === 0) return { rows: acc.rows, emptySinceMs: acc.emptySinceMs ?? atMs }
+			const broken =
+				acc.rows.length > 0 && acc.emptySinceMs !== null && atMs - acc.emptySinceMs > gapAfterMs
+			const gap = {
+				bucket: new Date(acc.emptySinceMs ?? atMs).toISOString(),
+				p50LatencyMs: null,
+				p95LatencyMs: null,
+				p99LatencyMs: null,
+				partial: false,
+			}
+			const row = {
+				bucket: point.bucket,
+				p50LatencyMs: point.p50LatencyMs,
+				p95LatencyMs: point.p95LatencyMs,
+				p99LatencyMs: point.p99LatencyMs,
+				partial: point.partial,
+			}
+			return { rows: [...acc.rows, ...(broken ? [gap] : []), row], emptySinceMs: null }
+		},
+		{ rows: [], emptySinceMs: null },
+	).rows
+}
 
 /** The plot's insets in px, shared by every chart on the page so one instant sits at one x (`pl-16`, `pr-3`). */
 const PLOT_LEFT = 64
@@ -269,6 +305,7 @@ export const percentileSeries = (points: ReadonlyArray<CheckPoint>) => {
 
 const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartContext): Html => {
 	const series = percentileSeries(stats.points)
+	const intervalMs = checkIntervalMs(model)
 	return h.submodel({
 		slotId: "uptime-latency-chart",
 		model: model.chart,
@@ -282,7 +319,7 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 				marginRight: PLOT_RIGHT,
 				xDomainMs: [...windowDomain(stats)],
 				latencySeries: series.map(({ key, label }) => ({ key, label })),
-				rows: chartRows(stats.points),
+				rows: chartRows(stats, intervalMs),
 				colors: {
 					border: resolveColor(context.theme, "--border"),
 					background: resolveColor(context.theme, "--background"),
@@ -820,6 +857,7 @@ const phaseChart = (h: H, model: Model, stats: CheckStats, context: ChartContext
 		showTotal: true,
 		xDomainMs: windowDomain(stats),
 		marginLeft: PLOT_LEFT,
+		breaks: breakBuckets(stats, checkIntervalMs(model)),
 	})
 	return h.div(
 		[h.Class("h-56")],

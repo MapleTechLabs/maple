@@ -1,6 +1,6 @@
 import { areaY, d3Curve, defineChart, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { makeBucketAxis, pinnedTimeXAxis } from "@maple/ui/components/plot/bucket-axis"
+import { bucketDate, makeBucketAxis, pinnedTimeXAxis } from "@maple/ui/components/plot/bucket-axis"
 import { focusCrosshair } from "@maple/ui/components/plot/plot-focus"
 import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
 import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
@@ -17,13 +17,13 @@ import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 
 type StackedBreakdownSpec = Extract<ChartSpec, { readonly _tag: "StackedBreakdown" }>
 
-/** One band segment: a bucket row, the series it belongs to, its value and where it sits in the stack. */
+/** One band segment: a bucket row, the series it belongs to, its value and where it sits in the stack; null at a break. */
 interface BreakdownCell {
 	readonly row: InfraPoint
 	readonly name: string
 	readonly value: number
-	readonly bottom: number
-	readonly top: number
+	readonly bottom: number | null
+	readonly top: number | null
 }
 
 /** A key absent from a bucket row is a zero count: `stack()` would tear the band at a null. */
@@ -49,6 +49,17 @@ export const buildStackedBreakdown = (
 			return [...stacked, { row, name, value, bottom, top: bottom + value }]
 		}, []),
 	)
+	// A break is a null cell per series, in time order with the rest, so the area and line leave a gap.
+	const breaks: ReadonlyArray<BreakdownCell> = (spec.breaks ?? []).flatMap((bucket) =>
+		series.map((name) => ({
+			row: { bucket, time: "", date: bucketDate(bucket) },
+			name,
+			value: 0,
+			bottom: null,
+			top: null,
+		})),
+	)
+	const ordered = [...cells, ...breaks].toSorted((a, b) => a.row.date.getTime() - b.row.date.getTime())
 	const curve = d3Curve(curveMonotoneX)
 	const format = (value: number) => formatValueByUnit(value, spec.unit)
 	const focus = tooltipFocusCapture()
@@ -56,7 +67,7 @@ export const buildStackedBreakdown = (
 		gradients: series.map((name) => verticalGradient(gradientFor(name), colorOf(name), 0.4, 0.05)),
 		marks: [
 			// Fills without an outline: a stroked area also draws its sides and its floor.
-			areaY(cells, {
+			areaY(ordered, {
 				x: (cell: BreakdownCell) => cell.row.date,
 				y: (cell: BreakdownCell) => cell.top,
 				y1: (cell: BreakdownCell) => cell.bottom,
@@ -68,7 +79,7 @@ export const buildStackedBreakdown = (
 			// Each band's top edge, the top band first: a band at 0 leaves the one under it visible.
 			...series.toReversed().map((name) =>
 				lineY(
-					cells.filter((cell) => cell.name === name),
+					ordered.filter((cell) => cell.name === name),
 					{
 						id: `edge-${name}`,
 						x: (cell: BreakdownCell) => cell.row.date,

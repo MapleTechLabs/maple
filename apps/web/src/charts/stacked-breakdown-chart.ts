@@ -56,6 +56,7 @@ export type StackedBreakdownOptions = Readonly<{
 	showTotal?: boolean
 	xDomainMs?: readonly [number, number]
 	marginLeft?: number
+	breaks?: ReadonlyArray<string>
 }>
 
 export type StackedBreakdown = Readonly<{
@@ -98,6 +99,7 @@ export const stackedBreakdown = (options: StackedBreakdownOptions): StackedBreak
 			...(options.showTotal === undefined ? undefined : { showTotal: options.showTotal }),
 			...(options.xDomainMs === undefined ? undefined : { xDomainMs: [...options.xDomainMs] }),
 			...(options.marginLeft === undefined ? undefined : { marginLeft: options.marginLeft }),
+			...(options.breaks === undefined ? undefined : { breaks: [...options.breaks] }),
 		},
 	}
 }
