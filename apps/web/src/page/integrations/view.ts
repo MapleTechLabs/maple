@@ -18,6 +18,7 @@ import { cloudflareCard, cloudflareHeaderActions } from "./view-cloudflare"
 import { gcpCard, gcpHeaderStatus } from "./view-gcp"
 import { githubCard } from "./view-github"
 import { hazelCard } from "./view-hazel"
+import { linearCard } from "./view-linear"
 import { planetscaleCard } from "./view-planetscale"
 import { railwayCard } from "./view-railway"
 import { awsCard } from "./view-aws"
@@ -60,6 +61,8 @@ export const cardView = (
 	switch (integration) {
 		case "hazel":
 			return [hazelCard(h, model)]
+		case "linear":
+			return [linearCard(h, model)]
 		case "github":
 			return githubCard(h, model, timeZone)
 		case "cloudflare":

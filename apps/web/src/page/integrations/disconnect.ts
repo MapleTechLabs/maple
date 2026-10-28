@@ -29,6 +29,17 @@ export const DISCONNECTS = new Map<string, DisconnectSpec>([
 		},
 	],
 	[
+		"linear",
+		{
+			title: "Disconnect Linear",
+			description: "Maple stops opening and updating Linear issues for incidents until you reconnect.",
+			confirmLabel: "Disconnect",
+			success: "Linear disconnected",
+			error: "Failed to disconnect Linear",
+			refresh: ["linear"],
+		},
+	],
+	[
 		"github",
 		{
 			title: "Disconnect GitHub",
@@ -96,6 +107,8 @@ const mutation = (integration: string) =>
 		switch (integration) {
 			case "hazel":
 				return yield* Effect.asVoid(internal.integrations.hazelDisconnect())
+			case "linear":
+				return yield* Effect.asVoid(internal.integrations.linearDisconnect())
 			case "github":
 				return yield* Effect.asVoid(internal.integrations.githubDisconnect())
 			case "planetscale":

@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { HazelIntegrationStatus } from "@maple/domain/http"
+import { HazelIntegrationStatus, LinearIntegrationStatus } from "@maple/domain/http"
 import { V2ChatConnectorList } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
@@ -44,6 +44,24 @@ const withHazel = (connected: boolean, search: Model["search"] = {}): Model => {
 	])
 }
 
+const linear = (state: "absent" | "connected" | "revoked") =>
+	Schema.decodeUnknownSync(LinearIntegrationStatus)({
+		connected: state !== "absent",
+		workspaceName: state === "absent" ? null : "Acme Eng",
+		connectedByUserId: null,
+		revoked: state === "revoked",
+	})
+
+const withLinear = (state: "absent" | "connected" | "revoked"): Model => {
+	const model = entered({ integration: "linear" })
+	return steps(model, [
+		Message.CompletedLoadLinear({
+			key: model.statuses.linear.key ?? "",
+			result: Result.succeed(linear(state)),
+		}),
+	])
+}
+
 describe("integrations hub", () => {
 	test("entry reads the clock, every status and the customer once", () => {
 		const result = init({ search: {} }, context)
@@ -58,6 +76,7 @@ describe("integrations hub", () => {
 				"LoadIntegrationsGcpStatus",
 				"LoadIntegrationsAwsStatus",
 				"LoadIntegrationsSupabaseStatus",
+				"LoadIntegrationsLinearStatus",
 				"LoadIntegrationsHazelStatus",
 				"LoadIntegrationsGithubStatus",
 				"LoadIntegrationsChatConnectors",
@@ -262,5 +281,51 @@ describe("hazel card", () => {
 			expectView(text("Couldn't load the Hazel integration")).toExist(),
 			expectView(role("button", { name: /Retry|Try again/ })).toExist(),
 		)
+	})
+})
+
+describe("linear card", () => {
+	test("not connected shows the connect card; connect starts a Linear attempt", () => {
+		const model = withLinear("absent")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(
+				text("Linear destinations will appear here after connecting your workspace."),
+			).toExist(),
+		)
+		const started = pageUpdate(model, Message.ClickedConnect())
+		expect(started.model.connect.active).toEqual({ provider: "linear", attempt: 1 })
+		const answered = pageUpdate(started.model, Message.SucceededStartConnect({ attempt: 1 }))
+		expect(names(answered.commands)).toEqual(["LoadIntegrationsLinearStatus"])
+	})
+
+	test("connected shows the workspace; a revoked grant asks for a reconnect", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withLinear("connected")),
+			expectView(text("Acme Eng")).toExist(),
+			expectView(text("Connected")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withLinear("revoked")),
+			expectView(text("Revoked")).toExist(),
+			expectView(role("button", { name: "Reconnect" })).toExist(),
+		)
+	})
+
+	test("disconnect toasts and re-reads the Linear status", () => {
+		const opened = pageUpdate(withLinear("connected"), Message.ClickedDisconnect()).model
+		const confirmed = pageUpdate(opened, Message.ConfirmedDisconnect())
+		expect(names(confirmed.commands)).toContain("DisconnectIntegration")
+		const done = pageUpdate(
+			confirmed.model,
+			Message.CompletedDisconnect({ integration: "linear", failure: null }),
+		)
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Linear disconnected", description: "" }),
+		)
+		expect(names(done.commands)).toEqual(["LoadIntegrationsLinearStatus"])
 	})
 })

@@ -280,6 +280,17 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 			return { label: "Via Prometheus", variant: "outline" }
 		case "hazel":
 			return fold(statuses.hazel, (status) => connectedOrNot(status.connected), unavailableStatus)
+		case "linear":
+			return fold(
+				statuses.linear,
+				(status): CardStatus =>
+					status.revoked
+						? { label: "Revoked", variant: "warn" }
+						: status.connected
+							? { label: status.workspaceName ?? "Connected", variant: "ok" }
+							: NOT_CONNECTED,
+				unavailableStatus,
+			)
 		case "github":
 			return githubStatus(statuses)
 		default:
@@ -554,6 +565,34 @@ const hazelOverview = (statuses: Statuses) =>
 		unavailableOverview,
 	)
 
+const linearOverview = (statuses: Statuses) =>
+	fold(
+		statuses.linear,
+		(status): IntegrationOverview =>
+			status.revoked
+				? {
+						kind: "connected",
+						health: "attention",
+						stateLabel: "Revoked",
+						context: status.workspaceName,
+						stat: null,
+						lastSyncLabel: null,
+						issue: "Reconnect Linear",
+					}
+				: status.connected
+					? {
+							kind: "connected",
+							health: "healthy",
+							stateLabel: "Healthy",
+							context: status.workspaceName,
+							stat: "Incident issues ready",
+							lastSyncLabel: null,
+							issue: null,
+						}
+					: CONNECT,
+		unavailableOverview,
+	)
+
 const githubOverview = (statuses: Statuses, nowMs: number) =>
 	fold(
 		statuses.github,
@@ -637,6 +676,8 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return SET_UP
 		case "hazel":
 			return hazelOverview(statuses)
+		case "linear":
+			return linearOverview(statuses)
 		case "github":
 			return githubOverview(statuses, nowMs)
 		default:

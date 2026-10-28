@@ -120,6 +120,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			aws: Keyed.idle(),
 			supabase: Keyed.idle(),
 			hazel: Keyed.idle(),
+			linear: Keyed.idle(),
 			github: Keyed.idle(),
 			chat: Keyed.idle(),
 			scrapeTargets: Keyed.idle(),
@@ -237,6 +238,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadSupabaseMetrics: ({ key, result }) => Supabase.completedMetricsRows(model, key, result),
 		CompletedLoadHazel: ({ key, result }) =>
 			accepted(model, { ...s, hazel: Keyed.accept(s.hazel, key, result) }),
+		CompletedLoadLinear: ({ key, result }) =>
+			accepted(model, { ...s, linear: Keyed.accept(s.linear, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
 			accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }),
 		CompletedLoadChat: ({ key, result }) =>
