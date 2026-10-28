@@ -4,6 +4,7 @@ import {
 	StatusPageIncidentId,
 	StatusPageIncidentUpdateId,
 } from "@maple/domain"
+import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
 import type { V2StatusPage, V2StatusPageComponent, V2StatusPageIncident } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { NOW } from "../shared/test-rows"
@@ -30,7 +31,7 @@ export const statusPage = (fields: Partial<V2StatusPage> = {}): V2StatusPage => 
 	description: null,
 	website_url: null,
 	logo_url: null,
-	brand_color: null,
+	theme: DEFAULT_STATUS_PAGE_THEME,
 	show_powered_by: true,
 	auto_incidents: "draft",
 	break_glass_token_suffix: null,

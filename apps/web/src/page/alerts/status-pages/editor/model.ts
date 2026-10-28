@@ -18,6 +18,10 @@ import { ComponentForm, IncidentForm, SettingsForm, UpdateForm } from "./form"
 export const BreakGlassAction = Schema.Literals(["rotate", "revoke"])
 export type BreakGlassAction = typeof BreakGlassAction.Type
 
+/** The scheme the preview shows an Auto page in; the page itself follows each visitor. */
+export const PreviewScheme = Schema.Literals(["light", "dark"])
+export type PreviewScheme = typeof PreviewScheme.Type
+
 /** A freshly issued break-glass token: shown once, never read back. */
 export const RevealedToken = Schema.Struct({ token: Schema.String, suffix: Schema.String })
 
@@ -59,6 +63,7 @@ export const Model = Schema.Struct({
 	settingsEdits: Schema.NullOr(SettingsForm),
 	isSavingSettings: Schema.Boolean,
 	settingsFailure: Schema.NullOr(LoadFailure),
+	previewScheme: PreviewScheme,
 	isPublishing: Schema.Boolean,
 	breakGlassDialog: Dialog.Model,
 	breakGlassAction: Schema.NullOr(BreakGlassAction),

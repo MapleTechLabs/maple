@@ -13,7 +13,8 @@ import { adminOnlyNote, settingsSection, settingsSections } from "../../../setti
 import { switchRow } from "../../../settings/kit/switch-row"
 import { publicPath } from "../../shared/status-page-commands"
 import { selectField, textareaField, textField } from "../fields"
-import { type SettingsForm, settingsFormOf, settingsIssues } from "./form"
+import { hasSettingsIssues, type SettingsForm, settingsFormOf, settingsIssues } from "./form"
+import { appearanceSection, previewPanel } from "./view-appearance"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isSettingsDirty, settingsOf } from "./update-settings"
@@ -86,34 +87,6 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 						error: issues.logoUrl,
 						onInput: (value) => Message.ChangedSetting({ field: "logoUrl", value }),
 					}),
-					h.div(
-						[h.Class("flex items-end gap-2")],
-						[
-							textField(h, {
-								id: "status-page-brand-color",
-								label: "Brand color",
-								value: form.brandColor,
-								placeholder: "#1a2b3c",
-								isMono: true,
-								isDisabled: isReadOnly,
-								error: issues.brandColor,
-								className: "flex-1",
-								onInput: (value) => Message.ChangedSetting({ field: "brandColor", value }),
-							}),
-							...(issues.brandColor === null && form.brandColor.trim() !== ""
-								? [
-										h.span(
-											[
-												h.AriaHidden(true),
-												h.Class("mb-1.5 size-6 shrink-0 rounded-md border"),
-												h.Style({ backgroundColor: form.brandColor.trim() }),
-											],
-											[],
-										),
-									]
-								: []),
-						],
-					),
 				],
 			),
 		],
@@ -303,24 +276,30 @@ const dangerZone = (h: H): Html =>
 
 export const settingsTab = (h: H, model: Model, page: V2StatusPage): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
-	const issues = settingsIssues(form)
-	const hasIssues = Object.values(issues).some((issue) => issue !== null)
+	const hasIssues = hasSettingsIssues(form)
 	return h.div(
-		[h.Class("flex max-w-4xl flex-col")],
+		[h.Class("flex max-w-4xl flex-col xl:max-w-7xl")],
 		[
-			settingsSections(h, [
-				...(model.isAdmin
-					? []
-					: [
-							adminOnlyNote(h, [
-								"Only org admins can change a status page. You can still post incident updates.",
-							]),
-						]),
-				pageSection(h, model, form),
-				behaviourSection(h, model, form),
-				breakGlassSection(h, model, page),
-				...(model.isAdmin ? [dangerZone(h)] : []),
-			]),
+			h.div(
+				[h.Class("grid gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:items-start")],
+				[
+					settingsSections(h, [
+						...(model.isAdmin
+							? []
+							: [
+									adminOnlyNote(h, [
+										"Only org admins can change a status page. You can still post incident updates.",
+									]),
+								]),
+						pageSection(h, model, form),
+						appearanceSection(h, model, form),
+						behaviourSection(h, model, form),
+						breakGlassSection(h, model, page),
+						...(model.isAdmin ? [dangerZone(h)] : []),
+					]),
+					previewPanel(h, model, page, form),
+				],
+			),
 			...(model.settingsFailure === null
 				? []
 				: [

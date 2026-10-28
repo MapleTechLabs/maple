@@ -15,6 +15,15 @@ import type {
 	V2StatusPageIncidentCreateParams,
 	V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
+import {
+	STATUS_PAGE_HEX_COLOR_PATTERN,
+	StatusPageThemeAppearance,
+	StatusPageThemeFont,
+	StatusPageThemePreset,
+	StatusPageThemeRadius,
+	type StatusPageTheme,
+	themeContrastIssue,
+} from "@maple/domain/status-page"
 import { DateTime, Option, Schema } from "effect"
 import { closingStatus, STATUSES_OF_KIND } from "../../shared/status-page-derive"
 import { slugIssue } from "../slug"
@@ -218,10 +227,29 @@ export const SettingsTextField = Schema.Literals([
 	"description",
 	"websiteUrl",
 	"logoUrl",
-	"brandColor",
 	"autoIncidents",
 ])
 export type SettingsTextField = typeof SettingsTextField.Type
+
+/** The theme's colour inputs, as typed; blank means the preset's colour. */
+export const ThemeColorField = Schema.Literals(["accent", "background", "text", "card", "border"])
+export type ThemeColorField = typeof ThemeColorField.Type
+
+/** The colours Auto ignores: they apply only to a forced Light or Dark page. */
+export const THEME_OVERRIDE_FIELDS = ["background", "text", "card", "border"] as const
+
+export const ThemeForm = Schema.Struct({
+	preset: StatusPageThemePreset,
+	appearance: StatusPageThemeAppearance,
+	accent: Schema.String,
+	background: Schema.String,
+	text: Schema.String,
+	card: Schema.String,
+	border: Schema.String,
+	radius: StatusPageThemeRadius,
+	font: StatusPageThemeFont,
+})
+export type ThemeForm = typeof ThemeForm.Type
 
 export const SettingsForm = Schema.Struct({
 	name: Schema.String,
@@ -229,11 +257,20 @@ export const SettingsForm = Schema.Struct({
 	description: Schema.String,
 	websiteUrl: Schema.String,
 	logoUrl: Schema.String,
-	brandColor: Schema.String,
 	showPoweredBy: Schema.Boolean,
 	autoIncidents: StatusPageAutoIncidents,
+	theme: ThemeForm,
 })
 export type SettingsForm = typeof SettingsForm.Type
+
+export const themeFormOf = (theme: StatusPageTheme): ThemeForm => ({
+	...theme,
+	accent: theme.accent ?? "",
+	background: theme.background ?? "",
+	text: theme.text ?? "",
+	card: theme.card ?? "",
+	border: theme.border ?? "",
+})
 
 export const settingsFormOf = (page: V2StatusPage): SettingsForm => ({
 	name: page.name,
@@ -241,19 +278,31 @@ export const settingsFormOf = (page: V2StatusPage): SettingsForm => ({
 	description: page.description ?? "",
 	websiteUrl: page.website_url ?? "",
 	logoUrl: page.logo_url ?? "",
-	brandColor: page.brand_color ?? "",
 	showPoweredBy: page.show_powered_by,
 	autoIncidents: page.auto_incidents,
+	theme: themeFormOf(page.theme),
 })
 
-/** The values the API stores: trimmed, the color lower-cased, as `settingsPayload` sends them. */
+const normalizedColor = (value: string): string => value.trim().toLowerCase()
+
+/** The theme as the API stores it: blank colours null, the rest trimmed and lower-cased. */
+export const themeOf = (form: ThemeForm): StatusPageTheme => ({
+	...form,
+	accent: orNull(normalizedColor(form.accent)),
+	background: orNull(normalizedColor(form.background)),
+	text: orNull(normalizedColor(form.text)),
+	card: orNull(normalizedColor(form.card)),
+	border: orNull(normalizedColor(form.border)),
+})
+
+/** The values the API stores: trimmed, the colours lower-cased, as `settingsPayload` sends them. */
 const normalizedSettings = (form: SettingsForm): SettingsForm => ({
 	...form,
 	name: form.name.trim(),
 	description: form.description.trim(),
 	websiteUrl: form.websiteUrl.trim(),
 	logoUrl: form.logoUrl.trim(),
-	brandColor: form.brandColor.trim().toLowerCase(),
+	theme: themeFormOf(themeOf(form.theme)),
 })
 
 /** Same once normalized, so a saved draft whose input differed only in case or spaces settles. */
@@ -266,11 +315,20 @@ const sameNormalized = (a: SettingsForm, b: SettingsForm): boolean =>
 	a.description === b.description &&
 	a.websiteUrl === b.websiteUrl &&
 	a.logoUrl === b.logoUrl &&
-	a.brandColor === b.brandColor &&
 	a.showPoweredBy === b.showPoweredBy &&
-	a.autoIncidents === b.autoIncidents
+	a.autoIncidents === b.autoIncidents &&
+	sameTheme(a.theme, b.theme)
 
-const HEX_COLOR = /^#[0-9a-f]{6}$/iu
+const sameTheme = (a: ThemeForm, b: ThemeForm): boolean =>
+	a.preset === b.preset &&
+	a.appearance === b.appearance &&
+	a.accent === b.accent &&
+	a.background === b.background &&
+	a.text === b.text &&
+	a.card === b.card &&
+	a.border === b.border &&
+	a.radius === b.radius &&
+	a.font === b.font
 const isHttpsUrl = (value: string): boolean => /^https:\/\/\S+$/u.test(value)
 const isHttpUrl = (value: string): boolean => /^https?:\/\/\S+$/u.test(value)
 
@@ -284,15 +342,33 @@ export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsText
 			? null
 			: "Use an http or https URL.",
 	logoUrl: form.logoUrl.trim() === "" || isHttpsUrl(form.logoUrl.trim()) ? null : "Use an https URL.",
-	brandColor:
-		form.brandColor.trim() === "" || HEX_COLOR.test(form.brandColor.trim())
-			? null
-			: "Use a hex color like #1a2b3c.",
 	autoIncidents: null,
 })
 
+const colorIssue = (value: string): string | null =>
+	value.trim() === "" || STATUS_PAGE_HEX_COLOR_PATTERN.test(value.trim())
+		? null
+		: "Use a hex color like #1a2b3c."
+
+/** Each colour input's problem, or `null`. */
+export const themeColorIssues = (theme: ThemeForm): Readonly<Record<ThemeColorField, string | null>> => ({
+	accent: colorIssue(theme.accent),
+	background: colorIssue(theme.background),
+	text: colorIssue(theme.text),
+	card: colorIssue(theme.card),
+	border: colorIssue(theme.border),
+})
+
+/** Unreadable text, as the API would refuse it; checked once every colour is a valid hex. */
+export const themeContrastOf = (theme: ThemeForm): string | null =>
+	Object.values(themeColorIssues(theme)).some((issue) => issue !== null)
+		? null
+		: themeContrastIssue(themeOf(theme))
+
 export const hasSettingsIssues = (form: SettingsForm): boolean =>
-	Object.values(settingsIssues(form)).some((issue) => issue !== null)
+	Object.values(settingsIssues(form)).some((issue) => issue !== null) ||
+	Object.values(themeColorIssues(form.theme)).some((issue) => issue !== null) ||
+	themeContrastOf(form.theme) !== null
 
 export const settingsPayload = (form: SettingsForm): V2StatusPageUpdateParams => ({
 	name: form.name.trim(),
@@ -300,7 +376,7 @@ export const settingsPayload = (form: SettingsForm): V2StatusPageUpdateParams =>
 	description: orNull(form.description),
 	website_url: orNull(form.websiteUrl),
 	logo_url: orNull(form.logoUrl),
-	brand_color: orNull(form.brandColor)?.toLowerCase() ?? null,
+	theme: themeOf(form.theme),
 	show_powered_by: form.showPoweredBy,
 	auto_incidents: form.autoIncidents,
 })

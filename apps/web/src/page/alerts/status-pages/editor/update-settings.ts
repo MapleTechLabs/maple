@@ -17,6 +17,7 @@ import {
 	isSameSettings,
 	type SettingsForm,
 	type SettingsTextField,
+	type ThemeForm,
 	settingsFormOf,
 	settingsPayload,
 } from "./form"
@@ -58,6 +59,9 @@ export const changeSetting = (model: Model, field: SettingsTextField, value: str
 				...form,
 				[field]: field === "slug" ? value.trim().toLowerCase() : value,
 			}))
+
+export const changeTheme = (model: Model, change: Partial<ThemeForm>): Return =>
+	withSettings(model, (form) => ({ ...form, theme: { ...form.theme, ...change } }))
 
 export const togglePoweredBy = (model: Model): Return =>
 	withSettings(model, (form) => ({ ...form, showPoweredBy: !form.showPoweredBy }))

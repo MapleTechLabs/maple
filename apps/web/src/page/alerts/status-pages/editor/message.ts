@@ -7,12 +7,19 @@ import {
 	V2StatusPagePublishResult,
 	V2UptimeMonitor,
 } from "@maple/domain/http/v2"
+import {
+	StatusPageThemeAppearance,
+	StatusPageThemeFont,
+	StatusPageThemePreset,
+	StatusPageThemeRadius,
+} from "@maple/domain/status-page"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../../../data/load-failure"
 import * as CopyButton from "../../../../ui/copy-button"
 import * as Dialog from "../../../../ui/dialog"
-import { ComponentTextField, IncidentTextField, SettingsTextField } from "./form"
+import { ComponentTextField, IncidentTextField, SettingsTextField, ThemeColorField } from "./form"
+import { PreviewScheme } from "./model"
 
 const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
 
@@ -58,6 +65,12 @@ export const Message = defineMessageUnion({
 	// Settings
 	ChangedSetting: { field: SettingsTextField, value: Schema.String },
 	ToggledPoweredBy: {},
+	PickedThemePreset: { preset: StatusPageThemePreset },
+	PickedThemeAppearance: { appearance: StatusPageThemeAppearance },
+	ChangedThemeColor: { field: ThemeColorField, value: Schema.String },
+	PickedThemeRadius: { radius: StatusPageThemeRadius },
+	PickedThemeFont: { font: StatusPageThemeFont },
+	PickedPreviewScheme: { scheme: PreviewScheme },
 	ClickedDiscardSettings: {},
 	ClickedSaveSettings: {},
 	CompletedSaveSettings: { result: outcome(V2StatusPage) },

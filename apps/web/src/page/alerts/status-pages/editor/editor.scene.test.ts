@@ -1,14 +1,19 @@
 import { OrgId } from "@maple/domain"
 import { StatusPagePublicId, type V2StatusPage } from "@maple/domain/http/v2"
-import { Result, Schema } from "effect"
+import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
+import { Option, Result, Schema } from "effect"
 import {
+	attr,
 	click,
 	expect as expectView,
+	find,
 	given,
+	inside,
 	Mount,
 	role,
 	scene,
 	selector,
+	tap,
 	text,
 	type,
 	withViewInputs,
@@ -375,7 +380,7 @@ describe("settings tab", () => {
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "settings" })),
 			expectView(text("Unsaved changes")).not.toExist(),
-			type(role("textbox", { name: "Brand color" }), "teal"),
+			type(role("textbox", { name: "Accent" }), "teal"),
 			expectView(text("Unsaved changes")).toExist(),
 			expectView(text("Use a hex color like #1a2b3c.")).toExist(),
 			expectView(role("button", { name: "Save" })).toBeDisabled(),
@@ -384,7 +389,8 @@ describe("settings tab", () => {
 
 	test("saving sends every field and settles once the page matches", () => {
 		const edited = [
-			Message.ChangedSetting({ field: "brandColor", value: "#1A2B3C" }),
+			Message.ChangedThemeColor({ field: "accent", value: "#1A2B3C" }),
+			Message.PickedThemePreset({ preset: "paper" }),
 			Message.ChangedSetting({ field: "autoIncidents", value: "publish" }),
 			Message.ToggledPoweredBy(),
 		].reduce((model, message) => pageUpdate(model, message).model, loaded({ tab: "settings" }))
@@ -396,7 +402,7 @@ describe("settings tab", () => {
 					payload: {
 						name: "Acme Status",
 						slug: "acme-status",
-						brand_color: "#1a2b3c",
+						theme: { ...DEFAULT_STATUS_PAGE_THEME, preset: "paper", accent: "#1a2b3c" },
 						show_powered_by: false,
 						auto_incidents: "publish",
 						website_url: null,
@@ -405,7 +411,7 @@ describe("settings tab", () => {
 			},
 		])
 		const saved = statusPage({
-			brand_color: "#1A2B3C",
+			theme: { ...DEFAULT_STATUS_PAGE_THEME, preset: "paper", accent: "#1a2b3c" },
 			show_powered_by: false,
 			auto_incidents: "publish",
 		})
@@ -414,6 +420,52 @@ describe("settings tab", () => {
 			Message.CompletedSaveSettings({ result: Result.succeed(saved) }),
 		)
 		expect(done.model.settingsEdits).toBeNull()
+	})
+
+	test("Auto disables the colour overrides but not the accent", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "settings" })),
+			expectView(role("textbox", { name: "Background" })).toBeDisabled(),
+			expectView(role("textbox", { name: "Text" })).toBeDisabled(),
+			expectView(role("textbox", { name: "Accent" })).toBeEnabled(),
+			inside(role("group", { name: "Mode" }), click(role("button", { name: "Dark" }))),
+			expectView(role("textbox", { name: "Background" })).toBeEnabled(),
+		)
+	})
+
+	test("an unreadable text colour shows its contrast and blocks the save", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "settings" })),
+			inside(role("group", { name: "Mode" }), click(role("button", { name: "Light" }))),
+			type(role("textbox", { name: "Text" }), "#777777"),
+			expectView(
+				text("Text on the background has a contrast of 4.48:1; it needs at least 4.5:1."),
+			).toExist(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+		)
+	})
+
+	test("the preview is a sandboxed page that follows the draft accent and preview mode", () => {
+		const iframeOf = find("iframe")
+		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
+			Option.getOrElse(Option.flatMap(iframeOf(html), attr("srcdoc")), () => "")
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "settings" })),
+			expectView(selector("iframe")).toHaveAttr("sandbox", ""),
+			tap(({ html }) => {
+				expect(srcdoc(html)).toContain("Acme Status")
+				expect(srcdoc(html)).toContain("color-scheme:light;")
+			}),
+			// The preview mode is for looking only: it is not a page edit.
+			inside(role("group", { name: "Preview mode" }), click(role("button", { name: "Dark" }))),
+			tap(({ html }) => expect(srcdoc(html)).toContain("color-scheme:dark;")),
+			expectView(text("Unsaved changes")).not.toExist(),
+			type(role("textbox", { name: "Accent" }), "#ff0066"),
+			tap(({ html }) => expect(srcdoc(html)).toContain("--link:#ff0066")),
+		)
 	})
 
 	test("the first break-glass token is issued at once and shown once", () => {
