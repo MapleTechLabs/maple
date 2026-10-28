@@ -8,7 +8,7 @@ import {
 	StatusPageThemePreset,
 	StatusPageThemeRadius,
 	type StatusPageTheme,
-	type StatusPageThemeTokens,
+	type ResolvedStatusPageThemeTokens,
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
 import { safeColor } from "./escape"
@@ -44,16 +44,17 @@ const TOKEN_NAMES = [
 	"line",
 	"card",
 	"link",
+	"secondary",
 	"ok",
 	"degraded",
 	"partial",
 	"major",
 	"maint",
 	"none",
-] as const satisfies ReadonlyArray<keyof StatusPageThemeTokens>
+] as const satisfies ReadonlyArray<keyof ResolvedStatusPageThemeTokens>
 
 /** One scheme's CSS variables; `safeColor` drops any token that is not a hex colour. */
-export const tokenVariables = (tokens: StatusPageThemeTokens): string =>
+export const tokenVariables = (tokens: ResolvedStatusPageThemeTokens): string =>
 	TOKEN_NAMES.flatMap((name) => {
 		const value = safeColor(tokens[name])
 		return value === null ? [] : [`--${name}:${value}`]

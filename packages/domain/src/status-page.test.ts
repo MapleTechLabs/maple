@@ -401,6 +401,22 @@ describe("theme readability", () => {
 		expect(contrastRatio(paper.light.link, paper.light.bg)).toBeGreaterThanOrEqual(4.5)
 	})
 
+	it("uses the accent for the site name and footer only where it reads, else the muted colour", () => {
+		const resolved = resolveStatusPageTheme(theme({ appearance: "light", accent: "#a5b4fc" }))
+		expect(resolved.light.secondary).toBe(resolved.light.muted)
+		expect(resolveStatusPageTheme(theme({ appearance: "dark", accent: "#a5b4fc" })).dark.secondary).toBe(
+			"#a5b4fc",
+		)
+	})
+
+	it("keeps muted text readable when a custom text colour only just passes", () => {
+		const resolved = resolveStatusPageTheme(
+			theme({ appearance: "light", text: "#767676", background: "#ffffff", card: "#ffffff" }),
+		)
+		expect(contrastRatio(resolved.light.muted, resolved.light.bg)).toBeGreaterThanOrEqual(4.5)
+		expect(contrastRatio(resolved.light.muted, resolved.light.card)).toBeGreaterThanOrEqual(4.5)
+	})
+
 	it("keeps every preset's status text readable on its background and cards", () => {
 		const presets = ["default", "mono", "midnight", "paper"] as const
 		const worst = presets.flatMap((preset) => {

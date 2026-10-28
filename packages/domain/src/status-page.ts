@@ -149,13 +149,18 @@ export interface StatusPageThemeTokens {
 	readonly none: string
 }
 
+/** A scheme's tokens as rendered: `secondary` colours the site name and footer links. */
+export interface ResolvedStatusPageThemeTokens extends StatusPageThemeTokens {
+	readonly secondary: string
+}
+
 export interface ResolvedStatusPageTheme {
 	/** `auto` follows the visitor's scheme with both sets; `light`/`dark` forces that one set. */
 	readonly appearance: StatusPageThemeAppearance
 	/** The custom accent, or null; also folded into each set's `link`. */
 	readonly accent: string | null
-	readonly light: StatusPageThemeTokens
-	readonly dark: StatusPageThemeTokens
+	readonly light: ResolvedStatusPageThemeTokens
+	readonly dark: ResolvedStatusPageThemeTokens
 	readonly radiusPx: number
 	readonly fontStack: string
 }
@@ -326,26 +331,40 @@ export const contrastRatio = (a: string, b: string): number => {
 	return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05)
 }
 
+/** The most-blended mix of `fg` into `bg` (from 62% up to 100%) that keeps AA on `bg` and `card`. */
+const readableMix = (fg: string, bg: string, card: string): string =>
+	MUTED_WEIGHTS.map((weight) => mixHex(fg, bg, weight)).find(
+		(muted) =>
+			contrastRatio(muted, bg) >= STATUS_PAGE_MIN_CONTRAST &&
+			contrastRatio(muted, card) >= STATUS_PAGE_MIN_CONTRAST,
+	) ?? fg
+
+const MUTED_WEIGHTS = Array.from({ length: 39 }, (_, step) => 0.62 + step * 0.01)
+
 const withOverrides = (tokens: StatusPageThemeTokens, theme: StatusPageTheme): StatusPageThemeTokens => {
 	const bg = theme.background ?? tokens.bg
 	const fg = theme.text ?? tokens.fg
-	// Muted text follows a custom text or background so it stays between the two.
-	const muted = theme.background === null && theme.text === null ? tokens.muted : mixHex(fg, bg, 0.62)
+	const card = theme.card ?? tokens.card
+	// Muted text follows a custom text or background, blended toward it only as far as stays readable.
+	const muted = theme.background === null && theme.text === null ? tokens.muted : readableMix(fg, bg, card)
 	return {
 		...tokens,
 		bg,
 		fg,
 		muted,
-		card: theme.card ?? tokens.card,
+		card,
 		line: theme.border ?? tokens.line,
 	}
 }
 
-/** Links take the accent only where it stays readable on that mode's background; else the text colour. */
-const withAccent = (tokens: StatusPageThemeTokens, accent: string | null): StatusPageThemeTokens =>
+/**
+ * Links take the accent only where it stays readable on that mode's background; else the text
+ * colour. The site name and footer links take it too, else the muted colour.
+ */
+const withAccent = (tokens: StatusPageThemeTokens, accent: string | null): ResolvedStatusPageThemeTokens =>
 	accent === null || contrastRatio(accent, tokens.bg) < STATUS_PAGE_MIN_CONTRAST
-		? tokens
-		: { ...tokens, link: accent }
+		? { ...tokens, secondary: tokens.muted }
+		: { ...tokens, link: accent, secondary: accent }
 
 /**
  * The concrete tokens a theme renders with. Auto takes the preset and accent only; a forced
@@ -369,7 +388,7 @@ export const resolveStatusPageTheme = (theme: StatusPageTheme): ResolvedStatusPa
 /** The token sets a visitor can actually see. */
 export const visibleThemeTokens = (
 	resolved: ResolvedStatusPageTheme,
-): ReadonlyArray<StatusPageThemeTokens> =>
+): ReadonlyArray<ResolvedStatusPageThemeTokens> =>
 	resolved.appearance === "auto"
 		? [resolved.light, resolved.dark]
 		: [resolved.appearance === "light" ? resolved.light : resolved.dark]

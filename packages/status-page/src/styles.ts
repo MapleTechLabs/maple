@@ -1,5 +1,4 @@
 import type { ResolvedStatusPageTheme } from "@maple/domain/status-page"
-import { safeColor } from "./escape"
 import { tokenVariables } from "./theme"
 
 /** The colour scheme: both sets behind the media query in auto, one forced set otherwise. */
@@ -9,16 +8,10 @@ const schemeStyles = (theme: ResolvedStatusPageTheme): string =>
 @media (prefers-color-scheme:dark){:root{${tokenVariables(theme.dark)}}}`
 		: `:root{color-scheme:${theme.appearance};${tokenVariables(theme.appearance === "light" ? theme.light : theme.dark)}}`
 
-/** Secondary links take the accent only when one is set; otherwise they stay muted. */
-const accentVariable = (accent: string | null): string => {
-	const color = safeColor(accent)
-	return color === null ? "" : `;--accent:${color}`
-}
-
 /** Shared page chrome: flat, system fonts, no animation; colours, radius and font from the theme. */
 export const baseStyles = (theme: ResolvedStatusPageTheme): string => `
 ${schemeStyles(theme)}
-:root{--radius:${Math.max(0, Math.round(theme.radiusPx))}px;--font:${theme.fontStack}${accentVariable(theme.accent)}}
+:root{--radius:${Math.max(0, Math.round(theme.radiusPx))}px;--font:${theme.fontStack}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--font);-webkit-font-smoothing:antialiased}
 a{color:var(--link)}
@@ -27,7 +20,7 @@ a{color:var(--link)}
 .top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:32px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:12px;font-weight:600;font-size:18px;color:var(--fg);text-decoration:none}
 .brand img{max-height:36px;max-width:200px;display:block}
-.site{font-size:14px;color:var(--accent,var(--muted))}
+.site{font-size:14px;color:var(--secondary)}
 .s-operational{--c:var(--ok)}.s-degraded{--c:var(--degraded)}.s-partial_outage{--c:var(--partial)}.s-major_outage{--c:var(--major)}.s-maintenance{--c:var(--maint)}
 .dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--c)}
 .notice{padding:12px 16px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:16px;font-size:14px;background:color-mix(in srgb,var(--degraded) 10%,var(--bg))}
@@ -38,7 +31,7 @@ h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
 .meta{font-size:13px;color:var(--muted)}
 .empty{color:var(--muted);font-size:14px;margin:0}
 footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
-footer a{color:var(--accent,var(--muted))}
+footer a{color:var(--secondary)}
 @media (max-width:560px){.wrap{padding:24px 16px 40px}}
 `
 
