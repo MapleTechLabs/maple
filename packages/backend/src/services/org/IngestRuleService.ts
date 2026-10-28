@@ -24,6 +24,7 @@ import {
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import type { MapleDb } from "@maple/db/client"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 
 export interface IngestRuleInput {
@@ -104,6 +105,10 @@ const validateFields = Effect.fnUntraced(function* (fields: {
 		})
 	}
 })
+
+/** Serializes an org's rule writes (create, reorder, delete) within their transaction. */
+const lockRules = (db: MapleDb, orgId: OrgId) =>
+	db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('ingest_rules'))`)
 
 const validateSpec = Effect.fnUntraced(function* (spec: IngestRuleSpec) {
 	const problems = ingestRuleProblems(spec)
@@ -187,9 +192,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				const inserted = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* db.execute(
-								Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('ingest_rules'))`,
-							)
+							yield* lockRules(db, orgId)
 							const existing = yield* db.run(
 								PG.from(OrgIngestRules)
 									.select(($) => ({ position: $.position }))
@@ -269,10 +272,16 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.id": ruleId })
 				const rows = yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(OrgIngestRules)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
-							.returning("id"),
+					db.transaction(
+						lockRules(db, orgId).pipe(
+							Effect.andThen(
+								db.run(
+									PG.deleteFrom(OrgIngestRules)
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
+										.returning("id"),
+								),
+							),
+						),
 					),
 				)
 				if (rows.length === 0) {
@@ -378,31 +387,43 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.count": ids.length })
 				yield* requireRollout(orgId)
-				const existing = yield* list(orgId)
-				const known = new Set(existing.map((rule) => rule.id))
-				if (
-					ids.length !== existing.length ||
-					new Set(ids).size !== ids.length ||
-					ids.some((id) => !known.has(id))
-				) {
+				const now = yield* Clock.currentTimeMillis
+				// Validate and write under the same per-org lock as create and delete, so the id list
+				// cannot go stale between the check and the writes.
+				const applied = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* lockRules(db, orgId)
+							const existing = yield* db.run(
+								PG.from(OrgIngestRules)
+									.select(($) => ({ id: $.id }))
+									.where(($) => [$.orgId.eq(orgId)]),
+							)
+							const known = new Set(existing.map((rule) => rule.id))
+							if (
+								ids.length !== existing.length ||
+								new Set(ids).size !== ids.length ||
+								ids.some((id) => !known.has(id))
+							)
+								return false
+							yield* Effect.forEach(
+								ids,
+								(id, position) =>
+									db.run(
+										PG.update(OrgIngestRules)
+											.set({ position, updatedAt: now })
+											.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
+									),
+								{ discard: true },
+							)
+							return true
+						}),
+					),
+				)
+				if (!applied) {
 					const message = "Pass every ingest rule id exactly once"
 					return yield* new IngestRuleValidationError({ message, problems: [message] })
 				}
-				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.transaction(
-						Effect.forEach(
-							ids,
-							(id, position) =>
-								db.run(
-									PG.update(OrgIngestRules)
-										.set({ position, updatedAt: now })
-										.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
-								),
-							{ discard: true },
-						),
-					),
-				)
 				return yield* list(orgId)
 			})
 
