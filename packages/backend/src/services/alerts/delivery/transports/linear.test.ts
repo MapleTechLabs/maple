@@ -94,6 +94,8 @@ const fakeLinear = (
 		threads?: ReadonlyArray<LinearThread>
 		/** Ids held by issues Maple cannot see: a create with one answers "already exists". */
 		taken?: ReadonlyArray<string>
+		/** Ids another delivery creates first: the create answers "already exists" and the issue is there. */
+		raced?: ReadonlyArray<string>
 	} = {},
 ) => {
 	const issues = new Map((seed.issues ?? []).map((issue) => [issue.id, issue]))
@@ -120,6 +122,16 @@ const fakeLinear = (
 				const input = variables.input
 				const id = isRecord(input) ? String(input.id) : ""
 				if (seed.taken?.includes(id)) return null
+				if (seed.raced?.includes(id)) {
+					issues.set(id, {
+						id,
+						identifier: "ENG-50",
+						url: "https://linear.app/acme/issue/ENG-50",
+						state: { type: "triage" },
+						team: { id: "team_1" },
+					})
+					return null
+				}
 				const issue = {
 					id,
 					identifier: `ENG-${issues.size + 1}`,
@@ -409,6 +421,19 @@ describe("linear transport after a resolve or a team change", () => {
 			yield* linear.send(inputFor({ deliveryKey: "delivery_7" }))
 			assert.strictEqual(inputOf(linear.calls, "MapleIssueCreate").teamId, "team_1")
 			assert.notInclude(names(linear.calls), "MapleComment")
+		}),
+	)
+
+	it.effect("reuses the issue a concurrent delivery created first", () =>
+		Effect.gen(function* () {
+			const id = linearEntityId("issue", DESTINATION_ID, "team_1", "inc_1", "")
+			const linear = fakeLinear({ raced: [id] })
+			const result = yield* linear.send(inputFor())
+			assert.lengthOf(
+				linear.calls.filter((call) => call.name === "MapleIssueCreate"),
+				1,
+			)
+			assert.strictEqual(result.providerMessage, "Opened Linear issue ENG-50")
 		}),
 	)
 

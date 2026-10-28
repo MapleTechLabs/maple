@@ -251,9 +251,22 @@ const createIssue = Effect.fn("LinearTransport.createIssue")(function* (
 				Effect.flatMap((result) =>
 					result?.issueCreate.issue
 						? Effect.succeed(result.issueCreate.issue)
-						: result === null && canFallBack
-							? // The id is held by an issue Maple cannot see (trashed or hidden): take the next one.
-								createIssue(port, input, threadKey, issueId, false)
+						: result === null
+							? // Taken: a concurrent delivery's issue is reused; one Maple cannot see moves to the next id.
+								fetchIssue(port, input, issueId).pipe(
+									Effect.flatMap((raced) =>
+										raced !== null
+											? Effect.succeed(raced)
+											: canFallBack
+												? createIssue(port, input, threadKey, issueId, false)
+												: Effect.fail(
+														makeDeliveryError(
+															"Linear did not return the created issue",
+															"linear",
+														),
+													),
+									),
+								)
 							: Effect.fail(
 									makeDeliveryError("Linear did not return the created issue", "linear"),
 								),
