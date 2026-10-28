@@ -38,6 +38,8 @@ import type {
 	ServiceHealthSnapshotRequest,
 	ServiceOverviewRequest,
 	ReleasesListRequest,
+	UptimeChecksRequest,
+	UptimePhaseTimingsRequest,
 	ReleaseDetailRequest,
 	WorkloadDetailSummaryRequest,
 	WebAnalyticsSummaryRequest,
@@ -552,6 +554,38 @@ export const releasesList = defineQuery({
 			}),
 			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
 			{ rowSchema: CH.releasesListRowSchema },
+		),
+})
+
+// One uptime monitor's per-bucket phase averages, for the monitor page's breakdown chart.
+export const uptimePhaseTimings = defineQuery({
+	id: "uptimePhaseTimings",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: UptimePhaseTimingsRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.uptimePhaseTimingsQuery(),
+			{
+				orgId,
+				monitorId: payload.monitorId,
+				startTime: payload.startTime,
+				endTime: payload.endTime,
+				bucketSeconds: payload.bucketSeconds,
+			},
+			{ rowSchema: CH.uptimePhaseTimingsRowSchema },
+		),
+})
+
+// One uptime monitor's checks with their phases, for the monitor page's per-check chart.
+export const uptimeChecks = defineQuery({
+	id: "uptimeChecks",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: UptimeChecksRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.uptimeChecksQuery({ limit: payload.limit }),
+			{ orgId, monitorId: payload.monitorId, startTime: payload.startTime, endTime: payload.endTime },
+			{ rowSchema: CH.uptimeChecksRowSchema },
 		),
 })
 

@@ -7,17 +7,17 @@ order: 2
 
 An **incident** is one period during which an [alert rule](/docs/alerting/alert-rules) is breaching. Maple opens it, notifies the rule's [destinations](/docs/alerting/notification-destinations), repeats the notification while the breach continues, and resolves it when the signal recovers.
 
-A rule that evaluates several groups (several services, or a **Group by**) keeps a separate incident for each group. One slow route opens one incident. It does not open or resolve the others.
+A rule that evaluates several groups (several services, or a **Split by**) keeps a separate incident for each group. One slow route opens one incident. It does not open or resolve the others.
 
 ## Lifecycle
 
-Maple checks every enabled rule once a minute. Each check is **breached**, **healthy** or **skipped** (too few samples, or no data).
+Maple checks every enabled rule on its check interval, 1 to 60 minutes (see [Check interval](/docs/alerting/rule-evaluation#check-interval)). Each check is **breached**, **healthy** or **skipped** (too few samples, or no data).
 
-| Step     | When it happens                                                                                         | Notification |
-| -------- | ------------------------------------------------------------------------------------------------------- | ------------ |
-| Open     | The rule breaches on **Breaches to fire** consecutive checks.                                           | `trigger`    |
-| Renotify | The incident is still breaching and **Renotify (min)** minutes have passed since the last notification. | `renotify`   |
-| Resolve  | The rule is healthy on **Healthy to resolve** consecutive checks.                                       | `resolve`    |
+| Step     | When it happens                                                                                          | Notification |
+| -------- | -------------------------------------------------------------------------------------------------------- | ------------ |
+| Open     | The rule breaches on **Breaches to fire** checks, in a row or within **Out of the last** checks.         | `trigger`    |
+| Renotify | The incident is still breaching and **Remind while open, every** has passed since the last notification. | `renotify`   |
+| Resolve  | The rule is healthy on **Resolve after** checks in a row.                                                | `resolve`    |
 
 Skipped checks do not move the incident either way. The breach and healthy counters keep their values until the next check that has enough data.
 
@@ -25,13 +25,13 @@ An incident has two statuses, **open** and **resolved**. A resolved incident sta
 
 ### Flapping
 
-If a rule resolves and then opens a new incident for the same group within its **Renotify (min)** interval, Maple opens the incident without sending a `trigger`. The matching `resolve` is not sent either. This stops a signal that hovers around the threshold from sending a notification every few minutes.
+If a rule resolves and then opens a new incident for the same group within its **Remind while open, every** interval, Maple opens the incident without sending a `trigger`. The matching `resolve` is not sent either. This stops a signal that hovers around the threshold from sending a notification every few minutes.
 
 ## Waiting on data
 
 A breach can stop appearing because the problem is fixed, or because the service stopped sending telemetry. Before it resolves an incident on an empty window, Maple checks whether the service's traffic is still arriving. It compares the current window with the traffic just before the incident opened, and with the same time the day before.
 
-If Maple cannot confirm the traffic, the incident stays open and shows **Waiting on data** in place of its current value. Hovering the badge shows why:
+If Maple cannot confirm the traffic, the incident stays open. The **Inbox** marks it **Held**, and the incident's page shows **Waiting on data** with the reason:
 
 | Situation                                                                     | Resolves                                                     |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------ |
@@ -59,15 +59,16 @@ If a delivery fails with an error that can be retried, Maple retries it up to 5 
 
 ## Where to see incidents
 
-- **Alerts → Overview.** When anything is firing, **Active incidents** lists every open incident with its **Severity**, **Rule**, **Group**, **Current value**, **Duration** and **Last notified** time. The summary cards count rules that are **Firing**, **Needs attention**, **Healthy** and **Disabled**.
-- **The rule's page.** Click a rule or an incident row. The **Overview** tab charts the signal with the threshold and lists recent checks. The **History** tab lists past incidents, filterable by **All**, **Fired** and **Resolved**, with **Total triggered**, **Avg resolution** and **Top contributors**.
+- **Alerts → Inbox.** Lists every open incident with its severity, rule and group, the current value against the threshold, and how long it has been open. Below it, **Last 24 hours** charts recent incidents per rule, and **Blind spots** lists rules that cannot fire, notify or keep up: **Error**, **Stale**, **No data**, **Slowed down**, **Unrouted** and **Delivery**. When nothing is firing, **Headroom** shows how close each rule is to its threshold.
+- **The incident's page.** Click an incident. It charts the signal, shows a **Timeline** of the incident and its notifications, and links to the related traces, logs and error issue.
+- **The rule's page.** Click a rule on the **Rules** tab. The tab filters rules by **Firing**, **Blind**, **Healthy** and **Disabled**. The **Overview** tab charts the signal with the threshold and lists recent checks. The **History** tab lists past incidents, filterable by **All**, **Fired** and **Resolved**, with **Total triggered**, **Avg resolution** and **Top contributors**.
 - **MCP.** `list_alert_incidents` and `get_incident_timeline` on the [MCP server](/docs/reference/mcp) return the same data to an AI assistant.
 
 ## Troubleshooting
 
 - **An incident is stuck on Waiting on data.** The service stopped sending the telemetry the rule reads. Check the service under **Traces**. The incident resolves on its own once data returns or the time limit passes.
-- **An incident opened but nobody was notified.** Check that the rule has destinations and that none is marked **Disabled** on the **Destinations** tab. A re-opened incident inside the renotify interval is silent by design (see [Flapping](#flapping)).
-- **Too many notifications.** Raise **Renotify (min)**, or raise **Breaches to fire** and **Healthy to resolve** on the rule.
+- **An incident opened but nobody was notified.** Check that the rule has destinations, and that none is marked disabled or auto-disabled under **Destinations** on the **Routing** tab. The **Delivery log** on the same tab lists every attempt. A re-opened incident inside the renotify interval is silent by design (see [Flapping](#flapping)).
+- **Too many notifications.** Raise **Remind while open, every**, or raise **Breaches to fire** and **Resolve after** on the rule.
 
 ## Next steps
 

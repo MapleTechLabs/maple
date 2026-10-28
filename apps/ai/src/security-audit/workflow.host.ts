@@ -12,6 +12,7 @@ import { SandboxClient } from "@maple/backend/sandbox/client"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
+import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
@@ -21,9 +22,12 @@ import { FetchHttpClient } from "effect/http"
 import { runSecurityAuditWorkflow } from "./workflow.run"
 
 // Its own service name: hour-long background runs would skew maple-ai's request percentiles.
-const auditTelemetry = eventTelemetry({ serviceName: "maple-security-audit" })
+const auditTelemetry = eventTelemetry({ serviceName: "maple-security-audit", flushEvery: "30 seconds" })
 
-/** The run's services over the host Worker's env: database, store, credits and the repository sandbox. */
+/**
+ * The run's services over the host Worker's env: database, store, credits, the org's OpenRouter key
+ * and the repository sandbox.
+ */
 const runServices = (env: Record<string, unknown>) => {
 	const base = Layer.mergeAll(DatabasePgLive, Env.layer, EdgeCacheServiceLive, FetchHttpClient.layer).pipe(
 		Layer.provideMerge(Layer.mergeAll(layerMapleDbConnection(env), envPorts(env))),
@@ -32,9 +36,12 @@ const runServices = (env: Record<string, unknown>) => {
 		Layer.provide(CloudflareRepoSandboxLive),
 		Layer.provide(Layer.mergeAll(VcsSourceService.layer, SandboxClient.layer)),
 	)
-	return Layer.mergeAll(SecurityAuditStore.layer, SecurityAuditCredits.layer, sandbox).pipe(
-		Layer.provideMerge(base),
-	)
+	return Layer.mergeAll(
+		SecurityAuditStore.layer,
+		SecurityAuditCredits.layer,
+		OrgOpenRouterKeyService.layer,
+		sandbox,
+	).pipe(Layer.provideMerge(base))
 }
 
 export const runHostedAudit = (payload: SecurityAuditWorkflowPayload, env: Record<string, unknown>) =>

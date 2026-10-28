@@ -108,6 +108,7 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 		targets: Keyed.idle(),
 		findings: Keyed.idle(),
 		unitFilter: "all",
+		eventFilter: "all",
 		isLedgerOpen: false,
 		busy: null,
 		cancelDialog: Dialog.init("security-cancel-run", "alert-dialog"),
@@ -278,6 +279,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return fetchOlder(model, oldest)
 		},
 		PickedUnitFilter: ({ filter }) => ({ model: { ...model, unitFilter: filter } }),
+		PickedEventFilter: ({ filter }) => ({ model: { ...model, eventFilter: filter } }),
 		ToggledLedger: () => ({ model: { ...model, isLedgerOpen: !model.isLedgerOpen } }),
 		ClickedStartRun: () => {
 			const run = runOf(model)

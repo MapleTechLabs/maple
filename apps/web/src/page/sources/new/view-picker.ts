@@ -59,7 +59,10 @@ const card = (
 				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5")],
 				[
 					h.span([h.Class("truncate text-sm font-medium")], [meta.label]),
-					h.span([h.Class("text-muted-foreground truncate text-xs")], [meta.description]),
+					h.span(
+						[h.Class("font-prose text-muted-foreground truncate text-xs")],
+						[meta.description],
+					),
 				],
 			),
 			...(badge === null ? [] : [badge]),

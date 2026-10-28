@@ -182,7 +182,7 @@ MapleBrowser.init({
 
 Call these from your router's hooks to make one click one trace: a navigation
 span, the data-loading spans under it, and the `fetch` spans they start.
-[maple.dev/docs/frontend](https://maple.dev/docs/frontend) shows where for each
+[maple.dev/docs/session-replay/browser-sdk](https://maple.dev/docs/session-replay/browser-sdk#framework-examples) shows where for each
 framework.
 
 ```ts

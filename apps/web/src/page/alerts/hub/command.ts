@@ -1,7 +1,11 @@
 import { UptimeMonitorId } from "@maple/domain"
 import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
 import { V2AlertDestinationUpdateParams } from "@maple/domain/http/v2"
+import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
+import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Cause, Clock, Effect, Schema } from "effect"
+import { IdleTtl } from "../../../data/idle-ttl"
+import { readThrough } from "../../../data/read-cache"
 import { toLoadFailure } from "../../../data/load-failure"
 import { Command } from "foldkit"
 import {
@@ -15,6 +19,7 @@ import {
 } from "../shared/commands"
 import { deleteMonitor, listMonitors, setMonitorEnabled } from "../shared/uptime-commands"
 import { Message } from "./message"
+import { ServiceNamespaces, serviceNamespaces } from "./uptime-groups"
 
 export const ReadHubClock = Command.define("ReadAlertsHubClock", {
 	messages: [Message.ReadClock],
@@ -101,6 +106,30 @@ export const FetchHubMonitors = Command.define("FetchAlertsHubMonitors", {
 		listMonitors.pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedFetchMonitors({ key, result })),
+		),
+})
+
+/** Each service's namespace over the last day, on the cache-snapped range the namespace switcher reads. */
+export const FetchServiceNamespaces = Command.define("FetchAlertsHubServiceNamespaces", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchServiceNamespaces],
+	execute: ({ key }) =>
+		Effect.gen(function* () {
+			const now = yield* Clock.currentTimeMillis
+			const range = snapRangeForCache({
+				startTime: formatWarehouseDateTime(now - 24 * 60 * 60 * 1000),
+				endTime: formatWarehouseDateTime(now),
+			})
+			return yield* readThrough(
+				{ key, refresh: false, idleTtlMs: IdleTtl.serviceOverview, schema: ServiceNamespaces },
+				Effect.map(getServiceOverview({ data: range }), (response) =>
+					serviceNamespaces(response.data),
+				),
+			)
+		}).pipe(
+			Effect.mapError(toLoadFailure),
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchServiceNamespaces({ key, result })),
 		),
 })
 

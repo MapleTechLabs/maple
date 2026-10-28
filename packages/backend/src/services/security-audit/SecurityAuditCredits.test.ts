@@ -5,6 +5,7 @@ import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { missingCredits, SecurityAuditCredits } from "./SecurityAuditCredits"
 
 const customer = (balances: Record<string, unknown>) =>
@@ -54,7 +55,13 @@ describe("SecurityAuditCredits", () => {
 	const MAPLE_ORG = Schema.decodeUnknownSync(OrgId)("default")
 
 	/** The service over a stubbed Autumn that answers every call with `status` and `body`. */
-	const ensureFor = (orgId: OrgId, config: Record<string, unknown>, status: number, body: string) =>
+	const ensureFor = (
+		orgId: OrgId,
+		config: Record<string, unknown>,
+		status: number,
+		body: string,
+		orgKey: Option.Option<string> = Option.none(),
+	) =>
 		Effect.gen(function* () {
 			const service = yield* SecurityAuditCredits
 			return yield* service.ensure(orgId)
@@ -72,6 +79,7 @@ describe("SecurityAuditCredits", () => {
 								),
 							),
 							EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
+							OrgOpenRouterKeyService.fixedRunKey(orgKey),
 						),
 					),
 					Layer.provideMerge(Env.layer),
@@ -109,6 +117,13 @@ describe("SecurityAuditCredits", () => {
 			const body = JSON.stringify({ id: "org_customer", subscriptions: [], balances: {} })
 			const error = yield* Effect.flip(ensureFor(CUSTOMER_ORG, BILLED, 200, body))
 			assert.strictEqual(error._tag, "@maple/backend/security-audit/NoCredits")
+		}),
+	)
+
+	it.effect("lets an org on its own OpenRouter key start without AI credits", () =>
+		Effect.gen(function* () {
+			const body = JSON.stringify({ id: "org_customer", subscriptions: [], balances: {} })
+			yield* ensureFor(CUSTOMER_ORG, BILLED, 200, body, Option.some("sk-or-org"))
 		}),
 	)
 

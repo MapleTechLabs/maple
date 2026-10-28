@@ -96,6 +96,7 @@ const toolbar = (
 	visible: ReadonlyArray<V2Investigation>,
 	hasMore: boolean,
 	isKnown: boolean,
+	isFramed: boolean,
 ): Html => {
 	const activeCount = all.filter(isActive).length
 	const counts = new Map([
@@ -105,7 +106,7 @@ const toolbar = (
 	const stats = triageStatsOf(all, model.nowMs)
 	// Two rows: tabs beside the triage counters, then the filters with room for their labels.
 	return h.div(
-		[h.Class("flex flex-col gap-1.5 border-b border-border/60 px-2 py-1.5")],
+		[h.Class(cn("flex flex-col gap-1.5", isFramed ? "border-b border-border/60 px-2 py-1.5" : "pb-3"))],
 		[
 			h.div(
 				[h.Class("flex min-w-0 items-center gap-2")],
@@ -581,6 +582,18 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			],
 		)
 	}
+	// A failed load shows the error block bare: inside the panel it would double the border.
+	const isFailed = AsyncData.isFailure(model.firstPage.data) || AsyncData.hasError(model.firstPage.data)
+	const filters = (isFramed: boolean) =>
+		toolbar(
+			h,
+			model,
+			all,
+			visible,
+			hasMore,
+			AsyncData.hasData(model.firstPage.data) && !AsyncData.hasError(model.firstPage.data),
+			isFramed,
+		)
 	return dashboardPage(
 		h,
 		{
@@ -588,17 +601,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			sticky: h.div([h.Class("contents")], [...(notice === null ? [] : [notice]), bar(h, model)]),
 		},
 		[
-			panel(h, { className: "shrink-0" }, [
-				toolbar(
-					h,
-					model,
-					all,
-					visible,
-					hasMore,
-					AsyncData.hasData(model.firstPage.data) && !AsyncData.hasError(model.firstPage.data),
-				),
-				body,
-			]),
+			isFailed
+				? h.div([h.Class("shrink-0")], [filters(false), body])
+				: panel(h, { className: "shrink-0" }, [filters(true), body]),
 		],
 	)
 })

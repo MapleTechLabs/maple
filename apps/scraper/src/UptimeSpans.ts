@@ -1,5 +1,12 @@
 import { Array as Arr, Option } from "effect"
-import type { UptimeProbeTarget } from "@maple/domain/uptime"
+import {
+	MAPLE_SERVICES_NAMESPACE,
+	UPTIME_MONITOR_ID_ATTRIBUTE,
+	UPTIME_SERVICE_NAME,
+	UPTIME_TIMING_ATTRIBUTES,
+	type UptimeProbeTarget,
+} from "@maple/domain/uptime"
+import type { PhaseTimings } from "./UptimePhases"
 import type { CheckTraceContext, ProbeOutcome } from "./UptimeProbe"
 
 /** Everything one check span needs; buffered until the org's next flush. */
@@ -46,8 +53,7 @@ export interface OtlpTraceExportRequest {
 	}>
 }
 
-export const UPTIME_SERVICE_NAME = "maple-uptime"
-const SCOPE = { name: "maple-uptime", version: "1.0" } as const
+const SCOPE = { name: UPTIME_SERVICE_NAME, version: "1.0" } as const
 
 const anyValue = (value: string | number | boolean): OtlpAnyValue => {
 	if (typeof value === "string") return { stringValue: value }
@@ -108,6 +114,19 @@ const targetAttributes = (
 	}
 }
 
+const PHASE_FIELDS = ["dnsMs", "connectMs", "tlsMs", "ttfbMs", "transferMs"] as const satisfies ReadonlyArray<
+	keyof PhaseTimings
+>
+
+/** An HTTP check's phases in ms to 0.1 ms; a phase that did not happen has no attribute. */
+export const timingAttributes = (timings: PhaseTimings | undefined): Record<string, number> =>
+	Object.fromEntries(
+		PHASE_FIELDS.flatMap((field) => {
+			const value = timings?.[field] ?? null
+			return value === null ? [] : [[UPTIME_TIMING_ATTRIBUTES[field], Math.round(value * 10) / 10]]
+		}),
+	)
+
 /** One CLIENT span for a check, ids equal to the `traceparent` the target saw. */
 export const toOtlpSpan = (check: UptimeCheckSpan): OtlpSpan => {
 	const { outcome } = check
@@ -127,6 +146,7 @@ export const toOtlpSpan = (check: UptimeCheckSpan): OtlpSpan => {
 				: { "http.response.status_code": outcome.statusCode }),
 			...(outcome.errorType === null ? undefined : { "error.type": outcome.errorType }),
 			...(outcome.error === null ? undefined : { "maple.uptime.failure": outcome.error }),
+			...timingAttributes(outcome.timings),
 		}),
 		status: outcome.ok ? { code: 1 } : { code: 2, message: outcome.error ?? "Check failed" },
 	}
@@ -135,7 +155,8 @@ export const toOtlpSpan = (check: UptimeCheckSpan): OtlpSpan => {
 const resourceAttributes = (monitor: UptimeCheckSpan["monitor"]) =>
 	keyValues({
 		"service.name": UPTIME_SERVICE_NAME,
-		"maple.uptime.monitor_id": monitor.id,
+		"service.namespace": MAPLE_SERVICES_NAMESPACE,
+		[UPTIME_MONITOR_ID_ATTRIBUTE]: monitor.id,
 		"maple.uptime.monitor_name": monitor.name,
 		...(monitor.serviceName === null ? undefined : { "maple.uptime.service_name": monitor.serviceName }),
 	})

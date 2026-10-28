@@ -13,12 +13,6 @@
 		"strict": true,
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedSideEffectImports": true,
-		"plugins": [
-			{
-				"name": "@effect/language-service",
-				"reportSuggestionsAsWarningsInTsc": true
-			}
-		],
 		"resolveJsonModule": true
 	}
 }

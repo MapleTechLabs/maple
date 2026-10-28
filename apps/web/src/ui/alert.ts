@@ -10,7 +10,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 
 // Port of packages/ui/src/components/ui/alert.tsx.
 
-// The shared `info` variant reuses the green severity hue of `ok`; info reads blue here.
+// The shared `info` variant reuses the green severity hue of `ok`; info reads blue here. `done`
+// keeps its shared tinted variant; its glyph is what sets it apart from info.
 const variantOverride = (variant: AlertOptions["variant"]): string | undefined =>
 	variant === "info" ? "border-info/32 bg-info/4 [&>svg]:text-info" : undefined
 

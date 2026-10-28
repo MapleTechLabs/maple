@@ -45,15 +45,17 @@ describe("formatDuration", () => {
 
 	it("keeps going past a minute instead of stopping at seconds", () => {
 		// The web copy capped here and rendered an hour as "3600.00s".
-		expect(formatDuration(90_000)).toBe("1.5min")
-		expect(formatDuration(3_600_000)).toBe("1.0h")
+		expect(formatDuration(90_000)).toBe("1m 30s")
+		expect(formatDuration(72_000)).toBe("1m 12s")
+		expect(formatDuration(3_600_000)).toBe("1h")
+		expect(formatDuration(3_900_000)).toBe("1h 5m")
 	})
 })
 
 describe("formatLatency", () => {
 	it("shares the duration ladder and has a placeholder for missing values", () => {
-		expect(formatLatency(90_000)).toBe("1.5min")
-		expect(formatLatency(3_600_000)).toBe("1.0h")
+		expect(formatLatency(90_000)).toBe("1m 30s")
+		expect(formatLatency(3_600_000)).toBe("1h")
 		expect(formatLatency(Number.NaN)).toBe(EMPTY_VALUE)
 	})
 })
@@ -65,6 +67,12 @@ describe("formatNumber", () => {
 		expect(formatNumber(1_200_000)).toBe("1.2M")
 		expect(formatNumber(2_500_000_000)).toBe("2.5B")
 		expect(formatNumber(1_200_000_000_000)).toBe("1.2T")
+	})
+
+	it("drops a trailing .0 and rolls up at a tier edge", () => {
+		expect(formatNumber(193_000)).toBe("193K")
+		expect(formatNumber(2_000_000)).toBe("2M")
+		expect(formatNumber(999_960)).toBe("1M")
 	})
 
 	it("compacts negatives (delta columns), not just positives", () => {
@@ -90,9 +98,9 @@ describe("byte formatting", () => {
 		expect(formatStorageBytes(1_000_000)).toBe("1.0 MB")
 	})
 
-	it("keeps the sign of a negative binary size and floors storage at zero", () => {
+	it("treats a negative binary size as bad data and floors storage at zero", () => {
 		expect(formatBytes(0)).toBe("0 B")
-		expect(formatBytes(-4096)).toBe("-4.0 KB")
+		expect(formatBytes(-4096)).toBe(EMPTY_VALUE)
 		expect(formatBytes(Number.NaN)).toBe(EMPTY_VALUE)
 		expect(formatStorageBytes(-5)).toBe("0 B")
 	})
@@ -160,9 +168,9 @@ describe("formatLoad / formatUptime", () => {
 describe("value-by-unit dispatch", () => {
 	it("routes each unit to its formatter", () => {
 		expect(formatValueByUnit(0.5, "percent")).toBe("50.0%")
-		expect(formatValueByUnit(90_000, "duration_ms")).toBe("1.5min")
-		expect(formatValueByUnit(90_000_000, "duration_us")).toBe("1.5min")
-		expect(formatValueByUnit(90, "duration_s")).toBe("1.5min")
+		expect(formatValueByUnit(90_000, "duration_ms")).toBe("1m 30s")
+		expect(formatValueByUnit(90_000_000, "duration_us")).toBe("1m 30s")
+		expect(formatValueByUnit(90, "duration_s")).toBe("1m 30s")
 		expect(formatValueByUnit(1_500, "requests_per_sec")).toBe("1.5K/s")
 		expect(formatValueByUnit(3_400, undefined)).toBe("3.4K")
 	})
@@ -183,6 +191,12 @@ describe("bucket helpers normalize warehouse timestamps", () => {
 		const tzLess = formatBucketLabel("2026-05-24 14:30:00", context, "tick")
 		const explicit = formatBucketLabel("2026-05-24T14:30:00Z", context, "tick")
 		expect(tzLess).toBe(explicit)
+	})
+
+	it("formatBucketLabel names a midnight tick on a multi-day axis by its day alone", () => {
+		const context = { rangeMs: 7 * 86_400_000, bucketSeconds: 3 * 3600, timeZone: "UTC", locale: "en-US" }
+		expect(formatBucketLabel("2026-10-20T00:00:00Z", context, "tick")).toBe("Oct 20")
+		expect(formatBucketLabel("2026-10-20T12:00:00Z", context, "tick")).toBe("Oct 20, 12:00 PM")
 	})
 
 	it("infers spacing and range from tz-less buckets", () => {
@@ -228,13 +242,14 @@ describe("formatRate", () => {
 })
 
 describe("worst-case inputs", () => {
-	it("formatDuration keeps sign, rolls up at rounding edges, reaches days and guards NaN", () => {
-		expect(formatDuration(-42.5)).toBe("-42.5ms")
+	it("formatDuration rejects negatives, rolls up at rounding edges, reaches days and guards NaN", () => {
+		expect(formatDuration(-42.5)).toBe("—")
 		expect(formatDuration(0.000001)).toBe("1ns")
 		expect(formatDuration(0)).toBe("0μs")
 		expect(formatDuration(999.96)).toBe("1.00s")
-		expect(formatDuration(59_999)).toBe("1.0min")
-		expect(formatDuration(259_200_000)).toBe("3.0d")
+		expect(formatDuration(59_999)).toBe("1m")
+		expect(formatDuration(259_200_000)).toBe("3d")
+		expect(formatDuration(273_600_000)).toBe("3d 4h")
 		expect(formatDuration(Number.NaN)).toBe("—")
 		expect(formatDuration(Number.POSITIVE_INFINITY)).toBe("—")
 	})
@@ -251,7 +266,8 @@ describe("worst-case inputs", () => {
 
 	it("formatUptime has a sub-minute and a years tier", () => {
 		expect(formatUptime(4)).toBe("<1m")
-		expect(formatUptime(3 * 365 * 86_400)).toBe("3y 0d")
+		expect(formatUptime(3 * 365 * 86_400)).toBe("3y")
+		expect(formatUptime(3 * 86_400)).toBe("3d")
 	})
 
 	it("formatErrorRate guards non-finite input", () => {

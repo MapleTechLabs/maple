@@ -38,14 +38,19 @@ const decodeStoredTabs = Schema.decodeUnknownOption(StoredTabs)
 const encodeTabs = Schema.encodeSync(Schema.fromJsonString(TabsState))
 
 export const freshTabs = (nowMs: number): TabsState => ({
-	tabs: [{ id: DEFAULT_TAB_ID, title: "New Chat", createdAt: nowMs, updatedAt: nowMs }],
+	tabs: [{ id: DEFAULT_TAB_ID, title: "New chat", createdAt: nowMs, updatedAt: nowMs }],
 	activeTabId: DEFAULT_TAB_ID,
 })
 
-const getItem = (key: string) => Effect.orElseSucceed(Effect.try(() => localStorage.getItem(key)), () => null)
-const setItem = (key: string, value: string) => Effect.ignore(Effect.try(() => localStorage.setItem(key, value)))
+const getItem = (key: string) =>
+	Effect.orElseSucceed(
+		Effect.try(() => localStorage.getItem(key)),
+		() => null,
+	)
+const setItem = (key: string, value: string) =>
+	Effect.ignore(Effect.try(() => localStorage.setItem(key, value)))
 
-/** `loadState`: the stored tabs (older ones lack `updatedAt`), else one fresh "New Chat". */
+/** `loadState`: the stored tabs (older ones lack `updatedAt`), else one fresh "New chat". */
 export const readTabs = (orgId: string, nowMs: number) =>
 	Effect.map(getItem(tabsKey(orgId)), (raw) =>
 		Option.getOrElse(
@@ -72,14 +77,20 @@ export const ensureStoredTab = (orgId: string, id: string, title: string, nowMs:
 			orgId,
 			state.tabs.some((tab) => tab.id === id)
 				? { ...state, activeTabId: id }
-				: { tabs: [...state.tabs, { id, title, createdAt: nowMs, updatedAt: nowMs }], activeTabId: id },
+				: {
+						tabs: [...state.tabs, { id, title, createdAt: nowMs, updatedAt: nowMs }],
+						activeTabId: id,
+					},
 		),
 	)
 
 /** `createTab` outside the page: appended and made active. */
 export const appendStoredTab = (orgId: string, id: string, nowMs: number) =>
 	Effect.flatMap(readTabs(orgId, nowMs), (state) =>
-		writeTabs(orgId, { tabs: [...state.tabs, { id, title: "New Chat", createdAt: nowMs, updatedAt: nowMs }], activeTabId: id }),
+		writeTabs(orgId, {
+			tabs: [...state.tabs, { id, title: "New chat", createdAt: nowMs, updatedAt: nowMs }],
+			activeTabId: id,
+		}),
 	)
 
 /** `renameTab` outside the page; an id not in the list (the quick thread) changes nothing but is saved. */

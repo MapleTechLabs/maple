@@ -200,23 +200,29 @@ const remediation = (h: H, record: Confirmed): Html =>
 		),
 	])
 
-const validationNeeded = (h: H, record: NeedsValidation): Html =>
-	section(h, "Why it is not proven", "Audits read code; they do not run it yet", [
-		...(record.blockers.length === 0
-			? []
-			: [
-					h.ul(
-						[h.Class("flex list-disc flex-col gap-1.5 pl-5 text-sm")],
-						record.blockers.map((blocker, index) => h.li([h.Key(`b-${index}`)], [blocker])),
-					),
-				]),
+/** What to run to prove or disprove it: the first thing a reader of an unproven lead needs. */
+const checkIt = (h: H, record: NeedsValidation): Html =>
+	section(h, "Check it", "Found by reading the code. Not run, so not proven.", [
 		...(record.validation_plan.local === undefined
 			? []
-			: [labelled(h, "Check it locally", record.validation_plan.local)]),
+			: [labelled(h, "Locally", record.validation_plan.local)]),
 		...(record.validation_plan.deployment === undefined
 			? []
-			: [labelled(h, "Check it on a deployment", record.validation_plan.deployment)]),
+			: [labelled(h, "On a deployment", record.validation_plan.deployment)]),
+		...(record.validation_plan.local === undefined && record.validation_plan.deployment === undefined
+			? [prose(h, "The audit left no check for this lead. Use the trace below to reproduce it.")]
+			: []),
 	])
+
+const whyNotProven = (h: H, record: NeedsValidation): Html | null =>
+	record.blockers.length === 0
+		? null
+		: section(h, "Why it is not proven", null, [
+				h.ul(
+					[h.Class("flex list-disc flex-col gap-1.5 pl-5 text-sm")],
+					record.blockers.map((blocker, index) => h.li([h.Key(`b-${index}`)], [blocker])),
+				),
+			])
 
 const rejection = (h: H, record: Rejected): Html =>
 	section(h, "Why it was rejected", "A second model disproved the claim", [prose(h, record.reason)])
@@ -232,8 +238,15 @@ export const findingBody = (h: H, finding: SecurityAuditFinding): ReadonlyArray<
 				assessment(h, record),
 				remediation(h, record),
 			]
-		case "needs_validation":
-			return [whatIsWrong(h, record), traceAndEvidence(h, record), validationNeeded(h, record)]
+		case "needs_validation": {
+			const blockers = whyNotProven(h, record)
+			return [
+				checkIt(h, record),
+				whatIsWrong(h, record),
+				...(blockers === null ? [] : [blockers]),
+				traceAndEvidence(h, record),
+			]
+		}
 		case "rejected":
 			return [whatIsWrong(h, record), rejection(h, record), traceAndEvidence(h, record)]
 	}

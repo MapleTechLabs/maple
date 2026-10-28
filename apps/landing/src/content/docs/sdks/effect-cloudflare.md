@@ -7,13 +7,7 @@ navLabel: "Cloudflare Workers"
 sdk: "effect"
 ---
 
-The `/cloudflare` entry point of `@maple-dev/effect-sdk` is built for Cloudflare Workers. A Worker has no long-running process: the isolate handles a request, returns a response, and the runtime may suspend it at any moment. A background export fiber does not run reliably between invocations, so this entry point buffers telemetry inside the isolate and sends it when you call `flush(env)`, which you schedule with `ctx.waitUntil`.
-
-<div class="flex flex-wrap gap-2 mb-8 not-prose">
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Cloudflare Workers</span>
-</div>
-
-> Already installed the SDK? If not, see the [install instructions](/docs/sdks/effect#install).
+The `/cloudflare` entry point of `@maple-dev/effect-sdk` is built for Cloudflare Workers. [Install the SDK](/docs/sdks/effect#install) first. A Worker has no long-running process: the isolate handles a request, returns a response, and the runtime may suspend it at any moment. A background export fiber does not run reliably between invocations, so this entry point buffers telemetry inside the isolate and sends it when you call `flush(env)`, which you schedule with `ctx.waitUntil`.
 
 ## Why Workers are different
 

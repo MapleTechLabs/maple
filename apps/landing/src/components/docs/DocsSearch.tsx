@@ -115,6 +115,7 @@ function Icon({ svg, className }: { svg: string | undefined; className?: string 
 	)
 }
 
+// Only on ranked hits: browse mode already groups rows under their section.
 function Tag({ doc }: { doc: SearchDoc }) {
 	return (
 		<span className="ms-auto shrink-0 whitespace-nowrap border border-current/25 px-1.5 py-0.5 font-medium text-[9px] text-current/70 uppercase leading-none tracking-wider">
@@ -125,10 +126,9 @@ function Tag({ doc }: { doc: SearchDoc }) {
 
 type Icons = SearchIndexPayload["icons"]
 
-// The highlighted row mirrors the sidebar's active link: a primary tint and a
-// primary left bar. Text keeps the foreground color and leans on opacity for hierarchy.
+// The highlighted row: a light neutral tint and a thin primary left edge. Text keeps the foreground color and leans on opacity for hierarchy.
 const ITEM_CLASS =
-	"flex items-center gap-3 rounded-none data-highlighted:bg-primary/10 data-highlighted:text-fg data-highlighted:shadow-[inset_2px_0_0_var(--primary)]"
+	"flex items-center gap-3 rounded-none data-highlighted:bg-fg/[0.06] data-highlighted:text-fg data-highlighted:shadow-[inset_2px_0_0_var(--primary)]"
 
 function PageItem({ doc, icons }: { doc: SearchDoc; icons: Icons }) {
 	return (
@@ -138,7 +138,6 @@ function PageItem({ doc, icons }: { doc: SearchDoc; icons: Icons }) {
 				<span className="truncate text-sm">{doc.title}</span>
 				<span className="truncate text-xs opacity-65">{doc.description}</span>
 			</span>
-			<Tag doc={doc} />
 		</CommandItem>
 	)
 }
@@ -265,7 +264,7 @@ export default function DocsSearch() {
 			    inside holds focus through the close, which would block the page. */}
 			<CommandDialog open={open} onOpenChange={setPaletteOpen}>
 				{open && (
-					<CommandDialogPopup>
+					<CommandDialogPopup className="max-h-[calc(100dvh-6rem)] sm:max-h-105">
 						<Command
 							inline={false}
 							filter={null}
@@ -276,7 +275,7 @@ export default function DocsSearch() {
 							}}
 						>
 							<CommandInput placeholder="Search the docs…" />
-							<CommandList>
+							<CommandList className="not-empty:pb-3">
 								{results === null ? (
 									grouped.map(([group, items]) => (
 										<CommandGroup key={group}>
@@ -293,20 +292,52 @@ export default function DocsSearch() {
 										</CommandGroup>
 									))
 								) : results.length === 0 ? (
-									<CommandEmpty>No results for “{query}”.</CommandEmpty>
+									<CommandEmpty>
+										<p>No results for “{query}”.</p>
+										<p className="mt-1.5 text-xs opacity-70">
+											Try a framework or signal name, or open the{" "}
+											<a
+												href="/docs/getting-started/quickstart"
+												className="underline underline-offset-2 hover:text-fg"
+											>
+												quickstart
+											</a>{" "}
+											or the{" "}
+											<a
+												href="/docs/instrumentation"
+												className="underline underline-offset-2 hover:text-fg"
+											>
+												instrumentation guides
+											</a>
+											.
+										</p>
+									</CommandEmpty>
 								) : (
 									results.map((hit) => (
 										<HitItem key={hit.record.url} hit={hit} terms={terms} icons={icons} />
 									))
 								)}
 							</CommandList>
-							<CommandFooter>
-								<span className="flex items-center gap-1.5">
-									<kbd className="font-medium text-fg-muted/70">↵</kbd> to open
+							{/* Key hints on a keyboard; on touch a slim footer with a close button. */}
+							<CommandFooter className="py-2.5 text-fg/75">
+								<span
+									className={cn(
+										"flex items-center gap-1.5 [@media(hover:none)]:hidden",
+										results?.length === 0 && "invisible",
+									)}
+								>
+									<kbd className="font-medium text-fg">↵</kbd> to open
 								</span>
-								<span className="flex items-center gap-1.5">
-									<kbd className="font-medium text-fg-muted/70">esc</kbd> to close
+								<span className="flex items-center gap-1.5 [@media(hover:none)]:hidden">
+									<kbd className="font-medium text-fg">esc</kbd> to close
 								</span>
+								<button
+									type="button"
+									onClick={() => setPaletteOpen(false)}
+									className="ms-auto hidden rounded-md px-2 py-1 text-fg/75 transition-colors hover:text-fg [@media(hover:none)]:inline-flex"
+								>
+									Close
+								</button>
 							</CommandFooter>
 						</Command>
 					</CommandDialogPopup>

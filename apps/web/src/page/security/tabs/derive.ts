@@ -108,6 +108,14 @@ export const countBySeverity = (
 export const bySeverity = (a: SecurityAuditFinding, b: SecurityAuditFinding): number =>
 	severityRank(a.overallSeverity) - severityRank(b.overallSeverity) || b.updatedAt - a.updatedAt
 
+/** Open leads, worst first: confirmed by severity, then leads to validate by when they were last seen. */
+export const openLeads = (
+	findings: ReadonlyArray<SecurityAuditFinding>,
+): ReadonlyArray<SecurityAuditFinding> => [
+	...[...openConfirmed(findings)].sort(bySeverity),
+	...[...openNeedsValidation(findings)].sort((a, b) => b.updatedAt - a.updatedAt),
+]
+
 /** Closed units out of the ledger: what the run got to, whatever it found. */
 const CLOSED_UNIT_STATUSES: ReadonlyArray<string> = ["covered", "candidate", "not_applicable", "out_of_scope"]
 
@@ -115,6 +123,36 @@ export const coverageOf = (detail: SecurityAuditRunDetail): Readonly<{ closed: n
 	closed: CLOSED_UNIT_STATUSES.reduce((sum, status) => sum + (detail.unitCounts[status] ?? 0), 0),
 	total: detail.unitTotal,
 })
+
+/** Every target's latest ledger added up; null until one has units. */
+export const coverageAcross = (
+	model: Model,
+): Readonly<{ closed: number; total: number; targets: number }> | null => {
+	const details = targetsOf(model).flatMap((target) => {
+		const run = latestRunFor(model, target.id)
+		const detail = run === undefined ? null : latestDetailOf(model, run.id)
+		return detail === null || detail.unitTotal === 0 ? [] : [coverageOf(detail)]
+	})
+	return details.length === 0
+		? null
+		: details.reduce<Readonly<{ closed: number; total: number; targets: number }>>(
+				(sum, { closed, total }) => ({
+					closed: sum.closed + closed,
+					total: sum.total + total,
+					targets: sum.targets + 1,
+				}),
+				{ closed: 0, total: 0, targets: 0 },
+			)
+}
+
+/** Whether every read `coverageAcross` sums has landed: before that, "not mapped" would be a guess. */
+export const coverageSettled = (model: Model): boolean =>
+	Option.isSome(AsyncData.getData(model.targets.data)) &&
+	Option.isSome(AsyncData.getData(model.runs.data)) &&
+	targetsOf(model).every((target) => {
+		const run = latestRunFor(model, target.id)
+		return run === undefined || latestDetailOf(model, run.id) !== null
+	})
 
 /** The API lists at most this many runs per request, newest first. */
 export const RUN_LIST_CAP = 50
@@ -168,6 +206,31 @@ export const runsForTab = (
 	const runs = targetId === undefined ? runsOf(model) : runsForTarget(model, targetId)
 	const listed = own ?? Option.getOrNull(AsyncData.getData(model.runs.data))?.runs ?? []
 	return { runs, isCapped: listed.length >= RUN_LIST_CAP }
+}
+
+/**
+ * What a run left open, by the findings it last saw. Only a target's newest finished run owns
+ * them: an older run's findings were seen again later. Null when that cannot be told.
+ */
+export const runLeadsOf = (
+	model: Model,
+	run: SecurityAuditRun,
+): Readonly<{ confirmed: number; toValidate: number }> | null => {
+	const owner = runsForTarget(model, run.targetId).find(
+		(candidate) => !isLive(candidate) && candidate.status !== "failed",
+	)
+	const slot = model.findings[run.targetId]
+	if (owner?.id !== run.id || slot === undefined) return null
+	return Option.match(AsyncData.getData(slot.data), {
+		onNone: () => null,
+		onSome: ({ findings }) => {
+			const seen = findings.filter((finding) => finding.lastSeenRunId === run.id)
+			return {
+				confirmed: openConfirmed(seen).length,
+				toValidate: openNeedsValidation(seen).length,
+			}
+		},
+	})
 }
 
 /** The org's settings once read; null while loading or when the read failed. */

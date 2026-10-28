@@ -116,7 +116,7 @@ const displayOptions = (h: H, model: Model, view: SessionView): Html => {
 						h.button(
 							[
 								h.Type("button"),
-								h.AriaLabel("Display options"),
+								h.AriaLabel(`Display options, ${on} of ${rows.length} shown`),
 								h.Class(
 									"inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-background px-2 text-foreground text-xs transition-colors hover:bg-muted/64 data-[popup-open]:bg-muted/64",
 								),
@@ -127,7 +127,7 @@ const displayOptions = (h: H, model: Model, view: SessionView): Html => {
 								"Display",
 								h.span(
 									[h.Class("text-muted-foreground tabular-nums")],
-									[String(on), "/", String(rows.length)],
+									[`· ${on} of ${rows.length}`],
 								),
 							],
 						),

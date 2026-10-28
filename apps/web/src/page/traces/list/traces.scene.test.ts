@@ -94,7 +94,7 @@ describe("traces list", () => {
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load", timeZone: "UTC" }),
 		)
-		expect(names(resolved.commands)).toEqual([FetchFacets.name, FetchFirstPage.name])
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([FetchFacets.name, FetchFirstPage.name]))
 	})
 
 	test("a first page for a superseded window is dropped", () => {

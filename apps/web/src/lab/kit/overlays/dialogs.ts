@@ -74,7 +74,7 @@ export const kitDialog = (h: H, model: Dialog.Model): Html =>
 					labelledInput(h, `${model.id}-name`, "Name", "Checkout latency"),
 				]),
 				dialogFooter(h, "dialog", [
-					closeButton(h, close, "dialog-close", "ghost", "Cancel"),
+					closeButton(h, close, "dialog-close", "outline", "Cancel"),
 					button(h, {}, ["Save"]),
 				]),
 			],

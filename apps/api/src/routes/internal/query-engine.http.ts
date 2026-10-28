@@ -53,6 +53,8 @@ import {
 	ServiceDbQuerySummaryResponse,
 	ServiceDetailOverviewResponse,
 	ReleasesListResponse,
+	UptimeChecksResponse,
+	UptimePhaseTimingsResponse,
 	ReleaseDetailResponse,
 	type ReleaseRow,
 	ServiceDependenciesBundleResponse,
@@ -152,6 +154,7 @@ import {
 	workloadMetricSpec,
 } from "@maple/backend/queries/query-helpers"
 import { Queries } from "@/routes/queries"
+import { isMapleService } from "@maple/domain/uptime"
 import { productEventsFunnelOpts, productEventsPathsOpts } from "@maple/query-engine/registry"
 import {
 	makeDashboardReads,
@@ -1255,6 +1258,42 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
+				.handle("uptimePhaseTimings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.uptimePhaseTimings, tenant, payload)
+						return new UptimePhaseTimingsResponse({
+							points: rows
+								.filter((row) => row.timedChecks > 0)
+								.map((row) => ({ ...row, bucket: DateTime.formatIso(row.bucket) })),
+						})
+					}),
+				)
+				.handle("uptimeChecks", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.uptimeChecks, tenant, payload)
+						return new UptimeChecksResponse({
+							checks: rows.map((row) => ({
+								at: DateTime.formatIso(row.at),
+								traceId: decodeTraceId(row.traceId),
+								durationMs: row.durationMs,
+								ok: row.status !== "Error",
+								statusCode: row.httpStatus > 0 ? row.httpStatus : null,
+								phases:
+									row.timed === 1
+										? {
+												dnsMs: row.dnsMs,
+												connectMs: row.connectMs,
+												tlsMs: row.tlsMs,
+												ttfbMs: row.ttfbMs,
+												transferMs: row.transferMs,
+											}
+										: null,
+							})),
+						})
+					}),
+				)
 				.handle("releaseDetail", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -1318,7 +1357,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const tenant = yield* CurrentTenant.Context
 						// Resolve warehouse routing once before the fan-out.
 						yield* warehouse.warmRoute(tenant)
-						const [dependencyRows, overviewRows, dbEdges, platformRows] = yield* Effect.all(
+						const [dependencyRows, allOverviewRows, dbEdges, platformRows] = yield* Effect.all(
 							[
 								runQuery(Queries.serviceDependencies, tenant, payload),
 								runQuery(Queries.serviceOverview, tenant, payload),
@@ -1332,6 +1371,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							],
 							{ concurrency: 4 },
 						)
+						// The edges already drop Maple's own callers; overview rows would still draw them as nodes.
+						const overviewRows = allOverviewRows.filter((row) => !isMapleService(row))
 
 						const services = new Set<string>()
 						for (const row of dependencyRows) {

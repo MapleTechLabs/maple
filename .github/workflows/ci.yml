@@ -31,8 +31,10 @@ jobs:
             archive: ${{ steps.filter.outputs.archive == 'true' }}
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
+            workers: ${{ steps.filter.outputs.workers == 'true' }}
             ingest: ${{ steps.filter.outputs.ingest == 'true' }}
             collector: ${{ steps.filter.outputs.collector == 'true' }}
+            terraform: ${{ steps.filter.outputs.terraform == 'true' }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -56,6 +58,7 @@ jobs:
                       ts:
                         - *base
                         - 'alchemy.run.ts'
+                        - 'test/**'
                         - 'apps/**'
                         - 'examples/**'
                         - 'packages/**'
@@ -117,6 +120,16 @@ jobs:
                         - 'apps/api/test/integration/**'
                         - 'apps/api/vitest.integration.config.ts'
                         - 'packages/db/**'
+                      # Whatever the api and maple-ai bundles are built from: their workspace
+                      # dependencies span nearly all of packages/ and lib/, so both are listed whole.
+                      workers:
+                        - *base
+                        - 'alchemy.run.ts'
+                        - 'test/alchemy/**'
+                        - 'apps/api/**'
+                        - 'apps/ai/**'
+                        - 'packages/**'
+                        - 'lib/**'
                       shell:
                         - *base
                         - 'scripts/*.sh'
@@ -134,6 +147,9 @@ jobs:
                       collector:
                         - '.github/workflows/ci.yml'
                         - 'packages/otel-collector-maple-exporter/**'
+                      terraform:
+                        - '.github/workflows/ci.yml'
+                        - 'packages/terraform-provider-maple/**'
 
             - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
               with:
@@ -365,6 +381,32 @@ jobs:
                   MAPLE_TEST_PG_URL: postgres://maple:maple@127.0.0.1:5499/maple
               run: bun run --cwd apps/api test:integration
 
+    # api and maple-ai bundled and booted in local workerd by alchemy's test harness, joined by
+    # the real service binding. Nothing is deployed; the placeholders only satisfy plan-time
+    # config, and no test reaches Postgres or the warehouse.
+    workers-e2e:
+        name: Workers in workerd (alchemy test harness)
+        needs: changes
+        if: ${{ needs.changes.outputs.workers == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - uses: ./.github/actions/setup
+
+            - name: api → maple-ai over the service binding
+              env:
+                  MAPLE_PG_URL: postgres://maple:maple@127.0.0.1:5499/maple
+                  TINYBIRD_HOST: http://127.0.0.1:7181
+                  TINYBIRD_TOKEN: placeholder
+                  # Keys are checked as base64 for 32 bytes when maple-ai's graph builds.
+                  MAPLE_INGEST_KEY_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_SHARE_TOKEN_HMAC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+                  MAPLE_ROOT_PASSWORD: placeholder
+              run: bun run test:alchemy
+
     # One server version, pinned to docker-compose.development.yml's tag.
     clickhouse-schema-e2e:
         name: ClickHouse schema + SQL catalog E2E
@@ -456,7 +498,7 @@ jobs:
                   MAPLE_TELEMETRY: off
               run: |
                   for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard; do
-                      bun test "test/$file.test.ts"
+                      bun test --timeout 30000 "test/$file.test.ts"
                   done
 
             # Each probe owns its TMPDIR and port, so they run side by side. Probes
@@ -685,6 +727,52 @@ jobs:
             - name: go test
               run: go test -race -count=1 ./...
 
+    terraform-provider:
+        name: Terraform provider tests
+        needs: changes
+        if: ${{ needs.changes.outputs.terraform == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        defaults:
+            run:
+                working-directory: packages/terraform-provider-maple
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  persist-credentials: false
+
+            - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+              with:
+                  go-version-file: packages/terraform-provider-maple/go.mod
+                  cache: true
+                  cache-dependency-path: packages/terraform-provider-maple/go.sum
+
+            - name: gofmt -l
+              run: |
+                  diff=$(gofmt -l .)
+                  if [ -n "$diff" ]; then
+                    echo "::error::gofmt found unformatted files:"
+                    echo "$diff"
+                    exit 1
+                  fi
+
+            - name: go vet
+              run: go vet ./...
+
+            # Runs real `terraform` plan/apply/import cycles against an in-process fake
+            # API; terraform-plugin-testing installs a Terraform CLI when none is on PATH.
+            - name: go test
+              run: go test -race -count=1 ./...
+
+            - name: Registry docs are up to date
+              run: |
+                  go generate ./...
+                  if [ -n "$(git status --porcelain -- docs examples)" ]; then
+                    echo "::error::docs/ is stale: run go generate ./... in packages/terraform-provider-maple"
+                    git status --porcelain -- docs examples
+                    exit 1
+                  fi
+
     # The single required check, and branch protection must require only this one:
     # skipped path-filtered jobs never report, so requiring them would hang forever.
     ci:
@@ -697,11 +785,13 @@ jobs:
             - typescript
             - tests
             - postgres-connection-e2e
+            - workers-e2e
             - clickhouse-schema-e2e
             - local-checkpoint-native
             - local-archive-native
             - ingest-rust
             - otel-collector
+            - terraform-provider
         steps:
             - name: Fail if any job failed or was cancelled
               if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}

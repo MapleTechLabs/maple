@@ -7,14 +7,7 @@ navLabel: "Foldkit"
 sdk: "effect"
 ---
 
-The `/foldkit` entry point of `@maple-dev/effect-sdk` instruments a [Foldkit](https://foldkit.dev) app. Foldkit already runs every Command inside an Effect span named after it. On their own those spans are disconnected root traces, one per focus move or scroll. `MapleFoldkit` turns them into one trace per page load or navigation, drops the Commands that did no real work, and adds crash reports and slow-phase spans.
-
-<div class="flex flex-wrap gap-2 mb-8 not-prose">
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Browsers</span>
-    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Foldkit</span>
-</div>
-
-> Already installed the SDK? If not, see the [install instructions](/docs/sdks/effect#install). The `/foldkit` entry point ships in `@maple-dev/effect-sdk` 0.12.0 and later. New to Foldkit? Start with its [getting started guide](https://foldkit.dev/get-started).
+The `/foldkit` entry point of `@maple-dev/effect-sdk` instruments a [Foldkit](https://foldkit.dev) app. It ships in `@maple-dev/effect-sdk` 0.12.0 and later; [install the SDK](/docs/sdks/effect#install) first, and see Foldkit's [getting started guide](https://foldkit.dev/get-started) if you are new to it. Foldkit already runs every Command inside an Effect span named after it. On their own those spans are disconnected root traces, one per focus move or scroll. `MapleFoldkit` turns them into one trace per page load or navigation, drops the Commands that did no real work, and adds crash reports and slow-phase spans.
 
 ## Quick start
 
@@ -54,7 +47,7 @@ Annotate the `routing` callback parameters. TypeScript cannot infer them through
 
 `instrument` merges the telemetry layer into `resources` and wraps `init`, `update`, `routing.onUrlChange`, `crash` and `slow`. Every other field passes through unchanged, and it works the same on a `makeElement` config. Your own `crash.report` and `slow.onSlow` callbacks still run after Maple's.
 
-`MapleFoldkit.make` builds on [`MapleFlush.make`](/docs/sdks/effect-client), so flush on unload, sessions, session replay, privacy and global error capture all work as they do in the browser entry point, and it accepts every one of its options.
+`MapleFoldkit.make` builds on [`MapleFlush.make`](/docs/sdks/effect-client#mapleflushmake), so flush on unload, sessions, session replay, privacy and global error capture all work as they do in the browser entry point, and it accepts every one of its options.
 
 ## What it records
 
@@ -103,7 +96,7 @@ When the Foldkit runtime crashes, the SDK reports an exception named `foldkit.cr
 
 ### Slow phases
 
-An `update` over 16ms, or a `view` or DOM patch over 50ms, becomes a `foldkit.update`, `foldkit.view` or `foldkit.patch` span under the open navigation. Each carries `maple.foldkit.phase`, `maple.foldkit.duration_ms`, `maple.foldkit.threshold_ms` and, where known, `maple.foldkit.message`.
+An `update` over 16ms, or a `view` or DOM patch over 50ms, becomes a `foldkit.update`, `foldkit.view` or `foldkit.patch` span under the open navigation. Each carries `maple.foldkit.phase`, `maple.foldkit.duration_ms`, `maple.foldkit.threshold_ms` and, where known, `maple.foldkit.message`. Slow phases are not recorded while the tab is hidden, because the browser throttles background tabs.
 
 Change the budgets with `slowPhases: { Update: 8 }` (`0` records every run), or turn the spans off with `slowPhases: false`. A `slow.thresholdOverrides` in your Foldkit config wins over `slowPhases`.
 
@@ -133,7 +126,7 @@ The full path stays on the span as `url.path`.
 
 ## Configuration
 
-`MapleFoldkit.make()` accepts every [`MapleFlush.make` option](/docs/sdks/effect#configuration-reference) (`serviceName`, `ingestKey`, `region`, `endpoint`, `replay`, `privacy`, the span options, `autoFlushInterval`, ...) plus these:
+`MapleFoldkit.make()` accepts every [`MapleFlush.make` option](/docs/sdks/effect-client#mapleflushmake) (`serviceName`, `ingestKey`, `region`, `endpoint`, `replay`, `privacy`, the span options, `autoFlushInterval`, ...) plus these:
 
 | Option                 | Type                                    | Default                               | Description                                                                    |
 | ---------------------- | --------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
@@ -144,7 +137,7 @@ The full path stays on the span as `url.path`.
 | `routeName`            | `(pathname: string) => string`          | the path                              | Navigation span name suffix, e.g. a route name or template                     |
 | `slowPhases`           | `false \| { Update?, View?, Patch? }`   | `{ Update: 16, View: 50, Patch: 50 }` | Slow-phase budgets in ms, or `false` to turn them off                          |
 
-The returned object has `instrument`, plus the `layer`, `flush()` and `dispose()` of [`MapleFlush.make`](/docs/sdks/effect-client). `dispose()` also ends any open navigation so it goes out with the final flush.
+The returned object has `instrument`, plus the `layer`, `flush()` and `dispose()` of [`MapleFlush.make`](/docs/sdks/effect-client#mapleflushmake). `dispose()` also ends any open navigation so it goes out with the final flush.
 
 ## Verify
 

@@ -1,4 +1,4 @@
-import { Effect, Option, Result, Schema, Stream } from "effect"
+import { Context, Effect, Option, Result, Schema, Stream } from "effect"
 import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest, Url } from "effect/http"
 import type { HttpClientError, HttpClientResponse } from "effect/http"
@@ -267,6 +267,14 @@ export type ResolveHost = (hostname: string) => Effect.Effect<ReadonlyArray<stri
 export const isPrivateAddress = (address: string): boolean =>
 	address.includes(":") ? isPrivateIPv6(address) : !IPV4_LITERAL_RE.test(address) || isPrivateIPv4(address)
 
+/**
+ * The TLS name a guarded hop verifies when it dials a pinned address, null when the URL host is
+ * the address itself. Fetch gets it as `tls.serverName`; other transports read it from here.
+ */
+export const DialServerName = Context.Reference<string | null>("@maple/safe-fetch/DialServerName", {
+	defaultValue: () => null,
+})
+
 /** The request a hop actually sends, and the TLS name to verify when it dials an address. */
 interface Dial {
 	readonly request: HttpClientRequest.HttpClientRequest
@@ -321,6 +329,7 @@ const guardWith = <E, R, E2>(
 						...(serverName === null ? undefined : { tls: { serverName } }),
 					}),
 					Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
+					Effect.provideService(DialServerName, serverName),
 				),
 			),
 		)

@@ -2,12 +2,12 @@
 title: "CLI reference"
 description: "Every maple command, argument and flag, plus the local server's endpoints, environment variables and a troubleshooting guide."
 group: "Reference"
-order: 3
+order: 6
 ---
 
 The `maple` binary is one CLI with two backends: the local server it starts itself (`maple start`) and a hosted Maple workspace (`maple auth login`). Every query command runs against whichever backend is [resolved](#auth-and-configuration) for that invocation. Output is JSON by default, clean enough to pipe into `jq` or an agent.
 
-New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use the CLI with hosted Maple](#using-the-cli-with-hosted-maple). This page is the complete surface.
+New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use the CLI with hosted Maple](#using-the-cli-with-hosted-maple). This page lists every command.
 
 ## Command index
 
@@ -16,14 +16,15 @@ New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use th
 | [`maple start`](#maple-start) · [`stop`](#maple-stop) · [`reset`](#maple-reset)                                                                                   | Run the local server, stop it, or clear its live data        |
 | [`maple checkpoint`](#maple-checkpoint) · [`restore`](#maple-restore)                                                                                             | Take a restore point of the local store, or roll back to one |
 | [`maple archive …`](#maple-archive)                                                                                                                               | Export sealed days to Parquet and manage those archives      |
+| [`maple delete`](#maple-delete)                                                                                                                                   | Delete one service's or namespace's local telemetry          |
 | [`maple schema …`](#maple-schema)                                                                                                                                 | Inspect and migrate the local store's schema                 |
-| [`maple update`](#maple-update)                                                                                                                                   | Upgrade a script-installed binary in place                   |
+| [`maple update`](#maple-update) · [`changelog`](#maple-changelog)                                                                                                 | Upgrade a script-installed binary, read the release notes    |
 | [`maple services`](#maple-services) · [`diagnose`](#maple-diagnose-service-name) · [`service-map`](#maple-service-map) · [`top-ops`](#maple-top-ops-service-name) | Services, their health, dependencies and hottest operations  |
 | [`maple traces`](#maple-traces) · [`trace`](#maple-trace-trace-id) · [`slow-traces`](#maple-slow-traces)                                                          | Search spans, inspect one trace, find the slowest            |
 | [`maple errors`](#maple-errors) · [`error`](#maple-error-fingerprint-hash)                                                                                        | Error groups by fingerprint, and one group in detail         |
 | [`maple logs`](#maple-logs) · [`log-patterns`](#maple-log-patterns)                                                                                               | Search logs, or cluster them into templates                  |
 | [`maple attributes keys`](#maple-attributes-keys) · [`values`](#maple-attributes-values-key)                                                                      | Discover attribute keys and their values                     |
-| [`maple metrics`](#maple-metrics) · [`query`](#maple-query-sql)                                                                                                   | List metrics; run raw SQL (local only)                       |
+| [`maple metrics`](#maple-metrics) · [`metrics show`](#maple-metrics-show-metric-name) · [`query`](#maple-query-sql)                                               | List metrics, read one over time, run read-only SQL          |
 | [`maple timeseries`](#maple-timeseries) · [`breakdown`](#maple-breakdown) · [`compare`](#maple-compare)                                                           | Bucketed metrics, top-N breakdowns, two windows side by side |
 | [`maple auth …`](#maple-auth-login) · [`whoami`](#maple-whoami) · [`use`](#maple-use-localremoteauto)                                                             | Sign in to a workspace, see the resolved backend, pin one    |
 
@@ -58,24 +59,27 @@ Local mode only. `maple start` is the long-lived process that owns the embedded 
 
 Start the local ingest and query server.
 
-| Flag                                         | Default          | Description                                                                                                                                                                                     |
-| -------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--host <address>`                           | `127.0.0.1`      | Bind address. Off loopback, set `MAPLE_LOCAL_INGEST_KEY` and `MAPLE_LOCAL_ACCESS_TOKEN`, or the UI, OTLP ingest and raw SQL are open to the network (see [Server endpoints](#server-endpoints)) |
-| `--advertise-host <host>`                    | the bind address | Hostname printed for clients and used by the bundled UI                                                                                                                                         |
-| `--port <int>`                               | `4318`           | Port for OTLP ingest, the query API and the bundled UI                                                                                                                                          |
-| `--data-dir <path>`                          | `~/.maple/data`  | Embedded ClickHouse data directory                                                                                                                                                              |
-| `--offline`                                  | `false`          | Serve the UI bundled in the binary instead of linking to `local.maple.dev`                                                                                                                      |
-| `--background`, `-d`                         | `false`          | Run detached, logging to `~/.maple/maple.log`; stop with `maple stop`                                                                                                                           |
-| `--reset`                                    | `false`          | Wipe live data before starting, keeping checkpoints. For an incompatible upgrade                                                                                                                |
-| `--checkpoint-interval <dur>`                | `30m`            | How often to refresh the restore point while running (`45s`, `2h`, or `off`)                                                                                                                    |
-| `--on-dirty-store <policy>`                  | `fail`           | What to do when the store was not cleanly closed: `fail`, `wipe` or `restore-checkpoint`                                                                                                        |
-| `--chdb-config-file <path>`                  | generated        | Your own ClickHouse config for the embedded engine. Must keep backups enabled for checkpoints to work                                                                                           |
-| `--minimum-raw-telemetry-retention-days <n>` |                  | Persist a retention floor for the raw tables (at least 90 days). Survives reset and restore                                                                                                     |
+| Flag                                         | Default         | Description                                                                                                                                                                                                            |
+| -------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--host <address>`                           | `127.0.0.1`     | Bind address. Off loopback, set `MAPLE_LOCAL_INGEST_KEY` and `MAPLE_LOCAL_ACCESS_TOKEN`, or the UI, OTLP ingest and raw SQL are open to the network (see [Server endpoints](#server-endpoints))                        |
+| `--advertise-host <host>`                    |                 | Hostname printed for clients and used by the bundled UI. Defaults to the bind address (`--host`)                                                                                                                       |
+| `--port <int>`                               | `4318`          | Port for OTLP ingest, the query API and the bundled UI                                                                                                                                                                 |
+| `--data-dir <path>`                          | `~/.maple/data` | Embedded ClickHouse data directory                                                                                                                                                                                     |
+| `--offline`                                  | `false`         | Serve the UI bundled in the binary instead of linking to `local.maple.dev`                                                                                                                                             |
+| `--background`, `-d`                         | `false`         | Run detached, logging to `~/.maple/maple.log`; stop with `maple stop`                                                                                                                                                  |
+| `--reset`                                    | `false`         | Wipe live data before starting, keeping checkpoints. For an incompatible upgrade                                                                                                                                       |
+| `--checkpoint-interval <dur>`                | `30m`           | How often to refresh the restore point while running (`45s`, `2h`, or `off`)                                                                                                                                           |
+| `--on-dirty-store <policy>`                  | `fail`          | What to do when the store was not cleanly closed: `fail`, `wipe` or `restore-checkpoint`                                                                                                                               |
+| `--chdb-config-file <path>`                  |                 | Your own ClickHouse config for the embedded engine, instead of the generated one. Must keep backups enabled for checkpoints to work                                                                                    |
+| `--minimum-raw-telemetry-retention-days <n>` |                 | Persist a retention floor for the raw tables (at least 90 days). Survives reset and restore                                                                                                                            |
+| `--in-memory`                                | `false`         | Keep telemetry for this run only, in a throwaway store deleted on exit, with no checkpoints. Cannot be combined with `-d`, `--data-dir`, `--reset`, `--checkpoint-interval`, `--on-dirty-store` or the retention floor |
+| `--projector-module <path>`                  |                 | Load a trusted local projector `.mjs` module. Repeatable. The module runs with Maple's permissions                                                                                                                     |
 
 ```bash
 maple start                    # foreground, UI from local.maple.dev
 maple start --offline          # foreground, bundled UI, no internet needed
 maple start -d --port 4400     # detached on a custom port
+maple start --in-memory        # throwaway store, deleted on exit
 maple start --host 0.0.0.0 --advertise-host maple.home.arpa --offline
 ```
 
@@ -108,21 +112,39 @@ Create and validate a restorable checkpoint of the local store. Works out of the
 | `--port <int>`      | `4318`          | Port of the running server  |
 | `--data-dir <path>` | `~/.maple/data` | The server's data directory |
 
-If the server was started with a custom host, port or data directory, pass the same values here.
+If the server was started with a custom data directory, pass the same one. Without `--port`, the command reads the server's address from the store's discovery file.
 
 ### `maple restore`
 
 Restore the local store from the current checkpoint. Refuses to run while a server owns the store. The existing store is moved beside the data directory as `<data-dir>.quarantine-<ids>`, never deleted; `maple schema gc` lists it and `--apply` removes it.
 
-| Flag                     | Default                | Description                             |
-| ------------------------ | ---------------------- | --------------------------------------- |
-| `--data-dir <path>`      | `~/.maple/data`        | Store to restore                        |
-| `--checkpoint-id <uuid>` | the current checkpoint | Restore one specific checkpoint instead |
-| `--yes`, `-y`            | `false`                | Skip the confirmation prompt            |
+| Flag                     | Default         | Description                                                |
+| ------------------------ | --------------- | ---------------------------------------------------------- |
+| `--data-dir <path>`      | `~/.maple/data` | Store to restore                                           |
+| `--checkpoint-id <uuid>` |                 | Restore one specific checkpoint instead of the current one |
+| `--yes`, `-y`            | `false`         | Skip the confirmation prompt                               |
 
 ```bash
 maple restore --yes
 maple restore --checkpoint-id 01234567-89ab-4cde-8fab-0123456789ab --yes
+```
+
+### `maple delete`
+
+Delete one service's or namespace's telemetry from the local store, in the raw tables and every derived rollup. Local mode only. Without `--yes` it only prints what would be deleted.
+
+| Flag                 | Description                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `--service <name>`   | The `service.name` whose telemetry to delete                                         |
+| `--namespace <name>` | The `service.namespace` whose telemetry to delete. With `--service`, both must match |
+| `--env <name>`       | Only rows whose deployment environment equals this value                             |
+| `--before <age\|ts>` | Only rows older than an age (`7d`, `12h`) or a UTC timestamp, floored to the hour    |
+| `--yes`              | Delete. Without it the command is a dry run                                          |
+
+```bash
+maple delete --service checkout-pr-42          # preview
+maple delete --namespace pr-42 --yes
+maple delete --service api --before 7d --yes
 ```
 
 ### `maple archive`
@@ -158,24 +180,29 @@ Inspect and migrate the local store's schema. Needed only when a release note sa
 | `schema abandon [--yes]`                    | Quarantine an unfinished staged target, preserving the active source (also when the source was left dirty)                                                                                     |
 | `schema gc [--apply] [--release-preserved]` | List what restores, resets and migrations set aside (quarantined stores, migration sources, stale locks). `--apply` deletes it; `--release-preserved` also unpins the checkpoints a reset kept |
 
-All four take `--data-dir <path>` (default `~/.maple/data`).
+All five take `--data-dir <path>` (default `~/.maple/data`).
 
 ### `maple update`
 
-Update a script-installed binary to the latest release: download, verify the checksum, install in place.
+Update a script-installed binary to the latest release: download, verify the checksum and release signature, install in place.
 
-| Flag             | Description                                      |
-| ---------------- | ------------------------------------------------ |
-| `--check`        | Only report whether a newer version is available |
-| `--tag <vX.Y.Z>` | Install a specific release instead of the latest |
+| Flag                        | Description                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| `--check`                   | Only report whether a newer version is available                                   |
+| `--tag <vX.Y.Z>`            | Install a specific release instead of the latest                                   |
+| `--insecure-skip-signature` | Install even if the signature is missing or invalid. The checksum is still checked |
 
 Homebrew installs refuse `maple update` so the package manager stays in charge; run `brew upgrade maple` instead.
+
+### `maple changelog`
+
+Print the release notes for the installed version. `--since <version>` prints every release after that version instead (`maple changelog --since 0.0.20`). Text by default; `--format json` for JSON.
 
 ## Services
 
 ### `maple services`
 
-List active services with throughput, error rate and P95 latency. Flags: `--since` / `--start` / `--end`, `--env`.
+List active services with throughput, error rate and P95 latency. Flags: `--since` / `--start` / `--end`, `--env`, `--service`/`-s` (services whose name contains the text), `--limit` (default `50`).
 
 ### `maple diagnose <service-name>`
 
@@ -216,7 +243,7 @@ Search traces and spans.
 | `--max-duration-ms <int>` | Maximum duration in milliseconds                  |
 | `--http-method <method>`  | Filter by HTTP method (`GET`, `POST`, …)          |
 
-Plus `--since` / `--start` / `--end`, `--service`, `--limit`, `--offset`.
+Plus `--since` / `--start` / `--end`, `--service`, `--env`, `--limit`, `--offset`.
 
 ```bash
 maple traces --service api --min-duration-ms 500 --errors --since 1h
@@ -226,7 +253,8 @@ maple traces --service api --min-duration-ms 500 --errors --since 1h
 
 Inspect one trace: the full span tree plus correlated logs.
 
-- **`<trace-id>`**: the trace to inspect
+- **`<trace-id>`**: the trace to inspect, 32 hex characters
+- Flags: `--since` / `--start` / `--end`. With none set, the command looks back 24 hours, then up to 30 days
 
 ### `maple slow-traces`
 
@@ -251,17 +279,18 @@ One error group in detail: sample traces and a timeseries.
 
 Search logs.
 
-| Flag                 | Alias | Description                                          |
-| -------------------- | ----- | ---------------------------------------------------- |
-| `--severity <level>` |       | `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` or `FATAL` |
-| `--search <text>`    | `-q`  | Substring match on the body                          |
-| `--trace-id <id>`    |       | Only logs from one trace                             |
+| Flag                 | Alias | Description                                                    |
+| -------------------- | ----- | -------------------------------------------------------------- |
+| `--severity <level>` |       | `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` or `FATAL`           |
+| `--search <text>`    | `-q`  | Substring match on the body                                    |
+| `--trace-id <id>`    |       | Only logs from one trace                                       |
+| `--attributes`       |       | Include every log attribute on each entry, not only error keys |
 
-Plus `--since` / `--start` / `--end`, `--service`, `--limit`, `--offset`.
+Plus `--since` / `--start` / `--end`, `--service`, `--env`, `--limit`, `--offset`.
 
 ### `maple log-patterns`
 
-Cluster logs into templates to surface the noisiest patterns. Flags: `--since` / `--start` / `--end`, `--service`, `--severity`, `--search`/`-q`, `--limit`.
+Cluster logs into templates to surface the noisiest patterns. Flags: `--since` / `--start` / `--end`, `--service`, `--env`, `--severity`, `--search`/`-q`, `--limit`.
 
 ## Attributes
 
@@ -289,17 +318,31 @@ List the values seen for one attribute key.
 
 List available metrics. Flags: `--since` / `--start` / `--end`, `--service`, `--search`/`-q`, `--limit`.
 
-### `maple query "<sql>"`
+### `maple metrics show <metric-name>`
 
-Run raw ClickHouse SQL against the local store, for anything the typed commands don't cover.
+One metric's values over time, per service. Monotonic counters are shown as a per-second rate, every other type as the average per bucket.
 
-- **`<sql>`**: the query to run
+- **`<metric-name>`**: the exact metric name, from `maple metrics`
+- `--bucket <seconds>`: bucket size, default about 60 buckets over the window
+- Flags: `--since` / `--start` / `--end`, `--service`, `--env` (local mode only)
 
 ```bash
-maple query "SELECT ServiceName, count() FROM traces GROUP BY ServiceName ORDER BY 2 DESC"
+maple metrics show http.server.request.count --since 1h
 ```
 
-> **Local only.** Raw SQL against the hosted warehouse would let one client read other organizations' data, so `maple query` returns a clear error in remote mode. Every other command works in both modes.
+### `maple query "<sql>"`
+
+Run a read-only ClickHouse `SELECT`, for anything the typed commands don't cover. Writes, multiple statements and table functions are rejected.
+
+- **`<sql>`**: the query to run
+- Flags: `--since` / `--start` / `--end`, the window the macros use
+
+The macros `$__orgFilter`, `$__timeFilter(col)`, `$__startTime`, `$__endTime` and `$__interval_s` expand in both modes (see [SQL](/docs/reference/sql)). Locally, SQL without macros also runs as written. Remote queries must include `$__orgFilter` and return at most 100 rows. Quote the SQL in single quotes so the shell leaves `$__` alone:
+
+```bash
+maple query "SELECT ServiceName, count() FROM traces GROUP BY ServiceName ORDER BY 2 DESC"   # local
+maple query 'SELECT ServiceName, count() AS spans FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY ServiceName' --since 1h
+```
 
 ## Analytics
 
@@ -352,7 +395,7 @@ maple services --since 1h
 
 `maple auth login` opens your browser, and you approve the CLI for one organization. The CLI then holds an [API key](/docs/reference/authentication#api-keys) with full access that expires after 90 days. It appears under **Settings → Keys** with the description "Created by maple auth login". Run `maple auth login` again when it expires, and `maple auth logout` to revoke it.
 
-Every command except `maple query` works in remote mode. The server commands (`start`, `stop`, `reset`, `checkpoint`, `restore`, `archive`, `schema`) always act on the local store. Which region your organization is in is on [Regions](/docs/reference/regions).
+Every query command works in remote mode, `maple query` included. The server commands (`start`, `stop`, `reset`, `checkpoint`, `restore`, `delete`, `archive`, `schema`) always act on the local store. Which region your organization is in is on [Regions](/docs/reference/regions).
 
 ## Auth and configuration
 
@@ -390,7 +433,7 @@ Pin the default backend so commands stop auto-detecting, or `auto` to clear the 
 
 1. An explicit `--local` or `--remote` flag.
 2. The default pinned with `maple use`.
-3. Auto-detect: a stored credential implies remote; otherwise a quick `GET /health` probe of the local server implies local. If neither is available the CLI prints what to do next.
+3. Auto-detect: an explicitly set `MAPLE_LOCAL_URL` means local; otherwise a stored credential means remote; otherwise the CLI probes the local server (`GET /local/status`, falling back to `/health` for older binaries). If neither is available the CLI prints what to do next.
 
 ## Server endpoints
 
@@ -398,16 +441,17 @@ Pin the default backend so commands stop auto-detecting, or `auto` to clear the 
 
 | Method    | Path                                                                                                          | Auth                 | Purpose                                                                                 |
 | --------- | ------------------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
-| `GET`     | `/health`                                                                                                     | None                 | Liveness probe, returns `OK`. Used by mode auto-detect                                  |
+| `GET`     | `/health`                                                                                                     | None                 | Liveness probe, returns `OK`                                                            |
 | `POST`    | `/v1/traces`                                                                                                  | Ingest key           | OTLP traces ingest, responds `{ "accepted": <rowCount> }`                               |
 | `POST`    | `/v1/logs`                                                                                                    | Ingest key           | OTLP logs ingest                                                                        |
 | `POST`    | `/v1/metrics`                                                                                                 | Ingest key           | OTLP metrics ingest                                                                     |
 | `POST`    | `/local/query`                                                                                                | Access token         | Run SQL: `{ "sql": "..." }` in, a bare JSON array of rows out                           |
-| `GET`     | `/local/status`                                                                                               | Access token         | Server identity, version and last ingest time                                           |
+| `GET`     | `/local/status`                                                                                               | Access token         | Server identity, version and last ingest time. Used by mode auto-detect                 |
 | `GET`     | `/login`, `POST /local/auth/login`                                                                            | None                 | Sign-in page; exchanges the access token for a session cookie                           |
 | `GET`     | any other path                                                                                                | Access token         | The bundled UI, with `--offline` only. Signed-out page loads go to `/login`             |
 | `OPTIONS` | `*`                                                                                                           | None                 | CORS and private-network preflight, for the configured hosted UI origin only            |
 | `POST`    | `/local/checkpoint/backup`                                                                                    | Maintenance token    | Take a checkpoint. `maple checkpoint` calls this                                        |
+| `POST`    | `/local/maintenance/delete`                                                                                   | Maintenance token    | Delete one service's or namespace's telemetry. `maple delete` calls this                |
 | `POST`    | `/local/retention/retire`                                                                                     | Maintenance token    | Delete one UTC day from the live tables. `maple archive retire-live --apply` calls this |
 | `GET`     | `/local/eventing/health`, `/projections`, `/consumers`, `/outbox`                                             | Maintenance token    | Read local event projection and consumer state                                          |
 | `POST`    | `/local/eventing/projections`, `/consumers`, `/consumers/disable`, `/consumers/accept-gap`, `/outbox/abandon` | Maintenance token    | Administer local event projections and consumers                                        |
@@ -463,14 +507,14 @@ OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The 
 | `MAPLE_FORMAT`               | `json`                    | `json` or `table`, same as `--format`                                                                                                                          |
 | `MAPLE_NO_UPDATE_CHECK`      |                           | Any non-empty value disables the startup update check (the Homebrew wrapper sets it). The check runs at most once per 24 hours, only when stderr is a terminal |
 
-**CLI telemetry.** The CLI sends its own traces, logs and metrics (service `maple-cli`) to Maple by default. See [What connects to the internet](/docs/local-mode#what-connects-to-the-internet) for what is recorded.
+**CLI telemetry.** The CLI sends its own traces and metrics (service `maple-cli`) to Maple by default. See [What connects to the internet](/docs/local-mode#what-connects-to-the-internet) for what is recorded.
 
-| Variable            | Default                                | Purpose                                                                                                                                                                                                                                                             |
-| ------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MAPLE_TELEMETRY`   | on                                     | `off` disables the CLI's own telemetry entirely. Any other value leaves it on                                                                                                                                                                                       |
-| `MAPLE_INGEST_KEY`  | a key built into the binary            | Ingest key used for the CLI's own telemetry                                                                                                                                                                                                                         |
-| `MAPLE_ENDPOINT`    | `https://ingest.maple.dev`             | Where the CLI's own telemetry is sent. Takes precedence over `OTEL_EXPORTER_OTLP_ENDPOINT`, which is also read. If you export `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` for your app in the same shell, the CLI's telemetry goes to your local server too |
-| `MAPLE_ENVIRONMENT` | `ci` when `CI` is set, otherwise `cli` | `deployment.environment` reported on the CLI's own telemetry                                                                                                                                                                                                        |
+| Variable            | Default                                                                           | Purpose                                                                                                                                                                                                                                                             |
+| ------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MAPLE_TELEMETRY`   | on                                                                                | `off` disables the CLI's own telemetry entirely. Any other value leaves it on                                                                                                                                                                                       |
+| `MAPLE_INGEST_KEY`  | a key built into the binary                                                       | Ingest key used for the CLI's own telemetry                                                                                                                                                                                                                         |
+| `MAPLE_ENDPOINT`    | `https://ingest.maple.dev` (`https://ingest.eu.maple.dev` with `MAPLE_REGION=eu`) | Where the CLI's own telemetry is sent. Takes precedence over `OTEL_EXPORTER_OTLP_ENDPOINT`, which is also read. If you export `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` for your app in the same shell, the CLI's telemetry goes to your local server too |
+| `MAPLE_ENVIRONMENT` | `ci` when `CI` is set, otherwise `cli`                                            | `deployment.environment` reported on the CLI's own telemetry                                                                                                                                                                                                        |
 
 **Install script** (`scripts/install.sh`):
 

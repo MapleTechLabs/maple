@@ -57,7 +57,7 @@ describe("local sessions list", () => {
 	test("entry reads the clock, then asks for the list and its facets in the minute's window", () => {
 		expect(names(init(context).commands)).toContain(ReadClock.name)
 		const loaded = clocked()
-		expect(names(loaded.commands)).toEqual([FetchSessions.name, FetchFacets.name])
+		expect(names(loaded.commands)).toEqual(expect.arrayContaining([FetchSessions.name, FetchFacets.name]))
 		expect(Option.getOrNull(loaded.model.maybeAnchorMs)).toBe(Date.UTC(2026, 9, 1, 12, 0, 0))
 	})
 

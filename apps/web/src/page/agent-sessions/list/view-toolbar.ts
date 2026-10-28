@@ -51,7 +51,13 @@ const tooltipTrigger = <M>(h: HtmlBuilder<M>, id: string) => [
 export const toolbar = (
 	h: H,
 	model: Model,
-	options: Readonly<{ sessionCount: number | undefined; totalCount?: number; isWaiting: boolean }>,
+	options: Readonly<{
+		sessionCount: number | undefined
+		totalCount?: number
+		isWaiting: boolean
+		/** The failure card's Try again is the one retry while the list is failed. */
+		isFailed?: boolean
+	}>,
 ): Html =>
 	h.div(
 		[h.Class("flex flex-wrap items-center justify-between gap-3")],
@@ -92,11 +98,15 @@ export const toolbar = (
 							"With errors",
 						],
 					),
-					refreshButton(h, {
-						onRefresh: Message.ClickedReload(),
-						isPending: model.isReloading,
-						label: "Reload",
-					}),
+					...(options.isFailed === true
+						? []
+						: [
+								refreshButton(h, {
+									onRefresh: Message.ClickedReload(),
+									isPending: model.isReloading,
+									label: "Reload",
+								}),
+							]),
 				],
 			),
 		],

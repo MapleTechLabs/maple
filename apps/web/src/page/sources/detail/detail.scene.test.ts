@@ -583,7 +583,7 @@ describe("integration sources", () => {
 			given(withUsage),
 			resolveTheme,
 			expectView(text("300 KB")).toExist(),
-			expectView(text("2.0K metric points")).toExist(),
+			expectView(text("2K metric points")).toExist(),
 		)
 	})
 

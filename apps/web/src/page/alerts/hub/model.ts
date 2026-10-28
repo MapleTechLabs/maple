@@ -14,6 +14,7 @@ import { AlertsSearch } from "../../../route/search"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as DestinationDialog from "../destination/dialog"
+import { ServiceNamespaces } from "./uptime-groups"
 
 // The `/alerts` hub.
 
@@ -62,6 +63,8 @@ export const Model = Schema.Struct({
 	newRuleMenu: Menu.Model,
 	/** Uptime tab: `uptimeMonitors.list`, read only while the tab is open. */
 	monitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
+	/** Uptime tab: each service's namespace over the last day, to group the monitors by. */
+	serviceNamespaces: KeyedSchema(ServiceNamespaces, LoadFailure),
 	uptimeQuery: Schema.String,
 	uptimeStatus: UptimeStatusFilter,
 	uptimeKind: UptimeKindFilter,

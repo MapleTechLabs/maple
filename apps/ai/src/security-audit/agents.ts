@@ -14,7 +14,7 @@ import { AgentPolicy } from "@yielded/agent/agent-policy"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
 import * as InMemory from "@yielded/agent/in-memory"
 import * as Output from "@yielded/agent/output"
-import { Cause, type Duration, Effect, Layer, Schema } from "effect"
+import { Cause, type Duration, Effect, Layer, Ref, Schema } from "effect"
 import { liveContextLimit, MODEL_RETRIES, REPEATED_TOOL_CALLS, TOOL_CONCURRENCY } from "../chat/budgets"
 import { reportedCostOf } from "../platform/genai-spans"
 import type { LlmClients, ResolvedModel } from "../platform/Llm"
@@ -84,27 +84,42 @@ const auditAgent = (role: AuditRole, model: ResolvedModel) =>
 export const makeAuditAgents = (models: AuditModels, source: SourceReaderApi) =>
 	Effect.gen(function* () {
 		const clients = yield* Effect.context<LlmClients>()
-		const tools = auditToolHandlers(source)
 		const run = (invocation: AgentInvocation) => {
 			const model = modelFor(invocation.role, models)
 			const fail = (message: string) =>
 				new AuditAgentError({ message, role: invocation.role, agentId: invocation.agentId })
-			return AgentRuntime.run(auditAgent(invocation.role, model), invocation.prompt, {
-				// OpenRouter's own price for each call; Maple never prices tokens itself.
-				estimateCostMicrousd: (request) => {
-					const cost = reportedCostOf(request.finishMetadata)
-					return Effect.succeed(
-						cost === undefined
-							? { costMicrousd: 0, pricingStatus: "unknown" as const }
-							: {
-									costMicrousd: Math.round(cost * 1_000_000),
-									pricingStatus: "estimated" as const,
-								},
-					)
-				},
-			}).pipe(
-				Effect.map((result) => ({
+			return Effect.gen(function* () {
+				// Counted per invocation: an answer given without one tool call read nothing.
+				const calls = yield* Ref.make(0)
+				const tools = auditToolHandlers(
+					source,
+					Ref.update(calls, (n) => n + 1),
+				)
+				const result = yield* AgentRuntime.run(
+					auditAgent(invocation.role, model),
+					invocation.prompt,
+					{
+						// OpenRouter's own price for each call; Maple never prices tokens itself.
+						estimateCostMicrousd: (request) => {
+							const cost = reportedCostOf(request.finishMetadata)
+							return Effect.succeed(
+								cost === undefined
+									? { costMicrousd: 0, pricingStatus: "unknown" as const }
+									: {
+											costMicrousd: Math.round(cost * 1_000_000),
+											pricingStatus: "estimated" as const,
+										},
+							)
+						},
+					},
+				).pipe(
+					// Each invocation is an entry point: one agent run with its own tools and empty history.
+					// oxlint-disable-next-line effecttsgo/strict-effect-provide
+					Effect.provide(Layer.merge(tools.layer, InMemory.layer)),
+				)
+				return {
 					text: result.output,
+					toolCalls: yield* Ref.get(calls),
 					...(result.usage === undefined
 						? undefined
 						: {
@@ -114,15 +129,13 @@ export const makeAuditAgents = (models: AuditModels, source: SourceReaderApi) =>
 									costUsd: result.usage.costMicrousd / 1_000_000,
 								},
 							}),
-				})),
+				}
+			}).pipe(
 				// One agent's failure, typed or a defect, is that invocation's failure, never the run's.
 				Effect.mapError((error) => fail(Cause.pretty(Cause.fail(error)).slice(0, 600))),
 				Effect.catchDefect((defect) =>
 					Effect.fail(fail(Cause.pretty(Cause.die(defect)).slice(0, 600))),
 				),
-				// Each invocation is an entry point: one agent run with its own tools and empty history.
-				// oxlint-disable-next-line effecttsgo/strict-effect-provide
-				Effect.provide(Layer.merge(tools.layer, InMemory.layer)),
 				Effect.provide(clients),
 				Effect.withSpan("SecurityAudit.agent", {
 					attributes: {

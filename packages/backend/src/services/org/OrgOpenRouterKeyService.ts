@@ -291,4 +291,17 @@ export class OrgOpenRouterKeyService extends Context.Service<
 		Layer.provide(AutumnClient.layer),
 		Layer.provide(FetchHttpClient.layer),
 	)
+
+	/** Runs resolve to `apiKey` for every org, for tests; the settings methods are not served. */
+	static readonly fixedRunKey = (apiKey: Option.Option<string>) => {
+		const unserved = Effect.fail(
+			new OpenRouterKeyPersistenceError({ message: "fixedRunKey serves runs only" }),
+		)
+		return Layer.succeed(this, {
+			get: () => unserved,
+			set: () => unserved,
+			remove: () => unserved,
+			resolveForRun: () => Effect.succeed(Option.map(apiKey, Redacted.make)),
+		})
+	}
 }

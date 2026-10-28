@@ -2,7 +2,16 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { alert, alertDescription } from "../../ui/alert"
-import { emptyMessage } from "../../ui/empty"
+import { linkButton } from "../../ui/button"
+import {
+	empty as emptyBlock,
+	emptyContent,
+	emptyDescription,
+	emptyHeader,
+	emptyMedia,
+	emptyMessage,
+	emptyTitle,
+} from "../../ui/empty"
 import { icon } from "../../ui/icon"
 import { skeleton } from "../../ui/skeleton"
 import type { PageViewInputs } from "../contract"
@@ -181,6 +190,23 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 	}
 }
 
+/** The Data platform tab for an admin without the add-on: what it does and where to get it. */
+const lockedDataPlatform = (h: H): Html =>
+	emptyBlock(h, [
+		emptyHeader(h, [
+			emptyMedia(h, { variant: "icon" }, [icon(h, "LockIcon")]),
+			emptyTitle(h, ["Needs the Bring your own cloud add-on"]),
+			emptyDescription(h, [
+				"Store this organization's telemetry in a ClickHouse you run, with Maple querying it in place.",
+			]),
+		]),
+		emptyContent(h, [
+			linkButton(h, { size: "sm", href: hrefOf(AppRoute.Settings({ search: { tab: "billing" } })) }, [
+				"See plans",
+			]),
+		]),
+	])
+
 /** Why a `?tab=` deep link shows another tab: the viewer cannot open the one it names. */
 const gatedTabReason = (model: Model, tab: SettingsTab): string => {
 	const label = settingsTabLabels[tab]
@@ -323,6 +349,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			? [loadingSkeleton(h)]
 			: empty
 				? [emptyMessage(h, {}, ["No settings are available for the current account."])]
-				: [...pageNote(h, model), ...tabContent(h, model, inputs)],
+				: activeTabOf(model) === "data-platform" && visibilityOf(model).isDataPlatformLocked === true
+					? [lockedDataPlatform(h)]
+					: [...pageNote(h, model), ...tabContent(h, model, inputs)],
 	)
 })

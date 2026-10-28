@@ -60,6 +60,16 @@ const healthBar = <M>(h: HtmlBuilder<M>, segments: ReadonlyArray<HealthSegment>)
 	)
 }
 
+/** `healthBar` for a source we couldn't check: an empty track, so the row is not blank. */
+const healthBarUnavailable = <M>(h: HtmlBuilder<M>): Html =>
+	h.div(
+		[h.Class("flex flex-col gap-1.5")],
+		[
+			h.span([h.Class("h-1.5 w-full rounded-full border border-dashed")], []),
+			h.span([h.Class("text-2xs")], ["\u00a0"]),
+		],
+	)
+
 /** `healthBar`'s shape while loading: the bar and an empty legend line, so the row keeps its height. */
 const healthBarLoading = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
@@ -77,7 +87,7 @@ export const sourceRow = <M>(
 ): Html => {
 	const isQuietFailure = isFailureExplained && state.status === "error"
 	return h.a(
-		[h.Class(cn(ROW_CLASS, "py-3.5", isQuietFailure && "opacity-70")), h.Href(sourceHref(id, time))],
+		[h.Class(cn(ROW_CLASS, "py-3.5")), h.Href(sourceHref(id, time))],
 		[
 			h.span(
 				[h.Class("flex w-52 shrink-0 items-center gap-3")],
@@ -114,7 +124,7 @@ export const sourceRow = <M>(
 					? [healthBar(h, state.summary.segments)]
 					: state.status === "loading"
 						? [healthBarLoading(h)]
-						: [],
+						: [healthBarUnavailable(h)],
 			),
 			state.status === "loading"
 				? h.span(
@@ -132,8 +142,8 @@ export const sourceRow = <M>(
 								),
 							),
 						],
-						// A failed row already says "Couldn't load" (or the page banner does); the chevron leads to the details.
-						[state.status === "ready" ? state.summary.headline : ""],
+						// The page banner explains a shared failure; the row still says its status is unknown.
+						[state.status === "ready" ? state.summary.headline : "Status unavailable"],
 					),
 			icon(h, "ChevronRightIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
 		],

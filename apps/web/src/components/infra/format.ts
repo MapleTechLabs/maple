@@ -38,6 +38,18 @@ export function deriveHostStatus(lastSeenIso: string, reference: number | string
 export const formatWholePercent = (fraction: number) =>
 	Number.isFinite(fraction) ? `${Math.round(fraction * 100)}%` : EMPTY_VALUE
 
+/**
+ * A utilization column: one decimal under 10% with no trailing zero, whole numbers above,
+ * so a column reads "0.8%", "1.7%", "6%", "20%" on one rule.
+ */
+export const formatUtilizationPercent = (fraction: number): string => {
+	if (!Number.isFinite(fraction)) return EMPTY_VALUE
+	const pct = Math.max(fraction, 0) * 100
+	if (pct > 0 && pct < 0.1) return "<0.1%"
+	const rounded = Number(pct.toFixed(1))
+	return rounded >= 10 ? `${Math.round(pct)}%` : `${rounded}%`
+}
+
 /** CPU usage in cores, two decimals. */
 export const formatCores = (cores: number) => (Number.isFinite(cores) ? cores.toFixed(2) : EMPTY_VALUE)
 

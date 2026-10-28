@@ -28,17 +28,13 @@ export const auditSteps = (h: H): Html =>
 				["Runs stop at the org's monthly spend limit and report tokens and cost"],
 			),
 		}),
-		h.ol(
+		h.ul(
 			// Steps wrap onto more rows as the column narrows, like the run's phase strip.
 			[h.Class("flex flex-wrap gap-px bg-border")],
-			STEPS.map((step, index) =>
+			STEPS.map((step) =>
 				h.li(
 					[h.Key(step.title), h.Class("flex min-w-44 flex-1 flex-col gap-1.5 bg-card px-4 py-4")],
 					[
-						h.span(
-							[h.Class("font-mono text-xs text-muted-foreground tabular-nums")],
-							[String(index + 1).padStart(2, "0")],
-						),
 						h.span([h.Class("text-sm font-medium")], [step.title]),
 						h.span([h.Class("text-xs text-muted-foreground")], [step.body]),
 					],

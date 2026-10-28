@@ -86,8 +86,12 @@ const bigStat = <M>(h: HtmlBuilder<M>, elapsed: { value: string; unit: string } 
 				valueClassName: "text-foreground",
 			})
 
+/** A heading never ends in a full stop, even when it is a promoted summary sentence. */
+const asHeading = (text: string | null): string | null =>
+	text === null ? null : text.trim().replace(/\.$/, "")
+
 const repeatsHeading = (heading: string | null, text: string): boolean =>
-	text.trim().length === 0 || text.trim() === heading?.trim()
+	text.trim().length === 0 || asHeading(text) === heading
 
 const body = <M>(h: HtmlBuilder<M>, heading: string | null, text: string): Html | null =>
 	repeatsHeading(heading, text)
@@ -125,11 +129,22 @@ const IDENTIFIER = new RegExp(
 	].join("|"),
 )
 
-const actionText = <M>(h: HtmlBuilder<M>, action: string): Children =>
-	action
-		.split(IDENTIFIER)
-		.filter((part) => part.length > 0)
-		.map((part) => (IDENTIFIER.test(part) ? inlineCode(h, {}, [part.replace(/^`|`$/g, "")]) : part))
+// A chip followed by punctuation ("checkout-api's", "8f21c,") drops its right padding, so the
+// punctuation sits against the identifier instead of after a gap.
+const PUNCTUATION_AFTER = /^['’.,;:!?)]/
+
+const actionText = <M>(h: HtmlBuilder<M>, action: string): Children => {
+	const parts = action.split(IDENTIFIER).filter((part) => part.length > 0)
+	return parts.map((part, index) =>
+		IDENTIFIER.test(part)
+			? inlineCode(
+					h,
+					{ className: PUNCTUATION_AFTER.test(parts[index + 1] ?? "") ? "pr-px" : undefined },
+					[part.replace(/^`|`$/g, "")],
+				)
+			: part,
+	)
+}
 
 const nextActions = <M>(h: HtmlBuilder<M>, actions: ReadonlyArray<string>): Html | null =>
 	actions.length === 0
@@ -179,7 +194,7 @@ const diagnosed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Html =
 			],
 			[stat(h, "Confidence", [confidenceMeter(h, investigation.confidence)], true)],
 		)
-	const heading = reportHeadline(report)
+	const heading = asHeading(reportHeadline(report))
 	const severity = report.severityAssessment
 	return shell(
 		h,
@@ -194,10 +209,21 @@ const diagnosed = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Html =
 		[
 			stat(h, "Confidence", [confidenceMeter(h, report.confidence)]),
 			stat(h, "AI severity", [
+				// A warning glyph, so a red "High" severity never reads as the green bar-glyph "High" confidence.
 				severity
 					? h.span(
-							[h.Class(cn("font-medium", TONE_TEXT[SEVERITY_TEXT_TONE[severity]]))],
-							[SEVERITY_LABEL[severity]],
+							[
+								h.Class(
+									cn(
+										"flex items-center gap-1.5 font-medium",
+										TONE_TEXT[SEVERITY_TEXT_TONE[severity]],
+									),
+								),
+							],
+							[
+								icon(h, "CircleWarningIcon", { size: 12, className: "shrink-0" }),
+								SEVERITY_LABEL[severity],
+							],
 						)
 					: muted(h, EMPTY_VALUE),
 			]),
@@ -411,7 +437,8 @@ const inconclusive = <M>(h: HtmlBuilder<M>, investigation: V2Investigation): Htm
 	const report = investigation.report
 	const ruledOut = report?.ruledOut ?? []
 	const unchecked = report?.unchecked ?? []
-	const headline = reportHeadline(report) ?? "No cause was established, and this run recorded no partial."
+	const headline =
+		asHeading(reportHeadline(report)) ?? "No cause was established, and this run recorded no partial"
 	const lists = [
 		partialList(h, "Ruled out", ruledOut, "CircleXmarkIcon", "text-foreground"),
 		partialList(h, "Couldn't check", unchecked, "CircleQuestionIcon", "text-muted-foreground"),

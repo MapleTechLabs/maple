@@ -378,8 +378,26 @@ describe("PrReviewConversationService", () => {
 				"not_collaborator",
 			)
 			assert.lengthOf(recorded.begun, 0)
-		}).pipe(Effect.provide(layerFor(testDb, recorded)))
+		}).pipe(Effect.provide(layerFor(testDb, recorded, { permission: "read" })))
 	})
+
+	it.effect(
+		"answers a public repository's commenter who can push, whatever association the webhook reports",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const recorded = record()
+			return Effect.gen(function* () {
+				yield* seedRepo(false)
+				const conversations = yield* PrReviewConversationService
+				const outcome = yield* conversations.onPullRequestComment(
+					orgId,
+					comment({ authorAssociation: "CONTRIBUTOR" }),
+				)
+				assert.equal(outcome.outcome, "started")
+				assert.lengthOf(recorded.begun, 1)
+			}).pipe(Effect.provide(layerFor(testDb, recorded, { permission: "write" })))
+		},
+	)
 
 	it.effect("answers a private repository's commenter whatever association the webhook reports", () => {
 		const testDb = createTestDb(trackedDbs)
