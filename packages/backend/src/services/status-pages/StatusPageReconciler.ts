@@ -22,7 +22,7 @@ import { StatusPageKeys, statusFitsKind, type StatusPageOverlayEntry } from "@ma
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { repairOrphanedAutoIncidents } from "./auto-incidents"
+import { repairMissingAutoIncidents, repairOrphanedAutoIncidents } from "./auto-incidents"
 import { bumpPage } from "./outbox"
 import { StatusPagePublishDbError } from "./publish-errors"
 import { parseOverlayKey, StatusPageStore, type StatusPageStoreError } from "./StatusPageStore"
@@ -384,7 +384,10 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 
 			const repairAutoIncidents = Effect.fn("StatusPageReconciler.repairAutoIncidents")(function* () {
 				const nowMs = yield* Clock.currentTimeMillis
-				const repaired = yield* dbExecute((db) => repairOrphanedAutoIncidents(db, nowMs))
+				// Opens what the open hook missed, then resolves what the resolve hook missed.
+				const opened = yield* dbExecute((db) => repairMissingAutoIncidents(db, nowMs))
+				const resolved = yield* dbExecute((db) => repairOrphanedAutoIncidents(db, nowMs))
+				const repaired = opened + resolved
 				yield* Effect.annotateCurrentSpan({ "maple.status_page.repaired_count": repaired })
 				return repaired
 			})

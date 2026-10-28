@@ -261,7 +261,15 @@ export const cleanupRows = (testDb: TestDb) =>
 	).pipe(Effect.map((result) => result.rows))
 
 /** An alert incident row, for auto-incident repair. */
-export const seedAlertIncident = (testDb: TestDb, input: { readonly id: string; readonly status: string }) =>
+export const seedAlertIncident = (
+	testDb: TestDb,
+	input: {
+		readonly id: string
+		readonly status: string
+		readonly ruleId?: string
+		readonly firstTriggeredAt?: number
+	},
+) =>
 	sql(
 		testDb,
 		`INSERT INTO alert_incidents (id, org_id, rule_id, incident_key, rule_name, signal_type, severity, status,
@@ -270,9 +278,9 @@ export const seedAlertIncident = (testDb: TestDb, input: { readonly id: string; 
 		[
 			input.id,
 			ORG,
-			crypto.randomUUID(),
+			input.ruleId ?? crypto.randomUUID(),
 			input.status,
-			iso(NOW - DAY_MS),
+			iso(input.firstTriggeredAt ?? NOW - DAY_MS),
 			input.status === "resolved" ? iso(NOW - 60_000) : null,
 		],
 	)

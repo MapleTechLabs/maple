@@ -8,12 +8,14 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { importEntry, StatusPageReconciler } from "./StatusPageReconciler"
 import { type InMemoryStatusPageStore, StatusPageStore } from "./StatusPageStore"
 import {
+	DAY_MS,
 	NOW,
 	newPageId,
 	ORG,
 	readPage,
 	seedAlertIncident,
 	seedComponent,
+	seedMonitor,
 	seedIncident,
 	seedPage,
 } from "./status-page-test-support"
@@ -333,6 +335,47 @@ describe("StatusPageReconciler", () => {
 })
 
 describe("StatusPageReconciler.repairAutoIncidents", () => {
+	it.effect("opens the page incident a recent alert missed, once, and leaves older alerts alone", () =>
+		withReconciler(({ testDb, reconciler }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				const ruleId = crypto.randomUUID()
+				const monitorId = crypto.randomUUID()
+				yield* seedPage(testDb, { id: pageId, slug: "acme-missed", autoIncidents: "publish" })
+				yield* seedMonitor(testDb, { id: monitorId, status: "down", alertRuleId: ruleId })
+				yield* seedComponent(testDb, {
+					id: crypto.randomUUID(),
+					pageId,
+					name: "Checkout",
+					position: 0,
+					monitorId,
+				})
+				const missed = crypto.randomUUID()
+				yield* seedAlertIncident(testDb, {
+					id: missed,
+					status: "open",
+					ruleId,
+					firstTriggeredAt: NOW - 60_000,
+				})
+				// Opened long ago: its page incident may have been deleted on purpose.
+				yield* seedAlertIncident(testDb, {
+					id: crypto.randomUUID(),
+					status: "open",
+					ruleId,
+					firstTriggeredAt: NOW - DAY_MS,
+				})
+
+				assert.strictEqual(yield* reconciler.repairAutoIncidents(), 1)
+				const incidents = yield* incidentsOf(testDb, pageId)
+				assert.deepStrictEqual(
+					incidents.map((i) => [i.title, i.status]),
+					[["Checkout is down", "investigating"]],
+				)
+				assert.strictEqual(yield* reconciler.repairAutoIncidents(), 0)
+			}),
+		),
+	)
+
 	it.effect("resolves auto incidents whose alert incident is resolved or gone, and only those", () =>
 		withReconciler(({ testDb, reconciler }) =>
 			Effect.gen(function* () {

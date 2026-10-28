@@ -11,16 +11,18 @@ import {
 	UptimeMonitors,
 } from "@maple/db/tables"
 import {
-	type AlertIncidentId,
-	type AlertRuleId,
-	type OrgId,
+	AlertIncidentId,
+	AlertRuleId,
+	OrgId,
 	type StatusPageAutoIncidents,
 	type StatusPageComponentId,
 	type StatusPageId,
 	StatusPageIncidentId,
 	StatusPageIncidentUpdateId,
 } from "@maple/domain/primitives"
-import { Effect } from "effect"
+import * as Orm from "@maple-dev/effect-orm/database"
+import { msToSqlTimestamp } from "@maple/backend/platform/time"
+import { Effect, Schema } from "effect"
 import { bumpPage } from "./outbox"
 
 // Status page incidents opened and resolved by an uptime monitor's alert incident, on every
@@ -191,6 +193,54 @@ export const resolveForAlertIncident = (db: MapleDb, input: ResolveForAlertIncid
 		)
 		yield* announceResolved(db, input.orgId, resolved, input.at)
 		return resolved.length
+	})
+
+const MissingAutoIncidentRow = Schema.Struct({
+	id: AlertIncidentId,
+	org_id: OrgId,
+	rule_id: AlertRuleId,
+	first_triggered_ms: Schema.Number,
+})
+
+/** How long after an alert opens the repair still opens its missing page incidents. */
+export const AUTO_INCIDENT_OPEN_RETRY_MS = 15 * 60_000
+
+/**
+ * Opens page incidents the open hook missed (it runs after the alert commit, bounded, and may
+ * fail). Only for alerts opened in the last 15 minutes, so a page incident someone deleted while
+ * its alert stays open is not brought back. Each alert in its own transaction; returns how many.
+ */
+export const repairMissingAutoIncidents = (db: MapleDb, at: number) =>
+	Effect.gen(function* () {
+		// Four tables across two join keys (rule, then monitor): a typed query, not the builder.
+		const rows = yield* db.query(
+			Orm.sql`
+				SELECT DISTINCT a.id, a.org_id, a.rule_id,
+					(extract(epoch from a.first_triggered_at) * 1000)::float8 AS first_triggered_ms
+				FROM alert_incidents a
+				JOIN uptime_monitors m ON m.alert_rule_id = a.rule_id AND m.org_id = a.org_id
+				JOIN status_page_components c ON c.monitor_id = m.id AND c.org_id = a.org_id
+				JOIN status_pages p ON p.id = c.page_id AND p.org_id = a.org_id
+				LEFT JOIN status_page_incidents i ON i.alert_incident_id = a.id AND i.page_id = p.id
+				WHERE a.status <> 'resolved'
+					AND a.first_triggered_at >= ${msToSqlTimestamp(at - AUTO_INCIDENT_OPEN_RETRY_MS)}::timestamptz
+					AND p.auto_incidents <> 'off'
+					AND i.id IS NULL
+				ORDER BY first_triggered_ms
+				LIMIT ${AUTO_INCIDENT_REPAIR_BATCH}`,
+			MissingAutoIncidentRow,
+		)
+		const counts = yield* Effect.forEach(rows, (row) =>
+			db.transaction(
+				openForAlertIncident(db, {
+					orgId: row.org_id,
+					ruleId: row.rule_id,
+					alertIncidentId: row.id,
+					at: row.first_triggered_ms,
+				}),
+			),
+		)
+		return counts.reduce((sum, n) => sum + n, 0)
 	})
 
 /** Auto incidents one repair pass resolves at most. */
