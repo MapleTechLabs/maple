@@ -596,7 +596,9 @@ impl CompiledCondition {
             (Operand::Text(value), ConditionOp::Contains) => text.contains(value.as_str()),
             (Operand::List(values), ConditionOp::In) => values.iter().any(|v| v == text),
             (Operand::List(values), ConditionOp::NotIn) => !values.iter().any(|v| v == text),
-            (Operand::Pattern(pattern), ConditionOp::Regex) => pattern.is_match(text),
+            (Operand::Pattern(pattern), ConditionOp::Regex) => {
+                pattern.is_match(&text[..floor_char_boundary(text, SCAN_BYTES)])
+            }
             _ => false,
         }
     }
@@ -793,11 +795,16 @@ fn floor_char_boundary(text: &str, max: usize) -> usize {
     cut
 }
 
+/// The gateway's own routing and billing stamps; dotted keys like `maple_ai.*` carry customer text.
 fn is_protected_key(key: &str) -> bool {
     key == "service.name"
         || key == "org_id"
-        || key.starts_with("maple_")
-        || key.starts_with("maple.")
+        || key.strip_prefix("maple_").is_some_and(|rest| {
+            !rest.is_empty()
+                && rest
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+        })
 }
 
 fn string_value(text: String) -> Option<AnyValue> {
@@ -974,6 +981,8 @@ struct RecordTargets<'a> {
     attributes: &'a mut Vec<KeyValue>,
     events: &'a mut [span::Event],
     body: Option<&'a mut AnyValue>,
+    /// Span status message, scanned under the `attributes` scope.
+    status_message: Option<&'a mut String>,
 }
 
 /// One `apply_*` call: scratch space reused across records plus the stats sink.
@@ -1052,6 +1061,9 @@ impl<'a> Pass<'a> {
             };
             if redaction.scopes & SCOPE_ATTRIBUTES != 0 {
                 redactor.redact_attributes(targets.attributes);
+                if let Some(message) = targets.status_message.as_deref_mut() {
+                    redactor.scan_string(message);
+                }
             }
             if redaction.scopes & SCOPE_EVENTS != 0 {
                 targets
@@ -1139,6 +1151,7 @@ impl Pass<'_> {
                 attributes: &mut span.attributes,
                 events: &mut span.events,
                 body: None,
+                status_message: span.status.as_mut().map(|status| &mut status.message),
             });
         }
         keep
@@ -1162,6 +1175,7 @@ impl Pass<'_> {
                 attributes: &mut record.attributes,
                 events: &mut [],
                 body: record.body.as_mut(),
+                status_message: None,
             });
         }
         keep
@@ -1185,6 +1199,7 @@ impl Pass<'_> {
                 attributes: point.attributes_mut(),
                 events: &mut [],
                 body: None,
+                status_message: None,
             });
         }
         keep
@@ -1335,6 +1350,8 @@ mod tests {
         span_status: Option<String>,
         #[serde(default)]
         events: Option<Vec<EventInput>>,
+        #[serde(default)]
+        status_message: Option<String>,
     }
 
     #[derive(Debug, Deserialize)]
@@ -1437,7 +1454,7 @@ mod tests {
             kind: position(&SPAN_KINDS, input.span_kind.as_deref()),
             status: Some(Status {
                 code: position(&SPAN_STATUSES, input.span_status.as_deref()),
-                ..Default::default()
+                message: input.status_message.clone().unwrap_or_default(),
             }),
             trace_id: input.trace_id.as_deref().map(decode_hex).unwrap_or_default(),
             attributes: to_kvs(&input.attributes),
@@ -1477,6 +1494,9 @@ mod tests {
                 .iter()
                 .map(|event| json!({ "name": event.name, "attributes": from_kvs(&event.attributes) }))
                 .collect();
+        }
+        if input.status_message.is_some() {
+            out["statusMessage"] = json!(span.status.as_ref().map(|status| status.message.clone()));
         }
         out
     }

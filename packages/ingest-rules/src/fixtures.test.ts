@@ -19,6 +19,7 @@ const FixtureRecord = Schema.Struct({
 	traceId: Schema.optionalKey(Schema.String),
 	spanKind: Schema.optionalKey(Schema.String),
 	spanStatus: Schema.optionalKey(Schema.String),
+	statusMessage: Schema.optionalKey(Schema.String),
 	events: Schema.optionalKey(
 		Schema.Array(
 			Schema.Struct({ name: Schema.String, attributes: Schema.Record(Schema.String, Schema.Unknown) }),
@@ -70,6 +71,7 @@ const toRecord = (input: unknown): RuleRecord => {
 		traceId: fixture.traceId,
 		spanKind: fixture.spanKind,
 		spanStatus: fixture.spanStatus,
+		statusMessage: fixture.statusMessage,
 		events: fixture.events?.map((event) => ({ name: event.name, attributes: toMap(event.attributes) })),
 	}
 }
@@ -83,6 +85,7 @@ const outcomeJson = (record: RuleRecord) =>
 			attributes: mapJson(record.attributes),
 			body: record.body === undefined ? undefined : toJson(record.body),
 			events: eventsJson(record),
+			statusMessage: record.statusMessage,
 		}).filter(([, value]) => value !== undefined),
 	)
 
