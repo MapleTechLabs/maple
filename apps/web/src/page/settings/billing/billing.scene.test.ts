@@ -6,8 +6,9 @@ import { expect as expectView, given, scene, text, withViewInputs } from "foldki
 import { describe, expect, test } from "vitest"
 import { Message, type Model } from "./model"
 import { Message as DetailsMessage } from "./details/model"
-import { customerChanged, init, requestRuleStats, spendModelOf, update } from "./update"
+import { customerChanged, init, requestRuleStats, revisit, spendModelOf, update } from "./update"
 import { usageTable } from "./view-usage"
+import { toLoadFailure } from "../../../data/load-failure"
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
@@ -47,6 +48,20 @@ describe("billing tab", () => {
 		})
 		expect(requestRuleStats(init(true, false).model, null, NOW)).toBeNull()
 		expect(requested === null ? null : requestRuleStats(requested.model, customer, NOW)).toBeNull()
+	})
+
+	test("a failed rule stats read is asked for again when the tab is revisited", () => {
+		const requested = requestRuleStats(init(true, false).model, customer, NOW)
+		expect(requested).not.toBeNull()
+		if (requested === null) return
+		const failed = step(
+			requested.model,
+			Message.CompletedFetchRuleStats({ result: Result.fail(toLoadFailure(new Error("boom"))) }),
+		)
+		expect(requestRuleStats(failed.model, customer, NOW)).toBeNull()
+		expect(names(requestRuleStats(revisit(failed.model).model, customer, NOW)?.commands)).toEqual([
+			"FetchBillingRuleStats",
+		])
 	})
 
 	test("a signal with bytes dropped by rules says so under its usage", () => {

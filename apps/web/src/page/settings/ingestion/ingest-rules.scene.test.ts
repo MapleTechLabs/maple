@@ -161,17 +161,12 @@ describe("ingest rules section", () => {
 		expect(names(done.commands)).toContain("FetchIngestRules")
 	})
 
-	test("moving a rule down swaps the two positions", () => {
+	test("moving a rule down sends the whole new order in one request", () => {
 		const moving = pick(withRules([dropDebug, redactTokens]), dropDebug, "down")
 		expect(moving.commands).toContainEqual(
 			expect.objectContaining({
 				name: "MoveIngestRules",
-				args: {
-					changes: [
-						{ id: redactTokens.id, position: 0 },
-						{ id: dropDebug.id, position: 1 },
-					],
-				},
+				args: { ids: [redactTokens.id, dropDebug.id] },
 			}),
 		)
 	})

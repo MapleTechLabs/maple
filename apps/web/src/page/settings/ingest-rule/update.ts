@@ -211,7 +211,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			patchDraft(model, {
 				conditions: model.draft.conditions.filter((condition) => condition.id !== id),
 			}),
-		ChangedConditionField: ({ id, field }) => mapCondition(model, id, () => defaultCondition(id, field)),
+		// The key autocomplete holds its own text; clear it with the key so it never shows a stale one.
+		ChangedConditionField: ({ id, field }) => {
+			const box = model.keyBoxes[String(id)]
+			const cleared =
+				box === undefined
+					? model
+					: { ...model, keyBoxes: { ...model.keyBoxes, [String(id)]: { ...box, inputValue: "" } } }
+			return mapCondition(cleared, id, () => defaultCondition(id, field))
+		},
 		ChangedConditionOp: ({ id, op }) => mapCondition(model, id, (condition) => ({ ...condition, op })),
 		ChangedConditionValue: ({ id, value }) =>
 			mapCondition(model, id, (condition) => ({ ...condition, value })),

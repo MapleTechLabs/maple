@@ -70,6 +70,7 @@ const SpanWireRow = Schema.Struct({
 	spanName: Schema.String,
 	spanKind: Schema.optionalKey(Schema.String),
 	statusCode: Schema.String,
+	statusMessage: Schema.optionalKey(Schema.String),
 	traceId: Schema.String,
 	spanAttributes: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	resourceAttributes: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
