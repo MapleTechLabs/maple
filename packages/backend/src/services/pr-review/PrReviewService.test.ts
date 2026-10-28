@@ -682,11 +682,9 @@ describe("PrReviewService.onPullRequestEvent", () => {
 				assert.equal(midRun.skipReason, "automatic_limit")
 				assert.equal(begun.length, 1)
 
-				const opened = yield* Effect.forEach(["a", "b", "c"], (digit, index) =>
-					reviews.onPullRequestEvent(
-						orgId,
-						outsider({ number: 613 + index, headSha: sha(digit.repeat(40)) }),
-					),
+				// The same head opened against other base branches is a new pull request each time.
+				const opened = yield* Effect.forEach([613, 614, 615], (number) =>
+					reviews.onPullRequestEvent(orgId, outsider({ number, headSha: sha("a".repeat(40)) })),
 				)
 				assert.deepEqual(
 					opened.map((outcome) => outcome.skipReason ?? outcome.outcome),

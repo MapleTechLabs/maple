@@ -2084,7 +2084,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					})
 				}
 				if (outsideAuthor) {
-					// Bounds an outsider opening pull request after pull request; other heads only, so a redelivery stays a duplicate.
+					// Bounds an outsider opening pull request after pull request; this head of this PR is skipped, so a redelivery stays a duplicate.
 					const authorToday = yield* dbExecute((db) =>
 						db.run(
 							PG.from(PrReviews)
@@ -2092,7 +2092,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								.where(($) => [
 									$.orgId.eq(orgId),
 									$.authorLogin.eq(job.authorLogin ?? ""),
-									$.headSha.neq(headSha),
+									PG.or(
+										$.repositoryId.neq(repo.id),
+										$.number.neq(job.number),
+										$.headSha.neq(headSha),
+									),
 									$.createdAt.gte(utcDayStart(nowMs)),
 								]),
 						),
