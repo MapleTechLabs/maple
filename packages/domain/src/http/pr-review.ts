@@ -247,6 +247,12 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	/** The lowest severity posted inline; the summary always carries every finding. */
 	minInlineSeverity: Schema.optionalKey(PrReviewSeverity),
 	reviewDrafts: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * Review pull requests on a public repository from people without push access, forks included.
+	 * Off by default: their text reaches an agent that reads org telemetry and posts publicly. One
+	 * automatic review per pull request and three per author a day; a maintainer starts more.
+	 */
+	reviewExternalContributors: Schema.optionalKey(Schema.Boolean),
 	/** Reviews this repository may start per UTC day. */
 	dailyLimit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
 	/**
@@ -303,6 +309,7 @@ export const mergePrReviewConfig = (
 			...pick("categories"),
 			...pick("minInlineSeverity"),
 			...pick("reviewDrafts"),
+			...pick("reviewExternalContributors"),
 			...pick("dailyLimit"),
 			...pick("automaticReviewLimit"),
 			...pick("feedbackScope"),

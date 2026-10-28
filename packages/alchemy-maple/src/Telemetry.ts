@@ -21,7 +21,8 @@
  * )
  * ```
  *
- * Omit `ingestKey` when the host's env already carries `MAPLE_INGEST_KEY`.
+ * Omit `ingestKey` when the host's env already carries `MAPLE_INGEST_KEY`, or
+ * when `endpoint` is a local `maple start` or your own collector.
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import * as Output from "alchemy/Output"

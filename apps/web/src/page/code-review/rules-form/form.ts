@@ -20,11 +20,17 @@ export const SelectField = Schema.Literals([
 	"minInlineSeverity",
 	"feedbackScope",
 	"reviewDrafts",
+	"reviewExternalContributors",
 	"blockOnContractBreaks",
 	"postMergeCheck",
 ])
 export type SelectField = typeof SelectField.Type
-export const SwitchField = Schema.Literals(["reviewDrafts", "blockOnContractBreaks", "postMergeCheck"])
+export const SwitchField = Schema.Literals([
+	"reviewDrafts",
+	"reviewExternalContributors",
+	"blockOnContractBreaks",
+	"postMergeCheck",
+])
 export type SwitchField = typeof SwitchField.Type
 
 export const Model = Schema.Struct({
