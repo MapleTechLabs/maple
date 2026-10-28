@@ -240,17 +240,21 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 			 * `uptime_monitors` is continuous use: monitors that exist count against whoever pays now.
 			 * Their count moves with the org, keyed by the link so a retry moves them once.
 			 */
-			const moveUptimeMonitors = Effect.fn("BillingOrgService.moveUptimeMonitors")(function* (
-				orgId: OrgId,
-				move: { readonly from: OrgId; readonly to: OrgId; readonly key: string },
-			) {
-				const count = yield* dbExecute((db) =>
+			const countMonitors = (orgId: OrgId) =>
+				dbExecute((db) =>
 					db.run(
 						PG.from(UptimeMonitors)
 							.select(() => ({ count: PG.count() }))
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 				).pipe(Effect.map((rows) => Number(rows[0]?.count ?? 0)))
+
+			/** Moves `count` monitors between customers. The tracks never fail, so nothing after this can. */
+			const trackMonitorMove = Effect.fn("BillingOrgService.trackMonitorMove")(function* (
+				orgId: OrgId,
+				count: number,
+				move: { readonly from: OrgId; readonly to: OrgId; readonly key: string },
+			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.uptime.monitor_count": count })
 				if (count === 0) return
 				yield* Effect.all(
@@ -366,7 +370,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 							: Effect.void,
 					),
 				)
-				yield* moveUptimeMonitors(orgId, {
+				yield* trackMonitorMove(orgId, yield* countMonitors(orgId), {
 					from: orgId,
 					to: payer,
 					key: `billing_link:${orgId}:${row.createdAt}`,
@@ -390,6 +394,9 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				if (Option.isNone(row) || (orgId !== memberOrgId && orgId !== row.value.billingOrgId)) {
 					return yield* reject("not_a_member")
 				}
+				// Every step that can fail runs before the delete, and the tracks after it cannot fail:
+				// a failed unlink leaves the link and the count as they were, ready for a retry.
+				const count = yield* countMonitors(memberOrgId)
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
@@ -403,9 +410,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 						}),
 					),
 				)
-				// Only once the link is gone, so the payer is never short monitors it still pays for.
-				// Keyed by the link: a repeat of this unlink moves the count once.
-				yield* moveUptimeMonitors(memberOrgId, {
+				yield* trackMonitorMove(memberOrgId, count, {
 					from: row.value.billingOrgId,
 					to: memberOrgId,
 					key: `billing_unlink:${memberOrgId}:${row.value.createdAt}`,
