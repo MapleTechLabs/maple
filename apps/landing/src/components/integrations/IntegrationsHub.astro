@@ -16,6 +16,7 @@ import Layout from "../../layouts/Layout.astro";
 import BrandMarkIcon from "../BrandMarkIcon.astro";
 import LanguageLogo from "../docs/LanguageLogo.astro";
 import HazelLogo from "../icons/HazelLogo.astro";
+import PixelIcon from "../icons/PixelIcon.astro";
 import Footer from "../Footer.astro";
 import Nav from "../Nav.astro";
 import SeoHead from "../SeoHead.astro";
@@ -110,8 +111,9 @@ const WALL = [
 									<a
 										href={`#${category.id}`}
 										data-hub-rail-link
-										class="inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-md border border-border px-2.5 text-[12.5px] text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg aria-[current=true]:bg-bg-elevated aria-[current=true]:text-fg lg:flex lg:border-transparent"
+										class="inline-flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-border px-2.5 text-[12.5px] text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg aria-[current=true]:bg-bg-elevated aria-[current=true]:text-fg lg:flex lg:border-transparent"
 									>
+										<PixelIcon name={category.icon} class="size-3.5 shrink-0" />
 										{category.title()}
 									</a>
 								</li>

@@ -26,9 +26,13 @@ export interface HubTile {
 	keywords?: string
 }
 
+/** `PixelIcon` glyphs the rail uses, spelled out so this module stays free of `.astro`. */
+type RailIcon = "brackets-curly-dots" | "sparkle-2" | "cloud" | "stack-perspective-2" | "bell" | "laptop"
+
 export interface HubCategory {
 	/** Anchor id and rail key. */
 	id: string
+	icon: RailIcon
 	title: Msg
 	lede: Msg
 	tiles: readonly HubTile[]
@@ -268,17 +272,36 @@ const code: HubTile[] = [
 ]
 
 export const HUB_CATEGORIES: readonly HubCategory[] = [
-	{ id: "languages", title: m.intg_cat_languages_title, lede: m.intg_cat_languages_lede, tiles: languages },
+	{
+		id: "languages",
+		icon: "brackets-curly-dots",
+		title: m.intg_cat_languages_title,
+		lede: m.intg_cat_languages_lede,
+		tiles: languages,
+	},
 	{
 		id: "agents",
+		icon: "sparkle-2",
 		title: m.intg_cat_agents_title,
 		lede: m.intg_cat_agents_lede,
 		tiles: [...AGENT_FRAMEWORK_GUIDES, ...AGENT_GATEWAY_GUIDES].map(agentTile),
 	},
-	{ id: "cloud", title: m.intg_cat_cloud_title, lede: m.intg_cat_cloud_lede, tiles: cloud },
-	{ id: "databases", title: m.intg_cat_data_title, lede: m.intg_cat_data_lede, tiles: data },
-	{ id: "alerts", title: m.intg_cat_alerts_title, lede: m.intg_cat_alerts_lede, tiles: alerts },
-	{ id: "code", title: m.intg_cat_code_title, lede: m.intg_cat_code_lede, tiles: code },
+	{ id: "cloud", icon: "cloud", title: m.intg_cat_cloud_title, lede: m.intg_cat_cloud_lede, tiles: cloud },
+	{
+		id: "databases",
+		icon: "stack-perspective-2",
+		title: m.intg_cat_data_title,
+		lede: m.intg_cat_data_lede,
+		tiles: data,
+	},
+	{
+		id: "alerts",
+		icon: "bell",
+		title: m.intg_cat_alerts_title,
+		lede: m.intg_cat_alerts_lede,
+		tiles: alerts,
+	},
+	{ id: "code", icon: "laptop", title: m.intg_cat_code_title, lede: m.intg_cat_code_lede, tiles: code },
 ]
 
 export const HUB_TILE_COUNT = HUB_CATEGORIES.reduce((n, c) => n + c.tiles.length, 0)
