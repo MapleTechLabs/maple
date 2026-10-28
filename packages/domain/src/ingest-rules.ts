@@ -159,15 +159,86 @@ const UNPORTABLE_REGEX: ReadonlyArray<readonly [RegExp, string]> = [
 	[/\[[^\]]*(&&|~~|--)/u, "character class set operations are not supported"],
 	[/\[\^\]|\\c|\\0/u, "use an explicit class or escape instead"],
 	[/\{\s*\d{4,}|\{\s*\d+\s*,\s*\d{4,}/u, "counted repetitions are limited to 999"],
-	// A quantified group that itself repeats can backtrack exponentially in the preview engine.
-	[
-		/\((?:[^()\\]|\\.)*(?:[*+]|\{\d+,\}|\|)(?:[^()\\]|\\.)*\)\s*(?:[*+]|\{\d+,)/u,
-		"a repeated group may not contain a repetition or alternation",
-	],
 	[/\(\?P/u, "use (?<name>...) for named groups"],
 	[/(?!^)\(\?[a-zA-Z-]+[):]/u, "inline flags are only supported as a leading (?i)"],
 	[/^\(\?(?!i\))[a-zA-Z-]+\)/u, "only the (?i) inline flag is supported"],
 ]
+
+interface Quantifier {
+	readonly min: number
+	readonly max: number
+	readonly length: number
+}
+
+/** The quantifier at `at`, if any (`*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`, each optionally lazy). */
+const quantifierAt = (pattern: string, at: number): Quantifier | null => {
+	const lazy = (length: number) => (pattern[at + length] === "?" ? length + 1 : length)
+	const char = pattern[at]
+	if (char === "*") return { min: 0, max: Infinity, length: lazy(1) }
+	if (char === "+") return { min: 1, max: Infinity, length: lazy(1) }
+	if (char === "?") return { min: 0, max: 1, length: lazy(1) }
+	const counted = /^\{(\d+)(,(\d*))?\}/u.exec(pattern.slice(at))
+	if (counted === null) return null
+	const min = Number(counted[1])
+	const max = counted[2] === undefined ? min : counted[3] === "" ? Infinity : Number(counted[3])
+	return { min, max, length: lazy(counted[0].length) }
+}
+
+/**
+ * True when a group that repeats contains a variable-width repetition or an alternation, at any
+ * depth: `(a+)+`, `((a)+)+`, `(?:(a+))+`, `(a{1,2})+`, `(a|aa)+`. The JS engine the preview and local
+ * mode use backtracks exponentially on these; the gateway's engine does not, but parity matters.
+ */
+export const hasRepeatedVariableGroup = (pattern: string): boolean => {
+	const stack: Array<{ variable: boolean }> = [{ variable: false }]
+	let at = 0
+	const top = () => stack[stack.length - 1] ?? { variable: false }
+	/** Applies the quantifier after an atom; returns false when a variable group repeats. */
+	const afterAtom = (atomVariable: boolean): boolean => {
+		const quantifier = quantifierAt(pattern, at)
+		if (quantifier === null) {
+			if (atomVariable) top().variable = true
+			return true
+		}
+		at += quantifier.length
+		if (atomVariable && quantifier.max > 1) return false
+		if (atomVariable || quantifier.min !== quantifier.max) top().variable = true
+		return true
+	}
+	while (at < pattern.length) {
+		const char = pattern[at]
+		if (char === "\\") {
+			at += 2
+			if (!afterAtom(false)) return true
+		} else if (char === "[") {
+			at += pattern[at + 1] === "]" ? 2 : 1
+			while (at < pattern.length && pattern[at] !== "]") at += pattern[at] === "\\" ? 2 : 1
+			at += 1
+			if (!afterAtom(false)) return true
+		} else if (char === "(") {
+			at += 1
+			if (pattern[at] === "?") {
+				at += 1
+				if (pattern[at] === "<" && pattern[at + 1] !== "=" && pattern[at + 1] !== "!") {
+					while (at < pattern.length && pattern[at] !== ">") at += 1
+				}
+				at += 1
+			}
+			stack.push({ variable: false })
+		} else if (char === ")") {
+			at += 1
+			const group = stack.length > 1 ? stack.pop() : undefined
+			if (!afterAtom(group?.variable ?? false)) return true
+		} else if (char === "|") {
+			at += 1
+			top().variable = true
+		} else {
+			at += 1
+			if (!afterAtom(false)) return true
+		}
+	}
+	return false
+}
 
 /** Splits a leading `(?i)` off a pattern; both engines treat it as case-insensitive. */
 export const splitRegexFlags = (
@@ -183,6 +254,8 @@ export const regexProblem = (pattern: string): string | null => {
 	if (pattern.length > INGEST_RULE_LIMITS.patternLength)
 		return `pattern is longer than ${INGEST_RULE_LIMITS.patternLength} characters`
 	for (const [probe, message] of UNPORTABLE_REGEX) if (probe.test(pattern)) return message
+	if (hasRepeatedVariableGroup(pattern))
+		return "a repeated group may not contain a repetition or alternation"
 	const compiled = compileIngestRegex(pattern, false)
 	if (Option.isNone(compiled)) return "pattern is not a valid regular expression"
 	return compiled.value.test("") ? "pattern matches empty text" : null
