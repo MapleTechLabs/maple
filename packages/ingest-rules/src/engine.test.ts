@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { IngestRuleSpec } from "@maple/domain/ingest-rules"
 import { Schema } from "effect"
-import { applyRules, compileRules, globMatches, type RuleRecord } from "./engine"
+import { applyRules, compileRules, formatDouble, globMatches, type RuleRecord } from "./engine"
 import { hmacSha256, sha256, toHex, utf8 } from "./sha256"
 
 const maskEverything: IngestRuleSpec = {
@@ -47,6 +47,20 @@ describe("sha256", () => {
 		expect(toHex(hmacSha256(utf8("Jefe"), utf8("what do ya want for nothing?")))).toBe(
 			"5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
 		)
+	})
+})
+
+describe("formatDouble", () => {
+	it("writes doubles the way Rust's {} does", () => {
+		expect([Infinity, -Infinity, Number.NaN, -0, 1e21, 1.5e-7, 2].map(formatDouble)).toEqual([
+			"inf",
+			"-inf",
+			"NaN",
+			"-0",
+			"1000000000000000000000",
+			"0.00000015",
+			"2",
+		])
 	})
 })
 

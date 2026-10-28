@@ -2378,5 +2378,43 @@
 		"expected": {
 			"dropped": true
 		}
+	},
+	{
+		"name": "exists ignores names inherited by JS objects",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [
+					{
+						"field": "attribute",
+						"op": "exists",
+						"key": "constructor"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {}
+		}
 	}
 ]
