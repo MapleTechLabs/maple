@@ -95,6 +95,27 @@ describe("IngestRuleService", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("reorders every rule at once and refuses a partial or foreign list", () =>
+		Effect.gen(function* () {
+			const service = yield* IngestRuleService
+			const first = yield* service.create(ORG, { name: "First", spec: dropDebug })
+			const second = yield* service.create(ORG, { name: "Second", spec: maskEmails })
+			const other = yield* service.create(OTHER_ORG, { name: "Other", spec: maskEmails })
+			const reordered = yield* service.reorder(ORG, [second.id, first.id])
+			expect(reordered.map((rule) => [rule.name, rule.position])).toEqual([
+				["Second", 0],
+				["First", 1],
+			])
+			const partial = yield* service.reorder(ORG, [first.id]).pipe(Effect.flip)
+			const foreign = yield* service.reorder(ORG, [first.id, other.id]).pipe(Effect.flip)
+			expect([partial._tag, foreign._tag]).toEqual([
+				"@maple/http/errors/IngestRuleValidationError",
+				"@maple/http/errors/IngestRuleValidationError",
+			])
+			expect((yield* service.list(ORG)).map((rule) => rule.name)).toEqual(["Second", "First"])
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("cannot read, update or delete another org's rule", () =>
 		Effect.gen(function* () {
 			const service = yield* IngestRuleService

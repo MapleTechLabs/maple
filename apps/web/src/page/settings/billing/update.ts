@@ -338,6 +338,8 @@ export const revisit = (model: Model): Return => {
 			daily: daily.data,
 			invoices: invoices.data,
 			profile: profile.data,
+			// Back to idle so the settings page asks again for the current cycle; this is also the retry.
+			ruleStats: AsyncData.Idle(),
 		},
 		commands: [
 			...plans.commands,

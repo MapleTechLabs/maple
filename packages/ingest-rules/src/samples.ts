@@ -18,6 +18,7 @@ export interface SpanSample {
 	readonly spanName: string
 	readonly spanKind?: string
 	readonly statusCode: string
+	readonly statusMessage?: string
 	readonly traceId: string
 	readonly spanAttributes: Readonly<Record<string, string>>
 	readonly resourceAttributes: Readonly<Record<string, string>>
@@ -46,5 +47,6 @@ export const spanSampleToRecord = (row: SpanSample): RuleRecord => ({
 	name: row.spanName,
 	spanKind: spanKindName(row.spanKind),
 	spanStatus: row.statusCode.toLowerCase(),
+	statusMessage: row.statusMessage,
 	traceId: row.traceId,
 })
