@@ -1,5 +1,10 @@
 import type { StatusPageComponentStatus } from "@maple/domain/primitives"
-import type { StatusPageFreshness } from "@maple/domain/status-page"
+import {
+	DEFAULT_STATUS_PAGE_THEME,
+	type StatusPageFreshness,
+	type StatusPageSnapshot,
+	type StatusPageTheme,
+} from "@maple/domain/status-page"
 import { describe, expect, it } from "vitest"
 import {
 	FIXTURE_NOW,
@@ -9,7 +14,14 @@ import {
 	makeIncident,
 	makeSnapshot,
 } from "./fixtures"
-import { renderAtomFeed, renderBadgeSvg, renderManagePage, renderPage, renderStatusJson } from "./index"
+import {
+	previewSnapshot,
+	renderAtomFeed,
+	renderBadgeSvg,
+	renderManagePage,
+	renderPage,
+	renderStatusJson,
+} from "./index"
 
 const HOSTILE = `<script>alert("x")</script>&'`
 const live: StatusPageFreshness = { _tag: "live", updatedAt: FIXTURE_NOW - 2 * 60_000 }
@@ -36,7 +48,7 @@ const hostileSnapshot = makeSnapshot({
 		description: HOSTILE,
 		websiteUrl: "javascript:alert(1)",
 		logoUrl: "http://insecure.example/logo.png",
-		brandColor: "red;}body{display:none",
+		theme: DEFAULT_STATUS_PAGE_THEME,
 		showPoweredBy: false,
 	},
 	components: [makeComponent(0, { name: HOSTILE, group: HOSTILE, description: HOSTILE })],
@@ -271,5 +283,127 @@ describe("renderManagePage", () => {
 			].map((match) => match[1])
 		expect(selected("status")).toEqual([""])
 		expect(selected("impact")).toEqual([""])
+	})
+})
+
+/** A snapshot carrying `theme` as-is, skipping decode the way a corrupted edge copy could. */
+const themed = (theme: StatusPageTheme): StatusPageSnapshot => {
+	const snapshot = makeSnapshot()
+	return { ...snapshot, page: { ...snapshot.page, theme } }
+}
+
+const styleOf = (html: string): string => html.match(/<style[^>]*>([\s\S]*?)<\/style>/u)?.[1] ?? ""
+
+describe("page theme", () => {
+	it("follows the visitor's scheme in auto, with both token sets", () => {
+		const css = styleOf(renderPage(themed(DEFAULT_STATUS_PAGE_THEME), live, FIXTURE_NOW))
+		expect(css).toContain("color-scheme:light dark")
+		expect(css).toContain("@media (prefers-color-scheme:dark)")
+	})
+
+	it("forces dark with one token set, its background and no media query", () => {
+		const css = styleOf(
+			renderPage(
+				themed({ ...DEFAULT_STATUS_PAGE_THEME, appearance: "dark", background: "#101820" }),
+				live,
+				FIXTURE_NOW,
+			),
+		)
+		expect(css).toContain("color-scheme:dark;")
+		expect(css).not.toContain("prefers-color-scheme")
+		expect(css).toContain("--bg:#101820")
+		expect(css.match(/--bg:/gu)).toHaveLength(1)
+	})
+
+	it("ignores the colour overrides in auto but keeps the accent", () => {
+		const css = styleOf(
+			renderPage(
+				themed({
+					...DEFAULT_STATUS_PAGE_THEME,
+					accent: "#AA00FF",
+					background: "#101820",
+					text: "#fedcba",
+				}),
+				live,
+				FIXTURE_NOW,
+			),
+		)
+		expect(css).not.toContain("#101820")
+		expect(css).not.toContain("#fedcba")
+		expect(css.match(/--link:#aa00ff/gu)).toHaveLength(2)
+	})
+
+	it("applies the radius and the font stack", () => {
+		const css = styleOf(
+			renderPage(
+				themed({ ...DEFAULT_STATUS_PAGE_THEME, preset: "paper", radius: "lg", font: "serif" }),
+				live,
+				FIXTURE_NOW,
+			),
+		)
+		expect(css).toContain("--radius:14px")
+		expect(css).toMatch(/--font:ui-serif,Georgia/u)
+		expect(css).toContain("font:15px/1.5 var(--font)")
+		expect(css).toMatch(/\.card\{[^}]*border-radius:var\(--radius\)/u)
+		const square = styleOf(
+			renderPage(themed({ ...DEFAULT_STATUS_PAGE_THEME, radius: "none" }), live, FIXTURE_NOW),
+		)
+		expect(square).toContain("--radius:0px")
+	})
+
+	it("drops a hostile value in any theme field instead of letting it reach CSS", () => {
+		const hostile = "red;}html{opacity:0}"
+		const theme = {
+			preset: hostile,
+			appearance: "dark",
+			accent: hostile,
+			background: hostile,
+			text: hostile,
+			card: `#fff</style><script>alert(1)</script>`,
+			border: hostile,
+			radius: hostile,
+			font: hostile,
+		}
+		// Typed loosely on purpose: the renderer must cope with what the schema would refuse.
+		const snapshot: StatusPageSnapshot = JSON.parse(
+			JSON.stringify({ ...makeSnapshot(), page: { ...makeSnapshot().page, theme } }),
+		)
+		const html = renderPage(snapshot, live, FIXTURE_NOW)
+		const css = styleOf(html)
+		expect(html).not.toContain("opacity:0")
+		expect(html).not.toContain("alert(1)")
+		expect(css).toContain("--bg:#0a0a0a")
+		expect(css).toContain("--radius:8px")
+		expect(css).toMatch(/--font:ui-sans-serif/u)
+	})
+})
+
+describe("previewSnapshot", () => {
+	const base = makeSnapshot()
+
+	it("derives statuses from monitors, overrides and active incidents, with empty bars", () => {
+		const incident = makeIncident("inc-1", { componentIds: [fixtureComponentId(1)], impact: "major" })
+		const snapshot = previewSnapshot({
+			pageId: base.pageId,
+			page: { ...base.page, theme: { ...DEFAULT_STATUS_PAGE_THEME, accent: "#123abc" } },
+			components: [
+				{ ...base.components[0]!, monitorStatus: "down", manualStatus: null },
+				{ ...base.components[1]!, monitorStatus: "up", manualStatus: null },
+				{ ...base.components[2]!, monitorStatus: null, manualStatus: "degraded" },
+			],
+			incidents: makeSnapshot({ incidents: [incident] }).incidents,
+			nowMs: FIXTURE_NOW,
+		})
+		expect(snapshot.components.map((c) => c.status)).toEqual([
+			"major_outage",
+			"partial_outage",
+			"degraded",
+		])
+		expect(snapshot.components[1]?.baseStatus).toBe("operational")
+		expect(snapshot.components.map((c) => c.days.length)).toEqual([90, 90, 0])
+		expect(snapshot.components[0]?.days.every((day) => day.checks === 0)).toBe(true)
+		const html = renderPage(snapshot, { _tag: "live", updatedAt: FIXTURE_NOW }, FIXTURE_NOW)
+		expect(html).toContain("--link:#123abc")
+		expect(html).toContain("No checks yet")
 	})
 })

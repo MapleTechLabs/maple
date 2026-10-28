@@ -152,6 +152,8 @@ export interface StatusPageThemeTokens {
 export interface ResolvedStatusPageTheme {
 	/** `auto` follows the visitor's scheme with both sets; `light`/`dark` forces that one set. */
 	readonly appearance: StatusPageThemeAppearance
+	/** The custom accent, or null; also folded into each set's `link`. */
+	readonly accent: string | null
 	readonly light: StatusPageThemeTokens
 	readonly dark: StatusPageThemeTokens
 	readonly radiusPx: number
@@ -353,6 +355,7 @@ export const resolveStatusPageTheme = (theme: StatusPageTheme): ResolvedStatusPa
 		theme.appearance === mode ? withOverrides(preset[mode], theme) : preset[mode]
 	return {
 		appearance: theme.appearance,
+		accent,
 		light: withAccent(forced("light"), accent),
 		dark: withAccent(forced("dark"), accent),
 		radiusPx: RADIUS_PX[theme.radius],

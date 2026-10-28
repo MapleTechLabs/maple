@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import {
+	DEFAULT_STATUS_PAGE_THEME,
 	lastDays,
 	StatusPageSnapshot,
 	STATUS_PAGE_HISTORY_DAYS,
@@ -85,7 +86,7 @@ export const makeSnapshot = (fields: Partial<Encoded> = {}): StatusPageSnapshot 
 			description: "Status of Acme services",
 			websiteUrl: "https://acme.example",
 			logoUrl: null,
-			brandColor: null,
+			theme: DEFAULT_STATUS_PAGE_THEME,
 			showPoweredBy: true,
 		},
 		breakGlassTokenSha256: null,
