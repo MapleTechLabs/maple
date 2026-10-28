@@ -271,6 +271,32 @@ describe("Alchemy engine lifecycle", () => {
 		)
 	})
 
+	it.live("clears a scope field dropped from props, so it cannot clash with its replacement", () => {
+		const h = makeHarness()
+		const stack = h.stack("rule-scope")
+		return h.run(
+			Effect.gen(function* () {
+				const base = {
+					name: "Checkout errors",
+					severity: "critical" as const,
+					signal_type: "error_rate" as const,
+					comparator: "gt" as const,
+					threshold: 0.05,
+					window_minutes: 5,
+					destination_ids: [],
+				}
+				const named = { ...base, service_names: ["checkout"], alert_on_no_data: true }
+				const output = yield* stack.deploy(AlertRule("errors", named))
+				yield* stack.deploy(AlertRule("errors", { ...base, group_by: ["service.name"] }))
+				expect(h.documents.get(`/v2/alerts/rules/${output.ruleId}`)).toMatchObject({
+					service_names: [],
+					group_by: ["service.name"],
+					alert_on_no_data: false,
+				})
+			}),
+		)
+	})
+
 	it.live("recovers its own rule after lost state and rejects another stack or stage", () => {
 		const h = makeHarness()
 		return h.run(
