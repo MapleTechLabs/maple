@@ -3,7 +3,12 @@ import { Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { StatusPageComponentId, StatusPageId, UptimeMonitorId } from "@maple/domain/primitives"
-import { STATUS_PAGE_BREAK_GLASS_PREFIX, sha256Base64Url } from "@maple/domain/status-page"
+import {
+	DEFAULT_STATUS_PAGE_THEME,
+	STATUS_PAGE_BREAK_GLASS_PREFIX,
+	sha256Base64Url,
+	type StatusPageTheme,
+} from "@maple/domain/status-page"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { StatusPagesService, type CreateStatusPageIncidentInput } from "./StatusPagesService"
 
@@ -56,11 +61,11 @@ describe("StatusPagesService", () => {
 				name: " Acme ",
 				slug: "acme",
 				websiteUrl: "https://acme.test",
-				brandColor: "#AABBCC",
+				theme: { ...DEFAULT_STATUS_PAGE_THEME, accent: "#AABBCC" },
 				createdBy: USER,
 			})
 			assert.strictEqual(page.name, "Acme")
-			assert.strictEqual(page.brandColor, "#aabbcc")
+			assert.strictEqual(page.theme.accent, "#aabbcc")
 			assert.strictEqual(page.revision, 1)
 			assert.strictEqual(page.publishedRevision, 0)
 			yield* createPage("elsewhere", OTHER_ORG)
@@ -82,12 +87,47 @@ describe("StatusPagesService", () => {
 				service.update(ORG, page.id, { logoUrl: "http://acme.test/logo.png" }),
 			)
 			assert.strictEqual(badUrl._tag, "@maple/http/errors/StatusPageValidationError")
-			const badColor = yield* Effect.flip(service.update(ORG, page.id, { brandColor: "red" }))
+			const badColor = yield* Effect.flip(
+				service.update(ORG, page.id, { theme: { ...DEFAULT_STATUS_PAGE_THEME, card: "red" } }),
+			)
 			assert.strictEqual(badColor._tag, "@maple/http/errors/StatusPageValidationError")
 
 			assert.strictEqual(yield* service.remove(ORG, page.id), page.id)
 			const gone = yield* Effect.flip(service.get(ORG, page.id))
 			assert.strictEqual(gone._tag, "@maple/http/errors/StatusPageNotFoundError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("stores a forced theme with lower-cased colours and refuses unreadable text", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("themed")
+			assert.deepStrictEqual(page.theme, DEFAULT_STATUS_PAGE_THEME)
+			const dark: StatusPageTheme = {
+				...DEFAULT_STATUS_PAGE_THEME,
+				preset: "midnight",
+				appearance: "dark",
+				background: "#0F1115",
+				text: " #F5F5F5 ",
+				border: "",
+			}
+			const updated = yield* service.update(ORG, page.id, { theme: dark })
+			assert.deepStrictEqual(updated.theme, {
+				...dark,
+				background: "#0f1115",
+				text: "#f5f5f5",
+				border: null,
+			})
+
+			const unreadable = yield* Effect.flip(
+				service.update(ORG, page.id, {
+					theme: { ...DEFAULT_STATUS_PAGE_THEME, appearance: "light", text: "#777777" },
+				}),
+			)
+			assert.strictEqual(unreadable._tag, "@maple/http/errors/StatusPageValidationError")
+			assert.include(unreadable.message, "4.48:1")
+			assert.strictEqual((yield* service.get(ORG, page.id)).theme.background, "#0f1115")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -475,7 +515,9 @@ describe("StatusPagesService", () => {
 			// A failed mutation rolls back its bump with the write.
 			const before = yield* revision(testDb, page.id)
 			yield* Effect.flip(service.updateComponent(ORG, extra, { name: "Nope" }))
-			yield* Effect.flip(service.update(ORG, page.id, { brandColor: "nope" }))
+			yield* Effect.flip(
+				service.update(ORG, page.id, { theme: { ...DEFAULT_STATUS_PAGE_THEME, accent: "nope" } }),
+			)
 			assert.strictEqual(yield* revision(testDb, page.id), before)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})

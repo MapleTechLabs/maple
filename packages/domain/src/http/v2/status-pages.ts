@@ -13,6 +13,12 @@ import {
 	StatusPageUpdateSource,
 } from "../../primitives"
 import {
+	StatusPageThemeAppearance,
+	StatusPageThemeFont,
+	StatusPageThemePreset,
+	StatusPageThemeRadius,
+} from "../../status-page"
+import {
 	StatusPageComponentNotFoundError,
 	StatusPageIncidentNotFoundError,
 	StatusPageNotFoundError,
@@ -58,6 +64,81 @@ const autoIncidentsField = StatusPageAutoIncidents.annotate({
 	examples: ["draft"],
 })
 
+const themeExample = {
+	preset: "midnight",
+	appearance: "dark",
+	accent: "#a5b4fc",
+	background: null,
+	text: null,
+	card: null,
+	border: null,
+	radius: "md",
+	font: "sans",
+} as const
+
+const themeColor = (what: string) =>
+	Schema.NullOr(Schema.String).annotate({
+		description: `${what} as \`#rrggbb\`, or \`null\` for the preset's. Applies only when \`appearance\` is \`light\` or \`dark\`.`,
+		examples: ["#0f1115"],
+	})
+
+const themeFields = {
+	preset: StatusPageThemePreset.annotate({
+		description: "Base palette for light and dark: `default`, `mono`, `midnight` or `paper`.",
+		examples: ["midnight"],
+	}),
+	appearance: StatusPageThemeAppearance.annotate({
+		description:
+			"`auto` follows the visitor's light or dark setting; `light` or `dark` forces one and enables the colour overrides.",
+		examples: ["auto"],
+	}),
+	accent: Schema.NullOr(Schema.String).annotate({
+		description:
+			"Link and highlight colour as `#rrggbb` in every appearance, or `null` for the preset's.",
+		examples: ["#1a2b3c"],
+	}),
+	background: themeColor("Page background"),
+	text: themeColor("Text colour"),
+	card: themeColor("Card and group header background"),
+	border: themeColor("Border colour"),
+	radius: StatusPageThemeRadius.annotate({
+		description: "Corner radius of cards, banners and bars: `none`, `sm`, `md` or `lg`.",
+		examples: ["md"],
+	}),
+	font: StatusPageThemeFont.annotate({
+		description: "Font family: `sans`, `serif` or `mono` (system fonts).",
+		examples: ["sans"],
+	}),
+}
+
+export const V2StatusPageTheme = Schema.Struct(themeFields).annotate({
+	identifier: "StatusPageTheme",
+	title: "Status page theme",
+	description:
+		"How the public page looks. Text must reach a WCAG AA contrast of 4.5:1 on the background and on cards.",
+	examples: [wireExample(themeExample)],
+})
+export type V2StatusPageTheme = Schema.Schema.Type<typeof V2StatusPageTheme>
+
+/** Omitted theme fields keep their current value (the default on create). */
+export const V2StatusPageThemeParams = Schema.Struct({
+	preset: Schema.optionalKey(themeFields.preset),
+	appearance: Schema.optionalKey(themeFields.appearance),
+	accent: Schema.optionalKey(themeFields.accent),
+	background: Schema.optionalKey(themeFields.background),
+	text: Schema.optionalKey(themeFields.text),
+	card: Schema.optionalKey(themeFields.card),
+	border: Schema.optionalKey(themeFields.border),
+	radius: Schema.optionalKey(themeFields.radius),
+	font: Schema.optionalKey(themeFields.font),
+}).annotate({
+	identifier: "StatusPageThemeParams",
+	title: "Status page theme parameters",
+	description: "Theme fields to set. Omitted fields keep their current value, or the default on create.",
+	examples: [wireExample({ preset: "paper", font: "serif" })],
+})
+export type V2StatusPageThemeParams = Schema.Schema.Type<typeof V2StatusPageThemeParams>
+
 const statusPageExample = {
 	id: "stp_YofPTrK9782DWwcnXhpcCw",
 	object: "status_page",
@@ -66,7 +147,7 @@ const statusPageExample = {
 	description: "Live status of Acme's API and dashboard.",
 	website_url: "https://acme.example",
 	logo_url: null,
-	brand_color: "#1a2b3c",
+	theme: themeExample,
 	show_powered_by: true,
 	auto_incidents: "draft",
 	break_glass_token_suffix: null,
@@ -89,10 +170,7 @@ export const V2StatusPage = Schema.Struct({
 	description: Schema.NullOr(Schema.String).annotate({ description: "Text under the title, or `null`." }),
 	website_url: Schema.NullOr(Schema.String).annotate({ description: "Your site, linked from the page." }),
 	logo_url: Schema.NullOr(Schema.String).annotate({ description: "An https logo URL, or `null`." }),
-	brand_color: Schema.NullOr(Schema.String).annotate({
-		description: "Accent color as `#rrggbb`, or `null`.",
-		examples: ["#1a2b3c"],
-	}),
+	theme: V2StatusPageTheme,
 	show_powered_by: Schema.Boolean.annotate({ description: "Whether the page credits Maple." }),
 	auto_incidents: autoIncidentsField,
 	break_glass_token_suffix: Schema.NullOr(Schema.String).annotate({
@@ -125,7 +203,7 @@ export const V2StatusPageCreateParams = Schema.Struct({
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	website_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	logo_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	brand_color: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	theme: Schema.optionalKey(V2StatusPageThemeParams),
 	show_powered_by: Schema.optionalKey(Schema.Boolean),
 	auto_incidents: Schema.optionalKey(autoIncidentsField),
 }).annotate({
@@ -142,14 +220,14 @@ export const V2StatusPageUpdateParams = Schema.Struct({
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	website_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	logo_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	brand_color: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	theme: Schema.optionalKey(V2StatusPageThemeParams),
 	show_powered_by: Schema.optionalKey(Schema.Boolean),
 	auto_incidents: Schema.optionalKey(autoIncidentsField),
 }).annotate({
 	identifier: "StatusPageUpdateParams",
 	title: "Status page update parameters",
 	description: "Request body for updating a status page. Omitted fields are left unchanged.",
-	examples: [wireExample({ brand_color: "#1a2b3c" })],
+	examples: [wireExample({ theme: { accent: "#1a2b3c" } })],
 })
 export type V2StatusPageUpdateParams = Schema.Schema.Type<typeof V2StatusPageUpdateParams>
 

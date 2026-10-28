@@ -40,7 +40,15 @@ import {
 	type UptimeMonitorId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { STATUS_PAGE_BREAK_GLASS_PREFIX, StatusPageSlug, sha256Base64Url } from "@maple/domain/status-page"
+import {
+	DEFAULT_STATUS_PAGE_THEME,
+	STATUS_PAGE_BREAK_GLASS_PREFIX,
+	STATUS_PAGE_HEX_COLOR_PATTERN,
+	StatusPageSlug,
+	type StatusPageTheme,
+	sha256Base64Url,
+	themeContrastIssue,
+} from "@maple/domain/status-page"
 import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -53,7 +61,7 @@ export interface CreateStatusPageInput {
 	readonly description?: string | null
 	readonly websiteUrl?: string | null
 	readonly logoUrl?: string | null
-	readonly brandColor?: string | null
+	readonly theme?: StatusPageTheme
 	readonly showPoweredBy?: boolean
 	readonly autoIncidents?: StatusPageAutoIncidents
 	readonly createdBy: UserId
@@ -65,7 +73,7 @@ export interface UpdateStatusPageInput {
 	readonly description?: string | null
 	readonly websiteUrl?: string | null
 	readonly logoUrl?: string | null
-	readonly brandColor?: string | null
+	readonly theme?: StatusPageTheme
 	readonly showPoweredBy?: boolean
 	readonly autoIncidents?: StatusPageAutoIncidents
 }
@@ -216,7 +224,6 @@ export interface StatusPagesServiceApi {
 const MAX_NAME_LENGTH = 120
 const MAX_TEXT_LENGTH = 2000
 const MAX_URL_LENGTH = 2048
-const BRAND_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/u
 const INCIDENT_STATUSES: ReadonlySet<StatusPageIncidentStatus> = new Set([
 	"investigating",
 	"identified",
@@ -280,12 +287,29 @@ const validateHttpsUrl = (raw: string | null, what: string) => {
 	return Effect.succeed(value)
 }
 
-const validateBrandColor = (raw: string | null) => {
-	if (raw === null) return Effect.succeed(null)
-	return BRAND_COLOR_PATTERN.test(raw)
-		? Effect.succeed(raw.toLowerCase())
-		: Effect.fail(invalid("Brand color must be a hex color like #1a2b3c"))
+/** Blank is no colour; anything else must be `#rrggbb`, stored lower-cased. */
+const validateHex = (raw: string | null, what: string) => {
+	const value = raw?.trim() ?? ""
+	if (value.length === 0) return Effect.succeed(null)
+	return STATUS_PAGE_HEX_COLOR_PATTERN.test(value)
+		? Effect.succeed(value.toLowerCase())
+		: Effect.fail(invalid(`${what} must be a hex color like #1a2b3c`))
 }
+
+/** Hex colours normalized, and refused when the text would be hard to read. */
+const validateTheme = Effect.fnUntraced(function* (theme: StatusPageTheme) {
+	const normalized: StatusPageTheme = {
+		...theme,
+		accent: yield* validateHex(theme.accent, "Accent color"),
+		background: yield* validateHex(theme.background, "Background color"),
+		text: yield* validateHex(theme.text, "Text color"),
+		card: yield* validateHex(theme.card, "Card color"),
+		border: yield* validateHex(theme.border, "Border color"),
+	}
+	const issue = themeContrastIssue(normalized)
+	if (issue !== null) return yield* Effect.fail(invalid(issue))
+	return normalized
+})
 
 const validateStatusForKind = (kind: StatusPageIncidentKind, status: StatusPageIncidentStatus) => {
 	const allowed = kind === "maintenance" ? MAINTENANCE_STATUSES : INCIDENT_STATUSES
@@ -331,7 +355,7 @@ const toPageRecord = (row: StatusPageRow): StatusPageRecord => ({
 	description: row.description,
 	websiteUrl: row.websiteUrl,
 	logoUrl: row.logoUrl,
-	brandColor: row.brandColor,
+	theme: row.theme,
 	showPoweredBy: row.showPoweredBy,
 	autoIncidents: row.autoIncidents,
 	breakGlassTokenSuffix: row.breakGlassTokenSuffix,
@@ -578,7 +602,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const description = yield* validateText(input.description ?? null, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.websiteUrl ?? null, "Website URL")
 				const logoUrl = yield* validateHttpsUrl(input.logoUrl ?? null, "Logo URL")
-				const brandColor = yield* validateBrandColor(input.brandColor ?? null)
+				const theme = yield* validateTheme(input.theme ?? DEFAULT_STATUS_PAGE_THEME)
 				const now = yield* Clock.currentTimeMillis
 				const id = StatusPageId.make(randomUUID())
 				yield* dbExecuteSlug(slug)((db) =>
@@ -595,7 +619,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									description,
 									websiteUrl,
 									logoUrl,
-									brandColor,
+									theme,
 									showPoweredBy: input.showPoweredBy ?? true,
 									autoIncidents: input.autoIncidents ?? "off",
 									breakGlassTokenSha256: null,
@@ -639,8 +663,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					patch.logoUrl === undefined
 						? undefined
 						: yield* validateHttpsUrl(patch.logoUrl, "Logo URL")
-				const brandColor =
-					patch.brandColor === undefined ? undefined : yield* validateBrandColor(patch.brandColor)
+				const theme = patch.theme === undefined ? undefined : yield* validateTheme(patch.theme)
 				const now = yield* Clock.currentTimeMillis
 				yield* dbExecuteSlug(slug ?? "")((db) =>
 					db.transaction(
@@ -658,7 +681,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										...(description === undefined ? undefined : { description }),
 										...(websiteUrl === undefined ? undefined : { websiteUrl }),
 										...(logoUrl === undefined ? undefined : { logoUrl }),
-										...(brandColor === undefined ? undefined : { brandColor }),
+										...(theme === undefined ? undefined : { theme }),
 										...(patch.showPoweredBy === undefined
 											? undefined
 											: { showPoweredBy: patch.showPoweredBy }),

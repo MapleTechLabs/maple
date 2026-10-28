@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Layer } from "effect"
 import { OrgId, StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/domain/primitives"
-import { utcDay } from "@maple/domain/status-page"
+import { DEFAULT_STATUS_PAGE_THEME, utcDay } from "@maple/domain/status-page"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { StatusPageSnapshotBuilder, toSnapshot, type SnapshotInput } from "./StatusPageSnapshotBuilder"
 import {
@@ -42,7 +42,7 @@ const baseInput = (overrides: Partial<SnapshotInput> = {}): SnapshotInput => ({
 		description: null,
 		websiteUrl: null,
 		logoUrl: null,
-		brandColor: null,
+		theme: DEFAULT_STATUS_PAGE_THEME,
 		showPoweredBy: true,
 		breakGlassTokenSha256: null,
 		revision: 3,
@@ -279,6 +279,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			const builder = yield* StatusPageSnapshotBuilder
 			const snapshot = yield* builder.build(pageId, NOW)
 			assert.strictEqual(snapshot.revision, 4)
+			assert.deepStrictEqual(snapshot.page.theme, DEFAULT_STATUS_PAGE_THEME)
 			assert.deepStrictEqual(
 				snapshot.components.map((c) => [c.name, c.status, c.days.length]),
 				[

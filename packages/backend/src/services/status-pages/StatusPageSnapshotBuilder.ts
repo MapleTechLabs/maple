@@ -33,6 +33,7 @@ import {
 	STATUS_PAGE_SNAPSHOT_VERSION,
 	type StatusPageSnapshot,
 	type StatusPageSnapshotIncident,
+	type StatusPageTheme,
 	utcDay,
 } from "@maple/domain/status-page"
 import { Context, Effect, Layer } from "effect"
@@ -49,7 +50,7 @@ export interface SnapshotPageInput {
 	readonly description: string | null
 	readonly websiteUrl: string | null
 	readonly logoUrl: string | null
-	readonly brandColor: string | null
+	readonly theme: StatusPageTheme
 	readonly showPoweredBy: boolean
 	readonly breakGlassTokenSha256: string | null
 	readonly revision: number
@@ -213,7 +214,7 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 			description: input.page.description,
 			websiteUrl: input.page.websiteUrl,
 			logoUrl: input.page.logoUrl,
-			brandColor: input.page.brandColor,
+			theme: input.page.theme,
 			showPoweredBy: input.page.showPoweredBy,
 		},
 		breakGlassTokenSha256: input.page.breakGlassTokenSha256,
@@ -267,7 +268,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 								description: $.description,
 								websiteUrl: $.websiteUrl,
 								logoUrl: $.logoUrl,
-								brandColor: $.brandColor,
+								theme: $.theme,
 								showPoweredBy: $.showPoweredBy,
 								breakGlassTokenSha256: $.breakGlassTokenSha256,
 								revision: $.revision,

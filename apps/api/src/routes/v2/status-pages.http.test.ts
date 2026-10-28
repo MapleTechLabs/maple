@@ -130,14 +130,24 @@ describe("v2 status pages", () => {
 			const created = await harness.request("POST", "/v2/status_pages", token, {
 				name: "Acme Status",
 				slug: "acme-status",
-				brand_color: "#1A2B3C",
+				theme: { accent: "#1A2B3C" },
 			})
 			expect(created.status).toBe(200)
 			expect(created.body).toMatchObject({
 				object: "status_page",
 				name: "Acme Status",
 				slug: "acme-status",
-				brand_color: "#1a2b3c",
+				theme: {
+					preset: "default",
+					appearance: "auto",
+					accent: "#1a2b3c",
+					background: null,
+					text: null,
+					card: null,
+					border: null,
+					radius: "md",
+					font: "sans",
+				},
 				auto_incidents: "off",
 				revision: 1,
 				published_revision: 0,
@@ -152,8 +162,22 @@ describe("v2 status pages", () => {
 			const updated = await harness.request("PATCH", `/v2/status_pages/${id}`, token, {
 				description: "Live status of Acme.",
 				auto_incidents: "draft",
+				theme: { preset: "paper", appearance: "light", background: "#FFFDF7" },
 			})
 			expect(updated.status).toBe(200)
+			// Omitted theme fields keep their values.
+			expect(updated.body.theme).toMatchObject({
+				preset: "paper",
+				appearance: "light",
+				accent: "#1a2b3c",
+				background: "#fffdf7",
+			})
+
+			const unreadable = await harness.request("PATCH", `/v2/status_pages/${id}`, token, {
+				theme: { text: "#777777", background: "#ffffff" },
+			})
+			expect(unreadable.status).toBe(400)
+			expect(unreadable.body.error.message).toContain("4.48:1")
 			expect(updated.body).toMatchObject({
 				name: "Acme Status",
 				description: "Live status of Acme.",
