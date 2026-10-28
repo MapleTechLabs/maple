@@ -223,6 +223,11 @@ export const SecurityAuditFinding = Schema.Struct({
 	targetId: SecurityAuditTargetId,
 	verdict: SecurityAuditVerdict,
 	overallSeverity: Schema.NullOr(SecurityAuditSeverity),
+	/**
+	 * A needs-validation lead's severity as the engine estimates it from the code it read, before
+	 * anything proves it; null for confirmed and rejected findings and for a lead given no estimate.
+	 */
+	estimatedSeverity: Schema.NullOr(SecurityAuditSeverity),
 	status: SecurityAuditFindingStatus,
 	statusReason: Schema.NullOr(Schema.String),
 	statusChangedBy: Schema.NullOr(UserId),
@@ -265,7 +270,28 @@ export const SecurityAuditUnit = Schema.Struct({
 export type SecurityAuditUnit = typeof SecurityAuditUnit.Type
 
 export const SecurityAuditTargetsResponse = Schema.Struct({ targets: Schema.Array(SecurityAuditTarget) })
-export const SecurityAuditRunsResponse = Schema.Struct({ runs: Schema.Array(SecurityAuditRun) })
+/**
+ * What one run reported, per severity: confirmed findings by their severity and needs-validation
+ * leads by their estimate. `unverified` is how many of those severity counts are estimates;
+ * `needsValidation` is the leads with no estimate.
+ */
+export const SecurityAuditRunFindingCounts = Schema.Struct({
+	critical: Schema.Number,
+	high: Schema.Number,
+	medium: Schema.Number,
+	low: Schema.Number,
+	informational: Schema.Number,
+	unverified: Schema.Number,
+	needsValidation: Schema.Number,
+	rejected: Schema.Number,
+})
+export type SecurityAuditRunFindingCounts = typeof SecurityAuditRunFindingCounts.Type
+
+export const SecurityAuditRunsResponse = Schema.Struct({
+	runs: Schema.Array(SecurityAuditRun),
+	/** Per run id; admins only, since members may list runs but not read findings. */
+	findingCounts: Schema.optionalKey(Schema.Record(Schema.String, SecurityAuditRunFindingCounts)),
+})
 export const SecurityAuditEventsResponse = Schema.Struct({ events: Schema.Array(SecurityAuditEvent) })
 export const SecurityAuditFindingsResponse = Schema.Struct({ findings: Schema.Array(SecurityAuditFinding) })
 export const SecurityAuditUnitsResponse = Schema.Struct({ units: Schema.Array(SecurityAuditUnit) })
@@ -608,6 +634,13 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			params: { runId: SecurityAuditRunId },
 			query: SecurityAuditListEventsQuery,
 			success: SecurityAuditEventsResponse,
+			error: [...adminErrors, SecurityAuditRunNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("listRunFindings", "/runs/:runId/findings", {
+			params: { runId: SecurityAuditRunId },
+			success: SecurityAuditFindingsResponse,
 			error: [...adminErrors, SecurityAuditRunNotFoundError],
 		}),
 	)

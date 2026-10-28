@@ -4,18 +4,20 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../../ui/display"
 import { eyebrow } from "../../../ui/eyebrow"
 import { panel, panelHeader } from "../../../ui/panel"
-import type { FindingRecord } from "../kit/format"
-import { Message } from "./model"
+import type { FindingRecord } from "./format"
 
 // The finding's own record: what is wrong, the trace, how it is exploited, how to fix it.
-
-type H = HtmlBuilder<Message>
 
 type Confirmed = Extract<FindingRecord, { verdict: "confirmed" }>
 type NeedsValidation = Extract<FindingRecord, { verdict: "needs_validation" }>
 type Rejected = Extract<FindingRecord, { verdict: "rejected" }>
 
-const section = (h: H, title: string, hint: string | null, children: ReadonlyArray<Html>): Html =>
+const section = <M>(
+	h: HtmlBuilder<M>,
+	title: string,
+	hint: string | null,
+	children: ReadonlyArray<Html>,
+): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(
 			h,
@@ -26,16 +28,16 @@ const section = (h: H, title: string, hint: string | null, children: ReadonlyArr
 		h.div([h.Class("flex flex-col gap-4 px-4 py-4")], children),
 	])
 
-const prose = (h: H, text: string, className?: string): Html =>
+const prose = <M>(h: HtmlBuilder<M>, text: string, className?: string): Html =>
 	h.p([h.Class(cn("whitespace-pre-line text-sm leading-relaxed", className))], [text])
 
-const labelled = (h: H, label: string, text: string): Html =>
+const labelled = <M>(h: HtmlBuilder<M>, label: string, text: string): Html =>
 	h.div(
 		[h.Class("flex flex-col gap-1.5 rounded-md border px-3 py-2.5")],
 		[eyebrow(h, { as: "div" }, [label]), h.p([h.Class("text-sm")], [text])],
 	)
 
-const codeBlock = (h: H, text: string, label?: string): Html =>
+const codeBlock = <M>(h: HtmlBuilder<M>, text: string, label?: string): Html =>
 	h.div(
 		[h.Class("overflow-hidden rounded-md border bg-muted/40")],
 		[
@@ -63,7 +65,7 @@ const CONDITION_LABEL = {
 	third_party_dependency: "third party",
 } satisfies Record<Confirmed["conditions"][number]["kind"], string>
 
-const whatIsWrong = (h: H, record: FindingRecord): Html =>
+const whatIsWrong = <M>(h: HtmlBuilder<M>, record: FindingRecord): Html =>
 	section(h, "What is wrong", null, [
 		prose(h, record.description),
 		h.div(
@@ -77,7 +79,7 @@ const whatIsWrong = (h: H, record: FindingRecord): Html =>
 		),
 	])
 
-const traceAndEvidence = (h: H, record: FindingRecord): Html => {
+const traceAndEvidence = <M>(h: HtmlBuilder<M>, record: FindingRecord): Html => {
 	const files = new Set([
 		...record.trace.map((step) => step.file),
 		...record.evidence.map((item) => item.file),
@@ -132,7 +134,7 @@ const traceAndEvidence = (h: H, record: FindingRecord): Html => {
 	)
 }
 
-const exploitation = (h: H, record: Confirmed): Html =>
+const exploitation = <M>(h: HtmlBuilder<M>, record: Confirmed): Html =>
 	section(h, "How it is exploited", null, [
 		prose(h, record.execution.attacker_perspective),
 		...(record.conditions.length === 0
@@ -176,7 +178,7 @@ const exploitation = (h: H, record: Confirmed): Html =>
 		),
 	])
 
-const assessment = (h: H, record: Confirmed): Html =>
+const assessment = <M>(h: HtmlBuilder<M>, record: Confirmed): Html =>
 	section(h, "Assessment", "The agent that checks a finding never found it", [
 		h.div(
 			[h.Class("grid gap-3 md:grid-cols-3")],
@@ -192,7 +194,7 @@ const assessment = (h: H, record: Confirmed): Html =>
 		),
 	])
 
-const remediation = (h: H, record: Confirmed): Html =>
+const remediation = <M>(h: HtmlBuilder<M>, record: Confirmed): Html =>
 	section(h, "How to fix it", null, [
 		prose(h, record.remediation.strategy),
 		...(record.remediation.code_changes ?? []).map((change) =>
@@ -201,7 +203,7 @@ const remediation = (h: H, record: Confirmed): Html =>
 	])
 
 /** What to run to prove or disprove it: the first thing a reader of an unproven lead needs. */
-const checkIt = (h: H, record: NeedsValidation): Html =>
+const checkIt = <M>(h: HtmlBuilder<M>, record: NeedsValidation): Html =>
 	section(h, "Check it", "Found by reading the code. Not run, so not proven.", [
 		...(record.validation_plan.local === undefined
 			? []
@@ -214,7 +216,7 @@ const checkIt = (h: H, record: NeedsValidation): Html =>
 			: []),
 	])
 
-const whyNotProven = (h: H, record: NeedsValidation): Html | null =>
+const whyNotProven = <M>(h: HtmlBuilder<M>, record: NeedsValidation): Html | null =>
 	record.blockers.length === 0
 		? null
 		: section(h, "Why it is not proven", null, [
@@ -224,10 +226,10 @@ const whyNotProven = (h: H, record: NeedsValidation): Html | null =>
 				),
 			])
 
-const rejection = (h: H, record: Rejected): Html =>
+const rejection = <M>(h: HtmlBuilder<M>, record: Rejected): Html =>
 	section(h, "Why it was rejected", "A second model disproved the claim", [prose(h, record.reason)])
 
-export const findingBody = (h: H, finding: SecurityAuditFinding): ReadonlyArray<Html> => {
+export const findingBody = <M>(h: HtmlBuilder<M>, finding: SecurityAuditFinding): ReadonlyArray<Html> => {
 	const { record } = finding
 	switch (record.verdict) {
 		case "confirmed":

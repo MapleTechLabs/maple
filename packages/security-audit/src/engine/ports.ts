@@ -6,7 +6,7 @@
  */
 import { Context, type Effect, Schema } from "effect"
 import type { ExecutionPolicy } from "../prompts"
-import type { CoverageUnit, Finding } from "../schema"
+import type { CoverageUnit, EstimatedSeverity, Finding } from "../schema"
 
 export const AuditRole = Schema.Literals([
 	"recon",
@@ -127,9 +127,11 @@ export interface AuditStoreApi {
 		runId: string,
 		ledger: ReadonlyArray<CoverageUnit>,
 	) => Effect.Effect<void, AuditStoreError>
+	/** `estimates` holds each needs_validation record's estimated severity, by fingerprint. */
 	readonly saveFindings: (
 		runId: string,
 		findings: ReadonlyArray<Finding>,
+		estimates: ReadonlyMap<string, EstimatedSeverity>,
 	) => Effect.Effect<void, AuditStoreError>
 	readonly saveReports: (runId: string, reports: AuditReports) => Effect.Effect<void, AuditStoreError>
 	readonly recordEvent: (runId: string, event: AuditEvent) => Effect.Effect<void, AuditStoreError>

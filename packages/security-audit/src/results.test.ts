@@ -1,7 +1,15 @@
 import { Effect, Exit } from "effect"
 import { describe, expect, it } from "vitest"
-import { confirmedRecord } from "./__fixtures__/records"
-import { type Candidate, candidateErrors, CandidateVerdict, decodeAgentJson, HunterResult } from "./results"
+import { confirmedRecord, needsValidationRecord } from "./__fixtures__/records"
+import {
+	type Candidate,
+	candidateErrors,
+	candidateRecord,
+	CandidateVerdict,
+	decodeAgentJson,
+	HunterResult,
+} from "./results"
+import { findingsErrors } from "./validators"
 
 const hunterJson = JSON.stringify({
 	units: [
@@ -78,5 +86,23 @@ describe("candidateErrors", () => {
 
 	it("reports a candidate whose fingerprint breaks the skill's pattern", () => {
 		expect(candidateErrors({ ...candidate, fingerprint: "has spaces" }).length).toBeGreaterThan(0)
+	})
+})
+
+describe("candidateRecord", () => {
+	const { verdict: _verdict, ...fields } = needsValidationRecord
+	const estimated_severity = {
+		likelihood: { score: "medium", reason: "any member reaches the route" },
+		impact: { score: "high", reason: "cross-tenant key roll" },
+		overall_severity: "high",
+	} as const
+	const lead: Candidate = { proposed_verdict: "needs_validation", ...fields, estimated_severity }
+
+	it("leaves a lead's estimate out of the record the upstream validator checks", () => {
+		expect(candidateRecord(lead)).toEqual(needsValidationRecord)
+		expect(candidateErrors(lead)).toEqual([])
+		// The upstream schema refuses fields it does not define, so the estimate must never reach it.
+		const polluted = { ...needsValidationRecord, estimated_severity }
+		expect(findingsErrors([polluted]).length).toBeGreaterThan(0)
 	})
 })

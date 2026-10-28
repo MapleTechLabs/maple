@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest"
 import { plannedUnit } from "./__fixtures__/records"
-import { type AgentContext, companionFileOf, hunterPrompt, unknownBlockRefs, VERBATIM } from "./prompts"
+import { confirmedRecord, needsValidationRecord } from "./__fixtures__/records"
+import {
+	type AgentContext,
+	candidateVerifierPrompt,
+	companionFileOf,
+	hunterPrompt,
+	recordVerifierPrompt,
+	unknownBlockRefs,
+	VERBATIM,
+} from "./prompts"
 import {
 	COMPANION_FILES,
 	COMPANION_REQUIRED_SECTIONS,
@@ -141,5 +150,47 @@ describe("unknownBlockRefs", () => {
 				selected_companion_blocks: ["DATA-ISOLATION-AND-LIFECYCLE.md#tenant-isolation"],
 			}),
 		).toEqual(["DATA-ISOLATION-AND-LIFECYCLE.md#tenant-isolation"])
+	})
+})
+
+describe("estimated severity", () => {
+	const estimate = {
+		likelihood: { score: "low", reason: "needs a leaked key id" },
+		impact: { score: "high", reason: "cross-tenant key roll" },
+		overall_severity: "low",
+	} as const
+
+	it("asks hunters for an estimate beside each lead, calibrated by the skill's anchors", () => {
+		expect(prompt).toContain(
+			"Every needs_validation candidate therefore also carries `estimated_severity`",
+		)
+		// The skill's calibration anchors through its high/medium discriminator, verbatim.
+		expect(prompt).toContain(VERBATIM.severityAnchors)
+		expect(prompt).toContain("The high/medium discriminator")
+	})
+
+	it("asks a candidate verifier for its own estimate at the top level of a needs_validation decision", () => {
+		const verifier = candidateVerifierPrompt(
+			{
+				candidate: needsValidationRecord,
+				linkedChecks: [],
+				architectureFacts: "",
+				companionValidationBlocks: [],
+				priorRecords: [],
+			},
+			context,
+		)
+		expect(verifier).toContain(
+			'{"decision": "needs_validation", "record": {...}, "estimated_severity": {...}}',
+		)
+	})
+
+	it("shows a record verifier a lead's current estimate, and none for a confirmed record", () => {
+		expect(recordVerifierPrompt(needsValidationRecord, context, estimate)).toContain(
+			JSON.stringify(estimate),
+		)
+		const confirmedPrompt = recordVerifierPrompt(confirmedRecord, context, null)
+		expect(confirmedPrompt).not.toContain("The record's current estimate")
+		expect(confirmedPrompt).not.toContain("The record carries no estimate yet")
 	})
 })

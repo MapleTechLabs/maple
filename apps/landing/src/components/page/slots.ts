@@ -16,6 +16,7 @@
  */
 import type { ArtifactId, SectionId } from "../../lib/page-registry"
 import LiveAlertFiring from "../live/LiveAlertFiring.astro"
+import LiveAnomaly from "../live/LiveAnomaly.astro"
 import LiveBrowserSessions from "../live/LiveBrowserSessions.astro"
 import LiveFunnel from "../live/LiveFunnel.astro"
 import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro"
@@ -53,6 +54,7 @@ export const ARTIFACTS = {
 	funnel: LiveFunnel,
 	"pr-review": PrReview,
 	uptime: LiveUptime,
+	anomaly: LiveAnomaly,
 } satisfies Record<ArtifactId, unknown>
 
 export const EXTRA_SECTIONS = {

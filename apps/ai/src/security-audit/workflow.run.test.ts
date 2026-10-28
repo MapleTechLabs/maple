@@ -940,7 +940,7 @@ const keysFinding: Finding = {
 const seedOpenFinding = (store: SecurityAuditOrgStore, targetId: SecurityAuditTargetId) =>
 	Effect.gen(function* () {
 		const seed = yield* store.startRun({ targetId, kind: "manual", sourceRef: SHA })
-		yield* store.saveFindings(seed.id, [keysFinding])
+		yield* store.saveFindings(seed.id, [keysFinding], new Map())
 		yield* store.finishRun(seed.id, { status: "complete" })
 	})
 

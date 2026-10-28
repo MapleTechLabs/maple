@@ -136,6 +136,10 @@ export const SecurityAuditRunFindings = PG.table("security_audit_run_findings", 
 		overallSeverity: PG.column(PG.nullable(PG.brand(PG.text, SecurityAuditSeverity)), {
 			name: "overall_severity",
 		}),
+		/** The engine's unverified estimate, for needs_validation leads only; null when it gave none. */
+		estimatedSeverity: PG.column(PG.nullable(PG.brand(PG.text, SecurityAuditSeverity)), {
+			name: "estimated_severity",
+		}),
 		record: PG.jsonb(Finding),
 	},
 	primaryKey: ["runId", "fingerprint"],
@@ -156,6 +160,9 @@ export const SecurityAuditFindings = PG.table("security_audit_findings", {
 		verdict: PG.brand(PG.text, SecurityAuditVerdict),
 		overallSeverity: PG.column(PG.nullable(PG.brand(PG.text, SecurityAuditSeverity)), {
 			name: "overall_severity",
+		}),
+		estimatedSeverity: PG.column(PG.nullable(PG.brand(PG.text, SecurityAuditSeverity)), {
+			name: "estimated_severity",
 		}),
 		record: PG.jsonb(Finding),
 		status: PG.column(PG.brand(PG.text, SecurityAuditFindingStatus), { default: "open" }),

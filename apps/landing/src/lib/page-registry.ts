@@ -42,6 +42,7 @@ export type ArtifactId =
 	| "funnel"
 	| "pr-review"
 	| "uptime"
+	| "anomaly"
 
 export type SectionId =
 	| "k8s-console"
