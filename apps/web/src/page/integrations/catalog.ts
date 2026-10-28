@@ -180,7 +180,7 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		category: "notifications",
 		name: "Linear",
 		description:
-			"Open a Linear issue for each critical incident, then comment as it escalates and resolves.",
+			"Open one Linear issue per alert rule, then comment as it fires again, changes severity or resolves.",
 		icon: named("LinearIcon"),
 		accent: LINEAR_ACCENT,
 	},

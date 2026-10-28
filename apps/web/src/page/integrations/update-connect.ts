@@ -47,6 +47,7 @@ export const refreshProvider = (
 export const clickedConnect = (model: Model): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (!Schema.is(ConnectProvider)(integration) || model.connect.isStarting) return { model }
+	if (integration === "linear" && !model.isAdmin) return { model }
 	const attempt = model.connect.attempts + 1
 	const base = integration === "cloudflare" ? Cloudflare.resetPrime(model) : model
 	return {

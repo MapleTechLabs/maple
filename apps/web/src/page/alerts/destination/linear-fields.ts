@@ -1,4 +1,4 @@
-import { Effect, Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schedule, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "../../../data/keyed"
@@ -6,9 +6,11 @@ import { LoadFailure, toLoadFailure } from "../../../data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Select from "../../../ui/select"
+import { currentReturnPath, startConnect } from "../../integrations/connect"
+import { readIsAdmin } from "../shared/commands"
 import type { DestinationForm } from "./form"
 
-// `LinearFields`: the org's Linear connection (made on the Integrations page) and the
+// `LinearFields`: the org's Linear connection, connected in a popup by an admin, and the
 // team this destination opens issues in.
 
 export const LinearStatus = Schema.Struct({
@@ -24,6 +26,12 @@ export const Model = Schema.Struct({
 	status: Keyed.KeyedSchema(LinearStatus, LoadFailure),
 	teams: Keyed.KeyedSchema(Schema.Array(LinearTeam), LoadFailure),
 	teamSelect: Select.Model,
+	/** Connecting Linear is admin-only; `null` until the session answers. */
+	isAdmin: Schema.NullOr(Schema.Boolean),
+	/** The connect popup is out: the status is re-read once it closes. */
+	isConnecting: Schema.Boolean,
+	/** A failed teams read re-checks the status once, without re-reading the teams after it. */
+	isRecheckingStatus: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -33,12 +41,18 @@ export const init = (): Model => ({
 	status: Keyed.idle(),
 	teams: Keyed.idle(),
 	teamSelect: Select.init(TEAM_SELECT_ID, { value: "", selectedIndex: null }),
+	isAdmin: null,
+	isConnecting: false,
+	isRecheckingStatus: false,
 })
 
 export const Message = defineMessageUnion({
 	CompletedFetchStatus: { key: Schema.String, result: Schema.Result(LinearStatus, LoadFailure) },
 	CompletedFetchTeams: { key: Schema.String, result: Schema.Result(Schema.Array(LinearTeam), LoadFailure) },
+	CompletedFetchIsAdmin: { isAdmin: Schema.Boolean },
 	ClickedRetry: {},
+	ClickedConnect: {},
+	CompletedConnect: { isStarted: Schema.Boolean },
 	GotTeamSelectMessage: { message: Select.Message },
 })
 export type Message = typeof Message.Type
@@ -78,6 +92,42 @@ const FetchTeams = Command.define("FetchAlertLinearTeams", {
 		),
 })
 
+export const FetchIsAdmin = Command.define("FetchAlertLinearIsAdmin", {
+	messages: [Message.CompletedFetchIsAdmin],
+	execute: Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchIsAdmin({ isAdmin })),
+})
+
+const WINDOW_NAME = "maple-linear-connect"
+const WINDOW_FEATURES = "popup,width=520,height=680"
+const POPUP_WAIT = "15 minutes"
+
+/** The popup opens in the click, goes to the authorize URL, and answers once it closes. */
+export const ConnectLinear = Command.define("ConnectAlertLinear", {
+	messages: [Message.CompletedConnect],
+	execute: Effect.gen(function* () {
+		const popup = yield* Effect.sync(() => window.open("", WINDOW_NAME, WINDOW_FEATURES))
+		const returnTo = yield* currentReturnPath
+		const started = yield* Effect.result(startConnect("linear", returnTo))
+		if (started._tag === "Failure") {
+			yield* Effect.sync(() => popup?.close())
+			return Message.CompletedConnect({ isStarted: false })
+		}
+		const url = started.success.redirectUrl
+		if (popup === null) {
+			yield* Effect.sync(() => window.open(url, WINDOW_NAME, WINDOW_FEATURES))
+			return Message.CompletedConnect({ isStarted: true })
+		}
+		yield* Effect.sync(() => {
+			popup.location.href = url
+		})
+		yield* Effect.sync(() => popup.closed).pipe(
+			Effect.repeat({ schedule: Schedule.spaced("500 millis"), until: (isClosed) => isClosed }),
+			Effect.timeoutOption(POPUP_WAIT),
+		)
+		return Message.CompletedConnect({ isStarted: true })
+	}),
+})
+
 export type Return = Readonly<{
 	model: Model
 	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -102,14 +152,34 @@ const readTeams = (model: Model, mode: Keyed.RequestMode): Return =>
 		onSome: (teams) => ({ model: { ...model, teams }, commands: [FetchTeams({ key: TEAMS_KEY })] }),
 	})
 
+/** Every status answer re-reads the teams: a reconnect may be to another workspace. */
 const statusAnswered = (
 	model: Model,
 	key: string,
 	result: Result.Result<LinearStatus, LoadFailure>,
 ): Return => {
-	const next = { ...model, status: Keyed.accept(model.status, key, result) }
+	const accepted = Keyed.accept(model.status, key, result)
+	if (accepted === model.status) return { model, commands: [] }
+	const next = { ...model, status: accepted, isRecheckingStatus: false }
 	const usable = Option.exists(AsyncData.getData(next.status.data), isUsable)
-	return usable ? readTeams(next, "Load") : { model: next, commands: [] }
+	return usable && !model.isRecheckingStatus ? readTeams(next, "Refresh") : { model: next, commands: [] }
+}
+
+const teamsAnswered = (
+	model: Model,
+	key: string,
+	result: Result.Result<ReadonlyArray<LinearTeam>, LoadFailure>,
+	form: DestinationForm,
+): Return => {
+	const next = { ...model, teams: Keyed.accept(model.teams, key, result) }
+	// A failed read may be a grant revoked since the status was read.
+	if (next.teams !== model.teams && Result.isFailure(result))
+		return readStatus({ ...next, isRecheckingStatus: true }, "Refresh")
+	// The stored team's name, once known, keeps the suggested name current.
+	const name = teamName(next, form.linearTeamId)
+	return name === ""
+		? { model: next, commands: [] }
+		: { model: next, commands: [], form: { linearTeamName: name } }
 }
 
 const teamName = (model: Model, teamId: string): string =>
@@ -119,19 +189,17 @@ const teamName = (model: Model, teamId: string): string =>
 export const update = (model: Model, message: Message, form: DestinationForm): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchStatus: ({ key, result }) => statusAnswered(model, key, result),
-		CompletedFetchTeams: ({ key, result }) => {
-			const next = { ...model, teams: Keyed.accept(model.teams, key, result) }
-			// The stored team's name, once known, keeps the suggested name current.
-			const name = teamName(next, form.linearTeamId)
-			return name === ""
-				? { model: next, commands: [] }
-				: { model: next, commands: [], form: { linearTeamName: name } }
-		},
-		ClickedRetry: () => {
-			const status = Option.getOrNull(AsyncData.getData(model.status.data))
-			return status !== null && isUsable(status)
-				? readTeams(model, "Refresh")
-				: readStatus(model, "Refresh")
+		CompletedFetchTeams: ({ key, result }) => teamsAnswered(model, key, result, form),
+		CompletedFetchIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin }, commands: [] }),
+		// The status read chains into the teams when the connection is usable.
+		ClickedRetry: () => readStatus({ ...model, isRecheckingStatus: false }, "Refresh"),
+		ClickedConnect: () =>
+			model.isConnecting || model.isAdmin !== true
+				? { model, commands: [] }
+				: { model: { ...model, isConnecting: true }, commands: [ConnectLinear()] },
+		CompletedConnect: ({ isStarted }) => {
+			const settled = { ...model, isConnecting: false, isRecheckingStatus: false }
+			return isStarted ? readStatus(settled, "Refresh") : { model: settled, commands: [] }
 		},
 		GotTeamSelectMessage: ({ message: inner }) => {
 			const step = Select.update(model.teamSelect, inner)
@@ -147,16 +215,21 @@ export const update = (model: Model, message: Message, form: DestinationForm): R
 		},
 	})
 
-/** The fields mount: the select reads the form, and the status (then the teams) is read. */
+/**
+ * The fields mount: the select reads the form, the session's role is read once, and the status
+ * is read. A cached status that is not usable is re-read, as Linear may be connected since.
+ */
 export const reset = (model: Model, form: DestinationForm): Return => {
 	const mounted = {
 		...model,
+		isRecheckingStatus: false,
 		teamSelect: Select.init(TEAM_SELECT_ID, { value: form.linearTeamId, selectedIndex: null }),
 	}
-	const status = readStatus(mounted, "Load")
+	const admin = model.isAdmin === null ? [FetchIsAdmin()] : []
+	const isCachedUsable = Option.exists(AsyncData.getData(mounted.status.data), isUsable)
+	const status = readStatus(mounted, isCachedUsable ? "Load" : "Refresh")
 	// A status already known to be usable (a reopen) reads the teams straight away.
-	const usable = Option.exists(AsyncData.getData(status.model.status.data), isUsable)
-	if (!usable) return status
+	if (!isCachedUsable) return { ...status, commands: [...admin, ...status.commands] }
 	const teams = readTeams(status.model, "Load")
-	return { model: teams.model, commands: [...status.commands, ...teams.commands] }
+	return { model: teams.model, commands: [...admin, ...status.commands, ...teams.commands] }
 }

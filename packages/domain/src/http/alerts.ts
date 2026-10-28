@@ -348,8 +348,8 @@ export class ChatAlertDestinationConfig extends Schema.Class<ChatAlertDestinatio
 }) {}
 
 /**
- * A team in the org's connected Linear workspace. Each critical incident opens one issue
- * there; the team's key and name are read from Linear at save time, never from the request.
+ * A team in the org's connected Linear workspace. Each alert thread (rule and group) opens one
+ * issue there; the team's key and name are read from Linear at save time, never from the request.
  */
 export class LinearAlertDestinationConfig extends Schema.Class<LinearAlertDestinationConfig>(
 	"LinearAlertDestinationConfig",

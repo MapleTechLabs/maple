@@ -253,7 +253,7 @@ describe("destination dialog", () => {
 
 	test("Linear checks the connection, then a picked team is saved as the destination's", () => {
 		const chosen = update(opened(), Message.ClickedProvider({ type: "linear" }))
-		expect(names(chosen.commands)).toEqual(["FetchAlertLinearStatus"])
+		expect(names(chosen.commands)).toContain("FetchAlertLinearStatus")
 		const linear = (model: typeof chosen.model, message: LinearFields.Message) =>
 			update(model, Message.GotLinearFieldsMessage({ message }))
 		const connected = linear(
@@ -304,7 +304,7 @@ describe("destination dialog", () => {
 		)
 	})
 
-	test("Linear not connected sends the user to the Integrations page and cannot be saved", () => {
+	test("Linear not connected offers to connect it and cannot be saved", () => {
 		scene(
 			{ update, view },
 			given(opened()),
@@ -312,13 +312,17 @@ describe("destination dialog", () => {
 			click(role("button", { name: /^Linear/ })),
 			expectView(text("Checking your Linear connection…")).toExist(),
 			Command.resolve(
+				LinearFields.FetchIsAdmin,
+				LinearFields.Message.CompletedFetchIsAdmin({ isAdmin: true }),
+			),
+			Command.resolve(
 				LinearFields.FetchStatus,
 				LinearFields.Message.CompletedFetchStatus({
 					key: LinearFields.STATUS_KEY,
 					result: Result.succeed({ connected: false, revoked: false, workspaceName: null }),
 				}),
 			),
-			expectView(role("link", { name: "Connect Linear" })).toExist(),
+			expectView(role("button", { name: "Connect Linear" })).toExist(),
 		)
 		const chosen = update(opened(), Message.ClickedProvider({ type: "linear" })).model
 		const disconnected = update(
@@ -335,7 +339,7 @@ describe("destination dialog", () => {
 			{ update, view },
 			given(disconnected.model),
 			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
-			expectView(role("link", { name: "Connect Linear" })).toExist(),
+			expectView(role("button", { name: "Connect Linear" })).toExist(),
 			expectView(role("button", { name: "Add Linear destination" })).toBeDisabled(),
 		)
 	})
