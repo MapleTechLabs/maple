@@ -295,7 +295,10 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				.listIncidents(tenant.orgId, page.id)
 				.pipe(Effect.mapError(toMcpError("get_status_page")))
 			// Answering means Maple is up, so this is the probe side of freshness only.
-			const freshness = pageFreshness({ snapshot, heartbeatAt: nowMs, nowMs })
+			const probesSeenAt = yield* builder
+				.probesSeenAt(nowMs)
+				.pipe(Effect.mapError(toMcpError("get_status_page")))
+			const freshness = pageFreshness({ snapshot, heartbeat: { at: nowMs, probesSeenAt }, nowMs })
 			return {
 				page: toPageRow(page),
 				overallStatus: overallStatus(snapshot),

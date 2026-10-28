@@ -6,6 +6,7 @@ import {
 	StatusPageIncidentUpdates,
 	StatusPages,
 	UptimeMonitorDaily,
+	UptimeMonitors,
 	UptimeMonitorStates,
 } from "@maple/db/tables"
 import type {
@@ -31,6 +32,7 @@ import {
 	STATUS_PAGE_SNAPSHOT_VERSION,
 	type StatusPageSnapshot,
 	type StatusPageSnapshotIncident,
+	utcDay,
 } from "@maple/domain/status-page"
 import { Context, Effect, Layer } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -225,6 +227,8 @@ export interface StatusPageSnapshotBuilderApi {
 		pageId: StatusPageId,
 		nowMs: number,
 	) => Effect.Effect<StatusPageSnapshot, StatusPageGoneError | StatusPagePublishDbError>
+	/** Newest scheduled check across all monitors (the prober's pulse); null when none ran lately. */
+	readonly probesSeenAt: (nowMs: number) => Effect.Effect<number | null, StatusPagePublishDbError>
 }
 
 const toDbError = makePersistenceErrorMapper(StatusPagePublishDbError, "Status page snapshot read failed")
@@ -372,7 +376,27 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 			return toSnapshot({ ...input, nowMs })
 		})
 
-		return { build }
+		const probesSeenAt = Effect.fn("StatusPageSnapshotBuilder.probesSeenAt")(function* (nowMs: number) {
+			// The daily counters fold in every scheduled check; their PK (monitor, day) serves this
+			// per enabled monitor. Heartbeat monitors are excluded: their misses are not probes.
+			const [seen] = yield* dbExecute((db) =>
+				db.run(
+					PG.from(UptimeMonitorDaily, "d")
+						.innerJoin(UptimeMonitors, "m", (d, m) =>
+							d.monitorId.eq(m.id).and(d.orgId.eq(m.orgId)),
+						)
+						.select(($) => ({ at: PG.max($.lastCheckAt) }))
+						.where(($) => [
+							$.m.enabled.eq(true),
+							$.m.kind.neq("heartbeat"),
+							PG.inList($.day, [utcDay(nowMs), utcDay(nowMs - DAY_MS)]),
+						]),
+				),
+			)
+			return seen?.at ?? null
+		})
+
+		return { build, probesSeenAt }
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
