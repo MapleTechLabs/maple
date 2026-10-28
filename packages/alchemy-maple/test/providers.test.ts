@@ -381,7 +381,10 @@ describe("AlertDestinationProvider", () => {
 		Effect.gen(function* () {
 			const stub = makeStub({
 				"GET /v2/alerts/destinations/dest_lin": () => Effect.succeed(wireLinear("team_other")),
-				"PATCH /v2/alerts/destinations/dest_lin": () => Effect.succeed(wireLinear("team_1")),
+				"PATCH /v2/alerts/destinations/dest_lin": (body) => {
+					expect(body).toEqual(expect.objectContaining({ team_id: "team_1" }))
+					return Effect.succeed(wireLinear("team_1"))
+				},
 			})
 			yield* reconcile(stub)
 			expect(stub.calls).toContain("PATCH /v2/alerts/destinations/dest_lin")
