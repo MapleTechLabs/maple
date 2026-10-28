@@ -269,6 +269,81 @@ describe("AnomalyDetectionService.runTick baseline cache", () => {
 			expect(contexts.filter((c) => c.endsWith("Baseline"))).toEqual([])
 		}).pipe(Effect.provide(layer))
 	})
+
+	it.live("computes each baseline once on a miss and the next tick reads it back", () => {
+		const testDb = createTestDb(createdDbs)
+		const contexts: Array<string> = []
+		const warehouse = makeWarehouseServiceStub({
+			crossOrgQuery: () => Effect.succeed([{ orgId: ORG }]),
+			compiledQuery: (_tenant, compiled, options) => {
+				contexts.push(options?.context ?? "")
+				const rows =
+					options?.context === "anomalyErrorSpikeCurrent"
+						? [
+								{
+									fingerprintHash: "42",
+									serviceName: "payments",
+									errorLabel: "Boom",
+									deploymentEnv: "production",
+									count: 3,
+								},
+							]
+						: []
+				return compiledQueryOf(compiled).decodeRows(rows).pipe(Effect.orDie)
+			},
+		})
+		const configLive = makeConfig()
+		const layer = Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					Layer.succeed(WarehouseQueryService, warehouse),
+					OrgClickHouseSettingsService.layer,
+				),
+			),
+			Layer.provide(
+				Layer.mergeAll(
+					testDb.layer,
+					EdgeCacheService.layer.pipe(
+						Layer.provide(Layer.succeed(CacheBackend, CacheBackend.of(makeMemoryBackend()))),
+					),
+					Env.layer.pipe(Layer.provide(configLive)),
+				),
+			),
+			Layer.provide(configLive),
+		)
+		const baselineContexts = () => contexts.filter((c) => c.endsWith("Baseline")).sort()
+
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO anomaly_detector_settings (org_id, enabled, sensitivity, muted_signals_json, created_at, updated_at)
+					 VALUES ($1, true, 'normal', '[]'::jsonb, now(), now())`,
+					[ORG],
+				),
+			)
+			const service = yield* AnomalyDetectionService
+			yield* service.runTick()
+			expect(baselineContexts()).toEqual([
+				"anomalyErrorSpikeBaseline",
+				"anomalyLogVolumeBaseline",
+				"anomalyTraceSignalsBaseline",
+			])
+
+			// The next tick five minutes later: its org claim has expired, the hour has not rolled.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE anomaly_detector_settings SET last_tick_at = NULL WHERE org_id = $1`,
+					[ORG],
+				),
+			)
+			contexts.length = 0
+			yield* service.runTick()
+			expect(contexts).toContain("anomalyTraceSignalsCurrent")
+			expect(baselineContexts()).toEqual([])
+		}).pipe(Effect.provide(layer))
+	})
 })
 
 describe("AnomalyDetectionService.runTick org config priming", () => {
