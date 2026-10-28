@@ -3,7 +3,7 @@
  * Every id Maple sends derives from the delivery, so a retry finds what its first attempt made.
  */
 import { createHash } from "node:crypto"
-import { AlertDeliveryTargetMissingError } from "@maple/domain/http"
+import { type AlertDeliveryFailure, AlertDeliveryTargetMissingError } from "@maple/domain/http"
 import { Clock, Effect, Schema } from "effect"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import { displayGroupKey, formatAlertHeadline, formatSeverityLabel, truncate } from "../../alert-formatting"
@@ -90,6 +90,7 @@ const IssueStateSchema = Schema.Struct({
 		completedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		canceledAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		state: Schema.Struct({ type: Schema.String }),
+		team: Schema.Struct({ id: Schema.String }),
 	}),
 })
 type IssueState = (typeof IssueStateSchema.Type)["issue"]
@@ -116,7 +117,13 @@ const IssueCreateSchema = Schema.Struct({
 	}),
 })
 
-const ISSUE_FIELDS = "id identifier url trashed archivedAt completedAt canceledAt state { type }"
+interface LinearIssueRef {
+	readonly id: string
+	readonly identifier: string
+	readonly url: string
+}
+
+const ISSUE_FIELDS = "id identifier url trashed archivedAt completedAt canceledAt state { type } team { id }"
 
 const fetchIssue = (port: LinearDeliveryPort, input: Input, issueId: string) =>
 	port
@@ -202,6 +209,7 @@ const issueIdFor = (input: Input, replacing: string | null) =>
 	linearEntityId(
 		"issue",
 		input.context.destination.id,
+		input.config.teamId,
 		input.context.incidentId ?? input.context.deliveryKey,
 		replacing ?? "",
 	)
@@ -211,7 +219,8 @@ const createIssue = Effect.fn("LinearTransport.createIssue")(function* (
 	input: Input,
 	threadKey: string,
 	replacing: string | null,
-) {
+	canFallBack = true,
+): Effect.fn.Return<LinearIssueRef, AlertDeliveryFailure> {
 	const { context } = input
 	const issueId = issueIdFor(input, replacing)
 	// Found means an earlier attempt or delivery already made it; use it whatever its state.
@@ -236,12 +245,18 @@ const createIssue = Effect.fn("LinearTransport.createIssue")(function* (
 					},
 				},
 				IssueCreateSchema,
+				{ duplicateIsSuccess: true },
 			)
 			.pipe(
 				Effect.flatMap((result) =>
 					result?.issueCreate.issue
 						? Effect.succeed(result.issueCreate.issue)
-						: Effect.fail(makeDeliveryError("Linear did not return the created issue", "linear")),
+						: result === null && canFallBack
+							? // The id is held by an issue Maple cannot see (trashed or hidden): take the next one.
+								createIssue(port, input, threadKey, issueId, false)
+							: Effect.fail(
+									makeDeliveryError("Linear did not return the created issue", "linear"),
+								),
 				),
 			))
 	// Linear treats the URL as the attachment's key on an issue, so a retry updates it in place.
@@ -308,10 +323,20 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 	const threadKey = linearThreadKey(input)
 	const thread = yield* port.findThread(context.destination.orgId, context.destination.id, threadKey)
 	const issue = thread === null ? null : yield* fetchIssue(port, input, thread.linearIssueId)
+	const resolved = context.incidentId !== null && context.incidentStatus === "resolved"
+	// The resolve already reached this thread's issue; a trigger arriving late must not reopen it.
+	if (resolved && thread !== null && issue !== null && issue.team.id === input.config.teamId) {
+		return {
+			providerMessage: `Skipped: the incident resolved before this trigger reached ${issue.identifier}`,
+			providerReference: issue.url,
+			responseCode: null,
+		} satisfies DispatchResult
+	}
 	const closedAt = issue !== null && isClosed(issue) ? closedAtMs(issue) : null
 	const replace =
 		thread === null ||
 		issue === null ||
+		issue.team.id !== input.config.teamId ||
 		Boolean(issue.archivedAt) ||
 		(issue !== null &&
 			isClosed(issue) &&
@@ -319,7 +344,7 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 	if (replace) {
 		const opened = yield* createIssue(port, input, threadKey, thread?.linearIssueId ?? null)
 		// Delivered after its incident resolved: still on record, and marked resolved so nothing dangles.
-		if (context.incidentId !== null && context.incidentStatus === "resolved") {
+		if (resolved) {
 			yield* comment(port, input, opened.id, RESOLVED_BEFORE_OPEN)
 		}
 		return {

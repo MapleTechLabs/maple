@@ -78,6 +78,7 @@ interface IssueFixture {
 	readonly identifier: string
 	readonly url: string
 	readonly state: { readonly type: string }
+	readonly team: { readonly id: string }
 	readonly completedAt?: string | null
 }
 
@@ -88,7 +89,12 @@ interface Call {
 
 /** Linear and the thread table in memory; every GraphQL operation is recorded. */
 const fakeLinear = (
-	seed: { issues?: ReadonlyArray<IssueFixture>; threads?: ReadonlyArray<LinearThread> } = {},
+	seed: {
+		issues?: ReadonlyArray<IssueFixture>
+		threads?: ReadonlyArray<LinearThread>
+		/** Ids held by issues Maple cannot see: a create with one answers "already exists". */
+		taken?: ReadonlyArray<string>
+	} = {},
 ) => {
 	const issues = new Map((seed.issues ?? []).map((issue) => [issue.id, issue]))
 	const threads = new Map((seed.threads ?? []).map((thread) => [thread.threadKey, thread]))
@@ -112,11 +118,14 @@ const fakeLinear = (
 				}
 			case "MapleIssueCreate": {
 				const input = variables.input
+				const id = isRecord(input) ? String(input.id) : ""
+				if (seed.taken?.includes(id)) return null
 				const issue = {
-					id: isRecord(input) ? String(input.id) : "",
+					id,
 					identifier: `ENG-${issues.size + 1}`,
 					url: `https://linear.app/acme/issue/ENG-${issues.size + 1}`,
 					state: { type: "triage" },
+					team: { id: isRecord(input) ? String(input.teamId) : "" },
 				}
 				issues.set(issue.id, issue)
 				return { issueCreate: { success: true, issue } }
@@ -177,6 +186,7 @@ const issue = (overrides: Partial<IssueFixture> = {}): IssueFixture => ({
 	identifier: "ENG-7",
 	url: "https://linear.app/acme/issue/ENG-7",
 	state: { type: "started" },
+	team: { id: "team_1" },
 	...overrides,
 })
 
@@ -187,7 +197,7 @@ describe("linear transport", () => {
 			const result = yield* linear.send(inputFor())
 
 			const create = inputOf(linear.calls, "MapleIssueCreate")
-			assert.strictEqual(create.id, linearEntityId("issue", DESTINATION_ID, "inc_1", ""))
+			assert.strictEqual(create.id, linearEntityId("issue", DESTINATION_ID, "team_1", "inc_1", ""))
 			assert.strictEqual(create.teamId, "team_1")
 			assert.strictEqual(create.priority, 1)
 			assert.include(
@@ -205,7 +215,7 @@ describe("linear transport", () => {
 
 	it.effect("reuses the issue a lost-response create already made", () =>
 		Effect.gen(function* () {
-			const issueId = linearEntityId("issue", DESTINATION_ID, "inc_1", "")
+			const issueId = linearEntityId("issue", DESTINATION_ID, "team_1", "inc_1", "")
 			const linear = fakeLinear({
 				issues: [issue({ id: issueId, identifier: "ENG-3", state: { type: "triage" } })],
 			})
@@ -293,7 +303,7 @@ describe("linear transport", () => {
 
 	it.effect("resolves an issue whose trigger made it but never saved the thread", () =>
 		Effect.gen(function* () {
-			const issueId = linearEntityId("issue", DESTINATION_ID, "inc_1", "")
+			const issueId = linearEntityId("issue", DESTINATION_ID, "team_1", "inc_1", "")
 			const linear = fakeLinear({ issues: [issue({ id: issueId, identifier: "ENG-4" })] })
 			const result = yield* linear.send(inputFor({ eventType: "resolve", incidentStatus: "resolved" }))
 			assert.include(String(inputOf(linear.calls, "MapleComment").body), "Resolved")
@@ -349,7 +359,7 @@ describe("linear transport", () => {
 	it.effect("gives a closed issue a fresh id when the same incident needs a new one", () =>
 		Effect.gen(function* () {
 			const closedAt = new Date(NOW - LINEAR_REOPEN_WINDOW_MS - HOUR).toISOString()
-			const oldId = linearEntityId("issue", DESTINATION_ID, "delivery_1")
+			const oldId = linearEntityId("issue", DESTINATION_ID, "team_1", "inc_1", "")
 			const linear = fakeLinear({
 				issues: [issue({ id: oldId, state: { type: "completed" }, completedAt: closedAt })],
 				threads: [openThread({ linearIssueId: oldId })],
@@ -371,6 +381,45 @@ describe("linear transport", () => {
 				inputFor({ deliveryKey: "delivery_3", ruleSeverities: ["warning", "critical"] }),
 			)
 			assert.include(String(inputOf(alert.calls, "MapleComment").body), "Severity changed to critical")
+		}),
+	)
+})
+
+describe("linear transport after a resolve or a team change", () => {
+	it.effect("does not reopen an issue for a trigger that arrives after its incident resolved", () =>
+		Effect.gen(function* () {
+			const closedAt = new Date(NOW - 2 * HOUR).toISOString()
+			const linear = fakeLinear({
+				issues: [issue({ state: { type: "completed" }, completedAt: closedAt })],
+				threads: [openThread()],
+			})
+			const result = yield* linear.send(inputFor({ incidentId: "inc_2", incidentStatus: "resolved" }))
+			assert.notInclude(names(linear.calls), "MapleIssueReopen")
+			assert.notInclude(names(linear.calls), "MapleComment")
+			assert.include(result.providerMessage, "Skipped")
+		}),
+	)
+
+	it.effect("opens a new issue in the destination's team when the thread's issue is in another", () =>
+		Effect.gen(function* () {
+			const linear = fakeLinear({
+				issues: [issue({ team: { id: "team_old" } })],
+				threads: [openThread()],
+			})
+			yield* linear.send(inputFor({ deliveryKey: "delivery_7" }))
+			assert.strictEqual(inputOf(linear.calls, "MapleIssueCreate").teamId, "team_1")
+			assert.notInclude(names(linear.calls), "MapleComment")
+		}),
+	)
+
+	it.effect("moves to a fresh id when the computed one is held by an issue Maple cannot see", () =>
+		Effect.gen(function* () {
+			const held = linearEntityId("issue", DESTINATION_ID, "team_1", "inc_1", "")
+			const linear = fakeLinear({ taken: [held] })
+			const result = yield* linear.send(inputFor())
+			const creates = linear.calls.filter((call) => call.name === "MapleIssueCreate")
+			assert.lengthOf(creates, 2)
+			assert.strictEqual(result.providerMessage, "Opened Linear issue ENG-1")
 		}),
 	)
 })

@@ -81,7 +81,9 @@ const linearServer = () => {
 								},
 							],
 						})
-					: json({ data: { issue: { ...issue, state: { type: "triage" } } } })
+					: json({
+							data: { issue: { ...issue, state: { type: "triage" }, team: { id: "team_1" } } },
+						})
 			}
 			case "MapleIssueCreate": {
 				const id = String(operation.variables.input?.id)

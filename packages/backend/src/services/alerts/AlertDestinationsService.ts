@@ -889,39 +889,42 @@ export class AlertDestinationsService extends Context.Service<
 				disabledAt: null,
 				disabledReason: null,
 			} as const
-			const writeRows = yield* dbExecute((db) =>
-				db.run(
-					PG.update(AlertDestinations)
-						.set({
-							name: nextName,
-							enabled: nextEnabled,
-							configJson: nextPublicConfig,
-							secretCiphertext: encryptedSecret.ciphertext,
-							secretIv: encryptedSecret.iv,
-							secretTag: encryptedSecret.tag,
-							...clearedFailureState,
-							updatedAt: timestamp,
-							updatedBy: userId,
-						})
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)])
-						.returning(() => ({ txid: currentTxid })),
-				),
-			)
 			// Once the new team is saved, the old team's issues stop being this destination's threads.
-			if (
+			const linearTeamChanged =
 				hydrated.secretConfig.type === "linear" &&
 				nextSecretConfig.type === "linear" &&
 				hydrated.secretConfig.teamId !== nextSecretConfig.teamId
-			) {
-				yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(AlertLinearIssues).where(($) => [
-							$.orgId.eq(orgId),
-							$.destinationId.eq(destinationId),
-						]),
-					),
-				)
-			}
+			const writeRows = yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const rows = yield* db.run(
+							PG.update(AlertDestinations)
+								.set({
+									name: nextName,
+									enabled: nextEnabled,
+									configJson: nextPublicConfig,
+									secretCiphertext: encryptedSecret.ciphertext,
+									secretIv: encryptedSecret.iv,
+									secretTag: encryptedSecret.tag,
+									...clearedFailureState,
+									updatedAt: timestamp,
+									updatedBy: userId,
+								})
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(destinationId)])
+								.returning(() => ({ txid: currentTxid })),
+						)
+						if (linearTeamChanged) {
+							yield* db.run(
+								PG.deleteFrom(AlertLinearIssues).where(($) => [
+									$.orgId.eq(orgId),
+									$.destinationId.eq(destinationId),
+								]),
+							)
+						}
+						return rows
+					}),
+				),
+			)
 			const txid = readTxid(writeRows)
 			const document = yield* rowToDestinationDocument(
 				{
