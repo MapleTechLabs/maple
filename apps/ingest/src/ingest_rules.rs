@@ -15,7 +15,8 @@ use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::logs::v1::LogRecord;
 use opentelemetry_proto::tonic::metrics::v1::{
-    metric, ExponentialHistogramDataPoint, HistogramDataPoint, NumberDataPoint, SummaryDataPoint,
+    metric, Exemplar, ExponentialHistogramDataPoint, HistogramDataPoint, NumberDataPoint,
+    SummaryDataPoint,
 };
 use opentelemetry_proto::tonic::resource::v1::Resource;
 use opentelemetry_proto::tonic::trace::v1::{span, Span};
@@ -441,6 +442,11 @@ impl CompiledRules {
     /// Ids of the compiled rules; `RuleStats::per_rule` uses the same indexes.
     pub fn rule_ids(&self) -> &[RuleId] {
         &self.ids
+    }
+
+    /// True when some rule reads this signal, so a caller can skip the payload otherwise.
+    pub fn covers(&self, signal: IngestSignal) -> bool {
+        self.reads(signal_bit(signal))
     }
 
     fn reads(&self, signal: u8) -> bool {
@@ -973,6 +979,8 @@ impl Redactor<'_> {
 struct RecordTargets<'a> {
     attributes: &'a mut Vec<KeyValue>,
     events: &'a mut [span::Event],
+    /// Metric exemplars; their `filtered_attributes` fall under the `attributes` scope.
+    exemplars: &'a mut [Exemplar],
     body: Option<&'a mut AnyValue>,
 }
 
@@ -1052,6 +1060,10 @@ impl<'a> Pass<'a> {
             };
             if redaction.scopes & SCOPE_ATTRIBUTES != 0 {
                 redactor.redact_attributes(targets.attributes);
+                targets
+                    .exemplars
+                    .iter_mut()
+                    .for_each(|exemplar| redactor.redact_attributes(&mut exemplar.filtered_attributes));
             }
             if redaction.scopes & SCOPE_EVENTS != 0 {
                 targets
@@ -1094,10 +1106,11 @@ impl<'a> Pass<'a> {
     }
 }
 
-/// The metric data point kinds, which share only their attributes.
+/// The metric data point kinds: attributes on all, exemplars on all but summaries.
 trait DataPoint: Message {
     fn attributes(&self) -> &[KeyValue];
-    fn attributes_mut(&mut self) -> &mut Vec<KeyValue>;
+    /// The point's attributes and its exemplars (whose `filtered_attributes` may carry PII).
+    fn parts_mut(&mut self) -> (&mut Vec<KeyValue>, &mut [Exemplar]);
 }
 
 macro_rules! impl_data_point {
@@ -1106,8 +1119,8 @@ macro_rules! impl_data_point {
             fn attributes(&self) -> &[KeyValue] {
                 &self.attributes
             }
-            fn attributes_mut(&mut self) -> &mut Vec<KeyValue> {
-                &mut self.attributes
+            fn parts_mut(&mut self) -> (&mut Vec<KeyValue>, &mut [Exemplar]) {
+                (&mut self.attributes, self.exemplars.as_mut_slice())
             }
         })*
     };
@@ -1116,9 +1129,17 @@ macro_rules! impl_data_point {
 impl_data_point!(
     NumberDataPoint,
     HistogramDataPoint,
-    ExponentialHistogramDataPoint,
-    SummaryDataPoint
+    ExponentialHistogramDataPoint
 );
+
+impl DataPoint for SummaryDataPoint {
+    fn attributes(&self) -> &[KeyValue] {
+        &self.attributes
+    }
+    fn parts_mut(&mut self) -> (&mut Vec<KeyValue>, &mut [Exemplar]) {
+        (&mut self.attributes, &mut [])
+    }
+}
 
 impl Pass<'_> {
     /// Returns false when the span is dropped.
@@ -1138,6 +1159,7 @@ impl Pass<'_> {
             self.redact_record(RecordTargets {
                 attributes: &mut span.attributes,
                 events: &mut span.events,
+                exemplars: &mut [],
                 body: None,
             });
         }
@@ -1161,6 +1183,7 @@ impl Pass<'_> {
             self.redact_record(RecordTargets {
                 attributes: &mut record.attributes,
                 events: &mut [],
+                exemplars: &mut [],
                 body: record.body.as_mut(),
             });
         }
@@ -1181,9 +1204,11 @@ impl Pass<'_> {
         };
         let (keep, redact) = self.evaluate(&view, || point.encoded_len());
         if redact {
+            let (attributes, exemplars) = point.parts_mut();
             self.redact_record(RecordTargets {
-                attributes: point.attributes_mut(),
+                attributes,
                 events: &mut [],
+                exemplars,
                 body: None,
             });
         }
@@ -1771,6 +1796,38 @@ mod tests {
             .collect();
         assert_eq!(names, ["http.server.duration"]);
         assert_eq!(stats.total.dropped, 2);
+    }
+
+    #[test]
+    fn attribute_scope_redacts_metric_exemplars() {
+        let rule = spec(json!({
+            "signals": ["metrics"],
+            "conditions": [],
+            "action": { "_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [],
+                "scopes": ["attributes"], "method": "mask" }
+        }));
+        let (compiled, _) = CompiledRules::compile(vec![("email".to_owned(), rule)], String::new());
+        let mut point = number_point(vec![string_kv("user", "a@b.co")]);
+        point.exemplars = vec![Exemplar {
+            filtered_attributes: vec![string_kv("enduser.email", "c@d.io")],
+            ..Default::default()
+        }];
+        let mut request = metrics_request(None, vec![gauge("http.server.duration", vec![point])]);
+        apply_metrics(&compiled, &mut request, &mut RuleStats::default());
+
+        let Some(metric::Data::Gauge(data)) = &request.resource_metrics[0].scope_metrics[0].metrics[0].data
+        else {
+            panic!("the gauge changed kind");
+        };
+        let point = &data.data_points[0];
+        assert_eq!(
+            Value::Object(from_kvs(&point.attributes)),
+            json!({ "user": "[REDACTED:email]" })
+        );
+        assert_eq!(
+            Value::Object(from_kvs(&point.exemplars[0].filtered_attributes)),
+            json!({ "enduser.email": "[REDACTED:email]" })
+        );
     }
 
     #[test]

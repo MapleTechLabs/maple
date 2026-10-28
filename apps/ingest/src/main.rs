@@ -11,6 +11,7 @@
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 mod autumn;
+mod rules_gateway;
 mod sources;
 mod task_protection;
 
@@ -51,6 +52,7 @@ use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEM
 use maple_ingest::decompress::{gunzip_bounded, gunzip_len_bounded, GunzipError};
 use maple_ingest::gcp_logging;
 use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
+use maple_ingest::ingest_rules::{self, IngestSignal, RuleStats};
 use maple_ingest::metrics;
 use maple_ingest::otel::{
     accept_internal_span, auth_internal_span, build_resource, decode_internal_span,
@@ -97,6 +99,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 use sha2::Sha256;
+use rules_gateway::{IngestRuleResolver, IngestRuleRows, IngestRuleStatRow, IngestRuleStatsSink};
 use sources::{
     OverrideMode, PauseWindow, SourceConfigRow, SourcePolicy, SourceRateLimiter, SourceRef,
     SourceSignal, MAX_PUBLIC_ID_LEN, SOURCE_ID_ATTRIBUTE, SOURCE_TOKEN_PREFIX,
@@ -188,6 +191,10 @@ struct AppConfig {
     autumn_deny_ttl_secs: u64,
     ingest_key_cache_ttl_secs: u64,
     org_routing_cache_ttl_secs: u64,
+    /// `INGEST_RULES_ENABLED`: apply customer drop/redact rules. Off reads nothing and costs nothing.
+    ingest_rules_enabled: bool,
+    /// `INGEST_RULES_CACHE_TTL_SECS`: how long an org's compiled rules are reused.
+    ingest_rules_cache_ttl_secs: u64,
     /// Ceiling on the total decompressed rrweb payload a single replay session
     /// may accumulate. 0 disables the cap. See `ReplaySessionBudget`.
     replay_max_session_bytes: u64,
@@ -577,6 +584,17 @@ impl AppConfig {
             30,
         )?;
 
+        let ingest_rules_enabled = parse_bool(
+            "INGEST_RULES_ENABLED",
+            std::env::var("INGEST_RULES_ENABLED").ok(),
+            false,
+        )?;
+        let ingest_rules_cache_ttl_secs = parse_u64(
+            "INGEST_RULES_CACHE_TTL_SECS",
+            std::env::var("INGEST_RULES_CACHE_TTL_SECS").ok(),
+            30,
+        )?;
+
         // 1 GiB of decompressed rrweb per session. Sized as an absurdity guard,
         // not a product tier: the observed p99 session is ~594 MB, so this only
         // trips on runaway recordings (canvas capture, unmasked media, a page
@@ -729,6 +747,8 @@ impl AppConfig {
             autumn_deny_ttl_secs,
             ingest_key_cache_ttl_secs,
             org_routing_cache_ttl_secs,
+            ingest_rules_enabled,
+            ingest_rules_cache_ttl_secs,
             replay_max_session_bytes,
             replay_blob_store,
             internal_org_id,
@@ -976,6 +996,9 @@ struct ClickHouseTargetResolver {
     negative_cache: Cache<String, ()>,
 }
 
+/// How often per-rule ingest stats are written to `org_ingest_rule_stats`.
+const INGEST_RULE_STATS_FLUSH_INTERVAL: Duration = Duration::from_mins(1);
+
 /// How long a resolved ClickHouse target is reused.
 const CLICKHOUSE_TARGET_TTL: Duration = Duration::from_mins(1);
 /// How long "no ready ClickHouse target" is remembered. Matches the ingest-key
@@ -1063,6 +1086,12 @@ trait KeyStore: Send + Sync {
         &self,
         org_id: &str,
     ) -> Result<Vec<AttributeMappingRow>, String>;
+
+    /// The org's enabled ingest rules in `position` order, and its hash salt.
+    async fn fetch_ingest_rules(&self, org_id: &str) -> Result<IngestRuleRows, String>;
+
+    /// Adds per-rule counts into `org_ingest_rule_stats`, one statement for all `rows`.
+    async fn record_ingest_rule_stats(&self, rows: &[IngestRuleStatRow]) -> Result<(), String>;
 
     async fn fetch_clickhouse_target(
         &self,
@@ -1479,6 +1508,10 @@ struct AppState {
     gcp_inflight_limiter: OrgInFlightLimiter,
     sampling_resolver: SamplingPolicyResolver,
     attribute_mapping_resolver: AttributeMappingResolver,
+    /// Each org's compiled ingest rules; inert unless `INGEST_RULES_ENABLED`.
+    ingest_rule_resolver: IngestRuleResolver,
+    /// Per-rule counts awaiting the next flush to `org_ingest_rule_stats`.
+    ingest_rule_stats: Arc<IngestRuleStatsSink>,
     cloudflare_resolver: CloudflareConnectorResolver,
     gcp_resolver: GcpConnectorResolver,
     aws_resolver: AwsConnectionResolver,
@@ -1663,6 +1696,14 @@ impl Signal {
             Self::Traces => SourceSignal::Traces,
             Self::Logs => SourceSignal::Logs,
             Self::Metrics => SourceSignal::Metrics,
+        }
+    }
+
+    fn ingest_signal(self) -> IngestSignal {
+        match self {
+            Self::Traces => IngestSignal::Traces,
+            Self::Logs => IngestSignal::Logs,
+            Self::Metrics => IngestSignal::Metrics,
         }
     }
 }
@@ -2946,6 +2987,18 @@ async fn main() {
         last_known: DashMap::new(),
     });
 
+    // Rule stats go to Postgres every minute; the static store's write is a no-op.
+    let ingest_rule_stats = Arc::new(IngestRuleStatsSink::default());
+    let ingest_rules_enabled = config.ingest_rules_enabled;
+    if ingest_rules_enabled {
+        tokio::spawn(rules_gateway::run_stats_flusher(
+            Arc::clone(&ingest_rule_stats),
+            Arc::clone(&store),
+            INGEST_RULE_STATS_FLUSH_INTERVAL,
+        ));
+    }
+    let stats_store = Arc::clone(&store);
+
     // Same pooled client as every other outbound call; `http_client` itself is
     // moved into the state below.
     let http_client_for_blobs = http_client.clone();
@@ -2979,6 +3032,13 @@ async fn main() {
             store: Arc::clone(&store),
             cache: attribute_mapping_cache,
         },
+        ingest_rule_resolver: IngestRuleResolver::new(
+            Arc::clone(&store),
+            config.ingest_rules_enabled,
+            Duration::from_secs(config.ingest_rules_cache_ttl_secs),
+            10_000,
+        ),
+        ingest_rule_stats: Arc::clone(&ingest_rule_stats),
         cloudflare_resolver: CloudflareConnectorResolver {
             store: Arc::clone(&store),
             lookup_hmac_key: config.lookup_hmac_key.clone(),
@@ -3152,6 +3212,11 @@ async fn main() {
                 "Shipped the undrained WAL tail to the object store"
             );
         }
+    }
+
+    // Counts since the last periodic flush; best effort like the flusher itself.
+    if ingest_rules_enabled {
+        ingest_rule_stats.flush(stats_store.as_ref()).await;
     }
 
     if let Some(providers) = telemetry_providers {
@@ -3370,7 +3435,6 @@ impl opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::Tra
         let mut decoded = DecodedPayload::Traces(inner);
         let (admission, claims) =
             admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        let decoded_bytes = claims.metered_bytes(decoded_bytes);
         accept_grpc_decoded(
             &self.state,
             Signal::Traces,
@@ -3406,7 +3470,6 @@ impl opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsS
         let mut decoded = DecodedPayload::Logs(inner);
         let (admission, claims) =
             admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        let decoded_bytes = claims.metered_bytes(decoded_bytes);
         accept_grpc_decoded(
             &self.state,
             Signal::Logs,
@@ -3444,7 +3507,6 @@ impl opentelemetry_proto::tonic::collector::metrics::v1::metrics_service_server:
         let mut decoded = DecodedPayload::Metrics(inner);
         let (admission, claims) =
             admit_grpc_claims(&self.state, admission, &mut decoded, &resolved).await;
-        let decoded_bytes = claims.metered_bytes(decoded_bytes);
         accept_grpc_decoded(
             &self.state,
             Signal::Metrics,
@@ -3486,10 +3548,12 @@ async fn admit_grpc_claims(
 
 /// Accept a decoded export, already authenticated and entitlement-gated by
 /// `grpc_admission`.
+/// `decoded_bytes` is the export's size as received; only the share the claims and
+/// ingest rules leave is metered.
 async fn accept_grpc_decoded(
     state: &AppState,
     signal: Signal,
-    decoded: DecodedPayload,
+    mut decoded: DecodedPayload,
     resolved: &ResolvedIngestKey,
     admission: KeyAdmission,
     decoded_bytes: usize,
@@ -3515,14 +3579,16 @@ async fn accept_grpc_decoded(
         .try_acquire(&resolved.org_id)
         .ok_or_else(|| tonic::Status::resource_exhausted("Per-org ingest limit exceeded"))?;
     let item_count = decoded.item_count();
+    let mut retained = claims.retained;
 
     let result = process_decoded_payload(
         state,
         signal,
         PayloadFormat::Protobuf,
         None,
-        &decoded,
+        &mut decoded,
         resolved,
+        &mut retained,
     )
     .await;
 
@@ -3532,13 +3598,14 @@ async fn accept_grpc_decoded(
             state
                 .resolver
                 .note_claimed_source_use(&claims.claimed_sources);
-            if resolved.org_id != SENTINEL_ORG_ID {
+            let decoded_bytes = retained.metered_bytes(decoded_bytes);
+            if resolved.org_id != SENTINEL_ORG_ID && decoded_bytes > 0 {
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(
                         &resolved.org_id,
                         signal.path(),
                         decoded_bytes as u64,
-                        item_count as u64,
+                        retained.metered_items(item_count) as u64,
                     );
                 }
                 if let Some(tracker) = &state.autumn_tracker {
@@ -4908,6 +4975,9 @@ async fn handle_signal(
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.rules.count" = tracing::field::Empty,
+        "maple.ingest.rules.dropped_items" = tracing::field::Empty,
+        "maple.ingest.rules.redacted_values" = tracing::field::Empty,
         "maple.ingest.payload_format" = tracing::field::Empty,
         "maple.ingest.content_encoding" = tracing::field::Empty,
         "maple.ingest.decoded_bytes" = tracing::field::Empty,
@@ -4989,6 +5059,9 @@ async fn handle_cloudflare_logpush(
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.rules.count" = tracing::field::Empty,
+        "maple.ingest.rules.dropped_items" = tracing::field::Empty,
+        "maple.ingest.rules.redacted_values" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
     let span_handle = span.clone();
@@ -5261,7 +5334,7 @@ async fn handle_signal_inner(
         parse_span.record("maple.ingest.item_count", decoded.item_count());
         decoded
     };
-    let claims = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
+    let mut claims = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
     if claims.all_paused {
         // Like a paused token source: success to the sender, nothing written or billed.
         return Ok((
@@ -5278,18 +5351,19 @@ async fn handle_signal_inner(
     debug!(item_count, "Payload enriched");
     metrics::items_accepted(signal.path(), item_count as u64);
 
-    // Only the share left after dropping paused pull sources' resources is metered.
-    let decoded_bytes = claims.metered_bytes(decoded_payload.len());
-
     let response_result = process_decoded_payload(
         state,
         signal,
         payload_format,
         content_encoding.as_deref(),
-        &decoded,
+        &mut decoded,
         &resolved_key,
+        &mut claims.retained,
     )
     .await;
+    // Only the share left after paused-source drops and ingest rules is metered.
+    let decoded_bytes = claims.metered_bytes(decoded_payload.len());
+    let item_count = claims.retained.metered_items(item_count);
 
     let response = response_result.map_err(|error| (error, "forward"))?;
     if response.status().is_success() {
@@ -5498,14 +5572,16 @@ async fn handle_cloudflare_logpush_inner(
                 source: None,
                 default_source: resolved.source.clone(),
             };
-            let decoded = DecodedPayload::Logs(request);
+            let mut decoded = DecodedPayload::Logs(request);
+            let mut retained = Retained::default();
             let response = match process_decoded_payload(
                 state,
                 Signal::Logs,
                 PayloadFormat::Protobuf,
                 None,
-                &decoded,
+                &mut decoded,
                 &resolved_key,
+                &mut retained,
             )
             .await
             {
@@ -5525,20 +5601,22 @@ async fn handle_cloudflare_logpush_inner(
                 .await;
             state.resolver.note_source_use(&resolved_key, false);
 
-            if resolved.org_id != SENTINEL_ORG_ID {
+            // Only the share the ingest rules left is metered.
+            let metered_bytes = retained.metered_bytes(decoded_payload.len());
+            if resolved.org_id != SENTINEL_ORG_ID && metered_bytes > 0 {
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(
                         &resolved.org_id,
                         Signal::Logs.path(),
-                        decoded_payload.len() as u64,
-                        item_count as u64,
+                        metered_bytes as u64,
+                        retained.metered_items(item_count) as u64,
                     );
                 }
                 if let Some(tracker) = &state.autumn_tracker {
                     tracker.track(
                         &resolved.org_id,
                         Signal::Logs.path(),
-                        billable_gb(decoded_payload.len() as u64),
+                        billable_gb(metered_bytes as u64),
                     );
                 }
             }
@@ -5588,6 +5666,9 @@ async fn handle_gcp_logpush(
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.rules.count" = tracing::field::Empty,
+        "maple.ingest.rules.dropped_items" = tracing::field::Empty,
+        "maple.ingest.rules.redacted_values" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
     let span_handle = span.clone();
@@ -5856,13 +5937,15 @@ async fn handle_gcp_logpush_inner(
         },
         current_time_unix_nano(),
     );
+    let mut retained = Retained::default();
     let response = match process_decoded_payload(
         state,
         Signal::Logs,
         PayloadFormat::Protobuf,
         None,
-        &DecodedPayload::Logs(request),
+        &mut DecodedPayload::Logs(request),
         &resolved.key,
+        &mut retained,
     )
     .await
     {
@@ -5878,11 +5961,20 @@ async fn handle_gcp_logpush_inner(
     state.gcp_resolver.record_health(connector_id, None).await;
     state.resolver.note_source_use(&resolved.key, false);
 
-    if let Some(usage) = &state.usage_metrics {
-        usage.record(org_id, Signal::Logs.path(), body.len() as u64, 1);
-    }
-    if let Some(tracker) = &state.autumn_tracker {
-        tracker.track(org_id, Signal::Logs.path(), billable_gb(body.len() as u64));
+    // Metered on the push body, scaled to what the ingest rules left; nothing when they dropped it.
+    let metered_bytes = retained.metered_bytes(body.len());
+    if metered_bytes > 0 {
+        if let Some(usage) = &state.usage_metrics {
+            usage.record(
+                org_id,
+                Signal::Logs.path(),
+                metered_bytes as u64,
+                retained.metered_items(1) as u64,
+            );
+        }
+        if let Some(tracker) = &state.autumn_tracker {
+            tracker.track(org_id, Signal::Logs.path(), billable_gb(metered_bytes as u64));
+        }
     }
 
     Ok((response, GcpPushOutcome::Accepted))
@@ -5970,6 +6062,9 @@ async fn handle_aws_firehose(
         "maple.ingest.self_managed" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
         "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.rules.count" = tracing::field::Empty,
+        "maple.ingest.rules.dropped_items" = tracing::field::Empty,
+        "maple.ingest.rules.redacted_values" = tracing::field::Empty,
         "maple.ingest.decoded_bytes" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
@@ -6186,7 +6281,7 @@ async fn store_delivery(
     let received_bytes: usize = requests.iter().map(Message::encoded_len).sum();
     Span::current().record("maple.ingest.decoded_bytes", received_bytes);
 
-    let decoded = DecodedPayload::Metrics(aws_metric_stream::build_metrics_request(
+    let mut decoded = DecodedPayload::Metrics(aws_metric_stream::build_metrics_request(
         requests,
         &aws_metric_stream::Connection {
             id: connection_id,
@@ -6195,14 +6290,16 @@ async fn store_delivery(
         },
     ));
     let item_count = decoded.item_count();
+    let mut retained = Retained::default();
     if item_count > 0 {
         if let Err(error) = process_decoded_payload(
             state,
             Signal::Metrics,
             PayloadFormat::Protobuf,
             None,
-            &decoded,
+            &mut decoded,
             key,
+            &mut retained,
         )
         .await
         {
@@ -6216,15 +6313,18 @@ async fn store_delivery(
     state.aws_resolver.record_health(connection_id, None).await;
     state.resolver.note_source_use(key, false);
 
-    if item_count > 0 {
+    // Only the share the ingest rules left is metered.
+    let metered_bytes = retained.metered_bytes(received_bytes);
+    let stored = retained.metered_items(item_count);
+    if stored > 0 && metered_bytes > 0 {
         if let Some(usage) = &state.usage_metrics {
-            usage.record(org_id, signal, received_bytes as u64, item_count as u64);
+            usage.record(org_id, signal, metered_bytes as u64, stored as u64);
         }
         if let Some(tracker) = &state.autumn_tracker {
-            tracker.track(org_id, signal, billable_gb(received_bytes as u64));
+            tracker.track(org_id, signal, billable_gb(metered_bytes as u64));
         }
     }
-    Ok(item_count)
+    Ok(stored)
 }
 
 /// A delivery that can never decode: acked so Firehose does not retry it, and
@@ -6711,21 +6811,53 @@ struct ClaimOutcome {
     kept_claim: bool,
     /// Every resource named a paused source and was dropped: answer success, write nothing.
     all_paused: bool,
-    /// Encoded size of the payload (before, after) dropping paused resources, so
-    /// only the retained share is metered. `None` when nothing was dropped.
-    retained: Option<(usize, usize)>,
+    /// What paused-source drops (and later the ingest rules) left of the payload.
+    retained: Retained,
 }
 
-impl ClaimOutcome {
-    /// `original` bytes scaled to the share left after the drop; unchanged when none was.
+/// The share of a payload still stored after paused-source drops and ingest rules,
+/// so only that share is metered. Never above what was received.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Retained {
+    /// (kept, received) as a product of each step's encoded sizes; `None` when nothing changed.
+    share: Option<(u128, u128)>,
+    /// Items the ingest rules dropped.
+    dropped_items: u64,
+}
+
+impl Retained {
+    /// Folds in one step that took the encoded payload from `before` to `after` bytes.
+    /// Capped at 1, so masking or hashing that grows a value never bills more.
+    fn retain(&mut self, before: usize, after: usize) {
+        if before == 0 {
+            return;
+        }
+        let after = after.min(before);
+        let (kept, received) = self.share.unwrap_or((1, 1));
+        self.share = Some((kept * after as u128, received * before as u128));
+    }
+
+    /// `original` bytes scaled to the retained share; unchanged when nothing changed.
     fn metered_bytes(&self, original: usize) -> usize {
-        match self.retained {
-            Some((before, after)) if before > 0 => {
-                let scaled = original as u128 * after as u128 / before as u128;
+        match self.share {
+            Some((kept, received)) if received > 0 => {
+                let scaled = original as u128 * kept / received;
                 usize::try_from(scaled).unwrap_or(original)
             }
             _ => original,
         }
+    }
+
+    /// `items` less what the rules dropped.
+    fn metered_items(&self, items: usize) -> usize {
+        items.saturating_sub(usize::try_from(self.dropped_items).unwrap_or(usize::MAX))
+    }
+}
+
+impl ClaimOutcome {
+    /// `original` bytes scaled to the share left after the drops; unchanged when none was.
+    fn metered_bytes(&self, original: usize) -> usize {
+        self.retained.metered_bytes(original)
     }
 }
 
@@ -6758,9 +6890,10 @@ async fn verify_claims_and_enrich(
     let before = (!verified.paused.is_empty()).then(|| decoded.encoded_len());
     let dropped = drop_paused_resources(decoded, &verified.paused);
     let all_paused = dropped && decoded.resource_count() == 0;
-    let retained = before
-        .filter(|_| dropped)
-        .map(|before| (before, decoded.encoded_len()));
+    let mut retained = Retained::default();
+    if let Some(before) = before.filter(|_| dropped) {
+        retained.retain(before, decoded.encoded_len());
+    }
     if dropped {
         metrics::source_paused_drop(&resolved_key.org_id, decoded.signal().path());
         if all_paused {
@@ -7243,15 +7376,62 @@ async fn relay_collector_response(
         })
 }
 
+/// Applies the org's ingest rules in place and folds what they removed into `retained`.
+/// False when no record is left. Free when the feature is off or no rule reads the signal.
+async fn apply_ingest_rules(
+    state: &AppState,
+    decoded: &mut DecodedPayload,
+    org_id: &str,
+    retained: &mut Retained,
+) -> bool {
+    let resolver = &state.ingest_rule_resolver;
+    if !resolver.enabled() || org_id == SENTINEL_ORG_ID {
+        return true;
+    }
+    let rules = resolver.resolve_rules(org_id).await;
+    let signal = decoded.signal();
+    if !rules.covers(signal.ingest_signal()) {
+        return true;
+    }
+    let before = decoded.encoded_len();
+    let mut stats = RuleStats::default();
+    match decoded {
+        DecodedPayload::Traces(request) => ingest_rules::apply_traces(&rules, request, &mut stats),
+        DecodedPayload::Logs(request) => ingest_rules::apply_logs(&rules, request, &mut stats),
+        DecodedPayload::Metrics(request) => ingest_rules::apply_metrics(&rules, request, &mut stats),
+    }
+    let span = Span::current();
+    span.record("maple.ingest.rules.count", rules.len());
+    span.record("maple.ingest.rules.dropped_items", stats.total.dropped);
+    span.record("maple.ingest.rules.redacted_values", stats.total.redacted_values);
+    if stats.total.dropped > 0 || stats.total.redacted_values > 0 {
+        retained.retain(before, decoded.encoded_len());
+        retained.dropped_items += stats.total.dropped;
+        if stats.total.dropped_bytes > 0 {
+            metrics::ingest_rules_dropped_bytes(org_id, signal.path(), stats.total.dropped_bytes);
+        }
+    }
+    state
+        .ingest_rule_stats
+        .record(org_id, signal.path(), &rules, &stats, current_time_millis());
+    decoded.resource_count() > 0
+}
+
 #[hotpath::measure]
 async fn process_decoded_payload(
     state: &AppState,
     signal: Signal,
     payload_format: PayloadFormat,
     content_encoding: Option<&str>,
-    decoded: &DecodedPayload,
+    decoded: &mut DecodedPayload,
     resolved_key: &ResolvedIngestKey,
+    retained: &mut Retained,
 ) -> Result<Response, ApiError> {
+    // Before the native/forward split: the WAL, S3 shipping and the collector never see raw values.
+    if !apply_ingest_rules(state, decoded, &resolved_key.org_id, retained).await {
+        // Every record was dropped by a rule: success to the sender, nothing written.
+        return Ok(StatusCode::OK.into_response());
+    }
     let destination = native_destination_for(resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
@@ -8355,6 +8535,40 @@ impl PostgresTarget {
     }
 }
 
+/// One multi-row upsert adding counts into `org_ingest_rule_stats`; 8 parameters per row.
+/// Rows must have distinct keys, or Postgres refuses to update a row twice.
+fn ingest_rule_stats_upsert_sql(rows: usize) -> String {
+    let mut sql = String::from(
+        "INSERT INTO org_ingest_rule_stats \
+         (org_id, rule_id, bucket, signal, matched, dropped, dropped_bytes, redacted_values) VALUES ",
+    );
+    for row in 0..rows {
+        let p = row * 8;
+        if row > 0 {
+            sql.push_str(", ");
+        }
+        sql.push_str(&format!(
+            "(${}, ${}, to_timestamp(${}::bigint / 1000.0), ${}, ${}::bigint, ${}::bigint, ${}::bigint, ${}::bigint)",
+            p + 1,
+            p + 2,
+            p + 3,
+            p + 4,
+            p + 5,
+            p + 6,
+            p + 7,
+            p + 8
+        ));
+    }
+    sql.push_str(
+        " ON CONFLICT (org_id, rule_id, bucket, signal) DO UPDATE SET \
+         matched = org_ingest_rule_stats.matched + EXCLUDED.matched, \
+         dropped = org_ingest_rule_stats.dropped + EXCLUDED.dropped, \
+         dropped_bytes = org_ingest_rule_stats.dropped_bytes + EXCLUDED.dropped_bytes, \
+         redacted_values = org_ingest_rule_stats.redacted_values + EXCLUDED.redacted_values",
+    );
+    sql
+}
+
 /// One Postgres client span.
 ///
 /// `operation`/`collection` are the SQL verb and primary table, NOT the Rust
@@ -8732,6 +8946,80 @@ impl KeyStore for PostgresKeyStore {
                 operation: row.get("operation"),
             })
             .collect())
+    }
+
+    async fn fetch_ingest_rules(&self, org_id: &str) -> Result<IngestRuleRows, String> {
+        let client = self.client().await?;
+        // `spec_json::text`: tokio-postgres has no serde_json feature here, so it is parsed later.
+        let rows = client
+            .query(
+                "SELECT r.id, r.spec_json::text AS spec_json, s.hash_salt \
+                 FROM org_ingest_rules r \
+                 LEFT JOIN org_ingest_rule_settings s ON s.org_id = r.org_id \
+                 WHERE r.org_id = $1 AND r.enabled \
+                 ORDER BY r.position, r.created_at, r.id",
+                &[&org_id],
+            )
+            .instrument(postgres_client_span(
+                "fetch_ingest_rules",
+                "SELECT",
+                "org_ingest_rules",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_ingest_rules failed: {error}"))?;
+        // NULL until the org's first hash rule is created, so nothing can hash with it yet.
+        let hash_salt = rows
+            .first()
+            .and_then(|row| row.get::<_, Option<String>>("hash_salt"))
+            .unwrap_or_default();
+        Ok(IngestRuleRows {
+            rules: rows
+                .iter()
+                .map(|row| (row.get("id"), row.get("spec_json")))
+                .collect(),
+            hash_salt,
+        })
+    }
+
+    async fn record_ingest_rule_stats(&self, rows: &[IngestRuleStatRow]) -> Result<(), String> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let numbers: Vec<[i64; 5]> = rows
+            .iter()
+            .map(|row| {
+                let count = |value: u64| i64::try_from(value).unwrap_or(i64::MAX);
+                [
+                    row.bucket_ms,
+                    count(row.counts.matched),
+                    count(row.counts.dropped),
+                    count(row.counts.dropped_bytes),
+                    count(row.counts.redacted_values),
+                ]
+            })
+            .collect();
+        let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+            Vec::with_capacity(rows.len() * 8);
+        for (row, values) in rows.iter().zip(&numbers) {
+            params.push(&row.org_id);
+            params.push(&row.rule_id);
+            params.push(&values[0]);
+            params.push(&row.signal);
+            params.extend(values[1..].iter().map(|value| value as &(dyn tokio_postgres::types::ToSql + Sync)));
+        }
+        let client = self.client().await?;
+        client
+            .execute(ingest_rule_stats_upsert_sql(rows.len()).as_str(), &params)
+            .instrument(postgres_client_span(
+                "record_ingest_rule_stats",
+                "INSERT",
+                "org_ingest_rule_stats",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres record_ingest_rule_stats failed: {error}"))?;
+        Ok(())
     }
 
     async fn fetch_clickhouse_target(
@@ -9112,6 +9400,14 @@ impl KeyStore for StaticKeyStore {
         _org_id: &str,
     ) -> Result<Vec<AttributeMappingRow>, String> {
         Ok(Vec::new())
+    }
+
+    async fn fetch_ingest_rules(&self, _org_id: &str) -> Result<IngestRuleRows, String> {
+        Ok(IngestRuleRows::default())
+    }
+
+    async fn record_ingest_rule_stats(&self, _rows: &[IngestRuleStatRow]) -> Result<(), String> {
+        Ok(())
     }
 
     async fn fetch_clickhouse_target(
@@ -10385,6 +10681,13 @@ mod tests {
         routing_fetches: AtomicU64,
         target_fetches: AtomicU64,
         routing_errors: AtomicBool,
+        /// Stored ingest rules by org, as `fetch_ingest_rules` returns them.
+        ingest_rules: std::sync::Mutex<std::collections::HashMap<String, IngestRuleRows>>,
+        ingest_rule_fetches: AtomicU64,
+        /// Fails `fetch_ingest_rules`.
+        ingest_rule_errors: AtomicBool,
+        /// Every row `record_ingest_rule_stats` was given.
+        ingest_rule_stats: std::sync::Mutex<Vec<IngestRuleStatRow>>,
     }
 
     impl FakeKeyStore {
@@ -10597,6 +10900,26 @@ mod tests {
             _org_id: &str,
         ) -> Result<Vec<AttributeMappingRow>, String> {
             Ok(Vec::new())
+        }
+        async fn fetch_ingest_rules(&self, org_id: &str) -> Result<IngestRuleRows, String> {
+            self.ingest_rule_fetches.fetch_add(1, Ordering::Relaxed);
+            if self.ingest_rule_errors.load(Ordering::Relaxed) {
+                return Err("fake ingest rule lookup failure".to_owned());
+            }
+            Ok(self
+                .ingest_rules
+                .lock()
+                .unwrap()
+                .get(org_id)
+                .cloned()
+                .unwrap_or_default())
+        }
+        async fn record_ingest_rule_stats(
+            &self,
+            rows: &[IngestRuleStatRow],
+        ) -> Result<(), String> {
+            self.ingest_rule_stats.lock().unwrap().extend_from_slice(rows);
+            Ok(())
         }
         async fn fetch_clickhouse_target(
             &self,
@@ -10929,6 +11252,8 @@ mod tests {
                 autumn_deny_ttl_secs: 5,
                 ingest_key_cache_ttl_secs: 60,
                 org_routing_cache_ttl_secs: 5,
+                ingest_rules_enabled: false,
+                ingest_rules_cache_ttl_secs: 30,
                 replay_max_session_bytes: 1024 * 1024 * 1024,
                 replay_blob_store: None,
                 trust_proxy_geo: false,
@@ -10978,6 +11303,13 @@ mod tests {
                     .max_capacity(16)
                     .build(),
             },
+            ingest_rule_resolver: IngestRuleResolver::new(
+                Arc::clone(&key_store),
+                false,
+                Duration::from_secs(30),
+                16,
+            ),
+            ingest_rule_stats: Arc::new(IngestRuleStatsSink::default()),
             cloudflare_resolver: CloudflareConnectorResolver {
                 store: Arc::clone(&key_store),
                 lookup_hmac_key: "test-hmac-key".to_owned(),
@@ -15600,5 +15932,341 @@ mod tests {
         assert_eq!(parse_fleet_size(Some("4".to_owned())), Ok(4));
         assert!(parse_fleet_size(Some("0".to_owned())).is_err());
         assert!(parse_fleet_size(Some("many".to_owned())).is_err());
+    }
+
+    // Ingest rules in the gateway (docs/ingest-rules.md).
+
+    impl FakeKeyStore {
+        /// Stores `rules` (spec JSON, in position order) as the org's enabled rules.
+        fn set_ingest_rules(&self, org_id: &str, rules: &[serde_json::Value]) {
+            let rows = IngestRuleRows {
+                rules: rules
+                    .iter()
+                    .enumerate()
+                    .map(|(index, rule)| (format!("rule_{index}"), rule.to_string()))
+                    .collect(),
+                hash_salt: "test-salt".to_owned(),
+            };
+            self.ingest_rules
+                .lock()
+                .unwrap()
+                .insert(org_id.to_owned(), rows);
+        }
+    }
+
+    /// Turns ingest rules on for `state`, reading them from `store`.
+    fn with_ingest_rules(mut state: AppState, store: &Arc<FakeKeyStore>) -> AppState {
+        state.ingest_rule_resolver = IngestRuleResolver::new(
+            Arc::<FakeKeyStore>::clone(store),
+            true,
+            Duration::from_secs(30),
+            16,
+        );
+        state
+    }
+
+    fn mask_emails_rule() -> serde_json::Value {
+        serde_json::json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": { "_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [],
+                "scopes": ["attributes", "body"], "method": "mask" }
+        })
+    }
+
+    fn drop_debug_logs_rule() -> serde_json::Value {
+        serde_json::json!({
+            "signals": ["logs"],
+            "conditions": [{ "field": "severity", "op": "lt", "value": "info" }],
+            "action": { "_tag": "drop", "keepPercent": 0 }
+        })
+    }
+
+    /// A one-record log request at `severity_number`.
+    fn log_request_at(message: &str, severity_number: i32) -> ExportLogsServiceRequest {
+        let mut request = test_log_request(message);
+        request.resource_logs[0].scope_logs[0].log_records[0].severity_number = severity_number;
+        request
+    }
+
+    fn forwarded_bodies(request: &ExportLogsServiceRequest) -> Vec<String> {
+        request
+            .resource_logs
+            .iter()
+            .flat_map(|resource| &resource.scope_logs)
+            .flat_map(|scope| &scope.log_records)
+            .filter_map(|record| match record.body.as_ref()?.value.as_ref()? {
+                any_value::Value::StringValue(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    async fn next_forwarded_logs(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    ) -> ExportLogsServiceRequest {
+        let body = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("forwarded")
+            .expect("forward channel should stay open");
+        ExportLogsServiceRequest::decode(body).expect("protobuf")
+    }
+
+    /// A forward-mode state for one private key whose org is `org`, plus its store.
+    async fn rules_forward_state(
+        name: &str,
+        raw_key: &str,
+        org: &str,
+        forward_url: String,
+    ) -> (AppState, Arc<FakeKeyStore>, PathBuf) {
+        let queue_dir = unique_main_test_dir(name);
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: org.to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+        (state, store, queue_dir)
+    }
+
+    #[tokio::test]
+    async fn forwarded_logs_carry_redacted_values_only() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_forward";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-forward", raw_key, "org_rules_forward", forward_url).await;
+        store.set_ingest_rules("org_rules_forward", &[mask_emails_rule()]);
+        let state = with_ingest_rules(state, &store);
+
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        let (response, ..) = handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs)
+            .await
+            .expect("accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        let forwarded = next_forwarded_logs(&mut forward_rx).await;
+        assert_eq!(forwarded_bodies(&forwarded), ["login from [REDACTED:email]"]);
+
+        // The counts reach the stats table on the next flush.
+        state.ingest_rule_stats.flush(store.as_ref()).await;
+        let rows = store.ingest_rule_stats.lock().unwrap().clone();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!((rows[0].rule_id.as_str(), rows[0].signal), ("rule_0", "logs"));
+        assert_eq!((rows[0].counts.matched, rows[0].counts.redacted_values), (1, 1));
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_dropped_debug_log_is_not_forwarded_and_meters_nothing() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_drop";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-drop", raw_key, "org_rules_drop", forward_url).await;
+        store.set_ingest_rules("org_rules_drop", &[drop_debug_logs_rule()]);
+        let state = with_ingest_rules(state, &store);
+
+        let body = log_request_at("noisy debug line", 5).encode_to_vec();
+        let (response, item_count, _, metered) =
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs)
+                .await
+                .expect("a fully dropped batch is still acked");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!((item_count, metered), (0, 0));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "a dropped log must not be forwarded"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_partial_drop_meters_only_what_is_kept() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_partial";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-partial", raw_key, "org_rules_partial", forward_url).await;
+        store.set_ingest_rules("org_rules_partial", &[drop_debug_logs_rule()]);
+        let state = with_ingest_rules(state, &store);
+
+        let mut request = log_request_at("kept info line", 9);
+        let mut debug = request.resource_logs[0].scope_logs[0].log_records[0].clone();
+        debug.severity_number = 5;
+        debug.body = Some(AnyValue {
+            value: Some(any_value::Value::StringValue("dropped debug line".to_owned())),
+        });
+        request.resource_logs[0].scope_logs[0].log_records.push(debug);
+        let body = request.encode_to_vec();
+        let received = body.len();
+        let (_, item_count, _, metered) =
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs)
+                .await
+                .expect("accepted");
+        assert_eq!(item_count, 1);
+        assert!(metered > 0 && metered < received, "{metered} of {received}");
+        let forwarded = next_forwarded_logs(&mut forward_rx).await;
+        assert_eq!(forwarded_bodies(&forwarded), ["kept info line"]);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn disabled_ingest_rules_never_query_the_store() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_off";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-off", raw_key, "org_rules_off", forward_url).await;
+        store.set_ingest_rules("org_rules_off", &[mask_emails_rule()]);
+        // `test_app_state` leaves INGEST_RULES_ENABLED at its default, off.
+
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        let (_, _, _, metered) =
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body.clone()), Signal::Logs)
+                .await
+                .expect("accepted");
+        assert_eq!(metered, body.len());
+        let forwarded = next_forwarded_logs(&mut forward_rx).await;
+        assert_eq!(forwarded_bodies(&forwarded), ["login from jane@example.com"]);
+        assert_eq!(store.ingest_rule_fetches.load(Ordering::Relaxed), 0);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_failed_rule_lookup_keeps_serving_the_last_good_rules() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.set_ingest_rules("org_rules_lkg", &[mask_emails_rule(), drop_debug_logs_rule()]);
+        let resolver = IngestRuleResolver::new(
+            Arc::<FakeKeyStore>::clone(&store),
+            true,
+            Duration::from_secs(30),
+            16,
+        );
+        assert_eq!(resolver.resolve_rules("org_rules_lkg").await.len(), 2);
+
+        store.ingest_rule_errors.store(true, Ordering::Relaxed);
+        resolver.expire("org_rules_lkg").await;
+        assert_eq!(resolver.resolve_rules("org_rules_lkg").await.len(), 2);
+        assert_eq!(store.ingest_rule_fetches.load(Ordering::Relaxed), 2);
+
+        // An org never loaded falls back to no rules rather than failing the request.
+        assert!(resolver.resolve_rules("org_never_loaded").await.is_empty());
+    }
+
+    const GCP_EMAIL_LOG_ENTRY: &str = r#"{
+        "logName": "projects/my-project/logs/run.googleapis.com%2Fstdout",
+        "insertId": "insert-2",
+        "timestamp": "2025-03-07T12:34:56.123456789Z",
+        "severity": "WARNING",
+        "textPayload": "password reset for jane@example.com",
+        "resource": {
+            "type": "cloud_run_revision",
+            "labels": {
+                "project_id": "my-project",
+                "service_name": "checkout",
+                "revision_name": "checkout-00042-abc",
+                "location": "europe-west4"
+            }
+        }
+    }"#;
+
+    /// `gcp_logpush_state` with ingest rules on, before it is shared.
+    async fn gcp_rules_state(
+        name: &str,
+        clickhouse_url: &str,
+        rules: &[serde_json::Value],
+    ) -> (AppState, Arc<FakeKeyStore>, PathBuf) {
+        let (state, store, queue_dir) = gcp_logpush_state(name, clickhouse_url).await;
+        let Ok(state) = Arc::try_unwrap(state) else {
+            panic!("the GCP test state is not shared yet");
+        };
+        store.set_ingest_rules("org_gcp", rules);
+        let state = with_ingest_rules(state, &store);
+        (state, store, queue_dir)
+    }
+
+    #[tokio::test]
+    async fn stored_rows_hold_the_redacted_value_never_the_raw_one() {
+        let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
+        let (state, _store, queue_dir) =
+            gcp_rules_state("rules-gcp-redact", &ch_url, &[mask_emails_rule()]).await;
+        let state = Arc::new(state);
+
+        let accepted = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_EMAIL_LOG_ENTRY).await;
+        assert_eq!(accepted.status(), StatusCode::OK);
+        let stored = tokio::time::timeout(Duration::from_secs(2), ch_rx.recv())
+            .await
+            .expect("the entry should reach the org's ClickHouse")
+            .expect("ClickHouse channel should stay open");
+        assert!(stored.query.starts_with("INSERT INTO logs"));
+        assert!(stored.body.contains("password reset for [REDACTED:email]"), "{}", stored.body);
+        assert!(!stored.body.contains("jane@example.com"), "{}", stored.body);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn gcp_pushes_meter_only_what_the_rules_leave() {
+        let (ch_url, _ch_rx) = spawn_fake_clickhouse().await;
+        // Removing the entry's `gcp.*` attributes shrinks what is stored.
+        let remove_gcp_attributes = serde_json::json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": { "_tag": "redact", "keys": ["gcp.*"], "detectors": [], "patterns": [],
+                "scopes": ["attributes"], "method": "remove" }
+        });
+        let (state, _store, queue_dir) =
+            gcp_rules_state("rules-gcp-meter", &ch_url, &[remove_gcp_attributes]).await;
+        let (state, mut autumn_rx) = with_fake_autumn(state).await;
+        let state = Arc::new(state);
+
+        let accepted = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
+        assert_eq!(accepted.status(), StatusCode::OK);
+        let calls = drain_autumn_calls(&mut autumn_rx).await;
+        let tracked = tracked(&calls);
+        let unscaled = billable_gb(GCP_LOG_ENTRY.len() as u64);
+        assert_eq!(tracked.len(), 1, "{tracked:?}");
+        assert_eq!(tracked[0].0, "logs");
+        assert!(tracked[0].1 > 0.0 && tracked[0].1 < unscaled, "{} of {unscaled}", tracked[0].1);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn retained_share_composes_and_never_exceeds_what_was_received() {
+        let mut retained = Retained::default();
+        assert_eq!(retained.metered_bytes(1_000), 1_000);
+        // A paused-source drop keeps half, then the rules keep half of that.
+        retained.retain(200, 100);
+        retained.retain(80, 40);
+        assert_eq!(retained.metered_bytes(1_000), 250);
+        // Hashing that grows the payload bills no more than before it.
+        retained.retain(40, 60);
+        assert_eq!(retained.metered_bytes(1_000), 250);
+        retained.dropped_items = 2;
+        assert_eq!(retained.metered_items(3), 1);
+        assert_eq!(retained.metered_items(1), 0);
+    }
+
+    #[test]
+    fn rule_stats_upsert_numbers_every_row_and_adds_on_conflict() {
+        let sql = ingest_rule_stats_upsert_sql(2);
+        assert!(sql.contains(
+            "($1, $2, to_timestamp($3::bigint / 1000.0), $4, $5::bigint, $6::bigint, $7::bigint, $8::bigint), \
+             ($9, $10, to_timestamp($11::bigint / 1000.0), $12, $13::bigint, $14::bigint, $15::bigint, $16::bigint)"
+        ));
+        assert!(sql.contains("dropped_bytes = org_ingest_rule_stats.dropped_bytes + EXCLUDED.dropped_bytes"));
     }
 }
