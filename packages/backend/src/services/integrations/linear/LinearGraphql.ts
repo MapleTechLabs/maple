@@ -1,15 +1,11 @@
-/**
- * One Linear GraphQL call. Linear answers most failures as HTTP 200/400 with an
- * `errors` array, so the status alone cannot tell a dead grant from a bad query:
- * the error's `extensions.code` (or `type`) decides.
- */
+/** One Linear GraphQL call. Linear reports most failures in an `errors` array, so the codes decide, not the status. */
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 
 export const LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 
-const REQUEST_TIMEOUT = "20 seconds"
+const REQUEST_TIMEOUT = "8 seconds"
 
 const GraphqlErrorSchema = Schema.Struct({
 	message: Schema.String,
@@ -54,12 +50,10 @@ const errorSummary = (errors: ReadonlyArray<LinearGraphqlError>) =>
 	errors.map((error) => error.message).join("; ")
 
 /**
- * POST a query. A rejected token fails `IntegrationsRevokedError` (the caller's
- * refresh-and-retry keys on it); any other non-2xx without GraphQL errors fails
- * `IntegrationsUpstreamError`. GraphQL errors on a readable body are returned,
- * not failed, so a caller can treat "not found" as an answer.
+ * A rejected token fails `IntegrationsRevokedError`, which the caller's refresh-and-retry keys on.
+ * Other GraphQL errors are returned, so a caller can treat "not found" as an answer.
  */
-export const linearGraphql = Effect.fn("Linear.graphql")(function* (
+export const linearGraphql = Effect.fn("Linear.graphql", { kind: "client" })(function* (
 	httpClient: HttpClient.HttpClient,
 	accessToken: string,
 	operationName: string,
@@ -110,7 +104,7 @@ export const linearGraphql = Effect.fn("Linear.graphql")(function* (
 
 	if (status === 401 || errors.some(isAuthError)) {
 		return yield* Effect.fail(
-			new IntegrationsRevokedError({ message: "Linear rejected the access token — reconnect Linear" }),
+			new IntegrationsRevokedError({ message: "Linear rejected the access token. Reconnect Linear." }),
 		)
 	}
 	if (status === 429 || errors.some((error) => error.code === "RATELIMITED")) {

@@ -24,7 +24,7 @@ import {
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertDestinations, AlertRules, type AlertDestinationRow } from "@maple/db/tables"
+import { AlertDestinations, AlertLinearIssues, AlertRules, type AlertDestinationRow } from "@maple/db/tables"
 import { Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
@@ -112,7 +112,7 @@ const emailSecretConfig = (members: ReadonlyArray<OrgMember>): DestinationSecret
 type AlertDestinationDependencyError =
 	| Effect.Error<ReturnType<HazelOAuthServiceApi["createChannelWebhook"]>>
 	| Effect.Error<ReturnType<OrgMembersServiceApi["resolveMembers"]>>
-	| Effect.Error<ReturnType<LinearOAuthServiceApi["listTeams"]>>
+	| Effect.Error<ReturnType<LinearOAuthServiceApi["getTeam"]>>
 
 const linearPublicConfig = (team: LinearTeam): DestinationPublicConfig => ({
 	summary: `Linear · ${team.name}`,
@@ -425,9 +425,8 @@ export class AlertDestinationsService extends Context.Service<
 			orgId: OrgId,
 			teamId: string,
 		) {
-			const teams = yield* linearOAuth.listTeams(orgId)
-			const team = teams.find((candidate) => candidate.id === teamId)
-			if (team === undefined) {
+			const team = yield* linearOAuth.getTeam(orgId, teamId)
+			if (team === null) {
 				return yield* Effect.fail(
 					makeValidationError("That team is not in the connected Linear workspace"),
 				)
@@ -829,6 +828,15 @@ export class AlertDestinationsService extends Context.Service<
 								}
 							}
 							const team = yield* resolveLinearTeam(orgId, teamId)
+							// The old team's issues are not this team's; the next trigger opens fresh ones.
+							yield* dbExecute((db) =>
+								db.run(
+									PG.deleteFrom(AlertLinearIssues).where(($) => [
+										$.orgId.eq(orgId),
+										$.destinationId.eq(destinationId),
+									]),
+								),
+							)
 							return {
 								nextPublicConfig: linearPublicConfig(team),
 								nextSecretConfig: linearSecretConfig(team),

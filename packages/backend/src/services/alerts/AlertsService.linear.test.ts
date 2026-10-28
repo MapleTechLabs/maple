@@ -1,11 +1,12 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Duration, Effect, Layer } from "effect"
+import { ConfigProvider, Duration, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { AlertsService } from "./AlertsService"
+import { LinearIssueTracker } from "./LinearIssueTracker"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
 	adminRoles,
@@ -50,6 +51,20 @@ const linearServer = () => {
 		switch (operation.name) {
 			case "MapleConnectedWorkspace":
 				return json({ data: { organization: { id: "lin_org", name: "Acme" } } })
+			case "MapleTeamLookup": {
+				const known = operation.variables.id === "team_1"
+				return known
+					? json({ data: { team: { id: "team_1", key: "ENG", name: "Engineering" } } })
+					: json({
+							data: null,
+							errors: [
+								{
+									message: "Could not find referenced Team.",
+									extensions: { code: "INPUT_ERROR" },
+								},
+							],
+						})
+			}
 			case "MapleTeams":
 				return json({
 					data: { teams: { nodes: [{ id: "team_1", key: "ENG", name: "Engineering" }] } },
@@ -81,39 +96,44 @@ const linearServer = () => {
 	return { fetch, operations }
 }
 
-/** Connects the org through the real OAuth service, against the same database and key as the alerts layer. */
+const oauthConfig = ConfigProvider.layer(
+	ConfigProvider.fromUnknown({
+		PORT: "3472",
+		TINYBIRD_HOST: "https://maple-managed.tinybird.co",
+		TINYBIRD_TOKEN: "managed-token",
+		MAPLE_AUTH_MODE: "self_hosted",
+		MAPLE_ROOT_PASSWORD: "test-root-password",
+		MAPLE_DEFAULT_ORG_ID: "default",
+		MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 5).toString("base64"),
+		MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "lookup-key",
+		MAPLE_INGEST_PUBLIC_URL: "http://127.0.0.1:3474",
+		LINEAR_OAUTH_CLIENT_ID: "lin-client-id",
+		LINEAR_OAUTH_CLIENT_SECRET: "lin-client-secret",
+	}),
+)
+
+/** The real OAuth service and issue tracker, against the same database and key as the alerts layer. */
+const linearLayers = (testDb: TestDb, fetch: typeof globalThis.fetch) =>
+	Layer.mergeAll(
+		LinearOAuthService.layer,
+		Layer.effect(LinearIssueTracker, LinearIssueTracker.make).pipe(
+			Layer.provide(FetchHttpClient.layer),
+			Layer.provide(LinearOAuthService.layer),
+		),
+	).pipe(
+		Layer.provide(testDb.layer),
+		Layer.provide(Env.layer),
+		Layer.provide(oauthConfig),
+		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+	)
+
 const connectLinear = (testDb: TestDb, fetch: typeof globalThis.fetch, orgId: ReturnType<typeof asOrgId>) =>
 	Effect.gen(function* () {
 		const service = yield* LinearOAuthService
 		const userId = asUserId("user_linear")
 		const { state } = yield* service.startConnect(orgId, userId, { callbackUrl: "https://api.test/cb" })
 		yield* service.completeConnect("code", state, { orgId, userId })
-	}).pipe(
-		Effect.provide(
-			LinearOAuthService.layer.pipe(
-				Layer.provide(testDb.layer),
-				Layer.provide(Env.layer),
-				Layer.provide(
-					ConfigProvider.layer(
-						ConfigProvider.fromUnknown({
-							PORT: "3472",
-							TINYBIRD_HOST: "https://maple-managed.tinybird.co",
-							TINYBIRD_TOKEN: "managed-token",
-							MAPLE_AUTH_MODE: "self_hosted",
-							MAPLE_ROOT_PASSWORD: "test-root-password",
-							MAPLE_DEFAULT_ORG_ID: "default",
-							MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 5).toString("base64"),
-							MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "lookup-key",
-							MAPLE_INGEST_PUBLIC_URL: "http://127.0.0.1:3474",
-							LINEAR_OAUTH_CLIENT_ID: "lin-client-id",
-							LINEAR_OAUTH_CLIENT_SECRET: "lin-client-secret",
-						}),
-					),
-				),
-				Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetch)),
-			),
-		),
-	)
+	}).pipe(Effect.provide(linearLayers(testDb, fetch)))
 
 const breaching = tracesRow({
 	count: 200,
@@ -219,5 +239,54 @@ describe("AlertsService with a Linear destination", () => {
 				1,
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: linear.fetch })))
+	})
+
+	it.effect("fails terminally when Linear no longer has the team or refuses access", () => {
+		const testDb = createTestDb(trackedDbs)
+		const orgId = asOrgId("org_linear_gone")
+		const answers = {
+			MapleIssueCreate: {
+				data: null,
+				errors: [{ message: "Could not find referenced Team.", extensions: { code: "INPUT_ERROR" } }],
+			},
+			MapleComment: {
+				data: null,
+				errors: [{ message: "Forbidden", extensions: { code: "FORBIDDEN" } }],
+			},
+		}
+		const fetch: typeof globalThis.fetch = async (input, init) => {
+			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+			if (url === "https://api.linear.app/oauth/token") {
+				return json({
+					access_token: "lin-access",
+					refresh_token: "r",
+					expires_in: 86399,
+					scope: "read,write",
+				})
+			}
+			const name = JSON.parse(String(init?.body)).operationName
+			return json(
+				name === "MapleIssueCreate" || name === "MapleComment"
+					? answers[name]
+					: { data: { organization: { id: "lin_org", name: "Acme" } } },
+			)
+		}
+		const operation = (name: string) => ({ name, document: "", variables: {} })
+		return Effect.gen(function* () {
+			yield* connectLinear(testDb, fetch, orgId)
+			const tracker = yield* LinearIssueTracker
+			const missing = yield* tracker
+				.request(orgId, operation("MapleIssueCreate"), Schema.Unknown)
+				.pipe(Effect.flip)
+			assert.strictEqual(missing._tag, "@maple/http/errors/AlertDeliveryTargetMissingError")
+			const forbidden = yield* tracker
+				.request(orgId, operation("MapleComment"), Schema.Unknown)
+				.pipe(Effect.flip)
+			assert.strictEqual(forbidden._tag, "@maple/http/errors/AlertDeliveryTargetMissingError")
+			const read = yield* tracker.request(orgId, operation("MapleIssueCreate"), Schema.Unknown, {
+				notFoundIsNull: true,
+			})
+			assert.isNull(read)
+		}).pipe(Effect.provide(linearLayers(testDb, fetch)))
 	})
 })

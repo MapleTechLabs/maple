@@ -137,7 +137,7 @@ const fakeLinear = (
 					),
 				)
 			}),
-		findThread: (_destinationId, threadKey) => Effect.succeed(threads.get(threadKey) ?? null),
+		findThread: (_orgId, _destinationId, threadKey) => Effect.succeed(threads.get(threadKey) ?? null),
 		saveThread: (thread) => Effect.sync(() => void threads.set(thread.threadKey, thread)),
 	}
 	const send = (input: RenderInput<SecretConfigOf<"linear">>) =>
@@ -187,7 +187,7 @@ describe("linear transport", () => {
 			const result = yield* linear.send(inputFor())
 
 			const create = inputOf(linear.calls, "MapleIssueCreate")
-			assert.strictEqual(create.id, linearEntityId("issue", DESTINATION_ID, "inc_1"))
+			assert.strictEqual(create.id, linearEntityId("issue", DESTINATION_ID, "delivery_1"))
 			assert.strictEqual(create.teamId, "team_1")
 			assert.strictEqual(create.priority, 1)
 			assert.include(
@@ -205,7 +205,7 @@ describe("linear transport", () => {
 
 	it.effect("reuses the issue a lost-response create already made", () =>
 		Effect.gen(function* () {
-			const issueId = linearEntityId("issue", DESTINATION_ID, "inc_1")
+			const issueId = linearEntityId("issue", DESTINATION_ID, "delivery_1")
 			const linear = fakeLinear({
 				issues: [issue({ id: issueId, identifier: "ENG-3", state: { type: "triage" } })],
 			})
@@ -218,11 +218,16 @@ describe("linear transport", () => {
 	it.effect("comments on the open issue when the same incident changes severity", () =>
 		Effect.gen(function* () {
 			const linear = fakeLinear({ issues: [issue()], threads: [openThread()] })
-			const result = yield* linear.send(inputFor({ deliveryKey: "delivery_2" }))
+			const result = yield* linear.send(
+				inputFor({ deliveryKey: "delivery_2", ruleSeverities: ["warning", "critical"] }),
+			)
 			assert.notInclude(names(linear.calls), "MapleIssueCreate")
 			const comment = inputOf(linear.calls, "MapleComment")
 			assert.include(String(comment.body), "Severity changed to critical")
-			assert.strictEqual(comment.id, linearEntityId("comment", "delivery_2"))
+			assert.strictEqual(
+				comment.id,
+				linearEntityId("comment", DESTINATION_ID, "issue_open", "delivery_2"),
+			)
 			assert.strictEqual(result.providerMessage, "Commented on Linear issue ENG-7")
 		}),
 	)
@@ -301,6 +306,43 @@ describe("linear transport", () => {
 			const result = yield* linear.send(inputFor({ eventType: "test", incidentId: null }))
 			assert.notInclude(names(linear.calls), "MapleIssueCreate")
 			assert.strictEqual(result.providerMessage, "Linear team Engineering (ENG) is reachable")
+		}),
+	)
+
+	it.effect("opens no issue for a trigger retried after its incident resolved", () =>
+		Effect.gen(function* () {
+			const linear = fakeLinear()
+			const result = yield* linear.send(inputFor({ incidentStatus: "resolved" }))
+			assert.lengthOf(linear.calls, 0)
+			assert.include(result.providerMessage, "Skipped")
+		}),
+	)
+
+	it.effect("gives a closed issue a fresh id when the same incident needs a new one", () =>
+		Effect.gen(function* () {
+			const closedAt = new Date(NOW - LINEAR_REOPEN_WINDOW_MS - HOUR).toISOString()
+			const oldId = linearEntityId("issue", DESTINATION_ID, "delivery_1")
+			const linear = fakeLinear({
+				issues: [issue({ id: oldId, state: { type: "completed" }, completedAt: closedAt })],
+				threads: [openThread({ linearIssueId: oldId })],
+			})
+			const result = yield* linear.send(inputFor({ deliveryKey: "delivery_9" }))
+			const create = inputOf(linear.calls, "MapleIssueCreate")
+			assert.notStrictEqual(create.id, oldId)
+			assert.strictEqual(result.providerMessage, "Opened Linear issue ENG-2")
+		}),
+	)
+
+	it.effect("labels an error-issue update without claiming a severity change", () =>
+		Effect.gen(function* () {
+			const linear = fakeLinear({ issues: [issue()], threads: [openThread()] })
+			yield* linear.send(inputFor({ deliveryKey: "delivery_3" }))
+			assert.include(String(inputOf(linear.calls, "MapleComment").body), "**Updated.**")
+			const alert = fakeLinear({ issues: [issue()], threads: [openThread()] })
+			yield* alert.send(
+				inputFor({ deliveryKey: "delivery_3", ruleSeverities: ["warning", "critical"] }),
+			)
+			assert.include(String(inputOf(alert.calls, "MapleComment").body), "Severity changed to critical")
 		}),
 	)
 })

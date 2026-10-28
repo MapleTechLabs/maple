@@ -5,6 +5,7 @@
 import {
 	AlertDeliveryAuthError,
 	AlertDeliveryError,
+	AlertDeliveryTargetMissingError,
 	type AlertDeliveryFailure,
 	type IntegrationsNotConnectedError,
 	type IntegrationsPersistenceError,
@@ -86,7 +87,20 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 							operation.variables,
 						),
 					)
-					if (result.errors.some(isNotFound)) return null
+					if (result.errors.some(isNotFound)) {
+						if (options.notFoundIsNull === true) return null
+						return yield* new AlertDeliveryTargetMissingError({
+							message: `Linear could not find what ${operation.name} refers to. Check the destination's team.`,
+							destinationType: "linear",
+						})
+					}
+					if (result.errors.some((error) => error.code === "FORBIDDEN")) {
+						return yield* new AlertDeliveryTargetMissingError({
+							message:
+								"Maple no longer has access to this Linear team. Reconnect Linear or pick another team.",
+							destinationType: "linear",
+						})
+					}
 					if (options.duplicateIsSuccess === true && result.errors.some(isDuplicate)) return null
 					if (result.errors.length > 0) {
 						return yield* new AlertDeliveryError({
@@ -121,12 +135,16 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 					}),
 				)
 
-			const findThread: LinearDeliveryPort["findThread"] = (destinationId, threadKey) =>
+			const findThread: LinearDeliveryPort["findThread"] = (orgId, destinationId, threadKey) =>
 				dbExecute((db) =>
 					db.run(
 						PG.from(AlertLinearIssues)
 							.select()
-							.where(($) => [$.destinationId.eq(destinationId), $.threadKey.eq(threadKey)])
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.destinationId.eq(destinationId),
+								$.threadKey.eq(threadKey),
+							])
 							.limit(1),
 					),
 				).pipe(

@@ -1,10 +1,6 @@
 /**
- * Linear opens one issue per alert thread (a rule and group) and comments on it after that,
- * so a team's Triage gets a ticket per problem, not per notification. Reminders are skipped:
- * Linear is where the work is tracked, not where anyone is paged.
- *
- * Every id Maple sends is derived from the event, so a retried delivery finds the issue or
- * comment its first attempt made instead of making another.
+ * One Linear issue per alert thread (rule and group), commented on after that; reminders are skipped.
+ * Every id Maple sends derives from the delivery, so a retry finds what its first attempt made.
  */
 import { createHash } from "node:crypto"
 import { AlertDeliveryTargetMissingError } from "@maple/domain/http"
@@ -31,6 +27,8 @@ export const LINEAR_REOPEN_WINDOW_MS = 24 * 60 * 60 * 1000
 const MAPLE_ICON_URL = "https://maple.dev/logo512.png"
 const MAX_TITLE_CHARS = 250
 const MAX_BODY_CHARS = 8000
+/** Under the 30s delivery lease, so a slow Linear never lets a second worker run the same row. */
+const SEND_TIMEOUT = "25 seconds"
 
 /** A UUID v4-shaped id (Linear requires v4) derived from `parts`, so the same event always maps to it. */
 export const linearEntityId = (...parts: ReadonlyArray<string>): string => {
@@ -67,12 +65,17 @@ export const linearIssueDescription = (input: Input): string => {
 export const linearCommentBody = (input: Input, thread: LinearThread | null): string => {
 	const { context } = input
 	const summary = buildSummaryLine(context, (value) => `**${value}**`)
+	const sameIncident =
+		thread !== null && thread.incidentId !== null && thread.incidentId === context.incidentId
+	// Alert incidents re-trigger only on a severity change; error-issue updates carry no tiers.
 	const heading =
 		context.eventType === "resolve"
 			? "Resolved"
-			: thread !== null && thread.incidentId !== null && thread.incidentId === context.incidentId
-				? `Severity changed to ${formatSeverityLabel(context.severity).toLowerCase()}`
-				: "Fired again"
+			: !sameIncident
+				? "Fired again"
+				: context.ruleSeverities !== undefined
+					? `Severity changed to ${formatSeverityLabel(context.severity).toLowerCase()}`
+					: "Updated"
 	return `**${heading}.** ${summary}\n\n[Open in Maple](${input.linkUrl})`
 }
 
@@ -124,6 +127,7 @@ const fetchIssue = (port: LinearDeliveryPort, input: Input, issueId: string) =>
 				variables: { id: issueId },
 			},
 			IssueStateSchema,
+			{ notFoundIsNull: true },
 		)
 		.pipe(
 			Effect.map((result) => (result === null || result.issue.trashed === true ? null : result.issue)),
@@ -139,6 +143,7 @@ const fetchTeam = (port: LinearDeliveryPort, input: Input) =>
 				variables: { id: input.config.teamId },
 			},
 			TeamSchema,
+			{ notFoundIsNull: true },
 		)
 		.pipe(
 			Effect.flatMap((result) =>
@@ -170,7 +175,19 @@ const comment = (port: LinearDeliveryPort, input: Input, issueId: string, body: 
 			name: "MapleComment",
 			document:
 				"mutation MapleComment($input: CommentCreateInput!) { commentCreate(input: $input) { success } }",
-			variables: { input: { id: linearEntityId("comment", input.context.deliveryKey), issueId, body } },
+			variables: {
+				input: {
+					// Linear ids are workspace-wide and one delivery key can fan out to several destinations.
+					id: linearEntityId(
+						"comment",
+						input.context.destination.id,
+						issueId,
+						input.context.deliveryKey,
+					),
+					issueId,
+					body,
+				},
+			},
 		},
 		Schema.Unknown,
 		{ duplicateIsSuccess: true },
@@ -182,9 +199,10 @@ const createIssue = Effect.fn("LinearTransport.createIssue")(function* (
 	threadKey: string,
 ) {
 	const { context } = input
-	const issueId = linearEntityId("issue", context.destination.id, context.incidentId ?? context.deliveryKey)
-	// A retry after a create that landed but whose response was lost finds the issue it made.
-	const existing = yield* fetchIssue(port, input, issueId)
+	// Keyed by the delivery, not the incident: a replacement issue for the same incident needs a new id.
+	const issueId = linearEntityId("issue", context.destination.id, context.deliveryKey)
+	const found = yield* fetchIssue(port, input, issueId)
+	const existing = found !== null && !found.archivedAt && !isClosed(found) ? found : null
 	const issue =
 		existing ??
 		(yield* port
@@ -258,7 +276,7 @@ const reopen = Effect.fn("LinearTransport.reopen")(function* (
 	const stateId =
 		(team.triageEnabled ? team.triageIssueState?.id : undefined) ??
 		team.states.nodes.toSorted((a, b) => a.position - b.position)[0]?.id
-	if (stateId === undefined) return
+	if (stateId === undefined) return false
 	yield* port.request(
 		input.context.destination.orgId,
 		{
@@ -269,6 +287,7 @@ const reopen = Effect.fn("LinearTransport.reopen")(function* (
 		},
 		Schema.Unknown,
 	)
+	return true
 })
 
 const trigger = Effect.fn("LinearTransport.trigger")(function* (
@@ -276,8 +295,17 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 	input: Input,
 	nowMs: number,
 ) {
+	const { context } = input
 	const threadKey = linearThreadKey(input)
-	const thread = yield* port.findThread(input.context.destination.id, threadKey)
+	const thread = yield* port.findThread(context.destination.orgId, context.destination.id, threadKey)
+	// A trigger retried after its incident resolved must not open an issue nothing will resolve.
+	if (thread === null && context.incidentId !== null && context.incidentStatus === "resolved") {
+		return {
+			providerMessage: "Skipped: the incident resolved before Linear was reached",
+			providerReference: null,
+			responseCode: null,
+		} satisfies DispatchResult
+	}
 	const issue = thread === null ? null : yield* fetchIssue(port, input, thread.linearIssueId)
 	if (thread === null || issue === null || issue.archivedAt) {
 		return yield* createIssue(port, input, threadKey)
@@ -287,11 +315,11 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 		if (closedAt === null || nowMs - closedAt > LINEAR_REOPEN_WINDOW_MS) {
 			return yield* createIssue(port, input, threadKey)
 		}
-		yield* reopen(port, input, issue.id)
+		const reopened = yield* reopen(port, input, issue.id)
 		yield* comment(port, input, issue.id, linearCommentBody(input, thread))
 		yield* port.saveThread({ ...thread, incidentId: input.context.incidentId })
 		return {
-			providerMessage: `Reopened Linear issue ${issue.identifier}`,
+			providerMessage: `${reopened ? "Reopened" : "Commented on closed"} Linear issue ${issue.identifier}`,
 			providerReference: issue.url,
 			responseCode: null,
 		} satisfies DispatchResult
@@ -308,7 +336,8 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 })
 
 const resolve = Effect.fn("LinearTransport.resolve")(function* (port: LinearDeliveryPort, input: Input) {
-	const thread = yield* port.findThread(input.context.destination.id, linearThreadKey(input))
+	const { destination } = input.context
+	const thread = yield* port.findThread(destination.orgId, destination.id, linearThreadKey(input))
 	// The issue stays open: the team closes it once they are done with it.
 	if (thread === null) {
 		return { providerMessage: "No Linear issue to update", providerReference: null, responseCode: null }
@@ -356,5 +385,11 @@ export const linearTransport: EffectTransport<Config> = {
 						input.context.sentAtMs ?? (yield* Clock.currentTimeMillis),
 					)
 			}
-		}).pipe(Effect.withSpan("LinearTransport.send")),
+		}).pipe(
+			Effect.timeoutOrElse({
+				duration: SEND_TIMEOUT,
+				orElse: () => Effect.fail(makeDeliveryError("Linear delivery timed out", "linear")),
+			}),
+			Effect.withSpan("LinearTransport.send"),
+		),
 }

@@ -170,16 +170,17 @@ export interface LinearOperation {
 /** The org's Linear workspace, and where each alert thread's issue is remembered. */
 export interface LinearDeliveryPort {
 	/**
-	 * Run one GraphQL operation with the org's token and decode `data`. Null when Linear says the
-	 * entity does not exist, or, with `duplicateIsSuccess`, that an entity with this id already does.
+	 * Run one GraphQL operation with the org's token and decode `data`. Null only when an option
+	 * allows it: a read of a missing entity, or a create whose id already exists.
 	 */
 	readonly request: <A>(
 		orgId: OrgId,
 		operation: LinearOperation,
 		schema: Schema.Decoder<A>,
-		options?: { readonly duplicateIsSuccess?: boolean },
+		options?: { readonly notFoundIsNull?: boolean; readonly duplicateIsSuccess?: boolean },
 	) => Effect.Effect<A | null, AlertDeliveryFailure>
 	readonly findThread: (
+		orgId: OrgId,
 		destinationId: AlertDestinationId,
 		threadKey: string,
 	) => Effect.Effect<LinearThread | null, AlertDeliveryFailure>

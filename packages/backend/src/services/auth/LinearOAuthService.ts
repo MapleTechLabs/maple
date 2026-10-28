@@ -14,7 +14,11 @@ import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { linearData, linearGraphql } from "@maple/backend/services/integrations/linear/LinearGraphql"
+import {
+	isNotFound,
+	linearData,
+	linearGraphql,
+} from "@maple/backend/services/integrations/linear/LinearGraphql"
 import {
 	makeOAuthConnectionHelpers,
 	OAUTH_STATE_TTL_MS,
@@ -33,6 +37,10 @@ const decodeOrgId = Schema.decodeUnknownSync(OrgId)
 
 const ViewerSchema = Schema.Struct({
 	organization: Schema.Struct({ id: Schema.String, name: Schema.String }),
+})
+
+const TeamSchema = Schema.Struct({
+	team: Schema.Struct({ id: Schema.String, key: Schema.String, name: Schema.String }),
 })
 
 const TeamsSchema = Schema.Struct({
@@ -114,6 +122,8 @@ export interface LinearOAuthServiceApi {
 		use: (accessToken: string) => Effect.Effect<A, E | IntegrationsRevokedError>,
 	) => Effect.Effect<A, E | LinearAccessError>
 	readonly listTeams: (orgId: OrgId) => Effect.Effect<ReadonlyArray<LinearTeam>, LinearAccessError>
+	/** One team by id, or null when the workspace has no such team the app can see. */
+	readonly getTeam: (orgId: OrgId, teamId: string) => Effect.Effect<LinearTeam | null, LinearAccessError>
 	readonly disconnect: (
 		orgId: OrgId,
 	) => Effect.Effect<{ readonly disconnected: boolean }, IntegrationsPersistenceError>
@@ -249,6 +259,20 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				return teams.teams.nodes.toSorted((a, b) => a.name.localeCompare(b.name))
 			})
 
+			const getTeam = Effect.fn("LinearOAuthService.getTeam")(function* (orgId: OrgId, teamId: string) {
+				const result = yield* withAccessToken(orgId, (accessToken) =>
+					linearGraphql(
+						httpClient,
+						accessToken,
+						"MapleTeamLookup",
+						"query MapleTeamLookup($id: String!) { team(id: $id) { id key name } }",
+						{ id: teamId },
+					),
+				)
+				if (result.errors.some(isNotFound)) return null
+				return (yield* linearData(TeamSchema, "team lookup")(result)).team
+			})
+
 			/** Best effort: the grant is dropped on Maple's side whatever Linear answers. */
 			const revokeAtLinear = (orgId: OrgId) =>
 				Effect.gen(function* () {
@@ -273,6 +297,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				getStatus,
 				withAccessToken,
 				listTeams,
+				getTeam,
 				disconnect,
 			} satisfies LinearOAuthServiceApi
 		}),
