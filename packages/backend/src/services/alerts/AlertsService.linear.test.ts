@@ -291,7 +291,7 @@ describe("AlertsService with a Linear destination", () => {
 					scope: "read,write",
 				})
 			}
-			const name = JSON.parse(String(init?.body)).operationName
+			const name: unknown = JSON.parse(String(init?.body)).operationName
 			return json(
 				name === "MapleIssueCreate" || name === "MapleComment"
 					? answers[name]
