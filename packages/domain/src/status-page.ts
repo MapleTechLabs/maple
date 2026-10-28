@@ -346,7 +346,13 @@ const withOverrides = (tokens: StatusPageThemeTokens, theme: StatusPageTheme): S
 	const fg = theme.text ?? tokens.fg
 	const card = theme.card ?? tokens.card
 	// Muted text follows a custom text or background, blended toward it only as far as stays readable.
-	const muted = theme.background === null && theme.text === null ? tokens.muted : readableMix(fg, bg, card)
+	const presetReads =
+		contrastRatio(tokens.muted, bg) >= STATUS_PAGE_MIN_CONTRAST &&
+		contrastRatio(tokens.muted, card) >= STATUS_PAGE_MIN_CONTRAST
+	const muted =
+		theme.background === null && theme.text === null && presetReads
+			? tokens.muted
+			: readableMix(fg, bg, card)
 	return {
 		...tokens,
 		bg,

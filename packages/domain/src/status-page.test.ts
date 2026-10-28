@@ -409,6 +409,11 @@ describe("theme readability", () => {
 		)
 	})
 
+	it("re-derives muted text when only the card colour changes and the preset grey no longer reads", () => {
+		const resolved = resolveStatusPageTheme(theme({ appearance: "light", card: "#d4d4d4" }))
+		expect(contrastRatio(resolved.light.muted, "#d4d4d4")).toBeGreaterThanOrEqual(4.5)
+	})
+
 	it("keeps muted text readable when a custom text colour only just passes", () => {
 		const resolved = resolveStatusPageTheme(
 			theme({ appearance: "light", text: "#767676", background: "#ffffff", card: "#ffffff" }),
