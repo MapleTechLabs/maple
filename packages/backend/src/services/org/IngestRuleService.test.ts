@@ -94,6 +94,26 @@ describe("IngestRuleService", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("stops at the per-org rule cap, even for creates sent together", () =>
+		Effect.gen(function* () {
+			const service = yield* IngestRuleService
+			yield* Effect.forEach(
+				Array.from({ length: 48 }, (_, index) => index),
+				(index) => service.create(ORG, { name: `Rule ${index}`, spec: maskEmails }),
+			)
+			const results = yield* Effect.all(
+				[1, 2, 3].map((index) =>
+					service.create(ORG, { name: `Late ${index}`, spec: maskEmails }).pipe(Effect.result),
+				),
+				{ concurrency: "unbounded" },
+			)
+			expect(results.filter((result) => result._tag === "Success")).toHaveLength(2)
+			const rules = yield* service.list(ORG)
+			expect(rules).toHaveLength(50)
+			expect(new Set(rules.map((rule) => rule.position)).size).toBe(50)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("cannot read, update or delete another org's rule", () =>
 		Effect.gen(function* () {
 			const service = yield* IngestRuleService
