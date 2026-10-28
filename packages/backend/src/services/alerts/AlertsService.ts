@@ -162,6 +162,10 @@ import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertR
 import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import {
+	openForAlertIncident,
+	resolveForAlertIncident,
+} from "@maple/backend/services/status-pages/auto-incidents"
+import {
 	decodeStoredAlertRuleMetadata,
 	storedRuleCondition,
 	isGroupedPlan,
@@ -652,6 +656,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			} = rulePersistence
 
 			const dbExecute = makeDbExecute(database, "AlertsService", makePersistenceError)
+
+			// Status pages showing an uptime rule's monitor follow its incidents. Runs after the
+			// alert write commits; a failure is logged and never blocks alerting.
+			const syncStatusPages = <E>(
+				signalType: string,
+				write: (db: MapleDb) => Effect.Effect<unknown, E>,
+			) =>
+				signalType !== "uptime"
+					? Effect.void
+					: database
+							.execute((db) => db.transaction(write(db)))
+							.pipe(
+								Effect.asVoid,
+								Effect.catch((error) =>
+									Effect.logWarning("Status page auto incident sync failed").pipe(
+										Effect.annotateLogs({
+											"error.message": summarizeCause(Cause.fail(error)),
+										}),
+									),
+								),
+							)
 
 			/**
 			 * Run `write` only while `claim` still owns the rule. The claim row is
@@ -3126,6 +3151,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								severity: lifecycle.severity,
 							}
 						}
+						yield* syncStatusPages(normalized.signalType, (db) =>
+							openForAlertIncident(db, {
+								orgId: row.orgId,
+								ruleId: row.id,
+								alertIncidentId: incidentId,
+								at: timestamp,
+							}),
+						)
 						if (lifecycle.notificationSuppression === "flapping") {
 							yield* Effect.logInfo("Skipping trigger notification for flapping incident").pipe(
 								Effect.annotateLogs({
@@ -3291,6 +3324,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								severity: lifecycle.severity,
 							}
 						}
+						yield* syncStatusPages(normalized.signalType, (db) =>
+							resolveForAlertIncident(db, {
+								orgId: row.orgId,
+								alertIncidentId: openIncident.id,
+								at: timestamp,
+							}),
+						)
 						if (openIncident.holdReason !== null) {
 							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
 						}
@@ -3577,6 +3617,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							),
 						)
 						if (resolved.length === 0) return false
+						yield* syncStatusPages(normalized.signalType, (db) =>
+							resolveForAlertIncident(db, {
+								orgId,
+								alertIncidentId: incident.id,
+								at: timestamp,
+							}),
+						)
 						if (incident.holdReason !== null) {
 							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
 						}
@@ -3750,6 +3797,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								),
 							)
 							if (resolved.length === 0) return false
+							yield* syncStatusPages(normalized.signalType, (db) =>
+								resolveForAlertIncident(db, {
+									orgId,
+									alertIncidentId: incident.id,
+									at: timestamp,
+								}),
+							)
 							if (incident.holdReason !== null) {
 								yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
 							}
