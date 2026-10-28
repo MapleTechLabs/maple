@@ -916,6 +916,30 @@ describe("runAudit, estimated severity", () => {
 		expect(recorded.estimates.get(FINGERPRINT)?.overall_severity).toBe("medium")
 	})
 
+	it("a lead a hunter raises again without an estimate keeps the last run's level", async () => {
+		const { estimated_severity: _dropped, ...bare } = keysLead
+		const { recorded } = await runScripted(
+			baseInput({
+				prior: {
+					runId: "run-0",
+					sourceRef: "abc123",
+					ledger: [],
+					findings: [],
+					estimates: new Map([[FINGERPRINT, "critical"]]),
+				},
+			}),
+			(i) =>
+				i.agentId === "hunter-w1-1"
+					? json({ ...hunterAnswer(i, ALL, keysLead), candidates: [bare] })
+					: leads((v) =>
+							v.agentId === "verify-1"
+								? json({ decision: "needs_validation", record: leadRecord })
+								: undefined,
+						)(i),
+		)
+		expect(recorded.estimates.get(FINGERPRINT)?.overall_severity).toBe("critical")
+	})
+
 	it("applies a record verifier's revised estimate directly: it is not a material change", async () => {
 		const { recorded } = await runScripted(baseInput(), (i) =>
 			i.role === "record-verifier"

@@ -30,9 +30,11 @@ interface ValidationItem {
 	readonly carriedUnits: ReadonlyArray<string>
 }
 
-/** The hunter's estimate for a proposed lead, or the level a carried lead was last stored at. */
+/** The hunter's estimate for a proposed lead, else the level the lead was last stored at. */
 const claimEstimate = (engine: Engine, claim: Candidate | Finding): EstimatedSeverity | null => {
-	if ("proposed_verdict" in claim) return candidateEstimate(claim)
+	const proposed = "proposed_verdict" in claim ? candidateEstimate(claim) : null
+	if (proposed !== null) return proposed
+	// A carried lead, or one a hunter raised again without an estimate, keeps its last level.
 	const level = engine.input.prior?.estimates?.get(claim.fingerprint)
 	if (level === undefined) return null
 	const carried = { score: level, reason: "Carried from the previous run's estimate." }
