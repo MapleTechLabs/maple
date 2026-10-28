@@ -175,9 +175,12 @@ const renderIncident = (title: string, output: typeof StatusPageIncidentMutation
 		title,
 		notices: incident.published
 			? []
-			: [
-					"This is a draft: it is not on the public page. post_status_page_update with publish=true publishes it.",
-				],
+			: incident.resolvedAt === null
+				? [
+						"This is a draft: it is not on the public page. post_status_page_update with publish=true publishes it.",
+					]
+				: // A closed draft must not be pointed at post_status_page_update: its statuses reopen it.
+					["This was closed as a draft, so it never appeared on the public page."],
 		blocks: [
 			doc.fields([
 				["Title", incident.title],
@@ -499,6 +502,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			incident: P.text("The incident's id (sti_… or its UUID)"),
 			message: P.text("The closing public update, e.g. what was fixed"),
+			publish: P.optionalFlag("true publishes a draft along with its closing update"),
 		}),
 		output: StatusPageIncidentMutationOutput,
 		hints: MUTATION_HINTS,
@@ -518,6 +522,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					body: params.message,
 					source: "mcp",
 					createdBy: tenant.userId,
+					publish: params.publish === true,
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
 			return { action: "resolved" as const, incident: toIncidentRow(updated) }

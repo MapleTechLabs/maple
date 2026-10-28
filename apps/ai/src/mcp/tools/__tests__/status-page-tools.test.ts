@@ -150,6 +150,38 @@ describe("status page tools", () => {
 		expect(markdown(page)).toContain("list_status_pages")
 	})
 
+	it("resolves a draft and publishes it in the same call, or says it stayed a draft", async () => {
+		const open = async (title: string) =>
+			decode(
+				StatusPageIncidentMutationOutput,
+				await runToolDirect(rt, "create_status_page_incident", {
+					page: "acme-status",
+					title,
+					message: "Investigating.",
+				}),
+			).incident.id
+		const kept = await runToolDirect(rt, "resolve_status_page_incident", {
+			incident: await open("Quiet draft"),
+			message: "Never mind.",
+		})
+		expect(decode(StatusPageIncidentMutationOutput, kept).incident).toMatchObject({
+			status: "resolved",
+			published: false,
+		})
+		expect(markdown(kept)).toContain("closed as a draft")
+		expect(markdown(kept)).not.toContain("post_status_page_update")
+
+		const shown = decode(
+			StatusPageIncidentMutationOutput,
+			await runToolDirect(rt, "resolve_status_page_incident", {
+				incident: await open("Public draft"),
+				message: "Fixed.",
+				publish: true,
+			}),
+		)
+		expect(shown.incident).toMatchObject({ status: "resolved", published: true })
+	})
+
 	it("reads delayed while the page's monitors have not reported, and live once one has", async () => {
 		const monitorId = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d09"
 		const now = Date.now()
