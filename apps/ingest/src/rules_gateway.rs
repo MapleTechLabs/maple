@@ -255,18 +255,26 @@ impl IngestRuleStatsSink {
                 failed.extend_from_slice(chunk);
             }
         }
+        if let Some(dropped) = self.settle_failed(failed) {
+            metrics::ingest_rule_stats_dropped(u64::try_from(dropped).unwrap_or(u64::MAX));
+        }
+    }
+
+    /// Keeps the rows a flush could not write, or drops them on the `MAX_FAILED_FLUSHES`th failure
+    /// in a row. Returns how many rows were dropped. An empty `failed` is a success and resets the count.
+    fn settle_failed(&self, failed: Vec<IngestRuleStatRow>) -> Option<usize> {
         if failed.is_empty() {
             self.failed_flushes.store(0, Ordering::Relaxed);
-            return;
+            return None;
         }
         let failures = self.failed_flushes.fetch_add(1, Ordering::Relaxed) + 1;
-        if failures >= MAX_FAILED_FLUSHES {
-            warn!(rows = failed.len(), failures, "Ingest rule stats dropped after repeated failed flushes");
-            metrics::ingest_rule_stats_dropped(u64::try_from(failed.len()).unwrap_or(u64::MAX));
-            self.failed_flushes.store(0, Ordering::Relaxed);
-        } else {
+        if failures < MAX_FAILED_FLUSHES {
             self.restore(failed);
+            return None;
         }
+        warn!(rows = failed.len(), failures, "Ingest rule stats dropped after repeated failed flushes");
+        self.failed_flushes.store(0, Ordering::Relaxed);
+        Some(failed.len())
     }
 }
 
@@ -283,5 +291,55 @@ pub(crate) async fn run_stats_flusher(
     loop {
         interval.tick().await;
         sink.flush(store.as_ref()).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn org_rules() -> OrgRules {
+        let spec: IngestRuleSpec = serde_json::from_value(serde_json::json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": {"_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [], "scopes": ["attributes"], "method": "mask"}
+        }))
+        .unwrap_or_else(|error| panic!("rule spec: {error}"));
+        let (compiled, invalid) = CompiledRules::compile(vec![("rule_1".to_owned(), spec)], "salt".to_owned());
+        assert!(invalid.is_empty());
+        OrgRules::new("org_1", compiled)
+    }
+
+    fn redacted(values: u64) -> RuleStats {
+        let counters = RuleCounters { matched: 1, redacted_values: values, ..RuleCounters::default() };
+        RuleStats { per_rule: vec![counters.clone()], total: counters }
+    }
+
+    #[test]
+    fn counts_survive_failed_flushes_until_the_limit_then_drop() {
+        let sink = IngestRuleStatsSink::default();
+        let rules = org_rules();
+        sink.record("logs", &rules, &redacted(2), 0);
+        sink.record("logs", &rules, &redacted(3), 1_000);
+        for _ in 1..MAX_FAILED_FLUSHES {
+            let rows = sink.take();
+            assert_eq!(rows.len(), 1, "the two records share an hour and sum into one row");
+            assert_eq!(rows[0].counts.redacted_values, 5);
+            assert_eq!(sink.settle_failed(rows), None, "a failed flush keeps the counts");
+        }
+        assert_eq!(sink.settle_failed(sink.take()), Some(1), "the tenth failure in a row drops them");
+        assert!(sink.take().is_empty());
+        assert_eq!(sink.failed_flushes.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn a_successful_flush_resets_the_failure_count() {
+        let sink = IngestRuleStatsSink::default();
+        let rules = org_rules();
+        sink.record("logs", &rules, &redacted(1), 0);
+        assert_eq!(sink.settle_failed(sink.take()), None);
+        assert_eq!(sink.failed_flushes.load(Ordering::Relaxed), 1);
+        assert_eq!(sink.settle_failed(Vec::new()), None);
+        assert_eq!(sink.failed_flushes.load(Ordering::Relaxed), 0);
     }
 }
