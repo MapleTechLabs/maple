@@ -15,10 +15,16 @@ import {
 import { IngestRuleId } from "@maple/domain/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgIngestRuleSettings, OrgIngestRules, type OrgIngestRuleRow } from "@maple/db/tables"
+import {
+	OrgIngestRuleSettings,
+	OrgIngestRuleStats,
+	OrgIngestRules,
+	type OrgIngestRuleRow,
+} from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import type { MapleDb } from "@maple/db/client"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 
 export interface IngestRuleInput {
@@ -27,6 +33,27 @@ export interface IngestRuleInput {
 	readonly position?: number
 	readonly spec: IngestRuleSpec
 }
+
+/** Totals over a window; `dropped_bytes` is what the rules kept off the bill. */
+export interface IngestRuleCounts {
+	readonly matched: number
+	readonly dropped: number
+	readonly droppedBytes: number
+	readonly redactedValues: number
+}
+
+export interface IngestRuleStatsWindow {
+	readonly rules: ReadonlyArray<IngestRuleCounts & { readonly ruleId: IngestRuleId }>
+	readonly signals: ReadonlyArray<IngestRuleCounts & { readonly signal: string }>
+	/** Per rule and UTC hour; only for windows up to `HOURLY_MAX_MS`. */
+	readonly hourly: ReadonlyArray<{
+		readonly ruleId: IngestRuleId
+		readonly bucket: number
+		readonly matched: number
+	}>
+}
+
+export const HOURLY_MAX_MS = 7 * 24 * 60 * 60 * 1000
 
 export interface IngestRulePatch {
 	readonly name?: string
@@ -78,6 +105,10 @@ const validateFields = Effect.fnUntraced(function* (fields: {
 		})
 	}
 })
+
+/** Serializes an org's rule writes (create, reorder, delete) within their transaction. */
+const lockRules = (db: MapleDb, orgId: OrgId) =>
+	db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('ingest_rules'))`)
 
 const validateSpec = Effect.fnUntraced(function* (spec: IngestRuleSpec) {
 	const problems = ingestRuleProblems(spec)
@@ -161,9 +192,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				const inserted = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* db.execute(
-								Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('ingest_rules'))`,
-							)
+							yield* lockRules(db, orgId)
 							const existing = yield* db.run(
 								PG.from(OrgIngestRules)
 									.select(($) => ({ position: $.position }))
@@ -243,10 +272,16 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.id": ruleId })
 				const rows = yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(OrgIngestRules)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
-							.returning("id"),
+					db.transaction(
+						lockRules(db, orgId).pipe(
+							Effect.andThen(
+								db.run(
+									PG.deleteFrom(OrgIngestRules)
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
+										.returning("id"),
+								),
+							),
+						),
 					),
 				)
 				if (rows.length === 0) {
@@ -255,7 +290,144 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				return ruleId
 			})
 
-			return { list, get, create, update, delete: remove }
+			// Postgres sums int8 as numeric, which drivers may hand back as a string.
+			const counts = (row: {
+				readonly matched: number | string | null
+				readonly dropped: number | string | null
+				readonly droppedBytes: number | string | null
+				readonly redactedValues: number | string | null
+			}): IngestRuleCounts => ({
+				matched: Number(row.matched ?? 0),
+				dropped: Number(row.dropped ?? 0),
+				droppedBytes: Number(row.droppedBytes ?? 0),
+				redactedValues: Number(row.redactedValues ?? 0),
+			})
+
+			const stats = Effect.fn("IngestRuleService.stats")(function* (
+				orgId: OrgId,
+				startMs: number,
+				endMs: number,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.window_ms": endMs - startMs })
+				const [byRule, bySignal, hourly] = yield* Effect.all(
+					[
+						dbExecute((db) =>
+							db.run(
+								PG.from(OrgIngestRuleStats)
+									.select(($) => ({
+										ruleId: $.ruleId,
+										matched: PG.sum($.matched),
+										dropped: PG.sum($.dropped),
+										droppedBytes: PG.sum($.droppedBytes),
+										redactedValues: PG.sum($.redactedValues),
+									}))
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.bucket.gte(startMs),
+										$.bucket.lt(endMs),
+									])
+									.groupBy("ruleId"),
+							),
+						),
+						dbExecute((db) =>
+							db.run(
+								PG.from(OrgIngestRuleStats)
+									.select(($) => ({
+										signal: $.signal,
+										matched: PG.sum($.matched),
+										dropped: PG.sum($.dropped),
+										droppedBytes: PG.sum($.droppedBytes),
+										redactedValues: PG.sum($.redactedValues),
+									}))
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.bucket.gte(startMs),
+										$.bucket.lt(endMs),
+									])
+									.groupBy("signal"),
+							),
+						),
+						endMs - startMs > HOURLY_MAX_MS
+							? Effect.succeed([])
+							: dbExecute((db) =>
+									db.run(
+										PG.from(OrgIngestRuleStats)
+											.select(($) => ({
+												ruleId: $.ruleId,
+												bucket: $.bucket,
+												matched: PG.sum($.matched),
+											}))
+											.where(($) => [
+												$.orgId.eq(orgId),
+												$.bucket.gte(startMs),
+												$.bucket.lt(endMs),
+											])
+											.groupBy("ruleId", "bucket")
+											.orderBy(($) => [[$.bucket, "asc"]]),
+									),
+								),
+					],
+					{ concurrency: "unbounded" },
+				)
+				return {
+					rules: byRule.map((row) => ({ ruleId: row.ruleId, ...counts(row) })),
+					signals: bySignal.map((row) => ({ signal: row.signal, ...counts(row) })),
+					hourly: hourly.map((row) => ({
+						ruleId: row.ruleId,
+						bucket: row.bucket,
+						matched: Number(row.matched ?? 0),
+					})),
+				} satisfies IngestRuleStatsWindow
+			})
+
+			/** Positions 0..n-1 in one transaction; `ids` must be exactly the org's rules. */
+			const reorder = Effect.fn("IngestRuleService.reorder")(function* (
+				orgId: OrgId,
+				ids: ReadonlyArray<IngestRuleId>,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.count": ids.length })
+				yield* requireRollout(orgId)
+				const now = yield* Clock.currentTimeMillis
+				// Validate and write under the same per-org lock as create and delete, so the id list
+				// cannot go stale between the check and the writes.
+				const applied = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* lockRules(db, orgId)
+							const existing = yield* db.run(
+								PG.from(OrgIngestRules)
+									.select(($) => ({ id: $.id }))
+									.where(($) => [$.orgId.eq(orgId)]),
+							)
+							const known = new Set(existing.map((rule) => rule.id))
+							if (
+								ids.length !== existing.length ||
+								new Set(ids).size !== ids.length ||
+								ids.some((id) => !known.has(id))
+							)
+								return false
+							yield* Effect.forEach(
+								ids,
+								(id, position) =>
+									db.run(
+										PG.update(OrgIngestRules)
+											.set({ position, updatedAt: now })
+											.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
+									),
+								{ discard: true },
+							)
+							return true
+						}),
+					),
+				)
+				if (!applied) {
+					const message = "Pass every ingest rule id exactly once"
+					return yield* new IngestRuleValidationError({ message, problems: [message] })
+				}
+				return yield* list(orgId)
+			})
+
+			return { list, get, create, update, delete: remove, stats, reorder }
 		}),
 	},
 ) {

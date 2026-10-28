@@ -437,6 +437,21 @@ describe("v2 ingest_rules over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("reports stats for an empty window and rejects an inverted one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+		const empty = await harness.request("GET", "/v2/ingest_rules/stats", { token: key.secret })
+		expect(empty.status).toBe(200)
+		expect(empty.body).toMatchObject({ object: "ingest_rule_stats", rules: [], signals: [], hourly: [] })
+		const inverted = await harness.request(
+			"GET",
+			"/v2/ingest_rules/stats?start_time=2026-10-28T12:00:00.000Z&end_time=2026-10-27T12:00:00.000Z",
+			{ token: key.secret },
+		)
+		expect(inverted.status).toBe(400)
+		await harness.dispose()
+	})
+
 	it("answers an invalid rule with 400 and every problem", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey()

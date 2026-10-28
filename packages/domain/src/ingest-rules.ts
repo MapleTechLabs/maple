@@ -269,6 +269,14 @@ export const compileIngestRegex = (pattern: string, global = true): Option.Optio
 	return compileRegex(source, `${global ? "g" : ""}${ignoreCase ? "i" : ""}u`)
 }
 
+/** The ops a field supports, for editors that only offer valid choices. */
+export const opsForField = (field: IngestRuleField): ReadonlyArray<IngestRuleOp> =>
+	IngestRuleOp.literals.filter((op) => FIELD_OPS.get(field)?.has(op) === true)
+
+/** The signals a field exists on; every signal unless it is signal-specific. */
+export const signalsForField = (field: IngestRuleField): ReadonlyArray<IngestRuleSignal> =>
+	FIELD_SIGNALS.get(field) ?? IngestRuleSignal.literals
+
 const conditionProblem = (
 	condition: IngestRuleCondition,
 	signals: ReadonlyArray<IngestRuleSignal>,
@@ -320,6 +328,8 @@ export const ingestRuleProblems = (spec: IngestRuleSpec): ReadonlyArray<string> 
 	})
 	const action = spec.action
 	if (action._tag === "drop") {
+		if (!Number.isInteger(action.keepPercent) || action.keepPercent < 0 || action.keepPercent > 100)
+			problems.push("keep percent is a whole number from 0 to 100")
 		if (spec.conditions.length === 0) problems.push("a drop rule needs at least one condition")
 		if (action.keepPercent > 0 && spec.signals.includes("metrics"))
 			problems.push("metrics can only be dropped entirely (keep 0%)")

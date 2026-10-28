@@ -48,7 +48,7 @@ import { OrgOnboardingState } from "./onboarding"
 import { OrgClickHouseSchemaApplyRuns } from "./org-clickhouse-schema-apply-runs"
 import { OrgClickHouseSettings } from "./org-clickhouse-settings"
 import { OrgIngestAttributeMappings } from "./org-ingest-attribute-mappings"
-import { OrgIngestRules, OrgIngestRuleSettings } from "./org-ingest-rules"
+import { OrgIngestRules, OrgIngestRuleSettings, OrgIngestRuleStats } from "./org-ingest-rules"
 import { OrgIngestKeys } from "./org-ingest-keys"
 import { OrgIngestSamplingPolicies } from "./org-ingest-sampling-policies"
 import { Sources } from "./sources"
@@ -193,6 +193,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	OrgIngestAttributeMappings,
 	OrgIngestRules,
 	OrgIngestRuleSettings,
+	OrgIngestRuleStats,
 	OrgIngestKeys,
 	OrgIngestSamplingPolicies,
 	OrgOpenRouterKeys,

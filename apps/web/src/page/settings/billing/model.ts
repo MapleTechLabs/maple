@@ -8,6 +8,7 @@ import {
 	CustomerPortalResult,
 	DailySpendResponse,
 } from "@maple/domain/http"
+import { V2IngestRuleStats } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -40,6 +41,7 @@ export const UsageData = AsyncData.Schema(BillingUsage, LoadFailure)
 export const DailyData = AsyncData.Schema(DailySpendResponse, LoadFailure)
 export const InvoicesData = AsyncData.Schema(Schema.Array(BillingInvoice), LoadFailure)
 export const ProfileData = AsyncData.Schema(BillingProfile, ProfileFailure)
+export const RuleStatsData = AsyncData.Schema(V2IngestRuleStats, LoadFailure)
 
 /** `useCheckoutReturn`: back from Stripe (`?checkout=complete`), waiting on the Autumn sync. */
 export const CheckoutReturn = Schema.Literals(["Idle", "Confirming", "TimedOut"])
@@ -53,6 +55,8 @@ export const Model = Schema.Struct({
 	daily: DailyData.schema,
 	invoices: InvoicesData.schema,
 	profile: ProfileData.schema,
+	/** What ingest rules dropped this cycle; read once the cycle is known. */
+	ruleStats: RuleStatsData.schema,
 	/** The usage row whose cap editor is open, and what is typed in it. */
 	editingCap: Schema.NullOr(SpendFeatureId),
 	capDraft: Schema.String,
@@ -76,6 +80,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchDaily: result(DailySpendResponse),
 	CompletedFetchInvoices: result(Schema.Array(BillingInvoice)),
 	CompletedFetchProfile: { result: Schema.Result(BillingProfile, ProfileFailure) },
+	CompletedFetchRuleStats: result(V2IngestRuleStats),
 	ClickedRetryCustomer: {},
 	ClickedRetryDaily: {},
 	ClickedRetryInvoices: {},

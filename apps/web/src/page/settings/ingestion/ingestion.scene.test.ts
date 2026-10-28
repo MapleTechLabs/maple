@@ -11,8 +11,15 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, type InitOptions, update } from "./update"
 
-const options: InitOptions = { isAdmin: true, orgKey: "default", timeZone: "UTC", pinnedNamespace: null }
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const options: InitOptions = {
+	isAdmin: true,
+	hasIngestRules: true,
+	orgKey: "default",
+	timeZone: "UTC",
+	pinnedNamespace: null,
+}
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 const step = (model: Model, message: Message) => update(model, message, options)
 
 const rename = Schema.decodeUnknownSync(V2Recommendation)({
@@ -67,7 +74,10 @@ describe("ingestion tab", () => {
 		const rolling = step(asked, Message.ClickedConfirmRoll())
 		expect(rolling.commands?.[0]).toMatchObject({ name: "RollIngestKey", args: { kind: "private" } })
 		expect(step(rolling.model, Message.ClickedConfirmRoll()).commands ?? []).toEqual([])
-		const rolled = step(rolling.model, Message.CompletedRollKey({ kind: "private", result: Result.succeed(undefined) }))
+		const rolled = step(
+			rolling.model,
+			Message.CompletedRollKey({ kind: "private", result: Result.succeed(undefined) }),
+		)
 		expect(names(rolled.commands)).toContain("FetchIngestionKeys")
 		expect([rolled.model.isRolling, rolled.model.rollDialog.isOpen]).toEqual([false, false])
 		expect(rolled.outMessage).toEqual(
@@ -80,12 +90,24 @@ describe("ingestion tab", () => {
 	})
 
 	test("a failed regenerate closes the dialog with an error toast and keeps the pair", () => {
-		const rolling = step(step(loaded(), Message.ClickedRegenerateKey({ kind: "public" })).model, Message.ClickedConfirmRoll())
+		const rolling = step(
+			step(loaded(), Message.ClickedRegenerateKey({ kind: "public" })).model,
+			Message.ClickedConfirmRoll(),
+		)
 		const failure = toLoadFailure(new Error("boom"))
-		const failed = step(rolling.model, Message.CompletedRollKey({ kind: "public", result: Result.fail(failure) }))
+		const failed = step(
+			rolling.model,
+			Message.CompletedRollKey({ kind: "public", result: Result.fail(failure) }),
+		)
 		expect(names(failed.commands)).not.toContain("FetchIngestionKeys")
 		expect(failed.model.rollDialog.isOpen).toBe(false)
-		expect(failed.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "error", title: "Unable to complete request", description: failure.message }))
+		expect(failed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Unable to complete request",
+				description: failure.message,
+			}),
+		)
 	})
 
 	test("reveal toggles one key at a time", () => {
@@ -123,7 +145,10 @@ describe("ingestion tab", () => {
 
 	test("a toggle flips the mapping once until its answer lands", () => {
 		const toggling = step(loaded(), Message.ToggledMapping({ id: mapping.id }))
-		expect(toggling.commands?.[0]).toMatchObject({ name: "ToggleAttributeMapping", args: { isEnabled: true } })
+		expect(toggling.commands?.[0]).toMatchObject({
+			name: "ToggleAttributeMapping",
+			args: { isEnabled: true },
+		})
 		expect(step(toggling.model, Message.ToggledMapping({ id: mapping.id })).commands ?? []).toEqual([])
 	})
 
@@ -132,14 +157,37 @@ describe("ingestion tab", () => {
 		const opened = step(loaded(), Message.ClickedAddMapping())
 		expect(names(opened.commands)).toContain("FetchMappingAttributeKeys")
 		const filled = [
-			dialog(MappingDialog.Message.GotNameMessage({ message: Field.Message.ChangedValue({ value: " Status " }) })),
-			dialog(MappingDialog.Message.GotKeyMessage({ field: "sourceKey", message: Combobox.Message.ChangedInput({ value: "a.b" }) })),
-			dialog(MappingDialog.Message.GotKeyMessage({ field: "targetKey", message: Combobox.Message.ChangedInput({ value: "c.d" }) })),
+			dialog(
+				MappingDialog.Message.GotNameMessage({
+					message: Field.Message.ChangedValue({ value: " Status " }),
+				}),
+			),
+			dialog(
+				MappingDialog.Message.GotKeyMessage({
+					field: "sourceKey",
+					message: Combobox.Message.ChangedInput({ value: "a.b" }),
+				}),
+			),
+			dialog(
+				MappingDialog.Message.GotKeyMessage({
+					field: "targetKey",
+					message: Combobox.Message.ChangedInput({ value: "c.d" }),
+				}),
+			),
 		].reduce((model, message) => step(model, message).model, opened.model)
 		const saving = step(filled, dialog(MappingDialog.Message.ClickedSave()))
 		expect(saving.commands?.[0]).toMatchObject({
 			name: "SaveAttributeMapping",
-			args: { editingId: null, payload: { name: "Status", source_context: "span", source_key: "a.b", target_key: "c.d", operation: "copy" } },
+			args: {
+				editingId: null,
+				payload: {
+					name: "Status",
+					source_context: "span",
+					source_key: "a.b",
+					target_key: "c.d",
+					operation: "copy",
+				},
+			},
 		})
 	})
 
@@ -155,7 +203,12 @@ describe("ingestion tab", () => {
 			].reduce((current, message) => step(current, message).model, model)
 		const typed = [
 			Message.ClickedAddMapping(),
-			dialog(MappingDialog.Message.GotKeyMessage({ field: "sourceKey", message: Combobox.Message.ChangedInput({ value: "http" }) })),
+			dialog(
+				MappingDialog.Message.GotKeyMessage({
+					field: "sourceKey",
+					message: Combobox.Message.ChangedInput({ value: "http" }),
+				}),
+			),
 		].reduce((model, message) => step(model, message).model, loaded())
 		expect(typed.mappingDialog.sourceKey.isOpen).toBe(true)
 		const once = pressEscape(typed)

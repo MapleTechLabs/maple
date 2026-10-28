@@ -26,6 +26,7 @@ import * as AlertIncident from "./alerts/incident"
 import * as AlertRule from "./alerts/rule"
 import * as AlertsUptimeMonitor from "./alerts/uptime-monitor"
 import * as AlertsUptimeNew from "./alerts/uptime-form"
+import * as IngestRuleEditor from "./settings/ingest-rule"
 import * as DashboardsList from "./dashboards/list"
 import * as DashboardTemplates from "./dashboards/templates"
 import * as DashboardView from "./dashboards/view"
@@ -158,6 +159,7 @@ export const pages = [
 	InvestigationsList.page,
 	InvestigationDetail.page,
 	Settings.page,
+	IngestRuleEditor.page,
 	McpPage.page,
 	SourcesList.page,
 	SourcesNew.page,

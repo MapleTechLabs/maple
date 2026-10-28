@@ -133,6 +133,13 @@ const sessionOf = (model: Model) => ({
 /** The Ingestion tab's options: the quick-start key is the org in Clerk mode, `default` self-hosted. */
 export const ingestionOptionsOf = (model: Model, context: PageContext): Ingestion.InitOptions => ({
 	isAdmin: visibilityOf(model).isAdmin,
+	// Self-hosted mounts the tab before the session lands and turns every rollout on.
+	hasIngestRules:
+		!isClerkAuthEnabled ||
+		AsyncData.getOrElse(
+			AsyncData.map(model.session, (session) => session.hasIngestRules === true),
+			() => false,
+		),
 	orgKey: isClerkAuthEnabled ? context.orgId : "default",
 	timeZone: context.timeZone,
 	pinnedNamespace: context.pinnedNamespace,
@@ -481,6 +488,9 @@ export const init = (route: SettingsRoute, context: PageContext): Return => {
 
 // Only the denied link's own rewrite (no `tab`) keeps its note; picking a tab clears it.
 export const routeChanged = (model: Model, route: SettingsRoute, context: PageContext): Return =>
+	withRuleStats(changedRoute(model, route, context))
+
+const changedRoute = (model: Model, route: SettingsRoute, context: PageContext): Return =>
 	enter(
 		{
 			...model,
@@ -591,7 +601,21 @@ const settleCheckout = ({ model, commands, outMessage }: Return): Return => {
 	}
 }
 
+/** A Billing tab on screen reads the rule stats once the customer and clock give it a cycle. */
+const withRuleStats = (ret: Return): Return => {
+	const billing = tabNamed(ret.model, "Billing")
+	if (billing === undefined) return ret
+	const customer = AsyncData.getOrElse(ret.model.customer, () => null)
+	const step = Billing.requestRuleStats(billing.model, customer, ret.model.nowMs)
+	if (step === null) return ret
+	const lifted = liftBilling(ret.model, { step, isCustomerStale: false })
+	return { ...ret, model: lifted.model, commands: [...(ret.commands ?? []), ...(lifted.commands ?? [])] }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	withRuleStats(updateMessage(model, message, context))
+
+const updateMessage = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		CompletedFetchSession: ({ result }) =>
