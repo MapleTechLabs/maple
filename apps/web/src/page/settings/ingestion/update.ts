@@ -94,31 +94,6 @@ const ingestRulesFetches = () => [
 	),
 ]
 
-/** `revisit` for an org without the ingest rules rollout: the rest of the tab, no rules requests. */
-const revisitWithoutRules = (model: Model, options: InitOptions): Return => {
-	const overview = revisitData(model.overview, () =>
-		FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace }),
-	)
-	const ingest = revisitData(model.ingest, FetchIngestionKeys)
-	const recommendations = revisitData(model.recommendations, FetchRecommendations)
-	const mappings = revisitData(model.mappings, FetchMappings)
-	return {
-		model: {
-			...model,
-			overview: overview.data,
-			ingest: ingest.data,
-			recommendations: recommendations.data,
-			mappings: mappings.data,
-		},
-		commands: [
-			...overview.commands,
-			...ingest.commands,
-			...recommendations.commands,
-			...mappings.commands,
-		],
-	}
-}
-
 /** A refetch keeps the rows on screen (`useAtomRefresh`'s `waiting`). */
 const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) =>
 	Option.getOrElse(AsyncData.revalidate(data), () => data)
@@ -218,7 +193,23 @@ export const revisit = (model: Model, options: InitOptions): Return => {
 	const ingest = revisitData(model.ingest, FetchIngestionKeys)
 	const recommendations = revisitData(model.recommendations, FetchRecommendations)
 	const mappings = revisitData(model.mappings, FetchMappings)
-	if (!model.hasIngestRules) return revisitWithoutRules(model, options)
+	const base: Return = {
+		model: {
+			...model,
+			overview: overview.data,
+			ingest: ingest.data,
+			recommendations: recommendations.data,
+			mappings: mappings.data,
+		},
+		commands: [
+			...overview.commands,
+			...ingest.commands,
+			...recommendations.commands,
+			...mappings.commands,
+		],
+	}
+	// Without the ingest rules rollout the tab neither shows nor requests rules.
+	if (!model.hasIngestRules) return base
 	const rules = revisitData(model.ingestRules.rules, () =>
 		Command.mapMessage(IngestRules.FetchIngestRules(), (message) =>
 			Message.GotIngestRulesMessage({ message }),
@@ -230,22 +221,8 @@ export const revisit = (model: Model, options: InitOptions): Return => {
 		),
 	)
 	return {
-		model: {
-			...model,
-			overview: overview.data,
-			ingest: ingest.data,
-			recommendations: recommendations.data,
-			mappings: mappings.data,
-			ingestRules: { ...model.ingestRules, rules: rules.data, stats: stats.data },
-		},
-		commands: [
-			...overview.commands,
-			...ingest.commands,
-			...recommendations.commands,
-			...mappings.commands,
-			...rules.commands,
-			...stats.commands,
-		],
+		model: { ...base.model, ingestRules: { ...model.ingestRules, rules: rules.data, stats: stats.data } },
+		commands: [...(base.commands ?? []), ...rules.commands, ...stats.commands],
 	}
 }
 
