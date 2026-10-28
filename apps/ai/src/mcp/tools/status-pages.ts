@@ -482,16 +482,11 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 					...(componentIds === undefined ? undefined : { componentIds }),
 					source: "mcp",
 					createdBy: tenant.userId,
+					// One write: a failure leaves neither the update nor the publish, so a retry cannot double post.
+					publish: params.publish === true,
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
-			// Published only once the update itself was accepted.
-			const updated =
-				params.publish === true && !posted.published
-					? yield* service
-							.updateIncident(tenant.orgId, incidentId, { published: true })
-							.pipe(Effect.mapError(toMcpError(tool)))
-					: posted
-			return { action: "updated" as const, incident: toIncidentRow(updated) }
+			return { action: "updated" as const, incident: toIncidentRow(posted) }
 		}),
 		render: (output) => renderIncident("Status page update posted", output),
 	})
