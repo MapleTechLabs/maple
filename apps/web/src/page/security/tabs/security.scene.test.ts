@@ -31,13 +31,13 @@ import type { PageContext } from "../../contract"
 import * as AddTarget from "../kit/add-target"
 import * as SpendSettings from "../kit/spend-settings"
 import { toCreateFailure } from "../kit/api"
+import { sectionsOf } from "../kit/findings"
 import {
 	filteredFindings,
 	findingsStateOf,
-	groupFindings,
 	latestRunFor,
 	openLeads,
-	runLeadsOf,
+	runCountsOf,
 	runningRuns,
 	spendThisMonth,
 } from "./derive"
@@ -261,12 +261,13 @@ describe("security tabs", () => {
 	test("the findings list hides rejected records until asked", () => {
 		const state = findingsStateOf(loaded())
 		const findings = state._tag === "Ready" ? state.findings : []
-		const groupsOf = (rejected: boolean) =>
-			groupFindings(filteredFindings(findings, rejected ? { rejected } : {}, "")).map(
-				(entry) => entry.group,
+		const sectionsFor = (rejected: boolean) =>
+			sectionsOf(filteredFindings(findings, rejected ? { rejected } : {}, "")).map(
+				(entry) => entry.bucket,
 			)
-		expect(groupsOf(false)).toEqual(["confirmed", "needs_validation"])
-		expect(groupsOf(true)).toEqual(["confirmed", "needs_validation", "rejected"])
+		// Both leads carry an estimate, so they sit under their severity, not in a group of their own.
+		expect(sectionsFor(false)).toEqual(["critical", "high", "medium", "low"])
+		expect(sectionsFor(true)).toEqual(["critical", "high", "medium", "low", "rejected"])
 	})
 
 	test("the status tab and search narrow the findings", () => {
@@ -459,15 +460,24 @@ describe("security tabs", () => {
 		)
 	})
 
-	test("a filter picked within the search debounce keeps what was typed", () => {
+	test("rejected findings show unfolded whether the URL or the switch asked for them", () => {
+		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
+		expect(pageUpdate(findings, Message.ToggledShowRejected()).outMessage).toMatchObject({
+			url: expect.stringContaining("rejected=true"),
+		})
+		const shown = routeChanged(
+			findings,
+			AppRoute.SecurityFindings({ search: { rejected: true } }),
+			context,
+		).model
+		const entered = init(AppRoute.SecurityFindings({ search: { rejected: true } }), context).model
+		expect([findings.collapsed, shown.collapsed, entered.collapsed]).toEqual([["rejected"], [], []])
+	})
+
+	test("a severity tab picked within the search debounce keeps what was typed", () => {
 		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
 		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
-		const picked = pageUpdate(
-			typed,
-			Message.GotSeveritySelectMessage({
-				message: Select.Message.SelectedItem({ index: 1, value: "critical" }),
-			}),
-		)
+		const picked = pageUpdate(typed, Message.PickedSeverity({ bucket: "critical" }))
 		expect(picked.outMessage).toMatchObject({
 			_tag: "RequestedNavigation",
 			url: expect.stringContaining("q="),
@@ -501,17 +511,18 @@ describe("security tabs", () => {
 		).toBeUndefined()
 	})
 
-	test("a status tab picked within the search debounce keeps what was typed", () => {
+	test("a status picked within the search debounce keeps what was typed", () => {
 		const findings = routeChanged(loaded(), AppRoute.SecurityFindings({ search: {} }), context).model
 		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
-		scene(
-			{ update: pageUpdate, view },
-			given(typed),
-			expectView(role("link", { name: /^Fixed/ })).toHaveAttr(
-				"href",
-				hrefOf(AppRoute.SecurityFindings({ search: { q: "exports", status: "fixed" } })),
-			),
+		const picked = pageUpdate(
+			typed,
+			Message.GotStatusSelectMessage({
+				message: Select.Message.SelectedItem({ index: 1, value: "fixed" }),
+			}),
 		)
+		expect(picked.outMessage).toMatchObject({
+			url: hrefOf(AppRoute.SecurityFindings({ search: { q: "exports", status: "fixed" } })),
+		})
 	})
 
 	test("an empty status tab offers Clear filters only when a filter besides the status is set", () => {
@@ -634,50 +645,48 @@ describe("spend and models", () => {
 			}),
 		).model
 
-	test("the Overview counts leads to validate with the confirmed ones, worst confirmed first", () => {
+	test("the Overview ranks open leads by severity, an estimate after the proven ones at its level", () => {
 		const model = loaded()
 		const state = findingsStateOf(model)
 		const leads = state._tag === "Ready" ? openLeads(state.findings) : []
 		expect(
 			leads.map((finding) =>
-				finding.verdict === "confirmed" ? finding.overallSeverity : "to validate",
+				finding.verdict === "confirmed"
+					? finding.overallSeverity
+					: `${finding.estimatedSeverity ?? "no"} estimate`,
 			),
 		).toEqual([
+			"critical",
 			"critical",
 			"high",
 			"high",
 			"high",
+			"high estimate",
 			"medium",
 			"medium",
+			"medium estimate",
 			"low",
-			"to validate",
-			"to validate",
 		])
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(text("7 confirmed · 2 to validate")).toExist(),
+			expectView(text("8 confirmed · 2 to validate")).toExist(),
 		)
 	})
 
-	test("a run's leads are told only for a target's newest finished run, which last saw them", () => {
+	test("each run keeps what it reported, even when a later run saw the same finding again", () => {
 		const model = loaded(AppRoute.SecurityRuns({ search: {} }))
-		const runOf = (id: string) => runsOf(NOW).runs.find((run) => run.id === id)
-		const leadsOf = (id: string) => {
-			const run = runOf(id)
-			return run === undefined ? undefined : runLeadsOf(model, run)
-		}
+		const criticalOf = (id: string) => runCountsOf(model, id)?.buckets.critical
 		expect([
-			leadsOf(RUN_IDS.billing),
-			leadsOf(RUN_IDS.billingCancelled),
-			leadsOf(RUN_IDS.dashboard),
-			leadsOf(RUN_IDS.terraform),
-		]).toEqual([{ confirmed: 3, toValidate: 1 }, null, null, null])
+			criticalOf(RUN_IDS.billing),
+			criticalOf(RUN_IDS.billingCancelled),
+			criticalOf(RUN_IDS.terraform),
+		]).toEqual([1, 1, 0])
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
 			expectView(text("reached the monthly spend limit")).toExist(),
-			expectView(role("columnheader", { name: "Leads" })).toExist(),
+			expectView(role("columnheader", { name: "Findings" })).toExist(),
 			expectView(role("columnheader", { name: "Tokens" })).not.toExist(),
 		)
 	})

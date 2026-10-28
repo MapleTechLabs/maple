@@ -137,7 +137,7 @@ const retried = (store: AuditStoreApi): AuditStoreApi => {
 		saveMetadata: (m) => Effect.retry(store.saveMetadata(m), policy),
 		saveArchitecture: (r, md) => Effect.retry(store.saveArchitecture(r, md), policy),
 		saveLedger: (r, l) => Effect.retry(store.saveLedger(r, l), policy),
-		saveFindings: (r, f) => Effect.retry(store.saveFindings(r, f), policy),
+		saveFindings: (r, f, e) => Effect.retry(store.saveFindings(r, f, e), policy),
 		saveReports: (r, x) => Effect.retry(store.saveReports(r, x), policy),
 		recordEvent: (r, e) => Effect.retry(store.recordEvent(r, e), policy),
 	}
@@ -408,6 +408,7 @@ export const auditWithAgents = <E, R>(
 					sourceRef: priorRow.value.sourceRef,
 					ledger: (yield* store.listUnits(priorRow.value.id)).map((row) => row.unit),
 					findings: yield* store.listRunFindings(priorRow.value.id),
+					estimates: yield* store.listRunFindingEstimates(priorRow.value.id),
 				}
 		const changed =
 			prior === null

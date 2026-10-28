@@ -197,12 +197,23 @@ export const phasesOf = (
 
 // RESULTS
 
-/** What this run reported: findings last seen in it. */
+/** What this run reported, from its own snapshot. */
 export const resultsOf = (model: Model): ReadonlyArray<SecurityAuditFinding> =>
 	Option.match(AsyncData.getData(model.findings.data), {
 		onNone: () => [],
-		onSome: (response) => response.findings.filter((finding) => finding.lastSeenRunId === model.runId),
+		onSome: (response) => response.findings,
 	})
+
+export const openFindingOf = (model: Model): SecurityAuditFinding | null =>
+	resultsOf(model).find((finding) => finding.fingerprint === model.openFingerprint) ?? null
+
+/** How the run ran stays open while it is live; a finished run leads with what it found. */
+export const isDetailsOpenByDefault = (model: Model): boolean => {
+	const run = runOf(model)
+	return run === null || isLive(run)
+}
+
+export const isDetailsOpen = (model: Model): boolean => model.isDetailsOpen ?? isDetailsOpenByDefault(model)
 
 export type Verdicts = Readonly<{ confirmed: number; needsValidation: number; rejected: number }>
 
