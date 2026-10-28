@@ -15,6 +15,7 @@ import {
 	UptimeMonitorId,
 	UserId,
 } from "@maple/domain/primitives"
+import { DEFAULT_STATUS_PAGE_THEME, StatusPageTheme } from "@maple/domain/status-page"
 import { UptimeMonitors } from "./uptime"
 
 /**
@@ -32,7 +33,8 @@ export const StatusPages = PG.table("status_pages", {
 		description: PG.nullable(PG.text),
 		websiteUrl: PG.column(PG.nullable(PG.text), { name: "website_url" }),
 		logoUrl: PG.column(PG.nullable(PG.text), { name: "logo_url" }),
-		brandColor: PG.column(PG.nullable(PG.text), { name: "brand_color" }),
+		/** Colours, appearance, radius and font of the public page. */
+		theme: PG.column(PG.jsonb(StatusPageTheme), { default: DEFAULT_STATUS_PAGE_THEME }),
 		showPoweredBy: PG.column(PG.bool, { name: "show_powered_by", default: true }),
 		autoIncidents: PG.column(PG.brand(PG.text, StatusPageAutoIncidents), {
 			name: "auto_incidents",

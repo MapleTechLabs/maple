@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest"
 import { StatusPageComponentId, StatusPageId } from "./primitives"
 import {
 	applyOverlay,
+	contrastRatio,
+	DEFAULT_STATUS_PAGE_THEME,
+	resolveStatusPageTheme,
+	themeContrastIssue,
 	dayState,
 	deriveComponentStatus,
 	fillDays,
@@ -30,7 +34,7 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 		description: null,
 		websiteUrl: null,
 		logoUrl: null,
-		brandColor: null,
+		theme: DEFAULT_STATUS_PAGE_THEME,
 		showPoweredBy: true,
 	},
 	breakGlassTokenSha256: null,
@@ -293,5 +297,123 @@ describe("applyOverlay", () => {
 describe("sha256Base64Url", () => {
 	it("matches the known digest of a value, without padding", async () => {
 		expect(await sha256Base64Url("abc")).toBe("ungWv48Bz-pBQUDeXa4iI7ADYaOWF3qctBD_YfIAFa0")
+	})
+})
+
+describe("contrastRatio", () => {
+	it("matches known WCAG pairs", () => {
+		expect(contrastRatio("#000000", "#ffffff")).toBeCloseTo(21, 5)
+		expect(contrastRatio("#777777", "#ffffff")).toBeCloseTo(4.48, 2)
+		expect(contrastRatio("#767676", "#ffffff")).toBeCloseTo(4.54, 2)
+		expect(contrastRatio("#ffffff", "#777777")).toBe(contrastRatio("#777777", "#ffffff"))
+	})
+})
+
+describe("resolveStatusPageTheme", () => {
+	const theme = { ...DEFAULT_STATUS_PAGE_THEME }
+
+	it("auto applies the accent but ignores the colour overrides", () => {
+		const resolved = resolveStatusPageTheme({
+			...theme,
+			accent: "#AA00FF",
+			background: "#123456",
+			text: "#fedcba",
+		})
+		expect(resolved.appearance).toBe("auto")
+		expect(resolved.light.link).toBe("#aa00ff")
+		expect(resolved.dark.link).toBe("#aa00ff")
+		expect(resolved.light.bg).toBe(resolveStatusPageTheme(theme).light.bg)
+		expect(resolved.dark.fg).toBe(resolveStatusPageTheme(theme).dark.fg)
+	})
+
+	it("a forced appearance replaces that mode's colours only", () => {
+		const resolved = resolveStatusPageTheme({
+			...theme,
+			appearance: "dark",
+			background: "#101820",
+			text: "#f0f0f0",
+			card: "#18222c",
+			border: "#2a3440",
+		})
+		expect(resolved.dark).toMatchObject({
+			bg: "#101820",
+			fg: "#f0f0f0",
+			card: "#18222c",
+			line: "#2a3440",
+		})
+		expect(resolved.light.bg).toBe(resolveStatusPageTheme(theme).light.bg)
+	})
+
+	it("keeps the preset's status colours whatever the overrides", () => {
+		const base = resolveStatusPageTheme({ ...theme, preset: "midnight", appearance: "light" })
+		const custom = resolveStatusPageTheme({
+			...theme,
+			preset: "midnight",
+			appearance: "light",
+			accent: "#ff0000",
+			background: "#eeeeee",
+		})
+		expect(custom.light.ok).toBe(base.light.ok)
+		expect(custom.light.major).toBe(base.light.major)
+	})
+
+	it("presets differ and carry radius and font", () => {
+		const paper = resolveStatusPageTheme({ ...theme, preset: "paper", radius: "lg", font: "serif" })
+		expect(paper.light.bg).not.toBe(resolveStatusPageTheme(theme).light.bg)
+		expect(paper.radiusPx).toBeGreaterThan(resolveStatusPageTheme(theme).radiusPx)
+		expect(paper.fontStack).toContain("serif")
+		expect(resolveStatusPageTheme({ ...theme, radius: "none" }).radiusPx).toBe(0)
+	})
+})
+
+describe("themeContrastIssue", () => {
+	const presets = ["default", "mono", "midnight", "paper"] as const
+	const appearances = ["auto", "light", "dark"] as const
+
+	it("passes every preset in every appearance", () => {
+		const issues = presets.flatMap((preset) =>
+			appearances.map((appearance) =>
+				themeContrastIssue({ ...DEFAULT_STATUS_PAGE_THEME, preset, appearance }),
+			),
+		)
+		expect(issues.filter((issue) => issue !== null)).toEqual([])
+	})
+
+	it("flags #777777 text on a white background at 4.48:1", () => {
+		const issue = themeContrastIssue({
+			...DEFAULT_STATUS_PAGE_THEME,
+			appearance: "light",
+			background: "#ffffff",
+			text: "#777777",
+		})
+		expect(issue).toContain("4.48:1")
+	})
+
+	it("flags text that is readable on the background but not on cards", () => {
+		const issue = themeContrastIssue({
+			...DEFAULT_STATUS_PAGE_THEME,
+			appearance: "light",
+			text: "#595959",
+			card: "#888888",
+		})
+		expect(issue).toMatch(/^Text on cards/u)
+	})
+
+	it("accepts #767676 on white, just over the line", () => {
+		expect(
+			themeContrastIssue({
+				...DEFAULT_STATUS_PAGE_THEME,
+				appearance: "light",
+				background: "#ffffff",
+				text: "#767676",
+				card: "#ffffff",
+			}),
+		).toBeNull()
+	})
+
+	it("ignores unreadable overrides in auto, where they do not apply", () => {
+		expect(
+			themeContrastIssue({ ...DEFAULT_STATUS_PAGE_THEME, background: "#ffffff", text: "#fefefe" }),
+		).toBeNull()
 	})
 })
