@@ -74,7 +74,10 @@ export const makeLocalIngestRulesSource = (file: string) => {
 		if (cached !== null && cached.mtimeMs === stat.success.mtimeMs)
 			return { rules: cached.rules, reloaded: false }
 		const body = Result.try(() => fs.readFileSync(file, "utf8"))
-		const rules = Result.isFailure(body) ? EMPTY : parseLocalIngestRules(body.success)
+		// An unreadable file runs no rules, but says so: silence here would store what a rule redacts.
+		const rules = Result.isFailure(body)
+			? { ...EMPTY, problems: [`ingest rules file ${file} could not be read: ${String(body.failure)}`] }
+			: parseLocalIngestRules(body.success)
 		cached = { mtimeMs: stat.success.mtimeMs, rules }
 		return { rules, reloaded: true }
 	}
