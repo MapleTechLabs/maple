@@ -446,7 +446,11 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 		return { outbound, peakInFlight, maxSlotWaitMs, baselineScans }
 	})
 
-	const runModelTick = (options: { readonly currentMs?: number; readonly slowContext?: string }) => {
+	const runModelTick = (options: {
+		readonly currentMs?: number
+		readonly slowContext?: string
+		readonly coldBaselines?: boolean
+	}) => {
 		const testDb = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			const model = yield* makeWorkerModel
@@ -463,15 +467,22 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 				),
 			)
 			// Every baseline is cached for the hour, as on all but the first tick of an hour.
+			// Cold: every baseline read misses and the recomputed blob is written back.
+			const isBaselineBucket = (bucket: string) =>
+				bucket.startsWith("anomaly-") && bucket.endsWith("base")
 			const warmBaselineBackend = Layer.succeed(
 				CacheBackend,
 				CacheBackend.of({
 					...makeMemoryBackend(),
 					get: (bucket) =>
-						bucket.startsWith("anomaly-") && bucket.endsWith("base")
-							? model.outbound(CACHE_READ_MS, Effect.succeed([]))
+						isBaselineBucket(bucket)
+							? model.outbound(
+									CACHE_READ_MS,
+									Effect.succeed(options.coldBaselines ? undefined : []),
+								)
 							: Effect.succeed(undefined),
-					put: () => Effect.void,
+					put: (bucket) =>
+						isBaselineBucket(bucket) ? model.outbound(CACHE_READ_MS, Effect.void) : Effect.void,
 				}),
 			)
 			const warehouse = makeWarehouseServiceStub({
@@ -565,6 +576,16 @@ describe("AnomalyDetectionService.runTick outbound budget", () => {
 			expect(run.peakInFlight).toBeLessThanOrEqual(4)
 			expect(run.maxSlotWaitMs).toBeLessThan(NO_QUEUE_MS)
 			expect(run.baselineScans).toBe(0)
+		}),
+	)
+
+	it.live("keeps the first tick of an hour, with every baseline recomputed, within the budget", () =>
+		Effect.gen(function* () {
+			const run = yield* runModelTick({ coldBaselines: true })
+			expect(run.orgFailures).toBe(0)
+			expect(run.baselineScans).toBe(orgs.length * 3)
+			expect(run.peakInFlight).toBeLessThanOrEqual(4)
+			expect(run.maxSlotWaitMs).toBeLessThan(NO_QUEUE_MS)
 		}),
 	)
 
