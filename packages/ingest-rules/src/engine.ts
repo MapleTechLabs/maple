@@ -39,6 +39,8 @@ export interface RuleRecord {
 	readonly traceId?: string
 	readonly spanKind?: string
 	readonly spanStatus?: string
+	/** Span status message; scanned under the `attributes` scope. */
+	readonly statusMessage?: string
 	readonly events?: ReadonlyArray<RuleEvent>
 }
 
@@ -119,10 +121,31 @@ export const isAttrList = (value: AttrValue): value is ReadonlyArray<AttrValue> 
 const isMap = (value: AttrValue): value is AttrMap =>
 	typeof value === "object" && !isAttrList(value) && !(value instanceof Uint8Array)
 
+/** A double as Rust's `{}` prints it: never exponent form, `-0` kept, `inf`/`NaN` spelled out. */
+export const formatDouble = (value: number): string => {
+	if (Number.isNaN(value)) return "NaN"
+	if (!Number.isFinite(value)) return value > 0 ? "inf" : "-inf"
+	if (Object.is(value, -0)) return "-0"
+	const text = String(Math.abs(value))
+	if (!text.includes("e")) return String(value)
+	// Shortest round-trip digits, then shifted: `1e+21` is "1000000000000000000000", `1.5e-7` "0.00000015".
+	const [mantissa = "", exponentText = "0"] = text.split("e")
+	const digits = mantissa.replace(".", "")
+	const point = (mantissa.indexOf(".") === -1 ? mantissa.length : mantissa.indexOf(".")) + Number(exponentText)
+	const unsigned =
+		point >= digits.length
+			? digits + "0".repeat(point - digits.length)
+			: point <= 0
+				? `0.${"0".repeat(-point)}${digits}`
+				: `${digits.slice(0, point)}.${digits.slice(point)}`
+	return value < 0 ? `-${unsigned}` : unsigned
+}
+
 /** The string a value compares as; null for bytes, arrays and kvlists. */
 export const comparable = (value: AttrValue): string | null => {
 	if (typeof value === "string") return value
-	if (typeof value === "number" || typeof value === "bigint") return String(value)
+	if (typeof value === "number") return formatDouble(value)
+	if (typeof value === "bigint") return String(value)
 	if (typeof value === "boolean") return value ? "true" : "false"
 	return null
 }
@@ -202,7 +225,7 @@ const conditionMatches = (record: RuleRecord, compiled: CompiledCondition): bool
 		case "contains":
 			return value.includes(operand)
 		case "regex":
-			return compiled.regex !== null && compiled.regex.test(value)
+			return compiled.regex !== null && compiled.regex.test(value.slice(0, INGEST_RULE_LIMITS.scanBytes))
 		default:
 			return false
 	}
@@ -347,6 +370,10 @@ const redactRecord = (
 			? record.events?.map((event) => ({ ...event, attributes: redactMap(event.attributes, ctx) }))
 			: record.events,
 		body: scopeHas(rule, "body") && record.body !== undefined ? scanValue(record.body, ctx) : record.body,
+		statusMessage:
+			scopeHas(rule, "attributes") && record.statusMessage !== undefined && record.statusMessage !== ""
+				? scanString(record.statusMessage, ctx)
+				: record.statusMessage,
 	}
 	return { record: next, count: ctx.count }
 }

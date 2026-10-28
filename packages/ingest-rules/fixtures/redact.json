@@ -1215,5 +1215,125 @@
 				"bin": "[REDACTED]"
 			}
 		}
+	},
+	{
+		"name": "only the gateway's own maple_ stamps are protected",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [],
+				"action": {
+					"_tag": "redact",
+					"keys": [],
+					"detectors": ["email"],
+					"patterns": [],
+					"scopes": ["attributes"],
+					"method": "mask"
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple_ai.tool.error_result": "no account for a@b.co",
+				"maple_org_id": "a@b.co",
+				"maple.sdk": "a@b.co"
+			},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "ok",
+			"traceId": "0af7651916cd43dd8448eb211c80319c"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple_ai.tool.error_result": "no account for [REDACTED:email]",
+				"maple_org_id": "a@b.co",
+				"maple.sdk": "[REDACTED:email]"
+			}
+		}
+	},
+	{
+		"name": "attributes scope covers the span status message",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [],
+				"action": {
+					"_tag": "redact",
+					"keys": [],
+					"detectors": ["email"],
+					"patterns": [],
+					"scopes": ["attributes"],
+					"method": "mask"
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "error",
+			"traceId": "0af7651916cd43dd8448eb211c80319c",
+			"statusMessage": "user a@b.co not found"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"statusMessage": "user [REDACTED:email] not found"
+		}
+	},
+	{
+		"name": "the status message is left alone outside the attributes scope",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": ["traces"],
+				"conditions": [],
+				"action": {
+					"_tag": "redact",
+					"keys": [],
+					"detectors": ["email"],
+					"patterns": [],
+					"scopes": ["events"],
+					"method": "mask"
+				}
+			}
+		],
+		"input": {
+			"signal": "traces",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"name": "GET /users",
+			"spanKind": "server",
+			"spanStatus": "error",
+			"traceId": "0af7651916cd43dd8448eb211c80319c",
+			"statusMessage": "user a@b.co not found"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"statusMessage": "user a@b.co not found"
+		}
 	}
 ]

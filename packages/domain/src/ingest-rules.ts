@@ -117,9 +117,12 @@ export type SeverityLevel = keyof typeof SEVERITY_LEVELS
 export const SPAN_KINDS = ["unspecified", "internal", "server", "client", "producer", "consumer"] as const
 export const SPAN_STATUSES = ["unset", "ok", "error"] as const
 
-/** Keys no rule may redact: they route, attribute and bill the data. */
+/**
+ * Keys no rule may redact: they route, attribute and bill the data. Only the gateway's own
+ * stamps (`maple_org_id`, `maple_source_id`, ...) qualify; `maple_ai.*` copies customer text.
+ */
 export const isProtectedKey = (key: string): boolean =>
-	key === "service.name" || key === "org_id" || key.startsWith("maple_") || key.startsWith("maple.")
+	key === "service.name" || key === "org_id" || /^maple_[a-z0-9_]+$/u.test(key)
 
 const SINGLE_OPS: ReadonlySet<IngestRuleOp> = new Set(["eq", "neq", "prefix", "contains", "regex"])
 const LIST_OPS: ReadonlySet<IngestRuleOp> = new Set(["in", "not_in"])
@@ -150,7 +153,12 @@ const UNPORTABLE_REGEX: ReadonlyArray<readonly [RegExp, string]> = [
 	[/\(\?<?[=!]/u, "lookaround is not supported"],
 	[/\(\?>/u, "atomic groups are not supported"],
 	[/\\[1-9]|\\k</u, "backreferences are not supported"],
-	[/[*+?}]\+/u, "possessive quantifiers are not supported"],
+	[/(?<!\\)[*+?}]\+/u, "possessive quantifiers are not supported"],
+	[/\[[^\]]*(&&|~~|--)/u, "character class set operations are not supported"],
+	[/\[\^\]|\\c|\\0/u, "use an explicit class or escape instead"],
+	[/\{\s*\d{4,}|\{\s*\d+\s*,\s*\d{4,}/u, "counted repetitions are limited to 999"],
+	// A quantified group that itself repeats can backtrack exponentially in the preview engine.
+	[/\((?:[^()\\]|\\.)*(?:[*+]|\{\d+,\}|\|)(?:[^()\\]|\\.)*\)\s*(?:[*+]|\{\d+,)/u, "a repeated group may not contain a repetition or alternation"],
 	[/\(\?P/u, "use (?<name>...) for named groups"],
 	[/(?!^)\(\?[a-zA-Z-]+[):]/u, "inline flags are only supported as a leading (?i)"],
 	[/^\(\?(?!i\))[a-zA-Z-]+\)/u, "only the (?i) inline flag is supported"],
