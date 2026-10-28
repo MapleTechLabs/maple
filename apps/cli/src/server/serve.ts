@@ -71,6 +71,7 @@ import {
 	secretMatches,
 	sessionCookie,
 } from "./remote-auth"
+import { applyLocalIngestRules, localIngestRulesPath, makeLocalIngestRulesSource } from "./ingest-rules"
 import { localServiceMapRollupLoop } from "./service-map-rollup"
 import { ensureStoreMarkerDurable, storeHasData } from "./store-version"
 import {
@@ -397,6 +398,8 @@ const projectionFailure =
 	(error: { readonly message: string }): Effect.Effect<never, IngestStopped> =>
 		Effect.fail(stopIngest(text(`event projection ${signal}: ${error.message}`, status), requestBytes))
 
+const localIngestRules = makeLocalIngestRulesSource(localIngestRulesPath())
+
 const ingest = (
 	db: Pick<Chdb, "exec">,
 	authority: RetiredDayAuthority,
@@ -425,6 +428,16 @@ const ingest = (
 				),
 			),
 		)
+		// Customer ingest rules run first, so dropped or redacted data never reaches events or chDB.
+		const { rules, reloaded } = localIngestRules()
+		if (reloaded)
+			yield* Effect.forEach(rules.problems, (problem) => Effect.logWarning(problem), { discard: true })
+		const ruled = applyLocalIngestRules(signal, decoded, rules.compiled)
+		if (ruled.dropped + ruled.redactedValues > 0)
+			yield* Effect.annotateCurrentSpan({
+				"maple.ingest.rules.dropped_items": ruled.dropped,
+				"maple.ingest.rules.redacted_values": ruled.redactedValues,
+			})
 		const rejectProjection = (status: 400 | 503) => projectionFailure(signal, requestBytes, status)
 		const evaluation = yield* eventing
 			.evaluateOtlp(signal, decoded, (rangeDate) => authority.isRetired(rangeDate))

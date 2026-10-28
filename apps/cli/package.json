@@ -16,6 +16,7 @@
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/eventing-core": "workspace:*",
+		"@maple/ingest-rules": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"effect": "catalog:effect",
 		"protobufjs": "^8.8.1"
