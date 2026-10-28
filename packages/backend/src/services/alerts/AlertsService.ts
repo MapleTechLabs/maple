@@ -601,6 +601,9 @@ export interface AlertsServiceApi
 	>
 }
 
+/** Longest an uptime incident's status-page write may delay the alert tick. */
+const STATUS_PAGE_SYNC_TIMEOUT = "3 seconds"
+
 export class AlertsService extends Context.Service<AlertsService, AlertsServiceApi>()(
 	"@maple/backend/services/AlertsService",
 	{
@@ -658,7 +661,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const dbExecute = makeDbExecute(database, "AlertsService", makePersistenceError)
 
 			// Status pages showing an uptime rule's monitor follow its incidents. Runs after the
-			// alert write commits; a failure is logged and never blocks alerting.
+			// alert write commits, bounded so a slow page write cannot hold the notification behind
+			// it; a failure or timeout is logged (the repair sweep catches up) and never blocks alerting.
 			const syncStatusPages = <E>(
 				signalType: string,
 				context: { readonly orgId: OrgId; readonly alertIncidentId: string },
@@ -669,6 +673,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					: database
 							.execute((db) => db.transaction(write(db)))
 							.pipe(
+								Effect.timeout(STATUS_PAGE_SYNC_TIMEOUT),
 								Effect.asVoid,
 								Effect.catch((error) =>
 									Effect.logWarning("Status page auto incident sync failed").pipe(
