@@ -64,6 +64,7 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { DemoService } from "@maple/backend/services/org/DemoService"
 import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
+import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
@@ -128,6 +129,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	PlanetScaleService.layer,
 	PlanetScaleWebhookService.layer,
 	IngestAttributeMappingService.layer,
+	IngestRuleService.layer,
 	AutumnClient.layer,
 	StripeClient.layer,
 	ProductEventsService.layer,
