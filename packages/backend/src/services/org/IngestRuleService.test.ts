@@ -113,6 +113,8 @@ describe("IngestRuleService", () => {
 				"@maple/http/errors/IngestRuleValidationError",
 			])
 			expect((yield* service.list(ORG)).map((rule) => rule.name)).toEqual(["Second", "First"])
+		}).pipe(Effect.provide(makeLayer())),
+	)
 
 	it.effect("stops at the per-org rule cap, even for creates sent together", () =>
 		Effect.gen(function* () {
