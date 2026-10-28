@@ -159,6 +159,7 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 									orgId: row.orgId,
 									destinationId: row.destinationId,
 									threadKey: row.threadKey,
+									linearTeamId: row.linearTeamId,
 									linearIssueId: row.linearIssueId,
 									linearIdentifier: row.linearIdentifier,
 									linearUrl: row.linearUrl,
@@ -171,6 +172,7 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
 					const values = {
+						linearTeamId: thread.linearTeamId,
 						linearIssueId: thread.linearIssueId,
 						linearIdentifier: thread.linearIdentifier,
 						linearUrl: thread.linearUrl,

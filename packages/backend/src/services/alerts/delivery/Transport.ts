@@ -154,6 +154,7 @@ export interface LinearThread {
 	readonly orgId: OrgId
 	readonly destinationId: AlertDestinationId
 	readonly threadKey: string
+	readonly linearTeamId: string
 	readonly linearIssueId: string
 	readonly linearIdentifier: string
 	readonly linearUrl: string

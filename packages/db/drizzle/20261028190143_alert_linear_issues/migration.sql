@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS "alert_linear_issues" (
 	"org_id" text NOT NULL,
 	"destination_id" text NOT NULL,
 	"thread_key" text NOT NULL,
+	"linear_team_id" text NOT NULL,
 	"linear_issue_id" text NOT NULL,
 	"linear_identifier" text NOT NULL,
 	"linear_url" text NOT NULL,

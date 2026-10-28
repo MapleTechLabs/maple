@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "0699fea40794550aa3b6b75db06315e934957f2d06f123461ee66523493e3631",
+	"id": "488458b9c1ae1a6a6aa77e78ed0171373c0e3d3f7fb9b4d73e8a3606eeb3e94f",
 	"prevIds": [
 		"85caedb84ed88c3f757c61b4f4e64017825a347e9d1714eea0e7e32d398af605"
 	],
@@ -2005,7 +2005,7 @@
 		{
 			"kind": "column",
 			"table": "alert_linear_issues",
-			"name": "linear_issue_id",
+			"name": "linear_team_id",
 			"position": 4,
 			"type": "text",
 			"notNull": true,
@@ -2015,7 +2015,7 @@
 		{
 			"kind": "column",
 			"table": "alert_linear_issues",
-			"name": "linear_identifier",
+			"name": "linear_issue_id",
 			"position": 5,
 			"type": "text",
 			"notNull": true,
@@ -2025,7 +2025,7 @@
 		{
 			"kind": "column",
 			"table": "alert_linear_issues",
-			"name": "linear_url",
+			"name": "linear_identifier",
 			"position": 6,
 			"type": "text",
 			"notNull": true,
@@ -2035,8 +2035,18 @@
 		{
 			"kind": "column",
 			"table": "alert_linear_issues",
-			"name": "incident_id",
+			"name": "linear_url",
 			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "incident_id",
+			"position": 8,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -2046,7 +2056,7 @@
 			"kind": "column",
 			"table": "alert_linear_issues",
 			"name": "created_at",
-			"position": 8,
+			"position": 9,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2056,7 +2066,7 @@
 			"kind": "column",
 			"table": "alert_linear_issues",
 			"name": "updated_at",
-			"position": 9,
+			"position": 10,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,

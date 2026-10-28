@@ -186,6 +186,7 @@ const openThread = (overrides: Partial<LinearThread> = {}): LinearThread => ({
 	orgId: ORG,
 	destinationId: DESTINATION_ID,
 	threadKey: "rule_1:checkout",
+	linearTeamId: "team_1",
 	linearIssueId: "issue_open",
 	linearIdentifier: "ENG-7",
 	linearUrl: "https://linear.app/acme/issue/ENG-7",
@@ -412,11 +413,11 @@ describe("linear transport after a resolve or a team change", () => {
 		}),
 	)
 
-	it.effect("opens a new issue in the destination's team when the thread's issue is in another", () =>
+	it.effect("opens a new issue in the destination's team once the destination moved to it", () =>
 		Effect.gen(function* () {
 			const linear = fakeLinear({
 				issues: [issue({ team: { id: "team_old" } })],
-				threads: [openThread()],
+				threads: [openThread({ linearTeamId: "team_old" })],
 			})
 			yield* linear.send(inputFor({ deliveryKey: "delivery_7" }))
 			assert.strictEqual(inputOf(linear.calls, "MapleIssueCreate").teamId, "team_1")
@@ -445,6 +446,20 @@ describe("linear transport after a resolve or a team change", () => {
 			const creates = linear.calls.filter((call) => call.name === "MapleIssueCreate")
 			assert.lengthOf(creates, 2)
 			assert.strictEqual(result.providerMessage, "Opened Linear issue ENG-1")
+		}),
+	)
+})
+
+describe("linear transport and issues people move", () => {
+	it.effect("keeps commenting on an issue a person moved to another team", () =>
+		Effect.gen(function* () {
+			const linear = fakeLinear({
+				issues: [issue({ team: { id: "team_other" } })],
+				threads: [openThread()],
+			})
+			yield* linear.send(inputFor({ incidentId: "inc_2" }))
+			assert.notInclude(names(linear.calls), "MapleIssueCreate")
+			assert.include(String(inputOf(linear.calls, "MapleComment").body), "Fired again")
 		}),
 	)
 })

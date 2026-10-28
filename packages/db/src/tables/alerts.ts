@@ -285,6 +285,8 @@ export const AlertLinearIssues = PG.table("alert_linear_issues", {
 		destinationId: PG.column(PG.brand(PG.text, AlertDestinationId), { name: "destination_id" }),
 		/** `<ruleId>:<groupKey>`, or the delivery's dedupe key when it has no rule. */
 		threadKey: PG.column(PG.text, { name: "thread_key" }),
+		/** The destination's team when the issue was opened; a different team today means a new issue. */
+		linearTeamId: PG.column(PG.text, { name: "linear_team_id" }),
 		/** Linear's issue UUID, which Maple chose so a retried create cannot duplicate it. */
 		linearIssueId: PG.column(PG.text, { name: "linear_issue_id" }),
 		/** e.g. `ENG-123`. */

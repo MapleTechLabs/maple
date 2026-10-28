@@ -295,6 +295,7 @@ const createIssue = Effect.fn("LinearTransport.createIssue")(function* (
 		orgId: context.destination.orgId,
 		destinationId: context.destination.id,
 		threadKey,
+		linearTeamId: input.config.teamId,
 		linearIssueId: issue.id,
 		linearIdentifier: issue.identifier,
 		linearUrl: issue.url,
@@ -337,11 +338,13 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 	const thread = yield* port.findThread(context.destination.orgId, context.destination.id, threadKey)
 	const issue = thread === null ? null : yield* fetchIssue(port, input, thread.linearIssueId)
 	const resolved = context.incidentId !== null && context.incidentStatus === "resolved"
-	// The resolve already reached this thread's issue; a trigger arriving late must not reopen it.
-	if (resolved && thread !== null && issue !== null && issue.team.id === input.config.teamId) {
+	// Opened for this destination's current team; an issue a person moved since still counts.
+	const sameTeam = thread !== null && thread.linearTeamId === input.config.teamId
+	// The resolve already reached this thread; a trigger arriving late must not reopen or revive it.
+	if (resolved && sameTeam) {
 		return {
-			providerMessage: `Skipped: the incident resolved before this trigger reached ${issue.identifier}`,
-			providerReference: issue.url,
+			providerMessage: "Skipped: the incident resolved before this trigger reached Linear",
+			providerReference: thread.linearUrl,
 			responseCode: null,
 		} satisfies DispatchResult
 	}
@@ -349,7 +352,7 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 	const replace =
 		thread === null ||
 		issue === null ||
-		issue.team.id !== input.config.teamId ||
+		!sameTeam ||
 		Boolean(issue.archivedAt) ||
 		(issue !== null &&
 			isClosed(issue) &&
@@ -367,7 +370,8 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 		} satisfies DispatchResult
 	}
 	if (issue !== null && isClosed(issue)) {
-		const reopened = yield* reopen(port, input, issue.id)
+		// A person may have moved it to another team, whose states this destination does not know.
+		const reopened = issue.team.id === input.config.teamId ? yield* reopen(port, input, issue.id) : false
 		yield* comment(port, input, issue.id, linearCommentBody(input, thread))
 		yield* port.saveThread({ ...thread, incidentId: input.context.incidentId })
 		return {
@@ -404,6 +408,7 @@ const resolve = Effect.fn("LinearTransport.resolve")(function* (port: LinearDeli
 					orgId: context.destination.orgId,
 					destinationId: context.destination.id,
 					threadKey,
+					linearTeamId: input.config.teamId,
 					linearIssueId: orphan.id,
 					linearIdentifier: orphan.identifier,
 					linearUrl: orphan.url,
