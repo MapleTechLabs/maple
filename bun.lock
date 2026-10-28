@@ -51,6 +51,7 @@
         "@maple/backend": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
+        "@maple/ingest-rules": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/query-engine-integrations": "workspace:*",
         "@maple/query-model": "workspace:*",
@@ -322,6 +323,7 @@
         "@maple/effect-db": "workspace:*",
         "@maple/grid-engine": "workspace:*",
         "@maple/infra": "workspace:*",
+        "@maple/ingest-rules": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/ui": "workspace:*",
@@ -783,6 +785,20 @@
       },
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:alchemy",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/ingest-rules": {
+      "name": "@maple/ingest-rules",
+      "dependencies": {
+        "@maple/domain": "workspace:*",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@effect/language-service": "catalog:effect",
+        "@effect/vitest": "catalog:effect",
         "@types/node": "catalog:tooling",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
@@ -1279,7 +1295,7 @@
 
     "@electric-sql/client": ["@electric-sql/client@1.5.28", "", { "dependencies": { "@microsoft/fetch-event-source": "^2.0.1" }, "optionalDependencies": { "@rollup/rollup-darwin-arm64": "^4.18.1" }, "bin": { "intent": "bin/intent.mjs" } }, "sha512-b0cym3YWXL6PbQmEF0xDRsLt2xgXX46stvOSRAIXRPAP6dLZIHZL0o0HxeTdsZ27L3PbIg6Pw6KnyanRVGtWPA=="],
 
-    "@electric-sql/pglite": ["@electric-sql/pglite@0.5.8", "", {}, "sha512-n9tsbUOhwx2epK1V0ZG9Ar4SHWUju04dhmzZXiSBXwBoleOvIfals33NAaWgagQVAL4Rbvx/Ptsu3P+pA09f6Q=="],
+    "@electric-sql/pglite": ["@electric-sql/pglite@0.5.12", "", {}, "sha512-IiAxv1ld1V9QP0AWsflliDqrGRo+20O+yXOr2fjk6YzBHsCvTPclwQhCB1uZ7eHtPrxUrSllNzWgqy/Ot76PEw=="],
 
     "@emnapi/core": ["@emnapi/core@1.11.2", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" } }, "sha512-TC8MkTuZUtcTSiFeuC0ksCh9QIJ5+F21MvZ4Wn4ORfYaFJ/0dsiudv5tVkejgwZlwQ39jL9WWDe2lz8x0WglOA=="],
 
@@ -1548,6 +1564,8 @@
     "@maple/infra": ["@maple/infra@workspace:packages/infra"],
 
     "@maple/ingest": ["@maple/ingest@workspace:apps/ingest"],
+
+    "@maple/ingest-rules": ["@maple/ingest-rules@workspace:packages/ingest-rules"],
 
     "@maple/landing": ["@maple/landing@workspace:apps/landing"],
 
@@ -3928,8 +3946,6 @@
     "@e2e-dev/web/playwright-core": ["playwright-core@1.64.0", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-T9r+MZkTECl2+oUcZ26YgZzTrYidTsIhYYkJix+6iDOymOb1FB2RLLSOxRGnZGv5DStt+aduIVbt+E8WygXYpg=="],
 
     "@effect/sql-d1/@cloudflare/workers-types": ["@cloudflare/workers-types@5.20261026.1", "", {}, "sha512-E+KMLXOMip7uzfkFYoSjAF0n0+VFkK2KFU0Md/PM3JkPpC9Km0/YAoDttkmxAoZLGbK1wQRAFg2IJtyZkTBCHg=="],
-
-    "@effect/sql-pglite/@electric-sql/pglite": ["@electric-sql/pglite@0.5.12", "", {}, "sha512-IiAxv1ld1V9QP0AWsflliDqrGRo+20O+yXOr2fjk6YzBHsCvTPclwQhCB1uZ7eHtPrxUrSllNzWgqy/Ot76PEw=="],
 
     "@foldkit/vite-plugin/@effect/platform-node": ["@effect/platform-node@4.0.0", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0", "undici": "^8.11.2" }, "peerDependencies": { "effect": "^4.0.0", "redis": ">=5.0.0 <7.0.0" } }, "sha512-/L+4MUbl8FejPKLHLROYSOebvHnfixkP8KiblSD/DE5uH5xENZBHaux4nH6XMnRP+lr8ajpEJFS8sUrmmxFJeQ=="],
 
