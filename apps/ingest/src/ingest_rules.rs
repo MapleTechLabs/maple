@@ -1620,6 +1620,22 @@ mod tests {
     }
 
     #[test]
+    fn doubles_format_like_the_ts_engine() {
+        let cases = [
+            (f64::INFINITY, "inf"),
+            (f64::NEG_INFINITY, "-inf"),
+            (f64::NAN, "NaN"),
+            (-0.0, "-0"),
+            (1e21, "1000000000000000000000"),
+            (1.5e-7, "0.00000015"),
+            (2.0, "2"),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(format_double(value), expected, "formatting {value}");
+        }
+    }
+
+    #[test]
     fn drop_fixtures_conform() {
         run_fixtures(DROP_FIXTURES);
     }
