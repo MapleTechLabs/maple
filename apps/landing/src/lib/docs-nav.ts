@@ -24,6 +24,7 @@ export const SECTIONS = [
 			"Agent Sessions",
 			"Dashboards",
 			"Alerting",
+			"Code Review",
 			"Infrastructure",
 			"Integrations",
 			"Infrastructure as Code",

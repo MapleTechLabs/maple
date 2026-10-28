@@ -1,20 +1,14 @@
-import type {
-	SecurityAuditEvent,
-	SecurityAuditFinding,
-	SecurityAuditRunDetail,
-	SecurityAuditUnit,
-} from "@maple/domain/http"
+import type { SecurityAuditEvent, SecurityAuditRunDetail, SecurityAuditUnit } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AppRoute, hrefOf } from "../../../route"
 import { badge } from "../../../ui/display"
 import { filterChip } from "../../../ui/filter-chip"
 import { errorState } from "../../../ui/error-state"
 import { panel, panelHeader } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import { formatClock, formatUsd, gateOf, isLive, isoOf, locationOf } from "../kit/format"
-import { gateState, placeholderRows, securitySeverityBadge } from "../kit/parts"
+import { formatClock, formatUsd, gateOf, isLive, isoOf } from "../kit/format"
+import { gateState, placeholderRows } from "../kit/parts"
 import {
 	countOf,
 	filteredUnits,
@@ -29,7 +23,7 @@ import { type EventFilter, eventLineOf, unitContext, unitName } from "../kit/out
 import { EVENTS_PAGE } from "./command"
 import { Message, type Model, type UnitFilter } from "./model"
 
-// The run's coverage ledger, its gaps, what it reported, and the event log.
+// The run's coverage ledger, its gaps and the event log.
 
 type H = HtmlBuilder<Message>
 
@@ -215,125 +209,6 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 		ledgerToggle(h, `Show all ${gapCount(run)} gaps and the full ledger`),
 	])
 }
-
-const resultMark = (h: H, finding: SecurityAuditFinding): Html =>
-	finding.verdict === "needs_validation"
-		? badge(h, { variant: "outline", className: "border-dashed" }, ["Needs validation"])
-		: finding.verdict === "rejected"
-			? badge(h, { variant: "muted", className: "line-through" }, ["Rejected"])
-			: finding.overallSeverity === null || finding.overallSeverity === "informational"
-				? badge(h, { variant: "muted" }, ["Info"])
-				: securitySeverityBadge(h, finding.overallSeverity)
-
-export const resultsPanel = (
-	h: H,
-	model: Model,
-	results: ReadonlyArray<SecurityAuditFinding>,
-	run: SecurityAuditRunDetail,
-): Html =>
-	panel(h, { className: "min-w-0 overflow-hidden" }, [
-		panelHeader(h, {
-			title: "Results of this run",
-			action: h.span(
-				[h.Class("text-xs text-muted-foreground")],
-				[`${results.length} ${results.length === 1 ? "record" : "records"}`],
-			),
-		}),
-		AsyncData.matchData(model.findings.data, {
-			onEmpty: () => placeholderRows(h, 4),
-			onFailure: (failure) => {
-				const gate = gateOf(failure)
-				return gate === null
-					? errorState(h, {
-							failure,
-							title: "Couldn't load findings",
-							variant: "inline",
-							onRetry: Message.ClickedRetry(),
-						})
-					: gateState(h, gate, "m-4")
-			},
-			onData: () =>
-				results.length === 0
-					? h.p(
-							[h.Class("px-4 py-6 text-sm text-muted-foreground")],
-							[isLive(run) ? "Nothing reported yet." : "This run reported no findings."],
-						)
-					: h.ul(
-							[h.Class("divide-y")],
-							results.map((finding) =>
-								h.li(
-									[h.Key(finding.fingerprint)],
-									[
-										h.a(
-											[
-												h.Href(
-													hrefOf(
-														AppRoute.SecurityFinding({
-															targetId: finding.targetId,
-															fingerprint: finding.fingerprint,
-														}),
-													),
-												),
-												h.Class(
-													"flex items-center gap-4 px-4 py-3 hover:bg-muted/40",
-												),
-											],
-											[
-												h.span(
-													[h.Class("flex min-w-0 flex-1 flex-col")],
-													[
-														h.span(
-															[h.Class("truncate text-sm")],
-															[finding.record.title],
-														),
-														h.span(
-															[
-																h.Class(
-																	"truncate font-mono text-xs text-muted-foreground",
-																),
-															],
-															[locationOf(finding.record) ?? ""],
-														),
-													],
-												),
-												resultMark(h, finding),
-											],
-										),
-									],
-								),
-							),
-						),
-		}),
-		...(run.reports === null
-			? []
-			: [
-					h.div(
-						[h.Class("flex flex-wrap items-center gap-3 border-t px-4 py-2.5 text-xs")],
-						[
-							h.span([h.Class("text-muted-foreground")], ["Reports:"]),
-							...(
-								[
-									["report", "REPORT.md"],
-									["findingsDetail", "FINDINGS-DETAIL.md"],
-									["needsValidation", "NEEDS-VALIDATION.md"],
-								] as const
-							).map(([report, label]) =>
-								h.button(
-									[
-										h.Key(report),
-										h.Type("button"),
-										h.Class(
-											"font-mono underline underline-offset-2 hover:text-foreground",
-										),
-										h.OnClick(Message.ClickedReport({ report })),
-									],
-									[label],
-								),
-							),
-						],
-					),
-				]),
-	])
 
 const eventRow = (h: H, event: SecurityAuditEvent, timeZone: string): Html => {
 	const line = eventLineOf(event)

@@ -43,7 +43,7 @@ export const confirmedRecord: Finding = {
 	confidence: { score: "high", reason: "reproduced against a dummy tenant" },
 }
 
-export const needsValidationRecord: Finding = {
+export const needsValidationRecord: Extract<Finding, { verdict: "needs_validation" }> = {
 	verdict: "needs_validation",
 	fingerprint: "keys/roll-missing-org-scope",
 	title: "Key roll may cross orgs",

@@ -248,8 +248,51 @@ export const settingsOf = (now: number) => {
 	})
 }
 
-export const runsOf = (now: number) =>
-	Schema.decodeUnknownSync(SecurityAuditRunsResponse)({ runs: runSeeds(now).map(run) })
+/** Per run, what its snapshot holds, as the API counts it for admins. */
+const findingCountsOf = (now: number, runIds: ReadonlyArray<string>) =>
+	Object.fromEntries(
+		runIds.map((runId) => {
+			const findings = runFindingsOf(now, runId).findings
+			const severityOf = (finding: (typeof findings)[number]) =>
+				finding.verdict === "confirmed"
+					? (finding.overallSeverity ?? "informational")
+					: finding.verdict === "needs_validation"
+						? finding.estimatedSeverity
+						: null
+			const at = (severity: string) =>
+				findings.filter((finding) => severityOf(finding) === severity).length
+			return [
+				runId,
+				{
+					critical: at("critical"),
+					high: at("high"),
+					medium: at("medium"),
+					low: at("low"),
+					informational: at("informational"),
+					unverified: findings.filter(
+						(finding) =>
+							finding.verdict === "needs_validation" && finding.estimatedSeverity !== null,
+					).length,
+					needsValidation: findings.filter(
+						(finding) =>
+							finding.verdict === "needs_validation" && finding.estimatedSeverity === null,
+					).length,
+					rejected: findings.filter((finding) => finding.verdict === "rejected").length,
+				},
+			]
+		}),
+	)
+
+export const runsOf = (now: number) => {
+	const runs = runSeeds(now).map(run)
+	return Schema.decodeUnknownSync(SecurityAuditRunsResponse)({
+		runs,
+		findingCounts: findingCountsOf(
+			now,
+			runs.map((entry) => entry.id),
+		),
+	})
+}
 
 const UNIT_COUNTS = new Map<string, Readonly<Record<string, number>>>([
 	[
@@ -791,6 +834,10 @@ type FindingSeed = Readonly<{
 	file: string
 	line: number
 	runId: string
+	/** The earlier run that first reported it, when not `runId`. */
+	firstRunId?: string
+	/** A lead's severity as the engine estimated it; leads from older runs carry none. */
+	estimate?: "critical" | "high" | "medium" | "low" | null
 	ago: number
 	createdAgo?: number
 }>
@@ -921,6 +968,19 @@ const FINDINGS: ReadonlyArray<FindingSeed> = [
 		createdAgo: 18 * MINUTE,
 	},
 	{
+		fingerprint: "refund-owner-c0d4",
+		targetId: TARGET_IDS.billing,
+		verdict: "confirmed",
+		severity: "critical",
+		title: "Refund endpoint skips the invoice ownership check",
+		file: "src/refunds/create.ts",
+		line: 29,
+		runId: RUN_IDS.billing,
+		firstRunId: RUN_IDS.billingCancelled,
+		ago: DAY,
+		createdAgo: 3 * DAY,
+	},
+	{
 		fingerprint: "webhook-replay-77aa",
 		targetId: TARGET_IDS.billing,
 		verdict: "confirmed",
@@ -990,6 +1050,7 @@ const FINDINGS: ReadonlyArray<FindingSeed> = [
 	},
 	{
 		fingerprint: "proration-twice-c4b1",
+		estimate: "medium",
 		targetId: TARGET_IDS.billing,
 		verdict: "needs_validation",
 		severity: null,
@@ -1001,6 +1062,7 @@ const FINDINGS: ReadonlyArray<FindingSeed> = [
 	},
 	{
 		fingerprint: "ssrf-image-proxy-0e88",
+		estimate: "high",
 		targetId: TARGET_IDS.gateway,
 		verdict: "needs_validation",
 		severity: null,
@@ -1023,17 +1085,20 @@ const FINDINGS: ReadonlyArray<FindingSeed> = [
 	},
 ]
 
+/** A lead from the deep run, scored as the engine estimated it, or unscored as an older run's. */
 const deepLead = (
 	fingerprint: string,
 	title: string,
 	file: string,
 	line: number,
 	verdict: "needs_validation" | "rejected" = "needs_validation",
+	estimate: "critical" | "high" | "medium" | "low" | null = null,
 ): FindingSeed => ({
 	fingerprint,
 	targetId: DEEP_TARGET_ID,
 	verdict,
 	severity: null,
+	estimate,
 	title,
 	file,
 	line,
@@ -1048,24 +1113,32 @@ const DEEP_FINDINGS: ReadonlyArray<FindingSeed> = [
 		"Comment markdown renders raw HTML for other members",
 		"src/comments/render.ts",
 		41,
+		"needs_validation",
+		"high",
 	),
 	deepLead(
 		"attachment-key-b2e1",
 		"Attachment name reaches the storage key unnormalised",
 		"src/attachments/upload.ts",
 		77,
+		"needs_validation",
+		"medium",
 	),
 	deepLead(
 		"export-retry-c3d2",
 		"Export job may write another workspace's rows on retry",
 		"src/export/job.ts",
 		118,
+		"needs_validation",
+		"critical",
 	),
 	deepLead(
 		"invite-reuse-d4c3",
 		"Invite token may be accepted twice under a race",
 		"src/invites/accept.ts",
 		33,
+		"needs_validation",
+		"medium",
 	),
 	deepLead(
 		"share-expiry-e5b4",
@@ -1078,6 +1151,8 @@ const DEEP_FINDINGS: ReadonlyArray<FindingSeed> = [
 		"Outbound webhook may follow redirects to internal hosts",
 		"src/hooks/deliver.ts",
 		92,
+		"needs_validation",
+		"high",
 	),
 	deepLead(
 		"search-filter-07b6",
@@ -1094,6 +1169,7 @@ const findingOf = (seed: FindingSeed, now: number) => ({
 	targetId: seed.targetId,
 	verdict: seed.verdict,
 	overallSeverity: seed.severity,
+	estimatedSeverity: seed.verdict === "needs_validation" ? (seed.estimate ?? null) : null,
 	status: seed.status ?? "open",
 	statusReason:
 		seed.status === "dismissed"
@@ -1102,7 +1178,7 @@ const findingOf = (seed: FindingSeed, now: number) => ({
 	statusChangedBy: seed.status === "dismissed" ? "user_maya" : null,
 	statusChangedAt: seed.status === "dismissed" ? now - HOUR : null,
 	record: record(seed),
-	firstSeenRunId: seed.runId,
+	firstSeenRunId: seed.firstRunId ?? seed.runId,
 	lastSeenRunId: seed.runId,
 	firstSeenRef: "9f3c2a1",
 	lastSeenRef: "9f3c2a1b7e0d4c6a8b2e1f3d5c7a9b0e2d4f6a8c",
@@ -1115,6 +1191,14 @@ export const findingsOf = (now: number, targetId: string) =>
 	Schema.decodeUnknownSync(SecurityAuditFindingsResponse)({
 		findings: [...FINDINGS, ...DEEP_FINDINGS]
 			.filter((seed) => seed.targetId === targetId)
+			.map((seed) => findingOf(seed, now)),
+	})
+
+/** What one run reported: every seed it saw, the earlier run included for carried findings. */
+export const runFindingsOf = (now: number, runId: string) =>
+	Schema.decodeUnknownSync(SecurityAuditFindingsResponse)({
+		findings: [...FINDINGS, ...DEEP_FINDINGS]
+			.filter((seed) => seed.runId === runId || seed.firstRunId === runId)
 			.map((seed) => findingOf(seed, now)),
 	})
 

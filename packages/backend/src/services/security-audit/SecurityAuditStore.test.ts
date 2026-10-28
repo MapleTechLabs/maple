@@ -3,7 +3,14 @@ import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { VcsRepositoryId } from "@maple/domain/http/vcs"
 import type { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import type { AgentUsage, AuditEvent, CoverageUnit, Finding, RunMetadata } from "@maple/security-audit"
+import type {
+	AgentUsage,
+	AuditEvent,
+	CoverageUnit,
+	EstimatedSeverity,
+	Finding,
+	RunMetadata,
+} from "@maple/security-audit"
 import { Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -11,6 +18,8 @@ import { SecurityAuditStore, type SecurityAuditStoreApi } from "./SecurityAuditS
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
+/** Saves whose findings carry no estimated severity. */
+const NO_ESTIMATES: ReadonlyMap<string, EstimatedSeverity> = new Map()
 
 const orgA = Schema.decodeUnknownSync(OrgId)("org_a")
 const orgB = Schema.decodeUnknownSync(OrgId)("org_b")
@@ -54,6 +63,33 @@ const rejected = (fingerprint: string): Finding => ({
 	claimed_root_cause: "unchecked id",
 	reason: "the gateway filters by org",
 })
+
+const lead = (fingerprint: string): Finding => ({
+	verdict: "needs_validation",
+	fingerprint,
+	title: `Lead ${fingerprint}`,
+	description: "rollKey may look the key up by id alone.",
+	trace: [],
+	evidence: [],
+	claimed_root_cause: "unchecked id",
+	blockers: ["whether the gateway filters by org is deployment configuration"],
+	validation_plan: { deployment: "owner checks the gateway's key routes" },
+})
+
+type Score = EstimatedSeverity["overall_severity"]
+
+/** Estimates by fingerprint, each with that overall severity. */
+const estimates = (entries: Record<string, Score>): ReadonlyMap<string, EstimatedSeverity> =>
+	new Map(
+		Object.entries(entries).map(([fingerprint, overall]) => [
+			fingerprint,
+			{
+				likelihood: { score: "medium", reason: "reachable by a member" },
+				impact: { score: overall, reason: "if the gateway does not filter" },
+				overall_severity: overall,
+			},
+		]),
+	)
 
 const unit = (coverageId: string, status: CoverageUnit["status"], wave: number): CoverageUnit => ({
 	coverage_id: coverageId,
@@ -154,9 +190,13 @@ describe("SecurityAuditStore findings lifecycle", () => {
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
 				const first = yield* seedRun(store, orgA, "sha-1")
-				yield* scoped.saveFindings(first.runId, [confirmed("f1", "high"), rejected("f2")])
+				yield* scoped.saveFindings(
+					first.runId,
+					[confirmed("f1", "high"), rejected("f2")],
+					NO_ESTIMATES,
+				)
 				const second = yield* seedRun(store, orgA, "sha-2", first.targetId)
-				yield* scoped.saveFindings(second.runId, [confirmed("f1", "low")])
+				yield* scoped.saveFindings(second.runId, [confirmed("f1", "low")], NO_ESTIMATES)
 
 				const findings = yield* scoped.listFindings(first.targetId)
 				const f1 = findings.find((f) => f.fingerprint === "f1")
@@ -185,11 +225,11 @@ describe("SecurityAuditStore findings lifecycle", () => {
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
 				const first = yield* seedRun(store, orgA, "sha-1")
-				yield* scoped.saveFindings(first.runId, [
-					confirmed("fixed"),
-					confirmed("dismissed"),
-					confirmed("accepted"),
-				])
+				yield* scoped.saveFindings(
+					first.runId,
+					[confirmed("fixed"), confirmed("dismissed"), confirmed("accepted")],
+					NO_ESTIMATES,
+				)
 				const revalidation = yield* seedRun(store, orgA, "sha-2", first.targetId)
 				const marked = yield* scoped.markFixed(
 					first.targetId,
@@ -211,11 +251,11 @@ describe("SecurityAuditStore findings lifecycle", () => {
 				)
 
 				const regression = yield* seedRun(store, orgA, "sha-3", first.targetId)
-				yield* scoped.saveFindings(regression.runId, [
-					confirmed("fixed"),
-					confirmed("dismissed"),
-					confirmed("accepted"),
-				])
+				yield* scoped.saveFindings(
+					regression.runId,
+					[confirmed("fixed"), confirmed("dismissed"), confirmed("accepted")],
+					NO_ESTIMATES,
+				)
 				const findings = yield* scoped.listFindings(first.targetId)
 				assert.deepStrictEqual(
 					Object.fromEntries(
@@ -236,15 +276,255 @@ describe("SecurityAuditStore findings lifecycle", () => {
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
 				const first = yield* seedRun(store, orgA, "sha-1")
-				yield* scoped.saveFindings(first.runId, [confirmed("kept")])
+				yield* scoped.saveFindings(first.runId, [confirmed("kept")], NO_ESTIMATES)
 				const second = yield* seedRun(store, orgA, "sha-2", first.targetId)
-				yield* scoped.saveFindings(second.runId, [confirmed("kept"), confirmed("draft")])
-				yield* scoped.saveFindings(second.runId, [confirmed("kept")])
+				yield* scoped.saveFindings(
+					second.runId,
+					[confirmed("kept"), confirmed("draft")],
+					NO_ESTIMATES,
+				)
+				yield* scoped.saveFindings(second.runId, [confirmed("kept")], NO_ESTIMATES)
 				const findings = yield* scoped.listFindings(first.targetId)
 				assert.deepStrictEqual(
 					findings.map((f) => [f.fingerprint, f.firstSeenRunId]),
 					[["kept", first.runId]],
 				)
+			}),
+		),
+	)
+})
+
+describe("SecurityAuditStore estimated severity", () => {
+	it.effect("hands a later run each estimated lead's level, and only this org's", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const first = yield* seedRun(store, orgA, "sha-1")
+				yield* store
+					.forOrg(orgA)
+					.saveFindings(
+						first.runId,
+						[lead("scored"), lead("unscored"), confirmed("conf", "high")],
+						estimates({ scored: "critical" }),
+					)
+				assert.deepStrictEqual(
+					[...(yield* store.forOrg(orgA).listRunFindingEstimates(first.runId))],
+					[["scored", "critical"]],
+				)
+				assert.strictEqual((yield* store.forOrg(orgB).listRunFindingEstimates(first.runId)).size, 0)
+			}),
+		),
+	)
+
+	it.effect(
+		"stores a lead's estimate on its run and tracked rows, the latest run's on the tracked one",
+		() =>
+			withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(orgA)
+					const first = yield* seedRun(store, orgA, "sha-1")
+					// An estimate handed in for a confirmed finding is not one: only leads carry estimates.
+					yield* scoped.saveFindings(
+						first.runId,
+						[lead("lead"), confirmed("conf", "high")],
+						estimates({ lead: "high", conf: "low" }),
+					)
+					const second = yield* seedRun(store, orgA, "sha-2", first.targetId)
+					yield* scoped.saveFindings(second.runId, [lead("lead")], estimates({ lead: "medium" }))
+
+					const severities = (
+						rows: ReadonlyArray<{
+							readonly fingerprint: string
+							readonly estimatedSeverity: Score | null
+						}>,
+					) => Object.fromEntries(rows.map((f) => [f.fingerprint, f.estimatedSeverity]))
+					assert.deepStrictEqual(severities(yield* scoped.listRunFindingViews(first.runId)), {
+						lead: "high",
+						conf: null,
+					})
+					assert.deepStrictEqual(severities(yield* scoped.listFindings(first.targetId)), {
+						lead: "medium",
+						conf: null,
+					})
+					// The record stays the skill's own shape: the estimate lives in its column only.
+					assert.deepStrictEqual(yield* scoped.listRunFindings(second.runId), [lead("lead")])
+				}),
+			),
+	)
+
+	it.effect(
+		"orders a run's findings by effective severity, confirmed before estimated at the same one",
+		() =>
+			withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(orgA)
+					const { runId } = yield* seedRun(store, orgA, "sha-1")
+					yield* scoped.saveFindings(
+						runId,
+						[
+							rejected("a-rejected"),
+							lead("b-unestimated"),
+							confirmed("c-low", "low"),
+							lead("d-high"),
+							confirmed("e-high", "high"),
+							lead("f-critical"),
+						],
+						estimates({ "d-high": "high", "f-critical": "critical" }),
+					)
+					const rows = yield* scoped.listRunFindingViews(runId)
+					assert.deepStrictEqual(
+						rows.map((f) => f.fingerprint),
+						["f-critical", "e-high", "d-high", "c-low", "b-unestimated", "a-rejected"],
+					)
+				}),
+			),
+	)
+})
+
+describe("SecurityAuditStore run findings", () => {
+	it.effect("lists each run's own record and severity with the target's shared triage", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const first = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(
+					first.runId,
+					[rejected("a-claim"), confirmed("b-low", "low"), confirmed("c-shared", "high")],
+					NO_ESTIMATES,
+				)
+				const second = yield* seedRun(store, orgA, "sha-2", first.targetId)
+				yield* scoped.saveFindings(second.runId, [confirmed("c-shared", "low")], NO_ESTIMATES)
+				yield* scoped.setFindingStatus(first.targetId, "c-shared", "dismissed", "test fixture", user)
+
+				const view = (runId: SecurityAuditRunId) =>
+					scoped
+						.listRunFindingViews(runId)
+						.pipe(
+							Effect.map((rows) =>
+								rows.map((f) => [
+									f.fingerprint,
+									f.verdict,
+									f.overallSeverity,
+									f.record.verdict === "confirmed"
+										? f.record.severity.overall_severity
+										: null,
+									f.status,
+									f.firstSeenRunId,
+									f.lastSeenRunId,
+								]),
+							),
+						)
+				assert.deepStrictEqual(
+					[yield* view(first.runId), yield* view(second.runId)],
+					[
+						[
+							["c-shared", "confirmed", "high", "high", "dismissed", first.runId, second.runId],
+							["b-low", "confirmed", "low", "low", "open", first.runId, first.runId],
+							["a-claim", "rejected", null, null, "open", first.runId, first.runId],
+						],
+						[["c-shared", "confirmed", "low", "low", "dismissed", first.runId, second.runId]],
+					],
+				)
+				assert.deepStrictEqual(yield* store.forOrg(orgB).listRunFindingViews(first.runId), [])
+			}),
+		),
+	)
+
+	it.effect("reads a finding the target does not track as open and first seen in the run", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(runId, [confirmed("f1")], NO_ESTIMATES)
+				yield* rawSql(`DELETE FROM security_audit_findings WHERE fingerprint = 'f1'`)
+				const run = yield* scoped.getRun(runId)
+				const startedAt = Option.getOrThrow(run).startedAt
+
+				const [f1] = yield* scoped.listRunFindingViews(runId)
+				assert.deepStrictEqual(
+					[
+						f1?.targetId,
+						f1?.status,
+						f1?.statusReason,
+						f1?.statusChangedBy,
+						f1?.statusChangedAt,
+						f1?.firstSeenRunId,
+						f1?.lastSeenRunId,
+						f1?.firstSeenRef,
+						f1?.lastSeenRef,
+						f1?.fixedRunId,
+						f1?.createdAt,
+						f1?.updatedAt,
+					],
+					[
+						targetId,
+						"open",
+						null,
+						null,
+						null,
+						runId,
+						runId,
+						"sha-1",
+						"sha-1",
+						null,
+						startedAt,
+						startedAt,
+					],
+				)
+			}),
+		),
+	)
+
+	it.effect("counts each run's findings by severity and verdict, zeros for a run with none", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const scoped = store.forOrg(orgA)
+				const first = yield* seedRun(store, orgA, "sha-1")
+				yield* scoped.saveFindings(
+					first.runId,
+					[
+						confirmed("h1", "high"),
+						confirmed("h2", "high"),
+						confirmed("l1", "low"),
+						rejected("r1"),
+						lead("e1"),
+					],
+					estimates({ e1: "high" }),
+				)
+				// Rows an engine wrote directly: a confirmed one without a severity, and an unverified one.
+				yield* rawSql(
+					`INSERT INTO security_audit_run_findings (run_id, fingerprint, org_id, verdict, overall_severity, record)
+					 VALUES ($1, 'n1', $2, 'confirmed', null, '{}'::jsonb), ($1, 'v1', $2, 'needs_validation', null, '{}'::jsonb)`,
+					[first.runId, orgA],
+				)
+				const empty = yield* seedRun(store, orgA, "sha-2", first.targetId)
+				const zeros = {
+					critical: 0,
+					high: 0,
+					medium: 0,
+					low: 0,
+					informational: 0,
+					unverified: 0,
+					needsValidation: 0,
+					rejected: 0,
+				}
+
+				// The estimated lead counts under its estimate and as unverified; the one without, apart.
+				assert.deepStrictEqual(yield* scoped.countRunFindings([first.runId, empty.runId]), {
+					[first.runId]: {
+						...zeros,
+						high: 3,
+						unverified: 1,
+						low: 1,
+						informational: 1,
+						needsValidation: 1,
+						rejected: 1,
+					},
+					[empty.runId]: zeros,
+				})
+				assert.deepStrictEqual(yield* store.forOrg(orgB).countRunFindings([first.runId]), {
+					[first.runId]: zeros,
+				})
+				assert.deepStrictEqual(yield* scoped.countRunFindings([]), {})
 			}),
 		),
 	)
@@ -256,7 +536,11 @@ describe("SecurityAuditStore triage survives a resave", () => {
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
 				const run = yield* seedRun(store, orgA, "sha-1")
-				yield* scoped.saveFindings(run.runId, [confirmed("triaged"), confirmed("draft")])
+				yield* scoped.saveFindings(
+					run.runId,
+					[confirmed("triaged"), confirmed("draft")],
+					NO_ESTIMATES,
+				)
 				const db = trackedDbs[0]
 				assert.isDefined(db)
 				yield* Effect.promise(() =>
@@ -264,7 +548,7 @@ describe("SecurityAuditStore triage survives a resave", () => {
 						`UPDATE security_audit_findings SET status = 'dismissed' WHERE fingerprint = 'triaged'`,
 					),
 				)
-				yield* scoped.saveFindings(run.runId, [])
+				yield* scoped.saveFindings(run.runId, [], NO_ESTIMATES)
 				const findings = yield* scoped.listFindings(run.targetId)
 				assert.deepStrictEqual(
 					findings.map((f) => [f.fingerprint, f.status]),
@@ -404,13 +688,13 @@ describe("SecurityAuditStore runs and events", () => {
 		withStore((store) =>
 			Effect.gen(function* () {
 				const a = yield* seedRun(store, orgA, "sha-1")
-				yield* store.forOrg(orgA).saveFindings(a.runId, [confirmed("f1")])
+				yield* store.forOrg(orgA).saveFindings(a.runId, [confirmed("f1")], NO_ESTIMATES)
 				const other = store.forOrg(orgB)
 				const run = yield* other.getRun(a.runId)
 				const runs = yield* other.listRuns()
 				const findings = yield* other.listFindings(a.targetId)
 				const ledgerWrite = yield* Effect.flip(other.saveLedger(a.runId, [unit("u1", "planned", 1)]))
-				const findingsWrite = yield* Effect.flip(other.saveFindings(a.runId, []))
+				const findingsWrite = yield* Effect.flip(other.saveFindings(a.runId, [], NO_ESTIMATES))
 				const startOnTarget = yield* Effect.flip(
 					other.startRun({ targetId: a.targetId, kind: "manual", sourceRef: "x" }),
 				)
@@ -435,10 +719,14 @@ describe("SecurityAuditStore replays", () => {
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
 				const first = yield* seedRun(store, orgA, "sha-1")
-				yield* scoped.saveFindings(first.runId, [confirmed("earlier")])
+				yield* scoped.saveFindings(first.runId, [confirmed("earlier")], NO_ESTIMATES)
 				const second = yield* seedRun(store, orgA, "sha-2", first.targetId)
-				yield* scoped.saveFindings(second.runId, [confirmed("earlier"), confirmed("new")])
-				yield* scoped.saveFindings(second.runId, [])
+				yield* scoped.saveFindings(
+					second.runId,
+					[confirmed("earlier"), confirmed("new")],
+					NO_ESTIMATES,
+				)
+				yield* scoped.saveFindings(second.runId, [], NO_ESTIMATES)
 				const db = trackedDbs[0]
 				assert.isDefined(db)
 				const perRun = yield* Effect.promise(() =>
@@ -505,7 +793,7 @@ describe("SecurityAuditStore triage", () => {
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
 				const first = yield* seedRun(store, orgA, "sha-1")
-				yield* scoped.saveFindings(first.runId, [confirmed("f1"), confirmed("f2")])
+				yield* scoped.saveFindings(first.runId, [confirmed("f1"), confirmed("f2")], NO_ESTIMATES)
 
 				const foreign = yield* store
 					.forOrg(orgB)
@@ -520,7 +808,7 @@ describe("SecurityAuditStore triage", () => {
 				const missing = yield* scoped.setFindingStatus(first.targetId, "nope", "dismissed", "x", user)
 
 				const next = yield* seedRun(store, orgA, "sha-2", first.targetId)
-				yield* scoped.saveFindings(next.runId, [confirmed("f1"), confirmed("f2")])
+				yield* scoped.saveFindings(next.runId, [confirmed("f1"), confirmed("f2")], NO_ESTIMATES)
 				const findings = yield* scoped.listFindings(first.targetId)
 
 				assert.deepStrictEqual(
@@ -543,7 +831,7 @@ describe("SecurityAuditStore triage", () => {
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
 				const first = yield* seedRun(store, orgA, "sha-1")
-				yield* scoped.saveFindings(first.runId, [confirmed("f1")])
+				yield* scoped.saveFindings(first.runId, [confirmed("f1")], NO_ESTIMATES)
 				const revalidation = yield* seedRun(store, orgA, "sha-2", first.targetId)
 				yield* scoped.markFixed(first.targetId, ["f1"], revalidation.runId)
 
@@ -593,7 +881,7 @@ describe("SecurityAuditStore tolerant readers", () => {
 				const scoped = store.forOrg(orgA)
 				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
 				yield* scoped.saveLedger(runId, [unit("u1", "covered", 1)])
-				yield* scoped.saveFindings(runId, [confirmed("f1"), confirmed("f2")])
+				yield* scoped.saveFindings(runId, [confirmed("f1"), confirmed("f2")], NO_ESTIMATES)
 				const db = trackedDbs[0]
 				assert.isDefined(db)
 				// Shapes an earlier skill version wrote: a unit without its refs, a finding without a verdict.
@@ -846,7 +1134,7 @@ describe("SecurityAuditStore lenient run and event reads", () => {
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
 				const { targetId, runId } = yield* seedRun(store, orgA, "sha-1")
-				yield* scoped.saveFindings(runId, [confirmed("f1")])
+				yield* scoped.saveFindings(runId, [confirmed("f1")], NO_ESTIMATES)
 				yield* rawSql(
 					`UPDATE security_audit_findings SET record = '{"old":true}'::jsonb WHERE fingerprint = 'f1'`,
 				)
@@ -1021,14 +1309,14 @@ describe("SecurityAuditStore writes after a run finished", () => {
 			Effect.gen(function* () {
 				const scoped = store.forOrg(orgA)
 				const prior = yield* seedRun(store, orgA, "sha-1")
-				yield* scoped.saveFindings(prior.runId, [confirmed("f1")])
+				yield* scoped.saveFindings(prior.runId, [confirmed("f1")], NO_ESTIMATES)
 				yield* scoped.finishRun(prior.runId, { status: "complete" })
 				const { runId } = yield* seedRun(store, orgA, "sha-2", prior.targetId)
 				yield* scoped.cancelRun(runId, user)
 
 				// A replayed or still-running Workflow keeps writing after the cancel landed.
 				yield* scoped.saveLedger(runId, [unit("u1", "covered", 1)])
-				yield* scoped.saveFindings(runId, [confirmed("f1", "low"), confirmed("f2")])
+				yield* scoped.saveFindings(runId, [confirmed("f1", "low"), confirmed("f2")], NO_ESTIMATES)
 				yield* scoped.saveArchitecture(runId, "# late")
 				yield* scoped.saveReports(runId, { report: "late", findingsDetail: "", needsValidation: "" })
 				yield* scoped.setUsage(runId, {

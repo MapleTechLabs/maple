@@ -4,7 +4,7 @@
  * `incomplete` with its reasons recorded and disclosed in the report.
  */
 import { Effect, Ref } from "effect"
-import type { Finding } from "../schema"
+import type { EstimatedSeverity, Finding } from "../schema"
 import { findingsErrors, ledgerErrors } from "../validators"
 import type { LedgerUnit } from "./ledger"
 import type { AuditReports, RunMetadata, RunStatus } from "./ports"
@@ -20,6 +20,8 @@ export interface AuditRunResult {
 	readonly gaps: ReadonlyArray<string>
 	readonly ledger: ReadonlyArray<LedgerUnit>
 	readonly findings: ReadonlyArray<Finding>
+	/** The needs_validation findings' estimated severities, by fingerprint. */
+	readonly estimates: ReadonlyMap<string, EstimatedSeverity>
 	readonly reports: AuditReports
 	readonly invocations: number
 	readonly usage: { readonly inputTokens: number; readonly outputTokens: number; readonly costUsd: number }
@@ -85,7 +87,15 @@ export const runAudit = (input: AuditRunInput) =>
 		const final = yield* Ref.get(engine.state)
 		const status = final.incomplete.length === 0 ? "complete" : "incomplete"
 		const reports = buildReports(input, final, findings, status)
-		yield* engine.store.saveFindings(input.runId, stored)
+		const estimates = new Map(
+			findings.flatMap((record) => {
+				const estimate = final.estimates.get(record.fingerprint)
+				return record.verdict === "needs_validation" && estimate !== undefined
+					? [[record.fingerprint, estimate] as const]
+					: []
+			}),
+		)
+		yield* engine.store.saveFindings(input.runId, stored, estimates)
 		yield* engine.store.saveReports(input.runId, reports)
 		yield* engine.store.saveMetadata(metadata(input, status, final.incomplete))
 		yield* engine.event({
@@ -99,6 +109,7 @@ export const runAudit = (input: AuditRunInput) =>
 			gaps: final.gaps,
 			ledger: final.ledger,
 			findings,
+			estimates,
 			reports,
 			invocations: final.spent,
 			usage: final.usage,
