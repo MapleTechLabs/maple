@@ -27,6 +27,9 @@ describe("regexProblem", () => {
 		expect(regexProblem("[(+]+x")).toBeNull()
 		expect(regexProblem("\\^+x")).toBeNull()
 		expect(regexProblem("a\\$+")).toBeNull()
+		expect(regexProblem("[a$]+x")).toBeNull()
+		expect(regexProblem("[^^]+x")).toBeNull()
+		expect(regexProblem("[\\]^]*x")).toBeNull()
 	})
 
 	it.each([

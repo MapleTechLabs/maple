@@ -160,8 +160,6 @@ const UNPORTABLE_REGEX: ReadonlyArray<readonly [RegExp, string]> = [
 	[/\[\^\]|\\c|\\0/u, "use an explicit class or escape instead"],
 	[/\{\s*\d{4,}|\{\s*\d+\s*,\s*\d{4,}/u, "counted repetitions are limited to 999"],
 	[/\(\?P/u, "use (?<name>...) for named groups"],
-	// Repeating an assertion matches nothing new, and JavaScriptCore gives up on it silently.
-	[/(?<!\\)\\[bB][*+?{]|(?<![\\[])[\^$][*+?{]/u, "\\b, \\B, ^ and $ cannot be repeated"],
 	[/(?!^)\(\?[a-zA-Z-]+[):]/u, "inline flags are only supported as a leading (?i)"],
 	[/^\(\?(?!i\))[a-zA-Z-]+\)/u, "only the (?i) inline flag is supported"],
 ]
@@ -498,12 +496,38 @@ export const hasAmbiguousRepetition = (pattern: string): boolean => {
 	})
 }
 
+/**
+ * True when `\\b`, `\\B`, `^` or `$` carries a quantifier outside a class. Repeating an assertion
+ * matches nothing new, and JavaScriptCore (Bun, Safari) silently gives up on it on long text.
+ */
+const hasRepeatedAssertion = (pattern: string): boolean => {
+	let inClass = false
+	for (let at = 0; at < pattern.length; at += 1) {
+		const char = pattern[at]
+		const quantified = (offset: number) => {
+			const next = pattern[at + offset]
+			return next !== undefined && "*+?{".includes(next)
+		}
+		if (char === "\\") {
+			if (!inClass && "bB".includes(pattern[at + 1] ?? "") && quantified(2)) return true
+			at += 1
+		} else if (inClass) inClass = char !== "]"
+		else if (char === "[") {
+			inClass = true
+			if (pattern[at + 1] === "^") at += 1
+			if (pattern[at + 1] === "]") at += 1
+		} else if ((char === "^" || char === "$") && quantified(1)) return true
+	}
+	return false
+}
+
 /** Null when the pattern is in the subset both the Rust `regex` crate and JS `RegExp` accept. */
 export const regexProblem = (pattern: string): string | null => {
 	if (pattern.length === 0) return "pattern is empty"
 	if (pattern.length > INGEST_RULE_LIMITS.patternLength)
 		return `pattern is longer than ${INGEST_RULE_LIMITS.patternLength} characters`
 	for (const [probe, message] of UNPORTABLE_REGEX) if (probe.test(pattern)) return message
+	if (hasRepeatedAssertion(pattern)) return "\\b, \\B, ^ and $ cannot be repeated"
 	if (portableRegexSource(splitRegexFlags(pattern).source) === null)
 		return "inside [...], use explicit characters instead of \\D, \\W, \\S, \\b, \\B or a nested ["
 	if (hasRepeatedVariableGroup(pattern))
