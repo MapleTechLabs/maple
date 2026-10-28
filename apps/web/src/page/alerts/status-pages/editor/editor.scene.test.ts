@@ -97,6 +97,20 @@ describe("status page editor", () => {
 		expect(sent).toContain("FetchStatusPageMonitors")
 	})
 
+	test("fresh page and incident reads re-read the clock, so relative times never run ahead", () => {
+		const entered = init({ _tag: "AlertsStatusPage", pageId: PUBLIC_ID, search: {} }, context).model
+		const afterPage = pageUpdate(
+			entered,
+			Message.CompletedFetchPage({ key: entered.page.key ?? "", result: Result.succeed(statusPage()) }),
+		)
+		const afterIncidents = pageUpdate(
+			entered,
+			Message.CompletedFetchIncidents({ key: entered.incidents.key ?? "", result: Result.succeed([]) }),
+		)
+		expect(names(afterPage.commands)).toContain("ReadStatusPageClock")
+		expect(names(afterIncidents.commands)).toContain("ReadStatusPageClock")
+	})
+
 	test("an id that is not a page id shows not found without a read", () => {
 		const entered = init({ _tag: "AlertsStatusPage", pageId: "nope", search: {} }, context)
 		expect(names(entered.commands)).not.toContain("FetchStatusPage")

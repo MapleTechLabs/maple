@@ -133,14 +133,17 @@ const whenIdle = (isBusy: boolean, model: Model, run: () => Return): Return => (
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		// Each fresh read re-reads the clock, so "published 2m ago" and update times never drift into the future.
 		CompletedFetchPage: ({ key, result }) => ({
 			model: { ...model, page: Keyed.accept(model.page, key, result) },
+			commands: [ReadEditorClock()],
 		}),
 		CompletedFetchComponents: ({ key, result }) => ({
 			model: { ...model, components: Keyed.accept(model.components, key, result) },
 		}),
 		CompletedFetchIncidents: ({ key, result }) => ({
 			model: { ...model, incidents: Keyed.accept(model.incidents, key, result) },
+			commands: [ReadEditorClock()],
 		}),
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
