@@ -1,8 +1,8 @@
 import type { SecurityAuditFinding, SecurityAuditRunFindingCounts } from "@maple/domain/http"
 import { Schema } from "effect"
 
-// Findings by what to fix first: a confirmed finding sits under its severity, an unproven or
-// disproved one under its verdict.
+// Findings by what to fix first: a confirmed finding under its severity, a lead under its estimated
+// one, and an unscored lead or a disproved claim under its verdict.
 
 export const SeverityBucket = Schema.Literals([
 	"critical",
@@ -30,9 +30,18 @@ export const BUCKET_LABEL = {
 	rejected: "Rejected",
 } satisfies Record<SeverityBucket, string>
 
-/** A confirmed finding without a score reads as informational, as the counts API files it. */
+/** A lead the engine scored from source but nothing has proven yet. */
+export const isUnverified = (finding: SecurityAuditFinding): boolean =>
+	finding.verdict === "needs_validation" && finding.estimatedSeverity !== null
+
+/** A confirmed finding by its severity (unscored reads as informational, as the counts API files
+ * it), a scored lead by its estimate; an unscored lead or a disproved claim by its verdict. */
 export const bucketOf = (finding: SecurityAuditFinding): SeverityBucket =>
-	finding.verdict === "confirmed" ? (finding.overallSeverity ?? "informational") : finding.verdict
+	finding.verdict === "confirmed"
+		? (finding.overallSeverity ?? "informational")
+		: isUnverified(finding) && finding.estimatedSeverity !== null
+			? finding.estimatedSeverity
+			: finding.verdict
 
 export type BucketCounts = Readonly<Record<SeverityBucket, number>>
 
@@ -67,13 +76,19 @@ export type FindingSection = Readonly<{
 	rows: ReadonlyArray<SecurityAuditFinding>
 }>
 
-/** Non-empty sections, most severe first; within one, the most recently seen first. */
+/** Non-empty sections, most severe first; within one, proven before unverified, then the most
+ * recently seen first. */
 export const sectionsOf = (findings: ReadonlyArray<SecurityAuditFinding>): ReadonlyArray<FindingSection> =>
 	SEVERITY_BUCKETS.map((bucket) => ({
 		bucket,
 		rows: findings
 			.filter((finding) => bucketOf(finding) === bucket)
-			.toSorted((a, b) => b.updatedAt - a.updatedAt || a.fingerprint.localeCompare(b.fingerprint)),
+			.toSorted(
+				(a, b) =>
+					Number(isUnverified(a)) - Number(isUnverified(b)) ||
+					b.updatedAt - a.updatedAt ||
+					a.fingerprint.localeCompare(b.fingerprint),
+			),
 	})).filter((section) => section.rows.length > 0)
 
 /** The model's confidence in a confirmed finding; leads and rejections carry none. */

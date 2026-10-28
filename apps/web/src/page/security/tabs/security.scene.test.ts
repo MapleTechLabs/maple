@@ -265,15 +265,9 @@ describe("security tabs", () => {
 			sectionsOf(filteredFindings(findings, rejected ? { rejected } : {}, "")).map(
 				(entry) => entry.bucket,
 			)
-		expect(sectionsFor(false)).toEqual(["critical", "high", "medium", "low", "needs_validation"])
-		expect(sectionsFor(true)).toEqual([
-			"critical",
-			"high",
-			"medium",
-			"low",
-			"needs_validation",
-			"rejected",
-		])
+		// Both leads carry an estimate, so they sit under their severity, not in a group of their own.
+		expect(sectionsFor(false)).toEqual(["critical", "high", "medium", "low"])
+		expect(sectionsFor(true)).toEqual(["critical", "high", "medium", "low", "rejected"])
 	})
 
 	test("the status tab and search narrow the findings", () => {
@@ -651,13 +645,15 @@ describe("spend and models", () => {
 			}),
 		).model
 
-	test("the Overview counts leads to validate with the confirmed ones, worst confirmed first", () => {
+	test("the Overview ranks open leads by severity, an estimate after the proven ones at its level", () => {
 		const model = loaded()
 		const state = findingsStateOf(model)
 		const leads = state._tag === "Ready" ? openLeads(state.findings) : []
 		expect(
 			leads.map((finding) =>
-				finding.verdict === "confirmed" ? finding.overallSeverity : "to validate",
+				finding.verdict === "confirmed"
+					? finding.overallSeverity
+					: `${finding.estimatedSeverity ?? "no"} estimate`,
 			),
 		).toEqual([
 			"critical",
@@ -665,11 +661,11 @@ describe("spend and models", () => {
 			"high",
 			"high",
 			"high",
+			"high estimate",
 			"medium",
 			"medium",
+			"medium estimate",
 			"low",
-			"to validate",
-			"to validate",
 		])
 		scene(
 			{ update: pageUpdate, view },
@@ -680,7 +676,7 @@ describe("spend and models", () => {
 
 	test("each run keeps what it reported, even when a later run saw the same finding again", () => {
 		const model = loaded(AppRoute.SecurityRuns({ search: {} }))
-		const criticalOf = (id: string) => runCountsOf(model, id)?.critical
+		const criticalOf = (id: string) => runCountsOf(model, id)?.buckets.critical
 		expect([
 			criticalOf(RUN_IDS.billing),
 			criticalOf(RUN_IDS.billingCancelled),

@@ -40,6 +40,7 @@ import {
 	AuditStoreError,
 	type AuditEvent,
 	type AuditStoreApi,
+	type EstimatedSeverity,
 	type Finding,
 } from "@maple/security-audit"
 import {
@@ -169,6 +170,10 @@ export interface SecurityAuditOrgStore extends AuditStoreApi {
 	readonly countUnits: (runId: string) => Effect.Effect<Record<string, number>, AuditStoreError>
 	/** One run's final records, the input a later run carries forward. */
 	readonly listRunFindings: (runId: string) => Effect.Effect<ReadonlyArray<Finding>, AuditStoreError>
+	/** The level each of a run's leads was estimated at, by fingerprint: a later run carries it. */
+	readonly listRunFindingEstimates: (
+		runId: string,
+	) => Effect.Effect<ReadonlyMap<string, SecurityAuditSeverity>, AuditStoreError>
 	/**
 	 * Every finding the run holds, rejected included, as this run reported it, with the target's
 	 * lifecycle; one the target does not track yet reads as open and first seen here. Most severe first.
@@ -248,6 +253,9 @@ export interface SecurityAuditRunFindingCounts {
 	readonly medium: number
 	readonly low: number
 	readonly informational: number
+	/** How many of the severity counts are needs_validation leads counted by their estimate. */
+	readonly unverified: number
+	/** Leads without an estimate (stored before the engine estimated). */
 	readonly needsValidation: number
 	readonly rejected: number
 }
@@ -462,13 +470,30 @@ const runNotFound = (runId: string) =>
 const overallSeverity = (finding: Finding) =>
 	finding.verdict === "confirmed" ? finding.severity.overall_severity : null
 
-/** Confirmed by severity (a confirmed row without one as informational), then needs_validation, then rejected. */
-const findingRank = (verdict: SecurityAuditVerdict, severity: SecurityAuditSeverity | null) =>
+/** A needs_validation lead's estimated severity; null for every other verdict. */
+const estimatedSeverity = (finding: Finding, estimates: ReadonlyMap<string, EstimatedSeverity>) =>
+	finding.verdict === "needs_validation"
+		? (estimates.get(finding.fingerprint)?.overall_severity ?? null)
+		: null
+
+const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 } as const
+
+/**
+ * By effective severity (confirmed, or a lead's estimate), a confirmed finding before an estimated
+ * lead of the same severity; then leads without an estimate, then rejected.
+ */
+const findingRank = (
+	verdict: SecurityAuditVerdict,
+	overall: SecurityAuditSeverity | null,
+	estimated: SecurityAuditSeverity | null,
+) =>
 	verdict === "rejected"
-		? 6
+		? 11
 		: verdict === "needs_validation"
-			? 5
-			: { critical: 0, high: 1, medium: 2, low: 3, informational: 4 }[severity ?? "informational"]
+			? estimated === null
+				? 10
+				: SEVERITY_RANK[estimated] * 2 + 1
+			: SEVERITY_RANK[overall ?? "informational"] * 2
 
 const NO_RUN_FINDINGS: SecurityAuditRunFindingCounts = {
 	critical: 0,
@@ -476,20 +501,24 @@ const NO_RUN_FINDINGS: SecurityAuditRunFindingCounts = {
 	medium: 0,
 	low: 0,
 	informational: 0,
+	unverified: 0,
 	needsValidation: 0,
 	rejected: 0,
 }
 
-/** The counts key a stored (verdict, severity) row adds to. */
-const countKey = (
+/** The counts keys a stored (verdict, severity, estimate) row adds to. */
+const countKeys = (
 	verdict: SecurityAuditVerdict,
-	severity: SecurityAuditSeverity | null,
-): keyof SecurityAuditRunFindingCounts =>
+	overall: SecurityAuditSeverity | null,
+	estimated: SecurityAuditSeverity | null,
+): ReadonlyArray<keyof SecurityAuditRunFindingCounts> =>
 	verdict === "rejected"
-		? "rejected"
+		? ["rejected"]
 		: verdict === "needs_validation"
-			? "needsValidation"
-			: (severity ?? "informational")
+			? estimated === null
+				? ["needsValidation"]
+				: [estimated, "unverified"]
+			: [overall ?? "informational"]
 
 /** The stored row for one engine event; its id makes a replayed insert a no-op. */
 const eventRow = (orgId: OrgId, runId: SecurityAuditRunId, event: AuditEvent) =>
@@ -744,7 +773,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 				 */
 				const saveFindings: AuditStoreApi["saveFindings"] = Effect.fn(
 					"SecurityAuditStore.saveFindings",
-				)(function* (rawRunId, findings) {
+				)(function* (rawRunId, findings, estimates) {
 					const runId = yield* decodeRunId(rawRunId)
 					const now = yield* Clock.currentTimeMillis
 					// One row per fingerprint; a repeated one keeps its last record.
@@ -784,6 +813,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											orgId,
 											verdict: finding.verdict,
 											overallSeverity: overallSeverity(finding),
+											estimatedSeverity: estimatedSeverity(finding, estimates),
 											record: finding,
 										})),
 									),
@@ -798,6 +828,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 												fingerprint: finding.fingerprint,
 												verdict: finding.verdict,
 												overallSeverity: overallSeverity(finding),
+												estimatedSeverity: estimatedSeverity(finding, estimates),
 												record: finding,
 												status: "open" as const,
 												firstSeenRunId: runId,
@@ -814,6 +845,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 											set: ($, excluded) => ({
 												verdict: excluded.verdict,
 												overallSeverity: excluded.overallSeverity,
+												estimatedSeverity: excluded.estimatedSeverity,
 												record: excluded.record,
 												lastSeenRunId: excluded.lastSeenRunId,
 												lastSeenRef: excluded.lastSeenRef,
@@ -1364,6 +1396,33 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					return yield* keepDecodable(rows, (row) => decodeFinding(row.record), "run findings")
 				})
 
+				const listRunFindingEstimates: SecurityAuditOrgStore["listRunFindingEstimates"] = Effect.fn(
+					"SecurityAuditStore.listRunFindingEstimates",
+				)(function* (rawRunId) {
+					const runId = yield* decodeRunId(rawRunId)
+					const rows = yield* dbExecute((db) =>
+						db.run(
+							PG.from(SecurityAuditRunFindings)
+								.select(($) => ({
+									fingerprint: $.fingerprint,
+									estimatedSeverity: $.estimatedSeverity,
+								}))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.runId.eq(runId),
+									$.estimatedSeverity.isNotNull(),
+								]),
+						),
+					)
+					return new Map(
+						rows.flatMap((row) =>
+							row.estimatedSeverity === null
+								? []
+								: [[row.fingerprint, row.estimatedSeverity] as const],
+						),
+					)
+				})
+
 				const listRunFindingViews: SecurityAuditOrgStore["listRunFindingViews"] = Effect.fn(
 					"SecurityAuditStore.listRunFindingViews",
 				)(function* (rawRunId) {
@@ -1389,6 +1448,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									fingerprint: $.fingerprint,
 									verdict: $.verdict,
 									overallSeverity: $.overallSeverity,
+									estimatedSeverity: $.estimatedSeverity,
 									record: PG.undecoded($.record),
 								}))
 								.where(($) => [$.orgId.eq(orgId), $.runId.eq(runId)]),
@@ -1447,8 +1507,8 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 						})
 						.toSorted(
 							(a, b) =>
-								findingRank(a.verdict, a.overallSeverity) -
-									findingRank(b.verdict, b.overallSeverity) ||
+								findingRank(a.verdict, a.overallSeverity, a.estimatedSeverity) -
+									findingRank(b.verdict, b.overallSeverity, b.estimatedSeverity) ||
 								(a.fingerprint < b.fingerprint ? -1 : a.fingerprint > b.fingerprint ? 1 : 0),
 						)
 				})
@@ -1465,16 +1525,21 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 									runId: $.runId,
 									verdict: $.verdict,
 									overallSeverity: $.overallSeverity,
+									estimatedSeverity: $.estimatedSeverity,
 									count: PG.count(),
 								}))
 								.where(($) => [$.orgId.eq(orgId), $.runId.in_(...runIds)])
-								.groupBy("runId", "verdict", "overallSeverity"),
+								.groupBy("runId", "verdict", "overallSeverity", "estimatedSeverity"),
 						),
 					)
 					return rows.reduce<Record<string, SecurityAuditRunFindingCounts>>((counts, row) => {
-						const key = countKey(row.verdict, row.overallSeverity)
+						const keys = countKeys(row.verdict, row.overallSeverity, row.estimatedSeverity)
 						const current = counts[row.runId] ?? NO_RUN_FINDINGS
-						return { ...counts, [row.runId]: { ...current, [key]: current[key] + row.count } }
+						const next = keys.reduce(
+							(acc, key) => ({ ...acc, [key]: acc[key] + row.count }),
+							current,
+						)
+						return { ...counts, [row.runId]: next }
 					}, zeros)
 				})
 
@@ -1783,6 +1848,7 @@ export class SecurityAuditStore extends Context.Service<SecurityAuditStore, Secu
 					listUnits,
 					listUnitSummaries,
 					listRunFindings,
+					listRunFindingEstimates,
 					listRunFindingViews,
 					countRunFindings,
 					listEvents,

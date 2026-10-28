@@ -10,7 +10,7 @@ import { icon } from "../../../ui/icon"
 import { panel, panelHeader } from "../../../ui/panel"
 import { findingBody } from "../kit/finding-body"
 import { bucketOf, countByBucket, sectionsOf, type SeverityBucket } from "../kit/findings"
-import { bucketBadge, findingGroups, severityTabs, trailingText } from "../kit/findings-view"
+import { findingBadge, findingGroups, severityTabs, trailingText } from "../kit/findings-view"
 import { FINDING_STATUS_LABEL, gateOf, isLive, locationOf } from "../kit/format"
 import { gateState, placeholderRows } from "../kit/parts"
 import { countOf, openFindingOf } from "./derive"
@@ -174,7 +174,7 @@ export const findingSheet = (h: H, model: Model): Html => {
 								h.div(
 									[h.Class("flex flex-wrap items-center gap-2")],
 									[
-										bucketBadge(h, bucketOf(finding)),
+										findingBadge(h, finding),
 										h.span(
 											[h.Class("font-mono text-xs text-muted-foreground")],
 											[locationOf(finding.record) ?? ""],

@@ -37,6 +37,7 @@ import { gateState, metaItem, placeholder, securitySeverityBadge } from "../kit/
 import { currentTriageOf, findingOf, pickedTriageOf, reasonErrorOf, targetOf } from "./derive"
 import { Message, type Model } from "./model"
 import { findingBody } from "../kit/finding-body"
+import { findingBadge } from "../kit/findings-view"
 
 // `/security/findings/$targetId/$fingerprint`: the record on the left, triage and facts on the right.
 
@@ -52,7 +53,11 @@ const runHref = (runId: SecurityAuditRunId) => hrefOf(AppRoute.SecurityRun({ run
 
 const headerBadges = (h: H, finding: SecurityAuditFinding): ReadonlyArray<Html> => {
 	return [
-		...(finding.overallSeverity === null ? [] : [securitySeverityBadge(h, finding.overallSeverity)]),
+		...(finding.overallSeverity !== null
+			? [securitySeverityBadge(h, finding.overallSeverity)]
+			: finding.estimatedSeverity !== null
+				? [findingBadge(h, finding)]
+				: []),
 		badge(
 			h,
 			{

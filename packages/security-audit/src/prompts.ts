@@ -3,7 +3,7 @@
  * Nothing the skill says to copy verbatim is paraphrased here: blocks come from `./skill`.
  */
 import reportSchema from "../skill/report-schema.json" with { type: "json" }
-import type { CoverageUnit, Finding } from "./schema"
+import type { CoverageUnit, EstimatedSeverity, Finding, Severity } from "./schema"
 import {
 	COMPANION_FILES,
 	COMPANION_REQUIRED_SECTIONS,
@@ -12,6 +12,7 @@ import {
 	findBlock,
 	ORDINARY_BLOCK_REFS,
 	sectionText,
+	textFrom,
 } from "./skill"
 
 /** The skill's verbatim prompt text, resolved once. An empty value is skill drift; tests pin it. */
@@ -42,6 +43,7 @@ export const VERBATIM = {
 	coverageLedger: sectionText("RECONNAISSANCE.md", "## Deterministic coverage ledger") ?? "",
 	executionSafety: sectionText("SKILL.md", "## Universal execution safety") ?? "",
 	corePrinciples: sectionText("SKILL.md", "## Core principles") ?? "",
+	severityAnchors: textFrom("SKILL.md", "Calibrate overall severity with these anchors:") ?? "",
 } as const
 
 export type ReconAgent = keyof typeof VERBATIM.recon
@@ -66,6 +68,42 @@ const executionStatement = (policy: ExecutionPolicy): string =>
 	policy._tag === "Available"
 		? `## Execution for this run\n\nThe parent-approved OS-enforced sandbox is available through your tools with these limits: ${policy.limits}`
 		: `## Execution for this run\n\nNo target-controlled execution is available in this run: ${policy.blocker}. Do not build, test, or run target code. Settle what source review can settle; return any lead whose decisive fact needs execution as needs_validation with this exact blocker.`
+
+/**
+ * Maple addition, outside the skill's contract: an estimated severity for every needs_validation
+ * lead, so leads that cannot be executed can still be triaged. The record itself stays severity-free.
+ */
+const estimatedSeverityRule = (where: string): string =>
+	[
+		"## Maple addition: estimated severity for needs_validation",
+		`The skill gives a needs_validation record no severity, and the record must still carry none. This audit's host additionally needs an estimate to triage leads it cannot execute. ${where}`,
+		'`estimated_severity` has exactly the shape of a confirmed record\'s `severity`: {"likelihood": {"score": "...", "reason": "..."}, "impact": {"score": "...", "reason": "..."}, "overall_severity": "..."}, each score one of informational, low, medium, high, critical.',
+		'It is an estimate from reading source, not a demonstrated result, and is shown as unverified. Rate likelihood by how realistically the lower-trust principal reaches the traced path given the source-visible controls, and impact by what the claimed root cause would cause if the blocker resolves the way the claim needs. overall_severity must not exceed impact. Each reason names the source fact or the unresolved assumption it rests on. Calibrate with the skill\'s anchors, reading "demonstrated" as "claimed":',
+		VERBATIM.severityAnchors,
+	].join("\n\n")
+
+const HUNTER_ESTIMATE = estimatedSeverityRule(
+	"Every needs_validation candidate therefore also carries `estimated_severity`, a field beside `proposed_verdict` and the record fields; a confirmed candidate does not.",
+)
+
+const VERIFIER_ESTIMATE = estimatedSeverityRule(
+	'When your decision is needs_validation, add `estimated_severity` at the top level of your answer, beside `decision` and `record`, never inside the record: {"decision": "needs_validation", "record": {...}, "estimated_severity": {...}}. A candidate may carry its hunter\'s estimate; re-derive yours from what you verified and correct it. Other decisions carry no estimate.',
+)
+
+/** `undefined` for a record that is not needs_validation, so it has no estimate to check. */
+const recordVerifierEstimate = (estimate: EstimatedSeverity | null | undefined): string =>
+	estimatedSeverityRule(
+		[
+			...(estimate === undefined
+				? []
+				: [
+						estimate === null
+							? "The record carries no estimate yet."
+							: `The record's current estimate, which you also check: ${JSON.stringify(estimate)}`,
+					]),
+			"A replacement whose record is needs_validation adds `estimated_severity` beside `decision`, `reason` and `record`, never inside the record. If the record is right but the estimate is not, return a replacement with the record unchanged and the corrected estimate. A verified needs_validation record keeps its current estimate.",
+		].join(" "),
+	)
 
 export interface AgentContext {
 	/** Canonical lowercase agent id (`isSafeAgentId`). */
@@ -244,6 +282,7 @@ export const hunterPrompt = (input: HunterInput, context: AgentContext): string 
 					VERBATIM.structuredHunterResult,
 					`### report-schema.json: confirmed branch\n\n${schemaBranch("confirmed")}`,
 					`### report-schema.json: needs_validation branch\n\n${schemaBranch("needs_validation")}`,
+					HUNTER_ESTIMATE,
 				].join("\n\n")
 			: [
 					"## Run contract",
@@ -252,6 +291,7 @@ export const hunterPrompt = (input: HunterInput, context: AgentContext): string 
 					"Propose every lead as needs_validation: nothing can be confirmed without execution. Give each one a concrete validation_plan: the exact request, input or test that would settle it, and what result would confirm or refute it.",
 					VERBATIM.structuredHunterResult,
 					`### report-schema.json: needs_validation branch\n\n${schemaBranch("needs_validation")}`,
+					HUNTER_ESTIMATE,
 				].join("\n\n"),
 		footer(context),
 	].join("\n\n")
@@ -293,6 +333,8 @@ export interface CandidateVerifierInput {
 	readonly architectureFacts: string
 	readonly companionValidationBlocks: ReadonlyArray<string>
 	readonly priorRecords: ReadonlyArray<Finding>
+	/** The level a carried lead was last estimated at; null when it had none. */
+	readonly priorEstimate?: Severity | null
 	/** `quick` merges Phases 3 and 5: this one verifier also performs the final record checks. */
 	readonly includeRecordChecks?: boolean
 }
@@ -312,8 +354,9 @@ export const candidateVerifierPrompt = (input: CandidateVerifierInput, context: 
 		}`,
 		`## Candidate\n\n${JSON.stringify(input.candidate, null, 2)}`,
 		`## Linked coverage-unit checks\n\n${JSON.stringify(input.linkedChecks, null, 2)}`,
-		`## Prior records with this fingerprint\n\n${input.priorRecords.length === 0 ? "None." : JSON.stringify(input.priorRecords, null, 2)}`,
+		`## Prior records with this fingerprint\n\n${input.priorRecords.length === 0 ? "None." : JSON.stringify(input.priorRecords, null, 2)}${input.priorEstimate === undefined || input.priorEstimate === null ? "" : `\n\nThe previous run estimated this lead at \`${input.priorEstimate}\` (unverified). Keep or correct it in your estimate.`}`,
 		`## report-schema.json branches\n\n### confirmed\n\n${schemaBranch("confirmed")}\n\n### needs_validation\n\n${schemaBranch("needs_validation")}\n\n### rejected\n\n${schemaBranch("rejected")}`,
+		VERIFIER_ESTIMATE,
 		...(input.includeRecordChecks === true
 			? [
 					`## Final record checks (quick profile: you are also the final verifier)\n\n${VERBATIM.recordVerification}`,
@@ -323,14 +366,19 @@ export const candidateVerifierPrompt = (input: CandidateVerifierInput, context: 
 		footer(context),
 	].join("\n\n")
 
-export const recordVerifierPrompt = (record: Finding, context: AgentContext): string =>
+export const recordVerifierPrompt = (
+	record: Finding,
+	context: AgentContext,
+	estimate: EstimatedSeverity | null,
+): string =>
 	[
 		"You are a fresh research verifier for one final record of a defensive security audit. You check the structured record, not the hunter write-up, and remain inside source and local boundaries. You did not hunt or validate it.",
 		VERBATIM.recordVerification,
 		executionStatement(context.execution),
 		`## The record\n\n${JSON.stringify(record, null, 2)}`,
 		`## report-schema.json branches (for a replacement)\n\n### confirmed\n\n${schemaBranch("confirmed")}\n\n### needs_validation\n\n${schemaBranch("needs_validation")}\n\n### rejected\n\n${schemaBranch("rejected")}`,
-		'Return exactly one JSON object and no surrounding prose: {"decision":"verified","fingerprint":"..."} or {"decision":"replace","reason":"...","record":{...}}.',
+		recordVerifierEstimate(record.verdict === "needs_validation" ? estimate : undefined),
+		'Return exactly one JSON object and no surrounding prose: {"decision":"verified","fingerprint":"..."} or {"decision":"replace","reason":"...","record":{...}}, adding "estimated_severity":{...} beside "record" when the replacement record is needs_validation.',
 		`Your agent ID: ${context.agentId}`,
 		footer(context),
 	].join("\n\n")

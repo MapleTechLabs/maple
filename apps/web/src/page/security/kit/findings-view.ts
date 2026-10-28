@@ -9,6 +9,7 @@ import { locationOf } from "./format"
 import {
 	BUCKET_LABEL,
 	bucketOf,
+	isUnverified,
 	type BucketCounts,
 	type FindingSection,
 	type SeverityBucket,
@@ -67,6 +68,26 @@ export const bucketIcon = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket): Html =
 			return icon(h, "CircleXmarkIcon", { size: 14, className: "text-muted-foreground" })
 	}
 }
+
+/** The severity a finding reads at: a scored lead says its severity is an estimate. */
+export const findingBadge = <M>(h: HtmlBuilder<M>, finding: SecurityAuditFinding): Html =>
+	isUnverified(finding)
+		? badge(h, { variant: "outline", className: "border-dashed" }, [
+				`${BUCKET_LABEL[bucketOf(finding)]} · unverified`,
+			])
+		: bucketBadge(h, bucketOf(finding))
+
+/** A scored lead's mark: its severity, quieter and labelled, until something proves it. */
+export const unverifiedChip = <M>(h: HtmlBuilder<M>): Html =>
+	h.span(
+		[
+			h.Title("Severity estimated from the source; not proven by running the code"),
+			h.Class(
+				"rounded-sm border border-dashed border-muted-foreground/50 px-1.5 py-px text-[11px] text-muted-foreground",
+			),
+		],
+		["Unverified"],
+	)
 
 export const bucketBadge = <M>(h: HtmlBuilder<M>, bucket: SeverityBucket): Html =>
 	bucket === "needs_validation"
@@ -138,7 +159,7 @@ export const SECTION_HINT = {
 	medium: null,
 	low: null,
 	informational: null,
-	needs_validation: "Read from source, not run",
+	needs_validation: "No severity estimate",
 	rejected: "Disproved by a second model",
 } satisfies Record<SeverityBucket, string | null>
 
@@ -169,7 +190,9 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 		),
 	]
 	const children = [
-		bucketIcon(h, bucketOf(finding)),
+		isUnverified(finding)
+			? h.span([h.Class("inline-flex opacity-50")], [bucketIcon(h, bucketOf(finding))])
+			: bucketIcon(h, bucketOf(finding)),
 		h.span(
 			[
 				h.Class(
@@ -206,7 +229,10 @@ const findingRow = <M>(h: HtmlBuilder<M>, options: FindingRowOptions<M>): Html =
 						[note],
 					),
 				]),
-		h.span([h.Class("ml-auto flex shrink-0 items-center gap-3")], options.trailing),
+		h.span(
+			[h.Class("ml-auto flex shrink-0 items-center gap-3")],
+			[...(isUnverified(finding) ? [unverifiedChip(h)] : []), ...options.trailing],
+		),
 	]
 	return h.li(
 		[h.Key(`${finding.targetId}/${finding.fingerprint}`), h.Class("border-b border-border/60")],
@@ -225,6 +251,15 @@ export type FindingGroupsOptions<M> = Readonly<{
 	row: (finding: SecurityAuditFinding) => FindingRowOptions<M>
 	label: string
 }>
+
+/** "unverified" when a whole group is estimates, "2 unverified" when some are, nothing otherwise. */
+const unverifiedNote = <M>(
+	h: HtmlBuilder<M>,
+	rows: ReadonlyArray<SecurityAuditFinding>,
+): ReadonlyArray<Html> => {
+	const count = rows.filter(isUnverified).length
+	return count === 0 ? [] : [trailingText(h, count === rows.length ? "unverified" : `${count} unverified`)]
+}
 
 /** Groups by bucket, each under a sticky header that folds its rows, as Linear groups by priority. */
 export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOptions<M>): Html =>
@@ -256,6 +291,7 @@ export const findingGroups = <M>(h: HtmlBuilder<M>, options: FindingGroupsOption
 								[h.Class("font-mono text-xs tabular-nums text-muted-foreground")],
 								[String(rows.length)],
 							),
+							...unverifiedNote(h, rows),
 							...(hint === null
 								? []
 								: [

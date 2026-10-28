@@ -110,6 +110,8 @@ const toFinding = (row: Omit<SecurityAuditFindingRow, "id">): SecurityAuditFindi
 	targetId: row.targetId,
 	verdict: row.verdict,
 	overallSeverity: row.overallSeverity,
+	// The column is only ever set on needs_validation rows; the guard keeps the contract if one is not.
+	estimatedSeverity: row.verdict === "needs_validation" ? row.estimatedSeverity : null,
 	status: row.status,
 	statusReason: row.statusReason,
 	statusChangedBy: row.statusChangedBy,

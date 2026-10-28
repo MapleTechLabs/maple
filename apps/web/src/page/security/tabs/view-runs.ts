@@ -75,21 +75,29 @@ const muted = (h: H, text: string, title?: string): Html =>
 	)
 
 /** One dot and count per non-empty severity, so two runs compare at a glance. */
-const findingsCell = (h: H, counts: BucketCounts | null, run: SecurityAuditRun): Html => {
+const findingsCell = (
+	h: H,
+	counts: Readonly<{ buckets: BucketCounts; unverified: number }> | null,
+	run: SecurityAuditRun,
+): Html => {
 	if (counts === null) return muted(h, "", "Findings are visible to org admins only")
-	const shown = SCORED_BUCKETS.filter((bucket) => counts[bucket] > 0)
+	const { buckets, unverified } = counts
+	const shown = SCORED_BUCKETS.filter((bucket) => buckets[bucket] > 0)
 	if (shown.length === 0) return muted(h, isLive(run) ? "" : "None")
 	return h.span(
 		[
 			h.Class("flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1"),
 			h.Title(
-				shown.map((bucket) => `${counts[bucket]} ${BUCKET_LABEL[bucket].toLowerCase()}`).join(", "),
+				[
+					...shown.map((bucket) => `${buckets[bucket]} ${BUCKET_LABEL[bucket].toLowerCase()}`),
+					...(unverified === 0 ? [] : [`${unverified} of them estimated, not yet proven`]),
+				].join(", "),
 			),
 		],
 		shown.map((bucket) =>
 			h.span(
 				[h.Key(bucket), h.Class("inline-flex items-center gap-1 font-mono text-xs tabular-nums")],
-				[bucketDot(h, bucket, "size-2"), String(counts[bucket])],
+				[bucketDot(h, bucket, "size-2"), String(buckets[bucket])],
 			),
 		),
 	)

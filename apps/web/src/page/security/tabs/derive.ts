@@ -6,13 +6,13 @@ import type {
 	SecurityAuditSettings,
 	SecurityAuditTarget,
 } from "@maple/domain/http"
-import type { SecurityAuditFindingStatus, SecurityAuditSeverity } from "@maple/domain/security-audit"
+import type { SecurityAuditFindingStatus } from "@maple/domain/security-audit"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "../../../data/load-failure"
 import type { SecurityFindingsSearch } from "../../../route/search"
-import { type Gate, gateOf, isLive, isSameMonth, locationOf, severityRank } from "../kit/format"
-import { bucketOf, type BucketCounts, countsFromRun } from "../kit/findings"
+import { type Gate, gateOf, isLive, isSameMonth, locationOf } from "../kit/format"
+import { bucketOf, type BucketCounts, countsFromRun, isUnverified, SEVERITY_BUCKETS } from "../kit/findings"
 import type { Model } from "./model"
 
 // Pure readings of the tabs' Model: what each panel shows.
@@ -95,27 +95,17 @@ export const openConfirmed = (findings: ReadonlyArray<SecurityAuditFinding>) =>
 export const openNeedsValidation = (findings: ReadonlyArray<SecurityAuditFinding>) =>
 	findings.filter((finding) => finding.verdict === "needs_validation" && finding.status === "open")
 
-export const countBySeverity = (
-	findings: ReadonlyArray<SecurityAuditFinding>,
-): Readonly<Record<SecurityAuditSeverity, number>> => ({
-	critical: findings.filter((finding) => finding.overallSeverity === "critical").length,
-	high: findings.filter((finding) => finding.overallSeverity === "high").length,
-	medium: findings.filter((finding) => finding.overallSeverity === "medium").length,
-	low: findings.filter((finding) => finding.overallSeverity === "low").length,
-	informational: findings.filter((finding) => finding.overallSeverity === "informational").length,
-})
-
-/** Severity first, then the most recently seen. */
-export const bySeverity = (a: SecurityAuditFinding, b: SecurityAuditFinding): number =>
-	severityRank(a.overallSeverity) - severityRank(b.overallSeverity) || b.updatedAt - a.updatedAt
-
-/** Open leads, worst first: confirmed by severity, then leads to validate by when they were last seen. */
+/** Open leads, worst first: by severity, an estimate counting as one; proven before unverified at
+ * the same level; unscored leads last; then by when they were last seen. */
 export const openLeads = (
 	findings: ReadonlyArray<SecurityAuditFinding>,
-): ReadonlyArray<SecurityAuditFinding> => [
-	...[...openConfirmed(findings)].sort(bySeverity),
-	...[...openNeedsValidation(findings)].sort((a, b) => b.updatedAt - a.updatedAt),
-]
+): ReadonlyArray<SecurityAuditFinding> =>
+	[...openConfirmed(findings), ...openNeedsValidation(findings)].sort(
+		(a, b) =>
+			SEVERITY_BUCKETS.indexOf(bucketOf(a)) - SEVERITY_BUCKETS.indexOf(bucketOf(b)) ||
+			Number(isUnverified(a)) - Number(isUnverified(b)) ||
+			b.updatedAt - a.updatedAt,
+	)
 
 /** Closed units out of the ledger: what the run got to, whatever it found. */
 const CLOSED_UNIT_STATUSES: ReadonlyArray<string> = ["covered", "candidate", "not_applicable", "out_of_scope"]
@@ -210,7 +200,10 @@ export const runsForTab = (
 }
 
 /** What a run reported, per severity, from whichever run list carries it; null for members. */
-export const runCountsOf = (model: Model, runId: string): BucketCounts | null => {
+export const runCountsOf = (
+	model: Model,
+	runId: string,
+): Readonly<{ buckets: BucketCounts; unverified: number }> | null => {
 	const responses = [
 		Option.getOrNull(AsyncData.getData(model.runs.data)),
 		...Object.values(model.targetRuns).map((slot) => Option.getOrNull(AsyncData.getData(slot.data))),
@@ -218,7 +211,7 @@ export const runCountsOf = (model: Model, runId: string): BucketCounts | null =>
 	const counts = responses
 		.map((response) => response?.findingCounts?.[runId])
 		.find((entry) => entry !== undefined)
-	return counts === undefined ? null : countsFromRun(counts)
+	return counts === undefined ? null : { buckets: countsFromRun(counts), unverified: counts.unverified }
 }
 
 /** The org's settings once read; null while loading or when the read failed. */
