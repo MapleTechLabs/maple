@@ -225,6 +225,9 @@ const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig"
 			? undefined
 			: { minInlineSeverity: config.minInlineSeverity }),
 		...(config.reviewDrafts === undefined ? undefined : { reviewDrafts: config.reviewDrafts }),
+		...(config.reviewExternalContributors === undefined
+			? undefined
+			: { reviewExternalContributors: config.reviewExternalContributors }),
 		...(config.dailyLimit === undefined ? undefined : { dailyLimit: config.dailyLimit }),
 		...(config.automaticReviewLimit === undefined
 			? undefined

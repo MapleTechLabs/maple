@@ -575,12 +575,16 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice, mention: string) =>
 }
 
 /** The check a push gets once its pull request has used the repository's automatic reviews. */
-const pausedCheckFor = (headSha: string, limit: number, mention: string) => ({
+const pausedCheckFor = (headSha: string, limit: number, mention: string, outsideAuthor: boolean) => ({
 	name: PR_REVIEW_CHECK_NAME,
 	headSha,
 	state: { status: "completed" as const, conclusion: "skipped" as const },
 	title: "Automatic reviews paused",
-	summary: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes. Comment \`${mention} review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
+	summary: `${
+		outsideAuthor
+			? "Pull requests from outside contributors get one automatic review."
+			: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes.`
+	} A maintainer can comment \`${mention} review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
 })
 
 const SEVERITY_LABEL = {
@@ -1478,7 +1482,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 
 			/** Say on the head's checks that pushes no longer start reviews. Best effort, like every status. */
-			const postPausedCheck = (orgId: OrgId, repo: VcsRepo, headSha: GitCommitSha, limit: number) =>
+			const postPausedCheck = (
+				orgId: OrgId,
+				repo: VcsRepo,
+				headSha: GitCommitSha,
+				limit: number,
+				outsideAuthor: boolean,
+			) =>
 				Effect.gen(function* () {
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return
@@ -1486,7 +1496,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* provider.writePullRequestCheck(
 						installation,
 						ref,
-						pausedCheckFor(headSha, limit, provider.reviewerMention),
+						pausedCheckFor(headSha, limit, provider.reviewerMention, outsideAuthor),
 					)
 				}).pipe(
 					Effect.catchCause((cause) =>
@@ -2018,17 +2028,24 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				// repository it runs only for a trusted author. GitHub reports private org members as
 				// CONTRIBUTOR in webhooks, and only people with access can open a pull request on a private one.
 				// Webhooks also report them as CONTRIBUTOR on public repositories, so their push access is asked.
-				if (
+				const outsideAuthor =
 					mode === "automatic" &&
 					!repo.isPrivate &&
 					!isTrustedAuthorAssociation(job.authorAssociation) &&
 					!(yield* canPush(orgId, repo, job.authorLogin))
-				) {
-					yield* annotate("skipped", {
-						"maple.pr_review.skip_reason": "external_author",
-						"vcs.pull_request.author_association": job.authorAssociation ?? "absent",
+				if (outsideAuthor) {
+					const association = job.authorAssociation ?? "absent"
+					if (config.reviewExternalContributors !== true) {
+						yield* annotate("skipped", {
+							"maple.pr_review.skip_reason": "external_author",
+							"vcs.pull_request.author_association": association,
+						})
+						return skip("external_author")
+					}
+					yield* Effect.annotateCurrentSpan({
+						"maple.pr_review.external_author": true,
+						"vcs.pull_request.author_association": association,
 					})
-					return skip("external_author")
 				}
 				const nowMs = yield* Clock.currentTimeMillis
 				// The delayed copy of a push: start the row it queued, unless a later push replaced it.
@@ -2063,8 +2080,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						config,
 					})
 				}
-				if (config.automaticReviewLimit !== undefined && !requested) {
-					const limit = config.automaticReviewLimit
+				// An outside author gets one review from pushes, so pushing again cannot spend the org's reviews.
+				const automaticLimit = outsideAuthor ? 1 : config.automaticReviewLimit
+				if (automaticLimit !== undefined && !requested) {
+					const limit = automaticLimit
 					// A head that already has a row is a redelivery or a retry, handled below; pausing
 					// it would overwrite that review's own check.
 					const existingHead = yield* dbExecute((db) =>
@@ -2094,7 +2113,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						),
 					)
 					if (existingHead[0] === undefined && (earlier[0]?.total ?? 0) >= limit) {
-						yield* postPausedCheck(orgId, repo, headSha, limit)
+						yield* postPausedCheck(orgId, repo, headSha, limit, outsideAuthor)
 						yield* annotate("skipped", {
 							"maple.pr_review.skip_reason": "automatic_limit",
 							"maple.pr_review.automatic_limit": limit,
