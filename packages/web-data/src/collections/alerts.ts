@@ -332,6 +332,7 @@ const AlertDestinationPublicConfig = Schema.Struct({
 	memberUserIds: Schema.optionalKey(Schema.Array(Schema.String)),
 	chatConnector: Schema.optionalKey(ChatConnectorId),
 	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
+	linearTeamId: Schema.optionalKey(Schema.String),
 })
 const decodeDestinationPublicConfig = Schema.decodeUnknownOption(AlertDestinationPublicConfig)
 
@@ -363,6 +364,9 @@ export const rowToAlertDestinationDocument = (row: AlertDestinationRow): AlertDe
 		...(publicConfig.chatWorkspaceId === undefined
 			? undefined
 			: { chatWorkspaceId: publicConfig.chatWorkspaceId }),
+		...(publicConfig.linearTeamId === undefined
+			? undefined
+			: { linearTeamId: publicConfig.linearTeamId }),
 		lastTestedAt: row.last_tested_at != null ? decodeIso(row.last_tested_at) : null,
 		lastTestError: row.last_test_error,
 		disabledAt: row.disabled_at != null ? decodeIso(row.disabled_at) : null,

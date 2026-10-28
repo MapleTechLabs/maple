@@ -20,11 +20,12 @@ import { isFormReady, isValidPagerDutyKey, isValidTelegramToken, Message, type M
 import { chatFields } from "./chat-fields-view"
 import { emailFields } from "./email-fields-view"
 import { hazelFields } from "./hazel-fields-view"
+import { linearFields } from "./linear-fields-view"
 import { waitingFor } from "../shared/chat-connect"
 import { spinner } from "../../../ui/spinner"
 import { type TextField, toFormState } from "./form"
 
-// The destination dialog. The Email, Hazel and chat fields live in `*-fields-view.ts`.
+// The destination dialog. The Email, Hazel, Linear and chat fields live in `*-fields-view.ts`.
 
 type H = HtmlBuilder<Message>
 
@@ -354,6 +355,15 @@ const connectionFields = (h: H, model: Model, isEditing: boolean): ReadonlyArray
 					form,
 					isEditing,
 					toMessage: (message) => Message.GotHazelFieldsMessage({ message }),
+				}),
+			]
+		case "linear":
+			return [
+				linearFields(h, {
+					model: model.linear,
+					form,
+					isEditing,
+					toMessage: (message) => Message.GotLinearFieldsMessage({ message }),
 				}),
 			]
 		case "chat":
