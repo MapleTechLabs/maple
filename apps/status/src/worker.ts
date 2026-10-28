@@ -1,9 +1,12 @@
 /**
  * The status Worker: serves customer status pages from edge storage alone (KV, R2, the colo
  * cache), so a page keeps its last known state while every other part of Maple is down.
- * No service bindings, Hyperdrive or telemetry export: nothing here may call back into Maple.
+ * No service bindings or Hyperdrive: serving never calls Maple. Traces export to Maple's ingest after
+ * the response, best effort, so an outage loses them without touching the page.
  */
 import { MapleStack, mapleWorkerProps } from "@maple/infra/cloudflare"
+import { selfObservabilityEnv } from "@maple/infra/env"
+import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Clock, Effect, Layer } from "effect"
@@ -16,9 +19,11 @@ import { nativeStorage } from "./storage"
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
+	const env = yield* selfObservabilityEnv(stack.stage, stack.region)
 	return {
 		main: import.meta.url,
 		...mapleWorkerProps("status", stack),
+		env,
 		// Pages are reachable at `/s/<slug>` here; CF for SaaS custom hostnames will attach in a later PR.
 		workersDev: true,
 	}
@@ -60,8 +65,9 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 					nowMs,
 					randomId: () => crypto.randomUUID(),
 				})
+				yield* Effect.annotateCurrentSpan("http.response.status_code", response.status)
 				return HttpServerResponse.fromWeb(response)
-			}),
+			}).pipe(Effect.withSpan("status.request")),
 		}
 	}).pipe(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
@@ -70,6 +76,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 				Cloudflare.KV.ReadWriteNamespaceBinding,
 				Cloudflare.R2.ReadBucketBinding,
 				Cloudflare.Workers.RateLimitBinding,
+				WorkerTelemetry({ serviceName: "status" }),
 			),
 		),
 	),

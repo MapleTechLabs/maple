@@ -105,10 +105,28 @@ describe("renderPage", () => {
 		expect(renderPage(snapshot, live, FIXTURE_NOW)).toContain("99.97% uptime")
 	})
 
-	it("draws no bars for a component that hides uptime", () => {
-		const html = renderPage(makeSnapshot(), live, FIXTURE_NOW)
-		expect(barsOf(html, fixtureComponentId(2))).toHaveLength(0)
+	it("draws no bars for a component that hides uptime, even with daily counts", () => {
+		const snapshot = makeSnapshot({
+			components: [
+				makeComponent(0, { showUptime: true, days: makeDays() }),
+				makeComponent(1, { showUptime: false, days: makeDays() }),
+			],
+		})
+		const html = renderPage(snapshot, live, FIXTURE_NOW)
+		expect(barsOf(html, fixtureComponentId(1))).toHaveLength(0)
 		expect(barsOf(html, fixtureComponentId(0))).toHaveLength(90)
+	})
+
+	it("offers each status under the lifecycle it belongs to", () => {
+		const html = renderManagePage(makeSnapshot())
+		const group = (label: string) =>
+			[
+				...(
+					html.match(new RegExp(`<optgroup label="${label}">(.*?)</optgroup>`, "u"))?.[1] ?? ""
+				).matchAll(/value="([a-z_]+)"/gu),
+			].map((match) => match[1])
+		expect(group("For incidents")).toEqual(["investigating", "identified", "monitoring", "resolved"])
+		expect(group("For maintenance")).toEqual(["scheduled", "in_progress", "completed"])
 	})
 
 	it("lists active incidents with updates, upcoming maintenance and past incidents in their sections", () => {

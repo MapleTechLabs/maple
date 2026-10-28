@@ -171,6 +171,17 @@ const readCachedOverlay = (env: StatusEnv, pageId: string) =>
 		Effect.orElseSucceed(() => Option.none()),
 	)
 
+/** Entries in the colo's cached overlay, for merging with a list that may lag behind them. */
+export const cachedOverlayEntries = (
+	env: StatusEnv,
+	pageId: string,
+): Effect.Effect<ReadonlyArray<StatusPageOverlayEntry>> =>
+	readCachedOverlay(env, pageId).pipe(
+		Effect.map((cached) =>
+			Option.match(cached, { onNone: () => [], onSome: (hit) => hit.overlay.entries }),
+		),
+	)
+
 /** Caches the assembled overlay, keeping cached entries a lagging list has not caught up with yet. */
 export const rememberOverlay = (
 	env: StatusEnv,

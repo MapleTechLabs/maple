@@ -145,10 +145,17 @@ export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<R
 		// Liveness only: says the Worker runs, not that any page can be served.
 		if (url.pathname === "/_health") return plain("ok", 200)
 		const target = yield* resolveTarget(env, url)
-		if (target._tag === "unavailable") return plain(UNAVAILABLE, 503)
+		if (target._tag === "unavailable") {
+			yield* Effect.logWarning("Status page route lookup failed in every store")
+			return plain(UNAVAILABLE, 503)
+		}
 		if (target._tag === "missing") return notFound()
 		const view = yield* loadView(env, target.value.pageId)
-		if (Option.isNone(view)) return plain(UNAVAILABLE, 503)
+		yield* Effect.annotateCurrentSpan("maple.status_page.id", target.value.pageId)
+		if (Option.isNone(view)) {
+			yield* Effect.logWarning("Status page snapshot missing from every store")
+			return plain(UNAVAILABLE, 503)
+		}
 		// A renamed page keeps its old `slug:` key until cleanup; only the current slug serves it.
 		if (target.value.slug !== null && view.value.snapshot.page.slug !== target.value.slug)
 			return notFound()

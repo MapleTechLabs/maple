@@ -7,7 +7,8 @@ const iso = (ms: number): string => new Date(ms).toISOString()
 
 /** Atom feed with one entry per incident update, newest first. `pageUrl` is the page's absolute URL. */
 export const renderAtomFeed = (snapshot: StatusPageSnapshot, pageUrl: string): string => {
-	const base = pageUrl.replace(/\/+$/u, "")
+	// Callers pass an origin plus base path; one trailing slash at most, trimmed without a regex.
+	const base = pageUrl.endsWith("/") ? pageUrl.slice(0, -1) : pageUrl
 	const entries = snapshot.incidents
 		.flatMap((incident) => incident.updates.map((update) => ({ incident, update })))
 		.sort((a, b) => b.update.at - a.update.at)

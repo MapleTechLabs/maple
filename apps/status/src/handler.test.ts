@@ -218,6 +218,22 @@ describe("break-glass updates", () => {
 			...extra,
 		])
 
+	it("keeps an earlier post on the page when a lagging KV list has not returned it yet", async () => {
+		expect((await send(fake, update(TOKEN))).status).toBe(303)
+		// The first post's key is in KV but missing from `list`, as right after a write in another colo.
+		fake.kv.forEach((_, key) => key.startsWith("overlay:") && fake.unlisted.add(key))
+		const second = postForm(`${PAGE}_manage`, [
+			["token", TOKEN],
+			["incidentId", "new"],
+			["title", "Checkout down"],
+			["body", "Also looking at checkout"],
+		])
+		expect((await send(fake, second)).status).toBe(303)
+		const html = await (await send(fake, PAGE)).text()
+		expect(html).toContain("Payments down")
+		expect(html).toContain("Checkout down")
+	})
+
 	it("serves the form uncached", async () => {
 		const response = await send(fake, `${PAGE}_manage`)
 		expect(response.headers.get("cache-control")).toBe("no-store")

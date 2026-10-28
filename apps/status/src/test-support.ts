@@ -29,13 +29,15 @@ export const makeFakeStorage = () => {
 				)
 			: Effect.sync(value)
 
+	// Keys a lagging KV `list` has not returned yet; reads by key still see them.
+	const unlisted = new Set<string>()
 	const storage: StatusStorage = {
 		kvGet: (key) => guard("kv", key, () => kv.get(key) ?? null),
 		kvPut: (key, value) => guard("kv-put", key, () => void kv.set(key, value)),
 		kvList: (prefix, limit) =>
 			guard("kv", prefix, () =>
 				[...kv.keys()]
-					.filter((key) => key.startsWith(prefix))
+					.filter((key) => key.startsWith(prefix) && !unlisted.has(key))
 					.sort()
 					.slice(0, limit),
 			),
@@ -48,7 +50,9 @@ export const makeFakeStorage = () => {
 				return limits.allow
 			}),
 	}
-	return { storage, kv, r2, cache, failing, limits }
+	// Shared across requests, so two posts get distinct entry ids.
+	const ids = { next: 0 }
+	return { storage, kv, r2, cache, failing, limits, unlisted, ids }
 }
 
 export type FakeStorage = ReturnType<typeof makeFakeStorage>
@@ -93,11 +97,10 @@ export const send = (
 	input: string | Request,
 	options: { readonly nowMs?: number } = {},
 ): Promise<Response> => {
-	const counter = { next: 0 }
 	const env: StatusEnv = {
 		storage: fake.storage,
 		nowMs: options.nowMs ?? FIXTURE_NOW,
-		randomId: () => `id-${++counter.next}`,
+		randomId: () => `id-${++fake.ids.next}`,
 	}
 	return Effect.runPromise(handleRequest(typeof input === "string" ? new Request(input) : input, env))
 }

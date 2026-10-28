@@ -10,7 +10,7 @@ import {
 import { MANAGE_FIELDS, NEW_INCIDENT, NO_CHANGE } from "@maple/status-page"
 import { Effect, Option, Schema } from "effect"
 import type { StatusEnv, StatusStorageError } from "./ports"
-import { listOverlay, rememberOverlay } from "./snapshot"
+import { listOverlay, cachedOverlayEntries, rememberOverlay } from "./snapshot"
 
 /** A break-glass post that was refused; `status` is the HTTP status the form page answers with. */
 export class BreakGlassRejected extends Schema.TaggedError<BreakGlassRejected>()(
@@ -189,6 +189,7 @@ export const postBreakGlassUpdate = (
 			.kvPut(StatusPageKeys.overlayEntry(snapshot.pageId, id), JSON.stringify(entry))
 			.pipe(Effect.mapError(notSaved("The overlay could not be written.")))
 		// KV `list` lags writes, so the colo cache carries the new entry until the list catches up.
-		yield* rememberOverlay(env, snapshot.pageId, [...listed.entries, entry])
+		const previous = yield* cachedOverlayEntries(env, snapshot.pageId)
+		yield* rememberOverlay(env, snapshot.pageId, [...listed.entries, entry], previous)
 		return entry
 	})
