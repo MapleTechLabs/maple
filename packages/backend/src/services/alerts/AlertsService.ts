@@ -341,9 +341,14 @@ const DESTINATION_DISABLE_AFTER_FAILURES = 3
 /** Bound on the stored `disabled_reason`; it is a provider sentence, not a log. */
 const DISABLED_REASON_MAX_LENGTH = 500
 const ALERT_TEST_DELIVERY_CONCURRENCY = 5
-// A Worker invocation has six outbound slots; the tail's housekeeping and sweep run beside
-// these POSTs, so leave them two.
-const ALERT_CHECK_INGEST_CONCURRENCY = 4
+// A Worker invocation has six outbound slots. The delivery drain runs beside these POSTs
+// with three and Postgres needs one, so a stalled insert never makes a page wait for a slot.
+const ALERT_CHECK_INGEST_CONCURRENCY = 2
+// A healthy alert_checks POST is under a second; a stalled one is dropped, never retried,
+// because a write the warehouse already accepted would be counted twice.
+const ALERT_CHECK_INGEST_TIMEOUT = Duration.seconds(5)
+// Caps the whole ingest so a warehouse-wide stall across many orgs still ends the tick early.
+const ALERT_CHECK_INGEST_BUDGET = Duration.seconds(15)
 
 /** A warehouse outage (5xx or unreachable), not a fault of the rule being evaluated. */
 const warehouseOutageOf = (error: unknown): Option.Option<WarehouseUpstreamError> =>
@@ -577,6 +582,7 @@ export interface AlertsServiceApi
 			readonly warehouseUnavailableSkipCount: number
 			readonly deferredCount: number
 			readonly deliveryFailureCount: number
+			readonly alertChecksDroppedCount: number
 		},
 		| AlertPersistenceError
 		| AlertDeliveryFailure
@@ -4227,8 +4233,49 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Match.exhaustive,
 				)
 
+			// One POST per org. Awaited by the tick so the Worker stays alive for the writes; a failed
+			// or timed-out POST, or one cut by the budget, drops its rows (Postgres holds the alert state).
+			const ingestAlertChecks = Effect.fn("AlertsService.ingestAlertChecks")(function* (
+				checks: ReadonlyArray<AlertChecksRow>,
+			) {
+				const written = yield* Ref.make(0)
+				yield* Effect.forEach(
+					Object.entries(Arr.groupBy(checks, (check) => check.OrgId)),
+					([orgId, rows]) =>
+						// Not metered to Autumn: internal bookkeeping rows, not customer telemetry.
+						warehouse.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", rows).pipe(
+							Effect.timeout(ALERT_CHECK_INGEST_TIMEOUT),
+							Effect.andThen(Ref.update(written, (n) => n + rows.length)),
+							Effect.catchCause((cause) =>
+								Effect.logWarning("Dropped alert_checks audit rows").pipe(
+									Effect.annotateLogs({
+										orgId,
+										rowCount: rows.length,
+										cause: summarizeCause(cause),
+									}),
+								),
+							),
+						),
+					{ concurrency: ALERT_CHECK_INGEST_CONCURRENCY, discard: true },
+				).pipe(
+					Effect.timeout(ALERT_CHECK_INGEST_BUDGET),
+					Effect.catchCause(() => Effect.logWarning("alert_checks ingest hit its budget")),
+				)
+				const droppedCount = checks.length - (yield* Ref.get(written))
+				if (droppedCount > 0) {
+					yield* Metric.update(AlertingMetrics.alertChecksDroppedTotal, droppedCount)
+				}
+				yield* Effect.annotateCurrentSpan({
+					"maple.alerting.alert_checks_rows": checks.length,
+					"maple.alerting.alert_checks_dropped": droppedCount,
+				})
+				return droppedCount
+			})
+
 			const evaluateScheduledRules = Effect.fn("AlertsService.evaluateScheduledRules")(function* (
 				laneName: AlertSchedulerLane,
+				// Receives the forked alert_checks ingest; the caller joins it.
+				checkIngest: Ref.Ref<Option.Option<Fiber.Fiber<number>>>,
 			) {
 				const lane = SCHEDULER_LANES[laneName]
 				const tickStart = yield* now
@@ -5051,32 +5098,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					)
 				})
 
-				// Flush accumulated alert_check audit rows to Tinybird, one POST per
-				// orgId. Awaited so the Cloudflare Worker isolate stays alive until
-				// the writes complete; errors are logged then swallowed because the
-				// authoritative state already lives in Postgres above.
+				// The history rows go out on their own fiber so a stalled insert never holds the
+				// delivery drain; runSchedulerTick joins it before the tick returns.
 				const accumulatedChecks = yield* Ref.getAndSet(pendingChecks, Chunk.empty())
-				const ingestChecks = Effect.forEach(
-					Object.entries(
-						Arr.groupBy(Chunk.toReadonlyArray(accumulatedChecks), (check) => check.OrgId),
+				yield* Ref.set(
+					checkIngest,
+					Option.some(
+						yield* forkRequestScoped(ingestAlertChecks(Chunk.toReadonlyArray(accumulatedChecks))),
 					),
-					([orgId, checks]) =>
-						// Not metered to Autumn: internal bookkeeping rows, not customer
-						// telemetry.
-						warehouse.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", checks).pipe(
-							Effect.tapCause((cause) =>
-								Effect.logWarning("Failed to ingest alert_checks audit rows").pipe(
-									Effect.annotateLogs({
-										orgId,
-										rowCount: checks.length,
-										cause: summarizeCause(cause),
-									}),
-								),
-							),
-							Effect.ignore,
-						),
-					{ concurrency: ALERT_CHECK_INGEST_CONCURRENCY, discard: true },
-				).pipe(Effect.withSpan("AlertsService.ingestAlertChecks"))
+				)
 
 				// Every rule's writes are done, and these steps do not read each other's writes:
 				// disabled rules are never in the housekeeping lists, and the sweep only resolves,
@@ -5085,8 +5115,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const tail = yield* Effect.all(
 					Arr.map(
 						laneName === "standard"
-							? [housekeeping, digests, sweepDisabledRules, backfillUptimeRules, ingestChecks]
-							: [housekeeping, digests, ingestChecks],
+							? [housekeeping, digests, sweepDisabledRules, backfillUptimeRules]
+							: [housekeeping, digests],
 						Effect.exit,
 					),
 					{ concurrency: "unbounded" },
@@ -5112,12 +5142,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				lane: AlertSchedulerLane = "standard",
 			) {
 				const tickStart = yield* now
-				const evaluation = yield* Effect.exit(evaluateScheduledRules(lane))
+				const checkIngest = yield* Ref.make(Option.none<Fiber.Fiber<number>>())
+				const evaluation = yield* Effect.exit(evaluateScheduledRules(lane, checkIngest))
+				// The alert_checks ingest runs beside the drain and is joined even when the drain fails,
+				// so no write outlives the tick.
+				const joinCheckIngest = Effect.flatMap(Ref.get(checkIngest), (fiber) =>
+					Option.match(fiber, { onNone: () => Effect.succeed(0), onSome: Fiber.join }),
+				)
 				// One lane drains: the standard lane runs every minute, and its drain has its own 20s budget.
-				const deliveryResult =
+				const delivery = yield* Effect.exit(
 					lane === "standard"
-						? yield* processQueuedDeliveries()
-						: { processedCount: 0, failureCount: 0 }
+						? processQueuedDeliveries()
+						: Effect.succeed({ processedCount: 0, failureCount: 0 }),
+				)
+				const alertChecksDroppedCount = yield* joinCheckIngest
+				yield* Effect.annotateCurrentSpan(
+					"maple.alerting.alert_checks_dropped",
+					alertChecksDroppedCount,
+				)
+				const deliveryResult = yield* delivery
 				const evaluated = yield* evaluation
 				yield* Effect.annotateCurrentSpan("maple.alerting.rules_deferred", evaluated.deferredCount)
 				yield* Metric.update(AlertingMetrics.tickDurationMs, (yield* now) - tickStart)
@@ -5125,6 +5168,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					...evaluated,
 					processedCount: deliveryResult.processedCount,
 					deliveryFailureCount: deliveryResult.failureCount,
+					alertChecksDroppedCount,
 				}
 			}, withAlertEvaluationScope)
 

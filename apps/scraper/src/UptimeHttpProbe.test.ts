@@ -282,7 +282,7 @@ describe("UptimeHttpProbe", () => {
 
 	it.live("sums each hop's lookup into DNS, and times the body read only when one is read", () =>
 		Effect.gen(function* () {
-			// Every lookup takes 20 ms, so two hops spend at least 40 ms resolving.
+			// Every lookup sleeps 20 ms; timers can fire a fraction early, so assert more than one hop (35 ms).
 			const slowDns = (hostname: string) =>
 				Effect.andThen(Effect.sleep(Duration.millis(20)), fixedResolver(DNS)(hostname))
 			const recorded: Array<RecordedRequest> = []
@@ -305,7 +305,7 @@ describe("UptimeHttpProbe", () => {
 			const plain = yield* run({})
 			recorded.length = 0
 			const read = yield* run({ assertions: [{ _tag: "body", op: "contains", value: "ok" }] })
-			assert.isAtLeast(plain.timings?.dnsMs ?? 0, 40)
+			assert.isAtLeast(plain.timings?.dnsMs ?? 0, 35)
 			assert.isNull(plain.timings?.transferMs ?? null)
 			assert.isNotNull(read.timings?.transferMs ?? null)
 			// A lookup that failed measured nothing.
