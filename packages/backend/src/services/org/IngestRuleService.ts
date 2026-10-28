@@ -12,6 +12,7 @@ import {
 	type IngestRuleSpec,
 } from "@maple/domain/ingest-rules"
 import { IngestRuleId } from "@maple/domain/primitives"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	OrgIngestRuleSettings,
@@ -163,18 +164,27 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				yield* validateFields(input)
 				yield* validateSpec(input.spec)
-				const existing = yield* list(orgId)
-				if (existing.length >= INGEST_RULE_LIMITS.rulesPerOrg) {
-					const message = `An organization can have at most ${INGEST_RULE_LIMITS.rulesPerOrg} ingest rules`
-					return yield* new IngestRuleValidationError({ message, problems: [message] })
-				}
 				const now = yield* Clock.currentTimeMillis
 				const id = decodeRuleId(randomUUID())
 				yield* Effect.annotateCurrentSpan("maple.ingest_rule.id", id)
-				const lastPosition = existing.reduce((max, rule) => Math.max(max, rule.position), -1)
-				yield* dbExecute((db) =>
+				// Count and position under a per-org lock, so concurrent creates cannot pass the cap
+				// or share a position.
+				const inserted = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							yield* db.execute(
+								Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}), hashtext('ingest_rules'))`,
+							)
+							const existing = yield* db.run(
+								PG.from(OrgIngestRules)
+									.select(($) => ({ position: $.position }))
+									.where(($) => [$.orgId.eq(orgId)]),
+							)
+							if (existing.length >= INGEST_RULE_LIMITS.rulesPerOrg) return false
+							const lastPosition = existing.reduce(
+								(max, rule) => Math.max(max, rule.position),
+								-1,
+							)
 							yield* db.run(
 								PG.insertInto(OrgIngestRuleSettings)
 									.values({ orgId, hashSalt: randomSalt(), createdAt: now })
@@ -192,9 +202,14 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 									updatedAt: now,
 								}),
 							)
+							return true
 						}),
 					),
 				)
+				if (!inserted) {
+					const message = `An organization can have at most ${INGEST_RULE_LIMITS.rulesPerOrg} ingest rules`
+					return yield* new IngestRuleValidationError({ message, problems: [message] })
+				}
 				return yield* get(orgId, id).pipe(
 					Effect.catchTag("@maple/http/errors/IngestRuleNotFoundError", () =>
 						Effect.fail(
