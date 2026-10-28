@@ -88,7 +88,8 @@ export interface ListStatusPageIncidentsOptions {
 
 /** One page of an org's incidents, filtered and ordered in SQL (newest first). */
 export interface ListOrgStatusPageIncidentsOptions {
-	readonly pageId?: StatusPageId
+	/** One page, or null for every page of the org. */
+	readonly pageId: StatusPageId | null
 	readonly state: "open" | "closed" | "all"
 	readonly limit: number
 	readonly offset: number
@@ -974,13 +975,13 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const pageId = options.pageId
 				return yield* dbExecute((db) =>
 					Effect.gen(function* () {
-						if (pageId !== undefined) yield* findPage(db, orgId, pageId)
+						if (pageId !== null) yield* findPage(db, orgId, pageId)
 						const rows = yield* db.run(
 							PG.from(StatusPageIncidents)
 								.select()
 								.where(($) => [
 									$.orgId.eq(orgId),
-									pageId === undefined ? undefined : $.pageId.eq(pageId),
+									pageId === null ? undefined : $.pageId.eq(pageId),
 									options.state === "open"
 										? $.resolvedAt.isNull()
 										: options.state === "closed"

@@ -455,7 +455,7 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 						const state = query.state ?? "open"
 						const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 							service.listOrgIncidents(tenant.orgId, {
-								...(query.page_id === undefined ? {} : { pageId: query.page_id }),
+								pageId: query.page_id ?? null,
 								state,
 								limit,
 								offset,

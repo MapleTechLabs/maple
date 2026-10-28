@@ -322,10 +322,19 @@ describe("StatusPagesService", () => {
 
 			const titles = (options: Parameters<typeof service.listOrgIncidents>[1]) =>
 				service.listOrgIncidents(ORG, options).pipe(Effect.map((list) => list.map((i) => i.title)))
-			assert.deepStrictEqual(yield* titles({ state: "all", limit: 10, offset: 0 }), ["C", "B", "A"])
-			assert.deepStrictEqual(yield* titles({ state: "open", limit: 10, offset: 0 }), ["C", "B"])
-			assert.deepStrictEqual(yield* titles({ state: "closed", limit: 10, offset: 0 }), ["A"])
-			assert.deepStrictEqual(yield* titles({ state: "all", limit: 1, offset: 1 }), ["B"])
+			assert.deepStrictEqual(yield* titles({ pageId: null, state: "all", limit: 10, offset: 0 }), [
+				"C",
+				"B",
+				"A",
+			])
+			assert.deepStrictEqual(yield* titles({ pageId: null, state: "open", limit: 10, offset: 0 }), [
+				"C",
+				"B",
+			])
+			assert.deepStrictEqual(yield* titles({ pageId: null, state: "closed", limit: 10, offset: 0 }), [
+				"A",
+			])
+			assert.deepStrictEqual(yield* titles({ pageId: null, state: "all", limit: 1, offset: 1 }), ["B"])
 			assert.deepStrictEqual(yield* titles({ pageId: first.id, state: "all", limit: 10, offset: 0 }), [
 				"C",
 				"A",

@@ -308,7 +308,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			const theirs = crypto.randomUUID()
 			yield* seedMonitor(testDb, { id: ours, status: "up" })
 			yield* seedMonitor(testDb, { id: theirs, status: "up", orgId: "org_other" })
-			const daily = (monitorId: string, lastCheckAt: number, orgId?: string) =>
+			const daily = (monitorId: string, lastCheckAt: number, orgId: string = ORG) =>
 				seedDaily(testDb, {
 					monitorId,
 					day: utcDay(NOW),
@@ -316,7 +316,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 					failures: 0,
 					downChecks: 0,
 					lastCheckAt,
-					...(orgId === undefined ? {} : { orgId }),
+					orgId,
 				})
 			yield* daily(ours, NOW - 600_000)
 			yield* daily(theirs, NOW - 1_000, "org_other")
