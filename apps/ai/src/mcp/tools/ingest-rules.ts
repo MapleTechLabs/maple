@@ -238,6 +238,14 @@ const recordService = (record: RuleRecord) => {
 	return typeof service === "string" ? service : ""
 }
 
+/** What a preview over stored samples cannot show for this rule; span events are not sampled. */
+export const previewNotes = (spec: IngestRuleSpec, signal: "traces" | "logs"): ReadonlyArray<string> =>
+	signal === "traces" && spec.action._tag === "redact" && spec.action.scopes.includes("events")
+		? [
+				"Stored span samples carry no span events, so redactions there are not counted here; they still apply at ingest.",
+			]
+		: []
+
 /** What one rule does to sampled records: counts plus a few examples of each outcome. */
 export const previewOver = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRecord>) => {
 	const compiled = compileRules([spec], PREVIEW_SALT)
@@ -394,12 +402,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 				Effect.mapError(toMcpQueryError("preview_ingest_rule")),
 			)
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": records.length })
-			const notes =
-				signal === "traces" && spec.action._tag === "redact" && spec.action.scopes.includes("events")
-					? [
-							"Stored span samples carry no span events, so redactions there are not counted here; they still apply at ingest.",
-						]
-					: []
+			const notes = previewNotes(spec, signal)
 			return {
 				signal,
 				...previewOver(spec, records),
@@ -409,28 +412,29 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		}),
 		render: (output) => ({
 			title: "Ingest Rule Preview",
-			blocks: [
-				...(output.problems.length > 0
+			// A refused preview ran nothing, so it shows why and no counts.
+			blocks:
+				output.problems.length > 0
 					? [doc.text(`Not previewed: ${output.problems.join("; ")}.`)]
-					: []),
-				...(output.notes ?? []).map((note) => doc.text(note)),
-				doc.text(
-					`Of ${output.sampled} recent ${output.signal} records, ${output.dropped} would be dropped and ${output.redactedRecords} redacted (${output.redactedValues} values). Hashes use a preview key and differ from stored ones.`,
-				),
-				...(output.examples.length === 0
-					? []
 					: [
-							doc.table(
-								["Outcome", "Service", "Record", "Changes"],
-								output.examples.map((example) => [
-									example.outcome,
-									example.service,
-									example.label,
-									example.changes.join("; ") || "-",
-								]),
+							...(output.notes ?? []).map((note) => doc.text(note)),
+							doc.text(
+								`Of ${output.sampled} recent ${output.signal} records, ${output.dropped} would be dropped and ${output.redactedRecords} redacted (${output.redactedValues} values). Hashes use a preview key and differ from stored ones.`,
 							),
-						]),
-			],
+							...(output.examples.length === 0
+								? []
+								: [
+										doc.table(
+											["Outcome", "Service", "Record", "Changes"],
+											output.examples.map((example) => [
+												example.outcome,
+												example.service,
+												example.label,
+												example.changes.join("; ") || "-",
+											]),
+										),
+									]),
+						],
 		}),
 	})
 

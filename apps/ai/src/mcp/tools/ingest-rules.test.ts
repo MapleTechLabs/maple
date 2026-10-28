@@ -6,7 +6,7 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { parameterOfProblem, previewOver, registerIngestRuleTools } from "./ingest-rules"
+import { parameterOfProblem, previewNotes, previewOver, registerIngestRuleTools } from "./ingest-rules"
 import type { McpToolError, McpToolRegistrar } from "./types"
 import type { McpToolRequirements } from "./runtime-requirements"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
@@ -235,5 +235,23 @@ describe("ingest rule MCP tools", () => {
 			].map(parameterOfProblem),
 			["conditions", "conditions", "signals", "name", "position", "action"],
 		)
+	})
+
+	it("notes that span event redactions are not counted, only when the rule redacts events", () => {
+		const redactIn = (scopes: ReadonlyArray<"attributes" | "events">) => ({
+			signals: ["traces" as const],
+			conditions: [],
+			action: {
+				_tag: "redact" as const,
+				keys: [],
+				detectors: ["email" as const],
+				patterns: [],
+				scopes,
+				method: "mask" as const,
+			},
+		})
+		assert.lengthOf(previewNotes(redactIn(["attributes", "events"]), "traces"), 1)
+		assert.deepEqual(previewNotes(redactIn(["attributes"]), "traces"), [])
+		assert.deepEqual(previewNotes(redactIn(["events"]), "logs"), [])
 	})
 })
