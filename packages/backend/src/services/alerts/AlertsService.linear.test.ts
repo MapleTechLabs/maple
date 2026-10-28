@@ -284,7 +284,7 @@ describe("AlertsService with a Linear destination", () => {
 				.pipe(Effect.flip)
 			assert.strictEqual(forbidden._tag, "@maple/http/errors/AlertDeliveryTargetMissingError")
 			const read = yield* tracker.request(orgId, operation("MapleIssueCreate"), Schema.Unknown, {
-				notFoundIsNull: true,
+				missingIsNull: true,
 			})
 			assert.isNull(read)
 		}).pipe(Effect.provide(linearLayers(testDb, fetch)))

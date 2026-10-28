@@ -828,15 +828,6 @@ export class AlertDestinationsService extends Context.Service<
 								}
 							}
 							const team = yield* resolveLinearTeam(orgId, teamId)
-							// The old team's issues are not this team's; the next trigger opens fresh ones.
-							yield* dbExecute((db) =>
-								db.run(
-									PG.deleteFrom(AlertLinearIssues).where(($) => [
-										$.orgId.eq(orgId),
-										$.destinationId.eq(destinationId),
-									]),
-								),
-							)
 							return {
 								nextPublicConfig: linearPublicConfig(team),
 								nextSecretConfig: linearSecretConfig(team),
@@ -916,6 +907,21 @@ export class AlertDestinationsService extends Context.Service<
 						.returning(() => ({ txid: currentTxid })),
 				),
 			)
+			// Once the new team is saved, the old team's issues stop being this destination's threads.
+			if (
+				hydrated.secretConfig.type === "linear" &&
+				nextSecretConfig.type === "linear" &&
+				hydrated.secretConfig.teamId !== nextSecretConfig.teamId
+			) {
+				yield* dbExecute((db) =>
+					db.run(
+						PG.deleteFrom(AlertLinearIssues).where(($) => [
+							$.orgId.eq(orgId),
+							$.destinationId.eq(destinationId),
+						]),
+					),
+				)
+			}
 			const txid = readTxid(writeRows)
 			const document = yield* rowToDestinationDocument(
 				{

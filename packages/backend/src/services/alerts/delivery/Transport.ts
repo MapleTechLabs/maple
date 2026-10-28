@@ -171,13 +171,13 @@ export interface LinearOperation {
 export interface LinearDeliveryPort {
 	/**
 	 * Run one GraphQL operation with the org's token and decode `data`. Null only when an option
-	 * allows it: a read of a missing entity, or a create whose id already exists.
+	 * allows it: an entity that is gone or hidden from Maple, or a create whose id already exists.
 	 */
 	readonly request: <A>(
 		orgId: OrgId,
 		operation: LinearOperation,
 		schema: Schema.Decoder<A>,
-		options?: { readonly notFoundIsNull?: boolean; readonly duplicateIsSuccess?: boolean },
+		options?: { readonly missingIsNull?: boolean; readonly duplicateIsSuccess?: boolean },
 	) => Effect.Effect<A | null, AlertDeliveryFailure>
 	readonly findThread: (
 		orgId: OrgId,

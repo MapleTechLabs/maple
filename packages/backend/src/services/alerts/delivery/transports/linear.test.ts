@@ -187,7 +187,7 @@ describe("linear transport", () => {
 			const result = yield* linear.send(inputFor())
 
 			const create = inputOf(linear.calls, "MapleIssueCreate")
-			assert.strictEqual(create.id, linearEntityId("issue", DESTINATION_ID, "delivery_1"))
+			assert.strictEqual(create.id, linearEntityId("issue", DESTINATION_ID, "inc_1", ""))
 			assert.strictEqual(create.teamId, "team_1")
 			assert.strictEqual(create.priority, 1)
 			assert.include(
@@ -205,7 +205,7 @@ describe("linear transport", () => {
 
 	it.effect("reuses the issue a lost-response create already made", () =>
 		Effect.gen(function* () {
-			const issueId = linearEntityId("issue", DESTINATION_ID, "delivery_1")
+			const issueId = linearEntityId("issue", DESTINATION_ID, "inc_1", "")
 			const linear = fakeLinear({
 				issues: [issue({ id: issueId, identifier: "ENG-3", state: { type: "triage" } })],
 			})
@@ -286,8 +286,19 @@ describe("linear transport", () => {
 		Effect.gen(function* () {
 			const linear = fakeLinear()
 			const result = yield* linear.send(inputFor({ eventType: "resolve", incidentStatus: "resolved" }))
-			assert.lengthOf(linear.calls, 0)
+			assert.notInclude(names(linear.calls), "MapleComment")
 			assert.strictEqual(result.providerMessage, "No Linear issue to update")
+		}),
+	)
+
+	it.effect("resolves an issue whose trigger made it but never saved the thread", () =>
+		Effect.gen(function* () {
+			const issueId = linearEntityId("issue", DESTINATION_ID, "inc_1", "")
+			const linear = fakeLinear({ issues: [issue({ id: issueId, identifier: "ENG-4" })] })
+			const result = yield* linear.send(inputFor({ eventType: "resolve", incidentStatus: "resolved" }))
+			assert.include(String(inputOf(linear.calls, "MapleComment").body), "Resolved")
+			assert.strictEqual(result.providerMessage, "Commented on Linear issue ENG-4")
+			assert.strictEqual(linear.threads.get("rule_1:checkout")?.linearIssueId, issueId)
 		}),
 	)
 
@@ -309,12 +320,29 @@ describe("linear transport", () => {
 		}),
 	)
 
-	it.effect("opens no issue for a trigger retried after its incident resolved", () =>
+	it.effect("marks an issue resolved when its trigger arrives after the incident resolved", () =>
 		Effect.gen(function* () {
 			const linear = fakeLinear()
 			const result = yield* linear.send(inputFor({ incidentStatus: "resolved" }))
-			assert.lengthOf(linear.calls, 0)
-			assert.include(result.providerMessage, "Skipped")
+			assert.include(names(linear.calls), "MapleIssueCreate")
+			assert.include(
+				String(inputOf(linear.calls, "MapleComment").body),
+				"resolved before Maple reached Linear",
+			)
+			assert.strictEqual(result.providerMessage, "Opened Linear issue ENG-1")
+		}),
+	)
+
+	it.effect("finds the same issue for two deliveries of one incident", () =>
+		Effect.gen(function* () {
+			const linear = fakeLinear()
+			yield* linear.send(inputFor({ deliveryKey: "delivery_a" }))
+			linear.threads.clear()
+			yield* linear.send(inputFor({ deliveryKey: "delivery_b", severity: "warning" }))
+			assert.lengthOf(
+				linear.calls.filter((call) => call.name === "MapleIssueCreate"),
+				1,
+			)
 		}),
 	)
 

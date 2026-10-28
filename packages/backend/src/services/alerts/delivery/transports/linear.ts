@@ -27,7 +27,8 @@ export const LINEAR_REOPEN_WINDOW_MS = 24 * 60 * 60 * 1000
 const MAPLE_ICON_URL = "https://maple.dev/logo512.png"
 const MAX_TITLE_CHARS = 250
 const MAX_BODY_CHARS = 8000
-/** Under the 30s delivery lease, so a slow Linear never lets a second worker run the same row. */
+const RESOLVED_BEFORE_OPEN = "**Resolved.** The incident resolved before Maple reached Linear."
+/** Under the 30s delivery lease; a token refresh in flight can still overrun it, and re-sends are idempotent. */
 const SEND_TIMEOUT = "25 seconds"
 
 /** A UUID v4-shaped id (Linear requires v4) derived from `parts`, so the same event always maps to it. */
@@ -127,7 +128,7 @@ const fetchIssue = (port: LinearDeliveryPort, input: Input, issueId: string) =>
 				variables: { id: issueId },
 			},
 			IssueStateSchema,
-			{ notFoundIsNull: true },
+			{ missingIsNull: true },
 		)
 		.pipe(
 			Effect.map((result) => (result === null || result.issue.trashed === true ? null : result.issue)),
@@ -143,7 +144,7 @@ const fetchTeam = (port: LinearDeliveryPort, input: Input) =>
 				variables: { id: input.config.teamId },
 			},
 			TeamSchema,
-			{ notFoundIsNull: true },
+			{ missingIsNull: true },
 		)
 		.pipe(
 			Effect.flatMap((result) =>
@@ -190,19 +191,31 @@ const comment = (port: LinearDeliveryPort, input: Input, issueId: string, body: 
 			},
 		},
 		Schema.Unknown,
-		{ duplicateIsSuccess: true },
+		{ duplicateIsSuccess: true, missingIsNull: true },
+	)
+
+/**
+ * Every delivery of one incident maps to the same first issue, so racing or retried deliveries
+ * find it; a replacement for a closed or deleted issue is keyed by that issue and gets its own id.
+ */
+const issueIdFor = (input: Input, replacing: string | null) =>
+	linearEntityId(
+		"issue",
+		input.context.destination.id,
+		input.context.incidentId ?? input.context.deliveryKey,
+		replacing ?? "",
 	)
 
 const createIssue = Effect.fn("LinearTransport.createIssue")(function* (
 	port: LinearDeliveryPort,
 	input: Input,
 	threadKey: string,
+	replacing: string | null,
 ) {
 	const { context } = input
-	// Keyed by the delivery, not the incident: a replacement issue for the same incident needs a new id.
-	const issueId = linearEntityId("issue", context.destination.id, context.deliveryKey)
-	const found = yield* fetchIssue(port, input, issueId)
-	const existing = found !== null && !found.archivedAt && !isClosed(found) ? found : null
+	const issueId = issueIdFor(input, replacing)
+	// Found means an earlier attempt or delivery already made it; use it whatever its state.
+	const existing = yield* fetchIssue(port, input, issueId)
 	const issue =
 		existing ??
 		(yield* port
@@ -259,11 +272,7 @@ const createIssue = Effect.fn("LinearTransport.createIssue")(function* (
 		linearUrl: issue.url,
 		incidentId: context.incidentId,
 	})
-	return {
-		providerMessage: `Opened Linear issue ${issue.identifier}`,
-		providerReference: issue.url,
-		responseCode: null,
-	} satisfies DispatchResult
+	return issue
 })
 
 /** Back to Triage when the team uses it, else its first unstarted state. */
@@ -298,23 +307,28 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 	const { context } = input
 	const threadKey = linearThreadKey(input)
 	const thread = yield* port.findThread(context.destination.orgId, context.destination.id, threadKey)
-	// A trigger retried after its incident resolved must not open an issue nothing will resolve.
-	if (thread === null && context.incidentId !== null && context.incidentStatus === "resolved") {
+	const issue = thread === null ? null : yield* fetchIssue(port, input, thread.linearIssueId)
+	const closedAt = issue !== null && isClosed(issue) ? closedAtMs(issue) : null
+	const replace =
+		thread === null ||
+		issue === null ||
+		Boolean(issue.archivedAt) ||
+		(issue !== null &&
+			isClosed(issue) &&
+			(closedAt === null || nowMs - closedAt > LINEAR_REOPEN_WINDOW_MS))
+	if (replace) {
+		const opened = yield* createIssue(port, input, threadKey, thread?.linearIssueId ?? null)
+		// Delivered after its incident resolved: still on record, and marked resolved so nothing dangles.
+		if (context.incidentId !== null && context.incidentStatus === "resolved") {
+			yield* comment(port, input, opened.id, RESOLVED_BEFORE_OPEN)
+		}
 		return {
-			providerMessage: "Skipped: the incident resolved before Linear was reached",
-			providerReference: null,
+			providerMessage: `Opened Linear issue ${opened.identifier}`,
+			providerReference: opened.url,
 			responseCode: null,
 		} satisfies DispatchResult
 	}
-	const issue = thread === null ? null : yield* fetchIssue(port, input, thread.linearIssueId)
-	if (thread === null || issue === null || issue.archivedAt) {
-		return yield* createIssue(port, input, threadKey)
-	}
-	if (isClosed(issue)) {
-		const closedAt = closedAtMs(issue)
-		if (closedAt === null || nowMs - closedAt > LINEAR_REOPEN_WINDOW_MS) {
-			return yield* createIssue(port, input, threadKey)
-		}
+	if (issue !== null && isClosed(issue)) {
 		const reopened = yield* reopen(port, input, issue.id)
 		yield* comment(port, input, issue.id, linearCommentBody(input, thread))
 		yield* port.saveThread({ ...thread, incidentId: input.context.incidentId })
@@ -336,13 +350,41 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 })
 
 const resolve = Effect.fn("LinearTransport.resolve")(function* (port: LinearDeliveryPort, input: Input) {
-	const { destination } = input.context
-	const thread = yield* port.findThread(destination.orgId, destination.id, linearThreadKey(input))
+	const { context } = input
+	const threadKey = linearThreadKey(input)
+	const saved = yield* port.findThread(context.destination.orgId, context.destination.id, threadKey)
+	// A trigger that made its issue but failed before saving the thread still left the issue behind.
+	const orphan =
+		saved === null && context.incidentId !== null
+			? yield* fetchIssue(port, input, issueIdFor(input, null))
+			: null
+	const thread: LinearThread | null =
+		saved ??
+		(orphan === null
+			? null
+			: {
+					orgId: context.destination.orgId,
+					destinationId: context.destination.id,
+					threadKey,
+					linearIssueId: orphan.id,
+					linearIdentifier: orphan.identifier,
+					linearUrl: orphan.url,
+					incidentId: context.incidentId,
+				})
 	// The issue stays open: the team closes it once they are done with it.
 	if (thread === null) {
 		return { providerMessage: "No Linear issue to update", providerReference: null, responseCode: null }
 	}
-	yield* comment(port, input, thread.linearIssueId, linearCommentBody(input, thread))
+	if (saved === null) yield* port.saveThread(thread)
+	const posted = yield* comment(port, input, thread.linearIssueId, linearCommentBody(input, thread))
+	// Null is either a retried comment or an issue that is gone; only the second needs saying.
+	if (posted === null && (yield* fetchIssue(port, input, thread.linearIssueId)) === null) {
+		return {
+			providerMessage: `Linear issue ${thread.linearIdentifier} no longer exists`,
+			providerReference: null,
+			responseCode: null,
+		} satisfies DispatchResult
+	}
 	return {
 		providerMessage: `Commented on Linear issue ${thread.linearIdentifier}`,
 		providerReference: thread.linearUrl,

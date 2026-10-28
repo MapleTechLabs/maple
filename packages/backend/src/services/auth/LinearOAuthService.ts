@@ -269,7 +269,9 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 						{ id: teamId },
 					),
 				)
-				if (result.errors.some(isNotFound)) return null
+				// A team the app cannot see answers FORBIDDEN; to the picker it does not exist either.
+				if (result.errors.some((error) => isNotFound(error) || error.code === "FORBIDDEN"))
+					return null
 				return (yield* linearData(TeamSchema, "team lookup")(result)).team
 			})
 

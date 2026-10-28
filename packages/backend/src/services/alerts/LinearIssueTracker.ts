@@ -87,14 +87,17 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 							operation.variables,
 						),
 					)
+					const forbidden = result.errors.some((error) => error.code === "FORBIDDEN")
+					if (options.missingIsNull === true && (forbidden || result.errors.some(isNotFound))) {
+						return null
+					}
 					if (result.errors.some(isNotFound)) {
-						if (options.notFoundIsNull === true) return null
 						return yield* new AlertDeliveryTargetMissingError({
 							message: `Linear could not find what ${operation.name} refers to. Check the destination's team.`,
 							destinationType: "linear",
 						})
 					}
-					if (result.errors.some((error) => error.code === "FORBIDDEN")) {
+					if (forbidden) {
 						return yield* new AlertDeliveryTargetMissingError({
 							message:
 								"Maple no longer has access to this Linear team. Reconnect Linear or pick another team.",
