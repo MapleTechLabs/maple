@@ -47,6 +47,8 @@ import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSou
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
+import { LinearIssueTracker } from "@maple/backend/services/alerts/LinearIssueTracker"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -120,6 +122,13 @@ const makeHarness = () => {
 		schedulerSpreadMs: () => 0,
 	})
 	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
+	const linearOAuthLive = LinearOAuthService.layer.pipe(
+		Layer.provide(Layer.mergeAll(envLive, testDb.layer)),
+	)
+	const linearIssuesLive = Layer.effect(LinearIssueTracker, LinearIssueTracker.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
+		Layer.provide(Layer.mergeAll(linearOAuthLive, testDb.layer)),
+	)
 	const emailLive = Layer.succeed(EmailService, {
 		isConfigured: false,
 		send: () => Effect.void,
@@ -139,7 +148,16 @@ const makeHarness = () => {
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
-			Layer.mergeAll(envLive, testDb.layer, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
+			Layer.mergeAll(
+				envLive,
+				testDb.layer,
+				runtimeLive,
+				hazelOAuthLive,
+				linearOAuthLive,
+				linearIssuesLive,
+				emailLive,
+				orgMembersLive,
+			),
 		),
 	)
 	const alertReadModelsLive = Layer.effect(AlertReadModelsService, AlertReadModelsService.make).pipe(
@@ -166,6 +184,8 @@ const makeHarness = () => {
 				warehouseLive,
 				runtimeLive,
 				hazelOAuthLive,
+				linearOAuthLive,
+				linearIssuesLive,
 				emailLive,
 				orgMembersLive,
 				orgChSettingsLive,
