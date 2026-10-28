@@ -19,6 +19,7 @@
 		"./gcp-metrics": "./src/gcp-metrics.ts",
 		"./gen-ai": "./src/gen-ai.ts",
 		"./glob": "./src/glob.ts",
+		"./ingest-rules": "./src/ingest-rules.ts",
 		"./http": "./src/http/index.ts",
 		"./incident-context": "./src/incident-context.ts",
 		"./http/v2": "./src/http/v2/index.ts",

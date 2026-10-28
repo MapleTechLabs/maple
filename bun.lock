@@ -764,6 +764,19 @@
         "vitest": "catalog:",
       },
     },
+    "packages/ingest-rules": {
+      "name": "@maple/ingest-rules",
+      "dependencies": {
+        "@maple/domain": "workspace:*",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:effect",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
     "packages/otel-collector-maple-exporter": {
       "name": "otel-collector-maple-exporter",
       "version": "0.0.0",
@@ -1509,6 +1522,8 @@
     "@maple/infra": ["@maple/infra@workspace:packages/infra"],
 
     "@maple/ingest": ["@maple/ingest@workspace:apps/ingest"],
+
+    "@maple/ingest-rules": ["@maple/ingest-rules@workspace:packages/ingest-rules"],
 
     "@maple/landing": ["@maple/landing@workspace:apps/landing"],
 
@@ -4425,8 +4440,6 @@
     "hast-util-raw/parse5/entities": ["entities@6.0.1", "", {}, "sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g=="],
 
     "ink-confirm-input/ink-text-input/chalk": ["chalk@3.0.0", "", { "dependencies": { "ansi-styles": "^4.1.0", "supports-color": "^7.1.0" } }, "sha512-4D3B6Wf41KOYRFdszmDqMCGq5VV/uMAB273JILmO+3jAlh8X4qDtdtgCR3fxtbLEMzSx22QdhnDcJvu2u1fVwg=="],
-
-    "ink-confirm-input/ink-text-input/react": ["react@19.3.0", "", {}, "sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog=="],
 
     "juice/postcss/nanoid": ["nanoid@3.3.19", "", { "bin": { "nanoid": "bin/nanoid.cjs" } }, "sha512-Y2tUNy4ouw6tq5oDSKeQYGOyhkUBhNOcGV/02KC+6kd9eDGqdZd++mjMiIDilrBYvjEnCYvVtsuHCuP+okSfug=="],
 
