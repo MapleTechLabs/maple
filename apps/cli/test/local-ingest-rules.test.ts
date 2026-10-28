@@ -330,6 +330,16 @@ describe("local ingest rules", () => {
 		const unreadable = source()
 		expect(unreadable.rules.compiled.rules).toEqual([])
 		expect(unreadable.rules.problems[0]).toContain("could not be read")
+		// A path that cannot be stat'ed (a plain file used as a directory) is reported once, not ignored.
+		const plain = path.join(dir, "plain")
+		fs.writeFileSync(plain, "")
+		const blocked = makeLocalIngestRulesSource(path.join(plain, "ingest-rules.json"))
+		const blockedFirst = blocked()
+		expect([
+			blockedFirst.reloaded,
+			blockedFirst.rules.problems[0]?.includes("could not be read"),
+		]).toEqual([true, true])
+		expect(blocked().reloaded).toBe(false)
 		fs.rmSync(dir, { recursive: true })
 	})
 })

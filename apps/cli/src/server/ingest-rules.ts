@@ -84,13 +84,29 @@ export const parseLocalIngestRules = (body: string): LocalIngestRules => {
 	}
 }
 
+const isMissingFile = (error: unknown): boolean =>
+	typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
+
 /** Re-reads the file only when its mtime changes, so edits apply without a restart. */
 export const makeLocalIngestRulesSource = (file: string) => {
 	let cached: { readonly mtimeMs: number; readonly rules: LocalIngestRules } | null = null
+	let statError: string | null = null
 	/** `reloaded` is true the first time a file version is read, so its problems log once. */
 	return (): { readonly rules: LocalIngestRules; readonly reloaded: boolean } => {
 		const stat = Result.try(() => fs.statSync(file))
-		if (Result.isFailure(stat)) return { rules: EMPTY, reloaded: false }
+		if (Result.isFailure(stat)) {
+			// No file is the normal case. Anything else (permissions, a broken link) turns the rules
+			// off, so say so once per distinct error.
+			const reason = String(stat.failure)
+			if (isMissingFile(stat.failure) || reason === statError) return { rules: EMPTY, reloaded: false }
+			statError = reason
+			cached = null
+			return {
+				rules: { ...EMPTY, problems: [`ingest rules file ${file} could not be read: ${reason}`] },
+				reloaded: true,
+			}
+		}
+		statError = null
 		if (cached !== null && cached.mtimeMs === stat.success.mtimeMs)
 			return { rules: cached.rules, reloaded: false }
 		const body = Result.try(() => fs.readFileSync(file, "utf8"))
