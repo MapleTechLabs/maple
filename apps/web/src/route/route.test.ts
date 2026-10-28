@@ -40,6 +40,16 @@ describe("routes", () => {
 		expect(hrefOf(monitor)).toBe("/alerts/uptime/upm_abc")
 	})
 
+	test("a status page route keeps its tab and prints back", () => {
+		const route = parse("/alerts/status-pages/stp_abc?tab=%22incidents%22")
+		expect(route).toMatchObject({
+			_tag: "AlertsStatusPage",
+			pageId: "stp_abc",
+			search: { tab: "incidents" },
+		})
+		expect(hrefOf(route)).toBe("/alerts/status-pages/stp_abc?tab=incidents")
+	})
+
 	test("a literal sibling wins over a param route", () => {
 		expect(parse("/infra/hosts")._tag).toBe("InfraHosts")
 		expect(parse("/alerts/create")._tag).toBe("AlertsCreate")

@@ -21,6 +21,7 @@ import { alertsEmptyState } from "./view-empty"
 import { inboxTab } from "./view-inbox"
 import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
+import * as StatusPages from "../status-pages/list"
 import { rulesTab } from "./view-rules"
 import { deleteMonitorDialog, uptimeTab } from "./view-uptime"
 
@@ -32,6 +33,7 @@ const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
 	{ value: "inbox", label: "Inbox" },
 	{ value: "rules", label: "Rules" },
 	{ value: "uptime", label: "Uptime" },
+	{ value: "status-pages", label: "Status pages" },
 	{ value: "routing", label: "Routing" },
 ]
 
@@ -51,15 +53,17 @@ const tabBar = (
 			const count =
 				tab.value === "uptime"
 					? Option.getOrUndefined(monitorCount)
-					: Option.match(overview, {
-							onNone: () => undefined,
-							onSome: (data) =>
-								tab.value === "inbox"
-									? data.openIncidents.length
-									: tab.value === "rules"
-										? data.rules.length
-										: undefined,
-						})
+					: tab.value === "status-pages"
+						? StatusPages.pageCount(model.statusPages)
+						: Option.match(overview, {
+								onNone: () => undefined,
+								onSome: (data) =>
+									tab.value === "inbox"
+										? data.openIncidents.length
+										: tab.value === "rules"
+											? data.rules.length
+											: undefined,
+							})
 			return {
 				key: tab.value,
 				href: alertsHref({ ...model.search, tab: tab.value }),
@@ -160,11 +164,23 @@ const newRuleButton = (h: H, model: Model): Html =>
 		],
 	)
 
-// Destinations are a Routing concern, so "New destination" only shows on that tab.
+/** Opens the Status pages tab's create dialog. */
+const newStatusPage = Message.GotStatusPagesMessage({ message: StatusPages.Message.ClickedNew() })
+
+// Destinations are a Routing concern, so "New destination" only shows on that tab; pages likewise.
 const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
 	h.div(
 		[h.Class("flex items-center gap-2")],
 		[
+			...(model.isAdmin && tab === "status-pages"
+				? [
+						button(
+							h,
+							{ size: "sm", variant: "outline", attributes: [h.OnClick(newStatusPage)] },
+							[icon(h, "PlusIcon"), "New status page"],
+						),
+					]
+				: []),
 			...(model.isAdmin && tab === "routing"
 				? [
 						button(
@@ -273,7 +289,20 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							})
 						: tab === "uptime"
 							? uptimeTab(h, model, model.nowMs ?? 0, inputs.context.pinnedNamespace)
-							: hubBody(h, model, overview, tab),
+							: tab === "status-pages"
+								? h.submodel({
+										slotId: "alerts-status-pages",
+										model: model.statusPages,
+										view: StatusPages.view,
+										viewInputs: {
+											isAdmin: model.isAdmin,
+											nowMs: model.nowMs ?? 0,
+											timeZone: inputs.context.timeZone,
+										},
+										toParentMessage: (message) =>
+											Message.GotStatusPagesMessage({ message }),
+									})
+								: hubBody(h, model, overview, tab),
 				],
 			),
 			deleteDialog(h, model),
