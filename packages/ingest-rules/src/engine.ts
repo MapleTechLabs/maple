@@ -387,6 +387,11 @@ const redactRecord = (
 
 // APPLY
 
+/** The one random draw a record without a trace id gets, taken on first use. */
+interface RecordDraw {
+	value?: number
+}
+
 export const applyRules = (
 	compiled: CompiledRules,
 	record: RuleRecord,
@@ -394,10 +399,13 @@ export const applyRules = (
 ): RuleOutcome => {
 	const matching = compiled.rules.filter((rule) => ruleMatches(rule, record))
 	const matched = matching.map((rule) => rule.index)
+	// One draw per record, shared by every drop rule, as the gateway does for records without a trace id.
+	const draw: RecordDraw = {}
+	const once = () => (draw.value ??= random())
 	const dropper = matching.find(
 		(rule) =>
 			rule.spec.action._tag === "drop" &&
-			!keepBySample(record.traceId, rule.spec.action.keepPercent, random),
+			!keepBySample(record.traceId, rule.spec.action.keepPercent, once),
 	)
 	if (dropper !== undefined) return { _tag: "dropped", ruleIndex: dropper.index, matched }
 	const redactions = new Map<number, number>()

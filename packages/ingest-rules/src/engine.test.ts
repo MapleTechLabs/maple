@@ -50,6 +50,24 @@ describe("sha256", () => {
 	})
 })
 
+describe("sampling", () => {
+	it("draws once per record for every matching drop rule, like the gateway", () => {
+		const halfDrop = (value: string): IngestRuleSpec => ({
+			signals: ["logs"],
+			conditions: [{ field: "body", op: "contains", value }],
+			action: { _tag: "drop", keepPercent: 50 },
+		})
+		const draws = [0.3, 0.7]
+		const outcome = applyRules(
+			compileRules([halfDrop("a"), halfDrop("b")], "salt"),
+			logRecord({}, "a b"),
+			() => draws.shift() ?? 1,
+		)
+		expect(outcome._tag).toBe("kept")
+		expect(draws).toEqual([0.7])
+	})
+})
+
 describe("formatDouble", () => {
 	it("writes doubles the way Rust's {} does", () => {
 		expect([Infinity, -Infinity, Number.NaN, -0, 1e21, 1.5e-7, 2].map(formatDouble)).toEqual([
