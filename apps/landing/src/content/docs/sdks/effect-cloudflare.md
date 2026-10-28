@@ -42,7 +42,9 @@ Runtimes that own a per-request scope can use `telemetry.requestLayer` instead o
 
 ## No-op mode
 
-When no ingest key is set (neither `ingestKey` nor `MAPLE_INGEST_KEY`), the SDK runs in no-op mode. Each `flush()` still empties the buffers so they do not grow for the life of the isolate, but nothing is sent. The first flush logs one `console.info` line starting with `[MapleCloudflareSDK] no ingest key configured`. The same code can therefore run in preview environments that have no key.
+When no ingest key is set (neither `ingestKey` nor `MAPLE_INGEST_KEY`) and the endpoint is Maple's hosted ingest, the SDK runs in no-op mode. Each `flush()` still empties the buffers so they do not grow for the life of the isolate, but nothing is sent. The first flush logs one `console.info` line starting with `[MapleCloudflareSDK] no ingest key configured`. The same code can therefore run in preview environments that have no key.
+
+Against any other endpoint, such as a local `maple start` or your own collector, a keyless Worker exports without an `Authorization` header.
 
 ## Failure handling
 

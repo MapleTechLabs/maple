@@ -205,6 +205,27 @@ describe("MapleFlush.make (server)", () => {
 		expect(consoleInfoSpy).toHaveBeenCalledTimes(1)
 	})
 
+	it("exports without Authorization to a custom endpoint when no ingest key is configured", async () => {
+		const consoleInfoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
+		const { calls, restore: r } = setupFetch()
+		restore = () => {
+			r()
+			consoleInfoSpy.mockRestore()
+		}
+		const { ingestKey: _ingestKey, ...keyless } = baseConfig
+		const telemetry = make({ ...keyless, endpoint: "http://localhost:4318" })
+
+		await Effect.runPromise(
+			Effect.succeed(undefined).pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)),
+		)
+		await telemetry.flush()
+
+		const tracesCall = calls.find((c) => c.url === "http://localhost:4318/v1/traces")
+		expect(tracesCall?.body).toBeDefined()
+		expect(tracesCall?.headers).not.toHaveProperty("authorization")
+		expect(consoleInfoSpy).not.toHaveBeenCalled()
+	})
+
 	it("survives a failing collector — disables the signal for a cooldown", async () => {
 		const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 		const { calls, restore: r } = setupFetch(() => new Response(null, { status: 500 }))
