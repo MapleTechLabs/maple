@@ -135,7 +135,7 @@ const fetchIssue = (port: LinearDeliveryPort, input: Input, issueId: string) =>
 				variables: { id: issueId },
 			},
 			IssueStateSchema,
-			{ missingIsNull: true },
+			{ missingIsNull: true, hiddenIsNull: true },
 		)
 		.pipe(
 			Effect.map((result) => (result === null || result.issue.trashed === true ? null : result.issue)),
@@ -151,7 +151,7 @@ const fetchTeam = (port: LinearDeliveryPort, input: Input) =>
 				variables: { id: input.config.teamId },
 			},
 			TeamSchema,
-			{ missingIsNull: true },
+			{ missingIsNull: true, hiddenIsNull: true },
 		)
 		.pipe(
 			Effect.flatMap((result) =>

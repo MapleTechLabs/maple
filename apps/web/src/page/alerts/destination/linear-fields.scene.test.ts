@@ -199,6 +199,12 @@ describe("linear destination fields", () => {
 		)
 	})
 
+	test("an edit's stored team that the workspace no longer lists is cleared", () => {
+		const stored = { ...form, linearTeamId: "team_gone", linearTeamName: "Old team" }
+		const listed = withTeams([team], stored)
+		expect(listed.form).toEqual({ linearTeamId: "", linearTeamName: "" })
+	})
+
 	test("a failed teams read re-checks the connection once; a revoked grant then asks to reconnect", () => {
 		shows(withTeams([]).model, "No teams in this Linear workspace. Create one in Linear, then try again.")
 		const status = withStatus(CONNECTED).model

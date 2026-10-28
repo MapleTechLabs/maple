@@ -285,6 +285,14 @@ describe("AlertsService with a Linear destination", () => {
 				.request(orgId, operation("MapleComment"), Schema.Unknown)
 				.pipe(Effect.flip)
 			assert.strictEqual(forbidden._tag, "@maple/http/errors/AlertDeliveryTargetMissingError")
+			// A comment tolerates a missing issue, but a refusal is never recorded as delivered.
+			const refused = yield* tracker
+				.request(orgId, operation("MapleComment"), Schema.Unknown, {
+					missingIsNull: true,
+					duplicateIsSuccess: true,
+				})
+				.pipe(Effect.flip)
+			assert.strictEqual(refused._tag, "@maple/http/errors/AlertDeliveryTargetMissingError")
 			const read = yield* tracker.request(orgId, operation("MapleIssueCreate"), Schema.Unknown, {
 				missingIsNull: true,
 			})

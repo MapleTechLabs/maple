@@ -178,7 +178,12 @@ export interface LinearDeliveryPort {
 		orgId: OrgId,
 		operation: LinearOperation,
 		schema: Schema.Decoder<A>,
-		options?: { readonly missingIsNull?: boolean; readonly duplicateIsSuccess?: boolean },
+		options?: {
+			readonly missingIsNull?: boolean
+			/** Also null for FORBIDDEN: only reads, where a hidden entity is as good as gone. */
+			readonly hiddenIsNull?: boolean
+			readonly duplicateIsSuccess?: boolean
+		},
 	) => Effect.Effect<A | null, AlertDeliveryFailure>
 	readonly findThread: (
 		orgId: OrgId,

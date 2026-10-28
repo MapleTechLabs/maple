@@ -185,9 +185,11 @@ const teamsAnswered = (
 		return readStatus({ ...next, isRecheckingStatus: true }, "Refresh")
 	// The stored team's name, once known, keeps the suggested name current.
 	const name = teamName(next, form.linearTeamId)
-	return name === ""
-		? { model: next, commands: [] }
-		: { model: next, commands: [], form: { linearTeamName: name } }
+	if (name !== "") return { model: next, commands: [], form: { linearTeamName: name } }
+	// A stored team the workspace no longer lists is dead: clear it so the picker and Save agree.
+	return Result.isSuccess(result) && form.linearTeamId !== ""
+		? { model: next, commands: [], form: { linearTeamId: "", linearTeamName: "" } }
+		: { model: next, commands: [] }
 }
 
 const teamName = (model: Model, teamId: string): string =>

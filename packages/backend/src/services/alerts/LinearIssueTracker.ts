@@ -88,7 +88,10 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 						),
 					)
 					const forbidden = result.errors.some((error) => error.code === "FORBIDDEN")
-					if (options.missingIsNull === true && (forbidden || result.errors.some(isNotFound))) {
+					if (
+						(options.hiddenIsNull === true && forbidden) ||
+						(options.missingIsNull === true && result.errors.some(isNotFound))
+					) {
 						return null
 					}
 					if (result.errors.some(isNotFound)) {
