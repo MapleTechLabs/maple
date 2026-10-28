@@ -337,6 +337,7 @@ export class Chdb {
 	readonly #sym: ChdbSymbols
 	#connPtrPtr: Pointer | bigint | null
 	readonly #conn: Pointer
+	#beforeStatement: () => void = () => undefined
 
 	private constructor(sym: ChdbSymbols, connPtrPtr: Pointer | bigint, conn: Pointer) {
 		this.#sym = sym
@@ -425,6 +426,15 @@ export class Chdb {
 		this.#run(sql, "CSV", () => undefined, undefined)
 	}
 
+	/**
+	 * Run `hook` before every later statement. The server's `InsertBatcher`
+	 * inserts its queued rows here, so no statement runs ahead of rows that
+	 * requests before it queued.
+	 */
+	beforeEachStatement(hook: () => void): void {
+		this.#beforeStatement = hook
+	}
+
 	get closed(): boolean {
 		return this.#connPtrPtr === null
 	}
@@ -440,6 +450,7 @@ export class Chdb {
 		// The connection pointer is freed by close(); dereferencing it afterwards
 		// would crash natively, so a late request fails with a typed error instead.
 		if (this.#connPtrPtr === null) throw new ChdbClosedError({ message: "chDB connection is closed" })
+		this.#beforeStatement()
 		// Held in locals so neither buffer can be collected before the call reads it.
 		const query = cstr(sql)
 		const outputFormat = cstr(format)

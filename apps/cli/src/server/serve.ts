@@ -21,7 +21,7 @@ import {
 	readRawTelemetryRetentionDays,
 	rawTelemetryTtlStatements,
 } from "./chdb"
-import { buildInsertStatements } from "./inserts"
+import { InsertBatcher } from "./insert-batcher"
 import {
 	eventingControlSnapshotPath,
 	type EventConsumerFailure,
@@ -401,7 +401,7 @@ const projectionFailure =
 const localIngestRules = makeLocalIngestRulesSource(localIngestRulesPath())
 
 const ingest = (
-	db: Pick<Chdb, "exec">,
+	inserts: Pick<InsertBatcher, "insert">,
 	authority: RetiredDayAuthority,
 	signal: Signal,
 	req: Request,
@@ -484,20 +484,15 @@ const ingest = (
 			rejected += filtered.rejected
 			return { ...batch, ndjson: filtered.ndjson, rowCount: filtered.accepted }
 		})
-		let accepted = 0
-		for (const batch of batches) {
-			if (batch.rowCount === 0) continue
-			for (const statement of buildInsertStatements(batch.datasource, batch.ndjson)) {
-				const inserted = Result.try(() => db.exec(statement.sql))
-				if (Result.isFailure(inserted))
-					return yield* stopIngest(
-						text(`chDB insert (${batch.datasource}): ${describeThrown(inserted.failure)}`, 500),
-						requestBytes,
-						accepted,
-					)
-				accepted += statement.rowCount
-			}
-		}
+		const { accepted, failure } = yield* Effect.promise(() =>
+			inserts.insert(batches.filter((batch) => batch.rowCount > 0)),
+		)
+		if (failure !== undefined)
+			return yield* stopIngest(
+				text(`chDB insert (${failure.datasource}): ${describeThrown(failure.cause)}`, 500),
+				requestBytes,
+				accepted,
+			)
 		const readyEventIds = [...evaluation.recoveredEventIds, ...staged.eventIds]
 		// The rows are committed: a 5xx here would make exporters resend the batch
 		// and double-count it, so readiness is retried in the background instead.
@@ -699,7 +694,7 @@ interface ServerStatus {
 /** OTLP-ingest request as a `Server`-kind span, mirroring the Rust gateway
  *  (`apps/ingest`): `maple.signal`, item count, request size, HTTP semconv. */
 const ingestSpan = (
-	db: Chdb,
+	inserts: InsertBatcher,
 	authority: RetiredDayAuthority,
 	readiness: ReadinessRetry,
 	status: ServerStatus,
@@ -708,7 +703,13 @@ const ingestSpan = (
 ): Effect.Effect<Response, never, LocalEventingRuntime> =>
 	recoverResponse(
 		Effect.gen(function* () {
-			const { response, accepted, requestBytes } = yield* ingest(db, authority, signal, req, readiness)
+			const { response, accepted, requestBytes } = yield* ingest(
+				inserts,
+				authority,
+				signal,
+				req,
+				readiness,
+			)
 			if (accepted > 0 && response.status < 300) status.lastIngestAtMs = yield* Clock.currentTimeMillis
 			yield* Effect.annotateCurrentSpan({
 				"http.request.body.size": requestBytes,
@@ -1487,6 +1488,7 @@ const loginSpan = (
 
 interface ServerContext {
 	readonly db: Chdb
+	readonly inserts: InsertBatcher
 	readonly options: ServerOptions
 	readonly policy: BrowserOriginPolicy
 	readonly runSpan: SpanRunner
@@ -1566,7 +1568,14 @@ const makeFetch =
 					await runSpan(
 						admitted(
 							gate,
-							ingestSpan(db, authority, context.readiness, context.status, signal, req),
+							ingestSpan(
+								context.inserts,
+								authority,
+								context.readiness,
+								context.status,
+								signal,
+								req,
+							),
 						),
 					),
 				)
@@ -1784,6 +1793,8 @@ export const startServer = (
 			),
 		)
 		const gate = new RequestQuiescenceGate()
+		const inserts = new InsertBatcher(db)
+		db.beforeEachStatement(() => inserts.flush())
 		const runSpan: SpanRunner = (effect) => runtime.runPromise(effect)
 		const eventing = Context.get(services, LocalEventingRuntime)
 		const readiness = new ReadinessRecovery(
@@ -1810,6 +1821,7 @@ export const startServer = (
 						hostname: options.hostname,
 						fetch: makeFetch({
 							db,
+							inserts,
 							options,
 							policy,
 							runSpan,
@@ -1844,6 +1856,9 @@ export const startServer = (
 					// then cut whatever is left. chDB closes after this finalizer.
 					readiness.stop()
 					const drained = gate.shutdown()
+					// Queued exports are admitted requests: commit them now, so the
+					// drain below never waits on the batcher's timer.
+					inserts.flush()
 					const stopped = s.stop(false)
 					await settleWithin(Promise.all([drained, stopped]), SHUTDOWN_DRAIN_MS)
 					await s.stop(true)

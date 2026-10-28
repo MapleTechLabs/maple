@@ -60,11 +60,53 @@ export function buildInsertSql(datasource: string, ndjson: string): string {
  * fails with "Code: 62 … Max query size exceeded". Budget for the escaped
  * payload per statement, leaving headroom for the template prefix/suffix.
  */
-const MAX_ESCAPED_PAYLOAD_BYTES = 200_000
+export const MAX_ESCAPED_PAYLOAD_BYTES = 200_000
 
 export interface InsertStatement {
 	readonly sql: string
 	readonly rowCount: number
+}
+
+interface EscapedLine {
+	readonly text: string
+	readonly bytes: number
+}
+
+const templateFor = (datasource: string): InsertTemplate => {
+	const template = templates.get(datasource)
+	if (!template) throw new Error(`no insert mapping for datasource '${datasource}'`)
+	return template
+}
+
+const escapeLines = (ndjson: string): EscapedLine[] => {
+	const out: EscapedLine[] = []
+	for (const line of ndjson.split("\n")) {
+		if (line.length === 0) continue
+		// Escaping is per-character, so escaping line-by-line and joining with
+		// "\n" is identical to escaping the whole batch at once.
+		const text = escapeSqlLiteral(line)
+		out.push({ text, bytes: Buffer.byteLength(text, "utf8") + 1 })
+	}
+	return out
+}
+
+const splitLines = (template: InsertTemplate, lines: ReadonlyArray<EscapedLine>): InsertStatement[] => {
+	const out: InsertStatement[] = []
+	let chunk: string[] = []
+	let chunkBytes = 0
+	const flush = () => {
+		if (chunk.length === 0) return
+		out.push({ sql: template.prefix + chunk.join("\n") + template.suffix, rowCount: chunk.length })
+		chunk = []
+		chunkBytes = 0
+	}
+	for (const line of lines) {
+		if (chunkBytes > 0 && chunkBytes + line.bytes > MAX_ESCAPED_PAYLOAD_BYTES) flush()
+		chunk.push(line.text)
+		chunkBytes += line.bytes
+	}
+	flush()
+	return out
 }
 
 /**
@@ -75,26 +117,58 @@ export interface InsertStatement {
  * `SET max_query_size` (`MAX_QUERY_SIZE_BYTES`) exists for.
  */
 export function buildInsertStatements(datasource: string, ndjson: string): InsertStatement[] {
-	const template = templates.get(datasource)
-	if (!template) throw new Error(`no insert mapping for datasource '${datasource}'`)
-	const out: InsertStatement[] = []
-	let chunk: string[] = []
-	let chunkBytes = 0
+	return splitLines(templateFor(datasource), escapeLines(ndjson))
+}
+
+/** The rows of one batch inside a {@link BatchedInsertStatement}. */
+export interface InsertStatementPart<Owner> {
+	readonly owner: Owner
+	readonly rowCount: number
+}
+
+export interface BatchedInsertStatement<Owner> extends InsertStatement {
+	readonly parts: ReadonlyArray<InsertStatementPart<Owner>>
+}
+
+/**
+ * {@link buildInsertStatements} for several batches of one datasource. Each
+ * statement holds whole batches, so a failed insert names exactly the batches
+ * it carried. A batch over the budget gets statements of its own, split the
+ * way {@link buildInsertStatements} splits it.
+ */
+export function buildBatchedInsertStatements<Owner>(
+	datasource: string,
+	batches: ReadonlyArray<{ readonly owner: Owner; readonly ndjson: string }>,
+): BatchedInsertStatement<Owner>[] {
+	const template = templateFor(datasource)
+	const out: BatchedInsertStatement<Owner>[] = []
+	let data: string[] = []
+	let parts: InsertStatementPart<Owner>[] = []
+	let rowCount = 0
+	let bytes = 0
 	const flush = () => {
-		if (chunk.length === 0) return
-		out.push({ sql: template.prefix + chunk.join("\n") + template.suffix, rowCount: chunk.length })
-		chunk = []
-		chunkBytes = 0
+		if (parts.length === 0) return
+		out.push({ sql: template.prefix + data.join("\n") + template.suffix, rowCount, parts })
+		data = []
+		parts = []
+		rowCount = 0
+		bytes = 0
 	}
-	for (const line of ndjson.split("\n")) {
-		if (line.length === 0) continue
-		// Escaping is per-character, so escaping line-by-line and joining with
-		// "\n" is identical to escaping the whole batch at once.
-		const escaped = escapeSqlLiteral(line)
-		const bytes = Buffer.byteLength(escaped, "utf8") + 1
-		if (chunkBytes > 0 && chunkBytes + bytes > MAX_ESCAPED_PAYLOAD_BYTES) flush()
-		chunk.push(escaped)
-		chunkBytes += bytes
+	for (const { owner, ndjson } of batches) {
+		const lines = escapeLines(ndjson)
+		if (lines.length === 0) continue
+		const batchBytes = lines.reduce((total, line) => total + line.bytes, 0)
+		if (batchBytes > MAX_ESCAPED_PAYLOAD_BYTES) {
+			flush()
+			for (const statement of splitLines(template, lines))
+				out.push({ ...statement, parts: [{ owner, rowCount: statement.rowCount }] })
+			continue
+		}
+		if (bytes + batchBytes > MAX_ESCAPED_PAYLOAD_BYTES) flush()
+		data.push(lines.map((line) => line.text).join("\n"))
+		parts.push({ owner, rowCount: lines.length })
+		rowCount += lines.length
+		bytes += batchBytes
 	}
 	flush()
 	return out
