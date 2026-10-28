@@ -2,11 +2,11 @@
  * How many uptime monitors an org's plan allows, and the Autumn meter that counts them. The
  * `uptime_monitors` feature is continuous use: +1 on create, -1 on delete.
  */
-import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
 import {
 	BillingCustomer,
+	type BillingCustomerId,
 	UptimeMonitorLimitReachedError,
 	UptimeMonitorPersistenceError,
 } from "@maple/domain/http"
@@ -47,8 +47,15 @@ export const ensureWithinLimit = (
 export interface UptimeMonitorAllowanceApi {
 	/** The org's monitor cap; None when uncapped. Count against it with `ensureWithinLimit`. */
 	readonly limit: (orgId: OrgId) => Effect.Effect<Option.Option<number>, UptimeMonitorPersistenceError>
-	/** Meters a created (+1) or deleted (-1) monitor. Never fails: a dropped event is logged. */
-	readonly track: (orgId: OrgId, monitorId: UptimeMonitorId, delta: 1 | -1) => Effect.Effect<void>
+	/**
+	 * Meters a created (+1) or deleted (-1) monitor to `customerId`, the payer read inside the write's
+	 * transaction under the shared link lock. Never fails: a dropped event is logged.
+	 */
+	readonly track: (
+		customerId: BillingCustomerId,
+		monitorId: UptimeMonitorId,
+		delta: 1 | -1,
+	) => Effect.Effect<void>
 }
 
 export class UptimeMonitorAllowance extends Context.Service<
@@ -97,26 +104,13 @@ export class UptimeMonitorAllowance extends Context.Service<
 			},
 		)
 
-		const track: UptimeMonitorAllowanceApi["track"] = (orgId, monitorId, delta) =>
-			// Uncached: a create counts against the pool it was checked against, not a stale one.
-			billingCustomers.readLink(orgId).pipe(
-				Effect.map((link) => ownBillingCustomer(Option.getOrElse(link, () => orgId))),
-				Effect.flatMap((customerId) =>
-					trackFeatureUsage({
-						customerId,
-						featureId: UPTIME_MONITORS_FEATURE_ID,
-						value: delta,
-						idempotencyKey: `uptime_monitor:${monitorId}:${delta > 0 ? "created" : "deleted"}`,
-					}),
-				),
-				// Infallible, like the meter itself: a lookup failure drops this one event.
-				Effect.catchTag("@maple/http/errors/BillingAccountPersistenceError", (error) =>
-					Effect.logWarning("Uptime monitor usage not tracked").pipe(
-						Effect.annotateLogs({ orgId, monitorId, error: error.message }),
-					),
-				),
-				Effect.provideService(HttpClient.HttpClient, httpClient),
-			)
+		const track: UptimeMonitorAllowanceApi["track"] = (customerId, monitorId, delta) =>
+			trackFeatureUsage({
+				customerId,
+				featureId: UPTIME_MONITORS_FEATURE_ID,
+				value: delta,
+				idempotencyKey: `uptime_monitor:${monitorId}:${delta > 0 ? "created" : "deleted"}`,
+			}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 
 		return { limit, track } satisfies UptimeMonitorAllowanceApi
 	}),

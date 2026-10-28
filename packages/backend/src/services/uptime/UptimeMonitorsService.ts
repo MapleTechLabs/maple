@@ -1,4 +1,5 @@
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import { randomBytes, randomUUID } from "node:crypto"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -641,7 +642,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							.select(() => ({ count: PG.count() }))
 							.where(($) => [PG.inList($.orgId, pool)]),
 					)
-					return Number(rows[0]?.count ?? 0)
+					return { count: Number(rows[0]?.count ?? 0), payer: ownBillingCustomer(payer) }
 				})
 
 			const create = Effect.fn("UptimeMonitorsService.create")(function* (
@@ -663,12 +664,13 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const enabled = input.enabled !== false
 				const serviceName = input.serviceName ?? null
 				const destinationIds = Arr.dedupe(input.destinationIds ?? [])
-				yield* dbExecute((db) =>
+				const payer = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							// One lock for the count and the rule checks: concurrent creates cannot both pass a full plan.
 							yield* lockOrgMonitors(db, orgId)
-							yield* ensureWithinLimit(limit, yield* countPooledMonitors(db, orgId))
+							const pooled = yield* countPooledMonitors(db, orgId)
+							yield* ensureWithinLimit(limit, pooled.count)
 							yield* claimRuleWrite(db, orgId, ruleId, { name, destinationIds })
 							yield* db.run(
 								PG.insertInto(AlertRules).values({
@@ -714,10 +716,12 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									updatedAt: now,
 								}),
 							)
+							// Metered to the payer this create was counted against, even if a link lands next.
+							return pooled.payer
 						}),
 					),
 				)
-				yield* allowance.track(orgId, id, 1)
+				yield* allowance.track(payer, id, 1)
 				return yield* requireMonitor(orgId, id).pipe(
 					Effect.catchTag("@maple/http/errors/UptimeMonitorNotFoundError", () =>
 						Effect.fail(
@@ -904,12 +908,19 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							)
 							const ruleId = removed[0]?.alertRuleId ?? null
 							if (ruleId !== null) yield* deleteRuleRows(db, orgId, ruleId)
-							return removed
+							// The payer as of this delete: a link or unlink after it moves the rest.
+							const [link] = yield* db.run(
+								PG.from(OrgBillingLinks)
+									.select(($) => ({ billingOrgId: $.billingOrgId }))
+									.where(($) => [$.orgId.eq(orgId)])
+									.limit(1),
+							)
+							return { removed, payer: ownBillingCustomer(link?.billingOrgId ?? orgId) }
 						}),
 					),
 				)
-				if (deleted.length === 0) return yield* notFound(monitorId)
-				yield* allowance.track(orgId, monitorId, -1)
+				if (deleted.removed.length === 0) return yield* notFound(monitorId)
+				yield* allowance.track(deleted.payer, monitorId, -1)
 				return monitorId
 			})
 
