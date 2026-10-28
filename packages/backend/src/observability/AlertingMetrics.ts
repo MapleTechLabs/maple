@@ -92,3 +92,8 @@ export const deliveryAttemptDurationMs = Metric.histogram("alerting.delivery_att
 export const activeRulesGauge = Metric.gauge("alerting.active_rules", {
 	description: "Number of enabled alert rules found in the current tick",
 })
+
+export const alertChecksDroppedTotal = Metric.counter("alerting.alert_checks_dropped_total", {
+	description: "alert_checks history rows dropped because their warehouse insert failed or timed out",
+	incremental: true,
+})
