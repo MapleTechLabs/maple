@@ -79,6 +79,13 @@ export const GET: APIRoute = ({ site }) => {
 		...features.map((feature) => `- [${feature.navLabel()}](${url(`/features/${feature.slug}.md`)})`),
 		"",
 
+		"## Integrations",
+		"",
+		`Every language, agent framework, cloud, database and alert destination Maple works with, each linked to its setup guide.`,
+		"",
+		...both("Integrations", "/integrations"),
+		"",
+
 		"## Use cases",
 		"",
 		`Worked debugging stories, step by step. ${CONVENTION("use-case")}`,
