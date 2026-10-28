@@ -103,20 +103,19 @@ describe("ingest rule MCP tools", () => {
 		return Effect.gen(function* () {
 			const refused = yield* call("create_ingest_rule", dropDebug).pipe(Effect.flip)
 			assert.strictEqual(refused._tag, "@maple/mcp/errors/McpUnavailableError")
-		})
-			.pipe(Effect.provide(layerFor(testDb, ["org:member"])))
-			.pipe(
-				Effect.andThen(
-					Effect.gen(function* () {
-						const invalid = yield* call("create_ingest_rule", {
-							...dropDebug,
-							conditions: [],
-						}).pipe(Effect.flip)
-						assert.strictEqual(invalid._tag, "@maple/mcp/errors/McpInvalidInputError")
-						assert.include(invalid.message, "a drop rule needs at least one condition")
-					}).pipe(Effect.provide(layerFor(testDb, ["org:admin"]))),
-				),
-			)
+		}).pipe(
+			Effect.provide(layerFor(testDb, ["org:member"])),
+			Effect.andThen(
+				Effect.gen(function* () {
+					const invalid = yield* call("create_ingest_rule", {
+						...dropDebug,
+						conditions: [],
+					}).pipe(Effect.flip)
+					assert.strictEqual(invalid._tag, "@maple/mcp/errors/McpInvalidInputError")
+					assert.include(invalid.message, "a drop rule needs at least one condition")
+				}).pipe(Effect.provide(layerFor(testDb, ["org:admin"]))),
+			),
+		)
 	})
 
 	it.effect("a draft for metrics reports why it cannot be previewed instead of querying", () => {
