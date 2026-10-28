@@ -42,6 +42,8 @@ export const connectButton = (h: H, model: Model, integration: IntegrationId): H
 		{
 			size: "sm",
 			isLoading: model.connect.isStarting,
+			// Linear's start is admin-only on the server.
+			isDisabled: integration === "linear" && !model.isAdmin,
 			attributes: [h.OnClick(Message.ClickedConnect())],
 		},
 		[entryGlyph(h, entry, undefined), "Connect ", entry.name],

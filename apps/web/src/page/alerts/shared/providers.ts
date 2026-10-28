@@ -82,7 +82,7 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 		{
 			type: "linear",
 			label: "Linear",
-			description: "Open one Linear issue per incident in a team, and comment on it as it changes.",
+			description: "Open one Linear issue per alert rule in a team, and comment on it as it changes.",
 			accent: LINEAR_ACCENT,
 			accentBg: "rgba(94,106,213,0.18)",
 			accentText: "light-dark(#4651B8, #A9B0F0)",

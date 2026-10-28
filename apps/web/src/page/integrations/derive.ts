@@ -287,7 +287,13 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 					status.revoked
 						? { label: "Revoked", variant: "warn" }
 						: status.connected
-							? { label: status.workspaceName ?? "Connected", variant: "ok" }
+							? {
+									label:
+										status.workspaceName === null || status.workspaceName === ""
+											? "Connected"
+											: status.workspaceName,
+									variant: "ok",
+								}
 							: NOT_CONNECTED,
 				unavailableStatus,
 			)

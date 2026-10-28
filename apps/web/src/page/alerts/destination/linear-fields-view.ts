@@ -1,11 +1,11 @@
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Option } from "effect"
-import { AppRoute, hrefOf } from "../../../route"
-import { button, linkButton } from "../../../ui/button"
+import { button } from "../../../ui/button"
 import { field, fieldDescription, fieldError, type FieldIds, fieldLabel } from "../../../ui/field"
 import type { FieldState } from "../../../ui/input"
 import * as SelectView from "../../../ui/select-view"
+import { providerOf } from "../shared/providers"
 import type { DestinationForm } from "./form"
 import {
 	isUsable,
@@ -15,7 +15,7 @@ import {
 	TEAM_SELECT_ID,
 } from "./linear-fields"
 
-// `LinearFields`' view: a team picker, or the way to the Integrations page to connect Linear.
+// `LinearFields`' view: a team picker, or connecting Linear in a popup (admins only).
 
 const IDLE: FieldState = {
 	isInvalid: false,
@@ -30,7 +30,6 @@ const IDS: FieldIds = {
 	error: `${TEAM_SELECT_ID}-error`,
 	description: `${TEAM_SELECT_ID}-description`,
 }
-const INTEGRATIONS_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "linear" } }))
 
 type Inputs<M> = Readonly<{
 	model: LinearModel
@@ -50,34 +49,71 @@ const teamLabel = (team: LinearTeam): string => `${team.name} (${team.key})`
 const note = <M>(h: HtmlBuilder<M>, text: string): Html =>
 	h.p([h.Class("text-2xs text-muted-foreground")], [text])
 
+/** A re-read of a failed slot keeps the failure on screen, so the button shows it is working. */
+const isRetrying = (model: LinearModel): boolean =>
+	model.status.retrying === true ||
+	model.teams.retrying === true ||
+	AsyncData.isRefreshing(model.status.data)
+
 const retry = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, label: string): Html =>
 	button(
 		h,
 		{
 			size: "sm",
 			variant: "outline",
+			isLoading: isRetrying(inputs.model),
 			attributes: [h.OnClick(inputs.toMessage(LinearMessage.ClickedRetry()))],
 		},
 		[label],
 	)
 
-const connectNote = <M>(h: HtmlBuilder<M>, isRevoked: boolean): Html =>
-	h.div(
+const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean): Html => {
+	const { model } = inputs
+	const accent = providerOf("linear")
+	const isAdmin = model.isAdmin === true
+	return h.div(
 		[h.Class("space-y-2 rounded-md border border-dashed border-border/60 p-3")],
 		[
 			h.p(
 				[h.Class("text-xs text-muted-foreground")],
 				[
-					isRevoked
-						? "Linear revoked Maple's access. Reconnect it on the Integrations page, then pick a team here."
-						: "Connect your Linear workspace on the Integrations page, then pick the team incidents open issues in.",
+					model.isAdmin === false
+						? "Ask an org admin to connect Linear on the Integrations page, then check again."
+						: isRevoked
+							? "Linear revoked Maple's access. Reconnect it, then pick a team here."
+							: "Connect your Linear workspace, then pick the team issues open in.",
 				],
 			),
-			linkButton(h, { size: "sm", variant: "outline", href: INTEGRATIONS_HREF }, [
-				isRevoked ? "Reconnect Linear" : "Connect Linear",
-			]),
+			h.div(
+				[h.Class("flex flex-wrap gap-2")],
+				[
+					...(model.isAdmin === false
+						? []
+						: [
+								button(
+									h,
+									{
+										size: "sm",
+										isLoading: model.isConnecting,
+										isDisabled: !isAdmin,
+										attributes: [
+											h.OnClick(inputs.toMessage(LinearMessage.ClickedConnect())),
+											h.Style({
+												background: accent.accent,
+												"border-color": accent.accent,
+												color: model.isConnecting ? "transparent" : accent.accentOn,
+											}),
+										],
+									},
+									[isRevoked ? "Reconnect Linear" : "Connect Linear"],
+								),
+							]),
+					retry(h, inputs, "Check again"),
+				],
+			),
 		],
 	)
+}
 
 const teamField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const { form, model } = inputs
@@ -133,7 +169,7 @@ const teamField = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 		fieldDescription(
 			h,
 			{ ids: IDS, className: "text-2xs", state: IDLE },
-			"Opens one issue per incident in this team and comments as it escalates and resolves. Reminders are not sent.",
+			"Opens one issue per rule in this team, and comments when it fires again, changes severity or resolves. Reminders are not sent.",
 		),
 	])
 }
@@ -153,6 +189,6 @@ export const linearFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 				retry(h, inputs, "Try again"),
 			],
 		)
-	if (!isUsable(status)) return connectNote(h, status.revoked)
+	if (!isUsable(status)) return connectNote(h, inputs, status.revoked)
 	return teamField(h, inputs)
 }

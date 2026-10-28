@@ -264,7 +264,7 @@ const V2LinearDestinationCreateParams = Schema.Struct({
 	name: nameField,
 	team_id: NonEmptyString.annotate({
 		description:
-			"A team in the Linear workspace connected on the Integrations page. Each critical incident opens one issue there, and later events comment on it. The team's key and name are read from Linear.",
+			"A team in the Linear workspace connected on the Integrations page. Each alert rule opens one issue there (one per group), and later events comment on it. The team's key and name are read from Linear.",
 		examples: ["9cfb482a-81e3-4154-b5b9-2c805e70a02d"],
 	}),
 	enabled: enabledField,

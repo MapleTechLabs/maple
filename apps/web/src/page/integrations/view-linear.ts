@@ -33,14 +33,16 @@ const notConnected = (h: H, model: Model): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, [
 			{
-				label: "Incident issues",
-				title: "An issue per critical incident",
-				description: "Each critical incident opens a Linear issue in the team you pick.",
+				label: "Alert issues",
+				title: "One issue per rule",
+				description:
+					"A firing rule opens one Linear issue in the team you pick. Severity sets its priority.",
 			},
 			{
 				label: "Updates",
 				title: "Comments as it changes",
-				description: "Escalations and resolutions post as comments on the same issue.",
+				description:
+					"Firing again, a severity change or a resolve comments on the same issue. A closed issue reopens if the rule fires within 24 hours.",
 			},
 			{
 				label: "Attribution",
@@ -92,7 +94,7 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 							[
 								status.revoked
 									? "Linear rejected Maple's access, so incidents no longer open or update issues. Reconnect to resume."
-									: "Maple opens a Linear issue for each critical incident, then comments as it escalates and resolves. Create a Linear destination to pick the team.",
+									: "Maple opens one Linear issue per alert rule, then comments as it fires again, changes severity or resolves. Create a Linear destination to pick the team.",
 							],
 						),
 					],
