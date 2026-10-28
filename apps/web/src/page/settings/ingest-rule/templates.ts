@@ -1,6 +1,6 @@
 import { fromV2IngestRuleAction, type V2IngestRule } from "@maple/domain/http/v2"
 import type { IngestRuleCondition } from "@maple/domain/ingest-rules"
-import { type ConditionDraft, type Draft, emptyDraft } from "./form"
+import { type ConditionDraft, type Draft, emptyDraft, joinList } from "./form"
 
 // The empty state's starting points, and the draft an existing rule fills.
 
@@ -75,7 +75,7 @@ const conditionDraft = (rule: IngestRuleCondition, index: number): ConditionDraf
 	key: rule.key ?? "",
 	op: rule.op,
 	value: rule.value ?? "",
-	values: (rule.values ?? []).join(", "),
+	values: joinList(rule.values ?? []),
 })
 
 export const draftFromRule = (rule: V2IngestRule): Draft => {
@@ -91,7 +91,7 @@ export const draftFromRule = (rule: V2IngestRule): Draft => {
 			? { actionType: "drop", keepPercent: String(action.keepPercent) }
 			: {
 					actionType: "redact",
-					keys: action.keys.join(", "),
+					keys: joinList(action.keys),
 					detectors: action.detectors,
 					patterns: action.patterns.join("\n"),
 					scopes: action.scopes,
