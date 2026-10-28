@@ -116,17 +116,16 @@ export const th = <M>(h: HtmlBuilder<M>, options: ThOptions<M>): Html => {
 	)
 }
 
-/** `ToolTableBody`: rows scroll inside once a list outgrows it. */
+/** `ToolTableBody`: the rows, at full height; the page scrolls, not the table. */
 export const toolTableBody = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
-	options: Readonly<{ maxHeight?: number; isWaiting?: boolean }> = {},
+	options: Readonly<{ isWaiting?: boolean }> = {},
 ): Html =>
 	h.div(
 		[
-			h.Class(cn("overflow-y-auto", refreshingClass(options.isWaiting ?? false))),
+			h.Class(refreshingClass(options.isWaiting ?? false)),
 			...(options.isWaiting === true ? [h.AriaBusy(true)] : []),
-			h.Style({ "max-height": `${options.maxHeight ?? 460}px` }),
 		],
 		children,
 	)
