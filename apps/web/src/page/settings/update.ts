@@ -133,6 +133,10 @@ const sessionOf = (model: Model) => ({
 /** The Ingestion tab's options: the quick-start key is the org in Clerk mode, `default` self-hosted. */
 export const ingestionOptionsOf = (model: Model, context: PageContext): Ingestion.InitOptions => ({
 	isAdmin: visibilityOf(model).isAdmin,
+	hasIngestRules: AsyncData.getOrElse(
+		AsyncData.map(model.session, (session) => session.hasIngestRules === true),
+		() => false,
+	),
 	orgKey: isClerkAuthEnabled ? context.orgId : "default",
 	timeZone: context.timeZone,
 	pinnedNamespace: context.pinnedNamespace,

@@ -27,11 +27,17 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	releases: DisabledByDefaultFeatureFlag,
 	/** Gates the scheduled security audit API; internal-only while it is built out. */
 	securityAudit: DisabledByDefaultFeatureFlag,
+	/**
+	 * Gates creating and changing ingest rules. Turn it on for an org only once the ingest gateway
+	 * applies rules (`INGEST_RULES_ENABLED`), so no rule is ever shown as active while it is not.
+	 */
+	ingestRules: DisabledByDefaultFeatureFlag,
 }).pipe(
 	Schema.encodeKeys({
 		aiAutoTriage: "aiautotriage",
 		releases: "releases",
 		securityAudit: "securityaudit",
+		ingestRules: "ingestrules",
 	}),
 )
 
@@ -44,6 +50,7 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: false,
 	releases: false,
 	securityAudit: false,
+	ingestRules: false,
 }
 
 /**
@@ -56,6 +63,7 @@ export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: true,
 	releases: true,
 	securityAudit: true,
+	ingestRules: true,
 }
 
 /** Decode Clerk metadata, falling back to every rollout disabled for non-object input. */

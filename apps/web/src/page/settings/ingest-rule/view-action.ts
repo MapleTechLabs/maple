@@ -162,7 +162,7 @@ const redactControls = (h: H, model: Model): ReadonlyArray<Html> => {
 					[h.Class("text-muted-foreground text-xs")],
 					[
 						draft.method === "mask"
-							? "Writes [REDACTED]."
+							? "Key matches become [REDACTED]; detector matches become [REDACTED:email] and the like."
 							: draft.method === "hash"
 								? "Writes hash:<hex16>, a keyed hash that is the same for the same value."
 								: "Deletes attributes matched by key. Detector and pattern matches are masked.",

@@ -13,6 +13,7 @@ import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/Erro
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
 import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
@@ -194,7 +195,13 @@ const v2GroupLayersExceptOnboardingChecklist = (
 			Layer.provide(Layer.mergeAll(MobileDevicesService.layer, LiveActivitiesService.layer)),
 		),
 		HttpV2AgentFeedbackLive.pipe(Layer.provide(AgentFeedbackService.layer)),
-		HttpV2IngestRulesLive.pipe(Layer.provide(IngestRuleService.layer)),
+		HttpV2IngestRulesLive.pipe(
+			Layer.provide(
+				Layer.effect(IngestRuleService, IngestRuleService.make).pipe(
+					Layer.provide(OrganizationFeatureFlagsService.allEnabled),
+				),
+			),
+		),
 		HttpV2McpConnectionsLive.pipe(Layer.provide(McpConnectionsService.layer)),
 		// Same, plus the Env every harness provides as well.
 		HttpV2GcpIntegrationsLive.pipe(Layer.provide(GcpConnectorService.layer)),
