@@ -757,6 +757,64 @@ describe("/api/security-audit findings", () => {
 	})
 })
 
+describe("/api/security-audit run findings", () => {
+	it("lists what each run reported with rejected ones, and counts them for admins only", async () => {
+		const harness = makeHarness()
+		try {
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const first = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			await harness.withStore((store) =>
+				Effect.gen(function* () {
+					const scoped = store.forOrg(ORG_A)
+					yield* scoped.saveFindings(first.body.id, [confirmed("f1"), rejected("f2")])
+					yield* scoped.finishRun(first.body.id, { status: "complete" })
+				}),
+			)
+			const second = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			await harness.withStore((store) =>
+				store.forOrg(ORG_A).saveFindings(second.body.id, [confirmed("f1")]),
+			)
+			const member = `${ORG_A}|org:member`
+
+			const firstFindings = await harness.call("GET", `/runs/${first.body.id}/findings`)
+			const memberFindings = await harness.call("GET", `/runs/${first.body.id}/findings`, {
+				as: member,
+			})
+			const foreign = await harness.call("GET", `/runs/${first.body.id}/findings`, {
+				as: `${ORG_B}|org:admin`,
+			})
+			const adminRuns = await harness.call("GET", "/runs")
+			const memberRuns = await harness.call("GET", "/runs", { as: member })
+
+			expect(
+				firstFindings.body.findings.map(
+					(f: { fingerprint: string; verdict: string; lastSeenRunId: string }) => [
+						f.fingerprint,
+						f.verdict,
+						f.lastSeenRunId,
+					],
+				),
+			).toEqual([
+				["f1", "confirmed", second.body.id],
+				["f2", "rejected", first.body.id],
+			])
+			expect([memberFindings.status, foreign.status]).toEqual([403, 404])
+			const zeros = { critical: 0, high: 0, medium: 0, low: 0, informational: 0, needsValidation: 0 }
+			expect(adminRuns.body.findingCounts).toEqual({
+				[first.body.id]: { ...zeros, high: 1, rejected: 1 },
+				[second.body.id]: { ...zeros, high: 1, rejected: 0 },
+			})
+			expect([
+				memberRuns.status,
+				memberRuns.body.runs.length,
+				"findingCounts" in memberRuns.body,
+			]).toEqual([200, 2, false])
+		} finally {
+			await harness.dispose()
+		}
+	})
+})
+
 describe("/api/security-audit run cancellation", () => {
 	it("terminates the workflow, marks the run cancelled, and records the event and audit entry", async () => {
 		const harness = makeHarness()

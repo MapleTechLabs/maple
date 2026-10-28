@@ -30,6 +30,7 @@ import {
 	labTargetsOf,
 	RUN_IDS,
 	runDetailOf,
+	runFindingsOf,
 	runsOf,
 	settingsOf,
 	TARGET_IDS,
@@ -229,7 +230,7 @@ const run = (id: string, nowMs: number): RunStep => {
 			(model) =>
 				R.CompletedFetchFindings({
 					key: model.findings.key ?? "",
-					result: Result.succeed(findingsOf(nowMs, detail.targetId)),
+					result: Result.succeed(runFindingsOf(nowMs, id)),
 				}),
 		],
 	)

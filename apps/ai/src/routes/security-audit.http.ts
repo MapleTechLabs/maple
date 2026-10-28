@@ -40,7 +40,7 @@ import { AuditStoreError } from "@maple/security-audit"
 import { Clock, Effect, Option, Schema } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SecurityAuditWorkflowStarter } from "@maple/backend/platform/bindings"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import { isAdmin, requireAdmin } from "@maple/backend/services/auth/auth"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
 import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
@@ -105,7 +105,7 @@ const toEvent = (row: SecurityAuditEventRecord): SecurityAuditEvent => ({
 	outputTokens: row.outputTokens,
 })
 
-const toFinding = (row: SecurityAuditFindingRow): SecurityAuditFinding => ({
+const toFinding = (row: Omit<SecurityAuditFindingRow, "id">): SecurityAuditFinding => ({
 	fingerprint: row.fingerprint,
 	targetId: row.targetId,
 	verdict: row.verdict,
@@ -463,11 +463,15 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listRuns", ({ query }) =>
 				Effect.gen(function* () {
-					const { store } = yield* orgAccess
+					const { tenant, store } = yield* orgAccess
 					const rows = yield* orUnavailable(
 						store.listRuns(query.targetId === undefined ? {} : { targetId: query.targetId }),
 					)
-					return { runs: rows.map(toRun) }
+					const runs = rows.map(toRun)
+					// Members may list runs but not read findings, so only admins see what each reported.
+					if (!isAdmin(tenant.roles)) return { runs }
+					const findingCounts = yield* orUnavailable(store.countRunFindings(rows.map((r) => r.id)))
+					return { runs, findingCounts }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listRuns")),
 			)
 			.handle("getRun", ({ params }) =>
@@ -536,6 +540,14 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					)
 					return { events: rows.map(toEvent) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunEvents")),
+			)
+			.handle("listRunFindings", ({ params }) =>
+				Effect.gen(function* () {
+					const { store } = yield* adminAccess
+					const run = yield* requireRun(store, params.runId)
+					const rows = yield* orUnavailable(store.listRunFindingViews(run.id))
+					return { findings: rows.map(toFinding) }
+				}).pipe(Effect.withSpan("HttpSecurityAudit.listRunFindings")),
 			)
 			.handle("listFindings", ({ params, query }) =>
 				Effect.gen(function* () {

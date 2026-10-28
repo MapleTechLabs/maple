@@ -29,12 +29,14 @@ import {
 	coverageOf,
 	latestDetailOf,
 	RUN_LIST_CAP,
-	runLeadsOf,
+	runCountsOf,
 	runsForTab,
 	runsForTarget,
 	targetsOf,
 } from "./derive"
-import { leadsLine, stopSummaryOf } from "../kit/outcome"
+import { stopSummaryOf } from "../kit/outcome"
+import { BUCKET_LABEL, type BucketCounts, SCORED_BUCKETS } from "../kit/findings"
+import { bucketDot } from "../kit/findings-view"
 import { meter } from "../../../ui/meter"
 import { Message, type Model } from "./model"
 
@@ -72,16 +74,26 @@ const muted = (h: H, text: string, title?: string): Html =>
 		[text],
 	)
 
-const leadsCell = (h: H, leads: Readonly<{ confirmed: number; toValidate: number }> | null): Html =>
-	leads === null
-		? muted(h, "", "Open the run for what it reported")
-		: h.span(
-				[h.Class("flex flex-col items-end"), h.Title(leadsLine(leads.confirmed, leads.toValidate))],
-				[
-					h.span([h.Class("font-mono tabular-nums")], [String(leads.confirmed + leads.toValidate)]),
-					...(leads.toValidate === 0 ? [] : [muted(h, `${leads.toValidate} to validate`)]),
-				],
-			)
+/** One dot and count per non-empty severity, so two runs compare at a glance. */
+const findingsCell = (h: H, counts: BucketCounts | null, run: SecurityAuditRun): Html => {
+	if (counts === null) return muted(h, "", "Findings are visible to org admins only")
+	const shown = SCORED_BUCKETS.filter((bucket) => counts[bucket] > 0)
+	if (shown.length === 0) return muted(h, isLive(run) ? "" : "None")
+	return h.span(
+		[
+			h.Class("flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1"),
+			h.Title(
+				shown.map((bucket) => `${counts[bucket]} ${BUCKET_LABEL[bucket].toLowerCase()}`).join(", "),
+			),
+		],
+		shown.map((bucket) =>
+			h.span(
+				[h.Key(bucket), h.Class("inline-flex items-center gap-1 font-mono text-xs tabular-nums")],
+				[bucketDot(h, bucket, "size-2"), String(counts[bucket])],
+			),
+		),
+	)
+}
 
 const coverageCell = (h: H, run: SecurityAuditRun, detail: SecurityAuditRunDetail | null): Html => {
 	if (detail === null || detail.unitTotal === 0) return muted(h, "")
@@ -148,7 +160,7 @@ const runRow = (
 				),
 			]),
 			tableCell(h, [statusCell(h, run)]),
-			tableCell(h, [leadsCell(h, runLeadsOf(model, run))], "text-right"),
+			tableCell(h, [findingsCell(h, runCountsOf(model, run.id), run)], "text-right"),
 			tableCell(h, [coverageCell(h, run, latestDetailOf(model, run.id))], "text-right"),
 			tableCell(h, [formatUsd(runTotalUsd(run))], "text-right font-mono tabular-nums"),
 			tableCell(
@@ -302,7 +314,7 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 								tableHead(h, ["Run"]),
 								tableHead(h, ["Target"]),
 								tableHead(h, ["Status"]),
-								tableHead(h, ["Leads"], "text-right"),
+								tableHead(h, ["Findings"], "text-right"),
 								tableHead(h, ["Coverage"], "text-right"),
 								tableHead(h, ["Cost"], "text-right"),
 								tableHead(h, ["Started"], "text-right"),

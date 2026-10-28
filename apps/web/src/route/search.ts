@@ -905,8 +905,10 @@ export const InfraKubernetesWorkloadParams = Schema.Struct({
 // Security Center
 export const SecurityFindingsSearch = Schema.Struct({
 	status: Schema.optional(Schema.Literals(["open", "fixed", "dismissed", "accepted_risk", "all"])),
-	severity: Schema.optional(Schema.Literals(["critical", "high", "medium", "low", "informational"])),
-	verdict: Schema.optional(Schema.Literals(["confirmed", "needs_validation"])),
+	/** A severity, or the unscored leads: the tiles' one filter. */
+	severity: Schema.optional(
+		Schema.Literals(["critical", "high", "medium", "low", "informational", "needs_validation"]),
+	),
 	target: Schema.optional(Schema.String),
 	q: Schema.optional(Schema.String),
 	rejected: Schema.optional(Schema.Boolean),

@@ -12,7 +12,8 @@ import { AsyncData } from "foldkit"
 import type { LoadFailure } from "../../../data/load-failure"
 import type { SecurityFindingsSearch } from "../../../route/search"
 import { type Gate, gateOf, isLive, isSameMonth, locationOf, severityRank } from "../kit/format"
-import type { FindingGroup, Model } from "./model"
+import { bucketOf, type BucketCounts, countsFromRun } from "../kit/findings"
+import type { Model } from "./model"
 
 // Pure readings of the tabs' Model: what each panel shows.
 
@@ -208,29 +209,16 @@ export const runsForTab = (
 	return { runs, isCapped: listed.length >= RUN_LIST_CAP }
 }
 
-/**
- * What a run left open, by the findings it last saw. Only a target's newest finished run owns
- * them: an older run's findings were seen again later. Null when that cannot be told.
- */
-export const runLeadsOf = (
-	model: Model,
-	run: SecurityAuditRun,
-): Readonly<{ confirmed: number; toValidate: number }> | null => {
-	const owner = runsForTarget(model, run.targetId).find(
-		(candidate) => !isLive(candidate) && candidate.status !== "failed",
-	)
-	const slot = model.findings[run.targetId]
-	if (owner?.id !== run.id || slot === undefined) return null
-	return Option.match(AsyncData.getData(slot.data), {
-		onNone: () => null,
-		onSome: ({ findings }) => {
-			const seen = findings.filter((finding) => finding.lastSeenRunId === run.id)
-			return {
-				confirmed: openConfirmed(seen).length,
-				toValidate: openNeedsValidation(seen).length,
-			}
-		},
-	})
+/** What a run reported, per severity, from whichever run list carries it; null for members. */
+export const runCountsOf = (model: Model, runId: string): BucketCounts | null => {
+	const responses = [
+		Option.getOrNull(AsyncData.getData(model.runs.data)),
+		...Object.values(model.targetRuns).map((slot) => Option.getOrNull(AsyncData.getData(slot.data))),
+	]
+	const counts = responses
+		.map((response) => response?.findingCounts?.[runId])
+		.find((entry) => entry !== undefined)
+	return counts === undefined ? null : countsFromRun(counts)
 }
 
 /** The org's settings once read; null while loading or when the read failed. */
@@ -284,8 +272,8 @@ const matchesQuery = (finding: SecurityAuditFinding, query: string): boolean => 
 	return haystack.includes(query.toLowerCase())
 }
 
-/** The rows the toolbar leaves, before grouping. */
-export const filteredFindings = (
+/** The rows the toolbar leaves before the severity tile: what the tiles count. */
+export const toolbarFindings = (
 	findings: ReadonlyArray<SecurityAuditFinding>,
 	search: SecurityFindingsSearch,
 	query: string,
@@ -294,28 +282,24 @@ export const filteredFindings = (
 	return findings.filter(
 		(finding) =>
 			matchesStatus(finding.status, tab) &&
-			(search.severity === undefined || finding.overallSeverity === search.severity) &&
-			(search.verdict === undefined ||
-				finding.verdict === search.verdict ||
-				finding.verdict === "rejected") &&
 			(search.rejected === true || finding.verdict !== "rejected") &&
 			(search.target === undefined || finding.targetId === search.target) &&
 			matchesQuery(finding, query.trim()),
 	)
 }
 
-export const groupFindings = (
+/** The rows listed: the toolbar's, narrowed to the picked tile. A disproved row stays with "Show rejected". */
+export const filteredFindings = (
 	findings: ReadonlyArray<SecurityAuditFinding>,
-): ReadonlyArray<Readonly<{ group: FindingGroup; rows: ReadonlyArray<SecurityAuditFinding> }>> =>
-	(["confirmed", "needs_validation", "rejected"] as const)
-		.map((group) => ({
-			group,
-			rows: findings.filter((finding) => finding.verdict === group).sort(bySeverity),
-		}))
-		.filter((entry) => entry.rows.length > 0)
-
-/** The first rows of a group before "Show all". */
-export const GROUP_PAGE = 7
+	search: SecurityFindingsSearch,
+	query: string,
+): ReadonlyArray<SecurityAuditFinding> =>
+	toolbarFindings(findings, search, query).filter(
+		(finding) =>
+			search.severity === undefined ||
+			finding.verdict === "rejected" ||
+			bucketOf(finding) === search.severity,
+	)
 
 /** New: first reported in the last day. */
 export const isNewFinding = (finding: SecurityAuditFinding, nowMs: number): boolean =>

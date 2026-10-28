@@ -248,8 +248,43 @@ export const settingsOf = (now: number) => {
 	})
 }
 
-export const runsOf = (now: number) =>
-	Schema.decodeUnknownSync(SecurityAuditRunsResponse)({ runs: runSeeds(now).map(run) })
+/** Per run, what its snapshot holds, as the API counts it for admins. */
+const findingCountsOf = (now: number, runIds: ReadonlyArray<string>) =>
+	Object.fromEntries(
+		runIds.map((runId) => {
+			const findings = runFindingsOf(now, runId).findings
+			const confirmed = (severity: string) =>
+				findings.filter(
+					(finding) =>
+						finding.verdict === "confirmed" &&
+						(finding.overallSeverity ?? "informational") === severity,
+				).length
+			return [
+				runId,
+				{
+					critical: confirmed("critical"),
+					high: confirmed("high"),
+					medium: confirmed("medium"),
+					low: confirmed("low"),
+					informational: confirmed("informational"),
+					needsValidation: findings.filter((finding) => finding.verdict === "needs_validation")
+						.length,
+					rejected: findings.filter((finding) => finding.verdict === "rejected").length,
+				},
+			]
+		}),
+	)
+
+export const runsOf = (now: number) => {
+	const runs = runSeeds(now).map(run)
+	return Schema.decodeUnknownSync(SecurityAuditRunsResponse)({
+		runs,
+		findingCounts: findingCountsOf(
+			now,
+			runs.map((entry) => entry.id),
+		),
+	})
+}
 
 const UNIT_COUNTS = new Map<string, Readonly<Record<string, number>>>([
 	[
@@ -791,6 +826,8 @@ type FindingSeed = Readonly<{
 	file: string
 	line: number
 	runId: string
+	/** The earlier run that first reported it, when not `runId`. */
+	firstRunId?: string
 	ago: number
 	createdAgo?: number
 }>
@@ -919,6 +956,19 @@ const FINDINGS: ReadonlyArray<FindingSeed> = [
 		runId: RUN_IDS.dashboard,
 		ago: 18 * MINUTE,
 		createdAgo: 18 * MINUTE,
+	},
+	{
+		fingerprint: "refund-owner-c0d4",
+		targetId: TARGET_IDS.billing,
+		verdict: "confirmed",
+		severity: "critical",
+		title: "Refund endpoint skips the invoice ownership check",
+		file: "src/refunds/create.ts",
+		line: 29,
+		runId: RUN_IDS.billing,
+		firstRunId: RUN_IDS.billingCancelled,
+		ago: DAY,
+		createdAgo: 3 * DAY,
 	},
 	{
 		fingerprint: "webhook-replay-77aa",
@@ -1102,7 +1152,7 @@ const findingOf = (seed: FindingSeed, now: number) => ({
 	statusChangedBy: seed.status === "dismissed" ? "user_maya" : null,
 	statusChangedAt: seed.status === "dismissed" ? now - HOUR : null,
 	record: record(seed),
-	firstSeenRunId: seed.runId,
+	firstSeenRunId: seed.firstRunId ?? seed.runId,
 	lastSeenRunId: seed.runId,
 	firstSeenRef: "9f3c2a1",
 	lastSeenRef: "9f3c2a1b7e0d4c6a8b2e1f3d5c7a9b0e2d4f6a8c",
@@ -1115,6 +1165,14 @@ export const findingsOf = (now: number, targetId: string) =>
 	Schema.decodeUnknownSync(SecurityAuditFindingsResponse)({
 		findings: [...FINDINGS, ...DEEP_FINDINGS]
 			.filter((seed) => seed.targetId === targetId)
+			.map((seed) => findingOf(seed, now)),
+	})
+
+/** What one run reported: every seed it saw, the earlier run included for carried findings. */
+export const runFindingsOf = (now: number, runId: string) =>
+	Schema.decodeUnknownSync(SecurityAuditFindingsResponse)({
+		findings: [...FINDINGS, ...DEEP_FINDINGS]
+			.filter((seed) => seed.runId === runId || seed.firstRunId === runId)
 			.map((seed) => findingOf(seed, now)),
 	})
 

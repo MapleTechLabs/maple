@@ -23,7 +23,7 @@ import {
 	ParseSecurityReports,
 	StartAnotherRun,
 } from "./command"
-import { eventsOf, mergeEvents, runOf } from "./derive"
+import { eventsOf, isDetailsOpenByDefault, mergeEvents, runOf } from "./derive"
 import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -76,20 +76,16 @@ const readTargets = (model: Model, context: PageContext): Return =>
 		(key) => FetchRunTargets({ key }),
 	)
 
-/** The target's findings, once the run says which target; this run's results are among them. */
-const readFindings = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
-	const run = runOf(model)
-	if (run === null) return { model }
-	const targetId = run.targetId
-	return slotStep(
+/** What this run reported, from its own snapshot: a later run seeing them again changes nothing. */
+const readFindings = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
+	slotStep(
 		model,
 		model.findings,
 		(findings) => ({ findings }),
-		keyOf(context, "listFindings", { targetId }),
+		keyOf(context, "listRunFindings", { runId: model.runId }),
 		mode,
-		(key) => FetchRunFindings({ key, targetId }),
+		(key) => FetchRunFindings({ key, runId: model.runId }),
 	)
-}
 
 export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 	const model: Model = {
@@ -107,6 +103,11 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 		units: Keyed.idle(),
 		targets: Keyed.idle(),
 		findings: Keyed.idle(),
+		severity: null,
+		collapsed: ["rejected"],
+		openFingerprint: null,
+		findingDialog: Dialog.init("security-run-finding", "sheet"),
+		isDetailsOpen: null,
 		unitFilter: "all",
 		eventFilter: "all",
 		isLedgerOpen: false,
@@ -121,6 +122,7 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 		(next) => readEvents(next, context, "Load"),
 		(next) => readUnits(next, context, "Load"),
 		(next) => readTargets(next, context),
+		(next) => readFindings(next, context, "Load"),
 	])
 	return {
 		...loaded,
@@ -134,14 +136,16 @@ export const init = (route: SecurityRunRoute, context: PageContext): Return => {
 
 const dialogStep = (
 	model: Model,
-	field: "cancelDialog" | "reportDialog",
+	field: "cancelDialog" | "reportDialog" | "findingDialog",
 	step: ReturnType<typeof Dialog.update>,
 ): Return => ({
 	model: { ...model, [field]: step.model },
 	commands: Command.mapMessages(step.commands ?? [], (message) =>
 		field === "cancelDialog"
 			? Message.GotCancelDialogMessage({ message })
-			: Message.GotReportDialogMessage({ message }),
+			: field === "reportDialog"
+				? Message.GotReportDialogMessage({ message })
+				: Message.GotFindingDialogMessage({ message }),
 	),
 })
 
@@ -179,9 +183,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next: Model = { ...model, run: Keyed.accept(model.run, key, result) }
 			const run = runOf(next)
 			const justFinished = run !== null && wasLive && !isLive(run) && AsyncData.hasData(model.run.data)
-			if (!justFinished) return readFindings(next, context, "Load")
+			if (!justFinished) return { model: next }
+			// A run watched to the end keeps its details open; only runs opened finished start folded.
+			const settled: Model = { ...next, isDetailsOpen: next.isDetailsOpen ?? true }
 			// The last poll may have missed the final phase event and ledger: read everything once more.
-			return chainAll(next, [
+			return chainAll(settled, [
 				(updated) =>
 					readFindings(
 						updated,
@@ -265,6 +271,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(next) => readRun(next, context, "Refresh"),
 				(next) => readEvents(next, context, "Refresh"),
 				(next) => readUnits(next, context, "Refresh"),
+				// New leads land while the run hunts; a finished run's list is final.
+				(next) =>
+					Option.match(Option.fromNullishOr(runOf(next)), { onNone: () => false, onSome: isLive })
+						? readFindings(next, context, "Refresh")
+						: { model: next },
 			]),
 		ClickedRetry: () =>
 			chainAll(model, [
@@ -278,6 +289,33 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (model.isLoadingOlder || oldest === undefined) return { model }
 			return fetchOlder(model, oldest)
 		},
+		PickedSeverity: ({ bucket }) => ({
+			model: {
+				...model,
+				severity: bucket,
+				collapsed:
+					bucket === null ? model.collapsed : model.collapsed.filter((held) => held !== bucket),
+			},
+		}),
+		ToggledSection: ({ bucket }) => ({
+			model: {
+				...model,
+				collapsed: model.collapsed.includes(bucket)
+					? model.collapsed.filter((held) => held !== bucket)
+					: [...model.collapsed, bucket],
+			},
+		}),
+		ClickedFinding: ({ fingerprint }) =>
+			dialogStep(
+				{ ...model, openFingerprint: fingerprint },
+				"findingDialog",
+				Dialog.open(model.findingDialog),
+			),
+		GotFindingDialogMessage: ({ message: inner }) =>
+			dialogStep(model, "findingDialog", Dialog.update(model.findingDialog, inner)),
+		ToggledDetails: () => ({
+			model: { ...model, isDetailsOpen: !(model.isDetailsOpen ?? isDetailsOpenByDefault(model)) },
+		}),
 		PickedUnitFilter: ({ filter }) => ({ model: { ...model, unitFilter: filter } }),
 		PickedEventFilter: ({ filter }) => ({ model: { ...model, eventFilter: filter } }),
 		ToggledLedger: () => ({ model: { ...model, isLedgerOpen: !model.isLedgerOpen } }),
