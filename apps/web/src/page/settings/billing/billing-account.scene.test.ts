@@ -23,9 +23,15 @@ const orgId = Schema.decodeSync(OrgId)
 
 const account = (input: unknown) => Schema.decodeUnknownSync(BillingAccount)(input)
 const acme = { orgId: "org_acme", name: "Acme", imageUrl: null }
-const member = account({ role: "member", billingOrg: acme, members: [] })
-const standalone = account({ role: "standalone", billingOrg: { ...acme, orgId: "org_side" }, members: [] })
+const member = account({ orgId: "org_member", role: "member", billingOrg: acme, members: [] })
+const standalone = account({
+	orgId: "org_side",
+	role: "standalone",
+	billingOrg: { ...acme, orgId: "org_side" },
+	members: [],
+})
 const payer = account({
+	orgId: "org_acme",
 	role: "billing_org",
 	billingOrg: acme,
 	members: [
@@ -104,7 +110,8 @@ describe("billing account", () => {
 		const confirmed = step(opened.model, Message.ClickedConfirmUnlink())
 		expect(confirmed.commands?.[0]).toMatchObject({
 			name: "UnlinkBillingOrg",
-			args: { orgId: "org_acme", isSelf: true },
+			// Its own org: the payer has no link to remove.
+			args: { orgId: "org_member", isSelf: true },
 		})
 		const done = update(
 			confirmed.model,

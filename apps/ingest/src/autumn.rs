@@ -80,23 +80,29 @@ impl BillingOrgResolver {
     /// The Autumn `customer_id` for `org_id`. Concurrent misses share one lookup.
     pub(crate) async fn resolve(&self, org_id: &str) -> Result<String, String> {
         let fresh = match self.recent_failures.get(org_id).await {
-            Some(error) => match self.customers.get(org_id).await {
-                Some(customer_id) => Ok(customer_id),
-                None => Err(error),
-            },
-            None => self
-                .customers
-                .try_get_with_by_ref(org_id, async {
-                    tokio::time::timeout(
-                        BILLING_LOOKUP_TIMEOUT,
-                        self.lookup.fetch_billing_org_id(org_id),
-                    )
+            // Inside a failure's window: no Postgres, and the window is not extended.
+            Some(error) => Err(error),
+            None => {
+                let looked_up = self
+                    .customers
+                    .try_get_with_by_ref(org_id, async {
+                        tokio::time::timeout(
+                            BILLING_LOOKUP_TIMEOUT,
+                            self.lookup.fetch_billing_org_id(org_id),
+                        )
+                        .await
+                        .map_err(|_| "billing org lookup timed out".to_owned())?
+                        .map(|linked| linked.unwrap_or_else(|| org_id.to_owned()))
+                    })
                     .await
-                    .map_err(|_| "billing org lookup timed out".to_owned())?
-                    .map(|linked| linked.unwrap_or_else(|| org_id.to_owned()))
-                })
-                .await
-                .map_err(|error| error.as_ref().clone()),
+                    .map_err(|error| error.as_ref().clone());
+                if let Err(error) = &looked_up {
+                    self.recent_failures
+                        .insert(org_id.to_owned(), error.clone())
+                        .await;
+                }
+                looked_up
+            }
         };
         match fresh {
             Ok(customer_id) => {
@@ -105,18 +111,13 @@ impl BillingOrgResolver {
                     .await;
                 Ok(customer_id)
             }
-            Err(error) => {
-                self.recent_failures
-                    .insert(org_id.to_owned(), error.clone())
-                    .await;
-                match self.last_known.get(org_id).await {
-                    Some(stale) => {
-                        warn!(org_id, error = %error, "Billing org lookup failed; serving last-known");
-                        Ok(stale)
-                    }
-                    None => Err(error),
+            Err(error) => match self.last_known.get(org_id).await {
+                Some(stale) => {
+                    warn!(org_id, error = %error, "Billing org lookup failed; serving last-known");
+                    Ok(stale)
                 }
-            }
+                None => Err(error),
+            },
         }
     }
 
@@ -1358,6 +1359,24 @@ mod tests {
         assert_eq!(resolver.resolve("org_solo").await.unwrap(), "org_solo");
         assert_eq!(resolver.resolve("org_solo").await.unwrap(), "org_solo");
         assert_eq!(links.calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn a_failure_window_is_not_extended_by_requests_inside_it() {
+        let links = stub_links(&[("org_sub", "org_main")]);
+        let resolver = resolver_over(&links);
+        links.failing.store(true, Ordering::SeqCst);
+        assert!(resolver.resolve("org_sub").await.is_err());
+        links.failing.store(false, Ordering::SeqCst);
+
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(
+            resolver.resolve("org_sub").await.is_err(),
+            "still inside the window"
+        );
+        // 60ms after the failure, not 60ms after the last request: Postgres is read again.
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert_eq!(resolver.resolve("org_sub").await.unwrap(), "org_main");
     }
 
     #[tokio::test]

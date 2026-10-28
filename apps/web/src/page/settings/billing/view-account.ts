@@ -68,9 +68,7 @@ export const memberSection = (h: H, model: Model, account: BillingAccount): Html
 								{
 									variant: "outline",
 									size: "sm",
-									attributes: [
-										h.OnClick(Message.ClickedUnlink({ orgId: account.billingOrg.orgId })),
-									],
+									attributes: [h.OnClick(Message.ClickedUnlink({ orgId: account.orgId }))],
 								},
 								[`Stop billing through ${payer}`],
 							),

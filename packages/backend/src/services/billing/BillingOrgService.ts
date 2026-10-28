@@ -150,6 +150,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				const link = yield* linkOf(orgId)
 				if (Option.isSome(link)) {
 					return new BillingAccount({
+						orgId,
 						role: "member",
 						billingOrg: yield* describeOrg(link.value.billingOrgId),
 						members: [],
@@ -166,6 +167,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 					{ concurrency: "unbounded" },
 				)
 				return new BillingAccount({
+					orgId,
 					role: rows.length > 0 ? "billing_org" : "standalone",
 					billingOrg: self,
 					members: memberOrgs,
@@ -388,12 +390,6 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				if (Option.isNone(row) || (orgId !== memberOrgId && orgId !== row.value.billingOrgId)) {
 					return yield* reject("not_a_member")
 				}
-				// Keyed by the link, so a retried unlink moves the count once.
-				yield* moveUptimeMonitors(memberOrgId, {
-					from: row.value.billingOrgId,
-					to: memberOrgId,
-					key: `billing_unlink:${memberOrgId}:${row.value.createdAt}`,
-				})
 				yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
@@ -407,6 +403,13 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 						}),
 					),
 				)
+				// Only once the link is gone, so the payer is never short monitors it still pays for.
+				// Keyed by the link: a repeat of this unlink moves the count once.
+				yield* moveUptimeMonitors(memberOrgId, {
+					from: row.value.billingOrgId,
+					to: memberOrgId,
+					key: `billing_unlink:${memberOrgId}:${row.value.createdAt}`,
+				})
 				yield* forgetOrg(memberOrgId)
 				yield* Effect.logInfo("Org billing unlinked").pipe(
 					Effect.annotateLogs({

@@ -30,6 +30,7 @@ const profile = Schema.decodeUnknownSync(BillingProfile)({
 const NOW = 10 * 86_400_000
 
 const standalone = Schema.decodeUnknownSync(BillingAccount)({
+	orgId: "org_acme",
 	role: "standalone",
 	billingOrg: { orgId: "org_acme", name: "Acme", imageUrl: null },
 	members: [],

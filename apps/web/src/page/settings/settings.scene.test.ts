@@ -352,6 +352,7 @@ describe("settings page", () => {
 				message: BillingMessage.CompletedFetchAccount({
 					result: Result.succeed(
 						new BillingAccount({
+							orgId: context.orgId,
 							role: "standalone",
 							billingOrg: new BillingAccountOrg({
 								orgId: context.orgId,

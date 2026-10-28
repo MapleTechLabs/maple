@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
-import { BillingCustomerId, OrgId } from "@maple/domain/http"
+import { BillingAccountPersistenceError, BillingCustomerId, OrgId } from "@maple/domain/http"
 import { ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -547,6 +547,42 @@ describe("AutumnWebhookRouter", () => {
 				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
 				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
 				assert.strictEqual(response.status, 200)
+				assert.deepStrictEqual(reviews.reviewed, [])
+				assert.deepStrictEqual(events.tracked, [])
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
+	it.effect("asks for redelivery when it cannot tell whether the org is billed elsewhere", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const reviews = recordingCancellationReviews()
+			const unreadable = Layer.succeed(BillingCustomerResolver, {
+				billingOrgId: () => Effect.die("not used"),
+				customerFor: () => Effect.die("not used"),
+				requireOwnBilling: () => Effect.die("not used"),
+				readLink: () => Effect.fail(new BillingAccountPersistenceError({ message: "postgres down" })),
+				forget: () => Effect.void,
+			})
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					AutumnWebhookRouter,
+					{
+						AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET,
+						MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS",
+					},
+					events.layer,
+					undefined,
+					undefined,
+					reviews.layer,
+					unreadable,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
+				assert.strictEqual(response.status, 503)
 				assert.deepStrictEqual(reviews.reviewed, [])
 				assert.deepStrictEqual(events.tracked, [])
 			}).pipe(Effect.ensuring(Effect.promise(dispose)))

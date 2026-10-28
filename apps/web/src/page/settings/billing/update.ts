@@ -805,9 +805,11 @@ export const update = (
 			const account = accountOf(model)
 			const orgId = model.unlinkOrgId
 			if (account === null || orgId === null || model.isUnlinking) return same({ model })
+			// A member leaves its billing org by unlinking itself, never the org that pays.
+			const isSelf = account.role === "member"
 			return same({
 				model: { ...model, isUnlinking: true },
-				commands: [Unlink({ orgId, isSelf: account.role === "member" })],
+				commands: [Unlink({ orgId: isSelf ? account.orgId : orgId, isSelf })],
 			})
 		},
 		CompletedUnlink: ({ isSelf, result }) => {

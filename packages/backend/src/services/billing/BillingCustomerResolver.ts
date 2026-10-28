@@ -33,7 +33,7 @@ export interface BillingCustomerResolverApi {
 	readonly customerFor: (orgId: OrgId) => Effect.Effect<BillingCustomerId, BillingAccountPersistenceError>
 	/**
 	 * The org's own customer, for billing writes. Fails for a member org, whose plan, payment
-	 * details and invoices are its billing org's.
+	 * details and invoices are its billing org's. Reads Postgres, not the cache.
 	 */
 	readonly requireOwnBilling: (
 		orgId: OrgId,
@@ -88,7 +88,9 @@ export class BillingCustomerResolver extends Context.Service<
 		const requireOwnBilling = Effect.fn("BillingCustomerResolver.requireOwnBilling")(function* (
 			orgId: OrgId,
 		) {
-			const payer = yield* billingOrgId(orgId)
+			// Uncached: a write the cache let through would start a plan the billing org never sees.
+			const payer = (yield* readLink(orgId)) ?? orgId
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.billing.linked": payer !== orgId })
 			if (payer === orgId) return ownBillingCustomer(orgId)
 			return yield* new BillingManagedByBillingOrgError({
 				message: "This organization is billed through another organization",

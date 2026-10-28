@@ -18,6 +18,8 @@ export class BillingAccountOrg extends Schema.Class<BillingAccountOrg>("BillingA
 }) {}
 
 export class BillingAccount extends Schema.Class<BillingAccount>("BillingAccount")({
+	/** The org this account was read for: what a member sends to stop billing through its payer. */
+	orgId: OrgId,
 	role: BillingAccountRole,
 	/** The org that pays: this org itself unless it is a member. */
 	billingOrg: BillingAccountOrg,

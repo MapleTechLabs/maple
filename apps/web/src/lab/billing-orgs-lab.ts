@@ -115,9 +115,10 @@ const acme = { orgId: "org_acme", name: "Acme", imageUrl: null }
 const account = (state: LabState) =>
 	Schema.decodeUnknownSync(BillingAccount)(
 		state === "member" || state === "member-viewer"
-			? { role: "member", billingOrg: acme, members: [] }
+			? { orgId: "org_side", role: "member", billingOrg: acme, members: [] }
 			: state === "billing-org"
 				? {
+						orgId: acme.orgId,
 						role: "billing_org",
 						billingOrg: acme,
 						members: [
@@ -135,7 +136,12 @@ const account = (state: LabState) =>
 							},
 						],
 					}
-				: { role: "standalone", billingOrg: { ...acme, orgId: "org_side" }, members: [] },
+				: {
+						orgId: "org_side",
+						role: "standalone",
+						billingOrg: { ...acme, orgId: "org_side" },
+						members: [],
+					},
 	)
 
 const accountUsage = Schema.decodeUnknownSync(BillingAccountUsageResponse)({
