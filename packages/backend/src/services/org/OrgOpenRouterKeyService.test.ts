@@ -67,6 +67,7 @@ const autumnStub = (world: World) =>
 		openCustomerPortal: die,
 		listPlans: die,
 		applyReward: die,
+		cancelAtPeriodEnd: die,
 		updateCustomerBillingControls: die,
 		updateCustomerName: die,
 	})

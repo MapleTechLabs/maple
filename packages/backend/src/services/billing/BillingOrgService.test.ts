@@ -8,6 +8,7 @@ import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembership
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { ownBillingCustomer } from "./billing-customer"
 import { BillingCustomerResolver } from "./BillingCustomerResolver"
 import { BillingOrgService } from "./BillingOrgService"
 
@@ -153,18 +154,18 @@ describe("BillingOrgService", () => {
 			Effect.gen(function* () {
 				const resolver = yield* BillingCustomerResolver
 				const service = yield* BillingOrgService
-				assert.strictEqual(yield* resolver.customerFor(MEMBER), MEMBER)
+				assert.strictEqual(yield* resolver.customerFor(MEMBER), ownBillingCustomer(MEMBER))
 
 				const linked = yield* linkMember()
 				assert.strictEqual(linked.role, "member")
 				assert.strictEqual(linked.billingOrg.orgId, PAYER)
 				assert.strictEqual(linked.billingOrg.name, "Name of org_payer")
 
-				assert.strictEqual(yield* resolver.customerFor(MEMBER), PAYER)
-				assert.strictEqual(yield* resolver.customerFor(PAYER), PAYER)
+				assert.strictEqual(yield* resolver.customerFor(MEMBER), ownBillingCustomer(PAYER))
+				assert.strictEqual(yield* resolver.customerFor(PAYER), ownBillingCustomer(PAYER))
 				const write = yield* Effect.exit(resolver.requireOwnBilling(MEMBER))
 				assert.strictEqual(rejection(write), "@maple/http/errors/BillingManagedByBillingOrgError")
-				assert.strictEqual(yield* resolver.requireOwnBilling(PAYER), PAYER)
+				assert.strictEqual(yield* resolver.requireOwnBilling(PAYER), ownBillingCustomer(PAYER))
 
 				const payer = yield* service.account(PAYER)
 				assert.strictEqual(payer.role, "billing_org")
@@ -305,12 +306,12 @@ describe("BillingOrgService", () => {
 
 				const payer = yield* service.unlink({ orgId: PAYER, roles: ADMIN, memberOrgId: MEMBER })
 				assert.strictEqual(payer.role, "standalone")
-				assert.strictEqual(yield* resolver.customerFor(MEMBER), MEMBER)
+				assert.strictEqual(yield* resolver.customerFor(MEMBER), ownBillingCustomer(MEMBER))
 
 				yield* linkMember()
 				const left = yield* service.unlink({ orgId: MEMBER, roles: ADMIN, memberOrgId: MEMBER })
 				assert.strictEqual(left.role, "standalone")
-				assert.strictEqual(yield* resolver.customerFor(MEMBER), MEMBER)
+				assert.strictEqual(yield* resolver.customerFor(MEMBER), ownBillingCustomer(MEMBER))
 			}),
 		),
 	)

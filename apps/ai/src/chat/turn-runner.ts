@@ -21,7 +21,6 @@
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import { type BillingCustomerId, type PrReviewFailureReason, SubmitPrReviewRequest } from "@maple/domain/http"
-import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { CodeLoader } from "@maple/backend/platform/bindings"
@@ -767,24 +766,32 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const orgKey = yield* (yield* OrgOpenRouterKeyService).resolveForRun(tenant.orgId)
 		yield* Effect.annotateCurrentSpan("maple.llm.byok", Option.isSome(orgKey))
 		// Resolved before the turn so the finalizer has nothing left to look up. A failed lookup
-		// bills the org itself rather than dropping the turn's usage.
-		const customerId = yield* (yield* BillingCustomerResolver)
-			.customerFor(tenant.orgId)
-			.pipe(
-				Effect.catchTag("@maple/http/errors/BillingAccountPersistenceError", (error) =>
-					Effect.logError("Billing org lookup failed; metering the turn to its own org").pipe(
-						Effect.annotateLogs({ orgId: tenant.orgId, error: error.message }),
-						Effect.as(ownBillingCustomer(tenant.orgId)),
-					),
+		// meters nothing rather than a guess: the org's own customer may be the wrong card.
+		const customerId = yield* (yield* BillingCustomerResolver).customerFor(tenant.orgId).pipe(
+			Effect.map(Option.some),
+			Effect.catchTag("@maple/http/errors/BillingAccountPersistenceError", (error) =>
+				Effect.logError("Billing org lookup failed; this turn's AI usage is not metered").pipe(
+					Effect.annotateLogs({
+						orgId: tenant.orgId,
+						sessionId: input.sessionId,
+						messageId: input.messageId,
+						error: error.message,
+					}),
+					Effect.as(Option.none<BillingCustomerId>()),
 				),
-			)
+			),
+		)
 		return yield* turnBody(orgKey).pipe(
 			interruptOnAbort(input.signal, observability),
 			// `ensuring`, not a trailing statement: a turn that failed, was aborted, or ran out of steps
 			// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them.
 			Effect.ensuring(
 				Effect.suspend(() =>
-					meterTurn(input, customerId, origin, usage, { ownKey: Option.isSome(orgKey) }),
+					Option.match(customerId, {
+						onNone: () => Effect.void,
+						onSome: (payer) =>
+							meterTurn(input, payer, origin, usage, { ownKey: Option.isSome(orgKey) }),
+					}),
 				),
 			),
 		)

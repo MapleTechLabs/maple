@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
-import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
@@ -47,6 +47,8 @@ import { decodeInvoices, HttpBillingLive, resolveCycleWindow, sumDailySpend } fr
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 
 const ORG = "org_test_123"
+/** The org as the Autumn customer it bills to: itself, unlinked. */
+const CUSTOMER = BillingCustomerId.make(ORG)
 
 const makeCache = () => makeEdgeCacheService(makeMemoryBackend())
 
@@ -115,7 +117,7 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 				const autumn = yield* AutumnClient
 				return yield* autumn
 					.updateCustomerBillingControls(
-						ORG,
+						CUSTOMER,
 						new UpdateBillingControlsRequest({
 							spendLimits: [
 								new UpdateBillingSpendLimit({
@@ -195,7 +197,7 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 			Effect.gen(function* () {
 				const autumn = yield* AutumnClient
 				return yield* autumn
-					.updateCustomerBillingControls(ORG, {
+					.updateCustomerBillingControls(CUSTOMER, {
 						spendLimits: [
 							{ featureId: "logs", enabled: true, limitType: "absolute", overageLimit: 250 },
 						],
@@ -222,7 +224,7 @@ describe("AutumnClient.updateCustomerName", () => {
 			Effect.gen(function* () {
 				const autumn = yield* AutumnClient
 				return yield* autumn
-					.updateCustomerName(ORG, "Acme Inc")
+					.updateCustomerName(CUSTOMER, "Acme Inc")
 					.pipe(Effect.provideService(FetchHttpClient.Fetch, fetch))
 			}).pipe(Effect.provide(autumnClientLayer)),
 		)
@@ -242,8 +244,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { customer: ORG, calls } }
 			})
 
-			const first = yield* readCustomerCached(cache, ORG, run)
-			const second = yield* readCustomerCached(cache, ORG, run)
+			const first = yield* readCustomerCached(cache, CUSTOMER, run)
+			const second = yield* readCustomerCached(cache, CUSTOMER, run)
 
 			assert.strictEqual(calls, 1)
 			assert.isFalse(first.hit)
@@ -261,8 +263,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 500, response: { error: "boom" } }
 			})
 
-			const first = yield* readCustomerCached(cache, ORG, run)
-			const second = yield* readCustomerCached(cache, ORG, run)
+			const first = yield* readCustomerCached(cache, CUSTOMER, run)
+			const second = yield* readCustomerCached(cache, CUSTOMER, run)
 
 			assert.strictEqual(calls, 2)
 			assert.isFalse(first.hit)
@@ -280,10 +282,10 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { calls } }
 			})
 
-			yield* readCustomerCached(cache, ORG, run)
-			yield* readCustomerCached(cache, ORG, run) // served from cache
+			yield* readCustomerCached(cache, CUSTOMER, run)
+			yield* readCustomerCached(cache, CUSTOMER, run) // served from cache
 			yield* cache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: ORG })
-			const after = yield* readCustomerCached(cache, ORG, run)
+			const after = yield* readCustomerCached(cache, CUSTOMER, run)
 
 			assert.strictEqual(calls, 2)
 			assert.isFalse(after.hit)
@@ -300,8 +302,8 @@ describe("readCustomerCached", () => {
 				return { statusCode: 200, response: { calls } }
 			})
 
-			yield* readCustomerCached(cache, "org_a", run)
-			yield* readCustomerCached(cache, "org_b", run)
+			yield* readCustomerCached(cache, BillingCustomerId.make("org_a"), run)
+			yield* readCustomerCached(cache, BillingCustomerId.make("org_b"), run)
 
 			assert.strictEqual(calls, 2)
 		}),
@@ -311,7 +313,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: activePlanResponse })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_TTL_SECONDS])
 		}),
 	)
@@ -320,7 +322,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: noPlanResponse })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS])
 		}),
 	)
@@ -329,7 +331,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: lapsedPlanResponse })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_LAPSED_TTL_SECONDS])
 		}),
 	)
@@ -338,7 +340,7 @@ describe("readCustomerCached", () => {
 		Effect.gen(function* () {
 			const { cache, puts } = makeRecordingBackend()
 			const run = Effect.succeed({ statusCode: 200, response: { error: "autumn_api_error" } })
-			yield* readCustomerCached(cache, ORG, run)
+			yield* readCustomerCached(cache, CUSTOMER, run)
 			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS])
 		}),
 	)
@@ -625,6 +627,19 @@ describe("billing writes over HTTP", () => {
 
 	const die = () => Effect.die(new Error("not reachable once the admin gate rejects"))
 
+	/** A member org's resolver: reads bill to `payer`, writes are refused. */
+	const billedThroughResolver = (payer: OrgId) =>
+		Layer.succeed(BillingCustomerResolver, {
+			billingOrgId: () => Effect.succeed(payer),
+			customerFor: () => Effect.succeed(BillingCustomerId.make(payer)),
+			requireOwnBilling: () =>
+				Effect.fail(
+					new BillingManagedByBillingOrgError({ message: "billed elsewhere", billingOrgId: payer }),
+				),
+			readLink: () => Effect.succeed(Option.some(payer)),
+			forget: () => Effect.void,
+		})
+
 	const makeHarness = (
 		roles: ReadonlyArray<string>,
 		overrides: {
@@ -651,19 +666,7 @@ describe("billing writes over HTTP", () => {
 			Layer.provideMerge(
 				overrides.billedThrough === undefined
 					? BillingCustomerResolver.standalone
-					: Layer.succeed(BillingCustomerResolver, {
-							billingOrgId: () => Effect.succeed(overrides.billedThrough as OrgId),
-							customerFor: () =>
-								Effect.succeed(BillingCustomerId.make(overrides.billedThrough as OrgId)),
-							requireOwnBilling: () =>
-								Effect.fail(
-									new BillingManagedByBillingOrgError({
-										message: "billed elsewhere",
-										billingOrgId: overrides.billedThrough as OrgId,
-									}),
-								),
-							forget: () => Effect.void,
-						}),
+					: billedThroughResolver(overrides.billedThrough),
 			),
 			Layer.provideMerge(
 				Layer.succeed(BillingOrgService, { members: () => Effect.succeed([]) } as never),
