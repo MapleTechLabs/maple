@@ -1364,23 +1364,23 @@ mod tests {
     #[tokio::test]
     async fn a_failure_window_is_not_extended_by_requests_inside_it() {
         let links = stub_links(&[("org_sub", "org_main")]);
-        // Wide margins: moka runs on wall-clock time, and CI sleeps overshoot.
+        // A 600ms window, checked at 200ms (inside) and 700ms: past the window measured from the
+        // failure, but before one restarted by the 200ms check would close (800ms). 100ms margins.
         let resolver = BillingOrgResolver::with_failure_ttl(
             Arc::<StubLinks>::clone(&links),
             Duration::from_secs(60),
-            Duration::from_millis(400),
+            Duration::from_millis(600),
         );
         links.failing.store(true, Ordering::SeqCst);
         assert!(resolver.resolve("org_sub").await.is_err());
         links.failing.store(false, Ordering::SeqCst);
 
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(
             resolver.resolve("org_sub").await.is_err(),
             "still inside the window"
         );
-        // Measured from the failure, not from the last request: Postgres is read again.
-        tokio::time::sleep(Duration::from_millis(400)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
         assert_eq!(resolver.resolve("org_sub").await.unwrap(), "org_main");
     }
 

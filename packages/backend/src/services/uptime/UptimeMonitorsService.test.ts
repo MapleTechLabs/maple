@@ -808,6 +808,31 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, { allowance })))
 	})
 
+	it.effect("meters a member's monitors to the org that pays for it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const metered: Array<string> = []
+		const allowance = Layer.succeed(UptimeMonitorAllowance, {
+			limit: () => Effect.succeed(Option.none<number>()),
+			track: (customerId, _monitorId, delta) =>
+				Effect.sync(() => void metered.push(`${customerId}:${delta}`)),
+		})
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"INSERT INTO org_billing_links (org_id, billing_org_id, linked_by, created_at) VALUES ($1, $2, 'user', now())",
+					[OTHER_ORG, ORG],
+				),
+			)
+			const service = yield* UptimeMonitorsService
+			const created = yield* createHttp("member's", { orgId: OTHER_ORG })
+			yield* service.delete(OTHER_ORG, created.id)
+			const own = yield* createHttp("payer's own")
+			yield* service.delete(ORG, own.id)
+			assert.deepStrictEqual(metered, [`${ORG}:1`, `${ORG}:-1`, `${ORG}:1`, `${ORG}:-1`])
+		}).pipe(Effect.provide(makeLayer(testDb, { allowance })))
+	})
+
 	it.effect("tests an HTTP config against its assertions", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
