@@ -53,13 +53,14 @@ The easiest way to get a widget document is to build the dashboard in the UI and
 
 A notification channel that alert rules deliver to. Props are discriminated on `type`:
 
-| `type`      | Channel fields                                 |
-| ----------- | ---------------------------------------------- |
-| `pagerduty` | `integration_key`                              |
-| `webhook`   | `url`, optional `signing_secret`               |
-| `discord`   | `webhook_url`                                  |
-| `telegram`  | `bot_token`, `chat_id`                         |
-| `email`     | `member_user_ids` (Maple user IDs in your org) |
+| `type`      | Channel fields                                                |
+| ----------- | ------------------------------------------------------------- |
+| `pagerduty` | `integration_key`                                             |
+| `webhook`   | `url`, optional `signing_secret`                              |
+| `discord`   | `webhook_url`                                                 |
+| `telegram`  | `bot_token`, `chat_id`                                        |
+| `email`     | `member_user_ids` (Maple user IDs in your org)                |
+| `linear`    | `team_id` (a team in the Linear workspace connected in Maple) |
 
 Every variant also takes `name` (required) and `enabled` (defaults to `true` on both create and update).
 
