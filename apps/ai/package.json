@@ -27,6 +27,7 @@
 		"@maple/backend": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
+		"@maple/ingest-rules": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-engine-integrations": "workspace:*",
 		"@maple/query-model": "workspace:*",
