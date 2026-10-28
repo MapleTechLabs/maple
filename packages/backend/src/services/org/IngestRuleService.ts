@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import {
-	IngestRuleForbiddenError,
+	IngestRulesNotAvailableError,
 	IngestRuleNotFoundError,
 	IngestRulePersistenceError,
 	IngestRuleValidationError,
@@ -136,7 +136,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 			const requireRollout = Effect.fnUntraced(function* (orgId: OrgId) {
 				const flags = yield* featureFlags.flags(orgId)
 				if (!flags.ingestRules) {
-					return yield* new IngestRuleForbiddenError({
+					return yield* new IngestRulesNotAvailableError({
 						message: "Ingest rules are not available for this organization yet",
 					})
 				}

@@ -58,3 +58,18 @@ export class IngestRuleValidationError extends HttpTaggedError<IngestRuleValidat
 		exposure: "public_message",
 	},
 ) {}
+
+/** The org is not rolled out yet: rules would not be applied, so none can be created or changed. */
+export class IngestRulesNotAvailableError extends HttpTaggedError<IngestRulesNotAvailableError>()(
+	"@maple/http/errors/IngestRulesNotAvailableError",
+	{ message: Schema.String },
+	{
+		status: 403,
+		code: "ingest_rules_not_available",
+		title: "Ingest rules are not available",
+		message: "Ingest rules are not available for this organization yet.",
+		retry: "never",
+		recovery: "contact_support",
+		exposure: "public_message",
+	},
+) {}
