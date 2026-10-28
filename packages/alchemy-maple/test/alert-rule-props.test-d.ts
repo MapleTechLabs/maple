@@ -57,6 +57,7 @@ export const accepts = Effect.gen(function* () {
 	})
 	yield* AlertRule("raw", { ...raw, raw_query_reducer: "max" })
 	yield* AlertRule("builder", { ...builder, group_by: ["service.name"] })
+	yield* AlertRule("builder-no-data", { ...builder, alert_on_no_data: true })
 })
 
 // …and only with its own fields.
@@ -87,4 +88,6 @@ export const rejects = Effect.gen(function* () {
 	yield* AlertRule("l", { ...errorRate, threshold_upper: 1 })
 	// @ts-expect-error a grouped rule cannot alert on no data
 	yield* AlertRule("m", { ...errorRate, group_by: ["service.name"], alert_on_no_data: true })
+	// @ts-expect-error nor can a grouped builder_query
+	yield* AlertRule("n", { ...builder, group_by: ["service.name"], alert_on_no_data: true })
 })

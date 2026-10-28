@@ -67,8 +67,8 @@ type Comparison =
  * Which services a signal other than `builder_query` and `raw_query` reads:
  * the named ones; all of them, grouped (each group its own incident); all of
  * them grouped by `service.name` minus some; or all of them, ungrouped. A
- * grouped rule cannot alert on no data. `null` and `[]` clear a field set on
- * an earlier deploy.
+ * grouped rule cannot alert on no data. Leaving a field out clears it, as
+ * `null` and `[]` do.
  */
 type Scope =
 	| { service_names: string[]; group_by?: null; exclude_service_names?: [] }
@@ -88,7 +88,8 @@ type Scope =
 
 /**
  * What the rule measures. `builder_query` takes its draft, which carries its
- * own scope, so the API drops `service_names` and `exclude_service_names`.
+ * own scope, so the API drops `service_names` and `exclude_service_names`;
+ * grouped, it cannot alert on no data either.
  * `raw_query` takes its SQL, which returns its own groups, so it reads no
  * services and groups by none. Every other signal takes neither.
  */
@@ -99,14 +100,13 @@ type Measure =
 			raw_query_sql?: null
 			raw_query_reducer?: null
 	  } & Scope)
-	| {
+	| ({
 			signal_type: "builder_query"
 			/** Opaque query-builder draft (verbatim passthrough). */
 			query_builder_draft: Record<string, unknown>
-			group_by?: string[] | null
 			raw_query_sql?: null
 			raw_query_reducer?: null
-	  }
+	  } & ({ group_by: string[]; alert_on_no_data?: false } | { group_by?: null }))
 	| {
 			signal_type: "raw_query"
 			raw_query_sql: string
@@ -174,14 +174,23 @@ const WireRule = Schema.StructWithRest(
 )
 const decodeWireRule = Schema.decodeUnknownEffect(WireRule)
 
-/** The create/update body: exactly the props the user declared. */
-const desiredBody = (props: AlertRuleProps): Record<string, unknown> => {
-	const body: Record<string, unknown> = {}
-	for (const [key, value] of Object.entries(props)) {
-		if (value !== undefined) body[key] = value
-	}
-	return body
-}
+/**
+ * Fields the API validates together. PATCH keeps any field it is not sent, so
+ * an undeclared one goes out as its default, or a field dropped from props
+ * would outlive the deploy and clash with the ones that replaced it.
+ */
+const scopeDefaults = {
+	service_names: [],
+	exclude_service_names: [],
+	group_by: null,
+	alert_on_no_data: false,
+} satisfies Partial<Record<keyof AlertRuleProps, unknown>>
+
+/** The create/update body: the props the user declared, plus scope defaults. */
+const desiredBody = (props: AlertRuleProps): Record<string, unknown> => ({
+	...scopeDefaults,
+	...Object.fromEntries(Object.entries(props).filter(([, value]) => value !== undefined)),
+})
 
 /** Wire drift compare: declared fields vs the observed wire rule. */
 const drifted = (body: Record<string, unknown>, observed: Record<string, unknown>): boolean => {
