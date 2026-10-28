@@ -24,9 +24,6 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 			hasAiAutoTriage: isClerkAuthEnabled
 				? organizationFeatureFlagsFrom(window.Clerk?.organization?.publicMetadata).aiAutoTriage
 				: true,
-			hasIngestRules: isClerkAuthEnabled
-				? organizationFeatureFlagsFrom(window.Clerk?.organization?.publicMetadata).ingestRules
-				: true,
 		}
 	}).pipe(
 		Effect.mapError(toLoadFailure),

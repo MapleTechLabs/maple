@@ -178,7 +178,7 @@ character but `\n`", before compiling.
 
 | Variable                      | Default | Meaning                                                                                                                |
 | ----------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `INGEST_RULES_ENABLED`        | `true`  | Apply rules at all. Off never queries Postgres and costs nothing. The managed deploy sets it to `false` until rollout. |
+| `INGEST_RULES_ENABLED`        | `true`  | Apply rules at all. Off never queries Postgres and costs nothing. A kill switch; the managed deploy leaves it on.       |
 | `INGEST_RULES_CACHE_TTL_SECS` | `30`    | How long an org's compiled rules are reused before a reload (min 1).                                                   |
 
 - Concurrent requests that miss the cache for one org share a single lookup.

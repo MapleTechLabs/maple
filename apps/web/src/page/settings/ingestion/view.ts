@@ -241,7 +241,7 @@ export const view = Submodel.defineView<Model, Message, NoInputs>((model, _input
 		endpointAndKeysSection(h, model),
 		addServiceSection(h, model),
 		...recommendationsSection(h, model),
-		...(model.hasIngestRules ? [ingestRulesSection(h, model.ingestRules, model.isAdmin)] : []),
+		ingestRulesSection(h, model.ingestRules, model.isAdmin),
 		mappingsSection(h, model),
 		h.submodel({
 			slotId: "ingestion-mapping-dialog",
@@ -251,7 +251,7 @@ export const view = Submodel.defineView<Model, Message, NoInputs>((model, _input
 			viewInputs: { slotId: "ingestion-mapping-dialog-popup" },
 		}),
 		deleteMappingDialog(h, model),
-		...(model.isAdmin && model.hasIngestRules ? [deleteRuleDialog(h, model.ingestRules)] : []),
+		...(model.isAdmin ? [deleteRuleDialog(h, model.ingestRules)] : []),
 		...(model.isAdmin ? [rollKeyDialog(h, model)] : []),
 	]),
 )

@@ -13,7 +13,6 @@ import { init, type InitOptions, update } from "./update"
 
 const options: InitOptions = {
 	isAdmin: true,
-	hasIngestRules: true,
 	orgKey: "default",
 	timeZone: "UTC",
 	pinnedNamespace: null,
