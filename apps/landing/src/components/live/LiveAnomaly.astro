@@ -1,0 +1,457 @@
+---
+/**
+ * LiveAnomaly: a service's p95 latency tracking its seasonal baseline band, then
+ * breaching it on two checks in a row and opening an anomaly.
+ *
+ * Pure CSS on one shared 14s loop, like LiveAlertFiring. The base state is the
+ * final frame (breached, open), which is what `prefers-reduced-motion` shows.
+ *
+ * The numbers follow the detector: p95 is critical at 4x the baseline median
+ * (1,240 ms against 310 ms), an anomaly opens after 2 breaching checks, and the
+ * threshold is the widest of the robust band, 1.5x the median and median + 50 ms.
+ */
+
+const W = 300;
+const H = 120;
+const Y_MAX = 1400;
+
+/** Hour-of-day baseline median for each 5-minute check, in ms. */
+const MEDIAN = Array.from({ length: 36 }, (_, i) => 300 + 20 * Math.sin(i / 7));
+/** At normal sensitivity the ratio guard (1.5x the median) is the widest bound here. */
+const THRESHOLD = MEDIAN.map((m) => m * 1.5);
+/** Observed p95 per check. The last two breach. */
+const OBSERVED = [
+	292, 318, 301, 287, 326, 309, 297, 331, 312, 290, 305, 322, 298, 316, 335, 304, 289, 311, 327, 300, 318,
+	296, 309, 333, 301, 314, 290, 324, 307, 319, 298, 312, 336, 352, 980, 1240,
+];
+
+const x = (i: number) => (i / (OBSERVED.length - 1)) * W;
+const y = (v: number) => H - (v / Y_MAX) * H;
+const line = (values: readonly number[]) =>
+	values.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+
+const band = `${line(THRESHOLD)} ${MEDIAN.map((_, i) => MEDIAN.length - 1 - i)
+	.map((i) => `L${x(i).toFixed(1)},${y(MEDIAN[i]! - 40).toFixed(1)}`)
+	.join(" ")} Z`;
+const quiet = line(OBSERVED.slice(0, -2));
+const breach = `M${x(OBSERVED.length - 3).toFixed(1)},${y(OBSERVED.at(-3)!).toFixed(1)} L${x(OBSERVED.length - 2).toFixed(1)},${y(OBSERVED.at(-2)!).toFixed(1)} L${x(OBSERVED.length - 1).toFixed(1)},${y(OBSERVED.at(-1)!).toFixed(1)}`;
+
+const FACTS = [
+	{ k: "service", v: "checkout" },
+	{ k: "environment", v: "production" },
+	{ k: "observed", v: "1,240 ms", hot: true },
+	{ k: "baseline", v: "310 ms" },
+	{ k: "threshold", v: "465 ms" },
+	{ k: "deviation", v: "4.0× baseline", hot: true },
+];
+---
+
+<div class="live-frame">
+	<div class="live-frame__head">
+		<span>anomalies · checkout · latency_p95</span>
+		<span class="live-frame__live">
+			<span class="live-frame__live-dot"></span>
+			LIVE
+		</span>
+	</div>
+
+	<div class="an-grid">
+		<div class="an-pane">
+			<div class="an-pane__head">
+				<span class="an-label">p95 latency · last 3h</span>
+				<span class="an-legend">
+					<span class="an-legend__band"></span>baseline · same hour ±1, 7 days
+				</span>
+			</div>
+
+			<svg class="an-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+				<path class="an-band" d={band} />
+				<path class="an-median" d={line(MEDIAN)} />
+				<path class="an-observed" d={quiet} />
+				<path class="an-breach an-anim" d={breach} />
+				<circle class="an-dot an-dot--a an-anim" cx={x(OBSERVED.length - 2)} cy={y(OBSERVED.at(-2)!)} r="2.5" />
+				<circle class="an-dot an-dot--b an-anim" cx={x(OBSERVED.length - 1)} cy={y(OBSERVED.at(-1)!)} r="2.5" />
+			</svg>
+
+			<div class="an-status">
+				<span class="an-pills">
+					<span class="an-pill an-pill--ok an-anim">healthy</span>
+					<span class="an-pill an-pill--open an-anim">open · critical</span>
+				</span>
+				<span class="an-count">
+					breaching checks
+					<span class="an-count__stack">
+						<span class="an-count__n an-count__n--0 an-anim">0/2</span>
+						<span class="an-count__n an-count__n--1 an-anim">1/2</span>
+						<span class="an-count__n an-count__n--2 an-anim">2/2</span>
+					</span>
+				</span>
+			</div>
+		</div>
+
+		<div class="an-pane an-pane--rail">
+			<div class="an-pane__head">
+				<span class="an-label">anomaly</span>
+				<span class="an-chip">no rule</span>
+			</div>
+			<div class="an-facts">
+				{
+					FACTS.map((f) => (
+						<div class="an-fact">
+							<span>{f.k}</span>
+							<span class:list={["an-fact__v", f.hot && "an-fact__v--hot"]}>{f.v}</span>
+						</div>
+					))
+				}
+			</div>
+			<div class="an-actions">
+				<span class="an-btn an-btn--primary">Open investigation</span>
+				<span class="an-btn">Link issue</span>
+			</div>
+		</div>
+	</div>
+
+	<div
+		class="px-3.5 py-2.5 border-t border-border bg-bg-elevated text-[10px] uppercase tracking-wider text-fg-muted flex justify-between gap-4"
+	>
+		<span>checked every 5 min · opens after 2 breaches</span>
+		<span class="hidden sm:inline">resolves after 3 healthy checks</span>
+	</div>
+</div>
+
+<style>
+	.an-grid {
+		display: grid;
+		gap: 1px;
+		background: var(--border);
+	}
+	@media (min-width: 768px) {
+		.an-grid {
+			grid-template-columns: 1.35fr 0.65fr;
+		}
+	}
+	.an-pane {
+		background: var(--bg-deep);
+		padding: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		min-width: 0;
+	}
+	.an-pane__head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.an-label,
+	.an-legend {
+		font-size: 10px;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.an-legend {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		white-space: nowrap;
+	}
+	.an-legend__band {
+		width: 14px;
+		height: 8px;
+		border-radius: 2px;
+		background: color-mix(in oklab, var(--foreground) 12%, transparent);
+	}
+	@media (max-width: 480px) {
+		.an-legend {
+			display: none;
+		}
+	}
+
+	/* ── Chart ────────────────────────────────────────────────────── */
+	.an-chart {
+		width: 100%;
+		height: 150px;
+		overflow: visible;
+	}
+	.an-band {
+		fill: color-mix(in oklab, var(--foreground) 10%, transparent);
+	}
+	.an-median {
+		fill: none;
+		stroke: color-mix(in oklab, var(--foreground) 30%, transparent);
+		stroke-width: 1;
+		stroke-dasharray: 3 3;
+		vector-effect: non-scaling-stroke;
+	}
+	.an-observed,
+	.an-breach {
+		fill: none;
+		stroke-width: 1.5;
+		stroke-linejoin: round;
+		vector-effect: non-scaling-stroke;
+	}
+	.an-observed {
+		stroke: var(--foreground);
+	}
+	.an-breach {
+		stroke: var(--severity-error);
+	}
+	.an-dot {
+		fill: var(--severity-error);
+	}
+
+	/* ── Status ───────────────────────────────────────────────────── */
+	.an-status {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding-top: 10px;
+		border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+	}
+	.an-pills,
+	.an-count__stack {
+		display: grid;
+	}
+	.an-pills > *,
+	.an-count__stack > * {
+		grid-area: 1 / 1;
+	}
+	.an-pill {
+		width: fit-content;
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		padding: 2px 8px;
+		border-radius: 999px;
+		border: 1px solid;
+	}
+	.an-pill--ok {
+		color: var(--muted-foreground);
+		border-color: color-mix(in oklab, var(--border) 80%, transparent);
+		opacity: 0;
+	}
+	.an-pill--open {
+		color: var(--severity-error);
+		border-color: color-mix(in oklab, var(--severity-error) 45%, transparent);
+		background: color-mix(in oklab, var(--severity-error) 10%, transparent);
+	}
+	.an-count {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 5px;
+		font-size: 10px;
+		color: var(--muted-foreground);
+		white-space: nowrap;
+	}
+	.an-count__stack {
+		color: var(--foreground);
+	}
+	.an-count__n--0,
+	.an-count__n--1 {
+		opacity: 0;
+	}
+
+	/* ── Rail ─────────────────────────────────────────────────────── */
+	.an-chip {
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		padding: 2px 7px;
+		border-radius: 999px;
+		color: var(--muted-foreground);
+		border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+	}
+	.an-facts {
+		display: flex;
+		flex-direction: column;
+	}
+	.an-fact {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 5px 0;
+		font-size: 11px;
+		color: var(--muted-foreground);
+		border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+	}
+	.an-fact:last-child {
+		border-bottom: none;
+	}
+	.an-fact__v {
+		color: var(--foreground);
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+	.an-fact__v--hot {
+		color: var(--severity-error);
+	}
+	.an-actions {
+		margin-top: auto;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.an-btn {
+		font-size: 10px;
+		padding: 3px 9px;
+		border-radius: 5px;
+		border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+		color: var(--muted-foreground);
+		cursor: default;
+	}
+	.an-btn--primary {
+		color: var(--foreground);
+		border-color: color-mix(in oklab, var(--foreground) 25%, transparent);
+	}
+
+	/* ── Choreography: one shared 14s loop ────────────────────────────
+	   0–20%   quiet: the line sits in its band, 0/2, healthy
+	   24–29%  the breach segment fades in, first point lands, 1/2
+	   34–38%  second point lands, 2/2
+	   40–44%  the pill flips to open
+	   94–100% everything rewinds                                        */
+	.an-anim {
+		animation-duration: 14s;
+		animation-timing-function: linear;
+		animation-iteration-count: infinite;
+	}
+	.an-breach {
+		animation-name: an-draw;
+	}
+	@keyframes an-draw {
+		0%,
+		24% {
+			opacity: 0;
+		}
+		29%,
+		96% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+	.an-dot--a {
+		animation-name: an-dot-a;
+	}
+	.an-dot--b {
+		animation-name: an-dot-b;
+	}
+	@keyframes an-dot-a {
+		0%,
+		27% {
+			opacity: 0;
+		}
+		29%,
+		96% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+	@keyframes an-dot-b {
+		0%,
+		35% {
+			opacity: 0;
+		}
+		37%,
+		96% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+	.an-count__n--0 {
+		animation-name: an-count-0;
+	}
+	.an-count__n--1 {
+		animation-name: an-count-1;
+	}
+	.an-count__n--2 {
+		animation-name: an-count-2;
+	}
+	@keyframes an-count-0 {
+		0%,
+		28% {
+			opacity: 1;
+		}
+		29%,
+		96% {
+			opacity: 0;
+		}
+		100% {
+			opacity: 1;
+		}
+	}
+	@keyframes an-count-1 {
+		0%,
+		28% {
+			opacity: 0;
+		}
+		29%,
+		36% {
+			opacity: 1;
+		}
+		37%,
+		100% {
+			opacity: 0;
+		}
+	}
+	@keyframes an-count-2 {
+		0%,
+		36% {
+			opacity: 0;
+		}
+		37%,
+		96% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+	.an-pill--ok {
+		animation-name: an-pill-ok;
+	}
+	.an-pill--open {
+		animation-name: an-pill-open;
+	}
+	@keyframes an-pill-ok {
+		0%,
+		40% {
+			opacity: 1;
+		}
+		44%,
+		96% {
+			opacity: 0;
+		}
+		100% {
+			opacity: 1;
+		}
+	}
+	@keyframes an-pill-open {
+		0%,
+		40% {
+			opacity: 0;
+		}
+		44%,
+		96% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.an-anim {
+			animation: none !important;
+		}
+	}
+</style>
