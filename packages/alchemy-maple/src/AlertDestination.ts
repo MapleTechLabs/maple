@@ -75,6 +75,7 @@ const WireDestination = Schema.Struct({
 	type: Schema.String,
 	enabled: Schema.Boolean,
 	channel_label: Schema.NullOr(Schema.String),
+	linear_team_id: Schema.optionalKey(Schema.String),
 })
 const decodeWireDestination = Schema.decodeUnknownEffect(WireDestination)
 
@@ -119,7 +120,11 @@ const desiredBody = (props: AlertDestinationProps): Record<string, unknown> => {
 const drifted = (
 	props: AlertDestinationProps,
 	observed: Schema.Schema.Type<typeof WireDestination>,
-): boolean => props.name !== observed.name || (props.enabled ?? true) !== observed.enabled
+): boolean =>
+	props.name !== observed.name ||
+	(props.enabled ?? true) !== observed.enabled ||
+	// The Linear team is not a secret, so a team changed outside IaC is drift like a rename.
+	(props.type === "linear" && props.team_id !== observed.linear_team_id)
 
 const toAttributes = (observed: Schema.Schema.Type<typeof WireDestination>) => ({
 	destinationId: observed.id,
