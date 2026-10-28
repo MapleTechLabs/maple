@@ -29,6 +29,7 @@
 		"./integration-inventory": "./src/integration-inventory.ts",
 		"./source-health": "./src/source-health.ts",
 		"./llm": "./src/llm.ts",
+		"./status-page": "./src/status-page.ts",
 		"./uptime": "./src/uptime.ts",
 		"./url-redaction": "./src/url-redaction.ts",
 		"./mcp-manifest": "./src/mcp-manifest.ts",

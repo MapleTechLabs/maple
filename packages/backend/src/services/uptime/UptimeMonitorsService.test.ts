@@ -265,6 +265,57 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("counts checks per UTC day and marks pages showing a monitor whose status flipped", () => {
+		const testDb = createTestDb(trackedDbs)
+		const day1 = Date.UTC(2026, 9, 27, 23, 59)
+		const day2 = Date.UTC(2026, 9, 28, 0, 1)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API", { failuresToDown: 1 })
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO status_pages (id, org_id, name, slug, created_by, created_at, updated_at)
+					 VALUES ('11111111-1111-4111-8111-111111111111', $1, 'Acme', 'acme', $2, now(), now())`,
+					[ORG, USER],
+				).then(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO status_page_components (id, org_id, page_id, name, monitor_id, created_at, updated_at)
+						 VALUES ('22222222-2222-4222-8222-222222222222', $1, '11111111-1111-4111-8111-111111111111', 'API', $2, now(), now())`,
+						[ORG, monitor.id],
+					),
+				),
+			)
+			const revision = () =>
+				Effect.promise(() =>
+					queryFirstRow<{ revision: string }>(testDb, `SELECT revision::text FROM status_pages`),
+				).pipe(Effect.map((row) => row?.revision))
+
+			yield* service.recordChecks([
+				report(monitor.id, day1 - 60_000, true),
+				report(monitor.id, day1, false),
+			])
+			// Up then down: the flip marks the page.
+			assert.strictEqual(yield* revision(), "2")
+			yield* service.recordChecks([report(monitor.id, day2, false)])
+			// Still down: nothing new to publish.
+			assert.strictEqual(yield* revision(), "2")
+			// A retried batch is not counted twice.
+			yield* service.recordChecks([report(monitor.id, day2, false)])
+
+			const rows = yield* Effect.promise(() =>
+				testDb.pglite.query<{ day: string; checks: number; failures: number; down_checks: number }>(
+					`SELECT day, checks, failures, down_checks FROM uptime_monitor_daily ORDER BY day`,
+				),
+			)
+			assert.deepStrictEqual(rows.rows, [
+				{ day: "2026-10-27", checks: 2, failures: 1, down_checks: 1 },
+				{ day: "2026-10-28", checks: 1, failures: 1, down_checks: 1 },
+			])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("records the rest of a batch when a monitor is deleted between the read and the write", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
