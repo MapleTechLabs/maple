@@ -418,3 +418,27 @@ export const applyRules = (
 		}, record)
 	return { _tag: "kept", record: redacted, matched, redactions }
 }
+
+/**
+ * Applies the `attributes`-scoped redact rules a record matched to another attribute map that
+ * rides on it (metric exemplars), the way the gateway does.
+ */
+export const redactWithMatched = (
+	compiled: CompiledRules,
+	matched: ReadonlyArray<number>,
+	attributes: AttrMap,
+): AttrMap =>
+	compiled.rules
+		.filter((rule) => matched.includes(rule.index) && scopeHas(rule, "attributes"))
+		.reduce((current, rule) => {
+			const action = rule.spec.action
+			if (action._tag !== "redact") return current
+			const ctx: RedactContext = {
+				rule,
+				method: action.method,
+				detectors: action.detectors,
+				salt: compiled.salt,
+				count: 0,
+			}
+			return redactMap(current, ctx)
+		}, attributes)

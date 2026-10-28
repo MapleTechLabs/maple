@@ -482,6 +482,29 @@ version-matched reader, a prior Maple binary/export path, or an explicit
 unsupported boundary; the current binary never guesses by opening an
 incompatible source.
 
+## Ingest rules
+
+Local mode applies the same drop and redact rules as the cloud gateway
+([`docs/ingest-rules.md`](ingest-rules.md)), read from `~/.maple/ingest-rules.json`
+(or `MAPLE_LOCAL_INGEST_RULES`) instead of Postgres. The file is a JSON array of rule specs
+with an optional `name` and `enabled`:
+
+```json
+[
+	{
+		"name": "Drop debug logs",
+		"signals": ["logs"],
+		"conditions": [{ "field": "severity", "op": "lt", "value": "info" }],
+		"action": { "_tag": "drop", "keepPercent": 0 }
+	}
+]
+```
+
+Rules run on the decoded request before event projection and encoding, so dropped or redacted
+data never reaches chDB or the event outbox. The file is re-read when its modification time
+changes; an invalid rule is logged and skipped. There is no billing locally, and hashes use a
+fixed local key.
+
 ## External event projectors
 
 Supply projector implementations with the repeatable `--projector-module` startup flag.
