@@ -207,6 +207,14 @@ export const callouts = (h: H, model: Model): ReadonlyArray<Html> => [
 				),
 			]
 		: []),
+	...(model.draft.actionType === "redact" && model.draft.scopes.includes("events")
+		? [
+				callout(
+					h,
+					"The preview sample carries no span events, so redactions there only show in stored data.",
+				),
+			]
+		: []),
 ]
 
 export const previewPanel = (h: H, model: Model): Html =>

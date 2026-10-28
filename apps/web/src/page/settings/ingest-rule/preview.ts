@@ -30,6 +30,7 @@ export const SpanSample = Schema.Struct({
 	spanName: Schema.String,
 	spanKind: Schema.String,
 	statusCode: Schema.String,
+	statusMessage: Schema.optionalKey(Schema.String),
 	traceId: Schema.String,
 	spanAttributes: StringMap,
 	resourceAttributes: StringMap,
@@ -90,6 +91,16 @@ const changesOf = (before: RuleRecord, after: RuleRecord): ReadonlyArray<ValueCh
 	...(before.body !== undefined && show(before.body) !== show(after.body)
 		? [{ where: "body", key: "body", before: show(before.body), after: show(after.body) }]
 		: []),
+	...(before.statusMessage !== undefined && before.statusMessage !== after.statusMessage
+		? [
+				{
+					where: "status",
+					key: "message",
+					before: before.statusMessage,
+					after: after.statusMessage ?? "",
+				},
+			]
+		: []),
 	...(before.events ?? []).flatMap((event, index) =>
 		mapChanges(`event ${event.name}`, event.attributes, after.events?.[index]?.attributes ?? {}),
 	),
@@ -115,7 +126,7 @@ export const runPreview = (spec: IngestRuleSpec, records: ReadonlyArray<RuleReco
 }
 
 /** Replacement text the engine writes: `[REDACTED]`, `[REDACTED:email]` or `hash:<hex16>`. */
-export const REPLACEMENT = /\[REDACTED(?::[a-z_]+)?\]|hash:[0-9a-f]{16}/gu
+export const REPLACEMENT = /\[REDACTED(?::[a-z0-9_]+)?\]|hash:[0-9a-f]{16}/gu
 
 export type Segment = { readonly isReplacement: boolean; readonly text: string }
 

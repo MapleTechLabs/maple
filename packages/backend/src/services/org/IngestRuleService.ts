@@ -338,7 +338,41 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				} satisfies IngestRuleStatsWindow
 			})
 
-			return { list, get, create, update, delete: remove, stats }
+			/** Positions 0..n-1 in one transaction; `ids` must be exactly the org's rules. */
+			const reorder = Effect.fn("IngestRuleService.reorder")(function* (
+				orgId: OrgId,
+				ids: ReadonlyArray<IngestRuleId>,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.count": ids.length })
+				const existing = yield* list(orgId)
+				const known = new Set(existing.map((rule) => rule.id))
+				if (
+					ids.length !== existing.length ||
+					new Set(ids).size !== ids.length ||
+					ids.some((id) => !known.has(id))
+				) {
+					const message = "Pass every ingest rule id exactly once"
+					return yield* new IngestRuleValidationError({ message, problems: [message] })
+				}
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.forEach(
+							ids,
+							(id, position) =>
+								db.run(
+									PG.update(OrgIngestRules)
+										.set({ position, updatedAt: now })
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
+								),
+							{ discard: true },
+						),
+					),
+				)
+				return yield* list(orgId)
+			})
+
+			return { list, get, create, update, delete: remove, stats, reorder }
 		}),
 	},
 ) {

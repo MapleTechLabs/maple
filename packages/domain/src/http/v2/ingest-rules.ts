@@ -237,6 +237,17 @@ export const V2IngestRuleStats = Schema.Struct({
 })
 export type V2IngestRuleStats = Schema.Schema.Type<typeof V2IngestRuleStats>
 
+export const V2IngestRuleReorderParams = Schema.Struct({
+	ids: Schema.Array(IngestRulePublicId).annotate({
+		description: "Every rule's id, in the new order. Positions become 0, 1, 2 and so on.",
+	}),
+}).annotate({ identifier: "IngestRuleReorderParams", title: "Ingest rule reorder parameters" })
+
+export const V2IngestRuleReorderResponse = Schema.Struct({
+	object: Schema.Literal("list"),
+	data: Schema.Array(V2IngestRule),
+}).annotate({ identifier: "IngestRuleReorderResponse", title: "Ingest rules in their new order" })
+
 const [ruleNotFound, ruleValidation, rulePersistence, ruleForbidden] = publicErrors(
 	IngestRuleNotFoundError,
 	IngestRuleValidationError,
@@ -276,6 +287,20 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 				summary: "Ingest rule stats",
 				description:
 					"Per-rule and per-signal counts of what rules matched, dropped and redacted, at most 62 days. Requires the `ingest_rules:read` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("reorder", "/reorder", {
+			payload: V2IngestRuleReorderParams,
+			success: V2IngestRuleReorderResponse,
+			error: [ruleForbidden, ruleValidation, rulePersistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "reorderIngestRules",
+				summary: "Reorder ingest rules",
+				description:
+					"Sets every rule's position in one transaction, so the order is never half applied. Pass all of the organization's rule ids. Requires the `ingest_rules:write` scope and an admin role.",
 			}),
 		),
 	)

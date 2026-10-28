@@ -115,6 +115,23 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 					}
 				}),
 			)
+			.handle("reorder", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* requireRuleAdmin(tenant, "reorder")
+					const rules = yield* service.reorder(tenant.orgId, payload.ids)
+					yield* Effect.forEach(
+						rules,
+						(rule) =>
+							recordHttpAudit("ingest_rule.updated", {
+								resourceId: rule.id,
+								metadata: { name: rule.name, position: String(rule.position) },
+							}),
+						{ discard: true },
+					)
+					return { object: "list" as const, data: rules.map(toV2IngestRule) }
+				}),
+			)
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context

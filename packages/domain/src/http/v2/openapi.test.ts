@@ -214,6 +214,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/ingest_keys/private/roll",
 			"POST /v2/ingest_keys/public/roll",
 			"POST /v2/ingest_rules",
+			"POST /v2/ingest_rules/reorder",
 			"POST /v2/instrumentation/recommendations/{id}/dismiss",
 			"POST /v2/instrumentation/recommendations/{id}/reopen",
 			"POST /v2/integrations/aws/connections",

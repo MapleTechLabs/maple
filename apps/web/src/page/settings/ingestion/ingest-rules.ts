@@ -30,8 +30,6 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-const PositionChange = Schema.Struct({ id: RuleId, position: Schema.Number })
-
 export const Message = defineMessageUnion({
 	CompletedFetch: { result: Schema.Result(Schema.Array(V2IngestRule), LoadFailure) },
 	CompletedFetchStats: { result: Schema.Result(V2IngestRuleStats, LoadFailure) },
@@ -90,20 +88,13 @@ const ToggleIngestRule = Command.define("ToggleIngestRule", {
 		),
 })
 
-/** Writes the new order as positions 0..n-1, one PATCH per rule whose position changed. */
+/** Writes the whole new order in one request, so a failure never leaves it half applied. */
 const MoveIngestRules = Command.define("MoveIngestRules", {
-	args: { changes: Schema.Array(PositionChange) },
+	args: { ids: Schema.Array(RuleId) },
 	messages: [Message.CompletedMove],
-	execute: ({ changes }) =>
-		Effect.flatMap(MapleApiV2Client, (client) =>
-			Effect.forEach(
-				changes,
-				({ id, position }) => client.ingestRules.update({ params: { id }, payload: { position } }),
-				{
-					discard: true,
-				},
-			),
-		).pipe(
+	execute: ({ ids }) =>
+		Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.reorder({ payload: { ids } })).pipe(
+			Effect.asVoid,
 			Effect.mapError(toLoadFailure),
 			Effect.result,
 			Effect.map((result) => Message.CompletedMove({ result })),
@@ -152,17 +143,15 @@ const liftDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 
 const rulesOf = (model: Model) => AsyncData.getOrElse(model.rules, () => [])
 
-/** The list in its current order, with one rule moved one step; `[]` when it cannot move. */
+/** Every rule id in the new order, with one rule moved one step; `[]` when it cannot move. */
 export const moved = (rules: ReadonlyArray<V2IngestRule>, id: string, step: -1 | 1) => {
 	const index = rules.findIndex((rule) => rule.id === id)
 	const target = index + step
 	if (index === -1 || target < 0 || target >= rules.length) return []
-	const order = rules.map((rule, position) =>
-		position === index ? rules[target] : position === target ? rules[index] : rule,
-	)
-	return order.flatMap((rule, position) =>
-		rule === undefined || rule.position === position ? [] : [{ id: rule.id, position }],
-	)
+	return rules.flatMap((rule, position) => {
+		const next = position === index ? rules[target] : position === target ? rules[index] : rule
+		return next === undefined ? [] : [next.id]
+	})
 }
 
 const picked = (model: Model, menuId: string, value: string): Return =>
@@ -181,10 +170,10 @@ const picked = (model: Model, menuId: string, value: string): Return =>
 					}
 				if (value === "delete")
 					return liftDeleteDialog({ ...model, deleting: rule }, Dialog.open(model.deleteDialog))
-				const changes = model.isMoving ? [] : moved(rulesOf(model), rule.id, value === "up" ? -1 : 1)
-				return changes.length === 0
+				const ids = model.isMoving ? [] : moved(rulesOf(model), rule.id, value === "up" ? -1 : 1)
+				return ids.length === 0
 					? { model }
-					: { model: { ...model, isMoving: true }, commands: [MoveIngestRules({ changes })] }
+					: { model: { ...model, isMoving: true }, commands: [MoveIngestRules({ ids })] }
 			},
 		},
 	)
