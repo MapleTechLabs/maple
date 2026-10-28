@@ -149,4 +149,47 @@ describe("status page tools", () => {
 		expect(page.isError).toBe(true)
 		expect(markdown(page)).toContain("list_status_pages")
 	})
+
+	it("reads delayed while the page's monitors have not reported, and live once one has", async () => {
+		const monitorId = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d09"
+		const now = Date.now()
+		await executeSql(
+			rt.testDb,
+			`INSERT INTO uptime_monitors (id, org_id, name, kind, config_json, created_by, created_at, updated_at, enabled)
+			 VALUES ($1, $2, 'API health', 'http', $3, $4, now(), now(), true)`,
+			[
+				monitorId,
+				rt.tenant.orgId,
+				JSON.stringify({
+					_tag: "http",
+					url: "https://example.com/health",
+					method: "GET",
+					headers: {},
+					assertions: [],
+					timeoutMs: 5000,
+				}),
+				rt.tenant.userId,
+			],
+		)
+		await executeSql(
+			rt.testDb,
+			`INSERT INTO uptime_monitor_states (monitor_id, org_id, status, recent_json, updated_at) VALUES ($1, $2, 'up', '[]', now())`,
+			[monitorId, rt.tenant.orgId],
+		)
+		await executeSql(rt.testDb, `UPDATE status_page_components SET monitor_id = $1 WHERE name = 'API'`, [
+			monitorId,
+		])
+		const freshness = async () =>
+			decode(GetStatusPageOutput, await runToolDirect(rt, "get_status_page", { page: "acme-status" }))
+				.freshness
+
+		expect(await freshness()).toMatchObject({ state: "delayed", updatedAt: null })
+		await executeSql(
+			rt.testDb,
+			`INSERT INTO uptime_monitor_daily (monitor_id, day, org_id, checks, failures, down_checks, last_check_at)
+			 VALUES ($1, $2, $3, 1, 0, 0, to_timestamp($4 / 1000.0))`,
+			[monitorId, new Date(now).toISOString().slice(0, 10), rt.tenant.orgId, now - 30_000],
+		)
+		expect((await freshness()).state).toBe("live")
+	})
 })

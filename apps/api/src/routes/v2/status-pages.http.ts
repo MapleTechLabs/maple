@@ -13,6 +13,7 @@ import {
 	isoTimestampOrNull,
 	MapleApiV2,
 	paginateArray,
+	paginateOffsetQuery,
 	V2InsufficientPermissions,
 	type V2StatusPage,
 	type V2StatusPageComponent,
@@ -250,8 +251,14 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					// Best effort: the row is gone, so the page must not stay up; a failure is logged.
 					const store = yield* Effect.serviceOption(StatusPageStore)
 					if (Option.isSome(store)) {
+						// The slug route only while it still names this page: slugs free up for reuse at once.
 						yield* store.value.deletePage(deleted).pipe(
-							Effect.andThen(store.value.deleteRoutes({ slug: current.slug, hostnames: [] })),
+							Effect.andThen(store.value.readSlugRoute(current.slug)),
+							Effect.flatMap((owner) =>
+								owner === deleted
+									? store.value.deleteRoutes({ slug: current.slug, hostnames: [] })
+									: Effect.void,
+							),
 							Effect.catch((error) =>
 								Effect.logWarning("Status page edge data not deleted").pipe(
 									Effect.annotateLogs({
@@ -434,9 +441,6 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 	}),
 )
 
-const byNewest = (a: StatusPageIncidentRecord, b: StatusPageIncidentRecord) =>
-	b.startedAt - a.startedAt || (a.id < b.id ? 1 : -1)
-
 export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 	MapleApiV2,
 	"statusPageIncidents",
@@ -449,25 +453,16 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						const state = query.state ?? "open"
-						const pageIds =
-							query.page_id === undefined
-								? (yield* service.list(tenant.orgId)).map((page) => page.id)
-								: [query.page_id]
-						const incidents = yield* Effect.forEach(
-							pageIds,
-							(pageId) =>
-								service.listIncidents(tenant.orgId, pageId, {
-									includeResolved: state !== "open",
-								}),
-							{ concurrency: 4 },
+						const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
+							service.listOrgIncidents(tenant.orgId, {
+								...(query.page_id === undefined ? {} : { pageId: query.page_id }),
+								state,
+								limit,
+								offset,
+							}),
 						)
-						// `resolvedAt` is set when an incident resolves or maintenance completes.
-						const filtered = incidents
-							.flat()
-							.filter((incident) => state !== "closed" || incident.resolvedAt !== null)
-							.sort(byNewest)
-						const page = yield* paginateArray(filtered.map(toV2StatusPageIncident), query)
-						return { object: "list" as const, ...page }
+						const data = page.data.map(toV2StatusPageIncident)
+						return { object: "list" as const, ...page, data }
 					}),
 				)
 				.handle("retrieve", ({ params }) =>

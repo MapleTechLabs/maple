@@ -292,6 +292,47 @@ describe("StatusPagesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("lists an org's incidents across pages, filtered by state and paged newest first", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const first = yield* createPage("first")
+			const second = yield* createPage("second")
+			const other = yield* createPage("other-org", OrgId.make("org_status_other"))
+			const open = (pageId: StatusPageId, title: string, orgId: OrgId = ORG) =>
+				TestClock.adjust("1 minute").pipe(
+					Effect.andThen(
+						service.createIncident(orgId, pageId, {
+							kind: "incident",
+							title,
+							impact: "minor",
+							status: "investigating",
+							body: title,
+							componentIds: [],
+							source: "api",
+							createdBy: USER,
+						}),
+					),
+				)
+			const a = yield* open(first.id, "A")
+			yield* open(second.id, "B")
+			yield* open(first.id, "C")
+			yield* open(other.id, "Elsewhere", OrgId.make("org_status_other"))
+			yield* service.postUpdate(ORG, a.id, { status: "resolved", body: "Fixed", source: "api" })
+
+			const titles = (options: Parameters<typeof service.listOrgIncidents>[1]) =>
+				service.listOrgIncidents(ORG, options).pipe(Effect.map((list) => list.map((i) => i.title)))
+			assert.deepStrictEqual(yield* titles({ state: "all", limit: 10, offset: 0 }), ["C", "B", "A"])
+			assert.deepStrictEqual(yield* titles({ state: "open", limit: 10, offset: 0 }), ["C", "B"])
+			assert.deepStrictEqual(yield* titles({ state: "closed", limit: 10, offset: 0 }), ["A"])
+			assert.deepStrictEqual(yield* titles({ state: "all", limit: 1, offset: 1 }), ["B"])
+			assert.deepStrictEqual(yield* titles({ pageId: first.id, state: "all", limit: 10, offset: 0 }), [
+				"C",
+				"A",
+			])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("requires a valid window and maintenance statuses for maintenance", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

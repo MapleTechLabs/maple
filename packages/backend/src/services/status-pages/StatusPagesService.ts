@@ -86,6 +86,14 @@ export interface ListStatusPageIncidentsOptions {
 	readonly includeResolved?: boolean
 }
 
+/** One page of an org's incidents, filtered and ordered in SQL (newest first). */
+export interface ListOrgStatusPageIncidentsOptions {
+	readonly pageId?: StatusPageId
+	readonly state: "open" | "closed" | "all"
+	readonly limit: number
+	readonly offset: number
+}
+
 export interface CreateStatusPageIncidentInput {
 	readonly kind: StatusPageIncidentKind
 	readonly title: string
@@ -174,6 +182,10 @@ export interface StatusPagesServiceApi {
 		orgId: OrgId,
 		pageId: StatusPageId,
 		options?: ListStatusPageIncidentsOptions,
+	) => Effect.Effect<ReadonlyArray<StatusPageIncidentRecord>, PageError>
+	readonly listOrgIncidents: (
+		orgId: OrgId,
+		options: ListOrgStatusPageIncidentsOptions,
 	) => Effect.Effect<ReadonlyArray<StatusPageIncidentRecord>, PageError>
 	readonly getIncident: (
 		orgId: OrgId,
@@ -954,6 +966,36 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				)
 			})
 
+			const listOrgIncidents = Effect.fn("StatusPagesService.listOrgIncidents")(function* (
+				orgId: OrgId,
+				options: ListOrgStatusPageIncidentsOptions,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const pageId = options.pageId
+				return yield* dbExecute((db) =>
+					Effect.gen(function* () {
+						if (pageId !== undefined) yield* findPage(db, orgId, pageId)
+						const rows = yield* db.run(
+							PG.from(StatusPageIncidents)
+								.select()
+								.where(($) => [
+									$.orgId.eq(orgId),
+									pageId === undefined ? undefined : $.pageId.eq(pageId),
+									options.state === "open"
+										? $.resolvedAt.isNull()
+										: options.state === "closed"
+											? $.resolvedAt.isNotNull()
+											: undefined,
+								])
+								.orderBy(["startedAt", "desc"], ["id", "desc"])
+								.limit(options.limit)
+								.offset(options.offset),
+						)
+						return yield* loadIncidents(db, orgId, rows)
+					}),
+				)
+			})
+
 			const getIncident = Effect.fn("StatusPagesService.getIncident")(function* (
 				orgId: OrgId,
 				incidentId: StatusPageIncidentId,
@@ -1179,6 +1221,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				removeComponent,
 				reorderComponents,
 				listIncidents,
+				listOrgIncidents,
 				getIncident,
 				createIncident,
 				postUpdate,

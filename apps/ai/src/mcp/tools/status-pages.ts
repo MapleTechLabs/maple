@@ -294,11 +294,16 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			const incidents = yield* service
 				.listIncidents(tenant.orgId, page.id)
 				.pipe(Effect.mapError(toMcpError("get_status_page")))
-			// Answering means Maple is up, so this is the probe side of freshness only.
+			// Answering means Maple is up, so this is the probe side of freshness only, scoped to this org.
 			const probesSeenAt = yield* builder
-				.probesSeenAt(nowMs)
+				.probesSeenAt(nowMs, tenant.orgId)
 				.pipe(Effect.mapError(toMcpError("get_status_page")))
-			const freshness = pageFreshness({ snapshot, heartbeat: { at: nowMs, probesSeenAt }, nowMs })
+			const monitored = snapshot.components.some((component) => component.monitored)
+			// No recent probe at all is the most delayed a monitored page can be, not "live now".
+			const freshness =
+				monitored && probesSeenAt === null
+					? { _tag: "delayed" as const, updatedAt: null }
+					: pageFreshness({ snapshot, heartbeat: { at: nowMs, probesSeenAt }, nowMs })
 			return {
 				page: toPageRow(page),
 				overallStatus: overallStatus(snapshot),
@@ -319,7 +324,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				activeIncidents: incidents.map(toIncidentRow),
 				freshness: {
 					state: freshness._tag,
-					updatedAt: iso(freshness.updatedAt),
+					updatedAt: freshness.updatedAt === null ? null : iso(freshness.updatedAt),
 					publishPending: page.publishedRevision < page.revision,
 				},
 			}
@@ -329,7 +334,9 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			notices: [
 				...(output.freshness.state === "delayed"
 					? [
-							`Live checks are delayed: the page's monitors last reported at ${output.freshness.updatedAt}.`,
+							output.freshness.updatedAt === null
+								? "Live checks are delayed: none of the page's monitors has reported in the last two days."
+								: `Live checks are delayed: the page's monitors last reported at ${output.freshness.updatedAt}.`,
 						]
 					: []),
 				...(output.page.lastPublishError === null

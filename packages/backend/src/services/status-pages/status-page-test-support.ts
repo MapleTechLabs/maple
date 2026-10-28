@@ -59,6 +59,7 @@ export const seedMonitor = (
 		readonly alertRuleId?: string | null
 		readonly kind?: "http" | "heartbeat"
 		readonly enabled?: boolean
+		readonly orgId?: string
 	},
 ) =>
 	sql(
@@ -67,7 +68,7 @@ export const seedMonitor = (
 		 VALUES ($1, $2, 'Monitor', $7, $3, $4, $5, $6, $6, $8)`,
 		[
 			input.id,
-			ORG,
+			input.orgId ?? ORG,
 			JSON.stringify({
 				_tag: "http",
 				url: "https://example.com/health",
@@ -88,7 +89,7 @@ export const seedMonitor = (
 				testDb,
 				`INSERT INTO uptime_monitor_states (monitor_id, org_id, status, recent_json, updated_at)
 				 VALUES ($1, $2, $3, '[]', $4)`,
-				[input.id, ORG, input.status, iso(NOW)],
+				[input.id, input.orgId ?? ORG, input.status, iso(NOW)],
 			),
 		),
 	)
@@ -102,6 +103,7 @@ export const seedDaily = (
 		readonly failures: number
 		readonly downChecks: number
 		readonly lastCheckAt: number
+		readonly orgId?: string
 	},
 ) =>
 	sql(
@@ -111,7 +113,7 @@ export const seedDaily = (
 		[
 			input.monitorId,
 			input.day,
-			ORG,
+			input.orgId ?? ORG,
 			input.checks,
 			input.failures,
 			input.downChecks,

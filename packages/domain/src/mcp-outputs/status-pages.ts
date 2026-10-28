@@ -70,8 +70,8 @@ export const StatusPageIncidentRow = Schema.Struct({
 export const StatusPageFreshnessRow = Schema.Struct({
 	/** `delayed` when the page's monitors have not reported in the last minutes. */
 	state: Schema.Literals(["live", "delayed"]),
-	/** When the page's state was last confirmed by a check result. */
-	updatedAt: Schema.String,
+	/** When the page's state was last confirmed by a check result; null when its monitors never reported lately. */
+	updatedAt: Schema.NullOr(Schema.String),
 	/** Whether a change is still waiting for the next publish. */
 	publishPending: Schema.Boolean,
 })
