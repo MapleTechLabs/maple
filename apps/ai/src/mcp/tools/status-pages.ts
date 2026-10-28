@@ -332,6 +332,12 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		render: (output) => ({
 			title: `Status page: ${output.page.name}`,
 			notices: [
+				// No suggested call: both follow-ups need a public message only the user can word.
+				...(output.activeIncidents.some((incident) => isActiveIncident(incident))
+					? [
+							"To update an open incident, call post_status_page_update (incident, status, message) or resolve_status_page_incident (incident, message) with wording the user approves.",
+						]
+					: []),
 				...(output.freshness.state === "delayed"
 					? [
 							output.freshness.updatedAt === null
@@ -386,16 +392,6 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 							),
 						]),
 			],
-			next: output.activeIncidents
-				.filter((incident) => isActiveIncident(incident))
-				.slice(0, 2)
-				.map((incident) =>
-					doc.next(
-						"post_status_page_update",
-						{ incident: incident.id },
-						`post the next update on "${incident.title}"`,
-					),
-				),
 		}),
 	})
 

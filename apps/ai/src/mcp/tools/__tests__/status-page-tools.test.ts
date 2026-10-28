@@ -85,10 +85,10 @@ describe("status page tools", () => {
 			}),
 		)
 		expect(updated.incident).toMatchObject({ status: "identified", published: true, updateCount: 2 })
-		const live = decode(
-			GetStatusPageOutput,
-			await runToolDirect(rt, "get_status_page", { page: "Acme Status" }),
-		)
+		const liveResult = await runToolDirect(rt, "get_status_page", { page: "Acme Status" })
+		// The follow-up needs public wording, so it is a notice, not a half-filled call.
+		expect(markdown(liveResult)).toContain("To update an open incident, call post_status_page_update")
+		const live = decode(GetStatusPageOutput, liveResult)
 		expect(live.components).toMatchObject([{ name: "API", status: "partial_outage" }])
 		expect(live.overallStatus).toBe("partial_outage")
 
