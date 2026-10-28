@@ -71,6 +71,21 @@ describe("IngestRuleService", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("rejects a blank name or a fractional position whoever calls it", () =>
+		Effect.gen(function* () {
+			const service = yield* IngestRuleService
+			const blank = yield* service.create(ORG, { name: "  ", spec: dropDebug }).pipe(Effect.flip)
+			expect(
+				blank._tag === "@maple/http/errors/IngestRuleValidationError" ? blank.problems : [],
+			).toEqual(["the name must be 1 to 120 characters"])
+			const rule = yield* service.create(ORG, { name: "Drop debug", spec: dropDebug })
+			const moved = yield* service.update(ORG, rule.id, { position: 1.5 }).pipe(Effect.flip)
+			expect(
+				moved._tag === "@maple/http/errors/IngestRuleValidationError" ? moved.problems : [],
+			).toEqual(["position is a whole number from 0 to 10000"])
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("cannot read, update or delete another org's rule", () =>
 		Effect.gen(function* () {
 			const service = yield* IngestRuleService
