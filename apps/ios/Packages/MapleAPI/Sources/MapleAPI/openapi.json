@@ -13987,6 +13987,10 @@
       "name": "Attribute Mappings"
     },
     {
+      "description": "Drop or redact telemetry before Maple stores or bills it. Dropped data is not metered; redaction happens before anything is written to disk.",
+      "name": "Ingest Rules"
+    },
+    {
       "description": "The organization's append-only audit trail — allowed and denied actions performed through the dashboard, the public API, MCP, and any linked chat platform, attributed to the user, API key, or agent that performed them, with before/after diffs for updates. Reading it requires organization-administrator access (or the `audit_log:read` scope for API keys).",
       "name": "Audit Log"
     },

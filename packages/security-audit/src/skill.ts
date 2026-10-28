@@ -130,3 +130,12 @@ export const sectionText = (file: SkillFileName, heading: string): string | unde
 	const match = next.exec(text)
 	return text.slice(at, match === null ? undefined : match.index).trimEnd()
 }
+
+/** The prose of `file` from `marker` to the next heading of any level. */
+export const textFrom = (file: SkillFileName, marker: string): string | undefined => {
+	const text = SKILL_FILES[file]
+	const at = text.indexOf(marker)
+	if (at < 0) return undefined
+	const next = text.indexOf("\n#", at)
+	return text.slice(at, next < 0 ? undefined : next).trimEnd()
+}

@@ -3,13 +3,20 @@ import { OrgId } from "@maple/domain/http"
 import type { IngestRuleSpec } from "@maple/domain/ingest-rules"
 import { Effect, Layer, Schema } from "effect"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { IngestRuleService } from "./IngestRuleService"
+import { OrganizationFeatureFlagsService } from "./OrganizationFeatureFlagsService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const makeLayer = (testDb: TestDb = createTestDb(createdDbs)) =>
-	IngestRuleService.layer.pipe(Layer.provide(testDb.layer))
+const makeLayer = (
+	testDb: TestDb = createTestDb(createdDbs),
+	flags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
+) =>
+	Layer.effect(IngestRuleService, IngestRuleService.make).pipe(
+		Layer.provide(Layer.mergeAll(testDb.layer, flags)),
+	)
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_rules")
 const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
@@ -134,6 +141,24 @@ describe("IngestRuleService", () => {
 			expect(rules).toHaveLength(50)
 			expect(new Set(rules.map((rule) => rule.position)).size).toBe(50)
 		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("refuses to create rules for an org that is not rolled out", () =>
+		Effect.gen(function* () {
+			const service = yield* IngestRuleService
+			const refused = yield* service
+				.create(ORG, { name: "Drop debug", spec: dropDebug })
+				.pipe(Effect.flip)
+			expect(refused._tag).toBe("@maple/http/errors/IngestRuleForbiddenError")
+			expect(yield* service.list(ORG)).toEqual([])
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					createTestDb(createdDbs),
+					OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
+				),
+			),
+		),
 	)
 
 	it.effect("cannot read, update or delete another org's rule", () =>

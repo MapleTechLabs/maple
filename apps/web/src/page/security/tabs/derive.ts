@@ -6,13 +6,14 @@ import type {
 	SecurityAuditSettings,
 	SecurityAuditTarget,
 } from "@maple/domain/http"
-import type { SecurityAuditFindingStatus, SecurityAuditSeverity } from "@maple/domain/security-audit"
+import type { SecurityAuditFindingStatus } from "@maple/domain/security-audit"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { LoadFailure } from "../../../data/load-failure"
 import type { SecurityFindingsSearch } from "../../../route/search"
-import { type Gate, gateOf, isLive, isSameMonth, locationOf, severityRank } from "../kit/format"
-import type { FindingGroup, Model } from "./model"
+import { type Gate, gateOf, isLive, isSameMonth, locationOf } from "../kit/format"
+import { bucketOf, type BucketCounts, countsFromRun, isUnverified, SEVERITY_BUCKETS } from "../kit/findings"
+import type { Model } from "./model"
 
 // Pure readings of the tabs' Model: what each panel shows.
 
@@ -94,27 +95,17 @@ export const openConfirmed = (findings: ReadonlyArray<SecurityAuditFinding>) =>
 export const openNeedsValidation = (findings: ReadonlyArray<SecurityAuditFinding>) =>
 	findings.filter((finding) => finding.verdict === "needs_validation" && finding.status === "open")
 
-export const countBySeverity = (
-	findings: ReadonlyArray<SecurityAuditFinding>,
-): Readonly<Record<SecurityAuditSeverity, number>> => ({
-	critical: findings.filter((finding) => finding.overallSeverity === "critical").length,
-	high: findings.filter((finding) => finding.overallSeverity === "high").length,
-	medium: findings.filter((finding) => finding.overallSeverity === "medium").length,
-	low: findings.filter((finding) => finding.overallSeverity === "low").length,
-	informational: findings.filter((finding) => finding.overallSeverity === "informational").length,
-})
-
-/** Severity first, then the most recently seen. */
-export const bySeverity = (a: SecurityAuditFinding, b: SecurityAuditFinding): number =>
-	severityRank(a.overallSeverity) - severityRank(b.overallSeverity) || b.updatedAt - a.updatedAt
-
-/** Open leads, worst first: confirmed by severity, then leads to validate by when they were last seen. */
+/** Open leads, worst first: by severity, an estimate counting as one; proven before unverified at
+ * the same level; unscored leads last; then by when they were last seen. */
 export const openLeads = (
 	findings: ReadonlyArray<SecurityAuditFinding>,
-): ReadonlyArray<SecurityAuditFinding> => [
-	...[...openConfirmed(findings)].sort(bySeverity),
-	...[...openNeedsValidation(findings)].sort((a, b) => b.updatedAt - a.updatedAt),
-]
+): ReadonlyArray<SecurityAuditFinding> =>
+	[...openConfirmed(findings), ...openNeedsValidation(findings)].sort(
+		(a, b) =>
+			SEVERITY_BUCKETS.indexOf(bucketOf(a)) - SEVERITY_BUCKETS.indexOf(bucketOf(b)) ||
+			Number(isUnverified(a)) - Number(isUnverified(b)) ||
+			b.updatedAt - a.updatedAt,
+	)
 
 /** Closed units out of the ledger: what the run got to, whatever it found. */
 const CLOSED_UNIT_STATUSES: ReadonlyArray<string> = ["covered", "candidate", "not_applicable", "out_of_scope"]
@@ -208,29 +199,19 @@ export const runsForTab = (
 	return { runs, isCapped: listed.length >= RUN_LIST_CAP }
 }
 
-/**
- * What a run left open, by the findings it last saw. Only a target's newest finished run owns
- * them: an older run's findings were seen again later. Null when that cannot be told.
- */
-export const runLeadsOf = (
+/** What a run reported, per severity, from whichever run list carries it; null for members. */
+export const runCountsOf = (
 	model: Model,
-	run: SecurityAuditRun,
-): Readonly<{ confirmed: number; toValidate: number }> | null => {
-	const owner = runsForTarget(model, run.targetId).find(
-		(candidate) => !isLive(candidate) && candidate.status !== "failed",
-	)
-	const slot = model.findings[run.targetId]
-	if (owner?.id !== run.id || slot === undefined) return null
-	return Option.match(AsyncData.getData(slot.data), {
-		onNone: () => null,
-		onSome: ({ findings }) => {
-			const seen = findings.filter((finding) => finding.lastSeenRunId === run.id)
-			return {
-				confirmed: openConfirmed(seen).length,
-				toValidate: openNeedsValidation(seen).length,
-			}
-		},
-	})
+	runId: string,
+): Readonly<{ buckets: BucketCounts; unverified: number }> | null => {
+	const responses = [
+		Option.getOrNull(AsyncData.getData(model.runs.data)),
+		...Object.values(model.targetRuns).map((slot) => Option.getOrNull(AsyncData.getData(slot.data))),
+	]
+	const counts = responses
+		.map((response) => response?.findingCounts?.[runId])
+		.find((entry) => entry !== undefined)
+	return counts === undefined ? null : { buckets: countsFromRun(counts), unverified: counts.unverified }
 }
 
 /** The org's settings once read; null while loading or when the read failed. */
@@ -284,8 +265,8 @@ const matchesQuery = (finding: SecurityAuditFinding, query: string): boolean => 
 	return haystack.includes(query.toLowerCase())
 }
 
-/** The rows the toolbar leaves, before grouping. */
-export const filteredFindings = (
+/** The rows the toolbar leaves before the severity tile: what the tiles count. */
+export const toolbarFindings = (
 	findings: ReadonlyArray<SecurityAuditFinding>,
 	search: SecurityFindingsSearch,
 	query: string,
@@ -294,28 +275,24 @@ export const filteredFindings = (
 	return findings.filter(
 		(finding) =>
 			matchesStatus(finding.status, tab) &&
-			(search.severity === undefined || finding.overallSeverity === search.severity) &&
-			(search.verdict === undefined ||
-				finding.verdict === search.verdict ||
-				finding.verdict === "rejected") &&
 			(search.rejected === true || finding.verdict !== "rejected") &&
 			(search.target === undefined || finding.targetId === search.target) &&
 			matchesQuery(finding, query.trim()),
 	)
 }
 
-export const groupFindings = (
+/** The rows listed: the toolbar's, narrowed to the picked tile. A disproved row stays with "Show rejected". */
+export const filteredFindings = (
 	findings: ReadonlyArray<SecurityAuditFinding>,
-): ReadonlyArray<Readonly<{ group: FindingGroup; rows: ReadonlyArray<SecurityAuditFinding> }>> =>
-	(["confirmed", "needs_validation", "rejected"] as const)
-		.map((group) => ({
-			group,
-			rows: findings.filter((finding) => finding.verdict === group).sort(bySeverity),
-		}))
-		.filter((entry) => entry.rows.length > 0)
-
-/** The first rows of a group before "Show all". */
-export const GROUP_PAGE = 7
+	search: SecurityFindingsSearch,
+	query: string,
+): ReadonlyArray<SecurityAuditFinding> =>
+	toolbarFindings(findings, search, query).filter(
+		(finding) =>
+			search.severity === undefined ||
+			finding.verdict === "rejected" ||
+			bucketOf(finding) === search.severity,
+	)
 
 /** New: first reported in the last day. */
 export const isNewFinding = (finding: SecurityAuditFinding, nowMs: number): boolean =>

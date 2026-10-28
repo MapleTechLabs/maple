@@ -141,6 +141,7 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("RailwayIcon"),
 		accent: RAILWAY_ACCENT,
 		iconClassName: "text-foreground",
+		docsUrl: docsUrl("railway"),
 	},
 	{
 		id: "supabase",
@@ -151,6 +152,7 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 			"Authorize your Supabase organization to collect CPU, memory, disk and Postgres metrics for every project.",
 		icon: named("SupabaseIcon"),
 		accent: SUPABASE_ACCENT,
+		docsUrl: docsUrl("supabase"),
 	},
 	{
 		id: "warpstream",

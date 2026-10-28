@@ -140,6 +140,46 @@ describe("local ingest rules", () => {
 		expect(parsed.compiled.rules).toHaveLength(1)
 		expect(parsed.problems).toEqual(["ingest rule Bad skipped: a drop rule needs at least one condition"])
 		expect(parseLocalIngestRules("not json").problems[0]).toContain("ingest rules file is invalid")
+		const oneMalformed = parseLocalIngestRules(
+			JSON.stringify([
+				{ signals: ["log"], conditions: [], action: { _tag: "drop", keepPercent: 0 } },
+				{
+					signals: ["logs"],
+					conditions: [],
+					action: {
+						_tag: "redact",
+						keys: ["k"],
+						detectors: [],
+						patterns: [],
+						scopes: ["attributes"],
+						method: "remove",
+					},
+				},
+			]),
+		)
+		expect(oneMalformed.compiled.rules).toHaveLength(1)
+		expect(oneMalformed.problems[0]).toContain("ingest rule 1 skipped")
+		const afterDisabled = parseLocalIngestRules(
+			JSON.stringify([
+				{
+					enabled: false,
+					signals: ["logs"],
+					conditions: [],
+					action: {
+						_tag: "redact",
+						keys: ["k"],
+						detectors: [],
+						patterns: [],
+						scopes: ["attributes"],
+						method: "remove",
+					},
+				},
+				{ signals: ["logs"], conditions: [], action: { _tag: "drop", keepPercent: 0 } },
+			]),
+		)
+		expect(afterDisabled.problems).toEqual([
+			"ingest rule 2 skipped: a drop rule needs at least one condition",
+		])
 	})
 
 	it("merges resource redactions from rules matched by different records", () => {
@@ -290,6 +330,16 @@ describe("local ingest rules", () => {
 		const unreadable = source()
 		expect(unreadable.rules.compiled.rules).toEqual([])
 		expect(unreadable.rules.problems[0]).toContain("could not be read")
+		// A path that cannot be stat'ed (a plain file used as a directory) is reported once, not ignored.
+		const plain = path.join(dir, "plain")
+		fs.writeFileSync(plain, "")
+		const blocked = makeLocalIngestRulesSource(path.join(plain, "ingest-rules.json"))
+		const blockedFirst = blocked()
+		expect([
+			blockedFirst.reloaded,
+			blockedFirst.rules.problems[0]?.includes("could not be read"),
+		]).toEqual([true, true])
+		expect(blocked().reloaded).toBe(false)
 		fs.rmSync(dir, { recursive: true })
 	})
 })

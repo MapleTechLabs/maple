@@ -8,7 +8,7 @@ import type { ExecutionProfile } from "../ecosystems"
 import type { AgentContext, ExecutionPolicy } from "../prompts"
 import type { Candidate, UncoveredSurface } from "../results"
 import { decodeAgentJson } from "../results"
-import type { CoverageUnit, Finding } from "../schema"
+import type { CoverageUnit, EstimatedSeverity, Finding, Severity } from "../schema"
 import type { LedgerUnit } from "./ledger"
 import { AuditAgents, type AuditRole, AuditStore, type AuditEvent } from "./ports"
 
@@ -19,6 +19,8 @@ export interface PriorRun {
 	readonly sourceRef: string
 	readonly ledger: ReadonlyArray<CoverageUnit>
 	readonly findings: ReadonlyArray<Finding>
+	/** The overall level each of its needs_validation leads was estimated at, by fingerprint. */
+	readonly estimates?: ReadonlyMap<string, Severity>
 }
 
 export interface AuditRunInput {
@@ -71,6 +73,8 @@ export interface EngineState {
 	/** Prior rejected claims whose source did not change: they suppress only that exact claim. */
 	readonly suppressed: ReadonlyMap<string, Finding>
 	readonly findings: ReadonlyMap<string, Finding>
+	/** Each needs_validation record's estimated severity, beside `findings` and keyed the same. */
+	readonly estimates: ReadonlyMap<string, EstimatedSeverity>
 	/** Coverage the run discloses as not done (deferred, partial, unfunded), in the order it arose. */
 	readonly gaps: ReadonlyArray<string>
 	/** The skill's incomplete-run reasons; any one makes `run_status` incomplete. */
@@ -92,12 +96,25 @@ export const initialState: EngineState = {
 	carried: [],
 	suppressed: new Map(),
 	findings: new Map(),
+	estimates: new Map(),
 	gaps: [],
 	incomplete: [],
 	criticClean: false,
 	usedIds: new Set(),
 	halted: null,
 	usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+}
+
+/** `estimates` with `fingerprint` set to `estimate`, or without it when there is none. */
+export const withEstimate = (
+	estimates: ReadonlyMap<string, EstimatedSeverity>,
+	fingerprint: string,
+	estimate: EstimatedSeverity | null,
+): ReadonlyMap<string, EstimatedSeverity> => {
+	const next = new Map(estimates)
+	if (estimate === null) next.delete(fingerprint)
+	else next.set(fingerprint, estimate)
+	return next
 }
 
 /** A value-free note for a discarded result: at most 8 failing paths, never the values at them. */

@@ -210,7 +210,7 @@ const sampleRecords = Effect.fnUntraced(function* (
 	)
 })
 
-/** `key: before -> after` for every top-level value a rule changed. */
+/** `key -> after` for every top-level value a rule changed; the value before stays out of the transcript. */
 const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<string> => {
 	const diff = (scope: string, a: AttrMap, b: AttrMap) =>
 		Object.entries(a).flatMap(([key, value]) => {
@@ -218,7 +218,7 @@ const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<str
 			if (next === undefined) return [`${scope}${key}: removed`]
 			return JSON.stringify(next) === JSON.stringify(value)
 				? []
-				: [`${scope}${key}: ${truncate(String(value), 60)} -> ${truncate(String(next), 60)}`]
+				: [`${scope}${key} -> ${truncate(String(next), 60)}`]
 		})
 	const body =
 		before.body !== undefined && JSON.stringify(before.body) !== JSON.stringify(after.body)

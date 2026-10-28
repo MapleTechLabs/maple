@@ -29,6 +29,8 @@ type Return = PageReturn<Model, Message>
 
 export type InitOptions = Readonly<{
 	isAdmin: boolean
+	/** The `ingestRules` rollout flag; off means no ingest rules section and no rules requests. */
+	hasIngestRules: boolean
 	/** `useAuth().orgId` in Clerk mode, `"default"` self-hosted: the quick-start storage key. */
 	orgKey: string
 	timeZone: string
@@ -43,6 +45,7 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 export const init = (options: InitOptions): Return => ({
 	model: {
 		isAdmin: options.isAdmin,
+		hasIngestRules: options.hasIngestRules,
 		overview: AsyncData.Loading(),
 		ingest: AsyncData.Loading(),
 		endpointCopy: CopyButton.init(),
@@ -76,16 +79,45 @@ export const init = (options: InitOptions): Return => ({
 		FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace }),
 		FetchIngestionKeys(),
 		FetchRecommendations(),
-		Command.mapMessage(IngestRules.FetchIngestRules(), (message) =>
-			Message.GotIngestRulesMessage({ message }),
-		),
-		Command.mapMessage(IngestRules.FetchIngestRuleStats(), (message) =>
-			Message.GotIngestRulesMessage({ message }),
-		),
+		...(options.hasIngestRules ? ingestRulesFetches() : []),
 		FetchMappings(),
 		ReadFramework({ orgKey: options.orgKey }),
 	],
 })
+
+const ingestRulesFetches = () => [
+	Command.mapMessage(IngestRules.FetchIngestRules(), (message) =>
+		Message.GotIngestRulesMessage({ message }),
+	),
+	Command.mapMessage(IngestRules.FetchIngestRuleStats(), (message) =>
+		Message.GotIngestRulesMessage({ message }),
+	),
+]
+
+/** `revisit` for an org without the ingest rules rollout: the rest of the tab, no rules requests. */
+const revisitWithoutRules = (model: Model, options: InitOptions): Return => {
+	const overview = revisitData(model.overview, () =>
+		FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace }),
+	)
+	const ingest = revisitData(model.ingest, FetchIngestionKeys)
+	const recommendations = revisitData(model.recommendations, FetchRecommendations)
+	const mappings = revisitData(model.mappings, FetchMappings)
+	return {
+		model: {
+			...model,
+			overview: overview.data,
+			ingest: ingest.data,
+			recommendations: recommendations.data,
+			mappings: mappings.data,
+		},
+		commands: [
+			...overview.commands,
+			...ingest.commands,
+			...recommendations.commands,
+			...mappings.commands,
+		],
+	}
+}
 
 /** A refetch keeps the rows on screen (`useAtomRefresh`'s `waiting`). */
 const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) =>
@@ -186,6 +218,7 @@ export const revisit = (model: Model, options: InitOptions): Return => {
 	const ingest = revisitData(model.ingest, FetchIngestionKeys)
 	const recommendations = revisitData(model.recommendations, FetchRecommendations)
 	const mappings = revisitData(model.mappings, FetchMappings)
+	if (!model.hasIngestRules) return revisitWithoutRules(model, options)
 	const rules = revisitData(model.ingestRules.rules, () =>
 		Command.mapMessage(IngestRules.FetchIngestRules(), (message) =>
 			Message.GotIngestRulesMessage({ message }),
