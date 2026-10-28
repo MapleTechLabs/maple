@@ -65,6 +65,19 @@ const linearServer = () => {
 							],
 						})
 			}
+			case "MapleTeam":
+				return json({
+					data: {
+						team: {
+							id: "team_1",
+							key: "ENG",
+							name: "Engineering",
+							triageEnabled: true,
+							triageIssueState: { id: "state_triage" },
+							states: { nodes: [{ id: "state_todo", position: 1 }] },
+						},
+					},
+				})
 			case "MapleTeams":
 				return json({
 					data: { teams: { nodes: [{ id: "team_1", key: "ENG", name: "Engineering" }] } },
@@ -176,6 +189,18 @@ describe("AlertsService with a Linear destination", () => {
 			assert.strictEqual(destination.summary, "Linear · Engineering")
 			assert.strictEqual(destination.channelLabel, "ENG")
 			assert.strictEqual(destination.linearTeamId, "team_1")
+
+			const tested = yield* alerts.testDestination(
+				orgId,
+				asUserId("user_linear"),
+				adminRoles,
+				destination.id,
+			)
+			assert.strictEqual(tested.message, "Linear team Engineering (ENG) is reachable")
+			assert.notInclude(
+				linear.operations.map((operation) => operation.name),
+				"MapleIssueCreate",
+			)
 
 			const error = yield* alerts
 				.createDestination(orgId, asUserId("user_linear"), adminRoles, {

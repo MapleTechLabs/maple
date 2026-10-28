@@ -1035,7 +1035,7 @@ export class AlertDestinationsService extends Context.Service<
 		)(function* (orgId, _userId, roles, destinationId) {
 			yield* requireAdmin(roles)
 			const row = yield* requireDestinationRow(orgId, destinationId)
-			yield* delivery
+			const sent = yield* delivery
 				.sendImmediateNotification(row, {
 					deliveryKey: `${orgId}:${destinationId}:test`,
 					ruleId: decodeAlertRuleIdSync(runtime.makeUuid()),
@@ -1068,7 +1068,8 @@ export class AlertDestinationsService extends Context.Service<
 			yield* markDestinationTest(orgId, destinationId, null)
 			return new AlertDestinationTestResponse({
 				success: true,
-				message: "Test notification sent",
+				// A Linear test checks the team and opens no issue, so "sent" would be untrue.
+				message: row.type === "linear" ? sent.providerMessage : "Test notification sent",
 			})
 		})
 
