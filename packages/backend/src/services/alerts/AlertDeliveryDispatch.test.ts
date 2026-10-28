@@ -42,6 +42,16 @@ const dispatchDelivery = (
 const failingChatPost = () =>
 	Effect.fail(new AlertDeliveryError({ message: "unexpected postChatAlert", destinationType: "chat" }))
 
+/** These tests send to no Linear destination. */
+const unusedLinear: EffectTransportDeps["linear"] = {
+	request: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+	findThread: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+	saveThread: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+}
+
 const baseContext: TemplateRenderContext = {
 	ruleId: "rule_1" as TemplateRenderContext["ruleId"],
 	ruleName: "Checkout error rate",
@@ -82,6 +92,7 @@ const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-38
 /** Dispatch deps for non-email destinations — email sends must not happen. */
 const noEmailDeps: EffectTransportDeps = {
 	postChatAlert: failingChatPost,
+	linear: unusedLinear,
 	sendEmail: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
 }
@@ -453,6 +464,7 @@ describe("dispatchDelivery", () => {
 			const sent: Array<{ to: string; subject: string; html: string }> = []
 			const deps: EffectTransportDeps = {
 				postChatAlert: failingChatPost,
+				linear: unusedLinear,
 				sendEmail: (to, subject, html) =>
 					Effect.sync(() => {
 						sent.push({ to, subject, html })
@@ -479,6 +491,7 @@ describe("dispatchDelivery", () => {
 		Effect.gen(function* () {
 			const deps: EffectTransportDeps = {
 				postChatAlert: failingChatPost,
+				linear: unusedLinear,
 				sendEmail: () =>
 					Effect.fail(
 						new AlertDeliveryError({
@@ -503,6 +516,7 @@ describe("dispatchDelivery", () => {
 			const sent: string[] = []
 			const deps: EffectTransportDeps = {
 				postChatAlert: failingChatPost,
+				linear: unusedLinear,
 				sendEmail: (to) =>
 					to === "oncall@acme.test"
 						? Effect.fail(
@@ -529,6 +543,7 @@ describe("dispatchDelivery", () => {
 		Effect.gen(function* () {
 			const deps: EffectTransportDeps = {
 				postChatAlert: failingChatPost,
+				linear: unusedLinear,
 				sendEmail: () =>
 					Effect.fail(
 						new AlertDeliveryError({

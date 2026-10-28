@@ -273,8 +273,46 @@ export const AlertDeliveryEvents = PG.table("alert_delivery_events", {
 	tenantColumn: "orgId",
 })
 
+/**
+ * The Linear issue a `linear` destination keeps for one alert thread (a rule and group).
+ * A trigger comments on the thread's open issue, or reopens one closed within a day,
+ * instead of opening another. The row is replaced when a later trigger opens a fresh issue.
+ */
+export const AlertLinearIssues = PG.table("alert_linear_issues", {
+	columns: {
+		id: PG.text,
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		destinationId: PG.column(PG.brand(PG.text, AlertDestinationId), { name: "destination_id" }),
+		/** `<ruleId>:<groupKey>`, or the delivery's dedupe key when it has no rule. */
+		threadKey: PG.column(PG.text, { name: "thread_key" }),
+		/** Linear's issue UUID, which Maple chose so a retried create cannot duplicate it. */
+		linearIssueId: PG.column(PG.text, { name: "linear_issue_id" }),
+		/** e.g. `ENG-123`. */
+		linearIdentifier: PG.column(PG.text, { name: "linear_identifier" }),
+		linearUrl: PG.column(PG.text, { name: "linear_url" }),
+		incidentId: PG.column(PG.nullable(PG.text), { name: "incident_id" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: ["id"],
+	indexes: [
+		PG.uniqueIndex("alert_linear_issues_thread_idx", ["destinationId", "threadKey"]),
+		PG.index("alert_linear_issues_org_idx", ["orgId"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["destinationId"],
+			references: AlertDestinations,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
+	tenantColumn: "orgId",
+})
+
 export type AlertDestinationRow = PG.SelectRowOf<typeof AlertDestinations>
 export type AlertRuleRow = PG.SelectRowOf<typeof AlertRules>
 export type AlertRuleStateRow = PG.SelectRowOf<typeof AlertRuleStates>
 export type AlertIncidentRow = PG.SelectRowOf<typeof AlertIncidents>
 export type AlertDeliveryEventRow = PG.SelectRowOf<typeof AlertDeliveryEvents>
+export type AlertLinearIssueRow = PG.SelectRowOf<typeof AlertLinearIssues>

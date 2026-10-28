@@ -34,6 +34,11 @@ import { Env } from "@maple/backend/platform/Env"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { validateExternalUrl } from "@maple/safe-fetch"
 import { HazelOAuthService, type HazelOAuthServiceApi } from "@maple/backend/services/auth/HazelOAuthService"
+import {
+	LinearOAuthService,
+	type LinearOAuthServiceApi,
+	type LinearTeam,
+} from "@maple/backend/services/auth/LinearOAuthService"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
 import {
@@ -42,6 +47,7 @@ import {
 	type OrgMembersServiceApi,
 } from "@maple/backend/services/org/OrgMembersService"
 import { ChatAlertPoster, type ChatChannelChoice } from "./ChatAlertPoster"
+import { LinearIssueTracker } from "./LinearIssueTracker"
 import { PAGERDUTY_ROUTING_KEY_PATTERN, verifyPagerDutyRoutingKey } from "./delivery/transports/pagerduty"
 import {
 	fetchTelegramChats,
@@ -106,6 +112,20 @@ const emailSecretConfig = (members: ReadonlyArray<OrgMember>): DestinationSecret
 type AlertDestinationDependencyError =
 	| Effect.Error<ReturnType<HazelOAuthServiceApi["createChannelWebhook"]>>
 	| Effect.Error<ReturnType<OrgMembersServiceApi["resolveMembers"]>>
+	| Effect.Error<ReturnType<LinearOAuthServiceApi["listTeams"]>>
+
+const linearPublicConfig = (team: LinearTeam): DestinationPublicConfig => ({
+	summary: `Linear · ${team.name}`,
+	channelLabel: team.key,
+	linearTeamId: team.id,
+})
+
+const linearSecretConfig = (team: LinearTeam): DestinationSecretConfig => ({
+	type: "linear",
+	teamId: team.id,
+	teamKey: team.key,
+	teamName: team.name,
+})
 
 const encryptSecret = (
 	plaintext: string,
@@ -150,7 +170,7 @@ const chatPublicConfig = (
 })
 
 const buildPublicConfig = (
-	request: Exclude<AlertDestinationCreateRequest, { readonly type: "email" | "chat" }>,
+	request: Exclude<AlertDestinationCreateRequest, { readonly type: "email" | "chat" | "linear" }>,
 ): DestinationPublicConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
@@ -175,7 +195,10 @@ const buildPublicConfig = (
 	)
 
 const buildSecretConfig = (
-	request: Exclude<AlertDestinationCreateRequest, { readonly type: "hazel-oauth" | "email" | "chat" }>,
+	request: Exclude<
+		AlertDestinationCreateRequest,
+		{ readonly type: "hazel-oauth" | "email" | "chat" | "linear" }
+	>,
 ): DestinationSecretConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
@@ -227,6 +250,9 @@ const destinationDocumentFromRow = (
 		...(publicConfig.chatWorkspaceId === undefined
 			? undefined
 			: { chatWorkspaceId: publicConfig.chatWorkspaceId }),
+		...(publicConfig.linearTeamId === undefined
+			? undefined
+			: { linearTeamId: publicConfig.linearTeamId }),
 		lastTestedAt: row.lastTestedAt == null ? null : isoFromMs(row.lastTestedAt),
 		lastTestError: row.lastTestError,
 		consecutiveFailures: row.consecutiveFailures,
@@ -331,6 +357,7 @@ export class AlertDestinationsService extends Context.Service<
 		const runtime = yield* AlertRuntime
 		const httpClient = yield* HttpClient.HttpClient
 		const hazelOAuth = yield* HazelOAuthService
+		const linearOAuth = yield* LinearOAuthService
 		const email = yield* EmailService
 		const orgMembers = yield* OrgMembersService
 		const chatAlertPoster = yield* ChatAlertPoster
@@ -344,6 +371,7 @@ export class AlertDestinationsService extends Context.Service<
 			httpClient,
 			email,
 			postChatAlert: chatAlertPoster.post,
+			linear: yield* LinearIssueTracker,
 		})
 
 		const dbExecute = makeDbExecute(database, "AlertDestinationsService", makePersistenceError)
@@ -391,6 +419,21 @@ export class AlertDestinationsService extends Context.Service<
 							: Effect.succeed(members),
 					),
 				)
+
+		/** The team must be one the org's connected Linear workspace lists; its key and name come from there. */
+		const resolveLinearTeam = Effect.fn("AlertDestinationsService.resolveLinearTeam")(function* (
+			orgId: OrgId,
+			teamId: string,
+		) {
+			const teams = yield* linearOAuth.listTeams(orgId)
+			const team = teams.find((candidate) => candidate.id === teamId)
+			if (team === undefined) {
+				return yield* Effect.fail(
+					makeValidationError("That team is not in the connected Linear workspace"),
+				)
+			}
+			return team
+		})
 
 		const markDestinationTest = Effect.fn("AlertDestinationsService.markDestinationTest")(function* (
 			orgId: OrgId,
@@ -518,6 +561,10 @@ export class AlertDestinationsService extends Context.Service<
 					channelId,
 					channelName: channel.channelName,
 				}
+			} else if (request.type === "linear") {
+				const team = yield* resolveLinearTeam(orgId, request.teamId.trim())
+				publicConfig = linearPublicConfig(team)
+				secretConfig = linearSecretConfig(team)
 			} else {
 				publicConfig = buildPublicConfig(request)
 				secretConfig =
@@ -768,6 +815,25 @@ export class AlertDestinationsService extends Context.Service<
 								} satisfies DestinationSecretConfig,
 							}
 						}),
+					linear: (r) =>
+						Effect.gen(function* () {
+							const teamId = normalizeOptionalString(r.teamId)
+							const previous = hydrated.secretConfig
+							if (
+								teamId === null ||
+								(previous.type === "linear" && previous.teamId === teamId)
+							) {
+								return {
+									nextPublicConfig: hydrated.publicConfig,
+									nextSecretConfig: previous satisfies DestinationSecretConfig,
+								}
+							}
+							const team = yield* resolveLinearTeam(orgId, teamId)
+							return {
+								nextPublicConfig: linearPublicConfig(team),
+								nextSecretConfig: linearSecretConfig(team),
+							}
+						}),
 					email: (r) =>
 						Effect.gen(function* () {
 							const supplied =
@@ -1001,6 +1067,14 @@ export class AlertDestinationsService extends Context.Service<
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(ChatAlertPoster.layer),
-		Layer.provide(Layer.mergeAll(EmailService.layer, HazelOAuthService.layer, OrgMembersService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				EmailService.layer,
+				HazelOAuthService.layer,
+				LinearOAuthService.layer,
+				LinearIssueTracker.layer,
+				OrgMembersService.layer,
+			),
+		),
 	)
 }

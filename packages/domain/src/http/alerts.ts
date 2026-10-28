@@ -26,6 +26,7 @@ export const AlertDestinationType = Schema.Literals([
 	"telegram",
 	"email",
 	"chat",
+	"linear",
 ]).annotate({
 	identifier: "@maple/AlertDestinationType",
 	title: "Alert Destination Type",
@@ -346,6 +347,19 @@ export class ChatAlertDestinationConfig extends Schema.Class<ChatAlertDestinatio
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+/**
+ * A team in the org's connected Linear workspace. Each critical incident opens one issue
+ * there; the team's key and name are read from Linear at save time, never from the request.
+ */
+export class LinearAlertDestinationConfig extends Schema.Class<LinearAlertDestinationConfig>(
+	"LinearAlertDestinationConfig",
+)({
+	type: Schema.Literal("linear"),
+	name: ChannelLabel,
+	teamId: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export const MAX_EMAIL_RECIPIENTS = 10
 
 /**
@@ -375,6 +389,7 @@ export const AlertDestinationCreateRequest = Schema.Union([
 	TelegramAlertDestinationConfig,
 	EmailAlertDestinationConfig,
 	ChatAlertDestinationConfig,
+	LinearAlertDestinationConfig,
 ])
 export type AlertDestinationCreateRequest = Schema.Schema.Type<typeof AlertDestinationCreateRequest>
 
@@ -441,6 +456,14 @@ export class UpdateChatAlertDestinationConfig extends Schema.Class<UpdateChatAle
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+export class UpdateLinearAlertDestinationConfig extends Schema.Class<UpdateLinearAlertDestinationConfig>(
+	"UpdateLinearAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	teamId: OptionalNonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("pagerduty"),
@@ -470,6 +493,10 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 		type: Schema.Literal("chat"),
 		...UpdateChatAlertDestinationConfig.fields,
 	}),
+	Schema.Struct({
+		type: Schema.Literal("linear"),
+		...UpdateLinearAlertDestinationConfig.fields,
+	}),
 ])
 export type AlertDestinationUpdateRequest = Schema.Schema.Type<typeof AlertDestinationUpdateRequest>
 
@@ -487,6 +514,8 @@ export class AlertDestinationDocument extends Schema.Class<AlertDestinationDocum
 	/** The connector and linked workspace a `chat` destination posts through; absent otherwise. */
 	chatConnector: Schema.optionalKey(ChatConnectorId),
 	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
+	/** The Linear team a `linear` destination opens issues in; absent otherwise. */
+	linearTeamId: Schema.optionalKey(Schema.String),
 	lastTestedAt: Schema.NullOr(IsoDateTimeString),
 	lastTestError: Schema.NullOr(Schema.String),
 	/**
