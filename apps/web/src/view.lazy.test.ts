@@ -42,6 +42,7 @@ const SAMPLE_PATHS = [
 	"/alerts/create",
 	"/alerts/uptime/new",
 	"/alerts/uptime/upm_abc",
+	"/alerts/status-pages/stp_abc",
 	"/service-map",
 	"/infra/hosts",
 	"/infra/hosts/web-1",
