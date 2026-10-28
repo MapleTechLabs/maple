@@ -52,6 +52,23 @@ describe("InsertBatcher", () => {
 		expect(traces[0]).not.toContain("a-span")
 	})
 
+	test("an export meets its datasources in its own order, whatever the exports queued before it carry", async () => {
+		const { statements, inserts } = recording((sql) => sql.startsWith("INSERT INTO metrics_gauge"))
+		const [a, b] = await Promise.all([
+			inserts.insert([
+				{ datasource: "metrics_histogram", ndjson: rows("a-histogram") },
+				{ datasource: "metrics_sum", ndjson: rows("a-sum") },
+			]),
+			inserts.insert([
+				{ datasource: "metrics_gauge", ndjson: rows("b-gauge") },
+				{ datasource: "metrics_sum", ndjson: rows("b-sum") },
+			]),
+		])
+		expect(a).toEqual({ accepted: 2 })
+		expect(b).toMatchObject({ accepted: 0, failure: { datasource: "metrics_gauge" } })
+		expect(statements.some((sql) => sql.includes("b-sum"))).toBe(false)
+	})
+
 	test("a statement's worth of rows is inserted without waiting for the window", async () => {
 		const { statements, inserts } = recording()
 		const outcome = inserts.insert([

@@ -69,9 +69,11 @@ export class InsertBatcher {
 		// which calls back into this method and must find nothing left to do.
 		this.#queue = []
 		this.#queuedBytes = 0
-		const datasources = new Set(
-			queue.flatMap(({ batches }) => batches.map(({ datasource }) => datasource)),
-		)
+		// By name, the order the encoders emit each export's batches in, so every export
+		// meets its own datasources in the order it would have inserted them alone.
+		const datasources = [
+			...new Set(queue.flatMap(({ batches }) => batches.map(({ datasource }) => datasource))),
+		].sort()
 		for (const datasource of datasources) {
 			// An export whose insert already failed stops there, as it did when it inserted alone.
 			const batches = queue.flatMap((owner) => {
