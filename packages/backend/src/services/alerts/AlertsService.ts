@@ -341,9 +341,9 @@ const DESTINATION_DISABLE_AFTER_FAILURES = 3
 /** Bound on the stored `disabled_reason`; it is a provider sentence, not a log. */
 const DISABLED_REASON_MAX_LENGTH = 500
 const ALERT_TEST_DELIVERY_CONCURRENCY = 5
-// A Worker invocation has six outbound slots; the tail and the delivery drain run beside
-// these POSTs, so leave them two.
-const ALERT_CHECK_INGEST_CONCURRENCY = 4
+// A Worker invocation has six outbound slots. The delivery drain runs beside these POSTs
+// with three and Postgres needs one, so a stalled insert never makes a page wait for a slot.
+const ALERT_CHECK_INGEST_CONCURRENCY = 2
 // A healthy alert_checks POST is under a second; a stalled one is dropped, never retried,
 // because a write the warehouse already accepted would be counted twice.
 const ALERT_CHECK_INGEST_TIMEOUT = Duration.seconds(5)
