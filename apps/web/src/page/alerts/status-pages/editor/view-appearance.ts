@@ -9,6 +9,7 @@ import {
 	StatusPageThemeFont,
 	type StatusPageThemePreset,
 	StatusPageThemeRadius,
+	type StatusPageThemeTokens,
 } from "@maple/domain/status-page"
 import { previewSnapshot, renderPage } from "@maple/status-page"
 import { cn } from "@maple/ui/lib/utils"
@@ -62,13 +63,24 @@ const FONTS: ReadonlyArray<{ value: StatusPageThemeFont; label: string }> = [
 	{ value: "mono", label: "Monospace" },
 ]
 
-const COLOR_FIELDS: ReadonlyArray<{ field: ThemeColorField; label: string; placeholder: string }> = [
-	{ field: "accent", label: "Accent", placeholder: "#2563eb" },
-	{ field: "background", label: "Background", placeholder: "#ffffff" },
-	{ field: "text", label: "Text", placeholder: "#0a0a0a" },
-	{ field: "card", label: "Card", placeholder: "#fafafa" },
-	{ field: "border", label: "Border", placeholder: "#eaeaea" },
+/** Each input's placeholder is the preset's own colour, from the token it overrides. */
+const COLOR_FIELDS: ReadonlyArray<{
+	field: ThemeColorField
+	label: string
+	token: keyof StatusPageThemeTokens
+}> = [
+	{ field: "accent", label: "Accent", token: "link" },
+	{ field: "background", label: "Background", token: "bg" },
+	{ field: "text", label: "Text", token: "fg" },
+	{ field: "card", label: "Card", token: "card" },
+	{ field: "border", label: "Border", token: "line" },
 ]
+
+/** The preset's tokens in the page's mode (Auto shows the light ones). */
+const presetTokens = (theme: ThemeForm): StatusPageThemeTokens => {
+	const resolved = resolveStatusPageTheme({ ...DEFAULT_STATUS_PAGE_THEME, preset: theme.preset })
+	return theme.appearance === "dark" ? resolved.dark : resolved.light
+}
 
 const isRadius = Schema.is(StatusPageThemeRadius)
 const isFont = Schema.is(StatusPageThemeFont)
@@ -135,7 +147,7 @@ const colorField = (
 				id: `status-page-theme-${entry.field}`,
 				label: entry.label,
 				value,
-				placeholder: entry.placeholder,
+				placeholder: presetTokens(theme)[entry.token],
 				isMono: true,
 				isDisabled,
 				error,
