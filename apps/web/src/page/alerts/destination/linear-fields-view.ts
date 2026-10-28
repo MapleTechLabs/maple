@@ -84,6 +84,18 @@ const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean
 							: "Connect your Linear workspace, then pick the team issues open in.",
 				],
 			),
+			...(model.connectNote === null
+				? []
+				: [
+						h.p(
+							[h.Class("text-xs text-severity-error")],
+							[
+								model.connectNote === "Blocked"
+									? "Allow pop-ups for Maple, then try again."
+									: "Couldn't start the Linear connection. Try again.",
+							],
+						),
+					]),
 			h.div(
 				[h.Class("flex flex-wrap gap-2")],
 				[

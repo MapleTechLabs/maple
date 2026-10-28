@@ -30,6 +30,10 @@ export const Model = Schema.Struct({
 	isAdmin: Schema.NullOr(Schema.Boolean),
 	/** The connect popup is out: the status is re-read once it closes. */
 	isConnecting: Schema.Boolean,
+	/** Bumped per connect and per mount: a popup from an earlier one never settles this form. */
+	connectAttempt: Schema.Number,
+	/** How the last connect ended, when it needs saying. */
+	connectNote: Schema.NullOr(Schema.Literals(["Blocked", "Failed"])),
 	/** A failed teams read re-checks the status once, without re-reading the teams after it. */
 	isRecheckingStatus: Schema.Boolean,
 })
@@ -43,6 +47,8 @@ export const init = (): Model => ({
 	teamSelect: Select.init(TEAM_SELECT_ID, { value: "", selectedIndex: null }),
 	isAdmin: null,
 	isConnecting: false,
+	connectAttempt: 0,
+	connectNote: null,
 	isRecheckingStatus: false,
 })
 
@@ -52,7 +58,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchIsAdmin: { isAdmin: Schema.Boolean },
 	ClickedRetry: {},
 	ClickedConnect: {},
-	CompletedConnect: { isStarted: Schema.Boolean },
+	CompletedConnect: { attempt: Schema.Number, outcome: Schema.Literals(["Closed", "Blocked", "Failed"]) },
 	GotTeamSelectMessage: { message: Select.Message },
 })
 export type Message = typeof Message.Type
@@ -101,31 +107,33 @@ const WINDOW_NAME = "maple-linear-connect"
 const WINDOW_FEATURES = "popup,width=520,height=680"
 const POPUP_WAIT = "15 minutes"
 
-/** The popup opens in the click, goes to the authorize URL, and answers once it closes. */
+/**
+ * The popup opens in the click, goes to the authorize URL, and answers once it closes. A blocked
+ * popup is reported, never replaced by navigating this tab, which would lose the rule draft.
+ */
 export const ConnectLinear = Command.define("ConnectAlertLinear", {
+	args: { attempt: Schema.Number },
 	messages: [Message.CompletedConnect],
-	execute: Effect.gen(function* () {
-		const popup = yield* Effect.sync(() => window.open("", WINDOW_NAME, WINDOW_FEATURES))
-		const returnTo = yield* currentReturnPath
-		const started = yield* Effect.result(startConnect("linear", returnTo))
-		if (started._tag === "Failure") {
-			yield* Effect.sync(() => popup?.close())
-			return Message.CompletedConnect({ isStarted: false })
-		}
-		const url = started.success.redirectUrl
-		if (popup === null) {
-			yield* Effect.sync(() => window.open(url, WINDOW_NAME, WINDOW_FEATURES))
-			return Message.CompletedConnect({ isStarted: true })
-		}
-		yield* Effect.sync(() => {
-			popup.location.href = url
-		})
-		yield* Effect.sync(() => popup.closed).pipe(
-			Effect.repeat({ schedule: Schedule.spaced("500 millis"), until: (isClosed) => isClosed }),
-			Effect.timeoutOption(POPUP_WAIT),
-		)
-		return Message.CompletedConnect({ isStarted: true })
-	}),
+	execute: ({ attempt }) =>
+		Effect.gen(function* () {
+			const popup = yield* Effect.sync(() => window.open("", WINDOW_NAME, WINDOW_FEATURES))
+			if (popup === null) return Message.CompletedConnect({ attempt, outcome: "Blocked" })
+			const returnTo = yield* currentReturnPath
+			const started = yield* Effect.result(startConnect("linear", returnTo))
+			if (started._tag === "Failure") {
+				yield* Effect.sync(() => popup.close())
+				return Message.CompletedConnect({ attempt, outcome: "Failed" })
+			}
+			const url = started.success.redirectUrl
+			yield* Effect.sync(() => {
+				popup.location.href = url
+			})
+			yield* Effect.sync(() => popup.closed).pipe(
+				Effect.repeat({ schedule: Schedule.spaced("500 millis"), until: (isClosed) => isClosed }),
+				Effect.timeoutOption(POPUP_WAIT),
+			)
+			return Message.CompletedConnect({ attempt, outcome: "Closed" })
+		}),
 })
 
 export type Return = Readonly<{
@@ -196,10 +204,21 @@ export const update = (model: Model, message: Message, form: DestinationForm): R
 		ClickedConnect: () =>
 			model.isConnecting || model.isAdmin !== true
 				? { model, commands: [] }
-				: { model: { ...model, isConnecting: true }, commands: [ConnectLinear()] },
-		CompletedConnect: ({ isStarted }) => {
+				: {
+						model: {
+							...model,
+							isConnecting: true,
+							connectAttempt: model.connectAttempt + 1,
+							connectNote: null,
+						},
+						commands: [ConnectLinear({ attempt: model.connectAttempt + 1 })],
+					},
+		CompletedConnect: ({ attempt, outcome }) => {
+			if (attempt !== model.connectAttempt) return { model, commands: [] }
 			const settled = { ...model, isConnecting: false, isRecheckingStatus: false }
-			return isStarted ? readStatus(settled, "Refresh") : { model: settled, commands: [] }
+			return outcome === "Closed"
+				? readStatus({ ...settled, connectNote: null }, "Refresh")
+				: { model: { ...settled, connectNote: outcome }, commands: [] }
 		},
 		GotTeamSelectMessage: ({ message: inner }) => {
 			const step = Select.update(model.teamSelect, inner)
@@ -223,6 +242,10 @@ export const reset = (model: Model, form: DestinationForm): Return => {
 	const mounted = {
 		...model,
 		isRecheckingStatus: false,
+		// A popup from before this mount no longer settles the form.
+		isConnecting: false,
+		connectAttempt: model.connectAttempt + 1,
+		connectNote: null,
 		teamSelect: Select.init(TEAM_SELECT_ID, { value: form.linearTeamId, selectedIndex: null }),
 	}
 	const admin = model.isAdmin === null ? [FetchIsAdmin()] : []
