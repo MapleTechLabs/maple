@@ -71,6 +71,8 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalPlain("HAZEL_OAUTH_CLIENT_ID"),
 		optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
 		optionalPlain("HAZEL_OAUTH_SCOPES"),
+		optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
+		optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
 		// Each connector's declared install and outbound config; unset means unavailable.
 		...[...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys].map((key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
