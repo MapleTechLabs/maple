@@ -23,6 +23,7 @@
 		"@maple/agent-sessions": "workspace:*",
 		"@maple/chat-platform": "workspace:*",
 		"@maple/domain": "workspace:*",
+		"@maple/ingest-rules": "workspace:*",
 		"@maple/effect-db": "workspace:*",
 		"@maple/grid-engine": "workspace:*",
 		"@maple/infra": "workspace:*",
