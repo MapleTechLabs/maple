@@ -1,9 +1,11 @@
+import { Option } from "effect"
 import { describe, expect, it } from "vitest"
 import { StatusPageComponentId, StatusPageId } from "./primitives"
 import {
 	applyOverlay,
 	contrastRatio,
 	DEFAULT_STATUS_PAGE_THEME,
+	decodeStatusPageSnapshotJson,
 	resolveStatusPageTheme,
 	themeContrastIssue,
 	dayState,
@@ -98,6 +100,19 @@ describe("bars", () => {
 			{ day: "2026-10-27", checks: 4, failures: 0, downChecks: 0 },
 			{ day: "2026-10-28", checks: 0, failures: 0, downChecks: 0 },
 		])
+	})
+})
+
+describe("decodeStatusPageSnapshotJson", () => {
+	it("reads a snapshot published before themes existed with the default theme", () => {
+		// JSON drops the undefined theme, as an old snapshot never had one.
+		const legacy = JSON.stringify({
+			...snapshot(),
+			page: { ...snapshot().page, theme: undefined, brandColor: "#123456" },
+		})
+		const decoded = decodeStatusPageSnapshotJson(legacy)
+		expect(Option.isSome(decoded)).toBe(true)
+		expect(Option.getOrThrow(decoded).page.theme).toEqual(DEFAULT_STATUS_PAGE_THEME)
 	})
 })
 
