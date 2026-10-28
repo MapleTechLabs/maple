@@ -57,6 +57,7 @@ import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRout
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { PlanetScaleWebhookQueue } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
@@ -131,6 +132,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	ScrapeTargetsService.layer,
 	UptimeMonitorsService.layer,
 	StatusPagesService.layer,
+	// Needs the `StatusPageStore` port, which only the deployed Worker binds.
+	StatusPagePublisher.layer,
 	PlanetScaleConnectionService.layer,
 	PlanetScaleService.layer,
 	PlanetScaleWebhookService.layer,
