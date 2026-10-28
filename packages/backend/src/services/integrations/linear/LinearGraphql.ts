@@ -43,9 +43,12 @@ export interface LinearGraphqlResult {
 const isAuthError = (error: LinearGraphqlError) =>
 	error.code === "AUTHENTICATION_ERROR" || /authenticat/i.test(error.message)
 
-/** True when Linear says the entity does not exist (deleted, or never created). */
+/**
+ * True when Linear says the entity does not exist (deleted, or never created). Linear answers an
+ * unknown id with code `INPUT_ERROR` and "Could not find referenced Issue.", so the message decides.
+ */
 export const isNotFound = (error: LinearGraphqlError) =>
-	error.code === "ENTITY_NOT_FOUND" || /entity not found/i.test(error.message)
+	error.code === "ENTITY_NOT_FOUND" || /entity not found|could not find referenced/i.test(error.message)
 
 const errorSummary = (errors: ReadonlyArray<LinearGraphqlError>) =>
 	errors.map((error) => error.message).join("; ")

@@ -60,7 +60,10 @@ const linearServer = () => {
 					? json({
 							data: null,
 							errors: [
-								{ message: "Entity not found: Issue", extensions: { code: "INPUT_ERROR" } },
+								{
+									message: "Could not find referenced Issue.",
+									extensions: { code: "INPUT_ERROR" },
+								},
 							],
 						})
 					: json({ data: { issue: { ...issue, state: { type: "triage" } } } })
