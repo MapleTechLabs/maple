@@ -1,0 +1,280 @@
+---
+/**
+ * IntegrationsHub: `/integrations`, every language, agent framework, cloud,
+ * database and alert destination Maple works with, one tile per doc page.
+ *
+ * The data is `lib/integrations-hub.ts`. A category rail sits beside the grid
+ * from lg up and becomes a chip row below it; the search box filters tiles in
+ * place. Hairline grids pad their last row with blank cells, so the 1px-gap
+ * border never shows a hole; the script recomputes the padding while a search
+ * is active, when the visible count changes.
+ */
+import * as m from "../../paraglide/messages.js";
+import { HUB_CATEGORIES, text, tileHref } from "../../lib/integrations-hub";
+import { BRAND_MARKS, markColor } from "../../lib/brand-marks";
+import Layout from "../../layouts/Layout.astro";
+import BrandMarkIcon from "../BrandMarkIcon.astro";
+import LanguageLogo from "../docs/LanguageLogo.astro";
+import HazelLogo from "../icons/HazelLogo.astro";
+import Footer from "../Footer.astro";
+import Nav from "../Nav.astro";
+import SeoHead from "../SeoHead.astro";
+import PageCta from "../page/PageCta.astro";
+import PageHero from "../page/PageHero.astro";
+
+const locale = Astro.currentLocale ?? "en";
+const title = m.intg_seo_title();
+const description = m.intg_seo_desc();
+
+/** Blank cells that close a grid's last row, per breakpoint (2 columns from sm, 3 from lg). */
+const fillers = (count: number) => {
+	const sm = (2 - (count % 2)) % 2;
+	const lg = (3 - (count % 3)) % 3;
+	return [0, 1].map((i) => [i < sm ? "sm:block" : "sm:hidden", i < lg ? "lg:block" : "lg:hidden"].join(" "));
+};
+
+// The hero wall: one mark from every category, static.
+const WALL = [
+	"opentelemetry",
+	"aws",
+	"googlecloud",
+	"cloudflare",
+	"kubernetes",
+	"supabase",
+	"planetscale",
+	"prometheus",
+	"slack",
+	"pagerduty",
+	"github",
+	"claude",
+] as const;
+---
+
+<Layout title={title} description={description} mdHref={locale === "en" ? "/integrations.md" : undefined}>
+	<SeoHead title={title} description={description} />
+	<Nav />
+
+	<PageHero
+		eyebrow={m.intg_eyebrow()}
+		title={m.intg_title()}
+		lede={m.intg_lede()}
+		breadcrumb={[{ label: m.breadcrumb_home(), href: "/" }, { label: m.breadcrumb_integrations() }]}
+	>
+		<ul
+			slot="aside"
+			class="hidden grid-cols-4 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid"
+			aria-hidden="true"
+		>
+			{
+				WALL.map((id) => (
+					<li class="flex flex-col items-center justify-center gap-3 bg-bg px-2 py-7">
+						<BrandMarkIcon id={id} class="h-6 w-6" />
+						<span class="font-mono text-[10.5px] text-fg-muted">{BRAND_MARKS[id].name}</span>
+					</li>
+				))
+			}
+		</ul>
+	</PageHero>
+
+	<section class="border-t border-border bg-bg" data-hub>
+		<div class="shell grid gap-10 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-14">
+			<aside class="lg:sticky lg:top-24 lg:self-start">
+				<label class="relative block">
+					<span class="sr-only">{m.intg_search_label()}</span>
+					<svg
+						viewBox="0 0 24 24"
+						class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						aria-hidden="true"
+					>
+						<circle cx="11" cy="11" r="7"></circle>
+						<path d="m20 20-3.5-3.5"></path>
+					</svg>
+					<input
+						type="search"
+						data-hub-search
+						placeholder={m.intg_search_placeholder()}
+						autocomplete="off"
+						class="h-10 w-full rounded-lg border border-border bg-bg-elevated pl-9 pr-3 text-sm text-fg placeholder:text-fg-muted transition-colors focus:border-fg-muted/60 focus:outline-none [&::-webkit-search-cancel-button]:appearance-none"
+					/>
+				</label>
+
+				<nav aria-label={m.intg_rail_label()} class="mt-5">
+					<ul class="flex gap-1.5 overflow-x-auto pb-1 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0">
+						{
+							HUB_CATEGORIES.map((category) => (
+								<li data-hub-rail={category.id}>
+									<a
+										href={`#${category.id}`}
+										data-hub-rail-link
+										class="inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-md border border-border px-2.5 text-[12.5px] text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg aria-[current=true]:bg-bg-elevated aria-[current=true]:text-fg lg:flex lg:border-transparent"
+									>
+										{category.title()}
+									</a>
+								</li>
+							))
+						}
+					</ul>
+				</nav>
+			</aside>
+
+			<div class="min-w-0">
+				<div class="flex flex-col gap-16 md:gap-20">
+				{
+					HUB_CATEGORIES.map((category) => (
+						<section
+							id={category.id}
+							data-hub-category
+							class="scroll-mt-24"
+						>
+							<h2 class="font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl">
+								{category.title()}
+							</h2>
+							<p class="mt-3 max-w-[62ch] text-sm leading-relaxed text-fg-muted">{category.lede()}</p>
+
+							<ul data-hub-grid class="mt-8 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
+								{category.tiles.map((tile) => {
+									const name = text(tile.name);
+									const hint = text(tile.hint);
+									return (
+										<li data-hub-tile data-search={`${name} ${hint} ${tile.keywords ?? ""}`.toLowerCase()} class="flex bg-bg">
+											<a
+												href={tileHref(locale, tile)}
+												class="flex w-full items-start gap-3.5 p-5 transition-colors hover:bg-bg-elevated"
+											>
+												<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-bg-elevated">
+													{"lang" in tile.icon ? (
+														<LanguageLogo id={tile.icon.lang} class="h-[18px] w-[18px]" />
+													) : "mark" in tile.icon ? (
+														<BrandMarkIcon id={tile.icon.mark} class="h-[18px] w-[18px]" />
+													) : (
+														<HazelLogo class="h-[18px] w-[18px]" />
+													)}
+												</span>
+												<span class="min-w-0">
+													<span class="block text-[13.5px] font-medium text-fg">{name}</span>
+													<span class="mt-0.5 block text-[12.5px] leading-relaxed text-fg-muted">{hint}</span>
+												</span>
+											</a>
+										</li>
+									);
+								})}
+								{fillers(category.tiles.length).map((classes) => (
+									<li data-hub-filler class={`hidden bg-bg ${classes}`} aria-hidden="true" />
+								))}
+							</ul>
+						</section>
+					))
+				}
+
+				<p data-hub-empty hidden class="rounded-xl border border-border bg-bg-elevated px-6 py-5 text-[13px] leading-relaxed text-fg-muted">
+					{m.intg_search_empty()}
+					<a href="/docs/getting-started/quickstart" class="ml-1 text-primary transition-colors hover:text-fg">
+						{m.intg_otel_link()}
+					</a>
+				</p>
+
+				</div>
+
+				{/* The rule that keeps the list open-ended, as on the pricing page's stack grid. */}
+				<div class="mt-16 flex flex-col gap-4 rounded-xl border border-border bg-bg-elevated px-6 py-5 sm:flex-row sm:items-center sm:justify-between md:mt-20">
+					<div class="flex items-start gap-3">
+						<svg
+							viewBox="0 0 24 24"
+							class="mt-0.5 h-4 w-4 shrink-0"
+							style={`color:${markColor(BRAND_MARKS.opentelemetry)}`}
+							fill="currentColor"
+							aria-hidden="true"
+						>
+							<path d={BRAND_MARKS.opentelemetry.path} />
+						</svg>
+						<div>
+							<div class="text-[13px] font-medium text-fg">{m.intg_otel_title()}</div>
+							<p class="mt-1 max-w-[70ch] text-[12.5px] leading-relaxed text-fg-muted">{m.intg_otel_body()}</p>
+						</div>
+					</div>
+					<div class="flex shrink-0 flex-wrap gap-x-5 gap-y-2 text-[12.5px]">
+						<a href="/docs/getting-started/quickstart" class="text-primary transition-colors hover:text-fg">
+							{m.intg_otel_link()}
+						</a>
+						<a
+							href="https://github.com/MapleTechLabs/maple/issues"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="text-fg-muted transition-colors hover:text-fg"
+						>
+							{m.intg_request_link()}
+						</a>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<PageCta title={m.intg_cta_title()} lede={m.intg_cta_lede()} />
+
+	<Footer />
+</Layout>
+
+<script>
+	// In-place filter. Matching is a substring test on the tile's name and hint
+	// in the rendered locale; empty categories and their rail links hide with it.
+	const root = document.querySelector<HTMLElement>("[data-hub]");
+	const input = root?.querySelector<HTMLInputElement>("[data-hub-search]");
+
+	const columns = (grid: HTMLElement) => getComputedStyle(grid).gridTemplateColumns.split(" ").length;
+
+	const pad = (grid: HTMLElement, visible: number | null) => {
+		const fillers = [...grid.querySelectorAll<HTMLElement>("[data-hub-filler]")];
+		if (visible === null) {
+			for (const f of fillers) f.style.removeProperty("display");
+			return;
+		}
+		const cols = columns(grid);
+		const needed = cols > 1 ? (cols - (visible % cols)) % cols : 0;
+		fillers.forEach((f, i) => (f.style.display = i < needed ? "block" : "none"));
+	};
+
+	const apply = () => {
+		if (!root || !input) return;
+		const query = input.value.trim().toLowerCase();
+		let total = 0;
+		for (const category of root.querySelectorAll<HTMLElement>("[data-hub-category]")) {
+			const grid = category.querySelector<HTMLElement>("[data-hub-grid]");
+			let visible = 0;
+			for (const tile of category.querySelectorAll<HTMLElement>("[data-hub-tile]")) {
+				const match = query === "" || (tile.dataset.search ?? "").includes(query);
+				tile.hidden = !match;
+				if (match) visible++;
+			}
+			category.hidden = visible === 0;
+			root.querySelector<HTMLElement>(`[data-hub-rail="${category.id}"]`)?.toggleAttribute("hidden", visible === 0);
+			if (grid) pad(grid, query === "" ? null : visible);
+			total += visible;
+		}
+		root.querySelector<HTMLElement>("[data-hub-empty]")?.toggleAttribute("hidden", total > 0);
+	};
+
+	// The rail marks the category nearest the top of the viewport.
+	const links = new Map(
+		[...(root?.querySelectorAll<HTMLAnchorElement>("[data-hub-rail-link]") ?? [])].map((a) => [a.hash.slice(1), a]),
+	);
+	const spy = new IntersectionObserver(
+		(entries) => {
+			const hit = entries.find((entry) => entry.isIntersecting);
+			if (!hit) return;
+			for (const [id, a] of links) a.setAttribute("aria-current", String(id === hit.target.id));
+		},
+		{ rootMargin: "-20% 0px -70% 0px" },
+	);
+	for (const category of root?.querySelectorAll<HTMLElement>("[data-hub-category]") ?? []) spy.observe(category);
+
+	input?.addEventListener("input", apply);
+	// Column counts change across breakpoints, so a filtered grid re-pads on resize.
+	window.addEventListener("resize", () => {
+		if (input?.value.trim()) apply();
+	});
+</script>
