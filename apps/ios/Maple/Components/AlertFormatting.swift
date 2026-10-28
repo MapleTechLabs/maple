@@ -170,6 +170,7 @@ extension AlertDestinationType {
 		case .discord: "Discord"
 		case .telegram: "Telegram"
 		case .email: "Email"
+		case .linear: "Linear"
 		}
 	}
 }
