@@ -12,6 +12,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
+import { SeverityBucket } from "../kit/findings"
 import { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
 import * as Select from "../../../ui/select"
 import * as AddTarget from "../kit/add-target"
@@ -22,9 +23,6 @@ import * as SpendSettings from "../kit/spend-settings"
 
 export const Tab = Schema.Literals(["overview", "findings", "runs"])
 export type Tab = typeof Tab.Type
-
-export const FindingGroup = Schema.Literals(["confirmed", "needs_validation", "rejected"])
-export type FindingGroup = typeof FindingGroup.Type
 
 export const Model = Schema.Struct({
 	tab: Tab,
@@ -50,12 +48,11 @@ export const Model = Schema.Struct({
 	searchDraft: Schema.String,
 	/** Bumped per keystroke; only the last one's debounce commits the search to the URL. */
 	searchGeneration: Schema.Finite,
-	severitySelect: Select.Model,
-	verdictSelect: Select.Model,
+	statusSelect: Select.Model,
 	targetSelect: Select.Model,
 	runsTargetSelect: Select.Model,
-	/** Groups showing every row instead of the first page. */
-	expanded: Schema.Array(FindingGroup),
+	/** Severity sections folded to their header. */
+	collapsed: Schema.Array(SeverityBucket),
 })
 export type Model = typeof Model.Type
 
@@ -87,12 +84,12 @@ export const Message = defineMessageUnion({
 	},
 	ChangedSearchDraft: { value: Schema.String },
 	ElapsedSearchDebounce: { generation: Schema.Finite },
-	GotSeveritySelectMessage: { message: Select.Message },
-	GotVerdictSelectMessage: { message: Select.Message },
+	GotStatusSelectMessage: { message: Select.Message },
 	GotTargetSelectMessage: { message: Select.Message },
 	GotRunsTargetSelectMessage: { message: Select.Message },
 	ToggledShowRejected: {},
 	ClickedClearFilters: {},
-	ClickedShowAll: { group: FindingGroup },
+	PickedSeverity: { bucket: Schema.NullOr(SeverityBucket) },
+	ToggledSection: { bucket: SeverityBucket },
 })
 export type Message = typeof Message.Type

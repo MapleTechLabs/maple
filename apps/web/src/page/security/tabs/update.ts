@@ -12,7 +12,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { chain, chainAll, slotStep } from "../../kit/keyed-step"
 import * as AddTarget from "../kit/add-target"
 import * as SpendSettings from "../kit/spend-settings"
-import { isLive, SECURITY_SEVERITY_ORDER } from "../kit/format"
+import { isLive } from "../kit/format"
 import {
 	FetchFindings,
 	FetchGithubStatus,
@@ -33,6 +33,7 @@ import {
 	runningRuns,
 	runsOf,
 	settingsOf,
+	STATUS_TABS,
 	targetsOf,
 } from "./derive"
 import { Message, type Model, type Tab } from "./model"
@@ -52,19 +53,10 @@ const tabOfRoute = (route: SecurityTabsRoute): Tab =>
 
 // SELECTS
 
-const SEVERITY_VALUES: ReadonlyArray<string> = ["all", ...SECURITY_SEVERITY_ORDER]
-const VERDICT_VALUES: ReadonlyArray<string> = ["all", "confirmed", "needs_validation"]
-
-const selectFor = (id: string, values: ReadonlyArray<string>, value: string): Select.Model => {
-	const index = values.indexOf(value)
-	return Select.init(id, { value, selectedIndex: index === -1 ? null : index })
-}
-
 /** Keeps the selects' closed value on the URL's, without closing an open one. */
 const withSelectValues = (model: Model): Model => ({
 	...model,
-	severitySelect: { ...model.severitySelect, value: model.findingsSearch.severity ?? "all" },
-	verdictSelect: { ...model.verdictSelect, value: model.findingsSearch.verdict ?? "all" },
+	statusSelect: { ...model.statusSelect, value: model.findingsSearch.status ?? "open" },
 	targetSelect: { ...model.targetSelect, value: model.findingsSearch.target ?? "all" },
 	runsTargetSelect: { ...model.runsTargetSelect, value: model.runsSearch.target ?? "all" },
 })
@@ -232,11 +224,11 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		startingTargetId: null,
 		searchDraft: searches.findingsSearch.q ?? "",
 		searchGeneration: 0,
-		severitySelect: selectFor("security-severity", SEVERITY_VALUES, "all"),
-		verdictSelect: selectFor("security-verdict", VERDICT_VALUES, "all"),
+		statusSelect: Select.init("security-status", { value: "open", selectedIndex: 0 }),
 		targetSelect: Select.init("security-target", { value: "all", selectedIndex: 0 }),
 		runsTargetSelect: Select.init("security-runs-target", { value: "all", selectedIndex: 0 }),
-		expanded: [],
+		// Disproved findings start folded, unless the URL asked to show them.
+		collapsed: searches.findingsSearch.rejected === true ? [] : ["rejected"],
 	})
 	const loaded = chainAll(model, [
 		(next) => readTargets(next, context, "Load"),
@@ -263,6 +255,11 @@ export const routeChanged = (model: Model, route: SecurityTabsRoute, _context: P
 			...model,
 			tab: tabOfRoute(route),
 			...searches,
+			// Turning rejected on shows them, not a folded header.
+			collapsed:
+				searches.findingsSearch.rejected === true && model.findingsSearch.rejected !== true
+					? model.collapsed.filter((held) => held !== "rejected")
+					: model.collapsed,
 			// Leaving Findings drops a pending debounce, so it cannot navigate back there.
 			searchGeneration: isFindings ? model.searchGeneration : model.searchGeneration + 1,
 			// The draft follows the URL unless it already says the same thing (trailing spaces).
@@ -293,7 +290,7 @@ const searchWithDraft = (model: Model): SecurityFindingsSearch => {
 }
 
 /** `all` clears the param, so the URL only carries what narrows the list. */
-const withParam = <K extends "severity" | "verdict" | "target">(
+const withParam = <K extends "target">(
 	search: SecurityFindingsSearch,
 	key: K,
 	value: string,
@@ -301,9 +298,6 @@ const withParam = <K extends "severity" | "verdict" | "target">(
 	const { [key]: _dropped, ...rest } = search
 	return value === "all" ? rest : { ...rest, [key]: value }
 }
-
-const isSeverity = (value: string): value is NonNullable<SecurityFindingsSearch["severity"]> =>
-	SECURITY_SEVERITY_ORDER.some((severity) => severity === value)
 
 const selectStep = (
 	model: Model,
@@ -320,26 +314,6 @@ const selectStep = (
 	const step = onChange(updated, next.outMessage.value)
 	return { ...step, commands: [...commands, ...(step.commands ?? [])] }
 }
-
-const severityChanged = (model: Model, value: string): Return =>
-	navigate(
-		model,
-		findingsUrl(
-			value === "all" || !isSeverity(value)
-				? withParam(searchWithDraft(model), "severity", "all")
-				: { ...searchWithDraft(model), severity: value },
-		),
-	)
-
-const verdictChanged = (model: Model, value: string): Return =>
-	navigate(
-		model,
-		findingsUrl(
-			value === "confirmed" || value === "needs_validation"
-				? { ...searchWithDraft(model), verdict: value }
-				: withParam(searchWithDraft(model), "verdict", "all"),
-		),
-	)
 
 const runsTargetChanged = (model: Model, value: string): Return => {
 	const search: SecurityRunsSearch = value === "all" ? {} : { target: value }
@@ -574,23 +548,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const { q: _q, ...rest } = model.findingsSearch
 			return navigate(model, findingsUrl(q === undefined ? rest : { ...rest, q }), true)
 		},
-		GotSeveritySelectMessage: ({ message: inner }) =>
+		GotStatusSelectMessage: ({ message: inner }) =>
 			selectStep(
 				model,
-				model.severitySelect,
+				model.statusSelect,
 				inner,
-				(severitySelect) => ({ severitySelect }),
-				(next) => Message.GotSeveritySelectMessage({ message: next }),
-				severityChanged,
-			),
-		GotVerdictSelectMessage: ({ message: inner }) =>
-			selectStep(
-				model,
-				model.verdictSelect,
-				inner,
-				(verdictSelect) => ({ verdictSelect }),
-				(next) => Message.GotVerdictSelectMessage({ message: next }),
-				verdictChanged,
+				(statusSelect) => ({ statusSelect }),
+				(next) => Message.GotStatusSelectMessage({ message: next }),
+				(updated, value) => {
+					const { status: _status, ...rest } = searchWithDraft(updated)
+					const status = STATUS_TABS.find((tab) => tab === value)
+					// Open is the default, so the URL only carries another status.
+					return navigate(
+						updated,
+						findingsUrl(status === undefined || status === "open" ? rest : { ...rest, status }),
+					)
+				},
 			),
 		GotTargetSelectMessage: ({ message: inner }) =>
 			selectStep(
@@ -625,10 +598,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				findingsUrl(status === undefined ? {} : { status }),
 			)
 		},
-		ClickedShowAll: ({ group }) => ({
+		PickedSeverity: ({ bucket }) => {
+			if (bucket === "rejected") return { model }
+			const { severity: _severity, ...rest } = searchWithDraft(model)
+			return navigate(
+				bucket === null
+					? model
+					: { ...model, collapsed: model.collapsed.filter((held) => held !== bucket) },
+				findingsUrl(bucket === null ? rest : { ...rest, severity: bucket }),
+			)
+		},
+		ToggledSection: ({ bucket }) => ({
 			model: {
 				...model,
-				expanded: model.expanded.includes(group) ? model.expanded : [...model.expanded, group],
+				collapsed: model.collapsed.includes(bucket)
+					? model.collapsed.filter((held) => held !== bucket)
+					: [...model.collapsed, bucket],
 			},
 		}),
 	})

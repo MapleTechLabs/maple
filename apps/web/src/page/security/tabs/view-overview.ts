@@ -40,7 +40,6 @@ import {
 	securitySeverityBadge,
 } from "../kit/parts"
 import {
-	countBySeverity,
 	coverageAcross,
 	coverageSettled,
 	coverageOf,
@@ -59,6 +58,8 @@ import {
 	targetsOf,
 } from "./derive"
 import { Message, type Model } from "./model"
+import { bucketOf, countByBucket, isUnverified } from "../kit/findings"
+import { findingBadge } from "../kit/findings-view"
 import { auditSteps, emptyOnRamp } from "./view-empty"
 import { leadsLine, stopSummaryOf } from "../kit/outcome"
 
@@ -225,10 +226,23 @@ const kpis = (h: H, model: Model): Html => {
 
 // TARGETS TABLE
 
-/** Confirmed by severity as dots, then the leads still to validate. */
+/** "3 high, 1 unverified": how many of a severity's count are estimates. */
+const countTitle = (
+	count: number,
+	severity: "critical" | "high" | "medium" | "low",
+	unverified: ReadonlyArray<SecurityAuditFinding>,
+): string => {
+	const estimated = unverified.filter((finding) => bucketOf(finding) === severity).length
+	const base = `${count} ${SECURITY_SEVERITY_LABEL[severity].toLowerCase()}`
+	return estimated === 0 ? base : `${base}, ${estimated} unverified`
+}
+
+/** Open leads by severity as dots (estimates included), then the unscored ones still to validate. */
 const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html => {
-	const counts = countBySeverity(openConfirmed(findings))
-	const toValidate = openNeedsValidation(findings).length
+	const open = [...openConfirmed(findings), ...openNeedsValidation(findings)]
+	const counts = countByBucket(open)
+	const unverified = open.filter(isUnverified)
+	const toValidate = counts.needs_validation
 	return h.span(
 		[h.Class("flex items-center gap-2.5 font-mono text-xs tabular-nums")],
 		[
@@ -237,7 +251,7 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 					[
 						h.Key(severity),
 						h.Class("inline-flex items-center gap-1.5"),
-						h.Title(`${counts[severity]} ${SECURITY_SEVERITY_LABEL[severity].toLowerCase()}`),
+						h.Title(countTitle(counts[severity], severity, unverified)),
 					],
 					[
 						statusDot(h, {
@@ -468,11 +482,13 @@ const findingItem = (h: H, finding: SecurityAuditFinding, repository: string): H
 			h.span(
 				[h.Class("w-16 shrink-0")],
 				[
-					finding.verdict === "needs_validation"
-						? h.span([h.Class("text-xs text-muted-foreground normal-case")], ["To validate"])
-						: finding.overallSeverity === null
-							? ""
-							: securitySeverityBadge(h, finding.overallSeverity),
+					isUnverified(finding)
+						? findingBadge(h, finding)
+						: finding.verdict === "needs_validation"
+							? h.span([h.Class("text-xs text-muted-foreground normal-case")], ["To validate"])
+							: finding.overallSeverity === null
+								? ""
+								: securitySeverityBadge(h, finding.overallSeverity),
 				],
 			),
 			h.span(
