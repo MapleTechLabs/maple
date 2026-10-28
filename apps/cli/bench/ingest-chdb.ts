@@ -75,6 +75,10 @@ const execAll = (db: Chdb, signal: Signal, records: number) => {
 	return time(() => statements.forEach((s) => db.exec(s.sql)))
 }
 
+// Quoted: `system.settings` prints string values bare, and ClickHouse accepts quoted numbers.
+const setSetting = (db: Chdb, name: string | undefined, value: string | undefined) =>
+	db.exec(`SET ${name} = '${(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`)
+
 const stages = (db: Chdb) =>
 	signals.flatMap((signal) =>
 		sizes.map((records) => {
@@ -132,9 +136,9 @@ const settings = (db: Chdb) => {
 	const variants = settingVariants.flatMap((assignment) => {
 		const [name, value] = assignment.split("=")
 		const current = db.query(`SELECT value FROM system.settings WHERE name = '${name}'`, "TSVRaw").trim()
-		db.exec(`SET ${name} = ${value}`)
+		setSetting(db, name, value)
 		const rows = run(assignment)
-		db.exec(`SET ${name} = ${current}`)
+		setSetting(db, name, current)
 		return rows
 	})
 	return [...baseline, ...variants]
@@ -234,11 +238,24 @@ const main = () => {
 				? join(root, "chdb-config.xml")
 				: chdbConfig
 	if (chdbConfig === "default" && configFile) writeIngestConfig(configFile)
-	const openStarted = performance.now()
-	const db = Chdb.open({ dataDir, schemaSql: LOCAL_SCHEMA_SQL, configFile })
-	const openMs = Math.round(performance.now() - openStarted)
+	// A run that throws partway still removes its scratch store.
+	let db: Chdb | undefined
+	try {
+		const openStarted = performance.now()
+		db = Chdb.open({ dataDir, schemaSql: LOCAL_SCHEMA_SQL, configFile })
+		writeChdbReport(env, db, dataDir, Math.round(performance.now() - openStarted))
+	} finally {
+		db?.close()
+		rmSync(root, { recursive: true, force: true })
+	}
+}
+
+const writeChdbReport = (env: ReturnType<typeof environment>, db: Chdb, dataDir: string, openMs: number) => {
 	console.log(`store opened in ${openMs} ms at ${dataDir}`)
-	sessionSettings.forEach((assignment) => db.exec(`SET ${assignment}`))
+	sessionSettings.forEach((assignment) => {
+		const [name, value] = assignment.split("=")
+		setSetting(db, name, value)
+	})
 	const report = {
 		bench: "local-ingest-chdb",
 		environment: env,
@@ -261,8 +278,6 @@ const main = () => {
 		views: skip.has("views") ? null : (console.log("\n# views"), views(db)),
 		sustained: skip.has("sustained") ? null : (console.log("\n# sustained"), sustained(db)),
 	}
-	db.close()
-	rmSync(root, { recursive: true, force: true })
 	console.log(`\nwrote ${writeReport(`local-ingest-chdb-${env.date.slice(0, 10)}.json`, report)}`)
 }
 
