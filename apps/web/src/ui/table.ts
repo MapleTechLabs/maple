@@ -11,6 +11,7 @@ import {
 	tableStyles,
 } from "@maple/ui/styles/ui/table"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { withHint } from "./eyebrow"
 
 // Port of packages/ui/src/components/ui/table.tsx. Rows and cells repeat, so they set one class
 // attribute (S4) instead of `h.Class`.
@@ -102,7 +103,7 @@ export const tableHead = <M>(
 			h.DataAttribute("slot", "table-head"),
 			...attributes,
 		],
-		children,
+		children.flatMap((child) => withHint(h, child)),
 	)
 
 export const tableCell = <M>(

@@ -1,4 +1,4 @@
-import { Clock, Context, Duration, Effect, Layer, Option, Result, type Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Ref, Result, type Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	effectiveAssertions,
@@ -7,7 +7,7 @@ import {
 	type UptimeHttpConfig,
 	uptimeHttpRequest,
 } from "@maple/domain/uptime"
-import { describeHttpClientError, guardPinned, readTextPrefix } from "@maple/safe-fetch"
+import { describeHttpClientError, guardPinned, readTextPrefix, type ResolveHost } from "@maple/safe-fetch"
 import { HostResolver } from "@maple/safe-fetch/dns"
 import {
 	type CheckTraceContext,
@@ -19,6 +19,7 @@ import {
 	succeeded,
 	traceparentOf,
 } from "./UptimeProbe"
+import { addPhases, hasPhases, NO_PHASES, PhaseRecorder, recordPhases } from "./UptimePhases"
 
 export type HttpProbeConfig = Schema.Schema.Type<typeof UptimeHttpConfig>
 
@@ -54,16 +55,20 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 	"@maple/scraper/UptimeHttpProbe",
 	{
 		make: Effect.gen(function* () {
+			const resolveHost = yield* HostResolver
+			// Each hop's lookup is the check's DNS phase; the transport reports the rest.
+			const resolve: ResolveHost = (hostname) =>
+				Effect.timed(resolveHost(hostname)).pipe(
+					Effect.flatMap(([took, addresses]) =>
+						Effect.as(recordPhases({ dnsMs: Duration.toMillis(took) }), addresses),
+					),
+				)
 			// Scoped, so an unread body is cancelled when the check ends. A cross-origin redirect
 			// drops the configured headers and the body, keeping only the headers the probe owns.
-			const client = guardPinned(
-				HttpClient.withScope(yield* HttpClient.HttpClient),
-				yield* HostResolver,
-				{
-					strictRedirects: true,
-					ownHeaders: ["traceparent", "user-agent"],
-				},
-			)
+			const client = guardPinned(HttpClient.withScope(yield* HttpClient.HttpClient), resolve, {
+				strictRedirects: true,
+				ownHeaders: ["traceparent", "user-agent"],
+			})
 
 			// The shared request shaping (the test endpoint sends the same), plus our traceparent.
 			const buildRequest = (config: HttpProbeConfig, trace: CheckTraceContext) => {
@@ -76,7 +81,7 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 					: HttpClientRequest.bodyText(request, outgoing.body.text, outgoing.body.contentType)
 			}
 
-			const probe = (config: HttpProbeConfig, trace: CheckTraceContext) =>
+			const check = (config: HttpProbeConfig, trace: CheckTraceContext) =>
 				Effect.gen(function* () {
 					const url = parseUrl(config.url)
 					const endpoint = endpointOf(url, config.url)
@@ -94,7 +99,16 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 								// Latency is time to the response headers, not the body read after them.
 								const respondedInMs = (yield* Clock.currentTimeMillis) - startedAt
 								const read = readsBody
-									? yield* readTextPrefix(response, MAX_ASSERTION_BODY_BYTES)
+									? yield* Effect.timed(
+											readTextPrefix(response, MAX_ASSERTION_BODY_BYTES),
+										).pipe(
+											Effect.flatMap(([took, prefix]) =>
+												Effect.as(
+													recordPhases({ transferMs: Duration.toMillis(took) }),
+													prefix,
+												),
+											),
+										)
 									: null
 								return {
 									response,
@@ -162,6 +176,19 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 					return failure === null
 						? succeeded(durationMs, response.status)
 						: failed(durationMs, "assertion", failure, response.status)
+				})
+
+			const probe = (config: HttpProbeConfig, trace: CheckTraceContext) =>
+				Effect.gen(function* () {
+					const phases = yield* Ref.make(NO_PHASES)
+					const outcome = yield* check(config, trace).pipe(
+						Effect.provideService(PhaseRecorder, (hop) =>
+							Ref.update(phases, (total) => addPhases(total, hop)),
+						),
+					)
+					// The phases that completed, a failed check's too (DNS and connect before a TLS error).
+					const timings = yield* Ref.get(phases)
+					return hasPhases(timings) ? { ...outcome, timings } : outcome
 				})
 
 			return { probe } satisfies UptimeHttpProbeApi

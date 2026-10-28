@@ -36,6 +36,8 @@ import {
 	findingsStateOf,
 	groupFindings,
 	latestRunFor,
+	openLeads,
+	runLeadsOf,
 	runningRuns,
 	spendThisMonth,
 } from "./derive"
@@ -276,6 +278,48 @@ describe("security tabs", () => {
 		expect(filteredFindings(findings, {}, "exports.ts").map((finding) => finding.fingerprint)).toEqual([
 			"exports-tenant-body-8b9e",
 		])
+	})
+
+	test("coverage reads as unknown, not unmapped, until the latest runs are in", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			expectView(text("Not mapped")).toBeAbsent(),
+			expectView(text("no run has mapped a repository yet")).toBeAbsent(),
+		)
+	})
+
+	test("Covered sums every target's latest run, and says not mapped only once no run has", () => {
+		const answered = Object.values(TARGET_IDS).reduce((model, targetId) => {
+			const run = latestRunFor(model, targetId)
+			if (run === undefined) return model
+			return pageUpdate(
+				model,
+				Message.CompletedFetchLatestRun({
+					runId: run.id,
+					key: model.latestRuns[run.id]?.key ?? "",
+					result: Result.succeed(runDetailOf(NOW, run.id)),
+				}),
+			).model
+		}, loaded())
+		scene(
+			{ update: pageUpdate, view },
+			given(answered),
+			// gateway 212 of 212, dashboard 64 of 148, billing 38 of 54.
+			expectView(text("314 / 414")).toExist(),
+			expectView(text("Not mapped")).toBeAbsent(),
+		)
+
+		const entered = init(overview, context).model
+		const noRuns = [
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchTargets({
+				key: entered.targets.key ?? "",
+				result: Result.succeed(targetsOf(NOW)),
+			}),
+			Message.CompletedFetchRuns({ key: entered.runs.key ?? "", result: Result.succeed({ runs: [] }) }),
+		].reduce((model, message) => pageUpdate(model, message).model, entered)
+		scene({ update: pageUpdate, view }, given(noRuns), expectView(text("Not mapped")).toExist())
 	})
 
 	test("the latest run's coverage is read for the targets table", () => {
@@ -589,6 +633,54 @@ describe("spend and models", () => {
 				message: Select.Message.SelectedItem({ index: 0, value }),
 			}),
 		).model
+
+	test("the Overview counts leads to validate with the confirmed ones, worst confirmed first", () => {
+		const model = loaded()
+		const state = findingsStateOf(model)
+		const leads = state._tag === "Ready" ? openLeads(state.findings) : []
+		expect(
+			leads.map((finding) =>
+				finding.verdict === "confirmed" ? finding.overallSeverity : "to validate",
+			),
+		).toEqual([
+			"critical",
+			"high",
+			"high",
+			"high",
+			"medium",
+			"medium",
+			"low",
+			"to validate",
+			"to validate",
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("7 confirmed · 2 to validate")).toExist(),
+		)
+	})
+
+	test("a run's leads are told only for a target's newest finished run, which last saw them", () => {
+		const model = loaded(AppRoute.SecurityRuns({ search: {} }))
+		const runOf = (id: string) => runsOf(NOW).runs.find((run) => run.id === id)
+		const leadsOf = (id: string) => {
+			const run = runOf(id)
+			return run === undefined ? undefined : runLeadsOf(model, run)
+		}
+		expect([
+			leadsOf(RUN_IDS.billing),
+			leadsOf(RUN_IDS.billingCancelled),
+			leadsOf(RUN_IDS.dashboard),
+			leadsOf(RUN_IDS.terraform),
+		]).toEqual([{ confirmed: 3, toValidate: 1 }, null, null, null])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("reached the monthly spend limit")).toExist(),
+			expectView(role("columnheader", { name: "Leads" })).toExist(),
+			expectView(role("columnheader", { name: "Tokens" })).not.toExist(),
+		)
+	})
 
 	test("the Overview shows this month's spend against the org's limit", () => {
 		scene(

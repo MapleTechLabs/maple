@@ -334,6 +334,16 @@ export const shellSidebarFooter = (
 	tip: RailTip = NO_TIP,
 ): Html =>
 	sidebarFooter(h, [
+		// The pinned footer's edge: a hairline and shadow while nav rows sit hidden below it.
+		h.div(
+			[
+				h.AriaHidden(true),
+				h.Class(
+					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-[background-color,box-shadow] [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-[0_-6px_12px_rgb(0_0_0/0.35)]",
+				),
+			],
+			[],
+		),
 		sidebarMenu(h, undefined, [
 			footerNavRow(h, currentPath, { href: "/sources", title: "Sources", icon: "ConnectionIcon" }, tip),
 			// `/integrations` renders inside the settings rail, so Settings owns it.

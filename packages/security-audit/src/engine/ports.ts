@@ -34,6 +34,8 @@ export interface AgentUsage {
 export interface AgentAnswer {
 	readonly text: string
 	readonly usage?: AgentUsage
+	/** Tool calls the agent made; absent from answers recorded before it was counted. */
+	readonly toolCalls?: number
 }
 
 export class AuditAgentError extends Schema.TaggedError<AuditAgentError>()(

@@ -39,7 +39,7 @@ export function formatDurationAtStep(ms: number, stepMs: number): string {
 	if (Math.abs(ms) < 60_000) {
 		return `${(ms / 1000).toFixed(Math.min(3, decimalsFor(step / 1000)))}s`
 	}
-	return `${(ms / 60_000).toFixed(Math.min(2, decimalsFor(step / 60_000)))}min`
+	return `${(ms / 60_000).toFixed(Math.min(2, decimalsFor(step / 60_000)))}m`
 }
 
 // Two byte formatters, not one with a `base` option: the choice between them is
@@ -50,10 +50,12 @@ export function formatDurationAtStep(ms: number, stepMs: number): string {
 const BINARY_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const
 const DECIMAL_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const
 
-/** Binary (1024-based) byte size — memory, disk, page weight. */
+/** One decimal under 100, whole numbers from 100 up: the rule every byte-like unit shares. */
+const byteDigits = (value: number): string => (value >= 100 ? value.toFixed(0) : value.toFixed(1))
+
+/** Binary (1024-based) byte size: memory, disk, page weight. A negative size is bad data and reads as the placeholder. */
 export function formatBytes(bytes: number): string {
-	if (!Number.isFinite(bytes)) return EMPTY_VALUE
-	if (bytes < 0) return `-${formatBytes(-bytes)}`
+	if (!Number.isFinite(bytes) || bytes < 0) return EMPTY_VALUE
 	if (bytes === 0) return "0 B"
 	let value = bytes
 	let unit = 0
@@ -61,7 +63,7 @@ export function formatBytes(bytes: number): string {
 		value /= 1024
 		unit += 1
 	}
-	return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} ${BINARY_UNITS[unit]}`
+	return `${byteDigits(value)} ${BINARY_UNITS[unit]}`
 }
 
 /** Decimal (1000-based) byte size — warehouse storage and anything billed. */
@@ -73,12 +75,12 @@ export function formatStorageBytes(bytes: number): string {
 		value /= 1000
 		unit += 1
 	}
-	return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} ${DECIMAL_UNITS[unit]}`
+	return `${byteDigits(value)} ${DECIMAL_UNITS[unit]}`
 }
 
 /** Binary (1024-based) throughput. */
 export function formatBytesPerSecond(bytes: number): string {
-	if (!Number.isFinite(bytes) || bytes === 0) return "0 B/s"
+	if (!Number.isFinite(bytes) || bytes <= 0) return "0 B/s"
 	const units = ["B/s", "KB/s", "MB/s", "GB/s"]
 	let value = bytes
 	let unit = 0
@@ -86,7 +88,7 @@ export function formatBytesPerSecond(bytes: number): string {
 		value /= 1024
 		unit++
 	}
-	return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`
+	return `${byteDigits(value)} ${units[unit]}`
 }
 
 /**
@@ -133,7 +135,7 @@ export function formatLoad(load: number): string {
 	return load.toFixed(2)
 }
 
-/** Coarse uptime: `"<1m"`, minutes, hours, `"3d 4h"`, then `"2y 14d"`. */
+/** Coarse uptime: `"<1m"`, minutes, hours, `"3d 4h"`, then `"2y 14d"`; a zero trailing part is dropped (`"3y"`). */
 export function formatUptime(seconds: number): string {
 	if (!Number.isFinite(seconds) || seconds <= 0) return EMPTY_VALUE
 	const m = Math.floor(seconds / 60)
@@ -142,8 +144,9 @@ export function formatUptime(seconds: number): string {
 	const h = Math.floor(m / 60)
 	if (h < 24) return `${h}h`
 	const d = Math.floor(h / 24)
-	if (d < 365) return `${d}d ${h % 24}h`
-	return `${Math.floor(d / 365)}y ${d % 365}d`
+	const pair = (big: string, small: number, unit: string) => (small === 0 ? big : `${big} ${small}${unit}`)
+	if (d < 365) return pair(`${d}d`, h % 24, "h")
+	return pair(`${Math.floor(d / 365)}y`, d % 365, "d")
 }
 
 /** A latency in milliseconds; the duration ladder with a placeholder for missing values. */
@@ -200,9 +203,14 @@ export function inferRangeMs(data: ReadonlyArray<Record<string, unknown>>): numb
 	return Math.max(...bucketTimes) - Math.min(...bucketTimes)
 }
 
+/** Whether `date` reads 00:00 on the clock of `timeZone` (the browser's when undefined). */
+const isZonedMidnight = (date: Date, timeZone: string | undefined): boolean =>
+	date.toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) ===
+	"00:00"
+
 /**
  * Format a bucket timestamp label that adapts based on the overall time range:
- * - >= 24h with daily buckets: "Feb 14"
+ * - >= 24h with daily buckets, or a tick on midnight: "Feb 14"
  * - >= 24h with sub-day buckets: "Feb 14, 02:00 PM"
  * - 30min - 24h: "02:00 PM"
  * - <= 30min: "02:00:30 PM"
@@ -242,7 +250,8 @@ export function formatBucketLabel(
 	}
 
 	if (includeDate) {
-		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60) {
+		// A tick on midnight names the day alone, so a week axis reads "Oct 20", not "Oct 20, 12:00 AM".
+		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60 || isZonedMidnight(date, timeZone)) {
 			return date.toLocaleDateString(locale, { timeZone, month: "short", day: "numeric" })
 		}
 		return date
@@ -381,7 +390,7 @@ const DURATION_AXIS_UNITS = [
 	{ suffix: "μs", ms: 0.001, below: 1 },
 	{ suffix: "ms", ms: 1, below: 1000 },
 	{ suffix: "s", ms: 1000, below: 60_000 },
-	{ suffix: "min", ms: 60_000, below: 3_600_000 },
+	{ suffix: "m", ms: 60_000, below: 3_600_000 },
 	{ suffix: "h", ms: 3_600_000, below: Number.POSITIVE_INFINITY },
 ] as const
 

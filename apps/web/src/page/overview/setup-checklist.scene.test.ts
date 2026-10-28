@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest"
 import { LinkedCursorMessage, MountLinkedCursor } from "../../charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "../../charts/theme-colors"
 import { toLoadFailure } from "../../data/load-failure"
+import { failureSentence } from "../../ui/error-state"
 import * as Tabs from "../../ui/tabs"
 import { PageOutMessage, type PageContext } from "../contract"
 import { DEFAULT_QUICK_START_STATE } from "../onboarding/quick-start-state"
@@ -69,8 +70,14 @@ const pageMounts = [
 ] as const
 /** The guided setup's two underline tab lists (snippets and package managers). */
 const tabMounts = [
-	Mount.resolve<string, Tabs.Message>(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
-	Mount.resolve<string, Tabs.Message>(Tabs.MeasureTabIndicator, Tabs.Message.MeasuredIndicator({ rect: RECT })),
+	Mount.resolve<string, Tabs.Message>(
+		Tabs.MeasureTabIndicator,
+		Tabs.Message.MeasuredIndicator({ rect: RECT }),
+	),
+	Mount.resolve<string, Tabs.Message>(
+		Tabs.MeasureTabIndicator,
+		Tabs.Message.MeasuredIndicator({ rect: RECT }),
+	),
 ] as const
 
 describe("overview setup checklist", () => {
@@ -176,7 +183,7 @@ describe("overview setup checklist", () => {
 			{ update: pageUpdate, view },
 			given(failOverview(entered(true).read.model)),
 			...pageMounts,
-			expectView(text(toLoadFailure("boom").message, { exact: false })).toExist(),
+			expectView(text(failureSentence(toLoadFailure("boom")), { exact: false })).toExist(),
 			expectView(text("Watching for your first trace…")).not.toExist(),
 		)
 	})
@@ -196,12 +203,13 @@ describe("overview setup checklist", () => {
 			{ update: pageUpdate, view },
 			given(retrying),
 			...pageMounts,
-			expectView(text(toLoadFailure("boom").message, { exact: false })).toExist(),
+			expectView(text(failureSentence(toLoadFailure("boom")), { exact: false })).toExist(),
 		)
 	})
 
 	test("the card polls while it waits for a real service and stops once one lands", () => {
-		const polling = (model: Model) => subscriptions.setupPoll.modelToDependencies({ model, context }).isPolling
+		const polling = (model: Model) =>
+			subscriptions.setupPoll.modelToDependencies({ model, context }).isPolling
 		const read = entered(true).read.model
 		expect(polling(read)).toBe(true)
 		expect(polling(withServices(read, ["demo-frontend"]))).toBe(true)
@@ -212,7 +220,9 @@ describe("overview setup checklist", () => {
 
 	test("a dismissed card does not poll", () => {
 		const { read } = entered(true, { ...DEFAULT_QUICK_START_STATE, checklistDismissed: true })
-		expect(subscriptions.setupPoll.modelToDependencies({ model: read.model, context }).isPolling).toBe(false)
+		expect(subscriptions.setupPoll.modelToDependencies({ model: read.model, context }).isPolling).toBe(
+			false,
+		)
 	})
 
 	test("a stored dismissal sends none of the card's reads", () => {

@@ -5,6 +5,7 @@ import {
 	displayValue,
 	expect as expectView,
 	given,
+	Mount,
 	role,
 	scene,
 	selector,
@@ -13,10 +14,14 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Chart from "../../../charts/chart"
+import { MountChart } from "../../../charts/chart-mounts"
+import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { destinationRow, incidentRow, NOW, ORG } from "../shared/test-rows"
 import type { UptimeMonitor } from "../shared/uptime-derive"
 import { downMonitor, heartbeatMonitor, httpMonitor, MONITOR_RULE } from "../shared/uptime-test-monitors"
+import { traceHref } from "../shared/uptime-commands"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -30,6 +35,9 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	(commands ?? []).map(({ name }) => name)
 const publicId = Schema.encodeSync(UptimeMonitorPublicId)
 const incidentAlert = selector('[data-slot="alert"]')
+const breakdown = role("region", { name: "Response time breakdown" })
+const themeResolved = () =>
+	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
 const opened = (monitor: UptimeMonitor, extra: ReadonlyArray<Message> = []): Model => {
 	const entered = init(
@@ -59,6 +67,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(entry.model),
+			themeResolved(),
 			expectView(text("Monitor not found")).toExist(),
 		)
 	})
@@ -79,6 +88,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(monitor, [Message.UpdatedIncidents({ orgId: ORG, rows: [otherRule, incident] })])),
+			themeResolved(),
 			// All of it sits in one alert block, not a panel that collapses in the page column.
 			expectView(within(incidentAlert, text("Returning 503 since 11:54:00 AM"))).toExist(),
 			expectView(within(incidentAlert, text("Service Unavailable"))).toExist(),
@@ -104,6 +114,7 @@ describe("uptime monitor page", () => {
 					}),
 				]),
 			),
+			themeResolved(),
 			expectView(incidentAlert).not.toExist(),
 			expectView(text("Open failing trace")).not.toExist(),
 			expectView(text("PagerDuty oncall")).toExist(),
@@ -114,10 +125,492 @@ describe("uptime monitor page", () => {
 		)
 	})
 
+	test("a probed monitor reads its last 24 hours of checks once it loads; a heartbeat reads none", () => {
+		const loadedAs = (monitor: UptimeMonitor) => {
+			const entered = init(
+				{ _tag: "AlertsUptimeMonitor", monitorId: publicId(monitor.id), search: {} },
+				context,
+			).model
+			return pageUpdate(
+				entered,
+				Message.CompletedFetchMonitor({
+					key: entered.monitor.key ?? "",
+					result: Result.succeed(monitor),
+				}),
+			)
+		}
+		const http = loadedAs(httpMonitor())
+		expect(names(http.commands)).toEqual(["FetchUptimeCheckStats"])
+		expect(http.model.window).toBe("24h")
+		expect(names(loadedAs(heartbeatMonitor()).commands)).toEqual([])
+	})
+
+	test("picking another window reads it; picking the same one again reads nothing", () => {
+		const picked = pageUpdate(opened(httpMonitor()), Message.PickedWindow({ window: "7d" }))
+		expect(names(picked.commands)).toEqual(["FetchUptimeCheckStats"])
+		expect(names(pageUpdate(picked.model, Message.PickedWindow({ window: "7d" })).commands)).toEqual([])
+	})
+
+	test("the figures read the window's checks: uptime, how many failed, and P50, P95 and P99", () => {
+		const model = opened(httpMonitor())
+		const withStats = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 96,
+					failures: 2,
+					p50Ms: 121,
+					p95Ms: 310,
+					p99Ms: 884,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withStats),
+			themeResolved(),
+			expectView(text("97.92%")).toExist(),
+			expectView(text("96 checks, 2 failed")).toExist(),
+			expectView(text("121 ms")).toExist(),
+			expectView(text("310 ms")).toExist(),
+			expectView(text("884 ms")).toExist(),
+		)
+	})
+
+	test("every check in the window is a dot linking its trace, and the panel counts the failures", () => {
+		const model = opened(httpMonitor())
+		const sample = (minutesAgo: number, ok: boolean, traceId: string) => ({
+			at: new Date(NOW - minutesAgo * 60_000).toISOString(),
+			durationMs: ok ? 120 : 10_000,
+			ok,
+			statusCode: ok ? 200 : null,
+			traceId,
+			phases: null,
+		})
+		const withStats = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "1h",
+					points: [],
+					samples: [sample(30, true, "a".repeat(32)), sample(10, false, "b".repeat(32))],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 3_600_000,
+					windowEndMs: NOW,
+					checks: 2,
+					failures: 1,
+					p50Ms: 120,
+					p95Ms: 10_000,
+					p99Ms: 10_000,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withStats),
+			themeResolved(),
+			expectView(role("img", { name: "2 checks over the last hour, 1 failed" })).toExist(),
+			expectView(selector(`a[href="${traceHref("a".repeat(32))}"]`)).toExist(),
+			expectView(selector(`a[href="${traceHref("b".repeat(32))}"]`)).toExist(),
+		)
+		// Hovering the failed check shows its card with what it returned.
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(withStats, Message.HoveredCheck({ index: 1 })).model),
+			themeResolved(),
+			expectView(text("Failed")).toExist(),
+			expectView(text("10.00 s")).toExist(),
+			expectView(text("Click to open the trace")).toExist(),
+		)
+	})
+
+	test("hovering a timed check lists where its time went", () => {
+		const model = opened(httpMonitor())
+		const timed = {
+			at: new Date(NOW - 10 * 60_000).toISOString(),
+			durationMs: 66,
+			ok: true,
+			statusCode: 200,
+			traceId: "c".repeat(32),
+			phases: { dnsMs: 1.2, connectMs: 9, tlsMs: 16, ttfbMs: 40, transferMs: 0 },
+		}
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "1h",
+					points: [],
+					samples: [timed],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 3_600_000,
+					windowEndMs: NOW,
+					checks: 1,
+					failures: 0,
+					p50Ms: 66,
+					p95Ms: 66,
+					p99Ms: 66,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(loaded, Message.HoveredCheck({ index: 0 })).model),
+			themeResolved(),
+			expectView(text("1.2 ms")).toExist(),
+			expectView(text("40 ms")).toExist(),
+			expectView(text("TTFB")).toExist(),
+			expectView(selector(`a[href="${traceHref("c".repeat(32))}"]`)).toExist(),
+		)
+	})
+
+	test("a check list that failed to load says so instead of hiding the panel", () => {
+		const model = opened(httpMonitor())
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "1h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					samplesFailed: true,
+					windowStartMs: NOW - 3_600_000,
+					windowEndMs: NOW,
+					checks: 1,
+					failures: 0,
+					p50Ms: 66,
+					p95Ms: 66,
+					p99Ms: 66,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(text("Couldn't load the checks. The other figures are unaffected.")).toExist(),
+		)
+	})
+
+	test("a check far slower than the rest sits on the top edge and the legend says why", () => {
+		const model = opened(httpMonitor())
+		const at = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString()
+		const quick = Array.from({ length: 100 }, (_, index) => ({
+			at: at(100 - index),
+			durationMs: 120,
+			ok: true,
+			statusCode: 200,
+			traceId: `${index}`.padStart(32, "a"),
+			phases: null,
+		}))
+		const timeout = {
+			at: at(1),
+			durationMs: 10_000,
+			ok: false,
+			statusCode: null,
+			traceId: "f".repeat(32),
+			phases: null,
+		}
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [...quick, timeout],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 101,
+					failures: 1,
+					p50Ms: 120,
+					p95Ms: 120,
+					p99Ms: 120,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			// The axis follows the bulk of the checks, so one timeout does not flatten them.
+			expectView(text("200 ms")).toExist(),
+			expectView(text("Slower than 200 ms")).toExist(),
+			expectView(selector(`a[href="${traceHref("f".repeat(32))}"]`)).toExist(),
+		)
+	})
+
+	test("switching windows keeps the old figures labelled with their own window until the new ones land", () => {
+		const model = opened(httpMonitor())
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 96,
+					failures: 0,
+					p50Ms: 121,
+					p95Ms: 310,
+					p99Ms: 884,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(loaded, Message.PickedWindow({ window: "7d" })).model),
+			themeResolved(),
+			expectView(text("last 24 hours")).toExist(),
+			expectView(text("last 7 days")).not.toExist(),
+			expectView(
+				within(
+					breakdown,
+					text("No timed checks in the last 24 hours. Newer checks record each phase."),
+				),
+			).toExist(),
+		)
+	})
+
+	test("a chart runtime that fails to load says so instead of loading forever", () => {
+		const model = opened(httpMonitor())
+		const failed = [
+			Message.FailedLoadChartRuntime({ reason: "network" }),
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 4,
+					failures: 0,
+					p50Ms: 100,
+					p95Ms: 100,
+					p99Ms: 100,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		].reduce((current, message) => pageUpdate(current, message).model, model)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			themeResolved(),
+			expectView(text("The chart couldn't load. Reload the page to try again.")).toExist(),
+		)
+	})
+
+	test("an HTTP monitor's breakdown says when no check in the window has phase timings yet", () => {
+		const model = opened(httpMonitor())
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 4,
+					failures: 0,
+					p50Ms: 90,
+					p95Ms: 120,
+					p99Ms: 130,
+					phases: [],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(text("Response time breakdown")).toExist(),
+			expectView(
+				text("No timed checks in the last 24 hours. Newer checks record each phase."),
+			).toExist(),
+		)
+	})
+
+	test("an HTTP monitor's breakdown charts each phase once its checks carry timings", () => {
+		const model = opened(httpMonitor(), [Message.CompletedLoadChartRuntime()])
+		const phase = { timedChecks: 2, dnsMs: 4, connectMs: 11, tlsMs: 18, ttfbMs: 60, transferMs: 0 }
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 4,
+					failures: 0,
+					p50Ms: 90,
+					p95Ms: 120,
+					p99Ms: 130,
+					phases: [
+						{ bucket: "2026-10-26T10:00:00.000Z", ...phase },
+						{ bucket: "2026-10-26T11:00:00.000Z", ...phase },
+					],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			// The latency chart and the breakdown each mount a canvas.
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(selector('[data-chart-label="Response time breakdown by phase"]')).toExist(),
+			...["DNS", "Connect", "TLS", "TTFB", "Transfer"].map((label) =>
+				expectView(text(label)).toExist(),
+			),
+		)
+	})
+
+	test("a failed phase read says so in the breakdown and leaves the other figures standing", () => {
+		const model = opened(httpMonitor())
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 4,
+					failures: 0,
+					p50Ms: 90,
+					p95Ms: 120,
+					p99Ms: 130,
+					phases: [],
+					phasesFailed: true,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(
+				within(breakdown, text("Couldn't load the breakdown. The other figures are unaffected.")),
+			).toExist(),
+			expectView(text("4 checks, 0 failed")).toExist(),
+		)
+	})
+
+	test("a chart runtime that fails to load says so in the breakdown too", () => {
+		const model = opened(httpMonitor(), [Message.FailedLoadChartRuntime({ reason: "network" })])
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedFetchStats({
+				key: model.stats.key ?? "",
+				result: Result.succeed({
+					window: "24h",
+					points: [],
+					samples: [],
+					samplesTruncated: false,
+					samplesFailed: false,
+					windowStartMs: NOW - 86_400_000,
+					windowEndMs: NOW,
+					checks: 4,
+					failures: 0,
+					p50Ms: 90,
+					p95Ms: 120,
+					p99Ms: 130,
+					phases: [
+						{
+							bucket: "2026-10-26T10:00:00.000Z",
+							timedChecks: 2,
+							dnsMs: 4,
+							connectMs: 11,
+							tlsMs: 18,
+							ttfbMs: 60,
+							transferMs: 0,
+						},
+					],
+					phasesFailed: false,
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			expectView(
+				within(breakdown, text("The chart couldn't load. Reload the page to try again.")),
+			).toExist(),
+		)
+	})
+
+	test("a TCP monitor has response times but no phase breakdown", () => {
+		const tcp = httpMonitor({
+			kind: "tcp",
+			config: { type: "tcp", host: "db.acme.dev", port: 5432, timeout_ms: 5000 },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(opened(tcp)),
+			themeResolved(),
+			expectView(text("Response time")).toExist(),
+			expectView(text("Response time breakdown")).not.toExist(),
+		)
+	})
+
 	test("before destinations sync, the setup counts them instead of calling them unavailable", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(httpMonitor())),
+			themeResolved(),
 			expectView(text("1 destination")).toExist(),
 			expectView(text(/Unavailable destination/u)).not.toExist(),
 		)
@@ -127,9 +620,10 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(downMonitor())),
+			themeResolved(),
 			expectView(text("503")).toExist(),
 			expectView(text("503 Service Unavailable")).not.toExist(),
-			expectView(text("2 failed checks in a row")).toExist(),
+			expectView(text("2 failures in a row")).toExist(),
 		)
 	})
 
@@ -137,6 +631,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(heartbeatMonitor())),
+			themeResolved(),
 			expectView(text("Response time")).not.toExist(),
 			expectView(text("every 1d, 30m grace")).toExist(),
 		)
@@ -147,6 +642,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(monitor)),
+			themeResolved(),
 			expectView(displayValue("https://ingest.maple.dev/uptime/hb/abc123")).toExist(),
 			expectView(
 				displayValue("curl -fsS -m 10 --retry 3 https://ingest.maple.dev/uptime/hb/abc123/fail"),
@@ -188,6 +684,7 @@ describe("uptime monitor page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(monitor)),
+			themeResolved(),
 			expectView(role("button", { name: "Pause" })).toExist(),
 		)
 		const pausing = pageUpdate(opened(monitor), Message.ClickedToggle())

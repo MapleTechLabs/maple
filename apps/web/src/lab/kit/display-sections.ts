@@ -98,13 +98,17 @@ export const emptySection = <M>(h: HtmlBuilder<M>): Html =>
 		h.div(
 			[h.Class("grid grid-cols-2 gap-6")],
 			[
-				empty(h, [
-					emptyHeader(h, [
-						emptyMedia(h, { variant: "icon" }, [icon(h, "DatabaseIcon")]),
-						emptyTitle(h, ["No traces yet"]),
-						emptyDescription(h, ["Send spans from any OpenTelemetry SDK to see them here."]),
-					]),
-				]),
+				empty(
+					h,
+					[
+						emptyHeader(h, [
+							emptyMedia(h, { variant: "icon" }, [icon(h, "DatabaseIcon")]),
+							emptyTitle(h, ["No traces yet"]),
+							emptyDescription(h, ["Send spans from any OpenTelemetry SDK to see them here."]),
+						]),
+					],
+					"rounded-md border border-dashed",
+				),
 				emptyMessage(h, { dashed: true }, ["No dashboards match this filter."]),
 			],
 		),

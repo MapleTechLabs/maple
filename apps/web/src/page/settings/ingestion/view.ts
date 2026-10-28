@@ -191,11 +191,17 @@ const addServiceSection = (h: H, model: Model): Html => {
 					: "Point your OpenTelemetry SDK at Maple, or let Claude Code wire it up for you.",
 			],
 			padded: false,
-			actions: isOpen ? frameworkPicker(h, model.framework) : undefined,
 		},
 		[
 			isOpen
-				? connectInstructions(h, model, connection.privateKey)
+				? h.div(
+						[],
+						[
+							// Its own wrapping row, so the chips never crowd the section heading.
+							h.div([h.Class("border-b px-4 py-3")], [frameworkPicker(h, model.framework)]),
+							connectInstructions(h, model, connection.privateKey),
+						],
+					)
 				: h.div(
 						[h.Class("flex items-center gap-3 px-4 py-3")],
 						[

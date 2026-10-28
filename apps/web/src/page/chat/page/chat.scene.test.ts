@@ -1,7 +1,17 @@
 import { OrgId } from "@maple/domain"
 import { ChatEvent } from "@maple/domain/chat-session"
 import { Result, Schema } from "effect"
-import { Command, click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	Command,
+	click,
+	expect as expectView,
+	given,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { AppRoute } from "../../../route"
 import * as Menu from "../../../ui/menu"
@@ -24,20 +34,37 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 const route = (search: Record<string, string> = {}) => AppRoute.Chat({ search })
 
 const step = (model: Model, message: Message) => update(model, message, context)
-const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) => (commands ?? []).map(({ name }) => name)
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	(commands ?? []).map(({ name }) => name)
 
-const tab = (id: string, title = "New Chat", updatedAt = NOW) => ({ id, title, createdAt: updatedAt, updatedAt })
+const tab = (id: string, title = "New chat", updatedAt = NOW) => ({
+	id,
+	title,
+	createdAt: updatedAt,
+	updatedAt,
+})
 
 const loaded = (tabs = [tab("default")], activeTabId = "default", search: Record<string, string> = {}) =>
 	step(
 		init(route(search), context).model,
-		Message.CompletedLoadTabs({ state: { tabs, activeTabId }, nowMs: NOW, origin: "https://app.maple.dev", referrerPath: null }),
+		Message.CompletedLoadTabs({
+			state: { tabs, activeTabId },
+			nowMs: NOW,
+			origin: "https://app.maple.dev",
+			referrerPath: null,
+		}),
 	)
 
 const pickFromMenu = (model: Model, tabId: string, value: string) => {
-	const opened = step(model, Message.GotTabMenuMessage({ tabId, message: Menu.Message.ClickedTrigger() })).model
+	const opened = step(
+		model,
+		Message.GotTabMenuMessage({ tabId, message: Menu.Message.ClickedTrigger() }),
+	).model
 	const item = { kind: "Item" as const, value }
-	return step(opened, Message.GotTabMenuMessage({ tabId, message: Menu.Message.ClickedItem({ index: 0, item }) }))
+	return step(
+		opened,
+		Message.GotTabMenuMessage({ tabId, message: Menu.Message.ClickedItem({ index: 0, item }) }),
+	)
 }
 
 describe("chat page", () => {
@@ -49,7 +76,9 @@ describe("chat page", () => {
 		expect(names(entered.commands).filter((name) => name === "LoadChatHistory")).toHaveLength(2)
 		expect(Object.keys(entered.model.conversations)).toEqual(["default", "t2"])
 		// `writeTabToUrl`: the active tab lands in `?tab=` without a new history entry.
-		expect(entered.outMessage).toEqual(PageOutMessage.RequestedNavigation({ url: "/chat?tab=default", isReplace: true }))
+		expect(entered.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/chat?tab=default", isReplace: true }),
+		)
 	})
 
 	test("`?tab=` picks a known tab; back/forward to another tab activates it", () => {
@@ -69,20 +98,62 @@ describe("chat page", () => {
 	})
 
 	test("the first message renames its tab to its first 40 characters", () => {
-		const history = ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor: 0, running: false }) })
-		const model = step(loaded().model, Message.GotConversationMessage({ tabId: "default", message: history })).model
-		const typed = step(model, Message.GotConversationMessage({ tabId: "default", message: ConversationMessage.ClickedSuggestion({ text: "Which services have the highest error rate this week?" }) }))
+		const history = ConversationMessage.CompletedLoadHistory({
+			generation: 1,
+			result: Result.succeed({ messages: [], cursor: 0, running: false }),
+		})
+		const model = step(
+			loaded().model,
+			Message.GotConversationMessage({ tabId: "default", message: history }),
+		).model
+		const typed = step(
+			model,
+			Message.GotConversationMessage({
+				tabId: "default",
+				message: ConversationMessage.ClickedSuggestion({
+					text: "Which services have the highest error rate this week?",
+				}),
+			}),
+		)
 		expect(names(typed.commands)).toContain("StampChatRename")
-		const renamed = step(typed.model, Message.StampedRename({ id: "default", title: "Which services have the highest error ra", nowMs: NOW + 1 }))
+		const renamed = step(
+			typed.model,
+			Message.StampedRename({
+				id: "default",
+				title: "Which services have the highest error ra",
+				nowMs: NOW + 1,
+			}),
+		)
 		expect(renamed.model.tabs?.tabs[0]?.title).toBe("Which services have the highest error ra")
 	})
 
 	test("a second tab's turn starting reconnects the first tab's tail from what it already folded", () => {
 		const running = (cursor: number) =>
-			ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor, running: true }) })
-		const first = step(loaded([tab("default"), tab("t2")]).model, Message.GotConversationMessage({ tabId: "default", message: running(5) })).model
-		const delta = Schema.decodeUnknownSync(ChatEvent)({ type: "text-delta", seq: 9, messageId: "r", text: "Hello" })
-		const folded = step(first, Message.GotConversationMessage({ tabId: "default", message: ConversationMessage.ReceivedChatEvents({ generation: 1, events: [delta], nowMs: NOW }) })).model
+			ConversationMessage.CompletedLoadHistory({
+				generation: 1,
+				result: Result.succeed({ messages: [], cursor, running: true }),
+			})
+		const first = step(
+			loaded([tab("default"), tab("t2")]).model,
+			Message.GotConversationMessage({ tabId: "default", message: running(5) }),
+		).model
+		const delta = Schema.decodeUnknownSync(ChatEvent)({
+			type: "text-delta",
+			seq: 9,
+			messageId: "r",
+			text: "Hello",
+		})
+		const folded = step(
+			first,
+			Message.GotConversationMessage({
+				tabId: "default",
+				message: ConversationMessage.ReceivedChatEvents({
+					generation: 1,
+					events: [delta],
+					nowMs: NOW,
+				}),
+			}),
+		).model
 		expect(folded.conversations.default?.stream?.cursor).toBe(5)
 		const both = step(folded, Message.GotConversationMessage({ tabId: "t2", message: running(2) })).model
 		expect(both.conversations.default?.stream?.cursor).toBe(9)
@@ -122,16 +193,28 @@ describe("chat page", () => {
 		const copying = pickFromMenu(model, "default", "copy-link")
 		expect(copying.commands?.some((command) => command.name === "CopyChatShareLink")).toBe(true)
 		const copy = copying.commands?.find((command) => command.name === "CopyChatShareLink")
-		expect(copy?.args).toEqual({ url: "https://app.maple.dev/chat?shared=default&title=Checkout+incident" })
+		expect(copy?.args).toEqual({
+			url: "https://app.maple.dev/chat?shared=default&title=Checkout+incident",
+		})
 		const done = step(copying.model, Message.CompletedCopyShareLink({ ok: true }))
-		expect(done.outMessage).toEqual(PageOutMessage.RequestedToast({ type: "success", title: "Share link copied", description: "" }))
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Share link copied", description: "" }),
+		)
 	})
 
 	test("a shared link shows that conversation read-only, outside the viewer's own tabs", () => {
 		const shared = init(route({ shared: "t9", title: "Payments" }), context)
 		expect(names(shared.commands)).toContain("LoadChatHistory")
 		expect(shared.model.conversations.t9?.readOnly).toBe("shared")
-		const loadedShared = step(shared.model, Message.CompletedLoadTabs({ state: { tabs: [tab("default")], activeTabId: "default" }, nowMs: NOW, origin: "", referrerPath: null }))
+		const loadedShared = step(
+			shared.model,
+			Message.CompletedLoadTabs({
+				state: { tabs: [tab("default")], activeTabId: "default" },
+				nowMs: NOW,
+				origin: "",
+				referrerPath: null,
+			}),
+		)
 		expect(Object.keys(loadedShared.model.conversations)).toEqual(["t9"])
 	})
 
@@ -165,16 +248,22 @@ describe("chat page", () => {
 			// The command is the conversation's: its result is the conversation's Message, lifted by Scene.
 			Command.resolve(
 				LoadHistory,
-				ConversationMessage.CompletedLoadHistory({ generation: 1, result: Result.succeed({ messages: [], cursor: 0, running: false }) }),
+				ConversationMessage.CompletedLoadHistory({
+					generation: 1,
+					result: Result.succeed({ messages: [], cursor: 0, running: false }),
+				}),
 			),
 			Mount.resolve(MountStopClickPropagation, MountMessage.CompletedMountStopClick()),
-			expectView(role("button", { name: "Actions for New Chat" })).toExist(),
+			expectView(role("button", { name: "Actions for New chat" })).toExist(),
 		)
 	})
 
 	test("conversations group by recency: today, yesterday, the previous week, older", () => {
 		const day = 24 * 60 * 60 * 1000
-		const groups = groupTabs([tab("a", "A", NOW - 8 * day), tab("b", "B", NOW), tab("c", "C", NOW - day)], NOW)
+		const groups = groupTabs(
+			[tab("a", "A", NOW - 8 * day), tab("b", "B", NOW), tab("c", "C", NOW - day)],
+			NOW,
+		)
 		expect(groups.map((group) => [group.label, group.tabs.map((entry) => entry.id)])).toEqual([
 			["Today", ["b"]],
 			["Yesterday", ["c"]],

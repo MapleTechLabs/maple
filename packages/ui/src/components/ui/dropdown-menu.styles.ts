@@ -1,7 +1,7 @@
 export const dropdownMenuPositionerStyles = "isolate z-50 outline-none"
 
 export const dropdownMenuContentStyles =
-	"data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 bg-popover text-popover-foreground min-w-32 rounded-xl shadow-md ring-1 duration-100 transition-none data-[side=inline-start]:slide-in-from-right-2 data-[side=inline-end]:slide-in-from-left-2 z-50 max-h-(--available-height) w-(--anchor-width) origin-(--transform-origin) overflow-x-hidden overflow-y-auto outline-none data-closed:overflow-hidden"
+	"transition-[opacity,scale] duration-150 ease-out starting:scale-95 starting:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0 data-ending-style:duration-100 ring-foreground/10 bg-popover text-popover-foreground min-w-32 rounded-xl shadow-md ring-1 z-50 max-h-(--available-height) w-(--anchor-width) origin-(--transform-origin) overflow-x-hidden overflow-y-auto outline-none data-closed:overflow-hidden"
 
 export const dropdownMenuLabelStyles = "text-muted-foreground px-2 py-2 text-xs data-[inset]:pl-8"
 
@@ -14,7 +14,7 @@ export const dropdownMenuSubTriggerStyles =
 export const dropdownMenuSubTriggerIconStyles = "ml-auto"
 
 export const dropdownMenuSubContentStyles =
-	"data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 bg-popover text-popover-foreground min-w-[96px] rounded-xl shadow-lg ring-1 duration-100 w-auto"
+	"transition-[opacity,scale] duration-150 ease-out starting:scale-95 starting:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0 data-ending-style:duration-100 ring-foreground/10 bg-popover text-popover-foreground min-w-[96px] rounded-xl shadow-lg ring-1 w-auto"
 
 export const dropdownMenuCheckboxItemStyles =
 	"focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground gap-2 rounded-md py-2 pr-8 pl-2 text-xs [&_svg:not([class*='size-'])]:size-3.5 relative flex cursor-default items-center outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0"

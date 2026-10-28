@@ -25,7 +25,8 @@ const part =
 
 export const card = part(cardStyles, "card")
 export const cardHeader = part(cardHeaderStyles, "card-header")
-export const cardTitle = part(cardTitleStyles, "card-title")
-export const cardDescription = part(cardDescriptionStyles, "card-description")
+// A card's title and description are prose, in the same sans faces as dialog and alert copy.
+export const cardTitle = part(cn(cardTitleStyles, "font-display tracking-tight"), "card-title")
+export const cardDescription = part(cn(cardDescriptionStyles, "font-prose"), "card-description")
 export const cardPanel = part(cardPanelStyles, "card-panel")
 export const cardFooter = part(cardFooterStyles, "card-footer")

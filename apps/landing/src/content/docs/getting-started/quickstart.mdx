@@ -21,14 +21,15 @@ Sign up at [app.maple.dev](https://app.maple.dev). During onboarding you pick th
 
 ## 2. Copy your ingest key
 
-Open **Settings → Ingestion** and copy the private key (`maple_sk_…`). It is for servers and scripts. The public key (`maple_pk_…`) is for browser code. Both can only send telemetry. See [Authentication](/docs/reference/authentication#ingest-keys).
+Open **Settings → Ingestion** and copy the private key (`maple_sk_…`). It is for servers and scripts. The public key (`maple_pk_…`) is for browser and mobile code, and also works on servers. Both can only send telemetry. See [Authentication](/docs/reference/authentication#ingest-keys).
 
 ## 3. Set the exporter variables
 
 Every OpenTelemetry SDK reads these standard variables:
 
 ```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"   # EU: https://ingest.eu.maple.dev
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+# EU organizations use https://ingest.eu.maple.dev
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 export OTEL_SERVICE_NAME="quickstart"
@@ -300,9 +301,9 @@ Open **Explore → Traces** and filter **Service** to `quickstart` (or your `OTE
 
 ## Troubleshooting
 
-- **`401` from the ingest endpoint.** The key is wrong, or it belongs to the other region. A US key is rejected by `ingest.eu.maple.dev` and the other way around. See [Regions](/docs/reference/regions).
+- **The ingest endpoint answers 401.** The key is wrong, or it belongs to the other region. A US key is rejected by `ingest.eu.maple.dev` and the other way around. See [Regions](/docs/reference/regions).
 - **Nothing shows up.** Maple accepts OTLP over HTTP only. An exporter set to `grpc` or pointed at port `4317` cannot reach it; use `http/protobuf` and the endpoint without a port. Set `OTEL_LOG_LEVEL=debug` to print export errors.
-- **The trace is there, but under a name like `unknown_service`.** `OTEL_SERVICE_NAME` was not set in the shell (or `.env`) that started the app, so the SDK fell back to a default `service.name`.
+- **The trace shows up under the wrong service name.** A name like `unknown_service` means `OTEL_SERVICE_NAME` was not set in the shell (or `.env`) that started the app, so the SDK fell back to a default `service.name`.
 - **Still nothing.** Check the time range on the Traces page. For the curl span, your machine's clock sets the timestamp.
 
 More status codes and their meaning are in the [Ingest API reference](/docs/reference/ingest#status-codes).

@@ -23,7 +23,7 @@ The root span is the one span in a trace with no parent. When it never reaches M
 | More than 0.1%             | Warning  |
 | More than 1%               | Critical |
 
-Warning and critical need at least 50 traces in the window. Traces whose root was dropped by sampling don't count: those with a `th:` value in `tracestate`, and, when Maple's ingest sampling is on, traces made only of the error and slow spans it keeps from traces it drops.
+Warning and critical need at least 50 traces in the window. Traces whose root was dropped by sampling don't count, such as those with a `th:` value in `tracestate`.
 
 The finding lists the services where these traces start, each with its own share. The `audit_setup` [MCP tool](/docs/reference/mcp) returns the same result.
 

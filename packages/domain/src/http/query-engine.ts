@@ -15,6 +15,7 @@ import {
 	StatusCode,
 	SupabaseProjectRef,
 	TraceId,
+	UptimeMonitorId,
 } from "../primitives"
 import {
 	AttributeFilter,
@@ -1252,6 +1253,66 @@ export class ReleasesListResponse extends Schema.Class<ReleasesListResponse>("Re
 	timeline: Schema.Array(ReleaseTimelinePoint),
 	/** True when the row cap cut older releases off the end. */
 	truncated: Schema.Boolean,
+}) {}
+
+export class UptimePhaseTimingsRequest extends Schema.Class<UptimePhaseTimingsRequest>(
+	"UptimePhaseTimingsRequest",
+)({
+	monitorId: UptimeMonitorId,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+}) {}
+
+/** A bucket's mean phases (ms) over its checks that got a response; buckets with none are absent. */
+const UptimePhaseTimingsPoint = Schema.Struct({
+	bucket: Schema.String,
+	timedChecks: Schema.Number,
+	dnsMs: Schema.Number,
+	connectMs: Schema.Number,
+	tlsMs: Schema.Number,
+	ttfbMs: Schema.Number,
+	transferMs: Schema.Number,
+})
+export type UptimePhaseTimingsPoint = Schema.Schema.Type<typeof UptimePhaseTimingsPoint>
+
+export class UptimePhaseTimingsResponse extends Schema.Class<UptimePhaseTimingsResponse>(
+	"UptimePhaseTimingsResponse",
+)({
+	points: Schema.Array(UptimePhaseTimingsPoint),
+}) {}
+
+export class UptimeChecksRequest extends Schema.Class<UptimeChecksRequest>("UptimeChecksRequest")({
+	monitorId: UptimeMonitorId,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** Most checks returned, newest kept. */
+	limit: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(5000)),
+}) {}
+
+/** An HTTP check's phases in ms; a phase the check skipped is 0 (TLS on http://, no body read). */
+const UptimeCheckPhases = Schema.Struct({
+	dnsMs: Schema.Number,
+	connectMs: Schema.Number,
+	tlsMs: Schema.Number,
+	ttfbMs: Schema.Number,
+	transferMs: Schema.Number,
+})
+
+const UptimeCheck = Schema.Struct({
+	at: Schema.String,
+	traceId: TraceId,
+	durationMs: Schema.Number,
+	ok: Schema.Boolean,
+	statusCode: Schema.NullOr(Schema.Number),
+	/** Null when the check recorded none: TCP and DNS checks, older checks, no response. */
+	phases: Schema.NullOr(UptimeCheckPhases),
+})
+export type UptimeCheck = Schema.Schema.Type<typeof UptimeCheck>
+
+export class UptimeChecksResponse extends Schema.Class<UptimeChecksResponse>("UptimeChecksResponse")({
+	/** Newest first. */
+	checks: Schema.Array(UptimeCheck),
 }) {}
 
 export class ReleaseDetailRequest extends Schema.Class<ReleaseDetailRequest>("ReleaseDetailRequest")({
@@ -3486,6 +3547,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("releasesList", "/releases", {
 			payload: ReleasesListRequest,
 			success: ReleasesListResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("uptimePhaseTimings", "/uptime-phase-timings", {
+			payload: UptimePhaseTimingsRequest,
+			success: UptimePhaseTimingsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("uptimeChecks", "/uptime-checks", {
+			payload: UptimeChecksRequest,
+			success: UptimeChecksResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

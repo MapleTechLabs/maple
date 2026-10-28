@@ -1,8 +1,11 @@
 import { Effect, Layer, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
-import { apiProxyPath } from "./api-proxy"
+import { API_PROXY_PREFIX, apiProxyPath } from "./api-proxy"
 import { handleRequest } from "./handler"
 import type { WebWorkerEnv } from "./worker-env"
+import { CHART_KINDS, chartRequestFromPath } from "./og/chart-image"
+import { OG_IMAGE_PREFIX, ogIdFromPath } from "./og/share-links"
+import { WORKER_FIRST_PATHS } from "./worker-first"
 
 const assets = {
 	fetch: async () => new Response("<html></html>", { headers: { "content-type": "text/html" } }),
@@ -140,5 +143,56 @@ describe("document security headers", () => {
 			referrer: "no-referrer",
 			sniff: "nosniff",
 		})
+	})
+})
+
+describe("image paths", () => {
+	it("answers an image path whose id will not parse with a 404, not the app shell", async () => {
+		const { env } = recordingEnv()
+		const statuses = await Promise.all(
+			["/share/og/%.png", "/alerts/chart/%E0%A4%A.png", "/chat/chart/a/b.png"].map(async (path) => {
+				const response = await handleRequest(new Request(`https://app.maple.test${path}`), env)
+				return [path, response.status, response.headers.get("content-type")]
+			}),
+		)
+		expect(statuses).toEqual([
+			["/share/og/%.png", 404, null],
+			["/alerts/chart/%E0%A4%A.png", 404, null],
+			["/chat/chart/a/b.png", 404, null],
+		])
+	})
+})
+
+describe("WORKER_FIRST_PATHS", () => {
+	// Cloudflare's `run_worker_first` globs: `*` spans any characters, `/` included.
+	const routedToWorker = (pathname: string) =>
+		WORKER_FIRST_PATHS.some((pattern) =>
+			new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`).test(
+				pathname,
+			),
+		)
+
+	it("reaches the Worker for every path the handler answers itself", () => {
+		// Built from the routes' own prefixes, so a new image route is checked without editing this.
+		const paths = [
+			API_PROXY_PREFIX,
+			`${API_PROXY_PREFIX}/v2/traces`,
+			`${OG_IMAGE_PREFIX}abc123.png`,
+			...CHART_KINDS.map((kind) => `${kind.pathPrefix}eyJ.sig.png`),
+		]
+		const handledByWorker = (path: string) =>
+			apiProxyPath(path) !== undefined ||
+			ogIdFromPath(path) !== undefined ||
+			chartRequestFromPath(path) !== undefined
+		expect(paths.filter((path) => !handledByWorker(path))).toEqual([])
+		expect(paths.filter((path) => !routedToWorker(path))).toEqual([])
+	})
+
+	it("leaves app routes and hashed assets to the assets layer", () => {
+		expect(
+			["/", "/alerts", "/alerts/chart", "/share/tok_123", "/assets/index-abc.js", "/chat"].filter(
+				routedToWorker,
+			),
+		).toEqual([])
 	})
 })

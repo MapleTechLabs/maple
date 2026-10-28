@@ -13,17 +13,8 @@ import { filterChip } from "../../../ui/filter-chip"
 import { errorState } from "../../../ui/error-state"
 import { panel, panelHeader } from "../../../ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "../../../ui/table"
-import {
-	formatClock,
-	formatUsd,
-	gateOf,
-	isLive,
-	isoOf,
-	locationOf,
-	SECURITY_SEVERITY_LABEL,
-} from "../kit/format"
-import { gateState, placeholderRows } from "../kit/parts"
-import { SEVERITY_TONE } from "../../errors/kit/severity"
+import { formatClock, formatUsd, gateOf, isLive, isoOf, locationOf } from "../kit/format"
+import { gateState, placeholderRows, securitySeverityBadge } from "../kit/parts"
 import {
 	countOf,
 	filteredUnits,
@@ -32,9 +23,9 @@ import {
 	UNIT_FILTERS,
 	UNIT_LABEL,
 	UNIT_TONE,
-	unitPath,
-	unitTitle,
+	filteredEvents,
 } from "./derive"
+import { type EventFilter, eventLineOf, unitContext, unitName } from "../kit/outcome"
 import { EVENTS_PAGE } from "./command"
 import { Message, type Model, type UnitFilter } from "./model"
 
@@ -51,8 +42,8 @@ const resultText = (unit: SecurityAuditUnit): string => {
 	if (unit.unresolved[0] !== undefined) return unit.unresolved[0]
 	if (unit.status === "candidate" || unit.resultFingerprints.length > 0)
 		return `${unit.resultFingerprints.length} ${unit.resultFingerprints.length === 1 ? "candidate" : "candidates"}`
-	if (unit.status === "in_progress") return unit.agentId ?? "assigned"
-	if (unit.status === "covered") return "no issues"
+	if (unit.status === "in_progress") return unit.agentId === null ? "assigned" : "agent running"
+	if (unit.status === "covered") return "nothing reported"
 	return ""
 }
 
@@ -64,18 +55,25 @@ const unitRow = (h: H, unit: SecurityAuditUnit): Html =>
 				h,
 				[
 					h.span(
-						[h.Class("flex min-w-0 flex-col"), h.Title(unit.coverageId)],
+						[
+							h.Class("flex min-w-0 flex-col"),
+							h.Title(
+								[unit.coverageId, unit.surface, unit.boundary, unit.agentId]
+									.filter((part) => part !== null)
+									.join("\n"),
+							),
+						],
 						[
 							h.span(
 								[h.Class(cn("truncate text-sm", unit.stale && "font-mono text-xs"))],
-								[unitTitle(unit)],
+								[unitName(unit)],
 							),
-							...(unit.stale || unitPath(unit) === ""
+							...(unit.stale || unitContext(unit) === ""
 								? []
 								: [
 										h.span(
 											[h.Class("truncate text-xs text-muted-foreground")],
-											[unitPath(unit)],
+											[unitContext(unit)],
 										),
 									]),
 						],
@@ -225,9 +223,7 @@ const resultMark = (h: H, finding: SecurityAuditFinding): Html =>
 			? badge(h, { variant: "muted", className: "line-through" }, ["Rejected"])
 			: finding.overallSeverity === null || finding.overallSeverity === "informational"
 				? badge(h, { variant: "muted" }, ["Info"])
-				: badge(h, { variant: "outline", className: SEVERITY_TONE[finding.overallSeverity] }, [
-						SECURITY_SEVERITY_LABEL[finding.overallSeverity],
-					])
+				: securitySeverityBadge(h, finding.overallSeverity)
 
 export const resultsPanel = (
 	h: H,
@@ -340,28 +336,24 @@ export const resultsPanel = (
 	])
 
 const eventRow = (h: H, event: SecurityAuditEvent, timeZone: string): Html => {
-	const text = event.message ?? event.detail ?? (event.phase === null ? "" : `Phase ${event.phase}`)
-	const meta = [
-		event.kind === "Agent"
-			? [event.role, event.agentId].filter((part) => part !== null).join(" ")
-			: event.phase,
-		event.outcome,
-	]
-		.filter((part) => part !== null && part !== "" && part !== "ok")
-		.join(" · ")
+	const line = eventLineOf(event)
 	return h.li(
-		[h.Key(event.id), h.Class("grid grid-cols-[4.5rem_3.5rem_1fr_auto] gap-3 px-4 py-3 text-xs")],
+		[h.Key(event.id), h.Class("grid grid-cols-[4.5rem_1fr_auto] gap-3 px-4 py-3 text-xs")],
 		[
 			h.time(
 				[h.Class("font-mono tabular-nums text-muted-foreground"), h.Title(isoOf(event.at))],
 				[formatClock(event.at, timeZone)],
 			),
-			h.span([h.Class("uppercase tracking-wide text-muted-foreground")], [event.kind]),
 			h.span(
 				[h.Class("flex min-w-0 flex-col gap-0.5")],
 				[
-					h.span([h.Class("text-sm break-words")], [text]),
-					...(meta === "" ? [] : [h.span([h.Class("text-muted-foreground")], [meta])]),
+					h.span(
+						[h.Class(cn("text-sm break-words", line.isProblem && "text-severity-warn"))],
+						[line.sentence],
+					),
+					...(line.meta === null || line.meta === ""
+						? []
+						: [h.span([h.Class("font-mono text-muted-foreground")], [line.meta])]),
 				],
 			),
 			h.span(
@@ -371,6 +363,34 @@ const eventRow = (h: H, event: SecurityAuditEvent, timeZone: string): Html => {
 		],
 	)
 }
+
+const EVENT_FILTER_LABEL = {
+	all: "All",
+	problems: "Problems",
+	leads: "Leads",
+} satisfies Record<EventFilter, string>
+
+const EVENT_FILTERS: ReadonlyArray<EventFilter> = ["all", "problems", "leads"]
+
+const eventChips = (h: H, model: Model, events: ReadonlyArray<SecurityAuditEvent>): Html =>
+	h.div(
+		[h.Class("flex flex-wrap gap-1.5 border-b px-4 py-3")],
+		EVENT_FILTERS.map((filter) =>
+			filterChip(
+				h,
+				{
+					isPressed: model.eventFilter === filter,
+					onClick: Message.PickedEventFilter({ filter }),
+					size: "sm",
+					hasDot: filter !== "all",
+					tone: filter === "problems" ? "warn" : filter === "leads" ? "done" : "neutral",
+					count: String(filteredEvents(events, filter).length),
+					attributes: [h.Key(filter)],
+				},
+				[EVENT_FILTER_LABEL[filter]],
+			),
+		),
+	)
 
 export const eventsPanel = (
 	h: H,
@@ -400,13 +420,30 @@ export const eventsPanel = (
 						})
 					: gateState(h, gate, "m-4")
 			},
-			onData: () =>
-				events.length === 0
-					? h.p([h.Class("px-4 py-6 text-sm text-muted-foreground")], ["No events yet."])
-					: h.ol(
-							[h.Class("divide-y")],
-							events.map((event) => eventRow(h, event, timeZone)),
-						),
+			onData: () => {
+				const shown = filteredEvents(events, model.eventFilter)
+				return h.div(
+					[],
+					[
+						...(events.length === 0 ? [] : [eventChips(h, model, events)]),
+						shown.length === 0
+							? h.p(
+									[h.Class("px-4 py-6 text-sm text-muted-foreground")],
+									[
+										events.length === 0
+											? "No events yet."
+											: model.eventFilter === "problems"
+												? "No problems in the events read so far."
+												: "No events about leads read so far.",
+									],
+								)
+							: h.ol(
+									[h.Class("divide-y")],
+									shown.map((event) => eventRow(h, event, timeZone)),
+								),
+					],
+				)
+			},
 		}),
 		...(AsyncData.hasData(model.events.data) && model.hasMoreOlder && events.length >= EVENTS_PAGE
 			? [

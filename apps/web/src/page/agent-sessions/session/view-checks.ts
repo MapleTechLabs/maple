@@ -18,6 +18,7 @@ import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
 
 // The session checks: the verdict, what needs attention, the rest.
+// Headlines and actions are sentences, so they read in the prose face; codes and values stay mono.
 // TODO(tooltip): the coverage signals' explanations are drawn as their triggers.
 
 type H = HtmlBuilder<Message>
@@ -133,7 +134,7 @@ const evidenceRow = (h: H, model: Model, finding: SessionFinding, status: Sessio
 const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 	const actionLine = (children: ReadonlyArray<Html | string>) =>
 		h.p(
-			[h.Class("flex items-start gap-1.5 text-muted-foreground text-xs leading-relaxed")],
+			[h.Class("flex items-start gap-1.5 font-prose text-muted-foreground text-xs leading-relaxed")],
 			[
 				icon(h, "ArrowRightIcon", {
 					size: 12,
@@ -151,7 +152,7 @@ const checkBlock = (h: H, model: Model, check: SessionCheck): Html => {
 			h.div(
 				[h.Class("flex min-w-0 flex-col gap-1")],
 				[
-					h.p([h.Class("text-ui leading-relaxed")], withCode(h, check.headline)),
+					h.p([h.Class("font-prose text-ui leading-relaxed")], withCode(h, check.headline)),
 					...(check.id === "tool-errors"
 						? [
 								actionLine([
@@ -198,7 +199,7 @@ const checkFact = (h: H, check: SessionCheck): Html =>
 			checkDot(h, check.status),
 			h.span([h.Class("truncate text-ui")], [check.name]),
 			h.span(
-				[h.Class("min-w-0 text-muted-foreground text-xs leading-relaxed")],
+				[h.Class("min-w-0 font-prose text-muted-foreground text-xs leading-relaxed")],
 				withCode(h, check.headline),
 			),
 		],
@@ -372,7 +373,7 @@ export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): 
 					}),
 					isClean
 						? h.p(
-								[h.Class("flex items-center gap-2 py-2 text-ui")],
+								[h.Class("flex items-center gap-2 py-2 font-prose text-ui")],
 								[
 									icon(h, "CheckIcon", {
 										size: 14,

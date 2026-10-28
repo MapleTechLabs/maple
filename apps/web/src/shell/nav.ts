@@ -42,6 +42,8 @@ export interface NavItem {
 	readonly icon: IconName
 	readonly subItems?: ReadonlyArray<NavSubItem>
 	readonly badge?: string
+	/** Routes with no row of their own that this row stands in for (`/anomalies` under Alerts). */
+	readonly alsoActive?: ReadonlyArray<string>
 }
 
 export interface NavGroup {
@@ -125,7 +127,12 @@ export const navGroups = (
 		id: "monitor",
 		label: "Monitor",
 		items: [
-			{ title: "Services", href: "/services", icon: "ServerIcon" },
+			{
+				title: "Services",
+				href: "/services",
+				icon: "ServerIcon",
+				alsoActive: flags.releases ? [] : ["/releases"],
+			},
 			...(flags.releases
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),
@@ -147,8 +154,14 @@ export const navGroups = (
 		label: "Triage",
 		items: [
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
-			{ title: "Alerts", href: "/alerts", icon: "BellIcon" },
-			{ title: "Code Review", href: "/code-review", icon: "CodeIcon", badge: "Beta" },
+			{ title: "Alerts", href: "/alerts", icon: "BellIcon", alsoActive: ["/anomalies"] },
+			{
+				title: "Code Review",
+				href: "/code-review",
+				icon: "CodeIcon",
+				badge: "Beta",
+				alsoActive: flags.securityAudit ? [] : ["/security"],
+			},
 			...(flags.securityAudit
 				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
 				: []),
@@ -172,6 +185,7 @@ export const matchSubItem = (currentPath: string, sub: NavSubItem): string | und
 
 export const isNavItemActive = (currentPath: string, item: NavItem): boolean =>
 	isPathActive(currentPath, item.href) ||
+	(item.alsoActive?.some((href) => isPathActive(currentPath, href)) ?? false) ||
 	(item.subItems?.some((sub) => matchSubItem(currentPath, sub) !== undefined) ?? false)
 
 export interface NavPreview {

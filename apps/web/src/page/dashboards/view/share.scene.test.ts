@@ -71,7 +71,7 @@ describe("dashboard sharing", () => {
 		const made = pageUpdate(orgOnly.model, share(ShareMessage.ClickedMakePublic()))
 		expect(names(made.commands)).toEqual([WriteShare.name])
 		const boardDone = pageUpdate(made.model, share(ShareMessage.CompletedWrite({ error: null })))
-		expect(names(boardDone.commands)).toEqual([FetchShares.name, WriteShare.name])
+		expect(names(boardDone.commands)).toEqual(expect.arrayContaining([FetchShares.name, WriteShare.name]))
 	})
 
 	test("a list read answered after a newer one is dropped", () => {

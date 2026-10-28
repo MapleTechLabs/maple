@@ -128,13 +128,11 @@ The page opens with a stat strip: error count, share of all spans, and affected 
 
 Tabs filter by state:
 
-| Tab          | States                                          |
-| ------------ | ----------------------------------------------- |
-| **Open**     | Triage, Regressed, Todo, In progress, In review |
-| **Triage**   | Triage, Regressed                               |
-| **Active**   | Todo, In progress, In review                    |
-| **Resolved** | Done, Cancelled, Won't fix                      |
-| **All**      | Every state                                     |
+| Tab        | States                                          |
+| ---------- | ----------------------------------------------- |
+| **Open**   | Triage, Regressed, Todo, In progress, In review |
+| **Closed** | Verifying, Done, Cancelled, Won't fix           |
+| **All**    | Every state                                     |
 
 Columns: **Error**, **Trend · 24h**, **Events**, **Service**, **Status**, and **Last seen**. The trend and event counts cover the last 24 hours. The list covers all time.
 

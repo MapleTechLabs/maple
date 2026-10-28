@@ -32,6 +32,14 @@ export const RUN_IDS = {
 	billingCancelled: "run_51be0c9f44",
 } as const
 
+/** A deep target kept out of the overview's four, for the stop-reason and live-wave scenarios. */
+export const DEEP_TARGET_ID = "5ec0a0d1-0000-4000-8000-000000000005"
+
+export const DEEP_RUN_IDS = {
+	incomplete: "run_d33p0a71c2",
+	live: "run_d33p1b84e0",
+} as const
+
 const target = (
 	id: string,
 	repository: string,
@@ -68,6 +76,15 @@ export const targetsOf = (now: number) =>
 				now,
 			),
 			target(TARGET_IDS.terraform, "acme/infra-terraform", "main", "deep", ["modules"], now),
+		],
+	})
+
+/** The four targets and the deep one, for the run page's target lookup. */
+export const labTargetsOf = (now: number) =>
+	Schema.decodeSync(SecurityAuditTargetsResponse)({
+		targets: [
+			...targetsOf(now).targets,
+			target(DEEP_TARGET_ID, "acme/notes-service", "main", "deep", [], now),
 		],
 	})
 
@@ -186,6 +203,38 @@ const runSeeds = (now: number): ReadonlyArray<RunSeed> => [
 	},
 ]
 
+/** Deep runs on the notes service: one that stopped for several reasons, one mid wave 1. */
+const deepRunSeeds = (now: number): ReadonlyArray<RunSeed> => [
+	{
+		id: DEEP_RUN_IDS.incomplete,
+		targetId: DEEP_TARGET_ID,
+		status: "incomplete",
+		profile: "deep",
+		sourceRef: "d33p0a71c2e4b6d8f0a1c3e5b7d9f1a3c5e7b9d1",
+		spent: 214,
+		input: 11_300_000,
+		output: 402_000,
+		cost: 38.4,
+		startedAt: now - 3 * HOUR,
+		finishedAt: now - 3 * HOUR + 70 * MINUTE,
+		incompleteReason:
+			"critic_unavailable: post-wave critic after wave 2; record_verification_incomplete; org_budget_unavailable",
+	},
+	{
+		id: DEEP_RUN_IDS.live,
+		targetId: DEEP_TARGET_ID,
+		status: "in_progress",
+		profile: "deep",
+		sourceRef: "d33p1b84e0a2c4e6b8d0f2a4c6e8b0d2f4a6c8e0",
+		spent: 41,
+		input: 1_900_000,
+		output: 71_000,
+		cost: null,
+		startedAt: now - 24 * MINUTE,
+		finishedAt: null,
+	},
+]
+
 /** The org's settings: $1,184 of its $2,000 this month, on the default models. */
 export const settingsOf = (now: number) => {
 	const date = new Date(now)
@@ -219,6 +268,8 @@ const UNIT_COUNTS = new Map<string, Readonly<Record<string, number>>>([
 	[RUN_IDS.billing, { covered: 33, candidate: 5, deferred: 12, blocked: 3, planned: 1 }],
 	[RUN_IDS.billingCancelled, { covered: 10, planned: 30 }],
 	[RUN_IDS.terraform, {}],
+	[DEEP_RUN_IDS.incomplete, { covered: 31, not_applicable: 2, deferred: 20, planned: 8 }],
+	[DEEP_RUN_IDS.live, { covered: 12, candidate: 2, in_progress: 4, planned: 14 }],
 ])
 
 const REPORTS = {
@@ -230,7 +281,7 @@ const REPORTS = {
 }
 
 export const runDetailOf = (now: number, runId: string) => {
-	const seed = runSeeds(now).find((candidate) => candidate.id === runId)
+	const seed = [...runSeeds(now), ...deepRunSeeds(now)].find((candidate) => candidate.id === runId)
 	if (seed === undefined) throw new RangeError(`No fixture run ${runId}`)
 	const counts = UNIT_COUNTS.get(seed.id) ?? {}
 	return Schema.decodeUnknownSync(SecurityAuditRunDetail)({
@@ -356,6 +407,80 @@ const RECON: ReadonlyArray<EventSeed> = [
 	phase(60, "reconnaissance", "No prior ledger exists.", "Reconnaissance started."),
 ]
 
+/** Minutes into the deep incomplete run (started 180 minutes ago) as minutes ago. */
+const intoDeepRun = (minute: number) => 180 - minute
+
+/** The deep run's log, newest first: three stop reasons, failed and discarded agents. */
+const DEEP_INCOMPLETE_LOG: ReadonlyArray<EventSeed> = [
+	phase(intoDeepRun(70), "finished", "incomplete, 214 agents run", "Run finished incomplete."),
+	{ ago: intoDeepRun(69), kind: "Note", message: "incomplete: org_budget_unavailable" },
+	{
+		ago: intoDeepRun(68),
+		kind: "Note",
+		message: "record-3-1 not run: the organization's audit spend could not be read",
+	},
+	{ ago: intoDeepRun(66.5), kind: "Note", message: "incomplete: record_verification_incomplete" },
+	{
+		ago: intoDeepRun(66),
+		kind: "Agent",
+		role: "record-verifier",
+		agentId: "record-2-1",
+		outcome: "failed",
+		message: "the sandbox stopped answering",
+	},
+	phase(intoDeepRun(60), "record-verification", "8 records", "Fresh verifiers re-check 8 records."),
+	{
+		ago: intoDeepRun(59),
+		kind: "Agent",
+		role: "candidate-verifier",
+		agentId: "verify-4",
+		outcome: "ok",
+		message: "Kept as needs validation: the retry path has to run to show it.",
+		cost: 0.42,
+	},
+	phase(intoDeepRun(50), "candidate-validation", "10 unique candidates", "Validation of 10 candidates."),
+	{
+		ago: intoDeepRun(45),
+		kind: "Note",
+		message: "incomplete: critic_unavailable: post-wave critic after wave 2",
+	},
+	{
+		ago: intoDeepRun(44),
+		kind: "Agent",
+		role: "critic",
+		agentId: "critic-w2-post",
+		outcome: "discarded",
+		message: "result broke its contract at: missing_units[3].surface",
+		cost: 0.31,
+	},
+	{
+		ago: intoDeepRun(40),
+		kind: "Agent",
+		role: "hunter",
+		agentId: "hunter-w2-6",
+		outcome: "ok",
+		message: "Attachment names are passed to the storage key without normalising.",
+		cost: 0.58,
+	},
+	{
+		ago: intoDeepRun(38),
+		kind: "Agent",
+		role: "hunter",
+		agentId: "hunter-w2-2",
+		outcome: "failed",
+		message: "the agent did not answer within its time limit",
+	},
+	phase(intoDeepRun(25), "wave-2", "21 hunters over 21 units", "Wave 2 started with 21 units."),
+	phase(intoDeepRun(10), "wave-1", "32 hunters over 32 units", "Wave 1 started with 32 units."),
+	phase(
+		intoDeepRun(8),
+		"ledger-seeded",
+		"32 units mapped · 4 agents",
+		"Recon complete. 32 units in the ledger.",
+	),
+	phase(intoDeepRun(0), "reconnaissance", "No prior ledger exists.", "Reconnaissance started."),
+]
+
 /** Each run's own log, newest first: what its engine would have written. */
 const EVENTS_BY_RUN = new Map<string, ReadonlyArray<EventSeed>>([
 	[RUN_IDS.dashboard, EVENTS],
@@ -386,6 +511,46 @@ const EVENTS_BY_RUN = new Map<string, ReadonlyArray<EventSeed>>([
 		],
 	],
 	[RUN_IDS.terraform, []],
+	[DEEP_RUN_IDS.incomplete, DEEP_INCOMPLETE_LOG],
+	[
+		DEEP_RUN_IDS.live,
+		[
+			{
+				ago: 0.4,
+				kind: "Agent",
+				role: "hunter",
+				agentId: "hunter-w1-9",
+				outcome: "ok",
+				message: "Share links are scoped to the note owner's workspace.",
+				cost: 0.36,
+			},
+			{
+				ago: 1.6,
+				kind: "Agent",
+				role: "hunter",
+				agentId: "hunter-w1-7",
+				outcome: "discarded",
+				message: "empty answer",
+			},
+			{
+				ago: 3,
+				kind: "Agent",
+				role: "hunter",
+				agentId: "hunter-w1-4",
+				outcome: "ok",
+				message: "Comment markdown is rendered with raw HTML allowed.",
+				cost: 0.51,
+			},
+			phase(14, "wave-1", "32 hunters over 32 units", "Wave 1 started with 32 units."),
+			phase(
+				18,
+				"ledger-seeded",
+				"32 units mapped · 4 agents",
+				"Recon complete. 32 units in the ledger.",
+			),
+			phase(24, "reconnaissance", "No prior ledger exists.", "Reconnaissance started."),
+		],
+	],
 ])
 
 export const eventsOf = (now: number, runId: string) =>
@@ -438,107 +603,182 @@ const unit = (
 	unresolved: extra.unresolved ?? [],
 })
 
-export const unitsOf = () =>
+/** A deep ledger as the engine writes it: skill anchors for attack classes, `file#entry` surfaces. */
+const deepUnits = (live: boolean) => [
+	unit(
+		"u-share-token",
+		"covered",
+		1,
+		"share links",
+		"ATTACK-CLASSES.md#Broken-Access-Control",
+		"src/share/routes.ts#GET /share/:token",
+		"anonymous",
+	),
+	unit(
+		"u-comment-render",
+		"candidate",
+		1,
+		"comments",
+		"ATTACK-CLASSES.md#Injection",
+		"src/comments/render.ts#renderMarkdown",
+		"other users",
+		{ results: ["fp-comment-html"] },
+	),
+	unit(
+		"u-attachments-key",
+		live ? "in_progress" : "candidate",
+		live ? 1 : 2,
+		"attachments",
+		"ATTACK-CLASSES.md#Path-Traversal",
+		"src/attachments/upload.ts#POST /attachments",
+		"object storage",
+		live ? { agentId: "hunter-w1-11" } : { results: ["fp-attachment-key"] },
+	),
+	unit(
+		"u-export-job",
+		live ? "in_progress" : "covered",
+		1,
+		"exports",
+		"ATTACK-CLASSES.md#Broken-Access-Control",
+		"src/export/job.ts#runExport",
+		"workspace boundary",
+		live ? { agentId: "hunter-w1-12" } : {},
+	),
+	unit(
+		"u-invite-accept",
+		live ? "planned" : "deferred",
+		live ? 1 : 0,
+		"invitations",
+		"COMPANION.md#Token-Reuse",
+		"src/invites/accept.ts#POST /invites/:id/accept",
+		"workspace boundary",
+		live ? {} : { unresolved: ["Not reached: no more units were planned after wave 2"] },
+	),
+	unit(
+		"u-search-filter",
+		live ? "planned" : "deferred",
+		live ? 1 : 0,
+		"search",
+		"ATTACK-CLASSES.md#Injection",
+		"src/search/query.ts#buildFilter",
+		"workspace boundary",
+		live ? {} : { unresolved: ["Not reached: no more units were planned after wave 2"] },
+	),
+	unit(
+		"u-webhook-out",
+		"planned",
+		live ? 1 : 3,
+		"outbound webhooks",
+		"ATTACK-CLASSES.md#Server-Side-Request-Forgery",
+		"src/hooks/deliver.ts#deliver",
+		"internal network",
+	),
+]
+
+export const unitsOf = (runId?: string) =>
 	Schema.decodeUnknownSync(SecurityAuditUnitsResponse)({
-		units: [
-			unit(
-				"u-exports-bola",
-				"covered",
-				1,
-				"exports",
-				"broken object authorization",
-				"POST /v1/exports",
-				"tenant boundary",
-			),
-			unit(
-				"u-auth-redirect",
-				"candidate",
-				1,
-				"auth callback",
-				"open redirect",
-				"GET /auth/callback",
-				"user session",
-				{ results: ["fp-open-redirect"] },
-			),
-			unit(
-				"u-webhooks-sig",
-				"covered",
-				1,
-				"webhooks",
-				"signature bypass",
-				"POST /webhooks/stripe",
-				"external caller",
-			),
-			unit(
-				"u-share-token",
-				"in_progress",
-				2,
-				"share links",
-				"token guessing",
-				"GET /share/:token",
-				"anonymous",
-				{ agentId: "hunter h-2-07" },
-			),
-			unit(
-				"u-avatar-path",
-				"in_progress",
-				2,
-				"avatar upload",
-				"path traversal",
-				"POST /api/avatars",
-				"file storage",
-				{ agentId: "hunter h-2-05" },
-			),
-			unit(
-				"u-graphql-authz",
-				"planned",
-				2,
-				"graphql resolvers",
-				"authorization bypass",
-				"/graphql",
-				"tenant boundary",
-			),
-			unit(
-				"u-session-fixation",
-				"blocked",
-				1,
-				"session cookies",
-				"fixation",
-				"middleware/session.ts",
-				"browser",
-				{ unresolved: ["needs deploy config"] },
-			),
-			unit(
-				"u-refunds-race",
-				"deferred",
-				0,
-				"refunds",
-				"race condition on double submit",
-				"POST /refunds",
-				"payment provider",
-				{ unresolved: ["Not reached before the spend limit"] },
-			),
-			unit(
-				"u-invoice-pdf",
-				"deferred",
-				0,
-				"invoice pdf",
-				"path traversal",
-				"GET /invoices/:id/pdf",
-				"file storage",
-				{ unresolved: ["Not reached before the spend limit"] },
-			),
-			unit("u-legacy-7f2a91", "planned", 0, null, null, null, null, { stale: true }),
-			unit(
-				"u-markdown-xss",
-				"not_applicable",
-				1,
-				"markdown render",
-				"stored XSS",
-				"app/notes/render.tsx",
-				"other users",
-			),
-		],
+		units:
+			runId === DEEP_RUN_IDS.incomplete || runId === DEEP_RUN_IDS.live
+				? deepUnits(runId === DEEP_RUN_IDS.live)
+				: [
+						unit(
+							"u-exports-bola",
+							"covered",
+							1,
+							"exports",
+							"broken object authorization",
+							"POST /v1/exports",
+							"tenant boundary",
+						),
+						unit(
+							"u-auth-redirect",
+							"candidate",
+							1,
+							"auth callback",
+							"open redirect",
+							"GET /auth/callback",
+							"user session",
+							{ results: ["fp-open-redirect"] },
+						),
+						unit(
+							"u-webhooks-sig",
+							"covered",
+							1,
+							"webhooks",
+							"signature bypass",
+							"POST /webhooks/stripe",
+							"external caller",
+						),
+						unit(
+							"u-share-token",
+							"in_progress",
+							2,
+							"share links",
+							"token guessing",
+							"GET /share/:token",
+							"anonymous",
+							{ agentId: "hunter h-2-07" },
+						),
+						unit(
+							"u-avatar-path",
+							"in_progress",
+							2,
+							"avatar upload",
+							"path traversal",
+							"POST /api/avatars",
+							"file storage",
+							{ agentId: "hunter h-2-05" },
+						),
+						unit(
+							"u-graphql-authz",
+							"planned",
+							2,
+							"graphql resolvers",
+							"authorization bypass",
+							"/graphql",
+							"tenant boundary",
+						),
+						unit(
+							"u-session-fixation",
+							"blocked",
+							1,
+							"session cookies",
+							"fixation",
+							"middleware/session.ts",
+							"browser",
+							{ unresolved: ["needs deploy config"] },
+						),
+						unit(
+							"u-refunds-race",
+							"deferred",
+							0,
+							"refunds",
+							"race condition on double submit",
+							"POST /refunds",
+							"payment provider",
+							{ unresolved: ["Not reached before the spend limit"] },
+						),
+						unit(
+							"u-invoice-pdf",
+							"deferred",
+							0,
+							"invoice pdf",
+							"path traversal",
+							"GET /invoices/:id/pdf",
+							"file storage",
+							{ unresolved: ["Not reached before the spend limit"] },
+						),
+						unit("u-legacy-7f2a91", "planned", 0, null, null, null, null, { stale: true }),
+						unit(
+							"u-markdown-xss",
+							"not_applicable",
+							1,
+							"markdown render",
+							"stored XSS",
+							"app/notes/render.tsx",
+							"other users",
+						),
+					],
 	})
 
 type FindingSeed = Readonly<{
@@ -783,6 +1023,72 @@ const FINDINGS: ReadonlyArray<FindingSeed> = [
 	},
 ]
 
+const deepLead = (
+	fingerprint: string,
+	title: string,
+	file: string,
+	line: number,
+	verdict: "needs_validation" | "rejected" = "needs_validation",
+): FindingSeed => ({
+	fingerprint,
+	targetId: DEEP_TARGET_ID,
+	verdict,
+	severity: null,
+	title,
+	file,
+	line,
+	runId: DEEP_RUN_IDS.incomplete,
+	ago: 110 * MINUTE,
+})
+
+/** Six leads to validate and two disproved, all from the deep run that stopped early. */
+const DEEP_FINDINGS: ReadonlyArray<FindingSeed> = [
+	deepLead(
+		"comment-html-a1f0",
+		"Comment markdown renders raw HTML for other members",
+		"src/comments/render.ts",
+		41,
+	),
+	deepLead(
+		"attachment-key-b2e1",
+		"Attachment name reaches the storage key unnormalised",
+		"src/attachments/upload.ts",
+		77,
+	),
+	deepLead(
+		"export-retry-c3d2",
+		"Export job may write another workspace's rows on retry",
+		"src/export/job.ts",
+		118,
+	),
+	deepLead(
+		"invite-reuse-d4c3",
+		"Invite token may be accepted twice under a race",
+		"src/invites/accept.ts",
+		33,
+	),
+	deepLead(
+		"share-expiry-e5b4",
+		"Expired share links may stay readable from cache",
+		"src/share/cache.ts",
+		59,
+	),
+	deepLead(
+		"hook-redirect-f6a5",
+		"Outbound webhook may follow redirects to internal hosts",
+		"src/hooks/deliver.ts",
+		92,
+	),
+	deepLead(
+		"search-filter-07b6",
+		"Search filter concatenates the workspace id",
+		"src/search/query.ts",
+		24,
+		"rejected",
+	),
+	deepLead("share-enum-18c7", "Share tokens can be enumerated", "src/share/routes.ts", 12, "rejected"),
+]
+
 const findingOf = (seed: FindingSeed, now: number) => ({
 	fingerprint: seed.fingerprint,
 	targetId: seed.targetId,
@@ -807,7 +1113,9 @@ const findingOf = (seed: FindingSeed, now: number) => ({
 
 export const findingsOf = (now: number, targetId: string) =>
 	Schema.decodeUnknownSync(SecurityAuditFindingsResponse)({
-		findings: FINDINGS.filter((seed) => seed.targetId === targetId).map((seed) => findingOf(seed, now)),
+		findings: [...FINDINGS, ...DEEP_FINDINGS]
+			.filter((seed) => seed.targetId === targetId)
+			.map((seed) => findingOf(seed, now)),
 	})
 
 export const githubStatusOf = (connected = true) =>

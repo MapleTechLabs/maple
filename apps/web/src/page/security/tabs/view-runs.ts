@@ -1,6 +1,5 @@
-import type { SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
+import type { SecurityAuditRun, SecurityAuditRunDetail, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
-import { formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "../../../ui/button"
@@ -15,30 +14,104 @@ import {
 	formatElapsed,
 	formatUsd,
 	runTotalUsd,
+	isCancelled,
 	isLive,
-	modelLabel,
 	PROFILE_LABEL,
 	RUN_KIND_LABEL,
 	runElapsed,
 	scopeLabel,
 	shortId,
 	refLabel,
+	runToneOf,
 } from "../kit/format"
 import { placeholderRows, repositoryName, runStatusBadge } from "../kit/parts"
-import { RUN_LIST_CAP, runsForTab, runsForTarget, targetsOf } from "./derive"
+import {
+	coverageOf,
+	latestDetailOf,
+	RUN_LIST_CAP,
+	runLeadsOf,
+	runsForTab,
+	runsForTarget,
+	targetsOf,
+} from "./derive"
+import { leadsLine, stopSummaryOf } from "../kit/outcome"
+import { meter } from "../../../ui/meter"
 import { Message, type Model } from "./model"
 
 // The Runs tab: every run, newest first, narrowed to one target from the select.
 
 type H = HtmlBuilder<Message>
 
+/** The status, and for a run that stopped short, why in one line. */
+const statusCell = (h: H, run: SecurityAuditRun): Html => {
+	const reason =
+		isLive(run) || run.status === "complete" || isCancelled(run)
+			? null
+			: run.status === "failed"
+				? (run.error ?? "could not finish")
+				: stopSummaryOf(run.incompleteReason)
+	return h.div(
+		[h.Class("flex min-w-0 flex-col items-start gap-1")],
+		[
+			runStatusBadge(h, run),
+			...(reason === null
+				? []
+				: [
+						h.span(
+							[h.Class("max-w-48 truncate text-xs text-muted-foreground"), h.Title(reason)],
+							[reason],
+						),
+					]),
+		],
+	)
+}
+
+const muted = (h: H, text: string, title?: string): Html =>
+	h.span(
+		[h.Class("text-xs text-muted-foreground"), ...(title === undefined ? [] : [h.Title(title)])],
+		[text],
+	)
+
+const leadsCell = (h: H, leads: Readonly<{ confirmed: number; toValidate: number }> | null): Html =>
+	leads === null
+		? muted(h, "", "Open the run for what it reported")
+		: h.span(
+				[h.Class("flex flex-col items-end"), h.Title(leadsLine(leads.confirmed, leads.toValidate))],
+				[
+					h.span([h.Class("font-mono tabular-nums")], [String(leads.confirmed + leads.toValidate)]),
+					...(leads.toValidate === 0 ? [] : [muted(h, `${leads.toValidate} to validate`)]),
+				],
+			)
+
+const coverageCell = (h: H, run: SecurityAuditRun, detail: SecurityAuditRunDetail | null): Html => {
+	if (detail === null || detail.unitTotal === 0) return muted(h, "")
+	const { closed, total } = coverageOf(detail)
+	return h.div(
+		[h.Class("flex items-center justify-end gap-2")],
+		[
+			meter(h, {
+				value: closed,
+				max: total,
+				tone: runToneOf(run),
+				className: "w-10",
+				label: `${closed} of ${total} units closed`,
+			}),
+			h.span(
+				[h.Class("whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground")],
+				[`${closed} / ${total}`],
+			),
+		],
+	)
+}
+
 const runRow = (
 	h: H,
+	model: Model,
 	run: SecurityAuditRun,
 	targets: ReadonlyArray<SecurityAuditTarget>,
-	nowMs: number,
 	timeZone: string,
 ): Html => {
+	const nowMs = model.nowMs
 	const href = hrefOf(AppRoute.SecurityRun({ runId: run.id }))
 	const repository = targets.find((target) => target.id === run.targetId)?.repository ?? "Removed target"
 	return tableRow(
@@ -74,34 +147,27 @@ const runRow = (
 					],
 				),
 			]),
-			tableCell(h, [runStatusBadge(h, run)]),
-			tableCell(
-				h,
-				[run.discoveryModel === null ? "" : modelLabel(run.discoveryModel)],
-				"truncate text-xs text-muted-foreground",
-			),
-			tableCell(
-				h,
-				[formatNumber(run.inputTokens + run.outputTokens)],
-				"text-right font-mono tabular-nums",
-			),
+			tableCell(h, [statusCell(h, run)]),
+			tableCell(h, [leadsCell(h, runLeadsOf(model, run))], "text-right"),
+			tableCell(h, [coverageCell(h, run, latestDetailOf(model, run.id))], "text-right"),
 			tableCell(h, [formatUsd(runTotalUsd(run))], "text-right font-mono tabular-nums"),
 			tableCell(
 				h,
 				[
-					relativeTime(h, {
-						value: run.startedAt,
-						nowMs,
-						timeZone,
-						variant: "short",
-						tooltip: "title",
-					}),
+					h.span(
+						[h.Class("flex flex-col items-end")],
+						[
+							relativeTime(h, {
+								value: run.startedAt,
+								nowMs,
+								timeZone,
+								variant: "short",
+								tooltip: "title",
+							}),
+							h.span([h.Title("Duration")], [formatElapsed(runElapsed(run, nowMs))]),
+						],
+					),
 				],
-				"text-right font-mono text-xs text-muted-foreground",
-			),
-			tableCell(
-				h,
-				[formatElapsed(runElapsed(run, nowMs))],
 				"text-right font-mono text-xs text-muted-foreground",
 			),
 		],
@@ -236,16 +302,15 @@ export const runsBody = (h: H, model: Model, timeZone: string): ReadonlyArray<Ht
 								tableHead(h, ["Run"]),
 								tableHead(h, ["Target"]),
 								tableHead(h, ["Status"]),
-								tableHead(h, ["Model"]),
-								tableHead(h, ["Tokens"], "text-right"),
+								tableHead(h, ["Leads"], "text-right"),
+								tableHead(h, ["Coverage"], "text-right"),
 								tableHead(h, ["Cost"], "text-right"),
 								tableHead(h, ["Started"], "text-right"),
-								tableHead(h, ["Duration"], "text-right"),
 							]),
 						]),
 						tableBody(
 							h,
-							runs.map((run) => runRow(h, run, targets, model.nowMs, timeZone)),
+							runs.map((run) => runRow(h, model, run, targets, timeZone)),
 						),
 					]),
 	})

@@ -94,7 +94,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 												"flex min-h-0 w-full flex-col border-border lg:w-[500px] lg:shrink-0 lg:border-r",
 											),
 										],
-										[templateList(h, model, readiness)],
+										[templateList(h, model, readiness, metrics !== null)],
 									),
 									...(isSheet
 										? []

@@ -20,6 +20,7 @@ import {
 	GCP_RESOURCES_TAB,
 	GCP_VIEW_SERVICES,
 	gcpResourcesError,
+	type GcpServiceView,
 	type GcpView,
 } from "../../../../components/infra/gcp/tabs"
 import { formatPercentColumn, pluralize } from "@maple/ui/lib/format"
@@ -134,7 +135,13 @@ const loadedDescription = (
 }
 
 /** `tabs` goes to the header's `tabs` slot, pinned under the title row. */
-export type PageParts = Readonly<{ header: HeaderParts; tabs?: Html; body: ReadonlyArray<Html> }>
+export type PageParts = Readonly<{
+	header: HeaderParts
+	tabs?: Html
+	body: ReadonlyArray<Html>
+	/** The body is a failure card with Try again, so the header drops Reload. */
+	isFailed?: boolean
+}>
 
 /** `ListBody`: one view's band, search and table; the band counts every row, the table what is left. */
 const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends string>(
@@ -180,7 +187,7 @@ const listBody = <R extends { readonly keys: ReadonlyArray<string> }, S extends 
 		searchToolbar(h, {
 			id: "gcp-search",
 			value: query,
-			placeholder: `Filter ${rows.length} ${options.noun}`,
+			placeholder: `Filter ${options.noun}`,
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
 			trailing:
@@ -253,6 +260,16 @@ const healthDotOf = (h: H, health: GcpProjectHealth | undefined): ReadonlyArray<
 	]),
 ]
 
+/** What a project's share counts, matching `gcpProjectShares`. */
+const SHARE_UNIT = {
+	services: "of requests",
+	pubsub: "of messages",
+	cloudSql: "of instances",
+	gke: "of workloads",
+	computeEngine: "of instances",
+	loadBalancing: "of load balancers",
+} as const satisfies Record<GcpServiceView, string>
+
 /** `GcpProjectsStrip`: one cell per project, the biggest share first; a cell scopes to it. */
 const projectsStrip = (
 	h: H,
@@ -260,6 +277,7 @@ const projectsStrip = (
 	share: ReadonlyMap<string, number>,
 	counts: (project: string) => string,
 	health: ReadonlyMap<string, GcpProjectHealth>,
+	shareUnit: string,
 ): Html =>
 	h.div(
 		[h.Class("flex flex-col overflow-hidden rounded-md border md:flex-row")],
@@ -287,8 +305,14 @@ const projectsStrip = (
 									[project],
 								),
 								h.span(
-									[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
-									[formatPercentColumn(fraction)],
+									[h.Class("ml-auto flex items-baseline gap-1 whitespace-nowrap")],
+									[
+										h.span(
+											[h.Class("font-mono text-2xs tabular-nums text-foreground")],
+											[formatPercentColumn(fraction)],
+										),
+										h.span([h.Class("text-3xs text-muted-foreground")], [shareUnit]),
+									],
 								),
 							],
 						),
@@ -336,6 +360,7 @@ const infraView = (h: H, model: Model, connectors: ReturnType<typeof metricsConn
 	if (failures.length > 0) {
 		return {
 			header: intro,
+			isFailed: true,
 			body: failures.map((failure) =>
 				errorState(h, {
 					failure,
@@ -415,6 +440,7 @@ export const titleRow = (
 	h: H,
 	header: HeaderParts,
 	time: TitleRowTime,
+	isFailed = false,
 ): Readonly<{ titleContent: Html; actions: Html }> => ({
 	titleContent: pageHeroParts(h, {
 		title: TITLE,
@@ -433,6 +459,7 @@ export const titleRow = (
 			onReset: Message.ClickedResetTimeRange(),
 			onReload: Message.ClickedReload(),
 			isReloading: time.isReloading,
+			isReloadHidden: isFailed,
 		}),
 	),
 })
@@ -576,6 +603,7 @@ export const gcpListPageParts = (h: H, input: ListPageInput): PageParts => {
 									gcpProjectShares(inRegion, view),
 									projectCounts,
 									health,
+									SHARE_UNIT[view],
 								),
 							]
 						: []),
@@ -592,6 +620,7 @@ const content = (h: H, model: Model): PageParts =>
 		onLoading: () => ({ header: intro, body: [skeleton(h, "h-64 w-full")] }),
 		onFailure: (failure) => ({
 			header: intro,
+			isFailed: true,
 			body: [
 				errorState(h, {
 					failure,
@@ -602,6 +631,7 @@ const content = (h: H, model: Model): PageParts =>
 		}),
 		onStale: ({ error }) => ({
 			header: intro,
+			isFailed: true,
 			body: [
 				errorState(h, {
 					failure: error,
@@ -675,7 +705,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					scrollClassName: "gap-6",
-					...titleRow(h, page.header, model),
+					...titleRow(h, page.header, model, page.isFailed),
 					tabs: page.tabs,
 				},
 				page.body,

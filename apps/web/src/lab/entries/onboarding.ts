@@ -5,7 +5,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as PricingCardsView from "../../page/onboarding/pricing-cards-view"
 import * as QuickStartTeamView from "../../page/onboarding/quick-start-team-view"
 import * as QuickStartView from "../../page/onboarding/quick-start-view"
-import { button } from "../../ui/button"
+import { button, linkButton } from "../../ui/button"
+import { separator } from "../../ui/display"
 import * as CopyButton from "../../ui/copy-button"
 import { icon } from "../../ui/icon"
 import { defineLabWithFlags } from "../define"
@@ -183,7 +184,9 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>(
 			accountCluster: (label) =>
 				QuickStartView.accountClusterOf(h, [
 					label,
-					h.a([h.Href("/lab"), h.Class("text-xs underline underline-offset-4")], ["Exit preview"]),
+					// A divider and a ghost button, so only the active step carries an underline.
+					separator(h, "vertical", "h-4"),
+					linkButton(h, { href: "/lab", size: "xs", variant: "ghost" }, ["Exit preview"]),
 				]),
 			needsRegion: false,
 			hasPlan: model.hasPlan,

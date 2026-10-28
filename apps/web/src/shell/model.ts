@@ -49,6 +49,8 @@ export const Integrations = Schema.Struct({
 export const Model = Schema.Struct({
 	/** Desktop rail expanded (`SidebarProvider` `open`). */
 	isSidebarOpen: Schema.Boolean,
+	/** The last toggle came from ⌘B: keyboard toggles snap instead of animating the width. */
+	isSidebarToggleInstant: Schema.Boolean,
 	/** The mobile nav sheet (`openMobile`). */
 	isMobileNavOpen: Schema.Boolean,
 	/** Below `md` the sidebar is a sheet (`useIsMobile`). */
@@ -137,6 +139,7 @@ export type ShellFlags = Readonly<{
 
 export const init = (flags: ShellFlags): Model => ({
 	isSidebarOpen: true,
+	isSidebarToggleInstant: false,
 	isMobileNavOpen: false,
 	isMobile: flags.isMobile,
 	hasRequestedSidebarData: false,

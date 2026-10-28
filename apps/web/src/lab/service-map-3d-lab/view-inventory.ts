@@ -79,7 +79,10 @@ export const inventory = (h: H, model: Model): Html => {
 	const sorted = topology.nodes
 		.filter((node) => `${node.label} ${node.namespace} ${node.kind}`.includes(needle))
 		.toSorted((a, b) => b.errorRate - a.errorRate)
-	const degraded = topology.nodes.filter((node) => health(node.errorRate) === "degraded").length
+	const countOf = (level: "elevated" | "degraded") =>
+		topology.nodes.filter((node) => health(node.errorRate) === level).length
+	const degraded = countOf("elevated")
+	const failing = countOf("degraded")
 	return h.aside(
 		[
 			h.Class(
@@ -96,8 +99,18 @@ export const inventory = (h: H, model: Model): Html => {
 					),
 				],
 				[
-					h.span([], ["Sorted by error rate"]),
-					h.span([h.Class(degraded > 0 ? "text-severity-error" : "")], [`${degraded} degraded`]),
+					h.span([h.Class("whitespace-nowrap")], ["By error rate"]),
+					h.span(
+						[h.Class("whitespace-nowrap")],
+						[
+							h.span(
+								[h.Class(degraded > 0 ? "text-severity-warn" : "")],
+								[`${degraded} degraded`],
+							),
+							" · ",
+							h.span([h.Class(failing > 0 ? "text-severity-error" : "")], [`${failing} error`]),
+						],
+					),
 				],
 			),
 			h.div(
@@ -116,7 +129,7 @@ export const inventory = (h: H, model: Model): Html => {
 			),
 			h.p(
 				[h.Class("border-t px-4 py-3 text-3xs leading-relaxed text-muted-foreground")],
-				["Sample health thresholds", h.br([]), "Elevated > 1% · Degraded > 5% errors"],
+				["Sample health thresholds", h.br([]), "Degraded > 1% · Error > 5% errors"],
 			),
 		],
 	)

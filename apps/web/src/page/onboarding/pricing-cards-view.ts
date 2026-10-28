@@ -49,7 +49,8 @@ const dataRow = (h: H, feature: FeatureRow, isDetailed: boolean): Html => {
 	const iconName = FEATURE_ICONS.get(feature.featureId)
 	const value = h.span([h.Class("font-semibold tabular-nums text-foreground")], [feature.value])
 	return h.div(
-		[h.Class("flex items-center justify-between text-sm")],
+		// One row height for both cards, so a two-line overage row never pushes its card out of step.
+		[h.Class("flex min-h-10 items-center justify-between text-sm")],
 		[
 			h.div(
 				[h.Class("text-muted-foreground flex items-center gap-2.5")],
@@ -143,7 +144,10 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 				h.div(
 					[h.Class("mt-3 flex items-baseline gap-1")],
 					[
-						h.span([h.Class("text-3xl font-semibold tracking-tight tabular-nums")], [price]),
+						h.span(
+							[h.Class("font-mono text-3xl font-semibold tracking-tight tabular-nums")],
+							[price],
+						),
 						...(interval === undefined
 							? []
 							: [eyebrow(h, { variant: "label", className: "ml-1" }, [interval])]),
@@ -152,7 +156,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 				cardDescription(
 					h,
 					[plan.description ?? getPlanDescription(getPlanSlug(plan))],
-					"mt-2 font-display text-sm leading-relaxed text-muted-foreground",
+					"mt-2 min-h-[2lh] font-display text-sm leading-relaxed text-muted-foreground",
 				),
 			]),
 			cardPanel(
@@ -214,12 +218,17 @@ const enterpriseCard = (h: H): Html =>
 				),
 				h.div(
 					[h.Class("mt-3 flex items-baseline gap-1")],
-					[h.span([h.Class("text-3xl font-semibold tracking-tight tabular-nums")], ["Custom"])],
+					[
+						h.span(
+							[h.Class("font-mono text-3xl font-semibold tracking-tight tabular-nums")],
+							["Custom"],
+						),
+					],
 				),
 				cardDescription(
 					h,
 					["For high-volume teams with custom retention, compliance, and dedicated support."],
-					"mt-2 font-display text-sm leading-relaxed text-muted-foreground",
+					"mt-2 min-h-[2lh] font-display text-sm leading-relaxed text-muted-foreground",
 				),
 			]),
 			cardPanel(

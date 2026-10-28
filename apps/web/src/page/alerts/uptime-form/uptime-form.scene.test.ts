@@ -1,7 +1,17 @@
 import { OrgId } from "@maple/domain"
 import { UptimeMonitorPublicId } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
-import { click, expect as expectView, given, role, scene, text, type, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	expect as expectView,
+	given,
+	role,
+	scene,
+	selector,
+	text,
+	type,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "../../../data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -291,6 +301,54 @@ describe("uptime monitor form", () => {
 			given(opened),
 			expectView(text("Unavailable destination")).not.toExist(),
 			expectView(role("button", { name: "Stop notifying Destination" })).toExist(),
+		)
+	})
+
+	const editing = (monitor: ReturnType<typeof httpMonitor>): Model => {
+		const entered = init(
+			{ _tag: "AlertsUptimeNew", search: { monitorId: publicId(monitor.id) } },
+			context,
+		).model
+		return asAdmin(
+			pageUpdate(
+				entered,
+				Message.CompletedFetchExisting({
+					key: entered.existing.key ?? "",
+					result: Result.succeed(monitor),
+				}),
+			).model,
+		)
+	}
+
+	test("editing a monitor does not announce what happens after creating one", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(editing(heartbeatMonitor())),
+			expectView(text("The ping URL appears after you create the monitor.")).not.toExist(),
+		)
+	})
+
+	test("an edited POST check with a saved body opens on its headers and body, and a fresh one starts closed", () => {
+		const monitor = httpMonitor({
+			config: {
+				type: "http",
+				url: "https://api.acme.dev/checkout/health",
+				method: "POST",
+				headers: {},
+				body: '{"ping":true}',
+				assertions: [],
+				timeout_ms: 10000,
+			},
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(editing(monitor)),
+			expectView(selector("details[open]")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(fresh()),
+			expectView(selector("details[open]")).not.toExist(),
 		)
 	})
 

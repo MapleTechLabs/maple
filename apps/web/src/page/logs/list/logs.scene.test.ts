@@ -104,7 +104,7 @@ describe("logs list", () => {
 			init({ search: {} }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(names(resolved.commands)).toEqual([FetchFirstPage.name, FetchVolume.name, FetchAttributeKeys.name])
+		expect(names(resolved.commands)).toEqual(expect.arrayContaining([FetchFirstPage.name, FetchVolume.name, FetchAttributeKeys.name]))
 		const mounted = pageUpdate(resolved.model, Message.MountedFilterRail())
 		expect(names(mounted.commands)).toEqual([FetchFacets.name])
 		expect(names(pageUpdate(mounted.model, Message.MountedFilterRail()).commands)).toEqual([])

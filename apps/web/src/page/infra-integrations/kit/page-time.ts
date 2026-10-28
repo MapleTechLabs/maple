@@ -36,9 +36,14 @@ export const stepTimePicker = <M>(
 }
 
 /** `applyTimeRangeSearch`: a preset clears the absolute bounds, a custom range the preset. */
-export const withPreset = <S extends TimeSearch>(search: S, picked: string | TimeRangePicker.TimeSearchPatch): S => ({
+export const withPreset = <S extends TimeSearch>(
+	search: S,
+	picked: string | TimeRangePicker.TimeSearchPatch,
+): S => ({
 	...search,
-	...(typeof picked === "string" ? { startTime: undefined, endTime: undefined, timePreset: picked } : picked),
+	...(typeof picked === "string"
+		? { startTime: undefined, endTime: undefined, timePreset: picked }
+		: picked),
 })
 
 export type PageTimeOptions<M> = Readonly<{
@@ -50,6 +55,8 @@ export type PageTimeOptions<M> = Readonly<{
 	onReset: M
 	onReload: M
 	isReloading: boolean
+	/** True while the page's failure card shows, so its Try again is the only retry. */
+	isReloadHidden?: boolean
 }>
 
 export const pageTime = <M>(h: HtmlBuilder<M>, options: PageTimeOptions<M>): Html =>
@@ -60,6 +67,7 @@ export const pageTime = <M>(h: HtmlBuilder<M>, options: PageTimeOptions<M>): Htm
 		onReset: options.onReset,
 		onReload: options.onReload,
 		isReloading: options.isReloading,
+		isReloadHidden: options.isReloadHidden,
 		trigger: (label) =>
 			h.submodel({
 				slotId: "time-range-picker",

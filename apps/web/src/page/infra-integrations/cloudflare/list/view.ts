@@ -96,21 +96,21 @@ const zoneBand = (h: H, zones: ReadonlyArray<ZoneRow>, activeScope: ZoneScope | 
 			{
 				scope: "serving5xx",
 				label: "Serving 5xx",
-				hint: "≥1% of requests",
+				hint: "1% or more of requests",
 				value: serving5xx,
 				tone: "crit",
 			},
 			{
 				scope: "mostly4xx",
 				label: "Mostly 4xx",
-				hint: "≥50% of requests",
+				hint: "half or more of requests",
 				value: mostly4xx,
 				tone: "warn",
 			},
 			{
 				scope: "lowVolume",
 				label: "Low volume",
-				hint: `<${MIN_RATED_REQUESTS} requests, not rated`,
+				hint: `under ${MIN_RATED_REQUESTS} requests, not rated`,
 				value: lowVolume,
 				tone: "neutral",
 			},
@@ -138,21 +138,21 @@ const workerBand = (h: H, rows: ReadonlyArray<WorkerListRow>, activeScope: Worke
 			{
 				scope: "erroring",
 				label: "Erroring",
-				hint: "≥1% of invocations or DO calls",
+				hint: "1% or more of invocations or DO calls",
 				value: erroring,
 				tone: "crit",
 			},
 			{
 				scope: "slow",
 				label: "Slow",
-				hint: "duration p99 ≥1s",
+				hint: "p99 duration of 1s or more",
 				value: count(rows, (r) => workerInScope(r, "slow")),
 				tone: "warn",
 			},
 			{
 				scope: "cpuHeavy",
 				label: "CPU heavy",
-				hint: `cpu p99 ≥${CPU_HEAVY_P99_MS}ms`,
+				hint: `CPU p99 of ${CPU_HEAVY_P99_MS}ms or more`,
 				value: count(rows, (r) => workerInScope(r, "cpuHeavy")),
 				tone: "neutral",
 			},
@@ -190,7 +190,7 @@ const zonesView = (
 		searchToolbar(h, {
 			id: "cloudflare-search",
 			value: query,
-			placeholder: `Filter ${zones.length} zones`,
+			placeholder: "Filter zones",
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
 			trailing:
@@ -233,10 +233,13 @@ const workersView = (h: H, model: Model, rows: ReadonlyArray<WorkerListRow>, sco
 		searchToolbar(h, {
 			id: "cloudflare-search",
 			value: query,
-			placeholder: `Filter ${rows.length} Workers`,
+			placeholder: "Filter Workers",
 			onInput: (value) => Message.ChangedSearch({ value }),
 			onClear: Message.ClickedClearSearch(),
-			trailing: `${filtered.length} of ${rows.length} · problems first`,
+			trailing:
+				filtered.length === rows.length
+					? `${rows.length} Workers · problems first`
+					: `${filtered.length} of ${rows.length} · problems first`,
 			children:
 				previews > 0
 					? [

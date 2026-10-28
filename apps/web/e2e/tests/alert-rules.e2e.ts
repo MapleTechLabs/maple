@@ -111,7 +111,8 @@ test.describe("alert rules", () => {
 
 	test("names an empty range bound before save", { session: "reviewer" }, async ({ app, screen }) => {
 		await app.open("/alerts/create")
-		await screen.getByRole("button", /^Skip/).tap()
+		// The template picker opens first; Cancel closes it on the default rule.
+		await screen.getByRole("button", "Cancel").tap()
 		await screen.getByLabel("Rule name").fill(`e2e range ${runTag()}`)
 		await screen.getByRole("combobox", "Alert when the value").tap()
 		await screen.getByRole("option", "is between").tap()
@@ -121,7 +122,8 @@ test.describe("alert rules", () => {
 
 	test("previews a SQL rule", { session: "reviewer" }, async ({ app, screen }) => {
 		await app.open("/alerts/create")
-		await screen.getByRole("button", /^Skip/).tap()
+		// The template picker opens first; Cancel closes it on the default rule.
+		await screen.getByRole("button", "Cancel").tap()
 		await screen.getByRole("button", "SQL").tap()
 
 		await expect(screen.getByText(/^Breach above/)).toBeVisible({ timeout: 45_000 })
