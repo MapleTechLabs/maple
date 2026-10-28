@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Layer } from "effect"
 import { StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/domain/primitives"
 import { utcDay } from "@maple/domain/status-page"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -126,7 +126,7 @@ describe("toSnapshot", () => {
 		assert.strictEqual(snapshot.components[0]?.status, "operational")
 	})
 
-	it("fills 90 days of bars and takes probesSeenAt from the newest check", () => {
+	it("fills 90 days of bars", () => {
 		const today = utcDay(NOW)
 		const snapshot = toSnapshot(
 			baseInput({
@@ -137,7 +137,6 @@ describe("toSnapshot", () => {
 						checks: 10,
 						failures: 1,
 						downChecks: 0,
-						lastCheckAt: NOW - 5_000,
 					},
 					{
 						monitorId: MONITOR,
@@ -145,7 +144,6 @@ describe("toSnapshot", () => {
 						checks: 20,
 						failures: 0,
 						downChecks: 0,
-						lastCheckAt: NOW - DAY_MS,
 					},
 				],
 			}),
@@ -159,15 +157,59 @@ describe("toSnapshot", () => {
 			failures: 0,
 			downChecks: 0,
 		})
-		assert.strictEqual(snapshot.probesSeenAt, NOW - 5_000)
 	})
 
-	it("gives components without a monitor or with hidden uptime no bars", () => {
+	it("gives components without a monitor or with hidden uptime no bars, but still marks monitored ones", () => {
 		const hidden = toSnapshot(baseInput({ components: componentWith({ showUptime: false }) }))
 		const unmonitored = toSnapshot(baseInput({ components: componentWith({ monitorId: null }) }))
 		assert.deepStrictEqual(hidden.components[0]?.days, [])
 		assert.deepStrictEqual(unmonitored.components[0]?.days, [])
-		assert.strictEqual(unmonitored.probesSeenAt, null)
+		assert.isTrue(hidden.components[0]?.monitored)
+		assert.isFalse(unmonitored.components[0]?.monitored)
+	})
+
+	it("links break-glass updates to their entries and names the entry that opened an incident", () => {
+		const update = (
+			id: string,
+			at: number,
+			source: "break_glass" | "dashboard",
+			entry: string | null,
+		) => ({
+			id,
+			incidentId: INCIDENT,
+			status: "investigating" as const,
+			body: id,
+			source,
+			overlayEntryId: entry,
+			createdAt: at,
+		})
+		const opened = toSnapshot(
+			baseInput({
+				incidents: [incident()],
+				updates: [
+					update("later", NOW - 1_000, "dashboard", null),
+					update("first", NOW - 60_000, "break_glass", "entry-1"),
+				],
+			}),
+		)
+		assert.strictEqual(opened.incidents[0]?.openedByOverlayEntryId, "entry-1")
+		assert.deepStrictEqual(
+			opened.incidents[0]?.updates.map((u) => [u.id, u.overlayEntryId]),
+			[
+				["later", null],
+				["first", "entry-1"],
+			],
+		)
+		const followedUp = toSnapshot(
+			baseInput({
+				incidents: [incident()],
+				updates: [
+					update("first", NOW - 60_000, "dashboard", null),
+					update("later", NOW - 1_000, "break_glass", "entry-2"),
+				],
+			}),
+		)
+		assert.isNull(followedUp.incidents[0]?.openedByOverlayEntryId)
 	})
 })
 
@@ -230,10 +272,13 @@ describe("StatusPageSnapshotBuilder.build", () => {
 				snapshot.incidents.map((i) => [i.title, i.updates.length]),
 				[["Docs slow", 1]],
 			)
-			assert.strictEqual(snapshot.probesSeenAt, NOW - 30_000)
+			assert.deepStrictEqual(
+				snapshot.components.map((c) => c.monitored),
+				[true, false],
+			)
 
 			const missing = yield* Effect.exit(builder.build(newPageId(), NOW))
 			assert.isTrue(Exit.isFailure(missing))
-		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer), Effect.provide(testDb.layer))
+		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
 	})
 })

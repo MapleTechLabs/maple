@@ -107,6 +107,32 @@ describe("StatusPagesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("queues edge cleanup for a renamed slug and a deleted page", () => {
+		const testDb = createTestDb(trackedDbs)
+		const cleanups = Effect.promise(() =>
+			testDb.pglite.query<{ page_id: string; slug: string; delete_snapshot: boolean }>(
+				`SELECT page_id, slug, delete_snapshot FROM status_page_cleanups ORDER BY created_at, delete_snapshot`,
+			),
+		).pipe(Effect.map((result) => result.rows))
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("before")
+			yield* service.update(ORG, page.id, { slug: "before" })
+			assert.deepStrictEqual(yield* cleanups, [])
+
+			yield* service.update(ORG, page.id, { slug: "after" })
+			assert.deepStrictEqual(yield* cleanups, [
+				{ page_id: page.id, slug: "before", delete_snapshot: false },
+			])
+
+			yield* service.remove(ORG, page.id)
+			assert.deepStrictEqual(yield* cleanups, [
+				{ page_id: page.id, slug: "before", delete_snapshot: false },
+				{ page_id: page.id, slug: "after", delete_snapshot: true },
+			])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("links components only to monitors of the same org and reorders them", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

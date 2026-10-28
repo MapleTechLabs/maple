@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
 import {
+	AlertIncidents,
 	StatusPageComponents,
 	StatusPageIncidentComponents,
 	StatusPageIncidents,
@@ -147,6 +148,34 @@ export const openForAlertIncident = (db: MapleDb, input: OpenForAlertIncidentInp
 		return toOpen.length
 	})
 
+/** Posts the auto resolve update on each just-resolved incident and republishes its page. */
+const announceResolved = (
+	db: MapleDb,
+	orgId: OrgId,
+	resolved: ReadonlyArray<{ readonly id: StatusPageIncidentId; readonly pageId: StatusPageId }>,
+	at: number,
+) =>
+	Effect.forEach(
+		resolved,
+		(incident) =>
+			db
+				.run(
+					PG.insertInto(StatusPageIncidentUpdates).values({
+						id: StatusPageIncidentUpdateId.make(randomUUID()),
+						orgId,
+						incidentId: incident.id,
+						status: "resolved",
+						body: "Automated checks are passing again. This incident has been resolved.",
+						source: "auto",
+						createdBy: null,
+						overlayEntryId: null,
+						createdAt: at,
+					}),
+				)
+				.pipe(Effect.andThen(bumpPage(db, orgId, incident.pageId))),
+		{ discard: true },
+	)
+
 /** Resolves the open status page incidents this alert incident opened; run inside a transaction. */
 export const resolveForAlertIncident = (db: MapleDb, input: ResolveForAlertIncidentInput) =>
 	Effect.gen(function* () {
@@ -160,25 +189,49 @@ export const resolveForAlertIncident = (db: MapleDb, input: ResolveForAlertIncid
 				])
 				.returning(($) => ({ id: $.id, pageId: $.pageId })),
 		)
-		yield* Effect.forEach(
-			resolved,
-			(incident) =>
-				db
-					.run(
-						PG.insertInto(StatusPageIncidentUpdates).values({
-							id: StatusPageIncidentUpdateId.make(randomUUID()),
-							orgId: input.orgId,
-							incidentId: incident.id,
-							status: "resolved",
-							body: "Automated checks are passing again. This incident has been resolved.",
-							source: "auto",
-							createdBy: null,
-							overlayEntryId: null,
-							createdAt: input.at,
-						}),
-					)
-					.pipe(Effect.andThen(bumpPage(db, input.orgId, incident.pageId))),
-			{ discard: true },
-		)
+		yield* announceResolved(db, input.orgId, resolved, input.at)
 		return resolved.length
+	})
+
+/** Auto incidents one repair pass resolves at most. */
+export const AUTO_INCIDENT_REPAIR_BATCH = 50
+
+/**
+ * Open auto incidents whose alert incident is resolved or gone: the resolve hook runs after
+ * the alert commit and may have failed. Resolves each in its own transaction; returns how many.
+ */
+export const repairOrphanedAutoIncidents = (db: MapleDb, at: number) =>
+	Effect.gen(function* () {
+		const orphans = yield* db.run(
+			PG.from(StatusPageIncidents, "i")
+				.leftJoin(AlertIncidents, "a", (i, a) => i.alertIncidentId.eq(a.id).and(i.orgId.eq(a.orgId)))
+				.select(($) => ({ id: $.id, orgId: $.orgId }))
+				.where(($) => [
+					$.alertIncidentId.isNotNull(),
+					$.status.neq("resolved"),
+					PG.or($.a.id.isNull(), $.a.status.eq("resolved")),
+				])
+				.orderBy(["id", "asc"])
+				.limit(AUTO_INCIDENT_REPAIR_BATCH),
+		)
+		const counts = yield* Effect.forEach(orphans, (orphan) =>
+			db.transaction(
+				Effect.gen(function* () {
+					// Guarded on status: a resolve landing meanwhile wins and posts its own update.
+					const resolved = yield* db.run(
+						PG.update(StatusPageIncidents)
+							.set({ status: "resolved", resolvedAt: at, updatedAt: at })
+							.where(($) => [
+								$.orgId.eq(orphan.orgId),
+								$.id.eq(orphan.id),
+								$.status.neq("resolved"),
+							])
+							.returning(($) => ({ id: $.id, pageId: $.pageId })),
+					)
+					yield* announceResolved(db, orphan.orgId, resolved, at)
+					return resolved.length
+				}),
+			),
+		)
+		return counts.reduce((sum, n) => sum + n, 0)
 	})

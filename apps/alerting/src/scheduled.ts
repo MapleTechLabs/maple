@@ -418,27 +418,38 @@ const prReviewPostMergeTick = makeTick(
 			: undefined,
 )
 
-/** Imports break-glass updates, publishes lagging pages and writes the heartbeat; each step isolated. */
+/**
+ * Imports break-glass updates, repairs auto incidents, then sweeps: edge cleanups, lagging pages
+ * and the heartbeat (written by the sweep only once it reached the database). Each step isolated.
+ */
 const statusPagesTick = Effect.gen(function* () {
 	const publisher = yield* Effect.serviceOption(StatusPagePublisher)
 	const reconciler = yield* Effect.serviceOption(StatusPageReconciler)
 	if (Option.isNone(publisher) || Option.isNone(reconciler)) {
 		return yield* Effect.logInfo("Status page storage is not bound; skipping status page publishing")
 	}
-	const nowMs = yield* Clock.currentTimeMillis
-	yield* makeTick(publisher.value.heartbeat(nowMs), "status_page_heartbeat", () => undefined)
 	yield* makeTick(reconciler.value.reconcileAll(), "status_page_reconcile", (result) =>
-		result.imported + result.failed > 0
-			? { statusPageImported: result.imported, statusPageFailures: result.failed }
+		result.imported + result.cleared + result.failed > 0
+			? {
+					statusPageImported: result.imported,
+					statusPageCleared: result.cleared,
+					statusPageFailures: result.failed,
+				}
 			: undefined,
 	)
+	yield* makeTick(reconciler.value.repairAutoIncidents(), "status_page_repair", (repaired) =>
+		repaired > 0 ? { statusPageAutoIncidentsRepaired: repaired } : undefined,
+	)
+	const nowMs = yield* Clock.currentTimeMillis
 	yield* makeTick(publisher.value.sweep(nowMs), "status_page_publish", (result) =>
-		result.due > 0
+		result.due + result.cleaned + result.cleanupsFailed > 0
 			? {
 					statusPagesDue: result.due,
 					statusPagesWritten: result.written,
 					statusPagesUnchanged: result.unchanged,
 					statusPageFailures: result.failed,
+					statusPagesCleaned: result.cleaned,
+					statusPageCleanupFailures: result.cleanupsFailed,
 				}
 			: undefined,
 	)

@@ -45,7 +45,7 @@ import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
-import { bumpPage } from "./outbox"
+import { bumpPage, queuePageRemoval, queueSlugRemoval } from "./outbox"
 
 export interface CreateStatusPageInput {
 	readonly name: string
@@ -627,8 +627,11 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				yield* dbExecuteSlug(slug ?? "")((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* findPage(db, orgId, pageId)
+							const current = yield* findPage(db, orgId, pageId)
 							if (slug !== undefined) yield* ensureSlugFree(db, slug, pageId)
+							// The old slug route stays at the edge until the publisher drains this.
+							if (slug !== undefined && slug !== current.slug)
+								yield* queueSlugRemoval(db, orgId, pageId, current.slug)
 							yield* db.run(
 								PG.update(StatusPages)
 									.set({
@@ -662,10 +665,16 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.status_page.id": pageId })
 				const removed = yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(StatusPages)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)])
-							.returning("id"),
+					db.transaction(
+						Effect.gen(function* () {
+							// Queued before the delete reads the row; the publisher removes the edge copy.
+							yield* queuePageRemoval(db, orgId, pageId)
+							return yield* db.run(
+								PG.deleteFrom(StatusPages)
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)])
+									.returning("id"),
+							)
+						}),
 					),
 				)
 				if (removed.length === 0) return yield* pageNotFound(pageId)

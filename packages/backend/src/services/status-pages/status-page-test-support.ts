@@ -25,13 +25,14 @@ export const seedPage = (
 		readonly revision?: number
 		readonly publishedRevision?: number
 		readonly publishedAt?: number | null
+		readonly publishAttemptedAt?: number | null
 	},
 ) =>
 	sql(
 		testDb,
 		`INSERT INTO status_pages (id, org_id, name, slug, auto_incidents, break_glass_token_sha256,
-			revision, published_revision, published_at, created_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)`,
+			revision, published_revision, published_at, created_by, created_at, updated_at, publish_attempted_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12)`,
 		[
 			input.id,
 			ORG,
@@ -44,17 +45,26 @@ export const seedPage = (
 			input.publishedAt === undefined || input.publishedAt === null ? null : iso(input.publishedAt),
 			USER,
 			iso(NOW - DAY_MS),
+			input.publishAttemptedAt === undefined || input.publishAttemptedAt === null
+				? null
+				: iso(input.publishAttemptedAt),
 		],
 	)
 
 export const seedMonitor = (
 	testDb: TestDb,
-	input: { readonly id: string; readonly status: string; readonly alertRuleId?: string | null },
+	input: {
+		readonly id: string
+		readonly status: string
+		readonly alertRuleId?: string | null
+		readonly kind?: "http" | "heartbeat"
+		readonly enabled?: boolean
+	},
 ) =>
 	sql(
 		testDb,
-		`INSERT INTO uptime_monitors (id, org_id, name, kind, config_json, alert_rule_id, created_by, created_at, updated_at)
-		 VALUES ($1, $2, 'Monitor', 'http', $3, $4, $5, $6, $6)`,
+		`INSERT INTO uptime_monitors (id, org_id, name, kind, config_json, alert_rule_id, created_by, created_at, updated_at, enabled)
+		 VALUES ($1, $2, 'Monitor', $7, $3, $4, $5, $6, $6, $8)`,
 		[
 			input.id,
 			ORG,
@@ -69,6 +79,8 @@ export const seedMonitor = (
 			input.alertRuleId ?? null,
 			USER,
 			iso(NOW - DAY_MS),
+			input.kind ?? "http",
+			input.enabled ?? true,
 		],
 	).pipe(
 		Effect.andThen(
@@ -151,13 +163,14 @@ export const seedIncident = (
 		readonly resolvedAt?: number | null
 		readonly scheduledEnd?: number | null
 		readonly componentIds?: ReadonlyArray<string>
+		readonly alertIncidentId?: string | null
 	},
 ) =>
 	sql(
 		testDb,
 		`INSERT INTO status_page_incidents (id, org_id, page_id, kind, title, impact, status, published,
-			scheduled_end, started_at, resolved_at, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $10, $10)`,
+			scheduled_end, started_at, resolved_at, created_at, updated_at, alert_incident_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $10, $10, $12)`,
 		[
 			input.id,
 			ORG,
@@ -170,6 +183,7 @@ export const seedIncident = (
 			input.scheduledEnd === undefined || input.scheduledEnd === null ? null : iso(input.scheduledEnd),
 			iso(input.startedAt),
 			input.resolvedAt === undefined || input.resolvedAt === null ? null : iso(input.resolvedAt),
+			input.alertIncidentId ?? null,
 		],
 	).pipe(
 		Effect.andThen(
@@ -209,9 +223,11 @@ export const readPage = (testDb: TestDb, pageId: string) =>
 			published_at: string | null
 			published_hash: string | null
 			last_publish_error: string | null
+			publish_attempted_at: string | null
 		}>(
 			testDb,
-			`SELECT revision::text, published_revision::text, published_at::text, published_hash, last_publish_error
+			`SELECT revision::text, published_revision::text, published_at::text, published_hash, last_publish_error,
+				publish_attempted_at::text
 			 FROM status_pages WHERE id = $1`,
 			[pageId],
 		),
@@ -219,3 +235,44 @@ export const readPage = (testDb: TestDb, pageId: string) =>
 
 export const bumpRevision = (testDb: TestDb, pageId: string) =>
 	sql(testDb, `UPDATE status_pages SET revision = revision + 1 WHERE id = $1`, [pageId])
+
+/** Queues an edge cleanup row, as `outbox.ts` would. */
+export const seedCleanup = (
+	testDb: TestDb,
+	input: {
+		readonly pageId: string
+		readonly slug: string
+		readonly deleteSnapshot: boolean
+		readonly at: number
+	},
+) =>
+	sql(
+		testDb,
+		`INSERT INTO status_page_cleanups (id, org_id, page_id, slug, delete_snapshot, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		[crypto.randomUUID(), ORG, input.pageId, input.slug, input.deleteSnapshot, iso(input.at)],
+	)
+
+export const cleanupRows = (testDb: TestDb) =>
+	Effect.promise(() =>
+		testDb.pglite.query<{ page_id: string; slug: string }>(
+			`SELECT page_id, slug FROM status_page_cleanups ORDER BY created_at`,
+		),
+	).pipe(Effect.map((result) => result.rows))
+
+/** An alert incident row, for auto-incident repair. */
+export const seedAlertIncident = (testDb: TestDb, input: { readonly id: string; readonly status: string }) =>
+	sql(
+		testDb,
+		`INSERT INTO alert_incidents (id, org_id, rule_id, incident_key, rule_name, signal_type, severity, status,
+			comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key, created_at, updated_at)
+		 VALUES ($1, $2, $3, $1, 'Uptime', 'uptime', 'critical', $4, 'gt', 0, $5, $5, $6, $1, $5, $5)`,
+		[
+			input.id,
+			ORG,
+			crypto.randomUUID(),
+			input.status,
+			iso(NOW - DAY_MS),
+			input.status === "resolved" ? iso(NOW - 60_000) : null,
+		],
+	)

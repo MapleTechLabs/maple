@@ -70,7 +70,6 @@ export interface SnapshotDailyInput {
 	readonly checks: number
 	readonly failures: number
 	readonly downChecks: number
-	readonly lastCheckAt: number
 }
 
 export interface SnapshotIncidentInput {
@@ -92,6 +91,8 @@ export interface SnapshotUpdateInput {
 	readonly status: StatusPageIncidentStatus
 	readonly body: string
 	readonly source: StatusPageUpdateSource
+	/** The break-glass entry it was imported from, if any. */
+	readonly overlayEntryId: string | null
 	readonly createdAt: number
 }
 
@@ -130,30 +131,36 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 	const incidents: ReadonlyArray<StatusPageSnapshotIncident> = input.incidents
 		.filter((incident) => isListedIncident(incident, input.nowMs))
 		.toSorted((a, b) => b.startedAt - a.startedAt)
-		.map((incident) => ({
-			id: incident.id,
-			kind: incident.kind,
-			title: incident.title,
-			impact: incident.impact,
-			status: incident.status,
-			startedAt: incident.startedAt,
-			resolvedAt: incident.resolvedAt,
-			scheduledStart: incident.scheduledStart,
-			scheduledEnd: incident.scheduledEnd,
-			componentIds: input.incidentComponents
-				.filter((link) => link.incidentId === incident.id)
-				.map((link) => link.componentId),
-			updates: input.updates
+		.map((incident) => {
+			const updates = input.updates
 				.filter((update) => update.incidentId === incident.id)
-				.toSorted((a, b) => b.createdAt - a.createdAt)
-				.map((update) => ({
+				.toSorted((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
+			const first = updates.at(-1)
+			return {
+				id: incident.id,
+				kind: incident.kind,
+				title: incident.title,
+				impact: incident.impact,
+				status: incident.status,
+				startedAt: incident.startedAt,
+				resolvedAt: incident.resolvedAt,
+				scheduledStart: incident.scheduledStart,
+				scheduledEnd: incident.scheduledEnd,
+				componentIds: input.incidentComponents
+					.filter((link) => link.incidentId === incident.id)
+					.map((link) => link.componentId),
+				// The first update came from break-glass: `bg-<entry>` follow-ups still target it.
+				openedByOverlayEntryId: first?.source === "break_glass" ? first.overlayEntryId : null,
+				updates: updates.map((update) => ({
 					id: update.id,
 					status: update.status,
 					body: update.body,
 					at: update.createdAt,
 					source: update.source,
+					overlayEntryId: update.overlayEntryId,
 				})),
-		}))
+			}
+		})
 	const active = incidents.filter(isActiveIncident)
 
 	const components = input.components.map((component) => ({
@@ -169,6 +176,7 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 				.map(incidentComponentStatus),
 		}),
 		showUptime: component.showUptime,
+		monitored: component.monitorId !== null,
 		days:
 			component.monitorId === null || !component.showUptime
 				? []
@@ -185,15 +193,11 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 					),
 	}))
 
-	const monitorIds = new Set(input.components.flatMap((c) => (c.monitorId === null ? [] : [c.monitorId])))
-	const seen = daily.filter((row) => monitorIds.has(row.monitorId)).map((row) => row.lastCheckAt)
-
 	return {
 		schemaVersion: STATUS_PAGE_SNAPSHOT_VERSION,
 		pageId: input.page.id,
 		revision: input.page.revision,
 		generatedAt: input.nowMs,
-		probesSeenAt: seen.length === 0 ? null : Math.max(...seen),
 		page: {
 			name: input.page.name,
 			slug: input.page.slug,
@@ -287,7 +291,6 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 											checks: $.checks,
 											failures: $.failures,
 											downChecks: $.downChecks,
-											lastCheckAt: $.lastCheckAt,
 										}))
 										.where(($) => [
 											$.orgId.eq(orgId),
@@ -328,6 +331,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 											status: $.status,
 											body: $.body,
 											source: $.source,
+											overlayEntryId: $.overlayEntryId,
 											createdAt: $.createdAt,
 										}))
 										.where(($) => [
