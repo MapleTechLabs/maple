@@ -300,6 +300,23 @@ describe("StatusPagePublisher.sweep edge cleanups", () => {
 		),
 	)
 
+	it.effect("keeps a live page's edge data when its delete never committed", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "still-here" })
+				yield* publisher.sweep(NOW)
+				// Queued by an org purge that failed after the queue insert committed.
+				yield* seedCleanup(testDb, { pageId, slug: "still-here", deleteSnapshot: true, at: NOW })
+				yield* publisher.sweep(NOW + 60_000)
+				const { kv } = yield* store.contents
+				assert.isTrue(kv.has(StatusPageKeys.snapshot(pageId)))
+				assert.strictEqual(kv.get(StatusPageKeys.slug("still-here")), pageId)
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
 	it.effect("leaves a slug route alone once another page owns that slug", () =>
 		withPublisher(({ testDb, store, publisher }) =>
 			Effect.gen(function* () {

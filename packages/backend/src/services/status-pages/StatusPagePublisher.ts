@@ -156,9 +156,20 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				return { pageId, revision, written }
 			})
 
-			/** Removes one cleanup's edge data; a slug another live page now uses is left alone. */
+			/**
+			 * Removes one cleanup's edge data; a slug another live page now uses is left alone. A page that
+			 * still exists keeps its snapshot: its delete never committed (an org purge that failed later on).
+			 */
 			const cleanEdge = (row: StatusPageCleanupRow) =>
 				Effect.gen(function* () {
+					const alive = yield* dbExecute((db) =>
+						db.run(
+							PG.from(StatusPages)
+								.select(($) => ({ id: $.id }))
+								.where(($) => [$.id.eq(row.pageId)])
+								.limit(1),
+						),
+					)
 					const owners = yield* dbExecute((db) =>
 						db.run(
 							PG.from(StatusPages)
@@ -170,7 +181,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 					const routedTo = yield* store.readSlugRoute(row.slug)
 					const slugIsOurs = owners.length === 0 && (routedTo === null || routedTo === row.pageId)
 					if (slugIsOurs) yield* store.deleteRoutes({ slug: row.slug, hostnames: [] })
-					if (row.deleteSnapshot) yield* store.deletePage(row.pageId)
+					if (row.deleteSnapshot && alive.length === 0) yield* store.deletePage(row.pageId)
 				})
 
 			/** Oldest first; a row goes only once its edge deletes succeeded. */
