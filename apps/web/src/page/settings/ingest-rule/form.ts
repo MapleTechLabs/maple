@@ -117,17 +117,24 @@ export const defaultCondition = (id: number, field: IngestRuleField): ConditionD
 
 // DRAFT TO SPEC
 
-export const splitList = (text: string, separator: RegExp): ReadonlyArray<string> =>
-	text
-		.split(separator)
-		.map((entry) => entry.trim())
-		.filter((entry) => entry.length > 0)
+/** Comma-separated and trimmed; `\,` is a literal comma and `\\` a backslash, so values round-trip. */
+export const splitList = (text: string): ReadonlyArray<string> =>
+	Array.from(text.matchAll(/(?:\\.|[^,\\])+|\\$/gu), (match) =>
+		match[0].replace(/\\(.)/gu, "$1").trim(),
+	).filter((entry) => entry.length > 0)
+
+export const joinList = (values: ReadonlyArray<string>): string =>
+	values.map((value) => value.replace(/[\\,]/gu, (char) => `\\${char}`)).join(", ")
+
+/** One pattern per line, kept exactly as typed: a leading space can be part of a pattern. */
+export const splitLines = (text: string): ReadonlyArray<string> =>
+	text.split("\n").filter((line) => line.trim().length > 0)
 
 const conditionOf = (draft: ConditionDraft): IngestRuleCondition => {
 	const key = isKeyed(draft.field) ? { key: draft.key.trim() } : {}
 	if (isPresenceOp(draft.op)) return { field: draft.field, op: draft.op, ...key }
 	if (isListOp(draft.op))
-		return { field: draft.field, op: draft.op, ...key, values: splitList(draft.values, /,/u) }
+		return { field: draft.field, op: draft.op, ...key, values: splitList(draft.values) }
 	return { field: draft.field, op: draft.op, ...key, value: draft.value }
 }
 
@@ -140,9 +147,9 @@ const actionOf = (draft: Draft): IngestRuleAction =>
 		? { _tag: "drop", keepPercent: keepPercentOf(draft.keepPercent) }
 		: {
 				_tag: "redact",
-				keys: splitList(draft.keys, /,/u),
+				keys: splitList(draft.keys),
 				detectors: draft.detectors,
-				patterns: splitList(draft.patterns, /\n/u),
+				patterns: splitLines(draft.patterns),
 				scopes: draft.scopes,
 				method: draft.method,
 			}

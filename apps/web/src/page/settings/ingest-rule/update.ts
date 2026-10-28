@@ -15,6 +15,7 @@ import {
 	fieldsFor,
 	isKeyed,
 	specOf,
+	joinList,
 	splitList,
 } from "./form"
 import { ingestionHref, ruleIdFromUrl } from "./hrefs"
@@ -219,7 +220,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledConditionValue: ({ id, value }) =>
 			mapCondition(model, id, (condition) => ({
 				...condition,
-				values: toggled(splitList(condition.values, /,/u), value).join(", "),
+				values: joinList(toggled(splitList(condition.values), value)),
 			})),
 		GotKeyMessage: ({ id, message: child }) => updateKeyBox(model, id, child),
 		ToggledDetector: ({ detector }) =>
