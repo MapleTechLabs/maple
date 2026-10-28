@@ -100,9 +100,43 @@ describe("linear destination fields", () => {
 		const connecting = update(model, Message.ClickedConnect(), form)
 		expect(names(connecting)).toEqual(["ConnectAlertLinear"])
 		expect(update(connecting.model, Message.ClickedConnect(), form).commands).toEqual([])
-		const returned = update(connecting.model, Message.CompletedConnect({ isStarted: true }), form)
+		const returned = update(
+			connecting.model,
+			Message.CompletedConnect({ attempt: connecting.model.connectAttempt, outcome: "Closed" }),
+			form,
+		)
 		expect(names(returned)).toEqual(["FetchAlertLinearStatus"])
 		shows(withStatus({ ...CONNECTED, revoked: true }).model, "Reconnect Linear")
+	})
+
+	test("a reopen frees Connect, and the earlier popup's close no longer settles the form", () => {
+		const connecting = update(withStatus(NOT_CONNECTED).model, Message.ClickedConnect(), form).model
+		const earlier = connecting.connectAttempt
+		const reopened = reset(connecting, form).model
+		scene(
+			{
+				update: (current: Model, message: Message) => ({
+					model: update(current, message, form).model,
+				}),
+				view: render(),
+			},
+			given(reopened),
+			expectView(role("button", { name: "Connect Linear" })).toBeEnabled(),
+		)
+		const late = update(reopened, Message.CompletedConnect({ attempt: earlier, outcome: "Closed" }), form)
+		expect(late.commands).toEqual([])
+		expect(names(update(reopened, Message.ClickedConnect(), form))).toContain("ConnectAlertLinear")
+	})
+
+	test("a blocked popup asks to allow pop-ups instead of leaving the page", () => {
+		const connecting = update(withStatus(NOT_CONNECTED).model, Message.ClickedConnect(), form).model
+		const blocked = update(
+			connecting,
+			Message.CompletedConnect({ attempt: connecting.connectAttempt, outcome: "Blocked" }),
+			form,
+		)
+		expect(blocked.commands).toEqual([])
+		shows(blocked.model, "Allow pop-ups for Maple, then try again.")
 	})
 
 	test("a member is asked to find an admin, and can check again once one connected", () => {
