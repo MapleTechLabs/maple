@@ -21,6 +21,9 @@ describe("regexProblem", () => {
 		expect(regexProblem("\\++")).toBeNull()
 		expect(regexProblem("(ab)+c")).toBeNull()
 		expect(regexProblem("(GET|POST) /health")).toBeNull()
+		expect(regexProblem("(ab){3}c")).toBeNull()
+		expect(regexProblem("(?<id>[0-9]{4})-[a-z]+")).toBeNull()
+		expect(regexProblem("[(+]+x")).toBeNull()
 	})
 
 	it.each([
@@ -34,6 +37,11 @@ describe("regexProblem", () => {
 		["a*", "pattern matches empty text"],
 		["(a+)+$", "a repeated group may not contain a repetition or alternation"],
 		["(a|aa)+$", "a repeated group may not contain a repetition or alternation"],
+		["((a+))+$", "a repeated group may not contain a repetition or alternation"],
+		["((a)+)+$", "a repeated group may not contain a repetition or alternation"],
+		["(?:(a+))+$", "a repeated group may not contain a repetition or alternation"],
+		["(a{1,2})+$", "a repeated group may not contain a repetition or alternation"],
+		["(a?){2,}$", "a repeated group may not contain a repetition or alternation"],
 		["[a&&b]", "character class set operations are not supported"],
 		["[^]x", "use an explicit class or escape instead"],
 		["x{1000}", "counted repetitions are limited to 999"],
@@ -86,7 +94,13 @@ describe("ingestRuleProblems", () => {
 	})
 
 	it("lets rules redact Maple keys that carry customer text", () => {
-		expect(ingestRuleProblems({ signals: ["traces"], conditions: [], action: redact({ keys: ["maple_ai.tool.error_result"] }) })).toEqual([])
+		expect(
+			ingestRuleProblems({
+				signals: ["traces"],
+				conditions: [],
+				action: redact({ keys: ["maple_ai.tool.error_result"] }),
+			}),
+		).toEqual([])
 	})
 
 	it("refuses redacting keys Maple routes and bills on", () => {
