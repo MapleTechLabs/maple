@@ -188,7 +188,7 @@ describe("ingest rule MCP tools", () => {
 			[log("a", 9), log("b", 9)],
 		)
 		assert.deepInclude(redact, { dropped: 0, redactedRecords: 2, redactedValues: 2 })
-		assert.deepEqual(redact.examples[0]?.changes, ["user.email: a@b.co -> [REDACTED:email]"])
+		assert.deepEqual(redact.examples[0]?.changes, ["user.email -> [REDACTED:email]"])
 	})
 
 	it("names the argument a validation problem is about", () => {

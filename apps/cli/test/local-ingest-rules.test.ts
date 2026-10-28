@@ -140,6 +140,25 @@ describe("local ingest rules", () => {
 		expect(parsed.compiled.rules).toHaveLength(1)
 		expect(parsed.problems).toEqual(["ingest rule Bad skipped: a drop rule needs at least one condition"])
 		expect(parseLocalIngestRules("not json").problems[0]).toContain("ingest rules file is invalid")
+		const oneMalformed = parseLocalIngestRules(
+			JSON.stringify([
+				{ signals: ["log"], conditions: [], action: { _tag: "drop", keepPercent: 0 } },
+				{
+					signals: ["logs"],
+					conditions: [],
+					action: {
+						_tag: "redact",
+						keys: ["k"],
+						detectors: [],
+						patterns: [],
+						scopes: ["attributes"],
+						method: "remove",
+					},
+				},
+			]),
+		)
+		expect(oneMalformed.compiled.rules).toHaveLength(1)
+		expect(oneMalformed.problems[0]).toContain("ingest rule 1 skipped")
 	})
 
 	it("merges resource redactions from rules matched by different records", () => {

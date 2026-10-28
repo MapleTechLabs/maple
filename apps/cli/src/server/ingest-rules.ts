@@ -34,8 +34,8 @@ const LocalRule = Schema.Struct({
 	enabled: Schema.optionalKey(Schema.Boolean),
 	...IngestRuleSpec.fields,
 })
-const LocalRulesFile = Schema.fromJsonString(Schema.Array(LocalRule))
-const decodeRulesFile = Schema.decodeUnknownResult(LocalRulesFile)
+const decodeRulesFile = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Array(Schema.Unknown)))
+const decodeRule = Schema.decodeUnknownResult(LocalRule)
 
 export interface LocalIngestRules {
 	readonly compiled: CompiledRules
@@ -50,17 +50,27 @@ export const parseLocalIngestRules = (body: string): LocalIngestRules => {
 	const decoded = decodeRulesFile(body)
 	if (Result.isFailure(decoded))
 		return { ...EMPTY, problems: [`ingest rules file is invalid: ${decoded.failure.message}`] }
-	const enabled = decoded.success.filter((rule) => rule.enabled !== false)
+	// Each rule decodes on its own, so one malformed entry is skipped instead of disabling the file.
+	const parsed = decoded.success.map((entry, index) => ({ index, rule: decodeRule(entry) }))
+	const malformed = parsed.flatMap(({ index, rule }) =>
+		Result.isFailure(rule) ? [`ingest rule ${index + 1} skipped: ${rule.failure.message}`] : [],
+	)
+	const enabled = parsed
+		.flatMap(({ rule }) => (Result.isSuccess(rule) ? [rule.success] : []))
+		.filter((rule) => rule.enabled !== false)
 	const compiled = compileRules(
 		enabled.map((rule) => ({ signals: rule.signals, conditions: rule.conditions, action: rule.action })),
 		"local",
 	)
 	return {
 		compiled,
-		problems: compiled.invalid.map(
-			(invalid) =>
-				`ingest rule ${enabled[invalid.index]?.name ?? invalid.index + 1} skipped: ${invalid.problems.join("; ")}`,
-		),
+		problems: [
+			...malformed,
+			...compiled.invalid.map(
+				(invalid) =>
+					`ingest rule ${enabled[invalid.index]?.name ?? invalid.index + 1} skipped: ${invalid.problems.join("; ")}`,
+			),
+		],
 	}
 }
 
