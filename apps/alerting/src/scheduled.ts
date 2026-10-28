@@ -30,7 +30,10 @@ import { SupabaseLogsService } from "@maple/backend/services/integrations/Supaba
 import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
-import { StatusPageStore, statusPageBindingsFrom } from "@maple/backend/services/status-pages/StatusPageStore"
+import {
+	type StatusPageBindings,
+	StatusPageStore,
+} from "@maple/backend/services/status-pages/StatusPageStore"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
@@ -43,8 +46,8 @@ import { isLaneOf, scheduleFor, type TickLane } from "./schedule.ts"
 import type { AlertingWorkerEnv } from "./worker.ts"
 
 /** The status page publisher, only when its KV and R2 bindings exist on this Worker. */
-const statusPagesLayerIfBound = (env: AlertingWorkerEnv) =>
-	Option.match(statusPageBindingsFrom(env), {
+const statusPagesLayerIfBound = (bindings: Option.Option<StatusPageBindings>) =>
+	Option.match(bindings, {
 		onNone: () => Layer.empty,
 		onSome: ({ kv, bucket }) =>
 			Layer.mergeAll(StatusPagePublisher.layer, StatusPageReconciler.layer).pipe(
@@ -63,6 +66,7 @@ export const layerTick = (
 	env: AlertingWorkerEnv,
 	email: Option.Option<EmailSenderClient> = Option.none(),
 	chatSessions?: ChatSessionNamespace,
+	statusPages: Option.Option<StatusPageBindings> = Option.none(),
 ) =>
 	Layer.mergeAll(
 		AlertsService.layer,
@@ -86,7 +90,7 @@ export const layerTick = (
 		// Read by `maybeEnqueueTriage` when present; its absence means every
 		// incident opened here is investigated unclassified.
 		IncidentClassifier.layer,
-		statusPagesLayerIfBound(env),
+		statusPagesLayerIfBound(statusPages),
 	).pipe(
 		Layer.provide(PullRequestLookupLive),
 		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
@@ -577,10 +581,11 @@ export const runScheduled = (
 	env: AlertingWorkerEnv,
 	email: Option.Option<EmailSenderClient>,
 	chatSessions: ChatSessionNamespace,
+	statusPages: Option.Option<StatusPageBindings>,
 ): Effect.Effect<void, unknown> =>
 	withPgConnectionScope(selectLaneProgram(cron, lane, scheduledTicks)).pipe(
 		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(layerTick(env, email, chatSessions)),
+		Effect.provide(layerTick(env, email, chatSessions, statusPages)),
 	)

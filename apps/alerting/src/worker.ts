@@ -13,6 +13,8 @@ import {
 	MapleStack,
 	type MapleStage,
 	mapleWorkerProps,
+	StatusSnapshotsBucket,
+	StatusSnapshotsKv,
 } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
@@ -36,6 +38,7 @@ import { bindChatSessions } from "@maple/backend/platform/chat-sessions"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "@alchemy.run/cloudflare"
+import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Cause, Config, Effect, Layer, Option, Ref } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
@@ -48,6 +51,11 @@ import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticip
  * read through the ConfigProvider (`workerEnvLayer`), never off `env`.
  */
 export type AlertingWorkerEnv = Record<string, unknown>
+
+/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
+const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
+	// oxlint-disable-next-line effecttsgo/strict-effect-provide
+	Effect.provide(effect, RuntimeContext.phantom)
 
 /** Config-sourced env; largely shared with api via `@maple/infra/env`. */
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
@@ -151,6 +159,9 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		const email = yield* bindEmailSender
 		// maple-ai's chat Durable Object, where ticks start investigations; handed to each fire's graph.
 		const chatSessions = yield* bindChatSessions
+		// Where published status pages live; ticks publish snapshots and import break-glass posts.
+		const statusKv = yield* Cloudflare.KV.ReadWriteNamespace(StatusSnapshotsKv)
+		const statusBucket = yield* Cloudflare.R2.ReadWriteBucket(StatusSnapshotsBucket)
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
 		// Once per isolate too: an isolate never changes data center. A failed lookup stays
@@ -167,7 +178,8 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		const runTick = (cron: string, lane: string, env: Record<string, unknown>) =>
 			Effect.gen(function* () {
 				const { runScheduled } = yield* scheduled
-				yield* runScheduled(cron, lane, env, email, chatSessions)
+				const [kv, bucket] = yield* runtime(Effect.all([statusKv.raw, statusBucket.raw]))
+				yield* runScheduled(cron, lane, env, email, chatSessions, Option.some({ kv, bucket }))
 			}).pipe(
 				// Interrupts are isolate teardown, not a failed run.
 				Effect.catchCause((cause) =>
@@ -284,6 +296,8 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 			Layer.mergeAll(
 				Cloudflare.Hyperdrive.ConnectBinding,
 				Cloudflare.Email.SendBinding,
+				Cloudflare.KV.ReadWriteNamespaceBinding,
+				Cloudflare.R2.ReadWriteBucketBinding,
 				Cloudflare.Workers.CronEventSourceLive,
 				FetchHttpClient.layer,
 				WorkerTelemetry({

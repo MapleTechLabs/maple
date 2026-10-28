@@ -150,24 +150,10 @@ const call = <A>(operation: string, key: string, run: () => Promise<A>) =>
 			}),
 	})
 
-const isBucket = (value: unknown): value is StatusPageBucket =>
-	typeof value === "object" &&
-	value !== null &&
-	"put" in value &&
-	typeof value.put === "function" &&
-	"delete" in value &&
-	typeof value.delete === "function"
-
-const isKvNamespace = (value: unknown): value is StatusPageKvNamespace =>
-	isBucket(value) && "get" in value && typeof value.get === "function"
-
-/** The KV namespace and R2 bucket from a Worker env, when both are bound. */
-export const statusPageBindingsFrom = (
-	env: Record<string, unknown>,
-): Option.Option<{ readonly kv: StatusPageKvNamespace; readonly bucket: StatusPageBucket }> => {
-	const kv = env.STATUS_PAGES_KV
-	const bucket = env.STATUS_PAGES_BUCKET
-	return isKvNamespace(kv) && isBucket(bucket) ? Option.some({ kv, bucket }) : Option.none()
+/** The KV namespace and R2 bucket a Worker binds for publishing. */
+export interface StatusPageBindings {
+	readonly kv: StatusPageKvNamespace
+	readonly bucket: StatusPageBucket
 }
 
 /** What the in-memory store holds, for test assertions. */
