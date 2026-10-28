@@ -49,6 +49,8 @@ export const StatusPageSnapshotComponent = Schema.Struct({
 	description: Schema.NullOr(Schema.String),
 	group: Schema.NullOr(Schema.String),
 	status: StatusPageComponentStatus,
+	/** The status before incidents apply (monitor and manual override); the overlay derives from it. */
+	baseStatus: StatusPageComponentStatus,
 	showUptime: Schema.Boolean,
 	/** Backed by an uptime monitor, so its status goes stale when the probes stop. */
 	monitored: Schema.Boolean,
@@ -305,10 +307,11 @@ const withIncidentImpact = (
 	incidents: ReadonlyArray<StatusPageSnapshotIncident>,
 ): ReadonlyArray<StatusPageSnapshotComponent> => {
 	const active = incidents.filter(isActiveIncident)
+	// From `baseStatus`, not `status`: an incident the overlay resolves must stop counting.
 	return components.map((component) => ({
 		...component,
 		status: worstStatus([
-			component.status,
+			component.baseStatus,
 			...active
 				.filter((incident) => incident.componentIds.includes(component.id))
 				.map(incidentComponentStatus),

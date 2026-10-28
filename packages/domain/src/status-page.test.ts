@@ -41,6 +41,7 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 			description: null,
 			group: null,
 			status: "operational",
+			baseStatus: "operational",
 			showUptime: true,
 			monitored: true,
 			days: [{ day: "2026-10-28", checks: 10, failures: 0, downChecks: 0 }],
@@ -225,6 +226,19 @@ describe("applyOverlay", () => {
 		expect(merged.incidents[0]?.impact).toBe("critical")
 		expect(merged.incidents[0]?.status).toBe("identified")
 		expect(merged.components[0]?.status).toBe("major_outage")
+	})
+
+	it("lowers components again when the overlay resolves an incident the snapshot already applied", () => {
+		const applied = snapshot({
+			incidents: [criticalIncident],
+			components: snapshot().components.map((component) => ({
+				...component,
+				status: "major_outage" as const,
+			})),
+		})
+		const merged = applyOverlay(applied, { entries: [note({ status: "resolved" })] })
+		expect(merged.components[0]?.status).toBe("operational")
+		expect(overallStatus(merged)).toBe("operational")
 	})
 
 	it("ignores an incident status posted to maintenance", () => {

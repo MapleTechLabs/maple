@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "4af4ffc5d6c0025e17d3af2dd256d134af9fd617d0cfc87fc8a36cee82604f3a",
+	"id": "9eb256b64fe77cf6485019a9057a576ae4245095228948f4493a55cfb7029048",
 	"prevIds": [
-		"33f99028753ee9ffae00a7af64795fe1e4f025237d39ca333863b7cc50efecf7"
+		"85caedb84ed88c3f757c61b4f4e64017825a347e9d1714eea0e7e32d398af605"
 	],
 	"entities": [
 		{
@@ -542,6 +542,39 @@
 				"name": "org_ingest_keys_org_id_pk",
 				"columns": [
 					"org_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "org_ingest_rule_settings",
+			"primaryKey": {
+				"name": "org_ingest_rule_settings_pkey",
+				"columns": [
+					"org_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "org_ingest_rule_stats",
+			"primaryKey": {
+				"name": "org_ingest_rule_stats_pkey",
+				"columns": [
+					"org_id",
+					"rule_id",
+					"bucket",
+					"signal"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "org_ingest_rules",
+			"primaryKey": {
+				"name": "org_ingest_rules_pkey",
+				"columns": [
+					"id"
 				]
 			}
 		},
@@ -8803,6 +8836,196 @@
 		},
 		{
 			"kind": "column",
+			"table": "org_ingest_rule_settings",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rule_settings",
+			"name": "hash_salt",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rule_settings",
+			"name": "created_at",
+			"position": 2,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": "now()",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rule_stats",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rule_stats",
+			"name": "rule_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rule_stats",
+			"name": "bucket",
+			"position": 2,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rule_stats",
+			"name": "signal",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rule_stats",
+			"name": "matched",
+			"position": 4,
+			"type": "bigint",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rule_stats",
+			"name": "dropped",
+			"position": 5,
+			"type": "bigint",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rule_stats",
+			"name": "dropped_bytes",
+			"position": 6,
+			"type": "bigint",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rule_stats",
+			"name": "redacted_values",
+			"position": 7,
+			"type": "bigint",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rules",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rules",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rules",
+			"name": "name",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rules",
+			"name": "enabled",
+			"position": 3,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rules",
+			"name": "position",
+			"position": 4,
+			"type": "integer",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rules",
+			"name": "spec_json",
+			"position": 5,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rules",
+			"name": "created_at",
+			"position": 6,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": "now()",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "org_ingest_rules",
+			"name": "updated_at",
+			"position": 7,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": "now()",
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "org_ingest_sampling_policies",
 			"name": "org_id",
 			"position": 0,
@@ -16265,6 +16488,29 @@
 			"method": "btree",
 			"columns": [
 				"\"public_key\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "org_ingest_rule_stats",
+			"name": "org_ingest_rule_stats_org_bucket_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"bucket\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "org_ingest_rules",
+			"name": "org_ingest_rules_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
 			],
 			"where": null
 		},
