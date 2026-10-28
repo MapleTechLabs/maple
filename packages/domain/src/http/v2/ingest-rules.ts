@@ -13,6 +13,7 @@ import { IngestRuleId } from "../../primitives"
 import {
 	IngestRuleForbiddenError,
 	IngestRuleNotFoundError,
+	IngestRulesNotAvailableError,
 	IngestRulePersistenceError,
 	IngestRuleValidationError,
 } from "../ingest-rules"
@@ -251,11 +252,12 @@ export const V2IngestRuleReorderResponse = Schema.Struct({
 	data: Schema.Array(V2IngestRule),
 }).annotate({ identifier: "IngestRuleReorderResponse", title: "Ingest rules in their new order" })
 
-const [ruleNotFound, ruleValidation, rulePersistence, ruleForbidden] = publicErrors(
+const [ruleNotFound, ruleValidation, rulePersistence, ruleForbidden, rulesNotAvailable] = publicErrors(
 	IngestRuleNotFoundError,
 	IngestRuleValidationError,
 	IngestRulePersistenceError,
 	IngestRuleForbiddenError,
+	IngestRulesNotAvailableError,
 )
 
 const IngestRuleList = ListOf(V2IngestRule).annotate({
@@ -297,7 +299,7 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 		HttpApiEndpoint.post("reorder", "/reorder", {
 			payload: V2IngestRuleReorderParams,
 			success: V2IngestRuleReorderResponse,
-			error: [ruleForbidden, ruleValidation, rulePersistence],
+			error: [ruleForbidden, rulesNotAvailable, ruleValidation, rulePersistence],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "reorderIngestRules",
@@ -311,7 +313,7 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2IngestRuleCreateParams,
 			success: V2IngestRule,
-			error: [ruleForbidden, ruleValidation, rulePersistence],
+			error: [ruleForbidden, rulesNotAvailable, ruleValidation, rulePersistence],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createIngestRule",
@@ -340,7 +342,7 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 			params: { id: IngestRulePublicId },
 			payload: V2IngestRuleUpdateParams,
 			success: V2IngestRule,
-			error: [ruleForbidden, ruleNotFound, ruleValidation, rulePersistence],
+			error: [ruleForbidden, rulesNotAvailable, ruleNotFound, ruleValidation, rulePersistence],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "updateIngestRule",
