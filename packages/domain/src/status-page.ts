@@ -369,9 +369,10 @@ export const pageFreshness = (input: {
 }): StatusPageFreshness => {
 	const publisherAt = Math.max(input.snapshot.generatedAt, input.heartbeat?.at ?? 0)
 	const monitored = input.snapshot.components.some((component) => component.monitored)
-	const updatedAt = monitored
-		? Math.min(publisherAt, input.heartbeat?.probesSeenAt ?? publisherAt)
-		: publisherAt
+	const probesSeenAt = input.heartbeat?.probesSeenAt ?? null
+	// Monitors with no probe time to confirm them (heartbeat unreadable, or no probe ran) are not live.
+	if (monitored && probesSeenAt === null) return { _tag: "delayed", updatedAt: publisherAt }
+	const updatedAt = monitored && probesSeenAt !== null ? Math.min(publisherAt, probesSeenAt) : publisherAt
 	return input.nowMs - updatedAt > STATUS_PAGE_STALE_AFTER_MS
 		? { _tag: "delayed", updatedAt }
 		: { _tag: "live", updatedAt }

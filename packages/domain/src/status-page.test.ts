@@ -118,6 +118,11 @@ describe("pageFreshness", () => {
 	it("says delayed when the publisher stops, and ignores probes on a page with no monitors", () => {
 		const later = NOW + STATUS_PAGE_STALE_AFTER_MS + 1
 		expect(pageFreshness({ snapshot: snapshot(), heartbeat: null, nowMs: later })._tag).toBe("delayed")
+		// A just-published page cannot vouch for its monitors without a probe time.
+		expect(pageFreshness({ snapshot: snapshot(), heartbeat: null, nowMs: NOW })._tag).toBe("delayed")
+		expect(pageFreshness({ snapshot: snapshot(), heartbeat: beat(NOW, null), nowMs: NOW })._tag).toBe(
+			"delayed",
+		)
 		// A monitored component that hides its bars still counts as monitored.
 		const hidden = snapshot({
 			components: snapshot().components.map((component) => ({
