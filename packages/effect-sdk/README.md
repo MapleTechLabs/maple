@@ -74,7 +74,7 @@ export default {
 
 `telemetry.layer` MUST live in the same runtime as your routes — provide it to the layer composition you hand to `HttpRouter.toWebHandler`, not a separate per-request runtime, or your spans won't pick up the Tracer reference.
 
-When `MAPLE_INGEST_KEY` is unset and the endpoint is the public Maple ingest, the SDK runs in no-op mode: buffers are drained so they don't grow across the isolate's lifetime, but no requests are made. Against any other endpoint (a local `maple start`, your own collector) it exports without an `Authorization` header. After a flush failure, the failed batch is restored ahead of newer telemetry and that signal sleeps 60s before retrying. Trace and log cooldowns are independent.
+When no ingest key is set (neither `ingestKey` nor `MAPLE_INGEST_KEY`) and the endpoint is the public Maple ingest, the SDK runs in no-op mode: buffers are drained so they don't grow across the isolate's lifetime, but no requests are made. Against any other endpoint (a local `maple start`, your own collector) it exports without an `Authorization` header. After a flush failure, the failed batch is restored ahead of newer telemetry and that signal sleeps 60s before retrying. Trace and log cooldowns are independent.
 
 ### Cloudflare-specific options
 

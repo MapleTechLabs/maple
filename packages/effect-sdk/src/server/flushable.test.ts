@@ -31,6 +31,12 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
 
+// The keyless tests resolve the key and endpoint from env. Effect snapshots
+// `process.env` on first read, so ambient values are cleared before any test runs.
+for (const name of ["MAPLE_INGEST_KEY", "MAPLE_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"]) {
+	vi.stubEnv(name, undefined)
+}
+
 // Deterministic config that doesn't depend on ambient env, with the auto-flush
 // timer off so tests flush explicitly.
 const baseConfig = {
