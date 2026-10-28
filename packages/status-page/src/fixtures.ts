@@ -49,6 +49,8 @@ export const makeComponent = (index: number, fields: Partial<EncodedComponent> =
 	description: null,
 	group: null,
 	status: "operational",
+	// A fixture's status is its base unless a test says otherwise.
+	baseStatus: fields.status ?? "operational",
 	showUptime: true,
 	monitored: true,
 	days: makeDays(),
