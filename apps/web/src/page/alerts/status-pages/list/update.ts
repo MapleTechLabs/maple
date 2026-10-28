@@ -71,9 +71,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedName: ({ value }) => ({
 			model: { ...model, name: value, slug: model.isSlugEdited ? model.slug : slugFromName(value) },
 		}),
-		ChangedSlug: ({ value }) => ({
-			model: { ...model, slug: value.trim().toLowerCase(), isSlugEdited: value !== "" },
-		}),
+		ChangedSlug: ({ value }) => {
+			const slug = value.trim().toLowerCase()
+			// Clearing the address (spaces included) hands it back to the name.
+			return { model: { ...model, slug, isSlugEdited: slug !== "" } }
+		},
 		SubmittedCreate: () => create(model),
 		CompletedCreate: ({ result }) =>
 			Result.match(result, {

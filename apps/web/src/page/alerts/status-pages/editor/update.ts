@@ -151,6 +151,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				readPage(context, "Supersede"),
 				readComponents(context, "Supersede"),
 				readIncidents(context, "Supersede"),
+				readMonitors(context, "Supersede"),
 			),
 		// Components
 		ClickedAddComponent: () => openComponent(model, null),
