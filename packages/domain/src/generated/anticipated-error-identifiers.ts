@@ -67,7 +67,6 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/IngestRuleForbiddenError",
 	"@maple/http/errors/IngestRuleNotFoundError",
 	"@maple/http/errors/IngestRuleValidationError",
-	"@maple/http/errors/IngestRulesNotAvailableError",
 	"@maple/http/errors/IntegrationsForbiddenError",
 	"@maple/http/errors/IntegrationsNotConnectedError",
 	"@maple/http/errors/IntegrationsNotFoundError",

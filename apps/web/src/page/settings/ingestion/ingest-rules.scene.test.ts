@@ -15,7 +15,6 @@ import { deleteRuleDialog, ingestRulesSection } from "./view-ingest-rules"
 
 const options: InitOptions = {
 	isAdmin: true,
-	hasIngestRules: true,
 	orgKey: "default",
 	timeZone: "UTC",
 	pinnedNamespace: null,
@@ -82,14 +81,6 @@ const pick = (model: Model, rule: V2IngestRule, value: string) =>
 	)
 
 describe("ingest rules section", () => {
-	test("an org without the ingest rules rollout neither fetches nor shows rules", () => {
-		const started = init({ ...options, hasIngestRules: false })
-		const fetched = (started.commands ?? []).map(({ name }) => name)
-		expect(fetched).not.toContain("FetchIngestRules")
-		expect(fetched).not.toContain("FetchIngestRuleStats")
-		expect(started.model.hasIngestRules).toBe(false)
-	})
-
 	test("entry reads the org's rules", () => {
 		expect(names(init(options).commands)).toContain("FetchIngestRules")
 	})

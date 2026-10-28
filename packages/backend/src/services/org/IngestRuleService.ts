@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto"
 import {
-	IngestRulesNotAvailableError,
 	IngestRuleNotFoundError,
 	IngestRulePersistenceError,
 	IngestRuleValidationError,
@@ -25,7 +24,6 @@ import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import type { MapleDb } from "@maple/db/client"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 
 export interface IngestRuleInput {
 	readonly name: string
@@ -129,19 +127,6 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "IngestRuleService", toPersistenceError)
-			const featureFlags = yield* OrganizationFeatureFlagsService
-
-			// Rules only take effect once the gateway applies them; until an org is rolled out, writes are
-			// refused rather than stored as rules that look active and are not.
-			const requireRollout = Effect.fnUntraced(function* (orgId: OrgId) {
-				const flags = yield* featureFlags.flags(orgId)
-				if (!flags.ingestRules) {
-					return yield* new IngestRulesNotAvailableError({
-						message: "Ingest rules are not available for this organization yet",
-					})
-				}
-			})
-
 			const list = Effect.fn("IngestRuleService.list")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				const rows = yield* dbExecute((db) =>
@@ -181,7 +166,6 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				input: IngestRuleInput,
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
-				yield* requireRollout(orgId)
 				yield* validateFields(input)
 				yield* validateSpec(input.spec)
 				const now = yield* Clock.currentTimeMillis
@@ -245,7 +229,6 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				patch: IngestRulePatch,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.id": ruleId })
-				yield* requireRollout(orgId)
 				yield* get(orgId, ruleId)
 				yield* validateFields(patch)
 				if (patch.spec !== undefined) yield* validateSpec(patch.spec)
@@ -386,7 +369,6 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				ids: ReadonlyArray<IngestRuleId>,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.count": ids.length })
-				yield* requireRollout(orgId)
 				const now = yield* Clock.currentTimeMillis
 				// Validate and write under the same per-org lock as create and delete, so the id list
 				// cannot go stale between the check and the writes.
@@ -431,7 +413,5 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(OrganizationFeatureFlagsService.layer),
-	)
+	static readonly layer = Layer.effect(this, this.make)
 }
