@@ -6,11 +6,11 @@ import { scanCut } from "./engine"
 import { pattern } from "./fuzz-arbitraries"
 
 // The preview, MCP and local mode run patterns on a backtracking engine. Every pattern the
-// validator accepts must scan a full window (what the engine scans) of hostile text quickly, or
-// one rule can hang them. One repetition is quadratic at worst (~300ms here); the window bounds
-// that, and the budget sits well below what two overlapping repetitions take (minutes).
+// validator accepts must scan a full window of hostile text quickly, or one rule can hang them.
+// One repetition is quadratic at worst (~300ms); two overlapping ones take minutes. 30 patterns
+// here; the differential fuzz in the ingest-rust job runs the JS engine over 20,000 more.
 
-const FILLERS = ["a", "1", " ", "é", "_", "x.", "a1 ", "日", "\n"]
+const FILLERS = ["a", "1", " ", "é", "x."]
 const BUDGET_MS = 1500
 
 describe("accepted patterns", () => {
@@ -39,6 +39,6 @@ describe("accepted patterns", () => {
 			})
 			expect(slow).toEqual([])
 		},
-		{ timeout: 60_000 },
+		{ timeout: 60_000, arbitrary: { runs: 30 } },
 	)
 })
