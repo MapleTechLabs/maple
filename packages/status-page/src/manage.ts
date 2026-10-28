@@ -35,14 +35,25 @@ export interface ManageMessage {
 const option = (value: string, label: string, selected = false): string =>
 	`<option value="${escapeHtml(value)}"${selected ? " selected" : ""}>${escapeHtml(label)}</option>`
 
-/** Break-glass form: post an incident update straight to the edge while Maple is down. */
+/** A target option carrying its kind, so the status select can follow it. */
+const targetOption = (value: string, label: string, kind: StatusPageIncidentKind): string =>
+	`<option value="${escapeHtml(value)}" data-kind="${kind}">${escapeHtml(label)}</option>`
+
+/**
+ * Disables the status group the chosen target cannot take, and clears a choice from it. Without
+ * script the server still answers a mismatch with a 400 that names the right group.
+ */
+const followTargetKind = (targetField: string, statusField: string): string =>
+	`(()=>{const t=document.querySelector('select[name="${targetField}"]'),s=document.querySelector('select[name="${statusField}"]');if(!t||!s)return;const sync=()=>{const k=t.selectedOptions[0]?.dataset.kind??"incident";s.querySelectorAll("optgroup").forEach((g)=>{g.disabled=g.dataset.kind!==k});if(s.selectedOptions[0]?.parentElement?.disabled)s.value=""};t.addEventListener("change",sync);sync()})()`
+
 /** Statuses grouped by lifecycle: posting one to the other kind is rejected, so the form says which is which. */
 const statusGroup = (kind: StatusPageIncidentKind, label: string): string =>
-	`<optgroup label="${label}">${StatusPageIncidentStatus.literals
+	`<optgroup label="${label}" data-kind="${kind}">${StatusPageIncidentStatus.literals
 		.filter((status) => statusFitsKind(kind, status))
 		.map((status) => option(status, INCIDENT_STATUS_LABEL[status]))
 		.join("")}</optgroup>`
 
+/** Break-glass form: post an incident update straight to the edge while Maple is down. */
 export const renderManagePage = (
 	snapshot: StatusPageSnapshot,
 	message?: ManageMessage,
@@ -69,7 +80,7 @@ export const renderManagePage = (
 		`<section><h2>Post an update</h2><p class="meta">For use while Maple is unreachable. The update shows on the page at once and is imported into Maple when it recovers.</p>`,
 		`<form method="post" action="${pageHref(options, "/_manage")}" class="card">`,
 		`<label>Break-glass token<input type="password" name="${f.token}" autocomplete="off" required></label>`,
-		`<label>Incident<select name="${f.incidentId}">${option(NEW_INCIDENT, "New incident")}${incidents.map((incident) => option(incident.id, incident.kind === "maintenance" ? `Maintenance: ${incident.title}` : incident.title)).join("")}</select></label>`,
+		`<label>Incident<select name="${f.incidentId}">${targetOption(NEW_INCIDENT, "New incident", "incident")}${incidents.map((incident) => targetOption(incident.id, incident.kind === "maintenance" ? `Maintenance: ${incident.title}` : incident.title, incident.kind)).join("")}</select></label>`,
 		`<label>Title (new incidents)<input type="text" name="${f.title}" maxlength="200"></label>`,
 		`<label>Status<select name="${f.status}">${option(NO_CHANGE, "No change (new incidents: Investigating)", true)}${statusGroup("incident", "For incidents")}${statusGroup("maintenance", "For maintenance")}</select></label>`,
 		`<label>Impact<select name="${f.impact}">${option(NO_CHANGE, "No change (new incidents: Major)", true)}${StatusPageIncidentImpact.literals.map((impact) => option(impact, IMPACT_LABEL[impact])).join("")}</select></label>`,
@@ -85,5 +96,6 @@ export const renderManagePage = (
 		styles: manageStyles,
 		body,
 		head: `<meta name="robots" content="noindex">`,
+		script: followTargetKind(f.incidentId, f.status),
 	})
 }

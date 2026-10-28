@@ -122,11 +122,24 @@ describe("renderPage", () => {
 		const group = (label: string) =>
 			[
 				...(
-					html.match(new RegExp(`<optgroup label="${label}">(.*?)</optgroup>`, "u"))?.[1] ?? ""
+					html.match(new RegExp(`<optgroup label="${label}"[^>]*>(.*?)</optgroup>`, "u"))?.[1] ?? ""
 				).matchAll(/value="([a-z_]+)"/gu),
 			].map((match) => match[1])
 		expect(group("For incidents")).toEqual(["investigating", "identified", "monitoring", "resolved"])
 		expect(group("For maintenance")).toEqual(["scheduled", "in_progress", "completed"])
+	})
+
+	it("tags each target and status group with its kind for the form's script to match", () => {
+		const html = renderManagePage(
+			makeSnapshot({
+				incidents: [
+					makeIncident("db", { kind: "maintenance", status: "in_progress", title: "DB upgrade" }),
+				],
+			}),
+		)
+		expect(html).toContain(`<option value="new" data-kind="incident">New incident</option>`)
+		expect(html).toContain(`<option value="db" data-kind="maintenance">Maintenance: DB upgrade</option>`)
+		expect(html).toContain(`<optgroup label="For maintenance" data-kind="maintenance">`)
 	})
 
 	it("lists active incidents with updates, upcoming maintenance and past incidents in their sections", () => {
@@ -236,7 +249,7 @@ describe("renderManagePage", () => {
 		const html = renderManagePage(snapshot, { tone: "error", text: HOSTILE })
 		const incidentOptions = [
 			...(html.split(`name="incidentId"`)[1]?.split("</select>")[0] ?? "").matchAll(
-				/<option value="([^"]+)">/gu,
+				/<option value="([^"]+)"[^>]*>/gu,
 			),
 		].map((match) => match[1])
 		expect(incidentOptions).toEqual(["new", "open"])

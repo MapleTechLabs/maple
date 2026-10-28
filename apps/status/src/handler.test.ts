@@ -237,7 +237,7 @@ describe("break-glass updates", () => {
 	it("serves the form uncached", async () => {
 		const response = await send(fake, `${PAGE}_manage`)
 		expect(response.headers.get("cache-control")).toBe("no-store")
-		expect(await response.text()).toContain(`<option value="open">`)
+		expect(await response.text()).toContain(`<option value="open" data-kind="incident">`)
 	})
 
 	it("rejects a wrong token and saves nothing", async () => {
