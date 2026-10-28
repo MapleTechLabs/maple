@@ -46,7 +46,8 @@ export const listPageSummaries = Effect.gen(function* () {
 	const [incidents, monitors, components] = yield* Effect.all(
 		[
 			listOpenIncidents,
-			listMonitors.pipe(Effect.orElseSucceed(() => [])),
+			// A failed monitor read fails the tab: without it every monitored component would read green.
+			listMonitors,
 			Effect.forEach(pages, (page) => listPageComponents(page.id), { concurrency: 4 }),
 		],
 		{ concurrency: "unbounded" },

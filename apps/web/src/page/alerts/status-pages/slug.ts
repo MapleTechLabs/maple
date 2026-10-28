@@ -10,6 +10,8 @@ export const slugFromName = (name: string): string =>
 	name
 		.toLowerCase()
 		.normalize("NFKD")
+		// NFKD splits accented letters into base and mark; drop the mark so "Crème" stays "creme".
+		.replace(/\p{M}+/gu, "")
 		.replace(/[^a-z0-9]+/gu, "-")
 		.replace(/^-+|-+$/gu, "")
 		.slice(0, SLUG_MAX)

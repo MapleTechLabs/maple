@@ -246,7 +246,21 @@ export const settingsFormOf = (page: V2StatusPage): SettingsForm => ({
 	autoIncidents: page.auto_incidents,
 })
 
-export const isSameSettings = (a: SettingsForm, b: SettingsForm): boolean =>
+/** The values the API stores: trimmed, the color lower-cased, as `settingsPayload` sends them. */
+const normalizedSettings = (form: SettingsForm): SettingsForm => ({
+	...form,
+	name: form.name.trim(),
+	description: form.description.trim(),
+	websiteUrl: form.websiteUrl.trim(),
+	logoUrl: form.logoUrl.trim(),
+	brandColor: form.brandColor.trim().toLowerCase(),
+})
+
+/** Same once normalized, so a saved draft whose input differed only in case or spaces settles. */
+export const isSameSettings = (left: SettingsForm, right: SettingsForm): boolean =>
+	sameNormalized(normalizedSettings(left), normalizedSettings(right))
+
+const sameNormalized = (a: SettingsForm, b: SettingsForm): boolean =>
 	a.name === b.name &&
 	a.slug === b.slug &&
 	a.description === b.description &&
