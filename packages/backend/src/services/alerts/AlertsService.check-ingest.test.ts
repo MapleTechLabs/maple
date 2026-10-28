@@ -152,4 +152,42 @@ describe("AlertsService alert_checks ingest", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: webhookFetch })))
 		},
 	)
+
+	it.effect("stops the whole ingest at its budget when every insert stalls", () => {
+		const testDb = createTestDb(trackedDbs)
+		const orgs = Array.from({ length: 8 }, (_, i) => asOrgId(`org_checks_stall_${i}`))
+		const calls = Ref.makeUnsafe(0)
+		const stub: WarehouseQueryServiceApi = {
+			...makeWarehouseStub({ tracesAggregateRows: [tracesRow({ count: 100 })] }),
+			ingest: (_tenant, datasource) =>
+				datasource === "alert_checks"
+					? Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(Effect.sleep(Duration.seconds(30))))
+					: Effect.void,
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const userId = asUserId("user_checks")
+			yield* Effect.forEach(orgs, (orgId) =>
+				createWebhookDestination(alerts, orgId, userId).pipe(
+					Effect.flatMap((destination) =>
+						createErrorRateRule(alerts, orgId, userId, destination.id),
+					),
+				),
+			)
+
+			const tick = yield* Effect.forkChild(alerts.runSchedulerTick())
+			// Two POSTs at a time, each cut at 5s: three rounds fit in the 15s budget, the fourth never starts.
+			yield* Effect.forEach([2, 4, 6], (started) =>
+				waitUntil(Effect.map(Ref.get(calls), (n) => n === started)).pipe(
+					Effect.andThen(TestClock.adjust(Duration.seconds(5))),
+				),
+			)
+			const result = yield* Fiber.join(tick)
+
+			assert.strictEqual(yield* Ref.get(calls), 6)
+			assert.strictEqual(result.alertChecksDroppedCount, 8)
+		}).pipe(Effect.provide(makeLayer(testDb, stub)))
+	})
 })

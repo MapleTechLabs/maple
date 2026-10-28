@@ -347,6 +347,8 @@ const ALERT_CHECK_INGEST_CONCURRENCY = 2
 // A healthy alert_checks POST is under a second; a stalled one is dropped, never retried,
 // because a write the warehouse already accepted would be counted twice.
 const ALERT_CHECK_INGEST_TIMEOUT = Duration.seconds(5)
+// Caps the whole ingest so a warehouse-wide stall across many orgs still ends the tick early.
+const ALERT_CHECK_INGEST_BUDGET = Duration.seconds(15)
 
 /** A warehouse outage (5xx or unreachable), not a fault of the rule being evaluated. */
 const warehouseOutageOf = (error: unknown): Option.Option<WarehouseUpstreamError> =>
@@ -4231,18 +4233,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Match.exhaustive,
 				)
 
-			// One POST per org. Awaited by the tick so the Worker stays alive for the writes; a
-			// failed or timed-out POST drops its rows (Postgres holds the alert state) and is counted.
+			// One POST per org. Awaited by the tick so the Worker stays alive for the writes; a failed
+			// or timed-out POST, or one cut by the budget, drops its rows (Postgres holds the alert state).
 			const ingestAlertChecks = Effect.fn("AlertsService.ingestAlertChecks")(function* (
 				checks: ReadonlyArray<AlertChecksRow>,
 			) {
-				const dropped = yield* Ref.make(0)
+				const written = yield* Ref.make(0)
 				yield* Effect.forEach(
 					Object.entries(Arr.groupBy(checks, (check) => check.OrgId)),
 					([orgId, rows]) =>
 						// Not metered to Autumn: internal bookkeeping rows, not customer telemetry.
 						warehouse.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", rows).pipe(
 							Effect.timeout(ALERT_CHECK_INGEST_TIMEOUT),
+							Effect.andThen(Ref.update(written, (n) => n + rows.length)),
 							Effect.catchCause((cause) =>
 								Effect.logWarning("Dropped alert_checks audit rows").pipe(
 									Effect.annotateLogs({
@@ -4250,16 +4253,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										rowCount: rows.length,
 										cause: summarizeCause(cause),
 									}),
-									Effect.andThen(Ref.update(dropped, (n) => n + rows.length)),
-									Effect.andThen(
-										Metric.update(AlertingMetrics.alertChecksDroppedTotal, rows.length),
-									),
 								),
 							),
 						),
 					{ concurrency: ALERT_CHECK_INGEST_CONCURRENCY, discard: true },
+				).pipe(
+					Effect.timeout(ALERT_CHECK_INGEST_BUDGET),
+					Effect.catchCause(() => Effect.logWarning("alert_checks ingest hit its budget")),
 				)
-				const droppedCount = yield* Ref.get(dropped)
+				const droppedCount = checks.length - (yield* Ref.get(written))
+				if (droppedCount > 0) {
+					yield* Metric.update(AlertingMetrics.alertChecksDroppedTotal, droppedCount)
+				}
 				yield* Effect.annotateCurrentSpan({
 					"maple.alerting.alert_checks_rows": checks.length,
 					"maple.alerting.alert_checks_dropped": droppedCount,
