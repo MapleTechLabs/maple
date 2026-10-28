@@ -287,7 +287,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				slug: "external",
 				label: "Review outside contributors",
 				description:
-					"For public repositories. Reviews pull requests from people without push access, forks included: their code reaches an agent that reads your telemetry and posts publicly, and each review uses credits. One automatic review per pull request; a maintainer starts any later ones.",
+					"For public repositories. Reviews pull requests from people without push access, forks included. Their code and pull request text reach an agent that reads your telemetry, and its review, which can quote that telemetry, is public. Each outside author gets one automatic review per pull request and three a day; a maintainer starts any more.",
 				inherited: parent.reviewExternalContributors ?? BUILT_IN.reviewExternalContributors,
 			}),
 			toggleSetting(h, model, {

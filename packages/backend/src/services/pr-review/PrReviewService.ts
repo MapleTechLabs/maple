@@ -191,6 +191,9 @@ const TRUSTED_ASSOCIATIONS: ReadonlySet<string> = new Set(["OWNER", "MEMBER", "C
 export const isTrustedAuthorAssociation = (association: string | undefined): boolean =>
 	association !== undefined && TRUSTED_ASSOCIATIONS.has(association.toUpperCase())
 
+/** Automatic reviews one outside author may get per UTC day across the organization. */
+const OUTSIDE_AUTHOR_DAILY_REVIEWS = 3
+
 /** Repository permissions that make a person a maintainer, whatever the webhook's association says. */
 export const PUSH_PERMISSIONS: ReadonlySet<string> = new Set(["admin", "maintain", "write"])
 
@@ -2080,6 +2083,28 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						config,
 					})
 				}
+				if (outsideAuthor) {
+					// Bounds an outsider opening pull request after pull request; other heads only, so a redelivery stays a duplicate.
+					const authorToday = yield* dbExecute((db) =>
+						db.run(
+							PG.from(PrReviews)
+								.select(() => ({ total: PG.count() }))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.authorLogin.eq(job.authorLogin ?? ""),
+									$.headSha.neq(headSha),
+									$.createdAt.gte(utcDayStart(nowMs)),
+								]),
+						),
+					)
+					if ((authorToday[0]?.total ?? 0) >= OUTSIDE_AUTHOR_DAILY_REVIEWS) {
+						yield* annotate("skipped", {
+							"maple.pr_review.skip_reason": "quota",
+							"maple.pr_review.outside_author_limit": OUTSIDE_AUTHOR_DAILY_REVIEWS,
+						})
+						return skip("quota")
+					}
+				}
 				// An outside author gets one review from pushes, so pushing again cannot spend the org's reviews.
 				const automaticLimit = outsideAuthor ? 1 : config.automaticReviewLimit
 				if (automaticLimit !== undefined && !requested) {
@@ -2108,7 +2133,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									$.repositoryId.eq(repo.id),
 									$.number.eq(job.number),
 									$.headSha.neq(headSha),
-									$.status.in_("completed", "failed"),
+									// An outsider's superseded or running review counts too, or pushing mid-run resets the cap.
+									...(outsideAuthor ? [] : [$.status.in_("completed", "failed")]),
 								]),
 						),
 					)

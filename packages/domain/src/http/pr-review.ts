@@ -250,7 +250,7 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	/**
 	 * Review pull requests on a public repository from people without push access, forks included.
 	 * Off by default: their text reaches an agent that reads org telemetry and posts publicly. One
-	 * automatic review per pull request; later pushes wait for a maintainer.
+	 * automatic review per pull request and three per author a day; a maintainer starts more.
 	 */
 	reviewExternalContributors: Schema.optionalKey(Schema.Boolean),
 	/** Reviews this repository may start per UTC day. */

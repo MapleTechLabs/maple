@@ -658,6 +658,46 @@ describe("PrReviewService.onPullRequestEvent", () => {
 	)
 
 	it.effect(
+		"keeps an outside author at one automatic review when they push while it runs, and at three a day",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const begun: Array<Begun> = []
+			const outsider = (overrides: Partial<PullRequestEventJob> = {}) =>
+				job({ authorLogin: "stranger", authorAssociation: "NONE", ...overrides })
+			return Effect.gen(function* () {
+				const repositoryId = yield* seed(true, false)
+				const repo = yield* VcsRepository
+				yield* repo.setPrReviewConfig(
+					orgId,
+					repositoryId,
+					new PrReviewRepositoryConfig({ reviewExternalContributors: true }),
+				)
+				const reviews = yield* PrReviewService
+				assert.equal((yield* reviews.onPullRequestEvent(orgId, outsider())).outcome, "started")
+				// The first review is still running: superseding it must not reset the cap.
+				const midRun = yield* reviews.onPullRequestEvent(
+					orgId,
+					outsider({ action: "synchronize", headSha: HEAD_2 }),
+				)
+				assert.equal(midRun.skipReason, "automatic_limit")
+				assert.equal(begun.length, 1)
+
+				const opened = yield* Effect.forEach(["a", "b", "c"], (digit, index) =>
+					reviews.onPullRequestEvent(
+						orgId,
+						outsider({ number: 613 + index, headSha: sha(digit.repeat(40)) }),
+					),
+				)
+				assert.deepEqual(
+					opened.map((outcome) => outcome.skipReason ?? outcome.outcome),
+					["started", "started", "quota"],
+				)
+				assert.equal(begun.length, 3)
+			}).pipe(Effect.provide(layerFor(testDb, { begun })))
+		},
+	)
+
+	it.effect(
 		"takes the outside-contributor opt-in from the organization's defaults, and lets a repository opt out",
 		() => {
 			const testDb = createTestDb(trackedDbs)

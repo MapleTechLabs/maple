@@ -31,7 +31,8 @@ in order, skipping with the reason in brackets:
   (`bot_author`);
 - on a public repository, the author is OWNER, MEMBER or COLLABORATOR, or has push access
   (`external_author`), unless `reviewExternalContributors` is on. An outside author then gets one
-  review from pushes; later heads wait for `@maple review` or a maintainer approving the CI run;
+  review from pushes per PR and three a day across the org (`automatic_limit`, `quota`); later
+  heads wait for `@maple review` or a maintainer approving the CI run;
 - the repository has not reached its own optional `dailyLimit` today (`quota`); there is no
   organization-wide ceiling;
 - the head SHA has no live review yet (`duplicate`); a failed one is reclaimed for another attempt.
