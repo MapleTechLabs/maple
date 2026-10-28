@@ -4,6 +4,7 @@ import { FetchHttpClient } from "effect/http"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { seedOrgRow } from "@maple/backend/platform/test-two-orgs"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
@@ -33,6 +34,8 @@ interface World {
 	/** Each org's own subscriptions, as Autumn returns them. */
 	subscriptions: Map<string, ReadonlyArray<Record<string, unknown>>>
 	cancelled: Array<{ customerId: string; planId: string }>
+	/** Every usage track sent to Autumn: customer, feature, value. */
+	tracked: Array<{ customer: string; feature: string; value: number }>
 }
 
 const makeWorld = (overrides: Partial<World> = {}): World => ({
@@ -45,6 +48,7 @@ const makeWorld = (overrides: Partial<World> = {}): World => ({
 	elsewhere: new Set(),
 	subscriptions: new Map(),
 	cancelled: [],
+	tracked: [],
 	...overrides,
 })
 
@@ -118,18 +122,33 @@ const layerFor = (testDb: TestDb, world: World) =>
 				FetchHttpClient.layer,
 			),
 		),
+		// Autumn's track route, recorded: the uptime monitor transfer goes through it.
+		Layer.provideMerge(
+			Layer.succeed(FetchHttpClient.Fetch, async (_input, init) => {
+				const body = JSON.parse(String(init?.body ?? "{}"))
+				world.tracked.push({
+					customer: body.customer_id,
+					feature: body.feature_id,
+					value: body.value,
+				})
+				return new Response("{}", { status: 200 })
+			}),
+		),
 		Layer.provide(EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive))),
 		Layer.provide(testDb.layer),
-		// No Autumn key: the uptime monitor transfer tracks nothing.
-		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+		// Read when a track runs, so it has to reach the test's fiber.
+		Layer.provideMerge(
+			ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "am_sk_test" })),
+		),
 	)
 
 const run = <A, E>(
 	world: World,
 	effect: Effect.Effect<A, E, BillingOrgService | BillingCustomerResolver>,
+	seed: (testDb: TestDb) => Effect.Effect<void> = () => Effect.void,
 ) => {
 	const testDb = createTestDb(trackedDbs)
-	return effect.pipe(Effect.provide(layerFor(testDb, world)))
+	return seed(testDb).pipe(Effect.andThen(effect), Effect.provide(layerFor(testDb, world)))
 }
 
 const linkMember = (to = PAYER) =>
@@ -216,6 +235,37 @@ describe("BillingOrgService", () => {
 					{ customerId: MEMBER, planId: "openrouter_byok" },
 				])
 			}),
+		)
+	})
+
+	it.effect("moves the member's monitors to the payer on link and back on unlink, once each", () => {
+		const world = makeWorld()
+		return run(
+			world,
+			Effect.gen(function* () {
+				const service = yield* BillingOrgService
+				yield* linkMember()
+				yield* linkMember()
+				yield* service.unlink({ orgId: MEMBER, roles: ADMIN, memberOrgId: MEMBER })
+				const monitorMoves = world.tracked.filter((track) => track.feature === "uptime_monitors")
+				assert.deepStrictEqual(monitorMoves, [
+					{ customer: MEMBER, feature: "uptime_monitors", value: -2 },
+					{ customer: PAYER, feature: "uptime_monitors", value: 2 },
+					// The retried link sends the same keyed moves again; Autumn drops the repeats.
+					{ customer: MEMBER, feature: "uptime_monitors", value: -2 },
+					{ customer: PAYER, feature: "uptime_monitors", value: 2 },
+					{ customer: PAYER, feature: "uptime_monitors", value: -2 },
+					{ customer: MEMBER, feature: "uptime_monitors", value: 2 },
+				])
+			}),
+			(testDb) =>
+				Effect.all(
+					[
+						seedOrgRow(testDb, "uptime_monitors", "org_id", MEMBER),
+						seedOrgRow(testDb, "uptime_monitors", "org_id", MEMBER),
+					],
+					{ discard: true },
+				).pipe(Effect.orDie),
 		)
 	})
 

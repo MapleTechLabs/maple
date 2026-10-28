@@ -240,14 +240,15 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 			 * `uptime_monitors` is continuous use: monitors that exist count against whoever pays now.
 			 * Their count moves with the org, keyed by the link so a retry moves them once.
 			 */
-			const countMonitors = (orgId: OrgId) =>
-				dbExecute((db) =>
-					db.run(
+			/** Under the exclusive link lock, so no monitor create (which holds it shared) runs alongside. */
+			const countMonitors = (db: DatabaseClient, orgId: OrgId) =>
+				db
+					.run(
 						PG.from(UptimeMonitors)
 							.select(() => ({ count: PG.count() }))
 							.where(($) => [$.orgId.eq(orgId)]),
-					),
-				).pipe(Effect.map((rows) => Number(rows[0]?.count ?? 0)))
+					)
+					.pipe(Effect.map((rows) => Number(rows[0]?.count ?? 0)))
 
 			/** Moves `count` monitors between customers. The tracks never fail, so nothing after this can. */
 			const trackMonitorMove = Effect.fn("BillingOrgService.trackMonitorMove")(function* (
@@ -312,7 +313,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				}
 
 				const now = yield* Clock.currentTimeMillis
-				const row = yield* dbExecute((db) =>
+				const written = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							// One lock for every link write keeps the one-level rule true under races.
@@ -320,7 +321,8 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 								Orm.sql`select pg_advisory_xact_lock(hashtext('org_billing_links'))`,
 							)
 							const current = yield* checkLinkable(db, orgId, payer)
-							if (current !== null) return current
+							const monitors = yield* countMonitors(db, orgId)
+							if (current !== null) return { row: current, monitors }
 							const [inserted] = yield* db.run(
 								PG.insertInto(OrgBillingLinks)
 									.values({
@@ -331,10 +333,11 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 									})
 									.returning(),
 							)
-							return inserted ?? null
+							return { row: inserted ?? null, monitors }
 						}),
 					),
 				)
+				const row = written.row
 				if (row === null) {
 					return yield* new BillingAccountPersistenceError({
 						message: "Billing link was not written",
@@ -370,7 +373,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 							: Effect.void,
 					),
 				)
-				yield* trackMonitorMove(orgId, yield* countMonitors(orgId), {
+				yield* trackMonitorMove(orgId, written.monitors, {
 					from: orgId,
 					to: payer,
 					key: `billing_link:${orgId}:${row.createdAt}`,
@@ -394,19 +397,20 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				if (Option.isNone(row) || (orgId !== memberOrgId && orgId !== row.value.billingOrgId)) {
 					return yield* reject("not_a_member")
 				}
-				// Every step that can fail runs before the delete, and the tracks after it cannot fail:
-				// a failed unlink leaves the link and the count as they were, ready for a retry.
-				const count = yield* countMonitors(memberOrgId)
-				yield* dbExecute((db) =>
+				// The count and the delete share one transaction under the exclusive link lock, and the
+				// tracks after it cannot fail: a failed unlink changes nothing and a retry finishes it.
+				const count = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							// The same lock as link writes and the uptime pool count.
 							yield* db.execute(
 								Orm.sql`select pg_advisory_xact_lock(hashtext('org_billing_links'))`,
 							)
+							const monitors = yield* countMonitors(db, memberOrgId)
 							yield* db.run(
 								PG.deleteFrom(OrgBillingLinks).where(($) => [$.orgId.eq(memberOrgId)]),
 							)
+							return monitors
 						}),
 					),
 				)
