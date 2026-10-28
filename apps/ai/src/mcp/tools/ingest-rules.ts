@@ -266,8 +266,9 @@ export const previewOver = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRec
 				changes: [],
 			})),
 			...redacted.slice(0, 5).map(({ record, outcome }) => ({
-				service: recordService(record),
-				label: recordLabel(record),
+				service: recordService(outcome.record),
+				// The label comes from the redacted record: a masked body must not reappear here.
+				label: recordLabel(outcome.record),
 				outcome: "redacted" as const,
 				changes: changedValues(record, outcome.record),
 			})),
