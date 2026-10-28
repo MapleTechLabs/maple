@@ -21,6 +21,8 @@ interface Target {
 	readonly basePath: string
 	/** Path within the page, always starting with `/`. */
 	readonly path: string
+	/** The slug the request named, when it came in by `/s/<slug>`. */
+	readonly slug: string | null
 }
 
 /** The page a request is for: its hostname first, then the `/s/<slug>` path form. */
@@ -28,12 +30,17 @@ const resolveTarget = (env: StatusEnv, url: URL): Effect.Effect<Option.Option<Ta
 	Effect.gen(function* () {
 		const byHost = yield* pageIdForHost(env, url.hostname)
 		if (Option.isSome(byHost))
-			return Option.some({ pageId: byHost.value, basePath: "", path: url.pathname })
+			return Option.some({ pageId: byHost.value, basePath: "", path: url.pathname, slug: null })
 		const match = SLUG_PATH.exec(url.pathname)
 		const slug = match?.[1]
 		if (slug === undefined) return Option.none()
 		const bySlug = yield* pageIdForSlug(env, slug)
-		return Option.map(bySlug, (pageId) => ({ pageId, basePath: `/s/${slug}`, path: match?.[2] ?? "/" }))
+		return Option.map(bySlug, (pageId) => ({
+			pageId,
+			basePath: `/s/${slug}`,
+			path: match?.[2] ?? "/",
+			slug,
+		}))
 	})
 
 const managePage = (
@@ -134,5 +141,8 @@ export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<R
 		if (Option.isNone(target)) return notFound()
 		const view = yield* loadView(env, target.value.pageId)
 		if (Option.isNone(view)) return plain("This status page is temporarily unavailable.", 503)
+		// A renamed page keeps its old `slug:` key until cleanup; only the current slug serves it.
+		if (target.value.slug !== null && view.value.snapshot.page.slug !== target.value.slug)
+			return notFound()
 		return yield* servePage(env, request, url, view.value, target.value)
 	})

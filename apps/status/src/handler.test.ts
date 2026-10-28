@@ -91,6 +91,11 @@ describe("serving a page", () => {
 		expect((await send(fake, "https://status.maple.workers.dev/s/unknown/")).status).toBe(404)
 	})
 
+	it("stops serving a renamed page under its old slug", async () => {
+		fake.kv.set(StatusPageKeys.slug("old-acme"), FIXTURE_PAGE_ID)
+		expect((await send(fake, "https://status.maple.workers.dev/s/old-acme/")).status).toBe(404)
+	})
+
 	it("merges break-glass overlay entries into the page", async () => {
 		fake.kv.set(
 			StatusPageKeys.overlay(FIXTURE_PAGE_ID),
