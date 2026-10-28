@@ -4,19 +4,18 @@ import type { IngestRule } from "@maple/domain/ingest-rules"
 import {
 	MapleApiV2,
 	fromV2IngestRuleAction,
+	isoTimestamp,
 	paginateArray,
 	toV2IngestRuleAction,
 	V2ParameterInvalid,
 	type V2IngestRule,
 } from "@maple/domain/http/v2"
-import { Clock, DateTime, Effect } from "effect"
+import { Clock, Effect } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
-
-const isoTimestamp = (millis: number) => DateTime.formatIso(DateTime.makeUnsafe(millis))
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_STATS_WINDOW_MS = 62 * DAY_MS
