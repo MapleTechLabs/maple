@@ -131,7 +131,8 @@ export const formatDouble = (value: number): string => {
 	// Shortest round-trip digits, then shifted: `1e+21` is "1000000000000000000000", `1.5e-7` "0.00000015".
 	const [mantissa = "", exponentText = "0"] = text.split("e")
 	const digits = mantissa.replace(".", "")
-	const point = (mantissa.indexOf(".") === -1 ? mantissa.length : mantissa.indexOf(".")) + Number(exponentText)
+	const point =
+		(mantissa.indexOf(".") === -1 ? mantissa.length : mantissa.indexOf(".")) + Number(exponentText)
 	const unsigned =
 		point >= digits.length
 			? digits + "0".repeat(point - digits.length)
@@ -225,7 +226,9 @@ const conditionMatches = (record: RuleRecord, compiled: CompiledCondition): bool
 		case "contains":
 			return value.includes(operand)
 		case "regex":
-			return compiled.regex !== null && compiled.regex.test(value.slice(0, INGEST_RULE_LIMITS.scanBytes))
+			return (
+				compiled.regex !== null && compiled.regex.test(value.slice(0, INGEST_RULE_LIMITS.scanBytes))
+			)
 		default:
 			return false
 	}
@@ -403,3 +406,27 @@ export const applyRules = (
 		}, record)
 	return { _tag: "kept", record: redacted, matched, redactions }
 }
+
+/**
+ * Applies the `attributes`-scoped redact rules a record matched to another attribute map that
+ * rides on it (metric exemplars), the way the gateway does.
+ */
+export const redactWithMatched = (
+	compiled: CompiledRules,
+	matched: ReadonlyArray<number>,
+	attributes: AttrMap,
+): AttrMap =>
+	compiled.rules
+		.filter((rule) => matched.includes(rule.index) && scopeHas(rule, "attributes"))
+		.reduce((current, rule) => {
+			const action = rule.spec.action
+			if (action._tag !== "redact") return current
+			const ctx: RedactContext = {
+				rule,
+				method: action.method,
+				detectors: action.detectors,
+				salt: compiled.salt,
+				count: 0,
+			}
+			return redactMap(current, ctx)
+		}, attributes)

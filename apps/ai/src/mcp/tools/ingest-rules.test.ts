@@ -130,4 +130,21 @@ describe("ingest rule MCP tools", () => {
 			assert.deepInclude(preview, { sampled: 0, problems: ["metrics rules cannot be previewed"] })
 		}).pipe(Effect.provide(layerFor(createTestDb(trackedDbs), [])))
 	})
+
+	it.effect("refuses to preview span_kind conditions it cannot see", () => {
+		const call = tools()
+		return Effect.gen(function* () {
+			const preview = yield* call("preview_ingest_rule", {
+				signals: ["traces"],
+				conditions: [{ field: "span_kind", op: "in", values: ["internal"] }],
+				action: { type: "drop", keep_percent: 0 },
+			})
+			assert.deepInclude(preview, {
+				sampled: 0,
+				problems: [
+					"span_kind conditions cannot be previewed here; use the preview in Settings > Ingestion",
+				],
+			})
+		}).pipe(Effect.provide(layerFor(createTestDb(trackedDbs), [])))
+	})
 })
