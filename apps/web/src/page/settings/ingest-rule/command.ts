@@ -2,7 +2,7 @@ import { IngestRuleId } from "@maple/domain"
 import { V2IngestRuleCreateParams } from "@maple/domain/http/v2"
 import { QueryEngineExecuteRequest } from "@maple/query-engine"
 import { executeQueryEngine } from "@maple/web-data/warehouse/effect-utils"
-import { getLogAttributeKeys, listLogs } from "@maple/web-data/warehouse/logs"
+import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
 import {
 	getResourceAttributeKeys,
 	getSpanAttributeKeys,
@@ -57,8 +57,23 @@ export const FetchKeys = Command.define("FetchIngestRuleKeys", {
 export const FetchServices = Command.define("FetchIngestRuleServices", {
 	messages: [Message.CompletedFetchServices],
 	execute: currentWindow({ preset: "24h", snap: true }).pipe(
-		Effect.flatMap((window) => getTracesFacets({ data: window })),
-		Effect.map((response) => response.data.services.map((row) => row.name)),
+		// A service that only sends logs has no spans, so both facet lists feed the picker.
+		Effect.flatMap((window) =>
+			Effect.all(
+				[
+					getTracesFacets({ data: window }).pipe(
+						Effect.map((response) => response.data.services.map((row) => row.name)),
+						Effect.orElseSucceed((): ReadonlyArray<string> => []),
+					),
+					getLogsFacets({ data: window }).pipe(
+						Effect.map((response) => response.data.services.map((row) => row.name)),
+						Effect.orElseSucceed((): ReadonlyArray<string> => []),
+					),
+				],
+				{ concurrency: "unbounded" },
+			),
+		),
+		Effect.map(([traces, logs]): ReadonlyArray<string> => [...new Set([...traces, ...logs])].sort()),
 		Effect.orElseSucceed((): ReadonlyArray<string> => []),
 		Effect.map((services) => Message.CompletedFetchServices({ services })),
 	),
