@@ -45,6 +45,11 @@ export interface LocalIngestRules {
 
 const EMPTY: LocalIngestRules = { compiled: compileRules([], "local"), problems: [] }
 
+const ruleLabel = (
+	entry: { readonly index: number; readonly rule: { readonly name?: string } } | undefined,
+	fallback: number,
+) => entry?.rule.name ?? String((entry?.index ?? fallback) + 1)
+
 /** Parses a rules file body. Invalid rules are skipped and named, never fatal. */
 export const parseLocalIngestRules = (body: string): LocalIngestRules => {
 	const decoded = decodeRulesFile(body)
@@ -55,11 +60,16 @@ export const parseLocalIngestRules = (body: string): LocalIngestRules => {
 	const malformed = parsed.flatMap(({ index, rule }) =>
 		Result.isFailure(rule) ? [`ingest rule ${index + 1} skipped: ${rule.failure.message}`] : [],
 	)
+	// File positions travel with the rules, so an unnamed rule is reported by where it is in the file.
 	const enabled = parsed
-		.flatMap(({ rule }) => (Result.isSuccess(rule) ? [rule.success] : []))
-		.filter((rule) => rule.enabled !== false)
+		.flatMap(({ index, rule }) => (Result.isSuccess(rule) ? [{ index, rule: rule.success }] : []))
+		.filter(({ rule }) => rule.enabled !== false)
 	const compiled = compileRules(
-		enabled.map((rule) => ({ signals: rule.signals, conditions: rule.conditions, action: rule.action })),
+		enabled.map(({ rule }) => ({
+			signals: rule.signals,
+			conditions: rule.conditions,
+			action: rule.action,
+		})),
 		"local",
 	)
 	return {
@@ -68,7 +78,7 @@ export const parseLocalIngestRules = (body: string): LocalIngestRules => {
 			...malformed,
 			...compiled.invalid.map(
 				(invalid) =>
-					`ingest rule ${enabled[invalid.index]?.name ?? invalid.index + 1} skipped: ${invalid.problems.join("; ")}`,
+					`ingest rule ${ruleLabel(enabled[invalid.index], invalid.index)} skipped: ${invalid.problems.join("; ")}`,
 			),
 		],
 	}

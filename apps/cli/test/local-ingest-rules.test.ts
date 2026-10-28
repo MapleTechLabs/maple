@@ -159,6 +159,27 @@ describe("local ingest rules", () => {
 		)
 		expect(oneMalformed.compiled.rules).toHaveLength(1)
 		expect(oneMalformed.problems[0]).toContain("ingest rule 1 skipped")
+		const afterDisabled = parseLocalIngestRules(
+			JSON.stringify([
+				{
+					enabled: false,
+					signals: ["logs"],
+					conditions: [],
+					action: {
+						_tag: "redact",
+						keys: ["k"],
+						detectors: [],
+						patterns: [],
+						scopes: ["attributes"],
+						method: "remove",
+					},
+				},
+				{ signals: ["logs"], conditions: [], action: { _tag: "drop", keepPercent: 0 } },
+			]),
+		)
+		expect(afterDisabled.problems).toEqual([
+			"ingest rule 2 skipped: a drop rule needs at least one condition",
+		])
 	})
 
 	it("merges resource redactions from rules matched by different records", () => {
