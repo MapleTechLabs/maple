@@ -66,12 +66,14 @@ type Comparison =
 /**
  * Which services a signal other than `builder_query` and `raw_query` reads:
  * the named ones; all of them, grouped (each group its own incident); all of
- * them grouped by `service.name` minus some; or all of them, ungrouped. A
- * grouped rule cannot alert on no data. Leaving a field out clears it, as
+ * them grouped by `service.name` minus some; or all of them, ungrouped
+ * (`group_by` `[]` and `["none"]` group nothing). A grouped rule cannot alert
+ * on no data. Leaving a field out clears it, as
  * `null` and `[]` do.
  */
 type Scope =
 	| { service_names: string[]; group_by?: null; exclude_service_names?: [] }
+	| { group_by: [] | ["none"]; service_names?: []; exclude_service_names?: [] }
 	| {
 			group_by: string[]
 			service_names?: []

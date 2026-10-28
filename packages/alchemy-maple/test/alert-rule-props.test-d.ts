@@ -48,6 +48,8 @@ export const accepts = Effect.gen(function* () {
 	})
 	// Every service, ungrouped; `null` and `[]` clear what an earlier deploy set.
 	yield* AlertRule("org", { ...errorRate, group_by: null, service_names: [] })
+	yield* AlertRule("none", { ...errorRate, group_by: ["none"], alert_on_no_data: true })
+	yield* AlertRule("empty", { ...errorRate, group_by: [], alert_on_no_data: true })
 	yield* AlertRule("range", {
 		...base,
 		signal_type: "p95_latency",
