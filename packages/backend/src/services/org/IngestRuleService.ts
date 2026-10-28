@@ -47,8 +47,6 @@ const rowToRule = (row: OrgIngestRuleRow): IngestRule => ({
 	updatedAt: row.updatedAt,
 })
 
-const MAX_POSITION = 10_000
-
 /** What the HTTP schema checks, again here so MCP and other callers cannot skip it. */
 const fieldProblems = (fields: {
 	readonly name?: string
@@ -59,8 +57,10 @@ const fieldProblems = (fields: {
 		? [`the name must be 1 to ${INGEST_RULE_LIMITS.nameLength} characters`]
 		: []),
 	...(fields.position !== undefined &&
-	(!Number.isInteger(fields.position) || fields.position < 0 || fields.position > MAX_POSITION)
-		? [`position is a whole number from 0 to ${MAX_POSITION}`]
+	(!Number.isInteger(fields.position) ||
+		fields.position < 0 ||
+		fields.position > INGEST_RULE_LIMITS.maxPosition)
+		? [`position is a whole number from 0 to ${INGEST_RULE_LIMITS.maxPosition}`]
 		: []),
 ]
 
@@ -170,7 +170,9 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 									orgId,
 									name: input.name.trim(),
 									enabled: input.enabled ?? true,
-									position: input.position ?? Math.min(lastPosition + 1, MAX_POSITION),
+									position:
+										input.position ??
+										Math.min(lastPosition + 1, INGEST_RULE_LIMITS.maxPosition),
 									specJson: input.spec,
 									createdAt: now,
 									updatedAt: now,

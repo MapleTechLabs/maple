@@ -30,7 +30,10 @@ const RuleName = Schema.String.check(
 	Schema.isMaxLength(INGEST_RULE_LIMITS.nameLength),
 	Schema.isTrimmed(),
 )
-const Position = Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 10_000 }))
+const Position = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isBetween({ minimum: 0, maximum: INGEST_RULE_LIMITS.maxPosition }),
+)
 
 export const V2IngestRuleAction = Schema.Union([
 	Schema.Struct({
