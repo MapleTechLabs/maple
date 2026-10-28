@@ -784,7 +784,11 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										name,
 										description,
 										groupName,
-										position: existing.length,
+										// After the highest, not at the count: deletes leave gaps, so the count can be taken.
+										position: existing.reduce(
+											(top, row) => Math.max(top, row.position + 1),
+											0,
+										),
 										monitorId,
 										manualStatus: input.manualStatus ?? null,
 										showUptime: input.showUptime ?? true,

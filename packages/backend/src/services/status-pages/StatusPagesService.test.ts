@@ -160,6 +160,18 @@ describe("StatusPagesService", () => {
 			)
 			const partial = yield* Effect.flip(service.reorderComponents(ORG, page.id, [web.id]))
 			assert.strictEqual(partial._tag, "@maple/http/errors/StatusPageValidationError")
+
+			// After a delete leaves a gap, a new component still lands last, not on top of one.
+			yield* service.removeComponent(ORG, web.id)
+			const docs = yield* service.createComponent(ORG, page.id, { name: "Docs" })
+			assert.deepStrictEqual(
+				(yield* service.listComponents(ORG, page.id)).map((row) => [row.name, row.position]),
+				[
+					["API", 1],
+					["Docs", 2],
+				],
+			)
+			assert.strictEqual(docs.position, 2)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
