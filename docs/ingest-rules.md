@@ -19,7 +19,7 @@ A rule looks at one **record** at a time:
 | ------- | ------------ | ----------- | --------------------- | ----------------------------------- |
 | traces  | a span       | span name   | span attributes       | span kind, status, events, trace id |
 | logs    | a log record | (none)      | log attributes        | body, severity, trace id            |
-| metrics | a data point | metric name | data point attributes |                                     |
+| metrics | a data point | metric name | data point attributes | exemplars (redaction only)          |
 
 `service_name` and `resource_attribute` read the record's resource.
 
@@ -77,7 +77,8 @@ Values are compared as strings. An attribute value becomes a string as follows:
 
 `scopes` says where to look:
 
-- `attributes`: the record's attributes.
+- `attributes`: the record's attributes. For metrics this also covers the `filtered_attributes` of
+  the data point's exemplars, which can carry the same values.
 - `resource`: resource attributes.
 - `events`: span event attributes, where `exception.message` lives.
 - `body`: the log body.
@@ -160,6 +161,29 @@ with the `u` flag accept:
 The Rust engine is linear-time, so a pattern cannot stall the gateway. Shorthand classes (`\d`,
 `\w`, `\s`, `\b`) are Unicode-aware in Rust and ASCII-only in JS. Prefer explicit ASCII classes;
 the two engines agree on ASCII input either way.
+
+## Gateway configuration
+
+| Variable                      | Default | Meaning                                                                                                                |
+| ----------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `INGEST_RULES_ENABLED`        | `true`  | Apply rules at all. Off never queries Postgres and costs nothing. The managed deploy sets it to `false` until rollout. |
+| `INGEST_RULES_CACHE_TTL_SECS` | `30`    | How long an org's compiled rules are reused before a reload (min 1).                                                   |
+
+- Concurrent requests that miss the cache for one org share a single lookup.
+- If a reload fails, the gateway keeps applying the last rules it loaded for that org (kept up to
+  24 hours) and retries the lookup after 1 second. If it never loaded any, the request is refused
+  with a retryable 503 (`Retry-After: 5`; gRPC `UNAVAILABLE`) rather than stored unredacted.
+  Every failed lookup counts in `ingest_rules_fetch_failed_total`. A stored rule that does not
+  parse or compile is skipped and counted in `ingest_rules_invalid_total`.
+- Only the share of the payload the rules leave is metered, on every path (OTLP HTTP and gRPC,
+  Cloudflare, GCP, AWS), and items are recounted after the rules. Dropped records are discounted
+  by their encoded size; redaction is not, so it never bills more or less than was received.
+  Bytes of dropped records count in `ingest_rules_dropped_bytes_total`.
+- Per-rule counts (`matched`, `dropped`, `dropped_bytes`, `redacted_values`) are counted once the
+  payload is written (or fully dropped), summed per org, rule, signal and UTC hour, and added into
+  `org_ingest_rule_stats` every minute and on shutdown. A failed write keeps the counts for the
+  next one; after 10 failures in a row they are dropped and counted in
+  `ingest_rule_stats_dropped_total`.
 
 ## Limits
 
