@@ -134,4 +134,119 @@ describe("local ingest rules", () => {
 		expect(parsed.problems).toEqual(["ingest rule Bad skipped: a drop rule needs at least one condition"])
 		expect(parseLocalIngestRules("not json").problems[0]).toContain("ingest rules file is invalid")
 	})
+
+	it("merges resource redactions from rules matched by different records", () => {
+		const byService = parseLocalIngestRules(
+			JSON.stringify([
+				{
+					signals: ["logs"],
+					conditions: [{ field: "body", op: "eq", value: "one" }],
+					action: {
+						_tag: "redact",
+						keys: ["host.name"],
+						detectors: [],
+						patterns: [],
+						scopes: ["resource"],
+						method: "mask",
+					},
+				},
+				{
+					signals: ["logs"],
+					conditions: [{ field: "body", op: "eq", value: "two" }],
+					action: {
+						_tag: "redact",
+						keys: ["user.email"],
+						detectors: [],
+						patterns: [],
+						scopes: ["resource"],
+						method: "mask",
+					},
+				},
+			]),
+		)
+		const request = {
+			resourceLogs: [
+				{
+					resource: {
+						attributes: [
+							str("service.name", "api"),
+							str("host.name", "h1"),
+							str("user.email", "a@b.co"),
+						],
+					},
+					scopeLogs: [
+						{ logRecords: [{ body: { stringValue: "one" } }, { body: { stringValue: "two" } }] },
+					],
+				},
+			],
+		}
+		applyLocalIngestRules("logs", request, byService.compiled)
+		expect(request.resourceLogs[0]?.resource.attributes).toEqual([
+			str("service.name", "api"),
+			str("host.name", "[REDACTED]"),
+			str("user.email", "[REDACTED]"),
+		])
+	})
+
+	it("redacts metric exemplars and span status messages under the attributes scope", () => {
+		const metrics = {
+			resourceMetrics: [
+				{
+					resource: { attributes: [str("service.name", "api")] },
+					scopeMetrics: [
+						{
+							metrics: [
+								{
+									name: "http.server.duration",
+									gauge: {
+										dataPoints: [
+											{
+												attributes: [],
+												exemplars: [
+													{ filteredAttributes: [str("enduser.email", "a@b.co")] },
+												],
+											},
+										],
+									},
+								},
+							],
+						},
+					],
+				},
+			],
+		}
+		const emailRules = parseLocalIngestRules(
+			JSON.stringify([
+				{
+					signals: ["metrics", "traces"],
+					conditions: [],
+					action: {
+						_tag: "redact",
+						keys: [],
+						detectors: ["email"],
+						patterns: [],
+						scopes: ["attributes"],
+						method: "mask",
+					},
+				},
+			]),
+		)
+		applyLocalIngestRules("metrics", metrics, emailRules.compiled)
+		expect(
+			metrics.resourceMetrics[0]?.scopeMetrics[0]?.metrics[0]?.gauge.dataPoints[0]?.exemplars[0]
+				?.filteredAttributes,
+		).toEqual([str("enduser.email", "[REDACTED:email]")])
+		const traces = {
+			resourceSpans: [
+				{
+					resource: { attributes: [] },
+					scopeSpans: [{ spans: [{ name: "x", status: { code: 2, message: "no user a@b.co" } }] }],
+				},
+			],
+		}
+		applyLocalIngestRules("traces", traces, emailRules.compiled)
+		expect(traces.resourceSpans[0]?.scopeSpans[0]?.spans[0]?.status.message).toBe(
+			"no user [REDACTED:email]",
+		)
+	})
 })

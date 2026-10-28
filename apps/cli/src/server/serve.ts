@@ -432,7 +432,12 @@ const ingest = (
 		const { rules, reloaded } = localIngestRules()
 		if (reloaded)
 			yield* Effect.forEach(rules.problems, (problem) => Effect.logWarning(problem), { discard: true })
-		const ruled = applyLocalIngestRules(signal, decoded, rules.compiled)
+		// A value the rules cannot read (a malformed int or bytes) is the sender's fault: 400.
+		const ruled = yield* Effect.try({
+			try: () => applyLocalIngestRules(signal, decoded, rules.compiled),
+			catch: (error) =>
+				stopIngest(text(`decode ${signal}: ${describeThrown(error)}`, 400), requestBytes),
+		})
 		if (ruled.dropped + ruled.redactedValues > 0)
 			yield* Effect.annotateCurrentSpan({
 				"maple.ingest.rules.dropped_items": ruled.dropped,

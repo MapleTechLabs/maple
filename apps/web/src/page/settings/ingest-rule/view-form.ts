@@ -127,7 +127,7 @@ const keyInput = (h: H, model: Model, condition: ConditionDraft): Html => {
 }
 
 const chips = (h: H, condition: ConditionDraft, choices: ReadonlyArray<string>): Html => {
-	const chosen = splitList(condition.values, /,/u)
+	const chosen = splitList(condition.values)
 	return h.div(
 		[h.Role("group"), h.AriaLabel(`Condition ${condition.id} values`), h.Class("flex flex-wrap gap-1")],
 		choices.map((choice) =>

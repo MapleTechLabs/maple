@@ -2,6 +2,7 @@ import { IngestRuleSpec } from "@maple/domain/ingest-rules"
 import {
 	applyRules,
 	compileRules,
+	redactWithMatched,
 	type AttrMap,
 	type AttrValue,
 	type CompiledRules,
@@ -150,7 +151,7 @@ export const applyLocalIngestRules = (
 	if (compiled.rules.length === 0) return { dropped: 0, redactedValues: 0 }
 	let dropped = 0
 	let redactedValues = 0
-	const run = (record: RuleRecord): RuleRecord | null => {
+	const run: Run = (record) => {
 		const outcome = applyRules(compiled, record)
 		if (outcome._tag === "dropped") {
 			dropped += 1
@@ -159,7 +160,10 @@ export const applyLocalIngestRules = (
 		outcome.redactions.forEach((count) => {
 			redactedValues += count
 		})
-		return outcome.redactions.size > 0 ? outcome.record : record
+		return {
+			record: outcome.redactions.size > 0 ? outcome.record : record,
+			redactExtra: (attributes) => redactWithMatched(compiled, outcome.matched, attributes),
+		}
 	}
 	if (signal === "traces" && isTraceRequest(request)) applyToTraces(request, run)
 	if (signal === "logs" && isLogsRequest(request)) applyToLogs(request, run)
@@ -167,21 +171,40 @@ export const applyLocalIngestRules = (
 	return { dropped, redactedValues }
 }
 
-type Run = (record: RuleRecord) => RuleRecord | null
+interface RuleOutput {
+	readonly record: RuleRecord
+	/** The record's matched redact rules, applied to attributes riding on it (exemplars). */
+	readonly redactExtra: (attributes: AttrMap) => AttrMap
+}
+type Run = (record: RuleRecord) => RuleOutput | null
 
 interface Resource {
 	attributes?: KeyValue[]
 }
 
-/** The first kept record's rewritten resource, if a rule changed it. */
+/**
+ * Every change any kept record's rules made to the shared resource. Each record saw the resource
+ * as received, so rewrites merge key by key instead of one record's view winning.
+ */
 const writeResource = (
 	resource: Resource | undefined,
 	records: ReadonlyArray<RuleRecord>,
 	before: AttrMap,
 ) => {
-	const changed = records.find((record) => record.resource !== before)
-	if (resource !== undefined && changed !== undefined)
-		resource.attributes = fromMap(changed.resource, resource.attributes)
+	const changed = records.filter((record) => record.resource !== before)
+	if (resource === undefined || changed.length === 0) return
+	const merged = changed.reduce<AttrMap>(
+		(acc, record) =>
+			Object.fromEntries(
+				Object.entries(acc).flatMap(([key, value]): ReadonlyArray<readonly [string, AttrValue]> => {
+					const next = record.resource[key]
+					if (next === undefined) return []
+					return [[key, next === before[key] ? value : next]]
+				}),
+			),
+		before,
+	)
+	resource.attributes = fromMap(merged, resource.attributes)
 }
 
 const applyToTraces = (request: TraceRequest, run: Run) => {
@@ -190,7 +213,7 @@ const applyToTraces = (request: TraceRequest, run: Run) => {
 		const kept: Array<RuleRecord> = []
 		resourceSpans.scopeSpans = (resourceSpans.scopeSpans ?? []).filter((scopeSpans) => {
 			scopeSpans.spans = (scopeSpans.spans ?? []).filter((span) => {
-				const record = run({
+				const output = run({
 					signal: "traces",
 					resource,
 					attributes: toMap(span.attributes),
@@ -198,14 +221,18 @@ const applyToTraces = (request: TraceRequest, run: Run) => {
 					traceId: safeTraceId(span.traceId),
 					spanKind: SPAN_KINDS[span.kind ?? 0] ?? "unspecified",
 					spanStatus: SPAN_STATUSES[span.status?.code ?? 0] ?? "unset",
+					statusMessage: span.status?.message,
 					events: (span.events ?? []).map((event) => ({
 						name: event.name ?? "",
 						attributes: toMap(event.attributes),
 					})),
 				})
-				if (record === null) return false
+				if (output === null) return false
+				const { record } = output
 				kept.push(record)
 				span.attributes = fromMap(record.attributes, span.attributes)
+				if (span.status !== undefined && record.statusMessage !== span.status.message)
+					span.status.message = record.statusMessage
 				record.events?.forEach((event, index) => {
 					const original = span.events?.[index]
 					if (original !== undefined)
@@ -227,7 +254,7 @@ const applyToLogs = (request: LogsRequest, run: Run) => {
 		resourceLogs.scopeLogs = (resourceLogs.scopeLogs ?? []).filter((scopeLogs) => {
 			scopeLogs.logRecords = (scopeLogs.logRecords ?? []).filter((log) => {
 				const body = log.body === undefined ? undefined : toValue(log.body)
-				const record = run({
+				const output = run({
 					signal: "logs",
 					resource,
 					attributes: toMap(log.attributes),
@@ -236,7 +263,8 @@ const applyToLogs = (request: LogsRequest, run: Run) => {
 					severityText: log.severityText,
 					traceId: safeTraceId(log.traceId),
 				})
-				if (record === null) return false
+				if (output === null) return false
+				const { record } = output
 				kept.push(record)
 				log.attributes = fromMap(record.attributes, log.attributes)
 				if (record.body !== undefined && record.body !== body) log.body = fromValue(record.body)
@@ -260,10 +288,16 @@ const applyToMetrics = (request: MetricsRequest, run: Run) => {
 		const kept: Array<RuleRecord> = []
 		const keepPoints = <P extends DataPoint>(name: string, points: ReadonlyArray<P> | undefined): P[] =>
 			(points ?? []).filter((point) => {
-				const record = run({ signal: "metrics", resource, attributes: toMap(point.attributes), name })
-				if (record === null) return false
-				kept.push(record)
-				point.attributes = fromMap(record.attributes, point.attributes)
+				const output = run({ signal: "metrics", resource, attributes: toMap(point.attributes), name })
+				if (output === null) return false
+				kept.push(output.record)
+				point.attributes = fromMap(output.record.attributes, point.attributes)
+				point.exemplars?.forEach((exemplar) => {
+					exemplar.filteredAttributes = fromMap(
+						output.redactExtra(toMap(exemplar.filteredAttributes)),
+						exemplar.filteredAttributes,
+					)
+				})
 				return true
 			})
 		resourceMetrics.scopeMetrics = (resourceMetrics.scopeMetrics ?? []).filter((scopeMetrics) => {
@@ -284,6 +318,7 @@ const applyToMetrics = (request: MetricsRequest, run: Run) => {
 					(metric.sum?.dataPoints?.length ?? 0) +
 					(metric.histogram?.dataPoints?.length ?? 0) +
 					(metric.exponentialHistogram?.dataPoints?.length ?? 0)
+				// Summaries are not stored locally, so they pass through untouched.
 				return remaining > 0 || metric.summary !== undefined
 			})
 			return scopeMetrics.metrics.length > 0

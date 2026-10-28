@@ -72,6 +72,36 @@ const rowToRule = (row: OrgIngestRuleRow): IngestRule => ({
 	updatedAt: row.updatedAt,
 })
 
+const MAX_POSITION = 10_000
+
+/** What the HTTP schema checks, again here so MCP and other callers cannot skip it. */
+const fieldProblems = (fields: {
+	readonly name?: string
+	readonly position?: number
+}): ReadonlyArray<string> => [
+	...(fields.name !== undefined &&
+	(fields.name.trim().length === 0 || fields.name.trim().length > INGEST_RULE_LIMITS.nameLength)
+		? [`the name must be 1 to ${INGEST_RULE_LIMITS.nameLength} characters`]
+		: []),
+	...(fields.position !== undefined &&
+	(!Number.isInteger(fields.position) || fields.position < 0 || fields.position > MAX_POSITION)
+		? [`position is a whole number from 0 to ${MAX_POSITION}`]
+		: []),
+]
+
+const validateFields = Effect.fnUntraced(function* (fields: {
+	readonly name?: string
+	readonly position?: number
+}) {
+	const problems = fieldProblems(fields)
+	if (problems.length > 0) {
+		return yield* new IngestRuleValidationError({
+			message: `Invalid ingest rule: ${problems.join("; ")}`,
+			problems,
+		})
+	}
+})
+
 const validateSpec = Effect.fnUntraced(function* (spec: IngestRuleSpec) {
 	const problems = ingestRuleProblems(spec)
 	if (problems.length > 0) {
@@ -131,6 +161,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				input: IngestRuleInput,
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
+				yield* validateFields(input)
 				yield* validateSpec(input.spec)
 				const existing = yield* list(orgId)
 				if (existing.length >= INGEST_RULE_LIMITS.rulesPerOrg) {
@@ -180,6 +211,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.id": ruleId })
 				yield* get(orgId, ruleId)
+				yield* validateFields(patch)
 				if (patch.spec !== undefined) yield* validateSpec(patch.spec)
 				const now = yield* Clock.currentTimeMillis
 				yield* dbExecute((db) =>

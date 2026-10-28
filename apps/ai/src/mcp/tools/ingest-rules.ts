@@ -310,7 +310,16 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 								parameter: "rule",
 							})
 			const signal = params.signal ?? spec.signals.find((s) => s === "traces" || s === "logs")
-			const problems = ingestRuleProblems(spec)
+			// Stored spans in the search results carry no span kind, so such a condition would miscount.
+			const problems = [
+				...ingestRuleProblems(spec),
+				...(signal === "traces" &&
+				spec.conditions.some((condition) => condition.field === "span_kind")
+					? [
+							"span_kind conditions cannot be previewed here; use the preview in Settings > Ingestion",
+						]
+					: []),
+			]
 			if (signal === undefined || problems.length > 0) {
 				return {
 					signal: signal ?? spec.signals[0] ?? "logs",

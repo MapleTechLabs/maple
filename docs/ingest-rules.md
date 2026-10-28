@@ -41,18 +41,19 @@ Values are compared as strings. An attribute value becomes a string as follows:
 - A string stays as it is.
 - An int is written in decimal.
 - A bool is `true` or `false`.
-- A double uses the shortest round-trip form (`1.5`, `2`).
+- A double is written the way Rust's `{}` prints it: shortest round-trip digits, never exponent form
+  (`1.5`, `2`, `1000000000000000000000`, `0.0000001`, `-0`).
 - Bytes, arrays and kvlists never match a value comparison, including `neq` and `not_in`. They
   only satisfy `exists`.
 
-| op                      | Meaning                                             |
-| ----------------------- | --------------------------------------------------- |
-| `eq` / `neq`            | equal / not equal to `value`                        |
-| `in` / `not_in`         | equal to one of / none of `values`                  |
-| `prefix` / `contains`   | starts with / contains `value`                      |
-| `regex`                 | `value` matches anywhere in the string (unanchored) |
-| `exists` / `not_exists` | the attribute is / is not present                   |
-| `lt` / `gte`            | severity below / at or above the named level        |
+| op                      | Meaning                                                                 |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `eq` / `neq`            | equal / not equal to `value`                                            |
+| `in` / `not_in`         | equal to one of / none of `values`                                      |
+| `prefix` / `contains`   | starts with / contains `value`                                          |
+| `regex`                 | `value` matches anywhere in the first 16 KiB of the string (unanchored) |
+| `exists` / `not_exists` | the attribute is / is not present                                       |
+| `lt` / `gte`            | severity below / at or above the named level                            |
 
 - **Missing attributes.** A missing attribute fails every op except `neq`, `not_in` and
   `not_exists`, which pass.
@@ -82,9 +83,11 @@ Values are compared as strings. An attribute value becomes a string as follows:
 - `events`: span event attributes, where `exception.message` lives.
 - `body`: the log body.
 
-Arrays and kvlists are searched recursively. Keys that route, attribute or bill data are
-**protected** and never changed: `service.name`, `org_id`, and anything starting with `maple_` or
-`maple.`.
+Arrays and kvlists are searched recursively. The `attributes` scope also covers the span status
+message (detectors and patterns only; it has no key). Keys that route, attribute or bill data are
+**protected** and never changed: `service.name`, `org_id`, and the gateway's own stamps, which match
+`^maple_[a-z0-9_]+$` (`maple_org_id`, `maple_source_id`). Dotted Maple keys such as `maple_ai.*`
+carry customer text and are redacted like any other.
 
 - **`keys`** redact the whole value of a matching attribute.
     - A key pattern is a case-insensitive glob in which `*` matches any run of characters
@@ -149,6 +152,10 @@ The validator accepts only the subset of syntax that both the Rust `regex` crate
 with the `u` flag accept:
 
 - No lookaround, backreferences, atomic groups or possessive quantifiers.
+- No class set operations (`&&`, `~~`, `--` inside `[...]`), `[^]`, `\c` or `\0`.
+- Counted repetitions up to 999.
+- No repeated group that itself contains a repetition or an alternation (`(a+)+`, `(a|aa)+`): the
+  preview and local mode run the JS engine, which backtracks on them.
 - Only a leading `(?i)` as an inline flag.
 
 The Rust engine is linear-time, so a pattern cannot stall the gateway. Shorthand classes (`\d`,

@@ -98,8 +98,10 @@ const changesOf = (before: RuleRecord, after: RuleRecord): ReadonlyArray<ValueCh
 /** Runs the draft over the samples with the same engine the gateway's twin uses. */
 export const runPreview = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRecord>): PreviewResult => {
 	const compiled = compileRules([spec], PREVIEW_SALT)
-	const rows = records.flatMap((record): ReadonlyArray<PreviewRow> => {
-		const outcome = applyRules(compiled, record)
+	const rows = records.flatMap((record, index): ReadonlyArray<PreviewRow> => {
+		// Records without a trace id sample at random in the gateway; a fixed draw per row keeps
+		// the preview's counts steady between renders.
+		const outcome = applyRules(compiled, record, () => (((index * 0.618_033_988_75) % 1) + 1) % 1)
 		if (outcome._tag === "dropped") return [{ _tag: "dropped", record }]
 		const changes = changesOf(record, outcome.record)
 		return changes.length === 0 ? [] : [{ _tag: "redacted", record, changes }]
