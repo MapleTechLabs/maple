@@ -651,6 +651,7 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				...(stage.kind === "pr"
 					? { INGEST_RULES_ENABLED: "true" }
 					: yield* optionalPlain("INGEST_RULES_ENABLED")),
+				...(yield* optionalPlain("INGEST_RULES_CACHE_TTL_SECS")),
 				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),
 				...(yield* optionalPlain("INGEST_MAX_DECODED_BODY_BYTES")),
 				// The edge rule matches exact header values only; the gateway refuses these
