@@ -107,6 +107,8 @@ export interface PostStatusPageIncidentUpdateInput {
 	readonly componentIds?: ReadonlyArray<StatusPageComponentId>
 	readonly source: StatusPageUpdateSource
 	readonly createdBy?: UserId | null
+	/** Publishes a draft in the same write, so the update and its visibility never split. */
+	readonly publish?: boolean
 }
 
 export interface UpdateStatusPageIncidentInput {
@@ -1057,6 +1059,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										...(input.impact === undefined
 											? undefined
 											: { impact: input.impact }),
+										...(input.publish === true ? { published: true } : undefined),
 										resolvedAt: closed ? (current.resolvedAt ?? now) : null,
 										updatedAt: now,
 									})

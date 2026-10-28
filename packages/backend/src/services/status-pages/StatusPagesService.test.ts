@@ -175,6 +175,49 @@ describe("StatusPagesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("publishes a draft in the same write as its update, or not at all", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("drafts")
+			const draft = yield* service.createIncident(ORG, page.id, {
+				kind: "incident",
+				title: "Elevated errors",
+				impact: "major",
+				status: "investigating",
+				body: "Looking into it",
+				componentIds: [],
+				published: false,
+				source: "mcp",
+				createdBy: USER,
+			})
+			assert.isFalse(draft.published)
+
+			// A rejected update (maintenance status on an incident) leaves the draft and its updates as they were.
+			yield* Effect.flip(
+				service.postUpdate(ORG, draft.id, {
+					status: "in_progress",
+					body: "x",
+					source: "mcp",
+					publish: true,
+				}),
+			)
+			const unchanged = yield* service.getIncident(ORG, draft.id)
+			assert.isFalse(unchanged.published)
+			assert.lengthOf(unchanged.updates, 1)
+
+			yield* TestClock.adjust("1 minute")
+			const published = yield* service.postUpdate(ORG, draft.id, {
+				status: "identified",
+				body: "Rolling back",
+				source: "mcp",
+				publish: true,
+			})
+			assert.isTrue(published.published)
+			assert.lengthOf(published.updates, 2)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("opens an incident with its first update and resolves it", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
