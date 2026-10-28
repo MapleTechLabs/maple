@@ -161,7 +161,7 @@ const UNPORTABLE_REGEX: ReadonlyArray<readonly [RegExp, string]> = [
 	[/\{\s*\d{4,}|\{\s*\d+\s*,\s*\d{4,}/u, "counted repetitions are limited to 999"],
 	[/\(\?P/u, "use (?<name>...) for named groups"],
 	// Repeating an assertion matches nothing new, and JavaScriptCore gives up on it silently.
-	[/(?<!\\)\\[bB][*+?{]|(?<!\[)[\^$][*+?{]/u, "\\b, \\B, ^ and $ cannot be repeated"],
+	[/(?<!\\)\\[bB][*+?{]|(?<![\\[])[\^$][*+?{]/u, "\\b, \\B, ^ and $ cannot be repeated"],
 	[/(?!^)\(\?[a-zA-Z-]+[):]/u, "inline flags are only supported as a leading (?i)"],
 	[/^\(\?(?!i\))[a-zA-Z-]+\)/u, "only the (?i) inline flag is supported"],
 ]

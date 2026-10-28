@@ -25,6 +25,8 @@ describe("regexProblem", () => {
 		expect(regexProblem("(ab){3}c")).toBeNull()
 		expect(regexProblem("(?<id>[0-9]{4})-[a-z]+")).toBeNull()
 		expect(regexProblem("[(+]+x")).toBeNull()
+		expect(regexProblem("\\^+x")).toBeNull()
+		expect(regexProblem("a\\$+")).toBeNull()
 	})
 
 	it.each([
