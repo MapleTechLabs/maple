@@ -7,6 +7,7 @@ import {
 	DEFAULT_STATUS_PAGE_THEME,
 	decodeStatusPageSnapshotJson,
 	resolveStatusPageTheme,
+	type StatusPageTheme,
 	themeContrastIssue,
 	dayState,
 	deriveComponentStatus,
@@ -330,13 +331,14 @@ describe("resolveStatusPageTheme", () => {
 	it("auto applies the accent but ignores the colour overrides", () => {
 		const resolved = resolveStatusPageTheme({
 			...theme,
-			accent: "#AA00FF",
+			accent: "#1D4ED8",
 			background: "#123456",
 			text: "#fedcba",
 		})
 		expect(resolved.appearance).toBe("auto")
-		expect(resolved.light.link).toBe("#aa00ff")
-		expect(resolved.dark.link).toBe("#aa00ff")
+		// A deep blue reads on white, not on near-black, so only the light mode takes it.
+		expect(resolved.light.link).toBe("#1d4ed8")
+		expect(resolved.dark.link).toBe(resolved.dark.fg)
 		expect(resolved.light.bg).toBe(resolveStatusPageTheme(theme).light.bg)
 		expect(resolved.dark.fg).toBe(resolveStatusPageTheme(theme).dark.fg)
 	})
@@ -378,6 +380,38 @@ describe("resolveStatusPageTheme", () => {
 		expect(paper.radiusPx).toBeGreaterThan(resolveStatusPageTheme(theme).radiusPx)
 		expect(paper.fontStack).toContain("serif")
 		expect(resolveStatusPageTheme({ ...theme, radius: "none" }).radiusPx).toBe(0)
+	})
+})
+
+describe("theme readability", () => {
+	const theme = (overrides: Partial<StatusPageTheme>): StatusPageTheme => ({
+		...DEFAULT_STATUS_PAGE_THEME,
+		...overrides,
+	})
+
+	it("drops an accent that would be unreadable on a mode's background, keeping it where it reads", () => {
+		// Light lavender reads on the dark background but not on the light one.
+		const resolved = resolveStatusPageTheme(theme({ accent: "#a5b4fc" }))
+		expect(resolved.dark.link).toBe("#a5b4fc")
+		expect(resolved.light.link).toBe(resolved.light.fg)
+		// Carried over to Paper (light), it falls back instead of rendering at 1.88:1.
+		const paper = resolveStatusPageTheme(
+			theme({ preset: "paper", appearance: "light", accent: "#a5b4fc" }),
+		)
+		expect(contrastRatio(paper.light.link, paper.light.bg)).toBeGreaterThanOrEqual(4.5)
+	})
+
+	it("keeps every preset's status text readable on its background and cards", () => {
+		const presets = ["default", "mono", "midnight", "paper"] as const
+		const worst = presets.flatMap((preset) => {
+			const resolved = resolveStatusPageTheme(theme({ preset }))
+			return [resolved.light, resolved.dark].flatMap((tokens) =>
+				[tokens.ok, tokens.degraded, tokens.partial, tokens.major].map((colour) =>
+					Math.min(contrastRatio(colour, tokens.bg), contrastRatio(colour, tokens.card)),
+				),
+			)
+		})
+		expect(Math.min(...worst)).toBeGreaterThanOrEqual(4.5)
 	})
 })
 

@@ -320,7 +320,7 @@ describe("page theme", () => {
 			renderPage(
 				themed({
 					...DEFAULT_STATUS_PAGE_THEME,
-					accent: "#AA00FF",
+					accent: "#1D4ED8",
 					background: "#101820",
 					text: "#fedcba",
 				}),
@@ -330,7 +330,8 @@ describe("page theme", () => {
 		)
 		expect(css).not.toContain("#101820")
 		expect(css).not.toContain("#fedcba")
-		expect(css.match(/--link:#aa00ff/gu)).toHaveLength(2)
+		// Readable on the light background only, so one mode carries it.
+		expect(css.match(/--link:#1d4ed8/gu)).toHaveLength(1)
 	})
 
 	it("applies the radius and the font stack", () => {

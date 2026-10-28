@@ -169,9 +169,9 @@ const PRESET_TOKENS = {
 			line: "#eaeaea",
 			card: "#fafafa",
 			link: "#0a0a0a",
-			ok: "#16a34a",
-			degraded: "#d97706",
-			partial: "#ea580c",
+			ok: "#11813b",
+			degraded: "#aa5d05",
+			partial: "#c3490a",
 			major: "#dc2626",
 			maint: "#2563eb",
 			none: "#e5e5e5",
@@ -199,9 +199,9 @@ const PRESET_TOKENS = {
 			line: "#d4d4d4",
 			card: "#f4f4f4",
 			link: "#111111",
-			ok: "#3f7d58",
-			degraded: "#a87522",
-			partial: "#b4592c",
+			ok: "#3d7a56",
+			degraded: "#91651d",
+			partial: "#ac552a",
 			major: "#b33a3a",
 			maint: "#4b6a99",
 			none: "#e0e0e0",
@@ -259,9 +259,9 @@ const PRESET_TOKENS = {
 			line: "#e6dcc8",
 			card: "#f4eee1",
 			link: "#9a3f12",
-			ok: "#3d7a3a",
-			degraded: "#b0731a",
-			partial: "#b85a26",
+			ok: "#3c7839",
+			degraded: "#936016",
+			partial: "#a95323",
 			major: "#b23a2c",
 			maint: "#3f6497",
 			none: "#e7dfcf",
@@ -341,8 +341,11 @@ const withOverrides = (tokens: StatusPageThemeTokens, theme: StatusPageTheme): S
 	}
 }
 
+/** Links take the accent only where it stays readable on that mode's background; else the text colour. */
 const withAccent = (tokens: StatusPageThemeTokens, accent: string | null): StatusPageThemeTokens =>
-	accent === null ? tokens : { ...tokens, link: accent }
+	accent === null || contrastRatio(accent, tokens.bg) < STATUS_PAGE_MIN_CONTRAST
+		? tokens
+		: { ...tokens, link: accent }
 
 /**
  * The concrete tokens a theme renders with. Auto takes the preset and accent only; a forced
