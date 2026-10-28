@@ -221,7 +221,16 @@ const call = <A>(operation: string, key: string, run: () => Promise<A>) =>
 				key,
 				cause,
 			}),
-	})
+	}).pipe(
+		// A Client span per KV/R2 call, so edge storage shows on the service map.
+		Effect.withSpan(`StatusPageStore.${operation}`, {
+			kind: "client",
+			attributes: {
+				"peer.service": operation.startsWith("r2.") ? "cloudflare-r2" : "cloudflare-kv",
+				"maple.status_page.key": key,
+			},
+		}),
+	)
 
 /** The KV namespace and R2 bucket a Worker binds for publishing. */
 export interface StatusPageBindings {

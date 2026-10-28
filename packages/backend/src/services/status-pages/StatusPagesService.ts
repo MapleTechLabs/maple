@@ -504,6 +504,9 @@ const replaceIncidentComponents = Effect.fnUntraced(function* (
 
 const newBreakGlassToken = () => `${STATUS_PAGE_BREAK_GLASS_PREFIX}${randomBytes(32).toString("base64url")}`
 
+/** Newest incidents a list returns: with history included, a long-lived page stays bounded. */
+const INCIDENT_LIST_LIMIT = 200
+
 export class StatusPagesService extends Context.Service<StatusPagesService, StatusPagesServiceApi>()(
 	"@maple/backend/services/status-pages/StatusPagesService",
 	{
@@ -937,7 +940,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									$.pageId.eq(pageId),
 									includeResolved ? undefined : $.resolvedAt.isNull(),
 								])
-								.orderBy(["startedAt", "desc"], ["id", "desc"]),
+								.orderBy(["startedAt", "desc"], ["id", "desc"])
+								.limit(INCIDENT_LIST_LIMIT),
 						)
 						return yield* loadIncidents(db, orgId, rows)
 					}),

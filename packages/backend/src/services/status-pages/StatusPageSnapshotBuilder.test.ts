@@ -128,6 +128,20 @@ describe("toSnapshot", () => {
 		assert.strictEqual(snapshot.components[0]?.status, "operational")
 	})
 
+	it("marks the components of in-progress maintenance as under maintenance", () => {
+		const snapshot = toSnapshot(
+			baseInput({
+				incidents: [
+					incident({ kind: "maintenance", status: "in_progress", scheduledEnd: NOW + DAY_MS }),
+				],
+				incidentComponents: [{ incidentId: INCIDENT, componentId: COMPONENT }],
+			}),
+		)
+		assert.strictEqual(snapshot.incidents.length, 1)
+		assert.strictEqual(snapshot.components[0]?.status, "maintenance")
+		assert.strictEqual(snapshot.components[0]?.baseStatus, "operational")
+	})
+
 	it("fills 90 days of bars", () => {
 		const today = utcDay(NOW)
 		const snapshot = toSnapshot(
