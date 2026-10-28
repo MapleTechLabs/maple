@@ -2,6 +2,7 @@ import { existsSync } from "node:fs"
 import { readdir } from "node:fs/promises"
 import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
+import { GUIDE_SECTIONS } from "./instrumentation-guides"
 import { HUB_CATEGORIES, text, tileHref } from "./integrations-hub"
 
 const tiles = HUB_CATEGORIES.flatMap((category) => category.tiles)
@@ -45,5 +46,28 @@ describe("HUB_CATEGORIES", () => {
 				).toBe(true)
 			}
 		}
+	})
+
+	it("covers every page the instrumentation index links to", () => {
+		// Pages the hub reaches another way, or leaves out on purpose.
+		const elsewhere = new Set([
+			// Node.js, Next.js and Python tiles open their localized landing pages instead.
+			"/docs/guides/instrumentation-nodejs",
+			"/docs/guides/instrumentation-nextjs",
+			"/docs/guides/instrumentation-python",
+			// One Effect tile stands for the SDK's runtime-specific pages.
+			"/docs/sdks/effect-cloudflare",
+			"/docs/sdks/effect-client",
+			"/docs/sdks/effect-foldkit",
+			// An API, not an integration.
+			"/docs/product-events/api",
+		])
+		const hub = new Set(tiles.map((tile) => tile.href.split("#")[0]))
+		const pages = GUIDE_SECTIONS.flatMap((section) =>
+			section.cards.map((card) => card.href.split("#")[0]),
+		)
+		// In-page anchors on /docs/instrumentation split to "".
+		const missing = pages.filter((page) => page !== "" && !hub.has(page) && !elsewhere.has(page))
+		expect(missing).toEqual([])
 	})
 })
