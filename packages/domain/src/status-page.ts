@@ -50,6 +50,8 @@ export const StatusPageSnapshotComponent = Schema.Struct({
 	group: Schema.NullOr(Schema.String),
 	status: StatusPageComponentStatus,
 	showUptime: Schema.Boolean,
+	/** Backed by an uptime monitor, so its status goes stale when the probes stop. */
+	monitored: Schema.Boolean,
 	/** Oldest first; empty when the component has no monitor or hides uptime. */
 	days: Schema.Array(StatusPageDayBar),
 })
@@ -61,6 +63,8 @@ export const StatusPageSnapshotUpdate = Schema.Struct({
 	body: Schema.String,
 	at: Schema.Number,
 	source: StatusPageUpdateSource,
+	/** The break-glass entry this update was imported from, so the edge stops overlaying it. */
+	overlayEntryId: Schema.NullOr(Schema.String),
 })
 export type StatusPageSnapshotUpdate = Schema.Schema.Type<typeof StatusPageSnapshotUpdate>
 
@@ -75,6 +79,8 @@ export const StatusPageSnapshotIncident = Schema.Struct({
 	scheduledStart: Schema.NullOr(Schema.Number),
 	scheduledEnd: Schema.NullOr(Schema.Number),
 	componentIds: Schema.Array(Schema.String),
+	/** The break-glass entry that opened it, so follow-ups posted against `bg-<entry>` still land. */
+	openedByOverlayEntryId: Schema.NullOr(Schema.String),
 	/** Newest first. */
 	updates: Schema.Array(StatusPageSnapshotUpdate),
 })
@@ -97,8 +103,6 @@ export const StatusPageSnapshot = Schema.Struct({
 	pageId: StatusPageId,
 	revision: Schema.Number,
 	generatedAt: Schema.Number,
-	/** Newest check result among the page's monitors; null when none has reported. */
-	probesSeenAt: Schema.NullOr(Schema.Number),
 	page: StatusPageSnapshotPage,
 	/** SHA-256 (base64url) of the break-glass token; null when none is issued. */
 	breakGlassTokenSha256: Schema.NullOr(Schema.String),
@@ -108,8 +112,14 @@ export const StatusPageSnapshot = Schema.Struct({
 })
 export type StatusPageSnapshot = Schema.Schema.Type<typeof StatusPageSnapshot>
 
-/** Written once a minute while Maple's publisher runs; its age says whether the page is live. */
-export const StatusPagePublisherHeartbeat = Schema.Struct({ at: Schema.Number })
+/**
+ * Written after each successful publish sweep. `probesSeenAt` is the newest scheduled check result
+ * across all monitors: when the prober stops, every monitored page goes delayed together.
+ */
+export const StatusPagePublisherHeartbeat = Schema.Struct({
+	at: Schema.Number,
+	probesSeenAt: Schema.NullOr(Schema.Number),
+})
 export type StatusPagePublisherHeartbeat = Schema.Schema.Type<typeof StatusPagePublisherHeartbeat>
 
 // --- Break-glass overlay ---
@@ -122,8 +132,10 @@ export const StatusPageOverlayEntry = Schema.Struct({
 	/** The incident to update; null opens a new one titled `title`. */
 	incidentId: Schema.NullOr(Schema.String),
 	title: Schema.NullOr(Schema.String),
-	status: StatusPageIncidentStatus,
-	impact: StatusPageIncidentImpact,
+	/** Null keeps the incident's current status (a new incident starts `investigating`). */
+	status: Schema.NullOr(StatusPageIncidentStatus),
+	/** Null keeps the incident's current impact (a new incident starts `major`). */
+	impact: Schema.NullOr(StatusPageIncidentImpact),
 	body: Schema.String,
 	componentIds: Schema.Array(Schema.String),
 })
@@ -131,6 +143,15 @@ export type StatusPageOverlayEntry = Schema.Schema.Type<typeof StatusPageOverlay
 
 export const StatusPageOverlay = Schema.Struct({ entries: Schema.Array(StatusPageOverlayEntry) })
 export type StatusPageOverlay = Schema.Schema.Type<typeof StatusPageOverlay>
+
+const INCIDENT_STATUSES = ["investigating", "identified", "monitoring", "resolved"] as const
+const MAINTENANCE_STATUSES = ["scheduled", "in_progress", "completed"] as const
+
+/** Whether a status belongs to the kind: incidents and maintenance have separate lifecycles. */
+export const statusFitsKind = (kind: StatusPageIncidentKind, status: StatusPageIncidentStatus): boolean =>
+	kind === "incident"
+		? INCIDENT_STATUSES.some((allowed) => allowed === status)
+		: MAINTENANCE_STATUSES.some((allowed) => allowed === status)
 
 export const STATUS_PAGE_OVERLAY_MAX_ENTRIES = 50
 
@@ -140,47 +161,84 @@ export const overlayIncidentId = (entryId: string): string => `bg-${entryId}`
 const isResolvedStatus = (status: StatusPageIncidentStatus): boolean =>
 	status === "resolved" || status === "completed"
 
-/** The snapshot as visitors should see it, with break-glass updates applied in order. */
+/** Break-glass entries already imported into the snapshot; the edge skips them. */
+const importedEntryIds = (snapshot: StatusPageSnapshot): ReadonlySet<string> =>
+	new Set(
+		snapshot.incidents.flatMap((incident) =>
+			incident.updates.flatMap((update) =>
+				update.overlayEntryId === null ? [] : [update.overlayEntryId],
+			),
+		),
+	)
+
+/** Which incident an entry targets: `bg-<entry>` also matches the imported incident it opened. */
+const matchesTarget = (incident: StatusPageSnapshotIncident, targetId: string): boolean =>
+	incident.id === targetId ||
+	(incident.openedByOverlayEntryId !== null &&
+		overlayIncidentId(incident.openedByOverlayEntryId) === targetId)
+
+/** The snapshot as visitors should see it, with break-glass updates not yet imported applied in order. */
 export const applyOverlay = (
 	snapshot: StatusPageSnapshot,
 	overlay: StatusPageOverlay,
 ): StatusPageSnapshot => {
-	const entries = [...overlay.entries].sort((a, b) => a.at - b.at)
+	const imported = importedEntryIds(snapshot)
+	const entries = overlay.entries.filter((entry) => !imported.has(entry.id)).sort((a, b) => a.at - b.at)
 	if (entries.length === 0) return snapshot
 	const incidents = entries.reduce<ReadonlyArray<StatusPageSnapshotIncident>>((list, entry) => {
-		const update: StatusPageSnapshotUpdate = {
-			id: entry.id,
-			status: entry.status,
-			body: entry.body,
-			at: entry.at,
-			source: "break_glass",
-		}
 		const targetId = entry.incidentId ?? overlayIncidentId(entry.id)
-		const existing = list.find((incident) => incident.id === targetId)
+		const existing = list.find((incident) => matchesTarget(incident, targetId))
 		if (existing === undefined) {
+			const status =
+				entry.status !== null && statusFitsKind("incident", entry.status)
+					? entry.status
+					: "investigating"
 			const opened: StatusPageSnapshotIncident = {
 				id: targetId,
 				kind: "incident",
 				title: entry.title ?? "Service disruption",
-				impact: entry.impact,
-				status: entry.status,
+				impact: entry.impact ?? "major",
+				status,
 				startedAt: entry.at,
-				resolvedAt: isResolvedStatus(entry.status) ? entry.at : null,
+				resolvedAt: isResolvedStatus(status) ? entry.at : null,
 				scheduledStart: null,
 				scheduledEnd: null,
 				componentIds: entry.componentIds,
-				updates: [update],
+				openedByOverlayEntryId: entry.id,
+				updates: [
+					{
+						id: entry.id,
+						status,
+						body: entry.body,
+						at: entry.at,
+						source: "break_glass",
+						overlayEntryId: entry.id,
+					},
+				],
 			}
 			return [opened, ...list]
 		}
+		// A status from the other lifecycle (an incident status on maintenance) is ignored, not applied.
+		const status =
+			entry.status !== null && statusFitsKind(existing.kind, entry.status)
+				? entry.status
+				: existing.status
+		const update: StatusPageSnapshotUpdate = {
+			id: entry.id,
+			status,
+			body: entry.body,
+			at: entry.at,
+			source: "break_glass",
+			overlayEntryId: entry.id,
+		}
 		return list.map((incident) =>
-			incident.id === targetId
+			incident === existing
 				? {
 						...incident,
 						title: entry.title ?? incident.title,
-						impact: entry.impact,
-						status: entry.status,
-						resolvedAt: isResolvedStatus(entry.status) ? entry.at : null,
+						impact: entry.impact ?? incident.impact,
+						status,
+						resolvedAt: isResolvedStatus(status) ? (incident.resolvedAt ?? entry.at) : null,
 						componentIds:
 							entry.componentIds.length > 0 ? entry.componentIds : incident.componentIds,
 						updates: [update, ...incident.updates],
@@ -298,20 +356,19 @@ export type StatusPageFreshness =
 
 /**
  * Whether the page reflects live checks. `updatedAt` is when its state was last confirmed:
- * the older of the publisher's heartbeat and the newest probe result. Either going quiet
- * (Maple down, or the probes stopped) makes the page say so rather than look green.
+ * the publisher's last good sweep, and for a page with monitors also the newest probe result.
+ * Either going quiet (Maple down, or the probes stopped) makes the page say so rather than look green.
  */
 export const pageFreshness = (input: {
 	readonly snapshot: StatusPageSnapshot
-	readonly heartbeatAt: number | null
+	readonly heartbeat: StatusPagePublisherHeartbeat | null
 	readonly nowMs: number
 }): StatusPageFreshness => {
-	const publisherAt = Math.max(input.snapshot.generatedAt, input.heartbeatAt ?? 0)
-	const hasMonitors = input.snapshot.components.some((component) => component.days.length > 0)
-	const updatedAt =
-		hasMonitors && input.snapshot.probesSeenAt !== null
-			? Math.min(publisherAt, input.snapshot.probesSeenAt)
-			: publisherAt
+	const publisherAt = Math.max(input.snapshot.generatedAt, input.heartbeat?.at ?? 0)
+	const monitored = input.snapshot.components.some((component) => component.monitored)
+	const updatedAt = monitored
+		? Math.min(publisherAt, input.heartbeat?.probesSeenAt ?? publisherAt)
+		: publisherAt
 	return input.nowMs - updatedAt > STATUS_PAGE_STALE_AFTER_MS
 		? { _tag: "delayed", updatedAt }
 		: { _tag: "live", updatedAt }
@@ -336,18 +393,25 @@ export const StatusPageKeys = {
 	/** Path addressing (`/s/<slug>`), for hosts without a page of their own such as workers.dev. */
 	slug: (slug: string) => `slug:${slug}`,
 	snapshot: (pageId: string) => `page:${pageId}:snapshot`,
-	overlay: (pageId: string) => `page:${pageId}:overlay`,
+	/**
+	 * One key per break-glass entry, written once by the status Worker and deleted by the
+	 * reconciler once a published snapshot carries it: nothing rewrites a shared value.
+	 */
+	overlayEntry: (pageId: string, entryId: string) => `overlay:${pageId}:${entryId}`,
+	overlayPage: (pageId: string) => `overlay:${pageId}:`,
+	overlayAll: "overlay:",
 	heartbeat: "meta:heartbeat",
 	/** R2 copy of the snapshot, read when KV fails. */
 	snapshotObject: (pageId: string) => `pages/${pageId}/snapshot.json`,
 	hostObject: (hostname: string) => `hosts/${hostname.toLowerCase()}`,
+	slugObject: (slug: string) => `slugs/${slug}`,
 } as const
 
 export const decodeStatusPageSnapshotJson = Schema.decodeUnknownOption(
 	Schema.fromJsonString(StatusPageSnapshot),
 )
-export const decodeStatusPageOverlayJson = Schema.decodeUnknownOption(
-	Schema.fromJsonString(StatusPageOverlay),
+export const decodeStatusPageOverlayEntryJson = Schema.decodeUnknownOption(
+	Schema.fromJsonString(StatusPageOverlayEntry),
 )
 export const decodeStatusPageHeartbeatJson = Schema.decodeUnknownOption(
 	Schema.fromJsonString(StatusPagePublisherHeartbeat),

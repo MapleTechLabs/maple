@@ -1,4 +1,15 @@
 -- metadata
+CREATE TABLE IF NOT EXISTS "status_page_cleanups" (
+	"id" text NOT NULL,
+	"org_id" text NOT NULL,
+	"page_id" text NOT NULL,
+	"slug" text NOT NULL,
+	"delete_snapshot" boolean NOT NULL,
+	"created_at" timestamp with time zone NOT NULL,
+	CONSTRAINT "status_page_cleanups_pkey" PRIMARY KEY ("id")
+);
+--> statement-breakpoint
+-- metadata
 CREATE TABLE IF NOT EXISTS "status_page_components" (
 	"id" text NOT NULL,
 	"org_id" text NOT NULL,
@@ -76,6 +87,8 @@ CREATE TABLE IF NOT EXISTS "status_pages" (
 	"published_revision" bigint NOT NULL DEFAULT 0,
 	"published_at" timestamp with time zone,
 	"last_publish_error" text,
+	"published_hash" text,
+	"publish_attempted_at" timestamp with time zone,
 	"created_by" text NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL,
@@ -93,6 +106,9 @@ CREATE TABLE IF NOT EXISTS "uptime_monitor_daily" (
 	"last_check_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "uptime_monitor_daily_pk" PRIMARY KEY ("monitor_id", "day")
 );
+--> statement-breakpoint
+-- metadata
+CREATE INDEX IF NOT EXISTS "status_page_cleanups_created_idx" ON "status_page_cleanups" USING btree ("created_at");
 --> statement-breakpoint
 -- metadata
 CREATE INDEX IF NOT EXISTS "status_page_components_monitor_idx" ON "status_page_components" USING btree ("monitor_id");

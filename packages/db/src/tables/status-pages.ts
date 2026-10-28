@@ -45,6 +45,10 @@ export const StatusPages = PG.table("status_pages", {
 		publishedRevision: PG.column(PG.int8, { name: "published_revision", default: 0 }),
 		publishedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "published_at" }),
 		lastPublishError: PG.column(PG.nullable(PG.text), { name: "last_publish_error" }),
+		/** Hash of the last published content (minus timestamps); an unchanged hash skips the write. */
+		publishedHash: PG.column(PG.nullable(PG.text), { name: "published_hash" }),
+		/** Last publish attempt, good or not: the sweep takes the longest-waiting pages first. */
+		publishAttemptedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "publish_attempted_at" }),
 		createdBy: PG.column(PG.brand(PG.text, UserId), { name: "created_by" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
@@ -204,3 +208,25 @@ export const StatusPageIncidentComponents = PG.table("status_page_incident_compo
 	],
 	tenantColumn: "orgId",
 })
+
+/**
+ * Edge data to remove: a deleted page's snapshot and routes, or a renamed page's old slug.
+ * Written in the same transaction as the delete or rename (rows outlive the page and the org),
+ * drained by the publisher sweep.
+ */
+export const StatusPageCleanups = PG.table("status_page_cleanups", {
+	columns: {
+		id: PG.column(PG.text),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		pageId: PG.column(PG.brand(PG.text, StatusPageId), { name: "page_id" }),
+		slug: PG.column(PG.text),
+		/** True when the page is gone: drop its snapshot and break-glass entries too. */
+		deleteSnapshot: PG.column(PG.bool, { name: "delete_snapshot" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+	},
+	primaryKey: ["id"],
+	indexes: [PG.index("status_page_cleanups_created_idx", ["createdAt"])],
+	tenantColumn: "orgId",
+})
+
+export type StatusPageCleanupRow = PG.SelectRowOf<typeof StatusPageCleanups>

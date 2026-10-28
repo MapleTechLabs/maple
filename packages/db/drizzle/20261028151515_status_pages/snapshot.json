@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "e2b573fd1a54a8b1fee9505419e741aee6f580d1e557ee0d9d5d50aa24cdcadf",
+	"id": "4af4ffc5d6c0025e17d3af2dd256d134af9fd617d0cfc87fc8a36cee82604f3a",
 	"prevIds": [
 		"33f99028753ee9ffae00a7af64795fe1e4f025237d39ca333863b7cc50efecf7"
 	],
@@ -844,6 +844,16 @@
 			"name": "sources",
 			"primaryKey": {
 				"name": "sources_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "status_page_cleanups",
+			"primaryKey": {
+				"name": "status_page_cleanups_pkey",
 				"columns": [
 					"id"
 				]
@@ -12803,6 +12813,66 @@
 		},
 		{
 			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "page_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "slug",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "delete_snapshot",
+			"position": 4,
+			"type": "boolean",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "created_at",
+			"position": 5,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "status_page_components",
 			"name": "id",
 			"position": 0,
@@ -13364,8 +13434,28 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "created_by",
+			"name": "published_hash",
 			"position": 16,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "publish_attempted_at",
+			"position": 17,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "created_by",
+			"position": 18,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -13375,7 +13465,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "created_at",
-			"position": 17,
+			"position": 19,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -13385,7 +13475,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "updated_at",
-			"position": 18,
+			"position": 20,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -16696,6 +16786,17 @@
 			"method": "btree",
 			"columns": [
 				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_cleanups",
+			"name": "status_page_cleanups_created_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"created_at\""
 			],
 			"where": null
 		},

@@ -316,6 +316,40 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("marks pages showing a monitor when it is paused, resumed or deleted", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API", { failuresToDown: 1 })
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO status_pages (id, org_id, name, slug, created_by, created_at, updated_at)
+					 VALUES ('11111111-1111-4111-8111-111111111111', $1, 'Acme', 'acme', $2, now(), now())`,
+					[ORG, USER],
+				).then(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO status_page_components (id, org_id, page_id, name, monitor_id, created_at, updated_at)
+						 VALUES ('22222222-2222-4222-8222-222222222222', $1, '11111111-1111-4111-8111-111111111111', 'API', $2, now(), now())`,
+						[ORG, monitor.id],
+					),
+				),
+			)
+			const revision = () =>
+				Effect.promise(() =>
+					queryFirstRow<{ revision: string }>(testDb, `SELECT revision::text FROM status_pages`),
+				).pipe(Effect.map((row) => row?.revision))
+
+			yield* service.update(ORG, monitor.id, { enabled: false, updatedBy: USER })
+			assert.strictEqual(yield* revision(), "2")
+			yield* service.update(ORG, monitor.id, { enabled: true, updatedBy: USER })
+			assert.strictEqual(yield* revision(), "3")
+			yield* service.delete(ORG, monitor.id)
+			assert.strictEqual(yield* revision(), "4")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("records the rest of a batch when a monitor is deleted between the read and the write", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

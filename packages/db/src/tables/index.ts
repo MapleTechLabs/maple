@@ -81,6 +81,7 @@ import { OrgSupportChannels } from "./support-channels"
 import {
 	StatusPageComponents,
 	StatusPageIncidentComponents,
+	StatusPageCleanups,
 	StatusPageIncidentUpdates,
 	StatusPageIncidents,
 	StatusPages,
@@ -244,6 +245,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	StatusPageIncidents,
 	StatusPageIncidentUpdates,
 	StatusPageIncidentComponents,
+	StatusPageCleanups,
 	VcsInstallations,
 	VcsRepositories,
 	VcsCommits,

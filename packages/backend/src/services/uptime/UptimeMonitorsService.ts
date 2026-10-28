@@ -26,7 +26,7 @@ import {
 	UptimeMonitorId,
 	UptimeMonitorKind,
 	UptimeMonitorStatus,
-	type OrgId,
+	OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
 import {
@@ -904,6 +904,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									})
 									.where(($) => [$.orgId.eq(orgId), $.monitorId.eq(monitorId)]),
 							)
+							// A paused monitor no longer marks its components down.
+							yield* bumpPagesForMonitors(db, orgId, [monitorId])
 						}),
 					),
 				)
@@ -925,6 +927,8 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							yield* db.execute(
 								Orm.sql`select pg_advisory_xact_lock_shared(hashtext('org_billing_links'))`,
 							)
+							// Before the delete: its components lose the monitor (FK set null) and their bars.
+							yield* bumpPagesForMonitors(db, orgId, [monitorId])
 							const removed = yield* db.run(
 								PG.deleteFrom(UptimeMonitors)
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)])
@@ -1106,9 +1110,19 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 											}))
 								}),
 							)
-							yield* bumpPagesForMonitors(
-								db,
-								applied.filter((monitorId) => changed.has(monitorId)),
+							const flipped = applied.flatMap((monitorId) => {
+								const state = stateById.get(monitorId)
+								return state === undefined || !changed.has(monitorId) ? [] : [state]
+							})
+							yield* Effect.forEach(
+								Object.entries(Arr.groupBy(flipped, (state) => state.orgId)),
+								([orgId, group]) =>
+									bumpPagesForMonitors(
+										db,
+										OrgId.make(orgId),
+										group.map((state) => state.monitorId),
+									),
+								{ discard: true },
 							)
 							return rows
 						}),
@@ -1178,7 +1192,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									count: countOne({ at: now, ok, down: status === "down" }),
 								},
 							])
-							if (status !== row.status) yield* bumpPagesForMonitors(db, [row.id])
+							if (status !== row.status) yield* bumpPagesForMonitors(db, row.orgId, [row.id])
 							return updated
 						}),
 					),

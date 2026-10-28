@@ -11,6 +11,7 @@ import {
 	pageFreshness,
 	sha256Base64Url,
 	STATUS_PAGE_STALE_AFTER_MS,
+	type StatusPageOverlayEntry,
 	type StatusPageSnapshot,
 	uptimePercent,
 } from "./status-page"
@@ -23,7 +24,6 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 	pageId: StatusPageId.make("11111111-1111-4111-8111-111111111111"),
 	revision: 3,
 	generatedAt: NOW,
-	probesSeenAt: NOW,
 	page: {
 		name: "Acme",
 		slug: "acme",
@@ -42,6 +42,7 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 			group: null,
 			status: "operational",
 			showUptime: true,
+			monitored: true,
 			days: [{ day: "2026-10-28", checks: 10, failures: 0, downChecks: 0 }],
 		},
 	],
@@ -96,32 +97,45 @@ describe("bars", () => {
 })
 
 describe("pageFreshness", () => {
-	it("is live while both the publisher and the probes are recent", () => {
-		expect(pageFreshness({ snapshot: snapshot(), heartbeatAt: NOW, nowMs: NOW + 60_000 })._tag).toBe(
-			"live",
-		)
+	const beat = (at: number, probesSeenAt: number | null = at) => ({ at, probesSeenAt })
+
+	it("stays live on a quiet healthy page long after its last publish, while the sweep and probes run", () => {
+		const later = NOW + 60 * 60_000
+		expect(
+			pageFreshness({ snapshot: snapshot(), heartbeat: beat(later - 30_000), nowMs: later })._tag,
+		).toBe("live")
 	})
 
 	it("says delayed when the probes stop, even though the publisher still beats", () => {
 		const stale = NOW - STATUS_PAGE_STALE_AFTER_MS - 1
-		const freshness = pageFreshness({
-			snapshot: snapshot({ probesSeenAt: stale }),
-			heartbeatAt: NOW,
-			nowMs: NOW,
+		expect(pageFreshness({ snapshot: snapshot(), heartbeat: beat(NOW, stale), nowMs: NOW })).toEqual({
+			_tag: "delayed",
+			updatedAt: stale,
 		})
-		expect(freshness).toEqual({ _tag: "delayed", updatedAt: stale })
 	})
 
 	it("says delayed when the publisher stops, and ignores probes on a page with no monitors", () => {
 		const later = NOW + STATUS_PAGE_STALE_AFTER_MS + 1
-		expect(pageFreshness({ snapshot: snapshot(), heartbeatAt: null, nowMs: later })._tag).toBe("delayed")
-		const manualOnly = snapshot({
-			probesSeenAt: null,
-			components: snapshot().components.map((component) => ({ ...component, days: [] })),
+		expect(pageFreshness({ snapshot: snapshot(), heartbeat: null, nowMs: later })._tag).toBe("delayed")
+		// A monitored component that hides its bars still counts as monitored.
+		const hidden = snapshot({
+			components: snapshot().components.map((component) => ({
+				...component,
+				showUptime: false,
+				days: [],
+			})),
 		})
-		expect(pageFreshness({ snapshot: manualOnly, heartbeatAt: NOW, nowMs: NOW + 60_000 })._tag).toBe(
-			"live",
-		)
+		expect(pageFreshness({ snapshot: hidden, heartbeat: beat(NOW, 0), nowMs: NOW })._tag).toBe("delayed")
+		const manualOnly = snapshot({
+			components: snapshot().components.map((component) => ({
+				...component,
+				monitored: false,
+				days: [],
+			})),
+		})
+		expect(
+			pageFreshness({ snapshot: manualOnly, heartbeat: beat(NOW, 0), nowMs: NOW + 60_000 })._tag,
+		).toBe("live")
 	})
 })
 
@@ -178,6 +192,82 @@ describe("applyOverlay", () => {
 		})
 		expect(merged.incidents[0]?.resolvedAt).toBe(NOW)
 		expect(overallStatus(merged)).toBe("operational")
+	})
+
+	const criticalIncident = {
+		id: "inc-1",
+		kind: "incident" as const,
+		title: "Checkout down",
+		impact: "critical" as const,
+		status: "identified" as const,
+		startedAt: NOW,
+		resolvedAt: null,
+		scheduledStart: null,
+		scheduledEnd: null,
+		componentIds: [API],
+		openedByOverlayEntryId: null,
+		updates: [],
+	}
+	const note = (overrides: Partial<StatusPageOverlayEntry> = {}): StatusPageOverlayEntry => ({
+		id: "e9",
+		at: NOW + 1_000,
+		incidentId: "inc-1",
+		title: null,
+		status: null,
+		impact: null,
+		body: "Still working on it.",
+		componentIds: [],
+		...overrides,
+	})
+
+	it("keeps an incident's status and impact when an update leaves them unchanged", () => {
+		const merged = applyOverlay(snapshot({ incidents: [criticalIncident] }), { entries: [note()] })
+		expect(merged.incidents[0]?.impact).toBe("critical")
+		expect(merged.incidents[0]?.status).toBe("identified")
+		expect(merged.components[0]?.status).toBe("major_outage")
+	})
+
+	it("ignores an incident status posted to maintenance", () => {
+		const maintenance = {
+			...criticalIncident,
+			kind: "maintenance" as const,
+			status: "in_progress" as const,
+		}
+		const merged = applyOverlay(snapshot({ incidents: [maintenance] }), {
+			entries: [note({ status: "investigating" })],
+		})
+		expect(merged.incidents[0]?.status).toBe("in_progress")
+		expect(merged.components[0]?.status).toBe("maintenance")
+	})
+
+	it("skips entries the snapshot already imported, and routes follow-ups to the incident they opened", () => {
+		const imported = {
+			...criticalIncident,
+			id: "db-uuid",
+			openedByOverlayEntryId: "e1",
+			updates: [
+				{
+					id: "u1",
+					status: "identified" as const,
+					body: "Imported.",
+					at: NOW,
+					source: "break_glass" as const,
+					overlayEntryId: "e1",
+				},
+			],
+		}
+		const merged = applyOverlay(snapshot({ incidents: [imported] }), {
+			entries: [
+				note({ id: "e1", incidentId: null, title: "Checkout down", body: "Imported." }),
+				note({ id: "e2", incidentId: overlayIncidentId("e1"), status: "resolved" }),
+			],
+		})
+		expect(merged.incidents).toHaveLength(1)
+		expect(merged.incidents[0]?.updates.map((update) => update.body)).toEqual([
+			"Still working on it.",
+			"Imported.",
+		])
+		expect(merged.incidents[0]?.status).toBe("resolved")
 	})
 })
 
