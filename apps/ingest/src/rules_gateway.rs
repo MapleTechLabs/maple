@@ -2,9 +2,8 @@
 //! the per-rule counts flushed to `org_ingest_rule_stats`. The engine itself is
 //! `maple_ingest::ingest_rules`; the contract is `docs/ingest-rules.md`.
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
@@ -20,6 +19,10 @@ const HOUR_MS: i64 = 60 * 60 * 1000;
 const STAT_ROWS_PER_STATEMENT: usize = 500;
 /// Consecutive failed flushes after which the pending counts are given up.
 const MAX_FAILED_FLUSHES: u32 = 10;
+/// After a failed lookup, the next one waits this long; last-known rules are served meanwhile.
+const FETCH_RETRY_BACKOFF: Duration = Duration::from_secs(1);
+/// How long last-known rules may stand in for a failing store.
+const LAST_KNOWN_TTL: Duration = Duration::from_hours(24);
 
 /// An org's enabled rules as stored, in `position` order, with its hash salt.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -41,14 +44,42 @@ pub(crate) struct IngestRuleStatRow {
     pub(crate) counts: RuleCounters,
 }
 
-/// Each org's compiled rules: cached for a TTL, the last good load served when the store fails.
+/// One org's compiled rules, with shared ids so recording stats allocates nothing.
+pub(crate) struct OrgRules {
+    pub(crate) compiled: CompiledRules,
+    org_id: Arc<str>,
+    /// Indexed like `compiled.rule_ids()`.
+    rule_ids: Vec<Arc<str>>,
+}
+
+impl OrgRules {
+    fn new(org_id: &str, compiled: CompiledRules) -> Self {
+        let rule_ids = compiled.rule_ids().iter().map(|id| Arc::from(id.as_str())).collect();
+        Self {
+            compiled,
+            org_id: Arc::from(org_id),
+            rule_ids,
+        }
+    }
+}
+
+/// The org's rules could not be loaded and none were loaded before: refuse rather than store raw data.
+#[derive(Debug)]
+pub(crate) struct RulesUnavailable;
+
+/// Each org's compiled rules: cached for a TTL, concurrent misses share one fetch,
+/// and a failing store serves the last good load (or refuses when there is none).
 pub(crate) struct IngestRuleResolver {
     store: Arc<dyn KeyStore>,
     /// `INGEST_RULES_ENABLED`; when false the store is never queried.
     enabled: bool,
-    cache: Cache<String, Arc<CompiledRules>>,
-    last_known: DashMap<String, Arc<CompiledRules>>,
-    empty: Arc<CompiledRules>,
+    /// Successful loads only.
+    cache: Cache<String, Arc<OrgRules>>,
+    /// Bounded, so orgs that stop sending age out.
+    last_known: Cache<String, Arc<OrgRules>>,
+    /// Orgs whose last lookup failed less than `FETCH_RETRY_BACKOFF` ago.
+    recent_failures: Cache<String, ()>,
+    disabled: Arc<OrgRules>,
 }
 
 impl IngestRuleResolver {
@@ -57,11 +88,18 @@ impl IngestRuleResolver {
             store,
             enabled,
             cache: Cache::builder()
-                .time_to_live(ttl)
+                .time_to_live(ttl.max(Duration::from_secs(1)))
                 .max_capacity(capacity)
                 .build(),
-            last_known: DashMap::new(),
-            empty: Arc::new(CompiledRules::default()),
+            last_known: Cache::builder()
+                .time_to_live(LAST_KNOWN_TTL)
+                .max_capacity(capacity)
+                .build(),
+            recent_failures: Cache::builder()
+                .time_to_live(FETCH_RETRY_BACKOFF)
+                .max_capacity(capacity)
+                .build(),
+            disabled: Arc::new(OrgRules::new("", CompiledRules::default())),
         }
     }
 
@@ -69,42 +107,50 @@ impl IngestRuleResolver {
         self.enabled
     }
 
-    /// The org's rules. A failed lookup serves the last good load (or none) until the TTL ends.
-    pub(crate) async fn resolve_rules(&self, org_id: &str) -> Arc<CompiledRules> {
+    /// The org's rules. A failed lookup serves the last good load; with none, the request is refused.
+    pub(crate) async fn resolve_rules(&self, org_id: &str) -> Result<Arc<OrgRules>, RulesUnavailable> {
         if !self.enabled {
-            return Arc::clone(&self.empty);
+            return Ok(Arc::clone(&self.disabled));
         }
         if let Some(rules) = self.cache.get(org_id).await {
-            return rules;
+            return Ok(rules);
         }
-        let rules = match self.store.fetch_ingest_rules(org_id).await {
-            Ok(rows) => {
-                let rules = Arc::new(compile_rows(org_id, rows));
-                self.last_known
-                    .insert(org_id.to_owned(), Arc::clone(&rules));
-                rules
-            }
+        if self.recent_failures.contains_key(org_id) {
+            return self.fallback(org_id).await;
+        }
+        let store = Arc::clone(&self.store);
+        let last_known = self.last_known.clone();
+        let key = org_id.to_owned();
+        // `try_get_with` runs one fetch per org however many requests miss at once; errors are not cached.
+        let loaded = self
+            .cache
+            .try_get_with(org_id.to_owned(), async move {
+                let rows = store.fetch_ingest_rules(&key).await?;
+                let rules = Arc::new(OrgRules::new(&key, compile_rows(&key, rows)));
+                last_known.insert(key, Arc::clone(&rules)).await;
+                Ok::<_, String>(rules)
+            })
+            .await;
+        match loaded {
+            Ok(rules) => Ok(rules),
             Err(error) => {
                 metrics::ingest_rules_fetch_failed(org_id);
-                if let Some(stale) = self.last_known.get(org_id) {
-                    warn!(org_id, error = %error, "Ingest rule lookup failed; serving last-known rules");
-                    Arc::clone(stale.value())
-                } else {
-                    warn!(org_id, error = %error, "Ingest rule lookup failed with no last-known rules");
-                    Arc::clone(&self.empty)
-                }
+                warn!(org_id, error = %error, "Ingest rule lookup failed");
+                self.recent_failures.insert(org_id.to_owned(), ()).await;
+                self.fallback(org_id).await
             }
-        };
-        self.cache
-            .insert(org_id.to_owned(), Arc::clone(&rules))
-            .await;
-        rules
+        }
     }
 
-    /// Ends the cached entry early, so the next request reloads.
+    async fn fallback(&self, org_id: &str) -> Result<Arc<OrgRules>, RulesUnavailable> {
+        self.last_known.get(org_id).await.ok_or(RulesUnavailable)
+    }
+
+    /// Ends the cached entry and any failure backoff early, so the next request reloads.
     #[cfg(test)]
     pub(crate) async fn expire(&self, org_id: &str) {
         self.cache.invalidate(org_id).await;
+        self.recent_failures.invalidate(org_id).await;
     }
 }
 
@@ -127,19 +173,21 @@ fn compile_rows(org_id: &str, rows: IngestRuleRows) -> CompiledRules {
     for rule in &invalid {
         warn!(org_id, rule_id = %rule.id, reason = %rule.reason, "Ingest rule does not compile; skipped");
     }
-    let skipped = unparsable + u64::try_from(invalid.len()).unwrap_or(u64::MAX);
+    let skipped = unparsable.saturating_add(u64::try_from(invalid.len()).unwrap_or(u64::MAX));
     if skipped > 0 {
         metrics::ingest_rules_invalid(org_id, skipped);
     }
     compiled
 }
 
-type StatKey = (String, String, i64, &'static str);
+/// (org, rule, UTC hour in epoch ms, signal); the ids are shared with `OrgRules`.
+type StatKey = (Arc<str>, Arc<str>, i64, &'static str);
 
 /// Per-rule counts summed per (org, rule, UTC hour, signal) until the next flush.
+/// Sharded, so concurrent requests rarely contend.
 #[derive(Default)]
 pub(crate) struct IngestRuleStatsSink {
-    pending: Mutex<HashMap<StatKey, RuleCounters>>,
+    pending: DashMap<StatKey, RuleCounters>,
     failed_flushes: AtomicU32,
 }
 
@@ -151,39 +199,29 @@ fn add_counts(total: &mut RuleCounters, more: &RuleCounters) {
 }
 
 impl IngestRuleStatsSink {
-    fn lock(&self) -> MutexGuard<'_, HashMap<StatKey, RuleCounters>> {
-        self.pending.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Adds one payload's counts; free when no rule matched.
-    pub(crate) fn record(
-        &self,
-        org_id: &str,
-        signal: &'static str,
-        rules: &CompiledRules,
-        stats: &RuleStats,
-        now_ms: i64,
-    ) {
+    /// Adds one written payload's counts; free when no rule matched.
+    pub(crate) fn record(&self, signal: &'static str, rules: &OrgRules, stats: &RuleStats, now_ms: i64) {
         if stats.total.matched == 0 {
             return;
         }
         let bucket_ms = now_ms - now_ms.rem_euclid(HOUR_MS);
-        let mut pending = self.lock();
-        for (rule_id, counters) in rules.rule_ids().iter().zip(&stats.per_rule) {
+        for (rule_id, counters) in rules.rule_ids.iter().zip(&stats.per_rule) {
             if counters.matched == 0 {
                 continue;
             }
-            let key = (org_id.to_owned(), rule_id.clone(), bucket_ms, signal);
-            add_counts(pending.entry(key).or_default(), counters);
+            let key = (Arc::clone(&rules.org_id), Arc::clone(rule_id), bucket_ms, signal);
+            add_counts(&mut self.pending.entry(key).or_default(), counters);
         }
     }
 
+    /// Removes and returns every pending row; counts added meanwhile wait for the next flush.
     fn take(&self) -> Vec<IngestRuleStatRow> {
-        std::mem::take(&mut *self.lock())
-            .into_iter()
+        let keys: Vec<StatKey> = self.pending.iter().map(|entry| entry.key().clone()).collect();
+        keys.into_iter()
+            .filter_map(|key| self.pending.remove(&key))
             .map(|((org_id, rule_id, bucket_ms, signal), counts)| IngestRuleStatRow {
-                org_id,
-                rule_id,
+                org_id: org_id.to_string(),
+                rule_id: rule_id.to_string(),
                 bucket_ms,
                 signal,
                 counts,
@@ -192,10 +230,9 @@ impl IngestRuleStatsSink {
     }
 
     fn restore(&self, rows: Vec<IngestRuleStatRow>) {
-        let mut pending = self.lock();
         for row in rows {
-            let key = (row.org_id, row.rule_id, row.bucket_ms, row.signal);
-            add_counts(pending.entry(key).or_default(), &row.counts);
+            let key = (Arc::from(row.org_id), Arc::from(row.rule_id), row.bucket_ms, row.signal);
+            add_counts(&mut self.pending.entry(key).or_default(), &row.counts);
         }
     }
 

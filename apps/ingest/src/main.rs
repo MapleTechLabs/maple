@@ -2031,6 +2031,18 @@ static INGEST_SERVICE_UNAVAILABLE: FailureKind = FailureKind {
     retry_after_seconds: Some(5),
 };
 
+/// The org's ingest rules could not be loaded and none were before. Refused rather
+/// than stored unredacted; safe to resend once the rule store answers.
+static INGEST_RULES_UNAVAILABLE: FailureKind = FailureKind {
+    tag: "@maple/ingest/IngestRulesUnavailable",
+    code: "ingest_rules_unavailable",
+    title: "Ingest rules unavailable",
+    recovery: "retry",
+    retryable: true,
+    error_kind: "rules_unavailable",
+    retry_after_seconds: Some(5),
+};
+
 static INGEST_INTERNAL_ERROR: FailureKind = FailureKind {
     tag: "@maple/ingest/InternalError",
     code: "ingest_internal_error",
@@ -6821,8 +6833,8 @@ struct ClaimOutcome {
 struct Retained {
     /// (kept, received) as a product of each step's encoded sizes; `None` when nothing changed.
     share: Option<(u128, u128)>,
-    /// Items the ingest rules dropped.
-    dropped_items: u64,
+    /// Items left after the ingest rules dropped some, recounted from the payload.
+    kept_items: Option<usize>,
 }
 
 impl Retained {
@@ -6848,9 +6860,9 @@ impl Retained {
         }
     }
 
-    /// `items` less what the rules dropped.
+    /// `items` as counted before the rules, or what is left when they dropped some.
     fn metered_items(&self, items: usize) -> usize {
-        items.saturating_sub(usize::try_from(self.dropped_items).unwrap_or(usize::MAX))
+        self.kept_items.unwrap_or(items)
     }
 }
 
@@ -7376,45 +7388,74 @@ async fn relay_collector_response(
         })
 }
 
+/// What one payload's rule pass did, recorded once the payload is written.
+struct RulesApplied {
+    rules: Arc<rules_gateway::OrgRules>,
+    stats: RuleStats,
+}
+
 /// Applies the org's ingest rules in place and folds what they removed into `retained`.
-/// False when no record is left. Free when the feature is off or no rule reads the signal.
+/// `None` when the feature is off or no rule reads the signal, at no cost. A rule lookup
+/// with nothing to fall back on refuses the payload rather than storing it unredacted.
 async fn apply_ingest_rules(
     state: &AppState,
     decoded: &mut DecodedPayload,
     org_id: &str,
     retained: &mut Retained,
-) -> bool {
+) -> Result<Option<RulesApplied>, ApiError> {
     let resolver = &state.ingest_rule_resolver;
     if !resolver.enabled() || org_id == SENTINEL_ORG_ID {
-        return true;
+        return Ok(None);
     }
-    let rules = resolver.resolve_rules(org_id).await;
+    let rules = resolver.resolve_rules(org_id).await.map_err(|_| {
+        ApiError::tagged(
+            StatusCode::SERVICE_UNAVAILABLE,
+            &INGEST_RULES_UNAVAILABLE,
+            "Ingest rules could not be loaded; retry shortly",
+        )
+    })?;
     let signal = decoded.signal();
-    if !rules.covers(signal.ingest_signal()) {
-        return true;
+    if !rules.compiled.covers(signal.ingest_signal()) {
+        return Ok(None);
     }
-    let before = decoded.encoded_len();
     let mut stats = RuleStats::default();
     match decoded {
-        DecodedPayload::Traces(request) => ingest_rules::apply_traces(&rules, request, &mut stats),
-        DecodedPayload::Logs(request) => ingest_rules::apply_logs(&rules, request, &mut stats),
-        DecodedPayload::Metrics(request) => ingest_rules::apply_metrics(&rules, request, &mut stats),
+        DecodedPayload::Traces(request) => {
+            ingest_rules::apply_traces(&rules.compiled, request, &mut stats);
+        }
+        DecodedPayload::Logs(request) => ingest_rules::apply_logs(&rules.compiled, request, &mut stats),
+        DecodedPayload::Metrics(request) => {
+            ingest_rules::apply_metrics(&rules.compiled, request, &mut stats);
+        }
     }
     let span = Span::current();
-    span.record("maple.ingest.rules.count", rules.len());
+    span.record("maple.ingest.rules.count", rules.compiled.len());
     span.record("maple.ingest.rules.dropped_items", stats.total.dropped);
     span.record("maple.ingest.rules.redacted_values", stats.total.redacted_values);
     if stats.total.dropped > 0 || stats.total.redacted_values > 0 {
-        retained.retain(before, decoded.encoded_len());
-        retained.dropped_items += stats.total.dropped;
-        if stats.total.dropped_bytes > 0 {
+        // One walk, only when something changed. Redaction's size change is not tracked, so
+        // `before` is after plus the dropped bytes: drops are discounted, redaction never bills more.
+        let after = decoded.encoded_len();
+        let dropped_bytes = usize::try_from(stats.total.dropped_bytes).unwrap_or(usize::MAX);
+        retained.retain(after.saturating_add(dropped_bytes), after);
+        if stats.total.dropped > 0 {
+            retained.kept_items = Some(decoded.item_count());
             metrics::ingest_rules_dropped_bytes(org_id, signal.path(), stats.total.dropped_bytes);
         }
     }
-    state
-        .ingest_rule_stats
-        .record(org_id, signal.path(), &rules, &stats, current_time_millis());
-    decoded.resource_count() > 0
+    Ok(Some(RulesApplied { rules, stats }))
+}
+
+/// Adds a written payload's rule counts to the stats sink.
+fn record_rule_stats(state: &AppState, signal: Signal, applied: Option<&RulesApplied>) {
+    if let Some(applied) = applied {
+        state.ingest_rule_stats.record(
+            signal.path(),
+            &applied.rules,
+            &applied.stats,
+            current_time_millis(),
+        );
+    }
 }
 
 #[hotpath::measure]
@@ -7428,8 +7469,10 @@ async fn process_decoded_payload(
     retained: &mut Retained,
 ) -> Result<Response, ApiError> {
     // Before the native/forward split: the WAL, S3 shipping and the collector never see raw values.
-    if !apply_ingest_rules(state, decoded, &resolved_key.org_id, retained).await {
+    let applied = apply_ingest_rules(state, decoded, &resolved_key.org_id, retained).await?;
+    if applied.is_some() && decoded.resource_count() == 0 {
         // Every record was dropped by a rule: success to the sender, nothing written.
+        record_rule_stats(state, signal, applied.as_ref());
         return Ok(StatusCode::OK.into_response());
     }
     let destination = native_destination_for(resolved_key);
@@ -7440,6 +7483,7 @@ async fn process_decoded_payload(
             .instrument(accept_internal_span(signal.path(), destination.as_str()))
             .await?;
         if destination == ExportDestination::ClickHouse {
+            record_rule_stats(state, signal, applied.as_ref());
             return Ok(StatusCode::OK.into_response());
         }
     }
@@ -7449,7 +7493,7 @@ async fn process_decoded_payload(
         let outbound_body = encode_payload(&outbound_payload, content_encoding)?;
         let outbound_bytes = outbound_body.len();
         let forward_span = forward_client_span("collector", outbound_bytes, signal.path());
-        return forward_to_collector(
+        let response = forward_to_collector(
             state,
             signal,
             payload_format.content_type(),
@@ -7458,9 +7502,15 @@ async fn process_decoded_payload(
             resolved_key,
         )
         .instrument(forward_span)
-        .await;
+        .await?;
+        // Counted once the collector took the batch, like the bytes it is billed for.
+        if response.status().is_success() {
+            record_rule_stats(state, signal, applied.as_ref());
+        }
+        return Ok(response);
     }
 
+    record_rule_stats(state, signal, applied.as_ref());
     Ok(StatusCode::OK.into_response())
 }
 
@@ -16154,15 +16204,81 @@ mod tests {
             Duration::from_secs(30),
             16,
         );
-        assert_eq!(resolver.resolve_rules("org_rules_lkg").await.len(), 2);
+        let loaded = |rules: Result<Arc<rules_gateway::OrgRules>, rules_gateway::RulesUnavailable>| {
+            rules.expect("rules resolve").compiled.len()
+        };
+        // Concurrent misses share one fetch.
+        let (a, b, c) = tokio::join!(
+            resolver.resolve_rules("org_rules_lkg"),
+            resolver.resolve_rules("org_rules_lkg"),
+            resolver.resolve_rules("org_rules_lkg"),
+        );
+        assert_eq!((loaded(a), loaded(b), loaded(c)), (2, 2, 2));
+        assert_eq!(store.ingest_rule_fetches.load(Ordering::Relaxed), 1);
 
         store.ingest_rule_errors.store(true, Ordering::Relaxed);
         resolver.expire("org_rules_lkg").await;
-        assert_eq!(resolver.resolve_rules("org_rules_lkg").await.len(), 2);
+        assert_eq!(loaded(resolver.resolve_rules("org_rules_lkg").await), 2);
+        assert_eq!(store.ingest_rule_fetches.load(Ordering::Relaxed), 2);
+        // Within the backoff the store is not asked again.
+        assert_eq!(loaded(resolver.resolve_rules("org_rules_lkg").await), 2);
         assert_eq!(store.ingest_rule_fetches.load(Ordering::Relaxed), 2);
 
-        // An org never loaded falls back to no rules rather than failing the request.
-        assert!(resolver.resolve_rules("org_never_loaded").await.is_empty());
+        // An org never loaded has nothing safe to fall back on.
+        assert!(resolver.resolve_rules("org_never_loaded").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_rule_lookup_with_nothing_to_fall_back_on_refuses_with_a_retryable_503() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let raw_key = "maple_sk_rules_closed";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-closed", raw_key, "org_rules_closed", forward_url).await;
+        store.set_ingest_rules("org_rules_closed", &[mask_emails_rule()]);
+        store.ingest_rule_errors.store(true, Ordering::Relaxed);
+        let state = with_ingest_rules(state, &store);
+
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        let Err((error, _)) =
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs).await
+        else {
+            panic!("an unredactable payload must not be accepted");
+        };
+        assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            error.into_response().headers().get(RETRY_AFTER),
+            Some(&HeaderValue::from_static("5"))
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "nothing may be forwarded unredacted"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn rule_stats_count_only_payloads_the_collector_took() {
+        let forward_url = spawn_refusing_logs_collector(StatusCode::SERVICE_UNAVAILABLE).await;
+        let raw_key = "maple_sk_rules_refused";
+        let (state, store, queue_dir) =
+            rules_forward_state("rules-refused", raw_key, "org_rules_refused", forward_url).await;
+        store.set_ingest_rules("org_rules_refused", &[mask_emails_rule()]);
+        let state = with_ingest_rules(state, &store);
+
+        let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
+        let accepted =
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs).await;
+        assert!(
+            accepted.map_or(true, |(response, ..)| !response.status().is_success()),
+            "the collector refused the batch"
+        );
+        state.ingest_rule_stats.flush(store.as_ref()).await;
+        assert!(store.ingest_rule_stats.lock().unwrap().is_empty());
+
+        drop(std::fs::remove_dir_all(&queue_dir));
     }
 
     const GCP_EMAIL_LOG_ENTRY: &str = r#"{
@@ -16218,25 +16334,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn gcp_pushes_meter_only_what_the_rules_leave() {
-        let (ch_url, _ch_rx) = spawn_fake_clickhouse().await;
-        // Removing the entry's `gcp.*` attributes shrinks what is stored.
-        let remove_gcp_attributes = serde_json::json!({
-            "signals": ["logs"],
-            "conditions": [],
-            "action": { "_tag": "redact", "keys": ["gcp.*"], "detectors": [], "patterns": [],
-                "scopes": ["attributes"], "method": "remove" }
-        });
-        let (state, _store, queue_dir) =
-            gcp_rules_state("rules-gcp-meter", &ch_url, &[remove_gcp_attributes]).await;
+    async fn cloudflare_batches_meter_only_what_the_rules_leave() {
+        let (state, store, queue_dir, mut forward_rx) =
+            cloudflare_logpush_state("rules-cloudflare-meter").await;
+        // Drops the INFO (200) record and keeps the WARN (404) one.
+        store.set_ingest_rules(
+            "org_cf_source",
+            &[serde_json::json!({
+                "signals": ["logs"],
+                "conditions": [{ "field": "severity", "op": "lt", "value": "warn" }],
+                "action": { "_tag": "drop", "keepPercent": 0 }
+            })],
+        );
+        let state = with_ingest_rules(state, &store);
         let (state, mut autumn_rx) = with_fake_autumn(state).await;
-        let state = Arc::new(state);
+        const BATCH: &[u8] = b"{\"ClientRequestHost\":\"example.com\",\"EdgeResponseStatus\":200}\n\
+            {\"ClientRequestHost\":\"example.com\",\"EdgeResponseStatus\":404}\n";
 
-        let accepted = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_LOG_ENTRY).await;
-        assert_eq!(accepted.status(), StatusCode::OK);
+        let (response, ..) = handle_cloudflare_logpush_inner(
+            &state,
+            "cf_without_source",
+            Some("connector-secret"),
+            &HeaderMap::new(),
+            Bytes::from_static(BATCH),
+        )
+        .await
+        .expect("accepted");
+        assert_eq!(response.status(), StatusCode::OK);
+        let forwarded = next_forwarded_logs(&mut forward_rx).await;
+        assert_eq!(forwarded.resource_logs[0].scope_logs[0].log_records.len(), 1);
         let calls = drain_autumn_calls(&mut autumn_rx).await;
         let tracked = tracked(&calls);
-        let unscaled = billable_gb(GCP_LOG_ENTRY.len() as u64);
+        let unscaled = billable_gb(BATCH.len() as u64);
         assert_eq!(tracked.len(), 1, "{tracked:?}");
         assert_eq!(tracked[0].0, "logs");
         assert!(tracked[0].1 > 0.0 && tracked[0].1 < unscaled, "{} of {unscaled}", tracked[0].1);
@@ -16255,9 +16384,10 @@ mod tests {
         // Hashing that grows the payload bills no more than before it.
         retained.retain(40, 60);
         assert_eq!(retained.metered_bytes(1_000), 250);
-        retained.dropped_items = 2;
+        // Items are what the rules left, recounted, not the count before them.
+        assert_eq!(retained.metered_items(3), 3);
+        retained.kept_items = Some(1);
         assert_eq!(retained.metered_items(3), 1);
-        assert_eq!(retained.metered_items(1), 0);
     }
 
     #[test]

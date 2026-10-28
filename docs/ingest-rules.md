@@ -167,18 +167,23 @@ the two engines agree on ASCII input either way.
 | Variable                      | Default | Meaning                                                              |
 | ----------------------------- | ------- | -------------------------------------------------------------------- |
 | `INGEST_RULES_ENABLED`        | `false` | Apply rules at all. Off never queries Postgres and costs nothing.    |
-| `INGEST_RULES_CACHE_TTL_SECS` | `30`    | How long an org's compiled rules are reused before a reload.         |
+| `INGEST_RULES_CACHE_TTL_SECS` | `30`    | How long an org's compiled rules are reused before a reload (min 1). |
 
-- If a reload fails, the gateway keeps applying the last rules it loaded for that org (no rules if
-  it never loaded any) and counts `ingest_rules_fetch_failed_total`. A stored rule that does not
+- Concurrent requests that miss the cache for one org share a single lookup.
+- If a reload fails, the gateway keeps applying the last rules it loaded for that org (kept up to
+  24 hours) and retries the lookup after 1 second. If it never loaded any, the request is refused
+  with a retryable 503 (`Retry-After: 5`; gRPC `UNAVAILABLE`) rather than stored unredacted.
+  Every failed lookup counts in `ingest_rules_fetch_failed_total`. A stored rule that does not
   parse or compile is skipped and counted in `ingest_rules_invalid_total`.
 - Only the share of the payload the rules leave is metered, on every path (OTLP HTTP and gRPC,
-  Cloudflare, GCP, AWS). Redaction that makes a payload larger never bills more than was received.
+  Cloudflare, GCP, AWS), and items are recounted after the rules. Dropped records are discounted
+  by their encoded size; redaction is not, so it never bills more or less than was received.
   Bytes of dropped records count in `ingest_rules_dropped_bytes_total`.
-- Per-rule counts (`matched`, `dropped`, `dropped_bytes`, `redacted_values`) are summed per org,
-  rule, signal and UTC hour, and added into `org_ingest_rule_stats` every minute and on shutdown.
-  A failed write keeps the counts for the next one; after 10 failures in a row they are dropped
-  and counted in `ingest_rule_stats_dropped_total`.
+- Per-rule counts (`matched`, `dropped`, `dropped_bytes`, `redacted_values`) are counted once the
+  payload is written (or fully dropped), summed per org, rule, signal and UTC hour, and added into
+  `org_ingest_rule_stats` every minute and on shutdown. A failed write keeps the counts for the
+  next one; after 10 failures in a row they are dropped and counted in
+  `ingest_rule_stats_dropped_total`.
 
 ## Limits
 
