@@ -121,10 +121,13 @@ describe("ingestRuleProblems", () => {
 		expect(problems({ field: "span_kind", op: "in", values: ["sever"] })).toEqual([
 			"condition 1: span_kind values are unspecified, internal, server, client, producer, consumer",
 		])
-		expect(problems({ field: "severity", op: "lt", value: "toString" })).toEqual([
-			"condition 1: severity only applies to logs",
-			"condition 1: severity is one of trace, debug, info, warn, error, fatal",
-		])
+		expect(
+			ingestRuleProblems({
+				signals: ["logs"],
+				conditions: [{ field: "severity", op: "lt", value: "toString" }],
+				action: { _tag: "drop", keepPercent: 0 },
+			}),
+		).toEqual(["condition 1: severity is one of trace, debug, info, warn, error, fatal"])
 		expect(problems({ field: "attribute", key: "k", op: "regex", value: "(?=x)" })).toEqual([
 			"condition 1: lookaround is not supported",
 		])
