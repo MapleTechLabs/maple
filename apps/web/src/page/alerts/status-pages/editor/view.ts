@@ -129,10 +129,13 @@ const tabRead = (model: Model, tab: EditorTab): { failure: Option.Option<LoadFai
 	switch (tab) {
 		case "settings":
 			return { failure: Option.none(), isReady: true }
+		// Incidents name components and the composer picks them, so a failed components read shows too.
 		case "incidents":
 			return {
-				failure: AsyncData.getError(model.incidents.data),
-				isReady: AsyncData.hasData(model.incidents.data),
+				failure: AsyncData.getError(model.incidents.data).pipe(
+					Option.orElse(() => AsyncData.getError(model.components.data)),
+				),
+				isReady: AsyncData.hasData(model.incidents.data) && AsyncData.hasData(model.components.data),
 			}
 		// Statuses need monitors and incidents too, and the dialog's monitor picker needs monitors:
 		// a failure in either must show as one, not as every component Operational.

@@ -42,6 +42,7 @@ type Fixture = Readonly<{
 	components?: ReturnType<typeof component>[]
 	incidents?: ReturnType<typeof incident>[]
 	monitorsFail?: boolean
+	componentsFail?: boolean
 }>
 
 const loaded = (fixture: Fixture = {}): Model => {
@@ -62,7 +63,9 @@ const loaded = (fixture: Fixture = {}): Model => {
 		}),
 		Message.CompletedFetchComponents({
 			key: entered.components.key ?? "",
-			result: Result.succeed(fixture.components ?? [component(1), component(2), component(3)]),
+			result: fixture.componentsFail
+				? Result.fail(toLoadFailure(new Error("components unavailable")))
+				: Result.succeed(fixture.components ?? [component(1), component(2), component(3)]),
 		}),
 		Message.CompletedFetchIncidents({
 			key: entered.incidents.key ?? "",
@@ -122,6 +125,17 @@ describe("read failures", () => {
 			expectView(text("Couldn't load components")).toExist(),
 			expectView(role("heading", { name: /^Acme Status$/u })).toExist(),
 			expectView(text("Operational")).not.toExist(),
+		)
+	})
+})
+
+describe("read failures on the incidents tab", () => {
+	test("a failed components read shows an error rather than incidents with no components", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "incidents", componentsFail: true })),
+			expectView(text("Couldn't load incidents")).toExist(),
+			expectView(role("button", { name: "New incident" })).not.toExist(),
 		)
 	})
 })
