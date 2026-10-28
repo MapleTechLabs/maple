@@ -13,7 +13,7 @@ import {
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId, RoleName, UserId } from "@maple/domain/primitives"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
-import type { Finding } from "@maple/security-audit"
+import type { EstimatedSeverity, Finding } from "@maple/security-audit"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import {
 	SecurityAuditWorkflowStarter,
@@ -66,6 +66,8 @@ const fixedClock = (nowMs: number): Clock.Clock => ({
 })
 
 const trackedDbs: TestDb[] = []
+/** Saves whose findings carry no estimated severity. */
+const NO_ESTIMATES: ReadonlyMap<string, EstimatedSeverity> = new Map()
 afterEach(() => cleanupTestDbs(trackedDbs))
 
 const ORG_A = Schema.decodeUnknownSync(OrgId)("org_audit_a")
@@ -235,6 +237,24 @@ const rejected = (fingerprint: string): Finding => ({
 	reason: "the gateway filters by org",
 })
 
+const lead = (fingerprint: string): Finding => ({
+	verdict: "needs_validation",
+	fingerprint,
+	title: `Lead ${fingerprint}`,
+	description: "rollKey may look the key up by id alone.",
+	trace: [],
+	evidence: [],
+	claimed_root_cause: "unchecked id",
+	blockers: ["whether the gateway filters by org is deployment configuration"],
+	validation_plan: { deployment: "owner checks the gateway's key routes" },
+})
+
+const mediumEstimate: EstimatedSeverity = {
+	likelihood: { score: "medium", reason: "reachable by a member" },
+	impact: { score: "medium", reason: "if the gateway does not filter" },
+	overall_severity: "medium",
+}
+
 const TARGET = { repository: "acme/api", branch: "main" }
 
 const tag = (name: string) => `@maple/http/security-audit/${name}`
@@ -291,7 +311,7 @@ describe("/api/security-audit access", () => {
 			const target = await harness.call("POST", "/targets", { body: TARGET })
 			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
 			await harness.withStore((store) =>
-				store.forOrg(ORG_A).saveFindings(run.body.id, [confirmed("f1")]),
+				store.forOrg(ORG_A).saveFindings(run.body.id, [confirmed("f1")], NO_ESTIMATES),
 			)
 			const other = `${ORG_B}|org:admin`
 
@@ -702,7 +722,9 @@ describe("/api/security-audit findings", () => {
 			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
 			const fingerprint = "authz/rollKey:missing-org"
 			await harness.withStore((store) =>
-				store.forOrg(ORG_A).saveFindings(run.body.id, [confirmed(fingerprint), rejected("f2")]),
+				store
+					.forOrg(ORG_A)
+					.saveFindings(run.body.id, [confirmed(fingerprint), rejected("f2")], NO_ESTIMATES),
 			)
 			const findingsPath = `/targets/${target.body.id}/findings`
 			const findingPath = `${findingsPath}/${encodeURIComponent(fingerprint)}`
@@ -766,13 +788,17 @@ describe("/api/security-audit run findings", () => {
 			await harness.withStore((store) =>
 				Effect.gen(function* () {
 					const scoped = store.forOrg(ORG_A)
-					yield* scoped.saveFindings(first.body.id, [confirmed("f1"), rejected("f2")])
+					yield* scoped.saveFindings(
+						first.body.id,
+						[confirmed("f1"), rejected("f2"), lead("l1")],
+						new Map([["l1", mediumEstimate]]),
+					)
 					yield* scoped.finishRun(first.body.id, { status: "complete" })
 				}),
 			)
 			const second = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
 			await harness.withStore((store) =>
-				store.forOrg(ORG_A).saveFindings(second.body.id, [confirmed("f1")]),
+				store.forOrg(ORG_A).saveFindings(second.body.id, [confirmed("f1")], NO_ESTIMATES),
 			)
 			const member = `${ORG_A}|org:member`
 
@@ -788,20 +814,30 @@ describe("/api/security-audit run findings", () => {
 
 			expect(
 				firstFindings.body.findings.map(
-					(f: { fingerprint: string; verdict: string; lastSeenRunId: string }) => [
-						f.fingerprint,
-						f.verdict,
-						f.lastSeenRunId,
-					],
+					(f: {
+						fingerprint: string
+						verdict: string
+						estimatedSeverity: string | null
+						lastSeenRunId: string
+					}) => [f.fingerprint, f.verdict, f.estimatedSeverity, f.lastSeenRunId],
 				),
 			).toEqual([
-				["f1", "confirmed", second.body.id],
-				["f2", "rejected", first.body.id],
+				["f1", "confirmed", null, second.body.id],
+				["l1", "needs_validation", "medium", first.body.id],
+				["f2", "rejected", null, first.body.id],
 			])
 			expect([memberFindings.status, foreign.status]).toEqual([403, 404])
-			const zeros = { critical: 0, high: 0, medium: 0, low: 0, informational: 0, needsValidation: 0 }
+			const zeros = {
+				critical: 0,
+				high: 0,
+				medium: 0,
+				low: 0,
+				informational: 0,
+				unverified: 0,
+				needsValidation: 0,
+			}
 			expect(adminRuns.body.findingCounts).toEqual({
-				[first.body.id]: { ...zeros, high: 1, rejected: 1 },
+				[first.body.id]: { ...zeros, high: 1, medium: 1, unverified: 1, rejected: 1 },
 				[second.body.id]: { ...zeros, high: 1, rejected: 0 },
 			})
 			expect([

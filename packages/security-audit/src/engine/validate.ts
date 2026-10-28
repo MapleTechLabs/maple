@@ -6,13 +6,19 @@
  */
 import { Effect, Ref } from "effect"
 import { candidateVerifierPrompt, companionFileOf, recordVerifierPrompt } from "../prompts"
-import { type Candidate, CandidateVerdict, RecordVerdict } from "../results"
-import type { Finding } from "../schema"
+import {
+	type Candidate,
+	candidateEstimate,
+	CandidateVerdict,
+	RecordVerdict,
+	verdictEstimate,
+} from "../results"
+import type { EstimatedSeverity, Finding } from "../schema"
 import { findingsErrors } from "../validators"
 import { strongest } from "./hunt"
 import type { LedgerUnit } from "./ledger"
 import type { AuditStoreError } from "./ports"
-import type { Engine, EngineState } from "./state"
+import { type Engine, type EngineState, withEstimate } from "./state"
 
 const MAX_MATERIAL_CHAIN = 3
 
@@ -22,6 +28,15 @@ interface ValidationItem {
 	readonly claim: Candidate | Finding
 	/** Every unit carrying this prior record; one verifier decides for all of them. */
 	readonly carriedUnits: ReadonlyArray<string>
+}
+
+/** The hunter's estimate for a proposed lead, or the level a carried lead was last stored at. */
+const claimEstimate = (engine: Engine, claim: Candidate | Finding): EstimatedSeverity | null => {
+	if ("proposed_verdict" in claim) return candidateEstimate(claim)
+	const level = engine.input.prior?.estimates?.get(claim.fingerprint)
+	if (level === undefined) return null
+	const carried = { score: level, reason: "Carried from the previous run's estimate." }
+	return { likelihood: carried, impact: carried, overall_severity: level }
 }
 
 const files = (record: Finding): ReadonlyArray<string> => [
@@ -79,6 +94,7 @@ const recordDecision = (
 	s: EngineState,
 	item: ValidationItem,
 	record: Finding,
+	estimate: EstimatedSeverity | null,
 	verifierId: string,
 ): EngineState => {
 	const ledger = s.ledger.map((unit): LedgerUnit => {
@@ -125,7 +141,12 @@ const recordDecision = (
 			? { ...unit, decisions: { ...unit.decisions, [record.fingerprint]: record.verdict } }
 			: unit
 	})
-	return { ...s, ledger, findings: new Map(s.findings).set(record.fingerprint, record) }
+	return {
+		...s,
+		ledger,
+		findings: new Map(s.findings).set(record.fingerprint, record),
+		estimates: withEstimate(s.estimates, record.fingerprint, estimate),
+	}
 }
 
 const validateOne = (engine: Engine, item: ValidationItem, index: number) =>
@@ -145,6 +166,7 @@ const validateOne = (engine: Engine, item: ValidationItem, index: number) =>
 						priorRecords: (engine.input.prior?.findings ?? []).filter(
 							(r) => r.fingerprint === item.fingerprint,
 						),
+						priorEstimate: engine.input.prior?.estimates?.get(item.fingerprint) ?? null,
 						includeRecordChecks: engine.input.profile === "quick",
 					},
 					engine.context(agentId),
@@ -155,7 +177,16 @@ const validateOne = (engine: Engine, item: ValidationItem, index: number) =>
 				if (verdict.record.fingerprint !== item.fingerprint)
 					return { _tag: "other-root-cause" } as const
 				if (findingsErrors([verdict.record]).length > 0) return { _tag: "unusable" } as const
-				return { _tag: "decided", record: verdict.record, agentId } as const
+				// The verifier's estimate replaces the hunter's; without one, the hunter's stands.
+				return {
+					_tag: "decided",
+					record: verdict.record,
+					estimate:
+						verdict.decision === "needs_validation"
+							? (verdictEstimate(verdict) ?? claimEstimate(engine, item.claim))
+							: null,
+					agentId,
+				} as const
 			})
 		// A malformed result is discarded and re-run once with a fresh verifier when the budget permits.
 		const first = yield* attempt("")
@@ -185,7 +216,10 @@ const validateOne = (engine: Engine, item: ValidationItem, index: number) =>
 			])
 			return
 		}
-		yield* engine.mutate((s) => [undefined, recordDecision(s, item, decided.record, decided.agentId)])
+		yield* engine.mutate((s) => [
+			undefined,
+			recordDecision(s, item, decided.record, decided.estimate, decided.agentId),
+		])
 	})
 
 /** Phase 3. */
@@ -256,12 +290,18 @@ export const isMaterial = (before: Finding, after: Finding): boolean =>
 	JSON.stringify(tracePath(before)) !== JSON.stringify(tracePath(after)) ||
 	JSON.stringify(materialView(before)) !== JSON.stringify(materialView(after))
 
+/** A record with the estimate that travels beside it (null unless it is needs_validation). */
+interface Estimated {
+	readonly record: Finding
+	readonly estimate: EstimatedSeverity | null
+}
+
 /**
  * The final record, or why there is none: `verifier` when a verifier failed or its answer was
  * unusable twice, `unfunded` for the budget, `unsettled` when replacements never converged.
  */
 type RecordCheck =
-	| { readonly _tag: "Final"; readonly record: Finding }
+	| ({ readonly _tag: "Final" } & Estimated)
 	| { readonly _tag: "Unchecked"; readonly reason: "verifier" | "unfunded" | "unsettled" }
 
 const unchecked = (reason: "verifier" | "unfunded" | "unsettled"): RecordCheck => ({
@@ -269,10 +309,10 @@ const unchecked = (reason: "verifier" | "unfunded" | "unsettled"): RecordCheck =
 	reason,
 })
 
-const verifyRecord = (engine: Engine, record: Finding, index: number) =>
+const verifyRecord = (engine: Engine, start: Estimated, index: number) =>
 	Effect.gen(function* () {
 		const step = (
-			current: Finding,
+			current: Estimated,
 			depth: number,
 			retried: boolean,
 		): Effect.Effect<RecordCheck, AuditStoreError> =>
@@ -283,22 +323,30 @@ const verifyRecord = (engine: Engine, record: Finding, index: number) =>
 				const verdict = yield* engine.invoke(
 					"record-verifier",
 					agentId,
-					recordVerifierPrompt(current, engine.context(agentId)),
+					recordVerifierPrompt(current.record, engine.context(agentId), current.estimate),
 					RecordVerdict,
 				)
 				const usable =
 					verdict !== undefined &&
 					(verdict.decision === "verified"
-						? verdict.fingerprint === current.fingerprint
-						: verdict.record.fingerprint === current.fingerprint &&
+						? verdict.fingerprint === current.record.fingerprint
+						: verdict.record.fingerprint === current.record.fingerprint &&
 							findingsErrors([verdict.record]).length === 0)
 				if (!usable) return retried ? unchecked("verifier") : yield* step(current, depth, true)
-				if (verdict.decision === "verified") return { _tag: "Final", record: current } as const
-				return isMaterial(current, verdict.record)
-					? yield* step(verdict.record, depth + 1, false)
-					: ({ _tag: "Final", record: verdict.record } as const)
+				if (verdict.decision === "verified") return { _tag: "Final", ...current } as const
+				// A revised estimate alone is not material: it is Maple's, outside the skill's record.
+				const next = {
+					record: verdict.record,
+					estimate:
+						verdict.record.verdict === "needs_validation"
+							? (verdictEstimate(verdict) ?? current.estimate)
+							: null,
+				}
+				return isMaterial(current.record, verdict.record)
+					? yield* step(next, depth + 1, false)
+					: ({ _tag: "Final", ...next } as const)
 			})
-		return yield* step(record, 0, false)
+		return yield* step(start, 0, false)
 	})
 
 /** Phase 5; skipped by `quick`, whose Phase 3 verifier already did these checks. */
@@ -318,7 +366,11 @@ export const runRecordVerification = (engine: Engine) =>
 			records,
 			(record, index) =>
 				Effect.gen(function* () {
-					const checked = yield* verifyRecord(engine, record, index)
+					const checked = yield* verifyRecord(
+						engine,
+						{ record, estimate: s.estimates.get(record.fingerprint) ?? null },
+						index,
+					)
 					if (checked._tag === "Unchecked" && checked.reason === "verifier") {
 						// A failed verifier says nothing about the record: it stays as candidate validation
 						// decided it, marked on its units as not re-checked, and the run is incomplete.
@@ -353,7 +405,14 @@ export const runRecordVerification = (engine: Engine) =>
 						yield* engine.mutate((c) => {
 							const findings = new Map(c.findings)
 							findings.delete(record.fingerprint)
-							return [undefined, { ...c, findings }]
+							return [
+								undefined,
+								{
+									...c,
+									findings,
+									estimates: withEstimate(c.estimates, record.fingerprint, null),
+								},
+							]
 						})
 						yield* engine.fail("record_verification_incomplete")
 						return
@@ -364,6 +423,7 @@ export const runRecordVerification = (engine: Engine) =>
 						{
 							...c,
 							findings: new Map(c.findings).set(final.fingerprint, final),
+							estimates: withEstimate(c.estimates, final.fingerprint, checked.estimate),
 							ledger: c.ledger.map((unit) =>
 								unit.result_fingerprints.includes(final.fingerprint)
 									? {
