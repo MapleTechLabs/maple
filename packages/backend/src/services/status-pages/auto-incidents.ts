@@ -212,19 +212,22 @@ export const AUTO_INCIDENT_OPEN_RETRY_MS = 15 * 60_000
  */
 export const repairMissingAutoIncidents = (db: MapleDb, at: number) =>
 	Effect.gen(function* () {
-		// Four tables across two join keys (rule, then monitor): a typed query, not the builder.
+		// Anchored at the few opted-in pages (MATERIALIZED keeps the planner there), then down indexed
+		// keys: components by page, monitors by id, alerts by (org, rule), page incidents by alert.
 		const rows = yield* db.query(
 			Orm.sql`
+				WITH pages AS MATERIALIZED (
+					SELECT id, org_id FROM status_pages WHERE auto_incidents <> 'off'
+				)
 				SELECT DISTINCT a.id, a.org_id, a.rule_id,
 					(extract(epoch from a.first_triggered_at) * 1000)::float8 AS first_triggered_ms
-				FROM alert_incidents a
-				JOIN uptime_monitors m ON m.alert_rule_id = a.rule_id AND m.org_id = a.org_id
-				JOIN status_page_components c ON c.monitor_id = m.id AND c.org_id = a.org_id
-				JOIN status_pages p ON p.id = c.page_id AND p.org_id = a.org_id
+				FROM pages p
+				JOIN status_page_components c ON c.page_id = p.id AND c.org_id = p.org_id
+				JOIN uptime_monitors m ON m.id = c.monitor_id AND m.org_id = p.org_id
+				JOIN alert_incidents a ON a.org_id = m.org_id AND a.rule_id = m.alert_rule_id
 				LEFT JOIN status_page_incidents i ON i.alert_incident_id = a.id AND i.page_id = p.id
 				WHERE a.status <> 'resolved'
 					AND a.first_triggered_at >= ${msToSqlTimestamp(at - AUTO_INCIDENT_OPEN_RETRY_MS)}::timestamptz
-					AND p.auto_incidents <> 'off'
 					AND i.id IS NULL
 				ORDER BY first_triggered_ms
 				LIMIT ${AUTO_INCIDENT_REPAIR_BATCH}`,
