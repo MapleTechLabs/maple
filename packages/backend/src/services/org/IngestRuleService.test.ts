@@ -85,6 +85,15 @@ describe("IngestRuleService", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("never derives a position past the maximum the API accepts", () =>
+		Effect.gen(function* () {
+			const service = yield* IngestRuleService
+			yield* service.create(ORG, { name: "Last", position: 10_000, spec: dropDebug })
+			const next = yield* service.create(ORG, { name: "Next", spec: maskEmails })
+			expect(next.position).toBe(10_000)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("cannot read, update or delete another org's rule", () =>
 		Effect.gen(function* () {
 			const service = yield* IngestRuleService

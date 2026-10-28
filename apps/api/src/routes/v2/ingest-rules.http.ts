@@ -4,17 +4,16 @@ import type { IngestRule } from "@maple/domain/ingest-rules"
 import {
 	MapleApiV2,
 	fromV2IngestRuleAction,
+	isoTimestamp,
 	paginateArray,
 	toV2IngestRuleAction,
 	type V2IngestRule,
 } from "@maple/domain/http/v2"
-import { DateTime, Effect } from "effect"
+import { Effect } from "effect"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
-
-const isoTimestamp = (millis: number) => DateTime.formatIso(DateTime.makeUnsafe(millis))
 
 const toV2IngestRule = (rule: IngestRule): V2IngestRule => ({
 	id: rule.id,

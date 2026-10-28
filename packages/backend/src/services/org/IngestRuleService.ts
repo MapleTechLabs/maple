@@ -160,7 +160,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 									orgId,
 									name: input.name.trim(),
 									enabled: input.enabled ?? true,
-									position: input.position ?? lastPosition + 1,
+									position: input.position ?? Math.min(lastPosition + 1, MAX_POSITION),
 									specJson: input.spec,
 									createdAt: now,
 									updatedAt: now,
