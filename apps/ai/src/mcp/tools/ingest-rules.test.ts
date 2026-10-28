@@ -130,6 +130,22 @@ describe("ingest rule MCP tools", () => {
 		}).pipe(Effect.provide(layerFor(createTestDb(trackedDbs), [])))
 	})
 
+	it.effect("refuses to preview a rule against a signal it does not target", () => {
+		const call = tools()
+		return Effect.gen(function* () {
+			const preview = yield* call("preview_ingest_rule", {
+				signals: ["logs"],
+				conditions: [{ field: "severity", op: "lt", value: "info" }],
+				action: { type: "drop", keep_percent: 0 },
+				signal: "traces",
+			})
+			assert.deepInclude(preview, {
+				sampled: 0,
+				problems: ["the rule does not apply to traces; pick one of logs"],
+			})
+		}).pipe(Effect.provide(layerFor(createTestDb(trackedDbs), [])))
+	})
+
 	it.effect("refuses to preview span_kind conditions it cannot see", () => {
 		const call = tools()
 		return Effect.gen(function* () {
