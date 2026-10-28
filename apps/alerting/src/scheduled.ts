@@ -148,6 +148,7 @@ const schedulerTick = (lane: AlertSchedulerLane, spanKey: string) =>
 			warehouseUnavailableSkipCount: result.warehouseUnavailableSkipCount,
 			deferredCount: result.deferredCount,
 			deliveryFailureCount: result.deliveryFailureCount,
+			alertChecksDroppedCount: result.alertChecksDroppedCount,
 		}),
 	)
 
