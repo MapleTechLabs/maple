@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { IngestRuleSpec } from "@maple/domain/ingest-rules"
+import { INGEST_RULE_LIMITS } from "@maple/domain/ingest-rules"
 import { Schema } from "effect"
-import { applyRules, compileRules, formatDouble, globMatches, type RuleRecord } from "./engine"
+import { applyRules, compileRules, formatDouble, globMatches, scanCut, type RuleRecord } from "./engine"
+import { text } from "./fuzz-arbitraries"
 import { hmacSha256, sha256, toHex, utf8 } from "./sha256"
 
 const maskEverything: IngestRuleSpec = {
@@ -114,6 +116,22 @@ describe("applyRules properties", () => {
 					.map(([key, value]) => [key, value.replace(/[0-9@A-Z:_-]/g, "x")]),
 			)
 			expect(keptRecord(logRecord(clean, "plain words only")).attributes).toEqual(clean)
+		},
+	)
+})
+
+describe("scanCut", () => {
+	it.prop(
+		"cuts at the last whole code point within the byte cap, as the gateway does",
+		[text],
+		([value]) => {
+			const cut = scanCut(value)
+			const bytes = (part: string) => utf8(part).length
+			expect(bytes(value.slice(0, cut))).toBeLessThanOrEqual(INGEST_RULE_LIMITS.scanBytes)
+			expect(value.slice(cut, cut + 1)).not.toMatch(/^[\udc00-\udfff]$/u)
+			const next = String.fromCodePoint(value.codePointAt(cut) ?? 0)
+			if (cut < value.length)
+				expect(bytes(value.slice(0, cut)) + bytes(next)).toBeGreaterThan(INGEST_RULE_LIMITS.scanBytes)
 		},
 	)
 })

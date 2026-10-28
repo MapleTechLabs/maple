@@ -852,14 +852,15 @@ impl Redactor<'_> {
         }
     }
 
-    /// Redacts attributes or kvlist entries in place.
+    /// Redacts a record's, resource's, event's or exemplar's attributes in place.
     fn redact_attributes(&mut self, attributes: &mut Vec<KeyValue>) {
-        attributes.retain_mut(|kv| self.redact_entry(kv));
+        attributes.retain_mut(|kv| self.redact_entry(kv, true));
     }
 
-    /// Returns false when the entry is to be removed.
-    fn redact_entry(&mut self, kv: &mut KeyValue) -> bool {
-        if is_protected_key(&kv.key) {
+    /// Returns false when the entry is to be removed. Protected keys only route and bill at the
+    /// top level; inside a kvlist they are customer data.
+    fn redact_entry(&mut self, kv: &mut KeyValue, top_level: bool) -> bool {
+        if top_level && is_protected_key(&kv.key) {
             return true;
         }
         if self.key_matches(&kv.key) {
@@ -892,7 +893,9 @@ impl Redactor<'_> {
                     self.redact_value(item);
                 }
             }
-            Some(any_value::Value::KvlistValue(list)) => self.redact_attributes(&mut list.values),
+            Some(any_value::Value::KvlistValue(list)) => {
+                list.values.retain_mut(|kv| self.redact_entry(kv, false));
+            }
             _ => {}
         }
     }
@@ -1324,72 +1327,79 @@ pub fn apply_metrics(rules: &CompiledRules, request: &mut ExportMetricsServiceRe
     pass.stats.refresh_total();
 }
 
-#[cfg(test)]
-mod tests {
+/// Runs one shared-fixture case through the engine. Used by the fixture tests and by the
+/// `ingest_rules_oracle` example, which the TS differential fuzzer drives.
+#[cfg(any(test, feature = "conformance"))]
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate,
+    reason = "test harness; a malformed case is a bug in the caller"
+)]
+pub mod conformance {
     use super::*;
     use opentelemetry_proto::tonic::common::v1::{ArrayValue, InstrumentationScope, KeyValueList};
     use opentelemetry_proto::tonic::logs::v1::{ResourceLogs, ScopeLogs};
     use opentelemetry_proto::tonic::metrics::v1::{
-        number_data_point, Gauge, Metric, ResourceMetrics, ScopeMetrics, Sum,
+        number_data_point, Gauge, Metric, ResourceMetrics, ScopeMetrics,
     };
     use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans, Status};
+    use serde::Deserialize;
     use serde_json::{json, Map, Value};
 
-    const DROP_FIXTURES: &str = include_str!("../../../packages/ingest-rules/fixtures/drop.json");
-    const REDACT_FIXTURES: &str =
-        include_str!("../../../packages/ingest-rules/fixtures/redact.json");
-    const SPAN_KINDS: [&str; 6] = ["unspecified", "internal", "server", "client", "producer", "consumer"];
-    const SPAN_STATUSES: [&str; 3] = ["unset", "ok", "error"];
+    pub const SPAN_KINDS: [&str; 6] = ["unspecified", "internal", "server", "client", "producer", "consumer"];
+    pub const SPAN_STATUSES: [&str; 3] = ["unset", "ok", "error"];
 
     #[derive(Debug, Deserialize)]
-    struct Case {
-        name: String,
-        salt: String,
-        rules: Vec<IngestRuleSpec>,
-        input: Input,
-        expected: Value,
+    pub struct Case {
+        #[serde(default)]
+        pub name: String,
+        pub salt: String,
+        pub rules: Vec<IngestRuleSpec>,
+        pub input: Input,
+        #[serde(default)]
+        pub expected: Value,
     }
 
     #[derive(Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
-    struct Input {
-        signal: IngestSignal,
-        resource: Map<String, Value>,
-        attributes: Map<String, Value>,
+    pub struct Input {
+        pub signal: IngestSignal,
+        pub resource: Map<String, Value>,
+        pub attributes: Map<String, Value>,
         #[serde(default)]
-        body: Option<Value>,
+        pub body: Option<Value>,
         #[serde(default)]
-        severity_number: Option<i32>,
+        pub severity_number: Option<i32>,
         #[serde(default)]
-        severity_text: Option<String>,
+        pub severity_text: Option<String>,
         #[serde(default)]
-        trace_id: Option<String>,
+        pub trace_id: Option<String>,
         #[serde(default)]
-        name: Option<String>,
+        pub name: Option<String>,
         #[serde(default)]
-        span_kind: Option<String>,
+        pub span_kind: Option<String>,
         #[serde(default)]
-        span_status: Option<String>,
+        pub span_status: Option<String>,
         #[serde(default)]
-        events: Option<Vec<EventInput>>,
+        pub events: Option<Vec<EventInput>>,
         #[serde(default)]
-        status_message: Option<String>,
+        pub status_message: Option<String>,
     }
 
     #[derive(Debug, Deserialize)]
-    struct EventInput {
-        name: String,
-        attributes: Map<String, Value>,
+    pub struct EventInput {
+        pub name: String,
+        pub attributes: Map<String, Value>,
     }
 
-    fn decode_hex(text: &str) -> Vec<u8> {
+    pub fn decode_hex(text: &str) -> Vec<u8> {
         (0..text.len())
             .step_by(2)
             .map(|i| u8::from_str_radix(&text[i..i + 2], 16).expect("hex byte"))
             .collect()
     }
 
-    fn to_any(value: &Value) -> AnyValue {
+    pub fn to_any(value: &Value) -> AnyValue {
         let inner = match value {
             Value::Null => None,
             Value::Bool(flag) => Some(any_value::Value::BoolValue(*flag)),
@@ -1413,7 +1423,7 @@ mod tests {
         AnyValue { value: inner }
     }
 
-    fn to_kvs(map: &Map<String, Value>) -> Vec<KeyValue> {
+    pub fn to_kvs(map: &Map<String, Value>) -> Vec<KeyValue> {
         map.iter()
             .map(|(key, value)| KeyValue {
                 key: key.clone(),
@@ -1423,7 +1433,7 @@ mod tests {
             .collect()
     }
 
-    fn from_any(value: &AnyValue) -> Value {
+    pub fn from_any(value: &AnyValue) -> Value {
         match &value.value {
             None => Value::Null,
             Some(any_value::Value::StringValue(text)) => json!(text),
@@ -1443,26 +1453,26 @@ mod tests {
         }
     }
 
-    fn from_kvs(attributes: &[KeyValue]) -> Map<String, Value> {
+    pub fn from_kvs(attributes: &[KeyValue]) -> Map<String, Value> {
         attributes
             .iter()
             .map(|kv| (kv.key.clone(), kv.value.as_ref().map_or(Value::Null, from_any)))
             .collect()
     }
 
-    fn position(names: &[&str], name: Option<&str>) -> i32 {
+    pub fn position(names: &[&str], name: Option<&str>) -> i32 {
         name.and_then(|name| names.iter().position(|candidate| *candidate == name))
             .map_or(0, |index| i32::try_from(index).expect("small enum"))
     }
 
-    fn resource_of(input: &Input) -> Option<Resource> {
+    pub fn resource_of(input: &Input) -> Option<Resource> {
         Some(Resource {
             attributes: to_kvs(&input.resource),
             ..Default::default()
         })
     }
 
-    fn kept(resource: &[KeyValue], attributes: &[KeyValue]) -> Value {
+    pub fn kept(resource: &[KeyValue], attributes: &[KeyValue]) -> Value {
         json!({
             "dropped": false,
             "resource": from_kvs(resource),
@@ -1470,7 +1480,7 @@ mod tests {
         })
     }
 
-    fn run_traces(rules: &CompiledRules, input: &Input) -> Value {
+    pub fn run_traces(rules: &CompiledRules, input: &Input) -> Value {
         let span = Span {
             name: input.name.clone().unwrap_or_default(),
             kind: position(&SPAN_KINDS, input.span_kind.as_deref()),
@@ -1523,7 +1533,7 @@ mod tests {
         out
     }
 
-    fn run_logs(rules: &CompiledRules, input: &Input) -> Value {
+    pub fn run_logs(rules: &CompiledRules, input: &Input) -> Value {
         let record = LogRecord {
             severity_number: input.severity_number.unwrap_or(0),
             severity_text: input.severity_text.clone().unwrap_or_default(),
@@ -1556,7 +1566,7 @@ mod tests {
         out
     }
 
-    fn number_point(attributes: Vec<KeyValue>) -> NumberDataPoint {
+    pub fn number_point(attributes: Vec<KeyValue>) -> NumberDataPoint {
         NumberDataPoint {
             attributes,
             value: Some(number_data_point::Value::AsInt(1)),
@@ -1564,7 +1574,7 @@ mod tests {
         }
     }
 
-    fn gauge(name: &str, points: Vec<NumberDataPoint>) -> Metric {
+    pub fn gauge(name: &str, points: Vec<NumberDataPoint>) -> Metric {
         Metric {
             name: name.to_owned(),
             data: Some(metric::Data::Gauge(Gauge { data_points: points })),
@@ -1572,7 +1582,7 @@ mod tests {
         }
     }
 
-    fn metrics_request(resource: Option<Resource>, metrics: Vec<Metric>) -> ExportMetricsServiceRequest {
+    pub fn metrics_request(resource: Option<Resource>, metrics: Vec<Metric>) -> ExportMetricsServiceRequest {
         ExportMetricsServiceRequest {
             resource_metrics: vec![ResourceMetrics {
                 resource,
@@ -1586,7 +1596,7 @@ mod tests {
         }
     }
 
-    fn run_metrics(rules: &CompiledRules, input: &Input) -> Value {
+    pub fn run_metrics(rules: &CompiledRules, input: &Input) -> Value {
         let metric = gauge(
             input.name.as_deref().unwrap_or_default(),
             vec![number_point(to_kvs(&input.attributes))],
@@ -1604,7 +1614,8 @@ mod tests {
         kept(resource, &data.data_points[0].attributes)
     }
 
-    fn run_case(case: &Case) -> Value {
+    /// The case's outcome in the fixture `expected` form, or `{"invalid": ...}` when a rule does not compile.
+    pub fn run_case(case: &Case) -> Value {
         let rules = case
             .rules
             .iter()
@@ -1612,13 +1623,29 @@ mod tests {
             .map(|(index, rule)| (format!("r{index}"), rule.clone()))
             .collect();
         let (compiled, invalid) = CompiledRules::compile(rules, case.salt.clone());
-        assert!(invalid.is_empty(), "{}: invalid rules {invalid:?}", case.name);
+        if !invalid.is_empty() {
+            return json!({ "invalid": format!("{invalid:?}") });
+        }
         match case.input.signal {
             IngestSignal::Traces => run_traces(&compiled, &case.input),
             IngestSignal::Logs => run_logs(&compiled, &case.input),
             IngestSignal::Metrics => run_metrics(&compiled, &case.input),
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::conformance::*;
+    use opentelemetry_proto::tonic::logs::v1::{ResourceLogs, ScopeLogs};
+    use opentelemetry_proto::tonic::metrics::v1::{Metric, Sum};
+    use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans};
+    use serde_json::{json, Value};
+
+    const DROP_FIXTURES: &str = include_str!("../../../packages/ingest-rules/fixtures/drop.json");
+    const REDACT_FIXTURES: &str =
+        include_str!("../../../packages/ingest-rules/fixtures/redact.json");
 
     fn run_fixtures(source: &str) {
         let cases: Vec<Case> = serde_json::from_str(source).expect("fixtures parse");
@@ -1657,6 +1684,122 @@ mod tests {
         ];
         for (value, expected) in cases {
             assert_eq!(format_double(value), expected, "formatting {value}");
+        }
+    }
+
+    mod properties {
+        use super::*;
+        use opentelemetry_proto::tonic::common::v1::{ArrayValue, KeyValueList};
+        use proptest::prelude::*;
+
+        const KEYS: [&str; 8] = [
+            "service.name", "org_id", "maple_org_id", "user.email", "password", "maple_ai.prompt", "a", "",
+        ];
+
+        fn text() -> impl Strategy<Value = String> {
+            prop_oneof![
+                any::<String>(),
+                "[a-z@. 0-9é日😀\n-]{0,40}",
+                Just("jane.doe+x@example.co.uk 4111 1111 1111 1111".to_owned()),
+                (0usize..64).prop_map(|extra| format!("{}a@b.co", "é".repeat(SCAN_BYTES / 2 - 32 + extra))),
+            ]
+        }
+
+        fn value() -> impl Strategy<Value = AnyValue> {
+            let leaf = prop_oneof![
+                text().prop_map(|text| any_value::Value::StringValue(text)),
+                any::<i64>().prop_map(any_value::Value::IntValue),
+                any::<f64>().prop_map(any_value::Value::DoubleValue),
+                any::<bool>().prop_map(any_value::Value::BoolValue),
+                proptest::collection::vec(any::<u8>(), 0..8).prop_map(any_value::Value::BytesValue),
+            ]
+            .prop_map(|inner| AnyValue { value: Some(inner) });
+            leaf.prop_recursive(3, 24, 4, |inner| {
+                prop_oneof![
+                    proptest::collection::vec(inner.clone(), 0..4).prop_map(|values| AnyValue {
+                        value: Some(any_value::Value::ArrayValue(ArrayValue { values })),
+                    }),
+                    proptest::collection::vec((proptest::sample::select(&KEYS[..]), inner), 0..4).prop_map(
+                        |entries| AnyValue {
+                            value: Some(any_value::Value::KvlistValue(KeyValueList {
+                                values: entries
+                                    .into_iter()
+                                    .map(|(key, value)| KeyValue { key: key.to_owned(), value: Some(value), ..Default::default() })
+                                    .collect(),
+                            })),
+                        }
+                    ),
+                ]
+            })
+        }
+
+        fn attributes() -> impl Strategy<Value = Vec<KeyValue>> {
+            proptest::collection::vec((proptest::sample::select(&KEYS[..]), value()), 0..6).prop_map(|entries| {
+                entries
+                    .into_iter()
+                    .map(|(key, value)| KeyValue { key: key.to_owned(), value: Some(value), ..Default::default() })
+                    .collect()
+            })
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(256))]
+
+            /// Rules come from Postgres; a row the API never validated must be skipped, not crash the gateway.
+            #[test]
+            fn compiling_any_rule_never_panics(
+                pattern in any::<String>(),
+                key in any::<String>(),
+                value in any::<String>(),
+                op in proptest::sample::select(&["eq", "regex", "in", "lt", "gte", "exists", "prefix"][..]),
+                field in proptest::sample::select(&["attribute", "body", "severity", "span_kind", "name"][..]),
+            ) {
+                let rule = json!({
+                    "signals": ["logs", "traces"],
+                    "conditions": [{ "field": field, "key": key, "op": op, "value": value, "values": [value] }],
+                    "action": { "_tag": "redact", "keys": [key], "detectors": ["email"], "patterns": [pattern], "scopes": ["attributes", "body"], "method": "hash" },
+                });
+                if let Ok(spec) = serde_json::from_value::<IngestRuleSpec>(rule) {
+                    let _ = CompiledRules::compile(vec![("r".to_owned(), spec)], "salt".to_owned());
+                }
+            }
+
+            /// Redaction walks arbitrary nesting without panicking and never touches a top-level protected key.
+            #[test]
+            fn redaction_keeps_top_level_protected_keys(
+                attributes in attributes(),
+                method in proptest::sample::select(&["mask", "hash", "remove"][..]),
+            ) {
+                let rule = spec(json!({
+                    "signals": ["logs"],
+                    "conditions": [],
+                    "action": { "_tag": "redact", "keys": ["*"], "detectors": ["email", "credit_card", "jwt", "api_token", "ipv4", "ipv6", "phone", "iban"], "patterns": ["[a-z]+"], "scopes": ["attributes", "resource", "body"], "method": method },
+                }));
+                let (rules, invalid) = CompiledRules::compile(vec![("r".to_owned(), rule)], "salt".to_owned());
+                prop_assert!(invalid.is_empty());
+                let protected = |kvs: &[KeyValue]| -> Vec<KeyValue> {
+                    kvs.iter().filter(|kv| is_protected_key(&kv.key)).cloned().collect()
+                };
+                let before = protected(&attributes);
+                let mut request = ExportLogsServiceRequest {
+                    resource_logs: vec![ResourceLogs {
+                        resource: Some(Resource { attributes: attributes.clone(), ..Default::default() }),
+                        scope_logs: vec![ScopeLogs {
+                            log_records: vec![LogRecord {
+                                attributes,
+                                body: Some(AnyValue { value: Some(any_value::Value::StringValue("a@b.co".to_owned())) }),
+                                ..Default::default()
+                            }],
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                };
+                apply_logs(&rules, &mut request, &mut RuleStats::default());
+                let resource_logs = &request.resource_logs[0];
+                prop_assert_eq!(protected(&resource_logs.scope_logs[0].log_records[0].attributes), before.clone());
+                prop_assert_eq!(protected(resource_attributes(resource_logs.resource.as_ref())), before);
+            }
         }
     }
 

@@ -8,6 +8,7 @@
 	},
 	"scripts": {
 		"test": "vitest run",
+		"fuzz": "bun scripts/fuzz.ts",
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {

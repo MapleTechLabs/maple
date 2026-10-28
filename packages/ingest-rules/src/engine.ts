@@ -230,9 +230,7 @@ const conditionMatches = (record: RuleRecord, compiled: CompiledCondition): bool
 		case "contains":
 			return value.includes(operand)
 		case "regex":
-			return (
-				compiled.regex !== null && compiled.regex.test(value.slice(0, INGEST_RULE_LIMITS.scanBytes))
-			)
+			return compiled.regex !== null && compiled.regex.test(value.slice(0, scanCut(value)))
 		default:
 			return false
 	}
@@ -241,6 +239,30 @@ const conditionMatches = (record: RuleRecord, compiled: CompiledCondition): bool
 const ruleMatches = (rule: CompiledRule, record: RuleRecord): boolean =>
 	rule.signals.has(record.signal) &&
 	rule.conditions.every((condition) => conditionMatches(record, condition))
+
+/**
+ * Where the scan stops: the end of the longest prefix within `scanBytes` UTF-8 bytes that does
+ * not split a code point. The gateway cuts in bytes, so UTF-16 lengths would scan further.
+ */
+export const scanCut = (text: string): number => {
+	const cap = INGEST_RULE_LIMITS.scanBytes
+	if (text.length * 3 <= cap) return text.length
+	let bytes = 0
+	let index = 0
+	while (index < text.length) {
+		const unit = text.charCodeAt(index)
+		const pair =
+			unit >= 0xd800 &&
+			unit <= 0xdbff &&
+			index + 1 < text.length &&
+			(text.charCodeAt(index + 1) & 0xfc00) === 0xdc00
+		const size = pair ? 4 : unit < 0x80 ? 1 : unit < 0x800 ? 2 : 3
+		if (bytes + size > cap) return index
+		bytes += size
+		index += pair ? 2 : 1
+	}
+	return index
+}
 
 // SAMPLING
 
@@ -313,7 +335,8 @@ const replaceSpans = (
 const scanString = (text: string, ctx: RedactContext): string => {
 	const replacement = (label: string | null) => (matched: string) =>
 		ctx.method === "hash" ? hashText(ctx.salt, matched) : label === null ? MASK : `[REDACTED:${label}]`
-	const tail = text.slice(INGEST_RULE_LIMITS.scanBytes)
+	const cut = scanCut(text)
+	const tail = text.slice(cut)
 	const afterDetectors = ctx.detectors.reduce(
 		(head, detector) => {
 			const { regex, accept } = DETECTORS[detector]
@@ -321,7 +344,7 @@ const scanString = (text: string, ctx: RedactContext): string => {
 			ctx.count += spans.length
 			return replaceSpans(head, spans, replacement(detector))
 		},
-		text.slice(0, INGEST_RULE_LIMITS.scanBytes),
+		text.slice(0, cut),
 	)
 	const afterPatterns = ctx.rule.patterns.reduce((head, regex) => {
 		const spans = findAll(regex, head, () => true)
@@ -335,7 +358,7 @@ const scanValue = (value: AttrValue, ctx: RedactContext): AttrValue => {
 	if (typeof value === "string")
 		return ctx.detectors.length + ctx.rule.patterns.length === 0 ? value : scanString(value, ctx)
 	if (isAttrList(value)) return value.map((item) => scanValue(item, ctx))
-	if (isMap(value)) return redactMap(value, ctx)
+	if (isMap(value)) return redactMap(value, ctx, false)
 	return value
 }
 
@@ -347,10 +370,11 @@ const keyReplacement = (value: AttrValue, ctx: RedactContext): AttrValue | typeo
 }
 
 // `Object.fromEntries` keeps a `__proto__` key as data; assigning it onto `{}` would not.
-const redactMap = (map: AttrMap, ctx: RedactContext): AttrMap =>
+// Protected keys only route and bill at the top level; inside a kvlist they are customer data.
+const redactMap = (map: AttrMap, ctx: RedactContext, topLevel = true): AttrMap =>
 	Object.fromEntries(
 		Object.entries(map).flatMap(([key, value]) => {
-			if (isProtectedKey(key)) return [[key, value]]
+			if (topLevel && isProtectedKey(key)) return [[key, value]]
 			const next = ctx.rule.keys.some((pattern) => globMatches(pattern, key))
 				? keyReplacement(value, ctx)
 				: scanValue(value, ctx)

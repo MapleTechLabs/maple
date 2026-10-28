@@ -160,6 +160,8 @@ const UNPORTABLE_REGEX: ReadonlyArray<readonly [RegExp, string]> = [
 	[/\[\^\]|\\c|\\0/u, "use an explicit class or escape instead"],
 	[/\{\s*\d{4,}|\{\s*\d+\s*,\s*\d{4,}/u, "counted repetitions are limited to 999"],
 	[/\(\?P/u, "use (?<name>...) for named groups"],
+	// Repeating an assertion matches nothing new, and JavaScriptCore gives up on it silently.
+	[/(?<!\\)\\[bB][*+?{]|(?<!\[)[\^$][*+?{]/u, "\\b, \\B, ^ and $ cannot be repeated"],
 	[/(?!^)\(\?[a-zA-Z-]+[):]/u, "inline flags are only supported as a leading (?i)"],
 	[/^\(\?(?!i\))[a-zA-Z-]+\)/u, "only the (?i) inline flag is supported"],
 ]
@@ -208,7 +210,7 @@ export const hasRepeatedVariableGroup = (pattern: string): boolean => {
 	while (at < pattern.length) {
 		const char = pattern[at]
 		if (char === "\\") {
-			at += 2
+			at = atomEnd(pattern, at)
 			if (!afterAtom(false)) return true
 		} else if (char === "[") {
 			at += pattern[at + 1] === "]" ? 2 : 1
@@ -248,25 +250,276 @@ export const splitRegexFlags = (
 		? { source: pattern.slice(4), ignoreCase: true }
 		: { source: pattern, ignoreCase: false }
 
+const WORD = "\\p{Alphabetic}\\p{M}\\p{Nd}\\p{Pc}\\p{Join_Control}"
+const BOUNDARY = `(?:(?<=[${WORD}])(?![${WORD}])|(?<![${WORD}])(?=[${WORD}]))`
+const NOT_BOUNDARY = `(?:(?<=[${WORD}])(?=[${WORD}])|(?<![${WORD}])(?![${WORD}]))`
+const SHORTHANDS = new Map([
+	["d", "\\p{Nd}"],
+	["D", "\\P{Nd}"],
+	["w", `[${WORD}]`],
+	["W", `[^${WORD}]`],
+	["s", "\\p{White_Space}"],
+	["S", "\\P{White_Space}"],
+	["b", BOUNDARY],
+	["B", NOT_BOUNDARY],
+])
+const CLASS_SHORTHANDS = new Map([
+	["d", "\\p{Nd}"],
+	["w", WORD],
+	["s", "\\p{White_Space}"],
+])
+
+/**
+ * The JS source that matches what the gateway's `regex` crate matches. Rust's `\d`, `\w`, `\s`
+ * and `\b` are Unicode-aware and its `.` only stops at `\n`; JS `u` mode's are ASCII or stop at
+ * more line breaks. Null for what JS cannot express: a negated shorthand, `\b` or a nested `[`
+ * inside a class.
+ */
+export const portableRegexSource = (source: string): string | null => {
+	const out: Array<string> = []
+	let inClass = false
+	let at = 0
+	while (at < source.length) {
+		const char = source[at] ?? ""
+		if (char === "\\") {
+			const next = source[at + 1] ?? ""
+			if ("pPux".includes(next) && source[at + 2] === "{") {
+				const close = source.indexOf("}", at)
+				const end = close === -1 ? source.length : close + 1
+				out.push(source.slice(at, end))
+				at = end
+				continue
+			}
+			const replacement = (inClass ? CLASS_SHORTHANDS : SHORTHANDS).get(next)
+			if (inClass && replacement === undefined && "DWSbB".includes(next) && next !== "") return null
+			out.push(replacement ?? char + next)
+			at += 2
+			continue
+		}
+		if (inClass && char === "[") return null
+		if (char === "[") inClass = true
+		else if (char === "]") inClass = false
+		out.push(!inClass && char === "." ? "[^\\n]" : char)
+		at += 1
+	}
+	return out.join("")
+}
+
+const compileRegex = Option.liftThrowable((source: string, flags: string) => new RegExp(source, flags))
+
+interface Repetition {
+	readonly atom: string
+	readonly min: number
+	readonly max: number
+	/** A quantified group or an alternation: never counts as a separator. */
+	readonly opaque: boolean
+}
+
+/** Splits `source` on `|` outside classes and groups. */
+const topLevelBranches = (source: string): Array<string> => {
+	const branches: Array<string> = []
+	let depth = 0
+	let inClass = false
+	let start = 0
+	for (let at = 0; at < source.length; at += 1) {
+		const char = source[at]
+		if (char === "\\") at += 1
+		else if (inClass) inClass = char !== "]"
+		else if (char === "[") inClass = true
+		else if (char === "(") depth += 1
+		else if (char === ")") depth -= 1
+		else if (char === "|" && depth === 0) {
+			branches.push(source.slice(start, at))
+			start = at + 1
+		}
+	}
+	branches.push(source.slice(start))
+	return branches
+}
+
+/** The end of the atom at `at`: an escape, a class, a group or one character. */
+const atomEnd = (source: string, at: number): number => {
+	const char = source[at]
+	if (char === "\\") {
+		const kind = source[at + 1] ?? ""
+		if ("pPux".includes(kind) && source[at + 2] === "{") return source.indexOf("}", at) + 1
+		// `\xHH` and `\uHHHH` are one atom; a quantifier after them repeats the whole escape.
+		if (kind === "x") return at + 4
+		if (kind === "u") return at + 6
+		return at + 2
+	}
+	if (char === "[") {
+		let end = source[at + 1] === "^" ? at + 2 : at + 1
+		while (end < source.length && source[end] !== "]") end += source[end] === "\\" ? 2 : 1
+		return end + 1
+	}
+	if (char === "(") {
+		let depth = 0
+		let end = at
+		while (end < source.length) {
+			const inner = source[end]
+			if (inner === "\\") end += 1
+			else if (inner === "[") end = atomEnd(source, end) - 1
+			else if (inner === "(") depth += 1
+			else if (inner === ")" && --depth === 0) return end + 1
+			end += 1
+		}
+		return source.length
+	}
+	return at + 1
+}
+
+/** The inside of a group atom: `(a)`, `(?:a)` and `(?<name>a)` all give `a`. */
+const groupBody = (atom: string): string =>
+	atom.slice(atom.startsWith("(?") ? atom.indexOf(atom[2] === "<" ? ">" : ":") + 1 : 1, -1)
+
+/**
+ * Share of the gateway's 1 MiB compiled-regex limit one copy of an escape takes, from the most
+ * repetitions the `regex` crate compiles: `\w` and the worst `\p{...}` 20, `\d` 204, `.` 1048.
+ */
+const ESCAPE_WEIGHTS = new Map([
+	["p", 1 / 20],
+	["P", 1 / 20],
+	["w", 1 / 20],
+	["W", 1 / 20],
+	["D", 1 / 82],
+	["d", 1 / 204],
+	["S", 1 / 544],
+	["s", 1 / 1541],
+	["b", 0],
+	["B", 0],
+])
+const LITERAL_WEIGHT = 1 / 10_000
+const ANY_WEIGHT = 1 / 1048
+
+const atomWeight = (atom: string): number => {
+	if (atom.startsWith("\\")) return ESCAPE_WEIGHTS.get(atom[1] ?? "") ?? LITERAL_WEIGHT
+	if (atom === ".") return ANY_WEIGHT
+	if (!atom.startsWith("[")) return LITERAL_WEIGHT
+	const members = [...atom.matchAll(/\\(.)/gu)].map((escape) => ESCAPE_WEIGHTS.get(escape[1] ?? "") ?? 0)
+	return Math.max(atom.startsWith("[^") ? ANY_WEIGHT : 1 / 3000, ...members)
+}
+
+/** Estimated share of the gateway's compiled-regex limit; copies add up, counted repeats multiply. */
+export const compiledRegexWeight = (source: string): number =>
+	topLevelBranches(source).reduce((total, branch) => {
+		let weight = 0
+		let at = 0
+		while (at < branch.length) {
+			const char = branch[at] ?? ""
+			if (char === "^" || char === "$") {
+				at += 1
+				continue
+			}
+			const end = atomEnd(branch, at)
+			const atom = branch.slice(at, end)
+			const quantifier = quantifierAt(branch, end)
+			at = end + (quantifier?.length ?? 0)
+			const copies =
+				quantifier === null ? 1 : quantifier.max === Infinity ? quantifier.min + 1 : quantifier.max
+			weight += copies * (char === "(" ? compiledRegexWeight(groupBody(atom)) : atomWeight(atom))
+		}
+		return total + weight
+	}, 0)
+
+/** The atoms of one branch with their repetition; unquantified plain groups are flattened. */
+const repetitions = (branch: string): Array<Repetition> => {
+	const items: Array<Repetition> = []
+	let at = 0
+	while (at < branch.length) {
+		const char = branch[at] ?? ""
+		const next = branch[at + 1] ?? ""
+		if (char === "^" || char === "$" || (char === "\\" && "bBAz".includes(next))) {
+			at += char === "\\" ? 2 : 1
+			continue
+		}
+		const end = atomEnd(branch, at)
+		const atom = branch.slice(at, end)
+		const quantifier = quantifierAt(branch, end)
+		at = end + (quantifier?.length ?? 0)
+		if (char === "(") {
+			const body = groupBody(atom)
+			const plain = quantifier === null && topLevelBranches(body).length === 1
+			if (plain) {
+				items.push(...repetitions(body))
+				continue
+			}
+			const unbounded = /(?<!\\)[*+]|\{\d+,\}/u.test(body)
+			items.push({
+				atom,
+				min: 0,
+				max: unbounded || (quantifier?.max ?? 1) === Infinity ? Infinity : 1,
+				opaque: true,
+			})
+			continue
+		}
+		items.push({ atom, min: quantifier?.min ?? 1, max: quantifier?.max ?? 1, opaque: false })
+	}
+	return items
+}
+
+/** Characters tried against atoms to decide whether two of them can match the same text. */
+const PROBES = [
+	...Array.from({ length: 95 }, (_, index) => String.fromCharCode(32 + index)),
+	..."\t\n\r  \u0085éßжΣſKİ日٣²😀́‍",
+]
+
+/**
+ * True when two wide repetitions can match the same text with no required character between
+ * them that neither matches: `a*a*b`, `.*.*=`, `\w+\w+!`. A backtracking engine (the preview's
+ * and local mode's) takes cubic time or worse on these; `[a-z]+@[a-z]+` is fine.
+ */
+export const hasAmbiguousRepetition = (pattern: string): boolean => {
+	const { source, ignoreCase } = splitRegexFlags(pattern)
+	const matchers = new Map<string, (char: string) => boolean>()
+	const matcher = (atom: string) => {
+		const cached = matchers.get(atom)
+		if (cached !== undefined) return cached
+		const regex = compileRegex(`^(?:${portableRegexSource(atom) ?? atom})`, ignoreCase ? "iu" : "u")
+		const test = Option.isSome(regex) ? (char: string) => regex.value.test(char) : () => true
+		matchers.set(atom, test)
+		return test
+	}
+	const overlap = (left: Repetition, right: Repetition) =>
+		PROBES.some((char) => matcher(left.atom)(char) && matcher(right.atom)(char))
+	const wide = (item: Repetition) => item.max === Infinity || item.max - item.min > 32
+	return topLevelBranches(source).some((branch) => {
+		let open: Array<Repetition> = []
+		return repetitions(branch).some((item) => {
+			if (wide(item) && open.some((earlier) => overlap(earlier, item))) return true
+			if (item.min >= 1 && !item.opaque) open = open.filter((earlier) => overlap(earlier, item))
+			if (wide(item)) open.push(item)
+			return false
+		})
+	})
+}
+
 /** Null when the pattern is in the subset both the Rust `regex` crate and JS `RegExp` accept. */
 export const regexProblem = (pattern: string): string | null => {
 	if (pattern.length === 0) return "pattern is empty"
 	if (pattern.length > INGEST_RULE_LIMITS.patternLength)
 		return `pattern is longer than ${INGEST_RULE_LIMITS.patternLength} characters`
 	for (const [probe, message] of UNPORTABLE_REGEX) if (probe.test(pattern)) return message
+	if (portableRegexSource(splitRegexFlags(pattern).source) === null)
+		return "inside [...], use explicit characters instead of \\D, \\W, \\S, \\b, \\B or a nested ["
 	if (hasRepeatedVariableGroup(pattern))
 		return "a repeated group may not contain a repetition or alternation"
 	const compiled = compileIngestRegex(pattern, false)
 	if (Option.isNone(compiled)) return "pattern is not a valid regular expression"
+	if (compiledRegexWeight(splitRegexFlags(pattern).source) > 0.85)
+		return "pattern is too large for the gateway to compile; repeat \\w, \\d or \\p{...} less, or use an ASCII class like [A-Za-z0-9_]"
+	if (hasAmbiguousRepetition(pattern))
+		return "two repetitions that can match the same text need a character neither matches between them (a*a*b is too slow to match)"
 	return compiled.value.test("") ? "pattern matches empty text" : null
 }
-
-const compileRegex = Option.liftThrowable((source: string, flags: string) => new RegExp(source, flags))
 
 /** The compiled JS form of a pattern that passed `regexProblem`. */
 export const compileIngestRegex = (pattern: string, global = true): Option.Option<RegExp> => {
 	const { source, ignoreCase } = splitRegexFlags(pattern)
-	return compileRegex(source, `${global ? "g" : ""}${ignoreCase ? "i" : ""}u`)
+	const portable = portableRegexSource(source)
+	return portable === null
+		? Option.none()
+		: compileRegex(portable, `${global ? "g" : ""}${ignoreCase ? "i" : ""}u`)
 }
 
 /** The ops a field supports, for editors that only offer valid choices. */

@@ -140,6 +140,10 @@ jobs:
                         - '.github/workflows/ci.yml'
                         - 'mise.toml'
                         - 'apps/ingest/**'
+                        # Shared rule fixtures are compiled into the Rust tests; the rule
+                        # contract and TS engine are diffed against the gateway's below.
+                        - 'packages/ingest-rules/**'
+                        - 'packages/domain/src/ingest-rules.ts'
                         # Embedded by telemetry.rs's cross-language contract test.
                         - 'apps/scraper/src/__fixtures__/otlp-export.json'
                         - 'packages/db/drizzle/**'
@@ -676,9 +680,12 @@ jobs:
               with:
                   persist-credentials: false
 
-            - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+            # Bun and the ingest-rules workspace drive the differential fuzz below.
+            - uses: ./.github/actions/setup
               with:
-                  install_args: rust
+                  tools: rust bun
+                  install-filters: "@maple/ingest-rules"
+                  turbo-cache: "false"
 
             - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
               with:
@@ -690,6 +697,13 @@ jobs:
             # The deploy builds release only; catch a release-only break before merge.
             - name: Build the release binary
               run: cargo build --locked --release --bin maple-ingest
+
+            # Random rules and records through both rule engines; a disagreement prints the
+            # shrunk case and a --seed to replay it (docs/ingest-rules.md#fuzzing).
+            - name: Diff the gateway's rule engine against the TS one
+              # A JS regex cannot be interrupted, so a pattern that backtracks hangs; fail instead.
+              timeout-minutes: 10
+              run: bun run --cwd ../../packages/ingest-rules fuzz --runs 20000
 
     otel-collector:
         name: OTel collector exporter tests
