@@ -56,6 +56,7 @@ import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuth
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
+import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { PlanetScaleWebhookQueue } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
@@ -129,6 +130,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	CancellationReviewService.layer,
 	ScrapeTargetsService.layer,
 	UptimeMonitorsService.layer,
+	StatusPagesService.layer,
 	PlanetScaleConnectionService.layer,
 	PlanetScaleService.layer,
 	PlanetScaleWebhookService.layer,
