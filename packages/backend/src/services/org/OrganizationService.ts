@@ -1,4 +1,8 @@
 import { createClerkClient } from "@clerk/backend"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
+import { trackFeatureUsage } from "@maple/backend/services/billing/autumn-tracker"
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import {
 	ChooseOrganizationRegionResponse,
 	CreateOrganizationResponse,
@@ -55,6 +59,7 @@ import {
 	OAuthConnections,
 	OrgClickHouseSettings,
 	OrgIngestKeys,
+	OrgBillingLinks,
 	OrgOpenRouterKeys,
 	OrgIngestRules,
 	OrgIngestRuleSettings,
@@ -199,6 +204,8 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	SupabaseConnections,
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
 	OrgOpenRouterKeys,
+	// A deleted member org stops being billed to anyone. A billing org with members is refused.
+	OrgBillingLinks,
 	// Drop rules and the hash salt: a recreated org must not silently lose data to old rules.
 	OrgIngestRules,
 	OrgIngestRuleSettings,
@@ -328,6 +335,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 
 			const autumn = yield* AutumnClient
 			const regions = yield* OrganizationRegionService
+			const httpClient = yield* HttpClient.HttpClient
 
 			const requireAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
 				roles: ReadonlyArray<RoleName>,
@@ -474,7 +482,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					})
 				}
 				const customer = yield* autumn
-					.getOrCreateCustomer(orgId, { expand: [] })
+					.getOrCreateCustomer(ownBillingCustomer(orgId), { expand: [] })
 					.pipe(Effect.mapError((error) => toProviderError(error)))
 				if (customer.statusCode !== 200) {
 					return yield* new OrganizationProviderError({
@@ -522,7 +530,49 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				yield* requireAdmin(roles, "delete the organization")
+				// Its members would be left billed to a customer nobody can reach.
+				const members = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OrgBillingLinks)
+							.select(($) => ({ orgId: $.orgId }))
+							.where(($) => [$.billingOrgId.eq(orgId)])
+							.limit(1),
+					),
+				)
+				if (members.length > 0) {
+					return yield* new OrganizationForbiddenError({
+						message:
+							"Other organizations are billed through this one. Unlink them in billing settings before deleting it.",
+					})
+				}
+				// A member's monitors count against its billing org; purging them must give the count back.
+				const [link] = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OrgBillingLinks)
+							.select(($) => ({ billingOrgId: $.billingOrgId }))
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+				)
+				const monitorCount =
+					link === undefined
+						? 0
+						: yield* dbExecute((db) =>
+								db.run(
+									PG.from(UptimeMonitors)
+										.select(() => ({ count: PG.count() }))
+										.where(($) => [$.orgId.eq(orgId)]),
+								),
+							).pipe(Effect.map((rows) => Number(rows[0]?.count ?? 0)))
 				yield* purgeOrgScopedRows(orgId)
+				if (link !== undefined && monitorCount > 0) {
+					yield* trackFeatureUsage({
+						customerId: ownBillingCustomer(link.billingOrgId),
+						featureId: UPTIME_MONITORS_FEATURE_ID,
+						value: -monitorCount,
+						idempotencyKey: `org_delete:${orgId}:uptime_monitors`,
+					}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+				}
 				yield* deleteClerkOrganization(orgId)
 				return new DeleteOrganizationResponse({ deleted: true })
 			})
@@ -537,6 +587,8 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.layer)),
+		Layer.provide(
+			Layer.mergeAll(AutumnClient.layer, OrganizationRegionService.layer, FetchHttpClient.layer),
+		),
 	)
 }

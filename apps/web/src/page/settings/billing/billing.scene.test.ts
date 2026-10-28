@@ -1,4 +1,4 @@
-import { AttachResult, BillingCustomer, BillingProfile } from "@maple/domain/http"
+import { AttachResult, BillingAccount, BillingCustomer, BillingProfile } from "@maple/domain/http"
 import { V2IngestRuleStats } from "@maple/domain/http/v2"
 import { Result, Schema } from "effect"
 import { Submodel } from "foldkit"
@@ -29,6 +29,12 @@ const profile = Schema.decodeUnknownSync(BillingProfile)({
 
 const NOW = 10 * 86_400_000
 
+const standalone = Schema.decodeUnknownSync(BillingAccount)({
+	role: "standalone",
+	billingOrg: { orgId: "org_acme", name: "Acme", imageUrl: null },
+	members: [],
+})
+
 /** The usage table alone; the tab around it has its own tests. */
 const usageView = Submodel.defineView<Model, Message, Readonly<{ readonly none?: never }>>(
 	(model, _inputs, h) => {
@@ -38,20 +44,24 @@ const usageView = Submodel.defineView<Model, Message, Readonly<{ readonly none?:
 )
 const view = withViewInputs(usageView, {})()
 const step = (model: Model, message: Message) => update(model, message, customer, NOW).step
+/** The tab once the account says this org pays for itself. */
+const entered = () =>
+	step(init(true, false, true).model, Message.CompletedFetchAccount({ result: Result.succeed(standalone) }))
 
 describe("billing tab", () => {
 	test("once the cycle is known, the rule stats are read from its start, once", () => {
-		const requested = requestRuleStats(init(true, false).model, customer, NOW)
+		const requested = requestRuleStats(entered().model, customer, NOW)
 		expect(requested?.commands?.[0]).toMatchObject({
 			name: "FetchBillingRuleStats",
 			args: { startMs: 0 },
 		})
-		expect(requestRuleStats(init(true, false).model, null, NOW)).toBeNull()
+		expect(requestRuleStats(entered().model, null, NOW)).toBeNull()
+		expect(requestRuleStats(init(true, false, true).model, customer, NOW)).toBeNull()
 		expect(requested === null ? null : requestRuleStats(requested.model, customer, NOW)).toBeNull()
 	})
 
 	test("a failed rule stats read is asked for again when the tab is revisited", () => {
-		const requested = requestRuleStats(init(true, false).model, customer, NOW)
+		const requested = requestRuleStats(entered().model, customer, NOW)
 		expect(requested).not.toBeNull()
 		if (requested === null) return
 		const failed = step(
@@ -86,7 +96,7 @@ describe("billing tab", () => {
 			{ update: step, view },
 			given(
 				step(
-					init(true, false).model,
+					init(true, false, true).model,
 					Message.CompletedFetchRuleStats({ result: Result.succeed(stats) }),
 				).model,
 			),
@@ -95,21 +105,23 @@ describe("billing tab", () => {
 		)
 	})
 
-	test("reads the catalog, usage, daily spend, invoices and billing details", () => {
-		expect(names(init(true, false).commands)).toEqual(
+	test("reads the catalog, usage, spend and account, then invoices and details once the org pays for itself", () => {
+		expect(names(init(true, false, true).commands)).toEqual(
 			expect.arrayContaining([
 				"FetchBillingPlans",
 				"FetchBillingUsage",
 				"FetchBillingDailySpend",
-				"FetchBillingInvoices",
-				"FetchBillingProfile",
+				"FetchBillingAccount",
 			]),
+		)
+		expect(names(entered().commands)).toEqual(
+			expect.arrayContaining(["FetchBillingInvoices", "FetchBillingProfile"]),
 		)
 	})
 
 	test("a cap is saved for the open row, and the save reads the customer and daily spend again", () => {
 		const editing = update(
-			init(true, false).model,
+			init(true, false, true).model,
 			Message.ClickedEditCap({ featureId: "logs" }),
 			customer,
 			0,
@@ -132,7 +144,7 @@ describe("billing tab", () => {
 
 	test("text that is not a number keeps the cap editor from saving", () => {
 		const editing = update(
-			init(true, false).model,
+			init(true, false, true).model,
 			Message.ClickedEditCap({ featureId: "traces" }),
 			customer,
 			0,
@@ -143,7 +155,7 @@ describe("billing tab", () => {
 
 	test("billing details open on the profile on file and save every address line", () => {
 		const loaded = update(
-			init(true, false).model,
+			init(true, false, true).model,
 			Message.CompletedFetchProfile({ result: Result.succeed(profile) }),
 			customer,
 			0,
@@ -182,7 +194,7 @@ describe("billing tab", () => {
 	})
 
 	test("a return from Stripe polls the customer until it carries the plan, then clears the marker", () => {
-		const returning = init(true, true)
+		const returning = init(true, true, true)
 		expect(returning.model.checkoutReturn).toBe("Confirming")
 		expect(names(returning.commands)).toEqual(
 			expect.arrayContaining(["WaitBillingCheckoutPoll", "WaitBillingCheckoutTimeout"]),
@@ -201,18 +213,18 @@ describe("billing tab", () => {
 	})
 
 	test("the wait gives up after the timeout with the notice, and an idle tab never polls", () => {
-		const timedOut = update(init(true, true).model, Message.ElapsedCheckoutTimeout(), null, 0)
+		const timedOut = update(init(true, true, true).model, Message.ElapsedCheckoutTimeout(), null, 0)
 		expect(timedOut.step.model.checkoutReturn).toBe("TimedOut")
 		expect(timedOut.checkout).toBe("TimedOut")
 		expect(update(timedOut.step.model, Message.ElapsedCheckoutPoll(), null, 0).isCustomerStale).toBe(
 			false,
 		)
-		expect(names(init(true, false).commands)).not.toContain("WaitBillingCheckoutPoll")
+		expect(names(init(true, false, true).commands)).not.toContain("WaitBillingCheckoutPoll")
 	})
 
 	test("a checkout link records plan_checkout_started before the redirect", () => {
 		const attaching = update(
-			init(true, false).model,
+			init(true, false, true).model,
 			Message.ClickedSubscribe({ planId: "startup" }),
 			null,
 			0,

@@ -1,0 +1,63 @@
+# Billing orgs
+
+A customer with several organizations can pay for all of them on one plan and one invoice. One
+org is the **billing org**; the others are **members** billed through it. Each member keeps its own
+data, members, dashboards and alerts. Only billing moves.
+
+## Model
+
+- `org_billing_links` (Postgres, `packages/db/src/tables/billing-links.ts`): one row per member,
+  `org_id` (the member) to `billing_org_id` (the org that pays). One level deep: a billing org is
+  never itself a member, and a member never pays for others.
+- An org with no row bills as itself. That is every org until someone links one.
+- Every Autumn call takes a `BillingCustomerId` (`@maple/domain/http`), never a raw org id. It comes
+  from `BillingCustomerResolver.customerFor(orgId)` (the billing org's customer, cached 60s at the
+  edge), `requireOwnBilling(orgId)` (billing writes; a member gets `BillingManagedByBillingOrgError`, 409) or `ownBillingCustomer(orgId)` (questions about the org itself, such as its plan history).
+- The ingest gateway resolves the same table (`apps/ingest/src/autumn.rs`, `BillingOrgResolver`,
+  60s cache, last-known answer on a failed or slow read) when it flushes usage and when it checks
+  entitlements. An org it has never resolved keeps its usage for the next flush and fails the
+  entitlement check open while Postgres is unreachable.
+
+What a member gets from its billing org: the plan and its allowances, usage pool, spend limits and
+usage alerts, AI credits, uptime monitor allowance, add-ons such as the OpenRouter key. All of it is
+pooled; there are no per-member caps.
+
+## Enabling it for a customer
+
+Pooling allowances across orgs is a pricing decision, so linking is gated on the billing org's
+Autumn customer holding the boolean feature `billing_sub_orgs` (`apps/api/autumn.config.ts`).
+
+1. Push the feature once: `bun run --cwd apps/api atmn push`.
+2. In the Autumn dashboard, grant `billing_sub_orgs` to the billing org's customer (its plan, or a
+   customized plan for that customer). The customer id is the Maple org id.
+3. An admin of both orgs opens **Settings, Billing** in the member org and picks the billing org.
+
+The link endpoint (`POST /internal/billing/account/link`, called from the member) checks that the
+caller is an admin of both orgs, that both are in the same data region, and the one-level rule.
+
+## What linking does
+
+- The link is written first. Then the member's own running subscriptions (not an auto-enabled free
+  plan) are cancelled at the end of the period it already paid for. Usage from before the link
+  stays on that final invoice; usage after it is the billing org's. A retried link finishes both
+  steps; neither repeats.
+- The `billing.updated` webhooks for those cancellations post no cancellation review and emit no
+  plan events: billing moved, the customer did not churn.
+- The member's uptime monitor count moves to the billing org's customer (continuous-use meter),
+  keyed by the link so a retry moves it once. The monitor cap counts the whole pool: the billing
+  org's monitors and every member's.
+- A billing org's daily spend chart sums its members; `GET /internal/billing/account/usage` gives
+  the per-org split from the warehouse.
+
+Unlinking (`DELETE /internal/billing/account/members/:orgId`, by the member or the billing org)
+moves the monitor count back. The member then has no plan and goes through checkout like a new org.
+
+A billing org cannot be deleted while it has members; a member's link is purged with the member.
+
+## Known limits
+
+- A link takes up to 60s to reach every colo and the ingest gateway (both caches).
+- Plan webhooks (`billing.updated`) carry the billing org's id, so plan events land on it.
+- The uptime monitor move is fire-and-forget like every usage track: if Autumn drops one half, the
+  counts drift until reconciled by hand.
+- Links never span regions: usage meters and Postgres rows are per region.

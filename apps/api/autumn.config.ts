@@ -2,6 +2,7 @@ import { feature, plan, reward } from "atmn"
 import {
 	AI_CREDITS_FEATURE_ID,
 	AI_CREDITS_MARKUP_PERCENT,
+	BILLING_SUB_ORGS_FEATURE_ID,
 	OPENROUTER_BYOK_ADDON_ID,
 	OPENROUTER_BYOK_FEATURE_ID,
 	UPTIME_MONITORS_FEATURE_ID,
@@ -93,6 +94,13 @@ export const bringYourOwnCloud = feature({
 export const openRouterByok = feature({
 	id: OPENROUTER_BYOK_FEATURE_ID,
 	name: "Bring Your Own OpenRouter Key",
+	type: "boolean",
+})
+
+// The org may pay for sub-orgs. On no public plan: granted per customer in the Autumn dashboard.
+export const billingSubOrgs = feature({
+	id: BILLING_SUB_ORGS_FEATURE_ID,
+	name: "Billing for sub-organizations",
 	type: "boolean",
 })
 

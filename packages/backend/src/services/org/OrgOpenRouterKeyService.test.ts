@@ -1,4 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { ConfigProvider, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
@@ -105,6 +106,7 @@ const run = <A, E>(testDb: TestDb, world: World, effect: Effect.Effect<A, E, Org
 						autumnStub(world),
 						EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
 						FetchHttpClient.layer,
+						BillingCustomerResolver.standalone,
 					),
 				),
 				Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchStub(world))),

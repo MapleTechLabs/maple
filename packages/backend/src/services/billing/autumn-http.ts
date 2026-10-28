@@ -2,7 +2,7 @@
 import { Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
-import type { BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
+import type { BillingCustomerId, BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { AUTUMN_API_VERSION } from "./autumn-api"
 
@@ -282,7 +282,7 @@ export interface AutumnBillingControlsUpdate {
 
 export interface AutumnClientApi {
 	readonly getOrCreateCustomer: (
-		customerId: string,
+		customerId: BillingCustomerId,
 		options: {
 			readonly expand: ReadonlyArray<CustomerExpand>
 			readonly customerData?: AutumnCustomerData | undefined
@@ -301,7 +301,7 @@ export interface AutumnClientApi {
 	 * sums most of the PREVIOUS cycle too and overstated every usage card 3-4x.
 	 */
 	readonly aggregateEvents: (
-		customerId: string,
+		customerId: BillingCustomerId,
 		options: {
 			readonly featureId: ReadonlyArray<string> | string
 			/** Epoch ms, `start < end`. */
@@ -309,22 +309,30 @@ export interface AutumnClientApi {
 		},
 	) => AutumnCall
 	readonly attach: (
-		customerId: string,
+		customerId: BillingCustomerId,
 		options: { readonly planId: string; readonly successUrl?: string | undefined },
 	) => AutumnCall
-	readonly previewAttach: (customerId: string, options: { readonly planId: string }) => AutumnCall
+	readonly previewAttach: (
+		customerId: BillingCustomerId,
+		options: { readonly planId: string },
+	) => AutumnCall
 	readonly openCustomerPortal: (
-		customerId: string,
+		customerId: BillingCustomerId,
 		options: { readonly returnUrl?: string | undefined },
 	) => AutumnCall
-	readonly listPlans: (customerId: string | undefined) => AutumnCall
+	readonly listPlans: (customerId: BillingCustomerId | undefined) => AutumnCall
 	/**
 	 * Apply a config-defined reward as a discount on the customer's existing
 	 * subscription to `planId`. The onboarding checklist is the only caller.
 	 */
 	readonly applyReward: (
-		customerId: string,
+		customerId: BillingCustomerId,
 		options: { readonly planId: string; readonly rewardId: string },
+	) => AutumnCall
+	/** Cancel the customer's `planId` subscription at the end of its current period. */
+	readonly cancelAtPeriodEnd: (
+		customerId: BillingCustomerId,
+		options: { readonly planId: string },
 	) => AutumnCall
 	/**
 	 * Customer billing controls live on the canonical REST surface — `autumnHandler`
@@ -333,11 +341,11 @@ export interface AutumnClientApi {
 	 * version the SDK defaulted to.
 	 */
 	readonly updateCustomerBillingControls: (
-		orgId: string,
+		customerId: BillingCustomerId,
 		controls: AutumnBillingControlsUpdate,
 	) => AutumnCall
 	/** Overwrites the customer's display name. */
-	readonly updateCustomerName: (customerId: string, name: string) => AutumnCall
+	readonly updateCustomerName: (customerId: BillingCustomerId, name: string) => AutumnCall
 }
 
 const customerDataFields = (data: AutumnCustomerData | undefined): Record<string, unknown> =>
@@ -360,7 +368,7 @@ const callUpdateBillingControls = (
 	client: HttpClient.HttpClient,
 	secretKey: string | undefined,
 	apiUrl: string,
-	orgId: string,
+	customerId: BillingCustomerId,
 	controls: AutumnBillingControlsUpdate,
 ): Effect.Effect<AutumnResult, AutumnTransportFailure> =>
 	secretKey === undefined
@@ -377,7 +385,7 @@ const callUpdateBillingControls = (
 						},
 					}),
 					{
-						customer_id: orgId,
+						customer_id: customerId,
 						billing_controls: {
 							...(controls.spendLimits !== undefined
 								? {
@@ -508,8 +516,15 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 						discounts: [{ reward_id: rewardId }],
 					}),
 
-				updateCustomerBillingControls: (orgId, controls) =>
-					callUpdateBillingControls(httpClient, secretKey, apiUrl, orgId, controls),
+				cancelAtPeriodEnd: (customerId, { planId }) =>
+					call("updateSubscription", {
+						customer_id: customerId,
+						plan_id: planId,
+						cancel_action: "cancel_end_of_cycle",
+					}),
+
+				updateCustomerBillingControls: (customerId, controls) =>
+					callUpdateBillingControls(httpClient, secretKey, apiUrl, customerId, controls),
 
 				updateCustomerName: (customerId, name) =>
 					call("updateCustomer", { customer_id: customerId, name }),

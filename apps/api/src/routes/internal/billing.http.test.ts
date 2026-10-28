@@ -1,4 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
 import { ConfigProvider, Context, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
@@ -25,6 +27,11 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import {
 	BillingApiGroup,
 	BillingConflictError,
+	BillingCustomerId,
+	DailySpendResponse,
+	DailyVolume,
+	BillingManagedByBillingOrgError,
+	OrgId,
 	BillingCustomer,
 	CurrentTenant,
 	ApiSchemaErrors,
@@ -36,7 +43,7 @@ import {
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
-import { decodeInvoices, HttpBillingLive, resolveCycleWindow } from "./billing.http"
+import { decodeInvoices, HttpBillingLive, resolveCycleWindow, sumDailySpend } from "./billing.http"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 
 const ORG = "org_test_123"
@@ -391,6 +398,35 @@ describe("decodeInvoices", () => {
 	)
 })
 
+describe("sumDailySpend", () => {
+	const day = (date: string, logsGB: number, productEvents?: number) =>
+		new DailyVolume({
+			date,
+			logsGB,
+			tracesGB: 1,
+			metricsGB: 0,
+			browserSessions: 2,
+			...(productEvents === undefined ? undefined : { productEvents }),
+		})
+	const series = (days: ReadonlyArray<DailyVolume>) =>
+		new DailySpendResponse({ cycleStart: 10, cycleEnd: 20, days })
+
+	it("adds a billing org's members into its series, day by day", () => {
+		const total = sumDailySpend(series([day("2026-10-01", 1, 3), day("2026-10-02", 2)]), [
+			series([day("2026-10-01", 0.5), day("2026-10-02", 4, 1)]),
+		])
+		assert.deepStrictEqual(
+			total.days.map((d) => [d.date, d.logsGB, d.tracesGB, d.browserSessions, d.productEvents]),
+			[
+				["2026-10-01", 1.5, 2, 4, 3],
+				["2026-10-02", 6, 2, 4, 1],
+			],
+		)
+		assert.strictEqual(total.cycleStart, 10)
+		assert.strictEqual(total.cycleEnd, 20)
+	})
+})
+
 describe("resolveCycleWindow", () => {
 	const asCustomer = (subscriptions: ReadonlyArray<Record<string, unknown>>) =>
 		Schema.decodeUnknownSync(BillingCustomer)({ id: ORG, subscriptions })
@@ -583,6 +619,7 @@ describe("billing writes over HTTP", () => {
 		.middleware(ApiUnexpectedErrors) {}
 
 	const decodeTenant = Schema.decodeUnknownSync(CurrentTenant.TenantSchema)
+	const PAYER_ORG = Schema.decodeUnknownSync(OrgId)("org_billing_payer")
 	const tenantWithRoles = (roles: ReadonlyArray<string>) =>
 		decodeTenant({ orgId: ORG, userId: "user_billing_test", roles, authMode: "self_hosted" })
 
@@ -590,7 +627,12 @@ describe("billing writes over HTTP", () => {
 
 	const makeHarness = (
 		roles: ReadonlyArray<string>,
-		overrides: { readonly autumn?: object; readonly organizations?: object } = {},
+		overrides: {
+			readonly autumn?: object
+			readonly organizations?: object
+			/** The org this one is billed through, when it is a member org. */
+			readonly billedThrough?: OrgId
+		} = {},
 	) => {
 		const routes = HttpApiBuilder.layer(BillingOnlyApi).pipe(
 			Layer.provide(HttpBillingLive),
@@ -606,6 +648,26 @@ describe("billing writes over HTTP", () => {
 			),
 			Layer.provideMerge(Layer.succeed(EdgeCacheService, makeCache())),
 			Layer.provideMerge(Layer.succeed(DailySpendService, { get: die })),
+			Layer.provideMerge(
+				overrides.billedThrough === undefined
+					? BillingCustomerResolver.standalone
+					: Layer.succeed(BillingCustomerResolver, {
+							billingOrgId: () => Effect.succeed(overrides.billedThrough as OrgId),
+							customerFor: () =>
+								Effect.succeed(BillingCustomerId.make(overrides.billedThrough as OrgId)),
+							requireOwnBilling: () =>
+								Effect.fail(
+									new BillingManagedByBillingOrgError({
+										message: "billed elsewhere",
+										billingOrgId: overrides.billedThrough as OrgId,
+									}),
+								),
+							forget: () => Effect.void,
+						}),
+			),
+			Layer.provideMerge(
+				Layer.succeed(BillingOrgService, { members: () => Effect.succeed([]) } as never),
+			),
 			Layer.provideMerge(Layer.succeed(ProductEventsService, { track: die, trackMany: die })),
 			Layer.provideMerge(Layer.succeed(StripeClient, { request: die })),
 			Layer.provideMerge(
@@ -643,6 +705,23 @@ describe("billing writes over HTTP", () => {
 			const response = await harness.post("/internal/billing/attach", { planId: "startup" })
 			assert.strictEqual(response.status, 403)
 			assert.strictEqual(response.body._tag, "@maple/http/errors/BillingForbiddenError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses plan and portal changes from an org billed through another org", async () => {
+		const harness = makeHarness(["org:admin"], { billedThrough: PAYER_ORG })
+		try {
+			const attach = await harness.post("/internal/billing/attach", { planId: "startup" })
+			assert.strictEqual(attach.status, 409)
+			assert.strictEqual(attach.body._tag, "@maple/http/errors/BillingManagedByBillingOrgError")
+			assert.strictEqual(attach.body.billingOrgId, PAYER_ORG)
+			const portal = await harness.post("/internal/billing/portal", {
+				returnUrl: "https://maple.test/settings/billing",
+			})
+			assert.strictEqual(portal.status, 409)
+			assert.strictEqual(portal.body._tag, "@maple/http/errors/BillingManagedByBillingOrgError")
 		} finally {
 			await harness.dispose()
 		}

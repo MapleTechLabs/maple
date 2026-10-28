@@ -2,6 +2,7 @@
  * How many uptime monitors an org's plan allows, and the Autumn meter that counts them. The
  * `uptime_monitors` feature is continuous use: +1 on create, -1 on delete.
  */
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
 import {
 	BillingCustomer,
@@ -57,6 +58,7 @@ export class UptimeMonitorAllowance extends Context.Service<
 		const env = yield* Env
 		const edgeCache = yield* EdgeCacheService
 		const autumn = yield* AutumnClient
+		const billingCustomers = yield* BillingCustomerResolver
 		const httpClient = yield* HttpClient.HttpClient
 		// Maple's own org and deployments without billing (self-hosted, local dev) are uncapped.
 		const unmetered = (orgId: OrgId) =>
@@ -65,11 +67,15 @@ export class UptimeMonitorAllowance extends Context.Service<
 		const limit: UptimeMonitorAllowanceApi["limit"] = Effect.fn("UptimeMonitorAllowance.limit")(
 			function* (orgId) {
 				if (unmetered(orgId)) return Option.none<number>()
-				const cap = yield* readCustomerCached(
-					edgeCache,
-					orgId,
-					autumn.getOrCreateCustomer(orgId, { expand: ["subscriptions.plan"] }),
-				).pipe(
+				// A member org's monitors count against the plan of the org that pays for it.
+				const cap = yield* billingCustomers.customerFor(orgId).pipe(
+					Effect.flatMap((customerId) =>
+						readCustomerCached(
+							edgeCache,
+							customerId,
+							autumn.getOrCreateCustomer(customerId, { expand: ["subscriptions.plan"] }),
+						),
+					),
 					Effect.flatMap(({ result }) => ensureOk(result)),
 					Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
 					Effect.map(uptimeMonitorLimit),
@@ -91,18 +97,31 @@ export class UptimeMonitorAllowance extends Context.Service<
 		)
 
 		const track: UptimeMonitorAllowanceApi["track"] = (orgId, monitorId, delta) =>
-			trackFeatureUsage({
-				orgId,
-				featureId: UPTIME_MONITORS_FEATURE_ID,
-				value: delta,
-				idempotencyKey: `uptime_monitor:${monitorId}:${delta > 0 ? "created" : "deleted"}`,
-			}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
+			billingCustomers.customerFor(orgId).pipe(
+				Effect.flatMap((customerId) =>
+					trackFeatureUsage({
+						customerId,
+						featureId: UPTIME_MONITORS_FEATURE_ID,
+						value: delta,
+						idempotencyKey: `uptime_monitor:${monitorId}:${delta > 0 ? "created" : "deleted"}`,
+					}),
+				),
+				// Infallible, like the meter itself: a lookup failure drops this one event.
+				Effect.catchTag("@maple/http/errors/BillingAccountPersistenceError", (error) =>
+					Effect.logWarning("Uptime monitor usage not tracked").pipe(
+						Effect.annotateLogs({ orgId, monitorId, error: error.message }),
+					),
+				),
+				Effect.provideService(HttpClient.HttpClient, httpClient),
+			)
 
 		return { limit, track } satisfies UptimeMonitorAllowanceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(AutumnClient.layer, FetchHttpClient.layer)),
+		Layer.provide(
+			Layer.mergeAll(AutumnClient.layer, FetchHttpClient.layer, BillingCustomerResolver.layer),
+		),
 	)
 
 	/** No cap and no meter, for tests and harnesses. */

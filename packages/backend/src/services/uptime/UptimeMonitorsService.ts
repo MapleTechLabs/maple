@@ -10,6 +10,7 @@ import {
 	UptimeMonitors,
 	type UptimeMonitorRow,
 	type UptimeMonitorStateRow,
+	OrgBillingLinks,
 } from "@maple/db/tables"
 import {
 	UptimeMonitorLimitReachedError,
@@ -609,14 +610,39 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			const lockOrgMonitors = (db: MapleDb, orgId: OrgId) =>
 				db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
 
-			const countMonitors = (db: MapleDb, orgId: OrgId) =>
-				db
-					.run(
+			/**
+			 * Monitors counted against the plan `orgId` bills to: the billing org's and every member's,
+			 * since a member draws on its billing org's allowance. Takes that pool's lock too.
+			 */
+			const countPooledMonitors = (db: MapleDb, orgId: OrgId) =>
+				Effect.gen(function* () {
+					// Shared with other creates, exclusive with link writes: the pool cannot change mid-count.
+					yield* db.execute(
+						Orm.sql`select pg_advisory_xact_lock_shared(hashtext('org_billing_links'))`,
+					)
+					const [link] = yield* db.run(
+						PG.from(OrgBillingLinks)
+							.select(($) => ({ billingOrgId: $.billingOrgId }))
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					)
+					const payer = link?.billingOrgId ?? orgId
+					yield* db.execute(
+						Orm.sql`select pg_advisory_xact_lock(hashtext(${payer}), hashtext('uptime_monitor_pool'))`,
+					)
+					const members = yield* db.run(
+						PG.from(OrgBillingLinks)
+							.select(($) => ({ orgId: $.orgId }))
+							.where(($) => [$.billingOrgId.eq(payer)]),
+					)
+					const pool = [payer, ...members.map((member) => member.orgId)]
+					const rows = yield* db.run(
 						PG.from(UptimeMonitors)
 							.select(() => ({ count: PG.count() }))
-							.where(($) => [$.orgId.eq(orgId)]),
+							.where(($) => [PG.inList($.orgId, pool)]),
 					)
-					.pipe(Effect.map((rows) => Number(rows[0]?.count ?? 0)))
+					return Number(rows[0]?.count ?? 0)
+				})
 
 			const create = Effect.fn("UptimeMonitorsService.create")(function* (
 				orgId: OrgId,
@@ -642,7 +668,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						Effect.gen(function* () {
 							// One lock for the count and the rule checks: concurrent creates cannot both pass a full plan.
 							yield* lockOrgMonitors(db, orgId)
-							yield* ensureWithinLimit(limit, yield* countMonitors(db, orgId))
+							yield* ensureWithinLimit(limit, yield* countPooledMonitors(db, orgId))
 							yield* claimRuleWrite(db, orgId, ruleId, { name, destinationIds })
 							yield* db.run(
 								PG.insertInto(AlertRules).values({

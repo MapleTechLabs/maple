@@ -3,6 +3,15 @@ import { Effect, Schema } from "effect"
 import { TAX_ID_TYPE_VALUES } from "../billing-tax-ids"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
+import { OrgId } from "../primitives"
+import {
+	BillingAccount,
+	BillingAccountPersistenceError,
+	BillingAccountUsageResponse,
+	BillingLinkRejectedError,
+	BillingManagedByBillingOrgError,
+	LinkBillingOrgRequest,
+} from "./billing-account"
 import { WarehouseQueryError } from "./warehouse-errors"
 
 // Contract for raw Autumn proxy responses. Schemas model only consumed fields
@@ -78,6 +87,8 @@ export class BillingSubscription extends Schema.Class<BillingSubscription>("Bill
 	trialEndsAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	currentPeriodStart: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	currentPeriodEnd: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	/** Set once a cancellation is scheduled; the subscription stays `active` until it lands. */
+	canceledAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	quantity: Schema.optionalKey(Schema.Number),
 }) {}
 
@@ -601,7 +612,12 @@ export type AutumnFailure =
  * Failures reachable on every billing call, whatever it does: Autumn is broken
  * or unreachable (502), or we are not configured to call it (500).
  */
-const billingTransportErrors = [BillingUpstreamError, BillingNotConfiguredError] as const
+const billingTransportErrors = [
+	BillingUpstreamError,
+	BillingNotConfiguredError,
+	// Every call first reads which org pays, from Postgres.
+	BillingAccountPersistenceError,
+] as const
 
 /**
  * The above plus Autumn's classified rejections — declared ONLY on endpoints
@@ -636,7 +652,7 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 	.add(
 		HttpApiEndpoint.get("listInvoices", "/invoices", {
 			success: BillingInvoicesResponse,
-			error: [...billingTransportErrors],
+			error: [BillingManagedByBillingOrgError, ...billingTransportErrors],
 		}),
 	)
 	// Warehouse-backed, unlike every other read in this group: Autumn only knows
@@ -652,28 +668,28 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.put("updateBillingControls", "/billing-controls", {
 			payload: UpdateBillingControlsRequest,
 			success: BillingCustomer,
-			error: [BillingForbiddenError, ...billingRequestErrors],
+			error: [BillingManagedByBillingOrgError, BillingForbiddenError, ...billingRequestErrors],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.post("attach", "/attach", {
 			payload: AttachRequest,
 			success: AttachResult,
-			error: [BillingForbiddenError, ...billingRequestErrors],
+			error: [BillingManagedByBillingOrgError, BillingForbiddenError, ...billingRequestErrors],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.post("previewAttach", "/preview-attach", {
 			payload: PreviewAttachRequest,
 			success: PreviewAttachResult,
-			error: [...billingRequestErrors],
+			error: [BillingManagedByBillingOrgError, ...billingRequestErrors],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.post("openCustomerPortal", "/portal", {
 			payload: CustomerPortalRequest,
 			success: CustomerPortalResult,
-			error: [BillingForbiddenError, ...billingTransportErrors],
+			error: [BillingManagedByBillingOrgError, BillingForbiddenError, ...billingTransportErrors],
 		}),
 	)
 	// Billing details live on the Stripe customer, read through Stripe directly.
@@ -682,28 +698,70 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 	.add(
 		HttpApiEndpoint.get("getBillingProfile", "/profile", {
 			success: BillingProfile,
-			error: [...billingTransportErrors],
+			error: [BillingManagedByBillingOrgError, ...billingTransportErrors],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.put("updateBillingProfile", "/profile", {
 			payload: UpdateBillingProfileRequest,
 			success: BillingProfile,
-			error: [BillingForbiddenError, BillingProfileUnavailableError, ...billingRequestErrors],
+			error: [
+				BillingManagedByBillingOrgError,
+				BillingForbiddenError,
+				BillingProfileUnavailableError,
+				...billingRequestErrors,
+			],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.post("addBillingTaxId", "/profile/tax-ids", {
 			payload: AddBillingTaxIdRequest,
 			success: BillingProfile,
-			error: [BillingForbiddenError, BillingProfileUnavailableError, ...billingRequestErrors],
+			error: [
+				BillingManagedByBillingOrgError,
+				BillingForbiddenError,
+				BillingProfileUnavailableError,
+				...billingRequestErrors,
+			],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.delete("removeBillingTaxId", "/profile/tax-ids/:taxIdId", {
 			params: { taxIdId: Schema.String },
 			success: BillingProfile,
-			error: [BillingForbiddenError, BillingProfileUnavailableError, ...billingRequestErrors],
+			error: [
+				BillingManagedByBillingOrgError,
+				BillingForbiddenError,
+				BillingProfileUnavailableError,
+				...billingRequestErrors,
+			],
+		}),
+	)
+	// Billing orgs: a member org's billing rolls up to the org that pays for it.
+	.add(
+		HttpApiEndpoint.get("getBillingAccount", "/account", {
+			success: BillingAccount,
+			error: [...billingTransportErrors],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("getBillingAccountUsage", "/account/usage", {
+			success: BillingAccountUsageResponse,
+			error: [BillingForbiddenError, ...billingTransportErrors, WarehouseQueryError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("linkBillingOrg", "/account/link", {
+			payload: LinkBillingOrgRequest,
+			success: BillingAccount,
+			error: [BillingForbiddenError, BillingLinkRejectedError, ...billingRequestErrors],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("unlinkBillingOrg", "/account/members/:orgId", {
+			params: { orgId: OrgId },
+			success: BillingAccount,
+			error: [BillingForbiddenError, BillingLinkRejectedError, ...billingTransportErrors],
 		}),
 	)
 	.prefix("/internal/billing")

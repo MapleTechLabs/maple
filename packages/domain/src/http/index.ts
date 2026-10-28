@@ -22,6 +22,7 @@ export * from "./mcp-tools"
 export * from "./mobile-devices"
 export * from "./auth"
 export * from "./billing"
+export * from "./billing-account"
 export * from "./chat"
 export * as CurrentTenant from "./current-tenant"
 // The tenant-resolution failures themselves, flat: `@maple/auth` raises all

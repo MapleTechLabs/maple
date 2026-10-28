@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
-use autumn::{AutumnEntitlements, AutumnTracker};
+use autumn::{AutumnEntitlements, AutumnTracker, BillingOrgLookup, BillingOrgResolver};
 use axum::body::Bytes;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::MatchedPath;
@@ -1101,6 +1101,9 @@ trait KeyStore: Send + Sync {
     ) -> Result<Option<ClickHouseTargetRow>, String>;
 
     async fn fetch_org_routing(&self, org_id: &str) -> Result<Option<OrgRouting>, String>;
+
+    /// The org that pays for `org_id` (`org_billing_links`); `None` bills as itself.
+    async fn fetch_billing_org_id(&self, org_id: &str) -> Result<Option<String>, String>;
 
     /// `table` is one of the `*_CONNECTORS_TABLE` constants, never user input.
     async fn record_connector_success(
@@ -2947,11 +2950,18 @@ async fn main() {
         task_protection::spawn(pipeline);
     }
 
+    // Every Autumn call bills the org's billing parent when it has one.
+    let billing_orgs = BillingOrgResolver::new(
+        Arc::new(KeyStoreBillingLookup(Arc::clone(&store))),
+        BILLING_ORG_CACHE_TTL,
+    );
+
     let autumn_tracker = config.autumn_secret_key.as_ref().map(|key| {
         AutumnTracker::spawn(
             key.clone(),
             &config.autumn_api_url,
             config.autumn_flush_interval_secs,
+            billing_orgs.clone(),
         )
     });
 
@@ -2964,6 +2974,7 @@ async fn main() {
             &config.autumn_api_url,
             config.autumn_allow_ttl_secs,
             config.autumn_deny_ttl_secs,
+            billing_orgs.clone(),
         )
     });
 
@@ -9139,6 +9150,24 @@ impl KeyStore for PostgresKeyStore {
         }))
     }
 
+    async fn fetch_billing_org_id(&self, org_id: &str) -> Result<Option<String>, String> {
+        let client = self.client().await?;
+        let row = client
+            .query_opt(
+                "SELECT billing_org_id FROM org_billing_links WHERE org_id = $1",
+                &[&org_id],
+            )
+            .instrument(postgres_client_span(
+                "fetch_billing_org_id",
+                "SELECT",
+                "org_billing_links",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_billing_org_id failed: {error}"))?;
+        Ok(row.map(|row| row.get("billing_org_id")))
+    }
+
     async fn record_source_used(&self, key_id: &str, now_ms: i64) -> Result<(), String> {
         let client = self.client().await?;
         client
@@ -9379,6 +9408,19 @@ impl KeyStore for PostgresKeyStore {
     }
 }
 
+/// How long a resolved billing org is reused before `org_billing_links` is re-read.
+const BILLING_ORG_CACHE_TTL: Duration = Duration::from_secs(60);
+
+/// Feeds the Autumn billing resolver from the key store.
+struct KeyStoreBillingLookup(Arc<dyn KeyStore>);
+
+#[async_trait::async_trait]
+impl BillingOrgLookup for KeyStoreBillingLookup {
+    async fn fetch_billing_org_id(&self, org_id: &str) -> Result<Option<String>, String> {
+        self.0.fetch_billing_org_id(org_id).await
+    }
+}
+
 // Local-dev / single-tenant KeyStore: every well-formed ingest key resolves to
 // the configured org. No DB, no network. Connector flows are no-ops since
 // the logpush receivers need connector rows, which only Postgres holds.
@@ -9470,6 +9512,10 @@ impl KeyStore for StaticKeyStore {
     }
 
     async fn fetch_org_routing(&self, _org_id: &str) -> Result<Option<OrgRouting>, String> {
+        Ok(None)
+    }
+
+    async fn fetch_billing_org_id(&self, _org_id: &str) -> Result<Option<String>, String> {
         Ok(None)
     }
 
@@ -10727,6 +10773,8 @@ mod tests {
         /// (connection id, error) of every `record_aws_stream_health` call.
         aws_stream_health: std::sync::Mutex<Vec<(String, Option<String>)>>,
         routings: std::sync::Mutex<std::collections::HashMap<String, OrgRouting>>,
+        /// `org_billing_links`: sub-org to the org that pays for it.
+        billing_links: std::sync::Mutex<std::collections::HashMap<String, String>>,
         targets: std::sync::Mutex<std::collections::HashMap<String, ClickHouseTargetRow>>,
         ingest_key_fetches: AtomicU64,
         connector_fetches: AtomicU64,
@@ -10986,6 +11034,9 @@ mod tests {
                 return Err("simulated routing store outage".to_owned());
             }
             Ok(self.routings.lock().unwrap().get(org_id).cloned())
+        }
+        async fn fetch_billing_org_id(&self, org_id: &str) -> Result<Option<String>, String> {
+            Ok(self.billing_links.lock().unwrap().get(org_id).cloned())
         }
         async fn record_connector_success(
             &self,
@@ -11698,15 +11749,21 @@ mod tests {
         let api_url = format!("http://{addr}");
         state.autumn_entitlements = Some(AutumnEntitlements::new(
             state.http_client.clone(),
-            "am_sk_test".to_string(),
+            "am_sk_test".to_owned(),
             &api_url,
             // A one-second allow TTL, so a test that wants a second gate can
             // have one without a long sleep; the decision cache itself is
             // tested in `autumn.rs`.
             1,
             1,
+            BillingOrgResolver::unlinked(),
         ));
-        state.autumn_tracker = Some(AutumnTracker::spawn("am_sk_test".to_string(), &api_url, 1));
+        state.autumn_tracker = Some(AutumnTracker::spawn(
+            "am_sk_test".to_owned(),
+            &api_url,
+            1,
+            BillingOrgResolver::unlinked(),
+        ));
         (state, rx)
     }
 
@@ -11733,6 +11790,7 @@ mod tests {
             &format!("http://{addr}"),
             60,
             60,
+            BillingOrgResolver::unlinked(),
         ));
         state
     }

@@ -1,4 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { durableStep } from "@maple/backend/platform/durable-step"
 import { SandboxTimeoutError } from "@maple/backend/sandbox/contract"
@@ -165,6 +166,7 @@ const testLayer = () =>
 	Layer.mergeAll(
 		SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
 		SecurityAuditCredits.unmetered,
+		BillingCustomerResolver.standalone,
 		Layer.succeed(
 			HttpClient.HttpClient,
 			HttpClient.make(() => Effect.die("no network in tests")),
@@ -337,6 +339,7 @@ describe("auditWithAgents", () => {
 				Layer.mergeAll(
 					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
 					SecurityAuditCredits.unmetered,
+					BillingCustomerResolver.standalone,
 					Layer.succeed(HttpClient.HttpClient, recording),
 					ConfigProvider.layer(
 						ConfigProvider.fromUnknown({
@@ -388,6 +391,7 @@ describe("auditWithAgents", () => {
 				Layer.mergeAll(
 					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
 					noCredits,
+					BillingCustomerResolver.standalone,
 					Layer.succeed(HttpClient.HttpClient, recording),
 					ConfigProvider.layer(
 						ConfigProvider.fromUnknown({
@@ -475,6 +479,7 @@ describe("auditWithAgents", () => {
 				Layer.mergeAll(
 					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
 					runningOut,
+					BillingCustomerResolver.standalone,
 					Layer.succeed(
 						HttpClient.HttpClient,
 						HttpClient.make(() => Effect.die("no network in tests")),
@@ -523,6 +528,7 @@ describe("auditWithAgents", () => {
 				Layer.mergeAll(
 					SecurityAuditStore.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer)),
 					flaky,
+					BillingCustomerResolver.standalone,
 					Layer.succeed(
 						HttpClient.HttpClient,
 						HttpClient.make(() => Effect.die("no network in tests")),

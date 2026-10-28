@@ -42,6 +42,12 @@ export function isActivePlanSubscription(sub: PlanGatingSubscription | null | un
 export const OPENROUTER_BYOK_ADDON_ID = "openrouter_byok"
 export const OPENROUTER_BYOK_FEATURE_ID = "openrouter_byok"
 
+/**
+ * Lets an org pay for other orgs (sub-orgs keep their data, their billing rolls up here). Granted
+ * by hand on the billing org's plan in Autumn: pooling allowances across orgs is a pricing decision.
+ */
+export const BILLING_SUB_ORGS_FEATURE_ID = "billing_sub_orgs"
+
 /** AI usage in dollars: one credit is one dollar. Chat, triage, reviews and security audits draw on it. */
 export const AI_CREDITS_FEATURE_ID = "ai_credits"
 

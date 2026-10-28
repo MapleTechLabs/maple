@@ -777,6 +777,37 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, { allowance })))
 	})
 
+	it.effect("counts a billing org's members against its one allowance", () => {
+		const testDb = createTestDb(trackedDbs)
+		const allowance = Layer.succeed(UptimeMonitorAllowance, {
+			limit: () => Effect.succeed(Option.some(2)),
+			track: () => Effect.void,
+		})
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"INSERT INTO org_billing_links (org_id, billing_org_id, linked_by, created_at) VALUES ($1, $2, 'user', now())",
+					[OTHER_ORG, ORG],
+				),
+			)
+			yield* createHttp("payer's")
+			yield* createHttp("member's", { orgId: OTHER_ORG })
+			// The pool is full from either side.
+			const fromMember = yield* Effect.result(createHttp("member's second", { orgId: OTHER_ORG }))
+			const fromPayer = yield* Effect.result(createHttp("payer's second"))
+			assert.deepStrictEqual(
+				[fromMember, fromPayer].map((result) =>
+					Result.isFailure(result) ? result.failure._tag : "created",
+				),
+				[
+					"@maple/http/errors/UptimeMonitorLimitReachedError",
+					"@maple/http/errors/UptimeMonitorLimitReachedError",
+				],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, { allowance })))
+	})
+
 	it.effect("tests an HTTP config against its assertions", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

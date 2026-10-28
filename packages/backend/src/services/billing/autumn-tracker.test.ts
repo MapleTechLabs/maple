@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
+import { BillingCustomerId } from "@maple/domain/http"
 import { trackSecurityAuditCharge } from "./autumn-tracker"
 
 interface Captured {
@@ -36,7 +37,7 @@ describe("trackSecurityAuditCharge", () => {
 		Effect.gen(function* () {
 			const captured: Array<Captured> = []
 			yield* trackSecurityAuditCharge({
-				orgId: "org_a",
+				customerId: BillingCustomerId.make("org_a"),
 				runId: "run-1",
 				agentId: "hunter-w1-1",
 				kind: "sandbox",
@@ -67,7 +68,13 @@ describe("trackSecurityAuditCharge", () => {
 		Effect.gen(function* () {
 			const captured: Array<Captured> = []
 			const track = (orgId: string, usd: number) =>
-				trackSecurityAuditCharge({ orgId, runId: "run-1", agentId: "recon-1", kind: "model", usd })
+				trackSecurityAuditCharge({
+					customerId: BillingCustomerId.make(orgId),
+					runId: "run-1",
+					agentId: "recon-1",
+					kind: "model",
+					usd,
+				})
 			yield* track("org_maple", 1).pipe(Effect.provide(withEnv(BILLED, captured)))
 			yield* track("org_a", 1).pipe(Effect.provide(withEnv({}, captured)))
 			yield* track("org_a", 0).pipe(Effect.provide(withEnv(BILLED, captured)))

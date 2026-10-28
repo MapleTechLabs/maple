@@ -20,7 +20,8 @@
  */
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
-import { type PrReviewFailureReason, SubmitPrReviewRequest } from "@maple/domain/http"
+import { type BillingCustomerId, type PrReviewFailureReason, SubmitPrReviewRequest } from "@maple/domain/http"
+import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { CodeLoader } from "@maple/backend/platform/bindings"
@@ -59,7 +60,6 @@ import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./t
 import { type AgentDefinition, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn, type ChatRunOutcome } from "./run"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { toTenantContext, turnTenant } from "./turn-actor"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackAiCredits, trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
@@ -175,7 +175,8 @@ const MIN_CONTINUE_MS = 2 * 60 * 1000
  */
 export const meterTurn = (
 	input: Pick<RunChatSessionTurnInput, "sessionId" | "messageId">,
-	tenant: Pick<TenantContext, "orgId">,
+	/** The org that pays for the turn: `BillingCustomerResolver.customerFor` of the turn's org. */
+	customerId: BillingCustomerId,
 	origin: ChatTurnOrigin,
 	usage: Pick<RunUsage, "input" | "output" | "charges">,
 	options: { readonly ownKey?: boolean } = {},
@@ -192,13 +193,13 @@ export const meterTurn = (
 	return Effect.all(
 		[
 			trackAiCredits({
-				orgId: tenant.orgId,
+				customerId,
 				spends: usage.charges,
 				idempotencyKey: billing.idempotencyKey,
 				source: billing.source,
 			}),
 			trackTokenUsage({
-				orgId: tenant.orgId,
+				customerId,
 				inputTokens: usage.input,
 				outputTokens: usage.output,
 				idempotencyKey: billing.idempotencyKey,
@@ -280,6 +281,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const { PrReviewConversationService } =
 		await import("@maple/backend/services/pr-review/PrReviewConversationService")
 	const { OrgOpenRouterKeyService } = await import("@maple/backend/services/org/OrgOpenRouterKeyService")
+	const { BillingCustomerResolver } =
+		await import("@maple/backend/services/billing/BillingCustomerResolver")
 
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(
@@ -763,13 +766,25 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const program = Effect.gen(function* () {
 		const orgKey = yield* (yield* OrgOpenRouterKeyService).resolveForRun(tenant.orgId)
 		yield* Effect.annotateCurrentSpan("maple.llm.byok", Option.isSome(orgKey))
+		// Resolved before the turn so the finalizer has nothing left to look up. A failed lookup
+		// bills the org itself rather than dropping the turn's usage.
+		const customerId = yield* (yield* BillingCustomerResolver)
+			.customerFor(tenant.orgId)
+			.pipe(
+				Effect.catchTag("@maple/http/errors/BillingAccountPersistenceError", (error) =>
+					Effect.logError("Billing org lookup failed; metering the turn to its own org").pipe(
+						Effect.annotateLogs({ orgId: tenant.orgId, error: error.message }),
+						Effect.as(ownBillingCustomer(tenant.orgId)),
+					),
+				),
+			)
 		return yield* turnBody(orgKey).pipe(
 			interruptOnAbort(input.signal, observability),
 			// `ensuring`, not a trailing statement: a turn that failed, was aborted, or ran out of steps
 			// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them.
 			Effect.ensuring(
 				Effect.suspend(() =>
-					meterTurn(input, tenant, origin, usage, { ownKey: Option.isSome(orgKey) }),
+					meterTurn(input, customerId, origin, usage, { ownKey: Option.isSome(orgKey) }),
 				),
 			),
 		)

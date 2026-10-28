@@ -11,6 +11,7 @@ import {
 } from "./alerts"
 import { AnomalyDetectorSettings, AnomalyDetectorStates, AnomalyIncidents } from "./anomalies"
 import { ApiKeys } from "./api-keys"
+import { OrgBillingLinks } from "./billing-links"
 import { CancellationReviews } from "./cancellation-reviews"
 import { ChatIdentities } from "./chat-identities"
 import { ChatWorkspaces } from "./chat-workspaces"
@@ -95,6 +96,7 @@ export * from "./ai-triage"
 export * from "./alerts"
 export * from "./anomalies"
 export * from "./api-keys"
+export * from "./billing-links"
 export * from "./cancellation-reviews"
 export * from "./chat-identities"
 export * from "./chat-workspaces"
@@ -197,6 +199,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	OrgIngestKeys,
 	OrgIngestSamplingPolicies,
 	OrgOpenRouterKeys,
+	OrgBillingLinks,
 	Sources,
 	OrgRecommendationIssues,
 	PlanetscaleConnections,

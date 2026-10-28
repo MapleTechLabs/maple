@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { BillingCustomer, OrgId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
@@ -80,6 +81,7 @@ describe("SecurityAuditCredits", () => {
 							),
 							EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
 							OrgOpenRouterKeyService.fixedRunKey(orgKey),
+							BillingCustomerResolver.standalone,
 						),
 					),
 					Layer.provideMerge(Env.layer),

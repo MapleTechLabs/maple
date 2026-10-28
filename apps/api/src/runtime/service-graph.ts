@@ -19,6 +19,8 @@ import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { PreviewSignInService } from "@maple/backend/services/auth/PreviewSignInService"
 
 import { DailySpendService } from "@maple/backend/services/billing/DailySpendService"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -134,6 +136,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	StripeClient.layer,
 	ProductEventsService.layer,
 	DailySpendService.layer,
+	BillingCustomerResolver.layer,
+	BillingOrgService.layer,
 	CloudflareAnalyticsService.layer,
 	RailwayMetricsService.layer,
 	SupabaseOAuthService.layer,

@@ -1,5 +1,7 @@
 import {
 	AttachResult,
+	BillingAccount,
+	BillingAccountUsageResponse,
 	BillingCustomer,
 	BillingInvoice,
 	BillingProfile,
@@ -9,6 +11,7 @@ import {
 	DailySpendResponse,
 } from "@maple/domain/http"
 import { V2IngestRuleStats } from "@maple/domain/http/v2"
+import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -42,6 +45,16 @@ export const DailyData = AsyncData.Schema(DailySpendResponse, LoadFailure)
 export const InvoicesData = AsyncData.Schema(Schema.Array(BillingInvoice), LoadFailure)
 export const ProfileData = AsyncData.Schema(BillingProfile, ProfileFailure)
 export const RuleStatsData = AsyncData.Schema(V2IngestRuleStats, LoadFailure)
+export const AccountData = AsyncData.Schema(BillingAccount, LoadFailure)
+export const AccountUsageData = AsyncData.Schema(BillingAccountUsageResponse, LoadFailure)
+
+/** Another org the viewer administers, which this org could be billed through. */
+export const OrgChoice = Schema.Struct({ orgId: OrgId, name: Schema.String, imageUrl: Schema.String })
+export type OrgChoice = typeof OrgChoice.Type
+export const OrgChoicesData = AsyncData.Schema(Schema.Array(OrgChoice), LoadFailure)
+
+/** A failed link or unlink: `rejection` is the server's message when the rules refused it. */
+export const LinkFailure = Schema.Struct({ rejection: Schema.NullOr(Schema.String), failure: LoadFailure })
 
 /** `useCheckoutReturn`: back from Stripe (`?checkout=complete`), waiting on the Autumn sync. */
 export const CheckoutReturn = Schema.Literals(["Idle", "Confirming", "TimedOut"])
@@ -49,6 +62,8 @@ export type CheckoutReturn = typeof CheckoutReturn.Type
 
 export const Model = Schema.Struct({
 	isAdmin: Schema.Boolean,
+	/** Clerk mode: the viewer's other orgs are known, so this org can be billed through one. */
+	isClerk: Schema.Boolean,
 	checkoutReturn: CheckoutReturn,
 	plans: PlansData.schema,
 	usage: UsageData.schema,
@@ -69,6 +84,20 @@ export const Model = Schema.Struct({
 	details: Details.Model,
 	themeColors: Schema.NullOr(ThemeColors),
 	chart: Chart.Model,
+	/** Which org pays. Invoices and details are read only once it says this org is not a member. */
+	account: AccountData.schema,
+	/** Each org's volume this cycle; read only by a billing org with members. */
+	accountUsage: AccountUsageData.schema,
+	/** Read only for a standalone org's admin in Clerk mode. */
+	orgChoices: OrgChoicesData.schema,
+	linkOrgId: Schema.NullOr(OrgId),
+	linkDialog: Dialog.Model,
+	isLinking: Schema.Boolean,
+	linkRejection: Schema.NullOr(Schema.String),
+	/** The org a confirmed unlink removes: this org itself when it is a member. */
+	unlinkOrgId: Schema.NullOr(OrgId),
+	unlinkDialog: Dialog.Model,
+	isUnlinking: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -109,5 +138,19 @@ export const Message = defineMessageUnion({
 	GotDetailsMessage: { message: Details.Message },
 	ResolvedThemeColors: { colors: ThemeColors },
 	GotChartMessage: { message: Chart.Message },
+	CompletedFetchAccount: result(BillingAccount),
+	CompletedFetchAccountUsage: result(BillingAccountUsageResponse),
+	CompletedFetchOrgChoices: result(Schema.Array(OrgChoice)),
+	ClickedRetryAccount: {},
+	ClickedRetryAccountUsage: {},
+	ChangedLinkOrg: { value: Schema.String },
+	ClickedLink: {},
+	GotLinkDialogMessage: { message: Dialog.Message },
+	ClickedConfirmLink: {},
+	CompletedLink: { orgName: Schema.String, result: Schema.Result(BillingAccount, LinkFailure) },
+	ClickedUnlink: { orgId: OrgId },
+	GotUnlinkDialogMessage: { message: Dialog.Message },
+	ClickedConfirmUnlink: {},
+	CompletedUnlink: { isSelf: Schema.Boolean, result: Schema.Result(BillingAccount, LinkFailure) },
 })
 export type Message = typeof Message.Type

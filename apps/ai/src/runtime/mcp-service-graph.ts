@@ -1,4 +1,5 @@
 import { Layer } from "effect"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { McpToolExecutor } from "../mcp/dispatcher"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -43,4 +44,6 @@ export const InvestigationServicesLive = Layer.mergeAll(
 	PrReviewConversationService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 	// The org's own OpenRouter key, when it holds the add-on; the add-on check reads the cached customer.
 	OrgOpenRouterKeyService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
+	// Which org pays for the turn: a member org's AI credits are its billing org's.
+	BillingCustomerResolver.layer.pipe(Layer.provide(EdgeCacheServiceLive)),
 )

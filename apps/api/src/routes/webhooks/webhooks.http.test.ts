@@ -1,5 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer } from "effect"
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
+import { BillingCustomerId, OrgId } from "@maple/domain/http"
+import { ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -120,9 +122,11 @@ const makeRouterLayer = (
 	revocation: Layer.Layer<MembershipRevocationService> = recordingRevocation().layer,
 	audit: Layer.Layer<AuditLogService> = recordingAudit().layer,
 	cancellationReviews: Layer.Layer<CancellationReviewService> = recordingCancellationReviews().layer,
+	billingCustomers: Layer.Layer<BillingCustomerResolver> = BillingCustomerResolver.standalone,
 ) =>
 	router.pipe(
 		Layer.provide(productEvents),
+		Layer.provide(billingCustomers),
 		Layer.provide(cancellationReviews),
 		Layer.provide(revocation),
 		Layer.provide(audit),
@@ -508,6 +512,43 @@ describe("AutumnWebhookRouter", () => {
 					events.tracked.map((event) => event.name),
 					["plan_changed"],
 				)
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
+	it.effect("reviews nothing for an org whose plan ended because it is billed through another", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const reviews = recordingCancellationReviews()
+			const payer = Schema.decodeUnknownSync(OrgId)("org_payer")
+			const linked = Layer.succeed(BillingCustomerResolver, {
+				billingOrgId: () => Effect.succeed(payer),
+				customerFor: () => Effect.succeed(BillingCustomerId.make(payer)),
+				requireOwnBilling: () => Effect.die("not used"),
+				readLink: () => Effect.succeed(Option.some(payer)),
+				forget: () => Effect.void,
+			})
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					AutumnWebhookRouter,
+					{
+						AUTUMN_WEBHOOK_SECRET: AUTUMN_SECRET,
+						MAPLE_CANCELLATION_SLACK_CHANNEL_ID: "C_CANCELLATIONS",
+					},
+					events.layer,
+					undefined,
+					undefined,
+					reviews.layer,
+					linked,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const headers = yield* signedHeaders(AUTUMN_SECRET, AUTUMN_CANCEL_SCHEDULED, Date.now())
+				const response = yield* post(handler, "/webhooks/autumn", AUTUMN_CANCEL_SCHEDULED, headers)
+				assert.strictEqual(response.status, 200)
+				assert.deepStrictEqual(reviews.reviewed, [])
+				assert.deepStrictEqual(events.tracked, [])
 			}).pipe(Effect.ensuring(Effect.promise(dispose)))
 		}),
 	)

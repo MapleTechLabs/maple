@@ -2,6 +2,7 @@
  * The audit Workflow's heavy half, loaded on a run's first replay rather than at Worker startup:
  * the engine, the agent runtime and the backend services stay off the init's CPU budget.
  */
+import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -40,6 +41,7 @@ const runServices = (env: Record<string, unknown>) => {
 		SecurityAuditStore.layer,
 		SecurityAuditCredits.layer,
 		OrgOpenRouterKeyService.layer,
+		BillingCustomerResolver.layer,
 		sandbox,
 	).pipe(Layer.provideMerge(base))
 }

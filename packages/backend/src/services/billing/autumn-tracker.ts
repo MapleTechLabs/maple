@@ -13,6 +13,7 @@
 import { Config, Duration, Effect, Option, Redacted } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
+import type { BillingCustomerId } from "@maple/domain/http"
 import {
 	AUTUMN_API_VERSION,
 	AUTUMN_TRACK_PATH,
@@ -37,7 +38,8 @@ export type AiUsageSource = "triage" | "review" | "chat" | "bot"
 export type BillingUsageSource = AiUsageSource | "security_audit"
 
 export interface TrackTokenUsageOptions {
-	readonly orgId: string
+	/** The org that pays; resolve it with `BillingCustomerResolver.customerFor`. */
+	readonly customerId: BillingCustomerId
 	readonly inputTokens: number
 	readonly outputTokens: number
 	readonly idempotencyKey: string
@@ -59,7 +61,8 @@ export interface AiModelSpend {
 }
 
 export interface TrackAiCreditsOptions {
-	readonly orgId: string
+	/** The org that pays; resolve it with `BillingCustomerResolver.customerFor`. */
+	readonly customerId: BillingCustomerId
 	/** In call order: a charge's position is part of its idempotency key. */
 	readonly spends: ReadonlyArray<AiModelSpend>
 	readonly idempotencyKey: string
@@ -148,10 +151,10 @@ const postUsage = (
 			}),
 		)
 
-const postAll = (orgId: string, requests: ReadonlyArray<UsageRequest>) =>
+const postAll = (customerId: BillingCustomerId, requests: ReadonlyArray<UsageRequest>) =>
 	Effect.gen(function* () {
 		if (requests.length === 0) return
-		const tracker = yield* resolveTracker(orgId)
+		const tracker = yield* resolveTracker(customerId)
 		if (tracker === undefined) return
 		const client = yield* HttpClient.HttpClient
 		yield* Effect.forEach(requests, (request) => postUsage(client, tracker, request), {
@@ -162,7 +165,7 @@ const postAll = (orgId: string, requests: ReadonlyArray<UsageRequest>) =>
 
 /** Legacy raw token counts, kept beside {@link trackAiCredits} until the credit system is trusted. */
 export const trackTokenUsage = Effect.fn("AutumnTracker.trackTokenUsage")(function* ({
-	orgId,
+	customerId,
 	inputTokens,
 	outputTokens,
 	idempotencyKey,
@@ -173,12 +176,12 @@ export const trackTokenUsage = Effect.fn("AutumnTracker.trackTokenUsage")(functi
 		{ featureId: "ai_output_tokens", value: outputTokens, suffix: "output" },
 	].filter((count) => count.value > 0)
 	yield* postAll(
-		orgId,
+		customerId,
 		counts.map((count) => ({
 			path: AUTUMN_TRACK_PATH,
 			label: count.featureId,
 			body: {
-				customer_id: orgId,
+				customer_id: customerId,
 				feature_id: count.featureId,
 				value: count.value,
 				idempotency_key: `${idempotencyKey}:${source}:${count.suffix}`,
@@ -203,13 +206,13 @@ const spendsAnything = (spend: AiModelSpend) =>
  * overage behaviour is kept on purpose: `overflow` would ignore the org's spend limit.
  */
 export const trackAiCredits = Effect.fn("AutumnTracker.trackAiCredits")(function* ({
-	orgId,
+	customerId,
 	spends,
 	idempotencyKey,
 	source,
 }: TrackAiCreditsOptions) {
 	yield* postAll(
-		orgId,
+		customerId,
 		spends
 			.flatMap((spend, index) =>
 				spendsAnything(spend) ? [{ spend, key: `${idempotencyKey}:${source}:credits:${index}` }] : [],
@@ -219,7 +222,7 @@ export const trackAiCredits = Effect.fn("AutumnTracker.trackAiCredits")(function
 				label: spend.modelId,
 				idempotencyKey: key,
 				body: {
-					customer_id: orgId,
+					customer_id: customerId,
 					feature_id: AI_CREDITS_FEATURE_ID,
 					model_id: spend.modelId,
 					input_tokens: spend.inputTokens,
@@ -237,7 +240,8 @@ export const trackAiCredits = Effect.fn("AutumnTracker.trackAiCredits")(function
 export type SecurityAuditChargeKind = "sandbox" | "model"
 
 export interface TrackSecurityAuditChargeOptions {
-	readonly orgId: string
+	/** The org that pays; resolve it with `BillingCustomerResolver.customerFor`. */
+	readonly customerId: BillingCustomerId
 	readonly runId: string
 	/** The invocation's agent id: one charge per agent and kind, however often its step is retried. */
 	readonly agentId: string
@@ -251,7 +255,7 @@ export interface TrackSecurityAuditChargeOptions {
  * track, not `track_tokens`: the model cost is OpenRouter's own bill, marked up by the caller.
  */
 export const trackSecurityAuditCharge = Effect.fn("AutumnTracker.trackSecurityAuditCharge")(function* ({
-	orgId,
+	customerId,
 	runId,
 	agentId,
 	kind,
@@ -260,13 +264,13 @@ export const trackSecurityAuditCharge = Effect.fn("AutumnTracker.trackSecurityAu
 	if (!(usd > 0)) return
 	const source: BillingUsageSource = "security_audit"
 	const idempotencyKey = `${runId}:${agentId}:${source}:${kind}`
-	yield* postAll(orgId, [
+	yield* postAll(customerId, [
 		{
 			path: AUTUMN_TRACK_PATH,
 			label: AI_CREDITS_FEATURE_ID,
 			idempotencyKey,
 			body: {
-				customer_id: orgId,
+				customer_id: customerId,
 				feature_id: AI_CREDITS_FEATURE_ID,
 				value: usd,
 				idempotency_key: idempotencyKey,
@@ -277,7 +281,8 @@ export const trackSecurityAuditCharge = Effect.fn("AutumnTracker.trackSecurityAu
 })
 
 export interface TrackFeatureUsageOptions {
-	readonly orgId: string
+	/** The org that pays; resolve it with `BillingCustomerResolver.customerFor`. */
+	readonly customerId: BillingCustomerId
 	readonly featureId: string
 	/** Negative for continuous-use features giving a unit back, e.g. a deleted monitor. */
 	readonly value: number
@@ -286,18 +291,18 @@ export interface TrackFeatureUsageOptions {
 
 /** A plain track of `value` units on a metered feature. */
 export const trackFeatureUsage = Effect.fn("AutumnTracker.trackFeatureUsage")(function* ({
-	orgId,
+	customerId,
 	featureId,
 	value,
 	idempotencyKey,
 }: TrackFeatureUsageOptions) {
 	if (value === 0) return
-	yield* postAll(orgId, [
+	yield* postAll(customerId, [
 		{
 			path: AUTUMN_TRACK_PATH,
 			label: featureId,
 			idempotencyKey,
-			body: { customer_id: orgId, feature_id: featureId, value, idempotency_key: idempotencyKey },
+			body: { customer_id: customerId, feature_id: featureId, value, idempotency_key: idempotencyKey },
 		},
 	])
 })
