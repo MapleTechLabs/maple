@@ -14,6 +14,8 @@ export const INGEST_RULE_LIMITS = {
 	patternsPerRule: 10,
 	patternLength: 512,
 	nameLength: 120,
+	/** Highest `position` a rule can have. */
+	maxPosition: 10_000,
 	/** Detectors and patterns read at most this many bytes of one string value. */
 	scanBytes: 16 * 1024,
 } as const
