@@ -20,13 +20,16 @@ export const MANAGE_FIELDS = {
 /** `incidentId` value that opens a new incident. */
 export const NEW_INCIDENT = "new"
 
+/** Status and impact value that keeps the incident's current one; a new incident takes the defaults. */
+export const NO_CHANGE = ""
+
 export interface ManageMessage {
 	readonly tone: "ok" | "error"
 	readonly text: string
 }
 
-const option = (value: string, label: string): string =>
-	`<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`
+const option = (value: string, label: string, selected = false): string =>
+	`<option value="${escapeHtml(value)}"${selected ? " selected" : ""}>${escapeHtml(label)}</option>`
 
 /** Break-glass form: post an incident update straight to the edge while Maple is down. */
 export const renderManagePage = (
@@ -57,8 +60,8 @@ export const renderManagePage = (
 		`<label>Break-glass token<input type="password" name="${f.token}" autocomplete="off" required></label>`,
 		`<label>Incident<select name="${f.incidentId}">${option(NEW_INCIDENT, "New incident")}${incidents.map((incident) => option(incident.id, incident.title)).join("")}</select></label>`,
 		`<label>Title (new incidents)<input type="text" name="${f.title}" maxlength="200"></label>`,
-		`<label>Status<select name="${f.status}">${StatusPageIncidentStatus.literals.map((status) => option(status, INCIDENT_STATUS_LABEL[status])).join("")}</select></label>`,
-		`<label>Impact<select name="${f.impact}">${StatusPageIncidentImpact.literals.map((impact) => option(impact, IMPACT_LABEL[impact])).join("")}</select></label>`,
+		`<label>Status<select name="${f.status}">${option(NO_CHANGE, "No change (new incidents: Investigating)", true)}${StatusPageIncidentStatus.literals.map((status) => option(status, INCIDENT_STATUS_LABEL[status])).join("")}</select></label>`,
+		`<label>Impact<select name="${f.impact}">${option(NO_CHANGE, "No change (new incidents: Major)", true)}${StatusPageIncidentImpact.literals.map((impact) => option(impact, IMPACT_LABEL[impact])).join("")}</select></label>`,
 		components,
 		`<label>Message<textarea name="${f.body}" maxlength="5000" required></textarea></label>`,
 		`<button type="submit">Post update</button></form></section>`,

@@ -21,6 +21,11 @@ export interface CachedValue {
 export interface StatusStorage {
 	readonly kvGet: (key: string) => Effect.Effect<string | null, StatusStorageError>
 	readonly kvPut: (key: string, value: string) => Effect.Effect<void, StatusStorageError>
+	/** Up to `limit` key names under `prefix`, in key order. */
+	readonly kvList: (
+		prefix: string,
+		limit: number,
+	) => Effect.Effect<ReadonlyArray<string>, StatusStorageError>
 	readonly r2Get: (key: string) => Effect.Effect<string | null, StatusStorageError>
 	readonly cacheGet: (key: string) => Effect.Effect<CachedValue | null, StatusStorageError>
 	readonly cachePut: (key: string, entry: CachedValue) => Effect.Effect<void, StatusStorageError>

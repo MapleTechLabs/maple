@@ -1,6 +1,12 @@
-import { StatusPageKeys, type StatusPageSnapshot } from "@maple/domain/status-page"
-import { FIXTURE_NOW } from "@maple/status-page/fixtures"
-import { Effect } from "effect"
+import {
+	decodeStatusPageOverlayEntryJson,
+	StatusPageKeys,
+	type StatusPageOverlayEntry,
+	type StatusPagePublisherHeartbeat,
+	type StatusPageSnapshot,
+} from "@maple/domain/status-page"
+import { FIXTURE_NOW, FIXTURE_PAGE_ID } from "@maple/status-page/fixtures"
+import { Effect, Option } from "effect"
 import { handleRequest } from "./handler"
 import { type CachedValue, type StatusEnv, type StatusStorage, StatusStorageError } from "./ports"
 
@@ -26,6 +32,13 @@ export const makeFakeStorage = () => {
 	const storage: StatusStorage = {
 		kvGet: (key) => guard("kv", key, () => kv.get(key) ?? null),
 		kvPut: (key, value) => guard("kv-put", key, () => void kv.set(key, value)),
+		kvList: (prefix, limit) =>
+			guard("kv", prefix, () =>
+				[...kv.keys()]
+					.filter((key) => key.startsWith(prefix))
+					.sort()
+					.slice(0, limit),
+			),
 		r2Get: (key) => guard("r2", key, () => r2.get(key) ?? null),
 		cacheGet: (key) => guard("cache", key, () => cache.get(key) ?? null),
 		cachePut: (key, entry) => guard("cache", key, () => void cache.set(key, entry)),
@@ -47,14 +60,32 @@ export const publish = (
 	options: { readonly host?: string; readonly heartbeatAt?: number | null } = {},
 ) => {
 	const json = JSON.stringify(snapshot)
-	fake.kv.set(StatusPageKeys.host(options.host ?? "status.acme.example"), snapshot.pageId)
+	const host = options.host ?? "status.acme.example"
+	fake.kv.set(StatusPageKeys.host(host), snapshot.pageId)
 	fake.kv.set(StatusPageKeys.slug(snapshot.page.slug), snapshot.pageId)
 	fake.kv.set(StatusPageKeys.snapshot(snapshot.pageId), json)
 	fake.r2.set(StatusPageKeys.snapshotObject(snapshot.pageId), json)
-	fake.r2.set(StatusPageKeys.hostObject(options.host ?? "status.acme.example"), snapshot.pageId)
+	fake.r2.set(StatusPageKeys.hostObject(host), snapshot.pageId)
+	fake.r2.set(StatusPageKeys.slugObject(snapshot.page.slug), snapshot.pageId)
 	const heartbeatAt = options.heartbeatAt === undefined ? FIXTURE_NOW : options.heartbeatAt
-	if (heartbeatAt !== null) fake.kv.set(StatusPageKeys.heartbeat, JSON.stringify({ at: heartbeatAt }))
+	if (heartbeatAt !== null) {
+		const heartbeat: StatusPagePublisherHeartbeat = {
+			at: heartbeatAt,
+			probesSeenAt: heartbeatAt - 30_000,
+		}
+		fake.kv.set(StatusPageKeys.heartbeat, JSON.stringify(heartbeat))
+	}
 }
+
+/** Writes one break-glass entry under its own key, as the Worker does. */
+export const putOverlayEntry = (fake: FakeStorage, entry: StatusPageOverlayEntry) =>
+	fake.kv.set(StatusPageKeys.overlayEntry(FIXTURE_PAGE_ID, entry.id), JSON.stringify(entry))
+
+/** Every break-glass entry stored for the fixture page, in key order. */
+export const overlayEntries = (fake: FakeStorage): ReadonlyArray<StatusPageOverlayEntry> =>
+	[...fake.kv.entries()]
+		.filter(([key]) => key.startsWith(StatusPageKeys.overlayPage(FIXTURE_PAGE_ID)))
+		.flatMap(([, raw]) => Option.toArray(decodeStatusPageOverlayEntryJson(raw)))
 
 /** Runs one request through the handler; ids count up so nonces and entry ids are predictable. */
 export const send = (

@@ -26,6 +26,7 @@ const update = (
 	body,
 	at,
 	source: "dashboard" as const,
+	overlayEntryId: null,
 })
 
 const hostileSnapshot = makeSnapshot({
@@ -227,5 +228,17 @@ describe("renderManagePage", () => {
 		expect(checkboxes).toEqual([fixtureComponentId(0), fixtureComponentId(1), fixtureComponentId(2)])
 		expect(html).not.toContain("<script>alert")
 		expect(html).toContain("&lt;script&gt;")
+	})
+
+	it("selects No change for status and impact, so a follow-up keeps the incident's values", () => {
+		const html = renderManagePage(makeSnapshot({ incidents: [makeIncident("open")] }))
+		const selected = (name: string) =>
+			[
+				...(html.split(`name="${name}"`)[1]?.split("</select>")[0] ?? "").matchAll(
+					/<option value="([^"]*)" selected>/gu,
+				),
+			].map((match) => match[1])
+		expect(selected("status")).toEqual([""])
+		expect(selected("impact")).toEqual([""])
 	})
 })

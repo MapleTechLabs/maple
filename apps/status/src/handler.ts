@@ -10,7 +10,7 @@ import { Effect, Option } from "effect"
 import { parseForm, postBreakGlassUpdate } from "./break-glass"
 import type { StatusEnv } from "./ports"
 import { asset, html, notFound, PUBLIC_CACHE_CONTROL, plain, redirect } from "./responses"
-import { loadView, type PageView, pageIdForHost, pageIdForSlug } from "./snapshot"
+import { type Lookup, loadView, type PageView, pageIdForHost, pageIdForSlug } from "./snapshot"
 
 /** `/s/<slug>` and `/s/<slug>/<rest>`: path addressing for hosts without a page of their own. */
 const SLUG_PATH = /^\/s\/([a-z0-9][a-z0-9-]{1,46}[a-z0-9])(\/.*)?$/u
@@ -26,21 +26,26 @@ interface Target {
 }
 
 /** The page a request is for: its hostname first, then the `/s/<slug>` path form. */
-const resolveTarget = (env: StatusEnv, url: URL): Effect.Effect<Option.Option<Target>> =>
+const resolveTarget = (env: StatusEnv, url: URL): Effect.Effect<Lookup<Target>> =>
 	Effect.gen(function* () {
 		const byHost = yield* pageIdForHost(env, url.hostname)
-		if (Option.isSome(byHost))
-			return Option.some({ pageId: byHost.value, basePath: "", path: url.pathname, slug: null })
+		if (byHost._tag === "found")
+			return {
+				_tag: "found",
+				value: { pageId: byHost.value, basePath: "", path: url.pathname, slug: null },
+			}
 		const match = SLUG_PATH.exec(url.pathname)
 		const slug = match?.[1]
-		if (slug === undefined) return Option.none()
+		if (slug === undefined) return byHost
 		const bySlug = yield* pageIdForSlug(env, slug)
-		return Option.map(bySlug, (pageId) => ({
-			pageId,
-			basePath: `/s/${slug}`,
-			path: match?.[2] ?? "/",
-			slug,
-		}))
+		if (bySlug._tag === "found") {
+			return {
+				_tag: "found",
+				value: { pageId: bySlug.value, basePath: `/s/${slug}`, path: match?.[2] ?? "/", slug },
+			}
+		}
+		// Either store being down means the 404 could be wrong, so it must not be cached.
+		return byHost._tag === "unavailable" ? byHost : bySlug
 	})
 
 const managePage = (
@@ -57,6 +62,8 @@ const managePage = (
 		nonce,
 	})
 }
+
+const UNAVAILABLE = "This status page is temporarily unavailable."
 
 const NOT_SAVED =
 	"The update was not saved: the status store did not answer. Try again in a minute; nothing was published."
@@ -138,9 +145,10 @@ export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<R
 		// Liveness only: says the Worker runs, not that any page can be served.
 		if (url.pathname === "/_health") return plain("ok", 200)
 		const target = yield* resolveTarget(env, url)
-		if (Option.isNone(target)) return notFound()
+		if (target._tag === "unavailable") return plain(UNAVAILABLE, 503)
+		if (target._tag === "missing") return notFound()
 		const view = yield* loadView(env, target.value.pageId)
-		if (Option.isNone(view)) return plain("This status page is temporarily unavailable.", 503)
+		if (Option.isNone(view)) return plain(UNAVAILABLE, 503)
 		// A renamed page keeps its old `slug:` key until cleanup; only the current slug serves it.
 		if (target.value.slug !== null && view.value.snapshot.page.slug !== target.value.slug)
 			return notFound()

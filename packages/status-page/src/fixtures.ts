@@ -50,6 +50,7 @@ export const makeComponent = (index: number, fields: Partial<EncodedComponent> =
 	group: null,
 	status: "operational",
 	showUptime: true,
+	monitored: true,
 	days: makeDays(),
 	...fields,
 })
@@ -65,6 +66,7 @@ export const makeIncident = (id: string, fields: Partial<EncodedIncident> = {}):
 	scheduledStart: null,
 	scheduledEnd: null,
 	componentIds: [],
+	openedByOverlayEntryId: null,
 	updates: [],
 	...fields,
 })
@@ -75,7 +77,6 @@ export const makeSnapshot = (fields: Partial<Encoded> = {}): StatusPageSnapshot 
 		pageId: FIXTURE_PAGE_ID,
 		revision: 1,
 		generatedAt: FIXTURE_NOW - 60_000,
-		probesSeenAt: FIXTURE_NOW - 30_000,
 		page: {
 			name: "Acme",
 			slug: "acme",
@@ -89,7 +90,7 @@ export const makeSnapshot = (fields: Partial<Encoded> = {}): StatusPageSnapshot 
 		components: [
 			makeComponent(0, { name: "API", group: "Platform" }),
 			makeComponent(1, { name: "Dashboard", group: "Platform" }),
-			makeComponent(2, { name: "Docs", showUptime: false, days: [] }),
+			makeComponent(2, { name: "Docs", showUptime: false, monitored: false, days: [] }),
 		],
 		incidents: [],
 		...fields,

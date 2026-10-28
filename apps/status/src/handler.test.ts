@@ -1,4 +1,4 @@
-import { decodeStatusPageOverlayJson, sha256Base64Url, StatusPageKeys } from "@maple/domain/status-page"
+import { sha256Base64Url, type StatusPageOverlayEntry, StatusPageKeys } from "@maple/domain/status-page"
 import {
 	FIXTURE_NOW,
 	FIXTURE_PAGE_ID,
@@ -6,21 +6,34 @@ import {
 	makeIncident,
 	makeSnapshot,
 } from "@maple/status-page/fixtures"
-import { Option } from "effect"
 import { beforeEach, describe, expect, it } from "vitest"
 import { cacheKey } from "./snapshot"
-import { type FakeStorage, makeFakeStorage, postForm, publish, send } from "./test-support"
+import {
+	type FakeStorage,
+	makeFakeStorage,
+	overlayEntries,
+	postForm,
+	publish,
+	putOverlayEntry,
+	send,
+} from "./test-support"
 
 const PAGE = "https://status.acme.example/"
 const TOKEN = "mstat_correct-horse-battery-staple"
 
 const delayedBanner = (html: string): string =>
 	html.match(/<div class="notice" id="delayed"[^>]*>/u)?.[0] ?? ""
-const overlayEntries = (fake: FakeStorage) =>
-	Option.match(decodeStatusPageOverlayJson(fake.kv.get(StatusPageKeys.overlay(FIXTURE_PAGE_ID)) ?? ""), {
-		onNone: () => [],
-		onSome: (overlay) => overlay.entries,
-	})
+const entry = (fields: Partial<StatusPageOverlayEntry> = {}): StatusPageOverlayEntry => ({
+	id: "e1",
+	at: FIXTURE_NOW - 120_000,
+	incidentId: null,
+	title: "Checkout failing",
+	status: "investigating",
+	impact: "critical",
+	body: "Posted from the edge",
+	componentIds: [fixtureComponentId(0)],
+	...fields,
+})
 
 describe("serving a page", () => {
 	let fake: FakeStorage
@@ -96,28 +109,54 @@ describe("serving a page", () => {
 		expect((await send(fake, "https://status.maple.workers.dev/s/old-acme/")).status).toBe(404)
 	})
 
-	it("merges break-glass overlay entries into the page", async () => {
-		fake.kv.set(
-			StatusPageKeys.overlay(FIXTURE_PAGE_ID),
-			JSON.stringify({
-				entries: [
-					{
-						id: "e1",
-						at: FIXTURE_NOW - 120_000,
-						incidentId: null,
-						title: "Checkout failing",
-						status: "investigating",
-						impact: "critical",
-						body: "Posted from the edge",
-						componentIds: [fixtureComponentId(0)],
-					},
-				],
+	it("merges break-glass entries listed from their per-entry keys into the page", async () => {
+		putOverlayEntry(fake, entry())
+		putOverlayEntry(
+			fake,
+			entry({
+				id: "e2",
+				at: FIXTURE_NOW - 60_000,
+				incidentId: "bg-e1",
+				title: null,
+				status: null,
+				impact: null,
+				body: "Still looking",
 			}),
 		)
 		const html = await (await send(fake, PAGE)).text()
 		expect(html).toContain("<h1>Major system outage</h1>")
 		expect(html).toContain("Checkout failing")
 		expect(html).toContain("Posted from the edge")
+		expect(html).toContain("Still looking")
+	})
+
+	it("lists the overlay at most every 10 seconds per colo", async () => {
+		await send(fake, PAGE)
+		putOverlayEntry(fake, entry())
+		expect(await (await send(fake, PAGE, { nowMs: FIXTURE_NOW + 5_000 })).text()).not.toContain(
+			"Checkout failing",
+		)
+		expect(await (await send(fake, PAGE, { nowMs: FIXTURE_NOW + 11_000 })).text()).toContain(
+			"Checkout failing",
+		)
+	})
+
+	it("serves the slug route from R2 when KV throws", async () => {
+		fake.failing.add("kv")
+		const response = await send(fake, "https://status.maple.workers.dev/s/acme/")
+		expect(response.status).toBe(200)
+		expect(await response.text()).toContain("<title>Acme status</title>")
+	})
+
+	it("answers an uncached 503, not a 404, when KV and R2 both fail on lookup", async () => {
+		fake.failing.add("kv")
+		fake.failing.add("r2")
+		const byHost = await send(fake, PAGE)
+		expect(byHost.status).toBe(503)
+		expect(byHost.headers.get("cache-control")).toBe("no-store")
+		const bySlug = await send(fake, "https://status.maple.workers.dev/s/acme/")
+		expect(bySlug.status).toBe(503)
+		expect(bySlug.headers.get("cache-control")).toBe("no-store")
 	})
 
 	it("shows the delayed banner when the heartbeat is old, and hides it when fresh", async () => {
@@ -273,18 +312,115 @@ describe("break-glass updates", () => {
 		expect(overlayEntries(fake)).toEqual([])
 	})
 
-	it("refuses once the overlay holds the maximum number of entries", async () => {
-		const entry = {
-			at: FIXTURE_NOW,
-			incidentId: null,
-			title: null,
-			status: "monitoring",
-			impact: "minor",
-			body: "b",
-			componentIds: [],
-		}
-		const full = Array.from({ length: 50 }, (_, index) => ({ ...entry, id: `e${index}` }))
-		fake.kv.set(StatusPageKeys.overlay(FIXTURE_PAGE_ID), JSON.stringify({ entries: full }))
+	it("refuses once the page holds the maximum number of listed entry keys", async () => {
+		Array.from({ length: 49 }, (_, index) => putOverlayEntry(fake, entry({ id: `e${index}` })))
+		// A corrupt key still counts toward the cap.
+		fake.kv.set(StatusPageKeys.overlayEntry(FIXTURE_PAGE_ID, "corrupt"), "{not json")
 		expect((await send(fake, update(TOKEN))).status).toBe(409)
+		expect(overlayEntries(fake)).toHaveLength(49)
+	})
+
+	it("keeps critical impact and the status on a No change follow-up", async () => {
+		publish(
+			fake,
+			makeSnapshot({
+				breakGlassTokenSha256: await sha256Base64Url(TOKEN),
+				incidents: [makeIncident("open", { impact: "critical", status: "identified" })],
+			}),
+		)
+		const response = await send(
+			fake,
+			postForm(`${PAGE}_manage`, [
+				["token", TOKEN],
+				["incidentId", "open"],
+				["title", ""],
+				["status", ""],
+				["impact", ""],
+				["body", "Still working on it"],
+			]),
+		)
+		expect(response.status).toBe(303)
+		expect(overlayEntries(fake)[0]).toMatchObject({ status: null, impact: null })
+		const json = await (await send(fake, `${PAGE}api/v1/status.json`)).json()
+		expect(json).toMatchObject({ incidents: [{ id: "open", impact: "critical", status: "identified" }] })
+	})
+
+	it("opens a new incident as investigating and major when status and impact say No change", async () => {
+		await send(
+			fake,
+			postForm(`${PAGE}_manage`, [
+				["token", TOKEN],
+				["incidentId", "new"],
+				["title", "Payments down"],
+				["status", ""],
+				["impact", ""],
+				["body", "We are on it"],
+			]),
+		)
+		expect(overlayEntries(fake)[0]).toMatchObject({ status: "investigating", impact: "major" })
+	})
+
+	it("rejects a status that does not fit the incident's kind", async () => {
+		publish(
+			fake,
+			makeSnapshot({
+				breakGlassTokenSha256: await sha256Base64Url(TOKEN),
+				incidents: [
+					makeIncident("planned", {
+						kind: "maintenance",
+						status: "scheduled",
+						scheduledStart: FIXTURE_NOW + 86_400_000,
+						scheduledEnd: FIXTURE_NOW + 90_000_000,
+					}),
+				],
+			}),
+		)
+		const post = (incidentId: string, status: string) =>
+			send(
+				fake,
+				postForm(`${PAGE}_manage`, [
+					["token", TOKEN],
+					["incidentId", incidentId],
+					["title", "Payments down"],
+					["status", status],
+					["impact", ""],
+					["body", "b"],
+				]),
+			)
+		expect((await post("planned", "resolved")).status).toBe(400)
+		expect((await post("new", "in_progress")).status).toBe(400)
+		expect(overlayEntries(fake)).toEqual([])
+		expect((await post("planned", "in_progress")).status).toBe(303)
+	})
+
+	it("answers 413 to an oversized body sent chunked, without a content-length", async () => {
+		const chunk = new TextEncoder().encode(`body=${"x".repeat(8 * 1024)}`)
+		const stream = new ReadableStream<Uint8Array>({
+			start(controller) {
+				Array.from({ length: 5 }, () => controller.enqueue(chunk))
+				controller.close()
+			},
+		})
+		const init: RequestInit & { duplex: "half" } = {
+			method: "POST",
+			headers: { "content-type": "application/x-www-form-urlencoded" },
+			body: stream,
+			duplex: "half",
+		}
+		const request = new Request(`${PAGE}_manage`, init)
+		expect(request.headers.get("content-length")).toBeNull()
+		expect((await send(fake, request)).status).toBe(413)
+		expect(overlayEntries(fake)).toEqual([])
+	})
+
+	it("dedupes repeated component ids", async () => {
+		await send(
+			fake,
+			update(TOKEN, [
+				["componentIds", fixtureComponentId(0)],
+				["componentIds", fixtureComponentId(1)],
+			]),
+		)
+		expect(overlayEntries(fake)[0]?.componentIds).toEqual([fixtureComponentId(0), fixtureComponentId(1)])
 	})
 })
