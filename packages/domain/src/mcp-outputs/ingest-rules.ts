@@ -44,4 +44,6 @@ export const PreviewIngestRuleOutput = Schema.Struct({
 	examples: Schema.Array(PreviewExample),
 	/** Rule problems; a rule with problems is not previewed. */
 	problems: Schema.Array(Schema.String),
+	/** What the sample cannot show, e.g. span events, which stored samples do not carry. */
+	notes: Schema.optionalKey(Schema.Array(Schema.String)),
 })
