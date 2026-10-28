@@ -114,6 +114,18 @@ describe("ingestRuleProblems", () => {
 		])
 	})
 
+	it("keeps keep percent a whole number from 0 to 100", () => {
+		const keep = (keepPercent: number) =>
+			ingestRuleProblems({
+				signals: ["logs"],
+				conditions: [{ field: "severity", op: "lt", value: "info" }],
+				action: { _tag: "drop", keepPercent },
+			})
+		expect(keep(50)).toEqual([])
+		expect(keep(12.5)).toEqual(["keep percent is a whole number from 0 to 100"])
+		expect(keep(101)).toEqual(["keep percent is a whole number from 0 to 100"])
+	})
+
 	it("only drops metrics entirely", () => {
 		expect(
 			ingestRuleProblems({

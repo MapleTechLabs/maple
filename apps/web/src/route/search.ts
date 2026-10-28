@@ -340,6 +340,11 @@ export const AlertsUptimeNewSearch = Schema.Struct({
 
 export const AlertsUptimeMonitorSearch = Schema.Struct({})
 
+/** `/settings/ingestion/rules/new`: `template` prefills the editor from an empty-state template. */
+export const IngestRuleNewSearch = Schema.Struct({
+	template: Schema.optional(Schema.String),
+})
+
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)
 
 export const CodeReviewIssuesSearch = Schema.Struct(CodeReviewIssuesSearchFields)

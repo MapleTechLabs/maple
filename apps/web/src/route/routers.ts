@@ -87,6 +87,16 @@ const routers = {
 		search(Search.AlertsUptimeMonitorSearch),
 		Route.mapTo(AppRoute.AlertsUptimeMonitor),
 	),
+	IngestRuleNew: pipe(
+		path("settings", "ingestion", "rules", "new"),
+		search(Search.IngestRuleNewSearch),
+		Route.mapTo(AppRoute.IngestRuleNew),
+	),
+	IngestRule: pipe(
+		path("settings", "ingestion", "rules"),
+		slash(segment("ruleId")),
+		Route.mapTo(AppRoute.IngestRule),
+	),
 	Anomaly: pipe(
 		path("anomalies"),
 		slash(schemaSegment("incidentId", AnomalyIncidentId)),
@@ -399,6 +409,8 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.AlertsCreate,
 		routers.AlertsUptimeNew,
 		routers.AlertsUptimeMonitor,
+		routers.IngestRuleNew,
+		routers.IngestRule,
 		routers.DashboardsTemplates,
 		routers.SourcesNew,
 		routers.InfraDiscover,

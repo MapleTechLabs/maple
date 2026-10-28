@@ -20,6 +20,7 @@ import {
 	ToggleMapping,
 	TriageRecommendation,
 } from "./command"
+import * as IngestRules from "./ingest-rules"
 import * as MappingDialog from "./mapping-dialog"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -62,6 +63,7 @@ export const init = (options: InitOptions): Return => ({
 		recommendations: AsyncData.Loading(),
 		recommendationTab: "open",
 		pendingRecommendations: [],
+		ingestRules: IngestRules.init(),
 		mappings: AsyncData.Loading(),
 		pendingToggles: [],
 		rowMenus: {},
@@ -74,6 +76,12 @@ export const init = (options: InitOptions): Return => ({
 		FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace }),
 		FetchIngestionKeys(),
 		FetchRecommendations(),
+		Command.mapMessage(IngestRules.FetchIngestRules(), (message) =>
+			Message.GotIngestRulesMessage({ message }),
+		),
+		Command.mapMessage(IngestRules.FetchIngestRuleStats(), (message) =>
+			Message.GotIngestRulesMessage({ message }),
+		),
 		FetchMappings(),
 		ReadFramework({ orgKey: options.orgKey }),
 	],
@@ -124,6 +132,16 @@ const liftMappingDialog = (model: Model, step: ReturnType<typeof MappingDialog.u
 	}
 }
 
+const liftIngestRules = (model: Model, step: ReturnType<typeof IngestRules.update>): Return => {
+	const lifted: Return = {
+		model: { ...model, ingestRules: step.model },
+		commands: Command.mapMessages(step.commands ?? [], (message) =>
+			Message.GotIngestRulesMessage({ message }),
+		),
+	}
+	return step.outMessage === undefined ? lifted : { ...lifted, outMessage: step.outMessage }
+}
+
 const liftRollDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, rollDialog: step.model },
 	commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -168,6 +186,16 @@ export const revisit = (model: Model, options: InitOptions): Return => {
 	const ingest = revisitData(model.ingest, FetchIngestionKeys)
 	const recommendations = revisitData(model.recommendations, FetchRecommendations)
 	const mappings = revisitData(model.mappings, FetchMappings)
+	const rules = revisitData(model.ingestRules.rules, () =>
+		Command.mapMessage(IngestRules.FetchIngestRules(), (message) =>
+			Message.GotIngestRulesMessage({ message }),
+		),
+	)
+	const stats = revisitData(model.ingestRules.stats, () =>
+		Command.mapMessage(IngestRules.FetchIngestRuleStats(), (message) =>
+			Message.GotIngestRulesMessage({ message }),
+		),
+	)
 	return {
 		model: {
 			...model,
@@ -175,12 +203,15 @@ export const revisit = (model: Model, options: InitOptions): Return => {
 			ingest: ingest.data,
 			recommendations: recommendations.data,
 			mappings: mappings.data,
+			ingestRules: { ...model.ingestRules, rules: rules.data, stats: stats.data },
 		},
 		commands: [
 			...overview.commands,
 			...ingest.commands,
 			...recommendations.commands,
 			...mappings.commands,
+			...rules.commands,
+			...stats.commands,
 		],
 	}
 }
@@ -357,6 +388,8 @@ export const update = (model: Model, message: Message, options: InitOptions): Re
 				}),
 			})
 		},
+		GotIngestRulesMessage: ({ message: child }) =>
+			liftIngestRules(model, IngestRules.update(model.ingestRules, child)),
 		ClickedAddMapping: () => liftMappingDialog(model, MappingDialog.open(model.mappingDialog, null)),
 		ToggledMapping: ({ id }) =>
 			Option.match(mappingById(model, id), {

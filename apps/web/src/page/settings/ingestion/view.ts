@@ -18,6 +18,7 @@ import type { Model } from "./model"
 import { credentialRow, ingestKeyRows } from "./view-keys"
 import { connectInstructions, frameworkIconStrip, frameworkPicker } from "./view-setup"
 import { deleteMappingDialog, mappingsSection, recommendationsSection } from "./view-rules"
+import { deleteRuleDialog, ingestRulesSection } from "./view-ingest-rules"
 
 // `IngestionSection`.
 
@@ -240,6 +241,7 @@ export const view = Submodel.defineView<Model, Message, NoInputs>((model, _input
 		endpointAndKeysSection(h, model),
 		addServiceSection(h, model),
 		...recommendationsSection(h, model),
+		ingestRulesSection(h, model.ingestRules, model.isAdmin),
 		mappingsSection(h, model),
 		h.submodel({
 			slotId: "ingestion-mapping-dialog",
@@ -249,6 +251,7 @@ export const view = Submodel.defineView<Model, Message, NoInputs>((model, _input
 			viewInputs: { slotId: "ingestion-mapping-dialog-popup" },
 		}),
 		deleteMappingDialog(h, model),
+		...(model.isAdmin ? [deleteRuleDialog(h, model.ingestRules)] : []),
 		...(model.isAdmin ? [rollKeyDialog(h, model)] : []),
 	]),
 )

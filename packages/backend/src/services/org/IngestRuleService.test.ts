@@ -2,13 +2,14 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import type { IngestRuleSpec } from "@maple/domain/ingest-rules"
 import { Effect, Layer, Schema } from "effect"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { IngestRuleService } from "./IngestRuleService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const makeLayer = () => IngestRuleService.layer.pipe(Layer.provide(createTestDb(createdDbs).layer))
+const makeLayer = (testDb: TestDb = createTestDb(createdDbs)) =>
+	IngestRuleService.layer.pipe(Layer.provide(testDb.layer))
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_rules")
 const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
@@ -87,4 +88,42 @@ describe("IngestRuleService", () => {
 			expect(yield* service.list(ORG)).toEqual([])
 		}).pipe(Effect.provide(makeLayer())),
 	)
+
+	it.effect("sums the gateway's hourly counters per rule and per signal inside the window", () => {
+		const testDb = createTestDb(createdDbs)
+		const hour = Date.UTC(2026, 9, 28, 10)
+		const insert = (rule: string, bucket: number, signal: string, dropped: number, bytes: number) =>
+			Effect.promise(() =>
+				executeSql(
+					testDb,
+					"INSERT INTO org_ingest_rule_stats (org_id, rule_id, bucket, signal, matched, dropped, dropped_bytes, redacted_values) VALUES ($1, $2, to_timestamp($3 / 1000.0), $4, $5, $5, $6, 0)",
+					[ORG, rule, bucket, signal, dropped, bytes],
+				),
+			)
+		return Effect.gen(function* () {
+			const service = yield* IngestRuleService
+			const rule = yield* service.create(ORG, { name: "Drop debug", spec: dropDebug })
+			yield* insert(rule.id, hour, "logs", 10, 1000)
+			yield* insert(rule.id, hour + 3_600_000, "logs", 5, 500)
+			yield* insert(rule.id, hour - 3_600_000, "logs", 99, 9900)
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"INSERT INTO org_ingest_rule_stats (org_id, rule_id, bucket, signal, matched, dropped, dropped_bytes, redacted_values) VALUES ($1, $2, to_timestamp($3 / 1000.0), 'logs', 7, 7, 700, 0)",
+					[OTHER_ORG, rule.id, hour],
+				),
+			)
+			const window = yield* service.stats(ORG, hour, hour + 2 * 3_600_000)
+			expect(window.rules).toEqual([
+				{ ruleId: rule.id, matched: 15, dropped: 15, droppedBytes: 1500, redactedValues: 0 },
+			])
+			expect(window.signals).toEqual([
+				{ signal: "logs", matched: 15, dropped: 15, droppedBytes: 1500, redactedValues: 0 },
+			])
+			expect(window.hourly).toEqual([
+				{ ruleId: rule.id, bucket: hour, matched: 10 },
+				{ ruleId: rule.id, bucket: hour + 3_600_000, matched: 5 },
+			])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
 })

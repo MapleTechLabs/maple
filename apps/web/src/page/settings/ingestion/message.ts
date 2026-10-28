@@ -12,6 +12,7 @@ import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as Tabs from "../../../ui/tabs"
+import * as IngestRules from "./ingest-rules"
 import * as MappingDialog from "./mapping-dialog"
 import { IngestKeyKind, OverviewRow, RecommendationTab } from "./model"
 
@@ -47,6 +48,7 @@ export const Message = defineMessageUnion({
 		label: Schema.String,
 		result: Schema.Result(Schema.Void, LoadFailure),
 	},
+	GotIngestRulesMessage: { message: IngestRules.Message },
 	ClickedAddMapping: {},
 	ToggledMapping: { id: AttributeMappingPublicId },
 	CompletedToggleMapping: { id: AttributeMappingPublicId, result: Schema.Result(Schema.Void, LoadFailure) },

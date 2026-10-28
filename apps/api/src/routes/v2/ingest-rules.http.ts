@@ -6,15 +6,20 @@ import {
 	fromV2IngestRuleAction,
 	paginateArray,
 	toV2IngestRuleAction,
+	V2ParameterInvalid,
 	type V2IngestRule,
 } from "@maple/domain/http/v2"
-import { DateTime, Effect } from "effect"
+import { Clock, DateTime, Effect } from "effect"
+import { timestampMs } from "@maple/backend/platform/time"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
 
 const isoTimestamp = (millis: number) => DateTime.formatIso(DateTime.makeUnsafe(millis))
+
+const DAY_MS = 24 * 60 * 60 * 1000
+const MAX_STATS_WINDOW_MS = 62 * DAY_MS
 
 const toV2IngestRule = (rule: IngestRule): V2IngestRule => ({
 	id: rule.id,
@@ -60,6 +65,55 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 					const rules = yield* service.list(tenant.orgId)
 					const page = yield* paginateArray(rules.map(toV2IngestRule), query)
 					return { object: "list" as const, ...page }
+				}),
+			)
+			.handle("stats", ({ query }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const endMs =
+						query.end_time === undefined
+							? yield* Clock.currentTimeMillis
+							: timestampMs(query.end_time)
+					const startMs =
+						query.start_time === undefined ? endMs - DAY_MS : timestampMs(query.start_time)
+					if (!(startMs < endMs) || endMs - startMs > MAX_STATS_WINDOW_MS) {
+						return yield* Effect.fail(
+							V2ParameterInvalid.make(
+								"start_time must be before end_time, at most 62 days apart.",
+								{
+									param: "start_time",
+								},
+							),
+						)
+					}
+					const stats = yield* service.stats(tenant.orgId, startMs, endMs)
+					const counts = (row: {
+						matched: number
+						dropped: number
+						droppedBytes: number
+						redactedValues: number
+					}) => ({
+						matched: row.matched,
+						dropped: row.dropped,
+						dropped_bytes: row.droppedBytes,
+						redacted_values: row.redactedValues,
+					})
+					return {
+						object: "ingest_rule_stats" as const,
+						start_time: isoTimestamp(startMs),
+						end_time: isoTimestamp(endMs),
+						rules: stats.rules.map((row) => ({ id: row.ruleId, ...counts(row) })),
+						signals: stats.signals.flatMap((row) =>
+							row.signal === "traces" || row.signal === "logs" || row.signal === "metrics"
+								? [{ signal: row.signal, ...counts(row) }]
+								: [],
+						),
+						hourly: stats.hourly.map((row) => ({
+							id: row.ruleId,
+							bucket: isoTimestamp(row.bucket),
+							matched: row.matched,
+						})),
+					}
 				}),
 			)
 			.handle("retrieve", ({ params }) =>

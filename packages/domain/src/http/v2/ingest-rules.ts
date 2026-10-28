@@ -200,6 +200,43 @@ export const V2IngestRuleDeleteResponse = Schema.Struct({
 	examples: [wireExample({ id: "irule_YofPTrK9782DWwcnXhpcCw", object: "ingest_rule", deleted: true })],
 })
 
+const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+const countFields = {
+	matched: Count.annotate({ description: "Records the rule's conditions matched." }),
+	dropped: Count.annotate({ description: "Records the rule dropped." }),
+	dropped_bytes: Count.annotate({ description: "Encoded bytes dropped; never metered or billed." }),
+	redacted_values: Count.annotate({ description: "Values masked, hashed or removed." }),
+}
+
+export const V2IngestRuleStatsQuery = Schema.Struct({
+	start_time: Schema.optional(
+		Timestamp.annotate({ description: "Window start; defaults to 24 hours before end_time." }),
+	),
+	end_time: Schema.optional(Timestamp.annotate({ description: "Window end; defaults to now." })),
+}).annotate({ identifier: "IngestRuleStatsQuery", title: "Ingest rule stats query" })
+
+export const V2IngestRuleStats = Schema.Struct({
+	object: Schema.Literal("ingest_rule_stats"),
+	start_time: Timestamp,
+	end_time: Timestamp,
+	rules: Schema.Array(Schema.Struct({ id: IngestRulePublicId, ...countFields })).annotate({
+		description: "Totals per rule over the window; rules without hits are left out.",
+	}),
+	signals: Schema.Array(Schema.Struct({ signal: IngestRuleSignal, ...countFields })).annotate({
+		description: "Totals per signal: what rules kept off the bill.",
+	}),
+	hourly: Schema.Array(
+		Schema.Struct({ id: IngestRulePublicId, bucket: Timestamp, matched: Count }),
+	).annotate({
+		description: "Matches per rule and UTC hour; empty for windows over 7 days.",
+	}),
+}).annotate({
+	identifier: "IngestRuleStats",
+	title: "Ingest rule stats",
+	description: "What the gateway's rules matched, dropped and redacted. Counts lag by up to a minute.",
+})
+export type V2IngestRuleStats = Schema.Schema.Type<typeof V2IngestRuleStats>
+
 const [ruleNotFound, ruleValidation, rulePersistence, ruleForbidden] = publicErrors(
 	IngestRuleNotFoundError,
 	IngestRuleValidationError,
@@ -225,6 +262,20 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 				summary: "List ingest rules",
 				description:
 					"Returns your organization's ingest rules in position order. Requires the `ingest_rules:read` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("stats", "/stats", {
+			query: V2IngestRuleStatsQuery,
+			success: V2IngestRuleStats,
+			error: [V2ParameterInvalid.schema, rulePersistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getIngestRuleStats",
+				summary: "Ingest rule stats",
+				description:
+					"Per-rule and per-signal counts of what rules matched, dropped and redacted, at most 62 days. Requires the `ingest_rules:read` scope.",
 			}),
 		),
 	)
