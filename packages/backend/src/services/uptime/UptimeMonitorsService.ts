@@ -893,6 +893,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						Effect.gen(function* () {
 							// The lock update and rule writes take, so neither recreates a rule for a gone monitor.
 							yield* lockOrgMonitors(db, orgId)
+							// Shared with creates, exclusive with link writes: a link's monitor count stays exact.
+							yield* db.execute(
+								Orm.sql`select pg_advisory_xact_lock_shared(hashtext('org_billing_links'))`,
+							)
 							const removed = yield* db.run(
 								PG.deleteFrom(UptimeMonitors)
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)])

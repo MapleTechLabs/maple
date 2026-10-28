@@ -392,38 +392,45 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 						message: "Only org admins can change who pays for the organization",
 					})
 				}
-				const row = yield* linkOf(memberOrgId)
-				// The member may leave, and the billing org may let it go; nobody else may touch it.
-				if (Option.isNone(row) || (orgId !== memberOrgId && orgId !== row.value.billingOrgId)) {
-					return yield* reject("not_a_member")
-				}
-				// The count and the delete share one transaction under the exclusive link lock, and the
-				// tracks after it cannot fail: a failed unlink changes nothing and a retry finishes it.
-				const count = yield* dbExecute((db) =>
+				// Read, checked, counted and deleted under the exclusive link lock, so a relink racing
+				// this unlink is never the row removed. The tracks after it cannot fail: a failed unlink
+				// changes nothing and a retry finishes it.
+				const { link, count } = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							// The same lock as link writes and the uptime pool count.
+							// The same lock as link writes, monitor creates and monitor deletes.
 							yield* db.execute(
 								Orm.sql`select pg_advisory_xact_lock(hashtext('org_billing_links'))`,
 							)
+							const [current] = yield* db.run(linkQuery(memberOrgId))
+							// The member may leave, and the billing org may let it go; nobody else may.
+							if (
+								current === undefined ||
+								(orgId !== memberOrgId && orgId !== current.billingOrgId)
+							) {
+								return yield* reject("not_a_member")
+							}
 							const monitors = yield* countMonitors(db, memberOrgId)
 							yield* db.run(
-								PG.deleteFrom(OrgBillingLinks).where(($) => [$.orgId.eq(memberOrgId)]),
+								PG.deleteFrom(OrgBillingLinks).where(($) => [
+									$.orgId.eq(memberOrgId),
+									$.createdAt.eq(current.createdAt),
+								]),
 							)
-							return monitors
+							return { link: current, count: monitors }
 						}),
 					),
 				)
 				yield* trackMonitorMove(memberOrgId, count, {
-					from: row.value.billingOrgId,
+					from: link.billingOrgId,
 					to: memberOrgId,
-					key: `billing_unlink:${memberOrgId}:${row.value.createdAt}`,
+					key: `billing_unlink:${memberOrgId}:${link.createdAt}`,
 				})
 				yield* forgetOrg(memberOrgId)
 				yield* Effect.logInfo("Org billing unlinked").pipe(
 					Effect.annotateLogs({
 						orgId: memberOrgId,
-						billingOrgId: row.value.billingOrgId,
+						billingOrgId: link.billingOrgId,
 						by: orgId,
 					}),
 				)
