@@ -127,7 +127,7 @@ describe("IngestRuleService", () => {
 			const refused = yield* service
 				.create(ORG, { name: "Drop debug", spec: dropDebug })
 				.pipe(Effect.flip)
-			expect(refused._tag).toBe("@maple/http/errors/IngestRuleForbiddenError")
+			expect(refused._tag).toBe("@maple/http/errors/IngestRulesNotAvailableError")
 			expect(yield* service.list(ORG)).toEqual([])
 		}).pipe(
 			Effect.provide(

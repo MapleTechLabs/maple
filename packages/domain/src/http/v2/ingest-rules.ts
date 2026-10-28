@@ -13,6 +13,7 @@ import { IngestRuleId } from "../../primitives"
 import {
 	IngestRuleForbiddenError,
 	IngestRuleNotFoundError,
+	IngestRulesNotAvailableError,
 	IngestRulePersistenceError,
 	IngestRuleValidationError,
 } from "../ingest-rules"
@@ -203,11 +204,12 @@ export const V2IngestRuleDeleteResponse = Schema.Struct({
 	examples: [wireExample({ id: "irule_YofPTrK9782DWwcnXhpcCw", object: "ingest_rule", deleted: true })],
 })
 
-const [ruleNotFound, ruleValidation, rulePersistence, ruleForbidden] = publicErrors(
+const [ruleNotFound, ruleValidation, rulePersistence, ruleForbidden, rulesNotAvailable] = publicErrors(
 	IngestRuleNotFoundError,
 	IngestRuleValidationError,
 	IngestRulePersistenceError,
 	IngestRuleForbiddenError,
+	IngestRulesNotAvailableError,
 )
 
 const IngestRuleList = ListOf(V2IngestRule).annotate({
@@ -235,7 +237,7 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2IngestRuleCreateParams,
 			success: V2IngestRule,
-			error: [ruleForbidden, ruleValidation, rulePersistence],
+			error: [ruleForbidden, rulesNotAvailable, ruleValidation, rulePersistence],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createIngestRule",
@@ -264,7 +266,7 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 			params: { id: IngestRulePublicId },
 			payload: V2IngestRuleUpdateParams,
 			success: V2IngestRule,
-			error: [ruleForbidden, ruleNotFound, ruleValidation, rulePersistence],
+			error: [ruleForbidden, rulesNotAvailable, ruleNotFound, ruleValidation, rulePersistence],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "updateIngestRule",
