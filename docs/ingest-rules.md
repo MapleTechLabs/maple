@@ -86,8 +86,9 @@ Values are compared as strings. An attribute value becomes a string as follows:
 Arrays and kvlists are searched recursively. The `attributes` scope also covers the span status
 message (detectors and patterns only; it has no key). Keys that route, attribute or bill data are
 **protected** and never changed: `service.name`, `org_id`, and the gateway's own stamps, which match
-`^maple_[a-z0-9_]+$` (`maple_org_id`, `maple_source_id`). Dotted Maple keys such as `maple_ai.*`
-carry customer text and are redacted like any other.
+`^maple_[a-z0-9_]+$` (`maple_org_id`, `maple_source_id`). Protection applies to top-level keys only;
+the same names inside a kvlist value are customer data and are redacted like any other. Dotted Maple
+keys such as `maple_ai.*` carry customer text and are redacted like any other.
 
 - **`keys`** redact the whole value of a matching attribute.
     - A key pattern is a case-insensitive glob in which `*` matches any run of characters
@@ -96,8 +97,8 @@ carry customer text and are redacted like any other.
     - `body` has no key; key patterns never apply to it, except to keys inside a kvlist body.
 - **`detectors`** and **`patterns`** replace only the matched text inside string values.
     - Values that are not strings are left alone.
-    - At most the first 16 KiB of a value is scanned (bytes in the gateway, UTF-16 code units in TS,
-      the same for ASCII), and any longer remainder stays unscanned.
+    - At most the first 16 KiB of a value is scanned, counted in UTF-8 bytes and cut at the last
+      whole character, and any longer remainder stays unscanned. The TS engine counts bytes too.
     - The 16 KiB cut happens once, before the first detector. Later detectors and patterns scan the
       rewritten head, whatever its length, and the unscanned tail is appended at the end.
     - Matches are leftmost-first and do not overlap. Empty matches are ignored, and the validator
@@ -154,13 +155,24 @@ with the `u` flag accept:
 - No lookaround, backreferences, atomic groups or possessive quantifiers.
 - No class set operations (`&&`, `~~`, `--` inside `[...]`), `[^]`, `\c` or `\0`.
 - Counted repetitions up to 999.
-- No repeated group that itself contains a repetition or an alternation (`(a+)+`, `(a|aa)+`): the
-  preview and local mode run the JS engine, which backtracks on them.
+- No repeated group that itself contains a repetition or an alternation (`(a+)+`, `(a|aa)+`).
+- No two wide repetitions (unbounded, or more than 32 apart) that can match the same text without a
+  required character between them that neither matches: `a*a*b`, `.*.*=` and `\w+\w+!` are
+  refused, `[a-z]+@[a-z]+` and `\w+\s+\w+` are fine. Overlap is decided on a probe set of ASCII
+  and representative Unicode characters.
+- Inside `[...]`, no `\D`, `\W`, `\S`, `\b`, `\B` or nested `[`.
+- No quantifier on `\b`, `\B`, `^` or `$`; JavaScriptCore (Bun, Safari) silently fails to match
+  some of them on long text.
+- Small enough for the gateway to compile under its 1 MiB limit. Unicode classes are large: `\w`
+  and `\p{...}` fit about 20 copies, `\d` about 200, so `\w{32}` is refused and
+  `[A-Za-z0-9_]{32}` is fine. Copies add up across the pattern and multiply through counted groups.
 - Only a leading `(?i)` as an inline flag.
 
-The Rust engine is linear-time, so a pattern cannot stall the gateway. Shorthand classes (`\d`,
-`\w`, `\s`, `\b`) are Unicode-aware in Rust and ASCII-only in JS. Prefer explicit ASCII classes;
-the two engines agree on ASCII input either way.
+The Rust engine is linear-time, so a pattern cannot stall the gateway. The preview, MCP and local
+mode run the JS engine, which backtracks; the repetition rules keep every accepted pattern within a
+quadratic worst case over the 16 KiB window. Patterns mean what the gateway means: the TS engine
+rewrites `\d`, `\w`, `\s`, `\b` (and their negations) to Rust's Unicode classes, and `.` to "any
+character but `\n`", before compiling.
 
 ## Gateway configuration
 
@@ -225,3 +237,21 @@ Each `packages/ingest-rules/fixtures/*.json` is an array of cases:
 - **Expected values.** When `dropped` is true, the other `expected` fields are omitted. Otherwise
   `expected` gives the full `resource`, `attributes`, `body` (when the input has one) and `events`
   (when the input has them).
+
+## Fuzzing
+
+The fixtures pin chosen cases; three property suites cover the rest.
+
+- `bun run --cwd packages/ingest-rules fuzz [--runs N] [--seed S]` generates rules and records,
+  runs each through the TS engine and the gateway's (the `ingest_rules_oracle` example, built with
+  `--features conformance`), and shrinks the first disagreement. It prints the differing path, the
+  rules and a `--seed` to replay. CI runs 20,000 cases in the `ingest-rust` job.
+- `packages/ingest-rules/src/invariants.test.ts`: protected keys never change, masked emails do not
+  survive in scanned text, key and detector masking is idempotent, rules for other signals change
+  nothing, and sampling keeps a trace whole.
+- `packages/ingest-rules/src/regex-time.test.ts`: every pattern the validator accepts scans a
+  16 KiB window of repetitive text within budget on the JS engine.
+- `apps/ingest` (`ingest_rules::tests::properties`): compiling any rule never panics, and redacting
+  arbitrarily nested values never touches a top-level protected key.
+
+A disagreement the fuzzer finds becomes a fixture case once the engines agree again.

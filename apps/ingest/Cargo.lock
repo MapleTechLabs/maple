@@ -1588,6 +1588,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-proto",
  "opentelemetry_sdk",
+ "proptest",
  "prost",
  "regex",
  "reqwest",

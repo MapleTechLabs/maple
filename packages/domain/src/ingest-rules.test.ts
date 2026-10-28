@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { ingestRuleProblems, regexProblem, type IngestRuleSpec } from "./ingest-rules"
+import { Option } from "effect"
+import { compileIngestRegex, ingestRuleProblems, regexProblem, type IngestRuleSpec } from "./ingest-rules"
 
 const redact = (
 	overrides: Partial<Extract<IngestRuleSpec["action"], { _tag: "redact" }>> = {},
@@ -24,6 +25,11 @@ describe("regexProblem", () => {
 		expect(regexProblem("(ab){3}c")).toBeNull()
 		expect(regexProblem("(?<id>[0-9]{4})-[a-z]+")).toBeNull()
 		expect(regexProblem("[(+]+x")).toBeNull()
+		expect(regexProblem("\\^+x")).toBeNull()
+		expect(regexProblem("a\\$+")).toBeNull()
+		expect(regexProblem("[a$]+x")).toBeNull()
+		expect(regexProblem("[^^]+x")).toBeNull()
+		expect(regexProblem("[\\]^]*x")).toBeNull()
 	})
 
 	it.each([
@@ -47,8 +53,84 @@ describe("regexProblem", () => {
 		["x{1000}", "counted repetitions are limited to 999"],
 		["(", "pattern is not a valid regular expression"],
 		["", "pattern is empty"],
+		["[^ ]+\\B{0,64}b", "\\b, \\B, ^ and $ cannot be repeated"],
+		["^+a", "\\b, \\B, ^ and $ cannot be repeated"],
+		["\\p{L", "pattern is not a valid regular expression"],
+		["(\\u{41)+", "pattern is not a valid regular expression"],
+		["[\\W_]", "inside [...], use explicit characters instead of \\D, \\W, \\S, \\b, \\B or a nested ["],
+		["[[a]]", "inside [...], use explicit characters instead of \\D, \\W, \\S, \\b, \\B or a nested ["],
 	])("rejects %s", (pattern, problem) => {
 		expect(regexProblem(pattern)).toBe(problem)
+	})
+
+	const SLOW =
+		"two repetitions that can match the same text need a character neither matches between them (a*a*b is too slow to match)"
+
+	it.each([
+		"a*a*b",
+		"a+a+b",
+		".*.*=",
+		"x.*y.*z",
+		"\\w*\\w*!",
+		"(?:a*)a*b",
+		"(?i)A*a*b",
+		"[0-9]{0,99}[0-9]{0,99}x",
+		"(?i)\\p{L}*\\x41*\\p{Lu}{3,}$",
+	])("rejects %s, which backtracks for minutes in the preview's engine", (pattern) => {
+		expect(regexProblem(pattern)).toBe(SLOW)
+	})
+
+	const TOO_LARGE =
+		"pattern is too large for the gateway to compile; repeat \\w, \\d or \\p{...} less, or use an ASCII class like [A-Za-z0-9_]"
+
+	// The gateway's regex crate caps a compiled pattern at 1 MiB; Unicode classes are large.
+	it.each(["\\w{32}", "a*\\p{Lu}{0,64}!", "\\w{12}\\w{12}", "(?:\\w{5}){5}", "(?:\\w{12}|\\w{12})"])(
+		"rejects %s, which the gateway could not compile",
+		(pattern) => {
+			expect(regexProblem(pattern)).toBe(TOO_LARGE)
+		},
+	)
+
+	it("accepts long ASCII repeats and short Unicode ones", () => {
+		expect(regexProblem("[A-Za-z0-9_]{32}")).toBeNull()
+		expect(regexProblem("\\w{16}")).toBeNull()
+		expect(regexProblem("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")).toBeNull()
+	})
+
+	it.each([
+		"[a-z]+@[a-z]+\\.[a-z]{2,6}",
+		"\\w+\\s+\\w+",
+		"\\d{1,3}\\.\\d{1,3}",
+		"password=.*",
+		"\\d+-\\d+",
+		"[^@]+@",
+		"\\d{1,3}\\d{1,3}",
+	])("accepts %s, whose repetitions are separated or short", (pattern) => {
+		expect(regexProblem(pattern)).toBeNull()
+	})
+})
+
+describe("compileIngestRegex", () => {
+	const matches = (pattern: string, text: string) =>
+		Option.match(compileIngestRegex(pattern, false), {
+			onNone: () => null,
+			onSome: (regex) => regex.test(text),
+		})
+
+	it("gives shorthand classes the gateway's Unicode meaning", () => {
+		expect(matches("^\\w+$", "café_٣")).toBe(true)
+		expect(matches("^\\d+$", "٣٤٥")).toBe(true)
+		expect(matches("^\\s$", "\u00a0")).toBe(true)
+		expect(matches("^\\s$", "\ufeff")).toBe(false)
+		expect(matches("\\bé", "café")).toBe(false)
+		expect(matches("^[\\d_]+$", "٣_1")).toBe(true)
+	})
+
+	it("lets . match every character but a newline, as the gateway does", () => {
+		expect(matches("^a.b$", "a\rb")).toBe(true)
+		expect(matches("^a.b$", "a\u2028b")).toBe(true)
+		expect(matches("^a.b$", "a\nb")).toBe(false)
+		expect(matches("^a\\.b$", "axb")).toBe(false)
 	})
 })
 
