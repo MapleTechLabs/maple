@@ -191,7 +191,7 @@ struct AppConfig {
     autumn_deny_ttl_secs: u64,
     ingest_key_cache_ttl_secs: u64,
     org_routing_cache_ttl_secs: u64,
-    /// `INGEST_RULES_ENABLED`: apply customer drop/redact rules. Off reads nothing and costs nothing.
+    /// `INGEST_RULES_ENABLED` (default on): apply customer drop/redact rules. Off reads nothing and costs nothing.
     ingest_rules_enabled: bool,
     /// `INGEST_RULES_CACHE_TTL_SECS`: how long an org's compiled rules are reused.
     ingest_rules_cache_ttl_secs: u64,
@@ -584,10 +584,12 @@ impl AppConfig {
             30,
         )?;
 
+        // On by default, so a self-hosted gateway applies the rules its dashboard lets admins save;
+        // the managed deploy sets it explicitly per stage.
         let ingest_rules_enabled = parse_bool(
             "INGEST_RULES_ENABLED",
             std::env::var("INGEST_RULES_ENABLED").ok(),
-            false,
+            true,
         )?;
         let ingest_rules_cache_ttl_secs = parse_u64(
             "INGEST_RULES_CACHE_TTL_SECS",
@@ -16179,7 +16181,7 @@ mod tests {
         let (state, store, queue_dir) =
             rules_forward_state("rules-off", raw_key, "org_rules_off", forward_url).await;
         store.set_ingest_rules("org_rules_off", &[mask_emails_rule()]);
-        // `test_app_state` leaves INGEST_RULES_ENABLED at its default, off.
+        // `test_app_state` builds its config with ingest rules turned off.
 
         let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
         let (_, _, _, metered) =

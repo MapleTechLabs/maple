@@ -647,10 +647,11 @@ export const createMapleIngest = ({ stage, region, domains, profile, dbLogin }: 
 				...(yield* optionalPlain("INGEST_GCP_ORG_MAX_IN_FLIGHT")),
 				...(yield* optionalPlain("INGEST_REQUEST_TIMEOUT_SECS")),
 				...(yield* optionalPlain("INGEST_QUEUE_MAX_AGE_SECS")),
-				// Customer ingest rules (docs/ingest-rules.md): on for PR previews, elsewhere off unless set to "true".
+				// Customer ingest rules (docs/ingest-rules.md): on for PR previews; the managed deploy stays off
+				// until rollout (the gateway itself defaults to on, for self-hosted installs).
 				...(stage.kind === "pr"
 					? { INGEST_RULES_ENABLED: "true" }
-					: yield* optionalPlain("INGEST_RULES_ENABLED")),
+					: yield* optionalPlain("INGEST_RULES_ENABLED", "false")),
 				...(yield* optionalPlain("INGEST_RULES_CACHE_TTL_SECS")),
 				...(yield* optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES")),
 				...(yield* optionalPlain("INGEST_MAX_DECODED_BODY_BYTES")),
