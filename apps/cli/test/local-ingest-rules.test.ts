@@ -119,6 +119,52 @@ describe("local ingest rules", () => {
 		expect(ndjson).toContain("no a@b.co")
 	})
 
+	it("redacts span event attributes when a rule is scoped to events", () => {
+		const eventsOnly = parseLocalIngestRules(
+			JSON.stringify([
+				{
+					signals: ["traces"],
+					conditions: [],
+					action: {
+						_tag: "redact",
+						keys: [],
+						detectors: ["email"],
+						patterns: [],
+						scopes: ["events"],
+						method: "mask",
+					},
+				},
+			]),
+		)
+		const request = {
+			resourceSpans: [
+				{
+					resource: { attributes: [str("service.name", "api")] },
+					scopeSpans: [
+						{
+							spans: [
+								{
+									name: "GET /users",
+									attributes: [str("enduser.email", "a@b.co")],
+									events: [
+										{
+											name: "exception",
+											attributes: [str("exception.message", "no a@b.co")],
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+			],
+		}
+		applyLocalIngestRules("traces", request, eventsOnly.compiled)
+		const span = request.resourceSpans[0]?.scopeSpans[0]?.spans[0]
+		expect(span?.events[0]?.attributes).toEqual([str("exception.message", "no [REDACTED:email]")])
+		expect(span?.attributes).toEqual([str("enduser.email", "a@b.co")])
+	})
+
 	it("names invalid rules and keeps the valid ones", () => {
 		const parsed = parseLocalIngestRules(
 			JSON.stringify([

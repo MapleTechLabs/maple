@@ -391,7 +391,18 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 				Effect.mapError(toMcpQueryError("preview_ingest_rule")),
 			)
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": records.length })
-			return { signal, ...previewOver(spec, records), problems: [] }
+			const notes =
+				signal === "traces" && spec.action._tag === "redact" && spec.action.scopes.includes("events")
+					? [
+							"Stored span samples carry no span events, so redactions there are not counted here; they still apply at ingest.",
+						]
+					: []
+			return {
+				signal,
+				...previewOver(spec, records),
+				problems: [],
+				...(notes.length > 0 ? { notes } : undefined),
+			}
 		}),
 		render: (output) => ({
 			title: "Ingest Rule Preview",
@@ -399,6 +410,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 				...(output.problems.length > 0
 					? [doc.text(`Not previewed: ${output.problems.join("; ")}.`)]
 					: []),
+				...(output.notes ?? []).map((note) => doc.text(note)),
 				doc.text(
 					`Of ${output.sampled} recent ${output.signal} records, ${output.dropped} would be dropped and ${output.redactedRecords} redacted (${output.redactedValues} values). Hashes use a preview key and differ from stored ones.`,
 				),
