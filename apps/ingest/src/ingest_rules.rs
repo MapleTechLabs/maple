@@ -474,11 +474,8 @@ enum Probe<'a> {
     Text(Cow<'a, str>),
 }
 
+/// Rust's `{}` form: no exponent, `-0`, `inf`, `NaN` (the TS engine's `formatDouble` matches it).
 fn format_double(value: f64) -> String {
-    if value.is_infinite() {
-        let text = if value > 0.0 { "Infinity" } else { "-Infinity" };
-        return text.to_owned();
-    }
     format!("{value}")
 }
 

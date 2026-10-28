@@ -170,21 +170,25 @@ const severityOf = (record: RuleRecord): number | null => {
 	return SEVERITY_PREFIXES.find(([prefix]) => text.startsWith(prefix))?.[1] ?? null
 }
 
+/** Own keys only: an attribute named `constructor` is not inherited from `Object.prototype`. */
+const ownValue = (map: AttrMap, key: string): AttrValue | undefined =>
+	Object.hasOwn(map, key) ? map[key] : undefined
+
 /** `undefined` = missing, `null` = present but not comparable. */
 const fieldValue = (record: RuleRecord, condition: IngestRuleCondition): string | null | undefined => {
 	switch (condition.field) {
 		case "service_name": {
-			const service = record.resource["service.name"]
+			const service = ownValue(record.resource, "service.name")
 			return service === undefined ? "" : comparable(service)
 		}
 		case "name":
 			return record.name ?? ""
 		case "attribute": {
-			const value = record.attributes[condition.key ?? ""]
+			const value = ownValue(record.attributes, condition.key ?? "")
 			return value === undefined ? undefined : comparable(value)
 		}
 		case "resource_attribute": {
-			const value = record.resource[condition.key ?? ""]
+			const value = ownValue(record.resource, condition.key ?? "")
 			return value === undefined ? undefined : comparable(value)
 		}
 		case "body":
