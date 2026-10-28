@@ -50,6 +50,8 @@ describe("regexProblem", () => {
 		["", "pattern is empty"],
 		["[^ ]+\\B{0,64}b", "\\b, \\B, ^ and $ cannot be repeated"],
 		["^+a", "\\b, \\B, ^ and $ cannot be repeated"],
+		["\\p{L", "pattern is not a valid regular expression"],
+		["(\\u{41)+", "pattern is not a valid regular expression"],
 		["[\\W_]", "inside [...], use explicit characters instead of \\D, \\W, \\S, \\b, \\B or a nested ["],
 		["[[a]]", "inside [...], use explicit characters instead of \\D, \\W, \\S, \\b, \\B or a nested ["],
 	])("rejects %s", (pattern, problem) => {

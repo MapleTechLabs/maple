@@ -342,7 +342,11 @@ const atomEnd = (source: string, at: number): number => {
 	const char = source[at]
 	if (char === "\\") {
 		const kind = source[at + 1] ?? ""
-		if ("pPux".includes(kind) && source[at + 2] === "{") return source.indexOf("}", at) + 1
+		if ("pPux".includes(kind) && source[at + 2] === "{") {
+			// An unclosed `\p{` runs to the end; returning 0 would restart the scan forever.
+			const close = source.indexOf("}", at)
+			return close === -1 ? source.length : close + 1
+		}
 		// `\xHH` and `\uHHHH` are one atom; a quantifier after them repeats the whole escape.
 		if (kind === "x") return at + 4
 		if (kind === "u") return at + 6
@@ -371,7 +375,7 @@ const atomEnd = (source: string, at: number): number => {
 
 /** The inside of a group atom: `(a)`, `(?:a)` and `(?<name>a)` all give `a`. */
 const groupBody = (atom: string): string =>
-	atom.slice(atom.startsWith("(?") ? atom.indexOf(atom[2] === "<" ? ">" : ":") + 1 : 1, -1)
+	atom.slice(atom.startsWith("(?") ? Math.max(2, atom.indexOf(atom[2] === "<" ? ">" : ":") + 1) : 1, -1)
 
 /**
  * Share of the gateway's 1 MiB compiled-regex limit one copy of an escape takes, from the most
