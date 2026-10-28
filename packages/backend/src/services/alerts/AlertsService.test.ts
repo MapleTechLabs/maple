@@ -404,6 +404,52 @@ describe("AlertsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
 	})
 
+	it.effect("links the delivered payload to the incident's own page", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = {
+			tracesAggregateRows: [
+				tracesRow({
+					count: 200,
+					avgDuration: 40,
+					p50Duration: 20,
+					p95Duration: 120,
+					p99Duration: 240,
+					errorRate: 10,
+					satisfiedCount: 180,
+					toleratingCount: 10,
+					apdexScore: 0.925,
+				}),
+			],
+		}
+		const bodies: string[] = []
+		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+			bodies.push(typeof init?.body === "string" ? init.body : "")
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_link")
+			const userId = asUserId("user_link")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+
+			yield* alerts.runSchedulerTick()
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+
+			const incidents = yield* alerts.listIncidents(orgId)
+			assert.lengthOf(incidents.incidents, 1)
+			assert.lengthOf(bodies, 1)
+			const payload = JSON.parse(bodies[0]!) as { linkUrl?: string }
+			assert.isTrue(
+				payload.linkUrl?.endsWith(`/alerts/incidents/${incidents.incidents[0]!.id}`),
+				payload.linkUrl,
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
+	})
+
 	it.effect("skips no-data error-rate rules instead of opening incidents", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {

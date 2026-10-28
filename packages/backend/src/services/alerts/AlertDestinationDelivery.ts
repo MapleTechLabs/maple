@@ -104,10 +104,13 @@ export const makeAlertDestinationDelivery = (options: {
 		// there's nothing to enrich at dispatch time.
 		Effect.succeed(secretConfig)
 
-	const composeLinkUrl = (serviceLinkName: string | null) =>
-		serviceLinkName
-			? `${options.appBaseUrl}/services/${encodeURIComponent(serviceLinkName)}`
-			: `${options.appBaseUrl}/alerts`
+	/** The incident's own page when there is one, else the service (or the alerts list). */
+	const composeLinkUrl = (serviceLinkName: string | null, incidentId: string | null = null) =>
+		incidentId !== null
+			? `${options.appBaseUrl}/alerts/incidents/${encodeURIComponent(incidentId)}`
+			: serviceLinkName
+				? `${options.appBaseUrl}/services/${encodeURIComponent(serviceLinkName)}`
+				: `${options.appBaseUrl}/alerts`
 
 	const composeChatUrl = (context: AlertDispatchContext): string =>
 		buildAlertChatUrl(options.appBaseUrl, context)

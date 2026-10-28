@@ -1188,7 +1188,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const resolveNotificationLinkUrl = (
 				rule: Pick<NormalizedRule, "serviceNames" | "groupBy">,
 				groupKey: string | null,
-			) => composeLinkUrl(resolveServiceLinkName(rule, groupKey))
+				incidentId: string | null,
+			) => composeLinkUrl(resolveServiceLinkName(rule, groupKey), incidentId)
 
 			const toDeliveryAttemptFailure = (
 				error:
@@ -1222,7 +1223,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// breach stopped while telemetry was reduced, not "back to X".
 				resolvedAfterHold: ResolvedAfterHold | null,
 			) {
-				const linkUrl = resolveNotificationLinkUrl(rule, incident.groupKey)
+				const linkUrl = resolveNotificationLinkUrl(rule, incident.groupKey, incident.id)
 				const pushAllowed =
 					pushBudget === null ||
 					(yield* pushBudget.claim({
@@ -1230,7 +1231,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						ruleId: rule.id,
 						ruleName: rule.name,
 						severity: rule.severity,
-						linkUrl,
+						// A digest can cover several incidents of the rule, so it links the rule's page, not one incident.
+						linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey, null),
 						kind: eventType === "resolve" ? "resolve" : "firing",
 					}))
 				if (pushAllowed) {
@@ -1412,7 +1414,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						sparkline: series?.sparkline ?? null,
 						chartUrl,
 						template: rule.notificationTemplate,
-						linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey),
+						linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey, incident.id),
 						sentAtMs: scheduledAt,
 					},
 					orgId,
@@ -1636,7 +1638,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								value: evaluation.value,
 								sampleCount: evaluation.sampleCount,
 								template: normalized.notificationTemplate,
-								linkUrl: resolveNotificationLinkUrl(normalized, null),
+								linkUrl: resolveNotificationLinkUrl(normalized, null, null),
 								sentAtMs,
 							}),
 						{ concurrency: ALERT_TEST_DELIVERY_CONCURRENCY },
@@ -2398,6 +2400,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									groupBy: storedRule?.groupBy ?? null,
 								},
 								groupKey,
+								row.incidentId,
 							),
 							sentAtMs: deliveryStart,
 						},
@@ -2584,6 +2587,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								groupBy: storedRule?.groupBy ?? null,
 							},
 							groupKey,
+							row.incidentId,
 						),
 					} satisfies ChatDigestItem
 				})
