@@ -175,6 +175,11 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 				.filter((incident) => incident.componentIds.includes(component.id))
 				.map(incidentComponentStatus),
 		}),
+		baseStatus: deriveComponentStatus({
+			monitorStatus: component.monitorStatus,
+			manualStatus: component.manualStatus,
+			incidentStatuses: [],
+		}),
 		showUptime: component.showUptime,
 		monitored: component.monitorId !== null,
 		days:

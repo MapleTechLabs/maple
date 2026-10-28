@@ -92,6 +92,8 @@ describe("toSnapshot", () => {
 			}),
 		)
 		assert.strictEqual(snapshot.components[0]?.status, "partial_outage")
+		// The base leaves incidents out, so the edge can drop the impact when one resolves there.
+		assert.strictEqual(snapshot.components[0]?.baseStatus, "operational")
 		assert.deepStrictEqual(snapshot.incidents[0]?.componentIds, [COMPONENT])
 	})
 
