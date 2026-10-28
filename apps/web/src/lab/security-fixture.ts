@@ -253,22 +253,30 @@ const findingCountsOf = (now: number, runIds: ReadonlyArray<string>) =>
 	Object.fromEntries(
 		runIds.map((runId) => {
 			const findings = runFindingsOf(now, runId).findings
-			const confirmed = (severity: string) =>
-				findings.filter(
-					(finding) =>
-						finding.verdict === "confirmed" &&
-						(finding.overallSeverity ?? "informational") === severity,
-				).length
+			const severityOf = (finding: (typeof findings)[number]) =>
+				finding.verdict === "confirmed"
+					? (finding.overallSeverity ?? "informational")
+					: finding.verdict === "needs_validation"
+						? finding.estimatedSeverity
+						: null
+			const at = (severity: string) =>
+				findings.filter((finding) => severityOf(finding) === severity).length
 			return [
 				runId,
 				{
-					critical: confirmed("critical"),
-					high: confirmed("high"),
-					medium: confirmed("medium"),
-					low: confirmed("low"),
-					informational: confirmed("informational"),
-					needsValidation: findings.filter((finding) => finding.verdict === "needs_validation")
-						.length,
+					critical: at("critical"),
+					high: at("high"),
+					medium: at("medium"),
+					low: at("low"),
+					informational: at("informational"),
+					unverified: findings.filter(
+						(finding) =>
+							finding.verdict === "needs_validation" && finding.estimatedSeverity !== null,
+					).length,
+					needsValidation: findings.filter(
+						(finding) =>
+							finding.verdict === "needs_validation" && finding.estimatedSeverity === null,
+					).length,
 					rejected: findings.filter((finding) => finding.verdict === "rejected").length,
 				},
 			]
@@ -828,6 +836,8 @@ type FindingSeed = Readonly<{
 	runId: string
 	/** The earlier run that first reported it, when not `runId`. */
 	firstRunId?: string
+	/** A lead's severity as the engine estimated it; leads from older runs carry none. */
+	estimate?: "critical" | "high" | "medium" | "low" | null
 	ago: number
 	createdAgo?: number
 }>
@@ -1040,6 +1050,7 @@ const FINDINGS: ReadonlyArray<FindingSeed> = [
 	},
 	{
 		fingerprint: "proration-twice-c4b1",
+		estimate: "medium",
 		targetId: TARGET_IDS.billing,
 		verdict: "needs_validation",
 		severity: null,
@@ -1051,6 +1062,7 @@ const FINDINGS: ReadonlyArray<FindingSeed> = [
 	},
 	{
 		fingerprint: "ssrf-image-proxy-0e88",
+		estimate: "high",
 		targetId: TARGET_IDS.gateway,
 		verdict: "needs_validation",
 		severity: null,
@@ -1073,17 +1085,20 @@ const FINDINGS: ReadonlyArray<FindingSeed> = [
 	},
 ]
 
+/** A lead from the deep run, scored as the engine estimated it, or unscored as an older run's. */
 const deepLead = (
 	fingerprint: string,
 	title: string,
 	file: string,
 	line: number,
 	verdict: "needs_validation" | "rejected" = "needs_validation",
+	estimate: "critical" | "high" | "medium" | "low" | null = null,
 ): FindingSeed => ({
 	fingerprint,
 	targetId: DEEP_TARGET_ID,
 	verdict,
 	severity: null,
+	estimate,
 	title,
 	file,
 	line,
@@ -1098,24 +1113,32 @@ const DEEP_FINDINGS: ReadonlyArray<FindingSeed> = [
 		"Comment markdown renders raw HTML for other members",
 		"src/comments/render.ts",
 		41,
+		"needs_validation",
+		"high",
 	),
 	deepLead(
 		"attachment-key-b2e1",
 		"Attachment name reaches the storage key unnormalised",
 		"src/attachments/upload.ts",
 		77,
+		"needs_validation",
+		"medium",
 	),
 	deepLead(
 		"export-retry-c3d2",
 		"Export job may write another workspace's rows on retry",
 		"src/export/job.ts",
 		118,
+		"needs_validation",
+		"critical",
 	),
 	deepLead(
 		"invite-reuse-d4c3",
 		"Invite token may be accepted twice under a race",
 		"src/invites/accept.ts",
 		33,
+		"needs_validation",
+		"medium",
 	),
 	deepLead(
 		"share-expiry-e5b4",
@@ -1128,6 +1151,8 @@ const DEEP_FINDINGS: ReadonlyArray<FindingSeed> = [
 		"Outbound webhook may follow redirects to internal hosts",
 		"src/hooks/deliver.ts",
 		92,
+		"needs_validation",
+		"high",
 	),
 	deepLead(
 		"search-filter-07b6",
@@ -1144,6 +1169,7 @@ const findingOf = (seed: FindingSeed, now: number) => ({
 	targetId: seed.targetId,
 	verdict: seed.verdict,
 	overallSeverity: seed.severity,
+	estimatedSeverity: seed.verdict === "needs_validation" ? (seed.estimate ?? null) : null,
 	status: seed.status ?? "open",
 	statusReason:
 		seed.status === "dismissed"

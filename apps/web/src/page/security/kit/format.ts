@@ -96,14 +96,6 @@ export const VERDICT_LABEL = {
 	rejected: "Rejected",
 } satisfies Record<SecurityAuditVerdict, string>
 
-const SECURITY_SEVERITY_ORDER: ReadonlyArray<SecurityAuditSeverity> = [
-	"critical",
-	"high",
-	"medium",
-	"low",
-	"informational",
-]
-
 export const SECURITY_SEVERITY_LABEL = {
 	critical: "Critical",
 	high: "High",
@@ -111,10 +103,6 @@ export const SECURITY_SEVERITY_LABEL = {
 	low: "Low",
 	informational: "Info",
 } satisfies Record<SecurityAuditSeverity, string>
-
-/** Sort rank: critical first, no severity (needs validation, rejected) last. */
-export const severityRank = (severity: SecurityAuditSeverity | null): number =>
-	severity === null ? SECURITY_SEVERITY_ORDER.length : SECURITY_SEVERITY_ORDER.indexOf(severity)
 
 /** The errors kit's four levels; informational shares the unset glyph. */
 export const issueSeverityOf = (severity: SecurityAuditSeverity | null) =>
