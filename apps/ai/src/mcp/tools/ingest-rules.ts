@@ -238,6 +238,14 @@ const recordService = (record: RuleRecord) => {
 	return typeof service === "string" ? service : ""
 }
 
+/** Why a signal cannot be previewed for this rule, naming only the signals `signal` accepts. */
+const notTargeted = (signal: string, signals: ReadonlyArray<string>): string => {
+	const previewable = signals.filter((candidate) => candidate === "traces" || candidate === "logs")
+	return previewable.length === 0
+		? `the rule does not apply to ${signal}, and metrics rules cannot be previewed`
+		: `the rule does not apply to ${signal}; pick one of ${previewable.join(", ")}`
+}
+
 /** What a preview over stored samples cannot show for this rule; span events are not sampled. */
 export const previewNotes = (spec: IngestRuleSpec, signal: "traces" | "logs"): ReadonlyArray<string> =>
 	signal === "traces" && spec.action._tag === "redact" && spec.action.scopes.includes("events")
@@ -375,7 +383,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			const problems = [
 				...ingestRuleProblems(spec),
 				...(signal !== undefined && !spec.signals.includes(signal)
-					? [`the rule does not apply to ${signal}; pick one of ${spec.signals.join(", ")}`]
+					? [notTargeted(signal, spec.signals)]
 					: []),
 				...(signal === "traces" &&
 				spec.conditions.some((condition) => condition.field === "span_kind")
