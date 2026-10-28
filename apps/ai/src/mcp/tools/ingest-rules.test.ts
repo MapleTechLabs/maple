@@ -188,6 +188,23 @@ describe("ingest rule MCP tools", () => {
 		)
 		assert.deepInclude(redact, { dropped: 0, redactedRecords: 2, redactedValues: 2 })
 		assert.deepEqual(redact.examples[0]?.changes, ["user.email -> [REDACTED:email]"])
+		const bodyOnly = previewOver(
+			{
+				signals: ["logs"],
+				conditions: [],
+				action: {
+					_tag: "redact",
+					keys: [],
+					detectors: ["email"],
+					patterns: [],
+					scopes: ["body"],
+					method: "mask",
+				},
+			},
+			[log("user a@b.co failed", 9)],
+		)
+		assert.deepEqual(bodyOnly.examples[0]?.label, "user [REDACTED:email] failed")
+		assert.notInclude(JSON.stringify(bodyOnly), "a@b.co")
 	})
 
 	it("names the argument a validation problem is about", () => {
