@@ -152,7 +152,8 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 				// The first update came from break-glass: `bg-<entry>` follow-ups still target it.
 				openedByOverlayEntryId: first?.source === "break_glass" ? first.overlayEntryId : null,
 				updates: updates.map((update) => ({
-					id: update.id,
+					// An imported break-glass update keeps the id visitors and feed readers already saw.
+					id: update.overlayEntryId ?? update.id,
 					status: update.status,
 					body: update.body,
 					at: update.createdAt,

@@ -209,11 +209,12 @@ describe("toSnapshot", () => {
 			}),
 		)
 		assert.strictEqual(opened.incidents[0]?.openedByOverlayEntryId, "entry-1")
+		// An imported entry keeps its overlay id, so the feed does not show it twice after import.
 		assert.deepStrictEqual(
 			opened.incidents[0]?.updates.map((u) => [u.id, u.overlayEntryId]),
 			[
 				["later", null],
-				["first", "entry-1"],
+				["entry-1", "entry-1"],
 			],
 		)
 		const followedUp = toSnapshot(
