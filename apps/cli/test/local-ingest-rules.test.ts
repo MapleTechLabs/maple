@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { applyLocalIngestRules, parseLocalIngestRules } from "../src/server/ingest-rules"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+import {
+	applyLocalIngestRules,
+	makeLocalIngestRulesSource,
+	parseLocalIngestRules,
+} from "../src/server/ingest-rules"
 import { encodeLogs, encodeTraces } from "../src/server/otlp/encode"
 
 const rules = parseLocalIngestRules(
@@ -248,5 +255,41 @@ describe("local ingest rules", () => {
 		expect(traces.resourceSpans[0]?.scopeSpans[0]?.spans[0]?.status.message).toBe(
 			"no user [REDACTED:email]",
 		)
+	})
+
+	it("re-reads the rules file only when it changes, and reports one it cannot read", () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "maple-rules-"))
+		const file = path.join(dir, "ingest-rules.json")
+		const source = makeLocalIngestRulesSource(file)
+		expect(source()).toMatchObject({ reloaded: false })
+		const write = (rules: ReadonlyArray<unknown>, at: number) => {
+			fs.writeFileSync(file, JSON.stringify(rules))
+			fs.utimesSync(file, at, at)
+		}
+		const rule = {
+			signals: ["logs"],
+			conditions: [],
+			action: {
+				_tag: "redact",
+				keys: ["k"],
+				detectors: [],
+				patterns: [],
+				scopes: ["attributes"],
+				method: "remove",
+			},
+		}
+		write([rule], 1_000)
+		const first = source()
+		expect([first.reloaded, first.rules.compiled.rules.length]).toEqual([true, 1])
+		expect(source().reloaded).toBe(false)
+		write([rule, rule], 2_000)
+		expect(source().rules.compiled.rules.length).toBe(2)
+		fs.rmSync(file)
+		fs.mkdirSync(file)
+		fs.utimesSync(file, 3_000, 3_000)
+		const unreadable = source()
+		expect(unreadable.rules.compiled.rules).toEqual([])
+		expect(unreadable.rules.problems[0]).toContain("could not be read")
+		fs.rmSync(dir, { recursive: true })
 	})
 })

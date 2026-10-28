@@ -27,7 +27,7 @@ import {
 	type IngestRule,
 	type IngestRuleSpec,
 } from "@maple/domain/ingest-rules"
-import type { SelfDescribingHttpError } from "@maple/domain/http"
+import { IngestRuleValidationError, type SelfDescribingHttpError } from "@maple/domain/http"
 import type { ListLogsOutput } from "@maple/domain/tinybird"
 import type { OrgId } from "@maple/domain/primitives"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
@@ -69,9 +69,24 @@ const adminOnly = (tool: string) =>
 	})
 
 /** Validation failures name the parameter, so the model can fix the call. */
+/** The tool parameter a validator problem is about, so the model knows which argument to fix. */
+export const parameterOfProblem = (problem: string): string => {
+	if (problem.startsWith("condition ") || problem.includes("needs at least one condition"))
+		return "conditions"
+	if (problem.includes("signal")) return "signals"
+	if (problem.startsWith("the name")) return "name"
+	if (problem.startsWith("position")) return "position"
+	return "action"
+}
+
+const isValidationError = Schema.is(IngestRuleValidationError)
+
 const toMcpRuleError = (tool: string) => (error: SelfDescribingHttpError) =>
-	error._tag === "@maple/http/errors/IngestRuleValidationError"
-		? new McpInvalidInputError({ message: error.message, parameter: "action" })
+	isValidationError(error)
+		? new McpInvalidInputError({
+				message: error.message,
+				parameter: parameterOfProblem(error.problems[0] ?? ""),
+			})
 		: toMcpHttpError(tool)(error)
 
 const toRow = (rule: IngestRule): IngestRuleRow => ({
@@ -223,6 +238,43 @@ const recordService = (record: RuleRecord) => {
 	return typeof service === "string" ? service : ""
 }
 
+/** What one rule does to sampled records: counts plus a few examples of each outcome. */
+export const previewOver = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRecord>) => {
+	const compiled = compileRules([spec], PREVIEW_SALT)
+	const outcomes = records.map((record, index) => ({
+		record,
+		// Records without a trace id sample at random in the gateway; a fixed draw keeps answers stable.
+		outcome: applyRules(compiled, record, () => (((index * 0.618_033_988_75) % 1) + 1) % 1),
+	}))
+	const dropped = outcomes.filter(({ outcome }) => outcome._tag === "dropped")
+	const redacted = outcomes.flatMap(({ record, outcome }) =>
+		outcome._tag === "kept" && outcome.redactions.size > 0 ? [{ record, outcome }] : [],
+	)
+	return {
+		sampled: records.length,
+		dropped: dropped.length,
+		redactedRecords: redacted.length,
+		redactedValues: redacted.reduce(
+			(total, { outcome }) => total + [...outcome.redactions.values()].reduce((a, b) => a + b, 0),
+			0,
+		),
+		examples: [
+			...dropped.slice(0, 3).map(({ record }) => ({
+				service: recordService(record),
+				label: recordLabel(record),
+				outcome: "dropped" as const,
+				changes: [],
+			})),
+			...redacted.slice(0, 5).map(({ record, outcome }) => ({
+				service: recordService(record),
+				label: recordLabel(record),
+				outcome: "redacted" as const,
+				changes: changedValues(record, outcome.record),
+			})),
+		],
+	}
+}
+
 export function registerIngestRuleTools(server: McpToolRegistrar) {
 	server.define({
 		name: "list_ingest_rules",
@@ -337,39 +389,8 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 				provideWarehouseExecutorFromTenant(tenant),
 				Effect.mapError(toMcpQueryError("preview_ingest_rule")),
 			)
-			const compiled = compileRules([spec], PREVIEW_SALT)
-			const outcomes = records.map((record) => ({ record, outcome: applyRules(compiled, record) }))
-			const dropped = outcomes.filter(({ outcome }) => outcome._tag === "dropped")
-			const redacted = outcomes.flatMap(({ record, outcome }) =>
-				outcome._tag === "kept" && outcome.redactions.size > 0 ? [{ record, outcome }] : [],
-			)
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": records.length })
-			return {
-				signal,
-				sampled: records.length,
-				dropped: dropped.length,
-				redactedRecords: redacted.length,
-				redactedValues: redacted.reduce(
-					(total, { outcome }) =>
-						total + [...outcome.redactions.values()].reduce((a, b) => a + b, 0),
-					0,
-				),
-				examples: [
-					...dropped.slice(0, 3).map(({ record }) => ({
-						service: recordService(record),
-						label: recordLabel(record),
-						outcome: "dropped" as const,
-						changes: [],
-					})),
-					...redacted.slice(0, 5).map(({ record, outcome }) => ({
-						service: recordService(record),
-						label: recordLabel(record),
-						outcome: "redacted" as const,
-						changes: changedValues(record, outcome.record),
-					})),
-				],
-				problems: [],
-			}
+			return { signal, ...previewOver(spec, records), problems: [] }
 		}),
 		render: (output) => ({
 			title: "Ingest Rule Preview",

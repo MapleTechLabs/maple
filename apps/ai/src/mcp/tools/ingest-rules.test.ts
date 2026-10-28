@@ -6,7 +6,7 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { registerIngestRuleTools } from "./ingest-rules"
+import { parameterOfProblem, previewOver, registerIngestRuleTools } from "./ingest-rules"
 import type { McpToolError, McpToolRegistrar } from "./types"
 import type { McpToolRequirements } from "./runtime-requirements"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
@@ -146,5 +146,62 @@ describe("ingest rule MCP tools", () => {
 				],
 			})
 		}).pipe(Effect.provide(layerFor(createTestDb(trackedDbs), [])))
+	})
+
+	it("counts what a draft would drop and redact, with examples", () => {
+		const log = (body: string, severityNumber: number) => ({
+			signal: "logs" as const,
+			resource: { "service.name": "api" },
+			attributes: { "user.email": "a@b.co" },
+			body,
+			severityNumber,
+		})
+		const drop = previewOver(
+			{
+				signals: ["logs"],
+				conditions: [{ field: "severity", op: "lt", value: "info" }],
+				action: { _tag: "drop", keepPercent: 0 },
+			},
+			[log("noise", 5), log("kept", 9), log("noise", 1)],
+		)
+		assert.deepInclude(drop, { sampled: 3, dropped: 2, redactedRecords: 0 })
+		assert.deepEqual(
+			drop.examples.map((example) => [example.outcome, example.label]),
+			[
+				["dropped", "noise"],
+				["dropped", "noise"],
+			],
+		)
+		const redact = previewOver(
+			{
+				signals: ["logs"],
+				conditions: [],
+				action: {
+					_tag: "redact",
+					keys: [],
+					detectors: ["email"],
+					patterns: [],
+					scopes: ["attributes"],
+					method: "mask",
+				},
+			},
+			[log("a", 9), log("b", 9)],
+		)
+		assert.deepInclude(redact, { dropped: 0, redactedRecords: 2, redactedValues: 2 })
+		assert.deepEqual(redact.examples[0]?.changes, ["user.email: a@b.co -> [REDACTED:email]"])
+	})
+
+	it("names the argument a validation problem is about", () => {
+		assert.deepEqual(
+			[
+				"condition 1: attribute needs a key",
+				"a drop rule needs at least one condition",
+				"pick at least one signal",
+				"the name must be 1 to 120 characters",
+				"position is a whole number from 0 to 10000",
+				"pattern 1: lookaround is not supported",
+			].map(parameterOfProblem),
+			["conditions", "conditions", "signals", "name", "position", "action"],
+		)
 	})
 })
