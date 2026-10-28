@@ -158,7 +158,10 @@ const UNPORTABLE_REGEX: ReadonlyArray<readonly [RegExp, string]> = [
 	[/\[\^\]|\\c|\\0/u, "use an explicit class or escape instead"],
 	[/\{\s*\d{4,}|\{\s*\d+\s*,\s*\d{4,}/u, "counted repetitions are limited to 999"],
 	// A quantified group that itself repeats can backtrack exponentially in the preview engine.
-	[/\((?:[^()\\]|\\.)*(?:[*+]|\{\d+,\}|\|)(?:[^()\\]|\\.)*\)\s*(?:[*+]|\{\d+,)/u, "a repeated group may not contain a repetition or alternation"],
+	[
+		/\((?:[^()\\]|\\.)*(?:[*+]|\{\d+,\}|\|)(?:[^()\\]|\\.)*\)\s*(?:[*+]|\{\d+,)/u,
+		"a repeated group may not contain a repetition or alternation",
+	],
 	[/\(\?P/u, "use (?<name>...) for named groups"],
 	[/(?!^)\(\?[a-zA-Z-]+[):]/u, "inline flags are only supported as a leading (?i)"],
 	[/^\(\?(?!i\))[a-zA-Z-]+\)/u, "only the (?i) inline flag is supported"],
@@ -224,7 +227,7 @@ const conditionProblem = (
 	if (condition.value === undefined) return `${op} needs a value`
 	if (condition.values !== undefined) return `${op} takes value, not values`
 	if (condition.value.length > INGEST_RULE_LIMITS.valueLength) return "the value is too long"
-	if (field === "severity" && !(condition.value in SEVERITY_LEVELS))
+	if (field === "severity" && !Object.hasOwn(SEVERITY_LEVELS, condition.value))
 		return `severity is one of ${Object.keys(SEVERITY_LEVELS).join(", ")}`
 	return op === "regex" ? regexProblem(condition.value) : null
 }
