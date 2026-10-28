@@ -28,6 +28,8 @@ import { RailwayMetricsService } from "@maple/backend/services/integrations/Rail
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
@@ -274,6 +276,8 @@ const McpRuntimeServicesLive = Layer.mergeAll(
 	RepoSandboxService.layer,
 	ScrapeTargetsService.layer,
 	SetupAuditService.layer,
+	StatusPageSnapshotBuilder.layer,
+	StatusPagesService.layer,
 	UptimeMonitorsService.layer,
 	IngestRuleService.layer,
 	VcsCommitService.layer,

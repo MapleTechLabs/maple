@@ -43,6 +43,11 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"create_ingest_rule",
 	"update_ingest_rule",
 	"delete_ingest_rule",
+	// status pages: every post is public text on the customer's page
+	"create_status_page_incident",
+	"post_status_page_update",
+	"resolve_status_page_incident",
+	"schedule_status_page_maintenance",
 	// feedback
 	"send_maple_feedback",
 ])

@@ -27,6 +27,7 @@ import { registerCompareCommitsTool } from "./compare-commits"
 import { registerIntegrationWriteTools } from "./integration-writes"
 import { registerUptimeMonitorTools } from "./uptime-monitors"
 import { registerIngestRuleTools } from "./ingest-rules"
+import { registerStatusPageTools } from "./status-pages"
 import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
 import { registerGetServiceTopOperationsTool } from "./get-service-top-operations"
 import { registerServiceDeploymentsTool } from "./service-deployments"
@@ -435,6 +436,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerIntegrationWriteTools(registrar)
 	registerUptimeMonitorTools(registrar)
 	registerIngestRuleTools(registrar)
+	registerStatusPageTools(registrar)
 	registerSourceCodeTools(registrar)
 	registerSandboxTools(registrar)
 	registerPullRequestTools(registrar)
