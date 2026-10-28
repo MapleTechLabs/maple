@@ -1231,7 +1231,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						ruleId: rule.id,
 						ruleName: rule.name,
 						severity: rule.severity,
-						linkUrl,
+						// A digest can cover several incidents of the rule, so it links the rule's page, not one incident.
+						linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey, null),
 						kind: eventType === "resolve" ? "resolve" : "firing",
 					}))
 				if (pushAllowed) {
