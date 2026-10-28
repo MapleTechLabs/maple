@@ -14,6 +14,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "../../../../data/load-failure"
 import * as Dialog from "../../../../ui/dialog"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import { statusPagesTabHref } from "../../shared/status-page-commands"
@@ -40,6 +41,7 @@ type Fixture = Readonly<{
 	isAdmin?: boolean
 	components?: ReturnType<typeof component>[]
 	incidents?: ReturnType<typeof incident>[]
+	monitorsFail?: boolean
 }>
 
 const loaded = (fixture: Fixture = {}): Model => {
@@ -68,7 +70,9 @@ const loaded = (fixture: Fixture = {}): Model => {
 		}),
 		Message.CompletedFetchMonitors({
 			key: entered.monitors.key ?? "",
-			result: Result.succeed([httpMonitor(), downMonitor()]),
+			result: fixture.monitorsFail
+				? Result.fail(toLoadFailure(new Error("monitors unavailable")))
+				: Result.succeed([httpMonitor(), downMonitor()]),
 		}),
 	].reduce((model, message) => pageUpdate(model, message).model, entered)
 }
@@ -102,6 +106,22 @@ describe("status page editor", () => {
 			given(model),
 			expectView(role("heading", { name: /^Acme Status\s*Major outage$/u })).toExist(),
 			expectView(text("/s/acme-status")).toExist(),
+		)
+	})
+})
+
+describe("read failures", () => {
+	test("a failed monitors read shows an error, not every component Operational", () => {
+		const model = loaded({
+			components: [component(1, { monitor_id: downMonitor().id })],
+			monitorsFail: true,
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Couldn't load components")).toExist(),
+			expectView(role("heading", { name: /^Acme Status$/u })).toExist(),
+			expectView(text("Operational")).not.toExist(),
 		)
 	})
 })

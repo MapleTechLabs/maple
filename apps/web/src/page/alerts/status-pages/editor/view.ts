@@ -134,10 +134,18 @@ const tabRead = (model: Model, tab: EditorTab): { failure: Option.Option<LoadFai
 				failure: AsyncData.getError(model.incidents.data),
 				isReady: AsyncData.hasData(model.incidents.data),
 			}
+		// Statuses need monitors and incidents too, and the dialog's monitor picker needs monitors:
+		// a failure in either must show as one, not as every component Operational.
 		case "components":
 			return {
-				failure: AsyncData.getError(model.components.data),
-				isReady: AsyncData.hasData(model.components.data),
+				failure: AsyncData.getError(model.components.data).pipe(
+					Option.orElse(() => AsyncData.getError(model.monitors.data)),
+					Option.orElse(() => AsyncData.getError(model.incidents.data)),
+				),
+				isReady:
+					AsyncData.hasData(model.components.data) &&
+					AsyncData.hasData(model.monitors.data) &&
+					AsyncData.hasData(model.incidents.data),
 			}
 	}
 }
@@ -166,7 +174,12 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 	const tab = resolveTab(model.search.tab)
 	const timeZone = inputs.context.timeZone
 	const overall = overallOf(model)
-	const hasComponents = AsyncData.hasData(model.components.data) && componentsOf(model).length > 0
+	// The badge only claims a status once every input to it has loaded.
+	const hasComponents =
+		AsyncData.hasData(model.components.data) &&
+		AsyncData.hasData(model.monitors.data) &&
+		AsyncData.hasData(model.incidents.data) &&
+		componentsOf(model).length > 0
 	return h.div(
 		[h.Class("contents")],
 		[
