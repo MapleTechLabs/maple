@@ -366,6 +366,9 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			// Stored spans in the search results carry no span kind, so such a condition would miscount.
 			const problems = [
 				...ingestRuleProblems(spec),
+				...(signal !== undefined && !spec.signals.includes(signal)
+					? [`the rule does not apply to ${signal}; pick one of ${spec.signals.join(", ")}`]
+					: []),
 				...(signal === "traces" &&
 				spec.conditions.some((condition) => condition.field === "span_kind")
 					? [
