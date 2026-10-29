@@ -307,6 +307,18 @@ async fn flush_loop(
                         );
                         flusher.flush(&mut accumulator).await;
                     }
+                    // Not billed to the org's own id: a sub-org has no plan of its own. Logged
+                    // one entry per line so the usage can be tracked by hand.
+                    for ((org_id, feature_id), pending) in &accumulator {
+                        error!(
+                            org_id = %org_id,
+                            feature_id,
+                            value = pending.total(),
+                            billing_org_id = pending.customer_id.as_deref().unwrap_or(""),
+                            idempotency_key = %pending.idempotency_key,
+                            "Autumn usage dropped at shutdown"
+                        );
+                    }
                     break;
                 }
             }
