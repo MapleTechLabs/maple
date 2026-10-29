@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Option, Result } from "effect"
 import * as Keyed from "../../../../data/keyed"
 import type { AppRoute } from "../../../../route"
 import * as CopyButton from "../../../../ui/copy-button"
@@ -177,8 +177,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchConfig: ({ key, result }) => {
 			const next = { ...model, config: Keyed.accept(model.config, key, result) }
-			// Only a read the slot kept may rebase the draft; a superseded one carries older data.
-			return { model: key === model.config.key ? rebaseJsonDraft(next) : next }
+			// Only a successful read the slot kept may rebase the draft; a superseded or failed one
+			// carries older data, and the rebase waits for the next good read.
+			return {
+				model: key === model.config.key && Result.isSuccess(result) ? rebaseJsonDraft(next) : next,
+			}
 		},
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },

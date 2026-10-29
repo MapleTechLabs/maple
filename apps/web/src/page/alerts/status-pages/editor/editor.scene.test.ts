@@ -1000,6 +1000,34 @@ describe("json tab", () => {
 		expect(stale.jsonBase?.version).toBe("v7")
 	})
 
+	test("a failed re-read after a conflict leaves the rebase pending for the next good read", () => {
+		const base = { ...statusPageConfig(statusPage(), [component(1), component(2)]), version: "v7" }
+		const applying = pageUpdate(
+			editing(JSON.stringify(documentOf([1])), { config: base }),
+			Message.ClickedApplyJson(),
+		).model
+		const refused = pageUpdate(
+			applying,
+			Message.CompletedApplyJson({
+				result: Result.fail({
+					...toLoadFailure(new Error("changed")),
+					code: "status_page_conflict",
+					message: "changed",
+					retryable: false,
+				}),
+			}),
+		).model
+		const failed = pageUpdate(
+			refused,
+			Message.CompletedFetchConfig({
+				key: refused.config.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("unreachable"))),
+			}),
+		).model
+		expect(failed.isRebasingJson).toBe(true)
+		expect(failed.jsonBase?.version).toBe("v7")
+	})
+
 	test("unsaved Settings edits block Apply until they are saved or discarded", () => {
 		const draft = JSON.stringify(documentOf([1]))
 		const dirty = pageUpdate(
