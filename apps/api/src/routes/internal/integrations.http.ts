@@ -1,5 +1,6 @@
 import { HttpServerRequest } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import {
 	CloudflareDisconnectResponse,
 	CloudflareHyperdrivesResponse,
@@ -468,6 +469,23 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							returnTo: payload.returnTo,
 						})
 						return new CloudflareStartConnectResponse(result)
+					}),
+				)
+				.handle("cloudflareZoneSettings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						yield* cloudflareAnalytics.setZoneSettings(tenant.orgId, tenant.userId, payload)
+						yield* recordHttpAudit("cloudflare_integration.zones_updated", {
+							metadata: {
+								accountId: payload.accountId,
+								watchNewZones: payload.watchNewZones,
+								pausedZoneIds: payload.zones
+									.filter((zone) => !zone.watched)
+									.map((zone) => zone.zoneId),
+							},
+						})
+						return yield* cloudflareAnalytics.getIntegrationStatus(tenant.orgId)
 					}),
 				)
 				.handle("cloudflareDisconnect", () =>

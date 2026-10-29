@@ -39,6 +39,7 @@ import {
 	IntegrationsPersistenceError,
 	IntegrationsRevokedError,
 	IntegrationsUpstreamError,
+	IntegrationsValidationError,
 	OrgId,
 	RoleName,
 	UserId as UserIdSchema,
@@ -48,6 +49,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	CloudflareAnalyticsState,
 	CloudflareHyperdriveConfigs,
+	CloudflareZoneSettings,
 	OAuthConnections,
 	type CloudflareAnalyticsStateRow as StoredStateRow,
 	type CloudflareHyperdriveConfigRow,
@@ -78,7 +80,7 @@ import {
 	type CloudflareHyperdriveConfig,
 	type CloudflareZone,
 } from "@maple/backend/services/integrations/CloudflareApi"
-import type { SourceId } from "@maple/domain/primitives"
+import type { SourceId, UserId } from "@maple/domain/primitives"
 import { pollStatus } from "@maple/domain/integration-inventory"
 import type { SourceResourceCount } from "@maple/domain/source-health"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -1147,10 +1149,28 @@ const observeDatasetFailure = (orgId: OrgId, failure: DatasetPollFailure) =>
 		Effect.ignore,
 	)
 
+/** The customer's zone choice for one account. An account without a stored row watches everything. */
+interface ZoneWatchSettings {
+	readonly watchNewZones: boolean
+	readonly zoneOverrides: Readonly<Record<string, boolean>>
+}
+
+const WATCH_ALL_ZONES: ZoneWatchSettings = { watchNewZones: true, zoneOverrides: {} }
+
+const isZoneWatched = (settings: ZoneWatchSettings, zoneId: string): boolean =>
+	Object.hasOwn(settings.zoneOverrides, zoneId) ? settings.zoneOverrides[zoneId] : settings.watchNewZones
+
+interface ZoneSettingsUpdate {
+	readonly accountId: string
+	readonly watchNewZones: boolean
+	readonly zones: ReadonlyArray<{ readonly zoneId: string; readonly watched: boolean }>
+}
+
 interface CloudflareAnalyticsZoneStatusFields {
 	readonly id: string
 	readonly name: string
 	readonly enabled: boolean
+	readonly watched: boolean
 	readonly lastSyncedAt: number | null
 	readonly lastError: string | null
 	readonly watermarkAt: number | null
@@ -1170,6 +1190,7 @@ interface CloudflareAnalyticsAccountStatus {
 	readonly accountId: string
 	readonly zones: ReadonlyArray<CloudflareAnalyticsZoneStatusFields>
 	readonly workers: CloudflareAnalyticsWorkersStatusFields | null
+	readonly watchNewZones: boolean
 }
 
 interface CloudflareAnalyticsStatus {
@@ -1225,6 +1246,12 @@ export interface CloudflareAnalyticsServiceApi {
 		orgId: OrgId,
 		accountId?: string,
 	) => Effect.Effect<void, IntegrationsPersistenceError>
+	/** Replace one account's zone selection; paused zones stop polling on the next tick. */
+	readonly setZoneSettings: (
+		orgId: OrgId,
+		userId: UserId,
+		update: ZoneSettingsUpdate,
+	) => Effect.Effect<void, IntegrationsValidationError | IntegrationsPersistenceError>
 	/** The enabled HTTP-dataset zone row by name, naming the account that owns it; null when unknown. */
 	readonly findHttpZone: (
 		orgId: OrgId,
@@ -1272,6 +1299,29 @@ export class CloudflareAnalyticsService extends Context.Service<
 						]),
 				),
 			).pipe(Effect.map((rows) => Arr.copy(rows)))
+
+		/** The org's stored zone choices by account; accounts missing from the map watch every zone. */
+		const loadZoneSettings = (orgId: OrgId, accountId?: string) =>
+			dbExecute((db) =>
+				db.run(
+					PG.from(CloudflareZoneSettings)
+						.select("accountId", "watchNewZones", "zoneOverrides")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							accountId === undefined ? undefined : $.accountId.eq(accountId),
+						]),
+				),
+			).pipe(
+				Effect.map(
+					(rows) =>
+						new Map(
+							rows.map((row): [string, ZoneWatchSettings] => [
+								row.accountId,
+								{ watchNewZones: row.watchNewZones, zoneOverrides: row.zoneOverrides },
+							]),
+						),
+				),
+			)
 
 		/** One IN-list UPDATE over the given state rows; no-op on an empty id list. */
 		const updateRows = (rowIds: ReadonlyArray<string>, set: StateRowSet) => {
@@ -1467,6 +1517,11 @@ export class CloudflareAnalyticsService extends Context.Service<
 			zonesTruncated: boolean,
 		) {
 			const rows = yield* loadStateRows(orgId, accountId)
+			const settings = (yield* loadZoneSettings(orgId, accountId)).get(accountId) ?? WATCH_ALL_ZONES
+			yield* Effect.annotateCurrentSpan(
+				"maple.cloudflare.zones_unwatched",
+				zones.filter((zone) => !isZoneWatched(settings, zone.id)).length,
+			)
 			// Every zone-scoped dataset gets one state row per discovered zone — reconcile them all.
 			const byDatasetZone = new Map<string, CloudflareAnalyticsStateRow>()
 			for (const row of rows) {
@@ -1485,6 +1540,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						dataset: dataset.id,
 						zoneId: zone.id,
 						zoneName: zone.name,
+						enabled: isZoneWatched(settings, zone.id),
 						createdAt: now,
 						updatedAt: now,
 					})),
@@ -1502,23 +1558,27 @@ export class CloudflareAnalyticsService extends Context.Service<
 								),
 						)
 
-			const reappeared = ZONE_DATASETS.flatMap((dataset) =>
+			// A present zone is enabled exactly when the customer watches it. This also repairs a
+			// reset (reconnect) that re-enabled every row, before the tick polls anything.
+			const drifted = ZONE_DATASETS.flatMap((dataset) =>
 				zones.flatMap((zone) => {
 					const existing = byDatasetZone.get(`${dataset.id}:${zone.id}`)
-					if (!existing || (existing.zoneName === zone.name && existing.enabled)) return []
-					return [{ existing, zone }]
+					const watched = isZoneWatched(settings, zone.id)
+					if (!existing || (existing.zoneName === zone.name && existing.enabled === watched))
+						return []
+					return [{ existing, zone, watched }]
 				}),
 			)
 			yield* Effect.forEach(
-				reappeared,
-				({ existing, zone }) =>
+				drifted,
+				({ existing, zone, watched }) =>
 					// Re-enable on reappearance; a dataset-level disable re-asserts itself on the
 					// next settings check, so this errs on the side of collecting again.
 					Effect.andThen(
-						updateRows([existing.id], { zoneName: zone.name, enabled: true, updatedAt: now }),
+						updateRows([existing.id], { zoneName: zone.name, enabled: watched, updatedAt: now }),
 						Effect.sync(() => {
 							existing.zoneName = zone.name
-							existing.enabled = true
+							existing.enabled = watched
 						}),
 					),
 				{ discard: true },
@@ -2924,10 +2984,13 @@ export class CloudflareAnalyticsService extends Context.Service<
 
 		const getStatus = Effect.fn("CloudflareAnalyticsService.getStatus")(function* (orgId: OrgId) {
 			const rows = yield* loadStateRows(orgId)
+			const zoneSettings = yield* loadZoneSettings(orgId)
+			const settingsOf = (accountId: string) => zoneSettings.get(accountId) ?? WATCH_ALL_ZONES
 			const toZone = (row: CloudflareAnalyticsStateRow): CloudflareAnalyticsZoneStatusFields => ({
 				id: row.zoneId,
 				name: row.zoneName ?? row.zoneId,
 				enabled: row.enabled,
+				watched: isZoneWatched(settingsOf(row.accountId), row.zoneId),
 				lastSyncedAt: row.lastSuccessAt,
 				lastError: row.lastError,
 				watermarkAt: row.watermarkAt,
@@ -2951,6 +3014,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 						.map(toZone)
 						.sort((a, b) => a.name.localeCompare(b.name)),
 					workers: workersRow ? toWorkers(workersRow) : null,
+					watchNewZones: settingsOf(accountId).watchNewZones,
 				}
 			})
 			// Merged legacy view: all accounts' zones (zone ids are globally unique), and the
@@ -3157,6 +3221,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 					workers: accountAnalytics?.workers
 						? new CloudflareAnalyticsWorkersStatus(accountAnalytics.workers)
 						: null,
+					watchNewZones: accountAnalytics?.watchNewZones ?? WATCH_ALL_ZONES.watchNewZones,
 				})
 			})
 			// Legacy top-level view: first (oldest) connection's identity + every CONNECTED
@@ -3231,6 +3296,76 @@ export class CloudflareAnalyticsService extends Context.Service<
 			)
 		})
 
+		/**
+		 * Store one account's zone choice and pause or resume the zones whose choice changed. Only
+		 * changed zones are written, so a zone that vanished from Cloudflare stays disabled; any
+		 * drift left by a failed write is repaired by the next discovery pass.
+		 */
+		const setZoneSettings = Effect.fn("CloudflareAnalyticsService.setZoneSettings")(function* (
+			orgId: OrgId,
+			userId: UserId,
+			update: ZoneSettingsUpdate,
+		) {
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.cloudflare.account_id": update.accountId })
+			const zoneRows = (yield* loadStateRows(orgId, update.accountId)).filter(
+				(row) => DATASET_BY_ID.get(row.dataset)?.scope === "zone",
+			)
+			const known = new Set(zoneRows.map((row) => row.zoneId))
+			const unknown = update.zones.find((zone) => !known.has(zone.zoneId))
+			if (unknown !== undefined) {
+				return yield* new IntegrationsValidationError({
+					message: `Zone ${unknown.zoneId} is not on Cloudflare account ${update.accountId}`,
+				})
+			}
+			const previous =
+				(yield* loadZoneSettings(orgId, update.accountId)).get(update.accountId) ?? WATCH_ALL_ZONES
+			const next: ZoneWatchSettings = {
+				watchNewZones: update.watchNewZones,
+				zoneOverrides: Object.fromEntries(update.zones.map((zone) => [zone.zoneId, zone.watched])),
+			}
+			const now = yield* Clock.currentTimeMillis
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(CloudflareZoneSettings)
+						.values({
+							orgId,
+							accountId: update.accountId,
+							watchNewZones: next.watchNewZones,
+							zoneOverrides: next.zoneOverrides,
+							createdAt: now,
+							updatedAt: now,
+							updatedBy: userId,
+						})
+						.onConflictDoUpdate({
+							target: ["orgId", "accountId"],
+							set: () => ({
+								watchNewZones: next.watchNewZones,
+								zoneOverrides: next.zoneOverrides,
+								updatedAt: now,
+								updatedBy: userId,
+							}),
+						}),
+				),
+			)
+			const changed = zoneRows.filter(
+				(row) => isZoneWatched(previous, row.zoneId) !== isZoneWatched(next, row.zoneId),
+			)
+			const paused = changed.filter((row) => !isZoneWatched(next, row.zoneId))
+			const resumed = changed.filter((row) => isZoneWatched(next, row.zoneId))
+			yield* updateRows(
+				paused.map((row) => row.id),
+				{ enabled: false, updatedAt: now },
+			)
+			yield* updateRows(
+				resumed.map((row) => row.id),
+				{ enabled: true, updatedAt: now },
+			)
+			yield* Effect.annotateCurrentSpan({
+				"maple.cloudflare.rows_paused": paused.length,
+				"maple.cloudflare.rows_resumed": resumed.length,
+			})
+		})
+
 		const findHttpZone = Effect.fn("CloudflareAnalyticsService.findHttpZone")(function* (
 			orgId: OrgId,
 			zoneName: string,
@@ -3265,6 +3400,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			getUsage,
 			listHyperdriveConfigs: listHyperdriveConfigsForOrg,
 			resetOrgState,
+			setZoneSettings,
 			findHttpZone,
 		} satisfies CloudflareAnalyticsServiceApi
 	}),
