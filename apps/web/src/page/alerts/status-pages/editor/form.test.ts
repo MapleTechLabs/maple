@@ -67,6 +67,22 @@ describe("footer links", () => {
 	})
 })
 
+describe("URL fields", () => {
+	it("refuses what the service refuses: unparseable or not https, on every URL field", () => {
+		const issues = settingsIssues({
+			...saved,
+			websiteUrl: "http://acme.example",
+			privacyUrl: "https://acme.example:abc",
+			termsUrl: "https://acme.example/terms",
+			logoUrl: "",
+		})
+		expect(issues.websiteUrl).toBe("Use an https URL.")
+		expect(issues.privacyUrl).toBe("Use a valid URL, like https://acme.example.")
+		expect(issues.termsUrl).toBeNull()
+		expect(issues.logoUrl).toBeNull()
+	})
+})
+
 describe("theme settings", () => {
 	it("sends the whole theme with blank colours as null", () => {
 		const form: SettingsForm = {

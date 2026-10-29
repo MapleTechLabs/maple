@@ -339,20 +339,20 @@ const sameTheme = (a: ThemeForm, b: ThemeForm): boolean =>
 	a.border === b.border &&
 	a.radius === b.radius &&
 	a.font === b.font
-const isHttpsUrl = (value: string): boolean => /^https:\/\/\S+$/u.test(value)
-const isHttpUrl = (value: string): boolean => /^https?:\/\/\S+$/u.test(value)
-const httpsIssue = (value: string): string | null =>
-	value.trim() === "" || isHttpsUrl(value.trim()) ? null : "Use an https URL."
+/** The service's rule: a URL `URL` can parse, over https. Checked here so Save never sends what it refuses. */
+const httpsIssue = (value: string): string | null => {
+	const url = value.trim()
+	if (url === "") return null
+	if (!URL.canParse(url)) return "Use a valid URL, like https://acme.example."
+	return new URL(url).protocol === "https:" ? null : "Use an https URL."
+}
 
 /** Each field's problem, or `null`: the API refuses the same values. */
 export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsTextField, string | null>> => ({
 	name: form.name.trim() === "" ? "Add a name." : null,
 	slug: slugIssue(form.slug),
 	description: null,
-	websiteUrl:
-		form.websiteUrl.trim() === "" || isHttpUrl(form.websiteUrl.trim())
-			? null
-			: "Use an http or https URL.",
+	websiteUrl: httpsIssue(form.websiteUrl),
 	privacyUrl: httpsIssue(form.privacyUrl),
 	termsUrl: httpsIssue(form.termsUrl),
 	logoUrl: httpsIssue(form.logoUrl),
