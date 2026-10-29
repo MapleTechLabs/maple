@@ -175,9 +175,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, incidents: Keyed.accept(model.incidents, key, result) },
 			commands: [ReadEditorClock()],
 		}),
-		CompletedFetchConfig: ({ key, result }) => ({
-			model: rebaseJsonDraft({ ...model, config: Keyed.accept(model.config, key, result) }),
-		}),
+		CompletedFetchConfig: ({ key, result }) => {
+			const next = { ...model, config: Keyed.accept(model.config, key, result) }
+			// Only a read the slot kept may rebase the draft; a superseded one carries older data.
+			return { model: key === model.config.key ? rebaseJsonDraft(next) : next }
+		},
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
 		}),

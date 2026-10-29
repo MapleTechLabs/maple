@@ -970,6 +970,36 @@ describe("json tab", () => {
 		expect(reread.jsonBase?.version).toBe("v7")
 	})
 
+	test("a config read superseded by the conflict re-read does not rebase the draft", () => {
+		const base = { ...statusPageConfig(statusPage(), [component(1), component(2)]), version: "v7" }
+		const applying = pageUpdate(
+			editing(JSON.stringify(documentOf([1])), { config: base }),
+			Message.ClickedApplyJson(),
+		).model
+		const staleKey = applying.config.key ?? ""
+		const refused = pageUpdate(
+			applying,
+			Message.CompletedApplyJson({
+				result: Result.fail({
+					...toLoadFailure(new Error("changed")),
+					code: "status_page_conflict",
+					message: "changed",
+					retryable: false,
+				}),
+			}),
+		).model
+		// The older read lands after the conflict started a new one: it must not become the base.
+		const stale = pageUpdate(
+			refused,
+			Message.CompletedFetchConfig({
+				key: staleKey,
+				result: Result.succeed({ ...base, version: "v6" }),
+			}),
+		).model
+		expect(stale.isRebasingJson).toBe(true)
+		expect(stale.jsonBase?.version).toBe("v7")
+	})
+
 	test("unsaved Settings edits block Apply until they are saved or discarded", () => {
 		const draft = JSON.stringify(documentOf([1]))
 		const dirty = pageUpdate(
