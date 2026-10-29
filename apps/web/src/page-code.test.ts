@@ -113,6 +113,32 @@ describe("page code", () => {
 		expect(logs.model.page?._tag).toBe("LogsList")
 	})
 
+	test("A -> B -> A while both load enters A once, and B's late code changes nothing", async () => {
+		const toA = settle(signedIn(AppRoute.Metrics({ search: {} })))
+		const toB = settle({ ...toA.model, route: AppRoute.Errors({ search: {} }) })
+		const backToA = settle({ ...toB.model, route: AppRoute.Metrics({ search: {} }) })
+		expect(backToA.model.pageCode).toEqual(PageCode.Loading({ pageId: "MetricsBrowse" }))
+		const entered = update(backToA.model, await runLoad(toA))
+		expect(entered.model.page?._tag).toBe("MetricsBrowse")
+		const again = update(entered.model, await runLoad(backToA))
+		expect(again.model.page).toBe(entered.model.page)
+		const late = update(again.model, await runLoad(toB))
+		expect(late.model.page).toBe(entered.model.page)
+		expect(late.commands ?? []).toEqual([])
+	})
+
+	test("leaving for an unloaded page keeps the reads the open page held until the next one enters", async () => {
+		const first = settle(signedIn(AppRoute.Traces({ search: {} })))
+		const traces = update(first.model, await runLoad(first)).model
+		const holder = traces.preload.holder
+		expect(holder).not.toBe("")
+		const leaving = settle({ ...traces, route: AppRoute.Releases({ search: {} }) })
+		expect(leaving.model.preload).toBe(traces.preload)
+		expect(commandsNamed(leaving, "ReleaseReads")).toEqual([])
+		const releases = update(leaving.model, await runLoad(leaving))
+		expect(releases.model.preload.holder).not.toBe(holder)
+	})
+
 	test("a link to a page whose code is not loaded loads it first, then runs the page's preload", async () => {
 		const href = `http://localhost/traces/${"a".repeat(32)}`
 		const intended = update(
@@ -140,6 +166,15 @@ describe("page code", () => {
 		const failed = update(waiting, Message.FailedLoadPageCode({ pageId: "ServiceMap", failure })).model
 		expect(failed.pageCode).toEqual(PageCode.Failed({ pageId: "ServiceMap", failure }))
 		expect(commandsNamed(settle(failed), "LoadPageCode")).toEqual([])
+		// Another route never shows this page's failure.
+		scene(
+			{ update, view: body },
+			given({ ...failed, route: AppRoute.Logs({ search: {} }) }),
+			Mount.resolve(Toast.PortalToasts, Toast.Message.CompletedPortalToasts()),
+			Mount.resolve(Toast.PortalToasts, Toast.Message.CompletedPortalToasts()),
+			Mount.resolve(MeasureSidebarOverflow, ShellMessage.MeasuredSidebarOverflow()),
+			expectView(text("Couldn't load this page")).not.toExist(),
+		)
 		expect(
 			(update(failed, Message.ClickedReloadPage()).commands ?? []).map(({ name, args }) => ({
 				name,
