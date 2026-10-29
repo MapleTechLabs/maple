@@ -542,6 +542,7 @@ describe("StatusPagesService", () => {
 	})
 
 	describe("config", () => {
+		const NO_CHANGES = { fields: [], created: [], updated: [], deleted: [], reordered: false }
 		const cleanupSlugs = (testDb: TestDb) =>
 			Effect.promise(() =>
 				testDb.pglite.query<{ slug: string }>(
@@ -566,6 +567,7 @@ describe("StatusPagesService", () => {
 			return Effect.gen(function* () {
 				const { page, api, web, docs, config } = yield* seeded(testDb)
 				assert.deepStrictEqual(config, {
+					revision: yield* revision(testDb, page.id),
 					name: page.name,
 					slug: "config",
 					description: null,
@@ -595,7 +597,7 @@ describe("StatusPagesService", () => {
 					const { service, page, api, web, docs } = yield* seeded(testDb)
 					yield* service.update(ORG, page.id, { description: "Old", showPoweredBy: false })
 					const before = yield* revision(testDb, page.id)
-					const applied = yield* service.applyConfig(
+					const { config: applied, changes } = yield* service.applyConfig(
 						ORG,
 						page.id,
 						{
@@ -640,6 +642,13 @@ describe("StatusPagesService", () => {
 						listed.map((row) => row.id),
 					)
 					assert.deepStrictEqual(applied, yield* service.getConfig(ORG, page.id))
+					assert.deepStrictEqual(changes, {
+						fields: ["name", "description", "show_powered_by", "theme"],
+						created: ["Status API"],
+						updated: ["Docs site"],
+						deleted: ["Web"],
+						reordered: true,
+					})
 				}).pipe(Effect.provide(makeLayer(testDb)))
 			},
 		)
@@ -649,7 +658,9 @@ describe("StatusPagesService", () => {
 			return Effect.gen(function* () {
 				const { service, page, config } = yield* seeded(testDb)
 				const before = yield* revision(testDb, page.id)
-				assert.deepStrictEqual(yield* service.applyConfig(ORG, page.id, config, USER), config)
+				const applied = yield* service.applyConfig(ORG, page.id, config, USER)
+				assert.deepStrictEqual(applied.config, { ...config, revision: before + 1 })
+				assert.deepStrictEqual(applied.changes, NO_CHANGES)
 				assert.strictEqual(yield* revision(testDb, page.id), before + 1)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
@@ -734,8 +745,76 @@ describe("StatusPagesService", () => {
 					{ ...config, slug: "config-new" },
 					USER,
 				)
-				assert.strictEqual(renamed.slug, "config-new")
+				assert.strictEqual(renamed.config.slug, "config-new")
 				assert.deepStrictEqual(yield* cleanupSlugs(testDb), ["config"])
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("reports no change for values that differ only until stored", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				yield* service.update(ORG, page.id, {
+					theme: { ...DEFAULT_STATUS_PAGE_THEME, appearance: "light", accent: "#1a2b3c" },
+				})
+				const current = yield* service.getConfig(ORG, page.id)
+				const [first, ...rest] = current.components
+				assert.isDefined(first)
+				const padded: StatusPageConfig = {
+					...current,
+					name: ` ${current.name} `,
+					description: "   ",
+					theme: { ...current.theme, accent: "#1A2B3C" },
+					components: [{ ...first, name: ` ${first.name} `, group: " " }, ...rest],
+				}
+				const applied = yield* service.applyConfig(ORG, page.id, padded, USER)
+				assert.deepStrictEqual(applied.changes, NO_CHANGES)
+				assert.deepStrictEqual(applied.config.components, config.components)
+				assert.strictEqual(applied.config.theme?.accent, "#1a2b3c")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("with if_revision, a page that moved on is a conflict and nothing is written", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				const stale = config.revision ?? 0
+				yield* service.createComponent(ORG, page.id, { name: "Added meanwhile" })
+				const moved = yield* service.getConfig(ORG, page.id)
+				const conflict = yield* Effect.flip(
+					service.applyConfig(ORG, page.id, config, USER, { ifRevision: stale }),
+				)
+				assert.strictEqual(conflict._tag, "@maple/http/errors/StatusPageConflictError")
+				assert.include(conflict.message, `revision ${stale}`)
+				assert.deepStrictEqual(yield* service.getConfig(ORG, page.id), moved)
+
+				const applied = yield* service.applyConfig(ORG, page.id, moved, USER, {
+					ifRevision: moved.revision,
+				})
+				assert.deepStrictEqual(applied.changes, NO_CHANGES)
+				assert.strictEqual(applied.config.revision, (moved.revision ?? 0) + 1)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("caps a page at 200 components, for an apply and for a single create", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page } = yield* seeded(testDb)
+				const document = (count: number): StatusPageConfig => ({
+					name: "Big",
+					slug: "config",
+					components: Array.from({ length: count }, (_, index) => ({ name: `C${index}` })),
+				})
+				const tooMany = yield* Effect.flip(service.applyConfig(ORG, page.id, document(201), USER))
+				assert.strictEqual(tooMany._tag, "@maple/http/errors/StatusPageValidationError")
+				assert.include(tooMany.message, "at most 200 components")
+				assert.lengthOf(yield* service.listComponents(ORG, page.id), 3)
+
+				yield* service.applyConfig(ORG, page.id, document(200), USER)
+				const extra = yield* Effect.flip(service.createComponent(ORG, page.id, { name: "201st" }))
+				assert.strictEqual(extra._tag, "@maple/http/errors/StatusPageValidationError")
+				assert.include(extra.message, "at most 200 components")
+				assert.lengthOf(yield* service.listComponents(ORG, page.id), 200)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 

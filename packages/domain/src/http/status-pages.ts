@@ -104,6 +104,25 @@ export class StatusPageSlugTakenError extends HttpTaggedError<StatusPageSlugTake
 	},
 ) {}
 
+/** A conditional write whose `if_revision` no longer matches the page. */
+export class StatusPageConflictError extends HttpTaggedError<StatusPageConflictError>()(
+	"@maple/http/errors/StatusPageConflictError",
+	{
+		pageId: StatusPageId,
+		revision: Schema.Number,
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "status_page_conflict",
+		title: "Status page changed",
+		param: "if_revision",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
 export class StatusPagePersistenceError extends HttpTaggedError<StatusPagePersistenceError>()(
 	"@maple/http/errors/StatusPagePersistenceError",
 	{

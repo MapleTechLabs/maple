@@ -15,6 +15,7 @@ import {
 } from "@maple/db/tables"
 import {
 	StatusPageComponentNotFoundError,
+	StatusPageConflictError,
 	StatusPageIncidentNotFoundError,
 	StatusPageNotFoundError,
 	StatusPagePersistenceError,
@@ -26,9 +27,12 @@ import {
 	type StatusPageRecord,
 } from "@maple/domain/http"
 import {
+	diffStatusPageConfig,
+	MAX_STATUS_PAGE_COMPONENTS,
 	normalizeStatusPageConfig,
 	StatusPageComponentPublicId,
 	type StatusPageConfig,
+	type StatusPageConfigChangeSet,
 	UptimeMonitorPublicId,
 } from "@maple/domain/http/v2"
 import {
@@ -228,13 +232,27 @@ export interface StatusPagesServiceApi {
 	) => Effect.Effect<StatusPageIncidentId, IncidentError>
 	/** The page's settings, theme and components as one document. */
 	readonly getConfig: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<StatusPageConfig, PageError>
-	/** Replaces the page with `config` in one transaction: all of it applies, or none of it. */
+	/**
+	 * Replaces the page with `config` in one transaction: all of it applies, or none of it. With
+	 * `ifRevision`, a page past that revision fails with a conflict and nothing is written.
+	 */
 	readonly applyConfig: (
 		orgId: OrgId,
 		pageId: StatusPageId,
 		config: StatusPageConfig,
 		actor: UserId,
-	) => Effect.Effect<StatusPageConfig, PageWriteError | StatusPageSlugTakenError>
+		options?: { readonly ifRevision?: number | undefined },
+	) => Effect.Effect<
+		AppliedStatusPageConfig,
+		PageWriteError | StatusPageSlugTakenError | StatusPageConflictError
+	>
+}
+
+/** The page before and after the write, and what changed, all read under the page lock. */
+export interface AppliedStatusPageConfig {
+	readonly previous: StatusPageConfig
+	readonly config: StatusPageConfig
+	readonly changes: StatusPageConfigChangeSet
 }
 
 const MAX_NAME_LENGTH = 120
@@ -466,6 +484,28 @@ const findPage = (
 		)
 }
 
+/**
+ * The page row, locked until the transaction ends. Every component write takes it first, so an
+ * apply and component edits on one page run one at a time.
+ */
+const lockPage = (db: MapleDb, orgId: OrgId, pageId: StatusPageId) =>
+	db
+		.run(
+			PG.from(StatusPages)
+				.select()
+				.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)])
+				.limit(1)
+				.forUpdate(),
+		)
+		.pipe(
+			Effect.flatMap((rows) =>
+				rows[0] === undefined ? Effect.fail(pageNotFound(pageId)) : Effect.succeed(rows[0]),
+			),
+		)
+
+const tooManyComponents = () =>
+	invalid(`A status page can have at most ${MAX_STATUS_PAGE_COMPONENTS} components`)
+
 const findComponent = (db: MapleDb, orgId: OrgId, componentId: StatusPageComponentId) =>
 	db
 		.run(
@@ -588,6 +628,7 @@ const toConfig = (
 	page: StatusPageRow,
 	components: ReadonlyArray<StatusPageComponentRow>,
 ): StatusPageConfig => ({
+	revision: page.revision,
 	name: page.name,
 	slug: page.slug,
 	description: page.description,
@@ -898,9 +939,11 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const row = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* findPage(db, orgId, pageId)
+							yield* lockPage(db, orgId, pageId)
 							if (monitorId !== null) yield* ensureMonitorInOrg(db, orgId, monitorId)
 							const existing = yield* selectComponents(db, orgId, pageId)
+							if (existing.length >= MAX_STATUS_PAGE_COMPONENTS)
+								return yield* tooManyComponents()
 							const inserted = yield* db.run(
 								PG.insertInto(StatusPageComponents)
 									.values({
@@ -957,6 +1000,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					db.transaction(
 						Effect.gen(function* () {
 							const current = yield* findComponent(db, orgId, componentId)
+							yield* lockPage(db, orgId, current.pageId)
 							if (monitorId !== undefined && monitorId !== null)
 								yield* ensureMonitorInOrg(db, orgId, monitorId)
 							const updated = yield* db.run(
@@ -996,6 +1040,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					db.transaction(
 						Effect.gen(function* () {
 							const current = yield* findComponent(db, orgId, componentId)
+							yield* lockPage(db, orgId, current.pageId)
 							yield* db.run(
 								PG.deleteFrom(StatusPageComponents).where(($) => [
 									$.orgId.eq(orgId),
@@ -1019,7 +1064,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const rows = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* findPage(db, orgId, pageId)
+							yield* lockPage(db, orgId, pageId)
 							const existing = yield* selectComponents(db, orgId, pageId)
 							const requested = new Set(componentIds)
 							const sameSet =
@@ -1337,6 +1382,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				pageId: StatusPageId,
 				config: StatusPageConfig,
 				actor: UserId,
+				options?: { readonly ifRevision?: number | undefined },
 			) {
 				yield* Effect.annotateCurrentSpan({
 					orgId,
@@ -1345,6 +1391,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					"maple.status_page.config_components": config.components.length,
 				})
 				const input = normalizeStatusPageConfig(config)
+				if (input.components.length > MAX_STATUS_PAGE_COMPONENTS) return yield* tooManyComponents()
 				const name = yield* validateName(input.name, "Name")
 				const slug = yield* validateSlug(input.slug)
 				const description = yield* validateText(input.description, "Description")
@@ -1363,11 +1410,39 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const monitorIds = [
 					...new Set(components.flatMap((c) => (c.monitorId === null ? [] : [c.monitorId]))),
 				]
+				// The document as it will be stored; new components have no id yet.
+				const written: StatusPageConfig = {
+					name,
+					slug,
+					description,
+					website_url: websiteUrl,
+					logo_url: logoUrl,
+					show_powered_by: input.show_powered_by,
+					auto_incidents: input.auto_incidents,
+					theme,
+					components: components.map((component) => ({
+						...(component.id === null ? undefined : { id: component.id }),
+						name: component.name,
+						description: component.description,
+						group: component.groupName,
+						monitor_id: component.monitorId,
+						manual_status: component.manualStatus,
+						show_uptime: component.showUptime,
+					})),
+				}
+				const ifRevision = options?.ifRevision
 				const now = yield* Clock.currentTimeMillis
 				return yield* dbExecuteSlug(slug)((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							const current = yield* findPage(db, orgId, pageId)
+							// Locked before the components are read, so the change set below is the write's.
+							const current = yield* lockPage(db, orgId, pageId)
+							if (ifRevision !== undefined && ifRevision !== current.revision)
+								return yield* new StatusPageConflictError({
+									pageId,
+									revision: current.revision,
+									message: `The page changed since revision ${ifRevision} (it is now at ${current.revision}). Read the config again and redo the edit on it.`,
+								})
 							const existing = yield* selectComponents(db, orgId, pageId)
 							const byId = new Map(existing.map((row) => [row.id, row]))
 							const foreign = listedIds.find((id) => !byId.has(id))
@@ -1377,6 +1452,11 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 								)
 							yield* ensureMonitorsInOrg(db, orgId, monitorIds)
 							yield* ensureSlugFree(db, slug, pageId)
+							const previous = toConfig(current, existing)
+							const { fields, created, updated, deleted, reordered } = diffStatusPageConfig(
+								previous,
+								written,
+							)
 							// The old slug route stays at the edge until the publisher drains this.
 							if (slug !== current.slug)
 								yield* queueSlugRemoval(db, orgId, pageId, current.slug)
@@ -1456,7 +1536,11 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 							)
 							yield* bumpPage(db, orgId, pageId)
 							const page = yield* findPage(db, orgId, pageId)
-							return toConfig(page, yield* selectComponents(db, orgId, pageId))
+							return {
+								previous,
+								config: toConfig(page, yield* selectComponents(db, orgId, pageId)),
+								changes: { fields, created, updated, deleted, reordered },
+							}
 						}),
 					),
 				)

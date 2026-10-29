@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import {
 	StatusPageAutoIncidents,
@@ -21,6 +21,7 @@ import {
 } from "../../status-page"
 import {
 	StatusPageComponentNotFoundError,
+	StatusPageConflictError,
 	StatusPageIncidentNotFoundError,
 	StatusPageNotFoundError,
 	StatusPagePersistenceError,
@@ -469,7 +470,17 @@ export const StatusPageConfigComponent = Schema.Struct({
 })
 export type StatusPageConfigComponent = Schema.Schema.Type<typeof StatusPageConfigComponent>
 
+/** Most components one page may have; the config and a single create both refuse more. */
+export const MAX_STATUS_PAGE_COMPONENTS = 200
+
 export const StatusPageConfig = Schema.Struct({
+	revision: Schema.optionalKey(
+		Schema.Number.annotate({
+			description:
+				"The page revision this document was read at. Read-only: an apply ignores it; send it back as `if_revision` to refuse the apply if the page changed since.",
+			examples: [4],
+		}),
+	),
 	name: NonEmptyString.annotate({ description: "Page title.", examples: ["Acme Status"] }),
 	slug: slugField,
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -480,10 +491,11 @@ export const StatusPageConfig = Schema.Struct({
 	),
 	auto_incidents: Schema.optionalKey(autoIncidentsField),
 	theme: Schema.optionalKey(StatusPageConfigTheme),
-	components: Schema.Array(StatusPageConfigComponent).annotate({
-		description:
-			"Every component, in display order. Listed with an `id` updates it, without one adds it, and a component left out is deleted.",
-	}),
+	components: Schema.Array(StatusPageConfigComponent)
+		.check(Schema.isMaxLength(MAX_STATUS_PAGE_COMPONENTS))
+		.annotate({
+			description: `Every component, in display order (at most ${MAX_STATUS_PAGE_COMPONENTS}). Listed with an \`id\` updates it, without one adds it, and a component left out is deleted.`,
+		}),
 }).annotate({
 	identifier: "StatusPageConfig",
 	title: "Status page config",
@@ -493,26 +505,48 @@ export const StatusPageConfig = Schema.Struct({
 })
 export type StatusPageConfig = Schema.Schema.Type<typeof StatusPageConfig>
 
-/** A config with every default filled in, the shape a read returns. */
-export const normalizeStatusPageConfig = (config: StatusPageConfig) => ({
-	name: config.name,
-	slug: config.slug,
-	description: config.description ?? null,
-	website_url: config.website_url ?? null,
-	logo_url: config.logo_url ?? null,
-	show_powered_by: config.show_powered_by ?? true,
-	auto_incidents: config.auto_incidents ?? "off",
-	theme: { ...DEFAULT_STATUS_PAGE_THEME, ...config.theme },
-	components: config.components.map((component) => ({
-		...(component.id === undefined ? undefined : { id: component.id }),
-		name: component.name,
-		description: component.description ?? null,
-		group: component.group ?? null,
-		monitor_id: component.monitor_id ?? null,
-		manual_status: component.manual_status ?? null,
-		show_uptime: component.show_uptime ?? true,
-	})),
-})
+/** Optional text as the service stores it: trimmed, blank as `null`. */
+const textOrNull = (value: string | null | undefined): string | null => {
+	const trimmed = value?.trim() ?? ""
+	return trimmed.length === 0 ? null : trimmed
+}
+
+const hexOrNull = (value: string | null | undefined): string | null =>
+	textOrNull(value)?.toLowerCase() ?? null
+
+/**
+ * A config as an apply would store it: defaults filled in, text trimmed, blank text `null`,
+ * hex colours lower-cased. The apply and every preview of it diff through this.
+ */
+export const normalizeStatusPageConfig = (config: StatusPageConfig) => {
+	const theme = { ...DEFAULT_STATUS_PAGE_THEME, ...config.theme }
+	return {
+		name: config.name.trim(),
+		slug: config.slug,
+		description: textOrNull(config.description),
+		website_url: textOrNull(config.website_url),
+		logo_url: textOrNull(config.logo_url),
+		show_powered_by: config.show_powered_by ?? true,
+		auto_incidents: config.auto_incidents ?? "off",
+		theme: {
+			...theme,
+			accent: hexOrNull(theme.accent),
+			background: hexOrNull(theme.background),
+			text: hexOrNull(theme.text),
+			card: hexOrNull(theme.card),
+			border: hexOrNull(theme.border),
+		},
+		components: config.components.map((component) => ({
+			...(component.id === undefined ? undefined : { id: component.id }),
+			name: component.name.trim(),
+			description: textOrNull(component.description),
+			group: textOrNull(component.group),
+			monitor_id: component.monitor_id ?? null,
+			manual_status: component.manual_status ?? null,
+			show_uptime: component.show_uptime ?? true,
+		})),
+	}
+}
 
 const PAGE_CONFIG_FIELDS = [
 	"name",
@@ -534,12 +568,16 @@ const COMPONENT_CONFIG_FIELDS = [
 	"show_uptime",
 ] as const
 
-export interface StatusPageConfigChanges {
+/** What an apply changed: page fields, and components by name. */
+export interface StatusPageConfigChangeSet {
 	readonly fields: ReadonlyArray<(typeof PAGE_CONFIG_FIELDS)[number]>
 	readonly created: ReadonlyArray<string>
 	readonly updated: ReadonlyArray<string>
 	readonly deleted: ReadonlyArray<string>
 	readonly reordered: boolean
+}
+
+export interface StatusPageConfigChanges extends StatusPageConfigChangeSet {
 	/** Ids listed that are not components of the page, or listed twice: the apply refuses both. */
 	readonly unknownIds: ReadonlyArray<StatusPageComponentId>
 	readonly duplicateIds: ReadonlyArray<StatusPageComponentId>
@@ -759,14 +797,16 @@ const IncidentsQuery = Schema.Struct({
 	description: "Pagination plus optional page and state filters.",
 })
 
-const [pageNotFound, componentNotFound, incidentNotFound, validation, slugTaken, persistence] = publicErrors(
-	StatusPageNotFoundError,
-	StatusPageComponentNotFoundError,
-	StatusPageIncidentNotFoundError,
-	StatusPageValidationError,
-	StatusPageSlugTakenError,
-	StatusPagePersistenceError,
-)
+const [pageNotFound, componentNotFound, incidentNotFound, validation, slugTaken, conflict, persistence] =
+	publicErrors(
+		StatusPageNotFoundError,
+		StatusPageComponentNotFoundError,
+		StatusPageIncidentNotFoundError,
+		StatusPageValidationError,
+		StatusPageSlugTakenError,
+		StatusPageConflictError,
+		StatusPagePersistenceError,
+	)
 
 const StatusPageList = ListOf(V2StatusPage).annotate({
 	identifier: "StatusPageList",
@@ -778,6 +818,19 @@ const StatusPageIncidentList = ListOf(V2StatusPageIncident).annotate({
 	identifier: "StatusPageIncidentList",
 	title: "Status page incident list",
 	description: "A cursor-paginated page of status page incidents, newest first.",
+})
+
+const ApplyConfigQuery = Schema.Struct({
+	if_revision: Schema.optional(
+		Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)).annotate({
+			description:
+				"The `revision` the document was read at. When the page has moved past it, the apply answers 409 `status_page_conflict` and changes nothing.",
+		}),
+	),
+}).annotate({
+	identifier: "StatusPageConfigApplyQuery",
+	title: "Status page config apply query",
+	description: "An optional precondition on the page revision.",
 })
 
 const pageParams = { id: StatusPagePublicId }
@@ -902,23 +955,35 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				identifier: "getStatusPageConfig",
 				summary: "Retrieve a status page config",
 				description:
-					"Returns the page's settings, theme and components as one document, the body `PUT …/config` takes. Requires the `status_pages:read` scope.",
+					"Returns the page's settings, theme and components as one document, the body `PUT …/config` takes, with the `revision` it was read at. Requires the `status_pages:read` scope.",
 			}),
 		),
 	)
 	.add(
 		HttpApiEndpoint.put("applyConfig", "/:id/config", {
 			params: pageParams,
+			query: ApplyConfigQuery,
 			payload: StatusPageConfig,
 			success: StatusPageConfig,
-			error: [V2InsufficientPermissions.schema, pageNotFound, validation, slugTaken, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "applyStatusPageConfig",
-				summary: "Apply a status page config",
-				description: `Replaces the page with the document in one write: components listed with an \`id\` are updated, without one created, and left out deleted; list order is display order. Any invalid part rejects the whole document. Returns the applied config. ${adminNote}`,
-			}),
-		),
+			error: [
+				V2InsufficientPermissions.schema,
+				V2ParameterInvalid.schema,
+				pageNotFound,
+				validation,
+				slugTaken,
+				conflict,
+				persistence,
+			],
+		})
+			// A misspelt key would otherwise be dropped and its field reset to the default.
+			.annotate(HttpApi.PayloadParseOptions, { onExcessProperty: "error" })
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "applyStatusPageConfig",
+					summary: "Apply a status page config",
+					description: `Replaces the page with the document in one write: components listed with an \`id\` are updated, without one created, and left out deleted; list order is display order. Any invalid part, or a key the document does not define, rejects the whole document. With \`if_revision\`, a page that changed since that revision answers 409 and nothing is written. Returns the applied config. ${adminNote}`,
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("listComponents", "/:id/components", {
@@ -945,7 +1010,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			OpenApi.annotations({
 				identifier: "createStatusPageComponent",
 				summary: "Add a status page component",
-				description: `Adds a component after the existing ones. ${adminNote}`,
+				description: `Adds a component after the existing ones; a page holds at most ${MAX_STATUS_PAGE_COMPONENTS}. ${adminNote}`,
 			}),
 		),
 	)

@@ -13,13 +13,7 @@ import {
 	type StatusPageIncidentRow,
 	type StatusPageRow,
 } from "@maple/domain/mcp-outputs"
-import {
-	decodePublicId,
-	diffStatusPageConfig,
-	encodePublicId,
-	PublicIdPrefixes,
-	StatusPageConfig,
-} from "@maple/domain/http/v2"
+import { decodePublicId, encodePublicId, PublicIdPrefixes, StatusPageConfig } from "@maple/domain/http/v2"
 import type {
 	StatusPageComponentRecord,
 	StatusPageIncidentRecord,
@@ -34,6 +28,9 @@ import {
 } from "@maple/domain/primitives"
 import { isActiveIncident, overallStatus, pageFreshness } from "@maple/domain/status-page"
 import { parseWarehouseDateTime, WarehouseTimeInput } from "@maple/query-engine"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { auditAttribution } from "@maple/backend/services/audit/audit-access"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
@@ -73,6 +70,11 @@ const toMcpError =
 			case "@maple/http/errors/StatusPageValidationError":
 			case "@maple/http/errors/StatusPageSlugTakenError":
 				return new McpInvalidInputError({ message: error.message })
+			case "@maple/http/errors/StatusPageConflictError":
+				return new McpInvalidInputError({
+					message: `${error.message} Nothing was applied. Call get_status_page_config again and redo the edit on the fresh document; applying the old one would undo the other change.`,
+					parameter: "if_revision",
+				})
 			default:
 				return new McpQueryError({ message: `${error._tag}: ${error.message}`, pipeName: tool })
 		}
@@ -610,7 +612,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		render: (output) => ({
 			title: `Status page config: ${output.page.name}`,
 			notices: [
-				"apply_status_page_config replaces the page with an edited copy: keep a component's id to update it, drop the id to add one, leave it out to delete it. Order is display order.",
+				"apply_status_page_config replaces the page with an edited copy: keep a component's id to update it, drop the id to add one, leave it out to delete it. Order is display order. Keep the `revision` key: the apply is refused if the page changed since this read.",
 			],
 			blocks: [doc.code("json", JSON.stringify(encodeConfig(output.config), null, 2))],
 		}),
@@ -620,14 +622,18 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		name: "apply_status_page_config",
 		title: "Apply Status Page Config",
 		description:
-			"Replace a status page with a config document from get_status_page_config, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults. Only org admins may call it, and the result is public on the page.",
+			"Replace a status page with a config document from get_status_page_config, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults; unknown keys are refused. The document's `revision` guards the write: if the page changed since it was read, nothing is applied and you must read it again. Only org admins may call it, and the result is public on the page.",
 		parameters: Schema.Struct({
 			page: P.text("The page's slug, name or id"),
 			config: P.json(
 				StatusPageConfig,
-				"The whole page document, as returned by get_status_page_config, edited",
+				"The whole page document, as returned by get_status_page_config, edited. Keys it does not define are refused",
+			),
+			if_revision: P.optionalNumber(
+				"The page revision the document was read at. Defaults to the document's `revision`; the apply is refused if the page changed since",
 			),
 		}),
+		rejectUnknownKeys: true,
 		output: ApplyStatusPageConfigOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false, openWorld: true },
 		phrases: ["Applying a status page config"],
@@ -644,22 +650,28 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			)
 			const service = yield* StatusPagesService
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
-			const before = yield* service
-				.getConfig(tenant.orgId, page.id)
+			const { config, changes } = yield* service
+				.applyConfig(tenant.orgId, page.id, params.config, tenant.userId, {
+					ifRevision: params.if_revision ?? params.config.revision,
+				})
 				.pipe(Effect.mapError(toMcpError(tool)))
-			const config = yield* service
-				.applyConfig(tenant.orgId, page.id, params.config, tenant.userId)
-				.pipe(Effect.mapError(toMcpError(tool)))
-			const { fields, created, updated, deleted, reordered } = diffStatusPageConfig(
-				before,
-				params.config,
-			)
+			const audit = yield* AuditLogService
+			yield* audit.record({
+				orgId: tenant.orgId,
+				...auditAttribution(tenant, yield* CurrentAuditActor),
+				action: "status_page.config_applied",
+				resourceId: page.id,
+				metadata: {
+					name: config.name,
+					fields_changed: changes.fields.join(","),
+					components_created: changes.created.length,
+					components_updated: changes.updated.length,
+					components_deleted: changes.deleted.length,
+					components_reordered: changes.reordered,
+				},
+			})
 			const applied = yield* service.get(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
-			return {
-				page: toPageRow(applied),
-				config,
-				changes: { fields, created, updated, deleted, reordered },
-			}
+			return { page: toPageRow(applied), config, changes }
 		}),
 		render: (output) => {
 			const { fields, created, updated, deleted, reordered } = output.changes

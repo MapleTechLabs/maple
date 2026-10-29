@@ -9,7 +9,6 @@ import {
 	type StatusPageRecord,
 } from "@maple/domain/http"
 import {
-	diffStatusPageConfig,
 	isoTimestamp,
 	isoTimestampOrNull,
 	MapleApiV2,
@@ -341,32 +340,31 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					return yield* service.getConfig(tenant.orgId, params.id)
 				}),
 			)
-			.handle("applyConfig", ({ params, payload }) =>
+			.handle("applyConfig", ({ params, query, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireAdmin(tenant.roles, adminOnly("update"))
-					const before = yield* service.getConfig(tenant.orgId, params.id)
-					const applied = yield* service.applyConfig(
+					const { previous, config, changes } = yield* service.applyConfig(
 						tenant.orgId,
 						params.id,
 						payload,
 						tenant.userId,
+						{ ifRevision: query.if_revision },
 					)
-					const changes = diffStatusPageConfig(before, payload)
-					const { components: _before, ...pageBefore } = before
-					const { components: _after, ...pageAfter } = applied
+					const { components: _before, revision: _beforeRevision, ...pageBefore } = previous
+					const { components: _after, revision: _afterRevision, ...pageAfter } = config
 					yield* recordHttpAudit("status_page.config_applied", {
 						resourceId: params.id,
 						changes: diffAuditChanges(pageBefore, pageAfter),
 						metadata: {
-							name: applied.name,
+							name: config.name,
 							components_created: changes.created.length,
 							components_updated: changes.updated.length,
 							components_deleted: changes.deleted.length,
 							components_reordered: changes.reordered,
 						},
 					})
-					return applied
+					return config
 				}),
 			)
 			.handle("listComponents", ({ params, query }) =>

@@ -302,6 +302,72 @@ describe("status page tools", () => {
 			expect(markdown(again)).toContain("Nothing changed")
 		})
 
+		it("reports nothing changed for a re-sent document that differs only until stored", async () => {
+			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const { config } = read.structuredContent
+			const result = await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: {
+					...config,
+					name: ` ${config.name} `,
+					description: config.description === null ? "  " : ` ${config.description} `,
+					components: config.components.map((c: { name: string }) => ({
+						...c,
+						name: ` ${c.name} `,
+					})),
+				},
+			})
+			expect(result.isError).not.toBe(true)
+			expect(decode(ApplyStatusPageConfigOutput, result).changes).toEqual({
+				fields: [],
+				created: [],
+				updated: [],
+				deleted: [],
+				reordered: false,
+			})
+			expect(markdown(result)).toContain("Nothing changed")
+		})
+
+		it("refuses a key the config does not define, as an object or as JSON text", async () => {
+			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const { config } = read.structuredContent
+			const [first, ...rest] = config.components
+			const { show_uptime: _shown, ...withoutUptime } = first
+			const typo = { ...config, components: [{ ...withoutUptime, show_uptim: false }, ...rest] }
+			const asObject = await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: typo,
+			})
+			expect(asObject.isError).toBe(true)
+			expect(markdown(asObject)).toContain("show_uptim")
+			const asText = await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: JSON.stringify({ ...config, colour: "red" }),
+			})
+			expect(asText.isError).toBe(true)
+			expect(markdown(asText)).toContain("colour")
+			const after = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			expect(after.structuredContent.config).toEqual(config)
+		})
+
+		it("refuses a document read before the page changed, and says to read it again", async () => {
+			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const { config } = read.structuredContent
+			await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: { ...config, description: "Changed meanwhile." },
+			})
+			const moved = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const stale = await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: { ...config, components: [] },
+			})
+			expect(stale.isError).toBe(true)
+			expect(markdown(stale)).toContain("get_status_page_config again")
+			const after = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			expect(after.structuredContent.config).toEqual(moved.structuredContent.config)
+		})
+
 		it("refuses members and names a component id from another page", async () => {
 			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
 			const refused = await runToolDirect(rt, "apply_status_page_config", {

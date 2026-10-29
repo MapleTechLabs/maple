@@ -491,8 +491,8 @@ describe("v2 status pages", () => {
 						{ id: webId, name: "Web", group: "Apps" },
 					],
 				})
-				expect(read.body).not.toHaveProperty("revision")
 				const before = (await harness.request("GET", `/v2/status_pages/${id}`, token)).body.revision
+				expect(read.body.revision).toBe(before)
 
 				const applied = await harness.request(
 					"PUT",
@@ -501,7 +501,7 @@ describe("v2 status pages", () => {
 					read.body,
 				)
 				expect(applied.status).toBe(200)
-				expect(applied.body).toEqual(read.body)
+				expect(applied.body).toEqual({ ...read.body, revision: before + 1 })
 				const after = (await harness.request("GET", `/v2/status_pages/${id}`, token)).body.revision
 				expect(after).toBe(before + 1)
 			}))
@@ -564,6 +564,71 @@ describe("v2 status pages", () => {
 				expect(duplicate.body.error.message).toContain("more than once")
 				const malformed = await harness.request("PUT", path, token, { name: "No slug" })
 				expect(malformed.status).toBe(400)
+				expect((await harness.request("GET", path, token)).body).toEqual(read.body)
+			}))
+
+		it("refuses a key the document does not define, naming it, and changes nothing", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { id } = await seedPage(harness, token, "acme-typo")
+				const path = `/v2/status_pages/${id}/config`
+				const read = await harness.request("GET", path, token)
+				const [first, ...rest] = read.body.components
+				const { show_uptime: _shown, ...withoutUptime } = first
+				const typo = await harness.request("PUT", path, token, {
+					...read.body,
+					name: "Changed",
+					components: [{ ...withoutUptime, show_uptim: false }, ...rest],
+				})
+				expect(typo.status).toBe(400)
+				expect(typo.body.error.param).toBe("components[0].show_uptim")
+				const topLevel = await harness.request("PUT", path, token, { ...read.body, colour: "red" })
+				expect(topLevel.status).toBe(400)
+				expect(topLevel.body.error.param).toBe("colour")
+				expect((await harness.request("GET", path, token)).body).toEqual(read.body)
+			}))
+
+		it("with a stale if_revision answers 409 and writes nothing; a current one applies", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { id } = await seedPage(harness, token, "acme-stale")
+				const path = `/v2/status_pages/${id}/config`
+				const read = await harness.request("GET", path, token)
+				await harness.request("POST", `/v2/status_pages/${id}/components`, token, { name: "Added" })
+				const moved = await harness.request("GET", path, token)
+				const stale = await harness.request(
+					"PUT",
+					`${path}?if_revision=${read.body.revision}`,
+					token,
+					{ ...read.body, name: "Stale" },
+				)
+				expect(stale.status).toBe(409)
+				expect(stale.body.error.code).toBe("status_page_conflict")
+				expect(stale.body.error.message).toContain(`revision ${read.body.revision}`)
+				expect((await harness.request("GET", path, token)).body).toEqual(moved.body)
+
+				const current = await harness.request(
+					"PUT",
+					`${path}?if_revision=${moved.body.revision}`,
+					token,
+					{ ...moved.body, name: "Fresh" },
+				)
+				expect(current.status).toBe(200)
+				expect(current.body.name).toBe("Fresh")
+				expect(current.body.components.map((c: { name: string }) => c.name)).toContain("Added")
+			}))
+
+		it("refuses more than 200 components", () =>
+			withHarness(async (harness) => {
+				const { secret: token } = await harness.bootstrapKey()
+				const { id } = await seedPage(harness, token, "acme-big")
+				const path = `/v2/status_pages/${id}/config`
+				const read = await harness.request("GET", path, token)
+				const tooMany = await harness.request("PUT", path, token, {
+					...read.body,
+					components: Array.from({ length: 201 }, (_, index) => ({ name: `C${index}` })),
+				})
+				expect(tooMany.status).toBe(400)
 				expect((await harness.request("GET", path, token)).body).toEqual(read.body)
 			}))
 

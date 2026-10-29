@@ -91,6 +91,24 @@ describe("diffStatusPageConfig", () => {
 		})
 	})
 
+	it("reads text and colours as an apply stores them, so padding or case is no change", () => {
+		const changes = diffStatusPageConfig(
+			{ ...current, theme: { ...DEFAULT_STATUS_PAGE_THEME, accent: "#1a2b3c" } },
+			{
+				...current,
+				name: " Acme ",
+				description: "  ",
+				theme: { ...DEFAULT_STATUS_PAGE_THEME, accent: " #1A2B3C" },
+				components: current.components.map((component) => ({
+					...component,
+					name: ` ${component.name} `,
+					group: "",
+				})),
+			},
+		)
+		expect(changes).toMatchObject({ fields: [], updated: [] })
+	})
+
 	it("flags ids that are not on the page and ids listed twice", () => {
 		const changes = diffStatusPageConfig(current, {
 			...current,
@@ -110,5 +128,16 @@ describe("diffStatusPageConfig", () => {
 		expect(encoded.components[0]?.id).toMatch(/^stc_/)
 		expect(decode(encoded)).toEqual(current)
 		expect(() => decode({ name: "Acme", slug: "acme", components: [{ name: "" }] })).toThrow()
+	})
+
+	it("refuses more than 200 components", () => {
+		const decode = Schema.decodeUnknownExit(StatusPageConfig)
+		const document = (count: number) => ({
+			name: "Acme",
+			slug: "acme",
+			components: Array.from({ length: count }, (_, index) => ({ name: `C${index}` })),
+		})
+		expect(decode(document(200))._tag).toBe("Success")
+		expect(decode(document(201))._tag).toBe("Failure")
 	})
 })
