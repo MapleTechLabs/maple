@@ -54,7 +54,7 @@ const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-38
 
 const SENT_AT_MS = Date.parse("2026-06-02T00:00:00.000Z")
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/alerts/incidents/inc_1"
+const CHAT = "https://web.localhost/alerts/rule_1"
 
 const destinationRow = (overrides: Partial<AlertDestinationRow> = {}): AlertDestinationRow => ({
 	id: DESTINATION_ID,
@@ -162,10 +162,8 @@ describe("dispatchDelivery: pagerduty", () => {
 			assert.strictEqual(body.payload.summary, "Checkout error rate trigger")
 			assert.strictEqual(body.payload.source, "checkout")
 			assert.strictEqual(body.payload.severity, "critical")
-			assert.deepStrictEqual(body.links, [
-				{ href: LINK, text: "Open in Maple" },
-				{ href: CHAT, text: "View alert" },
-			])
+			assert.deepStrictEqual(body.links, [{ href: LINK, text: "Open in Maple" }])
+			assert.strictEqual(body.payload.custom_details.chatUrl, CHAT)
 			// custom_details carries RAW numbers, not the formatted strings the chat
 			// providers render — a PagerDuty payload is machine-facing.
 			assert.strictEqual(body.payload.custom_details.value, 0.08)
@@ -318,7 +316,7 @@ describe("dispatchDelivery: telegram", () => {
 	const sent = () =>
 		new Response(JSON.stringify({ ok: true, result: { message_id: 4242 } }), { status: 200 })
 
-	it.effect("posts an HTML message with both links as inline buttons", () =>
+	it.effect("posts an HTML message with an Open in Maple inline button", () =>
 		Effect.gen(function* () {
 			const { calls, fetchFn } = recorder(sent)
 			const result = yield* dispatch(context, fetchFn)
@@ -334,7 +332,7 @@ describe("dispatchDelivery: telegram", () => {
 			assert.include(body.text, "<b>Checkout error rate</b>")
 			assert.deepStrictEqual(
 				body.reply_markup.inline_keyboard[0].map((b: { url: string }) => b.url),
-				[LINK, CHAT],
+				[LINK],
 			)
 			// The token authenticates via the path; it must never also ride in the body.
 			assert.notInclude(call.body, botToken)

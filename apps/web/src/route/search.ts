@@ -643,9 +643,7 @@ export const AgentSessionToolSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const AlertIncidentSearch = Schema.Struct({
-	alert: Schema.optional(Schema.String),
-})
+export const AlertIncidentSearch = Schema.Struct({})
 
 // sessionTimeRangeSearchMiddleware()
 export const ErrorIssueSearch = Schema.Struct({

@@ -68,7 +68,7 @@ const inputFor = (context: Partial<DispatchContext> = {}): RenderInput<SecretCon
 	config,
 	context: { ...baseContext, ...context },
 	linkUrl: "https://app.maple.test/alerts/incidents/inc_1",
-	chatUrl: "https://app.maple.test/chat",
+	chatUrl: "https://app.maple.test/alerts/rule_1",
 	payloadJson: "{}",
 	templated: null,
 })
@@ -217,6 +217,7 @@ describe("linear transport", () => {
 				String(create.description),
 				"[Open in Maple](https://app.maple.test/alerts/incidents/inc_1)",
 			)
+			assert.notInclude(String(create.description), "https://app.maple.test/alerts/rule_1")
 			const link = inputOf(linear.calls, "MapleIssueLink")
 			assert.strictEqual(link.url, "https://app.maple.test/alerts/incidents/inc_1")
 

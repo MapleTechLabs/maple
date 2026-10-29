@@ -25,22 +25,19 @@ const MAX_TEMPLATED_BODY_CHARS = 1200
  * which is where its mention-neutralising lives, so a rule named `@everyone` pings nobody.
  *
  * The same card the legacy bot destination posts: the event and rule as the title, what was
- * observed against the threshold, severity and group as fields, the chart, both links as buttons,
+ * observed against the threshold, severity and group as fields, the chart, an Open in Maple button,
  * and a footer carrying the sparkline, the incident and the time. A rule's own template, when it
  * has one, replaces the title and the summary and drops the fields, as it does there.
  */
 export const buildChatAlertBlocks = (input: RenderInput<Config>): ReadonlyArray<ChatBlock> => {
-	const { context, templated, linkUrl, chatUrl } = input
+	const { context, templated, linkUrl } = input
 	const group = displayGroupKey(context.groupKey)
 	const card: Omit<ChatAlertBlock, "title" | "summary" | "fields"> = {
 		kind: "alert",
 		color: alertAccentColor(context.eventType, context.severity),
 		imageUrl: context.chartUrl ?? null,
 		imageAlt: `${context.ruleName} over the alert window`,
-		links: [
-			{ label: "Open in Maple", url: linkUrl, primary: true },
-			{ label: "View alert", url: chatUrl, primary: false },
-		],
+		links: [{ label: "Open in Maple", url: linkUrl, primary: true }],
 		footer: [
 			"\u{1F341} Maple Alerts",
 			// Ahead of the incident: on a renotify it is the only part that differs from the last one.

@@ -35,6 +35,7 @@ export interface RenderInput<Config> {
 	readonly config: Config
 	readonly context: DispatchContext
 	readonly linkUrl: string
+	/** The alert rule's page. No button links it; PagerDuty's `custom_details` carry it. */
 	readonly chatUrl: string
 	/**
 	 * The canonical wire payload. `webhook` ships it verbatim and HMAC-signs it,

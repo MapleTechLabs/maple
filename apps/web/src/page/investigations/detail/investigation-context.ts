@@ -1,7 +1,28 @@
 // The investigation conversation's starter suggestions and the noun for its subject's kind.
 
 import { Schema } from "effect"
-import { signalLabel } from "../../alerts/kit/alert-context"
+
+const signalLabel = (signalType: string): string => {
+	switch (signalType) {
+		case "error_rate":
+			return "error rate"
+		case "p95_latency":
+			return "p95 latency"
+		case "p99_latency":
+			return "p99 latency"
+		case "apdex":
+			return "Apdex"
+		case "throughput":
+			return "throughput"
+		case "builder_query":
+			return "query result"
+		case "raw_query":
+			return "SQL query result"
+		default:
+			// Never leak a raw enum into prose: these read mid-sentence.
+			return signalType.replace(/[_-]+/g, " ")
+	}
+}
 
 /** What Maple can investigate, read off the investigation's subject. */
 const InvestigationKindSchema = Schema.Literals(["alert", "anomaly", "error", "freeform"])

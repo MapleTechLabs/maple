@@ -54,7 +54,7 @@ Respond with any `2xx` within **15 seconds**. The response body is ignored.
 	"template": null,
 	"chart": { "url": "https://…" },
 	"linkUrl": "https://app.maple.dev/alerts/…",
-	"chatUrl": "https://app.maple.dev/alerts/incidents/…",
+	"chatUrl": "https://app.maple.dev/alerts/rule_…",
 	"sentAt": "2026-09-25T09:14:00.000Z",
 	"event": {
 		"specversion": "1.0",
@@ -84,7 +84,7 @@ Respond with any `2xx` within **15 seconds**. The response body is ignored.
 | `template`             | The rule's rendered notification template, or `null`                                                       |
 | `chart`                | `url` of a chart image and/or a `sparkline`, or `null`                                                     |
 | `linkUrl`              | The incident in the Maple dashboard                                                                        |
-| `chatUrl`              | Opens the incident in Maple, or the alert rule when there is no incident                                   |
+| `chatUrl`              | Opens the alert rule in Maple, or the alerts list for a test                                               |
 | `sentAt`               | ISO-8601 time the event was first generated. Retries keep the original value.                              |
 | `event`                | The same event as a [CloudEvents 1.0](https://cloudevents.io) envelope, for routers that speak CloudEvents |
 

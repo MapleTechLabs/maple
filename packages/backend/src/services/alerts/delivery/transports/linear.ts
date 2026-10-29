@@ -57,7 +57,7 @@ export const linearIssueDescription = (input: Input): string => {
 		...(group === null ? [] : [`- Group: \`${group}\``]),
 		...(context.incidentId === null ? [] : [`- Incident: \`${context.incidentId}\``]),
 		"",
-		`[Open in Maple](${input.linkUrl}) · [Ask Maple AI](${input.chatUrl})`,
+		`[Open in Maple](${input.linkUrl})`,
 	]
 	return truncate(lines.join("\n"), MAX_BODY_CHARS)
 }

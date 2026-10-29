@@ -1,5 +1,5 @@
 /**
- * Message RENDERING for the chat-style providers, plus the "View alert"
+ * Message RENDERING for the chat-style providers, plus the alert rule
  * deep-link and the template resolver.
  *
  * Transport — which provider gets which request, how it is sent, how failures
@@ -8,13 +8,7 @@
  * output assertable without any HTTP stub.
  */
 import { Option } from "effect"
-import type {
-	AlertComparator,
-	AlertDestinationType,
-	AlertEventType,
-	AlertSignalType,
-	AlertSeverity,
-} from "@maple/domain/http"
+import type { AlertDestinationType, AlertEventType } from "@maple/domain/http"
 import type { DispatchContext } from "./delivery/context"
 import {
 	comparatorBreachPhrase,
@@ -47,55 +41,17 @@ import {
 /*  Alert deep-link helper                                                    */
 /* -------------------------------------------------------------------------- */
 
-export interface AlertOpenUrlContext {
-	readonly ruleId: string
-	readonly ruleName: string
-	readonly incidentId: string | null
-	readonly eventType: AlertEventType
-	readonly signalType: AlertSignalType
-	readonly severity: AlertSeverity
-	readonly comparator: AlertComparator
-	readonly threshold: number
-	readonly thresholdUpper: number | null
-	readonly value: number | null
-	readonly windowMinutes: number
-	readonly groupKey: string | null
-	readonly sampleCount: number | null
-}
-
-const toBase64Url = (raw: string): string =>
-	Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-
 /**
- * "View alert" deep-link (the webhook's `chatUrl`). Points at the incident page; its `?alert=`
- * context gives the page a rule to link back to when the incident is gone. With no incident row
- * it opens the rule, or the alerts list for a `test` notification, whose rule id is made up.
+ * The alert rule's page: the webhook's `chatUrl` and the template's `links.chat`. A `test`
+ * notification's rule id is made up, so it opens the alerts list instead.
  */
-export const buildAlertOpenUrl = (baseUrl: string, context: AlertOpenUrlContext): string => {
-	if (context.incidentId === null) {
-		return context.eventType === "test"
-			? `${baseUrl}/alerts`
-			: `${baseUrl}/alerts/${encodeURIComponent(context.ruleId)}`
-	}
-	const encoded = toBase64Url(
-		JSON.stringify({
-			ruleId: context.ruleId,
-			ruleName: context.ruleName,
-			incidentId: context.incidentId,
-			eventType: context.eventType,
-			signalType: context.signalType,
-			severity: context.severity,
-			comparator: context.comparator,
-			threshold: context.threshold,
-			thresholdUpper: context.thresholdUpper,
-			value: context.value,
-			windowMinutes: context.windowMinutes,
-			groupKey: context.groupKey,
-			sampleCount: context.sampleCount,
-		}),
-	)
-	return `${baseUrl}/alerts/incidents/${encodeURIComponent(context.incidentId)}?alert=${encoded}`
-}
+export const buildAlertRuleUrl = (
+	baseUrl: string,
+	context: { readonly ruleId: string; readonly eventType: AlertEventType },
+): string =>
+	context.eventType === "test"
+		? `${baseUrl}/alerts`
+		: `${baseUrl}/alerts/${encodeURIComponent(context.ruleId)}`
 
 /**
  * One human-readable sentence describing what happened — the message lead
@@ -154,7 +110,7 @@ const discordImage = (context: Pick<DispatchContext, "chartUrl">) =>
 const discordFooterText = (context: Pick<DispatchContext, "sparkline">): string =>
 	context.sparkline ? `\u{1F341} Maple Alerts  ·  ${context.sparkline}` : "\u{1F341} Maple Alerts"
 
-export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, chatUrl: string) => [
+export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string) => [
 	{
 		title: `${eventTypeEmoji(context.eventType)} ${formatAlertHeadline(context)}`,
 		url: linkUrl,
@@ -167,7 +123,7 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, ch
 			{ name: "Window", value: formatWindow(context.windowMinutes), inline: true },
 			{
 				name: "Links",
-				value: `[Open in Maple](${linkUrl}) · [View alert](${chatUrl})`,
+				value: `[Open in Maple](${linkUrl})`,
 				inline: false,
 			},
 		],
@@ -348,7 +304,6 @@ export const buildDiscordEmbedsFromTemplate = (
 	body: string,
 	context: Pick<DispatchContext, "eventType" | "severity" | "sparkline" | "chartUrl">,
 	linkUrl: string,
-	chatUrl: string,
 ) => [
 	{
 		title: truncate(title, 256),
@@ -358,7 +313,7 @@ export const buildDiscordEmbedsFromTemplate = (
 		fields: [
 			{
 				name: "Links",
-				value: `[Open in Maple](${linkUrl}) · [View alert](${chatUrl})`,
+				value: `[Open in Maple](${linkUrl})`,
 				inline: false,
 			},
 		],

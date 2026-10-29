@@ -101,10 +101,7 @@ export const pagerDutyTransport: HttpTransport<Config> = {
 						chatUrl,
 					},
 				},
-				links: [
-					{ href: linkUrl, text: "Open in Maple" },
-					{ href: chatUrl, text: "View alert" },
-				],
+				links: [{ href: linkUrl, text: "Open in Maple" }],
 			}),
 		}
 	},

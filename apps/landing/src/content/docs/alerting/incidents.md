@@ -51,7 +51,7 @@ The built-in format carries:
 - The signal, the observed value and the threshold it was compared against.
 - The group, or `all` for an ungrouped rule.
 - The evaluation window.
-- An **Open in Maple** link to the affected service (or the alerts list) and a **View alert** link to the incident.
+- An **Open in Maple** link to the incident (or, without one, the affected service or the alerts list).
 
 A rule's **Message template** replaces the title and body for Slack, Discord, Telegram and PagerDuty destinations. Email, webhook and Hazel destinations use the built-in format. PagerDuty receives a stable `dedup_key` so the trigger and resolve land on the same PagerDuty incident. The webhook payload is in the [alert webhooks reference](/docs/reference/webhooks).
 

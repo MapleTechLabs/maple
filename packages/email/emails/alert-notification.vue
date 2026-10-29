@@ -25,10 +25,7 @@
 </MaplePanel>
 </MapleSection>
 <MapleSection class="px-6 pb-2 pt-6">
-<table class="w-full border-collapse"><tbody><tr>
-<td class="w-1/2 pr-1"><MapleCta href="[[linkUrl]]" padding="px-4 py-3">Open in Maple &rarr;</MapleCta></td>
-<td class="w-1/2 pl-1"><MapleCta href="[[chatUrl]]" variant="secondary" padding="px-4 py-3">View alert</MapleCta></td>
-</tr></tbody></table>
+<MapleCta href="[[linkUrl]]">Open in Maple &rarr;</MapleCta>
 </MapleSection>
 <MapleFooter>&#127809; Maple Alerts &middot; You are receiving this because this address is an alert destination for your organization.</MapleFooter>
 </MapleShell>
