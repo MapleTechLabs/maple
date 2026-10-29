@@ -79,10 +79,14 @@ const renderSection = (id: string, title: string, inner: string): string =>
 const renderHero = (
 	overall: StatusPageComponentStatus,
 	active: ReadonlyArray<StatusPageSnapshotIncident>,
+	affected: ReadonlyArray<StatusPageSnapshotComponent>,
 ): string => {
+	// With no incident posted, a non-operational banner names what is affected rather than "no issues".
 	const body =
 		active.length === 0
-			? `<p>We're not aware of any issues affecting our systems.</p>`
+			? overall === "operational"
+				? `<p>We're not aware of any issues affecting our systems.</p>`
+				: `<p>Affected: ${affected.map((component) => `${escapeHtml(component.name)} (${COMPONENT_STATUS_LABEL[component.status]})`).join(", ")}. We'll post an update here.</p>`
 			: `<ul>${active
 					.map(
 						(incident) =>
@@ -270,7 +274,11 @@ export const renderPage = (
 	const body = [
 		renderHeader(snapshot, options),
 		`<div class="notice" id="delayed" role="status"${delayed ? "" : " hidden"}>Live checks are delayed. Showing the last known state from ${timeTag(freshness.updatedAt)}.</div>`,
-		renderHero(overall, active),
+		renderHero(
+			overall,
+			active,
+			snapshot.components.filter((component) => component.status !== "operational"),
+		),
 		active.length === 0
 			? ""
 			: renderSection("active", "Active incidents", active.map(renderIncident).join("")),

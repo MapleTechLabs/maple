@@ -42,6 +42,9 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { StatusPageGoneError, StatusPagePublishDbError } from "./publish-errors"
 
+/** Most incidents one snapshot indexes for the calendar: about one a day for a year. */
+const STATUS_PAGE_INCIDENT_INDEX_LIMIT = 500
+
 const DAY_MS = 86_400_000
 
 export interface SnapshotPageInput {
@@ -364,7 +367,10 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 								$.pageId.eq(pageId),
 								$.published.eq(true),
 								PG.or($.resolvedAt.isNull(), $.resolvedAt.gte(indexCutoff)),
-							]),
+							])
+							// Bounded: the newest incidents fill the calendar; a page past this is pathological.
+							.orderBy(["startedAt", "desc"], ["id", "desc"])
+							.limit(STATUS_PAGE_INCIDENT_INDEX_LIMIT),
 					)
 					const incidentIds = incidents
 						.filter((incident) => isListedIncident(incident, nowMs))

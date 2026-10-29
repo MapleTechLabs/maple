@@ -265,6 +265,24 @@ describe("renderPage layout", () => {
 		expect(html).toContain(`id="incident-open"`)
 	})
 
+	it("names the affected components when the banner is not operational and no incident is posted", () => {
+		const hero = heroOf(
+			renderPage(
+				makeSnapshot({
+					components: [
+						makeComponent(0, { name: "API", status: "major_outage" }),
+						makeComponent(1, { name: "Dashboard" }),
+					],
+				}),
+				live,
+				FIXTURE_NOW,
+			),
+		)
+		expect(hero).not.toContain("not aware of any issues")
+		expect(hero).toContain("Affected: API (Major outage)")
+		expect(hero).not.toContain("Dashboard")
+	})
+
 	it("puts the uptime of the visible 90 days on the component row, with the status for screen readers", () => {
 		// A year of bars: an outage 200 days ago sits outside the latest window and does not count.
 		const days = makeDays(FIXTURE_NOW, { 164: "down" }, 365)
