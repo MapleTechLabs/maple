@@ -6,14 +6,15 @@ import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { kbdStyles } from "@maple/ui/styles/ui/kbd"
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
-import { Clock, Effect, Option, Schema, type Stream } from "effect"
-import { Command, Dom, Mount, Submodel, type Update } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Clock, Effect, Function, Layer, Option, Schema, type Stream } from "effect"
+import { Block, Dom, Update } from "foldkit"
+import type { Html } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { button } from "../../ui/button"
 import { eyebrow } from "../../ui/eyebrow"
 import { icon } from "../../ui/icon"
 import * as Combobox from "../../ui/combobox"
+import { ComboboxBlock } from "../../ui/combobox-view"
 import * as Popover from "../../ui/popover"
 import {
 	readEffectiveTimeZone,
@@ -41,7 +42,9 @@ export const Model = Schema.Struct({
 	popover: Popover.Model,
 	/** `TimeRangeTab`; the custom tab holds its calendar state while it is shown. */
 	tab: Tab,
-	custom: Schema.NullOr(CustomRange.Model),
+	custom: Schema.Option(CustomRange.Model),
+	/** The page's `maxRangeSeconds` when the custom tab opened; Apply is checked against it. */
+	customMaxRangeSeconds: Schema.NullOr(Schema.Number),
 	/** `ShorthandInput`: the typed duration and whether Enter rejected it. */
 	shorthand: Schema.String,
 	isShorthandInvalid: Schema.Boolean,
@@ -65,11 +68,12 @@ export type Model = typeof Model.Type
 export const init = (id: string): Model => ({
 	popover: Popover.init(id, { align: "end" }),
 	tab: "relative",
-	custom: null,
+	custom: Option.none(),
+	customMaxRangeSeconds: null,
 	shorthand: "",
 	isShorthandInvalid: false,
 	utcOffset: null,
-	zones: Combobox.init(`${id}-timezone`, "single"),
+	zones: Combobox.init(`${id}-timezone`, "single").model,
 	zoneRows: [],
 })
 
@@ -77,7 +81,6 @@ export const init = (id: string): Model => ({
 const MaxRange = Schema.optionalKey(Schema.Number)
 
 export const Message = defineMessageUnion({
-	GotPopoverMessage: { message: Popover.Message },
 	ClickedPreset: { value: Schema.String, maxRangeSeconds: MaxRange },
 	ChangedShorthand: { value: Schema.String },
 	PressedShorthandEnter: { maxRangeSeconds: MaxRange },
@@ -88,12 +91,12 @@ export const Message = defineMessageUnion({
 	},
 	ClickedTimeZoneTrigger: {},
 	ResolvedZoneRows: { rows: Schema.Array(ZoneRow) },
-	GotTimeZoneComboboxMessage: { message: Combobox.Message },
 	/** "Custom range…": the tab opens on the shown window once the clock gave today. */
 	ClickedCustomRange: {
 		startTime: Schema.NullOr(Schema.String),
 		endTime: Schema.NullOr(Schema.String),
 		timeZone: Schema.String,
+		maxRangeSeconds: MaxRange,
 	},
 	ResolvedCustomToday: {
 		startTime: Schema.NullOr(Schema.String),
@@ -102,7 +105,6 @@ export const Message = defineMessageUnion({
 		today: CustomRange.CalendarDate,
 		lastDay: CustomRange.CalendarDate,
 	},
-	GotCustomRangeMessage: { message: CustomRange.Message, maxRangeSeconds: MaxRange },
 })
 export type Message = typeof Message.Type
 
@@ -158,11 +160,119 @@ export const unpicked = <R extends object>(
 ): R | (R & { readonly outMessage: PageOutMessage }) =>
 	out?._tag === "RejectedRange" ? { ...step, outMessage: rejectedToast(out.maxRangeSeconds) } : step
 
-type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>
+// CUSTOM RANGE BLOCK
 
-const liftPopover = (model: Model, result: Update.Return<Popover.Model, Popover.Message>): Return => ({
-	model: { ...model, popover: result.model },
-	commands: Command.mapMessages(result.commands, (message) => Message.GotPopoverMessage({ message })),
+// The custom tab as a Block, so the picker binds it; `custom-range.ts` owns its update.
+const CustomRangeComposition = Block.makeDefinition("CustomRange", {
+	Model: CustomRange.Model,
+	Message: CustomRange.Message,
+	OutMessage: CustomRange.OutMessage,
+}).makeComposition()
+
+const prepareCustomRange = () =>
+	CustomRangeComposition.prepareBlock({
+		init: CustomRangeComposition.makeInit((seed: CustomRange.Seed) => ({
+			model: CustomRange.init(seed),
+		})),
+		update: CustomRangeComposition.makeUpdate({
+			ClickedPreviousMonth: CustomRange.update,
+			ClickedNextMonth: CustomRange.update,
+			ClickedDay: CustomRange.update,
+			ChangedStartTime: CustomRange.update,
+			ChangedEndTime: CustomRange.update,
+			ClickedApply: CustomRange.update,
+			ClickedCancel: CustomRange.update,
+		}),
+		view: CustomRangeComposition.makeView((model, h) => CustomRangeView.view(model, h)),
+	})
+const CustomRangeBlock: Block.FromAssemblyWithViewAndOutMessage<
+	typeof CustomRange.Model,
+	typeof prepareCustomRange
+> = Block.assemble(prepareCustomRange)
+
+// DEFINITION
+
+const TimeRangePickerDefinition = Block.makeDefinition("TimeRangePicker", { Model, Message, OutMessage })
+const { makeStep, makeNoopStep, makeFieldsStep, makeCommandsStep } = TimeRangePickerDefinition
+
+// COMMANDS AND MOUNTS
+
+export const ResolveCustomToday = TimeRangePickerDefinition.makeCommand("ResolveCustomRangeToday", {
+	args: {
+		startTime: Schema.NullOr(Schema.String),
+		endTime: Schema.NullOr(Schema.String),
+		timeZone: Schema.String,
+	},
+	messages: [Message.ResolvedCustomToday],
+	handler: function* () {
+		return (seed) =>
+			Effect.map(CustomRange.readToday(seed.timeZone), (days) =>
+				Message.ResolvedCustomToday({ ...seed, ...days }),
+			)
+	},
+})
+
+/** `useTimezonePreference()` now: the effective zone, its offset, and whether it is the system's. */
+const readPreference = Effect.map(
+	Effect.all([readEffectiveTimeZone, readSelectedTimeZone, Clock.currentTimeMillis]),
+	([timeZone, selected, nowMs]) =>
+		Message.ResolvedUtcOffset({
+			timeZone,
+			label: formatUtcOffset(timeZone, nowMs),
+			isSystem: Option.isNone(selected),
+		}),
+)
+
+/**
+ * The footer mounted (the popover opened): the stored zone preference and its offset now, so
+ * every picker shows the app's zone whatever its page passed; a DST change shows on the next open.
+ */
+export const MountUtcOffset = TimeRangePickerDefinition.makeMount("MountTimeRangeUtcOffset", {
+	args: { timeZone: Schema.String },
+	messages: [Message.ResolvedUtcOffset],
+	handler: function* () {
+		return () => readPreference
+	},
+})
+
+/** `onOpenChange(true)`: the zone list with its clocks frozen at this open. */
+export const ReadZoneRows = TimeRangePickerDefinition.makeCommand("ReadTimeZoneRows", {
+	messages: [Message.ResolvedZoneRows],
+	handler: function* () {
+		return () => Effect.map(readZoneRows, (rows) => Message.ResolvedZoneRows({ rows }))
+	},
+})
+
+/** `setSelectedTimezone(next === SYSTEM_VALUE ? null : next)`: stored, then read back for the footer. */
+export const SelectTimeZone = TimeRangePickerDefinition.makeCommand("SelectTimeZone", {
+	args: { value: Schema.String },
+	messages: [Message.ResolvedUtcOffset],
+	handler: function* () {
+		return ({ value }) =>
+			writeSelectedTimeZone(value === SYSTEM_VALUE ? Option.none() : Option.some(value)).pipe(
+				Effect.andThen(readPreference),
+			)
+	},
+})
+
+// BINDINGS
+
+/** `init` builds the popover itself, so the Binding does not initialise it. */
+const PopoverBinding = TimeRangePickerDefinition.makeBinding(Popover.PopoverBlock, {
+	field: "popover",
+	init: false,
+})
+
+/** `TimezoneSelect`'s combobox; `onValueChange` stores the pick (the picker itself stays open). */
+const ZonesBinding = TimeRangePickerDefinition.makeBinding(ComboboxBlock, {
+	field: "zones",
+	init: false,
+}).withOutMessagePolicy({
+	fold: TimeRangePickerDefinition.makeOutMessageFold(ComboboxBlock, {
+		ChangedSelection: () => makeNoopStep(),
+		ChangedValue: ({ value }) =>
+			makeCommandsStep(() => (value.length > 0 ? [SelectTimeZone({ value })] : [])),
+	}),
 })
 
 /** `relativeToAbsolute` resolves it: a duration (`2h`, `4d`, `2mo`) or `today`. */
@@ -173,117 +283,103 @@ const isWithin = (seconds: number | null, maxRangeSeconds: number | undefined): 
 	maxRangeSeconds === undefined ||
 	(seconds !== null && Number.isFinite(seconds) && seconds >= 0 && seconds <= maxRangeSeconds)
 
-const rejected = (model: Model, maxRangeSeconds: number): Return => ({
-	model,
-	outMessage: OutMessage.RejectedRange({ maxRangeSeconds }),
+/** A custom range applied: refused past the page's maximum, else the tab resets and the picker closes. */
+const appliedCustomStep = (startTime: string, endTime: string) =>
+	makeStep((model) => {
+		const maxRangeSeconds = model.customMaxRangeSeconds ?? undefined
+		return isWithin(
+			(parseWarehouseDateTime(endTime) - parseWarehouseDateTime(startTime)) / 1000,
+			maxRangeSeconds,
+		)
+			? makeStep(() =>
+					Function.compose(
+						Update.combineSteps([
+							makeFieldsStep(() => ({ tab: () => "relative", custom: () => Option.none() })),
+							PopoverBinding.requestClose(),
+						]),
+						Update.withOutMessage(OutMessage.SelectedCustomRange({ startTime, endTime })),
+					),
+				)
+			: makeStep(() => ({
+					model,
+					outMessage: OutMessage.RejectedRange({ maxRangeSeconds: maxRangeSeconds ?? 0 }),
+				}))
+	})
+
+const CustomRangeBinding = TimeRangePickerDefinition.makeBinding(CustomRangeBlock, {
+	field: "custom",
+}).withOutMessagePolicy({
+	fold: TimeRangePickerDefinition.makeOutMessageFold(CustomRangeBlock, {
+		CancelledRange: () => makeFieldsStep(() => ({ tab: () => "relative", custom: () => Option.none() })),
+		AppliedRange: ({ startTime, endTime }) => appliedCustomStep(startTime, endTime),
+	}),
 })
+
+export const TimeRangePickerComposition = TimeRangePickerDefinition.makeComposition({
+	bindings: [PopoverBinding, ZonesBinding, CustomRangeBinding],
+	mounts: [MountUtcOffset],
+})
+type H = Block.ViewBuilderFor<typeof TimeRangePickerComposition>
+
+// UPDATE
 
 /** A picked preset or typed shorthand: refused past the page's maximum, else applied and closed. */
-const pickedPreset = (model: Model, value: string, maxRangeSeconds: number | undefined): Return =>
-	maxRangeSeconds !== undefined && !isWithin(relativeRangeSeconds(value), maxRangeSeconds)
-		? rejected(model, maxRangeSeconds)
-		: {
-				...liftPopover(model, Popover.close(model.popover)),
-				outMessage: OutMessage.SelectedPreset({ presetValue: value }),
-			}
-
-export const ResolveCustomToday = Command.define("ResolveCustomRangeToday", {
-	args: {
-		startTime: Schema.NullOr(Schema.String),
-		endTime: Schema.NullOr(Schema.String),
-		timeZone: Schema.String,
-	},
-	messages: [Message.ResolvedCustomToday],
-	execute: (seed) =>
-		Effect.map(CustomRange.readToday(seed.timeZone), (days) =>
-			Message.ResolvedCustomToday({ ...seed, ...days }),
-		),
-})
-
-const customStep = (
-	model: Model,
-	custom: CustomRange.Model,
-	inner: CustomRange.Message,
-	maxRangeSeconds: number | undefined,
-): Return => {
-	const next = CustomRange.update(custom, inner)
-	const stepped = { ...model, custom: next.model }
-	return Option.match(Option.fromNullishOr(next.outMessage), {
-		onNone: () => ({ model: stepped }),
-		onSome: CustomRange.OutMessage.match<Return>({
-			CancelledRange: () => ({ model: { ...stepped, tab: "relative", custom: null } }),
-			AppliedRange: ({ startTime, endTime }) =>
-				isWithin(
-					(parseWarehouseDateTime(endTime) - parseWarehouseDateTime(startTime)) / 1000,
-					maxRangeSeconds,
+const pickedPresetStep = makeStep(
+	(model, value: string, maxRangeSeconds: number | undefined, isShorthand: boolean) => {
+		const cleared = isShorthand ? { ...model, shorthand: "", isShorthandInvalid: false } : model
+		return maxRangeSeconds !== undefined && !isWithin(relativeRangeSeconds(value), maxRangeSeconds)
+			? makeStep(() => ({ model: cleared, outMessage: OutMessage.RejectedRange({ maxRangeSeconds }) }))
+			: makeStep(() =>
+					Function.compose(
+						Update.combineSteps([
+							makeFieldsStep(() => ({
+								shorthand: (shorthand: string) => (isShorthand ? "" : shorthand),
+								isShorthandInvalid: (isInvalid: boolean) => (isShorthand ? false : isInvalid),
+							})),
+							PopoverBinding.requestClose(),
+						]),
+						Update.withOutMessage(OutMessage.SelectedPreset({ presetValue: value })),
+					),
 				)
-					? {
-							...liftPopover(
-								{ ...stepped, tab: "relative", custom: null },
-								Popover.close(model.popover),
-							),
-							outMessage: OutMessage.SelectedCustomRange({ startTime, endTime }),
-						}
-					: rejected(stepped, maxRangeSeconds ?? 0),
-		}),
-	})
-}
+	},
+)
 
-/** `TimezoneSelect`'s combobox; `onValueChange` stores the pick (the picker itself stays open). */
-const zonesStep = (model: Model, inner: Combobox.Message): Return => {
-	const next = Combobox.update(model.zones, inner)
-	const commands = Command.mapMessages(next.commands ?? [], (message) =>
-		Message.GotTimeZoneComboboxMessage({ message }),
-	)
-	return next.outMessage?._tag === "ChangedValue" && next.outMessage.value.length > 0
-		? {
-				model: { ...model, zones: next.model },
-				commands: [...commands, SelectTimeZone({ value: next.outMessage.value })],
-			}
-		: { model: { ...model, zones: next.model }, commands }
-}
+const customTab: Tab = "custom"
 
-export const update = (model: Model, message: Message): Return =>
-	Message.match<Return>(message, {
-		GotPopoverMessage: ({ message: inner }) => {
-			const next = liftPopover(model, Popover.update(model.popover, inner))
-			// The zone list unmounts with the picker; it reopens closed.
-			return next.model.popover.isOpen || !model.zones.isOpen
-				? next
-				: { ...next, model: { ...next.model, zones: Combobox.init(model.zones.id, "single") } }
-		},
-		ClickedPreset: ({ value, maxRangeSeconds }) => pickedPreset(model, value, maxRangeSeconds),
-		ChangedShorthand: ({ value }) => ({
-			model: { ...model, shorthand: value, isShorthandInvalid: false },
+export const update = TimeRangePickerComposition.makeUpdate({
+	ClickedPreset: (model, { value, maxRangeSeconds }) =>
+		pickedPresetStep(model, value, maxRangeSeconds, false),
+	ChangedShorthand: (model, { value }) => ({
+		model: { ...model, shorthand: value, isShorthandInvalid: false },
+	}),
+	PressedShorthandEnter: (model, { maxRangeSeconds }) =>
+		isValidShorthand(model.shorthand)
+			? pickedPresetStep(model, model.shorthand.toLowerCase(), maxRangeSeconds, true)
+			: makeFieldsStep(() => ({ isShorthandInvalid: () => true }))(model),
+	ResolvedUtcOffset: (model, { _tag, ...utcOffset }) => ({ model: { ...model, utcOffset } }),
+	ClickedTimeZoneTrigger: (model) =>
+		model.zones.isOpen
+			? ZonesBinding.requestClose()(model)
+			: makeCommandsStep(() => [ReadZoneRows()])(model),
+	ResolvedZoneRows: (model, { rows }) => {
+		const value = model.utcOffset?.isSystem === false ? model.utcOffset.timeZone : SYSTEM_VALUE
+		return Update.combineSteps([
+			makeFieldsStep(() => ({ zoneRows: () => rows })),
+			ZonesBinding.informOfValue({ selected: [value], inputValue: "" }),
+			// TODO(blocks): the old `ClickedTriggerOf` also highlighted the selected row; Combobox has no such operation yet.
+			ZonesBinding.requestOpen(),
+		])(model)
+	},
+	ClickedCustomRange: (model, { _tag, maxRangeSeconds, ...seed }) => ({
+		model: { ...model, customMaxRangeSeconds: maxRangeSeconds ?? null },
+		commands: [ResolveCustomToday(seed)],
+	}),
+	ResolvedCustomToday: (model, { _tag, ...seed }) =>
+		CustomRangeBinding.init({
+			args: [seed],
+			toParentModel: (custom) => ({ ...model, tab: customTab, custom: Option.some(custom) }),
 		}),
-		PressedShorthandEnter: ({ maxRangeSeconds }) =>
-			isValidShorthand(model.shorthand)
-				? pickedPreset(
-						{ ...model, shorthand: "", isShorthandInvalid: false },
-						model.shorthand.toLowerCase(),
-						maxRangeSeconds,
-					)
-				: { model: { ...model, isShorthandInvalid: true } },
-		ResolvedUtcOffset: ({ _tag, ...utcOffset }) => ({ model: { ...model, utcOffset } }),
-		ClickedTimeZoneTrigger: () =>
-			model.zones.isOpen
-				? zonesStep(model, Combobox.Message.ClickedTrigger())
-				: { model, commands: [ReadZoneRows()] },
-		ResolvedZoneRows: ({ rows }) => {
-			const value = model.utcOffset?.isSystem === false ? model.utcOffset.timeZone : SYSTEM_VALUE
-			return zonesStep(
-				{ ...model, zoneRows: rows, zones: { ...model.zones, selected: [value], inputValue: "" } },
-				Combobox.Message.ClickedTriggerOf({ items: rows.map((row) => row.value) }),
-			)
-		},
-		GotTimeZoneComboboxMessage: ({ message: inner }) => zonesStep(model, inner),
-		ClickedCustomRange: ({ _tag, ...seed }) => ({ model, commands: [ResolveCustomToday(seed)] }),
-		ResolvedCustomToday: (seed) => ({
-			model: { ...model, tab: "custom", custom: CustomRange.init(seed) },
-		}),
-		GotCustomRangeMessage: ({ message: inner, maxRangeSeconds }) =>
-			model.custom === null ? { model } : customStep(model, model.custom, inner, maxRangeSeconds),
-	})
+})
 
 /** The list presets (`LONG_RANGE_PRESET_OPTIONS` for long-range pages, else `PRESET_OPTIONS`). */
 export const PRESET_VALUES = ["5m", "15m", "30m", "1h", "6h", "12h", "1d", "3d", "1w", "2w", "1mo"]
@@ -314,7 +410,7 @@ const customSeed = (inputs: ViewInputs) => ({
 	timeZone: inputs.timeZone ?? "UTC",
 })
 
-const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
+const presetList = (h: H, inputs: ViewInputs): Html =>
 	h.div(
 		[h.Class("flex h-full flex-col py-2")],
 		[
@@ -351,7 +447,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 			h.button(
 				[
 					h.Type("button"),
-					h.OnClick(Message.ClickedCustomRange(customSeed(inputs))),
+					h.OnClick(Message.ClickedCustomRange({ ...customSeed(inputs), ...withMax(inputs) })),
 					h.Class(
 						"mt-1 flex h-7 items-center gap-2 pl-3 pr-2 text-left text-xs text-foreground/80 transition-colors hover:bg-muted/50 hover:text-foreground",
 					),
@@ -364,7 +460,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 		],
 	)
 
-const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
+const quickSelect = (h: H, inputs: ViewInputs): Html =>
 	h.div(
 		[h.Class("space-y-2")],
 		[
@@ -404,7 +500,7 @@ export type ViewInputs = Readonly<{
 }>
 
 /** `ShorthandInput`: type a duration, Enter applies it. */
-const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInputs): Html =>
+const shorthandInput = (h: H, model: Model, inputs: ViewInputs): Html =>
 	h.div(
 		[h.Class("space-y-1.5")],
 		[
@@ -461,44 +557,6 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 	)
 
 export { formatUtcOffset }
-
-/** `useTimezonePreference()` now: the effective zone, its offset, and whether it is the system's. */
-const readPreference = Effect.map(
-	Effect.all([readEffectiveTimeZone, readSelectedTimeZone, Clock.currentTimeMillis]),
-	([timeZone, selected, nowMs]) =>
-		Message.ResolvedUtcOffset({
-			timeZone,
-			label: formatUtcOffset(timeZone, nowMs),
-			isSystem: Option.isNone(selected),
-		}),
-)
-
-/**
- * The footer mounted (the popover opened): the stored zone preference and its offset now, so
- * every picker shows the app's zone whatever its page passed; a DST change shows on the next open.
- */
-export const MountUtcOffset = Mount.define("MountTimeRangeUtcOffset", {
-	args: { timeZone: Schema.String },
-	messages: [Message.ResolvedUtcOffset],
-	execute: () => readPreference,
-})
-
-/** `onOpenChange(true)`: the zone list with its clocks frozen at this open. */
-export const ReadZoneRows = Command.define("ReadTimeZoneRows", {
-	messages: [Message.ResolvedZoneRows],
-	execute: Effect.map(readZoneRows, (rows) => Message.ResolvedZoneRows({ rows })),
-})
-
-/** `setSelectedTimezone(next === SYSTEM_VALUE ? null : next)`: stored, then read back for the footer. */
-export const SelectTimeZone = Command.define("SelectTimeZone", {
-	args: { value: Schema.String },
-	messages: [Message.ResolvedUtcOffset],
-	execute: ({ value }) =>
-		writeSelectedTimeZone(value === SYSTEM_VALUE ? Option.none() : Option.some(value)).pipe(
-			Effect.andThen(readPreference),
-		),
-})
-
 /** Marks the page-level picker's trigger, the one "D" opens. */
 const HOTKEY_ATTRIBUTE = "time-range-hotkey"
 
@@ -536,7 +594,7 @@ export const openOnHotkey = <A>(): Stream.Stream<A> =>
  * `TimezoneSelect`: the `zone · UTC±n` trigger and its searchable zone list. `timeZone` is what the
  * page passed, shown until the footer's Mount read the stored preference.
  */
-const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: string): Html => {
+const timezoneFooter = (h: H, model: Model, fallbackZone: string): Html => {
 	const timeZone = model.utcOffset?.timeZone ?? fallbackZone
 	const triggerId = `${model.zones.id}-trigger`
 	const anchorId = `${model.zones.id}-anchor`
@@ -598,91 +656,108 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 			),
 			...(isListShown
 				? [
-						h.submodel({
-							slotId: "timezone-list",
-							model: model.zones,
-							view: zoneListView,
-							viewInputs: {
-								rows: model.zoneRows,
-								triggerId,
-								anchorId,
-								popoverId: model.popover.id,
-							},
-							toParentMessage: (message) => Message.GotTimeZoneComboboxMessage({ message }),
-						}),
+						h.block(
+							ZonesBinding.embedView({
+								slotId: "timezone-list",
+								model: model.zones,
+								view: zoneListView,
+								viewInputs: {
+									rows: model.zoneRows,
+									triggerId,
+									anchorId,
+									popoverId: model.popover.id,
+								},
+							}),
+						),
 					]
 				: []),
 		],
 	)
 }
 
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) =>
-	h.submodel({
-		slotId: "time-range-popover",
-		model: model.popover,
-		view: Popover.view,
-		toParentMessage: (message) => Message.GotPopoverMessage({ message }),
-		viewInputs: {
-			className:
-				model.tab === "custom"
-					? "w-auto max-w-[calc(100vw-1.5rem)] p-4"
-					: "w-[520px] max-w-[calc(100vw-1.5rem)] p-0",
-			toView: ({ trigger, withTrigger }) =>
-				h.div(
-					[h.Class("contents")],
-					withTrigger(
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								className: "gap-2",
-								slot: "popover-trigger",
-								attributes: [
-									...trigger,
-									...(inputs.hasHotkey === false
-										? []
-										: [h.Title("Time range (D)"), h.DataAttribute(HOTKEY_ATTRIBUTE, "")]),
-								],
-							},
-							timeRangeTriggerContent(h, inputs.label),
+export const view = TimeRangePickerComposition.makeView.withInputs<ViewInputs>((model, inputs, h) =>
+	h.block(
+		PopoverBinding.embedView({
+			slotId: "time-range-popover",
+			model: model.popover,
+			viewInputs: {
+				className:
+					model.tab === "custom"
+						? "w-auto max-w-[calc(100vw-1.5rem)] p-4"
+						: "w-[520px] max-w-[calc(100vw-1.5rem)] p-0",
+				toView: ({ trigger, withTrigger }) =>
+					h.div(
+						[h.Class("contents")],
+						withTrigger(
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									className: "gap-2",
+									slot: "popover-trigger",
+									attributes: [
+										...trigger,
+										...(inputs.hasHotkey === false
+											? []
+											: [
+													h.Title("Time range (D)"),
+													h.DataAttribute(HOTKEY_ATTRIBUTE, ""),
+												]),
+									],
+								},
+								timeRangeTriggerContent(h, inputs.label),
+							),
 						),
 					),
-				),
-			toContent: () => [
-				model.tab === "custom" && model.custom !== null
-					? h.submodel({
-							slotId: "custom-range",
-							model: model.custom,
-							view: CustomRangeView.view,
-							viewInputs: {},
-							toParentMessage: (message) =>
-								Message.GotCustomRangeMessage({ message, ...withMax(inputs) }),
-						})
-					: h.div(
-							[h.Class("flex flex-col")],
-							[
-								h.div(
-									[h.Class("flex flex-col sm:flex-row sm:items-stretch")],
-									[
-										h.div(
-											[
-												h.Class(
-													"w-full shrink-0 border-b border-border/70 sm:w-[168px] sm:border-r sm:border-b-0",
-												),
-											],
-											[presetList(h, inputs)],
-										),
-										h.div(
-											[h.Class("min-w-0 flex-1 space-y-5 p-4")],
-											[shorthandInput(h, model, inputs), quickSelect(h, inputs)],
-										),
-									],
-								),
-								timezoneFooter(h, model, inputs.timeZone ?? "UTC"),
-							],
-						),
-			],
-		},
-	}),
+				toContent: () => [
+					model.tab === "custom" && Option.isSome(model.custom)
+						? h.block(
+								CustomRangeBinding.embedView({
+									slotId: "custom-range",
+									model: model.custom.value,
+								}),
+							)
+						: h.div(
+								[h.Class("flex flex-col")],
+								[
+									h.div(
+										[h.Class("flex flex-col sm:flex-row sm:items-stretch")],
+										[
+											h.div(
+												[
+													h.Class(
+														"w-full shrink-0 border-b border-border/70 sm:w-[168px] sm:border-r sm:border-b-0",
+													),
+												],
+												[presetList(h, inputs)],
+											),
+											h.div(
+												[h.Class("min-w-0 flex-1 space-y-5 p-4")],
+												[shorthandInput(h, model, inputs), quickSelect(h, inputs)],
+											),
+										],
+									),
+									timezoneFooter(h, model, inputs.timeZone ?? "UTC"),
+								],
+							),
+				],
+			},
+		}),
+	),
 )
+
+const prepare = () =>
+	TimeRangePickerComposition.prepareBlock({
+		init: TimeRangePickerComposition.makeInit((id: string) => ({ model: init(id) })),
+		update,
+		view,
+		EffectsLayer: Layer.mergeAll(
+			ResolveCustomToday.layer,
+			MountUtcOffset.layer,
+			ReadZoneRows.layer,
+			SelectTimeZone.layer,
+		),
+	})
+export const TimeRangePickerBlock: Block.FromAssemblyWithViewAndOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)
