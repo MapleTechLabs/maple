@@ -1,0 +1,748 @@
+{
+	"bench": "local-ingest-http",
+	"environment": {
+		"date": "2026-10-28T22:10:02.421Z",
+		"git": "600c0ca55 + this branch, uncommitted",
+		"bun": "1.4.0",
+		"platform": "darwin 27.2.0",
+		"cpu": "Apple M5",
+		"cores": 10,
+		"memoryGb": 32,
+		"loadavgAtStart": [14.84, 22.57, 30.25]
+	},
+	"options": {
+		"signals": ["traces", "logs", "metrics"],
+		"sizes": [1, 50, 500],
+		"concurrencies": [1, 5, 10],
+		"exportsPerCell": 40,
+		"warmup": 5,
+		"burn": 0
+	},
+	"bootMs": 1547,
+	"firstExportMs": 66,
+	"cells": [
+		{
+			"signal": "traces",
+			"records": 1,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 55.21,
+				"p95": 88.04,
+				"max": 113.39,
+				"mean": 59.64
+			},
+			"recordsPerSecond": 17
+		},
+		{
+			"signal": "traces",
+			"records": 1,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 50.18,
+				"p95": 81.66,
+				"max": 81.69,
+				"mean": 55.97
+			},
+			"recordsPerSecond": 89
+		},
+		{
+			"signal": "traces",
+			"records": 1,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 50.12,
+				"p95": 59.05,
+				"max": 59.05,
+				"mean": 49.29
+			},
+			"recordsPerSecond": 202
+		},
+		{
+			"signal": "traces",
+			"records": 50,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 51.75,
+				"p95": 713.33,
+				"max": 1250.8,
+				"mean": 104.16
+			},
+			"recordsPerSecond": 480
+		},
+		{
+			"signal": "traces",
+			"records": 50,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 389.78,
+				"p95": 1255.42,
+				"max": 1255.52,
+				"mean": 441.64
+			},
+			"recordsPerSecond": 566
+		},
+		{
+			"signal": "traces",
+			"records": 50,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 187.18,
+				"p95": 204.31,
+				"max": 204.4,
+				"mean": 145.36
+			},
+			"recordsPerSecond": 2588
+		},
+		{
+			"signal": "traces",
+			"records": 500,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 152.54,
+				"p95": 1239.6,
+				"max": 1592.86,
+				"mean": 276.08
+			},
+			"recordsPerSecond": 1809
+		},
+		{
+			"signal": "traces",
+			"records": 500,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 661.78,
+				"p95": 2928.28,
+				"max": 3126.09,
+				"mean": 866.3
+			},
+			"recordsPerSecond": 1865
+		},
+		{
+			"signal": "traces",
+			"records": 500,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 1329.06,
+				"p95": 5460.64,
+				"max": 6705.93,
+				"mean": 1878.68
+			},
+			"recordsPerSecond": 1186
+		},
+		{
+			"signal": "logs",
+			"records": 1,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 19.08,
+				"p95": 37.07,
+				"max": 98.13,
+				"mean": 21.43
+			},
+			"recordsPerSecond": 47
+		},
+		{
+			"signal": "logs",
+			"records": 1,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 21.92,
+				"p95": 25.7,
+				"max": 25.77,
+				"mean": 22.1
+			},
+			"recordsPerSecond": 225
+		},
+		{
+			"signal": "logs",
+			"records": 1,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 34.16,
+				"p95": 44.36,
+				"max": 44.38,
+				"mean": 31.3
+			},
+			"recordsPerSecond": 318
+		},
+		{
+			"signal": "logs",
+			"records": 50,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 15.67,
+				"p95": 56.59,
+				"max": 65.54,
+				"mean": 18.63
+			},
+			"recordsPerSecond": 2671
+		},
+		{
+			"signal": "logs",
+			"records": 50,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 17.1,
+				"p95": 112.91,
+				"max": 112.98,
+				"mean": 28.61
+			},
+			"recordsPerSecond": 7936
+		},
+		{
+			"signal": "logs",
+			"records": 50,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 115.77,
+				"p95": 156.88,
+				"max": 157.24,
+				"mean": 105.83
+			},
+			"recordsPerSecond": 3776
+		},
+		{
+			"signal": "logs",
+			"records": 500,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 37.09,
+				"p95": 906.69,
+				"max": 1591.66,
+				"mean": 128.64
+			},
+			"recordsPerSecond": 3873
+		},
+		{
+			"signal": "logs",
+			"records": 500,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 113.01,
+				"p95": 232.75,
+				"max": 1350.39,
+				"mean": 137.8
+			},
+			"recordsPerSecond": 7724
+		},
+		{
+			"signal": "logs",
+			"records": 500,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 187.6,
+				"p95": 5137.04,
+				"max": 5160.41,
+				"mean": 1067.84
+			},
+			"recordsPerSecond": 3343
+		},
+		{
+			"signal": "metrics",
+			"records": 1,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 8.46,
+				"p95": 11.05,
+				"max": 14.08,
+				"mean": 8.74
+			},
+			"recordsPerSecond": 114
+		},
+		{
+			"signal": "metrics",
+			"records": 1,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 21.96,
+				"p95": 66.89,
+				"max": 66.91,
+				"mean": 28.42
+			},
+			"recordsPerSecond": 176
+		},
+		{
+			"signal": "metrics",
+			"records": 1,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 11.29,
+				"p95": 13.19,
+				"max": 13.22,
+				"mean": 11.31
+			},
+			"recordsPerSecond": 876
+		},
+		{
+			"signal": "metrics",
+			"records": 50,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 33.27,
+				"p95": 65.35,
+				"max": 840.69,
+				"mean": 56.63
+			},
+			"recordsPerSecond": 882
+		},
+		{
+			"signal": "metrics",
+			"records": 50,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 33.4,
+				"p95": 34.92,
+				"max": 34.96,
+				"mean": 31.46
+			},
+			"recordsPerSecond": 7915
+		},
+		{
+			"signal": "metrics",
+			"records": 50,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 43.45,
+				"p95": 85.17,
+				"max": 107.38,
+				"mean": 55.26
+			},
+			"recordsPerSecond": 6019
+		},
+		{
+			"signal": "metrics",
+			"records": 500,
+			"concurrency": 1,
+			"latencyMs": {
+				"n": 40,
+				"p50": 31.99,
+				"p95": 1217.53,
+				"max": 1334.06,
+				"mean": 103.47
+			},
+			"recordsPerSecond": 4824
+		},
+		{
+			"signal": "metrics",
+			"records": 500,
+			"concurrency": 5,
+			"latencyMs": {
+				"n": 40,
+				"p50": 97.7,
+				"p95": 543.45,
+				"max": 573.47,
+				"mean": 140.42
+			},
+			"recordsPerSecond": 12333
+		},
+		{
+			"signal": "metrics",
+			"records": 500,
+			"concurrency": 10,
+			"latencyMs": {
+				"n": 40,
+				"p50": 217.58,
+				"p95": 2728.97,
+				"max": 2754.27,
+				"mean": 673.43
+			},
+			"recordsPerSecond": 5456
+		}
+	],
+	"stalls": [
+		{
+			"signal": "traces",
+			"atSeconds": 6.3,
+			"ms": 1251
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 9,
+			"ms": 1255
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 9,
+			"ms": 1255
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 9,
+			"ms": 1255
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 9,
+			"ms": 1255
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 9,
+			"ms": 1256
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 16.7,
+			"ms": 1593
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 18.3,
+			"ms": 1240
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 21.4,
+			"ms": 1015
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 24.7,
+			"ms": 1190
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 25.9,
+			"ms": 1006
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 25.9,
+			"ms": 1216
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 25.9,
+			"ms": 1350
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 25.9,
+			"ms": 1508
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 27.4,
+			"ms": 1064
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 27.4,
+			"ms": 1228
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 30.3,
+			"ms": 1674
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 30.3,
+			"ms": 2043
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 30.3,
+			"ms": 2699
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 30.3,
+			"ms": 2928
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 30.3,
+			"ms": 3126
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 33.4,
+			"ms": 1654
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 36.6,
+			"ms": 1010
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 36.6,
+			"ms": 1213
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 36.6,
+			"ms": 1933
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 36.6,
+			"ms": 2133
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 36.6,
+			"ms": 2774
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 39.4,
+			"ms": 1066
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 39.4,
+			"ms": 1199
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 39.4,
+			"ms": 1329
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 39.4,
+			"ms": 2564
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 41.9,
+			"ms": 1093
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 41.9,
+			"ms": 1449
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 41.9,
+			"ms": 2031
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 41.9,
+			"ms": 2433
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 41.9,
+			"ms": 3568
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 41.9,
+			"ms": 4019
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 41.9,
+			"ms": 4325
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 46.3,
+			"ms": 1215
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 46.3,
+			"ms": 1705
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 46.3,
+			"ms": 2002
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 46.3,
+			"ms": 2277
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 46.3,
+			"ms": 2562
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 46.3,
+			"ms": 2835
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 46.3,
+			"ms": 3015
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 46.3,
+			"ms": 3249
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 49.5,
+			"ms": 1041
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 49.5,
+			"ms": 1217
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 49.5,
+			"ms": 1417
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 49.5,
+			"ms": 2896
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 49.5,
+			"ms": 4108
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 49.5,
+			"ms": 5461
+		},
+		{
+			"signal": "traces",
+			"atSeconds": 49.5,
+			"ms": 6706
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 59.3,
+			"ms": 1727
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 63.5,
+			"ms": 1592
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 67.4,
+			"ms": 1350
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 69.4,
+			"ms": 3449
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 69.4,
+			"ms": 4009
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 69.4,
+			"ms": 5022
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 69.4,
+			"ms": 5053
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 69.4,
+			"ms": 5081
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 69.4,
+			"ms": 5111
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 69.4,
+			"ms": 5137
+		},
+		{
+			"signal": "logs",
+			"atSeconds": 69.4,
+			"ms": 5160
+		},
+		{
+			"signal": "metrics",
+			"atSeconds": 79.5,
+			"ms": 1334
+		},
+		{
+			"signal": "metrics",
+			"atSeconds": 80.9,
+			"ms": 1218
+		},
+		{
+			"signal": "metrics",
+			"atSeconds": 86,
+			"ms": 2297
+		},
+		{
+			"signal": "metrics",
+			"atSeconds": 86,
+			"ms": 2591
+		},
+		{
+			"signal": "metrics",
+			"atSeconds": 86,
+			"ms": 2615
+		},
+		{
+			"signal": "metrics",
+			"atSeconds": 86,
+			"ms": 2642
+		},
+		{
+			"signal": "metrics",
+			"atSeconds": 86,
+			"ms": 2670
+		},
+		{
+			"signal": "metrics",
+			"atSeconds": 86,
+			"ms": 2698
+		},
+		{
+			"signal": "metrics",
+			"atSeconds": 86,
+			"ms": 2729
+		},
+		{
+			"signal": "metrics",
+			"atSeconds": 86,
+			"ms": 2754
+		}
+	]
+}

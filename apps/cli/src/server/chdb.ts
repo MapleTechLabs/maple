@@ -11,7 +11,7 @@
 // struct, so there is no struct-offset fragility across libchdb versions.
 
 import { CString, dlopen, FFIType, type Pointer, ptr, read, toArrayBuffer } from "bun:ffi"
-import { Effect, Schema, type Scope } from "effect"
+import { Effect, Result, Schema, type Scope } from "effect"
 import { existsSync } from "node:fs"
 import { lstatSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -337,6 +337,8 @@ export class Chdb {
 	readonly #sym: ChdbSymbols
 	#connPtrPtr: Pointer | bigint | null
 	readonly #conn: Pointer
+	#beforeStatement: (() => void) | undefined
+	#inBeforeStatement = false
 
 	private constructor(sym: ChdbSymbols, connPtrPtr: Pointer | bigint, conn: Pointer) {
 		this.#sym = sym
@@ -425,6 +427,19 @@ export class Chdb {
 		this.#run(sql, "CSV", () => undefined, undefined)
 	}
 
+	/**
+	 * Run `hook` before every later statement, except the ones `hook` itself runs.
+	 * The server's `InsertBatcher` inserts its queued rows here, so no statement
+	 * runs ahead of rows that requests before it queued. One hook at a time:
+	 * registering replaces the previous one, and the returned function removes it.
+	 */
+	beforeEachStatement(hook: () => void): () => void {
+		this.#beforeStatement = hook
+		return () => {
+			if (this.#beforeStatement === hook) this.#beforeStatement = undefined
+		}
+	}
+
 	get closed(): boolean {
 		return this.#connPtrPtr === null
 	}
@@ -436,10 +451,20 @@ export class Chdb {
 		}
 	}
 
+	#runBeforeStatement(): void {
+		const hook = this.#beforeStatement
+		if (hook === undefined || this.#inBeforeStatement) return
+		this.#inBeforeStatement = true
+		const ran = Result.try(hook)
+		this.#inBeforeStatement = false
+		if (Result.isFailure(ran)) throw ran.failure
+	}
+
 	#run<A>(sql: string, format: string, read: (view: Uint8Array) => A, empty: A): A {
 		// The connection pointer is freed by close(); dereferencing it afterwards
 		// would crash natively, so a late request fails with a typed error instead.
 		if (this.#connPtrPtr === null) throw new ChdbClosedError({ message: "chDB connection is closed" })
+		this.#runBeforeStatement()
 		// Held in locals so neither buffer can be collected before the call reads it.
 		const query = cstr(sql)
 		const outputFormat = cstr(format)

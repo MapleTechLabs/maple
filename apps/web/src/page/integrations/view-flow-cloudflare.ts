@@ -247,7 +247,7 @@ const resourceRows = (
 						detail: describeCloudflareIngestPhase({ kind: "discovering" }).description,
 					},
 		]
-	const enabled = status.zones.filter((zone) => zone.enabled).length
+	const enabled = status.zones.filter((zone) => zone.enabled && zone.watched !== false).length
 	const workers = workerServicesOf(usage).length
 	return [
 		{

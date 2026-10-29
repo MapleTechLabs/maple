@@ -45,3 +45,15 @@ Reports are in `docs/benchmarks/local-ingest-*-2026-10-28-{before,after}.json` (
 - The remaining tail is background merges on chDB's 2-thread pool. The same spans in fewer,
   larger inserts stall about half as long in total, which is the case for coalescing concurrent
   requests into one insert per datasource.
+
+## What the batched-insert runs found
+
+Exports that arrive together now share one insert per datasource (`src/server/insert-batcher.ts`).
+Reports are in `docs/benchmarks/local-ingest-http-2026-10-28-batched-inserts-{before,after}.json`
+(same machine, load average 15 to 30). The two runs were back to back, not interleaved.
+
+- Ten one-span traces exports sent at once answer at p50 50 ms, against 436 ms when each ran its
+  own insert. One alone still takes about 50 ms: the batcher waits one timer tick, not a window.
+- An export carrying a statement's worth of rows or more (every 500-record cell) still inserts on
+  its own, so those cells move only with merge stalls. Interleaved runs of the #1852 repro
+  measured them the same before and after.

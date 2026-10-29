@@ -281,6 +281,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedZoneSort: ({ key }) => CloudflareCard.clickedZoneSort(model, key),
 		ClickedWorkersExpand: () =>
 			CloudflareCard.updateBoard(model, { workersExpanded: !model.cloudflareCard.workersExpanded }),
+		ClickedManageZones: () => CloudflareCard.clickedManageZones(model),
+		GotZoneDialogMessage: ({ message: child }) => CloudflareCard.gotZoneDialog(model, child),
+		ToggledManagedZone: ({ accountId, zoneId }) =>
+			CloudflareCard.toggledManagedZone(model, accountId, zoneId),
+		ToggledWatchNewZones: ({ accountId }) => CloudflareCard.toggledWatchNewZones(model, accountId),
+		ClickedSetAccountZones: ({ accountId, watched }) =>
+			CloudflareCard.clickedSetAccountZones(model, accountId, watched),
+		ChangedManagedZoneSearch: ({ value }) =>
+			CloudflareCard.updateBoard(model, { zoneDraftSearch: value }),
+		SubmittedZoneSettings: () => CloudflareCard.submittedZoneSettings(model),
+		CompletedCloudflareZones: ({ failure }) =>
+			CloudflareCard.completedZoneSettings(model, context, failure),
 		CompletedLoadChartRuntime: () =>
 			CloudflareCard.updateBoard(model, { chartRuntime: ChartRuntime.Ready() }),
 		FailedLoadChartRuntime: ({ reason }) =>

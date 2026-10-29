@@ -20,6 +20,7 @@ import { CliDeviceAuthorizations } from "./cli-device-authorizations"
 import { CloudflareAnalyticsState } from "./cloudflare-analytics-state"
 import { CloudflareHyperdriveConfigs } from "./cloudflare-hyperdrive-configs"
 import { CloudflareLogpushConnectors } from "./cloudflare-logpush-connectors"
+import { CloudflareZoneSettings } from "./cloudflare-zone-settings"
 import { DashboardShares } from "./dashboard-shares"
 import { Dashboards, DashboardVersions } from "./dashboards"
 import { DeviceCredentials, DeviceProofReplays } from "./device-credentials"
@@ -105,6 +106,7 @@ export * from "./cli-device-authorizations"
 export * from "./cloudflare-analytics-state"
 export * from "./cloudflare-hyperdrive-configs"
 export * from "./cloudflare-logpush-connectors"
+export * from "./cloudflare-zone-settings"
 export * from "./dashboard-shares"
 export * from "./dashboards"
 export * from "./device-credentials"
@@ -161,6 +163,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	CloudflareAnalyticsState,
 	CloudflareHyperdriveConfigs,
 	CloudflareLogpushConnectors,
+	CloudflareZoneSettings,
 	DashboardShares,
 	Dashboards,
 	DashboardVersions,

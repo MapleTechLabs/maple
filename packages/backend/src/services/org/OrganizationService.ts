@@ -260,6 +260,7 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"AnomalyIncidents",
 	"CloudflareAnalyticsState",
 	"CloudflareHyperdriveConfigs",
+	"CloudflareZoneSettings",
 	"ErrorFingerprintCandidates",
 	"ErrorIssuePullRequests",
 	"ErrorIssueVerifications",
