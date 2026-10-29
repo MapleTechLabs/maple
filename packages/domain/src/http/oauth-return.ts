@@ -11,6 +11,7 @@ import { ChatConnectorId } from "../primitives"
 export const OAuthReturnFlow = Schema.Literals([
 	"cloudflare",
 	"hazel",
+	"linear",
 	"github",
 	"planetscale",
 	"supabase",
