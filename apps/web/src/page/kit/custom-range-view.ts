@@ -4,7 +4,6 @@ import { fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
 import { Option } from "effect"
 import * as Calendar from "foldkit/calendar"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { defineView } from "foldkit/submodel"
 import { button } from "../../ui/button"
 import { icon } from "../../ui/icon"
 import { input } from "../../ui/input"
@@ -217,7 +216,8 @@ const timeField = (
 		],
 	)
 
-export const view = defineView<Model, Message, Record<string, never>>((model, _inputs, h) => {
+/** The picker body. The owner renders it from its own view with a builder typed to this Message. */
+export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const first = Calendar.make(model.viewYear, model.viewMonth, 1)
 	const tabbable = tabbableOf(model, first)
 	const isValidRange = Option.isSome(appliedRange(model))
@@ -271,4 +271,4 @@ export const view = defineView<Model, Message, Record<string, never>>((model, _i
 			),
 		],
 	)
-})
+}

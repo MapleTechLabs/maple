@@ -14,8 +14,8 @@ import {
 	copyLabelLayerStyles,
 	copyLabelStyles,
 } from "@maple/ui/styles/ui/copy-button"
-import { Duration, Effect, Schema } from "effect"
-import { Command, type Update } from "foldkit"
+import { Duration, Effect, Layer, Schema } from "effect"
+import { Block } from "foldkit"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
@@ -23,8 +23,8 @@ import { button } from "./button"
 import { icon, type IconName } from "./icon"
 
 /**
- * `useCopy` + `<CopyButton>`: copy writes the clipboard, holds `copied`/`error` for the timeout,
- * then falls back to `idle`. A newer copy bumps `generation` so an older reset is dropped.
+ * `useCopy` + `<CopyButton>` as `CopyButtonBlock`: copy writes the clipboard, holds `copied`/`error`
+ * for the timeout, then falls back to `idle`. A newer copy bumps `generation` so an older reset is dropped.
  * TODO(toast): also toast on copy.
  */
 
@@ -38,8 +38,6 @@ const COPY_TIMEOUT = Duration.millis(2000)
 export const Model = Schema.Struct({ status: CopyStatus, generation: Schema.Finite })
 export type Model = typeof Model.Type
 
-export const init = (): Model => ({ status: "idle", generation: 0 })
-
 // MESSAGE
 
 export const Message = defineMessageUnion({
@@ -49,6 +47,8 @@ export const Message = defineMessageUnion({
 	ElapsedCopyStatus: { generation: Schema.Finite },
 })
 export type Message = typeof Message.Type
+
+const CopyButtonDefinition = Block.makeDefinition("CopyButton", { Model, Message })
 
 // COMMAND
 
@@ -61,47 +61,54 @@ export const writeClipboard = (text: string): Effect.Effect<boolean> =>
 		Effect.orElseSucceed(() => false),
 	)
 
-export const WriteClipboard = Command.define("WriteClipboard", {
+export const WriteClipboard = CopyButtonDefinition.makeCommand("WriteClipboard", {
 	args: { text: Schema.String, generation: Schema.Finite },
 	messages: [Message.SucceededCopy, Message.FailedCopy],
-	execute: ({ text, generation }) =>
-		Effect.map(writeClipboard(text), (ok) =>
-			ok ? Message.SucceededCopy({ generation }) : Message.FailedCopy({ generation }),
-		),
+	handler: function* () {
+		return ({ text, generation }) =>
+			Effect.map(writeClipboard(text), (ok) =>
+				ok ? Message.SucceededCopy({ generation }) : Message.FailedCopy({ generation }),
+			)
+	},
 })
 
-export const WaitCopyStatus = Command.define("WaitCopyStatus", {
+export const WaitCopyStatus = CopyButtonDefinition.makeCommand("WaitCopyStatus", {
 	args: { generation: Schema.Finite },
 	messages: [Message.ElapsedCopyStatus],
-	execute: ({ generation }) =>
-		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyStatus({ generation }))),
+	handler: function* () {
+		return ({ generation }) =>
+			Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyStatus({ generation })))
+	},
 })
+
+const CopyButtonComposition = CopyButtonDefinition.makeComposition()
 
 // UPDATE
 
-const settled = (model: Model, generation: number, status: CopyStatus): Update.Return<Model, Message> =>
+const init = CopyButtonComposition.makeInit(() => ({
+	model: Model.make({ status: "idle", generation: 0 }),
+}))
+
+const settled = (model: Model, generation: number, status: CopyStatus) =>
 	generation === model.generation
 		? { model: modifyFields(model, { status: () => status }), commands: [WaitCopyStatus({ generation })] }
-		: { model }
+		: { model, commands: [] }
 
-export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
-	Message.match<Update.Return<Model, Message>>(message, {
-		ClickedCopy: ({ text }) => {
-			const generation = model.generation + 1
-			return text === ""
-				? settled(modifyFields(model, { generation: () => generation }), generation, "error")
-				: {
-						model: modifyFields(model, { generation: () => generation }),
-						commands: [WriteClipboard({ text, generation })],
-					}
-		},
-		SucceededCopy: ({ generation }) => settled(model, generation, "copied"),
-		FailedCopy: ({ generation }) => settled(model, generation, "error"),
-		ElapsedCopyStatus: ({ generation }) =>
-			generation === model.generation
-				? { model: modifyFields(model, { status: () => "idle" }) }
-				: { model },
-	})
+const update = CopyButtonComposition.makeUpdate({
+	ClickedCopy: (model, { text }) => {
+		const generation = model.generation + 1
+		return text === ""
+			? settled(modifyFields(model, { generation: () => generation }), generation, "error")
+			: {
+					model: modifyFields(model, { generation: () => generation }),
+					commands: [WriteClipboard({ text, generation })],
+				}
+	},
+	SucceededCopy: (model, { generation }) => settled(model, generation, "copied"),
+	FailedCopy: (model, { generation }) => settled(model, generation, "error"),
+	ElapsedCopyStatus: (model, { generation }) =>
+		generation === model.generation ? { model: modifyFields(model, { status: () => "idle" }) } : { model },
+})
 
 // VIEW
 
@@ -255,23 +262,35 @@ export const copyButton = <M>(h: HtmlBuilder<M>, options: CopyButtonOptions<M>):
 	)
 }
 
-export type CopyButtonViewConfig<ParentMessage> = Omit<
-	CopyButtonOptions<ParentMessage>,
-	"status" | "onClick"
-> &
+/** Data-only attributes a parent may pass through: Block view inputs cannot carry callbacks. */
+export type CopyButtonPassthroughAttribute = Extract<
+	Attribute<never>,
+	Readonly<{ _tag: "DataAttribute" | "Attribute" | "Disabled" | "Title" | "Id" }>
+>
+
+/** What the embedding parent supplies through `CopyButtonBinding.embedView({ viewInputs })`. */
+export type CopyButtonViewInputs = Omit<CopyButtonOptions<Message>, "status" | "onClick" | "attributes"> &
 	Readonly<{
-		model: Model
-		toParentMessage: (message: Message) => ParentMessage
+		/** The text a click copies. */
 		value: string
+		attributes?: ReadonlyArray<CopyButtonPassthroughAttribute>
 	}>
 
-/** `<CopyButton>` as a Submodel view: the click copies `value` and the Model holds the status. */
-export const view = <ParentMessage>(
-	h: HtmlBuilder<ParentMessage>,
-	config: CopyButtonViewConfig<ParentMessage>,
-): Html =>
+/** `<CopyButton>` as the Block view: the click copies `value` and the Model holds the status. */
+const view = CopyButtonComposition.makeView.withInputs<CopyButtonViewInputs>((model, viewInputs, h) =>
 	copyButton(h, {
-		...config,
-		status: config.model.status,
-		onClick: config.toParentMessage(Message.ClickedCopy({ text: config.value })),
+		...viewInputs,
+		status: model.status,
+		onClick: Message.ClickedCopy({ text: viewInputs.value }),
+	}),
+)
+
+const prepare = () =>
+	CopyButtonComposition.prepareBlock({
+		init,
+		update,
+		view,
+		EffectsLayer: Layer.mergeAll(WriteClipboard.layer, WaitCopyStatus.layer),
 	})
+export const CopyButtonBlock: Block.FromAssemblyWithView<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

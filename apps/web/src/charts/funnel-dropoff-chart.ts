@@ -3,11 +3,10 @@ import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { eyebrow } from "../ui/eyebrow"
 import { icon } from "../ui/icon"
-import { Message, type Model } from "./chart"
+import { ChartBlock, type ChartViewBuilder, Message } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import type { FunnelChartInputs } from "./funnel-chart"
 import { fmtValue } from "./funnel-chart"
@@ -16,7 +15,7 @@ import { fmtSpan, leaverRows, type Step, toSteps } from "./funnel-dropoff-steps"
 // Port of `FunnelDropoffChart` (packages/ui/src/components/charts/funnel/funnel-dropoff-chart.tsx).
 // The hovered column is the chart Model's `activeKey` (its index).
 
-type H = HtmlBuilder<Message>
+type H = ChartViewBuilder
 
 const STEP_MIN_W = 76
 const TIP_W = 264
@@ -67,13 +66,18 @@ const leaversBlock = (h: H, hovered: Step): ReadonlyArray<Html> =>
 											h.Class(
 												cn(
 													"min-w-0 flex-1 truncate",
-													entry.ended ? "text-muted-foreground" : "text-foreground/90",
+													entry.ended
+														? "text-muted-foreground"
+														: "text-foreground/90",
 												),
 											),
 										],
 										[entry.name],
 									),
-									h.span([h.Class("tabular-nums text-muted-foreground")], [formatPercent(entry.share)]),
+									h.span(
+										[h.Class("tabular-nums text-muted-foreground")],
+										[formatPercent(entry.share)],
+									),
 								],
 							),
 							h.div(
@@ -117,7 +121,10 @@ const tooltip = (h: H, hovered: Step, prev: Step, left: number, unit: string | u
 			h.div(
 				[h.Class("mb-1.5 flex h-1.5 gap-px overflow-hidden rounded-sm")],
 				[
-					h.div([h.Class("bg-severity-info"), h.Style({ width: `${(hovered.ofPrev ?? 0) * 100}%` })]),
+					h.div([
+						h.Class("bg-severity-info"),
+						h.Style({ width: `${(hovered.ofPrev ?? 0) * 100}%` }),
+					]),
 					h.div([h.Class("flex-1 bg-severity-error/70")]),
 				],
 			),
@@ -172,7 +179,10 @@ const groupBars = (h: H, ctx: ColumnContext, step: Step, index: number): Html =>
 			const height = group.value / max
 			const capH = Math.max(0, (group.prev - group.value) / max)
 			return h.div(
-				[h.Class("relative h-full flex-1"), h.Title(`${group.name} · ${fmtValue(group.value, ctx.unit)}`)],
+				[
+					h.Class("relative h-full flex-1"),
+					h.Title(`${group.name} · ${fmtValue(group.value, ctx.unit)}`),
+				],
 				[
 					...(index > 0 && capH > 0
 						? [
@@ -238,7 +248,10 @@ const pill = (h: H, ctx: ColumnContext, step: Step, prev: Step, isLast: boolean)
 				? [
 						h.span(
 							[h.Class("flex items-center gap-1 text-foreground/80")],
-							[icon(h, "ArrowDownIcon", { size: 12, className: TONE_TEXT.crit }), formatPercent(lostShare)],
+							[
+								icon(h, "ArrowDownIcon", { size: 12, className: TONE_TEXT.crit }),
+								formatPercent(lostShare),
+							],
 						),
 					]
 				: []),
@@ -312,7 +325,13 @@ const column = (h: H, ctx: ColumnContext, step: Step, index: number): Html => {
 	)
 }
 
-const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: string; color: string }>, showPercent: boolean, unit: string | undefined): Html => {
+const header = (
+	h: H,
+	steps: ReadonlyArray<Step>,
+	legend: ReadonlyArray<{ name: string; color: string }>,
+	showPercent: boolean,
+	unit: string | undefined,
+): Html => {
 	const first = steps[0]
 	const last = steps[steps.length - 1]
 	return h.div(
@@ -320,7 +339,11 @@ const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: 
 		[
 			legend.length > 0
 				? h.div(
-						[h.Class("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground")],
+						[
+							h.Class(
+								"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground",
+							),
+						],
 						legend.map((entry) =>
 							h.span(
 								[h.Class("flex min-w-0 items-center gap-1"), h.Title(entry.name)],
@@ -339,11 +362,16 @@ const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: 
 				? [
 						h.span(
 							[
-								h.Class("flex shrink-0 items-baseline gap-1.5 tabular-nums whitespace-nowrap"),
+								h.Class(
+									"flex shrink-0 items-baseline gap-1.5 tabular-nums whitespace-nowrap",
+								),
 								h.DataAttribute("slot", "funnel-dropoff-summary"),
 							],
 							[
-								h.span([h.Class("text-muted-foreground")], [showPercent ? "Conversion rate" : "Converted"]),
+								h.span(
+									[h.Class("text-muted-foreground")],
+									[showPercent ? "Conversion rate" : "Converted"],
+								),
 								h.span(
 									[h.Class("text-2xs font-semibold text-foreground")],
 									[
@@ -360,7 +388,7 @@ const header = (h: H, steps: ReadonlyArray<Step>, legend: ReadonlyArray<{ name: 
 	)
 }
 
-export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((model, inputs, h) => {
+export const view = ChartBlock.makeView.withInputs<FunnelChartInputs>((model, inputs, h) => {
 	const { steps, legend } = toSteps(inputs.data, pickValueField(inputs.data))
 	if (steps.length === 0 || (steps[0]?.value ?? 0) <= 0)
 		return h.div(
@@ -397,7 +425,9 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 	}
 	return h.div(
 		[
-			h.Class(cn("relative flex h-full w-full flex-col overflow-hidden px-1 select-none", inputs.className)),
+			h.Class(
+				cn("relative flex h-full w-full flex-col overflow-hidden px-1 select-none", inputs.className),
+			),
 			h.OnMount(MeasureChartContainer()),
 			h.OnMouseLeave(Message.LeftChart()),
 			h.DataAttribute("slot", "funnel-dropoff"),
@@ -415,7 +445,12 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 				visible.map((step, index) => column(h, ctx, step, index)),
 			),
 			...(hidden > 0
-				? [h.div([h.Class("shrink-0 pt-1 text-3xs leading-none text-muted-foreground")], [`+${hidden} more`])]
+				? [
+						h.div(
+							[h.Class("shrink-0 pt-1 text-3xs leading-none text-muted-foreground")],
+							[`+${hidden} more`],
+						),
+					]
 				: []),
 			...(hovered !== undefined && hoveredPrev !== undefined && !isGrouped
 				? [tooltip(h, hovered, hoveredPrev, tipLeft, inputs.unit)]

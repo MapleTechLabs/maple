@@ -12,22 +12,28 @@ import {
 	toastViewportStyles,
 } from "@maple/ui/styles/ui/toast"
 import { Array, Option } from "effect"
-import { Submodel } from "foldkit"
+import { Block } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { buttonVariants } from "@maple/ui/styles/ui/button"
 import { icon, type IconName } from "./icon"
 import {
 	descriptionId,
+	EffectsLayer,
+	init,
 	isExpanded,
 	LIMIT,
 	MeasureToast,
 	Message,
-	type Model,
+	Model,
 	PortalToasts,
 	titleId,
 	type Toast,
+	ToastComposition,
 	type ToastType,
+	update,
 } from "./toast"
+
+type ToastViewBuilder = Block.ViewBuilderFor<typeof ToastComposition>
 
 // packages/ui/src/components/ui/toast.tsx `Toasts` and `AnchoredToasts`, position "bottom-right".
 const POSITION = "bottom-right"
@@ -51,7 +57,7 @@ const regionAttributes = <M>(h: HtmlBuilder<M>): ReadonlyArray<Attribute<M>> => 
 const typeAttribute = <M>(h: HtmlBuilder<M>, type: ToastType): ReadonlyArray<Attribute<M>> =>
 	type === "default" ? [] : [h.DataAttribute("type", type)]
 
-const toastIcon = (h: HtmlBuilder<Message>, type: ToastType): ReadonlyArray<Html> =>
+const toastIcon = (h: ToastViewBuilder, type: ToastType): ReadonlyArray<Html> =>
 	type === "default"
 		? []
 		: [
@@ -93,7 +99,7 @@ const rootStyle = (toast: Toast, placement: Placement): Record<string, string> =
 	return toast.height === null ? style : { ...style, "--toast-height": `${toast.height}px` }
 }
 
-const toastRoot = (h: HtmlBuilder<Message>, model: Model, toast: Toast, placement: Placement): Html => {
+const toastRoot = (h: ToastViewBuilder, model: Model, toast: Toast, placement: Placement): Html => {
 	const isExpandedNow = isExpanded(model)
 	return h.div(
 		[
@@ -181,7 +187,7 @@ const toastRoot = (h: HtmlBuilder<Message>, model: Model, toast: Toast, placemen
 }
 
 /** `Toast.Portal` + `Toast.Viewport`: the bottom-right "Notifications" region and its toasts. */
-export const region = Submodel.defineView<Model, Message>((model, h) => {
+export const region = ToastComposition.makeView((model, h) => {
 	const frontmost = Option.flatMapNullishOr(Array.head(model.toasts), (toast) => toast.height)
 	return h.div(
 		[
@@ -218,7 +224,7 @@ export const region = Submodel.defineView<Model, Message>((model, h) => {
 })
 
 /** `AnchoredToasts`: the region for toasts pinned to an element (none are anchored yet). */
-export const anchoredRegion = Submodel.defineView<Model, Message>((model, h) =>
+export const anchoredRegion = ToastComposition.makeView((model, h) =>
 	h.div(
 		[
 			h.DataAttribute("base-ui-portal", ""),
@@ -238,12 +244,28 @@ export const anchoredRegion = Submodel.defineView<Model, Message>((model, h) =>
 	),
 )
 
-/** Both regions, in order, for a root view (the app shell or a lab page). */
-export const regions = <ParentMessage>(
-	h: HtmlBuilder<ParentMessage>,
-	model: Model,
-	toParentMessage: (message: Message) => ParentMessage,
-): ReadonlyArray<Html> => [
-	h.submodel({ slotId: "toasts-anchored", model, view: anchoredRegion, toParentMessage }),
-	h.submodel({ slotId: "toasts", model, view: region, toParentMessage }),
+const prepare = () =>
+	ToastComposition.prepareBlock({
+		init,
+		update,
+		view: region,
+		operations: {
+			requestAdd: Message.RequestedAdd,
+			requestClose: Message.RequestedClose,
+		},
+		EffectsLayer,
+	})
+export const ToastBlock: Block.FromAssemblyWithViewAndOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)
+
+/** One toast region's view: `region` (the Block's own view) or `anchoredRegion`. */
+export type RegionView = typeof region
+
+/**
+ * Both regions, in order, for a root view (the app shell or a lab page). `embed` renders one
+ * through the owner's Binding: `h.block(ToastsBinding.embedView({ slotId, model, view }))`.
+ */
+export const regions = (embed: (slotId: string, view: RegionView) => Html): ReadonlyArray<Html> => [
+	embed("toasts-anchored", anchoredRegion),
+	embed("toasts", region),
 ]

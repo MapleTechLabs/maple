@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { isSameFailure, type LoadFailure } from "../../data/load-failure"
 import { button } from "../button"
 import { separator } from "../display"
-import { errorState } from "../error-state"
+import { type AutoRetryMountRequirements, errorState } from "../error-state"
 import { eyebrow } from "../eyebrow"
 import { scrollArea } from "../scroll-area"
 import { skeleton } from "../skeleton"
@@ -155,7 +155,7 @@ export const filterSidebarEmpty = <M>(h: HtmlBuilder<M>): Html =>
  * (`mainFailure`); otherwise the rail is the only place it shows, so it keeps the full message.
  */
 export const filterSidebarError = <M>(
-	h: HtmlBuilder<M>,
+	h: HtmlBuilder<M, AutoRetryMountRequirements>,
 	failure: LoadFailure,
 	onRetry?: M,
 	mainFailure?: LoadFailure,

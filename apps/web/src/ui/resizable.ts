@@ -6,7 +6,7 @@ import {
 	resizablePanelStyles,
 } from "@maple/ui/styles/ui/resizable"
 import { Array, Effect, Number, Option, Queue, Schema, Stream } from "effect"
-import { Mount, Submodel, type Update } from "foldkit"
+import { Block } from "foldkit"
 import type { Html } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 
@@ -38,14 +38,6 @@ export const KEYBOARD_STEP = 5
 export const panelId = (id: string, index: number): string => `${id}-panel-${index}`
 export const handleId = (id: string, index: number): string => `${id}-handle-${index}`
 
-export const init = (id: string, orientation: Orientation, layout: ReadonlyArray<number>): Model => ({
-	id,
-	orientation,
-	layout,
-	drag: null,
-	focusedHandle: null,
-})
-
 // MESSAGE
 
 export const Message = defineMessageUnion({
@@ -55,8 +47,12 @@ export const Message = defineMessageUnion({
 	PressedHandleKey: { handleIndex: Schema.Number, key: Schema.String },
 	FocusedHandle: { handleIndex: Schema.Number },
 	BlurredHandle: {},
+	/** Parent-initiated: lays the group out from new `defaultSize`s (a panel joined or left). */
+	RequestedLayout: { layout: Schema.Array(Schema.Number) },
 })
 export type Message = typeof Message.Type
+
+const ResizableDefinition = Block.makeDefinition("Resizable", { Model, Message })
 
 // UPDATE
 
@@ -91,32 +87,6 @@ const keyDelta = (orientation: Orientation, key: string): Option.Option<number> 
 			: Option.none()
 }
 
-export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
-	Message.match<Update.Return<Model, Message>>(message, {
-		StartedDrag: ({ handleIndex }) => ({
-			model: { ...model, drag: { handleIndex, startLayout: model.layout } },
-		}),
-		Dragged: ({ deltaPercent }) =>
-			model.drag === null
-				? { model }
-				: {
-						model: {
-							...model,
-							layout: resize(model.drag.startLayout, model.drag.handleIndex, deltaPercent),
-						},
-					},
-		EndedDrag: () => ({ model: { ...model, drag: null } }),
-		PressedHandleKey: ({ handleIndex, key }) =>
-			Option.match(keyDelta(model.orientation, key), {
-				onNone: () => ({ model }),
-				onSome: (delta) => ({
-					model: { ...model, layout: resize(model.layout, handleIndex, delta) },
-				}),
-			}),
-		FocusedHandle: ({ handleIndex }) => ({ model: { ...model, focusedHandle: handleIndex } }),
-		BlurredHandle: () => ({ model: { ...model, focusedHandle: null } }),
-	})
-
 // MOUNT
 
 type DragMessage =
@@ -132,53 +102,91 @@ const ownHandles = (group: Element): ReadonlyArray<Element> =>
  * Pointer drags on the group's handles: the press reports the handle, each move the percent
  * moved along the group's axis since the press, the release the end.
  */
-export const MountResizeGroup = Mount.defineStream("MountResizeGroup", {
+export const MountResizeGroup = ResizableDefinition.makeMountStream("MountResizeGroup", {
 	args: { orientation: Orientation },
 	messages: [Message.StartedDrag, Message.Dragged, Message.EndedDrag],
-	execute: ({ element, orientation }) =>
-		Stream.callback<DragMessage>((queue) =>
-			Effect.acquireRelease(
-				Effect.sync(() => {
-					const isHorizontal = orientation === "horizontal"
-					const drag = { start: 0, size: 1, isActive: false }
-					const onMove = (event: PointerEvent) => {
-						if (!drag.isActive) return
-						const position = isHorizontal ? event.clientX : event.clientY
-						Queue.offerUnsafe(
-							queue,
-							Message.Dragged({ deltaPercent: ((position - drag.start) / drag.size) * 100 }),
-						)
-					}
-					const onUp = () => {
-						if (!drag.isActive) return
-						drag.isActive = false
-						Queue.offerUnsafe(queue, Message.EndedDrag())
-					}
-					const onDown = (event: Event) => {
-						if (!(event instanceof PointerEvent)) return
-						const handle =
-							event.target instanceof Element ? event.target.closest("[data-separator]") : null
-						const handleIndex = handle === null ? -1 : ownHandles(element).indexOf(handle)
-						if (handleIndex === -1) return
-						const box = element.getBoundingClientRect()
-						drag.start = isHorizontal ? event.clientX : event.clientY
-						drag.size = Math.max(1, isHorizontal ? box.width : box.height)
-						drag.isActive = true
-						event.preventDefault()
-						Queue.offerUnsafe(queue, Message.StartedDrag({ handleIndex }))
-					}
-					element.addEventListener("pointerdown", onDown)
-					document.addEventListener("pointermove", onMove)
-					document.addEventListener("pointerup", onUp)
-					return () => {
-						element.removeEventListener("pointerdown", onDown)
-						document.removeEventListener("pointermove", onMove)
-						document.removeEventListener("pointerup", onUp)
-					}
-				}),
-				(stop) => Effect.sync(stop),
-			).pipe(Effect.andThen(Effect.never)),
-		),
+	handler: function* () {
+		return ({ element, orientation }) => resizeGroupStream(element, orientation)
+	},
+})
+
+const resizeGroupStream = (element: Element, orientation: Orientation): Stream.Stream<DragMessage> =>
+	Stream.callback<DragMessage>((queue) =>
+		Effect.acquireRelease(
+			Effect.sync(() => {
+				const isHorizontal = orientation === "horizontal"
+				const drag = { start: 0, size: 1, isActive: false }
+				const onMove = (event: PointerEvent) => {
+					if (!drag.isActive) return
+					const position = isHorizontal ? event.clientX : event.clientY
+					Queue.offerUnsafe(
+						queue,
+						Message.Dragged({ deltaPercent: ((position - drag.start) / drag.size) * 100 }),
+					)
+				}
+				const onUp = () => {
+					if (!drag.isActive) return
+					drag.isActive = false
+					Queue.offerUnsafe(queue, Message.EndedDrag())
+				}
+				const onDown = (event: Event) => {
+					if (!(event instanceof PointerEvent)) return
+					const handle =
+						event.target instanceof Element ? event.target.closest("[data-separator]") : null
+					const handleIndex = handle === null ? -1 : ownHandles(element).indexOf(handle)
+					if (handleIndex === -1) return
+					const box = element.getBoundingClientRect()
+					drag.start = isHorizontal ? event.clientX : event.clientY
+					drag.size = Math.max(1, isHorizontal ? box.width : box.height)
+					drag.isActive = true
+					event.preventDefault()
+					Queue.offerUnsafe(queue, Message.StartedDrag({ handleIndex }))
+				}
+				element.addEventListener("pointerdown", onDown)
+				document.addEventListener("pointermove", onMove)
+				document.addEventListener("pointerup", onUp)
+				return () => {
+					element.removeEventListener("pointerdown", onDown)
+					document.removeEventListener("pointermove", onMove)
+					document.removeEventListener("pointerup", onUp)
+				}
+			}),
+			(stop) => Effect.sync(stop),
+		).pipe(Effect.andThen(Effect.never)),
+	)
+
+const ResizableComposition = ResizableDefinition.makeComposition({ mounts: [MountResizeGroup] })
+
+const init = ResizableComposition.makeInit(
+	(id: string, orientation: Orientation, layout: ReadonlyArray<number>) => ({
+		model: Model.make({ id, orientation, layout, drag: null, focusedHandle: null }),
+	}),
+)
+
+const update = ResizableComposition.makeUpdate({
+	StartedDrag: (model, { handleIndex }) => ({
+		model: { ...model, drag: { handleIndex, startLayout: model.layout } },
+	}),
+	Dragged: (model, { deltaPercent }) =>
+		model.drag === null
+			? { model }
+			: {
+					model: {
+						...model,
+						layout: resize(model.drag.startLayout, model.drag.handleIndex, deltaPercent),
+					},
+				},
+	EndedDrag: (model) => ({ model: { ...model, drag: null } }),
+	PressedHandleKey: (model, { handleIndex, key }) =>
+		Option.match(keyDelta(model.orientation, key), {
+			onNone: () => ({ model }),
+			onSome: (delta) => ({
+				model: { ...model, layout: resize(model.layout, handleIndex, delta) },
+			}),
+		}),
+	FocusedHandle: (model, { handleIndex }) => ({ model: { ...model, focusedHandle: handleIndex } }),
+	BlurredHandle: (model) => ({ model: { ...model, focusedHandle: null } }),
+	RequestedLayout: (model, { layout }) => ({ model: { ...model, layout } }),
 })
 
 // VIEW
@@ -193,7 +201,7 @@ export type ViewInputs = Readonly<{
 
 const HANDLE_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"])
 
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+const view = ResizableComposition.makeView.withInputs<ViewInputs>((model, inputs, h) => {
 	const panels = inputs.toPanels()
 	const isHorizontal = model.orientation === "horizontal"
 	const touchAction = isHorizontal ? "pan-y" : "pan-x"
@@ -290,3 +298,14 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		),
 	)
 })
+
+const prepare = () =>
+	ResizableComposition.prepareBlock({
+		init,
+		update,
+		view,
+		operations: { requestLayout: Message.RequestedLayout },
+		EffectsLayer: MountResizeGroup.layer,
+	})
+export const ResizableBlock: Block.FromAssemblyWithView<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

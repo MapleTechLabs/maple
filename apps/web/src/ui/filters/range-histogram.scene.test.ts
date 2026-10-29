@@ -2,7 +2,13 @@ import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { getByRole, given, Mount, scene, tap } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { HistogramMessage, MountRangeHistogram, type RangeBucket, rangeHistogram } from "./range-histogram"
+import {
+	HistogramMessage,
+	MountRangeHistogram,
+	type RangeBucket,
+	type RangeHistogramMountRequirements,
+	rangeHistogram,
+} from "./range-histogram"
 
 const before: ReadonlyArray<RangeBucket> = [
 	{ from: 0, to: 100, count: 3 },
@@ -13,7 +19,10 @@ const after: ReadonlyArray<RangeBucket> = [
 	{ from: 500, to: 1000, count: 4 },
 ]
 
-const view = (buckets: ReadonlyArray<RangeBucket>, h: HtmlBuilder<HistogramMessage>): Html =>
+const view = (
+	buckets: ReadonlyArray<RangeBucket>,
+	h: HtmlBuilder<HistogramMessage, RangeHistogramMountRequirements>,
+): Html =>
 	rangeHistogram(h, {
 		buckets,
 		unit: "ms",
@@ -47,6 +56,10 @@ describe("range histogram", () => {
 			recordBarsKey(keys),
 			Mount.resolve(MountRangeHistogram, HistogramMessage.LeftHistogram()),
 			recordBarsKey(keys),
+			// The old bounds' handlers end and a fresh acquisition takes the new bounds.
+			Mount.expectEnded(MountRangeHistogram),
+			Mount.expectHas(MountRangeHistogram),
+			Mount.resolve(MountRangeHistogram, HistogramMessage.LeftHistogram()),
 		)
 		expect(keys).toHaveLength(2)
 		expect(keys[0]).not.toEqual(keys[1])

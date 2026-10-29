@@ -3,9 +3,8 @@ import { formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/fo
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
 import { truncatedText } from "../ui/truncated-text"
-import { Message, type Model } from "./chart"
+import { ChartBlock, Message } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 
 // Port of `QueryBuilderHbarChart` (packages/ui/src/components/charts/hbar/query-builder-hbar-chart.tsx):
@@ -46,7 +45,7 @@ export const hbarBars = (source: ReadonlyArray<Record<string, unknown>>) => {
 	}))
 }
 
-export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model, inputs, h) => {
+export const view = ChartBlock.makeView.withInputs<HbarChartInputs>((model, inputs, h) => {
 	const bars = hbarBars(inputs.data)
 	if (bars.length === 0)
 		return h.div(
@@ -107,7 +106,9 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 						[
 							truncatedText(h, {
 								text: bar.name,
-								className: bar.unnamed ? "italic text-muted-foreground" : "text-foreground/90",
+								className: bar.unnamed
+									? "italic text-muted-foreground"
+									: "text-foreground/90",
 							}),
 							h.div(
 								[
@@ -129,7 +130,10 @@ export const view = Submodel.defineView<Model, Message, HbarChartInputs>((model,
 							h.span(
 								[h.Class("shrink-0 text-right tabular-nums text-muted-foreground")],
 								[
-									h.span([h.Class("text-foreground/90")], [fmtValue(bar.value, inputs.unit)]),
+									h.span(
+										[h.Class("text-foreground/90")],
+										[fmtValue(bar.value, inputs.unit)],
+									),
 									h.span([h.Class("px-1 text-muted-foreground/50")], ["·"]),
 									h.span([], [formatPercent(bar.pctOfTotal, PCT_FLOOR)]),
 								],

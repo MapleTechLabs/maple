@@ -2,9 +2,8 @@ import { DEFAULT_HEATMAP_COLOR_SCALE, type HeatmapColorScale } from "@maple/doma
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import type { Message, Model } from "./chart"
+import type { Html } from "foldkit/html"
+import { type ChartAttribute, ChartBlock, type ChartViewBuilder } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import { ChartSpec, ChartTooltip } from "./chart-spec"
 import { FOOTNOTE_BLOCK_H, solveHeatmapLayout } from "./heatmap-layout"
@@ -36,16 +35,52 @@ export interface HeatmapChartInputs {
 	readonly timeZone?: string | undefined
 }
 
-type H = HtmlBuilder<Message>
+type H = ChartViewBuilder
 
 const SCALES = ["amber", "blues", "reds", "viridis", "magma", "cividis"] as const
 const FALLBACKS = {
-	amber: ["oklch(0.32 0.035 70)", "oklch(0.45 0.075 65)", "oklch(0.58 0.115 60)", "oklch(0.71 0.15 57)", "oklch(0.85 0.13 78)"],
-	blues: ["oklch(0.32 0.04 255)", "oklch(0.45 0.08 252)", "oklch(0.58 0.12 250)", "oklch(0.71 0.15 248)", "oklch(0.85 0.11 238)"],
-	reds: ["oklch(0.32 0.045 28)", "oklch(0.45 0.09 28)", "oklch(0.58 0.14 28)", "oklch(0.71 0.185 30)", "oklch(0.85 0.135 45)"],
-	viridis: ["oklch(0.32 0.055 285)", "oklch(0.45 0.095 265)", "oklch(0.58 0.09 200)", "oklch(0.71 0.135 150)", "oklch(0.85 0.17 112)"],
-	magma: ["oklch(0.32 0.06 300)", "oklch(0.45 0.12 312)", "oklch(0.58 0.175 350)", "oklch(0.71 0.16 35)", "oklch(0.85 0.115 80)"],
-	cividis: ["oklch(0.32 0.045 262)", "oklch(0.45 0.055 250)", "oklch(0.58 0.03 130)", "oklch(0.71 0.075 95)", "oklch(0.85 0.13 95)"],
+	amber: [
+		"oklch(0.32 0.035 70)",
+		"oklch(0.45 0.075 65)",
+		"oklch(0.58 0.115 60)",
+		"oklch(0.71 0.15 57)",
+		"oklch(0.85 0.13 78)",
+	],
+	blues: [
+		"oklch(0.32 0.04 255)",
+		"oklch(0.45 0.08 252)",
+		"oklch(0.58 0.12 250)",
+		"oklch(0.71 0.15 248)",
+		"oklch(0.85 0.11 238)",
+	],
+	reds: [
+		"oklch(0.32 0.045 28)",
+		"oklch(0.45 0.09 28)",
+		"oklch(0.58 0.14 28)",
+		"oklch(0.71 0.185 30)",
+		"oklch(0.85 0.135 45)",
+	],
+	viridis: [
+		"oklch(0.32 0.055 285)",
+		"oklch(0.45 0.095 265)",
+		"oklch(0.58 0.09 200)",
+		"oklch(0.71 0.135 150)",
+		"oklch(0.85 0.17 112)",
+	],
+	magma: [
+		"oklch(0.32 0.06 300)",
+		"oklch(0.45 0.12 312)",
+		"oklch(0.58 0.175 350)",
+		"oklch(0.71 0.16 35)",
+		"oklch(0.85 0.115 80)",
+	],
+	cividis: [
+		"oklch(0.32 0.045 262)",
+		"oklch(0.45 0.055 250)",
+		"oklch(0.58 0.03 130)",
+		"oklch(0.71 0.075 95)",
+		"oklch(0.85 0.13 95)",
+	],
 } satisfies Readonly<Record<(typeof SCALES)[number], readonly [string, string, string, string, string]>>
 const GROUT_FALLBACK = "oklch(0.175 0.008 62)"
 
@@ -112,7 +147,7 @@ const tooltipBody = (
 	colorAt: (value: number) => string,
 	label: (y: string) => string,
 	unit: string | undefined,
-	portal: Attribute<Message>,
+	portal: ChartAttribute,
 ): Option.Option<Html> =>
 	tooltip._tag !== "HeatmapSlot"
 		? Option.none()
@@ -157,7 +192,7 @@ const footnoteOf = (hiddenX: number, hiddenY: number): string | null =>
 				.join(" · ")} hidden`
 		: null
 
-export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((chart, inputs, h) => {
+export const view = ChartBlock.makeView.withInputs<HeatmapChartInputs>((chart, inputs, h) => {
 	const model = buildHeatmapModel(deriveHeatmapPoints(inputs.data))
 	if (model.xDomain.length === 0 || model.yDomain.length === 0) return emptyState(h, inputs)
 	const requested = inputs.colorScale ?? DEFAULT_HEATMAP_COLOR_SCALE
@@ -173,15 +208,18 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 		containerH: chart.containerHeight,
 		columns: model.xDomain.length,
 		rows: model.yDomain.length,
-		longestYLabelChars: model.yDomain.reduce((longest, value) => Math.max(longest, label(value).length), 0),
+		longestYLabelChars: model.yDomain.reduce(
+			(longest, value) => Math.max(longest, label(value).length),
+			0,
+		),
 		hasFootnote: footnote !== null,
 	})
 	const hoveredKey = Option.getOrNull(chart.activeKey)
 	const hovered =
 		hoveredKey === null
 			? null
-			: ([...model.cells, ...model.holes].find((slot) => `${slot.x}\u0000${slot.y}` === hoveredKey)?.value ??
-				null)
+			: ([...model.cells, ...model.holes].find((slot) => `${slot.x}\u0000${slot.y}` === hoveredKey)
+					?.value ?? null)
 	const spec = ChartSpec.Heatmap({
 		cells: model.cells,
 		holes: model.holes,
@@ -228,7 +266,9 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 					: {
 							footer: h.p(
 								[
-									h.Class("pt-1 text-right text-3xs leading-3 tabular-nums text-muted-foreground/70"),
+									h.Class(
+										"pt-1 text-right text-3xs leading-3 tabular-nums text-muted-foreground/70",
+									),
 									h.Style({
 										height: `${FOOTNOTE_BLOCK_H}px`,
 										"padding-left": `${layout.gutter}px`,

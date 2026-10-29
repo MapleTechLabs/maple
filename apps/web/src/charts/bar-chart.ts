@@ -1,11 +1,14 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
-import type { Attribute, Html } from "foldkit/html"
-import type { Message, Model } from "./chart"
+import type { Html } from "foldkit/html"
+import { type ChartAttribute, ChartBlock } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import { timeseriesLegend } from "./timeseries-legend"
-import { bucketTimeseries, MAX_BAR_SERIES, OTHER_LABEL } from "@maple/ui/components/charts/_shared/bucket-series"
+import {
+	bucketTimeseries,
+	MAX_BAR_SERIES,
+	OTHER_LABEL,
+} from "@maple/ui/components/charts/_shared/bucket-series"
 import { ChartSpec, ChartTooltip, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
@@ -47,14 +50,16 @@ type Row = Readonly<Record<string, string | number | boolean>>
 /** `bucketBarSeries`: past `MAX_BAR_SERIES` the long tail folds into one "Other" series. */
 export const bucketBarSeries = (data: ReadonlyArray<Row>): ReadonlyArray<Row> => {
 	const seriesKeys = [
-		...new Set(data.flatMap((row) => Object.keys(row).filter((key) => key !== "bucket" && key !== "partial"))),
+		...new Set(
+			data.flatMap((row) => Object.keys(row).filter((key) => key !== "bucket" && key !== "partial")),
+		),
 	]
 	if (seriesKeys.length <= MAX_BAR_SERIES) return data
 	const { rows } = bucketTimeseries(data, seriesKeys, MAX_BAR_SERIES)
 	return rows.map((row, index) => (data[index]?.partial === true ? { ...row, partial: true } : row))
 }
 
-export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, inputs, h) => {
+export const view = ChartBlock.makeView.withInputs<BarChartInputs>((model, inputs, h) => {
 	const data = bucketBarSeries(inputs.data)
 	const { definitions } = seriesDefinitionsOf(data)
 	const tokens = seriesColorTokens(definitions)
@@ -76,7 +81,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 		label: definition.rawKey,
 		color: colors[definition.chartKey] ?? SERIES_FALLBACK_COLOR,
 	}))
-	const tooltipBody = (portal: Attribute<Message>): Option.Option<Html> =>
+	const tooltipBody = (portal: ChartAttribute): Option.Option<Html> =>
 		Option.flatMap(model.tooltip, (tooltip) =>
 			ChartTooltip.match(tooltip, {
 				Bucket: (bucket) => Option.some(bucketTooltipBody(h, bucket, portal)),
@@ -119,4 +124,3 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 		],
 	)
 })
-

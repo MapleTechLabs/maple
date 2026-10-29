@@ -9,9 +9,8 @@ import { EMPTY_VALUE, formatNumber, formatPercent, formatValueByUnit } from "@ma
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import type { Message, Model } from "./chart"
+import type { Html } from "foldkit/html"
+import { type ChartAttribute, ChartBlock, type ChartViewBuilder, type Model } from "./chart"
 import { ChartSpec, ChartTooltip, type PieSliceRow } from "./chart-spec"
 import { MeasureChartContainer } from "./chart-mounts"
 import { plotFrame } from "./plot-frame"
@@ -89,10 +88,10 @@ export const pieChartTokens = (data: ReadonlyArray<Record<string, unknown>>): Re
 ]
 
 const tooltipBody = (
-	h: HtmlBuilder<Message>,
+	h: ChartViewBuilder,
 	tooltip: ChartTooltip,
 	unit: string | undefined,
-	portal: Attribute<Message>,
+	portal: ChartAttribute,
 ): Option.Option<Html> =>
 	ChartTooltip.match(tooltip, {
 		PieSlice: (slice) =>
@@ -150,7 +149,7 @@ const fmtCenterTotal = (value: number, unit: string | undefined): string =>
 
 /** `DonutCenterTotal`: the total in the hole once the plot rect is known and the hole holds it. */
 const donutCenterTotal = (
-	h: HtmlBuilder<Message>,
+	h: ChartViewBuilder,
 	model: Model,
 	total: number,
 	unit: string | undefined,
@@ -163,21 +162,29 @@ const donutCenterTotal = (
 			if (holeRadius <= CENTER_TOTAL_MIN_INNER_R) return h.empty
 			return h.div(
 				[
-					h.Class("absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center leading-none"),
+					h.Class(
+						"absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center leading-none",
+					),
 					h.Style({ left: `${rect.x + rect.width / 2}px`, top: `${rect.y + rect.height / 2}px` }),
 				],
 				[
 					h.span(
 						[
 							h.Class("font-semibold text-foreground tabular-nums"),
-							h.Style({ "font-size": `${Math.min(22, holeRadius * 0.6)}px`, "letter-spacing": "-0.02em" }),
+							h.Style({
+								"font-size": `${Math.min(22, holeRadius * 0.6)}px`,
+								"letter-spacing": "-0.02em",
+							}),
 						],
 						[fmtCenterTotal(total, unit)],
 					),
 					h.span(
 						[
 							h.Class("pt-1 text-muted-foreground uppercase"),
-							h.Style({ "font-size": `${Math.min(10, holeRadius * 0.28)}px`, "letter-spacing": "0.04em" }),
+							h.Style({
+								"font-size": `${Math.min(10, holeRadius * 0.28)}px`,
+								"letter-spacing": "0.04em",
+							}),
 						],
 						["total"],
 					),
@@ -186,7 +193,7 @@ const donutCenterTotal = (
 		},
 	})
 
-export const view = Submodel.defineView<Model, Message, PieChartInputs>((model, inputs, h) => {
+export const view = ChartBlock.makeView.withInputs<PieChartInputs>((model, inputs, h) => {
 	const { rows, colorTokens, total } = pieRowsOf(inputs.data)
 	const { unit } = inputs
 	const background = resolveColor(inputs.theme, "--background")
@@ -265,7 +272,10 @@ export const view = Submodel.defineView<Model, Message, PieChartInputs>((model, 
 				legend,
 				legendPlacement: tableLegend ? "right" : "bottom",
 				...(inputs.donut === true
-					? { reportPlot: true, overlay: donutCenterTotal(h, model, total, unit, inputs.innerRadius) }
+					? {
+							reportPlot: true,
+							overlay: donutCenterTotal(h, model, total, unit, inputs.innerRadius),
+						}
 					: undefined),
 				tooltipBody: (portal) =>
 					Option.flatMap(model.tooltip, (tooltip) => tooltipBody(h, tooltip, unit, portal)),

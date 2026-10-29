@@ -12,9 +12,22 @@ import {
 	tabsTabStyles,
 } from "@maple/ui/styles/ui/tabs"
 import { Option, Schema } from "effect"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import { defineView } from "foldkit/submodel"
-import { type IndicatorRect, MeasureTabIndicator, Message, type Model, panelId, TabKey, tabId } from "./tabs"
+import { Block } from "foldkit"
+import type { Html } from "foldkit/html"
+import {
+	EffectsLayer,
+	type IndicatorRect,
+	init,
+	MeasureTabIndicator,
+	Message,
+	Model,
+	panelId,
+	TabKey,
+	TabsComposition,
+	type TabsViewBuilder,
+	tabId,
+	update,
+} from "./tabs"
 
 // Base UI's Tabs DOM: the same data attributes, roles, roving tabindex and `useId` ids.
 
@@ -40,11 +53,15 @@ export interface TabsViewInputs {
 	readonly ariaLabel?: string
 	/** Panel content for a value; values without one render no panel (Base UI unmounts it). */
 	readonly panel: (value: string) => ReadonlyArray<Html | string> | undefined
-	/** Which values have a panel, without building them (a panel holding a Submodel renders once). */
+	/** Which values have a panel, without building them (a panel holding a child Block renders once). */
 	readonly hasPanel?: (value: string) => boolean
+	/** The rendered subset of `model.values`, in order; ids still follow each value's model index. */
+	readonly values?: ReadonlyArray<string>
+	/** The panel shown while the selected value is not among `values`. */
+	readonly fallbackValue?: string
 }
 
-type H = HtmlBuilder<Message>
+type H = TabsViewBuilder
 
 const stateAttributes = (h: H, model: Model) => [
 	h.DataAttribute("activation-direction", model.activationDirection),
@@ -116,7 +133,13 @@ const indicator = (h: H, model: Model, variant: TabsVariant): Html =>
 		}),
 	])
 
-const tabList = (h: H, model: Model, inputs: TabsViewInputs, panelValues: ReadonlyArray<string>): Html => {
+const tabList = (
+	h: H,
+	model: Model,
+	inputs: TabsViewInputs,
+	rendered: ReadonlyArray<string>,
+	panelValues: ReadonlyArray<string>,
+): Html => {
 	const variant = inputs.variant ?? "default"
 	return h.div(
 		[
@@ -135,8 +158,9 @@ const tabList = (h: H, model: Model, inputs: TabsViewInputs, panelValues: Readon
 			h.OnMount(MeasureTabIndicator()),
 		],
 		[
-			...model.values.map((value, index) =>
-				tab(
+			...rendered.map((value) => {
+				const index = model.values.indexOf(value)
+				return tab(
 					h,
 					model,
 					index,
@@ -144,8 +168,8 @@ const tabList = (h: H, model: Model, inputs: TabsViewInputs, panelValues: Readon
 					panelValues.includes(value),
 					inputs.tabClassName,
 					inputs.tabContent,
-				),
-			),
+				)
+			}),
 			indicator(h, model, variant),
 		],
 	)
@@ -155,13 +179,14 @@ const tabPanel = (
 	h: H,
 	model: Model,
 	inputs: TabsViewInputs,
+	shown: string,
 	index: number,
 	children: ReadonlyArray<Html | string>,
 ): Html =>
 	h.div(
 		[
-			h.AriaLabelledBy(tabId(model, model.values.indexOf(model.selected))),
-			h.Class(cn(tabsPanelStyles, inputs.panelClassName, inputs.panelClassNameFor?.(model.selected))),
+			h.AriaLabelledBy(tabId(model, model.values.indexOf(shown))),
+			h.Class(cn(tabsPanelStyles, inputs.panelClassName, inputs.panelClassNameFor?.(shown))),
 			...stateAttributes(h, model),
 			h.DataAttribute("index", String(index)),
 			h.DataAttribute("slot", "tabs-content"),
@@ -172,14 +197,19 @@ const tabPanel = (
 		children,
 	)
 
-export const view = defineView<Model, Message, TabsViewInputs>((model, inputs, h) => {
-	// Each panel is built once: a panel holding a Submodel may only render it once per pass.
-	const content = inputs.panel(model.selected)
+/** The Tabs root: list, then the shown value's panel (Base UI unmounts the others). */
+export const view = TabsComposition.makeView.withInputs<TabsViewInputs>((model, inputs, h) => {
+	const rendered = inputs.values ?? model.values
+	const shown =
+		inputs.fallbackValue !== undefined && !rendered.includes(model.selected)
+			? inputs.fallbackValue
+			: model.selected
+	// Each panel is built once: a panel holding a child Block may only render it once per pass.
+	const content = inputs.panel(shown)
 	const hasPanel =
 		inputs.hasPanel ??
-		((value: string) =>
-			value === model.selected ? content !== undefined : inputs.panel(value) !== undefined)
-	const panelValues = model.values.filter(hasPanel)
+		((value: string) => (value === shown ? content !== undefined : inputs.panel(value) !== undefined))
+	const panelValues = rendered.filter(hasPanel)
 	return h.div(
 		[
 			h.Class(cn(tabsStyles, inputs.className)),
@@ -187,10 +217,27 @@ export const view = defineView<Model, Message, TabsViewInputs>((model, inputs, h
 			h.DataAttribute("slot", "tabs"),
 		],
 		[
-			(inputs.wrapList ?? ((list: Html) => list))(tabList(h, model, inputs, panelValues)),
+			(inputs.wrapList ?? ((list: Html) => list))(tabList(h, model, inputs, rendered, panelValues)),
 			...(content === undefined
 				? []
-				: [tabPanel(h, model, inputs, panelValues.indexOf(model.selected), content)]),
+				: [tabPanel(h, model, inputs, shown, panelValues.indexOf(shown), content)]),
 		],
 	)
 })
+
+// BLOCK
+
+const prepare = () =>
+	TabsComposition.prepareBlock({
+		init,
+		update,
+		view,
+		operations: {
+			requestReset: Message.RequestedReset,
+			requestSelect: Message.RequestedSelect,
+			informOfSelection: Message.InformedOfSelection,
+		},
+		EffectsLayer,
+	})
+export const TabsBlock: Block.FromAssemblyWithViewAndOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

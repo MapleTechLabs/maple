@@ -8,9 +8,8 @@ import { badge } from "../display"
 import { filterChip } from "../filter-chip"
 import { icon } from "../icon"
 import { input } from "../input"
-import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
+import type { SectionRender, ViewInputs as SectionViewInputs } from "./filter-sections"
 import { formatRange, type RangeUnit, UNIT_SUFFIX, UNIT_WORDS } from "./range-format"
-import { type HistogramMessage, type RangeBucket, rangeHistogram } from "./range-histogram"
 
 // Port of `RangeFilterSection` (packages/ui/src/components/filters/range-filter-section.tsx).
 // The draft text lives in the caller's Model; it commits on blur, Enter or the caller's debounce.
@@ -22,22 +21,19 @@ export type RangeFilterSectionConfig<M> = Readonly<{
 	/** One short line under the header, for meaning the label can't carry. */
 	hint?: string
 	unit: RangeUnit
-	/** The distribution above the inputs (drawn when it has more than one bucket). */
-	histogram?: ReadonlyArray<RangeBucket>
-	histogramUnitLabel?: string
-	/** The bar under the pointer (the readout names it), and the histogram's pointer Messages. */
-	histogramHover?: number | undefined
-	/** The bar a held press went down on, for the drag preview. */
-	histogramDrag?: number | undefined
-	onHistogram?: (message: HistogramMessage) => M
+	/**
+	 * The distribution above the inputs: `rangeHistogram` built by the caller, whose builder
+	 * carries its Mount. Pass it only when the distribution has more than one bucket.
+	 */
+	histogram?: Html
 	minValue: number | undefined
 	maxValue: number | undefined
 	draft: Readonly<{ min: string; max: string }>
 	presets: ReadonlyArray<RangePreset>
 	/** Base UI `useId`s for the panel and the two inputs. */
 	ids: Readonly<{ panel: string; min: string; max: string }>
-	sections: SectionsModel
-	toSectionsMessage: (message: SectionsMessage) => M
+	/** Embeds the page's `FilterSectionsBlock` binding: `h.block(Binding.embedView({ slotId, model, viewInputs }))`. */
+	embedSection: (viewInputs: SectionViewInputs) => Html
 	onDraftChange: (min: string, max: string) => M
 	onCommitDraft: M
 	/** A preset, the clear button or the badge's ×: applied at once. */
@@ -77,21 +73,7 @@ const presetMessage = <M>(config: RangeFilterSectionConfig<M>, preset: RangePres
 const panelBody = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): Html => {
 	const hasActiveRange = config.minValue !== undefined || config.maxValue !== undefined
 	const hasUnitText = /[a-z$]/i.test(config.draft.min) || /[a-z$]/i.test(config.draft.max)
-	const { onHistogram } = config
-	const histogram =
-		config.histogram !== undefined && config.histogram.length > 1 && onHistogram !== undefined
-			? rangeHistogram(h, {
-					buckets: config.histogram,
-					unit: config.unit,
-					unitLabel: config.histogramUnitLabel ?? "sessions",
-					title: config.title,
-					minValue: config.minValue,
-					maxValue: config.maxValue,
-					hoveredIndex: config.histogramHover,
-					dragStart: config.histogramDrag,
-					toMessage: onHistogram,
-				})
-			: null
+	const histogram = config.histogram ?? null
 	return h.div(
 		[h.Class("space-y-2")],
 		[
@@ -156,12 +138,22 @@ const panelBody = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): H
 }
 
 /** A collapsible min/max range with shortcut presets. */
-export const rangeFilterSection = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): Html => {
-	const { isOpen } = sectionOf(config.sections, config.title, true)
-	return h.div(
+export const rangeFilterSection = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>): Html =>
+	config.embedSection({
+		key: config.title,
+		defaultOpen: true,
+		toView: (render) => sectionBody(h, config, render),
+	})
+
+const sectionBody = <M>(
+	h: HtmlBuilder<M>,
+	config: RangeFilterSectionConfig<M>,
+	{ state: { isOpen }, toggle }: SectionRender,
+): Html =>
+	h.div(
 		[h.DataAttribute(isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
 		[
-			trigger(h, config, isOpen),
+			trigger(h, config, isOpen, toggle),
 			...(isOpen
 				? [
 						h.div(
@@ -182,9 +174,13 @@ export const rangeFilterSection = <M>(h: HtmlBuilder<M>, config: RangeFilterSect
 				: []),
 		],
 	)
-}
 
-const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOpen: boolean): Html => {
+const trigger = <M>(
+	h: HtmlBuilder<M>,
+	config: RangeFilterSectionConfig<M>,
+	isOpen: boolean,
+	toggle: SectionRender["toggle"],
+): Html => {
 	const hasActiveRange = config.minValue !== undefined || config.maxValue !== undefined
 	return h.button(
 		[
@@ -201,11 +197,7 @@ const trigger = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, isOp
 			h.DataAttribute("slot", "collapsible-trigger"),
 			h.Tabindex(0),
 			h.Type("button"),
-			h.OnClick(
-				config.toSectionsMessage(
-					SectionsMessage.ToggledSection({ key: config.title, defaultOpen: true }),
-				),
-			),
+			...toggle,
 		],
 		[
 			h.span([h.Class("truncate")], [config.title]),

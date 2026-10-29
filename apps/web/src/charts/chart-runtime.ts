@@ -24,12 +24,15 @@ export type ChartRuntimeMessage = typeof ChartRuntimeMessage.Type
 
 export const LoadChartRuntime = Command.define("LoadChartRuntime", {
 	messages: [ChartRuntimeMessage.CompletedLoadChartRuntime, ChartRuntimeMessage.FailedLoadChartRuntime],
-	execute: Effect.tryPromise(() => import("./chart-host")).pipe(
-		Effect.as(ChartRuntimeMessage.CompletedLoadChartRuntime()),
-		Effect.catch((error) =>
-			Effect.succeed(ChartRuntimeMessage.FailedLoadChartRuntime({ reason: String(error) })),
-		),
-	),
+	handler: function* () {
+		return () =>
+			Effect.tryPromise(() => import("./chart-host")).pipe(
+				Effect.as(ChartRuntimeMessage.CompletedLoadChartRuntime()),
+				Effect.catch((error) =>
+					Effect.succeed(ChartRuntimeMessage.FailedLoadChartRuntime({ reason: String(error) })),
+				),
+			)
+	},
 })
 
 export const isChartRuntimeReady = (runtime: ChartRuntime): boolean => runtime._tag === "Ready"

@@ -132,7 +132,9 @@ export const linkedCursorStream = <A>(element: Element, attached: A): Stream.Str
 /** `linkedCursorStream` as a Mount resolving `CompletedMountLinkedCursor`. */
 export const MountLinkedCursor = Mount.defineStream("MountLinkedCursor", {
 	messages: [LinkedCursorMessage.CompletedMountLinkedCursor],
-	execute: ({ element }) => linkedCursorStream(element, LinkedCursorMessage.CompletedMountLinkedCursor()),
+	handler: function* () {
+		return ({ element }) => linkedCursorStream(element, LinkedCursorMessage.CompletedMountLinkedCursor())
+	},
 })
 
 /** `LinkedCursorOverlay`: positioned and shown by `MountLinkedCursor`. */

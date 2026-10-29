@@ -1,5 +1,5 @@
 import { Runtime } from "foldkit"
-import { type Resources, ResourcesLive } from "../platform/resources"
+import type { Program } from "foldkit"
 
 /**
  * A lab entry is a self-contained Foldkit program booted on `/lab/<path>` instead of the app,
@@ -10,38 +10,16 @@ export interface LabEntry {
 	readonly start: (container: HTMLElement) => void
 }
 
-export const defineLab = <Model, Message extends { _tag: string }>(
+/**
+ * Boots the Program `makeElement(container)` returns: `Program.makeElement` over the lab's root
+ * Block (with `Flags` and `flags` when it reads the browser before init), then `.provide(ResourcesLive)`.
+ */
+export const defineLab = <Provided>(
 	title: string,
-	program: Omit<Runtime.ElementConfig<Model, Message, Resources>, "container" | "resources">,
+	makeElement: (container: HTMLElement) => Program.Runnable<undefined, void, Provided, "Element">,
 ): LabEntry => ({
 	title,
 	start: (container) => {
-		Runtime.run(
-			Runtime.makeElement<Model, Message, Resources>({
-				...program,
-				container,
-				resources: ResourcesLive,
-			}),
-		)
-	},
-})
-
-/** `defineLab` for a program that reads the browser (timezone, locale) through Flags before init. */
-export const defineLabWithFlags = <Model, Message extends { _tag: string }, Flags>(
-	title: string,
-	program: Omit<
-		Runtime.ElementConfigWithFlags<Model, Message, Flags, Resources>,
-		"container" | "resources"
-	>,
-): LabEntry => ({
-	title,
-	start: (container) => {
-		Runtime.run(
-			Runtime.makeElement<Model, Message, Flags, Resources>({
-				...program,
-				container,
-				resources: ResourcesLive,
-			}),
-		)
+		Runtime.run(makeElement(container))
 	},
 })

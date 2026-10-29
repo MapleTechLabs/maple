@@ -51,24 +51,26 @@ const readTokens = (element: Element, tokens: ReadonlyArray<string>): ThemeColor
 export const ResolveThemeColors = Mount.defineStream("ResolveThemeColors", {
 	args: { tokens: Schema.Array(Schema.String) },
 	messages: [ThemeMessage.ResolvedThemeColors],
-	execute: ({ element, tokens }) =>
-		Stream.callback<ThemeMessage>((queue) =>
-			Effect.acquireRelease(
-				Effect.sync(() => {
-					const emit = () =>
-						Queue.offerUnsafe(
-							queue,
-							ThemeMessage.ResolvedThemeColors({ colors: readTokens(element, tokens) }),
-						)
-					emit()
-					const observer = new MutationObserver(emit)
-					observer.observe(document.documentElement, {
-						attributes: true,
-						attributeFilter: ["class"],
-					})
-					return observer
-				}),
-				(observer) => Effect.sync(() => observer.disconnect()),
-			).pipe(Effect.flatMap(() => Effect.never)),
-		),
+	handler: function* () {
+		return ({ element, tokens }) =>
+			Stream.callback<ThemeMessage>((queue) =>
+				Effect.acquireRelease(
+					Effect.sync(() => {
+						const emit = () =>
+							Queue.offerUnsafe(
+								queue,
+								ThemeMessage.ResolvedThemeColors({ colors: readTokens(element, tokens) }),
+							)
+						emit()
+						const observer = new MutationObserver(emit)
+						observer.observe(document.documentElement, {
+							attributes: true,
+							attributeFilter: ["class"],
+						})
+						return observer
+					}),
+					(observer) => Effect.sync(() => observer.disconnect()),
+				).pipe(Effect.flatMap(() => Effect.never)),
+			)
+	},
 })

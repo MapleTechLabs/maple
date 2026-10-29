@@ -1,9 +1,8 @@
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import type { Message, Model } from "./chart"
+import type { Html } from "foldkit/html"
+import { type ChartAttribute, ChartBlock, type ChartViewBuilder } from "./chart"
 import { type CategoricalBin, ChartSpec, ChartTooltip, type NumericBin } from "./chart-spec"
 import { formatBound } from "./histogram-format"
 import { plotFrame } from "./plot-frame"
@@ -77,11 +76,11 @@ const numericBins = (
 
 /** `CountTooltipBody`. Shared with the histogram spike, whose body is the same markup. */
 export const countTooltipBody = (
-	h: HtmlBuilder<Message>,
+	h: ChartViewBuilder,
 	heading: string,
 	count: number,
 	color: string,
-	portal: Attribute<Message>,
+	portal: ChartAttribute,
 ): Html =>
 	h.div(
 		[h.Class("grid min-w-[9rem] items-start gap-1.5"), portal],
@@ -110,11 +109,11 @@ export const countTooltipBody = (
 	)
 
 const histogramTooltipBody = (
-	h: HtmlBuilder<Message>,
+	h: ChartViewBuilder,
 	tooltip: ChartTooltip,
 	color: string,
 	unit: string | undefined,
-	portal: Attribute<Message>,
+	portal: ChartAttribute,
 ): Option.Option<Html> =>
 	ChartTooltip.match(tooltip, {
 		NumericBin: (bin) =>
@@ -133,7 +132,7 @@ const histogramTooltipBody = (
 		Bucket: () => Option.none(),
 	})
 
-export const view = Submodel.defineView<Model, Message, HistogramChartInputs>((model, inputs, h) => {
+export const view = ChartBlock.makeView.withInputs<HistogramChartInputs>((model, inputs, h) => {
 	const source = inputs.data
 	const binCount = inputs.bucketCount ?? DEFAULT_BIN_COUNT
 	const useLogY = inputs.logScaleY ?? inputs.logScale ?? false

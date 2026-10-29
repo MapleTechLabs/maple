@@ -1,18 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import { Message, type Model } from "./chart"
+import type { Html } from "foldkit/html"
+import { type ChartAttribute, ChartBlock, type ChartViewBuilder } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import { ChartSpec, ChartTooltip, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
-import {
-	SERIES_FALLBACK_COLOR,
-	seriesColorTokens,
-	seriesDefinitionsOf,
-} from "./timeseries"
+import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
 import { timeseriesLegend } from "./timeseries-legend"
 
 // Port of `QueryBuilderAreaChart` + `Timeseries.Frame` (packages/ui/src/components/charts/area/,
@@ -57,9 +52,9 @@ export interface AreaChartInputs {
 }
 
 const tooltipBody = (
-	h: HtmlBuilder<Message>,
+	h: ChartViewBuilder,
 	tooltip: ChartTooltip,
-	portal: Attribute<Message>,
+	portal: ChartAttribute,
 ): Option.Option<Html> =>
 	ChartTooltip.match(tooltip, {
 		Bucket: (bucket) => Option.some(bucketTooltipBody(h, bucket, portal)),
@@ -69,7 +64,7 @@ const tooltipBody = (
 		HeatmapSlot: () => Option.none(),
 	})
 
-export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model, inputs, h) => {
+export const view = ChartBlock.makeView.withInputs<AreaChartInputs>((model, inputs, h) => {
 	const { definitions } = seriesDefinitionsOf(inputs.data)
 	const tokens = seriesColorTokens(definitions)
 	const colors = Object.fromEntries(

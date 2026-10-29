@@ -1,9 +1,8 @@
 import { formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
-import { Message, type Model } from "./chart"
+import type { Html } from "foldkit/html"
+import { ChartBlock, type ChartViewBuilder, Message } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
 import { funnelStages, type Stage } from "./funnel-stages"
 
@@ -18,7 +17,7 @@ export interface FunnelChartInputs {
 	readonly showStepPercent?: boolean | undefined
 }
 
-type H = HtmlBuilder<Message>
+type H = ChartViewBuilder
 
 export const fmtValue = (value: number, unit?: string): string =>
 	unit !== undefined && unit !== "" ? formatValueByUnit(value, unit) : formatNumber(value)
@@ -36,7 +35,11 @@ const sep = (h: H, glyph: string): Html => h.span([h.Class("px-1 text-muted-fore
 const swatch = (h: H, className: string, color: string): Html =>
 	h.span([h.Class(className), h.Style({ "background-color": color })])
 
-const legendRow = (h: H, legend: ReadonlyArray<{ name: string; color: string }>, hoverGroup: string | null): Html =>
+const legendRow = (
+	h: H,
+	legend: ReadonlyArray<{ name: string; color: string }>,
+	hoverGroup: string | null,
+): Html =>
 	h.div(
 		[h.Class("flex shrink-0 items-start gap-x-3 text-3xs leading-none text-muted-foreground")],
 		[
@@ -58,7 +61,9 @@ const legendRow = (h: H, legend: ReadonlyArray<{ name: string; color: string }>,
 									hoverGroup !== null && hoverGroup !== entry.name && "opacity-50",
 								),
 							),
-							h.OnMouseEnter(Message.ChangedActiveGroup({ maybeGroup: Option.some(entry.name) })),
+							h.OnMouseEnter(
+								Message.ChangedActiveGroup({ maybeGroup: Option.some(entry.name) }),
+							),
 							h.OnMouseLeave(Message.ChangedActiveGroup({ maybeGroup: Option.none() })),
 							h.Title(entry.name),
 						],
@@ -95,7 +100,13 @@ const stageNumbers = (h: H, stage: Stage, hoverGroup: string | null, flags: Flag
 	]
 }
 
-const groupBars = (h: H, stage: Stage, hoverGroup: string | null, fade: number, unit: string | undefined): Html =>
+const groupBars = (
+	h: H,
+	stage: Stage,
+	hoverGroup: string | null,
+	fade: number,
+	unit: string | undefined,
+): Html =>
 	h.div(
 		[h.Class("flex w-full flex-col gap-0.5"), h.DataAttribute("slot", "funnel-group-bars")],
 		stage.groups.map((group) =>
@@ -112,7 +123,9 @@ const groupBars = (h: H, stage: Stage, hoverGroup: string | null, fade: number, 
 						h.Style({
 							width: `${group.widthPct * 100}%`,
 							"background-color": group.color,
-							opacity: String((hoverGroup !== null && hoverGroup !== group.name ? 0.35 : 1) * fade),
+							opacity: String(
+								(hoverGroup !== null && hoverGroup !== group.name ? 0.35 : 1) * fade,
+							),
 							transition: "opacity 140ms ease, width 220ms ease",
 						}),
 					]),
@@ -121,7 +134,7 @@ const groupBars = (h: H, stage: Stage, hoverGroup: string | null, fade: number, 
 		),
 	)
 
-export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((model, inputs, h) => {
+export const view = ChartBlock.makeView.withInputs<FunnelChartInputs>((model, inputs, h) => {
 	const { stages, legend } = funnelStages(inputs.data)
 	if (stages.length === 0)
 		return h.div(
@@ -176,7 +189,9 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 										h.Class(
 											cn(
 												"truncate",
-												stage.unnamed ? "italic text-muted-foreground" : "text-foreground/90",
+												stage.unnamed
+													? "italic text-muted-foreground"
+													: "text-foreground/90",
 											),
 										),
 										h.Title(stage.name),
@@ -189,12 +204,19 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 								),
 							],
 						),
-						isGrouped ? groupBars(h, stage, hoverGroup, fade, inputs.unit) : stageBar(h, stage, fade),
+						isGrouped
+							? groupBars(h, stage, hoverGroup, fade, inputs.unit)
+							: stageBar(h, stage, fade),
 					],
 				)
 			}),
 			...(hiddenCount > 0
-				? [h.div([h.Class("shrink-0 text-3xs leading-none text-muted-foreground")], [`+${hiddenCount} more`])]
+				? [
+						h.div(
+							[h.Class("shrink-0 text-3xs leading-none text-muted-foreground")],
+							[`+${hiddenCount} more`],
+						),
+					]
 				: []),
 		],
 	)

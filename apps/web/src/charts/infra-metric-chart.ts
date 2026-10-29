@@ -2,12 +2,11 @@ import { validateCssColor } from "@maple/ui/lib/sanitizers"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartEmpty } from "../ui/chart-state"
 import { eyebrow } from "../ui/eyebrow"
 import { bucketTooltipBody } from "./bucket-tooltip"
-import type { Message, Model } from "./chart"
+import { ChartBlock, type ChartViewBuilder, type Message, type Model } from "./chart"
 import type { ChartSpec } from "./chart-spec"
 import { asChartUnit, infraPoints, labelFor } from "./definitions/infra-metric"
 import type { ChartEventMarker } from "./event-marker-spec"
@@ -18,7 +17,7 @@ import { resolveColor, type ThemeColors } from "./theme-colors"
 
 // The infra metric chart: the spec
 // with every colour resolved, the header's series info, the linked-cursor marker and overlay, and the
-// `CursorPlot` box. Embed `view` (a built spec) or `metricView` (rows) with `h.submodel`.
+// `CursorPlot` box. Embed `view` (a built spec) or `metricView` (rows) as `view` of a `ChartBlock` Binding.
 
 export const INFRA_METRIC_CHART_HEIGHT = 220
 /** The empty-chart message. */
@@ -136,7 +135,7 @@ export interface InfraMetricChartInputs {
 	readonly header?: Html
 }
 
-const chartBody = (h: HtmlBuilder<Message>, model: Model, inputs: InfraMetricChartInputs): Html => {
+const chartBody = (h: ChartViewBuilder, model: Model, inputs: InfraMetricChartInputs): Html => {
 	if (!hasPlottableValue(inputs.spec.rows)) {
 		return chartEmpty(h, { height: inputs.height }, [CHART_EMPTY_MESSAGE])
 	}
@@ -182,7 +181,7 @@ const chartBody = (h: HtmlBuilder<Message>, model: Model, inputs: InfraMetricCha
 }
 
 /** `InfraMetricChart` over a built spec. */
-export const view = Submodel.defineView<Model, Message, InfraMetricChartInputs>((model, inputs, h) =>
+export const view = ChartBlock.makeView.withInputs<InfraMetricChartInputs>((model, inputs, h) =>
 	chartBody(h, model, inputs),
 )
 
@@ -195,7 +194,7 @@ export type MetricChartInputs = Readonly<
 >
 
 /** `InfraMetricChart` over raw rows: the spec and the header's series info derived here. */
-export const metricView = Submodel.defineView<Model, Message, MetricChartInputs>((model, inputs, h) => {
+export const metricView = ChartBlock.makeView.withInputs<MetricChartInputs>((model, inputs, h) => {
 	const { spec, info } = infraMetricModel({
 		...inputs,
 		unit: asChartUnit(inputs.unit),

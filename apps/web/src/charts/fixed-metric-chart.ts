@@ -1,13 +1,12 @@
 import { Option } from "effect"
-import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
-import type { Message, Model } from "./chart"
+import { ChartBlock } from "./chart"
 import type { ChartSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 
 // The `PlotFrame` half of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`, with
-// `PlotTooltipBody` as the tooltip. Embed it with `h.submodel`; the definition is built in the Mount.
+// `PlotTooltipBody` as the tooltip. Embed it as `view` of a `ChartBlock` Binding; the definition is built in the Mount.
 
 export interface FixedMetricChartInputs {
 	readonly chartId: string
@@ -21,7 +20,7 @@ export interface FixedMetricChartInputs {
 	readonly reportPlot?: boolean
 }
 
-export const view = Submodel.defineView<Model, Message, FixedMetricChartInputs>((model, inputs, h) =>
+export const view = ChartBlock.makeView.withInputs<FixedMetricChartInputs>((model, inputs, h) =>
 	plotFrame(h, {
 		chartId: inputs.chartId,
 		spec: inputs.spec,

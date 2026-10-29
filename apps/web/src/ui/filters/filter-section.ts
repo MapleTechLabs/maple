@@ -11,8 +11,7 @@ import { badgeVariants } from "@maple/ui/styles/ui/badge"
 import { emptyMessage } from "../empty"
 import { icon, iconColor, type IconName } from "../icon"
 import { label } from "../label"
-import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } from "./filter-sections"
-import { searchInput } from "../search-input"
+import type { SectionRender, ViewInputs as SectionViewInputs } from "./filter-sections"
 
 // Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
 // Alt+click on a label toggles the exclusion: `OnClick` carries no modifiers, so the root's
@@ -66,8 +65,8 @@ export type FilterSectionConfig<M> = Readonly<{
 	isSearchable?: boolean
 	maxVisible?: number
 	defaultOpen?: boolean
-	sections: SectionsModel
-	toSectionsMessage: (message: SectionsMessage) => M
+	/** Embeds the page's `FilterSectionsBlock` binding: `h.block(Binding.embedView({ slotId, model, viewInputs }))`. */
+	embedSection: (viewInputs: SectionViewInputs) => Html
 	/** The checkbox was toggled: include it, or drop it from both lists. */
 	onToggle: (name: string) => M
 	onOnly?: (name: string) => M
@@ -299,8 +298,27 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 	const excluded = config.excluded ?? []
 	if (config.options.length === 0 && excluded.length === 0 && config.selected.length === 0) return null
 	const defaultOpen = config.defaultOpen ?? true
-	const state = sectionOf(config.sections, config.title, defaultOpen)
 	const isSearchable = config.isSearchable ?? false
+	const toView = (render: SectionRender) => sectionBody(h, config, excluded, isSearchable, render)
+	if (!isSearchable) return config.embedSection({ key: config.title, defaultOpen, toView })
+	return config.embedSection({
+		key: config.title,
+		defaultOpen,
+		search: {
+			id: `filter-section-${config.title}-search`,
+			placeholder: `Search ${config.title.toLowerCase()}...`,
+		},
+		toView,
+	})
+}
+
+const sectionBody = <M>(
+	h: HtmlBuilder<M>,
+	config: FilterSectionConfig<M>,
+	excluded: ReadonlyArray<string>,
+	isSearchable: boolean,
+	{ state, toggle, showMore, searchInput }: SectionRender,
+): Html => {
 	const { visible, hasMore, overflowingMatches } = visibleFilterOptions({
 		options: config.options,
 		selected: config.selected,
@@ -310,7 +328,6 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 		maxVisible: config.maxVisible ?? 5,
 	})
 	const panelId = `filter-section-${config.title}-panel`
-	const toSections = config.toSectionsMessage
 	return h.div(
 		[h.DataAttribute(state.isOpen ? "open" : "closed", ""), h.DataAttribute("slot", "collapsible")],
 		[
@@ -329,7 +346,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 					h.DataAttribute("slot", "collapsible-trigger"),
 					h.Tabindex(0),
 					h.Type("button"),
-					h.OnClick(toSections(SectionsMessage.ToggledSection({ key: config.title, defaultOpen }))),
+					...toggle,
 				],
 				[
 					h.span(
@@ -375,7 +392,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 								h.div(
 									[h.Class("pb-3")],
 									[
-										...(isSearchable ? [sectionSearch(h, config, state.search)] : []),
+										...(isSearchable ? [searchInput] : []),
 										h.div(
 											[h.Class("space-y-2")],
 											[
@@ -409,15 +426,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 																	size: "xs",
 																	className:
 																		"px-0 text-muted-foreground hover:text-foreground",
-																	attributes: [
-																		h.OnClick(
-																			toSections(
-																				SectionsMessage.ClickedShowMore(
-																					{ key: config.title },
-																				),
-																			),
-																		),
-																	],
+																	attributes: showMore,
 																},
 																[
 																	state.isShowingAll
@@ -438,18 +447,6 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 		],
 	)
 }
-
-const sectionSearch = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, search: string): Html =>
-	searchInput(h, {
-		id: `filter-section-${config.title}-search`,
-		size: "sm",
-		className: "mb-2",
-		placeholder: `Search ${config.title.toLowerCase()}...`,
-		value: search,
-		onInput: (value) =>
-			config.toSectionsMessage(SectionsMessage.ChangedSearch({ key: config.title, search: value })),
-		onClear: config.toSectionsMessage(SectionsMessage.ChangedSearch({ key: config.title, search: "" })),
-	})
 
 /** `SingleCheckboxFilter`: one checkbox with its label (and count). */
 export const singleCheckboxFilter = <M>(

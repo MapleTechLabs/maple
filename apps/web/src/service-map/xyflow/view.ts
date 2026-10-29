@@ -5,6 +5,7 @@ import { Option } from "effect"
 import {
 	ANIMATION_ATTRIBUTE,
 	AttachFlowCanvas,
+	type AttachFlowCanvasRequirement,
 	animationAttribute,
 	DEFAULT_GESTURES,
 	type FlowGestures,
@@ -122,8 +123,14 @@ const limitsOf = <M>(canvas: FlowCanvasView<M>) => ({
 	gestures: canvas.gestures ?? DEFAULT_GESTURES,
 })
 
-/** `<ReactFlow>`: wrapper, zoom pane, pane, viewport and the a11y descriptions. */
-export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Html =>
+/**
+ * `<ReactFlow>`: wrapper, zoom pane, pane, viewport and the a11y descriptions. The owning
+ * Composition registers `AttachFlowCanvas` in `mounts` and merges `AttachFlowCanvas.layer`.
+ */
+export const flowCanvas = <M>(
+	h: HtmlBuilder<M, AttachFlowCanvasRequirement>,
+	canvas: FlowCanvasView<M>,
+): Html =>
 	h.div(
 		[
 			...(canvas.ariaLabel === undefined ? [] : [h.AriaLabel(canvas.ariaLabel)]),
@@ -145,12 +152,7 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 					h.Style(FILL),
 					h.Attribute(MEASURE_EPOCH_ATTRIBUTE, String(canvas.model.measureEpoch)),
 					h.Attribute(LIMITS_ATTRIBUTE, limitsAttribute(limitsOf(canvas))),
-					h.OnMount(
-						Mount.mapMessage(
-							AttachFlowCanvas(limitsOf(canvas)),
-							canvas.toMessage,
-						),
-					),
+					h.OnMount(Mount.mapMessage(AttachFlowCanvas(limitsOf(canvas)), canvas.toMessage)),
 				],
 				[
 					h.div(
@@ -167,7 +169,10 @@ export const flowCanvas = <M>(h: HtmlBuilder<M>, canvas: FlowCanvasView<M>): Htm
 								],
 								[
 									canvas.edges,
-									h.div([h.Class("react-flow__edgelabel-renderer")], canvas.edgeLabels ?? []),
+									h.div(
+										[h.Class("react-flow__edgelabel-renderer")],
+										canvas.edgeLabels ?? [],
+									),
 									canvas.nodes,
 									h.div([
 										h.Class("react-flow__viewport-portal"),

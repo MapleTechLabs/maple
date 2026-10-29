@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { Option } from "effect"
-import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
-import type { Message } from "./chart"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import type { ChartAttribute, ChartViewBuilder, Message } from "./chart"
 import { CHART_LABEL_ATTRIBUTE, CHART_SPEC_ATTRIBUTE, type ChartSpec, encodeChartSpec } from "./chart-spec"
 import { type ChartRenderer, MountChart, PLOT_BOX_ATTRIBUTE, PortalTooltipBody } from "./chart-mounts"
 // The tooltip shell theming, imported here because every chart goes through the frame.
@@ -28,11 +28,11 @@ export interface PlotFrameInputs {
 	 * `renderTooltipBody(...)` for the current tooltip datum, `None` while the tooltip is hidden. The
 	 * body's root carries `portal`, the Mount that moves it into the library's tooltip shell.
 	 */
-	readonly tooltipBody: (portal: Attribute<Message>) => Option.Option<Html>
+	readonly tooltipBody: (portal: ChartAttribute) => Option.Option<Html>
 }
 
 /** Renders the tooltip body out of layout; its portal Mount moves it into the tooltip shell. */
-const tooltipHolder = (h: HtmlBuilder<Message>, inputs: PlotFrameInputs): Html =>
+const tooltipHolder = (h: ChartViewBuilder, inputs: PlotFrameInputs): Html =>
 	h.div(
 		[h.Hidden(true), h.DataAttribute("chart-tooltip-holder", "")],
 		Option.toArray(inputs.tooltipBody(h.OnMount(PortalTooltipBody()))),
@@ -41,7 +41,7 @@ const tooltipHolder = (h: HtmlBuilder<Message>, inputs: PlotFrameInputs): Html =
 // NOTE: the plot box and the side-legend row are separate view functions so their identities differ;
 // as inline same-tag divs they would patch into each other when the legend moves beside the plot.
 const plotBox = (
-	h: HtmlBuilder<Message>,
+	h: ChartViewBuilder,
 	inputs: PlotFrameInputs,
 	renderer: ChartRenderer,
 	sideLegend: boolean,
@@ -93,7 +93,7 @@ const sideLegendRow = (h: HtmlBuilder<Message>, plot: Html, legend: Html): Html 
 		[plot, h.div([h.Class("max-w-[45%] shrink-0 overflow-auto")], [legend])],
 	)
 
-export const plotFrame = (h: HtmlBuilder<Message>, inputs: PlotFrameInputs): Html => {
+export const plotFrame = (h: ChartViewBuilder, inputs: PlotFrameInputs): Html => {
 	const renderer = inputs.renderer ?? "canvas"
 	const legendPlacement = inputs.legendPlacement ?? "bottom"
 	const sideLegend = legendPlacement === "right" && inputs.legend !== undefined

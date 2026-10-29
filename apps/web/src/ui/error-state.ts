@@ -338,57 +338,62 @@ const budgets = new Map<string, RetryBudget>()
 export const MountNetworkAutoRetry = Mount.defineStream("MountNetworkAutoRetry", {
 	args: { retryKey: Schema.String },
 	messages: [AutoRetryMessage.ElapsedAutoRetry],
-	execute: ({ retryKey }) =>
-		Stream.callback<typeof AutoRetryMessage.ElapsedAutoRetry.Type>((queue) =>
-			Effect.acquireRelease(
-				Effect.flatMap(Effect.all([Clock.currentTimeMillis, Random.next]), ([now, jitter]) =>
-					Effect.sync(() => {
-						const key = `${location.pathname} ${retryKey}`
-						budgets.forEach((budget, other) => {
-							if (now - budget.touchedAt >= RESUME_WINDOW_MS) budgets.delete(other)
-						})
-						budgets.set(key, resume(budgets.get(key), now, jitter))
-						const state = { timeout: 0 }
-						const probe = () => Queue.offerUnsafe(queue, AutoRetryMessage.ElapsedAutoRetry())
-						const schedule = () => {
-							const budget = budgets.get(key)
-							if (budget === undefined || isExhausted(budget)) return
-							state.timeout = window.setTimeout(
-								() => {
-									const due = budgets.get(key)
-									const at = Date.now()
-									if (due !== undefined && at >= due.nextAt) {
-										const isUp = !document.hidden && navigator.onLine !== false
-										budgets.set(
-											key,
-											isUp
-												? probed(due, at, Math.random())
-												: postponed(due, at, Math.random()),
-										)
-										if (isUp) probe()
-									}
-									schedule()
-								},
-								Math.max(0, budget.nextAt - Date.now()),
-							)
-						}
-						const onVisibilityChange = () => {
-							if (!document.hidden && navigator.onLine !== false) probe()
-						}
-						window.addEventListener("online", probe)
-						document.addEventListener("visibilitychange", onVisibilityChange)
-						schedule()
-						return () => {
-							window.removeEventListener("online", probe)
-							document.removeEventListener("visibilitychange", onVisibilityChange)
-							window.clearTimeout(state.timeout)
-						}
-					}),
+	handler: function* () {
+		return ({ retryKey }) =>
+			Stream.callback<typeof AutoRetryMessage.ElapsedAutoRetry.Type>((queue) =>
+				Effect.acquireRelease(
+					Effect.flatMap(Effect.all([Clock.currentTimeMillis, Random.next]), ([now, jitter]) =>
+						Effect.sync(() => {
+							const key = `${location.pathname} ${retryKey}`
+							budgets.forEach((budget, other) => {
+								if (now - budget.touchedAt >= RESUME_WINDOW_MS) budgets.delete(other)
+							})
+							budgets.set(key, resume(budgets.get(key), now, jitter))
+							const state = { timeout: 0 }
+							const probe = () => Queue.offerUnsafe(queue, AutoRetryMessage.ElapsedAutoRetry())
+							const schedule = () => {
+								const budget = budgets.get(key)
+								if (budget === undefined || isExhausted(budget)) return
+								state.timeout = window.setTimeout(
+									() => {
+										const due = budgets.get(key)
+										const at = Date.now()
+										if (due !== undefined && at >= due.nextAt) {
+											const isUp = !document.hidden && navigator.onLine !== false
+											budgets.set(
+												key,
+												isUp
+													? probed(due, at, Math.random())
+													: postponed(due, at, Math.random()),
+											)
+											if (isUp) probe()
+										}
+										schedule()
+									},
+									Math.max(0, budget.nextAt - Date.now()),
+								)
+							}
+							const onVisibilityChange = () => {
+								if (!document.hidden && navigator.onLine !== false) probe()
+							}
+							window.addEventListener("online", probe)
+							document.addEventListener("visibilitychange", onVisibilityChange)
+							schedule()
+							return () => {
+								window.removeEventListener("online", probe)
+								document.removeEventListener("visibilitychange", onVisibilityChange)
+								window.clearTimeout(state.timeout)
+							}
+						}),
+					),
+					(release) => Effect.sync(release),
 				),
-				(release) => Effect.sync(release),
-			),
-		),
+			)
+	},
 })
+
+/** Builder capability a view needs to draw an auto-retrying `errorState`. */
+export type AutoRetryMountRequirements = Mount.RequirementsOf<typeof MountNetworkAutoRetry>
 
 /** A "retry soon" ending ("Retry in a few seconds.", "Try again or reload.") the retry affordance replaces. */
 const RETRY_SOON_ENDING =
@@ -412,7 +417,10 @@ export const autoRetryMessage = (message: string, note?: string): string =>
 		"Retrying automatically…",
 	].join(" ")
 
-export const errorState = <M>(h: HtmlBuilder<M>, options: ErrorStateOptions<M>): Html => {
+export const errorState = <M>(
+	h: HtmlBuilder<M, AutoRetryMountRequirements>,
+	options: ErrorStateOptions<M>,
+): Html => {
 	const { failure } = options
 	const heading = options.title ?? failure.title
 	const canRetry =

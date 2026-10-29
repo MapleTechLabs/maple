@@ -25,7 +25,70 @@ const Bound = Schema.Struct({ from: Schema.Number, to: Schema.Number, unbounded:
 /** A count bucket's last member is `to - 1`: the bound a selection writes. */
 const lastOfBound = (bound: typeof Bound.Type, isCount: boolean): number => (isCount ? bound.to - 1 : bound.to)
 
-/** Pointer capture on the bars. */
+const pointerStream = (element: Element, bounds: ReadonlyArray<typeof Bound.Type>, isCount: boolean) =>
+	Stream.callback<HistogramMessage>((queue) =>
+		Effect.acquireRelease(
+			Effect.sync(() => {
+				const state = { dragStart: -1 }
+				const indexAt = (clientX: number): number => {
+					const rect = element.getBoundingClientRect()
+					if (rect.width === 0) return 0
+					const ratio = (clientX - rect.left) / rect.width
+					return Math.min(bounds.length - 1, Math.max(0, Math.floor(ratio * bounds.length)))
+				}
+				const onDown = (event: Event) => {
+					if (!(event instanceof PointerEvent)) return
+					state.dragStart = indexAt(event.clientX)
+					Queue.offerUnsafe(
+						queue,
+						HistogramMessage.PointedHistogramBar({ index: state.dragStart, dragStart: state.dragStart }),
+					)
+					if (event.currentTarget instanceof Element) event.currentTarget.setPointerCapture(event.pointerId)
+				}
+				const onMove = (event: Event) =>
+					event instanceof PointerEvent &&
+					Queue.offerUnsafe(
+						queue,
+						HistogramMessage.PointedHistogramBar({
+							index: indexAt(event.clientX),
+							dragStart: state.dragStart === -1 ? undefined : state.dragStart,
+						}),
+					)
+				const onUp = (event: Event) => {
+					if (!(event instanceof PointerEvent)) return
+					if (state.dragStart === -1) return
+					const end = indexAt(event.clientX)
+					const lo = Math.min(state.dragStart, end)
+					const hi = Math.max(state.dragStart, end)
+					state.dragStart = -1
+					const bottom = bounds[lo]
+					const top = bounds[hi]
+					if (bottom === undefined || top === undefined) return
+					Queue.offerUnsafe(
+						queue,
+						HistogramMessage.SelectedHistogramRange({
+							min: bottom.from,
+							max: lo === hi || top.unbounded ? undefined : lastOfBound(top, isCount),
+						}),
+					)
+				}
+				const onLeave = () => Queue.offerUnsafe(queue, HistogramMessage.LeftHistogram())
+				element.addEventListener("pointerdown", onDown)
+				element.addEventListener("pointermove", onMove)
+				element.addEventListener("pointerup", onUp)
+				element.addEventListener("pointerleave", onLeave)
+				return () => {
+					element.removeEventListener("pointerdown", onDown)
+					element.removeEventListener("pointermove", onMove)
+					element.removeEventListener("pointerup", onUp)
+					element.removeEventListener("pointerleave", onLeave)
+				}
+			}),
+			(release) => Effect.sync(release),
+		),
+	)
+
+/** Pointer capture on the bars. A view drawing `rangeHistogram` registers it in its Composition's `mounts`. */
 export const MountRangeHistogram = Mount.defineStream("MountRangeHistogram", {
 	args: { bounds: Schema.Array(Bound), isCount: Schema.Boolean },
 	messages: [
@@ -33,69 +96,13 @@ export const MountRangeHistogram = Mount.defineStream("MountRangeHistogram", {
 		HistogramMessage.LeftHistogram,
 		HistogramMessage.SelectedHistogramRange,
 	],
-	execute: ({ element, bounds, isCount }) =>
-		Stream.callback<HistogramMessage>((queue) =>
-			Effect.acquireRelease(
-				Effect.sync(() => {
-					const state = { dragStart: -1 }
-					const indexAt = (clientX: number): number => {
-						const rect = element.getBoundingClientRect()
-						if (rect.width === 0) return 0
-						const ratio = (clientX - rect.left) / rect.width
-						return Math.min(bounds.length - 1, Math.max(0, Math.floor(ratio * bounds.length)))
-					}
-					const onDown = (event: Event) => {
-						if (!(event instanceof PointerEvent)) return
-						state.dragStart = indexAt(event.clientX)
-						Queue.offerUnsafe(
-							queue,
-							HistogramMessage.PointedHistogramBar({ index: state.dragStart, dragStart: state.dragStart }),
-						)
-						if (event.currentTarget instanceof Element) event.currentTarget.setPointerCapture(event.pointerId)
-					}
-					const onMove = (event: Event) =>
-						event instanceof PointerEvent &&
-						Queue.offerUnsafe(
-							queue,
-							HistogramMessage.PointedHistogramBar({
-								index: indexAt(event.clientX),
-								dragStart: state.dragStart === -1 ? undefined : state.dragStart,
-							}),
-						)
-					const onUp = (event: Event) => {
-						if (!(event instanceof PointerEvent)) return
-						if (state.dragStart === -1) return
-						const end = indexAt(event.clientX)
-						const lo = Math.min(state.dragStart, end)
-						const hi = Math.max(state.dragStart, end)
-						state.dragStart = -1
-						const bottom = bounds[lo]
-						const top = bounds[hi]
-						if (bottom === undefined || top === undefined) return
-						Queue.offerUnsafe(
-							queue,
-							HistogramMessage.SelectedHistogramRange({
-								min: bottom.from,
-								max: lo === hi || top.unbounded ? undefined : lastOfBound(top, isCount),
-							}),
-						)
-					}
-					const onLeave = () => Queue.offerUnsafe(queue, HistogramMessage.LeftHistogram())
-					element.addEventListener("pointerdown", onDown)
-					element.addEventListener("pointermove", onMove)
-					element.addEventListener("pointerup", onUp)
-					element.addEventListener("pointerleave", onLeave)
-					return () => {
-						element.removeEventListener("pointerdown", onDown)
-						element.removeEventListener("pointermove", onMove)
-						element.removeEventListener("pointerup", onUp)
-						element.removeEventListener("pointerleave", onLeave)
-					}
-				}),
-				(release) => Effect.sync(release),
-			),
-		),
+	handler: function* () {
+		return ({ element, bounds, isCount }) => pointerStream(element, bounds, isCount)
+	},
 })
+
+/** Builder capability a view needs to draw `rangeHistogram`. */
+export type RangeHistogramMountRequirements = Mount.RequirementsOf<typeof MountRangeHistogram>
 
 export type RangeHistogramConfig<M> = Readonly<{
 	buckets: ReadonlyArray<RangeBucket>
@@ -111,7 +118,9 @@ export type RangeHistogramConfig<M> = Readonly<{
 	toMessage: (message: HistogramMessage) => M
 }>
 
-export const rangeHistogram = <M>(h: HtmlBuilder<M>, config: RangeHistogramConfig<M>): Html | null => {
+export const rangeHistogram = <M>(
+	h: HtmlBuilder<M, RangeHistogramMountRequirements>,
+	config: RangeHistogramConfig<M>): Html | null => {
 	const { buckets, unit } = config
 	const first = buckets[0]
 	const last = buckets.at(-1)

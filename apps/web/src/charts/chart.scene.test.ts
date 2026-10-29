@@ -30,7 +30,7 @@ const view = withViewInputs(PieChart.view, {
 	legend: "right",
 	tooltip: "visible",
 })()
-const measured = modifyFields(Chart.init(), { containerWidth: () => CARD_WIDTH })
+const measured = modifyFields(Chart.initialModel(), { containerWidth: () => CARD_WIDTH })
 
 const legendRow = (name: string) => role("button", { name: new RegExp(`^${name}`) })
 const tooltip = selector("[data-chart-tooltip-holder]")
@@ -67,7 +67,7 @@ const apiGatewaySlice = ChartTooltip.PieSlice({
 describe("chart hover", () => {
 	test("plot focus on a slice grows that slice", () => {
 		scene(
-			{ update: Chart.update, view },
+			{ update: Chart.ChartBlock.update, view },
 			given(measured),
 			expectPieSpec({ activeName: null, highlighted: null }),
 			resolveMounts(Chart.Message.ChangedChartFocus({ maybeKey: Option.some("api-gateway") })),
@@ -77,7 +77,7 @@ describe("chart hover", () => {
 
 	test("hovering a legend row grows its slice, clicking pins it until clicked again", () => {
 		scene(
-			{ update: Chart.update, view },
+			{ update: Chart.ChartBlock.update, view },
 			given(measured),
 			resolveMounts(Chart.Message.CompletedMountChart()),
 			hover(legendRow("order-service")),
@@ -93,7 +93,7 @@ describe("chart hover", () => {
 
 	test("the tooltip body follows the tooltip datum and goes when the tooltip hides", () => {
 		scene(
-			{ update: Chart.update, view },
+			{ update: Chart.ChartBlock.update, view },
 			given(modifyFields(measured, { tooltip: () => Option.some(apiGatewaySlice) })),
 			expect(tooltip).toContainText("api-gateway"),
 			expect(tooltip).toContainText("4.8K"),

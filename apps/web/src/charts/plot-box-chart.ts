@@ -1,12 +1,11 @@
 import { Option } from "effect"
-import { Submodel } from "foldkit"
 import { bucketTooltipBody } from "./bucket-tooltip"
-import type { Message, Model } from "./chart"
+import { ChartBlock } from "./chart"
 import type { ChartSpec } from "./chart-spec"
 import { plotFrame } from "./plot-frame"
 
 // `CursorPlot` with a `height`: the plot frame in a fixed-height box, the bucket tooltip as its body.
-// Embed with `h.submodel`; the card around it is the page's.
+// Embed as `view` of a `ChartBlock` Binding; the card around it is the page's.
 
 export interface PlotBoxChartInputs {
 	readonly chartId: string
@@ -15,7 +14,7 @@ export interface PlotBoxChartInputs {
 	readonly height: number
 }
 
-export const view = Submodel.defineView<Model, Message, PlotBoxChartInputs>((model, inputs, h) =>
+export const view = ChartBlock.makeView.withInputs<PlotBoxChartInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class("w-full"), h.Style({ height: `${inputs.height}px` })],
 		[

@@ -7,10 +7,10 @@ import type { ChartTooltip } from "./chart-spec"
 export type BucketTooltip = Extract<ChartTooltip, { readonly _tag: "Bucket" }>
 
 /** `PlotTooltipBody`: the bucket heading, then one swatch, label and value per series. */
-export const bucketTooltipBody = <Message>(
-	h: HtmlBuilder<Message>,
+export const bucketTooltipBody = <Message, MountRequirements>(
+	h: HtmlBuilder<Message, MountRequirements>,
 	tooltip: BucketTooltip,
-	portal: Attribute<Message>,
+	portal: Attribute<Message, MountRequirements>,
 ): Html =>
 	h.div(
 		[h.Class("grid min-w-[9rem] max-w-[22rem] items-start gap-1.5"), portal],
@@ -72,10 +72,17 @@ export const bucketTooltipBody = <Message>(
 				? []
 				: [
 						h.div(
-							[h.Class("flex items-center justify-between gap-3 border-border/50 border-t pt-1.5 leading-none")],
+							[
+								h.Class(
+									"flex items-center justify-between gap-3 border-border/50 border-t pt-1.5 leading-none",
+								),
+							],
 							[
 								h.span([h.Class("text-muted-foreground")], ["Total"]),
-								h.span([h.Class("font-mono font-semibold text-foreground tabular-nums")], [tooltip.total]),
+								h.span(
+									[h.Class("font-mono font-semibold text-foreground tabular-nums")],
+									[tooltip.total],
+								),
 							],
 						),
 					]),

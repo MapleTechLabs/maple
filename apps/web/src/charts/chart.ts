@@ -1,51 +1,27 @@
-import { Option, Schema } from "effect"
-import type { Update } from "foldkit"
-import { defineMessageUnion } from "foldkit/message"
+import { Layer, Option } from "effect"
+import { Block } from "foldkit"
 import { modifyFields } from "foldkit/struct"
-import { ChartTooltip } from "./chart-spec"
+import type { Attribute, HtmlBuilder } from "foldkit/html"
+import { ChartDefinition, type Message, Model } from "./chart-definition"
+import { MeasureChartContainer, MountChart, PortalTooltipBody } from "./chart-mounts"
 
-/**
- * One chart's interaction state beside the chart: the hovered
- * datum (from the plot's focus or a legend row), the legend's pinned emphasis, the tooltip datum
- * and the measured container width. The library owns the canvas; this owns what the view reads.
- */
+export { Message, Model, PlotGeometry } from "./chart-definition"
 
-// MODEL
+// One chart's interaction state as a completed Block. It has no primary view: each chart kind
+// (`area-chart`, `sparkline`, ...) is an alternate view from `ChartBlock.makeView`.
 
-/** The plot rect and the x scale's domain-to-pixel mapping of the last render (`usePlotRect`, `usePlotScales`). */
-export const PlotGeometry = Schema.Struct({
-	x: Schema.Number,
-	y: Schema.Number,
-	width: Schema.Number,
-	height: Schema.Number,
-	domainStartMs: Schema.Number,
-	domainEndMs: Schema.Number,
-	rangeStart: Schema.Number,
-	rangeEnd: Schema.Number,
+const ChartComposition = ChartDefinition.makeComposition({
+	mounts: [MountChart, PortalTooltipBody, MeasureChartContainer],
 })
-export type PlotGeometry = typeof PlotGeometry.Type
+/** The builder every chart view and the frame's Mount-bearing helpers render with. */
+export type ChartViewBuilder = Block.ViewBuilderFor<typeof ChartComposition>
+type ChartMountRequirements =
+	ChartViewBuilder extends HtmlBuilder<Message, infer Requirements> ? Requirements : never
+/** An Attribute a chart view may carry, including its registered Mounts (the tooltip portal). */
+export type ChartAttribute = Attribute<Message, ChartMountRequirements>
 
-export const Model = Schema.Struct({
-	/** Set once the chart rendered a time x scale; overlays (deploy markers) position against it. */
-	plot: Schema.Option(PlotGeometry),
-	/** `activeName`: the focused datum's key, shared by plot focus and legend hover. */
-	activeKey: Schema.Option(Schema.String),
-	/** `usePlotLegendHighlight`: a legend click pins one key until clicked again. */
-	highlightedKey: Schema.Option(Schema.String),
-	/** What the tooltip shell's body shows; `None` while the library hides it. */
-	tooltip: Schema.Option(ChartTooltip),
-	/** `useContainerSize(containerRef).width`, rounded; 0 before the first measurement. */
-	containerWidth: Schema.Number,
-	/** `useContainerSize(containerRef).height`: a side legend's height cap; 0 before measured. */
-	containerHeight: Schema.Number,
-	/** `useSeriesVisibility`: series keys a time-series legend has hidden. */
-	hiddenKeys: Schema.Array(Schema.String),
-	/** A grouped DOM chart's hovered group (a funnel breakdown), beside the hovered row. */
-	activeGroup: Schema.Option(Schema.String),
-})
-export type Model = typeof Model.Type
-
-export const init = (): Model => ({
+/** The resting chart Model, for a parent that constructs or resets a chart directly. */
+export const initialModel = (): Model => ({
 	plot: Option.none(),
 	activeKey: Option.none(),
 	highlightedKey: Option.none(),
@@ -56,26 +32,7 @@ export const init = (): Model => ({
 	activeGroup: Option.none(),
 })
 
-// MESSAGE
-
-export const Message = defineMessageUnion({
-	CompletedMountChart: {},
-	FailedMountChart: { reason: Schema.String },
-	RenderedPlot: { plot: PlotGeometry },
-	ChangedChartFocus: { maybeKey: Schema.Option(Schema.String) },
-	ChangedChartTooltip: { maybeTooltip: Schema.Option(ChartTooltip) },
-	CompletedPortalTooltipBody: {},
-	ResizedChartContainer: { width: Schema.Number, height: Schema.Number },
-	EnteredLegendItem: { key: Schema.String },
-	LeftLegend: {},
-	ClickedLegendItem: { key: Schema.String },
-	/** A hiding legend's row: `keys` are every series, so the last visible one cannot be hidden. */
-	ToggledLegendSeries: { key: Schema.String, keys: Schema.Array(Schema.String) },
-	ChangedActiveGroup: { maybeGroup: Schema.Option(Schema.String) },
-	/** The pointer left a DOM chart: no row and no group is hovered. */
-	LeftChart: {},
-})
-export type Message = typeof Message.Type
+const init = ChartComposition.makeInit(() => ({ model: initialModel() }))
 
 // UPDATE
 
@@ -93,33 +50,43 @@ const toggledHidden = (
 const toggled = (current: Option.Option<string>, key: string): Option.Option<string> =>
 	Option.isSome(current) && current.value === key ? Option.none() : Option.some(key)
 
-export const update = (model: Model, message: Message) =>
-	Message.match<Update.Return<Model, Message>>(message, {
-		CompletedMountChart: () => ({ model }),
-		FailedMountChart: () => ({ model }),
-		RenderedPlot: ({ plot }) => ({ model: modifyFields(model, { plot: () => Option.some(plot) }) }),
-		ChangedChartFocus: ({ maybeKey }) => ({ model: modifyFields(model, { activeKey: () => maybeKey }) }),
-		ChangedChartTooltip: ({ maybeTooltip }) => ({
-			model: modifyFields(model, { tooltip: () => maybeTooltip }),
-		}),
-		CompletedPortalTooltipBody: () => ({ model }),
-		ResizedChartContainer: ({ width, height }) => ({
-			model: modifyFields(model, { containerWidth: () => width, containerHeight: () => height }),
-		}),
-		EnteredLegendItem: ({ key }) => ({
-			model: modifyFields(model, { activeKey: () => Option.some(key) }),
-		}),
-		LeftLegend: () => ({ model: modifyFields(model, { activeKey: () => Option.none() }) }),
-		ClickedLegendItem: ({ key }) => ({
-			model: modifyFields(model, { highlightedKey: (current) => toggled(current, key) }),
-		}),
-		ChangedActiveGroup: ({ maybeGroup }) => ({
-			model: modifyFields(model, { activeGroup: () => maybeGroup }),
-		}),
-		LeftChart: () => ({
-			model: modifyFields(model, { activeKey: () => Option.none(), activeGroup: () => Option.none() }),
-		}),
-		ToggledLegendSeries: ({ key, keys }) => ({
-			model: modifyFields(model, { hiddenKeys: (current) => toggledHidden(current, key, keys) }),
-		}),
+const update = ChartComposition.makeUpdate({
+	CompletedMountChart: (model) => ({ model }),
+	FailedMountChart: (model) => ({ model }),
+	RenderedPlot: (model, { plot }) => ({ model: modifyFields(model, { plot: () => Option.some(plot) }) }),
+	ChangedChartFocus: (model, { maybeKey }) => ({
+		model: modifyFields(model, { activeKey: () => maybeKey }),
+	}),
+	ChangedChartTooltip: (model, { maybeTooltip }) => ({
+		model: modifyFields(model, { tooltip: () => maybeTooltip }),
+	}),
+	CompletedPortalTooltipBody: (model) => ({ model }),
+	ResizedChartContainer: (model, { width, height }) => ({
+		model: modifyFields(model, { containerWidth: () => width, containerHeight: () => height }),
+	}),
+	EnteredLegendItem: (model, { key }) => ({
+		model: modifyFields(model, { activeKey: () => Option.some(key) }),
+	}),
+	LeftLegend: (model) => ({ model: modifyFields(model, { activeKey: () => Option.none() }) }),
+	ClickedLegendItem: (model, { key }) => ({
+		model: modifyFields(model, { highlightedKey: (current) => toggled(current, key) }),
+	}),
+	ChangedActiveGroup: (model, { maybeGroup }) => ({
+		model: modifyFields(model, { activeGroup: () => maybeGroup }),
+	}),
+	LeftChart: (model) => ({
+		model: modifyFields(model, { activeKey: () => Option.none(), activeGroup: () => Option.none() }),
+	}),
+	ToggledLegendSeries: (model, { key, keys }) => ({
+		model: modifyFields(model, { hiddenKeys: (current) => toggledHidden(current, key, keys) }),
+	}),
+})
+
+const prepare = () =>
+	ChartComposition.prepareBlock({
+		init,
+		update,
+		EffectsLayer: Layer.mergeAll(MountChart.layer, PortalTooltipBody.layer, MeasureChartContainer.layer),
 	})
+export const ChartBlock: Block.FromAssemblyWithoutViewOrOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

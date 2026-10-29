@@ -1,7 +1,8 @@
-import { Effect, Option, Queue, Schema, Stream } from "effect"
-import { Command, Mount, type Update } from "foldkit"
+import { Effect, Layer, Option, Queue, Schema, Stream } from "effect"
+import { Block } from "foldkit"
 import * as Dom from "foldkit/dom"
 import { defineMessageUnion } from "foldkit/message"
+import { modifyFields } from "foldkit/struct"
 
 // Port of packages/ui/src/components/ui/tabs.tsx (Base UI Tabs, horizontal, manual activation):
 // arrow keys and Home/End move the focused tab (Base UI's highlight), click/Enter/Space select it.
@@ -33,11 +34,13 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const init = (config: {
+export interface InitConfig {
 	readonly idBase: number
 	readonly values: ReadonlyArray<string>
 	readonly selected: string
-}): Model => ({
+}
+
+const initialModel = (config: InitConfig): Model => ({
 	idBase: config.idBase,
 	values: config.values,
 	selected: config.selected,
@@ -59,21 +62,37 @@ export const Message = defineMessageUnion({
 	PressedTabKey: { key: TabKey },
 	MeasuredIndicator: { rect: IndicatorRect },
 	CompletedFocusTab: {},
+	/** Operation: start over on `selected`, as a fresh `init` with the same ids and values. */
+	RequestedReset: { selected: Schema.String },
+	/** Operation: the parent selected `value` (a route change); the highlight follows it. */
+	RequestedSelect: { value: Schema.String },
+	/** Operation: the parent selected `value`; the highlight stays where it is. */
+	InformedOfSelection: { value: Schema.String },
 })
 export type Message = typeof Message.Type
 
+// OUT MESSAGE
+
+/** A tab click moved the selection; reported only when the selected value changes. */
+export const OutMessage = defineMessageUnion({
+	ChangedSelection: { value: Schema.String, index: Schema.Number },
+})
+export type OutMessage = typeof OutMessage.Type
+
+export const TabsDefinition = Block.makeDefinition("Tabs", { Model, Message, OutMessage })
+
 // COMMAND
 
-export const FocusTab = Command.define("FocusTab", {
+export const FocusTab = TabsDefinition.makeCommand("FocusTab", {
 	args: { id: Schema.String },
 	messages: [Message.CompletedFocusTab],
-	execute: ({ id }) =>
-		Dom.focus(`[id="${id}"]`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusTab())),
+	handler: function* () {
+		return ({ id }) =>
+			Dom.focus(`[id="${id}"]`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusTab()))
+	},
 })
 
 // UPDATE
-
-type UpdateReturn = Update.Return<Model, Message>
 
 const wrap = (index: number, count: number): number => ((index % count) + count) % count
 
@@ -98,36 +117,6 @@ const isSameRect = (a: IndicatorRect, b: IndicatorRect): boolean =>
 	a.bottom === b.bottom &&
 	a.width === b.width &&
 	a.height === b.height
-
-export const update = (model: Model, message: Message): UpdateReturn =>
-	Message.match<UpdateReturn>(message, {
-		ClickedTab: ({ index }) => {
-			const value = model.values[index]
-			if (value === undefined) return { model }
-			const previous = model.values.indexOf(model.selected)
-			if (value === model.selected) return { model: { ...model, highlightedIndex: index } }
-			return {
-				model: {
-					...model,
-					selected: value,
-					highlightedIndex: index,
-					activationDirection: index > previous ? "right" : "left",
-				},
-			}
-		},
-		PressedTabKey: ({ key }) => {
-			const highlightedIndex = nextHighlight(model, key)
-			return {
-				model: { ...model, highlightedIndex },
-				commands: [FocusTab({ id: tabId(model, highlightedIndex) })],
-			}
-		},
-		MeasuredIndicator: ({ rect }) =>
-			Option.exists(model.maybeIndicator, (current) => isSameRect(current, rect))
-				? { model }
-				: { model: { ...model, maybeIndicator: Option.some(rect) } },
-		CompletedFocusTab: () => ({ model }),
-	})
 
 // MOUNT
 
@@ -195,14 +184,73 @@ const observeIndicator = (list: HTMLElement): Stream.Stream<MeasuredIndicator> =
 	)
 
 /** On the tab list: reports the indicator rect on mount, on resize and when the selection moves. */
-export const MeasureTabIndicator = Mount.defineStream("MeasureTabIndicator", {
+export const MeasureTabIndicator = TabsDefinition.makeMountStream("MeasureTabIndicator", {
 	messages: [Message.MeasuredIndicator],
-	execute: ({ element, viewStateChanges }) =>
-		viewStateChanges.pipe(
-			Stream.switchMap((viewState) =>
-				viewState === "Live" && element instanceof HTMLElement
-					? observeIndicator(element)
-					: Stream.never,
-			),
-		),
+	handler: function* () {
+		return ({ element, viewStateChanges }) =>
+			viewStateChanges.pipe(
+				Stream.switchMap((viewState) =>
+					viewState === "Live" && element instanceof HTMLElement
+						? observeIndicator(element)
+						: Stream.never,
+				),
+			)
+	},
+})
+
+/** The handlers this Block owns; pass to `prepareBlock`. */
+export const EffectsLayer = Layer.mergeAll(FocusTab.layer, MeasureTabIndicator.layer)
+
+// COMPOSITION
+
+export const TabsComposition = TabsDefinition.makeComposition({ mounts: [MeasureTabIndicator] })
+export type TabsViewBuilder = Block.ViewBuilderFor<typeof TabsComposition>
+
+// INIT
+
+export const init = TabsComposition.makeInit((config: InitConfig) => ({ model: initialModel(config) }))
+
+// UPDATE
+
+const { makeStep } = TabsDefinition
+
+const clickTabStep = makeStep((model, index: number) => {
+	const value = model.values[index]
+	if (value === undefined) return { model }
+	const previous = model.values.indexOf(model.selected)
+	if (value === model.selected) return { model: modifyFields(model, { highlightedIndex: () => index }) }
+	return {
+		model: modifyFields(model, {
+			selected: () => value,
+			highlightedIndex: () => index,
+			activationDirection: (): ActivationDirection => (index > previous ? "right" : "left"),
+		}),
+		outMessage: OutMessage.ChangedSelection({ value, index }),
+	}
+})
+
+export const update = TabsComposition.makeUpdate({
+	ClickedTab: (model, { index }) => clickTabStep(model, index),
+	PressedTabKey: (model, { key }) => {
+		const highlightedIndex = nextHighlight(model, key)
+		return {
+			model: modifyFields(model, { highlightedIndex: () => highlightedIndex }),
+			commands: [FocusTab({ id: tabId(model, highlightedIndex) })],
+		}
+	},
+	MeasuredIndicator: (model, { rect }) =>
+		Option.exists(model.maybeIndicator, (current) => isSameRect(current, rect))
+			? { model }
+			: { model: modifyFields(model, { maybeIndicator: () => Option.some(rect) }) },
+	CompletedFocusTab: (model) => ({ model }),
+	RequestedReset: (model, { selected }) => ({
+		model: initialModel({ idBase: model.idBase, values: model.values, selected }),
+	}),
+	RequestedSelect: (model, { value }) => ({
+		model: modifyFields(model, {
+			selected: () => value,
+			highlightedIndex: () => model.values.indexOf(value),
+		}),
+	}),
+	InformedOfSelection: (model, { value }) => ({ model: modifyFields(model, { selected: () => value }) }),
 })

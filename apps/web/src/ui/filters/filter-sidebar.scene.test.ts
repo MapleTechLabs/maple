@@ -3,6 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { describe, test } from "vitest"
 import { type LoadFailure, toLoadFailure } from "../../data/load-failure"
+import type { AutoRetryMountRequirements } from "../error-state"
 import { filterSidebarError } from "./filter-sidebar"
 
 const Message = defineMessageUnion({ ClickedRetry: {} })
@@ -10,7 +11,7 @@ type Message = typeof Message.Type
 
 type Model = Readonly<{ facets: LoadFailure; main: LoadFailure | undefined }>
 
-const view = (model: Model, h: HtmlBuilder<Message>): Html =>
+const view = (model: Model, h: HtmlBuilder<Message, AutoRetryMountRequirements>): Html =>
 	filterSidebarError(h, model.facets, Message.ClickedRetry(), model.main)
 const update = (model: Model) => ({ model, commands: [] })
 
