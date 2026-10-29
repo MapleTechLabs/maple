@@ -1558,8 +1558,20 @@ export class CloudflareAnalyticsService extends Context.Service<
 								),
 						)
 
-			// A present zone is enabled exactly when the customer watches it. This also repairs a
-			// reset (reconnect) that re-enabled every row, before the tick polls anything.
+			// Pause every unwatched row, listed or not: this repairs a reconnect's blanket re-enable
+			// even when the zone fell past a truncated listing.
+			const paused = rows.filter(
+				(row) =>
+					DATASET_BY_ID.get(row.dataset)?.scope === "zone" &&
+					row.enabled &&
+					!isZoneWatched(settings, row.zoneId),
+			)
+			yield* updateRows(
+				paused.map((row) => row.id),
+				{ enabled: false, updatedAt: now },
+			)
+			for (const row of paused) row.enabled = false
+
 			const drifted = ZONE_DATASETS.flatMap((dataset) =>
 				zones.flatMap((zone) => {
 					const existing = byDatasetZone.get(`${dataset.id}:${zone.id}`)
@@ -3297,9 +3309,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 		})
 
 		/**
-		 * Store one account's zone choice and pause or resume the zones whose choice changed. Only
-		 * changed zones are written, so a zone that vanished from Cloudflare stays disabled; any
-		 * drift left by a failed write is repaired by the next discovery pass.
+		 * Store one account's zone choice and pause or resume the zones whose choice changed. Drift
+		 * from a failed write or a racing tick is repaired by the next discovery pass.
 		 */
 		const setZoneSettings = Effect.fn("CloudflareAnalyticsService.setZoneSettings")(function* (
 			orgId: OrgId,
@@ -3307,9 +3318,13 @@ export class CloudflareAnalyticsService extends Context.Service<
 			update: ZoneSettingsUpdate,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.cloudflare.account_id": update.accountId })
-			const zoneRows = (yield* loadStateRows(orgId, update.accountId)).filter(
-				(row) => DATASET_BY_ID.get(row.dataset)?.scope === "zone",
-			)
+			const accountRows = yield* loadStateRows(orgId, update.accountId)
+			if (accountRows.length === 0) {
+				return yield* new IntegrationsValidationError({
+					message: `Cloudflare account ${update.accountId} is not connected`,
+				})
+			}
+			const zoneRows = accountRows.filter((row) => DATASET_BY_ID.get(row.dataset)?.scope === "zone")
 			const known = new Set(zoneRows.map((row) => row.zoneId))
 			const unknown = update.zones.find((zone) => !known.has(zone.zoneId))
 			if (unknown !== undefined) {
@@ -3360,6 +3375,15 @@ export class CloudflareAnalyticsService extends Context.Service<
 				resumed.map((row) => row.id),
 				{ enabled: true, updatedAt: now },
 			)
+			// A resumed zone may have left Cloudflare while paused; rediscover before polling it.
+			if (resumed.length > 0) {
+				yield* updateRows(
+					accountRows
+						.filter((row) => row.dataset === WORKERS_DATASET && row.zoneId === "")
+						.map((row) => row.id),
+					{ discoveredAt: null, updatedAt: now },
+				)
+			}
 			yield* Effect.annotateCurrentSpan({
 				"maple.cloudflare.rows_paused": paused.length,
 				"maple.cloudflare.rows_resumed": resumed.length,

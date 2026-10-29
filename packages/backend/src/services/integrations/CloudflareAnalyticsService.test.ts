@@ -1376,6 +1376,60 @@ describe("CloudflareAnalyticsService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, captured, { zones: twoZones, graphqlZoneTags })))
 		})
 
+		it.effect("a paused zone past a truncated listing stays paused after a reconnect", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				yield* seedStateRow({
+					dataset: "http_requests",
+					zoneId: "beyond-cap-zone",
+					zoneName: "beyond.example.com",
+					watermarkAt: T0 - 20 * MIN,
+					settingsFetchedAt: T0 - 5 * MIN,
+				})
+				const service = yield* CloudflareAnalyticsService
+				yield* service.setZoneSettings(ORG, ADMIN, {
+					accountId: ACCOUNT_ID,
+					watchNewZones: true,
+					zones: [{ zoneId: "beyond-cap-zone", watched: false }],
+				})
+				yield* service.resetOrgState(ORG)
+				yield* service.pollOrg(ORG)
+				const enabled = yield* enabledByZone
+				assert.isFalse(enabled["beyond-cap-zone"])
+			}).pipe(Effect.provide(makeLayer(testDb, captured, { zonesTotal: 201 })))
+		})
+
+		it.effect("resuming a zone forces rediscovery before it is polled again", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedStateRow({ dataset: "workers_invocations", discoveredAt: T0 - 5 * MIN })
+				yield* seedStateRow({ dataset: "http_requests", zoneId: ZONE_ID, zoneName: ZONE_NAME })
+				const service = yield* CloudflareAnalyticsService
+				const anchorDiscoveredAt = loadStateRows.pipe(
+					Effect.map(
+						(rows) => rows.find((row) => row.dataset === "workers_invocations")?.discoveredAt,
+					),
+				)
+				yield* service.setZoneSettings(ORG, ADMIN, {
+					accountId: ACCOUNT_ID,
+					watchNewZones: true,
+					zones: [{ zoneId: ZONE_ID, watched: false }],
+				})
+				assert.strictEqual(yield* anchorDiscoveredAt, T0 - 5 * MIN)
+				yield* service.setZoneSettings(ORG, ADMIN, {
+					accountId: ACCOUNT_ID,
+					watchNewZones: true,
+					zones: [{ zoneId: ZONE_ID, watched: true }],
+				})
+				assert.isNull(yield* anchorDiscoveredAt)
+			}).pipe(Effect.provide(makeLayer(testDb, captured)))
+		})
+
 		it.effect("resuming a zone re-enables it and leaves a vanished zone disabled", () => {
 			const testDb = createTestDb(trackedDbs)
 			const captured: CapturedIngest[] = []
@@ -1409,20 +1463,28 @@ describe("CloudflareAnalyticsService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, captured)))
 		})
 
-		it.effect("rejects a zone that is not on the account", () => {
+		it.effect("rejects an unknown account or a zone that is not on the account", () => {
 			const testDb = createTestDb(trackedDbs)
 			const captured: CapturedIngest[] = []
 			return Effect.gen(function* () {
 				yield* seedStateRow({ dataset: "http_requests", zoneId: ZONE_ID, zoneName: ZONE_NAME })
 				const service = yield* CloudflareAnalyticsService
-				const error = yield* Effect.flip(
+				const unknownAccount = yield* Effect.flip(
 					service.setZoneSettings(ORG, ADMIN, {
 						accountId: "acct-other",
-						watchNewZones: true,
-						zones: [{ zoneId: ZONE_ID, watched: false }],
+						watchNewZones: false,
+						zones: [],
 					}),
 				)
-				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+				const unknownZone = yield* Effect.flip(
+					service.setZoneSettings(ORG, ADMIN, {
+						accountId: ACCOUNT_ID,
+						watchNewZones: true,
+						zones: [{ zoneId: "zone-elsewhere", watched: false }],
+					}),
+				)
+				assert.strictEqual(unknownAccount._tag, "@maple/http/errors/IntegrationsValidationError")
+				assert.strictEqual(unknownZone._tag, "@maple/http/errors/IntegrationsValidationError")
 				assert.deepStrictEqual(yield* enabledByZone, { [ZONE_ID]: true })
 			}).pipe(Effect.provide(makeLayer(testDb, captured)))
 		})

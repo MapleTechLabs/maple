@@ -2,10 +2,8 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { Schema } from "effect"
 
-// Which zones of a connected Cloudflare account the customer wants collected. Kept apart from
-// cloudflare_analytics_state, whose `enabled` flag the poller owns (discovery and reconnect reset
-// it). A missing row means every zone is watched. A zone is watched iff
-// `zoneOverrides[zoneId] ?? watchNewZones`.
+// Which zones of a Cloudflare account the customer collects: `zoneOverrides[zoneId] ?? watchNewZones`,
+// and every zone when the row is missing. Separate from the poller-owned state `enabled` flag.
 export const CloudflareZoneSettings = PG.table("cloudflare_zone_settings", {
 	columns: {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
