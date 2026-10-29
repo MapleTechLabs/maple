@@ -338,7 +338,11 @@ async fn flush_loop(
             pending_entries = accumulator.len(),
             "Autumn tracker shutting down, attempting final flush"
         );
-        if !flusher.flush(&mut accumulator).await {
+        let before: f64 = accumulator.values().map(PendingUsage::total).sum();
+        flusher.flush(&mut accumulator).await;
+        // One org's failure must not strand another's re-queued usage: stop only on no progress.
+        let after: f64 = accumulator.values().map(PendingUsage::total).sum();
+        if after >= before {
             break;
         }
     }

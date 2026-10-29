@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { BillingCustomer, BillingUsage } from "@maple/domain/http"
+import { BillingCustomer, BillingCustomerId, BillingUsage } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { classifyAutumn, decodeUpstream, ensureOk } from "@maple/backend/services/billing/autumn-client"
 import {
@@ -11,7 +11,7 @@ import {
 	camelizeKeys,
 } from "@maple/backend/services/billing/autumn-http"
 
-const ORG = "org_test_123"
+const ORG = BillingCustomerId.make("org_test_123")
 const KEY = "am_sk_test"
 const API_URL = "https://api.useautumn.com"
 
