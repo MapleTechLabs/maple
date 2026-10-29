@@ -131,11 +131,11 @@ const tabRead = (model: Model, tab: EditorTab): { failure: Option.Option<LoadFai
 	switch (tab) {
 		case "settings":
 			return { failure: Option.none(), isReady: true }
-		// The document lists every component, so it waits on them.
+		// The document is its own read: the components list stops at a page of them.
 		case "json":
 			return {
-				failure: AsyncData.getError(model.components.data),
-				isReady: AsyncData.hasData(model.components.data),
+				failure: AsyncData.getError(model.config.data),
+				isReady: AsyncData.hasData(model.config.data),
 			}
 		// Incidents name components and the composer picks them, so a failed components read shows too.
 		case "incidents":
@@ -166,7 +166,12 @@ const tabBody = (h: H, model: Model, page: V2StatusPage, tab: EditorTab, timeZon
 	if (Option.isSome(read.failure))
 		return errorState(h, {
 			failure: read.failure.value,
-			title: tab === "incidents" ? "Couldn't load incidents" : "Couldn't load components",
+			title:
+				tab === "incidents"
+					? "Couldn't load incidents"
+					: tab === "json"
+						? "Couldn't load the config"
+						: "Couldn't load components",
 			onRetry: Message.ClickedRetry(),
 			className: "py-12",
 		})

@@ -1,23 +1,31 @@
-import type { StatusPageConfig } from "@maple/domain/http/v2"
+import { normalizeStatusPageConfig, type StatusPageConfig, type V2StatusPage } from "@maple/domain/http/v2"
 import { Option, Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "../../../../data/load-failure"
 import * as CopyButton from "../../../../ui/copy-button"
 import type { PageContext } from "../../../contract"
 import { ApplyConfig } from "./command"
-import { configOf, type DraftResult, formatConfig, parseDraft } from "./config-json"
+import { type DraftResult, formatConfig, parseDraft } from "./config-json"
+import { isSameSettings, settingsFormOf } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { chain, componentsOf, pageOf, readComponents, readPage, type Return, toast } from "./reads"
+import {
+	chain,
+	pageOf,
+	readComponents,
+	readConfig,
+	readIncidents,
+	readPage,
+	type Return,
+	toast,
+} from "./reads"
 import { isSettingsDirty } from "./update-settings"
 
 // The JSON tab: the page as one document, and an admin's edit of it applied in one write.
 
-/** The saved page as its config, once the page and its components are in. */
+/** The saved page as `GET …/config` returned it, with every component and its revision. */
 export const currentConfigOf = (model: Model): Option.Option<StatusPageConfig> =>
-	AsyncData.hasData(model.components.data)
-		? Option.map(pageOf(model), (page) => configOf(page, componentsOf(model)))
-		: Option.none()
+	AsyncData.getData(model.config.data)
 
 /** The draft parsed against the saved page; none while not editing. */
 export const draftOf = (model: Model): Option.Option<DraftResult> =>
@@ -40,6 +48,7 @@ const hasChanges = (draft: DraftResult): boolean =>
 export const canApply = (model: Model): boolean =>
 	model.isAdmin &&
 	!model.isApplyingJson &&
+	!model.isSavingSettings &&
 	!isSettingsDirty(model) &&
 	Option.match(draftOf(model), { onNone: () => false, onSome: hasChanges })
 
@@ -55,8 +64,11 @@ export const editJson = (model: Model): Return =>
 		? withCurrent(model, (jsonDraft) => ({ ...model, jsonDraft, jsonFailure: null }))
 		: { model }
 
+/** Ignored while an apply runs: its result replaces the draft, and would drop the keystrokes. */
 export const changeJson = (model: Model, value: string): Return =>
-	model.jsonDraft === null ? { model } : { model: { ...model, jsonDraft: value, jsonFailure: null } }
+	model.jsonDraft === null || model.isApplyingJson
+		? { model }
+		: { model: { ...model, jsonDraft: value, jsonFailure: null } }
 
 export const cancelJson = (model: Model): Return =>
 	model.isApplyingJson ? { model } : { model: { ...model, jsonDraft: null, jsonFailure: null } }
@@ -64,6 +76,7 @@ export const cancelJson = (model: Model): Return =>
 export const applyJson = (model: Model): Return => {
 	const pageId = model.pageId
 	if (pageId === null || !canApply(model)) return { model }
+	const ifRevision = Option.getOrUndefined(currentConfigOf(model))?.revision
 	return Option.match(draftOf(model), {
 		onNone: () => ({ model }),
 		onSome: (draft) =>
@@ -71,9 +84,38 @@ export const applyJson = (model: Model): Return => {
 				onFailure: () => ({ model }),
 				onSuccess: ({ config }) => ({
 					model: { ...model, isApplyingJson: true, jsonFailure: null },
-					commands: [ApplyConfig({ pageId, config })],
+					commands: [ApplyConfig({ pageId, config, ifRevision })],
 				}),
 			}),
+	})
+}
+
+/** The loaded page with the applied document's settings, to compare Settings edits against. */
+const pageWith = (page: V2StatusPage, applied: StatusPageConfig): V2StatusPage => {
+	const config = normalizeStatusPageConfig(applied)
+	return {
+		...page,
+		name: config.name,
+		slug: config.slug,
+		description: config.description,
+		website_url: config.website_url,
+		logo_url: config.logo_url,
+		show_powered_by: config.show_powered_by,
+		auto_incidents: config.auto_incidents,
+		theme: config.theme,
+	}
+}
+
+/**
+ * Settings edits survive an apply when they are real edits: ones that match neither the page the
+ * apply replaced nor the one it wrote were typed meanwhile, and are kept.
+ */
+const settingsAfterApply = (model: Model, applied: StatusPageConfig): Model["settingsEdits"] => {
+	const edits = model.settingsEdits
+	if (edits === null || !isSettingsDirty(model)) return null
+	return Option.match(pageOf(model), {
+		onNone: () => edits,
+		onSome: (page) => (isSameSettings(edits, settingsFormOf(pageWith(page, applied))) ? null : edits),
 	})
 }
 
@@ -83,15 +125,27 @@ export const appliedJson = (
 	context: PageContext,
 ): Return =>
 	Result.match(result, {
-		onSuccess: (): Return => ({
+		onSuccess: (applied): Return => ({
+			// Deleted components take their incident links with them, so incidents re-read too.
 			...chain(
-				{ ...model, isApplyingJson: false, jsonDraft: null, settingsEdits: null },
+				{
+					...model,
+					isApplyingJson: false,
+					jsonDraft: null,
+					settingsEdits: settingsAfterApply(model, applied),
+				},
 				readPage(context, "Supersede"),
 				readComponents(context, "Supersede"),
+				readIncidents(context, "Supersede"),
+				readConfig(context, "Supersede"),
 			),
 			outMessage: toast("success", "Config applied", "It goes out with the next publish."),
 		}),
-		onFailure: (jsonFailure): Return => ({ model: { ...model, isApplyingJson: false, jsonFailure } }),
+		// A conflict means the page moved on: re-read it so Reset starts from the current one.
+		onFailure: (jsonFailure): Return =>
+			jsonFailure.code === "status_page_conflict"
+				? chain({ ...model, isApplyingJson: false, jsonFailure }, readConfig(context, "Supersede"))
+				: { model: { ...model, isApplyingJson: false, jsonFailure } },
 	})
 
 export const updateJsonCopy = (model: Model, message: CopyButton.Message): Return => {

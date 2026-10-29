@@ -312,10 +312,14 @@ export const settingsTab = (h: H, model: Model, page: V2StatusPage): Html => {
 			...saveBar(h, {
 				isDirty: isSettingsDirty(model),
 				isPending: model.isSavingSettings,
-				context: hasIssues ? "Fix the fields marked above." : undefined,
+				context: hasIssues
+					? "Fix the fields marked above."
+					: model.isApplyingJson
+						? "Saving waits for the JSON apply to finish."
+						: undefined,
 				onDiscard: Message.ClickedDiscardSettings(),
 				onSave: Message.ClickedSaveSettings(),
-				isSaveDisabled: hasIssues,
+				isSaveDisabled: hasIssues || model.isApplyingJson,
 			}),
 		],
 	)

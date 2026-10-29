@@ -3,43 +3,19 @@ import {
 	StatusPageComponentPublicId,
 	StatusPageConfig,
 	type StatusPageConfigChanges,
-	type V2StatusPage,
-	type V2StatusPageComponent,
 } from "@maple/domain/http/v2"
 import { Result, Schema, SchemaIssue } from "effect"
 
-// The JSON tab's document: the loaded page as a `StatusPageConfig`, and a draft parsed back.
-
-/** The same document `GET /v2/status_pages/{id}/config` returns, from the reads already loaded. */
-export const configOf = (
-	page: V2StatusPage,
-	components: ReadonlyArray<V2StatusPageComponent>,
-): StatusPageConfig => ({
-	name: page.name,
-	slug: page.slug,
-	description: page.description,
-	website_url: page.website_url,
-	logo_url: page.logo_url,
-	show_powered_by: page.show_powered_by,
-	auto_incidents: page.auto_incidents,
-	theme: page.theme,
-	components: components.map((component) => ({
-		id: component.id,
-		name: component.name,
-		description: component.description,
-		group: component.group,
-		monitor_id: component.monitor_id,
-		manual_status: component.manual_status,
-		show_uptime: component.show_uptime,
-	})),
-})
+// The JSON tab's document: the page as `GET …/config` returns it, and a draft parsed back.
 
 const encodeConfig = Schema.encodeSync(StatusPageConfig)
 const encodeId = Schema.encodeSync(StatusPageComponentPublicId)
 
-/** Pretty-printed with public ids, two-space indent. */
-export const formatConfig = (config: StatusPageConfig): string =>
-	JSON.stringify(encodeConfig(config), null, 2)
+/** Pretty-printed with public ids, two-space indent; the revision rides along as `if_revision`. */
+export const formatConfig = (config: StatusPageConfig): string => {
+	const { revision: _revision, ...document } = config
+	return JSON.stringify(encodeConfig(document), null, 2)
+}
 
 export type DraftProblem =
 	| { readonly _tag: "Syntax"; readonly message: string; readonly line: number; readonly column: number }

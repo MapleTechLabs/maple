@@ -1,5 +1,6 @@
 import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
 import {
+	StatusPageConfig,
 	V2StatusPage,
 	V2StatusPageComponent,
 	V2StatusPageIncident,
@@ -73,6 +74,8 @@ export const Model = Schema.Struct({
 	deletePageDialog: Dialog.Model,
 	isDeletingPage: Schema.Boolean,
 	// JSON
+	/** The page as `GET …/config` returns it: every component, and the revision to apply against. */
+	config: KeyedSchema(StatusPageConfig, LoadFailure),
 	/** The edited document; `null` while the tab shows the page as saved. */
 	jsonDraft: Schema.NullOr(Schema.String),
 	isApplyingJson: Schema.Boolean,

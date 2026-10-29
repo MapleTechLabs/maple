@@ -6,7 +6,7 @@ import { requestKey } from "../../../../data/request-key"
 import * as Dialog from "../../../../ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { UPTIME_LIST_LIMIT } from "../../shared/uptime-commands"
-import { FetchComponents, FetchEditorMonitors, FetchIncidents, FetchPage } from "./command"
+import { FetchComponents, FetchConfig, FetchEditorMonitors, FetchIncidents, FetchPage } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -18,6 +18,8 @@ const pageKey = (context: PageContext, pageId: string) =>
 	requestKey(context.orgId, "statusPages.retrieve", { pageId })
 const componentsKey = (context: PageContext, pageId: string) =>
 	requestKey(context.orgId, "statusPages.listComponents", { pageId })
+const configKey = (context: PageContext, pageId: string) =>
+	requestKey(context.orgId, "statusPages.getConfig", { pageId })
 const incidentsKey = (context: PageContext, pageId: string) =>
 	requestKey(context.orgId, "statusPageIncidents.list", { pageId })
 const monitorsKey = (context: PageContext) =>
@@ -61,6 +63,21 @@ export const readComponents =
 			onSome: (components) => ({
 				model: { ...model, components },
 				commands: [FetchComponents({ key: components.key, pageId: id })],
+			}),
+		})
+	}
+
+/** The JSON tab's document; read only while that tab is open, since it lists every component. */
+export const readConfig =
+	(context: PageContext, mode: Keyed.ReadMode) =>
+	(model: Model): Return => {
+		const id = model.pageId
+		if (id === null) return { model }
+		return Option.match(Keyed.requestFor(model.config, configKey(context, id), mode), {
+			onNone: () => ({ model }),
+			onSome: (config) => ({
+				model: { ...model, config },
+				commands: [FetchConfig({ key: config.key, pageId: id })],
 			}),
 		})
 	}

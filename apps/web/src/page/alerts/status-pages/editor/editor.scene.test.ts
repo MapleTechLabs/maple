@@ -1,5 +1,10 @@
 import { OrgId } from "@maple/domain"
-import { StatusPageComponentPublicId, StatusPagePublicId, type V2StatusPage } from "@maple/domain/http/v2"
+import {
+	StatusPageComponentPublicId,
+	type StatusPageConfig,
+	StatusPagePublicId,
+	type V2StatusPage,
+} from "@maple/domain/http/v2"
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
 import { Option, Result, Schema } from "effect"
 import {
@@ -25,10 +30,10 @@ import { PageOutMessage, type PageContext } from "../../../contract"
 import { statusPagesTabHref } from "../../shared/status-page-commands"
 import { ORG } from "../../shared/test-rows"
 import { downMonitor, httpMonitor } from "../../shared/uptime-test-monitors"
-import { component, componentId, incident, incidentId, statusPage } from "../test-pages"
+import { component, componentId, incident, incidentId, statusPage, statusPageConfig } from "../test-pages"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { moved } from "./update-components"
 import { view as pageView } from "./view"
 
@@ -48,6 +53,9 @@ type Fixture = Readonly<{
 	incidents?: ReturnType<typeof incident>[]
 	monitorsFail?: boolean
 	componentsFail?: boolean
+	/** The config read's document; by default the page and its components. */
+	config?: StatusPageConfig
+	configFail?: boolean
 }>
 
 const loaded = (fixture: Fixture = {}): Model => {
@@ -82,6 +90,23 @@ const loaded = (fixture: Fixture = {}): Model => {
 				? Result.fail(toLoadFailure(new Error("monitors unavailable")))
 				: Result.succeed([httpMonitor(), downMonitor()]),
 		}),
+		// Only the JSON tab reads the config.
+		...(entered.config.key === null
+			? []
+			: [
+					Message.CompletedFetchConfig({
+						key: entered.config.key,
+						result: fixture.configFail
+							? Result.fail(toLoadFailure(new Error("config unavailable")))
+							: Result.succeed(
+									fixture.config ??
+										statusPageConfig(
+											fixture.page ?? statusPage(),
+											fixture.components ?? [component(1), component(2), component(3)],
+										),
+								),
+					}),
+				]),
 	].reduce((model, message) => pageUpdate(model, message).model, entered)
 }
 
@@ -703,6 +728,167 @@ describe("json tab", () => {
 			expectView(text("Couldn't apply the config")).toExist(),
 			expectView(text(reason)).toExist(),
 		)
+	})
+
+	test("the document comes from the config read, so components past the list's first page stay", () => {
+		const entered = init(
+			{ _tag: "AlertsStatusPage", pageId: PUBLIC_ID, search: { tab: "json" } },
+			context,
+		)
+		expect(names(entered.commands)).toContain("FetchStatusPageConfig")
+		const listed = [component(1), component(2)]
+		const config = statusPageConfig(statusPage(), [...listed, component(3), component(4)])
+		const model = loaded({ tab: "json", components: listed, config })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(selector("pre")).toContainText(`"id": "${publicComponentId(4)}"`),
+			click(role("button", { name: "Edit JSON" })),
+			expectView(text("No changes yet.")).toExist(),
+			expectView(role("button", { name: "Apply" })).toBeDisabled(),
+		)
+		const dropped = JSON.stringify({ ...documentOf([1, 2, 3]) })
+		const editingConfig = [Message.ClickedEditJson(), Message.ChangedJson({ value: dropped })].reduce(
+			(current, message) => pageUpdate(current, message).model,
+			model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(editingConfig),
+			expectView(text("Components to delete")).toExist(),
+			expectView(text("Component 4")).toExist(),
+		)
+	})
+
+	test("the tab shows the config read's loading and failure states", () => {
+		const entered = init(
+			{ _tag: "AlertsStatusPage", pageId: PUBLIC_ID, search: { tab: "json" } },
+			context,
+		).model
+		const pageIn = pageUpdate(
+			entered,
+			Message.CompletedFetchPage({ key: entered.page.key ?? "", result: Result.succeed(statusPage()) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(pageIn),
+			expectView(selector("pre")).not.toExist(),
+			expectView(role("button", { name: "Edit JSON" })).not.toExist(),
+		)
+		const failed = loaded({ tab: "json", configFail: true })
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Couldn't load the config")).toExist(),
+		)
+		expect(names(pageUpdate(failed, Message.ClickedRetry()).commands)).toContain("FetchStatusPageConfig")
+	})
+
+	test("opening the tab re-reads the config, since other tabs write the page too", () => {
+		const onSettings = loaded({ tab: "settings" })
+		expect(onSettings.config.key).toBeNull()
+		const opened = routeChanged(
+			onSettings,
+			{ _tag: "AlertsStatusPage", pageId: PUBLIC_ID, search: { tab: "json" } },
+			context,
+		)
+		expect(names(opened.commands)).toEqual(["FetchStatusPageConfig"])
+	})
+
+	test("Apply sends the revision the document was read at", () => {
+		const model = editing(JSON.stringify({ ...documentOf([1, 2]) }), {
+			config: {
+				...statusPageConfig(statusPage(), [component(1), component(2), component(3)]),
+				revision: 7,
+			},
+		})
+		expect(pageUpdate(model, Message.ClickedApplyJson()).commands).toMatchObject([
+			{ name: "ApplyStatusPageConfig", args: { ifRevision: 7 } },
+		])
+	})
+
+	test("a draft that differs only by spacing or colour case is no change", () => {
+		const theme = { ...DEFAULT_STATUS_PAGE_THEME, appearance: "light" as const, accent: "#1a2b3c" }
+		const page = statusPage({ description: "Live status.", theme })
+		const draft = JSON.stringify({
+			...documentOf([1, 2, 3]),
+			name: " Acme Status ",
+			description: " Live status. ",
+			auto_incidents: "draft",
+			theme: { ...theme, accent: "#1A2B3C" },
+			components: documentOf([1, 2, 3]).components.map((c) => ({
+				...c,
+				name: ` ${c.name}`,
+				group: " ",
+			})),
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(editing(draft, { page })),
+			expectView(text("No changes yet.")).toExist(),
+			expectView(role("button", { name: "Apply" })).toBeDisabled(),
+		)
+	})
+
+	test("while an apply runs, typing is ignored, the editor is disabled, and Settings cannot save", () => {
+		const draft = JSON.stringify(documentOf([1]))
+		const applying = pageUpdate(editing(draft), Message.ClickedApplyJson()).model
+		expect(applying.isApplyingJson).toBe(true)
+		expect(pageUpdate(applying, Message.ChangedJson({ value: "{}" })).model.jsonDraft).toBe(draft)
+		scene(
+			{ update: pageUpdate, view },
+			given(applying),
+			expectView(role("textbox", { name: "Config JSON" })).toBeDisabled(),
+		)
+		const edited = pageUpdate(
+			applying,
+			Message.ChangedSetting({ field: "name", value: "Typed meanwhile" }),
+		).model
+		expect(pageUpdate(edited, Message.ClickedSaveSettings()).commands ?? []).toEqual([])
+	})
+
+	test("a successful apply keeps Settings edits typed meanwhile and re-reads incidents and the config", () => {
+		const draft = JSON.stringify(documentOf([1]))
+		const applying = pageUpdate(editing(draft), Message.ClickedApplyJson()).model
+		const typed = pageUpdate(
+			applying,
+			Message.ChangedSetting({ field: "name", value: "Typed meanwhile" }),
+		).model
+		const applied = (model: Model) =>
+			pageUpdate(
+				model,
+				Message.CompletedApplyJson({
+					result: Result.succeed({ ...documentOf([1]), components: [], revision: 4 }),
+				}),
+			)
+		const kept = applied(typed)
+		expect(kept.model.settingsEdits?.name).toBe("Typed meanwhile")
+		expect(names(kept.commands)).toEqual(
+			expect.arrayContaining(["FetchStatusPageIncidents", "FetchStatusPageConfig"]),
+		)
+		expect(applied(applying).model.settingsEdits).toBeNull()
+	})
+
+	test("a conflict keeps the draft, says why and re-reads the config", () => {
+		const reason = "The page changed since revision 3 (it is now at 4)."
+		const applying = pageUpdate(
+			editing(JSON.stringify(documentOf([1]))),
+			Message.ClickedApplyJson(),
+		).model
+		const refused = pageUpdate(
+			applying,
+			Message.CompletedApplyJson({
+				result: Result.fail({
+					...toLoadFailure(new Error(reason)),
+					code: "status_page_conflict",
+					message: reason,
+					retryable: false,
+				}),
+			}),
+		)
+		expect(refused.model.jsonDraft).toBe(applying.jsonDraft)
+		expect(names(refused.commands)).toEqual(["FetchStatusPageConfig"])
+		scene({ update: pageUpdate, view }, given(refused.model), expectView(text(reason)).toExist())
 	})
 
 	test("unsaved Settings edits block Apply until they are saved or discarded", () => {

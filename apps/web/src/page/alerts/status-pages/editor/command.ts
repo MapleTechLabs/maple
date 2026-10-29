@@ -20,6 +20,7 @@ import {
 	publishPage,
 	reorderComponents,
 	retrievePage,
+	retrievePageConfig,
 	revokeBreakGlass,
 	rotateBreakGlass,
 	saveComponent,
@@ -185,11 +186,21 @@ export const RevokeToken = Command.define("RevokeStatusPageBreakGlassToken", {
 		),
 })
 
+export const FetchConfig = Command.define("FetchStatusPageConfig", {
+	args: { key: Schema.String, pageId: StatusPageId },
+	messages: [Message.CompletedFetchConfig],
+	execute: ({ key, pageId }) =>
+		retrievePageConfig(pageId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchConfig({ key, result })),
+		),
+})
+
 export const ApplyConfig = Command.define("ApplyStatusPageConfig", {
-	args: { pageId: StatusPageId, config: StatusPageConfig },
+	args: { pageId: StatusPageId, config: StatusPageConfig, ifRevision: Schema.UndefinedOr(Schema.Number) },
 	messages: [Message.CompletedApplyJson],
-	execute: ({ pageId, config }) =>
-		applyPageConfig(pageId, config).pipe(
+	execute: ({ pageId, config, ifRevision }) =>
+		applyPageConfig(pageId, config, ifRevision).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedApplyJson({ result })),
 		),

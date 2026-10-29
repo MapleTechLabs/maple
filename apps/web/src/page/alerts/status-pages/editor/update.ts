@@ -9,7 +9,15 @@ import { FetchEditorSession, ReadEditorClock } from "./command"
 import { emptyComponentForm, emptyIncidentForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { chain, readComponents, readIncidents, readMonitors, readPage, type Return } from "./reads"
+import {
+	chain,
+	readComponents,
+	readConfig,
+	readIncidents,
+	readMonitors,
+	readPage,
+	type Return,
+} from "./reads"
 import {
 	askDeleteComponent,
 	changeComponent,
@@ -73,6 +81,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		page: Keyed.idle(),
 		components: Keyed.idle(),
 		incidents: Keyed.idle(),
+		config: Keyed.idle(),
 		monitors: Keyed.idle(),
 		isAdmin: false,
 		isSessionLoaded: false,
@@ -116,6 +125,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		readComponents(context, "Load"),
 		readIncidents(context, "Load"),
 		readMonitors(context, "Load"),
+		whenJson(context, "Load"),
 	)
 	return {
 		model: reads.model,
@@ -127,10 +137,15 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 	}
 }
 
-/** A tab switch is a search change: the reads are already in the Model. */
-export const routeChanged = (model: Model, route: EditorRoute): Return => ({
-	model: { ...model, search: route.search },
-})
+/** The config read, only while the JSON tab is open: the document must be current when edited. */
+const whenJson =
+	(context: PageContext, mode: Keyed.ReadMode) =>
+	(model: Model): Return =>
+		resolveTab(model.search.tab) === "json" ? readConfig(context, mode)(model) : { model }
+
+/** A tab switch is a search change; opening JSON re-reads the config, since other tabs write too. */
+export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
+	whenJson(context, "Refresh")({ ...model, search: route.search })
 
 /** The dialogs ignore dismissal while their write is in flight, as `ConfirmDialog` does. */
 const whenIdle = (isBusy: boolean, model: Model, run: () => Return): Return => (isBusy ? { model } : run())
@@ -150,6 +165,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, incidents: Keyed.accept(model.incidents, key, result) },
 			commands: [ReadEditorClock()],
 		}),
+		CompletedFetchConfig: ({ key, result }) => ({
+			model: { ...model, config: Keyed.accept(model.config, key, result) },
+		}),
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
 		}),
@@ -162,6 +180,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				readComponents(context, "Supersede"),
 				readIncidents(context, "Supersede"),
 				readMonitors(context, "Supersede"),
+				whenJson(context, "Supersede"),
 			),
 		// Components
 		ClickedAddComponent: () => openComponent(model, null),

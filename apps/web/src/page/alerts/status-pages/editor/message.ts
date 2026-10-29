@@ -91,6 +91,7 @@ export const Message = defineMessageUnion({
 	CompletedDeletePage: { result: outcome(Schema.Void) },
 	GotDeletePageDialogMessage: { message: Dialog.Message },
 	// JSON
+	CompletedFetchConfig: { key: Schema.String, result: outcome(StatusPageConfig) },
 	ClickedEditJson: {},
 	ChangedJson: { value: Schema.String },
 	ClickedResetJson: {},

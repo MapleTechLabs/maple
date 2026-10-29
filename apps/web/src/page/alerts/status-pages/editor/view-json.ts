@@ -141,6 +141,7 @@ const editView = (h: H, model: Model, draft: string): Html => {
 					),
 					textarea(h, {
 						id: "status-page-json",
+						isDisabled: model.isApplyingJson,
 						controlClassName: "min-h-[28rem] font-mono text-xs leading-relaxed",
 						attributes: [
 							h.Value(draft),

@@ -71,6 +71,7 @@ export const saveSettings = (model: Model): Return => {
 	return model.pageId === null ||
 		edits === null ||
 		model.isSavingSettings ||
+		model.isApplyingJson ||
 		!model.isAdmin ||
 		hasSettingsIssues(edits)
 		? { model }
