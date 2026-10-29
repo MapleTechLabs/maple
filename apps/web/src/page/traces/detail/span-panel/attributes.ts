@@ -14,16 +14,17 @@ import type { PanelState as Model } from "./model"
 // with filter actions and a value renderer that links commit SHAs.
 // TODO(json-highlight): an expanded JSON value renders plain; it should highlight like `CollapsibleJsonValue`.
 
-type H = HtmlBuilder<Message>
+/** Any builder whose Messages include the panel's: the panel's own, the popover's, local-ui's. */
+type H<P> = HtmlBuilder<Message | P>
 type Entries = ReadonlyArray<readonly [string, string]>
 
 const FULL_SHA = /^[0-9a-f]{40}$/i
 
-const filterAction = (h: H, label: string, onClick: Message, text: string): Html =>
+const filterAction = <P>(h: H<P>, label: string, onClick: Message, text: string): Html =>
 	attributeFilterAction(h, { label, onClick, text })
 
 /** `CommitShaAttributeValue`: the hover-card trigger (the card itself is not ported). */
-const commitShaValue = (h: H, id: string, value: string): Html => {
+const commitShaValue = <P>(h: H<P>, id: string, value: string): Html => {
 	const className = cn(
 		"cursor-pointer",
 		"-mx-0.5 cursor-pointer break-all rounded px-0.5 transition-colors hover:bg-muted/50",
@@ -42,7 +43,7 @@ const commitShaValue = (h: H, id: string, value: string): Html => {
 		: h.button([h.Class(className), h.Type("button"), onClick], [value])
 }
 
-const jsonValue = (h: H, model: Model, id: string, value: string): Html => {
+const jsonValue = <P>(h: H<P>, model: Model, id: string, value: string): Html => {
 	const isOpen = model.openIds.includes(id)
 	// Re-indented only once opened: a collapsed row shows an 80-character preview.
 	const formatted = isOpen ? Option.getOrElse(prettyJson(value), () => value) : ""
@@ -116,7 +117,7 @@ type RowInput = Readonly<{
 }>
 
 /** `AttributeRow`: copyable key, selectable value (or JSON / commit SHA) and the filter verbs. */
-const attributeRow = (h: H, model: Model, row: RowInput): Html => {
+const attributeRow = <P>(h: H<P>, model: Model, row: RowInput): Html => {
 	const id = `attr:${row.scope}:${row.attrKey}`
 	const shown = row.displayValue ?? row.value
 	const parsed =
@@ -202,12 +203,12 @@ const attributeRow = (h: H, model: Model, row: RowInput): Html => {
 
 const pick = (row: RowInput) => ({ scope: row.scope, key: row.attrKey, value: row.value })
 
-const heading = (h: H, title: string): Html =>
+const heading = <P>(h: H<P>, title: string): Html =>
 	h.h4([h.Class("text-xs font-medium tracking-wide text-foreground/70")], [title])
 
 /** `AttributesTable` without search or namespace grouping (the span panel uses neither). */
-const attributesTable = (
-	h: H,
+const attributesTable = <P>(
+	h: H<P>,
 	model: Model,
 	scope: AttributeScope,
 	entries: Entries,
@@ -230,8 +231,8 @@ const attributesTable = (
 			)
 
 /** `GenAiSection`: the `gen_ai.*` fields under plain-language labels. */
-const genAiSection = (
-	h: H,
+const genAiSection = <P>(
+	h: H<P>,
 	model: Model,
 	scope: AttributeScope,
 	groups: ReadonlyArray<GenAiGroup>,
@@ -283,8 +284,8 @@ const genAiSection = (
 			)
 
 /** `AttributesSection`: AI block, the raw table, and Maple's own `maple_` keys collapsed below. */
-export const attributesSection = (
-	h: H,
+export const attributesSection = <P>(
+	h: H<P>,
 	model: Model,
 	scope: AttributeScope,
 	attributes: Readonly<Record<string, string>>,

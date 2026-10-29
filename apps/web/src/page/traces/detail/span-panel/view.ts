@@ -3,13 +3,13 @@ import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
 import { getActiveInfraCorrelations } from "../../../../components/infra/infra-correlations"
 import { Option } from "effect"
-import { AsyncData, Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { AsyncData } from "foldkit"
+import type { Html } from "foldkit/html"
 import { keyValue, keyValueList } from "../../../../ui/key-value"
 import { scrollArea } from "../../../../ui/scroll-area"
 import { skeleton } from "../../../../ui/skeleton"
-import * as InfraCorrelation from "../../../kit/infra-correlation"
 import { attributesSection } from "./attributes"
+import { InfraBinding, SpanPanelComposition, type SpanPanelViewBuilder } from "./composition"
 import { copyableValue, selectableValue } from "./copy"
 import { errorSection } from "./error-section"
 import { spanEventsSection } from "./events"
@@ -21,7 +21,7 @@ import { spanLogs, tabsView } from "./view-tabs"
 
 export type ViewInputs = Readonly<{ timeZone: string }>
 
-type H = HtmlBuilder<Message>
+type H = SpanPanelViewBuilder
 
 const epochOf = (value: string): number => new Date(warehouseDateTimeToIso(value)).getTime()
 
@@ -162,7 +162,7 @@ const attributesBody = (h: H, model: Model): ReadonlyArray<Html | null> => {
 }
 
 /** The root `<SpanDetailPanel />` as the page's ResizablePanel holds it. */
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+export const view = SpanPanelComposition.makeView.withInputs<ViewInputs>((model, inputs, h) => {
 	const { span } = model
 	const detail = AsyncData.getData(model.detail.data)
 	const serviceColor = getServiceColor(span.serviceName)
@@ -216,18 +216,18 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 									h.div(
 										[h.Class("p-3")],
 										[
-											h.submodel({
-												slotId: `${model.infra.id}-panel`,
-												model: model.infra,
-												view: InfraCorrelation.view,
-												viewInputs: {
-													resourceAttributes: infraAttrs,
-													anchor: span.startTime,
-													spanDurationMs: span.durationMs,
-													timeZone: inputs.timeZone,
-												},
-												toParentMessage: (message) => Message.GotInfraMessage({ message }),
-											}),
+											h.block(
+												InfraBinding.embedView({
+													slotId: `${model.infra.id}-panel`,
+													model: model.infra,
+													viewInputs: {
+														resourceAttributes: infraAttrs,
+														anchor: span.startTime,
+														spanDurationMs: span.durationMs,
+														timeZone: inputs.timeZone,
+													},
+												}),
+											),
 										],
 									),
 								],

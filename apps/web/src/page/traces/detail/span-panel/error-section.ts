@@ -10,7 +10,8 @@ import type { PanelState as Model } from "./model"
 
 // `ErrorSection` (packages/ui/src/components/error-section.tsx), with a "Copy as prompt" payload.
 
-type H = HtmlBuilder<Message>
+/** Any builder whose Messages include the panel's: the panel's own, the popover's, local-ui's. */
+type H<P> = HtmlBuilder<Message | P>
 
 const COLLAPSED_LINES = 3
 const LINE_HEIGHT = 1.625
@@ -25,7 +26,7 @@ export type ErrorSectionInput = Readonly<{
 
 const BODY_ID = "error-body"
 
-export const errorSection = (h: H, model: Model, input: ErrorSectionInput): Html => {
+export const errorSection = <P>(h: H<P>, model: Model, input: ErrorSectionInput): Html => {
 	const { message } = input
 	const body = parseErrorBody(message)
 	const isLong = body.full.split("\n").length > COLLAPSED_LINES || message.length > 160

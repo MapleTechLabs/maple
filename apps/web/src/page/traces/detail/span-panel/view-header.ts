@@ -20,7 +20,8 @@ import { outcomeBadgeStyle, type PlatformInfo } from "./platform"
 
 // The panel's header, summary stats, cache and platform blocks (`SpanDetailPanel`).
 
-type H = HtmlBuilder<Message>
+/** Any builder whose Messages include the panel's: the panel's own, the popover's, local-ui's. */
+type H<P> = HtmlBuilder<Message | P>
 
 /** A warehouse timestamp in `timeZone`, optionally with milliseconds. */
 export const formatTimestamp = (value: string, timeZone: string, withMilliseconds: boolean): string => {
@@ -37,7 +38,7 @@ export const formatTimestamp = (value: string, timeZone: string, withMillisecond
 	}).format(date)
 }
 
-export const panelHeader = (h: H, model: Model): Html => {
+export const panelHeader = <P>(h: H<P>, model: Model): Html => {
 	const { span } = model
 	const serviceColor = getServiceColor(span.serviceName)
 	return h.div(
@@ -119,7 +120,7 @@ export const panelHeader = (h: H, model: Model): Html => {
 }
 
 /** Duration, self time, share of trace, status and cache result. */
-export const summaryStats = (h: H, model: Model): Html => {
+export const summaryStats = <P>(h: H<P>, model: Model): Html => {
 	const { span } = model
 	const node = toSpanNode(span)
 	const duration = formatDuration(span.durationMs)
@@ -171,7 +172,7 @@ export const summaryStats = (h: H, model: Model): Html => {
 }
 
 /** The cache summary row, for spans carrying `cache.*`. */
-export const cacheSummary = (h: H, model: Model): Html | null => {
+export const cacheSummary = <P>(h: H<P>, model: Model): Html | null => {
 	const cacheInfo = getCacheInfo({ ...model.span.spanAttributes })
 	if (cacheInfo === null) return null
 	return h.div(
@@ -191,7 +192,7 @@ export const cacheSummary = (h: H, model: Model): Html | null => {
 }
 
 /** The cloud platform / database block (Cloudflare, PostgreSQL, ...). */
-export const platformSummary = (h: H, model: Model, platform: PlatformInfo): Html =>
+export const platformSummary = <P>(h: H<P>, model: Model, platform: PlatformInfo): Html =>
 	h.div(
 		[h.Class("@container/platform border-b px-3 py-2 text-xs shrink-0 space-y-1.5")],
 		[

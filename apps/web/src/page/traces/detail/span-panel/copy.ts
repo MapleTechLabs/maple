@@ -9,7 +9,8 @@ import type { CopyStatus, PanelState as Model } from "./model"
 // with the copy status read from the panel's Model by target id.
 // TODO(toast): every copy should toast; toasts are not wired into the page yet.
 
-type H = HtmlBuilder<Message>
+/** Any builder whose Messages include the panel's: the panel's own, the popover's, local-ui's. */
+type H<P> = HtmlBuilder<Message | P>
 
 export const statusOf = (model: Model, id: string): CopyStatus => model.copies[id]?.status ?? "idle"
 
@@ -26,7 +27,7 @@ export type CopyButtonOptions = Readonly<{
 }>
 
 /** `<CopyButton>` (ghost, icon-xs) whose click copies `value`. */
-export const copyButton = (h: H, model: Model, options: CopyButtonOptions): Html =>
+export const copyButton = <P>(h: H<P>, model: Model, options: CopyButtonOptions): Html =>
 	sharedCopyButton(h, {
 		status: statusOf(model, options.id),
 		label: options.label,
@@ -43,8 +44,8 @@ export const copyButton = (h: H, model: Model, options: CopyButtonOptions): Html
 	})
 
 /** `CopyableValue`: inline text that copies itself on click. */
-export const copyableValue = (
-	h: H,
+export const copyableValue = <P>(
+	h: H<P>,
 	model: Model,
 	options: Readonly<{ id: string; value: string; label?: string; className?: string }>,
 	children?: ReadonlyArray<Html | string>,
@@ -71,8 +72,8 @@ export const copyableValue = (
 }
 
 /** `SelectableValue`: selectable text with a trailing copy button for the whole value. */
-export const selectableValue = (
-	h: H,
+export const selectableValue = <P>(
+	h: H<P>,
 	model: Model,
 	options: Readonly<{
 		id: string

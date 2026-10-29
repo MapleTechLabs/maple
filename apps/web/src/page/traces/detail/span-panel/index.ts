@@ -1,5 +1,6 @@
-// The trace detail page's span panel: `SpanDetailPanel` as a Submodel the page re-creates per selection.
-export { Message } from "./message"
+// The trace detail page's span panel: `SpanPanelBlock`, which the page re-initialises per selection.
+export { SpanPanelBlock } from "./block"
+export { Message, OutMessage } from "./message"
 export { Model } from "./model"
-export { init, update } from "./update"
-export { view } from "./view"
+export type { InitInput } from "./update"
+export type { ViewInputs } from "./view"

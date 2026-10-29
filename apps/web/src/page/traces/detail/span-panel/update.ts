@@ -1,15 +1,21 @@
 import { Record } from "effect"
-import { AsyncData, Command } from "foldkit"
+import { AsyncData, type Command } from "foldkit"
 import * as Keyed from "../../../../data/keyed"
 import { requestKey } from "../../../../data/request-key"
-import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
-import * as Tabs from "../../../../ui/tabs"
 import * as InfraCorrelation from "../../../kit/infra-correlation"
 import type { SpanNodeData } from "../trace-data"
-import { FetchSpanDetail, FetchSpanLogs, LOG_LIMIT, WaitSpanCopyStatus, WriteSpanClipboard } from "./command"
+import {
+	FetchSpanDetail,
+	FetchSpanLogs,
+	LOG_LIMIT,
+	type PanelStateRequirements,
+	WaitSpanCopyStatus,
+	WriteSpanClipboard,
+} from "./command"
+import { SpanPanelComposition } from "./composition"
 import { Message, OutMessage } from "./message"
-import type { CopyStatus, Model, PanelState } from "./model"
+import type { CopyStatus, PanelState } from "./model"
 
 export type InitInput = Readonly<{
 	span: SpanNodeData
@@ -19,22 +25,14 @@ export type InitInput = Readonly<{
 	orgId: string
 }>
 
-export type Return = Readonly<{
-	model: Model
-	commands?: ReadonlyArray<Command.Command<Message, never, Resources>>
-	outMessage?: OutMessage
-}>
-
-type StateReturn<S> = Readonly<{
+export type StateReturn<S> = Readonly<{
 	model: S
-	commands?: ReadonlyArray<Command.Command<Message, never, Resources>>
+	commands?: ReadonlyArray<Command.Command<Message, never, PanelStateRequirements>>
 	outMessage?: OutMessage
 }>
-
-export const TAB_VALUES =["details", "logs", "infrastructure"] as const
 
 /** The panel as it mounts: the logs read always, the full attributes unless the span is missing. */
-export const init = (input: InitInput): Return => {
+export const init = SpanPanelComposition.makeInit((input: InitInput) => {
 	const { span } = input
 	const logsKey = requestKey(input.orgId, "listLogs", {
 		data: { traceId: span.traceId, spanId: span.spanId, limit: LOG_LIMIT },
@@ -50,7 +48,6 @@ export const init = (input: InitInput): Return => {
 			totalDurationMs: input.totalDurationMs,
 			detail: hasDetail ? { key: detailKey, data: AsyncData.Loading() } : Keyed.idle(),
 			logs: { key: logsKey, data: AsyncData.Loading() },
-			tabs: Tabs.init({ idBase: 32, values: TAB_VALUES, selected: "details" }),
 			copies: {},
 			openIds: [],
 			isErrorExpanded: false,
@@ -70,7 +67,7 @@ export const init = (input: InitInput): Return => {
 				: []),
 		],
 	}
-}
+})
 
 const copyStatus = <S extends PanelState>(
 	model: S,
@@ -137,23 +134,19 @@ export const updateState = <S extends PanelState>(model: S, message: Message): S
 				url: attributeFilterUrl(scope, key, value, isExclude),
 			}),
 		}),
-		// The panel's own tab strip and Infrastructure tab; a holder without them keeps its state.
-		GotTabsMessage: () => ({ model }),
-		GotInfraMessage: () => ({ model }),
 	})
 
-export const update = (model: Model, message: Message): Return => {
-	if (message._tag === "GotInfraMessage") {
-		const next = InfraCorrelation.update(model.infra, message.message)
-		return {
-			model: { ...model, infra: next.model },
-			commands: Command.mapMessages(next.commands ?? [], (inner) => Message.GotInfraMessage({ message: inner })),
-		}
-	}
-	if (message._tag !== "GotTabsMessage") return updateState(model, message)
-	const next = Tabs.update(model.tabs, message.message)
-	return {
-		model: { ...model, tabs: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (tab) => Message.GotTabsMessage({ message: tab })),
-	}
-}
+/** The panel's own Messages; Tabs and Infrastructure deliveries route through their Bindings. */
+export const update = SpanPanelComposition.makeUpdate({
+	CompletedFetchDetail: updateState,
+	CompletedFetchLogs: updateState,
+	ClickedClose: updateState,
+	ClickedParentSpan: updateState,
+	ClickedCopy: updateState,
+	SucceededCopy: updateState,
+	FailedCopy: updateState,
+	ElapsedCopyStatus: updateState,
+	ToggledCollapsible: updateState,
+	ToggledErrorExpanded: updateState,
+	ClickedAttributeFilter: updateState,
+})

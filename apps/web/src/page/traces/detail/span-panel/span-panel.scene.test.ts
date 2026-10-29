@@ -8,7 +8,7 @@ import type { SpanNodeData } from "../trace-data"
 import { FetchSpanDetail, FetchSpanLogs } from "./command"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { SpanPanelBlock } from "./block"
 import { view as panelView } from "./view"
 
 const span: SpanNodeData = {
@@ -36,6 +36,7 @@ const input = {
 	orgId: "org_acme",
 }
 
+const { init, update } = SpanPanelBlock
 const view = withViewInputs(panelView, { timeZone: "UTC" })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	(commands ?? []).map(({ name }) => name)
@@ -51,18 +52,18 @@ const loaded = (): Model => {
 }
 
 const indicatorMeasured = () =>
-	Mount.resolve<string, Message>(
+	Mount.resolve(
 		Tabs.MeasureTabIndicator,
-		Message.GotTabsMessage({
-			message: Tabs.Message.MeasuredIndicator({
-				rect: { left: 16, right: 300, top: 4, bottom: 5, width: 96, height: 32 },
-			}),
+		Tabs.Message.MeasuredIndicator({
+			rect: { left: 16, right: 300, top: 4, bottom: 5, width: 96, height: 32 },
 		}),
 	)
 
 describe("span panel", () => {
 	test("mounting asks for the span's logs and its full attributes", () => {
-		expect(names(init(input).commands)).toEqual(expect.arrayContaining([FetchSpanLogs.name, FetchSpanDetail.name]))
+		expect(names(init(input).commands)).toEqual(
+			expect.arrayContaining([FetchSpanLogs.name, FetchSpanDetail.name]),
+		)
 	})
 
 	test("a span missing from the trace only asks for its logs", () => {

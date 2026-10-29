@@ -8,10 +8,11 @@ import type { Model, SpanEventData } from "./model"
 
 // The span's events section.
 
-type H = HtmlBuilder<Message>
+/** Any builder whose Messages include the panel's: the panel's own, the popover's, local-ui's. */
+type H<P> = HtmlBuilder<Message | P>
 
-const eventAttributes = (
-	h: H,
+const eventAttributes = <P>(
+	h: H<P>,
 	model: Model,
 	eventId: string,
 	attributes: Readonly<Record<string, string>>,
@@ -43,7 +44,7 @@ const eventAttributes = (
 			]
 }
 
-const stackTrace = (h: H, model: Model, eventId: string, stacktrace: string): Html => {
+const stackTrace = <P>(h: H<P>, model: Model, eventId: string, stacktrace: string): Html => {
 	const id = `${eventId}:stack`
 	const isOpen = model.openIds.includes(id)
 	return h.div(
@@ -97,7 +98,7 @@ const stackTrace = (h: H, model: Model, eventId: string, stacktrace: string): Ht
 	)
 }
 
-const eventRow = (h: H, model: Model, event: SpanEventData, index: number): Html => {
+const eventRow = <P>(h: H<P>, model: Model, event: SpanEventData, index: number): Html => {
 	const eventId = `event:${index}`
 	const described = describeSpanEvent(event)
 	const offset = h.span(
@@ -155,7 +156,11 @@ const eventRow = (h: H, model: Model, event: SpanEventData, index: number): Html
 }
 
 /** The span's OTel events in time order, `exception` events expanded; nothing when there are none. */
-export const spanEventsSection = (h: H, model: Model, events: ReadonlyArray<SpanEventData>): Html | null =>
+export const spanEventsSection = <P>(
+	h: H<P>,
+	model: Model,
+	events: ReadonlyArray<SpanEventData>,
+): Html | null =>
 	events.length === 0
 		? null
 		: h.div(
