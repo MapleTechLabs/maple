@@ -48,17 +48,21 @@ const summary = (h: H, changes: StatusPageConfigChanges): Html => {
 	const rows = changeRows(changes)
 	return panel(h, {}, [
 		panelHeader(h, { title: "Changes" }),
-		panelBody(h, [
-			rows.length === 0
-				? h.p([h.Class("text-sm text-muted-foreground")], ["No changes yet."])
-				: h.dl(
-						[h.Class("grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm")],
-						rows.flatMap(([term, detail]) => [
-							h.dt([h.Class("text-muted-foreground")], [term]),
-							h.dd([h.Class("text-foreground")], [detail]),
-						]),
-					),
-		]),
+		panelBody(
+			h,
+			[
+				rows.length === 0
+					? h.p([h.Class("text-sm text-muted-foreground")], ["No changes yet."])
+					: h.dl(
+							[h.Class("grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm")],
+							rows.flatMap(([term, detail]) => [
+								h.dt([h.Class("text-muted-foreground")], [term]),
+								h.dd([h.Class("text-foreground")], [detail]),
+							]),
+						),
+			],
+			"p-4",
+		),
 	])
 }
 
