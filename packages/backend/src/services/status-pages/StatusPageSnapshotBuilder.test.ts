@@ -412,6 +412,37 @@ describe("StatusPageSnapshotBuilder.build", () => {
 		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
 	})
 
+	it.effect("keeps an old open incident even when more resolved incidents than the cap are newer", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const builder = yield* StatusPageSnapshotBuilder
+			const pageId = newPageId()
+			yield* seedPage(testDb, { id: pageId, slug: "busy-page" })
+			yield* seedIncident(testDb, {
+				id: crypto.randomUUID(),
+				pageId,
+				title: "Long-running",
+				status: "identified",
+				startedAt: NOW - 200 * DAY_MS,
+			})
+			yield* Effect.forEach(
+				Array.from({ length: 501 }, (_, index) => index),
+				(index) =>
+					seedIncident(testDb, {
+						id: crypto.randomUUID(),
+						pageId,
+						title: `Blip ${index}`,
+						status: "resolved",
+						startedAt: NOW - (index + 1) * 60_000,
+						resolvedAt: NOW - (index + 1) * 60_000 + 1_000,
+					}),
+				{ discard: true },
+			)
+			const snapshot = yield* builder.build(pageId, NOW)
+			assert.isTrue(snapshot.incidents.some((incident) => incident.title === "Long-running"))
+		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
+	})
+
 	it.effect("reads the probe pulse across orgs, or for one org only when asked", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

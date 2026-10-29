@@ -42,7 +42,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { StatusPageGoneError, StatusPagePublishDbError } from "./publish-errors"
 
-/** Most incidents one snapshot indexes for the calendar: about one a day for a year. */
+/** Most resolved incidents one snapshot indexes for the calendar: about one a day for a year. */
 const STATUS_PAGE_INCIDENT_INDEX_LIMIT = 500
 
 const DAY_MS = 86_400_000
@@ -348,30 +348,39 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 											$.day.gte(firstDay),
 										]),
 								)
-					const incidents = yield* db.run(
-						PG.from(StatusPageIncidents)
-							.select(($) => ({
-								id: $.id,
-								kind: $.kind,
-								title: $.title,
-								impact: $.impact,
-								status: $.status,
-								published: $.published,
-								startedAt: $.startedAt,
-								resolvedAt: $.resolvedAt,
-								scheduledStart: $.scheduledStart,
-								scheduledEnd: $.scheduledEnd,
-							}))
+					const incidentFields = PG.from(StatusPageIncidents).select(($) => ({
+						id: $.id,
+						kind: $.kind,
+						title: $.title,
+						impact: $.impact,
+						status: $.status,
+						published: $.published,
+						startedAt: $.startedAt,
+						resolvedAt: $.resolvedAt,
+						scheduledStart: $.scheduledStart,
+						scheduledEnd: $.scheduledEnd,
+					}))
+					// Open incidents always, however old; only the resolved ones that fill the calendar are capped.
+					const open = yield* db.run(
+						incidentFields.where(($) => [
+							$.orgId.eq(orgId),
+							$.pageId.eq(pageId),
+							$.published.eq(true),
+							$.resolvedAt.isNull(),
+						]),
+					)
+					const resolved = yield* db.run(
+						incidentFields
 							.where(($) => [
 								$.orgId.eq(orgId),
 								$.pageId.eq(pageId),
 								$.published.eq(true),
-								PG.or($.resolvedAt.isNull(), $.resolvedAt.gte(indexCutoff)),
+								$.resolvedAt.gte(indexCutoff),
 							])
-							// Bounded: the newest incidents fill the calendar; a page past this is pathological.
 							.orderBy(["startedAt", "desc"], ["id", "desc"])
 							.limit(STATUS_PAGE_INCIDENT_INDEX_LIMIT),
 					)
+					const incidents = [...open, ...resolved]
 					const incidentIds = incidents
 						.filter((incident) => isListedIncident(incident, nowMs))
 						.map((incident) => incident.id)
