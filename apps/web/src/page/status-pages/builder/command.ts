@@ -1,6 +1,6 @@
 import { StatusPagePreviewParams, V2StatusPageCreateParams } from "@maple/domain/http/v2"
 import { Clock, Duration, Effect, Schema } from "effect"
-import { Command, Dom } from "foldkit"
+import { Command, Dom, Mount } from "foldkit"
 import { readIsAdmin } from "../../alerts/shared/commands"
 import { listMonitors, saveMonitor } from "../../alerts/shared/uptime-commands"
 import { createPage, previewPage } from "../shared/commands"
@@ -78,4 +78,13 @@ export const FocusBuilderField = Command.define("FocusStatusPageBuilderField", {
 	messages: [Message.CompletedFocus],
 	execute: ({ id }) =>
 		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocus())),
+})
+
+/** Focuses the element as it mounts, in the same render, so no keystroke lands elsewhere first. */
+export const FocusNewRow = Mount.define("FocusStatusPageBuilderRow", {
+	messages: [Message.CompletedFocus],
+	execute: ({ element }) =>
+		Effect.sync(() => (element instanceof HTMLElement ? element.focus() : undefined)).pipe(
+			Effect.as(Message.CompletedFocus()),
+		),
 })

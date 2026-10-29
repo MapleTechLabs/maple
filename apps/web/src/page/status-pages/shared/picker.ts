@@ -32,6 +32,8 @@ export const Picker = Schema.Struct({
 	url: Schema.String,
 	urlIssue: Schema.NullOr(Schema.String),
 	isCreatingMonitor: Schema.Boolean,
+	/** The row just added by hand: its name input takes focus as it mounts. */
+	autofocusKey: Schema.NullOr(Schema.String),
 })
 export type Picker = typeof Picker.Type
 
@@ -42,6 +44,7 @@ export const emptyPicker: Picker = {
 	url: "",
 	urlIssue: null,
 	isCreatingMonitor: false,
+	autofocusKey: null,
 }
 
 export const monitorKey = (id: UptimeMonitorId) => `m:${id}`
@@ -90,6 +93,8 @@ export const PickerMessage = defineMessageUnion({
 	ClickedMoveRow: { key: Schema.String, offset: Schema.Number },
 	ClickedRemoveRow: { key: Schema.String },
 	ClickedAddManual: {},
+	/** A key pressed on the Add button before the new row's input mounted and took focus. */
+	PressedKeyOnAdd: { key: Schema.String },
 	ClickedOpenUrl: {},
 	ChangedUrl: { value: Schema.String },
 	SubmittedUrl: {},
@@ -141,20 +146,28 @@ export type PickerStep = Readonly<{
 	picker: Picker
 	/** A URL to create a monitor for, once it passes the checks. */
 	createMonitor: Option.Option<string>
-	/** A row's name input to focus (a new component without a monitor). */
-	focusKey: Option.Option<string>
 }>
 
-const step = (picker: Picker): PickerStep => ({
-	picker,
-	createMonitor: Option.none(),
-	focusKey: Option.none(),
-})
+const step = (picker: Picker): PickerStep => ({ picker, createMonitor: Option.none() })
 
 export const updatePicker = (picker: Picker, message: PickerMessage): PickerStep =>
 	PickerMessage.match<PickerStep>(message, {
-		ToggledRow: ({ key }) => step(mapRow(picker, key, (row) => ({ ...row, isChecked: !row.isChecked }))),
-		ChangedRowName: ({ key, value }) => step(mapRow(picker, key, (row) => ({ ...row, name: value }))),
+		// A component added another way leaves an old URL error behind; it no longer applies.
+		ToggledRow: ({ key }) =>
+			step({
+				...mapRow(picker, key, (row) => ({ ...row, isChecked: !row.isChecked })),
+				urlIssue: null,
+			}),
+		// Typing in the new row means its focus arrived: keys stop being routed from the button.
+		ChangedRowName: ({ key, value }) =>
+			step({
+				...mapRow(picker, key, (row) => ({ ...row, name: value })),
+				autofocusKey: picker.autofocusKey === key ? null : picker.autofocusKey,
+			}),
+		PressedKeyOnAdd: ({ key }) =>
+			picker.autofocusKey === null || key.length !== 1
+				? step(picker)
+				: step(mapRow(picker, picker.autofocusKey, (row) => ({ ...row, name: row.name + key }))),
 		ChangedRowGroup: ({ key, value }) => step(mapRow(picker, key, (row) => ({ ...row, group: value }))),
 		PickedRowStatus: ({ key, value }) =>
 			Option.match(decodeStatus(value), {
@@ -174,10 +187,13 @@ export const updatePicker = (picker: Picker, message: PickerMessage): PickerStep
 				group: "",
 				manualStatus: "operational",
 			}
-			return {
-				...step({ ...picker, rows: [...picker.rows, row], nextKey: picker.nextKey + 1 }),
-				focusKey: Option.some(key),
-			}
+			return step({
+				...picker,
+				rows: [...picker.rows, row],
+				nextKey: picker.nextKey + 1,
+				autofocusKey: key,
+				urlIssue: null,
+			})
 		},
 		ClickedOpenUrl: () => step({ ...picker, isUrlOpen: true, urlIssue: null }),
 		ChangedUrl: ({ value }) => step({ ...picker, url: value, urlIssue: null }),
@@ -215,18 +231,23 @@ export const checkedRows = (picker: Picker): ReadonlyArray<PickerRow> =>
 	picker.rows.filter((row) => row.isChecked)
 
 export const rowIssue = (row: PickerRow): string | null =>
-	row.isChecked && row.name.trim() === "" ? "Add a name." : null
+	row.isChecked && row.name.trim() === "" ? "Name this component" : null
 
 export const hasRowIssues = (picker: Picker): boolean => picker.rows.some((row) => rowIssue(row) !== null)
 
 const orNull = (value: string): string | null => (value.trim() === "" ? null : value.trim())
 
-/** The page's components as the create and the preview take them, in list order. */
+/**
+ * The page's components as the create and the preview take them, in list order. A row with no
+ * name yet is left out: the API refuses a blank name, and `rowIssue` blocks the create meanwhile.
+ */
 export const draftComponents = (picker: Picker): ReadonlyArray<StatusPageDraftComponent> =>
-	checkedRows(picker).map((row) => ({
-		name: row.name.trim(),
-		group: orNull(row.group),
-		monitor_id: row.monitorId,
-		manual_status: row.monitorId === null ? row.manualStatus : null,
-		show_uptime: true,
-	}))
+	checkedRows(picker)
+		.filter((row) => row.name.trim() !== "")
+		.map((row) => ({
+			name: row.name.trim(),
+			group: orNull(row.group),
+			monitor_id: row.monitorId,
+			manual_status: row.monitorId === null ? row.manualStatus : null,
+			show_uptime: true,
+		}))

@@ -9,7 +9,7 @@ import {
 	V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
 import { Clock, Duration, Effect, Schema } from "effect"
-import { Command, Dom } from "foldkit"
+import { Command, Dom, Mount } from "foldkit"
 import { readIsAdmin } from "../../alerts/shared/commands"
 import {
 	applyPageConfig,
@@ -277,4 +277,13 @@ export const OpenPublicPage = Command.define("OpenStatusPagePublicPage", {
 	messages: [Message.OpenedPublicPage],
 	execute: ({ url }) =>
 		Effect.sync(() => window.open(url, "_blank", "noopener")).pipe(Effect.as(Message.OpenedPublicPage())),
+})
+
+/** Focuses the element as it mounts, in the same render, so no keystroke lands elsewhere first. */
+export const FocusNewRow = Mount.define("FocusStatusPageEditorRow", {
+	messages: [Message.CompletedFocus],
+	execute: ({ element }) =>
+		Effect.sync(() => (element instanceof HTMLElement ? element.focus() : undefined)).pipe(
+			Effect.as(Message.CompletedFocus()),
+		),
 })

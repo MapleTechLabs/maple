@@ -1,4 +1,4 @@
-import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
+import { isDialogOpen } from "@maple/ui/lib/keyboard"
 import { Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import type { PageSubscriptionInput } from "../../contract"
@@ -7,14 +7,21 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { resolveView } from "./update"
 
-// Escape closes the side panel (a field or an open dialog keeps its own Escape), and a click in
-// the preview frame selects what it landed on.
+// Escape closes the side panel, from its inputs too; an open dialog, menu or listbox keeps its own
+// Escape. A click in the preview frame selects what it landed on.
+
+/** An open popup owns Escape: a dialog, or a dropdown whose trigger or list has focus. */
+const isPopupOpen = (target: EventTarget | null): boolean =>
+	isDialogOpen() ||
+	(target instanceof Element &&
+		(target.getAttribute("aria-expanded") === "true" ||
+			target.closest('[role="listbox"], [role="menu"]') !== null))
 
 const escapes: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 	target: () => document,
 	type: "keydown",
 	filterMapEvent: (event) =>
-		event.key !== "Escape" || isEditableTarget(event.target) || isDialogOpen()
+		event.key !== "Escape" || isPopupOpen(event.target)
 			? Option.none()
 			: Option.some(Message.PressedEscape()),
 })

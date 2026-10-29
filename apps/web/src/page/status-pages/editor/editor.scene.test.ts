@@ -45,7 +45,7 @@ import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { moved } from "./update-components"
 import { canvasDocument } from "./view-canvas"
-import { view as pageView } from "./view"
+import { removeComponentCopy, view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -323,6 +323,28 @@ describe("the page as the editor", () => {
 			given(failed),
 			expectView(text("Not saved")).toExist(),
 			expectView(text("Couldn't save the component")).toExist(),
+		)
+	})
+
+	test("a component without a monitor shows its stored uptime setting, disabled, and says why", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(selected(1)),
+			expectView(role("checkbox", { name: "Show uptime bars" })).toBeChecked(),
+			expectView(role("checkbox", { name: "Show uptime bars" })).toBeDisabled(),
+			expectView(text("Uptime bars need a monitor.")).toExist(),
+		)
+	})
+
+	test("the remove confirm names the monitor only when there is one, and the draft wording for drafts", () => {
+		expect(removeComponentCopy(statusPage(), component(1, { monitor_id: httpMonitor().id }))).toBe(
+			"Visitors stop seeing it within a minute. Its monitor keeps running.",
+		)
+		expect(removeComponentCopy(statusPage(), component(1))).toBe(
+			"Visitors stop seeing it within a minute.",
+		)
+		expect(removeComponentCopy(statusPage({ draft: true }), component(1))).toBe(
+			"It leaves the draft; visitors never see it.",
 		)
 	})
 

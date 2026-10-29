@@ -1,12 +1,13 @@
 import { OrgId } from "@maple/domain"
 import { StatusPageSlugTakenError } from "@maple/domain/http"
-import type { V2UptimeMonitor } from "@maple/domain/http/v2"
+import { StatusPagePreviewParams, type V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
 import {
 	attr,
 	expect as expectView,
 	find,
 	given,
+	Mount,
 	role,
 	scene,
 	selector,
@@ -27,9 +28,10 @@ import {
 import { statusPageHref } from "../shared/commands"
 import { monitorKey, PickerMessage } from "../shared/picker"
 import { statusPage } from "../shared/test-pages"
+import { FocusNewRow } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, previewDraft as BuilderUpdatePreviewDraft, update } from "./update"
 import { view as builderView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
@@ -173,8 +175,8 @@ describe("status page builder", () => {
 
 	test("a component without a monitor gets a name and a manual status, and its name field focus", () => {
 		const adding = builderUpdate(withMonitors([]), picker(PickerMessage.ClickedAddManual()))
-		expect(names(adding.commands)).toContain("FocusStatusPageBuilderField")
 		const row = adding.model.picker.rows[0]
+		expect(adding.model.picker.autofocusKey).toBe(row?.key)
 		const filled = [
 			picker(PickerMessage.ChangedRowName({ key: row?.key ?? "", value: "Docs" })),
 			picker(PickerMessage.PickedRowStatus({ key: row?.key ?? "", value: "degraded" })),
@@ -191,6 +193,61 @@ describe("status page builder", () => {
 				},
 			},
 		])
+	})
+
+	test("an unnamed component never reaches a request: the preview leaves it out and Publish waits", () => {
+		const added = builderUpdate(
+			named(withMonitors([httpMonitor()])),
+			picker(PickerMessage.ClickedAddManual()),
+		)
+		const generation = added.model.previewGeneration
+		const fetching = builderUpdate(added.model, Message.ElapsedPreviewDebounce({ generation }))
+		const [command] = fetching.commands ?? []
+		expect(command).toMatchObject({ name: "FetchStatusPagePreview" })
+		const draft = BuilderUpdatePreviewDraft(added.model)
+		expect(draft.components.map((component) => component.monitor_id)).toEqual([httpMonitor().id])
+		// The args must encode: a blank name would fail the schema and crash the app.
+		expect(Schema.encodeSync(StatusPagePreviewParams)(draft).components).toHaveLength(1)
+		scene(
+			{ update: builderUpdate, view },
+			given(added.model),
+			Mount.resolve(FocusNewRow, Message.CompletedFocus()),
+			expectView(text("Name this component")).toExist(),
+			expectView(role("button", { name: "Publish page" })).toBeDisabled(),
+		)
+	})
+
+	test("keys pressed before the new row's input takes focus land in that row, not nowhere", () => {
+		const added = builderUpdate(withMonitors([]), picker(PickerMessage.ClickedAddManual())).model
+		const key = added.picker.autofocusKey ?? ""
+		const typed = [
+			picker(PickerMessage.PressedKeyOnAdd({ key: "W" })),
+			picker(PickerMessage.PressedKeyOnAdd({ key: "Enter" })),
+			picker(PickerMessage.ChangedRowName({ key, value: "Website" })),
+			picker(PickerMessage.PressedKeyOnAdd({ key: "x" })),
+		].reduce((model, message) => builderUpdate(model, message).model, added)
+		expect(typed.picker.rows.map((row) => row.name)).toEqual(["Website"])
+		const routed = builderUpdate(added, picker(PickerMessage.PressedKeyOnAdd({ key: "W" }))).model
+		expect(routed.picker.rows[0]?.name).toBe("W")
+	})
+
+	test("a plan or URL error clears once a component is added another way", () => {
+		const opened = builderUpdate(
+			withMonitors([httpMonitor()]),
+			picker(PickerMessage.ClickedOpenUrl()),
+		).model
+		const failed = builderUpdate(
+			opened,
+			Message.CompletedCreateMonitor({
+				result: Result.fail(
+					toLoadFailure(new Error("This organization's plan doesn't include uptime monitors.")),
+				),
+			}),
+		).model
+		expect(failed.picker.urlIssue).not.toBeNull()
+		expect(
+			builderUpdate(failed, picker(PickerMessage.ClickedAddManual())).model.picker.urlIssue,
+		).toBeNull()
 	})
 
 	test("a taken address shows next to the field and blocks publishing until it changes", () => {

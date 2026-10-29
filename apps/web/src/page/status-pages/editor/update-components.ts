@@ -20,7 +20,6 @@ import {
 	seedPicker,
 	updatePicker,
 } from "../shared/picker"
-import { rowNameId } from "../shared/picker-view"
 import {
 	AddComponents,
 	CreateEditorMonitor,
@@ -253,10 +252,6 @@ export const addPickerStep = (model: Model, message: PickerMessage): Return => {
 			...Option.match(step.createMonitor, {
 				onNone: () => [],
 				onSome: (url) => [CreateEditorMonitor({ url })],
-			}),
-			...Option.match(step.focusKey, {
-				onNone: () => [],
-				onSome: (key) => [FocusEditorElement({ id: rowNameId(ADD_PICKER_ID, key) })],
 			}),
 		],
 	}

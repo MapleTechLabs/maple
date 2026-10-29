@@ -21,6 +21,7 @@ import { APPEARANCES, presetCards } from "../shared/look"
 import { checkedRows } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { daysOf, previewDocument, previewFrame, previewTheme } from "../shared/preview"
+import { FocusNewRow } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { canSubmit, monitorsOf, NAME_ID, nameIssue, PICKER_ID, SLUG_ID, slugError } from "./update"
@@ -86,6 +87,7 @@ const componentsBody = (h: H, model: Model): Html => {
 		toMessage: (message) => Message.GotPickerMessage({ message }),
 		idPrefix: PICKER_ID,
 		isDisabled: model.submitting !== null,
+		focusOnMount: h.OnMount(FocusNewRow()),
 	})
 }
 
@@ -190,7 +192,8 @@ const previewPanel = (h: H, model: Model): Html =>
 	h.section(
 		[
 			h.AriaLabelledBy("status-page-builder-preview"),
-			h.Class("flex min-w-0 flex-col gap-3 min-[1000px]:sticky min-[1000px]:top-0"),
+			// The same clearance as the form column, so the publish bar never covers the frame.
+			h.Class("flex min-w-0 flex-col gap-3 pb-16 min-[1000px]:sticky min-[1000px]:top-0"),
 		],
 		[
 			h.div(
@@ -228,7 +231,7 @@ const previewPanel = (h: H, model: Model): Html =>
 			previewFrame(h, {
 				title: "Status page preview",
 				document: draftDocument(model),
-				className: "h-[560px] min-[1000px]:h-[calc(100vh-15rem)] min-[1000px]:min-h-[520px]",
+				className: "h-[560px] min-[1000px]:h-[calc(100vh-20rem)] min-[1000px]:min-h-[520px]",
 			}),
 			model.previewFailure === null
 				? h.p(

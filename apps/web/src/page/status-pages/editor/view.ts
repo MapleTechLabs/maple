@@ -188,16 +188,26 @@ const body = (h: H, model: Model, page: V2StatusPage, timeZone: string): Html =>
 	}
 }
 
-const deleteComponentDialog = (h: H, model: Model): Html => {
-	const name = componentsOf(model).find(
-		(component) => component.id === model.confirmDeleteComponentId,
-	)?.name
+/** What removing it does: a draft has no visitors yet, and only a monitored component has a monitor. */
+export const removeComponentCopy = (
+	page: V2StatusPage,
+	component: Readonly<{ monitor_id: string | null }> | undefined,
+): string =>
+	[
+		page.draft
+			? "It leaves the draft; visitors never see it."
+			: "Visitors stop seeing it within a minute.",
+		...(component?.monitor_id === null || component === undefined ? [] : ["Its monitor keeps running."]),
+	].join(" ")
+
+const deleteComponentDialog = (h: H, model: Model, page: V2StatusPage): Html => {
+	const component = componentsOf(model).find((row) => row.id === model.confirmDeleteComponentId)
 	return confirmDialog(h, {
 		slotId: "status-page-delete-component",
 		model: model.deleteComponentDialog,
 		toParentMessage: (message) => Message.GotDeleteComponentDialogMessage({ message }),
-		title: `Remove ${name ?? "this component"} from the page?`,
-		description: "Visitors stop seeing it with the next publish. Its monitor keeps running.",
+		title: `Remove ${component?.name ?? "this component"} from the page?`,
+		description: removeComponentCopy(page, component),
 		confirmLabel: "Remove from page",
 		isPending: model.isDeletingComponent,
 		onConfirm: Message.ClickedConfirmDeleteComponent(),
@@ -236,7 +246,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 				},
 				[body(h, model, page, timeZone)],
 			),
-			deleteComponentDialog(h, model),
+			deleteComponentDialog(h, model, page),
 			breakGlassDialog(h, model),
 			deletePageDialog(h, model, page),
 		],

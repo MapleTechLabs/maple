@@ -26,6 +26,7 @@ import { selectField, textareaField, textField } from "../shared/fields"
 import { incidentIssues } from "../shared/form"
 import { checkedRows, hasRowIssues } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
+import { FocusNewRow } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
@@ -193,7 +194,8 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 						[h.Id(Checkbox.labelId(uptimeId)), h.Class("flex items-center gap-2 text-sm")],
 						[
 							...Checkbox.view(h, {
-								model: { isChecked: form.showUptime && hasMonitor },
+								// The stored value, shown as is; it only takes effect once a monitor drives the component.
+								model: { isChecked: form.showUptime },
 								toParentMessage: () => Message.ToggledComponentUptime(),
 								id: `${uptimeId}-root`,
 								inputId: uptimeId,
@@ -202,6 +204,14 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 							h.span([], ["Show uptime bars"]),
 						],
 					),
+					...(hasMonitor
+						? []
+						: [
+								h.p(
+									[h.Class("-mt-2 text-xs text-muted-foreground")],
+									["Uptime bars need a monitor."],
+								),
+							]),
 				],
 			),
 			...failureAlert(h, "Couldn't save the component", model.componentFailure),
@@ -645,6 +655,7 @@ export const addPanel = (h: H, model: Model): Html => {
 			toMessage: (message) => Message.GotAddPickerMessage({ message }),
 			idPrefix: ADD_PICKER_ID,
 			isDisabled: model.isAddingComponents,
+			focusOnMount: h.OnMount(FocusNewRow()),
 			isOrderable: false,
 		}),
 		...failureAlert(h, "Couldn't add every component", model.addFailure),

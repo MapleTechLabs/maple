@@ -21,7 +21,6 @@ import {
 	seedPicker,
 	updatePicker,
 } from "../shared/picker"
-import { rowNameId } from "../shared/picker-view"
 import { historyFrom } from "../shared/preview"
 import { slugFromName, slugIssue } from "../shared/slug"
 import {
@@ -88,6 +87,7 @@ export const canSubmit = (model: Model): boolean =>
 
 const themeOf = (model: Model) => ({ preset: model.preset, appearance: model.appearance })
 
+/** What the preview reads; `draftComponents` leaves out rows not named yet, which the API refuses. */
 export const previewDraft = (model: Model): StatusPagePreviewParams => ({
 	name: model.name.trim(),
 	slug: model.slug,
@@ -176,10 +176,6 @@ const pickerStep = (model: Model, message: Parameters<typeof updatePicker>[1]): 
 			...Option.match(step.createMonitor, {
 				onNone: () => [],
 				onSome: (url) => [CreateBuilderMonitor({ url })],
-			}),
-			...Option.match(step.focusKey, {
-				onNone: () => [],
-				onSome: (key) => [FocusBuilderField({ id: rowNameId(PICKER_ID, key) })],
 			}),
 		],
 	}

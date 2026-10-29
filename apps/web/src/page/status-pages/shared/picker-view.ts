@@ -1,6 +1,6 @@
 import type { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../../../ui/button"
 import * as Checkbox from "../../../ui/checkbox"
 import { icon } from "../../../ui/icon"
@@ -22,6 +22,8 @@ export type PickerViewOptions<M> = Readonly<{
 	isDisabled?: boolean
 	/** Ordering and grouping apply to new pages only; the editor adds rows at the end. */
 	isOrderable?: boolean
+	/** An `OnMount` that focuses the element: the name input of a row added by hand gets it. */
+	focusOnMount?: Attribute<M>
 }>
 
 const rowId = (prefix: string, row: PickerRow, part: string) =>
@@ -38,6 +40,7 @@ const textInput = <M>(
 		error?: string | null
 		className?: string
 		onInput: (value: string) => M
+		extra?: ReadonlyArray<Attribute<M>>
 	}>,
 ): Html =>
 	input(h, {
@@ -50,6 +53,7 @@ const textInput = <M>(
 			h.Value(options.value),
 			h.Placeholder(options.placeholder),
 			h.OnInput(options.onInput),
+			...(options.extra ?? []),
 			...((options.error ?? null) === null
 				? []
 				: [h.AriaInvalid(true), h.AriaDescribedBy(`${options.id}-error`)]),
@@ -115,6 +119,11 @@ const editFields = <M>(
 				[
 					textInput(h, {
 						id: nameId,
+						// Focused as it mounts, so the first keystroke after "Add" lands in it.
+						extra:
+							options.focusOnMount !== undefined && options.picker.autofocusKey === row.key
+								? [options.focusOnMount]
+								: [],
 						label: `Shown as, ${label}`,
 						value: row.name,
 						placeholder: row.monitorId === null ? "Component name" : label,
@@ -283,7 +292,7 @@ const urlField = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>): Html => 
 		)
 	return h.form(
 		[
-			h.Class("flex flex-col gap-1.5"),
+			h.Class("flex w-full max-w-md flex-col gap-1.5"),
 			h.OnSubmit(options.toMessage(PickerMessage.SubmittedUrl())),
 			h.AriaLabel("Monitor a URL"),
 		],
@@ -295,7 +304,7 @@ const urlField = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>): Html => 
 						id,
 						size: "sm",
 						type: "url",
-						className: "flex-1",
+						className: "min-w-48 flex-1",
 						controlClassName: "font-mono",
 						isDisabled: options.isDisabled === true || picker.isCreatingMonitor,
 						attributes: [
@@ -382,7 +391,7 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 						),
 					]),
 			h.div(
-				[h.Class(cn("flex flex-col gap-2", isEmpty ? "" : "sm:flex-row sm:items-start sm:gap-3"))],
+				[h.Class("flex flex-col items-start gap-2")],
 				[
 					urlField(h, options),
 					button(
@@ -392,7 +401,13 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 							variant: "ghost",
 							isDisabled: options.isDisabled,
 							className: "self-start",
-							attributes: [h.OnClick(options.toMessage(PickerMessage.ClickedAddManual()))],
+							attributes: [
+								h.OnClick(options.toMessage(PickerMessage.ClickedAddManual())),
+								// Keys typed before the new row mounts reach the button; they belong to the row.
+								h.OnKeyDown((key) =>
+									options.toMessage(PickerMessage.PressedKeyOnAdd({ key })),
+								),
+							],
 						},
 						[icon(h, "PlusIcon"), "Add a component without a monitor"],
 					),
@@ -401,6 +416,3 @@ export const pickerView = <M>(h: HtmlBuilder<M>, options: PickerViewOptions<M>):
 		],
 	)
 }
-
-/** The id of a row's name input, for focusing a new one. */
-export const rowNameId = (prefix: string, key: string) => `${prefix}-name-${key.replace(":", "-")}`
