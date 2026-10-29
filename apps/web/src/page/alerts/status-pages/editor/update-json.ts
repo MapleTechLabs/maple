@@ -109,6 +109,8 @@ const pageWith = (page: V2StatusPage, applied: StatusPageConfig): V2StatusPage =
 		description: config.description,
 		website_url: config.website_url,
 		logo_url: config.logo_url,
+		privacy_url: config.privacy_url,
+		terms_url: config.terms_url,
 		show_powered_by: config.show_powered_by,
 		auto_incidents: config.auto_incidents,
 		theme: config.theme,

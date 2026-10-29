@@ -329,6 +329,8 @@ export const previewDocument = (model: Model, page: V2StatusPage, form: Settings
 			description: orNull(form.description),
 			websiteUrl: orNull(form.websiteUrl),
 			logoUrl: orNull(form.logoUrl),
+			privacyUrl: orNull(form.privacyUrl),
+			termsUrl: orNull(form.termsUrl),
 			showPoweredBy: form.showPoweredBy,
 			theme: previewTheme(themeOf(form.theme), model.previewScheme),
 		},

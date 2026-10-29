@@ -1,12 +1,21 @@
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
 import { describe, expect, it } from "vitest"
-import { hasSettingsIssues, isSameSettings, type SettingsForm, settingsPayload, themeFormOf } from "./form"
+import {
+	hasSettingsIssues,
+	isSameSettings,
+	type SettingsForm,
+	settingsIssues,
+	settingsPayload,
+	themeFormOf,
+} from "./form"
 
 const saved: SettingsForm = {
 	name: "Acme!",
 	slug: "acme",
 	description: "",
 	websiteUrl: "https://acme.example",
+	privacyUrl: "",
+	termsUrl: "",
 	logoUrl: "",
 	showPoweredBy: true,
 	autoIncidents: "off",
@@ -27,6 +36,34 @@ describe("isSameSettings", () => {
 	it("still sees a real change", () => {
 		expect(isSameSettings({ ...saved, theme: { ...saved.theme, accent: "#aabbcd" } }, saved)).toBe(false)
 		expect(isSameSettings({ ...saved, theme: { ...saved.theme, radius: "lg" } }, saved)).toBe(false)
+	})
+})
+
+describe("footer links", () => {
+	it("sends https links trimmed and blank ones as null", () => {
+		const payload = settingsPayload({
+			...saved,
+			privacyUrl: " https://acme.example/privacy ",
+			termsUrl: " ",
+		})
+		expect(payload.privacy_url).toBe("https://acme.example/privacy")
+		expect(payload.terms_url).toBeNull()
+	})
+
+	it("refuses links the API would refuse", () => {
+		const issues = settingsIssues({
+			...saved,
+			privacyUrl: "http://acme.example/privacy",
+			termsUrl: "javascript:alert(1)",
+		})
+		expect(issues.privacyUrl).toBe("Use an https URL.")
+		expect(issues.termsUrl).toBe("Use an https URL.")
+		expect(hasSettingsIssues({ ...saved, termsUrl: "https://acme.example/terms" })).toBe(false)
+	})
+
+	it("sees a changed link as unsaved", () => {
+		expect(isSameSettings({ ...saved, termsUrl: "https://acme.example/terms" }, saved)).toBe(false)
+		expect(isSameSettings({ ...saved, termsUrl: " " }, saved)).toBe(true)
 	})
 })
 
