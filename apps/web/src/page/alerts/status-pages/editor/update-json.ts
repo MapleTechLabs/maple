@@ -23,7 +23,7 @@ import { isSettingsDirty } from "./update-settings"
 
 // The JSON tab: the page as one document, and an admin's edit of it applied in one write.
 
-/** The saved page as `GET …/config` returned it, with every component and its revision. */
+/** The saved page as `GET …/config` returned it, with every component and its version. */
 export const currentConfigOf = (model: Model): Option.Option<StatusPageConfig> =>
 	AsyncData.getData(model.config.data)
 
@@ -76,7 +76,7 @@ export const cancelJson = (model: Model): Return =>
 export const applyJson = (model: Model): Return => {
 	const pageId = model.pageId
 	if (pageId === null || !canApply(model)) return { model }
-	const ifRevision = Option.getOrUndefined(currentConfigOf(model))?.revision
+	const ifVersion = Option.getOrUndefined(currentConfigOf(model))?.version
 	return Option.match(draftOf(model), {
 		onNone: () => ({ model }),
 		onSome: (draft) =>
@@ -84,7 +84,7 @@ export const applyJson = (model: Model): Return => {
 				onFailure: () => ({ model }),
 				onSuccess: ({ config }) => ({
 					model: { ...model, isApplyingJson: true, jsonFailure: null },
-					commands: [ApplyConfig({ pageId, config, ifRevision })],
+					commands: [ApplyConfig({ pageId, config, ifVersion })],
 				}),
 			}),
 	})

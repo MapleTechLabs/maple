@@ -349,10 +349,10 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						params.id,
 						payload,
 						tenant.userId,
-						{ ifRevision: query.if_revision },
+						{ ifVersion: query.if_version },
 					)
-					const { components: _before, revision: _beforeRevision, ...pageBefore } = previous
-					const { components: _after, revision: _afterRevision, ...pageAfter } = config
+					const { components: _before, version: _beforeVersion, ...pageBefore } = previous
+					const { components: _after, version: _afterVersion, ...pageAfter } = config
 					yield* recordHttpAudit("status_page.config_applied", {
 						resourceId: params.id,
 						changes: diffAuditChanges(pageBefore, pageAfter),

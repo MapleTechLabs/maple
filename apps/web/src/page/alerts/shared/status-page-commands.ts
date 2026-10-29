@@ -159,14 +159,15 @@ export const retrievePageConfig = (id: StatusPageId) =>
 
 /**
  * Replaces the page with `config` in one write and returns the applied document. A page past
- * `ifRevision` refuses it, so a stale document never deletes what someone else added.
+ * `ifVersion` refuses it if the config changed since, so a stale document never deletes what
+ * someone else added.
  */
-export const applyPageConfig = (id: StatusPageId, config: StatusPageConfig, ifRevision: number | undefined) =>
+export const applyPageConfig = (id: StatusPageId, config: StatusPageConfig, ifVersion: string | undefined) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		return yield* client.statusPages.applyConfig({
 			params: { id },
-			query: { if_revision: ifRevision },
+			query: { if_version: ifVersion },
 			payload: config,
 		})
 	}).pipe(Effect.mapError(toLoadFailure))

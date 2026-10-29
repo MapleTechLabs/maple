@@ -197,10 +197,10 @@ export const FetchConfig = Command.define("FetchStatusPageConfig", {
 })
 
 export const ApplyConfig = Command.define("ApplyStatusPageConfig", {
-	args: { pageId: StatusPageId, config: StatusPageConfig, ifRevision: Schema.UndefinedOr(Schema.Number) },
+	args: { pageId: StatusPageId, config: StatusPageConfig, ifVersion: Schema.UndefinedOr(Schema.String) },
 	messages: [Message.CompletedApplyJson],
-	execute: ({ pageId, config, ifRevision }) =>
-		applyPageConfig(pageId, config, ifRevision).pipe(
+	execute: ({ pageId, config, ifVersion }) =>
+		applyPageConfig(pageId, config, ifVersion).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedApplyJson({ result })),
 		),

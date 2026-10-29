@@ -566,8 +566,9 @@ describe("StatusPagesService", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				const { page, api, web, docs, config } = yield* seeded(testDb)
+				assert.match(config.version ?? "", /^[0-9a-z]+$/u)
 				assert.deepStrictEqual(config, {
-					revision: yield* revision(testDb, page.id),
+					version: config.version,
 					name: page.name,
 					slug: "config",
 					description: null,
@@ -659,7 +660,7 @@ describe("StatusPagesService", () => {
 				const { service, page, config } = yield* seeded(testDb)
 				const before = yield* revision(testDb, page.id)
 				const applied = yield* service.applyConfig(ORG, page.id, config, USER)
-				assert.deepStrictEqual(applied.config, { ...config, revision: before + 1 })
+				assert.deepStrictEqual(applied.config, config)
 				assert.deepStrictEqual(applied.changes, NO_CHANGES)
 				assert.strictEqual(yield* revision(testDb, page.id), before + 1)
 			}).pipe(Effect.provide(makeLayer(testDb)))
@@ -774,25 +775,67 @@ describe("StatusPagesService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 
-		it.effect("with if_revision, a page that moved on is a conflict and nothing is written", () => {
+		it.effect("with if_version, an edited config is a conflict and nothing is written", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
-				const { service, page, config } = yield* seeded(testDb)
-				const stale = config.revision ?? 0
+				const { service, page, config, web } = yield* seeded(testDb)
 				yield* service.createComponent(ORG, page.id, { name: "Added meanwhile" })
 				const moved = yield* service.getConfig(ORG, page.id)
+				assert.notStrictEqual(moved.version, config.version)
 				const conflict = yield* Effect.flip(
-					service.applyConfig(ORG, page.id, config, USER, { ifRevision: stale }),
+					service.applyConfig(ORG, page.id, config, USER, { ifVersion: config.version }),
 				)
 				assert.strictEqual(conflict._tag, "@maple/http/errors/StatusPageConflictError")
-				assert.include(conflict.message, `revision ${stale}`)
+				assert.include(conflict.message, "changed since it was read")
 				assert.deepStrictEqual(yield* service.getConfig(ORG, page.id), moved)
 
-				const applied = yield* service.applyConfig(ORG, page.id, moved, USER, {
-					ifRevision: moved.revision,
+				const applied = yield* service.applyConfig(ORG, page.id, { ...moved, name: "Fresh" }, USER, {
+					ifVersion: moved.version,
 				})
-				assert.deepStrictEqual(applied.changes, NO_CHANGES)
-				assert.strictEqual(applied.config.revision, (moved.revision ?? 0) + 1)
+				assert.strictEqual(applied.config.name, "Fresh")
+				assert.notStrictEqual(applied.config.version, moved.version)
+				assert.isTrue(applied.config.components.some((c) => c.id === web.id))
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("a status flip between read and apply is no conflict; a rename by someone else is", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config, web } = yield* seeded(testDb)
+				const before = yield* revision(testDb, page.id)
+				// What a monitor flip does to the page (`bumpPagesForMonitors`), and a reconcile's bump.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`UPDATE status_pages SET revision = revision + 1 WHERE id IN (
+							SELECT page_id FROM status_page_components WHERE monitor_id = $1)`,
+						[MONITOR],
+					),
+				)
+				yield* Effect.promise(() =>
+					executeSql(testDb, `UPDATE status_pages SET revision = revision + 1 WHERE id = $1`, [
+						page.id,
+					]),
+				)
+				assert.strictEqual(yield* revision(testDb, page.id), before + 2)
+				const applied = yield* service.applyConfig(
+					ORG,
+					page.id,
+					{ ...config, description: "Edited during an outage." },
+					USER,
+					{ ifVersion: config.version },
+				)
+				assert.deepStrictEqual(applied.changes.fields, ["description"])
+
+				const read = yield* service.getConfig(ORG, page.id)
+				yield* service.updateComponent(ORG, web.id, { name: "Web app" })
+				const conflict = yield* Effect.flip(
+					service.applyConfig(ORG, page.id, { ...read, name: "Mine" }, USER, {
+						ifVersion: read.version,
+					}),
+				)
+				assert.strictEqual(conflict._tag, "@maple/http/errors/StatusPageConflictError")
+				assert.strictEqual((yield* service.get(ORG, page.id)).name, read.name)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 

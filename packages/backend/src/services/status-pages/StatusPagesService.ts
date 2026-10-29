@@ -31,6 +31,7 @@ import {
 	MAX_STATUS_PAGE_COMPONENTS,
 	normalizeStatusPageConfig,
 	StatusPageComponentPublicId,
+	statusPageConfigVersion,
 	type StatusPageConfig,
 	type StatusPageConfigChangeSet,
 	UptimeMonitorPublicId,
@@ -234,14 +235,14 @@ export interface StatusPagesServiceApi {
 	readonly getConfig: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<StatusPageConfig, PageError>
 	/**
 	 * Replaces the page with `config` in one transaction: all of it applies, or none of it. With
-	 * `ifRevision`, a page past that revision fails with a conflict and nothing is written.
+	 * `ifVersion`, a config edited since that version fails with a conflict and nothing is written.
 	 */
 	readonly applyConfig: (
 		orgId: OrgId,
 		pageId: StatusPageId,
 		config: StatusPageConfig,
 		actor: UserId,
-		options?: { readonly ifRevision?: number | undefined },
+		options?: { readonly ifVersion?: string | undefined },
 	) => Effect.Effect<
 		AppliedStatusPageConfig,
 		PageWriteError | StatusPageSlugTakenError | StatusPageConflictError
@@ -624,11 +625,10 @@ const ensureMonitorsInOrg = Effect.fnUntraced(function* (
 	if (missing !== undefined) return yield* invalid(`Unknown uptime monitor ${encodeMonitorId(missing)}`)
 })
 
-const toConfig = (
+const contentOf = (
 	page: StatusPageRow,
 	components: ReadonlyArray<StatusPageComponentRow>,
 ): StatusPageConfig => ({
-	revision: page.revision,
 	name: page.name,
 	slug: page.slug,
 	description: page.description,
@@ -647,6 +647,15 @@ const toConfig = (
 		show_uptime: component.showUptime,
 	})),
 })
+
+/** The page's config as a read returns it, tagged with its content version. */
+const toConfig = (
+	page: StatusPageRow,
+	components: ReadonlyArray<StatusPageComponentRow>,
+): StatusPageConfig => {
+	const content = contentOf(page, components)
+	return { version: statusPageConfigVersion(content), ...content }
+}
 
 /** One config component, validated and with its defaults, before any id is checked. */
 const validateConfigComponent = Effect.fnUntraced(function* (
@@ -1382,7 +1391,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				pageId: StatusPageId,
 				config: StatusPageConfig,
 				actor: UserId,
-				options?: { readonly ifRevision?: number | undefined },
+				options?: { readonly ifVersion?: string | undefined },
 			) {
 				yield* Effect.annotateCurrentSpan({
 					orgId,
@@ -1430,20 +1439,24 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 						show_uptime: component.showUptime,
 					})),
 				}
-				const ifRevision = options?.ifRevision
+				const ifVersion = options?.ifVersion
 				const now = yield* Clock.currentTimeMillis
 				return yield* dbExecuteSlug(slug)((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							// Locked before the components are read, so the change set below is the write's.
 							const current = yield* lockPage(db, orgId, pageId)
-							if (ifRevision !== undefined && ifRevision !== current.revision)
+							const existing = yield* selectComponents(db, orgId, pageId)
+							const previous = toConfig(current, existing)
+							const version = statusPageConfigVersion(previous)
+							// The content's version, not the page revision: status flips and publishes leave it.
+							if (ifVersion !== undefined && ifVersion !== version)
 								return yield* new StatusPageConflictError({
 									pageId,
-									revision: current.revision,
-									message: `The page changed since revision ${ifRevision} (it is now at ${current.revision}). Read the config again and redo the edit on it.`,
+									version,
+									message:
+										"The page's config changed since it was read. Read the config again and redo the edit on it.",
 								})
-							const existing = yield* selectComponents(db, orgId, pageId)
 							const byId = new Map(existing.map((row) => [row.id, row]))
 							const foreign = listedIds.find((id) => !byId.has(id))
 							if (foreign !== undefined)
@@ -1452,7 +1465,6 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 								)
 							yield* ensureMonitorsInOrg(db, orgId, monitorIds)
 							yield* ensureSlugFree(db, slug, pageId)
-							const previous = toConfig(current, existing)
 							const { fields, created, updated, deleted, reordered } = diffStatusPageConfig(
 								previous,
 								written,

@@ -11,9 +11,9 @@ import { Result, Schema, SchemaIssue } from "effect"
 const encodeConfig = Schema.encodeSync(StatusPageConfig)
 const encodeId = Schema.encodeSync(StatusPageComponentPublicId)
 
-/** Pretty-printed with public ids, two-space indent; the revision rides along as `if_revision`. */
+/** Pretty-printed with public ids, two-space indent; the version rides along as `if_version`. */
 export const formatConfig = (config: StatusPageConfig): string => {
-	const { revision: _revision, ...document } = config
+	const { version: _version, ...document } = config
 	return JSON.stringify(encodeConfig(document), null, 2)
 }
 

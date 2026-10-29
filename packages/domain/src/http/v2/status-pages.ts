@@ -474,11 +474,11 @@ export type StatusPageConfigComponent = Schema.Schema.Type<typeof StatusPageConf
 export const MAX_STATUS_PAGE_COMPONENTS = 200
 
 export const StatusPageConfig = Schema.Struct({
-	revision: Schema.optionalKey(
-		Schema.Number.annotate({
+	version: Schema.optionalKey(
+		Schema.String.annotate({
 			description:
-				"The page revision this document was read at. Read-only: an apply ignores it; send it back as `if_revision` to refuse the apply if the page changed since.",
-			examples: [4],
+				"A tag of this document's content as read. Read-only: an apply ignores it; send it back as `if_version` to refuse the apply if the config changed since.",
+			examples: ["3k9x2m1q7z"],
 		}),
 	),
 	name: NonEmptyString.annotate({ description: "Page title.", examples: ["Acme Status"] }),
@@ -547,6 +547,40 @@ export const normalizeStatusPageConfig = (config: StatusPageConfig) => {
 		})),
 	}
 }
+
+/** JSON with object keys sorted at every depth; arrays keep their order. */
+const canonicalJson = (value: unknown): string => {
+	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
+	if (typeof value === "object" && value !== null)
+		return `{${Object.entries(value)
+			.filter(([, entry]) => entry !== undefined)
+			.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+			.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+			.join(",")}}`
+	return JSON.stringify(value) ?? "null"
+}
+
+/** cyrb53 over UTF-16 code units: 53 bits, the same in browsers, workerd and Node. */
+const cyrb53 = (text: string): number => {
+	const seed: readonly [number, number] = [0xdeadbeef, 0x41c6ce57]
+	const [a, b] = Array.from({ length: text.length }, (_, index) => text.charCodeAt(index)).reduce(
+		([h1, h2], code): readonly [number, number] => [
+			Math.imul(h1 ^ code, 2654435761),
+			Math.imul(h2 ^ code, 1597334677),
+		],
+		seed,
+	)
+	const a1 = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909)
+	const b1 = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a1 ^ (a1 >>> 13), 3266489909)
+	return 4294967296 * (2097151 & b1) + (a1 >>> 0)
+}
+
+/**
+ * The version of a config's content: a hash of its normalized, canonical form, so only an edit
+ * to the document changes it. An optimistic-concurrency tag, not a security boundary.
+ */
+export const statusPageConfigVersion = (config: StatusPageConfig): string =>
+	cyrb53(canonicalJson(normalizeStatusPageConfig(config))).toString(36)
 
 const PAGE_CONFIG_FIELDS = [
 	"name",
@@ -821,16 +855,16 @@ const StatusPageIncidentList = ListOf(V2StatusPageIncident).annotate({
 })
 
 const ApplyConfigQuery = Schema.Struct({
-	if_revision: Schema.optional(
-		Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)).annotate({
+	if_version: Schema.optional(
+		Schema.String.annotate({
 			description:
-				"The `revision` the document was read at. When the page has moved past it, the apply answers 409 `status_page_conflict` and changes nothing.",
+				"The `version` the document was read with. When the page's config has changed since, the apply answers 409 `status_page_conflict` and changes nothing.",
 		}),
 	),
 }).annotate({
 	identifier: "StatusPageConfigApplyQuery",
 	title: "Status page config apply query",
-	description: "An optional precondition on the page revision.",
+	description: "An optional precondition on the config version.",
 })
 
 const pageParams = { id: StatusPagePublicId }
@@ -955,7 +989,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				identifier: "getStatusPageConfig",
 				summary: "Retrieve a status page config",
 				description:
-					"Returns the page's settings, theme and components as one document, the body `PUT …/config` takes, with the `revision` it was read at. Requires the `status_pages:read` scope.",
+					"Returns the page's settings, theme and components as one document, the body `PUT …/config` takes, with its `version`. Requires the `status_pages:read` scope.",
 			}),
 		),
 	)
@@ -981,7 +1015,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				OpenApi.annotations({
 					identifier: "applyStatusPageConfig",
 					summary: "Apply a status page config",
-					description: `Replaces the page with the document in one write: components listed with an \`id\` are updated, without one created, and left out deleted; list order is display order. Any invalid part, or a key the document does not define, rejects the whole document. With \`if_revision\`, a page that changed since that revision answers 409 and nothing is written. Returns the applied config. ${adminNote}`,
+					description: `Replaces the page with the document in one write: components listed with an \`id\` are updated, without one created, and left out deleted; list order is display order. Any invalid part, or a key the document does not define, rejects the whole document. With \`if_version\`, a config that changed since that version was read answers 409 and nothing is written; status flips and publishes do not change it. Returns the applied config. ${adminNote}`,
 				}),
 			),
 	)

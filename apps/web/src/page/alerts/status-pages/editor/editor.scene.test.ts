@@ -795,15 +795,15 @@ describe("json tab", () => {
 		expect(names(opened.commands)).toEqual(["FetchStatusPageConfig"])
 	})
 
-	test("Apply sends the revision the document was read at", () => {
+	test("Apply sends the version the document was read with", () => {
 		const model = editing(JSON.stringify({ ...documentOf([1, 2]) }), {
 			config: {
 				...statusPageConfig(statusPage(), [component(1), component(2), component(3)]),
-				revision: 7,
+				version: "v7",
 			},
 		})
 		expect(pageUpdate(model, Message.ClickedApplyJson()).commands).toMatchObject([
-			{ name: "ApplyStatusPageConfig", args: { ifRevision: 7 } },
+			{ name: "ApplyStatusPageConfig", args: { ifVersion: "v7" } },
 		])
 	})
 
@@ -858,7 +858,7 @@ describe("json tab", () => {
 			pageUpdate(
 				model,
 				Message.CompletedApplyJson({
-					result: Result.succeed({ ...documentOf([1]), components: [], revision: 4 }),
+					result: Result.succeed({ ...documentOf([1]), components: [], version: "v8" }),
 				}),
 			)
 		const kept = applied(typed)
@@ -870,7 +870,7 @@ describe("json tab", () => {
 	})
 
 	test("a conflict keeps the draft, says why and re-reads the config", () => {
-		const reason = "The page changed since revision 3 (it is now at 4)."
+		const reason = "The page's config changed since it was read."
 		const applying = pageUpdate(
 			editing(JSON.stringify(documentOf([1]))),
 			Message.ClickedApplyJson(),

@@ -492,7 +492,7 @@ describe("v2 status pages", () => {
 					],
 				})
 				const before = (await harness.request("GET", `/v2/status_pages/${id}`, token)).body.revision
-				expect(read.body.revision).toBe(before)
+				expect(read.body.version).toMatch(/^[0-9a-z]+$/u)
 
 				const applied = await harness.request(
 					"PUT",
@@ -501,7 +501,7 @@ describe("v2 status pages", () => {
 					read.body,
 				)
 				expect(applied.status).toBe(200)
-				expect(applied.body).toEqual({ ...read.body, revision: before + 1 })
+				expect(applied.body).toEqual(read.body)
 				const after = (await harness.request("GET", `/v2/status_pages/${id}`, token)).body.revision
 				expect(after).toBe(before + 1)
 			}))
@@ -588,7 +588,7 @@ describe("v2 status pages", () => {
 				expect((await harness.request("GET", path, token)).body).toEqual(read.body)
 			}))
 
-		it("with a stale if_revision answers 409 and writes nothing; a current one applies", () =>
+		it("with a stale if_version answers 409 and writes nothing; a current one applies", () =>
 			withHarness(async (harness) => {
 				const { secret: token } = await harness.bootstrapKey()
 				const { id } = await seedPage(harness, token, "acme-stale")
@@ -596,20 +596,18 @@ describe("v2 status pages", () => {
 				const read = await harness.request("GET", path, token)
 				await harness.request("POST", `/v2/status_pages/${id}/components`, token, { name: "Added" })
 				const moved = await harness.request("GET", path, token)
-				const stale = await harness.request(
-					"PUT",
-					`${path}?if_revision=${read.body.revision}`,
-					token,
-					{ ...read.body, name: "Stale" },
-				)
+				const stale = await harness.request("PUT", `${path}?if_version=${read.body.version}`, token, {
+					...read.body,
+					name: "Stale",
+				})
 				expect(stale.status).toBe(409)
 				expect(stale.body.error.code).toBe("status_page_conflict")
-				expect(stale.body.error.message).toContain(`revision ${read.body.revision}`)
+				expect(stale.body.error.message).toContain("changed since it was read")
 				expect((await harness.request("GET", path, token)).body).toEqual(moved.body)
 
 				const current = await harness.request(
 					"PUT",
-					`${path}?if_revision=${moved.body.revision}`,
+					`${path}?if_version=${moved.body.version}`,
 					token,
 					{ ...moved.body, name: "Fresh" },
 				)

@@ -350,7 +350,7 @@ describe("status page tools", () => {
 			expect(after.structuredContent.config).toEqual(config)
 		})
 
-		it("refuses a document read before the page changed, and says to read it again", async () => {
+		it("refuses a document read before the config changed, and says to read it again", async () => {
 			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
 			const { config } = read.structuredContent
 			await runToolDirect(admin(), "apply_status_page_config", {
@@ -364,8 +364,15 @@ describe("status page tools", () => {
 			})
 			expect(stale.isError).toBe(true)
 			expect(markdown(stale)).toContain("get_status_page_config again")
+			const explicit = await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: moved.structuredContent.config,
+				if_version: config.version,
+			})
+			expect(explicit.isError).toBe(true)
 			const after = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
 			expect(after.structuredContent.config).toEqual(moved.structuredContent.config)
+			expect(after.structuredContent.config.version).not.toBe(config.version)
 		})
 
 		it("refuses members and names a component id from another page", async () => {

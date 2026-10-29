@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { StatusPageComponentId } from "../../primitives"
 import { DEFAULT_STATUS_PAGE_THEME } from "../../status-page"
-import { diffStatusPageConfig, StatusPageConfig } from "./status-pages"
+import { diffStatusPageConfig, StatusPageConfig, statusPageConfigVersion } from "./status-pages"
 
 const API = StatusPageComponentId.make("11111111-1111-4111-8111-111111111111")
 const WEB = StatusPageComponentId.make("22222222-2222-4222-8222-222222222222")
@@ -139,5 +139,72 @@ describe("diffStatusPageConfig", () => {
 		})
 		expect(decode(document(200))._tag).toBe("Success")
 		expect(decode(document(201))._tag).toBe("Failure")
+	})
+})
+
+describe("statusPageConfigVersion", () => {
+	const version = statusPageConfigVersion(current)
+
+	it("is the same short tag for equal documents, whatever their version key says", () => {
+		expect(version).toMatch(/^[0-9a-z]{1,11}$/u)
+		expect(statusPageConfigVersion(structuredClone(current))).toBe(version)
+		expect(statusPageConfigVersion({ ...current, version: "anything" })).toBe(version)
+	})
+
+	it("changes when a component changes, is added or moves", () => {
+		const renamed = current.components.map((component) =>
+			component.id === API ? { ...component, name: "API v2" } : component,
+		)
+		expect(statusPageConfigVersion({ ...current, components: renamed })).not.toBe(version)
+		expect(
+			statusPageConfigVersion({ ...current, components: [...current.components, { name: "New" }] }),
+		).not.toBe(version)
+		expect(
+			statusPageConfigVersion({ ...current, components: [...current.components].reverse() }),
+		).not.toBe(version)
+	})
+
+	it("ignores key order", () => {
+		const reordered: StatusPageConfig = {
+			components: current.components.map((component) => ({
+				show_uptime: component.show_uptime,
+				manual_status: component.manual_status,
+				monitor_id: component.monitor_id,
+				group: component.group,
+				description: component.description,
+				name: component.name,
+				id: component.id,
+			})),
+			theme: {
+				font: DEFAULT_STATUS_PAGE_THEME.font,
+				radius: DEFAULT_STATUS_PAGE_THEME.radius,
+				appearance: DEFAULT_STATUS_PAGE_THEME.appearance,
+				preset: DEFAULT_STATUS_PAGE_THEME.preset,
+			},
+			auto_incidents: current.auto_incidents,
+			show_powered_by: current.show_powered_by,
+			logo_url: current.logo_url,
+			website_url: current.website_url,
+			description: current.description,
+			slug: current.slug,
+			name: current.name,
+		}
+		expect(statusPageConfigVersion(reordered)).toBe(version)
+	})
+
+	it("ignores differences an apply would normalize away: padding, blanks, hex case, defaults", () => {
+		const accented = { ...current, theme: { ...DEFAULT_STATUS_PAGE_THEME, accent: "#1a2b3c" } }
+		expect(
+			statusPageConfigVersion({
+				...accented,
+				name: " Acme ",
+				description: "  ",
+				theme: { ...DEFAULT_STATUS_PAGE_THEME, accent: " #1A2B3C" },
+				components: current.components.map((component) => ({
+					id: component.id,
+					name: ` ${component.name}`,
+				})),
+			}),
+		).toBe(statusPageConfigVersion(accented))
 	})
 })

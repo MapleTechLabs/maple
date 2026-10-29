@@ -73,7 +73,7 @@ const toMcpError =
 			case "@maple/http/errors/StatusPageConflictError":
 				return new McpInvalidInputError({
 					message: `${error.message} Nothing was applied. Call get_status_page_config again and redo the edit on the fresh document; applying the old one would undo the other change.`,
-					parameter: "if_revision",
+					parameter: "if_version",
 				})
 			default:
 				return new McpQueryError({ message: `${error._tag}: ${error.message}`, pipeName: tool })
@@ -612,7 +612,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		render: (output) => ({
 			title: `Status page config: ${output.page.name}`,
 			notices: [
-				"apply_status_page_config replaces the page with an edited copy: keep a component's id to update it, drop the id to add one, leave it out to delete it. Order is display order. Keep the `revision` key: the apply is refused if the page changed since this read.",
+				"apply_status_page_config replaces the page with an edited copy: keep a component's id to update it, drop the id to add one, leave it out to delete it. Order is display order. Keep the `version` key: the apply is refused if the config changed since this read.",
 			],
 			blocks: [doc.code("json", JSON.stringify(encodeConfig(output.config), null, 2))],
 		}),
@@ -622,15 +622,15 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		name: "apply_status_page_config",
 		title: "Apply Status Page Config",
 		description:
-			"Replace a status page with a config document from get_status_page_config, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults; unknown keys are refused. The document's `revision` guards the write: if the page changed since it was read, nothing is applied and you must read it again. Only org admins may call it, and the result is public on the page.",
+			"Replace a status page with a config document from get_status_page_config, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults; unknown keys are refused. The document's `version` guards the write: if the config changed since it was read, nothing is applied and you must read it again. Only org admins may call it, and the result is public on the page.",
 		parameters: Schema.Struct({
 			page: P.text("The page's slug, name or id"),
 			config: P.json(
 				StatusPageConfig,
 				"The whole page document, as returned by get_status_page_config, edited. Keys it does not define are refused",
 			),
-			if_revision: P.optionalNumber(
-				"The page revision the document was read at. Defaults to the document's `revision`; the apply is refused if the page changed since",
+			if_version: P.optionalText(
+				"The config `version` the document was read with. Defaults to the document's `version`; the apply is refused if the config changed since",
 			),
 		}),
 		rejectUnknownKeys: true,
@@ -652,7 +652,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
 			const { config, changes } = yield* service
 				.applyConfig(tenant.orgId, page.id, params.config, tenant.userId, {
-					ifRevision: params.if_revision ?? params.config.revision,
+					ifVersion: params.if_version ?? params.config.version,
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
 			const audit = yield* AuditLogService
