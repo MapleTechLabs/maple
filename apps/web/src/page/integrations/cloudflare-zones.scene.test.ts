@@ -150,8 +150,16 @@ describe("cloudflare zone selection", () => {
 	})
 
 	test("a saved choice closes the dialog and re-reads the status", () => {
-		const saved = pageUpdate(connected(), Message.CompletedCloudflareZones({ failure: null }))
+		const step = (model: Model, message: Message) => pageUpdate(model, message).model
+		const opened = step(connected(), Message.ClickedManageZones())
+		const edited = step(opened, Message.ToggledManagedZone({ accountId: "acc_1", zoneId: "z1" }))
+		const saving = step(edited, Message.SubmittedZoneSettings())
+		expect(saving.cloudflareCard.isSavingZones).toBe(true)
+		expect(saving.cloudflareCard.zoneDialog.isOpen).toBe(true)
+
+		const saved = pageUpdate(saving, Message.CompletedCloudflareZones({ failure: null }))
 		expect(saved.model.cloudflareCard.isSavingZones).toBe(false)
+		expect(saved.model.cloudflareCard.zoneDialog.isOpen).toBe(false)
 		expect((saved.commands ?? []).map(({ name }) => name)).toContain("LoadIntegrationsCloudflareStatus")
 	})
 })
