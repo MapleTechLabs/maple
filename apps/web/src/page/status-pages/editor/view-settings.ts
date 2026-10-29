@@ -136,7 +136,7 @@ const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
 							value: form.autoIncidents,
 							entries: AUTO_INCIDENT_ENTRIES,
 							isDisabled: !model.isAdmin,
-							hint: "A draft waits for you on the Incidents tab; a published one shows on the page at once.",
+							hint: "A draft waits for you under Incidents in the editor's On this page list; a published one shows on the page at once.",
 							onInput: (value) => Message.ChangedSetting({ field: "autoIncidents", value }),
 						}),
 					],

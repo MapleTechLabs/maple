@@ -515,7 +515,7 @@ export const composerPanel = (h: H, model: Model, timeZone: string): Html => {
 						ariaLabel: "Kind",
 						className: "self-start",
 						value: form.kind,
-						onChange: (kind) => Message.ClickedNewIncident({ kind }),
+						onChange: (kind) => Message.ChangedIncidentKind({ kind }),
 						options: [
 							{ value: "incident", label: "Incident" },
 							{ value: "maintenance", label: "Maintenance" },

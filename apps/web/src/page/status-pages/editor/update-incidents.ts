@@ -79,6 +79,17 @@ export const openComposer = (model: Model, kind: StatusPageIncidentKind): Return
 	return focusPanel({ ...model, panel: { _tag: "Compose" }, incidentForm: form, incidentFailure: null })
 }
 
+/** Switching Incident and Maintenance keeps what was typed; only kind-specific defaults reset. */
+export const changeIncidentKind = (model: Model, kind: StatusPageIncidentKind): Return => {
+	const blank = emptyIncidentForm(kind)
+	return {
+		model: {
+			...model,
+			incidentForm: { ...model.incidentForm, kind, status: blank.status, impact: blank.impact },
+		},
+	}
+}
+
 /** Impact and status arrive as select values; anything else is not one of theirs and is dropped. */
 export const changeIncident = (model: Model, field: IncidentTextField, value: string): Return => {
 	const form = model.incidentForm

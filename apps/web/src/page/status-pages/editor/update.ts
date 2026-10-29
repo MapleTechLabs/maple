@@ -59,6 +59,7 @@ import {
 	changeIncident,
 	changeUpdate,
 	createdIncident,
+	changeIncidentKind,
 	openComposer,
 	openUpdate,
 	postedUpdate,
@@ -385,6 +386,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedAddComponents: ({ result }) => addedComponents(model, result, context),
 		// Incidents
 		ClickedNewIncident: ({ kind }) => openComposer(model, kind),
+		ChangedIncidentKind: ({ kind }) => changeIncidentKind(model, kind),
 		ChangedIncidentField: ({ field, value }) => changeIncident(model, field, value),
 		ToggledIncidentComponent: ({ componentId }) => toggleIncidentComponent(model, componentId),
 		PickedIncidentPublished: ({ isPublished }) => ({

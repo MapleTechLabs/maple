@@ -72,6 +72,7 @@ export const Message = defineMessageUnion({
 	CompletedAddComponents: { result: outcome(Schema.Array(V2StatusPageComponent)) },
 	// Incidents
 	ClickedNewIncident: { kind: StatusPageIncidentKind },
+	ChangedIncidentKind: { kind: StatusPageIncidentKind },
 	ChangedIncidentField: { field: IncidentTextField, value: Schema.String },
 	ToggledIncidentComponent: { componentId: StatusPageComponentId },
 	PickedIncidentPublished: { isPublished: Schema.Boolean },

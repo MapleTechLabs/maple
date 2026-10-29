@@ -382,6 +382,23 @@ describe("the page as the editor", () => {
 })
 
 describe("incidents in the panel", () => {
+	test("switching between incident and maintenance keeps what was typed", () => {
+		const typed = [
+			Message.ClickedNewIncident({ kind: "incident" }),
+			Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
+			Message.ChangedIncidentField({ field: "body", value: "Planned work." }),
+		].reduce((model, message) => pageUpdate(model, message).model, loaded())
+		const switched = pageUpdate(typed, Message.ChangedIncidentKind({ kind: "maintenance" })).model
+		expect(switched.incidentForm).toMatchObject({
+			kind: "maintenance",
+			title: "Database upgrade",
+			body: "Planned work.",
+			status: "scheduled",
+			impact: "none",
+			componentIds: typed.incidentForm.componentIds,
+		})
+	})
+
 	test("an open incident carries its actions, and a draft can be published", () => {
 		const model = pageUpdate(
 			loaded({
