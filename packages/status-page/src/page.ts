@@ -12,7 +12,7 @@ import {
 	uptimePercent,
 	utcDay,
 } from "@maple/domain/status-page"
-import { pageHref, type RenderOptions, renderDocument, renderHeader } from "./document"
+import { pageHref, previewIdAttr, type RenderOptions, renderDocument, renderHeader } from "./document"
 import { escapeHtml, safeUrl } from "./escape"
 import {
 	COMPONENT_STATUS_LABEL,
@@ -67,9 +67,9 @@ const incidentMeta = (incident: StatusPageSnapshotIncident): string => {
 	return `Started ${timeTag(incident.startedAt)}`
 }
 
-const renderIncident = (incident: StatusPageSnapshotIncident): string => {
+const renderIncident = (incident: StatusPageSnapshotIncident, options: RenderOptions): string => {
 	const status = incident.resolvedAt === null ? incidentComponentStatus(incident) : "operational"
-	return `<article class="card incident" id="incident-${escapeHtml(incident.id)}"><h3>${statusIcon(status)}<span>${escapeHtml(incident.title)}</span></h3><div class="meta">${INCIDENT_STATUS_LABEL[incident.status]} · ${incidentMeta(incident)}</div>${renderUpdates(incident)}</article>`
+	return `<article class="card incident" id="incident-${escapeHtml(incident.id)}"${previewIdAttr(options, "incident", incident.id)}><h3>${statusIcon(status)}<span>${escapeHtml(incident.title)}</span></h3><div class="meta">${INCIDENT_STATUS_LABEL[incident.status]} · ${incidentMeta(incident)}</div>${renderUpdates(incident)}</article>`
 }
 
 const renderSection = (id: string, title: string, inner: string): string =>
@@ -120,7 +120,7 @@ const renderBars = (days: ReadonlyArray<StatusPageDayBar>): string => {
 	return `<ol class="bars" aria-label="${label}">${bars}</ol>`
 }
 
-const renderComponent = (component: StatusPageSnapshotComponent): string => {
+const renderComponent = (component: StatusPageSnapshotComponent, options: RenderOptions): string => {
 	const description =
 		component.description === null ? "" : `<p class="desc">${escapeHtml(component.description)}</p>`
 	const showsBars = component.showUptime && component.days.length > 0
@@ -129,10 +129,10 @@ const renderComponent = (component: StatusPageSnapshotComponent): string => {
 	const uptime = !showsBars
 		? ""
 		: `<span class="uptime">${percent === null ? "No data" : `${formatPercent(percent)} uptime`}</span>`
-	return `<div class="component" data-component="${escapeHtml(component.id)}"><div class="row">${statusName(component.name, component.status)}${uptime}</div>${description}${showsBars ? renderBars(days) : ""}</div>`
+	return `<div class="component" data-component="${escapeHtml(component.id)}"${previewIdAttr(options, "component", component.id)}><div class="row">${statusName(component.name, component.status)}${uptime}</div>${description}${showsBars ? renderBars(days) : ""}</div>`
 }
 
-const renderSystemStatus = (snapshot: StatusPageSnapshot): string => {
+const renderSystemStatus = (snapshot: StatusPageSnapshot, options: RenderOptions): string => {
 	if (snapshot.components.length === 0) return ""
 	const shown = barComponents(snapshot.components)[0]
 	const label = shown === undefined ? "" : rangeLabel(windowDays(shown.days, 0))
@@ -143,7 +143,7 @@ const renderSystemStatus = (snapshot: StatusPageSnapshot): string => {
 				group.name === null
 					? ""
 					: `<div class="group-head">${statusName(group.name, group.status)}</div>`
-			return `<div class="group">${groupHead}${group.components.map(renderComponent).join("")}</div>`
+			return `<div class="group">${groupHead}${group.components.map((component) => renderComponent(component, options)).join("")}</div>`
 		})
 		.join("")
 	return `<section class="panel" aria-labelledby="h-components">${head}${groups}</section>`
@@ -281,18 +281,26 @@ export const renderPage = (
 		),
 		active.length === 0
 			? ""
-			: renderSection("active", "Active incidents", active.map(renderIncident).join("")),
+			: renderSection(
+					"active",
+					"Active incidents",
+					active.map((incident) => renderIncident(incident, options)).join(""),
+				),
 		upcoming.length === 0
 			? ""
-			: renderSection("upcoming", "Upcoming maintenance", upcoming.map(renderIncident).join("")),
-		renderSystemStatus(snapshot),
+			: renderSection(
+					"upcoming",
+					"Upcoming maintenance",
+					upcoming.map((incident) => renderIncident(incident, options)).join(""),
+				),
+		renderSystemStatus(snapshot, options),
 		renderCalendar(today, days, entries),
 		renderSection(
 			"past",
 			"Past incidents",
 			past.length === 0
 				? `<p class="empty">No incidents reported recently.</p>`
-				: past.map(renderIncident).join(""),
+				: past.map((incident) => renderIncident(incident, options)).join(""),
 		),
 		renderFooter(snapshot, freshness, nowMs, options),
 		`<script type="application/json" id="sp-data">${scriptJson(pageData(snapshot, today, entries, days))}</script>`,
