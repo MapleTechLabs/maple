@@ -1,62 +1,83 @@
-import type { StatusPageComponentId, StatusPageIncidentId, StatusPageIncidentKind } from "@maple/domain"
+import type {
+	StatusPageComponentId,
+	StatusPageComponentStatus,
+	StatusPageIncidentId,
+	StatusPageIncidentKind,
+} from "@maple/domain"
 import { StatusPageIncidentImpact, StatusPageIncidentStatus } from "@maple/domain"
+import { worstStatus } from "@maple/domain/status-page"
 import type { V2StatusPageIncident } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
-import type { LoadFailure } from "../../../../data/load-failure"
-import * as Dialog from "../../../../ui/dialog"
-import type { PageContext } from "../../../contract"
-import { isOpenIncident, STATUSES_OF_KIND } from "../../shared/status-page-derive"
-import { CreateIncident, PostIncidentUpdate, PublishIncident } from "./command"
+import type { LoadFailure } from "../../../data/load-failure"
+import type { PageContext } from "../../contract"
+import { componentStatus, isOpenIncident, STATUSES_OF_KIND } from "../shared/derive"
+import { CreateIncident, FocusEditorElement, PostIncidentUpdate, PublishIncident } from "./command"
 import {
 	emptyIncidentForm,
 	type IncidentTextField,
 	incidentIssues,
 	incidentPayload,
 	updateFormFor,
-} from "./form"
-import { Message } from "./message"
+} from "../shared/form"
+
 import type { Model } from "./model"
 import {
 	chain,
+	componentsOf,
 	errorToast,
 	incidentsOf,
-	liftDialog,
+	monitorsOf,
 	readIncidents,
 	readPage,
 	type Return,
 	toast,
 } from "./reads"
+import { focusPanel } from "./update-components"
 
-// The Incidents tab: the composer, posting an update or resolving, publishing a draft.
+/** The update form's message field: focused when Post update or Resolve opens it. */
+export const UPDATE_BODY_ID = "status-page-update-body"
+
+// Incidents in the side panel: the composer, an update or a resolve, publishing a draft.
 
 const decodeImpact = Schema.decodeUnknownOption(StatusPageIncidentImpact)
 const decodeStatus = Schema.decodeUnknownOption(StatusPageIncidentStatus)
-
-export const incidentDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return =>
-	liftDialog(
-		model,
-		step,
-		(next, incidentDialog) => ({ ...next, incidentDialog }),
-		(message) => Message.GotIncidentDialogMessage({ message }),
-	)
-
-export const updateDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return =>
-	liftDialog(
-		model,
-		step,
-		(next, updateDialog) => ({ ...next, updateDialog }),
-		(message) => Message.GotUpdateDialogMessage({ message }),
-	)
 
 /** Incidents and the page revision change together: both are read again. */
 const reread = (model: Model, context: PageContext): Return =>
 	chain(model, readIncidents(context, "Supersede"), readPage(context, "Supersede"))
 
-export const openComposer = (model: Model, kind: StatusPageIncidentKind): Return =>
-	incidentDialog(
-		{ ...model, incidentForm: emptyIncidentForm(kind), incidentFailure: null },
-		Dialog.open(model.incidentDialog),
-	)
+const IMPACT_OF_STATUS = {
+	operational: "minor",
+	maintenance: "minor",
+	degraded: "minor",
+	partial_outage: "major",
+	major_outage: "critical",
+} as const satisfies Record<StatusPageComponentStatus, StatusPageIncidentImpact>
+
+/**
+ * The composer in the side panel, prefilled: the selected component, or else every component
+ * visitors already see as not operational, with the impact their worst status suggests.
+ */
+export const openComposer = (model: Model, kind: StatusPageIncidentKind): Return => {
+	const components = componentsOf(model)
+	const statusOf = (component: (typeof components)[number]) =>
+		componentStatus(component, monitorsOf(model), incidentsOf(model))
+	const selected = model.panel?._tag === "Component" ? model.panel.componentId : null
+	const affected =
+		selected !== null
+			? components.filter((component) => component.id === selected)
+			: components.filter((component) => statusOf(component) !== "operational")
+	const blank = emptyIncidentForm(kind)
+	const form =
+		kind === "maintenance" || affected.length === 0
+			? { ...blank, componentIds: affected.map((component) => component.id) }
+			: {
+					...blank,
+					componentIds: affected.map((component) => component.id),
+					impact: IMPACT_OF_STATUS[worstStatus(affected.map(statusOf))],
+				}
+	return focusPanel({ ...model, panel: { _tag: "Compose" }, incidentForm: form, incidentFailure: null })
+}
 
 /** Impact and status arrive as select values; anything else is not one of theirs and is dropped. */
 export const changeIncident = (model: Model, field: IncidentTextField, value: string): Return => {
@@ -114,12 +135,13 @@ export const createdIncident = (
 	const settled = { ...model, isCreatingIncident: false }
 	return Result.match(result, {
 		onSuccess: (incident): Return => {
-			const closed = incidentDialog(settled, Dialog.close(settled.incidentDialog))
-			const refreshed = reread(closed.model, context)
 			const noun = incident.kind === "incident" ? "Incident" : "Maintenance"
+			const refreshed = reread(
+				{ ...settled, panel: { _tag: "Incident", incidentId: incident.id }, updateForm: null },
+				context,
+			)
 			return {
-				model: refreshed.model,
-				commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],
+				...refreshed,
 				outMessage: toast(
 					"success",
 					incident.published ? `${noun} published` : `${noun} saved as a draft`,
@@ -131,14 +153,30 @@ export const createdIncident = (
 	})
 }
 
+/** Opens the incident in the panel, its update form closed. */
+export const selectIncident = (model: Model, incidentId: StatusPageIncidentId): Return =>
+	incidentsOf(model).some((incident) => incident.id === incidentId)
+		? focusPanel({
+				...model,
+				panel: { _tag: "Incident", incidentId },
+				updateForm: null,
+				updateFailure: null,
+			})
+		: { model }
+
 export const openUpdate = (model: Model, incidentId: StatusPageIncidentId, isResolving: boolean): Return => {
 	const incident = incidentsOf(model).find((row) => row.id === incidentId)
 	return incident === undefined || !isOpenIncident(incident)
 		? { model }
-		: updateDialog(
-				{ ...model, updateForm: updateFormFor(incident, isResolving), updateFailure: null },
-				Dialog.open(model.updateDialog),
-			)
+		: {
+				model: {
+					...model,
+					panel: { _tag: "Incident", incidentId },
+					updateForm: updateFormFor(incident, isResolving),
+					updateFailure: null,
+				},
+				commands: [FocusEditorElement({ id: UPDATE_BODY_ID })],
+			}
 }
 
 export const changeUpdate = (model: Model, field: "status" | "body", value: string): Return => {
@@ -175,23 +213,18 @@ export const postedUpdate = (
 ): Return => {
 	const settled = { ...model, isPostingUpdate: false }
 	return Result.match(result, {
-		onSuccess: (incident): Return => {
-			const closed = updateDialog(settled, Dialog.close(settled.updateDialog))
-			const refreshed = reread(closed.model, context)
-			return {
-				model: refreshed.model,
-				commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],
-				outMessage: toast(
-					"success",
-					isOpenIncident(incident)
-						? "Update posted"
-						: incident.kind === "incident"
-							? "Incident resolved"
-							: "Maintenance completed",
-					incident.title,
-				),
-			}
-		},
+		onSuccess: (incident): Return => ({
+			...reread({ ...settled, updateForm: null }, context),
+			outMessage: toast(
+				"success",
+				isOpenIncident(incident)
+					? "Update posted"
+					: incident.kind === "incident"
+						? "Incident resolved"
+						: "Maintenance completed",
+				incident.title,
+			),
+		}),
 		onFailure: (updateFailure): Return => ({ model: { ...settled, updateFailure } }),
 	})
 }

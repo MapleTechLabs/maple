@@ -1,19 +1,19 @@
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../../../ui/alert"
-import { button } from "../../../../ui/button"
-import { confirmDialog } from "../../../../ui/confirm-dialog"
-import { copyableField } from "../../../../ui/copyable-field"
-import { icon } from "../../../../ui/icon"
-import { panel } from "../../../../ui/panel"
-import { failureMessage } from "../../../../data/load-failure"
-import { saveBar } from "../../../settings/kit/save-bar"
-import { adminOnlyNote, settingsSection, settingsSections } from "../../../settings/kit/section"
-import { switchRow } from "../../../settings/kit/switch-row"
-import { publicPath } from "../../shared/status-page-commands"
-import { selectField, textareaField, textField } from "../fields"
-import { hasSettingsIssues, type SettingsForm, settingsFormOf, settingsIssues } from "./form"
+import { alert, alertDescription, alertTitle } from "../../../ui/alert"
+import { button } from "../../../ui/button"
+import { confirmDialog } from "../../../ui/confirm-dialog"
+import { copyableField } from "../../../ui/copyable-field"
+import { icon } from "../../../ui/icon"
+import { panel } from "../../../ui/panel"
+import { failureMessage } from "../../../data/load-failure"
+import { saveBar } from "../../settings/kit/save-bar"
+import { adminOnlyNote, settingsSection, settingsSections } from "../../settings/kit/section"
+import { switchRow } from "../../settings/kit/switch-row"
+import { publicUrl } from "../shared/commands"
+import { selectField, textareaField, textField } from "../shared/fields"
+import { hasSettingsIssues, type SettingsForm, settingsFormOf, settingsIssues } from "../shared/form"
 import { appearanceSection, previewPanel } from "./view-appearance"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -58,7 +58,7 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 						isMono: true,
 						isDisabled: isReadOnly,
 						error: issues.slug,
-						hint: `${publicPath(form.slug)}. Changing it moves the page; the old address stops working.`,
+						hint: `${publicUrl(form.slug)}. Changing it moves the page; the old address stops working.`,
 						onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
 					}),
 					textareaField(h, {
@@ -145,7 +145,7 @@ const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
 		),
 	])
 
-const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
+export const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
 	model.revealedToken === null
 		? []
 		: [
@@ -192,7 +192,7 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 			title: "Break-glass token",
 			description: [
 				"If Maple itself is down, post updates straight to the page with this token at ",
-				h.code([h.Class("font-mono text-xs")], [`${publicPath(page.slug)}/_manage`]),
+				h.code([h.Class("font-mono text-xs")], [`${publicUrl(page.slug)}/_manage`]),
 				". The page keeps serving from edge storage either way.",
 			],
 		},
@@ -294,7 +294,7 @@ const dangerZone = (h: H): Html =>
 		]),
 	])
 
-export const settingsTab = (h: H, model: Model, page: V2StatusPage): Html => {
+export const settingsView = (h: H, model: Model, page: V2StatusPage): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	const hasIssues = hasSettingsIssues(form)
 	return h.div(
@@ -369,7 +369,7 @@ export const deletePageDialog = (h: H, model: Model, page: V2StatusPage): Html =
 		model: model.deletePageDialog,
 		toParentMessage: (message) => Message.GotDeletePageDialogMessage({ message }),
 		title: `Delete ${page.name}?`,
-		description: `${publicPath(page.slug)} goes offline and its components and incidents are deleted. This cannot be undone.`,
+		description: `${publicUrl(page.slug)} goes offline and its components and incidents are deleted. This cannot be undone.`,
 		confirmLabel: "Delete status page",
 		isPending: model.isDeletingPage,
 		onConfirm: Message.ClickedConfirmDeletePage(),

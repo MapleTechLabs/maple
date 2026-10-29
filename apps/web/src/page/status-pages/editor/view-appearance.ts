@@ -1,25 +1,18 @@
-import type { V2StatusPage, V2StatusPageIncident } from "@maple/domain/http/v2"
+import type { V2StatusPage } from "@maple/domain/http/v2"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	resolveStatusPageTheme,
-	STATUS_PAGE_INCIDENT_HISTORY_DAYS,
-	type StatusPageSnapshotIncident,
-	type StatusPageTheme,
-	type StatusPageThemeAppearance,
 	StatusPageThemeFont,
-	type StatusPageThemePreset,
 	StatusPageThemeRadius,
 	type StatusPageThemeTokens,
 } from "@maple/domain/status-page"
-import { previewSnapshot, renderPage } from "@maple/status-page"
-import { cn } from "@maple/ui/lib/utils"
+import { previewSnapshot } from "@maple/status-page"
 import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "../../../../ui/alert"
-import { segmentedSelect } from "../../../../ui/segmented-select"
-import { settingsSection } from "../../../settings/kit/section"
-import { isoMs } from "../../shared/time"
-import { selectField, textField } from "../fields"
+import { alert, alertDescription, alertTitle } from "../../../ui/alert"
+import { segmentedSelect } from "../../../ui/segmented-select"
+import { settingsSection } from "../../settings/kit/section"
+import { selectField, textField } from "../shared/fields"
 import {
 	type SettingsForm,
 	THEME_OVERRIDE_FIELDS,
@@ -28,27 +21,24 @@ import {
 	themeColorIssues,
 	themeContrastOf,
 	themeOf,
-} from "./form"
+} from "../shared/form"
 import { Message } from "./message"
-import type { Model, PreviewScheme } from "./model"
+import type { Model } from "./model"
+import { isoMs } from "../../alerts/shared/time"
+import { APPEARANCES, presetCards } from "../shared/look"
+import {
+	daysOf,
+	isListedIncident,
+	previewDocument,
+	previewFrame,
+	previewTheme,
+	toSnapshotIncident,
+} from "../shared/preview"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 
-// The Settings tab's Appearance section and the live preview of the public page.
+// The Settings view's Appearance section and the live preview of the public page.
 
 type H = HtmlBuilder<Message>
-
-const PRESETS: ReadonlyArray<{ value: StatusPageThemePreset; label: string }> = [
-	{ value: "default", label: "Default" },
-	{ value: "mono", label: "Mono" },
-	{ value: "midnight", label: "Midnight" },
-	{ value: "paper", label: "Paper" },
-]
-
-const APPEARANCES: ReadonlyArray<{ value: StatusPageThemeAppearance; label: string }> = [
-	{ value: "auto", label: "Auto" },
-	{ value: "light", label: "Light" },
-	{ value: "dark", label: "Dark" },
-]
 
 const RADII: ReadonlyArray<{ value: StatusPageThemeRadius; label: string }> = [
 	{ value: "none", label: "Square" },
@@ -86,50 +76,6 @@ const isRadius = Schema.is(StatusPageThemeRadius)
 const isFont = Schema.is(StatusPageThemeFont)
 const isOverride = (field: ThemeColorField): boolean =>
 	THEME_OVERRIDE_FIELDS.some((override) => override === field)
-
-/** One preset as a small card: its light and dark page colours side by side. */
-const presetCard = (h: H, theme: ThemeForm, preset: (typeof PRESETS)[number], isDisabled: boolean): Html => {
-	const tokens = resolveStatusPageTheme({ ...DEFAULT_STATUS_PAGE_THEME, preset: preset.value })
-	const isSelected = theme.preset === preset.value
-	const half = (scheme: typeof tokens.light) =>
-		h.span(
-			[
-				h.Class("flex flex-1 flex-col justify-center gap-1 px-2"),
-				h.Style({ backgroundColor: scheme.bg }),
-			],
-			[
-				h.span([h.Class("h-1 w-8 rounded-full"), h.Style({ backgroundColor: scheme.fg })], []),
-				h.span(
-					[h.Class("flex gap-0.5")],
-					[scheme.ok, scheme.ok, scheme.degraded, scheme.ok].map((color) =>
-						h.span([h.Class("h-2 w-1.5 rounded-[1px]"), h.Style({ backgroundColor: color })], []),
-					),
-				),
-			],
-		)
-	return h.button(
-		[
-			h.Type("button"),
-			h.Key(preset.value),
-			h.AriaPressed(isSelected ? "true" : "false"),
-			h.Disabled(isDisabled),
-			h.OnClick(Message.PickedThemePreset({ preset: preset.value })),
-			h.Class(
-				cn(
-					"flex flex-col gap-1.5 rounded-lg border p-1.5 text-left text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-					isSelected ? "border-primary/70 bg-primary/5" : "hover:bg-muted/50",
-				),
-			),
-		],
-		[
-			h.span(
-				[h.AriaHidden(true), h.Class("flex h-10 overflow-hidden rounded-md border")],
-				[half(tokens.light), half(tokens.dark)],
-			),
-			h.span([h.Class("px-0.5 font-medium text-foreground")], [preset.label]),
-		],
-	)
-}
 
 const colorField = (
 	h: H,
@@ -191,14 +137,11 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 						[h.Class("flex flex-col gap-1.5")],
 						[
 							h.span([h.Class("text-xs text-muted-foreground")], ["Preset"]),
-							h.div(
-								[
-									h.Role("group"),
-									h.AriaLabel("Preset"),
-									h.Class("grid grid-cols-2 gap-2 sm:grid-cols-4"),
-								],
-								PRESETS.map((preset) => presetCard(h, theme, preset, isReadOnly)),
-							),
+							presetCards(h, {
+								selected: theme.preset,
+								isDisabled: isReadOnly,
+								onPick: (preset) => Message.PickedThemePreset({ preset }),
+							}),
 						],
 					),
 					h.div(
@@ -276,49 +219,10 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 
 // PREVIEW
 
-const DAY_MS = 86_400_000
-
-const isListed = (incident: V2StatusPageIncident, nowMs: number): boolean =>
-	incident.published &&
-	(incident.resolved_at === null ||
-		isoMs(incident.resolved_at) >= nowMs - STATUS_PAGE_INCIDENT_HISTORY_DAYS * DAY_MS)
-
-const msOrNull = (value: string | null): number | null => (value === null ? null : isoMs(value))
-
-const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSnapshotIncident => ({
-	id: incident.id,
-	kind: incident.kind,
-	title: incident.title,
-	impact: incident.impact,
-	status: incident.status,
-	startedAt: isoMs(incident.started_at),
-	resolvedAt: msOrNull(incident.resolved_at),
-	scheduledStart: msOrNull(incident.scheduled_start),
-	scheduledEnd: msOrNull(incident.scheduled_end),
-	componentIds: incident.component_ids,
-	openedByOverlayEntryId: null,
-	updates: incident.updates
-		.map((update) => ({
-			id: update.id,
-			status: update.status,
-			body: update.body,
-			at: isoMs(update.created_at),
-			source: update.source,
-			overlayEntryId: null,
-		}))
-		.sort((a, b) => b.at - a.at),
-})
-
-/** Auto pages preview in the picked scheme, with the overrides Auto ignores left out. */
-export const previewTheme = (theme: StatusPageTheme, scheme: PreviewScheme): StatusPageTheme =>
-	theme.appearance === "auto"
-		? { ...theme, appearance: scheme, background: null, text: null, card: null, border: null }
-		: theme
-
 const orNull = (value: string): string | null => (value.trim() === "" ? null : value.trim())
 
 /** The public page as the draft would render it, from the loaded components and incidents. */
-export const previewDocument = (model: Model, page: V2StatusPage, form: SettingsForm): string => {
+export const settingsDocument = (model: Model, page: V2StatusPage, form: SettingsForm): string => {
 	const nowMs = model.nowMs ?? isoMs(page.updated_at)
 	const monitors = monitorsOf(model)
 	const snapshot = previewSnapshot({
@@ -344,13 +248,14 @@ export const previewDocument = (model: Model, page: V2StatusPage, form: Settings
 			manualStatus: component.manual_status,
 			showUptime: component.show_uptime,
 			monitored: component.monitor_id !== null,
+			days: daysOf(model.previewHistory, component.monitor_id),
 		})),
 		incidents: incidentsOf(model)
-			.filter((incident) => isListed(incident, nowMs))
+			.filter((incident) => isListedIncident(incident, nowMs))
 			.map(toSnapshotIncident),
 		nowMs,
 	})
-	return renderPage(snapshot, { _tag: "live", updatedAt: nowMs }, nowMs)
+	return previewDocument({ snapshot, nowMs, isSelectable: false, selectedIds: [] })
 }
 
 export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
@@ -383,19 +288,11 @@ export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: Setti
 						: []),
 				],
 			),
-			h.iframe(
-				[
-					h.Title("Status page preview"),
-					// No scripts, no same-origin access: the page is inert markup and CSS.
-					h.Sandbox(""),
-					h.Srcdoc(previewDocument(model, page, form)),
-					h.Class("h-[640px] w-full rounded-lg border bg-background"),
-				],
-				[],
-			),
-			h.p(
-				[h.Class("text-xs text-muted-foreground")],
-				["Unsaved changes show here first. Uptime bars fill in from your monitors once published."],
-			),
+			previewFrame(h, {
+				title: "Status page preview",
+				document: settingsDocument(model, page, form),
+				className: "h-[640px]",
+			}),
+			h.p([h.Class("text-xs text-muted-foreground")], ["Unsaved changes show here first."]),
 		],
 	)

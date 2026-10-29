@@ -1,14 +1,16 @@
 import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
 import {
 	StatusPageConfig,
+	StatusPageDraftComponent,
+	StatusPagePreviewParams,
 	V2StatusPageComponentCreateParams,
 	V2StatusPageIncidentCreateParams,
 	V2StatusPageIncidentPostUpdateParams,
 	V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
-import { Clock, Effect, Schema } from "effect"
-import { Command } from "foldkit"
-import { readIsAdmin } from "../../shared/commands"
+import { Clock, Duration, Effect, Schema } from "effect"
+import { Command, Dom } from "foldkit"
+import { readIsAdmin } from "../../alerts/shared/commands"
 import {
 	applyPageConfig,
 	createIncident,
@@ -17,6 +19,7 @@ import {
 	listComponents,
 	listPageIncidents,
 	postIncidentUpdate,
+	previewPage,
 	publishPage,
 	reorderComponents,
 	retrievePage,
@@ -26,8 +29,9 @@ import {
 	saveComponent,
 	updateIncident,
 	updatePage,
-} from "../../shared/status-page-commands"
-import { listMonitors } from "../../shared/uptime-commands"
+} from "../shared/commands"
+import { listMonitors, saveMonitor } from "../../alerts/shared/uptime-commands"
+import { monitorPayloadFor } from "../shared/picker"
 import { Message } from "./message"
 
 export const ReadEditorClock = Command.define("ReadStatusPageClock", {
@@ -214,4 +218,63 @@ export const DeletePage = Command.define("DeleteStatusPage", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedDeletePage({ result })),
 		),
+})
+
+/** How long the preview waits after the last change before it reads the monitors' history again. */
+const PREVIEW_DEBOUNCE_MS = 400
+
+export const WaitEditorPreview = Command.define("WaitStatusPageEditorPreview", {
+	args: { generation: Schema.Number },
+	messages: [Message.ElapsedPreviewDebounce],
+	execute: ({ generation }) =>
+		Effect.as(
+			Effect.sleep(Duration.millis(PREVIEW_DEBOUNCE_MS)),
+			Message.ElapsedPreviewDebounce({ generation }),
+		),
+})
+
+export const FetchEditorPreview = Command.define("FetchStatusPageEditorPreview", {
+	args: { generation: Schema.Number, draft: StatusPagePreviewParams },
+	messages: [Message.CompletedFetchPreview],
+	execute: ({ generation, draft }) =>
+		previewPage(draft).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchPreview({ generation, draft, result })),
+		),
+})
+
+export const CreateEditorMonitor = Command.define("CreateStatusPageEditorMonitor", {
+	args: { url: Schema.String },
+	messages: [Message.CompletedCreateMonitor],
+	execute: ({ url }) =>
+		saveMonitor(null, monitorPayloadFor(url)).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedCreateMonitor({ result })),
+		),
+})
+
+/** Adds the picked components in order, one create each; the first failure stops the rest. */
+export const AddComponents = Command.define("AddStatusPageComponents", {
+	args: { pageId: StatusPageId, components: Schema.Array(StatusPageDraftComponent) },
+	messages: [Message.CompletedAddComponents],
+	execute: ({ pageId, components }) =>
+		Effect.forEach(components, (component) => saveComponent(pageId, null, component)).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedAddComponents({ result })),
+		),
+})
+
+export const FocusEditorElement = Command.define("FocusStatusPageEditorElement", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocus],
+	execute: ({ id }) =>
+		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocus())),
+})
+
+/** The public page in a new tab: it lives on the status Worker's host, outside the app. */
+export const OpenPublicPage = Command.define("OpenStatusPagePublicPage", {
+	args: { url: Schema.String },
+	messages: [Message.OpenedPublicPage],
+	execute: ({ url }) =>
+		Effect.sync(() => window.open(url, "_blank", "noopener")).pipe(Effect.as(Message.OpenedPublicPage())),
 })

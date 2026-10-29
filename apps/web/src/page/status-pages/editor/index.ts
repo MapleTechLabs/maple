@@ -1,20 +1,22 @@
-import { definePage } from "../../../contract"
+import { definePage } from "../../contract"
 import { Message } from "./message"
 import { Model } from "./model"
+import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { breadcrumbsOf, view } from "./view"
 
-/** `/alerts/status-pages/$pageId`: one instance per page; the tabs are search. */
+/** `/status-pages/$pageId`: one instance per page; Settings, JSON and the live screen are search. */
 export const page = definePage(
-	"AlertsStatusPage",
+	"StatusPage",
 	{ Model, Message },
 	{
-		routes: ["AlertsStatusPage"],
+		routes: ["StatusPage"],
 		key: (route) => route.pageId,
 		init,
 		update,
 		routeChanged,
 		view,
+		subscriptions,
 		breadcrumbs: breadcrumbsOf,
 	},
 )

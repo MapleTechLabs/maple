@@ -9,12 +9,12 @@ import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
 import { Option, Result, Schema } from "effect"
 import {
 	attr,
+	Command,
 	click,
 	expect as expectView,
 	find,
 	given,
 	inside,
-	Mount,
 	role,
 	scene,
 	selector,
@@ -24,17 +24,27 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { toLoadFailure } from "../../../../data/load-failure"
-import * as Dialog from "../../../../ui/dialog"
-import { PageOutMessage, type PageContext } from "../../../contract"
-import { statusPagesTabHref } from "../../shared/status-page-commands"
-import { ORG } from "../../shared/test-rows"
-import { downMonitor, httpMonitor } from "../../shared/uptime-test-monitors"
-import { component, componentId, incident, incidentId, statusPage, statusPageConfig } from "../test-pages"
+import { toLoadFailure } from "../../../data/load-failure"
+import { PageOutMessage, type PageContext } from "../../contract"
+import { statusPagesHref } from "../shared/commands"
+import { selectionOf } from "../shared/preview"
+import { ORG } from "../../alerts/shared/test-rows"
+import { downMonitor, httpMonitor } from "../../alerts/shared/uptime-test-monitors"
+import {
+	component,
+	componentId,
+	incident,
+	incidentId,
+	statusPage,
+	statusPageConfig,
+} from "../shared/test-pages"
+import { PickerMessage } from "../shared/picker"
+import { FocusEditorElement } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { moved } from "./update-components"
+import { canvasDocument } from "./view-canvas"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
@@ -61,9 +71,9 @@ type Fixture = Readonly<{
 const loaded = (fixture: Fixture = {}): Model => {
 	const entered = init(
 		{
-			_tag: "AlertsStatusPage",
+			_tag: "StatusPage",
 			pageId: PUBLIC_ID,
-			search: fixture.tab === undefined ? {} : { tab: fixture.tab },
+			search: fixture.tab === undefined ? {} : { view: fixture.tab },
 		},
 		context,
 	).model
@@ -110,11 +120,9 @@ const loaded = (fixture: Fixture = {}): Model => {
 	].reduce((model, message) => pageUpdate(model, message).model, entered)
 }
 
-const mounted = () => Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog())
-
 describe("status page editor", () => {
 	test("entering reads the page, its components, incidents and the monitors", () => {
-		const entered = init({ _tag: "AlertsStatusPage", pageId: PUBLIC_ID, search: {} }, context)
+		const entered = init({ _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context)
 		const sent = names(entered.commands)
 		expect(sent).toContain("FetchStatusPage")
 		expect(sent).toContain("FetchStatusPageComponents")
@@ -123,7 +131,7 @@ describe("status page editor", () => {
 	})
 
 	test("fresh page and incident reads re-read the clock, so relative times never run ahead", () => {
-		const entered = init({ _tag: "AlertsStatusPage", pageId: PUBLIC_ID, search: {} }, context).model
+		const entered = init({ _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context).model
 		const afterPage = pageUpdate(
 			entered,
 			Message.CompletedFetchPage({ key: entered.page.key ?? "", result: Result.succeed(statusPage()) }),
@@ -137,7 +145,7 @@ describe("status page editor", () => {
 	})
 
 	test("an id that is not a page id shows not found without a read", () => {
-		const entered = init({ _tag: "AlertsStatusPage", pageId: "nope", search: {} }, context)
+		const entered = init({ _tag: "StatusPage", pageId: "nope", search: {} }, context)
 		expect(names(entered.commands)).not.toContain("FetchStatusPage")
 		scene(
 			{ update: pageUpdate, view },
@@ -152,7 +160,6 @@ describe("status page editor", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			expectView(role("heading", { name: /^Acme Status\s*Major outage$/u })).toExist(),
-			expectView(text("/s/acme-status")).toExist(),
 		)
 	})
 })
@@ -166,25 +173,18 @@ describe("read failures", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(text("Couldn't load components")).toExist(),
+			expectView(text("Couldn't load the page's components")).toExist(),
 			expectView(role("heading", { name: /^Acme Status$/u })).toExist(),
 			expectView(text("Operational")).not.toExist(),
 		)
 	})
 })
 
-describe("read failures on the incidents tab", () => {
-	test("a failed components read shows an error rather than incidents with no components", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(loaded({ tab: "incidents", componentsFail: true })),
-			expectView(text("Couldn't load incidents")).toExist(),
-			expectView(role("button", { name: "New incident" })).not.toExist(),
-		)
-	})
-})
+describe("the page as the editor", () => {
+	const selected = (componentNumber: number, fixture: Fixture = {}) =>
+		pageUpdate(loaded(fixture), Message.ClickedComponent({ componentId: componentId(componentNumber) }))
+			.model
 
-describe("components tab", () => {
 	test("moving a component down sends the whole new order once and shows it at once", () => {
 		const moving = pageUpdate(
 			loaded(),
@@ -217,86 +217,188 @@ describe("components tab", () => {
 		)
 	})
 
-	test("adding a component links the picked monitor and sends the cleared fields as null", () => {
-		const monitor = downMonitor()
-		const opened = pageUpdate(loaded(), Message.ClickedAddComponent()).model
-		const filled = [
+	test("a component picked in the On this page list opens in the panel with its fields", () => {
+		const target = component(2, { name: "API", group: "Core", manual_status: "degraded" })
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ components: [component(1), target] })),
+			click(role("button", { name: /^API/u })),
+			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
+			expectView(role("textbox", { name: "Shown as" })).toHaveValue("API"),
+			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
+			expectView(role("button", { name: /^API/u })).toHaveAttr("aria-pressed", "true"),
+		)
+	})
+
+	test("a click in the preview selects the component or incident it names; unknown ids do nothing", () => {
+		const model = loaded({ incidents: [incident(1)] })
+		const picked = pageUpdate(
+			model,
+			Message.ReceivedPreviewSelection({ kind: "component", id: componentId(3) }),
+		)
+		expect(picked.model.panel).toEqual({ _tag: "Component", componentId: componentId(3) })
+		expect(picked.model.componentForm.name).toBe("Component 3")
+		const incidentPicked = pageUpdate(
+			model,
+			Message.ReceivedPreviewSelection({ kind: "incident", id: incidentId(1) }),
+		)
+		expect(incidentPicked.model.panel).toEqual({ _tag: "Incident", incidentId: incidentId(1) })
+		expect(
+			pageUpdate(model, Message.ReceivedPreviewSelection({ kind: "component", id: "elsewhere" })).model
+				.panel,
+		).toBeNull()
+	})
+
+	test("a preview message that is not exactly a selection is ignored", () => {
+		expect(selectionOf({ type: "select", kind: "component", id: componentId(1) })).toEqual(
+			Option.some({ kind: "component", id: componentId(1) }),
+		)
+		expect(selectionOf({ type: "navigate", kind: "component", id: componentId(1) })).toEqual(
+			Option.none(),
+		)
+		expect(selectionOf({ type: "select", kind: "page", id: componentId(1) })).toEqual(Option.none())
+		expect(selectionOf({ type: "select", kind: "component", id: "<script>" })).toEqual(Option.none())
+		expect(selectionOf("select")).toEqual(Option.none())
+	})
+
+	test("the preview outlines the selection and marks components and incidents to click", () => {
+		const model = selected(2, { incidents: [incident(1)] })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(selector("iframe")).toHaveAttr("sandbox", "allow-scripts"),
+		)
+		const document = canvasDocument(model, statusPage())
+		const outlined = (id: string) => new RegExp(`\\[data-component-id="${id}"\\][^{]*\\{outline:2px`, "u")
+		expect(document).toMatch(outlined(componentId(2)))
+		expect(document).not.toMatch(outlined(componentId(1)))
+		expect(document).toContain(`data-incident-id="${incidentId(1)}"`)
+		expect(document).toContain(`data-component-id="${componentId(1)}"`)
+	})
+
+	test("a field saves on blur with one PATCH of the whole component, and only when it changed", () => {
+		const editing = pageUpdate(
+			selected(2),
 			Message.ChangedComponentField({ field: "name", value: " Payments " }),
-			Message.ChangedComponentField({ field: "monitorId", value: monitor.id }),
-			Message.ToggledComponentUptime(),
-		].reduce((model, message) => pageUpdate(model, message).model, opened)
-		const saving = pageUpdate(filled, Message.SubmittedComponent())
+		)
+		const saving = pageUpdate(editing.model, Message.CommittedComponent())
 		expect(saving.commands).toMatchObject([
 			{
 				name: "SaveStatusPageComponent",
 				args: {
-					componentId: null,
+					componentId: componentId(2),
 					payload: {
 						name: "Payments",
-						description: null,
 						group: null,
-						monitor_id: monitor.id,
+						monitor_id: null,
 						manual_status: null,
-						show_uptime: false,
+						show_uptime: true,
 					},
 				},
 			},
 		])
+		expect(pageUpdate(selected(2), Message.CommittedComponent()).commands ?? []).toEqual([])
+		const saved = pageUpdate(
+			saving.model,
+			Message.CompletedSaveComponent({ result: Result.succeed(component(2, { name: "Payments" })) }),
+		)
+		scene({ update: pageUpdate, view }, given(saved.model), expectView(text("Saved")).toExist())
 	})
 
-	test("editing fills the dialog from the component", () => {
-		const target = component(2, { name: "API", group: "Core", manual_status: "degraded" })
-		const opened = pageUpdate(
-			loaded({ components: [component(1), target] }),
-			Message.ClickedEditComponent({ componentId: target.id }),
+	test("picking a monitor saves at once and a failed save says so in the panel", () => {
+		const monitor = downMonitor()
+		const saving = pageUpdate(
+			selected(1),
+			Message.PickedComponentField({ field: "monitorId", value: monitor.id }),
+		)
+		expect(saving.commands).toMatchObject([
+			{ name: "SaveStatusPageComponent", args: { payload: { monitor_id: monitor.id } } },
+		])
+		const failed = pageUpdate(
+			saving.model,
+			Message.CompletedSaveComponent({ result: Result.fail(toLoadFailure(new Error("refused"))) }),
 		).model
 		scene(
 			{ update: pageUpdate, view },
-			given(opened),
-			mounted(),
-			expectView(role("textbox", { name: "Name" })).toHaveValue("API"),
-			expectView(role("textbox", { name: "Group" })).toHaveValue("Core"),
-			expectView(role("button", { name: "Save component" })).toExist(),
+			given(failed),
+			expectView(text("Not saved")).toExist(),
+			expectView(text("Couldn't save the component")).toExist(),
 		)
 	})
 
-	test("members see the components without the controls to change them", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(loaded({ isAdmin: false })),
-			expectView(text("Component 1")).toExist(),
-			expectView(role("button", { name: "Add component" })).not.toExist(),
-			expectView(role("button", { name: "Edit Component 1" })).not.toExist(),
-		)
+	test("Escape closes the panel", () => {
+		expect(pageUpdate(selected(1), Message.PressedEscape()).model.panel).toBeNull()
 	})
 
 	test("removing a component asks first, then deletes it once", () => {
-		const asking = pageUpdate(loaded(), Message.ClickedDeleteComponent({ componentId: componentId(2) }))
+		const asking = pageUpdate(
+			selected(2),
+			Message.ClickedDeleteComponent({ componentId: componentId(2) }),
+		)
 		expect(asking.model.confirmDeleteComponentId).toBe(componentId(2))
+		expect(asking.model.deleteComponentDialog.isOpen).toBe(true)
+		expect(names(asking.commands)).not.toContain("DeleteStatusPageComponent")
 		const deleting = pageUpdate(asking.model, Message.ClickedConfirmDeleteComponent())
 		expect(deleting.commands).toMatchObject([
 			{ name: "DeleteStatusPageComponent", args: { componentId: componentId(2) } },
 		])
 		expect(pageUpdate(deleting.model, Message.ClickedConfirmDeleteComponent()).commands ?? []).toEqual([])
 	})
+
+	test("Add component offers the monitors not on the page yet and adds the picked ones", () => {
+		const monitor = downMonitor()
+		const opened = pageUpdate(
+			loaded({ components: [component(1, { monitor_id: httpMonitor().id })] }),
+			Message.ClickedAddComponent(),
+		).model
+		expect(opened.addPicker.rows.map((row) => row.monitorId)).toEqual([monitor.id])
+		const picked = pageUpdate(
+			opened,
+			Message.GotAddPickerMessage({ message: PickerMessage.ToggledRow({ key: `m:${monitor.id}` }) }),
+		).model
+		expect(pageUpdate(picked, Message.ClickedSubmitAdd()).commands).toMatchObject([
+			{
+				name: "AddStatusPageComponents",
+				args: { components: [{ name: monitor.name, monitor_id: monitor.id }] },
+			},
+		])
+	})
+
+	test("members see the page and its components without any control to change them", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(selected(1, { isAdmin: false })),
+			expectView(text("Component 1")).toExist(),
+			expectView(role("button", { name: "Add component" })).not.toExist(),
+			expectView(role("button", { name: "Move Component 1 down" })).not.toExist(),
+			expectView(role("button", { name: "Remove from page" })).not.toExist(),
+			expectView(role("textbox", { name: "Shown as" })).toBeDisabled(),
+			expectView(text("Only org admins can change components.")).toExist(),
+		)
+		expect(
+			pageUpdate(selected(1, { isAdmin: false }), Message.ClickedAddComponent()).model.panel?._tag,
+		).toBe("Component")
+	})
 })
 
-describe("incidents tab", () => {
-	test("open incidents carry their actions, and a draft can be published", () => {
-		const model = loaded({
-			tab: "incidents",
-			incidents: [
-				incident(1, { published: false }),
-				incident(2, { status: "resolved", title: "Old outage" }),
-			],
-		})
+describe("incidents in the panel", () => {
+	test("an open incident carries its actions, and a draft can be published", () => {
+		const model = pageUpdate(
+			loaded({
+				incidents: [
+					incident(1, { published: false }),
+					incident(2, { status: "resolved", title: "Old outage" }),
+				],
+			}),
+			Message.ClickedIncident({ incidentId: incidentId(1) }),
+		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(text("Draft")).toExist(),
-			expectView(role("button", { name: "Publish draft" })).toExist(),
+			expectView(text("Draft, not public")).toExist(),
+			expectView(role("button", { name: "Publish" })).toExist(),
 			expectView(role("button", { name: "Resolve" })).toExist(),
-			expectView(text("Old outage")).toExist(),
+			expectView(role("button", { name: "Old outage" })).toExist(),
 		)
 		expect(
 			pageUpdate(model, Message.ClickedPublishIncident({ incidentId: incidentId(1) })).commands,
@@ -304,7 +406,7 @@ describe("incidents tab", () => {
 	})
 
 	test("resolving posts a resolved update with the closing message", () => {
-		const model = loaded({ tab: "incidents", incidents: [incident(1)] })
+		const model = loaded({ incidents: [incident(1)] })
 		const opened = pageUpdate(
 			model,
 			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: true }),
@@ -322,7 +424,7 @@ describe("incidents tab", () => {
 	})
 
 	test("Post update moves the status one step along and needs a message", () => {
-		const model = loaded({ tab: "incidents", incidents: [incident(1, { status: "identified" })] })
+		const model = loaded({ incidents: [incident(1, { status: "identified" })] })
 		const opened = pageUpdate(
 			model,
 			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
@@ -331,11 +433,24 @@ describe("incidents tab", () => {
 		expect(pageUpdate(opened.model, Message.SubmittedUpdate()).commands ?? []).toEqual([])
 	})
 
+	test("Post incident opens the composer in the panel, with the affected components picked", () => {
+		const model = loaded({ components: [component(1), component(2, { monitor_id: downMonitor().id })] })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			click(role("button", { name: "Post incident" })),
+			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
+			expectView(role("textbox", { name: "Title" })).toExist(),
+			expectView(role("checkbox", { name: "Component 2" })).toBeChecked(),
+			expectView(role("checkbox", { name: "Component 1" })).not.toBeChecked(),
+			expectView(role("dialog")).not.toExist(),
+		)
+		const opened = pageUpdate(model, Message.ClickedNewIncident({ kind: "incident" })).model
+		expect(opened.incidentForm.impact).toBe("critical")
+	})
+
 	test("an incident saved as a draft names its components and is not published", () => {
-		const opened = pageUpdate(
-			loaded({ tab: "incidents" }),
-			Message.ClickedNewIncident({ kind: "incident" }),
-		).model
+		const opened = pageUpdate(loaded(), Message.ClickedNewIncident({ kind: "incident" })).model
 		const filled = [
 			Message.ChangedIncidentField({ field: "title", value: "Slow checkout" }),
 			Message.ChangedIncidentField({ field: "impact", value: "critical" }),
@@ -363,11 +478,7 @@ describe("incidents tab", () => {
 
 	test("maintenance needs a window that ends after it starts, read in the viewer's zone", () => {
 		const zoned: PageContext = { ...context, timeZone: "Europe/Berlin" }
-		const opened = update(
-			loaded({ tab: "incidents" }),
-			Message.ClickedNewIncident({ kind: "maintenance" }),
-			zoned,
-		).model
+		const opened = update(loaded(), Message.ClickedNewIncident({ kind: "maintenance" }), zoned).model
 		const filled = [
 			Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
 			Message.ChangedIncidentField({ field: "body", value: "Brief read-only periods." }),
@@ -396,14 +507,10 @@ describe("incidents tab", () => {
 	})
 
 	test("the composer lists what is missing before it can be sent", () => {
-		const opened = pageUpdate(
-			loaded({ tab: "incidents" }),
-			Message.ClickedNewIncident({ kind: "maintenance" }),
-		).model
+		const opened = pageUpdate(loaded(), Message.ClickedNewIncident({ kind: "maintenance" })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
-			mounted(),
 			expectView(text("Add a title.")).toExist(),
 			type(role("textbox", { name: "Title" }), "Database upgrade"),
 			type(role("textbox", { name: "Message" }), "Brief read-only periods."),
@@ -413,7 +520,60 @@ describe("incidents tab", () => {
 	})
 })
 
-describe("settings tab", () => {
+describe("drafts", () => {
+	test("a draft page says it is not public and offers Publish, which goes to the live screen", () => {
+		const model = loaded({ page: statusPage({ draft: true, published_at: null }) })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Draft, not public")).toExist(),
+			expectView(text("Draft. Nothing is public until you publish.")).toExist(),
+			expectView(role("button", { name: "Publish" })).toExist(),
+		)
+		const publishing = pageUpdate(model, Message.ClickedPublish())
+		expect(names(publishing.commands)).toEqual(["PublishStatusPage"])
+		const done = pageUpdate(
+			publishing.model,
+			Message.CompletedPublish({
+				result: Result.succeed({
+					id: statusPage().id,
+					object: "status_page.publish_result",
+					outcome: "published",
+					revision: 4,
+				}),
+			}),
+		)
+		expect(done.outMessage).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: `/status-pages/${PUBLIC_ID}?view=live`,
+		})
+	})
+})
+
+describe("live screen", () => {
+	test("names the page, gives its address to copy and open, and the next steps", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "live" })),
+			expectView(role("heading", { name: "Acme Status is live" })).toExist(),
+			expectView(selector("#status-page-public-url")).toHaveValue("/s/acme-status"),
+			expectView(role("link", { name: "Open" })).toHaveAttr("href", "/s/acme-status"),
+			expectView(role("button", { name: "Get break-glass token" })).toExist(),
+			expectView(role("link", { name: "Page JSON" })).toHaveAttr(
+				"href",
+				`/status-pages/${PUBLIC_ID}?view=json`,
+			),
+			expectView(text("custom domain")).not.toExist(),
+		)
+	})
+
+	test("Get break-glass token issues one at once and shows it once", () => {
+		const issuing = pageUpdate(loaded({ tab: "live" }), Message.ClickedRotateToken())
+		expect(names(issuing.commands)).toEqual(["RotateStatusPageBreakGlassToken"])
+	})
+})
+
+describe("settings view", () => {
 	test("an edit raises the save bar, and a bad color blocks the save", () => {
 		scene(
 			{ update: pageUpdate, view },
@@ -507,7 +667,8 @@ describe("settings tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "settings" })),
-			expectView(selector("iframe")).toHaveAttr("sandbox", ""),
+			// Scripts page the bars; without `allow-same-origin` the page still reaches nothing of ours.
+			expectView(selector("iframe")).toHaveAttr("sandbox", "allow-scripts"),
 			tap(({ html }) => {
 				expect(srcdoc(html)).toContain("Acme Status")
 				expect(srcdoc(html)).toContain("color-scheme:light;")
@@ -570,7 +731,7 @@ describe("settings tab", () => {
 		)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: statusPagesTabHref(),
+				url: statusPagesHref(),
 				isReplace: true,
 				toast: { type: "success", title: "Status page deleted", description: "" },
 			}),
@@ -578,7 +739,7 @@ describe("settings tab", () => {
 	})
 })
 
-describe("json tab", () => {
+describe("json view", () => {
 	const publicComponentId = (n: number) => Schema.encodeSync(StatusPageComponentPublicId)(componentId(n))
 	/** The document the tab shows, as the user would edit it. */
 	const documentOf = (components: ReadonlyArray<number>) => ({
@@ -596,7 +757,10 @@ describe("json tab", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded({ tab: "json" })),
-			expectView(role("link", { name: "JSON" })).toHaveAttr("aria-current", "page"),
+			expectView(role("link", { name: "Back to page" })).toHaveAttr(
+				"href",
+				`/status-pages/${PUBLIC_ID}`,
+			),
 			expectView(selector("pre")).toContainText('"slug": "acme-status"'),
 			expectView(selector("pre")).toContainText(`"id": "${publicComponentId(2)}"`),
 			expectView(selector("pre")).toContainText('"auto_incidents": "draft"'),
@@ -745,10 +909,7 @@ describe("json tab", () => {
 	})
 
 	test("the document comes from the config read, so components past the list's first page stay", () => {
-		const entered = init(
-			{ _tag: "AlertsStatusPage", pageId: PUBLIC_ID, search: { tab: "json" } },
-			context,
-		)
+		const entered = init({ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "json" } }, context)
 		expect(names(entered.commands)).toContain("FetchStatusPageConfig")
 		const listed = [component(1), component(2)]
 		const config = statusPageConfig(statusPage(), [...listed, component(3), component(4)])
@@ -776,7 +937,7 @@ describe("json tab", () => {
 
 	test("the tab shows the config read's loading and failure states", () => {
 		const entered = init(
-			{ _tag: "AlertsStatusPage", pageId: PUBLIC_ID, search: { tab: "json" } },
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "json" } },
 			context,
 		).model
 		const pageIn = pageUpdate(
@@ -803,7 +964,7 @@ describe("json tab", () => {
 		expect(onSettings.config.key).toBeNull()
 		const opened = routeChanged(
 			onSettings,
-			{ _tag: "AlertsStatusPage", pageId: PUBLIC_ID, search: { tab: "json" } },
+			{ _tag: "StatusPage", pageId: PUBLIC_ID, search: { view: "json" } },
 			context,
 		)
 		expect(names(opened.commands)).toEqual(["FetchStatusPageConfig"])

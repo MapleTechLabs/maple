@@ -6,11 +6,11 @@ import type {
 } from "@maple/domain/http/v2"
 import { Option, Result, Schema } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
-import type { LoadFailure } from "../../../../data/load-failure"
-import * as CopyButton from "../../../../ui/copy-button"
-import * as Dialog from "../../../../ui/dialog"
-import { type PageContext, PageOutMessage } from "../../../contract"
-import { statusPagesTabHref } from "../../shared/status-page-commands"
+import type { LoadFailure } from "../../../data/load-failure"
+import * as CopyButton from "../../../ui/copy-button"
+import * as Dialog from "../../../ui/dialog"
+import { type PageContext, PageOutMessage } from "../../contract"
+import { statusPageHref, statusPagesHref } from "../shared/commands"
 import { DeletePage, PublishPage, RevokeToken, RotateToken, SaveSettings } from "./command"
 import {
 	hasSettingsIssues,
@@ -20,7 +20,7 @@ import {
 	type ThemeForm,
 	settingsFormOf,
 	settingsPayload,
-} from "./form"
+} from "../shared/form"
 import { Message } from "./message"
 import type { BreakGlassAction, Model } from "./model"
 import { errorToast, liftDialog, pageOf, readPage, type Return, toast } from "./reads"
@@ -120,15 +120,26 @@ export const published = (
 	context: PageContext,
 ): Return => {
 	const settled = { ...model, isPublishing: false }
+	const wasDraft = Option.match(pageOf(model), { onNone: () => false, onSome: (page) => page.draft })
 	return Result.match(result, {
-		onSuccess: (outcome): Return => ({
-			...readPage(context, "Supersede")(settled),
-			outMessage: toast(
-				"success",
-				PUBLISH_COPY[outcome.outcome],
-				outcome.outcome === "queued" ? "It goes out with the next minutely publish." : "",
-			),
-		}),
+		// A draft going public gets the live screen; a published page a toast.
+		onSuccess: (outcome): Return =>
+			wasDraft && model.pageId !== null
+				? {
+						...readPage(context, "Supersede")(settled),
+						outMessage: PageOutMessage.RequestedNavigation({
+							url: statusPageHref(model.pageId, "live"),
+							isReplace: false,
+						}),
+					}
+				: {
+						...readPage(context, "Supersede")(settled),
+						outMessage: toast(
+							"success",
+							PUBLISH_COPY[outcome.outcome],
+							outcome.outcome === "queued" ? "It goes out with the next minutely publish." : "",
+						),
+					},
 		onFailure: (failure): Return => ({
 			model: settled,
 			outMessage: errorToast("Couldn't publish", failure),
@@ -250,7 +261,7 @@ export const deletedPage = (model: Model, result: Result.Result<void, LoadFailur
 		onSuccess: (): Return => ({
 			...deletePageDialog(settled, Dialog.close(settled.deletePageDialog)),
 			outMessage: PageOutMessage.RequestedNavigation({
-				url: statusPagesTabHref(),
+				url: statusPagesHref(),
 				isReplace: true,
 				toast: { type: "success", title: "Status page deleted", description: "" },
 			}),

@@ -1,6 +1,6 @@
 import { Result } from "effect"
 import { describe, expect, it } from "vitest"
-import { statusPage, statusPageConfig } from "../test-pages"
+import { statusPage, statusPageConfig } from "../shared/test-pages"
 import { parseDraft, problemText } from "./config-json"
 
 const problemOf = (text: string) =>
