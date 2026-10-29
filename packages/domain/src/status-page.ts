@@ -22,6 +22,9 @@ export const STATUS_PAGE_WINDOW_DAYS = 90
 /** Resolved incidents stay listed, with their updates, this long. */
 export const STATUS_PAGE_INCIDENT_HISTORY_DAYS = 14
 /** Past this, the page says live checks are delayed instead of implying all is well. */
+/** Longest page link (website, logo, privacy, terms) the service stores; the editor checks it too. */
+export const STATUS_PAGE_MAX_URL_LENGTH = 2048
+
 export const STATUS_PAGE_STALE_AFTER_MS = 5 * 60_000
 
 /** Lowercase letters, digits and inner hyphens: the `<slug>` in `<slug>.<status domain>`. */

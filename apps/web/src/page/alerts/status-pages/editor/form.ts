@@ -23,6 +23,7 @@ import {
 	StatusPageThemeRadius,
 	type StatusPageTheme,
 	themeContrastIssue,
+	STATUS_PAGE_MAX_URL_LENGTH,
 } from "@maple/domain/status-page"
 import { DateTime, Option, Schema } from "effect"
 import { closingStatus, STATUSES_OF_KIND } from "../../shared/status-page-derive"
@@ -343,6 +344,8 @@ const sameTheme = (a: ThemeForm, b: ThemeForm): boolean =>
 const httpsIssue = (value: string): string | null => {
 	const url = value.trim()
 	if (url === "") return null
+	if (url.length > STATUS_PAGE_MAX_URL_LENGTH)
+		return `Keep it under ${STATUS_PAGE_MAX_URL_LENGTH} characters.`
 	if (!URL.canParse(url)) return "Use a valid URL, like https://acme.example."
 	return new URL(url).protocol === "https:" ? null : "Use an https URL."
 }

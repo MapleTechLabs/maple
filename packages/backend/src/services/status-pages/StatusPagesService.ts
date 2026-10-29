@@ -60,6 +60,7 @@ import {
 	type StatusPageTheme,
 	sha256Base64Url,
 	themeContrastIssue,
+	STATUS_PAGE_MAX_URL_LENGTH,
 } from "@maple/domain/status-page"
 import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -263,7 +264,6 @@ export interface AppliedStatusPageConfig {
 
 const MAX_NAME_LENGTH = 120
 const MAX_TEXT_LENGTH = 2000
-const MAX_URL_LENGTH = 2048
 const INCIDENT_STATUSES: ReadonlySet<StatusPageIncidentStatus> = new Set([
 	"investigating",
 	"identified",
@@ -321,7 +321,7 @@ const validateSlug = (slug: string) =>
 const validateHttpsUrl = (raw: string | null, what: string) => {
 	const value = raw?.trim() ?? ""
 	if (value.length === 0) return Effect.succeed(null)
-	if (value.length > MAX_URL_LENGTH || !URL.canParse(value))
+	if (value.length > STATUS_PAGE_MAX_URL_LENGTH || !URL.canParse(value))
 		return Effect.fail(invalid(`${what} must be a valid URL`))
 	if (new URL(value).protocol !== "https:") return Effect.fail(invalid(`${what} must use https`))
 	return Effect.succeed(value)

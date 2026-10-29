@@ -81,6 +81,11 @@ describe("URL fields", () => {
 		expect(issues.termsUrl).toBeNull()
 		expect(issues.logoUrl).toBeNull()
 	})
+
+	it("refuses a link longer than the service stores", () => {
+		const long = `https://acme.example/${"a".repeat(2048)}`
+		expect(settingsIssues({ ...saved, termsUrl: long }).termsUrl).toBe("Keep it under 2048 characters.")
+	})
 })
 
 describe("theme settings", () => {
