@@ -13,7 +13,6 @@ import { LoadFailure } from "../../../data/load-failure"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import * as DestinationDialog from "../destination/dialog"
-import * as StatusPages from "../status-pages/list"
 import { TestOutcome, UptimeKindFilter, UptimeStatusFilter } from "./model"
 import { ServiceNamespaces } from "./uptime-groups"
 
@@ -69,6 +68,5 @@ export const Message = defineMessageUnion({
 	ClickedConfirmDeleteMonitor: {},
 	CompletedDeleteMonitor: { monitorId: UptimeMonitorId, result: outcome(Schema.Void) },
 	GotDeleteMonitorDialogMessage: { message: Dialog.Message },
-	GotStatusPagesMessage: { message: StatusPages.Message },
 })
 export type Message = typeof Message.Type

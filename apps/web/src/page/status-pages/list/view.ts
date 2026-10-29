@@ -14,7 +14,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
 import { emptyActions } from "../../kit/signal-empty-state"
-import { ROW_STRETCHED_LINK_CLASS } from "../../alerts/shared/links"
+import { rowLink } from "../../../ui/table"
 import { newStatusPageHref, publicUrl, statusPageHref } from "../shared/commands"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_TONE, type StatusPageSummary } from "../shared/derive"
 import { Message } from "./message"
@@ -85,13 +85,12 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 					h.div(
 						[h.Class("min-w-0")],
 						[
-							h.a(
-								[
-									h.Href(statusPageHref(page.id)),
-									h.Class(
-										cn("block truncate text-sm font-medium", ROW_STRETCHED_LINK_CLASS),
-									),
-								],
+							rowLink(
+								h,
+								{
+									href: statusPageHref(page.id),
+									className: "block truncate text-sm font-medium",
+								},
 								[page.name],
 							),
 							h.p(
