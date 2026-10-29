@@ -41,7 +41,7 @@ interface QueuedExport {
 
 /** One export's rows of one datasource, the unit a shared statement carries. */
 interface QueuedPart {
-	readonly owner: QueuedExport
+	readonly queued: QueuedExport
 	readonly ndjson: string
 }
 
@@ -120,12 +120,12 @@ export class InsertBatcher {
 				const own = owner.batches.filter((batch) => batch.datasource === datasource)
 				return own.length === 0
 					? []
-					: [{ owner, ndjson: own.map((batch) => batch.ndjson).join("\n") }]
+					: [{ queued: owner, ndjson: own.map((batch) => batch.ndjson).join("\n") }]
 			})
 			// Whatever throws here, every export still settles below rather than waiting forever.
 			const inserted = Result.try(() => this.#insertDatasource(datasource, parts))
 			if (Result.isFailure(inserted))
-				for (const { owner } of parts) owner.failure ??= { datasource, cause: inserted.failure }
+				for (const { queued } of parts) queued.failure ??= { datasource, cause: inserted.failure }
 		}
 		for (const owner of queue)
 			owner.settle(
@@ -141,30 +141,45 @@ export class InsertBatcher {
 			parts.map((part) => ({ owner: part, ndjson: part.ndjson })),
 		)
 		for (const statement of statements) {
-			const live = statement.parts.filter(({ owner: part }) => part.owner.failure === undefined)
-			if (live.length === 0) continue
+			// Only an export split over several statements can have failed in an earlier one.
+			if (statement.parts.some(({ owner }) => owner.queued.failure !== undefined)) continue
 			const inserted = Result.try(() => this.#db.exec(statement.sql))
-			if (Result.isSuccess(inserted)) {
-				for (const { owner: part, rowCount } of live) part.owner.accepted += rowCount
-			} else if (statement.parts.length === 1) {
-				for (const { owner: part } of live)
-					part.owner.failure = { datasource, cause: inserted.failure }
-			} else {
-				// A shared statement fails whole: retry each export alone, so only the one with a bad row fails.
-				for (const { owner: part } of live) this.#insertAlone(datasource, part)
-			}
+			if (Result.isSuccess(inserted))
+				for (const { owner, rowCount } of statement.parts) owner.queued.accepted += rowCount
+			else if (statement.parts.length === 1)
+				statement.parts[0]!.owner.queued.failure = { datasource, cause: inserted.failure }
+			else
+				this.#retryAlone(
+					datasource,
+					statement.parts.map(({ owner }) => owner),
+					inserted.failure,
+				)
 		}
 	}
 
-	#insertAlone(datasource: string, part: QueuedPart): void {
+	/**
+	 * A shared statement fails whole, so retry each export alone and only the one
+	 * with a row the engine refuses fails. Two failures in a row read as the table
+	 * failing for everyone (too many parts, memory), and the rest fail untried.
+	 */
+	#retryAlone(datasource: string, parts: ReadonlyArray<QueuedPart>, cause: unknown): void {
+		let failedInARow = 0
+		for (const part of parts) {
+			if (failedInARow >= 2) part.queued.failure = { datasource, cause }
+			else failedInARow = this.#insertAlone(datasource, part) ? 0 : failedInARow + 1
+		}
+	}
+
+	#insertAlone(datasource: string, part: QueuedPart): boolean {
 		for (const statement of buildInsertStatements(datasource, part.ndjson)) {
 			const inserted = Result.try(() => this.#db.exec(statement.sql))
 			if (Result.isFailure(inserted)) {
-				part.owner.failure = { datasource, cause: inserted.failure }
-				return
+				part.queued.failure = { datasource, cause: inserted.failure }
+				return false
 			}
-			part.owner.accepted += statement.rowCount
+			part.queued.accepted += statement.rowCount
 		}
+		return true
 	}
 }
 

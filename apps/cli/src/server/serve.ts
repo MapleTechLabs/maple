@@ -484,26 +484,36 @@ const ingest = (
 			rejected += filtered.rejected
 			return { ...batch, ndjson: filtered.ndjson, rowCount: filtered.accepted }
 		})
-		const accepted = yield* inserts
-			.insert(batches.filter((batch) => batch.rowCount > 0))
-			.pipe(
-				Effect.catchTag("@maple/cli/LocalInsertError", (error) =>
-					Effect.fail(
-						stopIngest(
-							text(`chDB insert (${error.datasource}): ${describeThrown(error.cause)}`, 500),
-							requestBytes,
-							error.accepted,
-						),
-					),
-				),
-			)
 		const readyEventIds = [...evaluation.recoveredEventIds, ...staged.eventIds]
-		// The rows are committed: a 5xx here would make exporters resend the batch
-		// and double-count it, so readiness is retried in the background instead.
-		if (readyEventIds.length > 0) {
-			const marked = yield* Effect.exit(eventing.markReady(readyEventIds))
-			if (Exit.isFailure(marked)) readiness.retry(readyEventIds)
-		}
+		// Queued rows commit even if this fiber is interrupted while it waits on the
+		// batcher, so the wait and the readiness marking after it run as one step.
+		const accepted = yield* Effect.uninterruptible(
+			Effect.gen(function* () {
+				const accepted = yield* inserts
+					.insert(batches.filter((batch) => batch.rowCount > 0))
+					.pipe(
+						Effect.catchTag("@maple/cli/LocalInsertError", (error) =>
+							Effect.fail(
+								stopIngest(
+									text(
+										`chDB insert (${error.datasource}): ${describeThrown(error.cause)}`,
+										500,
+									),
+									requestBytes,
+									error.accepted,
+								),
+							),
+						),
+					)
+				// The rows are committed: a 5xx here would make exporters resend the batch
+				// and double-count it, so readiness is retried in the background instead.
+				if (readyEventIds.length > 0) {
+					const marked = yield* Effect.exit(eventing.markReady(readyEventIds))
+					if (Exit.isFailure(marked)) readiness.retry(readyEventIds)
+				}
+				return accepted
+			}),
+		)
 		const droppedEvents = staged.dropped
 		const errorMessage = rejected > 0 ? "telemetry from permanently retired UTC days was rejected" : ""
 		if (contentType.includes("json")) {
@@ -1859,8 +1869,8 @@ export const startServer = (
 					// then cut whatever is left. chDB closes after this finalizer.
 					readiness.stop()
 					const drained = gate.shutdown()
-					// Queued exports are admitted requests: commit them now, so the
-					// drain below never waits on the batcher's timer.
+					// Queued exports are admitted requests: commit them now rather than
+					// on the next tick. Requests admitted later still flush on their own tick.
 					inserts.flush()
 					const stopped = s.stop(false)
 					await settleWithin(Promise.all([drained, stopped]), SHUTDOWN_DRAIN_MS)

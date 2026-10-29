@@ -49,8 +49,7 @@ const templates: Map<string, InsertTemplate> = (() => {
  * statement for one datasource's NDJSON batch.
  */
 export function buildInsertSql(datasource: string, ndjson: string): string {
-	const template = templates.get(datasource)
-	if (!template) throw new Error(`no insert mapping for datasource '${datasource}'`)
+	const template = templateFor(datasource)
 	return template.prefix + escapeSqlLiteral(ndjson) + template.suffix
 }
 

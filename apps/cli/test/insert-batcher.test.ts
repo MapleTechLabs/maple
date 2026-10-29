@@ -97,6 +97,16 @@ describe("InsertBatcher", () => {
 		expect(statements.some((sql) => sql.includes("b-span"))).toBe(false)
 	})
 
+	test("an insert failing for every export is retried alone only until two retries fail", async () => {
+		const { statements, insert } = recording(() => true)
+		const outcomes = await Promise.all(
+			["a", "b", "c", "d"].map((body) => insert([{ datasource: "logs", ndjson: rows(body) }])),
+		)
+		for (const outcome of outcomes)
+			expect(outcome).toEqual({ accepted: 0, failure: { datasource: "logs" } })
+		expect(statements).toHaveLength(3)
+	})
+
 	test("an export naming a datasource with no insert mapping fails at once and holds up no other", async () => {
 		const { statements, insert } = recording()
 		const [unknown, known] = await Promise.all([
