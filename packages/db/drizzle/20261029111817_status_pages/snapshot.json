@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "9eb256b64fe77cf6485019a9057a576ae4245095228948f4493a55cfb7029048",
+	"id": "313c4ff8962ac16c45b3bde1462d7e0d48cbadd771f9351e4406ed4f64c0e03a",
 	"prevIds": [
-		"85caedb84ed88c3f757c61b4f4e64017825a347e9d1714eea0e7e32d398af605"
+		"488458b9c1ae1a6a6aa77e78ed0171373c0e3d3f7fb9b4d73e8a3606eeb3e94f"
 	],
 	"entities": [
 		{
@@ -61,6 +61,16 @@
 			"name": "alert_incidents",
 			"primaryKey": {
 				"name": "alert_incidents_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "alert_linear_issues",
+			"primaryKey": {
+				"name": "alert_linear_issues_pkey",
 				"columns": [
 					"id"
 				]
@@ -2019,6 +2029,116 @@
 			"table": "alert_incidents",
 			"name": "updated_at",
 			"position": 26,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "destination_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "thread_key",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "linear_team_id",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "linear_issue_id",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "linear_identifier",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "linear_url",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "incident_id",
+			"position": 8,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "created_at",
+			"position": 9,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_linear_issues",
+			"name": "updated_at",
+			"position": 10,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -15322,6 +15442,29 @@
 		},
 		{
 			"kind": "index",
+			"table": "alert_linear_issues",
+			"name": "alert_linear_issues_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "alert_linear_issues",
+			"name": "alert_linear_issues_thread_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"destination_id\"",
+				"\"thread_key\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "alert_rule_claims",
 			"name": "alert_rule_claims_org_idx",
 			"unique": false,
@@ -17398,6 +17541,20 @@
 				"\"name\""
 			],
 			"where": null
+		},
+		{
+			"kind": "foreign_key",
+			"table": "alert_linear_issues",
+			"name": "alert_linear_issues_destination_id_alert_destinations_id_fk",
+			"columns": [
+				"destination_id"
+			],
+			"foreignTable": "alert_destinations",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
 		},
 		{
 			"kind": "foreign_key",
