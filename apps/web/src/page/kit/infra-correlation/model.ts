@@ -1,6 +1,5 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../charts/chart"
 import { ChartRuntime } from "../../../charts/chart-runtime"
 import { ThemeColors } from "../../../charts/theme-colors"
 import { TimeWindow } from "../../../data/time-range"
@@ -29,7 +28,6 @@ export const Message = defineMessageUnion({
 	/** The panel is on screen: its window, for the record's resource attributes. */
 	ResolvedWindow: { window: TimeWindow, resourceAttributes: Attributes },
 	CompletedFetchSeries: { chartId: Schema.String, key: Schema.String, result: SeriesResult },
-	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },

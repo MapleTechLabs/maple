@@ -1,14 +1,20 @@
 import { Option, Result } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { LoadChartRuntime } from "../../../charts/chart-runtime"
 import { ResolveThemeColors, ThemeMessage } from "../../../charts/theme-colors"
 import { toLoadFailure } from "../../../data/load-failure"
+import { FetchCorrelationSeries } from "./command"
 import { Message, type Model } from "./model"
 import { init, update } from "./update"
 import { view as panelView, type ViewInputs } from "./view"
 import { anchoredWindow, MountInfraCorrelation } from "./window"
 
-const POD = { "k8s.pod.name": "payment-svc-7f9c-p0", "k8s.namespace.name": "shop", "k8s.node.name": "ip-10-0-12-84" }
+const POD = {
+	"k8s.pod.name": "payment-svc-7f9c-p0",
+	"k8s.namespace.name": "shop",
+	"k8s.node.name": "ip-10-0-12-84",
+}
 const window = { startTime: "2026-10-01 11:45:00", endTime: "2026-10-01 12:15:00" }
 const inputs = (resourceAttributes: ViewInputs["resourceAttributes"]): ViewInputs => ({
 	resourceAttributes,
@@ -36,8 +42,8 @@ describe("infra correlation panel", () => {
 
 	test("a pod record reads the pod's and its node's three charts, then loads the chart library", () => {
 		const names = (resolved().commands ?? []).map(({ name }) => name)
-		expect(names.filter((name) => name === "FetchInfraCorrelationSeries")).toHaveLength(6)
-		expect(names.at(-1)).toBe("LoadChartRuntime")
+		expect(names.filter((name) => name === FetchCorrelationSeries.name)).toHaveLength(6)
+		expect(names.at(-1)).toBe(LoadChartRuntime.name)
 		expect(Object.keys(resolved().model.series)).toEqual([
 			"pod-cpu_usage",
 			"pod-cpu_limit",
@@ -46,13 +52,18 @@ describe("infra correlation panel", () => {
 			"node-cpu_utilization",
 			"node-memory_utilization",
 		])
+		expect(Object.keys(resolved().model.charts)).toEqual(Object.keys(resolved().model.series))
 	})
 
 	test("an answer for another key is dropped", () => {
 		const model = resolved().model
 		const late = update(
 			model,
-			Message.CompletedFetchSeries({ chartId: "pod-cpu_usage", key: "stale", result: Result.succeed({ rows: [], unit: "cores" }) }),
+			Message.CompletedFetchSeries({
+				chartId: "pod-cpu_usage",
+				key: "stale",
+				result: Result.succeed({ rows: [], unit: "cores" }),
+			}),
 		)
 		expect(late.model.series["pod-cpu_usage"]).toEqual(model.series["pod-cpu_usage"])
 	})

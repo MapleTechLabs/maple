@@ -1,4 +1,5 @@
-// `InfraCorrelationPanel` as a Submodel: the log sheet's Infrastructure tab and the span panel's.
-export { Message, Model } from "./model"
-export { init, update } from "./update"
-export { view } from "./view"
+// `InfraCorrelationPanel` as a completed Block: the log sheet's Infrastructure tab and the span panel's.
+export { InfraCorrelationBlock } from "./block"
+export { Model } from "./model"
+export { init } from "./update"
+export type { ViewInputs } from "./view"
