@@ -271,10 +271,10 @@ describe("sidebar collapse", () => {
 		expectVitest(update(asked.model, Message.RequestedInfraSurfaces()).commands ?? []).toEqual([])
 	})
 
-	test("entering an org below md defers the sidebar's reads; on desktop they go with the tenant", () => {
+	test("entering an org below md defers the sidebar's reads; on desktop they go at once", () => {
 		const mobile = enter("org_parity")(init({ ...flags, isMobile: true }))
 		const desktop = enter("org_parity")(init(flags))
-		expectVitest((mobile.commands ?? []).map((command) => command.name)).toEqual(["LoadTenant"])
+		expectVitest((mobile.commands ?? []).map((command) => command.name)).toEqual([])
 		expectVitest(mobile.model.hasRequestedSidebarData).toBe(false)
 		expectVitest((desktop.commands ?? []).map((command) => command.name)).toContain("LoadInfraPresence")
 		expectVitest(desktop.model.hasRequestedSidebarData).toBe(true)

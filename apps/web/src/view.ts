@@ -18,7 +18,6 @@ import {
 import * as SignIn from "./page/sign-in"
 import { AppRoute, hrefOf, isPublicRoute } from "./route"
 import * as Shell from "./shell"
-import * as ChatSheet from "./page/chat/sheet"
 import * as ToastView from "./ui/toast-view"
 
 /** Placeholder for a route that is not ported yet: its tag and the session's org. */
@@ -55,8 +54,8 @@ const toShellMessage = (message: Shell.Message) => Message.GotShellMessage({ mes
 
 const toPageMessage = (message: PageMessage) => Message.GotPageMessage({ message })
 
-// One cache slot per position the page renders at: inside the shell, inside the bare shell, alone.
-type PagePosition = "shell" | "bare-shell" | "bare"
+// One cache slot per position the page renders at: inside the shell, or alone.
+type PagePosition = "shell" | "bare"
 const lazyPage = createKeyedLazy()
 
 const renderPage = (
@@ -163,7 +162,7 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 	]
 }
 
-/** The shell's overlay layers (mobile nav sheet, open menu, chat sheet), after the frame. */
+/** The shell's overlay layers (mobile nav sheet, open menu, palette, shortcuts), after the frame. */
 const shellOverlays = (
 	model: Model,
 	h: HtmlBuilder<Message>,
@@ -198,34 +197,7 @@ const shellOverlays = (
 		toParentMessage: toShellMessage,
 		viewInputs: { currentPath, clerk },
 	}),
-	h.submodel({
-		slotId: "chat-sheet",
-		model: model.chatSheet,
-		view: ChatSheet.view,
-		toParentMessage: (message: ChatSheet.Message) => Message.GotChatSheetMessage({ message }),
-		viewInputs: { timeZone: model.timeZone },
-	}),
 ]
-
-/** `/chat`: the shell's rail held collapsed around the page, no top bar (the page's own layout). */
-const bareShellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
-	const currentPath = hrefOf(model.route).split("?")[0] ?? "/"
-	const clerk = shellClerkOf(model)
-	return [
-		h.submodel({
-			slotId: "shell-bare-frame",
-			model: model.shell,
-			view: Shell.bareFrameView,
-			toParentMessage: toShellMessage,
-			viewInputs: {
-				currentPath,
-				clerk,
-				page: () => Option.getOrElse(lazyPageView(model, h, "bare-shell"), () => h.empty),
-			},
-		}),
-		...shellOverlays(model, h, currentPath, clerk),
-	]
-}
 
 /** An onboarding screen open for this route, outside the shell. */
 const onboardingView = (model: Model, h: HtmlBuilder<Message>): Option.Option<Html> =>
@@ -252,7 +224,6 @@ const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =
 							onSome: (screen) => [screen],
 						})
 					: [signInView(model, h)],
-			Chat: () => bareShellRoute(model, h),
 		},
 		() =>
 			Option.match(onboardingView(model, h), {
@@ -272,7 +243,7 @@ const content = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 		Resolving: () => [bootSplash(h)],
 		SignedOut: () => (isPublicRoute(model.route) ? routeView(model, h) : []),
 		// `ClerkReverseRedirects` holds the app on the splash until the plan is known.
-		// `WrongRegionScreen` (an onboarding screen) replaces every route, `/chat` included.
+		// `WrongRegionScreen` (an onboarding screen) replaces every route.
 		SignedIn: () =>
 			Option.exists(planGateOf(model), (gate) => gate.isSplash)
 				? [bootSplash(h)]

@@ -22,7 +22,7 @@ const USER = Schema.decodeUnknownSync(UserId)("user_chat")
 const INTERNAL_TOKEN = "chat-internal-service-token"
 const connectorId = Schema.decodeUnknownSync(ChatConnectorId)("testchat")
 const conversationKey = Schema.decodeUnknownSync(ChatConversationKey)("c1")
-const SESSION_PATH = `/api/chat/sessions/${encodeURIComponent(`${ORG}:quick`)}`
+const SESSION_PATH = `/api/chat/sessions/${encodeURIComponent(`${ORG}:inv-1`)}`
 
 const config = ConfigProvider.layer(
 	ConfigProvider.fromUnknown({
@@ -233,7 +233,7 @@ describe("ChatSessionsRouter", () => {
 		})
 	})
 
-	it.effect("refuses to post into a connector conversation", () => {
+	it.effect("hides a conversation that is not an investigation's, such as a connector thread", () => {
 		// Any member of the org could otherwise drop a message into a channel thread and have the
 		// answer metered as the connector, with nobody in the channel expecting it.
 		const testDb = createTestDb(trackedDbs)
@@ -261,7 +261,7 @@ describe("ChatSessionsRouter", () => {
 							),
 						),
 					)
-					assert.strictEqual(response.status, 403)
+					assert.strictEqual(response.status, 404)
 					assert.strictEqual(turns.length, 0)
 				}),
 			)

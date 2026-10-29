@@ -10,7 +10,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { Effect, Fiber, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import {
-	buildAlertChatUrl,
+	buildAlertRuleUrl,
 	buildDiscordEmbedsFromTemplate,
 	buildSummaryLine,
 	buildTemplateContext,
@@ -86,7 +86,7 @@ const rangeContext: TemplateRenderContext = {
 }
 
 const LINK = "https://web.localhost/alerts"
-const CHAT = "https://web.localhost/chat?mode=alert"
+const CHAT = "https://web.localhost/alerts/rule_1"
 const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 /** Dispatch deps for non-email destinations — email sends must not happen. */
@@ -97,16 +97,22 @@ const noEmailDeps: EffectTransportDeps = {
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
 }
 
-describe("buildAlertChatUrl (Ask Maple AI link)", () => {
-	it("targets the incident diagnosis page when an incident exists", () => {
-		const url = buildAlertChatUrl("https://web.localhost", baseContext)
-		assert.isTrue(url.startsWith("https://web.localhost/alerts/incidents/inc_1?alert="), url)
+describe("buildAlertRuleUrl", () => {
+	it("opens the rule page", () => {
+		assert.equal(
+			buildAlertRuleUrl("https://web.localhost", baseContext),
+			"https://web.localhost/alerts/rule_1",
+		)
 	})
 
-	it("falls back to the chat surface when there is no incident row", () => {
-		const url = buildAlertChatUrl("https://web.localhost", { ...baseContext, incidentId: null })
-		assert.isTrue(url.startsWith("https://web.localhost/chat?"), url)
-		assert.include(url, "mode=alert")
+	it("encodes a rule id that is not URL-safe", () => {
+		const url = buildAlertRuleUrl("https://web.localhost", { ruleId: "a/b?c", eventType: "trigger" })
+		assert.equal(url, "https://web.localhost/alerts/a%2Fb%3Fc")
+	})
+
+	it("opens the alerts list for a test notification, whose rule does not exist", () => {
+		const url = buildAlertRuleUrl("https://web.localhost", { ...baseContext, eventType: "test" })
+		assert.equal(url, "https://web.localhost/alerts")
 	})
 })
 
@@ -221,7 +227,7 @@ describe("buildSummaryLine", () => {
 
 describe("buildDiscordEmbedsFromTemplate", () => {
 	it("maps title/body to the embed and color-codes by severity", () => {
-		const [embed] = buildDiscordEmbedsFromTemplate("T", "B", baseContext, LINK, CHAT) as Array<{
+		const [embed] = buildDiscordEmbedsFromTemplate("T", "B", baseContext, LINK) as Array<{
 			title: string
 			description: string
 			color: number
@@ -481,7 +487,7 @@ describe("dispatchDelivery", () => {
 			assert.include(sent[0]!.subject, "Test")
 			assert.include(sent[0]!.html, "Test alert")
 			assert.include(sent[0]!.html, LINK)
-			assert.include(sent[0]!.html, CHAT)
+			assert.notInclude(sent[0]!.html, CHAT)
 			assert.strictEqual(result.providerMessage, "Emailed 2 members")
 			assert.strictEqual(result.responseCode, null)
 		}),

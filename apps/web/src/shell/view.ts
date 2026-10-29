@@ -67,10 +67,9 @@ const desktopSidebar = (
 	model: Model,
 	currentPath: string,
 	clerk: ShellClerk | null,
-	isOpen = model.isSidebarOpen,
 ): Html => {
 	const isInstant = model.isSidebarToggleInstant
-	if (isOpen)
+	if (model.isSidebarOpen)
 		return sidebarDesktop(
 			h,
 			"expanded",
@@ -200,24 +199,6 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 		model.isMobile && model.isMobileNavOpen ? [h.AriaHidden(true)] : [],
 	)
 })
-
-export type BareFrameInputs = Readonly<{ currentPath: string; clerk: ShellClerk | null; page: () => Html }>
-
-/**
- * `/chat`'s own `SidebarProvider open={false} className="h-svh overflow-hidden"`: the rail held
- * collapsed (its toggle does nothing there) and the page straight in the inset, no top bar.
- */
-export const bareFrameView = Submodel.defineView<Model, Message, BareFrameInputs>((model, inputs, h) =>
-	sidebarWrapper(
-		h,
-		[
-			...(model.isMobile ? [] : [desktopSidebar(h, model, inputs.currentPath, inputs.clerk, false)]),
-			sidebarInset(h, [inputs.page()]),
-		],
-		model.isMobile && model.isMobileNavOpen ? [h.AriaHidden(true)] : [],
-		"h-svh overflow-hidden",
-	),
-)
 
 const mobileNav = (
 	h: HtmlBuilder<Message>,

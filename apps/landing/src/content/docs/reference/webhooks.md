@@ -54,7 +54,7 @@ Respond with any `2xx` within **15 seconds**. The response body is ignored.
 	"template": null,
 	"chart": { "url": "https://…" },
 	"linkUrl": "https://app.maple.dev/alerts/…",
-	"chatUrl": "https://app.maple.dev/chat?…",
+	"chatUrl": "https://app.maple.dev/alerts/rule_…",
 	"sentAt": "2026-09-25T09:14:00.000Z",
 	"event": {
 		"specversion": "1.0",
@@ -84,7 +84,7 @@ Respond with any `2xx` within **15 seconds**. The response body is ignored.
 | `template`             | The rule's rendered notification template, or `null`                                                       |
 | `chart`                | `url` of a chart image and/or a `sparkline`, or `null`                                                     |
 | `linkUrl`              | The incident in the Maple dashboard                                                                        |
-| `chatUrl`              | Opens Maple's AI chat with the incident as context                                                         |
+| `chatUrl`              | Opens the alert rule in Maple, or the alerts list for a test                                               |
 | `sentAt`               | ISO-8601 time the event was first generated. Retries keep the original value.                              |
 | `event`                | The same event as a [CloudEvents 1.0](https://cloudevents.io) envelope, for routers that speak CloudEvents |
 
@@ -92,7 +92,7 @@ The body is identical for every destination's webhook, regardless of the rule's 
 
 ### Error issue notifications
 
-A destination listed in your organization's error notification policy (set with the `update_error_notification_policy` MCP tool or the API) also receives error issue events: a new issue, a regression, a resolve, and optionally workflow changes and claims. They carry the same headers and a smaller body: `eventType`, `incidentId`, `incidentStatus`, `dedupeKey`, `rule`, `observed`, `linkUrl`, `chatUrl` and `sentAt`, without `event`, `template` or `chart`. Here `rule.id` is the issue ID, `rule.name` reads `<ExceptionType> in <service>`, and `observed.value` is the occurrence count. `dedupeKey` starts with `error:`.
+A destination listed in your organization's error notification policy (set with the `update_error_notification_policy` MCP tool or the API) also receives error issue events: a new issue, a regression, a resolve, and optionally workflow changes and claims. They carry the same headers and a smaller body: `eventType`, `incidentId`, `incidentStatus`, `dedupeKey`, `rule`, `observed`, `linkUrl`, `chatUrl` and `sentAt`, without `event`, `template` or `chart`. Here `rule.id` is the issue ID, `rule.name` reads `<ExceptionType> in <service>`, and `observed.value` is the occurrence count. `dedupeKey` starts with `error:`. Both `linkUrl` and `chatUrl` open the issue.
 
 Issues escalated by triage arrive with `eventType: "escalation"` in the body and an extra `escalation` object describing the issue. The `x-maple-event-type` header on these reads `trigger`, so branch on the body's `eventType`.
 

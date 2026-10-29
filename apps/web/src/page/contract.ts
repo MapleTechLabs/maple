@@ -38,7 +38,7 @@ export interface ShellInfraSurfaces {
 
 export interface PageViewInputs {
 	readonly context: PageContext
-	/** `useIsMobile()` (below `md`), for the few layouts that branch on it in JSX (`/chat`). */
+	/** `useIsMobile()` (below `md`), for the few layouts that branch on it in JSX (the trace detail split). */
 	readonly isMobile?: boolean
 	/** `useMediaQuery("max-sm")`, likewise (the analytics chart's narrow margin). */
 	readonly isBelowSm?: boolean
@@ -86,8 +86,6 @@ export const PageOutMessage = defineMessageUnion({
 	},
 	/** The org-global namespace pin (the shell's org menu owns it): set, or cleared with `None`. */
 	RequestedNamespacePin: { maybeNamespace: Schema.Option(Schema.String) },
-	/** A page's own `SidebarTrigger` (`/chat` renders its header without the shell's top bar). */
-	RequestedSidebarToggle: {},
 	/**
 	 * `useInfraSurfaces()` in the page: the sidebar's presence probe and integration statuses. The
 	 * shell owns those reads; below `md` its sidebar is unmounted, so the page is what asks for them.
@@ -179,7 +177,11 @@ export interface PageSpec<Tags extends RouteTag, Model, Message> {
 	 * keeps the page and hands it `blockedNavigation` with where the user was going.
 	 */
 	readonly isBlockingNavigation?: (model: Model) => boolean
-	readonly blockedNavigation?: (model: Model, url: string, context: PageContext) => PageReturn<Model, Message>
+	readonly blockedNavigation?: (
+		model: Model,
+		url: string,
+		context: PageContext,
+	) => PageReturn<Model, Message>
 }
 
 // ERASED PAGE (what the registry and root consume)
@@ -366,11 +368,20 @@ export const definePage = <
 				: Option.none<ReadonlyArray<Command.Command<WrappedType, never, Resources>>>(),
 		update: (slot: PageSlotBase, message: PageMessageBase, context: PageContext) =>
 			isOwnSlot(slot) && isOwnMessage(message) && isForInstance(slot, message)
-				? Option.some(step(slot.key, slot.instance, context, spec.update(slot.model, message.message, context)))
+				? Option.some(
+						step(
+							slot.key,
+							slot.instance,
+							context,
+							spec.update(slot.model, message.message, context),
+						),
+					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		routeChanged: (slot: PageSlotBase, route: AppRoute, context: PageContext) =>
 			isOwnSlot(slot) && ownsRoute(route) && spec.routeChanged
-				? Option.some(step(slot.key, slot.instance, context, spec.routeChanged(slot.model, route, context)))
+				? Option.some(
+						step(slot.key, slot.instance, context, spec.routeChanged(slot.model, route, context)),
+					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		isRevivable: spec.revive !== undefined,
 		/** A parked instance of this route's page, back as `instance`; `None` if it cannot be. */
@@ -388,11 +399,20 @@ export const definePage = <
 			spec.isBlockingNavigation !== undefined &&
 			spec.blockedNavigation !== undefined &&
 			spec.isBlockingNavigation(slot.model)
-				? Option.some(step(slot.key, slot.instance, context, spec.blockedNavigation(slot.model, url, context)))
+				? Option.some(
+						step(
+							slot.key,
+							slot.instance,
+							context,
+							spec.blockedNavigation(slot.model, url, context),
+						),
+					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		contextChanged: (slot: PageSlotBase, context: PageContext) =>
 			isOwnSlot(slot) && spec.contextChanged
-				? Option.some(step(slot.key, slot.instance, context, spec.contextChanged(slot.model, context)))
+				? Option.some(
+						step(slot.key, slot.instance, context, spec.contextChanged(slot.model, context)),
+					)
 				: Option.none<PageStep<SlotType, WrappedType>>(),
 		infraSurfacesSettled: (slot: PageSlotBase, context: PageContext) =>
 			isOwnSlot(slot) && spec.infraSurfacesSettled

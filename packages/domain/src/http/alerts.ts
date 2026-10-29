@@ -612,7 +612,7 @@ export const ALERT_TEMPLATE_VARIABLES: ReadonlyArray<{
 	{ key: "incidentId", description: "Incident id (empty for tests)" },
 	{ key: "incidentStatus", description: "open | resolved" },
 	{ key: "links.app", description: "Deep link to the alert in Maple" },
-	{ key: "links.chat", description: "Deep link to Maple AI for this alert" },
+	{ key: "links.chat", description: "Deep link to the alert rule in Maple" },
 	{ key: "sentAt", description: "ISO timestamp the notification was sent" },
 ]
 

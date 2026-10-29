@@ -30,7 +30,7 @@ const SCROLL_ROWS = Array.from(
 	(_, index) => `span-${String(index + 1).padStart(2, "0")} GET /api/cart`,
 )
 
-/** The chat transcript's user bubble shape (page/chat/kit/view-transcript.ts). */
+/** The chat transcript's user bubble shape (page/investigations/conversation/kit/view-transcript.ts). */
 const USER_BUBBLE = "rounded-lg px-3.5 py-2.5 font-prose text-sm"
 
 const assistantMessage = <M>(h: HtmlBuilder<M>): Html =>

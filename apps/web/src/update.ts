@@ -62,7 +62,6 @@ import { identityOf, isSameIdentity } from "./platform/session-identity"
 import { AppRoute, hrefOf, isPublicRoute, type Redirect, routeRedirect, urlToAppRoute } from "./route"
 import { completeRangeOf, isWithin, withSessionRange } from "./route/session-time-range"
 import * as Shell from "./shell"
-import * as ChatSheet from "./page/chat/sheet"
 import * as OrgSwitcher from "./shell/clerk-org-switcher"
 import { presenceOf } from "./shell/view-nav"
 import * as Toast from "./ui/toast"
@@ -218,15 +217,13 @@ export const pageContextOf = (model: Model): Option.Option<PageContext> =>
 					),
 	})
 
-/** A page's request the shell answers: the namespace pin, or its own sidebar trigger (`/chat`). */
+/** A page's request the shell answers: the namespace pin or its infra surfaces. */
 const shellRequestOf = (out: PageOutMessage): Option.Option<Shell.Message> =>
 	out._tag === "RequestedNamespacePin"
 		? Option.some(Shell.Message.ClickedNamespace({ maybeNamespace: out.maybeNamespace }))
-		: out._tag === "RequestedSidebarToggle"
-			? Option.some(Shell.Message.ClickedPageSidebarTrigger())
-			: out._tag === "RequestedInfraSurfaces"
-				? Option.some(Shell.Message.RequestedInfraSurfaces())
-				: Option.none()
+		: out._tag === "RequestedInfraSurfaces"
+			? Option.some(Shell.Message.RequestedInfraSurfaces())
+			: Option.none()
 
 /** Writes the page slot, lifts its Commands and follows its navigation and shell requests. */
 const applyPage =
@@ -328,7 +325,6 @@ const actOnPageOut = (model: Model, outMessage: Option.Option<PageOutMessage>) =
 					: []),
 			],
 			RequestedNamespacePin: () => [],
-			RequestedSidebarToggle: () => [],
 			RequestedInfraSurfaces: () => [],
 			RequestedToast: () => [],
 			RequestedReconnectOrgCollections: () => [ReconnectOrgCollections()],
@@ -370,47 +366,6 @@ const writePage =
 			],
 		}
 	}
-
-/** The chat sheet's step: its Commands lifted, its toast shown like a page's. */
-const chatSheetOrgOf = (model: Model): string | null =>
-	Session.match(model.session, {
-		Resolving: () => null,
-		SignedOut: () => null,
-		SignedIn: ({ maybeOrgId }) => Option.getOrNull(maybeOrgId),
-	})
-
-/** An org switch or sign-out under the open sheet moves it to the new org, or closes it. */
-const followChatSheetOrg: Step = (model) => {
-	const step = ChatSheet.sessionChanged(model.chatSheet, chatSheetOrgOf(model))
-	return step.model === model.chatSheet
-		? { model }
-		: {
-				model: modifyFields(model, { chatSheet: () => step.model }),
-				commands: Command.mapMessages(step.commands ?? [], (child) =>
-					Message.GotChatSheetMessage({ message: child }),
-				),
-			}
-}
-
-const foldChatSheet = (model: Model, message: ChatSheet.Message) => {
-	const step = ChatSheet.update(model.chatSheet, message, chatSheetOrgOf(model))
-	const next = modifyFields(model, { chatSheet: () => step.model })
-	const commands = Command.mapMessages(step.commands ?? [], (child) =>
-		Message.GotChatSheetMessage({ message: child }),
-	)
-	if (step.outMessage === undefined) return { model: next, commands }
-	const toasted = showPageToast(
-		next,
-		PageOutMessage.RequestedToast({
-			type: step.outMessage.type,
-			title: step.outMessage.title,
-			description: "",
-			timeoutMs: null,
-			action: null,
-		}),
-	)
-	return { model: toasted.model, commands: [...commands, ...toasted.commands] }
-}
 
 /** Route entry or leave: the route's page is built, kept (same key) or dropped. */
 /** `ClerkReverseRedirects` renders a splash or redirects before the route mounts: no page yet. */
@@ -733,12 +688,13 @@ const loadRoute: Step = (model) =>
 		Resolving: () => ({ model }),
 		SignedOut: () => ({ model }),
 		SignedIn: ({ maybeOrgId }) =>
-			// `WrongRegionScreen` replaces the whole frame: no shell, no chat sheet, nothing it reads.
-			Option.isNone(maybeOrgId) || isPublicRoute(model.route) || isWrongRegion(model)
+			// `WrongRegionScreen` replaces the whole frame: no shell, nothing it reads.
+			Option.isNone(maybeOrgId) ||
+			isPublicRoute(model.route) ||
+			isWrongRegion(model) ||
+			!rendersShell(model.route)
 				? { model }
-				: rendersShell(model.route)
-					? foldShellStep(Shell.enter(maybeOrgId.value))(model)
-					: foldShellStep(Shell.enterBare)(model),
+				: foldShellStep(Shell.enter(maybeOrgId.value))(model),
 	})
 
 /**
@@ -876,7 +832,6 @@ export const settle: Step = Update.combine([
 	loadPage,
 	loadOnboarding,
 	syncSessionTimeRange,
-	followChatSheetOrg,
 ])
 
 // SESSION
@@ -1048,7 +1003,6 @@ const foldMessage = (model: Model, message: Message) =>
 		CompletedReconnectOrgCollections: () => ({ model }),
 		CompletedRestoreDashboardWidgets: () => ({ model }),
 		GotPageMessage: ({ message }) => toPage(model, message),
-		GotChatSheetMessage: ({ message }) => foldChatSheet(model, message),
 		GotOnboardingMessage: ({ message }) => updateOnboarding(model, message),
 		IntendedLink: ({ href, isImmediate }) =>
 			Option.match(Preload.intended(model.preload, href), {

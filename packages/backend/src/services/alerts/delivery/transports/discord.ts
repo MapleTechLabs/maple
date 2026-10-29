@@ -10,10 +10,10 @@ export const discordTransport: HttpTransport<Config> = {
 	peerService: "discord",
 	providerLabel: "Discord",
 	render: (input: RenderInput<Config>) => {
-		const { context, templated, linkUrl, chatUrl } = input
+		const { context, templated, linkUrl } = input
 		const embeds = templated
-			? buildDiscordEmbedsFromTemplate(templated.title, templated.body, context, linkUrl, chatUrl)
-			: buildDiscordEmbeds(context, linkUrl, chatUrl)
+			? buildDiscordEmbedsFromTemplate(templated.title, templated.body, context, linkUrl)
+			: buildDiscordEmbeds(context, linkUrl)
 		return {
 			url: input.config.webhookUrl,
 			headers: { "content-type": "application/json" },

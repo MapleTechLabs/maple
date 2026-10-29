@@ -14,7 +14,7 @@ import { HttpClient } from "effect/http"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
 import type { ChatAlertPosterApi } from "./ChatAlertPoster"
-import { buildAlertChatUrl, type DispatchContext as DeliveryDispatchContext } from "./AlertDeliveryDispatch"
+import { buildAlertRuleUrl, type DispatchContext as DeliveryDispatchContext } from "./AlertDeliveryDispatch"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchDestination, DispatchResult } from "./delivery/context"
 import type { LinearDeliveryPort } from "./delivery/Transport"
@@ -114,8 +114,8 @@ export const makeAlertDestinationDelivery = (options: {
 				? `${options.appBaseUrl}/services/${encodeURIComponent(serviceLinkName)}`
 				: `${options.appBaseUrl}/alerts`
 
-	const composeChatUrl = (context: AlertDispatchContext): string =>
-		buildAlertChatUrl(options.appBaseUrl, context)
+	const composeRuleUrl = (context: Pick<AlertDispatchContext, "ruleId" | "eventType">): string =>
+		buildAlertRuleUrl(options.appBaseUrl, context)
 
 	const sendEmail = (to: string, subject: string, html: string) =>
 		options.email
@@ -135,7 +135,7 @@ export const makeAlertDestinationDelivery = (options: {
 			payloadJson,
 			options.runtime.deliveryTimeoutMs(),
 			context.linkUrl,
-			composeChatUrl(context),
+			composeRuleUrl(context),
 			{ sendEmail, postChatAlert: options.postChatAlert, linear: options.linear },
 		).pipe(Effect.provideService(HttpClient.HttpClient, options.httpClient))
 
@@ -196,7 +196,7 @@ export const makeAlertDestinationDelivery = (options: {
 							}
 						: null,
 				linkUrl: context.linkUrl,
-				chatUrl: buildAlertChatUrl(options.appBaseUrl, context),
+				chatUrl: composeRuleUrl(context),
 				sentAt: new Date(context.sentAtMs).toISOString(),
 			} satisfies {
 				readonly event: Result.Result.Success<ReturnType<typeof projectAlertLifecycleEvent>>

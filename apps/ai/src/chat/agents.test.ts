@@ -49,7 +49,7 @@ describe("AGENTS", () => {
 describe("agentForSession", () => {
 	it("maps a session id to its mode's agent", () => {
 		assert.equal(agentForSession(makeChatSessionId("org_1", "tab")).name, "default")
-		assert.equal(agentForSession(makeChatSessionId("org_1", "alert-123")).name, "alert")
+		assert.equal(agentForSession(makeChatSessionId("org_1", "pr-123")).name, "pr-review")
 		assert.equal(agentForSession(makeChatSessionId("org_1", "inv-abc")).name, "investigate")
 		// A connector thread is an ordinary chat conversation; its ORIGIN is what differs.
 		assert.equal(

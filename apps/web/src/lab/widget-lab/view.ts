@@ -147,7 +147,6 @@ const tileContext = (h: H, model: Model, cell: Cell): TileContext<Message> => {
 		sparkline: cell.sparkline,
 		sparklineChart: model.charts[sparkSlot] ?? Chart.init(),
 		onSparklineChart: (message) => Message.GotChartMessage({ slot: sparkSlot, message }),
-		fix: Message.ClickedWidgetAction({ action: "fix" }),
 		errorDetails: (message) =>
 			errorDetailsPopover(h, {
 				slotId: `details-${slot}`,

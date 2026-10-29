@@ -1,5 +1,4 @@
 import { InfraSurfaceLiteral } from "@maple/domain/http"
-import { OrgId } from "@maple/domain"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { defineTaggedUnion } from "foldkit/schema"
@@ -31,8 +30,6 @@ export type Theme = typeof Theme.Type
 export const Message = defineMessageUnion({
 	ClickedSidebarTrigger: {},
 	PressedSidebarShortcut: {},
-	/** `/chat`'s own `SidebarTrigger`: its provider is held closed, so only the mobile sheet opens. */
-	ClickedPageSidebarTrigger: {},
 	/** A page reads `useInfraSurfaces` itself (the infra overview, Kubernetes workloads). */
 	RequestedInfraSurfaces: {},
 	ChangedViewport: { isMobile: Schema.Boolean },
@@ -68,12 +65,7 @@ export const Message = defineMessageUnion({
 	BecameTabVisible: {},
 	CheckedDeployedCommit: { maybeCommit: Schema.Option(Schema.String) },
 	ClickedReload: {},
-	/** The top bar's "Ask Maple AI" (`openGlobalChat`). */
-	ClickedAskMapleAi: {},
-	CompletedOpenGlobalChat: {},
 	CompletedReloadPage: {},
-	SucceededLoadTenant: { orgId: OrgId },
-	FailedLoadTenant: {},
 	SucceededLoadInfraPresence: { orgId: Schema.String, surfaces: Schema.Array(InfraSurfaceLiteral) },
 	FailedLoadInfraPresence: { orgId: Schema.String },
 	SucceededLoadIntegration: { orgId: Schema.String, integration: Integration, isConnected: Schema.Boolean },

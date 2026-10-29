@@ -97,7 +97,6 @@ export const platformFeatures = (): string[] => [
 	m.pricing_unlimited_dashboards(),
 	m.pricing_advanced_alerting(),
 	m.pricing_mcp_server(),
-	m.pricing_ai_chat(),
 	m.pricing_ai_triage(),
 	m.pricing_full_api(),
 ]

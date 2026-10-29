@@ -7,7 +7,6 @@ import { describe, expect, test, vi } from "vitest"
 
 // The shell's favorites listener targets `window` at import; nothing here touches it.
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
-import * as ChatSheet from "./page/chat/sheet"
 import type { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
 import { initCustomer } from "./page/onboarding/plan-gate"
@@ -101,7 +100,6 @@ const SAMPLE_PATHS = [
 	"/replays/session_1",
 	"/share/token_1",
 	"/analytics",
-	"/chat",
 ]
 
 const entered = (path: string): Model =>
@@ -114,7 +112,6 @@ const entered = (path: string): Model =>
 		toasts: Toast.init("toasts"),
 		toastActions: {},
 		toastRootActions: {},
-		chatSheet: ChatSheet.init(),
 		page: null,
 		pageInstances: 0,
 		parkedPages: [],

@@ -8,10 +8,11 @@ order not to break the code; incidents, measurements and retired designs live in
 ## The AI Worker (`maple-ai`)
 
 `apps/ai` hosts every agent surface: the MCP transport and its tools, and the `ChatSession`
-Durable Object, which also runs every investigation's autonomous pass. `apps/api` keeps the
-hostname and forwards `/mcp`, `/api/chat/*` and `/internal/chat/*` to it over a service
-binding, so the OAuth issuer and the RFC 8707 resource identifiers never move off api's
-origin.
+Durable Object, which runs every investigation (its autonomous pass and the follow-up
+conversation on its page), pull request review, and the Slack/Discord bot's threads.
+`apps/api` keeps the hostname and forwards `/mcp`, `/api/chat/*` and `/internal/chat/*` to it
+over a service binding, so the OAuth issuer and the RFC 8707 resource identifiers never move
+off api's origin.
 
 Two things a future change here needs to know:
 

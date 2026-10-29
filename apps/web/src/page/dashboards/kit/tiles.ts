@@ -65,8 +65,6 @@ export type TileContext<M> = Readonly<{
 	onSparklineChart?: (message: Chart.Message) => M
 	/** The board's resolved variables: titles read `$service` as its value (`interpolateDisplayText`). */
 	variables?: VariableValues
-	/** "Fix with AI" on a decode error, when the surface offers it. */
-	fix?: M | null
 	/** "Show last 7 days" on a list wider than the cap, when the surface offers narrowing. */
 	narrowRange?: M | null
 	/** The "Details" popover under a failed tile's message, when the surface renders one. */
@@ -142,7 +140,6 @@ const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
 }
 
 // TILES
-
 
 const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Column, isText: boolean): Html => {
 	const sort = ctx.tableSort
@@ -423,4 +420,3 @@ export const widgetTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Wi
 			return chartWidgetTile(h, ctx, widget, CHART_WIDGETS.chart)
 	}
 }
-

@@ -1,7 +1,6 @@
 import type { AlertIncidentDocument, AlertRulePreviewResponse, AlertRuleDocument } from "@maple/domain/http"
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { decodeAlertContextFromSearchParam } from "../../../components/chat/alert-context"
 import {
 	formatAlertDuration,
 	formatSignalValue,
@@ -34,7 +33,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { severityBadge } from "../shared/badges"
-import { alertsHref, ruleHref } from "../shared/links"
+import { alertsHref } from "../shared/links"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { providerOf } from "../shared/providers"
 import { RULE_CHART_TOKENS, ruleChart } from "../shared/rule-chart"
@@ -266,27 +265,19 @@ const loading = (h: H): Html =>
 		[skeleton(h, "h-[300px] w-full"), skeleton(h, "h-40 w-full")],
 	)
 
-const notFound = (h: H, model: Model): Html => {
-	const ruleId =
-		model.search.alert === undefined
-			? undefined
-			: decodeAlertContextFromSearchParam(model.search.alert)?.ruleId
-	return dashboardPage(h, {}, [
+const notFound = (h: H): Html =>
+	dashboardPage(h, {}, [
 		resourceNotFound(h, {
 			title: "Incident not found",
 			description: "It may have been pruned, or the link is stale.",
-			back:
-				ruleId !== undefined
-					? { href: ruleHref(ruleId), label: "Open the rule" }
-					: { href: alertsHref({}), label: "Back to alerts" },
+			back: { href: alertsHref({}), label: "Back to alerts" },
 		}),
 	])
-}
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const timeZone = inputs.context.timeZone
 	const page = Option.match(incidentViewOf(model), {
-		onNone: () => (model.incidents === null || model.nowMs === null ? loading(h) : notFound(h, model)),
+		onNone: () => (model.incidents === null || model.nowMs === null ? loading(h) : notFound(h)),
 		onSome: (view) => {
 			const now = model.nowMs ?? 0
 			return dashboardPage(

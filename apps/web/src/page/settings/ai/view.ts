@@ -339,9 +339,7 @@ const providerSection = (h: H, model: Model): Html =>
 		{
 			id: "ai-provider-heading",
 			title: "Model provider",
-			description: [
-				"Runs chat, investigations and pull request reviews. Models stay the same either way.",
-			],
+			description: ["Runs investigations and pull request reviews. Models stay the same either way."],
 			framed: false,
 		},
 		AsyncData.matchData(model.key, {

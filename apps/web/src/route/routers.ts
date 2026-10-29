@@ -16,7 +16,6 @@ const WorkloadKind = Search.InfraKubernetesWorkloadParams.fields.kind
 const routers = {
 	Home: pipe(Route.root, search(Search.HomeSearch), Route.mapTo(AppRoute.Home)),
 	Account: pipe(path("account"), search(Search.AccountSearch), Route.mapTo(AppRoute.Account)),
-	Chat: pipe(path("chat"), search(Search.ChatSearch), Route.mapTo(AppRoute.Chat)),
 	CliLogin: pipe(path("cli-login"), search(Search.CliLoginSearch), Route.mapTo(AppRoute.CliLogin)),
 	Connectors: pipe(path("connectors"), search(Search.ConnectorsSearch), Route.mapTo(AppRoute.Connectors)),
 	Developer: pipe(path("developer"), search(Search.DeveloperSearch), Route.mapTo(AppRoute.Developer)),

@@ -19,7 +19,6 @@ export {
 	checklistTicked,
 	connectPollTicked,
 	enter,
-	enterBare,
 	isChecklistCounting,
 	isConnectPolling,
 	routeChanged,
@@ -27,7 +26,6 @@ export {
 } from "./update"
 export {
 	type BreadcrumbEntry,
-	bareFrameView,
 	frameView,
 	menuLayerView,
 	paletteLayerView,

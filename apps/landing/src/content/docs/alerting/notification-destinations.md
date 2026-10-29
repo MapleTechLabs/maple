@@ -93,7 +93,7 @@ To find the ID by hand, post a message in the chat and open `https://api.telegra
 
 When you save, Maple verifies the token and checks that the bot can reach the chat. A valid token pointed at a group the bot was never added to fails at save time, not at the first real alert.
 
-Alerts arrive as a formatted message with **Open in Maple** and **Ask Maple AI** buttons, and the alert chart as the message preview when one is available.
+Alerts arrive as a formatted message with an **Open in Maple** button, and the alert chart as the message preview when one is available.
 
 ## Webhook
 
