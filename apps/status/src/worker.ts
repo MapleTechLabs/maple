@@ -28,7 +28,8 @@ const props = Effect.gen(function* () {
 		main: import.meta.url,
 		...mapleWorkerProps("status", stack),
 		env,
-		// Pages are reachable at `/s/<slug>` here; CF for SaaS custom hostnames will attach in a later PR.
+		// Pages are served at `/s/<slug>`; previews get a domain, prd stays on workers.dev until it has one.
+		domain: stack.domains.status,
 		workersDev: true,
 	}
 })
