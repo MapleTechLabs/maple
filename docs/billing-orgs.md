@@ -47,13 +47,14 @@ caller is an admin of both orgs, that both are in the same data region, and the 
   plan events: billing moved, the customer did not churn. The webhook reads the link under the
   link lock, so it waits for the link to commit before deciding.
 - The member's uptime monitor count moves to the billing org's customer (continuous-use meter),
-  keyed by the link so a retry moves it once. The monitor cap counts the whole pool: the billing
+  sent only by the call that writes the link, so a repeated link moves nothing. The monitor cap counts the whole pool: the billing
   org's monitors and every member's.
 - A billing org's daily spend chart sums its members; `GET /internal/billing/account/usage` gives
   the per-org split from the warehouse.
 
 Unlinking (`DELETE /internal/billing/account/members/:orgId`, by the member or the billing org)
-moves the monitor count back. The member then has no plan and goes through checkout like a new org.
+moves the monitor count back. A plan the member had before linking runs to the end of the period it
+was cancelled at; after that the member has no plan and goes through checkout like a new org.
 
 A billing org cannot be deleted while it has members; a member's link is purged with the member.
 
@@ -68,6 +69,10 @@ A billing org cannot be deleted while it has members; a member's link is purged 
   lock). The org is then unlinked with its plans ending; linking again finishes the job.
 - An org deleted while someone links it, or links to it, can leave a link row to a deleted org.
   The delete checks and removes links under the lock, but the rest of its purge does not.
+- An org unlinked before its own cancelled plan ends gets a cancellation review when that plan
+  expires: the webhook sees no link by then and reads it as churn.
+- A checkout started before linking and paid after it activates a plan on the member's own
+  customer. Nothing cancels it, and the webhook ignores plan changes on linked customers.
 - Links never span regions: usage meters and Postgres rows are per region.
 - Unverified against Autumn: with a downgrade booked, the current plan is already cancelled and is
   skipped, and the scheduled plan is cancelled immediately. If Autumn answers that by un-cancelling

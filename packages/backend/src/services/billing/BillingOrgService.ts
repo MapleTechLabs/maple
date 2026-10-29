@@ -328,6 +328,12 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 								Orm.sql`select pg_advisory_xact_lock(hashtext('org_billing_links'))`,
 							)
 							const current = yield* checkLinkable(db, orgId, payer)
+							// The flag was checked only when no link existed; one removed since must be re-checked.
+							if (existing !== null && current === null) {
+								return yield* new BillingAccountPersistenceError({
+									message: "The billing link changed while linking; try again",
+								})
+							}
 							const monitors = yield* countMonitors(db, orgId)
 							yield* cancelOwnSubscriptions(orgId).pipe(
 								Effect.timeoutOrElse({
@@ -340,7 +346,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 										),
 								}),
 							)
-							if (current !== null) return { row: current, monitors }
+							if (current !== null) return { row: current, monitors, inserted: false }
 							const [inserted] = yield* db.run(
 								PG.insertInto(OrgBillingLinks)
 									.values({
@@ -351,7 +357,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 									})
 									.returning(),
 							)
-							return { row: inserted ?? null, monitors }
+							return { row: inserted ?? null, monitors, inserted: true }
 						}),
 					),
 				)
@@ -363,11 +369,15 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				}
 				yield* forgetOrg(orgId)
 
-				yield* trackMonitorMove(orgId, written.monitors, {
-					from: orgId,
-					to: payer,
-					key: `billing_link:${orgId}:${row.createdAt}`,
-				})
+				// Only the call that wrote the link moves the count: a repeat weeks later would count
+				// today's monitors again under a key Autumn may have forgotten.
+				if (written.inserted) {
+					yield* trackMonitorMove(orgId, written.monitors, {
+						from: orgId,
+						to: payer,
+						key: `billing_link:${orgId}:${row.createdAt}`,
+					})
+				}
 				yield* Effect.logInfo("Org billing linked").pipe(
 					Effect.annotateLogs({ orgId, billingOrgId: payer, userId: input.userId }),
 				)

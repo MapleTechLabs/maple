@@ -185,6 +185,12 @@ const FetchOrgChoices = Command.define("FetchBillingOrgChoices", {
 const isLinkRejected = Schema.is(BillingLinkRejectedError)
 
 /** A refusal keeps the server's sentence for the person who asked; anything else is a plain failure. */
+/** Above the server's 10s budget for cancelling the org's own plans, plus a wait on the link lock. */
+const LINK_TIMEOUT = Duration.seconds(30)
+
+const withinLinkDeadline = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+	Effect.timeoutOrElse(effect, { duration: LINK_TIMEOUT, orElse: () => Effect.fail(NetworkErrorBody) })
+
 const toLinkFailure = (error: unknown) => ({
 	rejection: isLinkRejected(error) ? error.message : null,
 	failure: toLoadFailure(error),
@@ -197,6 +203,7 @@ const Link = Command.define("LinkBillingOrg", {
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.billing.linkBillingOrg({ payload: new LinkBillingOrgRequest({ billingOrgId }) }),
 		).pipe(
+			withinLinkDeadline,
 			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLinkFailure),
 			Effect.result,
@@ -211,6 +218,7 @@ const Unlink = Command.define("UnlinkBillingOrg", {
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.billing.unlinkBillingOrg({ params: { orgId } }),
 		).pipe(
+			withinLinkDeadline,
 			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLinkFailure),
 			Effect.result,

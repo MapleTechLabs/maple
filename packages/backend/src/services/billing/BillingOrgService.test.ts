@@ -277,7 +277,7 @@ describe("BillingOrgService", () => {
 		)
 	})
 
-	it.effect("serialises concurrent links: one cancel, one link, one monitor move", () => {
+	it.effect("two links at once make one cancel, one link and one monitor move", () => {
 		const world = makeWorld({
 			subscriptions: new Map([[MEMBER, [{ planId: "startup", status: "active" }]]]),
 		})
@@ -295,7 +295,15 @@ describe("BillingOrgService", () => {
 					(yield* service.members(PAYER)).map((row) => row.orgId),
 					[MEMBER],
 				)
+				assert.deepStrictEqual(
+					world.tracked.filter((track) => track.feature === "uptime_monitors"),
+					[
+						{ customer: MEMBER, feature: "uptime_monitors", value: -1 },
+						{ customer: PAYER, feature: "uptime_monitors", value: 1 },
+					],
+				)
 			}),
+			(testDb) => seedOrgRow(testDb, "uptime_monitors", "org_id", MEMBER).pipe(Effect.orDie),
 		)
 	})
 
@@ -312,9 +320,7 @@ describe("BillingOrgService", () => {
 				assert.deepStrictEqual(monitorMoves, [
 					{ customer: MEMBER, feature: "uptime_monitors", value: -2 },
 					{ customer: PAYER, feature: "uptime_monitors", value: 2 },
-					// The retried link sends the same keyed moves again; Autumn drops the repeats.
-					{ customer: MEMBER, feature: "uptime_monitors", value: -2 },
-					{ customer: PAYER, feature: "uptime_monitors", value: 2 },
+					// The repeated link finds the row and moves nothing.
 					{ customer: PAYER, feature: "uptime_monitors", value: -2 },
 					{ customer: MEMBER, feature: "uptime_monitors", value: 2 },
 				])

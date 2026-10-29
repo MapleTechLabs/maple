@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use maple_ingest::metrics;
 use moka::future::Cache;
 use reqwest::Client;
 use serde::Serialize;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tracing::{debug, error, info, warn, Instrument};
 use uuid::Uuid;
@@ -145,7 +146,11 @@ impl BillingOrgLookup for NoBillingLinks {
 #[derive(Clone)]
 pub(crate) struct AutumnTracker {
     tx: mpsc::UnboundedSender<UsageEvent>,
+    /// Taken by the first `shutdown`; every clone shares it.
+    stop: Arc<Mutex<Option<FlushLoopHandle>>>,
 }
+
+type FlushLoopHandle = (oneshot::Sender<()>, JoinHandle<()>);
 
 #[derive(Serialize)]
 struct TrackRequest<'a> {
@@ -172,11 +177,31 @@ impl AutumnTracker {
             api_url,
             billing,
         };
-        tokio::spawn(flush_loop(rx, flusher, flush_interval));
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let task = tokio::spawn(flush_loop(rx, stop_rx, flusher, flush_interval));
 
         info!(flush_interval_secs, "Autumn usage tracker started");
 
-        Self { tx }
+        Self {
+            tx,
+            stop: Arc::new(Mutex::new(Some((stop_tx, task)))),
+        }
+    }
+
+    /// Sends what is still pending and waits for it, up to `deadline`. The
+    /// loop never ends on its own: `AppState` keeps a sender alive until exit.
+    pub(crate) async fn shutdown(&self, deadline: Duration) {
+        let Some((stop, task)) = self.stop.lock().ok().and_then(|mut slot| slot.take()) else {
+            return;
+        };
+        // Err only means the loop already ended; the join below still waits for it.
+        stop.send(()).ok();
+        if tokio::time::timeout(deadline, task).await.is_err() {
+            error!(
+                deadline_secs = deadline.as_secs(),
+                "Autumn final flush hit its deadline; pending usage was not sent"
+            );
+        }
     }
 
     pub(crate) fn track(&self, org_id: &str, feature_id: &'static str, value: f64) {
@@ -241,6 +266,7 @@ struct UsageFlusher {
 )]
 async fn flush_loop(
     mut rx: mpsc::UnboundedReceiver<UsageEvent>,
+    mut stop: oneshot::Receiver<()>,
     flusher: UsageFlusher,
     flush_interval: Duration,
 ) {
@@ -288,41 +314,56 @@ async fn flush_loop(
                 metrics::autumn_pending_gb(total_pending);
             }
 
-            event = rx.recv() => {
-                if let Some(event) = event {
-                    let pending = accumulator
-                        .entry((event.org_id, event.feature_id))
-                        .or_insert_with(|| PendingUsage::new(0.0));
-                    if pending.customer_id.is_some() {
-                        pending.queued_value += event.value;
-                    } else {
-                        pending.value += event.value;
-                    }
-                } else {
-                    // Channel closed, do a final flush attempt
-                    if !accumulator.is_empty() {
-                        info!(
-                            pending_entries = accumulator.len(),
-                            "Autumn tracker shutting down, attempting final flush"
-                        );
-                        flusher.flush(&mut accumulator).await;
-                    }
-                    // Not billed to the org's own id: a sub-org has no plan of its own. Logged
-                    // one entry per line so the usage can be tracked by hand.
-                    for ((org_id, feature_id), pending) in &accumulator {
-                        error!(
-                            org_id = %org_id,
-                            feature_id,
-                            value = pending.total(),
-                            billing_org_id = pending.customer_id.as_deref().unwrap_or(""),
-                            idempotency_key = %pending.idempotency_key,
-                            "Autumn usage dropped at shutdown"
-                        );
-                    }
-                    break;
+            _ = &mut stop => {
+                while let Ok(event) = rx.try_recv() {
+                    accumulate(&mut accumulator, event);
                 }
+                break;
+            }
+
+            event = rx.recv() => {
+                let Some(event) = event else { break };
+                accumulate(&mut accumulator, event);
             }
         }
+    }
+
+    // A send re-queues usage that arrived behind a sealed batch, so a few
+    // passes are needed before everything has gone out.
+    for _ in 0..3 {
+        if accumulator.is_empty() {
+            break;
+        }
+        info!(
+            pending_entries = accumulator.len(),
+            "Autumn tracker shutting down, attempting final flush"
+        );
+        if !flusher.flush(&mut accumulator).await {
+            break;
+        }
+    }
+    // Not billed to the org's own id: a sub-org has no plan of its own. Logged
+    // one entry per line so the usage can be tracked by hand.
+    for ((org_id, feature_id), pending) in &accumulator {
+        error!(
+            org_id = %org_id,
+            feature_id,
+            value = pending.total(),
+            billing_org_id = pending.customer_id.as_deref().unwrap_or(""),
+            idempotency_key = %pending.idempotency_key,
+            "Autumn usage dropped at shutdown"
+        );
+    }
+}
+
+fn accumulate(accumulator: &mut HashMap<AccumulatorKey, PendingUsage>, event: UsageEvent) {
+    let pending = accumulator
+        .entry((event.org_id, event.feature_id))
+        .or_insert_with(|| PendingUsage::new(0.0));
+    if pending.customer_id.is_some() {
+        pending.queued_value += event.value;
+    } else {
+        pending.value += event.value;
     }
 }
 
@@ -1258,6 +1299,24 @@ mod tests {
         assert_eq!(first["feature_id"], "logs");
         assert_eq!(first_api_version.as_deref(), Some(AUTUMN_API_VERSION));
         assert_eq!(second_api_version.as_deref(), Some(AUTUMN_API_VERSION));
+    }
+
+    #[tokio::test]
+    async fn shutdown_sends_usage_still_pending() {
+        let (api_url, mut rx) = spawn_autumn_stub(StatusCode::OK).await;
+        // An interval long enough that only the shutdown can send it.
+        let tracker = AutumnTracker::spawn(
+            "sk_test".to_owned(),
+            &api_url,
+            3600,
+            BillingOrgResolver::unlinked(),
+        );
+        tracker.track("org_shutdown", "logs", 4.0);
+        tracker.shutdown(Duration::from_secs(5)).await;
+
+        let (sent, _) = rx.try_recv().expect("the shutdown flush sent the usage");
+        assert_eq!(sent["customer_id"], "org_shutdown");
+        assert_eq!(sent["value"], 4.0);
     }
 
     #[tokio::test]

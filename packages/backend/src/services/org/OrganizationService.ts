@@ -574,7 +574,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 						}),
 					),
 				)
-				yield* purgeOrgScopedRows(orgId)
+				// Before the purge: a failed purge retried finds no link and could not give the count back.
 				if (link !== undefined && monitorCount > 0) {
 					yield* trackFeatureUsage({
 						customerId: ownBillingCustomer(link.billingOrgId),
@@ -583,6 +583,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 						idempotencyKey: `org_delete:${orgId}:uptime_monitors`,
 					}).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 				}
+				yield* purgeOrgScopedRows(orgId)
 				yield* deleteClerkOrganization(orgId)
 				return new DeleteOrganizationResponse({ deleted: true })
 			})

@@ -2965,6 +2965,8 @@ async fn main() {
         )
     });
 
+    let shutdown_tracker = autumn_tracker.clone();
+
     // A configured Autumn account is the billing authority. Native balance
     // checks and customer controls must not be bypassable by a second flag.
     let autumn_entitlements = config.autumn_secret_key.as_ref().map(|key| {
@@ -3237,6 +3239,11 @@ async fn main() {
                 "Shipped the undrained WAL tail to the object store"
             );
         }
+    }
+
+    // Before telemetry shuts down, so a "dropped at shutdown" line still ships.
+    if let Some(tracker) = &shutdown_tracker {
+        tracker.shutdown(AUTUMN_SHUTDOWN_DEADLINE).await;
     }
 
     // Counts since the last periodic flush; best effort like the flusher itself.
@@ -9410,6 +9417,8 @@ impl KeyStore for PostgresKeyStore {
 
 /// How long a resolved billing org is reused before `org_billing_links` is re-read.
 const BILLING_ORG_CACHE_TTL: Duration = Duration::from_secs(60);
+/// Long enough for one flush pass of lookups and sends; the task's stop timeout is longer.
+const AUTUMN_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(10);
 
 /// Feeds the Autumn billing resolver from the key store.
 struct KeyStoreBillingLookup(Arc<dyn KeyStore>);
