@@ -13,6 +13,7 @@ import {
 	StatusPageUpdateSource,
 } from "../../primitives"
 import {
+	DEFAULT_STATUS_PAGE_THEME,
 	StatusPageThemeAppearance,
 	StatusPageThemeFont,
 	StatusPageThemePreset,
@@ -398,6 +399,193 @@ const StatusPageComponentList = ListOf(V2StatusPageComponent).annotate({
 	title: "Status page component list",
 	description: "A page's components in display order.",
 })
+
+// --- Config document ---
+
+const configExample = {
+	name: "Acme Status",
+	slug: "acme-status",
+	description: "Live status of Acme's API and dashboard.",
+	website_url: "https://acme.example",
+	logo_url: null,
+	show_powered_by: true,
+	auto_incidents: "draft",
+	theme: themeExample,
+	components: [
+		{
+			id: "stc_YofPTrK9782DWwcnXhpcCw",
+			name: "API",
+			description: null,
+			group: null,
+			monitor_id: "upm_YofPTrK9782DWwcnXhpcCw",
+			manual_status: null,
+			show_uptime: true,
+		},
+		{ name: "Docs", group: "Websites" },
+	],
+} as const
+
+export const StatusPageConfigTheme = Schema.Struct({
+	preset: Schema.optionalKey(themeFields.preset),
+	appearance: Schema.optionalKey(themeFields.appearance),
+	accent: Schema.optionalKey(themeFields.accent),
+	background: Schema.optionalKey(themeFields.background),
+	text: Schema.optionalKey(themeFields.text),
+	card: Schema.optionalKey(themeFields.card),
+	border: Schema.optionalKey(themeFields.border),
+	radius: Schema.optionalKey(themeFields.radius),
+	font: Schema.optionalKey(themeFields.font),
+}).annotate({
+	identifier: "StatusPageConfigTheme",
+	title: "Status page config theme",
+	description: "The page theme. Omitted fields take the default theme's value.",
+	examples: [wireExample(themeExample)],
+})
+
+export const StatusPageConfigComponent = Schema.Struct({
+	id: Schema.optionalKey(
+		StatusPageComponentPublicId.annotate({
+			description: "An existing component of this page (`stc_…`) to update. Omit to add a new one.",
+		}),
+	),
+	name: NonEmptyString.annotate({ examples: ["API"] }),
+	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	group: Schema.optionalKey(
+		Schema.NullOr(Schema.String).annotate({ description: "Heading the component is listed under." }),
+	),
+	monitor_id: Schema.optionalKey(
+		Schema.NullOr(UptimeMonitorPublicId).annotate({
+			description: "The uptime monitor (`upm_…`) driving its status, or `null`.",
+		}),
+	),
+	manual_status: Schema.optionalKey(Schema.NullOr(componentStatusField)),
+	show_uptime: Schema.optionalKey(
+		Schema.Boolean.annotate({ description: "Whether the page shows its uptime bars. Default `true`." }),
+	),
+}).annotate({
+	identifier: "StatusPageConfigComponent",
+	title: "Status page config component",
+	description: "One component; its place in the list is its position on the page.",
+})
+export type StatusPageConfigComponent = Schema.Schema.Type<typeof StatusPageConfigComponent>
+
+export const StatusPageConfig = Schema.Struct({
+	name: NonEmptyString.annotate({ description: "Page title.", examples: ["Acme Status"] }),
+	slug: slugField,
+	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	website_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	logo_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	show_powered_by: Schema.optionalKey(
+		Schema.Boolean.annotate({ description: "Whether the page credits Maple. Default `true`." }),
+	),
+	auto_incidents: Schema.optionalKey(autoIncidentsField),
+	theme: Schema.optionalKey(StatusPageConfigTheme),
+	components: Schema.Array(StatusPageConfigComponent).annotate({
+		description:
+			"Every component, in display order. Listed with an `id` updates it, without one adds it, and a component left out is deleted.",
+	}),
+}).annotate({
+	identifier: "StatusPageConfig",
+	title: "Status page config",
+	description:
+		"A whole status page as one document: its settings, theme and components, without incidents, the break-glass token or publish state. Applying it replaces the page; omitted optional fields take their defaults.",
+	examples: [wireExample(configExample)],
+})
+export type StatusPageConfig = Schema.Schema.Type<typeof StatusPageConfig>
+
+/** A config with every default filled in, the shape a read returns. */
+export const normalizeStatusPageConfig = (config: StatusPageConfig) => ({
+	name: config.name,
+	slug: config.slug,
+	description: config.description ?? null,
+	website_url: config.website_url ?? null,
+	logo_url: config.logo_url ?? null,
+	show_powered_by: config.show_powered_by ?? true,
+	auto_incidents: config.auto_incidents ?? "off",
+	theme: { ...DEFAULT_STATUS_PAGE_THEME, ...config.theme },
+	components: config.components.map((component) => ({
+		...(component.id === undefined ? undefined : { id: component.id }),
+		name: component.name,
+		description: component.description ?? null,
+		group: component.group ?? null,
+		monitor_id: component.monitor_id ?? null,
+		manual_status: component.manual_status ?? null,
+		show_uptime: component.show_uptime ?? true,
+	})),
+})
+
+const PAGE_CONFIG_FIELDS = [
+	"name",
+	"slug",
+	"description",
+	"website_url",
+	"logo_url",
+	"show_powered_by",
+	"auto_incidents",
+	"theme",
+] as const
+
+const COMPONENT_CONFIG_FIELDS = [
+	"name",
+	"description",
+	"group",
+	"monitor_id",
+	"manual_status",
+	"show_uptime",
+] as const
+
+export interface StatusPageConfigChanges {
+	readonly fields: ReadonlyArray<(typeof PAGE_CONFIG_FIELDS)[number]>
+	readonly created: ReadonlyArray<string>
+	readonly updated: ReadonlyArray<string>
+	readonly deleted: ReadonlyArray<string>
+	readonly reordered: boolean
+	/** Ids listed that are not components of the page, or listed twice: the apply refuses both. */
+	readonly unknownIds: ReadonlyArray<StatusPageComponentId>
+	readonly duplicateIds: ReadonlyArray<StatusPageComponentId>
+}
+
+const sameValue = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
+
+/** What applying `next` over the page's current config would change; components by name. */
+export const diffStatusPageConfig = (
+	current: StatusPageConfig,
+	next: StatusPageConfig,
+): StatusPageConfigChanges => {
+	const before = normalizeStatusPageConfig(current)
+	const after = normalizeStatusPageConfig(next)
+	const existing = new Map(
+		before.components.flatMap((component) =>
+			component.id === undefined ? [] : [[component.id, component] as const],
+		),
+	)
+	const listedIds = after.components.flatMap((component) =>
+		component.id === undefined ? [] : [component.id],
+	)
+	const listed = new Set(listedIds)
+	const keptOrder = listedIds.filter((id) => existing.has(id))
+	return {
+		fields: PAGE_CONFIG_FIELDS.filter((field) => !sameValue(before[field], after[field])),
+		created: after.components.filter((component) => component.id === undefined).map((c) => c.name),
+		updated: after.components.flatMap((component) => {
+			const previous = component.id === undefined ? undefined : existing.get(component.id)
+			if (previous === undefined) return []
+			const changed = COMPONENT_CONFIG_FIELDS.some(
+				(field) => !sameValue(previous[field], component[field]),
+			)
+			return changed ? [component.name] : []
+		}),
+		deleted: before.components
+			.filter((component) => component.id !== undefined && !listed.has(component.id))
+			.map((component) => component.name),
+		reordered: !sameValue(
+			keptOrder,
+			[...existing.keys()].filter((id) => listed.has(id)),
+		),
+		unknownIds: [...listed].filter((id) => !existing.has(id)),
+		duplicateIds: [...listed].filter((id) => listedIds.indexOf(id) !== listedIds.lastIndexOf(id)),
+	}
+}
 
 // --- Incidents ---
 

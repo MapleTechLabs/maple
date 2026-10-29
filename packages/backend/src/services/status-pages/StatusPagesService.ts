@@ -26,6 +26,12 @@ import {
 	type StatusPageRecord,
 } from "@maple/domain/http"
 import {
+	normalizeStatusPageConfig,
+	StatusPageComponentPublicId,
+	type StatusPageConfig,
+	UptimeMonitorPublicId,
+} from "@maple/domain/http/v2"
+import {
 	StatusPageComponentId,
 	StatusPageId,
 	StatusPageIncidentId,
@@ -220,6 +226,15 @@ export interface StatusPagesServiceApi {
 		orgId: OrgId,
 		incidentId: StatusPageIncidentId,
 	) => Effect.Effect<StatusPageIncidentId, IncidentError>
+	/** The page's settings, theme and components as one document. */
+	readonly getConfig: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<StatusPageConfig, PageError>
+	/** Replaces the page with `config` in one transaction: all of it applies, or none of it. */
+	readonly applyConfig: (
+		orgId: OrgId,
+		pageId: StatusPageId,
+		config: StatusPageConfig,
+		actor: UserId,
+	) => Effect.Effect<StatusPageConfig, PageWriteError | StatusPageSlugTakenError>
 }
 
 const MAX_NAME_LENGTH = 120
@@ -546,6 +561,67 @@ const replaceIncidentComponents = Effect.fnUntraced(function* (
 			componentIds.map((componentId) => ({ incidentId, componentId, orgId })),
 		),
 	)
+})
+
+const encodeComponentId = Schema.encodeSync(StatusPageComponentPublicId)
+const encodeMonitorId = Schema.encodeSync(UptimeMonitorPublicId)
+
+/** Every monitor must belong to the org; the error names the first that does not by its public id. */
+const ensureMonitorsInOrg = Effect.fnUntraced(function* (
+	db: MapleDb,
+	orgId: OrgId,
+	monitorIds: ReadonlyArray<UptimeMonitorId>,
+) {
+	const [first, ...rest] = monitorIds
+	if (first === undefined) return
+	const found = yield* db.run(
+		PG.from(UptimeMonitors)
+			.select("id")
+			.where(($) => [$.orgId.eq(orgId), $.id.in_(first, ...rest)]),
+	)
+	const known = new Set(found.map((row) => row.id))
+	const missing = monitorIds.find((id) => !known.has(id))
+	if (missing !== undefined) return yield* invalid(`Unknown uptime monitor ${encodeMonitorId(missing)}`)
+})
+
+const toConfig = (
+	page: StatusPageRow,
+	components: ReadonlyArray<StatusPageComponentRow>,
+): StatusPageConfig => ({
+	name: page.name,
+	slug: page.slug,
+	description: page.description,
+	website_url: page.websiteUrl,
+	logo_url: page.logoUrl,
+	show_powered_by: page.showPoweredBy,
+	auto_incidents: page.autoIncidents,
+	theme: page.theme,
+	components: components.map((component) => ({
+		id: component.id,
+		name: component.name,
+		description: component.description,
+		group: component.groupName,
+		monitor_id: component.monitorId,
+		manual_status: component.manualStatus,
+		show_uptime: component.showUptime,
+	})),
+})
+
+/** One config component, validated and with its defaults, before any id is checked. */
+const validateConfigComponent = Effect.fnUntraced(function* (
+	component: StatusPageConfig["components"][number],
+	index: number,
+) {
+	const at = `components[${index}]`
+	return {
+		id: component.id ?? null,
+		name: yield* validateName(component.name, `${at}.name`),
+		description: yield* validateText(component.description ?? null, `${at}.description`),
+		groupName: yield* validateText(component.group ?? null, `${at}.group`),
+		monitorId: component.monitor_id ?? null,
+		manualStatus: component.manual_status ?? null,
+		showUptime: component.show_uptime ?? true,
+	}
 })
 
 const newBreakGlassToken = () => `${STATUS_PAGE_BREAK_GLASS_PREFIX}${randomBytes(32).toString("base64url")}`
@@ -1243,7 +1319,152 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				return incidentId
 			})
 
+			const getConfig = Effect.fn("StatusPagesService.getConfig")(function* (
+				orgId: OrgId,
+				pageId: StatusPageId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.status_page.id": pageId })
+				return yield* dbExecute((db) =>
+					Effect.gen(function* () {
+						const page = yield* findPage(db, orgId, pageId)
+						return toConfig(page, yield* selectComponents(db, orgId, pageId))
+					}),
+				)
+			})
+
+			const applyConfig = Effect.fn("StatusPagesService.applyConfig")(function* (
+				orgId: OrgId,
+				pageId: StatusPageId,
+				config: StatusPageConfig,
+				actor: UserId,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"maple.status_page.id": pageId,
+					"maple.status_page.actor": actor,
+					"maple.status_page.config_components": config.components.length,
+				})
+				const input = normalizeStatusPageConfig(config)
+				const name = yield* validateName(input.name, "Name")
+				const slug = yield* validateSlug(input.slug)
+				const description = yield* validateText(input.description, "Description")
+				const websiteUrl = yield* validateHttpsUrl(input.website_url, "Website URL")
+				const logoUrl = yield* validateHttpsUrl(input.logo_url, "Logo URL")
+				const theme = yield* validateTheme(input.theme)
+				const components = yield* Effect.forEach(input.components, validateConfigComponent)
+				const listedIds = components.flatMap((component) =>
+					component.id === null ? [] : [component.id],
+				)
+				const duplicate = listedIds.find((id, index) => listedIds.indexOf(id) !== index)
+				if (duplicate !== undefined)
+					return yield* invalid(
+						`Component ${encodeComponentId(duplicate)} is listed more than once`,
+					)
+				const monitorIds = [
+					...new Set(components.flatMap((c) => (c.monitorId === null ? [] : [c.monitorId]))),
+				]
+				const now = yield* Clock.currentTimeMillis
+				return yield* dbExecuteSlug(slug)((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const current = yield* findPage(db, orgId, pageId)
+							const existing = yield* selectComponents(db, orgId, pageId)
+							const byId = new Map(existing.map((row) => [row.id, row]))
+							const foreign = listedIds.find((id) => !byId.has(id))
+							if (foreign !== undefined)
+								return yield* invalid(
+									`Component ${encodeComponentId(foreign)} is not on this page`,
+								)
+							yield* ensureMonitorsInOrg(db, orgId, monitorIds)
+							yield* ensureSlugFree(db, slug, pageId)
+							// The old slug route stays at the edge until the publisher drains this.
+							if (slug !== current.slug)
+								yield* queueSlugRemoval(db, orgId, pageId, current.slug)
+							yield* db.run(
+								PG.update(StatusPages)
+									.set({
+										name,
+										slug,
+										description,
+										websiteUrl,
+										logoUrl,
+										theme,
+										showPoweredBy: input.show_powered_by,
+										autoIncidents: input.auto_incidents,
+										updatedAt: now,
+									})
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
+							)
+							const listed = new Set(listedIds)
+							const [firstRemoved, ...restRemoved] = existing
+								.filter((row) => !listed.has(row.id))
+								.map((row) => row.id)
+							if (firstRemoved !== undefined)
+								yield* db.run(
+									PG.deleteFrom(StatusPageComponents).where(($) => [
+										$.orgId.eq(orgId),
+										$.pageId.eq(pageId),
+										$.id.in_(firstRemoved, ...restRemoved),
+									]),
+								)
+							yield* Effect.forEach(
+								components,
+								(component, position) => {
+									const fields = {
+										name: component.name,
+										description: component.description,
+										groupName: component.groupName,
+										position,
+										monitorId: component.monitorId,
+										manualStatus: component.manualStatus,
+										showUptime: component.showUptime,
+									}
+									const previous =
+										component.id === null ? undefined : byId.get(component.id)
+									if (previous === undefined)
+										return db.run(
+											PG.insertInto(StatusPageComponents).values({
+												...fields,
+												id: StatusPageComponentId.make(randomUUID()),
+												orgId,
+												pageId,
+												createdAt: now,
+												updatedAt: now,
+											}),
+										)
+									const unchanged =
+										previous.name === fields.name &&
+										previous.description === fields.description &&
+										previous.groupName === fields.groupName &&
+										previous.position === fields.position &&
+										previous.monitorId === fields.monitorId &&
+										previous.manualStatus === fields.manualStatus &&
+										previous.showUptime === fields.showUptime
+									return unchanged
+										? Effect.void
+										: db.run(
+												PG.update(StatusPageComponents)
+													.set({ ...fields, updatedAt: now })
+													.where(($) => [
+														$.orgId.eq(orgId),
+														$.pageId.eq(pageId),
+														$.id.eq(previous.id),
+													]),
+											)
+								},
+								{ discard: true },
+							)
+							yield* bumpPage(db, orgId, pageId)
+							const page = yield* findPage(db, orgId, pageId)
+							return toConfig(page, yield* selectComponents(db, orgId, pageId))
+						}),
+					),
+				)
+			})
+
 			return {
+				getConfig,
+				applyConfig,
 				list,
 				get,
 				create,
