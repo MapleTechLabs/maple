@@ -81,6 +81,8 @@ export const Model = Schema.Struct({
 	updateFailure: Schema.NullOr(LoadFailure),
 	publishingIncidentIds: Schema.Array(StatusPageIncidentId),
 	// Live
+	/** The status Worker's origin; empty hides the public links (no status domain yet). */
+	publicBaseUrl: Schema.String,
 	urlCopy: CopyButton.Model,
 	// Settings
 	/** Edits over the saved page; `null` while the form shows the page as saved. */

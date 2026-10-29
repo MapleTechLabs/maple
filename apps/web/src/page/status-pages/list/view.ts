@@ -15,7 +15,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
 import { emptyActions } from "../../kit/signal-empty-state"
 import { rowLink } from "../../../ui/table"
-import { newStatusPageHref, publicUrl, statusPageHref } from "../shared/commands"
+import { newStatusPageHref, publicAddress, statusPageHref } from "../shared/commands"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_TONE, type StatusPageSummary } from "../shared/derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -95,7 +95,7 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 							),
 							h.p(
 								[h.Class("truncate font-mono text-xs text-muted-foreground")],
-								[publicUrl(page.slug)],
+								[publicAddress(page.slug)],
 							),
 						],
 					),

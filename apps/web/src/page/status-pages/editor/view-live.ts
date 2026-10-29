@@ -15,6 +15,27 @@ import { revealedToken } from "./view-settings"
 
 type H = HtmlBuilder<Message>
 
+/** In place of a link that would not resolve: prd has no status domain yet. */
+export const NO_DOMAIN_NOTE = "Public address appears once a status domain is configured"
+
+/** The header's address: a link to the public page, or the note while there is no status domain. */
+export const addressLine = (h: H, model: Model, page: V2StatusPage): Html => {
+	const url = publicUrl(model.publicBaseUrl, page.slug)
+	return url === null
+		? h.span([h.Class("text-xs text-muted-foreground")], [NO_DOMAIN_NOTE])
+		: h.a(
+				[
+					h.Href(url),
+					h.Target("_blank"),
+					h.Rel("noopener"),
+					h.Class(
+						"font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
+					),
+				],
+				[url],
+			)
+}
+
 const nextStep = (
 	h: H,
 	options: Readonly<{
@@ -42,7 +63,7 @@ const nextStep = (
 	])
 
 export const liveView = (h: H, model: Model, page: V2StatusPage): Html => {
-	const url = publicUrl(page.slug)
+	const url = publicUrl(model.publicBaseUrl, page.slug)
 	const hasToken = page.break_glass_token_suffix !== null
 	return h.div(
 		[h.Class("mx-auto flex w-full max-w-2xl flex-col gap-8 py-6")],
@@ -65,34 +86,49 @@ export const liveView = (h: H, model: Model, page: V2StatusPage): Html => {
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex flex-col gap-2 sm:flex-row sm:items-end")],
-				[
-					h.div(
-						[h.Class("min-w-0 flex-1")],
+			url === null
+				? h.div(
+						[h.Class("flex flex-col gap-1.5")],
 						[
-							copyableField(h, {
-								id: "status-page-public-url",
-								label: "Public address",
-								value: url,
-								copyLabel: "public address",
-								copy: model.urlCopy,
-								toCopyMessage: (message) => Message.GotUrlCopyMessage({ message }),
-							}),
+							h.span([h.Class("text-xs text-muted-foreground")], ["Public address"]),
+							h.p(
+								[
+									h.Class(
+										"rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground",
+									),
+								],
+								[NO_DOMAIN_NOTE],
+							),
+						],
+					)
+				: h.div(
+						[h.Class("flex flex-col gap-2 sm:flex-row sm:items-end")],
+						[
+							h.div(
+								[h.Class("min-w-0 flex-1")],
+								[
+									copyableField(h, {
+										id: "status-page-public-url",
+										label: "Public address",
+										value: url,
+										copyLabel: "public address",
+										copy: model.urlCopy,
+										toCopyMessage: (message) => Message.GotUrlCopyMessage({ message }),
+									}),
+								],
+							),
+							linkButton(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									href: url,
+									attributes: [h.Target("_blank"), h.Rel("noopener")],
+								},
+								[icon(h, "ExternalLinkIcon"), "Open"],
+							),
 						],
 					),
-					linkButton(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							href: url,
-							attributes: [h.Target("_blank"), h.Rel("noopener")],
-						},
-						[icon(h, "ExternalLinkIcon"), "Open"],
-					),
-				],
-			),
 			h.section(
 				[h.AriaLabelledBy("status-page-next-steps"), h.Class("flex flex-col gap-3")],
 				[

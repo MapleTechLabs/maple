@@ -224,7 +224,14 @@ export const statusPagesHref = (): string => hrefOf(AppRoute.StatusPages())
 
 export const newStatusPageHref = (): string => hrefOf(AppRoute.StatusPageNew())
 
-const STATUS_BASE_URL: string = (import.meta.env.VITE_STATUS_PAGE_BASE_URL ?? "").trim().replace(/\/+$/u, "")
+/** The status Worker's origin; empty where it has no domain yet (prd today). */
+export const STATUS_PAGE_BASE_URL: string = (import.meta.env.VITE_STATUS_PAGE_BASE_URL ?? "")
+	.trim()
+	.replace(/\/+$/u, "")
 
-/** Where visitors read the page: the status Worker's `/s/<slug>`, a bare path until its host is set. */
-export const publicUrl = (slug: string): string => `${STATUS_BASE_URL}/s/${slug}`
+/** Where visitors read the page, or `null` while no status domain is configured. */
+export const publicUrl = (baseUrl: string, slug: string): string | null =>
+	baseUrl === "" ? null : `${baseUrl}/s/${slug}`
+
+/** The page's address as text: the full URL when known, its `/s/<slug>` path otherwise. */
+export const publicAddress = (slug: string): string => publicUrl(STATUS_PAGE_BASE_URL, slug) ?? `/s/${slug}`

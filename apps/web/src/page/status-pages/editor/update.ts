@@ -7,7 +7,13 @@ import * as CopyButton from "../../../ui/copy-button"
 import * as Dialog from "../../../ui/dialog"
 import * as Menu from "../../../ui/menu"
 import { type PageContext, PageOutMessage } from "../../contract"
-import { type EditorView, pageIdFromUrl, publicUrl, statusPageHref } from "../shared/commands"
+import {
+	type EditorView,
+	pageIdFromUrl,
+	publicUrl,
+	STATUS_PAGE_BASE_URL,
+	statusPageHref,
+} from "../shared/commands"
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
 import { emptyPicker } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
@@ -135,6 +141,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		isPostingUpdate: false,
 		updateFailure: null,
 		publishingIncidentIds: [],
+		publicBaseUrl: STATUS_PAGE_BASE_URL,
 		urlCopy: CopyButton.init(),
 		settingsEdits: null,
 		isSavingSettings: false,
@@ -251,13 +258,15 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 		case "delete":
 			return deletePageDialog(next, Dialog.open(next.deletePageDialog))
 		case "public":
-			return Option.match(pageOf(model), {
-				onNone: () => ({ model: next, commands }),
-				onSome: (page) => ({
-					model: next,
-					commands: [...commands, OpenPublicPage({ url: publicUrl(page.slug) })],
-				}),
-			})
+			return Option.match(
+				Option.flatMap(pageOf(model), (page) =>
+					Option.fromNullishOr(publicUrl(model.publicBaseUrl, page.slug)),
+				),
+				{
+					onNone: () => ({ model: next, commands }),
+					onSome: (url) => ({ model: next, commands: [...commands, OpenPublicPage({ url })] }),
+				},
+			)
 		default:
 			return { model: next, commands }
 	}

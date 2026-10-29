@@ -551,19 +551,60 @@ describe("drafts", () => {
 })
 
 describe("live screen", () => {
-	test("names the page, gives its address to copy and open, and the next steps", () => {
+	const live = (publicBaseUrl: string): Model => ({ ...loaded({ tab: "live" }), publicBaseUrl })
+
+	test("with a status domain: the full address to copy and open, and the next steps", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ tab: "live" })),
+			given(live("https://status-pr-7.maple.dev")),
 			expectView(role("heading", { name: "Acme Status is live" })).toExist(),
-			expectView(selector("#status-page-public-url")).toHaveValue("/s/acme-status"),
-			expectView(role("link", { name: "Open" })).toHaveAttr("href", "/s/acme-status"),
+			expectView(selector("#status-page-public-url")).toHaveValue(
+				"https://status-pr-7.maple.dev/s/acme-status",
+			),
+			expectView(role("link", { name: "Open" })).toHaveAttr(
+				"href",
+				"https://status-pr-7.maple.dev/s/acme-status",
+			),
+			expectView(role("button", { name: "Copy public address" })).toExist(),
 			expectView(role("button", { name: "Get break-glass token" })).toExist(),
 			expectView(role("link", { name: "Page JSON" })).toHaveAttr(
 				"href",
 				`/status-pages/${PUBLIC_ID}?view=json`,
 			),
-			expectView(text("custom domain")).not.toExist(),
+		)
+	})
+
+	test("without a status domain: a note in place of the address, no link, and publishing still works", () => {
+		const model = live("")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Public address appears once a status domain is configured")).toExist(),
+			expectView(selector("#status-page-public-url")).not.toExist(),
+			expectView(role("link", { name: "Open" })).not.toExist(),
+			expectView(role("link", { name: /\/s\/acme-status/u })).not.toExist(),
+			expectView(role("button", { name: "Get break-glass token" })).toExist(),
+		)
+		const draft = {
+			...loaded({ page: statusPage({ draft: true, published_at: null }) }),
+			publicBaseUrl: "",
+		}
+		expect(names(pageUpdate(draft, Message.ClickedPublish()).commands)).toEqual(["PublishStatusPage"])
+	})
+
+	test("the header links the public page once a status domain is set", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...loaded(), publicBaseUrl: "https://status-pr-7.maple.dev" }),
+			expectView(role("link", { name: "https://status-pr-7.maple.dev/s/acme-status" })).toHaveAttr(
+				"href",
+				"https://status-pr-7.maple.dev/s/acme-status",
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...loaded(), publicBaseUrl: "" }),
+			expectView(text("Public address appears once a status domain is configured")).toExist(),
 		)
 	})
 

@@ -31,7 +31,7 @@ import { componentsOf, incidentsOf, monitorsOf, pageOf } from "./reads"
 import { PAGE_MENU_ID, resolveView } from "./update"
 import { canvas } from "./view-canvas"
 import { jsonTab } from "./view-json"
-import { liveView } from "./view-live"
+import { addressLine, liveView } from "./view-live"
 import { breakGlassDialog, deletePageDialog, settingsView } from "./view-settings"
 
 // `/status-pages/$pageId`: the header, then the page as the editor, its Settings, its JSON, or the
@@ -78,7 +78,8 @@ const menuEntries = (model: Model, page: V2StatusPage): ReadonlyArray<MenuEntry>
 		value: "public",
 		label: "View public page",
 		icon: "ExternalLinkIcon",
-		isDisabled: page.draft,
+		// A draft is not public, and without a status domain there is no address to open.
+		isDisabled: page.draft || model.publicBaseUrl === "",
 	},
 	{ _tag: "Item", value: "settings", label: "Settings", icon: "GearIcon" },
 	{ _tag: "Item", value: "json", label: "JSON", icon: "BracketsCurlyIcon" },
@@ -223,7 +224,12 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 										COMPONENT_STATUS_LABEL[overall],
 									])
 								: h.empty,
-						meta: [stateLine(h, model, page, timeZone)],
+						meta: [
+							h.span(
+								[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1")],
+								[stateLine(h, model, page, timeZone), addressLine(h, model, page)],
+							),
+						],
 					}),
 					actions: headerActions(h, model, page),
 					gap: "md",

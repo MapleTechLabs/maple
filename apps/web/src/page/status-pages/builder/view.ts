@@ -15,7 +15,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { settingsSection } from "../../settings/kit/section"
-import { publicUrl, statusPagesHref } from "../shared/commands"
+import { publicAddress, statusPagesHref } from "../shared/commands"
 import { textField } from "../shared/fields"
 import { APPEARANCES, presetCards } from "../shared/look"
 import { checkedRows } from "../shared/picker"
@@ -55,7 +55,10 @@ const pageSection = (h: H, model: Model): Html =>
 					value: model.slug,
 					placeholder: "acme-status",
 					isMono: true,
-					hint: model.slug === "" ? "Follows the name until you type one." : publicUrl(model.slug),
+					hint:
+						model.slug === ""
+							? "Follows the name until you type one."
+							: publicAddress(model.slug),
 					error: slugError(model),
 					onInput: (value) => Message.ChangedSlug({ value }),
 				}),
@@ -287,7 +290,8 @@ const builder = (h: H, model: Model): Html =>
 				[h.Class("grid items-start gap-8 min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]")],
 				[
 					h.div(
-						[h.Class("flex min-w-0 flex-col gap-8")],
+						// Room under the last section, so it scrolls clear of the floating publish bar.
+						[h.Class("flex min-w-0 flex-col gap-8 pb-16")],
 						[
 							pageSection(h, model),
 							componentsSection(h, model),
