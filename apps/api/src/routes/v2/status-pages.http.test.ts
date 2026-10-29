@@ -475,7 +475,7 @@ describe("v2 status pages", () => {
 			return { id: page.body.id as string, apiId: api.body.id as string, webId: web.body.id as string }
 		}
 
-		it("round-trips the document with a single revision bump", () =>
+		it("round-trips the document without a revision bump", () =>
 			withHarness(async (harness) => {
 				const { secret: token } = await harness.bootstrapKey()
 				const { id, apiId, webId } = await seedPage(harness, token, "acme-config")
@@ -503,7 +503,8 @@ describe("v2 status pages", () => {
 				expect(applied.status).toBe(200)
 				expect(applied.body).toEqual(read.body)
 				const after = (await harness.request("GET", `/v2/status_pages/${id}`, token)).body.revision
-				expect(after).toBe(before + 1)
+				// Nothing changed, so nothing republishes.
+				expect(after).toBe(before)
 			}))
 
 		it("applies created, updated, deleted and reordered components with the page fields", () =>

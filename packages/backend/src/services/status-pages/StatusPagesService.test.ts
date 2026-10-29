@@ -654,7 +654,7 @@ describe("StatusPagesService", () => {
 			},
 		)
 
-		it.effect("re-applying the current document bumps the revision once and changes nothing", () => {
+		it.effect("re-applying the current document changes nothing and leaves the revision alone", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				const { service, page, config } = yield* seeded(testDb)
@@ -662,7 +662,7 @@ describe("StatusPagesService", () => {
 				const applied = yield* service.applyConfig(ORG, page.id, config, USER)
 				assert.deepStrictEqual(applied.config, config)
 				assert.deepStrictEqual(applied.changes, NO_CHANGES)
-				assert.strictEqual(yield* revision(testDb, page.id), before + 1)
+				assert.strictEqual(yield* revision(testDb, page.id), before)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 

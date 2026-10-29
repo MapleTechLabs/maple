@@ -28,6 +28,7 @@ import {
 } from "@maple/domain/http"
 import {
 	diffStatusPageConfig,
+	hasStatusPageConfigChanges,
 	MAX_STATUS_PAGE_COMPONENTS,
 	normalizeStatusPageConfig,
 	StatusPageComponentPublicId,
@@ -1546,7 +1547,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 								},
 								{ discard: true },
 							)
-							yield* bumpPage(db, orgId, pageId)
+							// A document that changes nothing leaves the revision alone, so nothing is republished.
+							if (hasStatusPageConfigChanges({ fields, created, updated, deleted, reordered }))
+								yield* bumpPage(db, orgId, pageId)
 							const page = yield* findPage(db, orgId, pageId)
 							return {
 								previous,

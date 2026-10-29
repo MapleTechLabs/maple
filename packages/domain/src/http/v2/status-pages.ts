@@ -611,6 +611,11 @@ export interface StatusPageConfigChangeSet {
 	readonly reordered: boolean
 }
 
+/** Whether an apply changed anything; a no-op apply neither republishes nor audits. */
+export const hasStatusPageConfigChanges = (changes: StatusPageConfigChangeSet): boolean =>
+	changes.fields.length + changes.created.length + changes.updated.length + changes.deleted.length > 0 ||
+	changes.reordered
+
 export interface StatusPageConfigChanges extends StatusPageConfigChangeSet {
 	/** Ids listed that are not components of the page, or listed twice: the apply refuses both. */
 	readonly unknownIds: ReadonlyArray<StatusPageComponentId>

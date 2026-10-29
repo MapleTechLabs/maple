@@ -18,6 +18,7 @@ import {
 	type V2StatusPage,
 	type V2StatusPageComponent,
 	type V2StatusPageIncident,
+	hasStatusPageConfigChanges,
 } from "@maple/domain/http/v2"
 import type {
 	OrgId,
@@ -353,6 +354,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					)
 					const { components: _before, version: _beforeVersion, ...pageBefore } = previous
 					const { components: _after, version: _afterVersion, ...pageAfter } = config
+					if (!hasStatusPageConfigChanges(changes)) return config
 					yield* recordHttpAudit("status_page.config_applied", {
 						resourceId: params.id,
 						changes: diffAuditChanges(pageBefore, pageAfter),

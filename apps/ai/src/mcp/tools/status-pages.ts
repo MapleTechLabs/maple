@@ -13,7 +13,13 @@ import {
 	type StatusPageIncidentRow,
 	type StatusPageRow,
 } from "@maple/domain/mcp-outputs"
-import { decodePublicId, encodePublicId, PublicIdPrefixes, StatusPageConfig } from "@maple/domain/http/v2"
+import {
+	decodePublicId,
+	encodePublicId,
+	hasStatusPageConfigChanges,
+	PublicIdPrefixes,
+	StatusPageConfig,
+} from "@maple/domain/http/v2"
 import type {
 	StatusPageComponentRecord,
 	StatusPageIncidentRecord,
@@ -656,20 +662,22 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
 			const audit = yield* AuditLogService
-			yield* audit.record({
-				orgId: tenant.orgId,
-				...auditAttribution(tenant, yield* CurrentAuditActor),
-				action: "status_page.config_applied",
-				resourceId: page.id,
-				metadata: {
-					name: config.name,
-					fields_changed: changes.fields.join(","),
-					components_created: changes.created.length,
-					components_updated: changes.updated.length,
-					components_deleted: changes.deleted.length,
-					components_reordered: changes.reordered,
-				},
-			})
+			// Nothing written, nothing to audit.
+			if (hasStatusPageConfigChanges(changes))
+				yield* audit.record({
+					orgId: tenant.orgId,
+					...auditAttribution(tenant, yield* CurrentAuditActor),
+					action: "status_page.config_applied",
+					resourceId: page.id,
+					metadata: {
+						name: config.name,
+						fields_changed: changes.fields.join(","),
+						components_created: changes.created.length,
+						components_updated: changes.updated.length,
+						components_deleted: changes.deleted.length,
+						components_reordered: changes.reordered,
+					},
+				})
 			const applied = yield* service.get(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
 			return { page: toPageRow(applied), config, changes }
 		}),
