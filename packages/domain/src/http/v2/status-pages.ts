@@ -893,6 +893,34 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		),
 	)
 	.add(
+		HttpApiEndpoint.get("getConfig", "/:id/config", {
+			params: pageParams,
+			success: StatusPageConfig,
+			error: [pageNotFound, persistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getStatusPageConfig",
+				summary: "Retrieve a status page config",
+				description:
+					"Returns the page's settings, theme and components as one document, the body `PUT …/config` takes. Requires the `status_pages:read` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.put("applyConfig", "/:id/config", {
+			params: pageParams,
+			payload: StatusPageConfig,
+			success: StatusPageConfig,
+			error: [V2InsufficientPermissions.schema, pageNotFound, validation, slugTaken, persistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "applyStatusPageConfig",
+				summary: "Apply a status page config",
+				description: `Replaces the page with the document in one write: components listed with an \`id\` are updated, without one created, and left out deleted; list order is display order. Any invalid part rejects the whole document. Returns the applied config. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
 		HttpApiEndpoint.get("listComponents", "/:id/components", {
 			params: pageParams,
 			query: ListQuery,

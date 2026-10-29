@@ -179,6 +179,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/status_pages",
 			"GET /v2/status_pages/{id}",
 			"GET /v2/status_pages/{id}/components",
+			"GET /v2/status_pages/{id}/config",
 			"GET /v2/support/slack_channel",
 			"GET /v2/traces/{trace_id}",
 			"GET /v2/traces/{trace_id}/spans/{span_id}",
@@ -285,6 +286,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PUT /v2/error_issues/{id}/severity",
 			"PUT /v2/mobile_devices/{token}",
 			"PUT /v2/mobile_devices/{token}/live_activities/{incident_id}",
+			"PUT /v2/status_pages/{id}/config",
 			"PUT /v2/widget_credentials/{installation_id}",
 		])
 	})
