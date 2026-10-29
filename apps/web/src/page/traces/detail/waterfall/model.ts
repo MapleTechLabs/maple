@@ -29,6 +29,8 @@ export const Message = defineMessageUnion({
 	ClickedCollapseAll: {},
 	ClickedExpandAll: {},
 	ChangedVirtualWindow: { rows: Schema.Array(VirtualRow), totalSize: Schema.Number },
+	/** The page's selection changed after mount (the `informSelectedSpan` operation). */
+	InformedOfSelectedSpan: { spanId: Schema.NullOr(Schema.String) },
 })
 export type Message = typeof Message.Type
 

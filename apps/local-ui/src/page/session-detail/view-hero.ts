@@ -5,13 +5,13 @@ import { initialsFrom } from "@maple/ui/lib/initials"
 import { gradientFor, isMobileDevice } from "@maple/ui/lib/replay"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { formatRelativeFrom } from "@maple/ui/lib/time-format"
-import * as CopyButton from "@maple/web/ui/copy-button"
 import { icon } from "@maple/web/ui/icon"
 import { truncatedId } from "@maple/web/ui/truncated-id"
+import { cn } from "@maple/ui/lib/utils"
+import { truncatedIdCopyStyles } from "@maple/ui/styles/ui/truncated-id"
 import { DateTime } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { copyOf } from "../kit/copies"
-import { Message } from "./message"
+import { CopyBinding, type SessionDetailViewBuilder } from "./composition"
 import type { Model, SessionDetail } from "./model"
 import { statTile, statusBadge } from "./view-bits"
 
@@ -19,8 +19,29 @@ import { statTile, statusBadge } from "./view-bits"
 
 export const SESSION_ID_COPY = "session-id"
 
-export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDetail, label: string, timeFormat: TimeFormat): Html => {
-	const copy = copyOf(model.copies, SESSION_ID_COPY)
+/** `<TruncatedId copy>`: the short id beside the Block-owned copy button for the full value. */
+const sessionIdWithCopy = (h: SessionDetailViewBuilder, model: Model): Html =>
+	h.span(
+		[h.Class(cn(truncatedIdCopyStyles, "text-xs"))],
+		[
+			truncatedId(h, { value: model.sessionId, kind: "session", length: 8 }),
+			h.block(
+				CopyBinding.embedView({
+					slotId: SESSION_ID_COPY,
+					model: model.copy,
+					viewInputs: { value: model.sessionId, label: "session id", size: "icon-xs" },
+				}),
+			),
+		],
+	)
+
+export const hero = (
+	h: SessionDetailViewBuilder,
+	model: Model,
+	session: SessionDetail,
+	label: string,
+	timeFormat: TimeFormat,
+): Html => {
 	return h.div(
 		[h.Class("flex flex-wrap items-center gap-4 border-b pb-5")],
 		[
@@ -37,25 +58,23 @@ export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 				[
 					h.div(
 						[h.Class("flex items-center gap-2")],
-						[h.h1([h.Class("truncate text-xl font-semibold tracking-tight")], [label]), statusBadge(h, isLocalSessionLive(session, model.nowMs))],
+						[
+							h.h1([h.Class("truncate text-xl font-semibold tracking-tight")], [label]),
+							statusBadge(h, isLocalSessionLive(session, model.nowMs)),
+						],
 					),
 					h.div(
 						[h.Class("mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground")],
 						[
-							truncatedId(h, {
-								value: model.sessionId,
-								kind: "session",
-								length: 8,
-								className: "text-xs",
-								copy: {
-									status: copy.status,
-									onClick: Message.GotCopyMessage({ id: SESSION_ID_COPY, message: CopyButton.Message.ClickedCopy({ text: model.sessionId }) }),
-								},
-							}),
+							sessionIdWithCopy(h, model),
 							h.span(
 								[h.Class("inline-flex items-center gap-1.5")],
 								[
-									icon(h, isMobileDevice(session.deviceType) ? "MobileIcon" : "ComputerIcon", { className: "size-3.5 opacity-60" }),
+									icon(
+										h,
+										isMobileDevice(session.deviceType) ? "MobileIcon" : "ComputerIcon",
+										{ className: "size-3.5 opacity-60" },
+									),
 									session.browserName || "Unknown",
 									...(session.osName ? [` · ${session.osName}`] : []),
 								],
@@ -63,12 +82,17 @@ export const hero = (h: HtmlBuilder<Message>, model: Model, session: SessionDeta
 							h.span(
 								[
 									h.Class("inline-flex items-center gap-1.5"),
-									h.Title(`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`),
+									h.Title(
+										`${formatDateTime(timeFormat, session.startTime)} (${formatUtcTitle(session.startTime)})`,
+									),
 								],
 								[
 									icon(h, "ClockIcon", { className: "size-3.5 opacity-60" }),
 									"started ",
-									formatRelativeFrom(DateTime.toEpochMillis(session.startTime), model.nowMs),
+									formatRelativeFrom(
+										DateTime.toEpochMillis(session.startTime),
+										model.nowMs,
+									),
 								],
 							),
 						],

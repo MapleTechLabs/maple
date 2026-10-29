@@ -1,4 +1,3 @@
-import * as Animation from "@foldkit/ui/animation"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	popoverDescriptionStyles,
@@ -8,13 +7,20 @@ import {
 	popoverViewportScrollStyles,
 	popoverViewportStyles,
 } from "@maple/ui/styles/ui/popover"
-import { Duration, Effect, Option, Schema, Stream } from "effect"
-import { Command, Mount, Submodel, type Update } from "foldkit"
+import { Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Block, Update } from "foldkit"
 import { type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { anchoredPopup } from "./overlay/anchored"
 import { fitPositionerToPopup } from "./overlay/auto-resize"
-import { initPopup, makeTransition, PopupState, popupId, portalId, triggerId } from "./overlay/popup-state"
+import {
+	initPopup,
+	PopupState,
+	PopupTransitionBlock,
+	popupId,
+	portalId,
+	triggerId,
+} from "./overlay/popup-state"
 import { Align, positionDefaults, Side } from "./overlay/position"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
 
@@ -47,19 +53,21 @@ export type Model = typeof Model.Type
 export const titleId = (id: string): string => `${id}-title`
 export const descriptionId = (id: string): string => `${id}-description`
 
-/** `align` and `side` are `PopoverContent`'s; `hoverDelayMs` is the trigger's `openOnHover` delay. */
-export const init = (
-	id: string,
-	options: Readonly<{
-		isOpen?: boolean
-		align?: Align
-		side?: Side
-		hoverDelayMs?: number
-		sideOffset?: number
-		isBare?: boolean
-		initialFocus?: "popup" | "first-tabbable"
-	}> = {},
-): Model => ({
+export type InitOptions = Readonly<{
+	isOpen?: boolean
+	align?: Align
+	side?: Side
+	hoverDelayMs?: number
+	sideOffset?: number
+	isBare?: boolean
+	initialFocus?: "popup" | "first-tabbable"
+}>
+
+/**
+ * The Model alone (also `PopoverBlock.init(id, options)`). `align` and `side` are
+ * `PopoverContent`'s; `hoverDelayMs` is the trigger's `openOnHover` delay.
+ */
+export const init = (id: string, options: InitOptions = {}): Model => ({
 	...initPopup(id, {
 		isOpen: options.isOpen,
 		side: options.side ?? "bottom",
@@ -84,79 +92,88 @@ export const Message = defineMessageUnion({
 	PressedOutside: {},
 	CompletedMountPopover: {},
 	ChangedPlacement: { side: Side, align: Align },
-	GotAnimationMessage: { message: Animation.Message },
 	EnteredTrigger: {},
 	LeftHoverArea: {},
 	EnteredPopup: {},
 	ElapsedHoverDelay: { generation: Schema.Number, isOpening: Schema.Boolean },
+	/** Parent-initiated: opens it; `isPressOpened` marks the trigger `data-pressed`. */
+	RequestedOpen: { isPressOpened: Schema.Boolean },
+	/** Parent-initiated: closes it. */
+	RequestedClose: {},
 })
 export type Message = typeof Message.Type
 
+const PopoverDefinition = Block.makeDefinition("Popover", { Model, Message })
+
+/** `animation` starts in `init` (via `initPopup`), so the Binding does not initialise it. */
+const AnimationBinding = PopoverDefinition.makeBinding(PopupTransitionBlock, {
+	field: "animation",
+	init: false,
+})
+
 /** The hover open delay, or the grace period for crossing from the trigger into the popup. */
-export const WaitHoverDelay = Command.define("WaitPopoverHoverDelay", {
+export const WaitHoverDelay = PopoverDefinition.makeCommand("WaitPopoverHoverDelay", {
 	args: { generation: Schema.Number, millis: Schema.Number, isOpening: Schema.Boolean },
 	messages: [Message.ElapsedHoverDelay],
-	execute: ({ generation, millis, isOpening }) =>
-		Effect.sleep(Duration.millis(millis)).pipe(
-			Effect.as(Message.ElapsedHoverDelay({ generation, isOpening })),
-		),
+	handler: function* () {
+		return ({ generation, millis, isOpening }) =>
+			Effect.sleep(Duration.millis(millis)).pipe(
+				Effect.as(Message.ElapsedHoverDelay({ generation, isOpening })),
+			)
+	},
 })
 
 const HOVER_CLOSE_GRACE_MS = 100
 
-const waitHover = (model: Model, millis: number, isOpening: boolean): Update.Return<Model, Message> => {
+const waitHoverStep = PopoverDefinition.makeStep((model, millis: number, isOpening: boolean) => {
 	const generation = model.hoverGeneration + 1
 	return {
 		model: { ...model, hoverGeneration: generation },
 		commands: [WaitHoverDelay({ generation, millis, isOpening })],
 	}
-}
+})
+
+const bumpHoverGenerationStep = PopoverDefinition.makeFieldsStep(() => ({
+	hoverGeneration: (generation: number) => generation + 1,
+}))
 
 // UPDATE
 
-const transition = makeTransition<Model, Message>(
-	(message) => Message.GotAnimationMessage({ message }),
-	"WaitForPopoverExit",
-)
 /** Each opening is placed afresh from the requested side, as Base UI's positioner does. */
-export const open = (model: Model): Update.Return<Model, Message> =>
-	transition.open(
-		model.isOpen ? model : { ...model, side: model.requestedSide, align: model.requestedAlign },
-	)
-export const WaitForPopoverExit = transition.WaitForExit
-export const close = transition.close
+const openStep = PopoverDefinition.makeStep((model) =>
+	model.isOpen
+		? PopoverDefinition.makeNoopStep()
+		: Update.combineSteps([
+				PopoverDefinition.makeFieldsStep((current) => ({
+					isOpen: () => true,
+					side: () => current.requestedSide,
+					align: () => current.requestedAlign,
+				})),
+				AnimationBinding.requestShow(),
+			]),
+)
 
-export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
-	Message.match<Update.Return<Model, Message>>(message, {
-		ClickedTrigger: () => (model.isOpen ? close(model) : open({ ...model, isPressOpened: true })),
-		ClickedClose: () => close(model),
-		PressedEscape: () => close(model),
-		PressedOutside: () => close(model),
-		CompletedMountPopover: () => ({ model }),
-		ChangedPlacement: ({ side, align }) => ({ model: { ...model, side, align } }),
-		GotAnimationMessage: ({ message: animationMessage }) =>
-			transition.foldAnimation(model, animationMessage),
-		EnteredTrigger: () =>
-			model.hoverDelayMs === 0 || model.isOpen
-				? { model: { ...model, hoverGeneration: model.hoverGeneration + 1 } }
-				: waitHover(model, model.hoverDelayMs, true),
-		EnteredPopup: () => ({ model: { ...model, hoverGeneration: model.hoverGeneration + 1 } }),
-		LeftHoverArea: () =>
-			model.hoverDelayMs === 0 ? { model } : waitHover(model, HOVER_CLOSE_GRACE_MS, false),
-		ElapsedHoverDelay: ({ generation, isOpening }) =>
-			generation !== model.hoverGeneration
-				? { model }
-				: isOpening
-					? open({ ...model, isPressOpened: false })
-					: model.isOpen
-						? close(model)
-						: { model },
-	})
+const closeStep = PopoverDefinition.makeStep((model) =>
+	model.isOpen
+		? Update.combineSteps([
+				PopoverDefinition.makeFieldsStep(() => ({ isOpen: () => false })),
+				AnimationBinding.requestHide(),
+			])
+		: PopoverDefinition.makeNoopStep(),
+)
+
+/** Sets `isPressOpened` first, as the old `open({ ...model, isPressOpened })` did. */
+const openWithPressStep = PopoverDefinition.makeStep((_model, isPressOpened: boolean) =>
+	Update.combineSteps([
+		PopoverDefinition.makeFieldsStep(() => ({ isPressOpened: () => isPressOpened })),
+		openStep,
+	]),
+)
 
 // MOUNT
 
 /** Portal, marker on the page outside, placement under the trigger and outside presses. */
-export const MountPopover = Mount.defineStream("MountPopover", {
+export const MountPopover = PopoverDefinition.makeMountStream("MountPopover", {
 	args: {
 		id: Schema.String,
 		align: Align,
@@ -167,50 +184,111 @@ export const MountPopover = Mount.defineStream("MountPopover", {
 		fallbackAnchorSelector: Schema.NullOr(Schema.String),
 	},
 	messages: [Message.CompletedMountPopover, Message.ChangedPlacement, Message.PressedOutside],
-	execute: ({ element, id, align, side, sideOffset, isBare, initialFocus, fallbackAnchorSelector }) =>
-		anchoredPopup(element, {
-			positionerSelector: "[data-slot=popover-positioner]",
-			popupSelector: `#${CSS.escape(popupId(id))}`,
-			config: {
-				...positionDefaults,
-				anchor: {
-					_tag: "Element",
-					id: triggerId(id),
-					fallbackSelector: fallbackAnchorSelector ?? undefined,
-				},
-				side,
+	handler: function* () {
+		return ({ element, id, align, side, sideOffset, isBare, initialFocus, fallbackAnchorSelector }) =>
+			mountPopoverStream(element, {
+				id,
 				align,
+				side,
 				sideOffset,
-				adaptiveOrigin: !isBare,
+				isBare,
+				initialFocus,
+				fallbackAnchorSelector,
+			})
+	},
+})
+
+type MountPopoverArgs = Readonly<{
+	id: string
+	align: Align
+	side: Side
+	sideOffset: number
+	isBare: boolean
+	initialFocus: "popup" | "first-tabbable"
+	fallbackAnchorSelector: string | null
+}>
+
+const mountPopoverStream = (
+	element: Element,
+	{ id, align, side, sideOffset, isBare, initialFocus, fallbackAnchorSelector }: MountPopoverArgs,
+) =>
+	anchoredPopup(element, {
+		positionerSelector: "[data-slot=popover-positioner]",
+		popupSelector: `#${CSS.escape(popupId(id))}`,
+		config: {
+			...positionDefaults,
+			anchor: {
+				_tag: "Element",
+				id: triggerId(id),
+				fallbackSelector: fallbackAnchorSelector ?? undefined,
 			},
-			// A child popup portalled out of this one (`nestedIn`) counts as inside, as a FloatingTree child does.
-			insideSelectors: [`#${CSS.escape(triggerId(id))}`, `[data-nested-in="${CSS.escape(id)}"]`],
-			markOutside: Option.some({ mark: true, ariaHidden: false }),
-			lockScroll: false,
-			focus: Option.some({ returnFocusId: Option.some(triggerId(id)), initialFocus }),
-			afterPlace: (positioner, popup, placedSide) => {
-				if (isBare) return
-				// Top and left popups anchor to the trigger-facing edge, measured as Base UI does.
-				if (placedSide === "top" || placedSide === "left")
-					return fitPositionerToPopup(positioner, popup, placedSide)
-				positioner.style.setProperty("--positioner-width", `${popup.offsetWidth}px`)
-				positioner.style.setProperty("--positioner-height", `${popup.offsetHeight}px`)
-			},
-		}).pipe(
-			Stream.map((event) => {
-				switch (event._tag) {
-					case "Mounted":
-						return Message.CompletedMountPopover()
-					case "Placed":
-						return Message.ChangedPlacement({
-							side: event.placed.side,
-							align: event.placed.align,
-						})
-					case "PressedOutside":
-						return Message.PressedOutside()
-				}
-			}),
-		),
+			side,
+			align,
+			sideOffset,
+			adaptiveOrigin: !isBare,
+		},
+		// A child popup portalled out of this one (`nestedIn`) counts as inside, as a FloatingTree child does.
+		insideSelectors: [`#${CSS.escape(triggerId(id))}`, `[data-nested-in="${CSS.escape(id)}"]`],
+		markOutside: Option.some({ mark: true, ariaHidden: false }),
+		lockScroll: false,
+		focus: Option.some({ returnFocusId: Option.some(triggerId(id)), initialFocus }),
+		afterPlace: (positioner, popup, placedSide) => {
+			if (isBare) return
+			// Top and left popups anchor to the trigger-facing edge, measured as Base UI does.
+			if (placedSide === "top" || placedSide === "left")
+				return fitPositionerToPopup(positioner, popup, placedSide)
+			positioner.style.setProperty("--positioner-width", `${popup.offsetWidth}px`)
+			positioner.style.setProperty("--positioner-height", `${popup.offsetHeight}px`)
+		},
+	}).pipe(
+		Stream.map((event) => {
+			switch (event._tag) {
+				case "Mounted":
+					return Message.CompletedMountPopover()
+				case "Placed":
+					return Message.ChangedPlacement({
+						side: event.placed.side,
+						align: event.placed.align,
+					})
+				case "PressedOutside":
+					return Message.PressedOutside()
+			}
+		}),
+	)
+
+const PopoverComposition = PopoverDefinition.makeComposition({
+	bindings: [AnimationBinding],
+	mounts: [MountPopover],
+})
+
+const blockInit = PopoverComposition.makeInit((id: string, options: InitOptions = {}) => ({
+	model: init(id, options),
+}))
+
+const update = PopoverComposition.makeUpdate({
+	ClickedTrigger: (model) => (model.isOpen ? closeStep(model) : openWithPressStep(model, true)),
+	ClickedClose: closeStep,
+	PressedEscape: closeStep,
+	PressedOutside: closeStep,
+	CompletedMountPopover: PopoverDefinition.makeNoopStep(),
+	ChangedPlacement: (model, { side, align }) => ({ model: { ...model, side, align } }),
+	EnteredTrigger: (model) =>
+		model.hoverDelayMs === 0 || model.isOpen
+			? bumpHoverGenerationStep(model)
+			: waitHoverStep(model, model.hoverDelayMs, true),
+	EnteredPopup: bumpHoverGenerationStep,
+	LeftHoverArea: (model) =>
+		model.hoverDelayMs === 0
+			? PopoverDefinition.makeNoopStep()(model)
+			: waitHoverStep(model, HOVER_CLOSE_GRACE_MS, false),
+	ElapsedHoverDelay: (model, { generation, isOpening }) =>
+		generation !== model.hoverGeneration
+			? PopoverDefinition.makeNoopStep()(model)
+			: isOpening
+				? openWithPressStep(model, false)
+				: closeStep(model),
+	RequestedOpen: (model, { isPressOpened }) => openWithPressStep(model, isPressOpened),
+	RequestedClose: closeStep,
 })
 
 // VIEW
@@ -234,7 +312,7 @@ export type ViewInputs = Readonly<{
 	fallbackAnchorSelector?: string | undefined
 }>
 
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+const view = PopoverComposition.makeView.withInputs<ViewInputs>((model, inputs, h) => {
 	const isVisible = isMounted(model.isOpen, model.animation)
 	const state = stateAttributes(h, model.isOpen, model.animation)
 	const placement = [h.DataAttribute("align", model.align)]
@@ -343,29 +421,41 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			),
 		],
 	)
+	// Built here, in this Block's boundary: `withTrigger` itself runs in the parent's.
+	const guardBefore = focusGuard(h, undefined, [h.Key("guard-before")])
+	const afterTrigger = [
+		focusGuard(h, undefined, [h.Key("guard-after")]),
+		focusGuard(h, "outside", [h.Key("guard-outside-before")]),
+		h.span([
+			h.Key("owner"),
+			h.AriaOwns(portalId(model.id)),
+			h.Style({
+				clipPath: SR_ONLY_STYLE.clipPath,
+				position: "fixed",
+				top: "0px",
+				left: "0px",
+			}),
+		]),
+		focusGuard(h, "outside", [h.Key("guard-outside-after")]),
+		portal,
+	]
 	const withTrigger = (button: Html): ReadonlyArray<Html> =>
-		isVisible
-			? [
-					focusGuard(h, undefined, [h.Key("guard-before")]),
-					button,
-					focusGuard(h, undefined, [h.Key("guard-after")]),
-					focusGuard(h, "outside", [h.Key("guard-outside-before")]),
-					h.span([
-						h.Key("owner"),
-						h.AriaOwns(portalId(model.id)),
-						h.Style({
-							clipPath: SR_ONLY_STYLE.clipPath,
-							position: "fixed",
-							top: "0px",
-							left: "0px",
-						}),
-					]),
-					focusGuard(h, "outside", [h.Key("guard-outside-after")]),
-					portal,
-				]
-			: [button]
+		isVisible ? [guardBefore, button, ...afterTrigger] : [button]
 	return inputs.toView({ trigger, withTrigger })
 })
+
+const prepare = () =>
+	PopoverComposition.prepareBlock({
+		init: blockInit,
+		update,
+		view,
+		operations: {
+			requestOpen: Message.RequestedOpen,
+			requestClose: Message.RequestedClose,
+		},
+		EffectsLayer: Layer.mergeAll(WaitHoverDelay.layer, MountPopover.layer),
+	})
+export const PopoverBlock: Block.FromAssemblyWithView<typeof Model, typeof prepare> = Block.assemble(prepare)
 
 export const popoverTitle = <M>(h: HtmlBuilder<M>, id: string, text: string, className?: string): Html =>
 	h.h2(

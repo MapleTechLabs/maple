@@ -1,18 +1,15 @@
-import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { emptyMessage } from "../../../../ui/empty"
 import { depthControls } from "../depth-controls"
-import { Message, type Model } from "./model"
+import { WaterfallComposition, type WaterfallViewBuilder } from "./composition"
+import { Message } from "./model"
 import { spanRow } from "./row"
 import { flattenVisible } from "./tree"
 import { KEYS_ATTRIBUTE, SELECTED_ATTRIBUTE, VirtualizeWaterfall } from "./virtualize"
 
 // `SpanHierarchy` (packages/ui/src/components/traces/span-hierarchy.tsx): the Waterfall tab's body.
 
-/** Nothing comes from the page but the Model: the selection lives in it too. */
-export type ViewInputs = Readonly<Record<string, never>>
-
-const header = (h: HtmlBuilder<Message>, shown: number, total: number): Html =>
+const header = (h: WaterfallViewBuilder, shown: number, total: number): Html =>
 	h.div(
 		[
 			h.Class(
@@ -61,7 +58,8 @@ const header = (h: HtmlBuilder<Message>, shown: number, total: number): Html =>
 		],
 	)
 
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, _inputs, h) => {
+/** Nothing comes from the page but the Model: the selection lives in it too. */
+export const view = WaterfallComposition.makeView((model, h) => {
 	if (model.rootSpans.length === 0) {
 		return emptyMessage(h, { className: "rounded-md border p-8 text-sm" }, [
 			"No spans found for this trace",

@@ -6,12 +6,19 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"
 import { icon } from "../icon"
 import { cappedCode } from "../logs/log-message"
-import { type AttributeSource, copyStatusOf, isOpen, Message, type Model } from "./attributes-panel"
+import {
+	type AttributeSource,
+	type AttributesPanelViewBuilder,
+	copyStatusOf,
+	isOpen,
+	Message,
+	type Model,
+} from "./attributes-panel"
 
 // Port of `CopyableValue`, `SelectableValue`, `AttributeRow` (packages/ui/src/components/attributes/
 // attributes-table.tsx) and `CollapsibleJsonValue` (json-value.tsx), against an AttributesPanel Model.
 
-type H = HtmlBuilder<Message>
+type H = AttributesPanelViewBuilder
 
 const stop = { propagation: "Stop" } as const
 

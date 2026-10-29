@@ -4,7 +4,7 @@ import * as CommandStyles from "@maple/ui/styles/ui/command"
 import * as DialogStyles from "@maple/ui/styles/ui/dialog"
 import * as SheetStyles from "@maple/ui/styles/ui/sheet"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
+import { Block } from "foldkit"
 import {
 	type Attribute,
 	type ChildAttribute,
@@ -14,13 +14,17 @@ import {
 } from "foldkit/html"
 import {
 	descriptionId,
+	DialogComposition,
+	EffectsLayer,
+	init,
 	type Kind,
 	Message,
-	type Model,
+	Model,
 	MountDialog,
 	popupId,
 	titleId,
 	triggerId,
+	update,
 } from "./dialog"
 import { button } from "./button"
 import { icon } from "./icon"
@@ -149,7 +153,7 @@ export type ViewInputs = Readonly<{
 
 const slotPrefix = (kind: Kind) => kind
 
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+export const view = DialogComposition.makeView.withInputs<ViewInputs>((model, inputs, h) => {
 	const parts = partsOf(model.kind, inputs.side ?? "right", inputs.className, inputs.isBottomStickOnMobile)
 	const slot = slotPrefix(model.kind)
 	const isVisible = isMounted(model.isOpen, model.animation)
@@ -265,6 +269,22 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		: null
 	return inputs.toView({ trigger, portal })
 })
+
+// BLOCK
+
+const prepare = () =>
+	DialogComposition.prepareBlock({
+		init,
+		update,
+		view,
+		operations: {
+			requestOpen: Message.RequestedOpen,
+			requestClose: Message.RequestedClose,
+		},
+		EffectsLayer,
+	})
+export const DialogBlock: Block.FromAssemblyWithViewAndOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)
 
 // CONTENT: `DialogHeader`, `DialogTitle`, ... for the kinds with a title (rendered by the parent).
 

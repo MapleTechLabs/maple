@@ -1,6 +1,6 @@
 import { elementScroll, observeElementOffset, observeElementRect, Virtualizer } from "@tanstack/virtual-core"
 import { Effect, Queue, Stream } from "effect"
-import { Mount } from "foldkit"
+import { WaterfallDefinition } from "./definition"
 import { Message, type VirtualRow } from "./model"
 
 /** The scroller carries the visible rows' span ids and the selection, so the Mount sees each change. */
@@ -201,12 +201,14 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<WindowMessage> =>
 		).pipe(Effect.flatMap(() => Effect.never)),
 	)
 
-export const VirtualizeWaterfall = Mount.defineStream("VirtualizeWaterfall", {
+export const VirtualizeWaterfall = WaterfallDefinition.makeMountStream("VirtualizeWaterfall", {
 	messages: [Message.ChangedVirtualWindow],
-	execute: ({ element, viewStateChanges }) =>
-		viewStateChanges.pipe(
-			Stream.switchMap((viewState) =>
-				viewState === "Live" && element instanceof HTMLElement ? virtualize(element) : Stream.never,
-			),
-		),
+	handler: function* () {
+		return ({ element, viewStateChanges }) =>
+			viewStateChanges.pipe(
+				Stream.switchMap((viewState) =>
+					viewState === "Live" && element instanceof HTMLElement ? virtualize(element) : Stream.never,
+				),
+			)
+	},
 })

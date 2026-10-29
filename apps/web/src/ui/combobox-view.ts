@@ -3,16 +3,21 @@ import * as A from "@maple/ui/styles/ui/autocomplete"
 import * as C from "@maple/ui/styles/ui/combobox"
 import { inputControlChromeStyles, inputControlLayoutStyles } from "@maple/ui/styles/ui/input"
 import { Option } from "effect"
-import { Submodel } from "foldkit"
+import { Block } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import {
+	ComboboxComposition,
+	type ComboboxViewBuilder,
+	init,
 	inputId,
 	itemId,
 	listId,
 	Message,
-	type Model,
+	Model,
 	MountCombobox,
+	operations,
 	queryOf,
+	update,
 	visibleItems,
 } from "./combobox"
 import { icon } from "./icon"
@@ -21,11 +26,11 @@ import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay
 import { inputControlClassName } from "./input"
 import { scrollArea } from "./scroll-area"
 
-type H = HtmlBuilder<Message>
+type H = ComboboxViewBuilder
 type Slot = "combobox" | "autocomplete"
 
 /** Base UI's visually hidden "Dismiss" button for screen readers, beside the input and the list. */
-export const dismissButton = <M>(h: HtmlBuilder<M>): Html =>
+export const dismissButton = <M, R = never>(h: HtmlBuilder<M, R>): Html =>
 	h.span([
 		h.AriaLabel("Dismiss"),
 		h.Role("button"),
@@ -45,9 +50,10 @@ export const dismissButton = <M>(h: HtmlBuilder<M>): Html =>
 const INPUT_KEYS = new Set(["ArrowDown", "ArrowUp", "Home", "End", "Enter", "Escape"])
 
 /** The input's combobox attributes, state and keys: arrows move the highlight, Enter picks it.
- *  Generic over the Message so the command palette renders its inline list from its parent. */
-export const inputAttributes = <M>(
-	h: HtmlBuilder<M>,
+ *  Generic over the builder so owner-authored Combobox views (autocomplete, the command palette)
+ *  reuse it; `toMessage` maps into that view's Message. */
+export const inputAttributes = <M, R = never>(
+	h: HtmlBuilder<M, R>,
 	model: Model,
 	options: Readonly<{
 		slot: string
@@ -61,7 +67,7 @@ export const inputAttributes = <M>(
 		highlightsSelected?: boolean
 	}>,
 	toMessage: (message: Message) => M,
-): ReadonlyArray<Attribute<M>> => {
+): ReadonlyArray<Attribute<M, R>> => {
 	const isVisible = isMounted(model.isOpen, model.animation)
 	return [
 		...(model.highlighted === null ? [] : [h.AriaActiveDescendant(itemId(model.id, model.highlighted))]),
@@ -89,7 +95,9 @@ export const inputAttributes = <M>(
 		h.OnInput((value) => toMessage(Message.ChangedInput({ value }))),
 		h.OnClick(
 			toMessage(
-				options.highlightsSelected === true ? Message.ClickedInputOf({ items: options.items, selected: model.selected[0] ?? null }) : Message.ClickedInput(),
+				options.highlightsSelected === true
+					? Message.ClickedInputOf({ items: options.items, selected: model.selected[0] ?? null })
+					: Message.ClickedInput(),
 			),
 		),
 		h.OnKeyDownPreventDefault((key) =>
@@ -109,7 +117,7 @@ export const inputAttributes = <M>(
 }
 
 /** `<input aria-hidden>` Base UI keeps for form submission, after the field. */
-export const hiddenInput = <M>(h: HtmlBuilder<M>, model: Model): Html =>
+export const hiddenInput = <M, R = never>(h: HtmlBuilder<M, R>, model: Model): Html =>
 	h.input([
 		h.Key("hidden-input"),
 		h.AriaHidden(true),
@@ -120,7 +128,7 @@ export const hiddenInput = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 	])
 
 /** combobox.tsx's item indicator: an inline round-capped check, not a pixel glyph. */
-export const comboboxCheckIcon = <Message>(h: HtmlBuilder<Message>): Html =>
+export const comboboxCheckIcon = <M, R = never>(h: HtmlBuilder<M, R>): Html =>
 	h.svg(
 		[
 			h.Attribute("xmlns", "http://www.w3.org/2000/svg"),
@@ -218,7 +226,12 @@ export type PopupOptions = Readonly<{
 	renderItem?: (value: string) => ReadonlyArray<Html | string>
 	isUnfiltered?: boolean
 	/** `<ComboboxContent>` under a `<ComboboxTrigger>`: a dialog popup with its search input on top. */
-	trigger?: Readonly<{ returnFocusId: string; header: Html; footer?: ReadonlyArray<Html>; sideOffset?: number }>
+	trigger?: Readonly<{
+		returnFocusId: string
+		header: Html
+		footer?: ReadonlyArray<Html>
+		sideOffset?: number
+	}>
 	/** `<ComboboxItem className>`. */
 	itemClassName?: (value: string) => string | undefined
 	listClassName?: string
@@ -236,9 +249,13 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 	const state = stateAttributes(h, model.isOpen, model.animation)
 	const placement = [h.DataAttribute("align", model.align), ...state, h.DataAttribute("side", model.side)]
 	const filtered =
-		options.isUnfiltered === true || options.isPrefiltered === true ? options.items : visibleItems(model, options.items)
+		options.isUnfiltered === true || options.isPrefiltered === true
+			? options.items
+			: visibleItems(model, options.items)
 	const isEmpty =
-		options.isUnfiltered === true && options.isPrefiltered !== true ? queryOf(model).trim() !== "" : filtered.length === 0
+		options.isUnfiltered === true && options.isPrefiltered !== true
+			? queryOf(model).trim() !== ""
+			: filtered.length === 0
 	return h.div(
 		[
 			h.Key(portalId(model.id)),
@@ -305,8 +322,13 @@ export const listPopup = (h: H, model: Model, options: PopupOptions): Html => {
 													...(model.mode === "multiple"
 														? [h.AriaMultiSelectable(true)]
 														: []),
-													...(options.trigger !== undefined && model.highlighted !== null
-														? [h.AriaActiveDescendant(itemId(model.id, model.highlighted))]
+													...(options.trigger !== undefined &&
+													model.highlighted !== null
+														? [
+																h.AriaActiveDescendant(
+																	itemId(model.id, model.highlighted),
+																),
+															]
 														: []),
 													h.Class(cn(styles.list, options.listClassName)),
 													h.DataAttribute("slot", `${options.slot}-list`),
@@ -389,7 +411,7 @@ const chip = (h: H, value: string, isOpen: boolean): Html =>
 	)
 
 /** `<Combobox multiple>` with `ComboboxChips`: chips for the selection, then the chips input. */
-export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((model, inputs, h) => {
+export const chipsView = ComboboxComposition.makeView.withInputs<ChipsViewInputs>((model, inputs, h) => {
 	const chipsSelector = `[data-slot=combobox-chips]:has(> #${inputId(model.id)})`
 	const isOpen = isMounted(model.isOpen, model.animation)
 	const isDisabled = inputs.isDisabled ?? false
@@ -397,7 +419,9 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 		[
 			h.Key("chips"),
 			...(isDisabled ? [h.AriaDisabled(true)] : []),
-			h.Class(cn(C.comboboxChipsStyles, isDisabled && "pointer-events-none opacity-60", inputs.className)),
+			h.Class(
+				cn(C.comboboxChipsStyles, isDisabled && "pointer-events-none opacity-60", inputs.className),
+			),
 			h.DataAttribute("slot", "combobox-chips"),
 			// Base UI's chips are a toolbar once there is a chip to move between.
 			...(model.selected.length === 0 ? [] : [h.Role("toolbar")]),
@@ -473,7 +497,15 @@ export type SingleViewInputs = Readonly<{
 
 export type InputFieldOptions = Pick<
 	SingleViewInputs,
-	"items" | "ariaLabel" | "placeholder" | "startAddon" | "size" | "showTrigger" | "isUnfiltered" | "className" | "highlightsSelected"
+	| "items"
+	| "ariaLabel"
+	| "placeholder"
+	| "startAddon"
+	| "size"
+	| "showTrigger"
+	| "isUnfiltered"
+	| "className"
+	| "highlightsSelected"
 > &
 	Readonly<{
 		/** Inside a trigger's popup the input carries no dismiss button of its own. */
@@ -544,7 +576,7 @@ export const inputField = (h: H, model: Model, inputs: InputFieldOptions): Html 
 }
 
 /** `<Combobox>` with `<ComboboxInput startAddon>`: input group, chevron trigger and its popup. */
-export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model, inputs, h) =>
+export const view = ComboboxComposition.makeView.withInputs<SingleViewInputs>((model, inputs, h) =>
 	inputs.toView({
 		field: inputField(h, model, inputs),
 		rest: [
@@ -591,3 +623,17 @@ const triggerButton = (h: H, model: Model, size: "sm" | "default"): Html =>
 			),
 		],
 	)
+
+// BLOCK
+
+const prepare = () =>
+	ComboboxComposition.prepareBlock({
+		init,
+		update,
+		view,
+		operations,
+		EffectsLayer: MountCombobox.layer,
+	})
+/** The single combobox's `view` is the default; embed `chipsView` (or an owner's own view) by `view`. */
+export const ComboboxBlock: Block.FromAssemblyWithViewAndOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

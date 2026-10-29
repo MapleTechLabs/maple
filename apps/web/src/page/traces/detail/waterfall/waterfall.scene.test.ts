@@ -9,13 +9,12 @@ import {
 	role,
 	scene,
 	text,
-	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { SpanNodeData, TraceData } from "../trace-data"
 import { Message, type Model, OutMessage } from "./model"
-import { init, setSelectedSpanId, update } from "./update"
-import { view as waterfallView } from "./view"
+import { init, update } from "./update"
+import { view } from "./view"
 import { VirtualizeWaterfall } from "./virtualize"
 
 const traceId = Schema.decodeSync(TraceId)("6843a8853182b32339b2dd5120d423f2")
@@ -61,8 +60,6 @@ const windowOver = (count: number) =>
 		rows: Array.from({ length: count }, (_, index) => ({ index, start: index * 33 })),
 		totalSize: count * 33,
 	})
-
-const view = withViewInputs(waterfallView, {})()
 
 describe("waterfall", () => {
 	test("a short trace opens every parent; a long one folds deep levels but keeps errors open", () => {
@@ -122,7 +119,7 @@ describe("waterfall", () => {
 
 	test("a selection made after mount reveals its ancestors without undoing user toggles", () => {
 		const folded = update(entered(), Message.ClickedCollapseAll()).model
-		const selected = setSelectedSpanId(folded, idOf("c")).model
+		const selected = update(folded, Message.InformedOfSelectedSpan({ spanId: idOf("c") })).model
 		expect(new Set(selected.expanded)).toEqual(new Set([idOf("r"), idOf("a"), idOf("b")]))
 		expect(selected.selectedSpanId).toBe(idOf("c"))
 	})

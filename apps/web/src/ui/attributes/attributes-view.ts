@@ -2,18 +2,24 @@ import { splitGenAiAttributes } from "@maple/ui/lib/gen-ai"
 import { groupAttributesByNamespace } from "@maple/ui/lib/log-attributes"
 import { cn } from "@maple/ui/lib/utils"
 import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { badge } from "../display"
 import { icon } from "../icon"
 import { attributeRow, type RowContext } from "./attribute-row"
-import { type AttributeSource, isOpen, Message, type Model } from "./attributes-panel"
+import {
+	type AttributeSource,
+	AttributesPanelComposition,
+	type AttributesPanelViewBuilder,
+	isOpen,
+	Message,
+	type Model,
+} from "./attributes-panel"
 import { searchInput } from "../search-input"
 
 // Port of `AttributesTable`, `AttributesSection`, `ResourceAttributesSection` (packages/ui/src/
 // components/attributes/attributes-table.tsx) and the log attributes panel.
 
-type H = HtmlBuilder<Message>
+type H = AttributesPanelViewBuilder
 
 /** Base UI `Collapsible`: open renders the panel (with Base UI's settled style), closed drops it. */
 const collapsible = (
@@ -296,7 +302,7 @@ const sectionOf = (h: H, model: Model, inputs: PanelInputs, source: AttributeSou
 export type TableInputs = Readonly<{ attributes: Readonly<Record<string, string>>; title: string }>
 
 /** A bare `<AttributesTable attributes title />`: ungrouped, unsearched, copy only. */
-export const tableView = Submodel.defineView<Model, Message, TableInputs>((model, inputs, h) =>
+export const tableView = AttributesPanelComposition.makeView.withInputs<TableInputs>((model, inputs, h) =>
 	attributesTable(
 		h,
 		{ model, source: "log", canFilter: false, idPrefix: "table" },
@@ -305,7 +311,7 @@ export const tableView = Submodel.defineView<Model, Message, TableInputs>((model
 )
 
 /** `LogAttributesPanel`: the search box, then the log and resource attribute sections. */
-export const view = Submodel.defineView<Model, Message, PanelInputs>((model, inputs, h) =>
+export const view = AttributesPanelComposition.makeView.withInputs<PanelInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class(cn("space-y-3"))],
 		[

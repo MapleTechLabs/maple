@@ -1,5 +1,4 @@
-export { init, locationChanged, update } from "./update"
-export { Message } from "./message"
+export { SessionDetailBlock } from "./block"
 export { Model } from "./model"
-export { view } from "./view"
+export type { SessionDetailViewInputs } from "./view"
 export { lanes } from "./lanes"

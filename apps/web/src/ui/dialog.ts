@@ -1,15 +1,15 @@
-import * as Animation from "@foldkit/ui/animation"
-import { Effect, Option, Schema, Stream } from "effect"
-import { Command, Dom, Mount, Update } from "foldkit"
+import { Effect, Option, pipe, Schema, Stream } from "effect"
+import { Block, Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { modifyFields } from "foldkit/struct"
 import { outsidePresses, strayEscapes } from "./overlay/anchored"
+import { PopupTransitionBlock } from "./overlay/popup-transition"
 import { lockBodyScroll, manageFocus, markOutside, portalToBody, trapFocus } from "./overlay/portal"
 
 /**
- * Base UI `Dialog` / `AlertDialog` as one Submodel: open state, the enter/exit transition, and a
+ * Base UI `Dialog` / `AlertDialog` as one Block: open state, the enter/exit transition, and a
  * Mount that portals the popup to `<body>`, marks the page outside it, locks scroll and traps
- * focus. `dialog-view.ts` renders Dialog, AlertDialog, Sheet and the command palette's dialog.
+ * focus. `dialog-view.ts` renders Dialog, AlertDialog, Sheet and the command palette's dialog
+ * and completes `DialogBlock`.
  */
 
 // MODEL
@@ -21,7 +21,7 @@ export const Model = Schema.Struct({
 	id: Schema.String,
 	kind: Kind,
 	isOpen: Schema.Boolean,
-	animation: Animation.Model,
+	animation: PopupTransitionBlock.Model,
 })
 export type Model = typeof Model.Type
 
@@ -30,12 +30,12 @@ export const triggerId = (id: string): string => `${id}-trigger`
 export const titleId = (id: string): string => `${id}-title`
 export const descriptionId = (id: string): string => `${id}-description`
 
-/** `<Dialog defaultOpen>` is `init(id, kind, { isOpen: true })`: open with no enter transition. */
-export const init = (id: string, kind: Kind, options: Readonly<{ isOpen?: boolean }> = {}): Model => ({
+/** `<Dialog defaultOpen>` is `initialModel(id, kind, { isOpen: true })`: open with no enter transition. */
+export const initialModel = (id: string, kind: Kind, options: Readonly<{ isOpen?: boolean }> = {}): Model => ({
 	id,
 	kind,
 	isOpen: options.isOpen ?? false,
-	animation: Animation.init({ id: popupId(id), isShowing: options.isOpen ?? false }),
+	animation: PopupTransitionBlock.init({ id: popupId(id), isShowing: options.isOpen ?? false }).model,
 })
 
 // MESSAGE
@@ -46,74 +46,19 @@ export const Message = defineMessageUnion({
 	PressedEscape: {},
 	PressedOutside: {},
 	CompletedMountDialog: {},
-	GotAnimationMessage: { message: Animation.Message },
+	/** Operation: the parent opens the dialog from code. */
+	RequestedOpen: {},
+	/** Operation: the parent closes the dialog from code. */
+	RequestedClose: {},
 })
 export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({ Opened: {}, Closed: {} })
 export type OutMessage = typeof OutMessage.Type
 
-// UPDATE
+export const DialogDefinition = Block.makeDefinition("Dialog", { Model, Message, OutMessage })
 
-/** The exit transition ends when the popup's CSS transitions settle (`useOpenChangeComplete`). */
-export const WaitForDialogTransition = Command.define("WaitForDialogTransition", {
-	args: { id: Schema.String, generation: Schema.Number },
-	messages: [Message.GotAnimationMessage],
-	execute: ({ id, generation }) =>
-		Dom.waitForAnimationSettled(`#${CSS.escape(popupId(id))}`).pipe(
-			Effect.as(
-				Message.GotAnimationMessage({ message: Animation.Message.EndedAnimation({ generation }) }),
-			),
-		),
-})
-
-const animationFold = {
-	read: (model: Model) => Option.some(model.animation),
-	write: (model: Model, animation: Animation.Model) => modifyFields(model, { animation: () => animation }),
-	toParentMessage: (message: Animation.Message) => Message.GotAnimationMessage({ message }),
-}
-
-const foldAnimation = Update.foldChild({
-	...animationFold,
-	update: Animation.update,
-	foldOutMessage: Animation.OutMessage.match<Update.Step<Model, Message>>({
-		StartedLeaveAnimating:
-			({ generation }) =>
-			(model) => ({ model, commands: [WaitForDialogTransition({ id: model.id, generation })] }),
-		TransitionedOut: () => (model) => ({ model }),
-	}),
-})
-const showAnimation = Update.foldChildStep({ ...animationFold, update: Animation.show })
-const hideAnimation = Update.foldChildStep({ ...animationFold, update: Animation.hide })
-
-type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
-
-export const open = (model: Model): UpdateReturn =>
-	model.isOpen
-		? { model }
-		: Update.withOutMessage(OutMessage.Opened())(
-				showAnimation(modifyFields(model, { isOpen: () => true })),
-			)
-
-export const close = (model: Model): UpdateReturn =>
-	model.isOpen
-		? Update.withOutMessage(OutMessage.Closed())(
-				hideAnimation(modifyFields(model, { isOpen: () => false })),
-			)
-		: { model }
-
-/** An alert dialog ignores presses outside it; Escape and its buttons still close it. */
-export const isDismissedByOutsidePress = (kind: Kind): boolean => kind !== "alert-dialog"
-
-export const update = (model: Model, message: Message): UpdateReturn =>
-	Message.match<UpdateReturn>(message, {
-		ClickedTrigger: () => (model.isOpen ? close(model) : open(model)),
-		ClickedClose: () => close(model),
-		PressedEscape: () => close(model),
-		PressedOutside: () => (isDismissedByOutsidePress(model.kind) ? close(model) : { model }),
-		CompletedMountDialog: () => ({ model }),
-		GotAnimationMessage: ({ message: animationMessage }) => foldAnimation(model, animationMessage),
-	})
+const { makeStep, makeNoopStep, makeFieldsStep } = DialogDefinition
 
 // MOUNT
 
@@ -126,7 +71,7 @@ const nestedPopups = (portal: Element) =>
  * On the portal root: moves it to `<body>`, hides the rest of the page from assistive tech,
  * locks scroll, traps focus and moves it in; releasing (unmount) undoes each and returns focus.
  */
-export const MountDialog = Mount.defineStream("MountDialog", {
+export const MountDialog = DialogDefinition.makeMountStream("MountDialog", {
 	args: {
 		id: Schema.String,
 		hasTrigger: Schema.Boolean,
@@ -134,28 +79,87 @@ export const MountDialog = Mount.defineStream("MountDialog", {
 		isReturningFocus: Schema.Boolean,
 	},
 	messages: [Message.CompletedMountDialog, Message.PressedOutside, Message.PressedEscape],
-	execute: ({ element, id, hasTrigger, isPopupFocused, isReturningFocus }) =>
-		Stream.unwrap(
-			Effect.gen(function* () {
-				yield* portalToBody(element)
-				yield* markOutside(element, { mark: true, ariaHidden: true })
-				yield* lockBodyScroll
-				const mounted = Stream.make(Message.CompletedMountDialog())
-				const popup = element.querySelector(`#${CSS.escape(popupId(id))}`)
-				if (!(element instanceof HTMLElement) || !(popup instanceof HTMLElement)) return mounted
-				yield* trapFocus(element, popup)
-				yield* manageFocus(popup, {
-					returnFocusId: hasTrigger ? Option.some(triggerId(id)) : Option.none(),
-					initialFocus: isPopupFocused ? "popup" : "first-tabbable",
-					isReturningFocus,
-				})
-				return Stream.concat(
-					mounted,
-					Stream.merge(
-						outsidePresses(popup, [nestedPopups(element)]).pipe(Stream.map(() => Message.PressedOutside())),
-						strayEscapes(element).pipe(Stream.map(() => Message.PressedEscape())),
-					),
-				)
-			}),
-		),
+	handler: function* () {
+		return ({ element, id, hasTrigger, isPopupFocused, isReturningFocus }) =>
+			Stream.unwrap(
+				Effect.gen(function* () {
+					yield* portalToBody(element)
+					yield* markOutside(element, { mark: true, ariaHidden: true })
+					yield* lockBodyScroll
+					const mounted = Stream.make(Message.CompletedMountDialog())
+					const popup = element.querySelector(`#${CSS.escape(popupId(id))}`)
+					if (!(element instanceof HTMLElement) || !(popup instanceof HTMLElement)) return mounted
+					yield* trapFocus(element, popup)
+					yield* manageFocus(popup, {
+						returnFocusId: hasTrigger ? Option.some(triggerId(id)) : Option.none(),
+						initialFocus: isPopupFocused ? "popup" : "first-tabbable",
+						isReturningFocus,
+					})
+					return Stream.concat(
+						mounted,
+						Stream.merge(
+							outsidePresses(popup, [nestedPopups(element)]).pipe(Stream.map(() => Message.PressedOutside())),
+							strayEscapes(element).pipe(Stream.map(() => Message.PressedEscape())),
+						),
+					)
+				}),
+			)
+	},
+})
+
+/** The handlers this Block owns; `prepareBlock` takes it. */
+export const EffectsLayer = MountDialog.layer
+
+// COMPOSITION
+
+// The exit transition ends when the popup's CSS transitions settle (`useOpenChangeComplete`):
+// PopupTransitionBlock waits on `#${popupId(id)}` itself once the leave starts.
+const AnimationBinding = DialogDefinition.makeBinding(PopupTransitionBlock, { field: "animation", init: false })
+
+export const DialogComposition = DialogDefinition.makeComposition({
+	bindings: [AnimationBinding],
+	mounts: [MountDialog],
+})
+export type DialogViewBuilder = Block.ViewBuilderFor<typeof DialogComposition>
+
+// INIT
+
+export const init = DialogComposition.makeInit(
+	(id: string, kind: Kind, options: Readonly<{ isOpen?: boolean }> = {}) => ({
+		model: initialModel(id, kind, options),
+	}),
+)
+
+// UPDATE
+
+const showStep = makeStep(() =>
+	Update.combineSteps([makeFieldsStep(() => ({ isOpen: () => true })), AnimationBinding.requestShow()]),
+)
+const hideStep = makeStep(() =>
+	Update.combineSteps([makeFieldsStep(() => ({ isOpen: () => false })), AnimationBinding.requestHide()]),
+)
+
+// A no-op when already open (closed); the OutMessage reports only a real change.
+const openStep = makeStep((model) => (model.isOpen ? makeNoopStep() : showStep))
+const closeStep = makeStep((model) => (model.isOpen ? hideStep : makeNoopStep()))
+const opened = (isOpen: boolean): OutMessage | undefined => (isOpen ? undefined : OutMessage.Opened())
+const closed = (isOpen: boolean): OutMessage | undefined => (isOpen ? OutMessage.Closed() : undefined)
+
+/** An alert dialog ignores presses outside it; Escape and its buttons still close it. */
+export const isDismissedByOutsidePress = (kind: Kind): boolean => kind !== "alert-dialog"
+
+export const update = DialogComposition.makeUpdate({
+	ClickedTrigger: (model) =>
+		model.isOpen
+			? pipe(closeStep(model), Update.withOutMessage(closed(model.isOpen)))
+			: pipe(openStep(model), Update.withOutMessage(opened(model.isOpen))),
+	ClickedClose: (model) => pipe(closeStep(model), Update.withOutMessage(closed(model.isOpen))),
+	PressedEscape: (model) => pipe(closeStep(model), Update.withOutMessage(closed(model.isOpen))),
+	PressedOutside: (model) =>
+		isDismissedByOutsidePress(model.kind)
+			? pipe(closeStep(model), Update.withOutMessage(closed(model.isOpen)))
+			: makeNoopStep()(model),
+	CompletedMountDialog: makeNoopStep(),
+	RequestedOpen: (model) => pipe(openStep(model), Update.withOutMessage(opened(model.isOpen))),
+	RequestedClose: (model) => pipe(closeStep(model), Update.withOutMessage(closed(model.isOpen))),
 })

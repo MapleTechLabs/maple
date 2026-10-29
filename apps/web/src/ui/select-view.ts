@@ -20,12 +20,23 @@ import {
 	selectValueStyles,
 } from "@maple/ui/styles/ui/select"
 import { Array, Option } from "effect"
-import { Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Block } from "foldkit"
+import type { Html } from "foldkit/html"
 import { icon } from "./icon"
 import { portalId, triggerId } from "./overlay/popup-state"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
-import { itemId, listId, Message, type Model, MountSelect } from "./select"
+import {
+	EffectsLayer,
+	init,
+	itemId,
+	listId,
+	Message,
+	type Model,
+	MountSelect,
+	SelectComposition,
+	type SelectViewBuilder,
+	update,
+} from "./select"
 
 /** `isDisabled`: `<SelectItem disabled>`, listed but not choosable. */
 export type SelectOption = Readonly<{ value: string; label: string; isDisabled?: boolean; title?: string }>
@@ -64,7 +75,7 @@ export type ViewInputs = Readonly<{
 	isDisabled?: boolean
 }>
 
-type H = HtmlBuilder<Message>
+type H = SelectViewBuilder
 
 /** The options in list order: their index is the highlight and focus index. */
 export const optionsOf = (entries: ReadonlyArray<SelectEntry>): ReadonlyArray<SelectOption> =>
@@ -284,7 +295,7 @@ const portal = (h: H, model: Model, inputs: ViewInputs): Html => {
 }
 
 /** `<SelectTrigger><SelectValue /></SelectTrigger>` and, while open, its guards and portal. */
-export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
+export const view = SelectComposition.makeView.withInputs<ViewInputs>((model, inputs, h) => {
 	const options = optionsOf(inputs.entries)
 	const selected = Array.findFirst(options, (item) => item.value === model.value)
 	const isVisible = isMounted(model.isOpen, model.animation)
@@ -370,3 +381,16 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 			: [trigger, hiddenInput],
 	)
 })
+
+// BLOCK
+
+const prepare = () =>
+	SelectComposition.prepareBlock({
+		init,
+		update,
+		view,
+		operations: { informValue: Message.InformedOfValue },
+		EffectsLayer,
+	})
+export const SelectBlock: Block.FromAssemblyWithViewAndOutMessage<typeof Model, typeof prepare> =
+	Block.assemble(prepare)

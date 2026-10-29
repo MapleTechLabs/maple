@@ -10,9 +10,14 @@ import {
 	text,
 	type,
 } from "foldkit/scene"
+import * as Story from "foldkit/story"
 import { describe, expect, test } from "vitest"
-import { init, Message, type Model, OutMessage, update, WriteAttributeClipboard } from "./attributes-panel"
+import { Message, type Model, OutMessage, WaitAttributeCopyStatus, WriteAttributeClipboard } from "./attributes-panel"
+import { AttributesPanelBlock } from "./attributes-panel-block"
 import { type PanelInputs, view } from "./attributes-view"
+
+const { init, update } = AttributesPanelBlock
+const { story } = Story
 
 const INPUTS: PanelInputs = {
 	logAttributes: { "http.route": "/api/checkout", duration_ms: "785", maple_org_id: "org_1" },
@@ -29,7 +34,7 @@ describe("attributes panel", () => {
 	test("rows group by namespace and the search narrows them", () => {
 		scene(
 			program,
-			given(init("panel")),
+			given(init("panel").model),
 			expectView(text("route")).toExist(),
 			expectView(text("pod.name")).toExist(),
 			type(placeholder("Search attributes…"), "region"),
@@ -42,7 +47,7 @@ describe("attributes panel", () => {
 	test("Maple's own keys wait in a closed section", () => {
 		scene(
 			program,
-			given(init("panel")),
+			given(init("panel").model),
 			expectView(text("maple_org_id")).not.toExist(),
 			click(role("button", { name: /^Maple internal/ })),
 			expectView(text("maple_org_id")).toExist(),
@@ -52,7 +57,7 @@ describe("attributes panel", () => {
 	test("a row's Filter action reports the attribute filter", () => {
 		scene(
 			program,
-			given(init("panel")),
+			given(init("panel").model),
 			click(role("button", { name: "Filter by http.route = /api/checkout" })),
 			expectOutMessage(
 				OutMessage.ChoseAttributeFilter({
@@ -66,15 +71,19 @@ describe("attributes panel", () => {
 	})
 
 	test("copying a key settles its status for that control only", () => {
-		const clicked = update(
-			init("panel"),
-			Message.ClickedCopy({ copyId: "key:log:http.route", text: "x" }),
+		story(
+			update,
+			Story.given(init("panel").model),
+			Story.message(Message.ClickedCopy({ copyId: "key:log:http.route", text: "x" })),
+			Story.Command.expectHas(WriteAttributeClipboard),
+			Story.Command.resolve(WriteAttributeClipboard, Message.SucceededCopy({ generation: 1 })),
+			Story.model((model: Model) =>
+				expect(model.copy).toEqual({ id: "key:log:http.route", status: "copied", generation: 1 }),
+			),
+			Story.Command.expectHas(WaitAttributeCopyStatus),
+			Story.Command.resolve(WaitAttributeCopyStatus, Message.ElapsedCopyStatus({ generation: 0 })),
+			Story.model((model: Model) => expect(model.copy.status).toBe("copied")),
 		)
-		expect(clicked.commands?.map((command) => command.name)).toEqual([WriteAttributeClipboard.name])
-		const copied = update(clicked.model, Message.SucceededCopy({ generation: 1 }))
-		expect(copied.model.copy).toEqual({ id: "key:log:http.route", status: "copied", generation: 1 })
-		const stale = update(copied.model, Message.ElapsedCopyStatus({ generation: 0 }))
-		expect(stale.model.copy.status).toBe("copied")
 	})
 
 	test("a JSON attribute previews raw, has no Filter action, and expands on click", () => {
@@ -85,7 +94,7 @@ describe("attributes panel", () => {
 		}
 		scene(
 			jsonProgram,
-			given(init("panel")),
+			given(init("panel").model),
 			expectView(text('{"a":1,"b":[2]}')).toExist(),
 			expectView(role("button", { name: /^Filter by payload/ })).not.toExist(),
 			click(text('{"a":1,"b":[2]}')),
@@ -105,7 +114,7 @@ describe("attributes panel", () => {
 		}
 		scene(
 			hugeProgram,
-			given(init("panel")),
+			given(init("panel").model),
 			click(text(/^\{"key0":0/)),
 			expectView(text(/Showing the first .* characters\. Copy it to get all of it\./)).toExist(),
 			expectView(text(/"key19999"/)).not.toExist(),

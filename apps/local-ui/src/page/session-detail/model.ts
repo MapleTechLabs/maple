@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { SlotSchema } from "../../data/slot"
-import { Copies } from "../kit/copies"
+import * as CopyButton from "@maple/web/ui/copy-button"
 
 // One session's detail, as Schemas: the columns the page reads.
 
@@ -64,6 +64,7 @@ export const Model = Schema.TaggedStruct("SessionDetailPage", {
 	/** `dataUpdatedAt` of the detail, for the "New data" pill. */
 	detailUpdatedAtMs: Schema.Number,
 	isRefreshing: Schema.Boolean,
-	copies: Copies,
+	/** The hero's session id copy button. */
+	copy: CopyButton.Model,
 })
 export type Model = typeof Model.Type
