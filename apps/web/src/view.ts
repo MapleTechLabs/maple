@@ -20,6 +20,7 @@ import {
 	type PageMessage,
 	pageBreadcrumbs,
 	pageSource,
+	unloadedPageOf,
 	viewPage,
 	viewPageTopbarActions,
 } from "./page/registry"
@@ -125,14 +126,20 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 		),
 	)
 
+/** The route's page whose code failed to load, with why; a stale failure of another page is none. */
+const failedPageCodeView = (model: Model, h: HtmlBuilder<Message>): Option.Option<Html> => {
+	const { pageCode } = model
+	return pageCode._tag === "Failed" && Option.contains(unloadedPageOf(model.route), pageCode.pageId)
+		? Option.some(pageCodeFailedContent(h, pageCode.failure, Message.ClickedReloadPage()))
+		: Option.none()
+}
+
 /** The routed page, the not-found body for an unknown path, or a skeleton while the page loads. */
 const pageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition): Html =>
 	Option.getOrElse(lazyPageView(model, h, position), () =>
 		model.route._tag === "NotFound"
 			? notFoundContent(h)
-			: model.pageCode._tag === "Failed"
-				? pageCodeFailedContent(h, model.pageCode.failure, Message.ClickedReloadPage())
-				: placeholderContent(h),
+			: Option.getOrElse(failedPageCodeView(model, h), () => placeholderContent(h)),
 	)
 
 /** The routed page's own top-bar actions, if it has any. */

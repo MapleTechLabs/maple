@@ -445,17 +445,23 @@ const loadPage: Step = (model) =>
 const isAwaitingPageCode = (model: Model, pageId: string) =>
 	model.pageCode._tag !== "Ready" && model.pageCode.pageId === pageId
 
-/** The route's page has no code yet: the open page is left and its code loaded, once (`Failed` waits for Reload). */
+/**
+ * The route's page has no code yet: the open page is left and its code loaded, once (`Failed` waits
+ * for Reload). Its held reads stay held until the next page enters and releases what it does not read.
+ */
 const awaitPageCode = (model: Model, pageId: string): UpdateReturn => {
 	const left =
 		model.page === null
-			? { model }
-			: writePage({ slot: null, commands: [], outMessage: Option.none() })(model)
+			? model
+			: modifyFields(model, {
+					page: () => null,
+					parkedPages: (parked) => parkPages(parked, model.page, null),
+				})
 	return isAwaitingPageCode(model, pageId)
-		? left
+		? { model: left }
 		: {
-				model: modifyFields(left.model, { pageCode: () => PageCode.Loading({ pageId }) }),
-				commands: [...(left.commands ?? []), LoadPageCode({ pageId, preloadHref: null })],
+				model: modifyFields(left, { pageCode: () => PageCode.Loading({ pageId }) }),
+				commands: [LoadPageCode({ pageId, preloadHref: null })],
 			}
 }
 
