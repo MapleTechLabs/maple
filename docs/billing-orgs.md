@@ -69,3 +69,7 @@ A billing org cannot be deleted while it has members; a member's link is purged 
 - An org deleted while someone links it, or links to it, can leave a link row to a deleted org.
   The delete checks and removes links under the lock, but the rest of its purge does not.
 - Links never span regions: usage meters and Postgres rows are per region.
+- Unverified against Autumn: with a downgrade booked, the current plan is already cancelled and is
+  skipped, and the scheduled plan is cancelled immediately. If Autumn answers that by un-cancelling
+  the current plan, it would renew on the member's card. Check the member's customer after the
+  first such link.

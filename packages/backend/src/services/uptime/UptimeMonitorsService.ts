@@ -655,6 +655,19 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const failuresToDown = yield* validateFailuresToDown(
 					input.failuresToDown ?? DEFAULT_FAILURES_TO_DOWN,
 				)
+				// The cap is read before the transaction, for the payer as it stands now, so no Autumn
+				// call runs under the link lock. Re-read under the lock only if a link moved it since.
+				const [linked] = yield* dbExecute((db) =>
+					db.run(
+						PG.from(OrgBillingLinks)
+							.select(($) => ({ billingOrgId: $.billingOrgId }))
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+				)
+				const expectedPayer = ownBillingCustomer(linked?.billingOrgId ?? orgId)
+				const expectedLimit = yield* allowance.limit(expectedPayer)
+
 				const now = yield* Clock.currentTimeMillis
 				const id = UptimeMonitorId.make(randomUUID())
 				const ruleId = AlertRuleId.make(randomUUID())
@@ -667,9 +680,12 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 							// One lock for the count and the rule checks: concurrent creates cannot both pass a full plan.
 							yield* lockOrgMonitors(db, orgId)
 							const pooled = yield* countPooledMonitors(db, orgId)
-							// The cap of the payer read under the link lock: a link landing a moment ago
-							// changes both the pool and whose plan caps it.
-							yield* ensureWithinLimit(yield* allowance.limit(pooled.payer), pooled.count)
+							// A link landing a moment ago changes both the pool and whose plan caps it.
+							const limit =
+								pooled.payer === expectedPayer
+									? expectedLimit
+									: yield* allowance.limit(pooled.payer)
+							yield* ensureWithinLimit(limit, pooled.count)
 							yield* claimRuleWrite(db, orgId, ruleId, { name, destinationIds })
 							yield* db.run(
 								PG.insertInto(AlertRules).values({
