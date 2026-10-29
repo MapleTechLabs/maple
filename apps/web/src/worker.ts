@@ -59,6 +59,11 @@ const props = Effect.gen(function* () {
 					? yield* plainFrom(["VITE_INGEST_URL"], "https://ingest.maple.dev")
 					: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
+			// The status Worker's origin, for the public page links; blank leaves them as paths.
+			VITE_STATUS_PAGE_BASE_URL: yield* plainFrom(
+				["VITE_STATUS_PAGE_BASE_URL", "MAPLE_STATUS_PAGE_BASE_URL"],
+				"",
+			),
 			// Orgs living in another region are redirected to that region's app.
 			VITE_MAPLE_REGION: region,
 			VITE_MAPLE_REGION_APP_URLS: JSON.stringify(resolveRegionAppUrls(stage)),

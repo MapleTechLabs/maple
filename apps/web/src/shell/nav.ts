@@ -138,6 +138,7 @@ export const navGroups = (
 		label: "Monitor",
 		items: [
 			{ ...servicesItem, alsoActive: flags.releases ? [] : ["/releases"] },
+			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" },
 			...(flags.releases
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),

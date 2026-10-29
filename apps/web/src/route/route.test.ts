@@ -40,14 +40,28 @@ describe("routes", () => {
 		expect(hrefOf(monitor)).toBe("/alerts/uptime/upm_abc")
 	})
 
-	test("a status page route keeps its tab and prints back", () => {
-		const route = parse("/alerts/status-pages/stp_abc?tab=%22incidents%22")
-		expect(route).toMatchObject({
-			_tag: "AlertsStatusPage",
-			pageId: "stp_abc",
-			search: { tab: "incidents" },
-		})
-		expect(hrefOf(route)).toBe("/alerts/status-pages/stp_abc?tab=incidents")
+	test("status page routes parse, the builder ahead of a page id, and print back", () => {
+		expect(parse("/status-pages")._tag).toBe("StatusPages")
+		expect(parse("/status-pages/new")._tag).toBe("StatusPageNew")
+		const route = parse("/status-pages/stp_abc?view=%22settings%22")
+		expect(route).toMatchObject({ _tag: "StatusPage", pageId: "stp_abc", search: { view: "settings" } })
+		expect(hrefOf(route)).toBe("/status-pages/stp_abc?view=settings")
+	})
+
+	test("the old status page links under Alerts redirect to their own section", () => {
+		expect(routeRedirect(parse("/alerts?tab=%22status-pages%22"))).toEqual(
+			Option.some({ url: "/status-pages", isReplace: true }),
+		)
+		expect(routeRedirect(parse("/alerts?tab=%22uptime%22"))).toEqual(Option.none())
+		expect(routeRedirect(parse("/alerts/status-pages/stp_abc"))).toEqual(
+			Option.some({ url: "/status-pages/stp_abc", isReplace: true }),
+		)
+		expect(routeRedirect(parse("/alerts/status-pages/stp_abc?tab=%22json%22"))).toEqual(
+			Option.some({ url: "/status-pages/stp_abc?view=json", isReplace: true }),
+		)
+		expect(routeRedirect(parse("/alerts/status-pages/stp_abc?tab=%22incidents%22"))).toEqual(
+			Option.some({ url: "/status-pages/stp_abc", isReplace: true }),
+		)
 	})
 
 	test("a literal sibling wins over a param route", () => {
