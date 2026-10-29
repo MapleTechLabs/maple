@@ -5,13 +5,21 @@
  */
 import { Clock, Effect, Schema } from "effect"
 import {
+	ApplyStatusPageConfigOutput,
+	GetStatusPageConfigOutput,
 	GetStatusPageOutput,
 	ListStatusPagesOutput,
 	StatusPageIncidentMutationOutput,
 	type StatusPageIncidentRow,
 	type StatusPageRow,
 } from "@maple/domain/mcp-outputs"
-import { decodePublicId, encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
+import {
+	decodePublicId,
+	diffStatusPageConfig,
+	encodePublicId,
+	PublicIdPrefixes,
+	StatusPageConfig,
+} from "@maple/domain/http/v2"
 import type {
 	StatusPageComponentRecord,
 	StatusPageIncidentRecord,
@@ -26,15 +34,17 @@ import {
 } from "@maple/domain/primitives"
 import { isActiveIncident, overallStatus, pageFreshness } from "@maple/domain/status-page"
 import { parseWarehouseDateTime, WarehouseTimeInput } from "@maple/query-engine"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
-import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, McpQueryError, McpUnavailableError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
 const INCIDENT_STATUSES = ["investigating", "identified", "monitoring"] as const
 const MUTATION_HINTS = { readOnly: false, destructive: false, idempotent: false, openWorld: true } as const
+const encodeConfig = Schema.encodeSync(StatusPageConfig)
 
 const iso = (ms: number) => new Date(ms).toISOString()
 const isoOrNull = (ms: number | null) => (ms === null ? null : iso(ms))
@@ -61,6 +71,7 @@ const toMcpError =
 					parameter: "components",
 				})
 			case "@maple/http/errors/StatusPageValidationError":
+			case "@maple/http/errors/StatusPageSlugTakenError":
 				return new McpInvalidInputError({ message: error.message })
 			default:
 				return new McpQueryError({ message: `${error._tag}: ${error.message}`, pipeName: tool })
@@ -573,5 +584,110 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			return { action: "scheduled" as const, incident: toIncidentRow(created) }
 		}),
 		render: (output) => renderIncident("Maintenance scheduled", output),
+	})
+
+	server.define({
+		name: "get_status_page_config",
+		title: "Get Status Page Config",
+		description:
+			"One status page's settings, theme and ordered components as a JSON document (no incidents, break-glass token or publish state). Edit it and pass it to apply_status_page_config to change the page in one write. Same document as GET /v2/status_pages/{id}/config.",
+		parameters: Schema.Struct({
+			page: P.text("The page's slug, name or id (list_status_pages lists them)"),
+		}),
+		output: GetStatusPageConfigOutput,
+		hints: { readOnly: true, destructive: false, idempotent: true },
+		phrases: ["Reading a status page config"],
+		handler: Effect.fn("McpTool.getStatusPageConfig")(function* (params) {
+			const tool = "get_status_page_config"
+			const tenant = yield* CurrentMcpTenant
+			const service = yield* StatusPagesService
+			const page = yield* resolvePage(tool, tenant.orgId, params.page)
+			const config = yield* service
+				.getConfig(tenant.orgId, page.id)
+				.pipe(Effect.mapError(toMcpError(tool)))
+			return { page: toPageRow(page), config }
+		}),
+		render: (output) => ({
+			title: `Status page config: ${output.page.name}`,
+			notices: [
+				"apply_status_page_config replaces the page with an edited copy: keep a component's id to update it, drop the id to add one, leave it out to delete it. Order is display order.",
+			],
+			blocks: [doc.code("json", JSON.stringify(encodeConfig(output.config), null, 2))],
+		}),
+	})
+
+	server.define({
+		name: "apply_status_page_config",
+		title: "Apply Status Page Config",
+		description:
+			"Replace a status page with a config document from get_status_page_config, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults. Only org admins may call it, and the result is public on the page.",
+		parameters: Schema.Struct({
+			page: P.text("The page's slug, name or id"),
+			config: P.json(
+				StatusPageConfig,
+				"The whole page document, as returned by get_status_page_config, edited",
+			),
+		}),
+		output: ApplyStatusPageConfigOutput,
+		hints: { readOnly: false, destructive: true, idempotent: false, openWorld: true },
+		phrases: ["Applying a status page config"],
+		handler: Effect.fn("McpTool.applyStatusPageConfig")(function* (params) {
+			const tool = "apply_status_page_config"
+			const tenant = yield* CurrentMcpTenant
+			yield* requireAdmin(
+				tenant.roles,
+				() =>
+					new McpUnavailableError({
+						message: `${tool} changes a public status page, which only org admins may do. Ask an admin, or edit it in Maple under Status pages.`,
+						capability: "org_admin",
+					}),
+			)
+			const service = yield* StatusPagesService
+			const page = yield* resolvePage(tool, tenant.orgId, params.page)
+			const before = yield* service
+				.getConfig(tenant.orgId, page.id)
+				.pipe(Effect.mapError(toMcpError(tool)))
+			const config = yield* service
+				.applyConfig(tenant.orgId, page.id, params.config, tenant.userId)
+				.pipe(Effect.mapError(toMcpError(tool)))
+			const { fields, created, updated, deleted, reordered } = diffStatusPageConfig(
+				before,
+				params.config,
+			)
+			const applied = yield* service.get(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
+			return {
+				page: toPageRow(applied),
+				config,
+				changes: { fields, created, updated, deleted, reordered },
+			}
+		}),
+		render: (output) => {
+			const { fields, created, updated, deleted, reordered } = output.changes
+			const unchanged =
+				fields.length === 0 &&
+				created.length === 0 &&
+				updated.length === 0 &&
+				deleted.length === 0 &&
+				!reordered
+			const list = (names: ReadonlyArray<string>) => (names.length === 0 ? undefined : names.join(", "))
+			return {
+				title: `Status page config applied: ${output.page.name}`,
+				notices: unchanged
+					? ["Nothing changed: the document matched the page."]
+					: ["The change publishes to the public page within a minute."],
+				blocks: [
+					doc.fields([
+						["Fields changed", list(fields)],
+						["Components created", list(created)],
+						["Components updated", list(updated)],
+						["Components deleted", list(deleted)],
+						["Order changed", reordered ? "yes" : undefined],
+					]),
+				],
+				next: [
+					doc.next("get_status_page", { page: output.page.slug }, "the page as visitors see it"),
+				],
+			}
+		},
 	})
 }

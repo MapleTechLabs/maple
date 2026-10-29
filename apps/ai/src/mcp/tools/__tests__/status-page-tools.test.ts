@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { Schema } from "effect"
+import { RoleName } from "@maple/domain/http"
 import {
+	ApplyStatusPageConfigOutput,
+	GetStatusPageConfigOutput,
 	GetStatusPageOutput,
 	ListStatusPagesOutput,
 	StatusPageIncidentMutationOutput,
@@ -223,5 +226,104 @@ describe("status page tools", () => {
 			[monitorId, new Date(now).toISOString().slice(0, 10), rt.tenant.orgId, now - 30_000],
 		)
 		expect((await freshness()).state).toBe("live")
+	})
+
+	describe("config", () => {
+		const PAGE = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1e01"
+		const admin = () => ({
+			...rt,
+			tenant: { ...rt.tenant, roles: [Schema.decodeUnknownSync(RoleName)("org:admin")] },
+		})
+		beforeAll(async () => {
+			const now = Date.now()
+			await executeSql(
+				rt.testDb,
+				`INSERT INTO status_pages (id, org_id, name, slug, created_by, created_at, updated_at)
+				 VALUES ($1, $2, 'Config Page', 'config-page', $3, to_timestamp($4 / 1000.0), to_timestamp($4 / 1000.0))`,
+				[PAGE, rt.tenant.orgId, rt.tenant.userId, now],
+			)
+			await executeSql(
+				rt.testDb,
+				`INSERT INTO status_page_components (id, org_id, page_id, name, position, created_at, updated_at)
+				 VALUES ($1, $2, $3, 'Web', 0, now(), now()), ($4, $2, $3, 'Docs', 1, now(), now())`,
+				[
+					"7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1e02",
+					rt.tenant.orgId,
+					PAGE,
+					"7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1e03",
+				],
+			)
+		})
+
+		it("reads the page as a JSON document with public ids, fenced for the model", async () => {
+			const result = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const { config } = result.structuredContent
+			expect(config).toMatchObject({
+				name: "Config Page",
+				slug: "config-page",
+				components: [{ name: "Web" }, { name: "Docs" }],
+			})
+			expect(config.components[0].id).toMatch(/^stc_/)
+			expect(decode(GetStatusPageConfigOutput, result).config.components).toHaveLength(2)
+			expect(markdown(result)).toContain("```json\n")
+			expect(markdown(result)).toContain(`"id": "${config.components[0].id}"`)
+		})
+
+		it("applies an edited document passed as a JSON string and summarises what changed", async () => {
+			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const [web] = read.structuredContent.config.components
+			const edited = {
+				...read.structuredContent.config,
+				description: "Live status.",
+				components: [{ name: "API" }, { ...web, group: "Apps" }],
+			}
+			const result = await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: JSON.stringify(edited),
+			})
+			expect(result.isError).not.toBe(true)
+			const output = decode(ApplyStatusPageConfigOutput, result)
+			expect(output.changes).toEqual({
+				fields: ["description"],
+				created: ["API"],
+				updated: ["Web"],
+				deleted: ["Docs"],
+				reordered: false,
+			})
+			expect(output.config.components.map((c) => c.name)).toEqual(["API", "Web"])
+			const text = markdown(result)
+			expect(text).toContain("Components created")
+			expect(text).toContain("Docs")
+
+			const again = await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: result.structuredContent.config,
+			})
+			expect(markdown(again)).toContain("Nothing changed")
+		})
+
+		it("refuses members and names a component id from another page", async () => {
+			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const refused = await runToolDirect(rt, "apply_status_page_config", {
+				page: "config-page",
+				config: read.structuredContent.config,
+			})
+			expect(refused.isError).toBe(true)
+			expect(markdown(refused)).toContain("only org admins")
+
+			const other = await runToolDirect(rt, "get_status_page_config", { page: "acme-status" })
+			const stolen = other.structuredContent.config.components[0].id
+			const foreign = await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: {
+					...read.structuredContent.config,
+					components: [{ id: stolen, name: "Stolen" }],
+				},
+			})
+			expect(foreign.isError).toBe(true)
+			expect(markdown(foreign)).toContain(stolen)
+			const after = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			expect(after.structuredContent.config).toEqual(read.structuredContent.config)
+		})
 	})
 })
