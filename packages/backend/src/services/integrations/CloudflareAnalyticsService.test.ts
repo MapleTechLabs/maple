@@ -1211,6 +1211,32 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 
+	it.effect("a caught-up account polls once 15 minutes are pending, not every tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedBehindAccount(ACCOUNT_ID, 3, 0)
+
+			const service = yield* CloudflareAnalyticsService
+			// The next two 5-min ticks leave 5 and 10 minutes pending: nothing worth a call.
+			yield* TestClock.setTime(T0 + 5 * MIN)
+			assert.strictEqual((yield* service.pollOrg(ORG)).callsMade, 0)
+			yield* TestClock.setTime(T0 + 10 * MIN)
+			assert.strictEqual((yield* service.pollOrg(ORG)).callsMade, 0)
+			assert.deepStrictEqual((yield* watermarksOf(ACCOUNT_ID)).http, [HORIZON, HORIZON, HORIZON])
+
+			// The third tick reads all 15 minutes, one zone document and one account document.
+			yield* TestClock.setTime(T0 + 15 * MIN)
+			const summary = yield* service.pollOrg(ORG)
+			assert.strictEqual(summary.callsMade, 2)
+			const after = yield* watermarksOf(ACCOUNT_ID)
+			assert.strictEqual(after.workers, HORIZON + 15 * MIN)
+			assert.deepStrictEqual(after.http, [HORIZON + 15 * MIN, HORIZON + 15 * MIN, HORIZON + 15 * MIN])
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
 	it.effect("an account dataset crowded out by zone documents leads the next tick", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
