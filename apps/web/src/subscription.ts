@@ -52,7 +52,7 @@ export const timeZonePreferenceChanges: Stream.Stream<Message> = Stream.merge(
 	Stream.map((timeZone) => Message.ChangedTimeZonePreference({ timeZone })),
 )
 
-/** Every page's Subscriptions, lifted onto the root (`page/registry.ts`). */
+/** The open page's Subscriptions, lifted onto the root (`page/registry.ts`). */
 const pages = Subscription.lift(pageSubscriptions)<Model, Message>({
 	read: (model) => Option.some({ page: model.page, context: Option.getOrNull(pageContextOf(model)) }),
 	toParentMessage: (message) => Message.GotPageMessage({ message }),

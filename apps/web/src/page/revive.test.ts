@@ -1,10 +1,10 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
-import { describe, expect, test } from "vitest"
+import { beforeAll, describe, expect, test } from "vitest"
 import { AppRoute } from "../route"
 import type { PageContext } from "./contract"
-import { enterRoute, PageMessage, type PageSlot, parkPages, updatePage } from "./registry"
+import { enterRoute, PageMessage, type PageSlot, parkPages, updatePage, loadEveryPage } from "./registry"
 import { DEFAULT_QUICK_START_STATE } from "./onboarding/quick-start-state"
 import { IncidentsData, RulesData } from "./overview/model"
 import * as Setup from "./overview/setup-checklist-update"
@@ -12,6 +12,9 @@ import { Message as OverviewMessage } from "./overview/message"
 import { initWith, revive as reviveOverview } from "./overview/update"
 import { Message } from "./services/list/message"
 import type { ServiceRow } from "./services/list/model"
+
+// Pages enter only once their code is loaded (`loadPageCode`); these tests drive loaded pages.
+beforeAll(() => Effect.runPromise(loadEveryPage))
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }

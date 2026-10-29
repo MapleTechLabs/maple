@@ -1,34 +1,22 @@
-import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
 import { Result, Schema, Stream } from "effect"
 import { Command, Submodel, Subscription } from "foldkit"
-import { defineMessageUnion } from "foldkit/message"
-import type { Resources } from "../../platform/resources"
+import type { Resources } from "../../../platform/resources"
 import {
-	definePage,
+	implementPage,
 	type PageContext,
 	type PageReturn,
 	type PageSubscriptionInput,
 	type PageViewInputs,
-} from "../contract"
-import { dashboardPage } from "../kit/dashboard-page"
-import { FetchSettingsSession, ReadSettingsClock } from "./command"
-import { Message as SettingsMessage } from "./message"
-import * as McpMessage from "./mcp/message"
-import * as McpModel from "./mcp/model"
-import * as Mcp from "./mcp/update"
-import * as McpView from "./mcp/view"
-import { apiKeyRows } from "./subscription"
-
-// `/mcp`: the same `McpSection` as `/settings?tab=mcp`, standalone.
-
-const Model = Schema.Struct({ nowMs: Schema.Number, isAdmin: Schema.Boolean, mcp: McpModel.Model })
-type Model = typeof Model.Type
-
-const Message = defineMessageUnion({
-	GotSettingsMessage: { message: SettingsMessage },
-	GotMcpMessage: { message: McpMessage.Message },
-})
-type Message = typeof Message.Type
+} from "../../contract"
+import { dashboardPage } from "../../kit/dashboard-page"
+import { entry, Message, type Model } from "./index"
+import { FetchSettingsSession, ReadSettingsClock } from "../command"
+import { Message as SettingsMessage } from "../message"
+import * as McpMessage from "../mcp/message"
+import * as Mcp from "../mcp/update"
+import * as McpView from "../mcp/view"
+import { apiKeyRows } from "../subscription"
 
 type Return = PageReturn<Model, Message>
 
@@ -98,8 +86,10 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 	),
 }))
 
-export const page = definePage(
-	"McpPage",
-	{ Model, Message },
-	{ routes: ["Mcp"], init, update, view, subscriptions, breadcrumbs: () => [{ label: "MCP" }] },
-)
+export const implementation = implementPage(entry, {
+	init,
+	update,
+	view,
+	subscriptions,
+	breadcrumbs: () => [{ label: "MCP" }],
+})

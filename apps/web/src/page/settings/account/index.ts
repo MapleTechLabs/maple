@@ -1,18 +1,8 @@
 import { definePage } from "../../contract"
-import { Message, Model } from "./model"
-import { init, routeChanged, update } from "./update"
-import { breadcrumbs, view } from "./view"
+import { Message } from "./model"
+import { Model } from "./model"
 
 /** `/account`: one instance; a tab switch is a search change (`routeChanged`). */
-export const page = definePage(
-	"Account",
-	{ Model, Message },
-	{
-		routes: ["Account"],
-		init,
-		update,
-		routeChanged,
-		view,
-		breadcrumbs,
-	},
-)
+export const entry = definePage("Account", { Model, Message }, { routes: ["Account"] })
+
+export const page = entry.lazy(() => import("./implementation"))

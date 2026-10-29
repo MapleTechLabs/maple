@@ -1,28 +1,12 @@
 import { definePage } from "../../../contract"
-import { Message, Model } from "./model"
-import { subscriptions } from "./subscription"
-import { contextChanged, init, routeChanged, update } from "./update"
-import { view } from "./view"
-import { platformSource } from "../../../../shell/source-link"
+import { Message } from "./model"
+import { Model } from "./model"
 
 /** `/infra/cloudflare/workers/$scriptName`: one Worker; another script is another instance. */
-export const page = definePage(
+export const entry = definePage(
 	"InfraCloudflareWorker",
 	{ Model, Message },
-	{
-		routes: ["InfraCloudflareWorker"],
-		key: (route) => `InfraCloudflareWorker:${route.scriptName}`,
-		init,
-		update,
-		routeChanged,
-		contextChanged,
-		view,
-		subscriptions,
-		source: () => platformSource("cloudflare"),
-		breadcrumbs: (model) => [
-			{ label: "Infrastructure", href: "/infra" },
-			{ label: "Cloudflare", href: "/infra/cloudflare?view=workers" },
-			{ label: model.scriptName },
-		],
-	},
+	{ routes: ["InfraCloudflareWorker"], key: (route) => `InfraCloudflareWorker:${route.scriptName}` },
 )
+
+export const page = entry.lazy(() => import("./implementation"))

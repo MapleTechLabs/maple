@@ -1,7 +1,7 @@
 import { OrgId, UserId } from "@maple/domain"
 import { BillingCustomer } from "@maple/domain/http"
-import { Option, Schema } from "effect"
-import { describe, expect, test, vi } from "vitest"
+import { Effect, Option, Schema } from "effect"
+import { beforeAll, describe, expect, test, vi } from "vitest"
 
 // Clerk mode is read at import; the shell's favorites listener targets `window` at import too.
 vi.hoisted(() => {
@@ -9,7 +9,7 @@ vi.hoisted(() => {
 	Object.assign(globalThis, { window: new EventTarget() })
 })
 import { Message } from "./message"
-import { ClerkPhase, type Model, Session } from "./model"
+import { ClerkPhase, type Model, PageCode, Session } from "./model"
 import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import * as SignIn from "./page/sign-in"
@@ -18,6 +18,10 @@ import { AppRoute } from "./route"
 import * as Shell from "./shell"
 import * as Toast from "./ui/toast"
 import { planGateOf, update } from "./update"
+import { loadEveryPage } from "./page/registry"
+
+// Pages enter only once their code is loaded (`loadPageCode`); these tests drive loaded pages.
+beforeAll(() => Effect.runPromise(loadEveryPage))
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 
@@ -31,6 +35,7 @@ const base = (knownToRenderApp: Record<string, boolean>): Model => ({
 	toastActions: {},
 	toastRootActions: {},
 	page: null,
+	pageCode: PageCode.Ready(),
 	pageInstances: 0,
 	parkedPages: [],
 	onboarding: null,

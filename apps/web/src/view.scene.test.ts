@@ -1,14 +1,14 @@
 import * as Animation from "@foldkit/ui/animation"
 import { OrgId } from "@maple/domain"
-import { Option, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import { click, Command, expect as expectView, given, Mount, role, scene, text } from "foldkit/scene"
-import { describe, test, vi } from "vitest"
+import { beforeAll, describe, test, vi } from "vitest"
 
 // The shell's favorites listener targets `window` at import; the scene never touches it.
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
 import type { Message } from "./message"
-import { ClerkPhase, type Model, Session } from "./model"
+import { ClerkPhase, type Model, PageCode, Session } from "./model"
 import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import * as SignIn from "./page/sign-in"
@@ -22,6 +22,10 @@ import { MountSuggestions, MountWhereEditor } from "./page/traces/list/command"
 import { Message as TracesMessage } from "./page/traces/list/message"
 import { settle, update } from "./update"
 import { view } from "./view"
+import { loadEveryPage } from "./page/registry"
+
+// Pages enter only once their code is loaded (`loadPageCode`); these tests drive loaded pages.
+beforeAll(() => Effect.runPromise(loadEveryPage))
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const body = (model: Model, h: HtmlBuilder<Message>) => view(model, h).body
@@ -36,6 +40,7 @@ const signedIn = (): Model => ({
 	toastActions: {},
 	toastRootActions: {},
 	page: null,
+	pageCode: PageCode.Ready(),
 	pageInstances: 0,
 	parkedPages: [],
 	onboarding: null,
