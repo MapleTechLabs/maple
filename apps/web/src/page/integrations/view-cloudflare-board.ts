@@ -236,6 +236,19 @@ export const zoneBoard = (
 					onClear: Message.ChangedZoneSearch({ value: "" }),
 					attributes: [h.AriaLabel("Filter zones by name")],
 				}),
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "xs",
+						isDisabled: !model.isAdmin,
+						attributes: [
+							h.OnClick(Message.ClickedManageZones()),
+							...(model.isAdmin ? [] : [h.Title("Only org admins can change zones")]),
+						],
+					},
+					["Manage zones"],
+				),
 			],
 		}),
 		...(banner === null ? [] : [h.div([h.Class("px-3 pt-3")], [banner])]),
