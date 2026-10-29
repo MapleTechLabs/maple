@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import * as Chart from "../../../charts/chart"
+import { ChartBlock } from "../../../charts/chart"
 import { KeyedSchema } from "../../../data/keyed"
 import { LoadFailure } from "../../../data/load-failure"
 
@@ -20,7 +20,7 @@ export type SeriesSlot = typeof SeriesSlot.Type
 export const SeriesSlots = Schema.Record(Schema.String, SeriesSlot)
 export type SeriesSlots = typeof SeriesSlots.Type
 
-export const ChartModels = Schema.Record(Schema.String, Chart.Model)
+export const ChartModels = Schema.Record(Schema.String, ChartBlock.Model)
 export type ChartModels = typeof ChartModels.Type
 
 export const SeriesResult = Schema.Result(SeriesData, LoadFailure)

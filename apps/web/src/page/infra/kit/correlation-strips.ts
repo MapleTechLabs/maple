@@ -34,16 +34,16 @@ export type StripSeries = Readonly<{
 	colors?: Readonly<Record<string, string>>
 }>
 
-export type CorrelationStripsOptions<M> = Readonly<{
+export type CorrelationStripsOptions<M, R = never> = Readonly<{
 	strips: ReadonlyArray<StripSeries>
 	xDomain: ReadonlyArray<string>
 	markers?: ReadonlyArray<ChartEventMarker>
 	isWaiting?: boolean
 	theme: ThemeColors
 	timeZone: string
-	/** The page's linked-cursor Mount. */
-	mountCursor: Attribute<M>
-	/** Embeds one strip's chart (`h.submodel` with the page's chart Message). */
+	/** The page's linked-cursor Mount, registered in the page's Composition. */
+	mountCursor: Attribute<M, R>
+	/** Embeds one strip's chart (`h.block(ChartBinding.embedView({ view: InfraMetricChart.view, ... }))`). */
 	chart: (chartId: string, inputs: Omit<InfraMetricChart.InfraMetricChartInputs, "chartId">) => Html
 }>
 
@@ -73,7 +73,10 @@ const lastValue = <M>(
 	})
 }
 
-export const correlationStrips = <M>(h: HtmlBuilder<M>, options: CorrelationStripsOptions<M>): Html => {
+export const correlationStrips = <M, R>(
+	h: HtmlBuilder<M, R>,
+	options: CorrelationStripsOptions<M, R>,
+): Html => {
 	const isWaiting = options.isWaiting === true
 	return h.section(
 		[

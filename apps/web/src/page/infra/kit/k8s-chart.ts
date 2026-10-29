@@ -7,7 +7,7 @@ import type { ThemeColors } from "../../../charts/theme-colors"
 import { panel } from "../../../ui/panel"
 import {
 	type InfraSeriesInfo,
-	metricView as metricChartView,
+	type MetricChartInputs,
 	titledHeader,
 } from "../../../charts/infra-metric-chart"
 import { chartError, chartLoading } from "../../../ui/chart-state"
@@ -35,10 +35,13 @@ const k8sSeriesSummary = (h: HtmlBuilder<Chart.Message>, info: InfraSeriesInfo, 
 		}),
 	})
 
-export type K8sChartOptions<M> = Readonly<{
+export type K8sChartOptions = Readonly<{
 	slot: SeriesSlot | undefined
-	chart: Chart.Model | undefined
-	toChart: (message: Chart.Message) => M
+	/**
+	 * Embeds the chart through the page's `ChartBlock` Binding, e.g.
+	 * `h.block(ChartsBinding.embedView({ slotId, key, model, view: InfraMetricChart.metricView, viewInputs }))`.
+	 */
+	chart: (slotId: string, viewInputs: MetricChartInputs) => Html
 	chartId: string
 	seriesLabel: string
 	/** An eyebrow title beside the legend, for charts not already titled by their section. */
@@ -53,7 +56,7 @@ export type K8sChartOptions<M> = Readonly<{
 	timeZone: string
 }>
 
-export const k8sChart = <M>(h: HtmlBuilder<M>, options: K8sChartOptions<M>): Html => {
+export const k8sChart = <M>(h: HtmlBuilder<M>, options: K8sChartOptions): Html => {
 	const height = options.height ?? K8S_CHART_HEIGHT
 	const data = options.slot?.data ?? AsyncData.Idle()
 	const theme = options.theme
@@ -64,30 +67,24 @@ export const k8sChart = <M>(h: HtmlBuilder<M>, options: K8sChartOptions<M>): Htm
 			theme === null || options.runtime._tag === "Loading"
 				? chartLoading(h, { variant: "area", height: height })
 				: panel(h, { className: "p-4" }, [
-						h.submodel({
-							slotId: `k8s-chart-${options.chartId}`,
-							model: options.chart ?? Chart.init(),
-							view: metricChartView,
-							toParentMessage: options.toChart,
-							viewInputs: {
-								chartId: options.chartId,
-								rows: series.rows,
-								unit: series.unit,
-								seriesLabel: options.seriesLabel,
-								stacked: options.stacked,
-								showThreshold: options.showThreshold,
-								linkedChartId: options.linkedChartId,
-								header:
-									options.title === undefined
-										? k8sSeriesSummary
-										: titledHeader(options.title, (hb, info) =>
-												k8sSeriesSummary(hb, info, ""),
-											),
-								isWaiting: AsyncData.isRefreshing(data),
-								height,
-								theme,
-								timeZone: options.timeZone,
-							},
+						options.chart(`k8s-chart-${options.chartId}`, {
+							chartId: options.chartId,
+							rows: series.rows,
+							unit: series.unit,
+							seriesLabel: options.seriesLabel,
+							stacked: options.stacked,
+							showThreshold: options.showThreshold,
+							linkedChartId: options.linkedChartId,
+							header:
+								options.title === undefined
+									? k8sSeriesSummary
+									: titledHeader(options.title, (hb, info) =>
+											k8sSeriesSummary(hb, info, ""),
+										),
+							isWaiting: AsyncData.isRefreshing(data),
+							height,
+							theme,
+							timeZone: options.timeZone,
 						}),
 					]),
 	})
