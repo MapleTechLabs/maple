@@ -412,6 +412,32 @@ describe("StatusPageSnapshotBuilder.build", () => {
 		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
 	})
 
+	it.effect("indexes incidents back to the first bar day, not the day before it", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const builder = yield* StatusPageSnapshotBuilder
+			const pageId = newPageId()
+			yield* seedPage(testDb, { id: pageId, slug: "cutoff-page" })
+			const firstDayStart = NOW - (NOW % DAY_MS) - 364 * DAY_MS
+			const seedResolved = (title: string, resolvedAt: number) =>
+				seedIncident(testDb, {
+					id: crypto.randomUUID(),
+					pageId,
+					title,
+					status: "resolved",
+					startedAt: resolvedAt - 60_000,
+					resolvedAt,
+				})
+			yield* seedResolved("On the first day", firstDayStart + 60_000)
+			yield* seedResolved("The day before", firstDayStart - 60_000)
+			const snapshot = yield* builder.build(pageId, NOW)
+			assert.deepStrictEqual(
+				snapshot.incidentHistory.map((entry) => entry.title),
+				["On the first day"],
+			)
+		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
+	})
+
 	it.effect("keeps an old open incident even when more resolved incidents than the cap are newer", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

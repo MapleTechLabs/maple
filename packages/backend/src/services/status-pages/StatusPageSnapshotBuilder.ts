@@ -284,8 +284,9 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ "maple.status_page.id": pageId })
 			const firstDay = lastDays(nowMs, STATUS_PAGE_HISTORY_DAYS)[0] ?? ""
-			// The calendar index reaches back a year; updates are read only for the listed incidents.
-			const indexCutoff = nowMs - STATUS_PAGE_HISTORY_DAYS * DAY_MS
+			// The calendar index starts where the bars do, midnight UTC of the first day; updates are read
+			// only for the listed incidents.
+			const indexCutoff = nowMs - (nowMs % DAY_MS) - (STATUS_PAGE_HISTORY_DAYS - 1) * DAY_MS
 			const input = yield* dbExecute((db) =>
 				Effect.gen(function* () {
 					const [page] = yield* db.run(
