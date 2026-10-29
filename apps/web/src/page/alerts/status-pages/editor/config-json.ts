@@ -56,40 +56,50 @@ const scanString = (text: string, at: number): Scan => {
 	return end === null ? fail(at, "Unterminated or invalid string") : { ok: true, at: end }
 }
 
+/** Deeper than any status page config; past it the scan reports a problem instead of overflowing the stack. */
+const MAX_DEPTH = 64
+
+/** Members one after another in a loop, so a long array never deepens the stack. */
 const scanMembers = (
 	text: string,
-	at: number,
+	from: number,
 	close: "}" | "]",
 	member: (text: string, at: number) => Scan,
 ): Scan => {
-	const scanned = member(text, skip(text, at))
-	if (!scanned.ok) return scanned
-	const next = skip(text, scanned.at)
-	if (text[next] === ",") return scanMembers(text, next + 1, close, member)
-	if (text[next] === close) return { ok: true, at: next + 1 }
-	return fail(next, `Expected ',' or '${close}'`)
+	let at = from
+	while (true) {
+		const scanned = member(text, skip(text, at))
+		if (!scanned.ok) return scanned
+		const next = skip(text, scanned.at)
+		if (text[next] === close) return { ok: true, at: next + 1 }
+		if (text[next] !== ",") return fail(next, `Expected ',' or '${close}'`)
+		at = next + 1
+	}
 }
 
-const scanProperty = (text: string, at: number): Scan => {
+const scanProperty = (text: string, at: number, depth: number): Scan => {
 	if (text[at] !== '"') return fail(at, "Expected a double-quoted property name")
 	const key = scanString(text, at)
 	if (!key.ok) return key
 	const colon = skip(text, key.at)
 	if (text[colon] !== ":") return fail(colon, "Expected ':' after the property name")
-	return scanValue(text, skip(text, colon + 1))
+	return scanValue(text, skip(text, colon + 1), depth)
 }
 
-const scanValue = (text: string, at: number): Scan => {
+const scanValue = (text: string, at: number, depth: number): Scan => {
 	const char = text[at]
+	if ((char === "{" || char === "[") && depth >= MAX_DEPTH) return fail(at, "Nested too deeply")
 	if (char === "{") {
 		const inner = skip(text, at + 1)
-		return text[inner] === "}" ? { ok: true, at: inner + 1 } : scanMembers(text, inner, "}", scanProperty)
+		return text[inner] === "}"
+			? { ok: true, at: inner + 1 }
+			: scanMembers(text, inner, "}", (source, from) => scanProperty(source, from, depth + 1))
 	}
 	if (char === "[") {
 		const inner = skip(text, at + 1)
 		return text[inner] === "]"
 			? { ok: true, at: inner + 1 }
-			: scanMembers(text, inner, "]", (source, from) => scanValue(source, from))
+			: scanMembers(text, inner, "]", (source, from) => scanValue(source, from, depth + 1))
 	}
 	if (char === '"') return scanString(text, at)
 	const end = token(NUMBER, text, at) ?? token(LITERAL, text, at)
@@ -103,7 +113,7 @@ const locate = (text: string, at: number) => {
 }
 
 const syntaxProblem = (text: string): DraftProblem => {
-	const scanned = scanValue(text, skip(text, 0))
+	const scanned = scanValue(text, skip(text, 0), 0)
 	const end = scanned.ok ? skip(text, scanned.at) : scanned.at
 	const message = scanned.ok ? "Unexpected text after the document" : scanned.message
 	return { _tag: "Syntax", message, ...locate(text, Math.min(end, text.length)) }
