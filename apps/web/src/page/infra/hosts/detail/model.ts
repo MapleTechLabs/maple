@@ -6,7 +6,7 @@ import { KeyedSchema } from "../../../../data/keyed"
 import { LoadFailure } from "../../../../data/load-failure"
 import { InfraHostSearch } from "../../../../route/search"
 import * as Frame from "../../kit/frame"
-import { Copies } from "../../kit/resource-attributes"
+import { MetaRowCopiesBlock } from "../../kit/resource-attributes"
 import { ChartModels, SeriesSlots } from "../../kit/series"
 
 // `/infra/hosts/$hostName`.
@@ -24,6 +24,7 @@ export const Model = Schema.Struct({
 	charts: ChartModels,
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
-	copies: Copies,
+	/** The rail rows' copy buttons, bound to `MetaRowCopiesBlock`. */
+	copies: MetaRowCopiesBlock.Model,
 })
 export type Model = typeof Model.Type

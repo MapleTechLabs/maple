@@ -1,25 +1,20 @@
-import { definePage } from "../../../contract"
-import { Message } from "./message"
-import { Model } from "./model"
-import { contextChanged, init, routeChanged, update } from "./update"
-import { view } from "./view"
+import type { BreadcrumbEntry } from "../../../../shell"
+import type { Model } from "./model"
 
-/** `/infra/hosts/$hostName`: one instance per host; a window change arrives as `routeChanged`. */
-export const page = definePage(
-	"InfraHost",
-	{ Model, Message },
-	{
-		routes: ["InfraHost"],
-		key: (route) => route.hostName,
-		init,
-		update,
-		routeChanged,
-		contextChanged,
-		view,
-		breadcrumbs: (model) => [
-			{ label: "Infrastructure", href: "/infra" },
-			{ label: "Hosts", href: "/infra/hosts" },
-			{ label: model.hostName },
-		],
-	},
-)
+/**
+ * `/infra/hosts/$hostName`: one instance per host (`key`). Entry is `HostDetailBlock.init(route,
+ * context)`; a window change arrives through the `informOfRouteChange` operation.
+ */
+export { HostDetailBlock } from "./block"
+export { Model } from "./model"
+export type { HostDetailViewInputs } from "./view"
+
+export const routes: ReadonlyArray<"InfraHost"> = ["InfraHost"]
+
+export const key = (route: Readonly<{ hostName: string }>): string => route.hostName
+
+export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => [
+	{ label: "Infrastructure", href: "/infra" },
+	{ label: "Hosts", href: "/infra/hosts" },
+	{ label: model.hostName },
+]

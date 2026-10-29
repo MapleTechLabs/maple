@@ -1,6 +1,6 @@
 import { severityLevel } from "../../../../components/infra/format"
 import { formatLoad, formatPercent } from "@maple/ui/lib/format"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { button, linkButton } from "../../../../ui/button"
 import { skeleton } from "../../../../ui/skeleton"
@@ -10,12 +10,13 @@ import { pageHeroParts } from "../../kit/page-parts"
 import { relativeTime } from "../../../kit/relative-time"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { hostStatusBadge } from "../../kit/status"
+import type { HostDetailViewBuilder } from "./composition"
 import { Message } from "./message"
 import type { HostSummary } from "./model"
 
 // `HostDetailHeader` / `HostDetailHeaderLoading` and `HeroChip`.
 
-type H = HtmlBuilder<Message>
+type H = HostDetailViewBuilder
 
 /** The header row's title and actions, and what opens the page body. */
 export type HostHeaderParts = Readonly<{ title: Html; actions: ReadonlyArray<Html>; body: Html }>

@@ -1,9 +1,8 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import * as Chart from "../../../../charts/chart"
 import { ThemeColors } from "../../../../charts/theme-colors"
 import { LoadFailure } from "../../../../data/load-failure"
-import * as CopyButton from "../../../../ui/copy-button"
+import { InfraHostSearch } from "../../../../route/search"
 import * as Frame from "../../kit/frame"
 import { SeriesResult } from "../../kit/series"
 import { HostSummary } from "./model"
@@ -20,8 +19,11 @@ export const Message = defineMessageUnion({
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
 	CompletedMountLinkedCursor: {},
-	GotChartMessage: { metric: HostMetric, message: Chart.Message },
-	GotCopyMessage: { label: Schema.String, message: CopyButton.Message },
-	GotFrameMessage: { message: Frame.Message },
+	/** The frame resolved a window, relayed back so the update can read the org it keys by. */
+	ResolvedFrameWindow: { mode: Frame.RequestMode },
+	/** Same instance, new search (the root's `routeChanged`). */
+	InformedOfRouteChange: { search: InfraHostSearch },
+	/** The namespace pin or time zone changed (the root's `contextChanged`). */
+	InformedOfContextChange: {},
 })
 export type Message = typeof Message.Type

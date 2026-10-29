@@ -1,5 +1,5 @@
-import { AsyncData, Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { AsyncData } from "foldkit"
+import type { Html } from "foldkit/html"
 import { ResolveThemeColors } from "../../../../charts/theme-colors"
 import { errorState } from "../../../../ui/error-state"
 import type { PageViewInputs } from "../../../contract"
@@ -8,6 +8,7 @@ import * as Frame from "../../kit/frame"
 import { pageHeroParts, headerActions } from "../../kit/page-parts"
 import { INFRA_CHART_TOKENS } from "../../../../charts/infra-metric-series"
 import { resourceAttributesCardSkeleton } from "../../kit/resource-attributes"
+import { FrameBinding, HostDetailComposition, type HostDetailViewBuilder } from "./composition"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
@@ -16,11 +17,12 @@ import { hostMetadataPanel, metricsPanel } from "./view-panels"
 
 // `HostDetailPage`.
 
-type H = HtmlBuilder<Message>
+type H = HostDetailViewBuilder
 
-const toFrame = (message: Frame.Message) => Message.GotFrameMessage({ message })
+/** What the page reads from the root: data only, as Block view inputs carry no callbacks. */
+export type HostDetailViewInputs = PageViewInputs
 
-const header = (h: H, model: Model, inputs: PageViewInputs): HostHeaderParts =>
+const header = (h: H, model: Model, inputs: HostDetailViewInputs): HostHeaderParts =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => hostDetailHeaderLoading(h),
 		onFailure: (failure) => ({
@@ -44,7 +46,7 @@ const header = (h: H, model: Model, inputs: PageViewInputs): HostHeaderParts =>
 	})
 
 /** The right rail: the summary's attributes, a skeleton while it first loads, nothing otherwise. */
-const rightPanel = (h: H, model: Model, inputs: PageViewInputs): Html | undefined => {
+const rightPanel = (h: H, model: Model, inputs: HostDetailViewInputs): Html | undefined => {
 	const data = model.summary.data
 	const summary = AsyncData.getOrElse(data, () => null)
 	if (summary !== null)
@@ -54,13 +56,14 @@ const rightPanel = (h: H, model: Model, inputs: PageViewInputs): Html | undefine
 		: undefined
 }
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+export const view = HostDetailComposition.makeView.withInputs<HostDetailViewInputs>((model, inputs, h) => {
 	const hero = header(h, model, inputs)
-	const timeControls = Frame.controls(
-		h,
-		model.frame,
-		{ search: model.search, defaultPreset: DEFAULT_PRESET },
-		toFrame,
+	const timeControls = h.block(
+		FrameBinding.embedView({
+			slotId: "infra-time-frame",
+			model: model.frame,
+			viewInputs: { search: model.search, defaultPreset: DEFAULT_PRESET },
+		}),
 	)
 	return h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INFRA_CHART_TOKENS }))],
@@ -69,8 +72,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					titleContent: hero.title,
-					actions:
-						headerActions(h, hero.actions, timeControls),
+					actions: headerActions(h, hero.actions, timeControls),
 					rightPanel: rightPanel(h, model, inputs),
 				},
 				[h.div([h.Class("space-y-8")], [hero.body, metricsPanel(h, model, inputs.context.timeZone)])],
