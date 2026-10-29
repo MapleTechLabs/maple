@@ -361,7 +361,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 						scheduledStart: $.scheduledStart,
 						scheduledEnd: $.scheduledEnd,
 					}))
-					// Open incidents always, however old; only the resolved ones that fill the calendar are capped.
+					// Open incidents always, however old; resolved ones are capped, most recently resolved first.
 					const open = yield* db.run(
 						incidentFields.where(($) => [
 							$.orgId.eq(orgId),
@@ -378,7 +378,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 								$.published.eq(true),
 								$.resolvedAt.gte(indexCutoff),
 							])
-							.orderBy(["startedAt", "desc"], ["id", "desc"])
+							.orderBy(["resolvedAt", "desc"], ["id", "desc"])
 							.limit(STATUS_PAGE_INCIDENT_INDEX_LIMIT),
 					)
 					const incidents = [...open, ...resolved]

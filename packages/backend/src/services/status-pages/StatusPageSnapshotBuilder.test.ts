@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Layer } from "effect"
 import { OrgId, StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/domain/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, utcDay } from "@maple/domain/status-page"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { StatusPageSnapshotBuilder, toSnapshot, type SnapshotInput } from "./StatusPageSnapshotBuilder"
 import {
 	DAY_MS,
@@ -466,6 +466,16 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			)
 			const snapshot = yield* builder.build(pageId, NOW)
 			assert.isTrue(snapshot.incidents.some((incident) => incident.title === "Long-running"))
+			// Resolve it now: as the most recently resolved, it stays indexed despite its old start.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE status_page_incidents SET status = 'resolved', resolved_at = $1 WHERE title = 'Long-running'`,
+					[new Date(NOW).toISOString()],
+				),
+			)
+			const after = yield* builder.build(pageId, NOW + 1_000)
+			assert.isTrue(after.incidentHistory.some((entry) => entry.title === "Long-running"))
 		}).pipe(Effect.provide(StatusPageSnapshotBuilder.layer.pipe(Layer.provide(testDb.layer))))
 	})
 
