@@ -80,7 +80,7 @@ export interface EnvConfig {
 	readonly STRIPE_API_URL: string
 	/**
 	 * Bot token in Maple's OWN Slack workspace, for creating customers' shared support channels
-	 * (scopes `groups:write`, `groups:read`, `conversations.connect:write`, `chat:write`). Unset → the dashboard
+	 * (scopes `channels:manage`, `channels:read`, `conversations.connect:write`, `chat:write`). Unset → the dashboard
 	 * reports the feature unavailable. Unrelated to the chat connector's per-workspace tokens.
 	 */
 	readonly MAPLE_SUPPORT_SLACK_BOT_TOKEN: Option.Option<Redacted.Redacted<string>>
@@ -113,6 +113,8 @@ export interface EnvConfig {
 	readonly HAZEL_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly HAZEL_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly HAZEL_OAUTH_SCOPES: string
+	readonly LINEAR_OAUTH_CLIENT_ID: Option.Option<string>
+	readonly LINEAR_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	/**
 	 * Resolved config for every chat connector the registry ships, keyed by the
 	 * name the connector declared. The catalog stays platform-neutral on purpose:
@@ -276,6 +278,8 @@ const envConfig = Config.all({
 		"HAZEL_OAUTH_SCOPES",
 		"openid email profile organizations:read channels:read channel-webhooks:write",
 	),
+	LINEAR_OAUTH_CLIENT_ID: optionalString("LINEAR_OAUTH_CLIENT_ID"),
+	LINEAR_OAUTH_CLIENT_SECRET: optionalRedacted("LINEAR_OAUTH_CLIENT_SECRET"),
 	CHAT_CONNECTOR_CONFIG: chatConnectorConfig,
 	CHAT_CONNECTOR_OUTBOUND_CONFIG: chatConnectorOutboundConfig,
 	SANDBOX_INTERNAL_SERVICE_TOKEN: optionalRedacted("SANDBOX_INTERNAL_SERVICE_TOKEN"),

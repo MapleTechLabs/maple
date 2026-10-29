@@ -30,6 +30,7 @@ export const FEEDBACK_LABELS = {
 export const BUILT_IN = {
 	minInlineSeverity: "warn",
 	reviewDrafts: false,
+	reviewExternalContributors: false,
 	feedbackScope: "organization",
 	blockOnContractBreaks: false,
 	postMergeCheck: true,
@@ -46,6 +47,7 @@ export const FormState = Schema.Struct({
 	categories: Schema.NullOr(Schema.Array(PrReviewCategory)),
 	minInlineSeverity: Schema.String,
 	reviewDrafts: Schema.String,
+	reviewExternalContributors: Schema.String,
 	dailyLimit: Schema.String,
 	automaticReviewLimit: Schema.String,
 	feedbackScope: Schema.String,
@@ -75,6 +77,11 @@ export const stateFromConfig = (mode: Mode, config: PrReviewRepositoryConfig): F
 				: config.reviewDrafts
 					? "on"
 					: "off",
+		reviewExternalContributors: toggleFromConfig(
+			config.reviewExternalContributors,
+			inherits,
+			BUILT_IN.reviewExternalContributors,
+		),
 		dailyLimit: config.dailyLimit === undefined ? "" : String(config.dailyLimit),
 		automaticReviewLimit:
 			config.automaticReviewLimit === undefined ? "" : String(config.automaticReviewLimit),
@@ -96,6 +103,7 @@ export const sameState = (a: FormState, b: FormState) =>
 	a.ignorePaths === b.ignorePaths &&
 	a.minInlineSeverity === b.minInlineSeverity &&
 	a.reviewDrafts === b.reviewDrafts &&
+	a.reviewExternalContributors === b.reviewExternalContributors &&
 	a.dailyLimit === b.dailyLimit &&
 	a.automaticReviewLimit === b.automaticReviewLimit &&
 	a.feedbackScope === b.feedbackScope &&
@@ -158,6 +166,11 @@ export const configFromState = (mode: Mode, state: FormState): PrReviewRepositor
 		state.feedbackScope === INHERIT || (org && state.feedbackScope === BUILT_IN.feedbackScope)
 			? undefined
 			: FEEDBACK_SCOPES.find((value) => value === state.feedbackScope)
+	const external = toggleToConfig(
+		state.reviewExternalContributors,
+		org,
+		BUILT_IN.reviewExternalContributors,
+	)
 	const block = toggleToConfig(state.blockOnContractBreaks, org, BUILT_IN.blockOnContractBreaks)
 	const postMerge = toggleToConfig(state.postMergeCheck, org, BUILT_IN.postMergeCheck)
 	return new PrReviewRepositoryConfig({
@@ -166,6 +179,7 @@ export const configFromState = (mode: Mode, state: FormState): PrReviewRepositor
 		...(categories === undefined ? undefined : { categories }),
 		...(severity === undefined ? undefined : { minInlineSeverity: severity }),
 		...(drafts === undefined ? undefined : { reviewDrafts: drafts }),
+		...(external === undefined ? undefined : { reviewExternalContributors: external }),
 		...(limit === "" ? undefined : { dailyLimit: Number(limit) }),
 		...(perPullRequest === "" ? undefined : { automaticReviewLimit: Number(perPullRequest) }),
 		...(feedback === undefined ? undefined : { feedbackScope: feedback }),

@@ -186,7 +186,7 @@ export const INTEGRATION_FEEDS = {
 		"query insights and deploy-request events",
 	],
 	prometheus: ["metrics scraped from Prometheus endpoints (list_metrics)"],
-	chat: ["the Maple bot in chat workspaces"],
+	chat: ["the Maple bot in chat workspaces", "alert issues and comments in Linear"],
 } satisfies Record<IntegrationProvider, ReadonlyArray<string>>
 
 /** The newest attempt decides: an error newer than the last success is failing. */
@@ -515,7 +515,8 @@ const prometheus = (inputs: IntegrationInventoryInputs, now: number): Integratio
 
 const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const hazel = oauthFor(inputs, "hazel")
-	if (!hazel && inputs.chatWorkspaces.length === 0) return null
+	const linear = oauthFor(inputs, "linear")
+	if (!hazel && !linear && inputs.chatWorkspaces.length === 0) return null
 	const workspaces = inputs.chatWorkspaces.map((w): IntegrationResource => ({
 		kind: "workspace",
 		name: w.name,
@@ -536,14 +537,27 @@ const chat = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry
 				},
 			]
 		: []
+	const linearResource: ReadonlyArray<IntegrationResource> = linear
+		? [
+				{
+					kind: "workspace",
+					name: linear.externalAccountName ?? "Linear",
+					status: linear.revokedAt === null ? "healthy" : "disconnected",
+					lastSuccessAt: null,
+					lastError: null,
+					note: "linear",
+				},
+			]
+		: []
 	const connectedAt = [
 		...inputs.chatWorkspaces.map((w) => w.createdAt),
 		...(hazel ? [hazel.createdAt] : []),
+		...(linear ? [linear.createdAt] : []),
 	]
 	return entry("chat", now, {
 		account: null,
 		connectedAt: Math.min(...connectedAt),
-		resources: [...workspaces, ...hazelResource],
+		resources: [...workspaces, ...hazelResource, ...linearResource],
 	})
 }
 

@@ -42,7 +42,6 @@ import { Message, type QueueSortKey, type ZoneSortKey } from "./model"
 type H = HtmlBuilder<Message>
 
 // The server caps the list at 500 rows, so the row area scrolls rather than growing the page.
-const TABLE_MAX_HEIGHT = "560px"
 // Capped: a short zone name on a wide page otherwise opens a gulf before its numbers.
 const NAME = "w-0 flex-1 min-w-[200px] max-w-[360px]"
 const NUMBER = "text-right font-mono text-xs tabular-nums"
@@ -326,7 +325,7 @@ export const zoneTable = (
 	const showLatency = options.zones.some((zone) => zone.ttfbP99Ms > 0)
 	return dataTable(
 		h,
-		{ ariaLabel: "Cloudflare zones", maxHeight: TABLE_MAX_HEIGHT },
+		{ ariaLabel: "Cloudflare zones" },
 		zoneColumns(h, options.sort, options.accounts !== undefined, showLatency),
 		sorted.length === 0
 			? [dataTableEmpty(h, [options.emptyMessage ?? "No zone traffic in the selected window."])]
@@ -471,7 +470,7 @@ export const workerTable = (
 ): Html =>
 	dataTable(
 		h,
-		{ ariaLabel: "Cloudflare Workers", maxHeight: TABLE_MAX_HEIGHT },
+		{ ariaLabel: "Cloudflare Workers" },
 		[
 			h.div([h.Class("w-2 shrink-0")]),
 			columnHead(h, { label: "Worker", width: "w-0 flex-1 min-w-[220px]" }),

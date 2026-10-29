@@ -3,6 +3,7 @@ import {
 	GithubStartConnectRequest,
 	HazelStartConnectRequest,
 	IntegrationReturnPath,
+	LinearStartConnectRequest,
 	SupabaseConnectRequest,
 } from "@maple/domain/http"
 import { Effect, Result, Schema } from "effect"
@@ -11,7 +12,14 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-cli
 
 // `IntegrationConnectProvider` and `useOAuthPopupFlow`.
 
-export const ConnectProvider = Schema.Literals(["cloudflare", "hazel", "github", "planetscale", "supabase"])
+export const ConnectProvider = Schema.Literals([
+	"cloudflare",
+	"hazel",
+	"linear",
+	"github",
+	"planetscale",
+	"supabase",
+])
 export type ConnectProvider = typeof ConnectProvider.Type
 
 /** One attempt: the popup is out while this is set; a new attempt restarts the flow. */
@@ -60,6 +68,14 @@ export const PROVIDERS = {
 		windowName: "maple-hazel-connect",
 		windowFeatures: "popup,width=520,height=640",
 		startErrorTitle: "Failed to start Hazel connect flow",
+		closeGraceMs: 0,
+		polls: false,
+	},
+	linear: {
+		label: "Linear",
+		windowName: "maple-linear-connect",
+		windowFeatures: "popup,width=520,height=680",
+		startErrorTitle: "Failed to start Linear connect flow",
 		closeGraceMs: 0,
 		polls: false,
 	},
@@ -113,6 +129,10 @@ export const startConnect = (provider: ConnectProvider, returnTo: IntegrationRet
 			case "hazel":
 				return yield* internal.integrations.hazelStart({
 					payload: new HazelStartConnectRequest({ returnTo }),
+				})
+			case "linear":
+				return yield* internal.integrations.linearStart({
+					payload: new LinearStartConnectRequest({ returnTo }),
 				})
 			case "github":
 				return yield* internal.integrations.githubStart({

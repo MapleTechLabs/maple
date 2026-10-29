@@ -28,6 +28,8 @@ import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
 import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
+import { LinearIssueTracker } from "./LinearIssueTracker"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
@@ -65,6 +67,8 @@ const makeConfig = () =>
 			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "lookup-key",
 			MAPLE_INGEST_PUBLIC_URL: "http://127.0.0.1:3474",
 			MAPLE_APP_BASE_URL: "http://127.0.0.1:3471",
+			LINEAR_OAUTH_CLIENT_ID: "lin-client-id",
+			LINEAR_OAUTH_CLIENT_SECRET: "lin-client-secret",
 		}),
 	)
 
@@ -248,6 +252,13 @@ export const makeLayer = (
 	)
 	const runtimeLive = Layer.succeed(AlertRuntime, { ...defaultTestRuntime, ...runtimeOverrides })
 	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, databaseLive)))
+	const linearOAuthLive = LinearOAuthService.layer.pipe(
+		Layer.provide(Layer.mergeAll(envLive, databaseLive)),
+	)
+	const linearIssuesLive = Layer.effect(LinearIssueTracker, LinearIssueTracker.make).pipe(
+		Layer.provide(FetchHttpClient.layer),
+		Layer.provide(Layer.mergeAll(linearOAuthLive, databaseLive)),
+	)
 	const emailLive = Layer.succeed(EmailService, emailStub ?? stubEmailService())
 	const orgMembersLive = Layer.succeed(OrgMembersService, stubOrgMembersService())
 	const orgChSettingsLive = OrgClickHouseSettingsService.layer.pipe(
@@ -257,7 +268,16 @@ export const makeLayer = (
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(chatAlertPoster),
 		Layer.provide(
-			Layer.mergeAll(envLive, databaseLive, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
+			Layer.mergeAll(
+				envLive,
+				databaseLive,
+				runtimeLive,
+				hazelOAuthLive,
+				linearOAuthLive,
+				linearIssuesLive,
+				emailLive,
+				orgMembersLive,
+			),
 		),
 	)
 	const alertReadModelsLive = Layer.effect(AlertReadModelsService, AlertReadModelsService.make).pipe(
@@ -283,6 +303,7 @@ export const makeLayer = (
 		Layer.provide(warehouseLive),
 		Layer.provide(runtimeLive),
 		Layer.provide(hazelOAuthLive),
+		Layer.provide(linearIssuesLive),
 		Layer.provide(emailLive),
 		Layer.provide(orgMembersLive),
 		Layer.provide(orgChSettingsLive),

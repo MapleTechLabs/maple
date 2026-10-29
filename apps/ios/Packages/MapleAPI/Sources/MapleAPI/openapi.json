@@ -6800,7 +6800,8 @@
           "discord",
           "telegram",
           "email",
-          "chat"
+          "chat",
+          "linear"
         ],
         "title": "Alert Destination Type",
         "type": "string"

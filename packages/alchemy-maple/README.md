@@ -133,7 +133,8 @@ export default Cloudflare.Worker(
 ```
 
 The `@maple-dev/alchemy/telemetry` subpath keeps the API client out of the Worker bundle.
-Omit `ingestKey` when the Worker's env already carries `MAPLE_INGEST_KEY`; the remaining
+Omit `ingestKey` when the Worker's env already carries `MAPLE_INGEST_KEY`, or when `endpoint`
+points at a local `maple start` or your own collector, which take keyless writes; the remaining
 options (`anticipatedErrorIdentifiers`, `dropSpanNames`, `serviceNamespace`, …) are the SDK's
 Cloudflare options, forwarded unchanged.
 

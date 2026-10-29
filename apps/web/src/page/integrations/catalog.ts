@@ -19,11 +19,13 @@ export type IntegrationId =
 	| "supabase"
 	| "warpstream"
 	| "hazel"
+	| "linear"
 	| "github"
 	| ChatIntegrationId
 
 export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
+export const LINEAR_ACCENT = "#5E6AD5"
 export const CLOUDFLARE_ACCENT = "#F38020"
 export const RAILWAY_ACCENT = "#0B0D0E"
 export const GCP_ACCENT = "#4285F4"
@@ -172,6 +174,15 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: named("HazelIcon"),
 		accent: HAZEL_ACCENT,
 		docsUrl: "https://hazel.sh/docs/integrations/maple",
+	},
+	{
+		id: "linear",
+		category: "notifications",
+		name: "Linear",
+		description:
+			"Open one Linear issue per alert rule, then comment as it fires again, changes severity or resolves.",
+		icon: named("LinearIcon"),
+		accent: LINEAR_ACCENT,
 	},
 	{
 		id: "github",

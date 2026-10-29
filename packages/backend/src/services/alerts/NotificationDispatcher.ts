@@ -21,6 +21,7 @@ import {
 } from "./AlertDestinationHydration"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { ChatAlertPoster } from "./ChatAlertPoster"
+import { LinearIssueTracker } from "./LinearIssueTracker"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
@@ -107,13 +108,14 @@ export interface NotificationDestinationResult {
 const make: Effect.Effect<
 	NotificationDispatcherApi,
 	NotificationDispatchError,
-	Database | Env | EmailService | ChatAlertPoster | HttpClient.HttpClient
+	Database | Env | EmailService | ChatAlertPoster | LinearIssueTracker | HttpClient.HttpClient
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const httpClient = yield* HttpClient.HttpClient
 	const env = yield* Env
 	const email = yield* EmailService
 	const chatAlertPoster = yield* ChatAlertPoster
+	const linear = yield* LinearIssueTracker
 
 	const encryptionKey = yield* parseBase64Aes256GcmKey(
 		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -213,7 +215,7 @@ const make: Effect.Effect<
 			DELIVERY_TIMEOUT_MS,
 			request.linkUrl,
 			chatUrl,
-			{ sendEmail, postChatAlert: chatAlertPoster.post },
+			{ sendEmail, postChatAlert: chatAlertPoster.post, linear },
 		).pipe(
 			Effect.provideService(HttpClient.HttpClient, httpClient),
 			Effect.tapError(() => Effect.annotateCurrentSpan({ "maple.delivery.outcome": "failed" })),
@@ -346,5 +348,6 @@ export class NotificationDispatcher extends Context.Service<
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(EmailService.layer),
+		Layer.provide(LinearIssueTracker.layer),
 	)
 }

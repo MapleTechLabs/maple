@@ -126,6 +126,48 @@ export class HazelDisconnectResponse extends Schema.Class<HazelDisconnectRespons
 	},
 ) {}
 
+export class LinearIntegrationStatus extends Schema.Class<LinearIntegrationStatus>("LinearIntegrationStatus")(
+	{
+		connected: Schema.Boolean,
+		/** The Linear workspace the app is installed in. */
+		workspaceName: Schema.NullOr(Schema.String),
+		connectedByUserId: Schema.NullOr(UserId),
+		/** Set once Linear rejected the grant; the org must reconnect. */
+		revoked: Schema.Boolean,
+	},
+) {}
+
+export class LinearTeamSummary extends Schema.Class<LinearTeamSummary>("LinearTeamSummary")({
+	id: Schema.String,
+	key: Schema.String,
+	name: Schema.String,
+}) {}
+
+export class LinearTeamsListResponse extends Schema.Class<LinearTeamsListResponse>("LinearTeamsListResponse")(
+	{
+		teams: Schema.Array(LinearTeamSummary),
+	},
+) {}
+
+export class LinearStartConnectRequest extends Schema.Class<LinearStartConnectRequest>(
+	"LinearStartConnectRequest",
+)({
+	returnTo: Schema.optionalKey(IntegrationReturnPath),
+}) {}
+
+export class LinearStartConnectResponse extends Schema.Class<LinearStartConnectResponse>(
+	"LinearStartConnectResponse",
+)({
+	redirectUrl: Schema.String,
+	state: Schema.String,
+}) {}
+
+export class LinearDisconnectResponse extends Schema.Class<LinearDisconnectResponse>(
+	"LinearDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
 /** Per-zone edge-analytics collection state (from the GraphQL Analytics poller). */
 export class CloudflareAnalyticsZoneStatus extends Schema.Class<CloudflareAnalyticsZoneStatus>(
 	"CloudflareAnalyticsZoneStatus",
@@ -1396,7 +1438,7 @@ export type IntegrationHttpError =
 	| IntegrationsPersistenceError
 
 /**
- * Dashboard control surface for the Hazel, Cloudflare, Railway and GitHub
+ * Dashboard control surface for the Hazel, Linear, Cloudflare, Railway and GitHub
  * integrations, plus VCS lookups. Internal transport: session-only, absent from
  * the public docs. PlanetScale and chat connectors are public v2 resources.
  *
@@ -1452,6 +1494,42 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.delete("hazelDisconnect", "/hazel", {
 			success: HazelDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("linearStatus", "/linear/status", {
+			success: LinearIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("linearStart", "/linear/start", {
+			payload: LinearStartConnectRequest,
+			success: LinearStartConnectResponse,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("linearTeams", "/linear/teams", {
+			success: LinearTeamsListResponse,
+			error: [
+				IntegrationsValidationError,
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("linearDisconnect", "/linear", {
+			success: LinearDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)

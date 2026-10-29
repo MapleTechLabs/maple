@@ -29,8 +29,6 @@ type Return = PageReturn<Model, Message>
 
 export type InitOptions = Readonly<{
 	isAdmin: boolean
-	/** The `ingestRules` rollout flag; off means no ingest rules section and no rules requests. */
-	hasIngestRules: boolean
 	/** `useAuth().orgId` in Clerk mode, `"default"` self-hosted: the quick-start storage key. */
 	orgKey: string
 	timeZone: string
@@ -45,7 +43,6 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 export const init = (options: InitOptions): Return => ({
 	model: {
 		isAdmin: options.isAdmin,
-		hasIngestRules: options.hasIngestRules,
 		overview: AsyncData.Loading(),
 		ingest: AsyncData.Loading(),
 		endpointCopy: CopyButton.init(),
@@ -79,7 +76,7 @@ export const init = (options: InitOptions): Return => ({
 		FetchIngestOverview({ timeZone: options.timeZone, pinnedNamespace: options.pinnedNamespace }),
 		FetchIngestionKeys(),
 		FetchRecommendations(),
-		...(options.hasIngestRules ? ingestRulesFetches() : []),
+		...ingestRulesFetches(),
 		FetchMappings(),
 		ReadFramework({ orgKey: options.orgKey }),
 	],
@@ -208,8 +205,6 @@ export const revisit = (model: Model, options: InitOptions): Return => {
 			...mappings.commands,
 		],
 	}
-	// Without the ingest rules rollout the tab neither shows nor requests rules.
-	if (!model.hasIngestRules) return base
 	const rules = revisitData(model.ingestRules.rules, () =>
 		Command.mapMessage(IngestRules.FetchIngestRules(), (message) =>
 			Message.GotIngestRulesMessage({ message }),

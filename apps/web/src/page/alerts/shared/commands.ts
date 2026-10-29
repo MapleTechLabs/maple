@@ -34,7 +34,10 @@ export const setRuleEnabled = (ruleId: AlertRuleId, isEnabled: boolean) =>
 		yield* client.alertRules.update({ params: { id: ruleId }, payload: { enabled: isEnabled } })
 	}).pipe(Effect.mapError(toLoadFailure))
 
-export const updateDestination = (destinationId: AlertDestinationId, payload: V2AlertDestinationUpdateParams) =>
+export const updateDestination = (
+	destinationId: AlertDestinationId,
+	payload: V2AlertDestinationUpdateParams,
+) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		const params = { id: destinationId }
@@ -53,6 +56,8 @@ export const updateDestination = (destinationId: AlertDestinationId, payload: V2
 			case "email":
 				return yield* client.alertDestinations.update({ params, payload })
 			case "chat":
+				return yield* client.alertDestinations.update({ params, payload })
+			case "linear":
 				return yield* client.alertDestinations.update({ params, payload })
 		}
 	}).pipe(Effect.asVoid, Effect.mapError(toLoadFailure))

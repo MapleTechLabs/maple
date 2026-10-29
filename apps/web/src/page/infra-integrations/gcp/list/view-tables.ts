@@ -73,7 +73,6 @@ import {
 
 // `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
 
-const TABLE_MAX_HEIGHT = "640px"
 const seconds = (value: number) => formatLatency(value * 1000)
 const head = (h: H, label: string, width: string, align?: "right", hidden?: string) =>
 	columnHead(h, { label, width, align, hidden })
@@ -174,7 +173,7 @@ export const servicesTable = (
 ): Html =>
 	dataTable(
 		h,
-		{ ariaLabel: "Services", maxHeight: TABLE_MAX_HEIGHT },
+		{ ariaLabel: "Services" },
 		[
 			dotLane(h),
 			head(h, "Service", NAME),
@@ -266,7 +265,7 @@ export const subscriptionsTable = (
 ): Html =>
 	dataTable(
 		h,
-		{ ariaLabel: "Pub/Sub subscriptions", maxHeight: TABLE_MAX_HEIGHT },
+		{ ariaLabel: "Pub/Sub subscriptions" },
 		[
 			dotLane(h),
 			head(h, "Subscription", NAME),
@@ -564,7 +563,7 @@ export const databasesTable = (
 ): Html =>
 	dataTable(
 		h,
-		{ ariaLabel: "Cloud SQL instances", maxHeight: TABLE_MAX_HEIGHT },
+		{ ariaLabel: "Cloud SQL instances" },
 		[
 			dotLane(h),
 			head(h, "Instance", NAME),

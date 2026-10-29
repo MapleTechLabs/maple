@@ -1,6 +1,6 @@
 ---
 title: "Notification destinations"
-description: "Route Maple alerts to Slack, email, PagerDuty, Discord, Telegram, Hazel or any HTTP endpoint. How to add a destination, send a test, and get the right credentials for each provider."
+description: "Route Maple alerts to Slack, email, PagerDuty, Discord, Telegram, Hazel, Linear or any HTTP endpoint. How to add a destination, send a test, and get the right credentials for each provider."
 group: "Alerting"
 order: 4
 ---
@@ -108,6 +108,22 @@ The payload, headers, signature verification and retry behavior are in the [aler
 ## Hazel
 
 Connect [Hazel](https://hazel.sh/docs/integrations/maple) through OAuth and pick a workspace channel to route alerts into. See Hazel's [Maple integration guide](https://hazel.sh/docs/integrations/maple).
+
+## Linear
+
+A Linear destination opens an issue in a Linear team instead of posting a message. Connect your Linear workspace first from **Integrations**: Maple installs as its own app, so the issues and comments it creates show Maple as the author. Then add a destination, pick **Linear**, and choose the team.
+
+Maple keeps one issue per alert rule and group, so a noisy rule does not fill your Triage:
+
+- The first `trigger` opens an issue in the team. It lands in Triage when the team uses it, and links back to the incident in Maple.
+- A later `trigger` comments on the same issue: when the rule fires again, or when the incident moves between warning and critical.
+- A `resolve` comments on the issue and leaves it open. Your team closes it when they are done.
+- If the rule fires again within 24 hours of the issue being closed, Maple reopens it. After that, it opens a new issue.
+- `renotify` reminders are not sent to Linear.
+
+To ticket only serious incidents, add the Linear destination to the rule's critical tier only. The **Test** button checks that Maple can reach the team. It does not create an issue.
+
+If Linear stops accepting Maple's access, deliveries fail with a reconnect message. Reconnect from **Integrations**.
 
 ## Next steps
 

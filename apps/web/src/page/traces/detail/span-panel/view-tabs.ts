@@ -108,7 +108,7 @@ export const tabList = (h: H, model: Model, values: ReadonlyArray<TabValue>): Ht
 					tabsListStyles,
 					tabsListVerticalStyles,
 					tabsListUnderlineStyles,
-					"sticky top-0 z-10 w-full justify-start overflow-x-auto bg-background px-4 *:data-[slot=tabs-tab]:grow-0",
+					"sticky top-0 z-10 w-full justify-start overflow-x-auto overflow-y-hidden bg-background px-4 *:data-[slot=tabs-tab]:grow-0",
 				),
 			),
 			...stateAttributes(h, model.tabs),

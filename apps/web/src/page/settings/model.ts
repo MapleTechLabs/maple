@@ -24,8 +24,6 @@ export const SessionInfo = Schema.Struct({
 	userId: Schema.NullOr(Schema.String),
 	/** `useOrganizationFeatureFlags().flags.aiAutoTriage`: Clerk org metadata; on self-hosted. */
 	hasAiAutoTriage: Schema.Boolean,
-	/** The `ingestRules` rollout flag: the Ingestion tab shows ingest rules only where the gateway applies them. */
-	hasIngestRules: Schema.optionalKey(Schema.Boolean),
 })
 export const SessionData = AsyncData.Schema(SessionInfo, LoadFailure)
 /** `billingCustomerAtom`: the nav's data-platform gate and the Billing tab read the one customer. */

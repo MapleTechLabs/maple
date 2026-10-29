@@ -30,7 +30,6 @@ export type RecommendationTab = typeof RecommendationTab.Type
 
 export const Model = Schema.Struct({
 	isAdmin: Schema.Boolean,
-	hasIngestRules: Schema.Boolean,
 	overview: OverviewData.schema,
 	ingest: IngestData.schema,
 	endpointCopy: CopyButton.Model,
