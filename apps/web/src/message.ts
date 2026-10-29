@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { UrlRequest } from "foldkit/navigation"
 import { Url } from "foldkit/url"
+import { LoadFailure } from "./data/load-failure"
 import * as Onboarding from "./page/onboarding"
 import { PageMessage } from "./page/registry"
 import * as SignIn from "./page/sign-in"
@@ -28,6 +29,15 @@ export const Message = defineMessageUnion({
 	CompletedSaveSessionToken: {},
 	CompletedLoadClerk: { snapshot: ClerkSnapshot },
 	FailedLoadClerk: { message: Schema.String },
+	/** A page's code loaded; `preloadHref` is the link whose intent asked, its preload still to run. */
+	CompletedLoadPageCode: {
+		pageId: Schema.String,
+		preloadHref: Schema.NullOr(Schema.String),
+		nowMs: Schema.Number,
+	},
+	FailedLoadPageCode: { pageId: Schema.String, failure: LoadFailure },
+	/** The failed page's Reload: a full load of the route, which also picks up a newer deploy. */
+	ClickedReloadPage: {},
 	ChangedClerkSession: { snapshot: ClerkSnapshot },
 	CompletedWaitForAuthSettle: {},
 	SucceededLoadCustomer: { orgId: Schema.String, customer: BillingCustomer },

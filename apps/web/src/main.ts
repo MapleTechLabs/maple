@@ -1,12 +1,13 @@
 import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
 import { Effect, Option, Schema } from "effect"
-import type { Runtime } from "foldkit"
+import type { Command, Runtime } from "foldkit"
 import type { Url } from "foldkit/url"
-import { CheckSession, LoadClerk } from "./command"
+import { CheckSession, LoadClerk, LoadPageCode } from "./command"
 import type { Message } from "./message"
-import { ClerkPhase, type Model, Session } from "./model"
+import { ClerkPhase, type Model, PageCode, Session } from "./model"
 import { initCustomer, readKnownToRenderApp } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
+import { unloadedPageOf } from "./page/registry"
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { readSessionToken } from "./platform/auth-api"
@@ -51,6 +52,16 @@ export const flags: Effect.Effect<Flags> = Effect.all({
 
 // INIT
 
+/** The route's page code loads alongside the session, so the page can enter once it resolves. */
+const withRoutePageCode = (model: Model, sessionCommand: Command.Command<Message, never, Resources>) =>
+	Option.match(unloadedPageOf(model.route), {
+		onNone: () => ({ model, commands: [sessionCommand] }),
+		onSome: (pageId) => ({
+			model: { ...model, pageCode: PageCode.Loading({ pageId }) },
+			commands: [sessionCommand, LoadPageCode({ pageId, preloadHref: null })],
+		}),
+	})
+
 export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resources> = (flags, url: Url) => {
 	const route = urlToAppRoute(url)
 	const base = {
@@ -61,6 +72,7 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 		toastActions: {},
 		toastRootActions: {},
 		page: null,
+		pageCode: PageCode.Ready(),
 		pageInstances: 0,
 		parkedPages: [],
 		onboarding: null,
@@ -73,17 +85,17 @@ export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resourc
 	}
 
 	if (isClerkAuthEnabled) {
-		return {
-			model: { ...base, session: Session.Resolving(), clerk: ClerkPhase.Loading() },
-			commands: [LoadClerk()],
-		}
+		return withRoutePageCode(
+			{ ...base, session: Session.Resolving(), clerk: ClerkPhase.Loading() },
+			LoadClerk(),
+		)
 	}
 
 	if (flags.hasStoredSession) {
-		return {
-			model: { ...base, session: Session.Resolving(), clerk: ClerkPhase.Unused() },
-			commands: [CheckSession()],
-		}
+		return withRoutePageCode(
+			{ ...base, session: Session.Resolving(), clerk: ClerkPhase.Unused() },
+			CheckSession(),
+		)
 	}
 
 	return settle({ ...base, session: Session.SignedOut(), clerk: ClerkPhase.Unused() })

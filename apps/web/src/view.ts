@@ -7,7 +7,13 @@ import { Message } from "./message"
 import { type Model, Session } from "./model"
 import { onboardingInputsOf, pageContextOf, planGateOf, shellClerkOf } from "./update"
 import * as OnboardingView from "./page/onboarding/view"
-import { breadcrumbsOf, notFoundContent, placeholderContent, rendersShell } from "./page/chrome"
+import {
+	breadcrumbsOf,
+	notFoundContent,
+	pageCodeFailedContent,
+	placeholderContent,
+	rendersShell,
+} from "./page/chrome"
 import type { PageContext, ShellInfraSurfaces } from "./page/contract"
 import {
 	isBarePageRoute,
@@ -122,7 +128,11 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 /** The routed page, the not-found body for an unknown path, or a skeleton while the page loads. */
 const pageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition): Html =>
 	Option.getOrElse(lazyPageView(model, h, position), () =>
-		model.route._tag === "NotFound" ? notFoundContent(h) : placeholderContent(h),
+		model.route._tag === "NotFound"
+			? notFoundContent(h)
+			: model.pageCode._tag === "Failed"
+				? pageCodeFailedContent(h, model.pageCode.failure, Message.ClickedReloadPage())
+				: placeholderContent(h),
 	)
 
 /** The routed page's own top-bar actions, if it has any. */
@@ -243,7 +253,7 @@ const routeView = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> =
 				onNone: () =>
 					rendersShell(model.route)
 						? shellRoute(model, h)
-						: isBarePageRoute(model.route) && model.page !== null
+						: isBarePageRoute(model.route)
 							? [pageView(model, h, "bare")]
 							: [placeholder(model, h, [])],
 			}),

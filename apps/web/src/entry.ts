@@ -2,6 +2,7 @@
 import "./platform/oauth-return-boot"
 import "./styles.css"
 
+import { Effect } from "effect"
 import { Runtime } from "foldkit"
 import type { UrlRequest } from "foldkit/navigation"
 import type { Url } from "foldkit/url"
@@ -9,6 +10,7 @@ import { trackAvatarImageLoads } from "./ui/avatar-image"
 import { crashView } from "./crash/view"
 import { labEnabled, labPathOf, startLab } from "./lab/boot"
 import { Flags, flags, init, Message, Model, subscriptions, update, view } from "./main"
+import { loadEveryPage } from "./page/registry"
 import { ResourcesLive } from "./platform/resources"
 import { instrument } from "./platform/telemetry"
 
@@ -43,5 +45,8 @@ const startApplication = () =>
 
 // `/lab/<path>` boots that lab page's own program instead of the app (scenarios, benches).
 const labPath = labEnabled ? labPathOf(location.pathname) : undefined
-if (labPath === undefined) startApplication()
-else void startLab(labPath, container)
+if (labPath !== undefined) void startLab(labPath, container)
+// A dev reload can restore a Model holding a page: that skips `init`, which loads the page's code.
+else if (import.meta.hot)
+	Effect.runFork(Effect.andThen(Effect.ignore(loadEveryPage), Effect.sync(startApplication)))
+else startApplication()

@@ -1,10 +1,13 @@
 import { OrgId } from "@maple/domain"
-import { Option, Schema } from "effect"
-import { describe, expect, test } from "vitest"
+import { Effect, Option, Schema } from "effect"
+import { beforeAll, describe, expect, test } from "vitest"
 import type { PageContext } from "./contract"
 import * as Preload from "./preload"
-import { pageIdentity, pageSlotId, preloadRoute } from "./registry"
+import { pageIdentity, pageSlotId, preloadRoute, loadEveryPage } from "./registry"
 import { AppRoute } from "../route"
+
+// Pages enter only once their code is loaded (`loadPageCode`); these tests drive loaded pages.
+beforeAll(() => Effect.runPromise(loadEveryPage))
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -43,7 +46,9 @@ describe("intent preload", () => {
 		const nextWindow = preloadRoute(AppRoute.Trace({ traceId: "a".repeat(32), search: {} }), context, 0)
 		const nextKey = Option.getOrThrow(Preload.keyOfCommand(nextWindow[0]!))
 		const entered = Preload.held(Preload.init(), holder, preloaded(), () => [keyOf()])
-		const moved = Preload.held(entered.model, holder, nextWindow, () => Preload.liveKeysOf({ slot: { key: nextKey, data: { _tag: "Loading" } } }))
+		const moved = Preload.held(entered.model, holder, nextWindow, () =>
+			Preload.liveKeysOf({ slot: { key: nextKey, data: { _tag: "Loading" } } }),
+		)
 		expect(moved.released).toEqual([keyOf()])
 		expect(moved.model.heldKeys).toEqual([nextKey])
 		const stillShown = Preload.held(entered.model, holder, nextWindow, () => [keyOf(), nextKey])

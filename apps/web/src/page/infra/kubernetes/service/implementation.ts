@@ -1,0 +1,19 @@
+import { implementPage } from "../../../contract"
+import { entry } from "./index"
+import { kubernetesBreadcrumbs } from "../../kit/view-tabs"
+import { contextChanged, init, routeChanged, update } from "./update"
+import { view } from "./view"
+
+export const implementation = implementPage(entry, {
+	init,
+	update,
+	routeChanged,
+	contextChanged,
+	view,
+	breadcrumbs: (model) =>
+		kubernetesBreadcrumbs(
+			"services",
+			model.search,
+			model.serviceName === null ? [] : [{ label: model.serviceName }],
+		),
+})

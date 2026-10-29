@@ -1,13 +1,13 @@
 import { OrgId, UserId } from "@maple/domain"
-import { Option, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { UrlRequest } from "foldkit/navigation"
 import { fromString as urlFromString } from "foldkit/url"
-import { describe, expect, test, vi } from "vitest"
+import { beforeAll, describe, expect, test, vi } from "vitest"
 
 // The shell's favorites listener targets `window` at import; the root update never touches it here.
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
 import { Message } from "./message"
-import { ClerkPhase, type Model, Session } from "./model"
+import { ClerkPhase, type Model, PageCode, Session } from "./model"
 import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import * as SignIn from "./page/sign-in"
@@ -18,6 +18,10 @@ import * as Toast from "./ui/toast"
 import type { ClerkSnapshot } from "./platform/clerk"
 import { subscriptions } from "./subscription"
 import { settle, update } from "./update"
+import { loadEveryPage } from "./page/registry"
+
+// Pages enter only once their code is loaded (`loadPageCode`); these tests drive loaded pages.
+beforeAll(() => Effect.runPromise(loadEveryPage))
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const NOW = Date.parse("2026-10-01T12:00:00Z")
@@ -32,6 +36,7 @@ const base = (route: AppRoute): Model => ({
 	toastActions: {},
 	toastRootActions: {},
 	page: null,
+	pageCode: PageCode.Ready(),
 	pageInstances: 0,
 	parkedPages: [],
 	onboarding: null,

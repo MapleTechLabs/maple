@@ -5,11 +5,13 @@ import { Command } from "foldkit"
 import { load, pushUrl, replaceUrl } from "foldkit/navigation"
 import { Message } from "./message"
 import { PRELOAD_HOLD_MS } from "./page/preload"
+import { loadPageCode } from "./page/registry"
 import { clearSessionToken, MapleAuthApi, readSessionToken, saveSessionToken } from "./platform/auth-api"
 import { saveSelectedPlanKnown } from "./page/onboarding/plan-gate"
 import { loadClerk, signOutOfClerk } from "./platform/clerk"
 import { BillingCustomerCache } from "./data/billing-customer"
 import { IntegrationStatuses } from "./data/integration-statuses"
+import { toLoadFailure } from "./data/load-failure"
 import { ReadCache } from "./data/read-cache"
 import { OrgCollections } from "./data/collections/org-collections"
 import { readSessionTimeRange, writeSessionTimeRange } from "./platform/session-time-range"
@@ -98,6 +100,24 @@ export const LoadClerk = Command.define("LoadClerk", {
 			Effect.succeed(Message.FailedLoadClerk({ message: error.message })),
 		),
 	),
+})
+
+/** A page's code (`page/registry.ts`), for the route about to enter it or a link's preload. */
+export const LoadPageCode = Command.define("LoadPageCode", {
+	args: { pageId: Schema.String, preloadHref: Schema.NullOr(Schema.String) },
+	messages: [Message.CompletedLoadPageCode, Message.FailedLoadPageCode],
+	execute: ({ pageId, preloadHref }) =>
+		Effect.annotateCurrentSpan({
+			"maple.page.id": pageId,
+			"maple.page.code_for_preload": preloadHref !== null,
+		}).pipe(
+			Effect.andThen(loadPageCode(pageId)),
+			Effect.andThen(Clock.currentTimeMillis),
+			Effect.map((nowMs) => Message.CompletedLoadPageCode({ pageId, preloadHref, nowMs })),
+			Effect.catchTag("@maple/web/PageLoadError", (error) =>
+				Effect.succeed(Message.FailedLoadPageCode({ pageId, failure: toLoadFailure(error) })),
+			),
+		),
 })
 
 export const WaitForAuthSettle = Command.define("WaitForAuthSettle", {
