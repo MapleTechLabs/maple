@@ -61,7 +61,13 @@ const withCurrent = (model: Model, write: (text: string, base: StatusPageConfig)
 /** Opens the editor on the saved document; Reset runs it again over the draft. */
 export const editJson = (model: Model): Return =>
 	model.isAdmin
-		? withCurrent(model, (jsonDraft, jsonBase) => ({ ...model, jsonDraft, jsonBase, jsonFailure: null }))
+		? withCurrent(model, (jsonDraft, jsonBase) => ({
+				...model,
+				jsonDraft,
+				jsonBase,
+				isRebasingJson: false,
+				jsonFailure: null,
+			}))
 		: { model }
 
 /** Ignored while an apply runs: its result replaces the draft, and would drop the keystrokes. */
@@ -73,7 +79,7 @@ export const changeJson = (model: Model, value: string): Return =>
 export const cancelJson = (model: Model): Return =>
 	model.isApplyingJson
 		? { model }
-		: { model: { ...model, jsonDraft: null, jsonBase: null, jsonFailure: null } }
+		: { model: { ...model, jsonDraft: null, jsonBase: null, isRebasingJson: false, jsonFailure: null } }
 
 export const applyJson = (model: Model): Return => {
 	const pageId = model.pageId
@@ -136,6 +142,7 @@ export const appliedJson = (
 					isApplyingJson: false,
 					jsonDraft: null,
 					jsonBase: null,
+					isRebasingJson: false,
 					settingsEdits: settingsAfterApply(model, applied),
 				},
 				readPage(context, "Supersede"),

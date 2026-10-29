@@ -938,6 +938,38 @@ describe("json tab", () => {
 		])
 	})
 
+	test("cancelling after a conflict ends the rebase, so a later draft keeps its own base", () => {
+		const base = { ...statusPageConfig(statusPage(), [component(1), component(2)]), version: "v7" }
+		const applying = pageUpdate(
+			editing(JSON.stringify(documentOf([1])), { config: base }),
+			Message.ClickedApplyJson(),
+		).model
+		const refused = pageUpdate(
+			applying,
+			Message.CompletedApplyJson({
+				result: Result.fail({
+					...toLoadFailure(new Error("changed")),
+					code: "status_page_conflict",
+					message: "changed",
+					retryable: false,
+				}),
+			}),
+		).model
+		// Cancel before the re-read lands, then start a fresh draft on v7.
+		const reopened = [Message.ClickedCancelJson(), Message.ClickedEditJson()].reduce(
+			(model, message) => pageUpdate(model, message).model,
+			refused,
+		)
+		const reread = pageUpdate(
+			reopened,
+			Message.CompletedFetchConfig({
+				key: reopened.config.key ?? "",
+				result: Result.succeed({ ...base, version: "v8" }),
+			}),
+		).model
+		expect(reread.jsonBase?.version).toBe("v7")
+	})
+
 	test("unsaved Settings edits block Apply until they are saved or discarded", () => {
 		const draft = JSON.stringify(documentOf([1]))
 		const dirty = pageUpdate(
