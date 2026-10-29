@@ -910,6 +910,34 @@ describe("json tab", () => {
 		scene({ update: pageUpdate, view }, given(refused.model), expectView(text(reason)).toExist())
 	})
 
+	test("after a conflict the re-read becomes the draft's base, so the next Apply can go through", () => {
+		const base = { ...statusPageConfig(statusPage(), [component(1), component(2)]), version: "v7" }
+		const draftText = JSON.stringify(documentOf([1]))
+		const applying = pageUpdate(editing(draftText, { config: base }), Message.ClickedApplyJson()).model
+		const refused = pageUpdate(
+			applying,
+			Message.CompletedApplyJson({
+				result: Result.fail({
+					...toLoadFailure(new Error("changed")),
+					code: "status_page_conflict",
+					message: "changed",
+					retryable: false,
+				}),
+			}),
+		).model
+		const reread = pageUpdate(
+			refused,
+			Message.CompletedFetchConfig({
+				key: refused.config.key ?? "",
+				result: Result.succeed({ ...base, version: "v8" }),
+			}),
+		).model
+		expect(reread.jsonDraft).toBe(draftText)
+		expect(pageUpdate(reread, Message.ClickedApplyJson()).commands).toMatchObject([
+			{ name: "ApplyStatusPageConfig", args: { ifVersion: "v8" } },
+		])
+	})
+
 	test("unsaved Settings edits block Apply until they are saved or discarded", () => {
 		const draft = JSON.stringify(documentOf([1]))
 		const dirty = pageUpdate(

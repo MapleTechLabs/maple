@@ -64,7 +64,15 @@ import {
 	changeTheme,
 	updateTokenCopy,
 } from "./update-settings"
-import { appliedJson, applyJson, cancelJson, changeJson, editJson, updateJsonCopy } from "./update-json"
+import {
+	appliedJson,
+	applyJson,
+	cancelJson,
+	changeJson,
+	editJson,
+	rebaseJsonDraft,
+	updateJsonCopy,
+} from "./update-json"
 
 type EditorRoute = Extract<AppRoute, { readonly _tag: "AlertsStatusPage" }>
 
@@ -116,6 +124,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		isDeletingPage: false,
 		jsonDraft: null,
 		jsonBase: null,
+		isRebasingJson: false,
 		isApplyingJson: false,
 		jsonFailure: null,
 		jsonCopy: CopyButton.init(),
@@ -167,7 +176,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			commands: [ReadEditorClock()],
 		}),
 		CompletedFetchConfig: ({ key, result }) => ({
-			model: { ...model, config: Keyed.accept(model.config, key, result) },
+			model: rebaseJsonDraft({ ...model, config: Keyed.accept(model.config, key, result) }),
 		}),
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },

@@ -80,6 +80,8 @@ export const Model = Schema.Struct({
 	jsonDraft: Schema.NullOr(Schema.String),
 	/** The saved document the draft was opened from: its diff base and the version an apply sends. */
 	jsonBase: Schema.NullOr(StatusPageConfig),
+	/** After a conflict: the next config read becomes the draft's base, keeping the typed draft. */
+	isRebasingJson: Schema.Boolean,
 	isApplyingJson: Schema.Boolean,
 	jsonFailure: Schema.NullOr(LoadFailure),
 	jsonCopy: CopyButton.Model,

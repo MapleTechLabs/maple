@@ -145,12 +145,27 @@ export const appliedJson = (
 			),
 			outMessage: toast("success", "Config applied", "It goes out with the next publish."),
 		}),
-		// A conflict means the page moved on: re-read it so Reset starts from the current one.
+		// A conflict means the page moved on: re-read it and rebase the draft onto it, keeping the text.
 		onFailure: (jsonFailure): Return =>
 			jsonFailure.code === "status_page_conflict"
-				? chain({ ...model, isApplyingJson: false, jsonFailure }, readConfig(context, "Supersede"))
+				? chain(
+						{ ...model, isApplyingJson: false, isRebasingJson: true, jsonFailure },
+						readConfig(context, "Supersede"),
+					)
 				: { model: { ...model, isApplyingJson: false, jsonFailure } },
 	})
+
+/**
+ * Once the re-read after a conflict lands, the draft is checked against the current page: the
+ * summary shows what the next Apply would overwrite, and that Apply carries the current version.
+ */
+export const rebaseJsonDraft = (model: Model): Model =>
+	model.isRebasingJson && model.jsonDraft !== null
+		? Option.match(currentConfigOf(model), {
+				onNone: () => model,
+				onSome: (current) => ({ ...model, jsonBase: current, isRebasingJson: false }),
+			})
+		: model
 
 export const updateJsonCopy = (model: Model, message: CopyButton.Message): Return => {
 	const step = CopyButton.update(model.jsonCopy, message)
