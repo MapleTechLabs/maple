@@ -9,28 +9,44 @@
 // the next tick and go into one insert. So a lone export waits for nothing,
 // and the busier the server, the larger each insert.
 
-import { Result } from "effect"
+import { Effect, Result, Schema } from "effect"
 import type { Chdb } from "./chdb"
-import { buildBatchedInsertStatements, MAX_ESCAPED_PAYLOAD_BYTES } from "./inserts"
+import {
+	buildBatchedInsertStatements,
+	buildInsertStatements,
+	hasInsertTemplate,
+	MAX_ESCAPED_PAYLOAD_BYTES,
+} from "./inserts"
 
 export interface InsertBatch {
 	readonly datasource: string
 	readonly ndjson: string
 }
 
-export interface InsertOutcome {
-	/** Rows committed. */
-	readonly accepted: number
-	/** The first insert that failed. The export's later rows were not inserted. */
-	readonly failure?: { readonly datasource: string; readonly cause: unknown }
-}
+/** An export's insert failed. Its rows before `datasource` are committed, its later ones are not. */
+export class LocalInsertError extends Schema.TaggedError<LocalInsertError>()("@maple/cli/LocalInsertError", {
+	message: Schema.String,
+	datasource: Schema.String,
+	/** Rows committed before the failure. */
+	accepted: Schema.Number,
+	cause: Schema.Defect(),
+}) {}
 
 interface QueuedExport {
 	readonly batches: ReadonlyArray<InsertBatch>
-	readonly settle: (outcome: InsertOutcome) => void
+	readonly settle: (outcome: Result.Result<number, LocalInsertError>) => void
 	accepted: number
-	failure: InsertOutcome["failure"]
+	failure: { readonly datasource: string; readonly cause: unknown } | undefined
 }
+
+/** One export's rows of one datasource, the unit a shared statement carries. */
+interface QueuedPart {
+	readonly owner: QueuedExport
+	readonly ndjson: string
+}
+
+const byDatasource = (a: InsertBatch, b: InsertBatch) =>
+	a.datasource < b.datasource ? -1 : a.datasource > b.datasource ? 1 : 0
 
 /**
  * Queues each export's rows until the next timer tick, or until a statement's
@@ -48,51 +64,114 @@ export class InsertBatcher {
 		this.#db = db
 	}
 
-	/** Resolves once the batches are committed, or once an insert of them fails. Never rejects. */
-	insert(batches: ReadonlyArray<InsertBatch>): Promise<InsertOutcome> {
-		if (batches.length === 0) return Promise.resolve({ accepted: 0 })
-		const { promise, resolve } = Promise.withResolvers<InsertOutcome>()
-		this.#queue.push({ batches, settle: resolve, accepted: 0, failure: undefined })
-		for (const batch of batches) this.#queuedBytes += batch.ndjson.length
+	/** Builds the batcher that every statement on `db` flushes first. */
+	static attach(db: Chdb): InsertBatcher {
+		const batcher = new InsertBatcher(db)
+		db.beforeEachStatement(() => batcher.flush())
+		return batcher
+	}
+
+	/** Succeeds with the rows committed once they all are; fails at the first insert that fails. */
+	insert(batches: ReadonlyArray<InsertBatch>): Effect.Effect<number, LocalInsertError> {
+		return Effect.flatMap(
+			Effect.promise(() => this.#enqueue(batches)),
+			Effect.fromResult,
+		)
+	}
+
+	#enqueue(batches: ReadonlyArray<InsertBatch>): Promise<Result.Result<number, LocalInsertError>> {
+		const unknown = batches.find((batch) => !hasInsertTemplate(batch.datasource))
+		if (unknown !== undefined)
+			return Promise.resolve(
+				Result.fail(failed(0, { datasource: unknown.datasource, cause: "no insert mapping" })),
+			)
+		if (batches.length === 0) return Promise.resolve(Result.succeed(0))
+		const { promise, resolve } = Promise.withResolvers<Result.Result<number, LocalInsertError>>()
+		// Each export inserts its datasources in name order, the one order flush can keep
+		// for every export at once, so its rows before a failed insert are always the same.
+		this.#queue.push({
+			batches: [...batches].sort(byDatasource),
+			settle: resolve,
+			accepted: 0,
+			failure: undefined,
+		})
+		// Escaping only grows the payload, so this undercounts by the escaped `\` and `'`.
+		for (const batch of batches) this.#queuedBytes += Buffer.byteLength(batch.ndjson, "utf8")
 		if (this.#queuedBytes >= MAX_ESCAPED_PAYLOAD_BYTES) this.flush()
 		else this.#timer ??= setTimeout(() => this.flush(), 0)
 		return promise
 	}
 
-	/** Insert everything queued now, one datasource at a time. Never throws. */
+	/** Insert everything queued now, one datasource at a time. Never throws, and settles every export it took. */
 	flush(): void {
 		clearTimeout(this.#timer)
 		this.#timer = undefined
 		const queue = this.#queue
 		if (queue.length === 0) return
-		// Taken before the first insert: each insert runs `Chdb.beforeEachStatement`,
-		// which calls back into this method and must find nothing left to do.
 		this.#queue = []
 		this.#queuedBytes = 0
-		// By name, the order the encoders emit each export's batches in, so every export
-		// meets its own datasources in the order it would have inserted them alone.
 		const datasources = [
 			...new Set(queue.flatMap(({ batches }) => batches.map(({ datasource }) => datasource))),
 		].sort()
 		for (const datasource of datasources) {
 			// An export whose insert already failed stops there, as it did when it inserted alone.
-			const batches = queue.flatMap((owner) => {
+			const parts = queue.flatMap((owner): QueuedPart[] => {
 				if (owner.failure !== undefined) return []
 				const own = owner.batches.filter((batch) => batch.datasource === datasource)
 				return own.length === 0
 					? []
 					: [{ owner, ndjson: own.map((batch) => batch.ndjson).join("\n") }]
 			})
-			for (const statement of buildBatchedInsertStatements(datasource, batches)) {
-				if (statement.parts.every(({ owner }) => owner.failure !== undefined)) continue
-				const inserted = Result.try(() => this.#db.exec(statement.sql))
-				for (const { owner, rowCount } of statement.parts) {
-					if (Result.isSuccess(inserted)) owner.accepted += rowCount
-					else owner.failure ??= { datasource, cause: inserted.failure }
-				}
+			// Whatever throws here, every export still settles below rather than waiting forever.
+			const inserted = Result.try(() => this.#insertDatasource(datasource, parts))
+			if (Result.isFailure(inserted))
+				for (const { owner } of parts) owner.failure ??= { datasource, cause: inserted.failure }
+		}
+		for (const owner of queue)
+			owner.settle(
+				owner.failure === undefined
+					? Result.succeed(owner.accepted)
+					: Result.fail(failed(owner.accepted, owner.failure)),
+			)
+	}
+
+	#insertDatasource(datasource: string, parts: ReadonlyArray<QueuedPart>): void {
+		const statements = buildBatchedInsertStatements(
+			datasource,
+			parts.map((part) => ({ owner: part, ndjson: part.ndjson })),
+		)
+		for (const statement of statements) {
+			const live = statement.parts.filter(({ owner: part }) => part.owner.failure === undefined)
+			if (live.length === 0) continue
+			const inserted = Result.try(() => this.#db.exec(statement.sql))
+			if (Result.isSuccess(inserted)) {
+				for (const { owner: part, rowCount } of live) part.owner.accepted += rowCount
+			} else if (statement.parts.length === 1) {
+				for (const { owner: part } of live)
+					part.owner.failure = { datasource, cause: inserted.failure }
+			} else {
+				// A shared statement fails whole: retry each export alone, so only the one with a bad row fails.
+				for (const { owner: part } of live) this.#insertAlone(datasource, part)
 			}
 		}
-		for (const { settle, accepted, failure } of queue)
-			settle(failure === undefined ? { accepted } : { accepted, failure })
+	}
+
+	#insertAlone(datasource: string, part: QueuedPart): void {
+		for (const statement of buildInsertStatements(datasource, part.ndjson)) {
+			const inserted = Result.try(() => this.#db.exec(statement.sql))
+			if (Result.isFailure(inserted)) {
+				part.owner.failure = { datasource, cause: inserted.failure }
+				return
+			}
+			part.owner.accepted += statement.rowCount
+		}
 	}
 }
+
+const failed = (accepted: number, failure: { readonly datasource: string; readonly cause: unknown }) =>
+	new LocalInsertError({
+		message: `chDB insert (${failure.datasource}) failed`,
+		datasource: failure.datasource,
+		accepted,
+		cause: failure.cause,
+	})

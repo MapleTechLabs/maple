@@ -484,14 +484,18 @@ const ingest = (
 			rejected += filtered.rejected
 			return { ...batch, ndjson: filtered.ndjson, rowCount: filtered.accepted }
 		})
-		const { accepted, failure } = yield* Effect.promise(() =>
-			inserts.insert(batches.filter((batch) => batch.rowCount > 0)),
-		)
-		if (failure !== undefined)
-			return yield* stopIngest(
-				text(`chDB insert (${failure.datasource}): ${describeThrown(failure.cause)}`, 500),
-				requestBytes,
-				accepted,
+		const accepted = yield* inserts
+			.insert(batches.filter((batch) => batch.rowCount > 0))
+			.pipe(
+				Effect.catchTag("@maple/cli/LocalInsertError", (error) =>
+					Effect.fail(
+						stopIngest(
+							text(`chDB insert (${error.datasource}): ${describeThrown(error.cause)}`, 500),
+							requestBytes,
+							error.accepted,
+						),
+					),
+				),
 			)
 		const readyEventIds = [...evaluation.recoveredEventIds, ...staged.eventIds]
 		// The rows are committed: a 5xx here would make exporters resend the batch
@@ -1793,8 +1797,7 @@ export const startServer = (
 			),
 		)
 		const gate = new RequestQuiescenceGate()
-		const inserts = new InsertBatcher(db)
-		db.beforeEachStatement(() => inserts.flush())
+		const inserts = InsertBatcher.attach(db)
 		const runSpan: SpanRunner = (effect) => runtime.runPromise(effect)
 		const eventing = Context.get(services, LocalEventingRuntime)
 		const readiness = new ReadinessRecovery(

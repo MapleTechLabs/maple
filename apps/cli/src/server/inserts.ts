@@ -72,6 +72,9 @@ interface EscapedLine {
 	readonly bytes: number
 }
 
+/** Whether `datasource` has an insert mapping; the builders below throw for one that does not. */
+export const hasInsertTemplate = (datasource: string): boolean => templates.has(datasource)
+
 const templateFor = (datasource: string): InsertTemplate => {
 	const template = templates.get(datasource)
 	if (!template) throw new Error(`no insert mapping for datasource '${datasource}'`)
@@ -117,7 +120,12 @@ const splitLines = (template: InsertTemplate, lines: ReadonlyArray<EscapedLine>)
  * `SET max_query_size` (`MAX_QUERY_SIZE_BYTES`) exists for.
  */
 export function buildInsertStatements(datasource: string, ndjson: string): InsertStatement[] {
-	return splitLines(templateFor(datasource), escapeLines(ndjson))
+	return buildBatchedInsertStatements(datasource, [{ owner: undefined, ndjson }]).map(
+		({ sql, rowCount }) => ({
+			sql,
+			rowCount,
+		}),
+	)
 }
 
 /** The rows of one batch inside a {@link BatchedInsertStatement}. */
